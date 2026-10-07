@@ -23,6 +23,13 @@ demonstrate that no module-global owner or cross-worker cleanup is required. The
 same contract remains valid in a serial run. Tests do not depend on collection
 timing, worker order, sleeps, retries, or implementation-private refcounts.
 
+An asynchronous probe also treats a suspended task frame as a real owner. It
+uses process-local `asyncio.Event` handshakes to prove the object is live while
+the task is suspended, then releases the explicit collection and coroutine
+local, awaits and deletes the task, and closes the loop through `asyncio.run`
+before asserting collection. It makes no claim about ready-queue, callback, or
+finalizer order.
+
 ## Root cause and compatibility
 
 The prior assertions retained the objects they expected to disappear. One test
@@ -35,6 +42,9 @@ This change is test-only. It does not alter product lifetime, public APIs,
 serialization, schemas, process topology, or the garbage collector. The probes
 use the documented `weakref` and `gc` APIs and remain portable to Python
 implementations that defer cyclic collection until an explicit `gc.collect()`.
+The async probe additionally uses documented task and event APIs; it observes
+only reachability before and after explicit ownership boundaries rather than
+CPython frame internals.
 The module's pipeline-controller fakes also conform to the current asynchronous
 merge and zero-argument gate protocols so strict type checking remains useful;
 their behavior is unchanged for these lifecycle tests.
@@ -47,6 +57,10 @@ their behavior is unchanged for these lifecycle tests.
 - Each item allocates a bounded number of tiny Python objects. Explicit
   collection is synchronous; no daemon, thread, child process, timer, sleep,
   retry, temporary file, or untracked helper is introduced.
+- Each async item creates exactly one task and two events inside its own worker
+  process. A `finally` boundary releases and awaits the task even if the live
+  phase assertion fails, so the probe cannot leave pending-task warnings or
+  work for another item to clean up.
 - Failure output identifies the surviving weak reference and exact test item.
   Parametrized item IDs make independent worker execution visible in gate logs.
 - The autouse cleanup fixture performs a final collection after each item, but
@@ -68,7 +82,8 @@ restored.
 
 - `tests/unit/test_resource_cleanup_deep.py::TestWeakrefLeakDetection` proves
   out-of-scope death, explicit-owner survival and release, cyclic collection,
-  finalizer execution, and independent parametrized worker probes.
+  finalizer execution, task-frame release after loop teardown, and independent
+  parametrized worker probes.
 - The complete resource-cleanup module must pass with warnings treated as errors.
 - Documentation, spec, and task-ledger validation must remain green. Because no
   production file changes, production line/branch coverage floors are unchanged.
@@ -86,6 +101,11 @@ restored.
   release](https://stackoverflow.com/questions/70321290/when-is-the-reference-count-for-a-local-variable-in-a-python-function-decreased)
   documents `del` as the explicit boundary when weakref-sensitive code must end
   a local owner's lifetime before function return.
+- A long-lived [2023 Python community discussion of garbage-collected asyncio
+  tasks](https://discuss.python.org/t/whats-up-with-garbage-collected-asyncio-task-objects/29686)
+  records real debugging failures when task ownership and completion were left
+  implicit. The probe therefore retains, awaits, and explicitly releases its
+  task instead of inferring lifecycle from scheduler timing.
 - The [pytest-xdist project](https://github.com/pytest-dev/pytest-xdist) documents
   that distributed tests run in separate worker processes. The regressions keep
   all ownership inside each item rather than relying on cross-worker state.

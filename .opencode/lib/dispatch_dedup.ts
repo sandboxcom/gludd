@@ -412,6 +412,22 @@ function staleLockCanBeReclaimed(lockPath: string, now: number): boolean {
   }
 }
 
+function closeDescriptorQuietly(descriptor: number): void {
+  try {
+    fs.closeSync(descriptor)
+  } catch {
+    // The descriptor may already have been closed before a later write failed.
+  }
+}
+
+function unlinkQuietly(filePath: string): void {
+  try {
+    fs.unlinkSync(filePath)
+  } catch {
+    // Best-effort cleanup: an absent path needs no further action.
+  }
+}
+
 function acquireLedgerLock(): () => void {
   const lockPath = `${DISPATCH_DEDUP_STATE}.lock`
   fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 })
@@ -437,8 +453,8 @@ function acquireLedgerLock(): () => void {
       fs.fsyncSync(descriptor)
       fs.closeSync(descriptor)
     } catch {
-      try { fs.closeSync(descriptor) } catch { /* already closed */ }
-      try { fs.unlinkSync(lockPath) } catch { /* absent */ }
+      closeDescriptorQuietly(descriptor)
+      unlinkQuietly(lockPath)
       throw new Error("dispatch_ledger_lock_unavailable")
     }
     return () => {

@@ -803,9 +803,6 @@ const defaultImpl: HotModule = {
     _writeHeartbeat()
     const tool = input.tool
     const args = output?.args ?? input?.args
-    const command = String(args?.command ?? input?.command ?? "")
-    // Dispatch admission is two-phase: reject durable conflicts first, run
-    // independent guards, then persist the owner claim only after they allow.
     if (isDispatchTool(tool)) {
       const duplicateMsg = preflightDispatch(tool, args)
       if (duplicateMsg) throw new Error(duplicateMsg)
@@ -816,6 +813,7 @@ const defaultImpl: HotModule = {
       const registrationMsg = registerDispatch(tool, args)
       if (registrationMsg) throw new Error(registrationMsg)
     }
+    const command = String(args?.command ?? input?.command ?? "")
     // all tools — force-delegate + mainthread budget
     // (Each of these is FAIL-OPEN internally; they return null on any error.)
     const forceMsg = enforceForceDelegate(tool, args)
