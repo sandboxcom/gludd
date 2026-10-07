@@ -14,7 +14,7 @@ import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from general_ludd.compaction.aggressive import compact_dicts
 from general_ludd.dispatch.limits import MAX_CALLS_PER_REQUEST
@@ -95,6 +95,20 @@ class ToolLoopExhausted(RuntimeError):
     Callers must treat this as a failed run rather than acting on the trailing
     (usually empty / raw-repr) content that the old code silently returned.
     """
+
+
+def _raise_tool_loop_exhausted(job_id: str, max_iterations: int) -> NoReturn:
+    """Record and raise terminal tool-loop exhaustion."""
+    logger.warning(
+        "Tool call loop reached max iterations (%d) for job %s",
+        max_iterations,
+        job_id,
+    )
+    raise ToolLoopExhausted(
+        f"Tool call loop reached max iterations ({max_iterations}) "
+        f"for job {job_id} while the model was still requesting tools; "
+        f"no final assistant answer was produced"
+    )
 
 
 class ToolCallLoop:
@@ -476,16 +490,7 @@ class ToolCallLoop:
                 continue
             return content
 
-        logger.warning(
-            "Tool call loop reached max iterations (%d) for job %s",
-            effective_max_iterations,
-            job.job_id,
-        )
-        raise ToolLoopExhausted(
-            f"Tool call loop reached max iterations ({effective_max_iterations}) "
-            f"for job {job.job_id} while the model was still requesting tools; "
-            f"no final assistant answer was produced"
-        )
+        _raise_tool_loop_exhausted(job.job_id, effective_max_iterations)
 
     def reset_auditor(self) -> None:
         """Reset the auditor state for a fresh job."""
