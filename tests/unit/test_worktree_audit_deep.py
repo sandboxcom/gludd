@@ -79,6 +79,7 @@ class TestGetWorktreesExcludesMain:
         )
         with mock.patch("scripts.check_worktree_health.run", return_value=(0, porcelain, "")):
             result = get_worktrees()
+        assert result is not None
         paths = [e["worktree"] for e in result]
         assert str(Path(MAIN_CHECKOUT).resolve()) not in paths, (
             "get_worktrees must exclude the main checkout"
@@ -93,14 +94,15 @@ class TestGetWorktreesExcludesMain:
             result = get_worktrees()
         assert result == [], "get_worktrees must return empty list when only main checkout exists"
 
-    def test_returns_empty_on_git_failure(
+    def test_returns_inconclusive_on_git_failure(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         from scripts.check_worktree_health import get_worktrees
 
         with mock.patch("scripts.check_worktree_health.run", return_value=(1, "", "git failed")):
             result = get_worktrees()
-        assert result == [], "get_worktrees must return empty list on git failure (fail-open)"
+        assert result is None, "inventory failure must not look like an empty inventory"
+        assert "git worktree list failed" in capsys.readouterr().err
 
 
 class TestCanonicalWorktreeIdentity:
@@ -164,6 +166,7 @@ class TestCanonicalWorktreeIdentity:
         ):
             result = get_worktrees()
 
+        assert result is not None
         assert result[0]["worktree"] == str(escape)
         assert result[0]["path_error"] == "outside_worktree_root"
 
@@ -221,6 +224,7 @@ class TestCanonicalWorktreeIdentity:
         ):
             result = get_worktrees()
 
+        assert result is not None
         assert result[0]["worktree"] == str(real_path.resolve())
         assert result[0]["path_identity"] == "canonical"
         assert result[1]["path_error"] == "duplicate_worktree_identity"
@@ -354,8 +358,10 @@ class TestScriptExitCodes:
             capture_output=True,
             text=True,
         )
-        assert result.returncode in {0, 1}
-        terminal = "PASSED" if result.returncode == 0 else "FAILED"
+        assert result.returncode in {0, 1, 2}
+        terminal = {0: "PASSED", 1: "FAILED", 2: "INCONCLUSIVE"}[
+            result.returncode
+        ]
         assert f"=== WORKTREE HEALTH: {terminal} ===" in result.stdout
 
     def test_make_worktree_health_check_exits_zero(self) -> None:
@@ -376,6 +382,9 @@ class TestScriptExitCodes:
             text=True,
         )
         if "no active worktrees" in result.stdout:
+            assert "ACTIVE-WORKTREE path=" not in result.stdout
+            return
+        if "=== WORKTREE HEALTH: INCONCLUSIVE ===" in result.stdout:
             assert "ACTIVE-WORKTREE path=" not in result.stdout
             return
 
@@ -427,6 +436,20 @@ class TestMainWithMockedWorktrees:
                 "head": "deadbeef",
             }
         ]
+
+    def test_inventory_failure_is_inconclusive_not_empty(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from scripts.check_worktree_health import main
+
+        with mock.patch("scripts.check_worktree_health.get_worktrees", return_value=None):
+            rc = main()
+
+        assert rc == 2
+        output = capsys.readouterr().out
+        assert "=== WORKTREE HEALTH: INCONCLUSIVE ===" in output
+        assert "no active worktrees" not in output
+        assert "=== WORKTREE HEALTH: PASSED ===" not in output
 
     def test_invalid_path_fails_closed_before_path_commands(
         self, capsys: pytest.CaptureFixture[str]

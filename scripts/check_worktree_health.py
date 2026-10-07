@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-check_worktree_health.py — gate that enforces the Git Worktree Lifecycle policy.
+"""Gate that enforces the Git Worktree Lifecycle policy.
 
 Flags: stale worktrees (>24h old with unmerged commits), branches missing
 from the remote, and other violations. Exits non-zero on any violation so
@@ -9,7 +8,7 @@ the agent MUST resolve before the gate goes green.
 Exit codes:
   0 — all worktrees healthy (or none exist)
   1 — violations found (agent MUST resolve)
-  2 — inconclusive (git/gh unavailable) — fail-open
+  2 — inconclusive because the Git worktree inventory is unavailable
 """
 from __future__ import annotations
 
@@ -91,16 +90,15 @@ def run(cmd: list[str], cwd: str | None = None) -> tuple[int, str, str]:
         return 2, "", str(e)
 
 
-def get_worktrees() -> list[dict[str, str]]:
-    """Parse `git worktree list --porcelain` and return list of worktree dicts.
-    Excludes the main checkout."""
+def get_worktrees() -> list[dict[str, str]] | None:
+    """Return validated secondary worktrees, or ``None`` if inventory fails."""
     exit_code, stdout, _stderr = run(
         ["git", "worktree", "list", "--porcelain"],
         cwd=MAIN_CHECKOUT,
     )
     if exit_code != 0:
         print(f"ERROR: git worktree list failed (exit {exit_code})", file=sys.stderr)
-        return []
+        return None
 
     entries: list[dict[str, str]] = []
     current: dict[str, str] = {}
@@ -159,8 +157,7 @@ def branch_exists_on_remote(branch: str) -> bool:
 
 
 def get_tree_age(worktree_path: str) -> float | None:
-    """Return the age of the worktree in seconds (based on HEAD commit time if possible,
-    otherwise directory mtime). Returns None if age can't be determined."""
+    """Return age from HEAD time or directory mtime when it can be determined."""
     exit_code, stdout, _stderr = run(
         ["git", "log", "-1", "--format=%ct", "HEAD"],
         cwd=worktree_path,
@@ -183,7 +180,15 @@ def get_tree_age(worktree_path: str) -> float | None:
 
 
 def main() -> int:
+    """Audit active worktrees and return the documented terminal status."""
     worktrees = get_worktrees()
+
+    if worktrees is None:
+        print(
+            "=== WORKTREE HEALTH: INCONCLUSIVE === "
+            "(Git worktree inventory unavailable)"
+        )
+        return 2
 
     if not worktrees:
         print("=== WORKTREE HEALTH: PASSED === (no active worktrees)")

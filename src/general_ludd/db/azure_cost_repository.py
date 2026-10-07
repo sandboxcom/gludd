@@ -416,6 +416,10 @@ class AzureCostReconciliationRepository:
         now: datetime,
     ) -> AzureCostPredictionModel:
         _require_aware("claim.expires_at", claim.expires_at)
+        if type(claim.fencing_token) is not int or claim.fencing_token <= 0:
+            raise StaleAzureCostLeaseError(
+                "Azure cost lease is stale, expired, or superseded by a newer fencing token"
+            )
         if claim.expires_at <= now:
             raise StaleAzureCostLeaseError("Azure cost lease is stale, expired, or superseded by a newer fencing token")
         stmt = select(AzureCostPredictionModel).where(
