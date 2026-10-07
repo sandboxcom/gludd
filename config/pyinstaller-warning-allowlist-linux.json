@@ -4,7 +4,7 @@
   "pyinstaller_version": "6.22.3",
   "transitive_warning_sha256_by_architecture": {
     "aarch64": "70c6ec35a8d7e0b9095ca2dd7879ef28be05bff279d6d7aca9220e54efbd14ba",
-    "x86_64": "250f40043cbf269ea17ec2d6e1bf6fbcd598ff41405b0575e636c61f091fef60"
+    "x86_64": "a833e5857ff994bf49d2f83d620d526faadd974306ebc79dc7adae8f02f9e9b6"
   },
   "reviewed_transitive_warning_sha256_alternates_by_architecture": {
     "x86_64": [
