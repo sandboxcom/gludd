@@ -24,7 +24,7 @@ def test_feature_guide_pins_safe_runtime_and_rollout_boundaries() -> None:
     normalized = " ".join(feature.split())
 
     for marker in (
-        "CLI and opt-in live REVIEW integration implemented",
+        "automatic durable live REVIEW integration implemented",
         "RunBundleStore.read_verified()",
         "VerifiedDecisionSourceV1",
         "Exact-context abstention",
@@ -37,7 +37,10 @@ def test_feature_guide_pins_safe_runtime_and_rollout_boundaries() -> None:
         "shadow -> canary -> canary_10 -> canary_50 -> active",
         "Atomic rollback",
         "explicit human approval",
-        "durable multiworker configuration, recorder/outcome feedback, and deployed live-traffic proof remain pending",
+        "DecisionCodificationConfig",
+        "DurableGenerationStore",
+        "Terminal application feedback",
+        "automatic signed replay capture and deployed live-traffic proof remain pending",
     ):
         assert marker in normalized
 
@@ -54,6 +57,9 @@ def test_feature_guide_retains_long_lived_practitioner_findings() -> None:
         "scikit-learn discussion #25411",
         "OPA #2379",
         "OPA #1514",
+        "SQLite forum: WAL with multiple processes",
+        "SQLite forum: `BEGIN IMMEDIATE`",
+        "SQLite forum: hidden WAL checkpoints",
     ):
         assert marker in feature
 
@@ -64,16 +70,18 @@ def test_design_spec_records_implemented_runtime_and_pending_evidence() -> None:
     normalized = " ".join(spec.split())
 
     assert (
-        "**Status: CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW IMPLEMENTED; "
-        "DURABLE INTEGRATION PENDING**"
+        "**Status: CORE, ANALYSIS API/CLI, AND AUTOMATIC DURABLE LIVE REVIEW "
+        "IMPLEMENTED; SIGNED REPLAY CAPTURE AND DEPLOYED PROOF PENDING**"
     ) in normalized
-    assert "## 0. Implementation status (2026-10-06)" in spec
+    assert "## 0. Implementation status (2026-10-07)" in spec
     assert "DecisionLogAnalyzer" in spec
     assert "DecisionResolver" in spec
     assert "DecisionCodificationAdapter" in spec
-    assert "explicit injection" in spec
+    assert "explicit injection or typed default-off daemon configuration" in spec
+    assert "DurableGenerationStore" in spec
+    assert "BEGIN IMMEDIATE" in spec
     assert (
-        "durable multiworker configuration, recorder/outcome feedback, and deployed "
+        "Automatic signed replay capture, multi-host state, and deployed "
         "live-traffic proof remain pending"
     ) in normalized
 

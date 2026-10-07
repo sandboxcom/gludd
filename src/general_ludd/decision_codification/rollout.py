@@ -7,8 +7,8 @@ import hmac
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime
-from typing import Final
+from datetime import datetime, timedelta
+from typing import Final, Protocol
 
 from general_ludd.decision_codification.artifact_store import (
     ArtifactStoreError,
@@ -17,11 +17,13 @@ from general_ludd.decision_codification.artifact_store import (
 )
 from general_ludd.decision_codification.schema import (
     ApprovalReceiptV1,
+    DecisionApplicationOutcomeV1,
     DecisionKind,
     DecisionRuleBundleV1,
     LifecycleState,
     ReceiptType,
     RolloutStage,
+    VerifiedOutcome,
 )
 
 _STAGE_THRESHOLDS: Final[dict[RolloutStage, int]] = {
@@ -49,6 +51,106 @@ class GenerationPointer:
     receipt_digest: str
     stage: RolloutStage
     epoch: int
+
+
+@dataclass(frozen=True, slots=True)
+class OutcomeFeedback:
+    """Idempotent persistence result and any resulting closed drift reason."""
+
+    recorded: bool
+    drift_reason: str | None
+
+
+class GenerationStore(Protocol):
+    """Atomic generation state contract shared by local and durable stores."""
+
+    def current(
+        self, project_id: str, decision_kind: DecisionKind
+    ) -> GenerationPointer | None:
+        """Read the current pointer for one exact decision scope."""
+        ...
+
+    def compare_and_swap(
+        self,
+        pointer: GenerationPointer,
+        *,
+        expected_candidate_digest: str | None,
+    ) -> GenerationPointer | None:
+        """Publish a pointer only when its candidate expectation matches."""
+        ...
+
+    def mark_drift_hold(self, candidate_digest: str, reason: str) -> None:
+        """Hold a candidate using one closed drift reason."""
+        ...
+
+    def is_drift_held(self, candidate_digest: str) -> bool:
+        """Return whether feedback currently holds the candidate."""
+        ...
+
+    def revoke(
+        self,
+        project_id: str,
+        decision_kind: DecisionKind,
+        expected_candidate_digest: str,
+        *,
+        remove_pointer: bool,
+    ) -> bool:
+        """Revoke the expected current candidate atomically."""
+        ...
+
+    def inactive_reason(
+        self, project_id: str, decision_kind: DecisionKind
+    ) -> str | None:
+        """Read the closed reason retained after pointer removal."""
+        ...
+
+    def is_revoked(self, candidate_digest: str) -> bool:
+        """Return whether a candidate is durably revoked."""
+        ...
+
+    def force_revoke(self, candidate_digest: str) -> None:
+        """Persist an emergency candidate revocation."""
+        ...
+
+    def reserve_use(
+        self,
+        candidate_digest: str,
+        application_id: str,
+        maximum_use_count: int,
+    ) -> bool:
+        """Idempotently reserve one bounded candidate application."""
+        ...
+
+    def has_application(self, candidate_digest: str, application_id: str) -> bool:
+        """Return whether an application was issued for the candidate."""
+        ...
+
+    def use_count(self, candidate_digest: str) -> int:
+        """Return the candidate's distinct application count."""
+        ...
+
+    def record_outcome(self, outcome: DecisionApplicationOutcomeV1) -> bool:
+        """Idempotently record terminal feedback for an issued application."""
+        ...
+
+    def recent_outcomes(
+        self,
+        candidate_digest: str,
+        *,
+        now: datetime,
+    ) -> tuple[VerifiedOutcome, ...]:
+        """Read the bounded recent terminal-outcome window."""
+        ...
+
+    def rollback(
+        self,
+        project_id: str,
+        decision_kind: DecisionKind,
+        expected_candidate_digest: str,
+        eligible: Callable[[GenerationPointer], bool],
+    ) -> GenerationPointer | None:
+        """Restore the newest eligible prior generation or disable lookup."""
+        ...
 
 
 def stable_canary_bucket(
@@ -86,6 +188,9 @@ class AtomicGenerationStore:
         self._inactive_reasons: dict[tuple[str, DecisionKind], str] = {}
         self._use_counts: dict[str, int] = {}
         self._applications: dict[str, set[str]] = {}
+        self._outcomes: dict[
+            tuple[str, str], DecisionApplicationOutcomeV1
+        ] = {}
 
     def current(
         self, project_id: str, decision_kind: DecisionKind
@@ -186,6 +291,45 @@ class AtomicGenerationStore:
         with self._lock:
             return self._use_counts.get(candidate_digest, 0)
 
+    def has_application(self, candidate_digest: str, application_id: str) -> bool:
+        """Return whether lookup reserved the exact application identity."""
+        with self._lock:
+            return application_id in self._applications.get(candidate_digest, set())
+
+    def record_outcome(self, outcome: DecisionApplicationOutcomeV1) -> bool:
+        """Idempotently retain one terminal result for an issued application."""
+        key = (outcome.candidate_digest, outcome.application_id)
+        with self._lock:
+            if not self.has_application(*key):
+                raise RolloutError("outcome does not reference an issued application")
+            existing = self._outcomes.get(key)
+            if existing is not None:
+                if existing != outcome:
+                    raise RolloutError("application has conflicting outcome feedback")
+                return False
+            self._outcomes[key] = outcome
+            return True
+
+    def recent_outcomes(
+        self,
+        candidate_digest: str,
+        *,
+        now: datetime,
+    ) -> tuple[VerifiedOutcome, ...]:
+        """Return the newest bounded seven-day application outcome window."""
+        cutoff = now - timedelta(days=7)
+        with self._lock:
+            selected = sorted(
+                (
+                    outcome
+                    for (candidate, _), outcome in self._outcomes.items()
+                    if candidate == candidate_digest
+                    and cutoff <= outcome.occurred_at <= now
+                ),
+                key=lambda outcome: (outcome.occurred_at, outcome.application_id),
+            )[-100:]
+        return tuple(outcome.outcome for outcome in selected)
+
     def rollback(
         self,
         project_id: str,
@@ -229,7 +373,7 @@ class RolloutController:
     def __init__(
         self,
         artifacts: DecisionArtifactStore,
-        pointers: AtomicGenerationStore,
+        pointers: GenerationStore,
         *,
         rollout_key: bytes,
     ) -> None:
@@ -449,6 +593,29 @@ class RolloutController:
         """Return distinct application count for observability and bounds."""
         return self.pointers.use_count(candidate_digest)
 
+    def record_application_outcome(
+        self,
+        outcome: DecisionApplicationOutcomeV1,
+    ) -> OutcomeFeedback:
+        """Persist terminal feedback and fail closed on unsafe live drift."""
+        recorded = self.pointers.record_outcome(outcome)
+        if not recorded:
+            return OutcomeFeedback(recorded=False, drift_reason=None)
+        window = self.pointers.recent_outcomes(
+            outcome.candidate_digest,
+            now=outcome.occurred_at,
+        )
+        drift_reason: str | None = None
+        if outcome.outcome is VerifiedOutcome.UNSAFE:
+            drift_reason = "safety_violation"
+        elif window:
+            failures = sum(item is VerifiedOutcome.FAILURE for item in window)
+            if failures / len(window) > 0.01:
+                drift_reason = "failure_rate"
+        if drift_reason is not None:
+            self.pointers.mark_drift_hold(outcome.candidate_digest, drift_reason)
+        return OutcomeFeedback(recorded=True, drift_reason=drift_reason)
+
     def _verified(
         self, bundle: DecisionRuleBundleV1, receipt: ApprovalReceiptV1
     ) -> tuple[DecisionRuleBundleV1, ApprovalReceiptV1]:
@@ -500,6 +667,8 @@ class RolloutController:
 __all__ = [
     "AtomicGenerationStore",
     "GenerationPointer",
+    "GenerationStore",
+    "OutcomeFeedback",
     "RolloutController",
     "RolloutError",
     "stable_canary_bucket",
