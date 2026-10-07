@@ -308,6 +308,41 @@ class TestMoleculeTaskOrdering:
         assert not missing_syntax, f"test_sequence missing 'syntax': {', '.join(missing_syntax)}"
 
 
+class TestRuntimeValidateIsolation:
+    """Pin the hosted runtime smoke to its explicit root and auth boundary."""
+
+    @pytest.mark.parametrize("filename", ["converge.yml", "verify.yml"])
+    def test_runtime_check_uses_project_root_and_explicit_auth(
+        self, filename: str
+    ) -> None:
+        path = PLAYBOOKS_DIR / "runtime_validate" / "default" / filename
+        plays = _load_yaml(path)
+        assert isinstance(plays, list) and len(plays) == 1
+        play = plays[0]
+        assert isinstance(play, dict)
+
+        variables = play["vars"]
+        assert variables["project_root"] == (
+            "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        )
+        assert variables["project_src"] == "{{ project_root }}/src"
+        assert variables["runtime_validate_auth_psk"] == (
+            "molecule-runtime-validation-only"
+        )
+
+        tasks = play["tasks"]
+        assert isinstance(tasks, list)
+        command_task = tasks[0]
+        environment = command_task["environment"]
+        assert environment == {
+            "GLUDD_AUTH_PSK": "{{ runtime_validate_auth_psk }}",
+        }
+        command = command_task["ansible.builtin.command"]["cmd"]
+        assert command.endswith("{{ project_src }} {{ project_root }}")
+        assert "GLUDD_PSK_DISABLE" not in str(play)
+        assert "GLUDD_ALLOW_NO_AUTH" not in str(play)
+
+
 # ---------------------------------------------------------------------------
 # 4. Variable reference tests
 # ---------------------------------------------------------------------------

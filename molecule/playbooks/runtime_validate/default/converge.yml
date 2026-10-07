@@ -4,13 +4,17 @@
   connection: local
   gather_facts: false
   vars:
-    project_src: "{{ lookup('env', 'PWD') }}/src"
+    project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    project_src: "{{ project_root }}/src"
+    runtime_validate_auth_psk: "molecule-runtime-validation-only"
     venv_python: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3"
     files_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
   tasks:
     - name: Run runtime component checks
       ansible.builtin.command:
-        cmd: "{{ venv_python }} {{ files_dir }}/default/files/check_runtime.py {{ project_src }} {{ lookup('env', 'PWD') }}"
+        cmd: "{{ venv_python }} {{ files_dir }}/default/files/check_runtime.py {{ project_src }} {{ project_root }}"
+      environment:
+        GLUDD_AUTH_PSK: "{{ runtime_validate_auth_psk }}"
       register: runtime_check
       changed_when: false
       failed_when: runtime_check.rc != 0

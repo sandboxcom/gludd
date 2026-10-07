@@ -21,6 +21,7 @@ _BUILD_WORKFLOW = _ROOT / ".github" / "workflows" / "build.yml"
 _MOLECULE_WORKFLOW = _ROOT / ".github" / "workflows" / "molecule.yml"
 _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
 _LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
+_LINUX_REVIEW_DIR = _ROOT / "config" / "pyinstaller-warning-reviews"
 _DEV_BUILD_LOCK = _ROOT / "requirements" / "profiles" / "dev-build" / "uv.lock"
 _LINUX_BUILDER_DOCKERFILE = _ROOT / "config" / "containers" / "linux-binary.Dockerfile"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
@@ -245,6 +246,7 @@ def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
 
     assert "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814" in alternates
     assert "837c969e07af0acbc4812ec9e417ef42eb941a9184d9aa1731c402c3df1d11ad" in alternates
+    assert "d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d" in alternates
 
 
 def test_linux_policy_tracks_locked_pyinstaller_version() -> None:
@@ -269,8 +271,33 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
         "aarch64": ("70c6ec35a8d7e0b9095ca2dd7879ef28be05bff279d6d7aca9220e54efbd14ba"),
-        "x86_64": ("d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d"),
+        "x86_64": ("250f40043cbf269ea17ec2d6e1bf6fbcd598ff41405b0575e636c61f091fef60"),
     }
+
+
+def test_current_hosted_x86_64_graph_has_complete_review_receipt() -> None:
+    digest = "250f40043cbf269ea17ec2d6e1bf6fbcd598ff41405b0575e636c61f091fef60"
+    receipt = json.loads(
+        (_LINUX_REVIEW_DIR / f"x86_64-{digest}.json").read_text(encoding="utf-8")
+    )
+
+    assert receipt["architecture"] == "x86_64"
+    assert receipt["pyinstaller_version"] == "6.22.3"
+    assert receipt["before"] == {
+        "transitive_count": 1317,
+        "transitive_sha256": "d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d",
+        "warning_sha256": "9dc61422e0ee2191104561a750acb72e648625314fec0f87d599c44ca8d80c2e",
+    }
+    assert receipt["after"] == {
+        "transitive_count": 861,
+        "transitive_sha256": digest,
+        "warning_sha256": "c4f01714e521e329ec2d2d2d49d8b07a215bf401b099f206c00c36ea6d7a489a",
+    }
+    assert receipt["delta"]["added_count"] == 101
+    assert receipt["delta"]["removed_count"] == 557
+    assert receipt["delta"]["added"] == sorted(set(receipt["delta"]["added"]))
+    assert receipt["delta"]["removed"] == sorted(set(receipt["delta"]["removed"]))
+    assert 861 == 1317 + 101 - 557
 
 
 def test_linux_policy_pins_exact_controller_runtime_boundary_edges() -> None:
