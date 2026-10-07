@@ -1,23 +1,23 @@
 # Decision-log mining and deterministic codification
 
-**Status: CORE, ANALYSIS API/CLI, AND AUTOMATIC DURABLE LIVE REVIEW IMPLEMENTED;
-SIGNED REPLAY CAPTURE AND DEPLOYED PROOF PENDING**
+**Status: CORE, ANALYSIS API/CLI, AUTOMATIC DURABLE LIVE REVIEW, AND SIGNED
+AGENT-OUTCOME CAPTURE IMPLEMENTED; DEPLOYED PROOF PENDING**
 
 **Scope:** Mine repeated, successful agent decisions into reviewable, versioned
 decision trees that Gludd can execute without an agent/LLM call. This document
 specifies the safe evidence boundary, offline learner, authenticated analysis
 API and CLI, approval lifecycle, runtime lookup, and zero-downtime operation.
 The standalone core, bounded analysis surfaces, and configured live REVIEW
-decision point are implemented with durable same-host multiworker state;
-automatic signed replay capture and deployed proof are not.
+decision point are implemented with durable same-host multiworker state and
+automatic signed fallback-outcome capture; deployed proof is not.
 
 ## 0. Implementation status (2026-10-07)
 
 The earlier checkpoint was **CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW IMPLEMENTED;
 DURABLE INTEGRATION PENDING**. It is retained as status lineage, not as the
 current claim. The status above supersedes it: same-host SQLite WAL durability
-is implemented, while automatic signed capture, multi-host durable integration,
-and deployed proof remain pending.
+and signed agent-outcome capture are implemented, while multi-host durable
+integration and deployed proof remain pending.
 
 The contract, normalization, similarity, mining, export, replay evaluation,
 authenticated artifact store, human-approval adapter, deterministic runtime,
@@ -50,9 +50,10 @@ exact active rules skip the reviewer while abstention and adapter failures call
 it exactly once off-loop. A versioned SQLite WAL repository now shares atomic
 pointer, use, rollback, revocation, drift, and application-outcome state between
 same-host workers. Terminal REVIEW application feedback is idempotent and can
-place a generation on immediate durable drift hold. Automatic signed replay
-capture, multi-host state, and deployed live-traffic proof remain pending. No
-production traffic is claimed to use this core today.
+place a generation on immediate durable drift hold. Eligible agent fallback
+outcomes can now be finalized automatically as signed two-event bundles;
+multi-host state and deployed live-traffic proof remain pending. No production
+traffic is claimed to use this core today.
 
 ## 1. Outcome and non-goals
 
@@ -84,7 +85,7 @@ storage, policy, or rollout stack.
 |---|---|---|
 | Strict event shape and canonical JSON | `src/general_ludd/replay/schema.py` | Extend the replay event taxonomy through its owner; use the same strict Pydantic and canonical-JSON conventions. |
 | Verified source evidence | `src/general_ludd/replay/store.py` | Mine only `RunBundleStore.read_verified()` output. Never scan arbitrary logs or bypass bundle verification. |
-| Agent decision capture | `src/general_ludd/replay/recorder.py` | Emit normalized decision-source events at the capture boundary after canonical redaction. |
+| Agent decision capture | `src/general_ludd/decision_codification/capture.py`, `src/general_ludd/replay/recorder.py`, and `RunBundleStore` | Reuse the recorder's bounded capture/finalization conventions, pre-normalize, HMAC-correlate, append the decision/outcome pair, and finalize through the existing signed store. |
 | Content redaction | `src/general_ludd/security/redaction.py` | Apply before normalization and record counts, never rejected content. |
 | Learned procedure lifecycle | `src/general_ludd/memory/procedural.py` | Reuse project scoping, success/failure feedback, and procedural-memory concepts; add a stricter rule artifact rather than placing executable code in free-form `steps`. |
 | Deterministic execution | `src/general_ludd/rules/engine.py` | Compile approved tree leaves to its bounded condition/action vocabulary; do not build another runtime policy interpreter. |
@@ -242,6 +243,16 @@ payload. The analyzer accepts exactly one same-project, same-correlation,
 non-backdated outcome link. Missing, duplicate, conflicting, or orphan links are
 content-free refusals, never partial evidence. The global 100,000-event analysis
 ceiling also bounds this join.
+
+`DecisionOutcomeRecorder` is enabled only when typed `capture_identity`
+configuration supplies exact source/runtime/model identity. It accepts no model
+request parameters and
+persists no raw capture/task identifier: both become domain-separated HMAC
+correlation fields. Under one cross-process capture lock it proves the bounded
+retention quota, appends the decision, appends its outcome link, and finalizes the
+manifest with the configured replay signature. The identity is idempotent only
+for exact payload/correlation equality; reuse with changed content is a conflict.
+An incomplete or unsigned bundle is never repaired into training evidence.
 
 A decision counts once per root task/correlation family. Retries, duplicated
 events, replayed runs, and child attempts cannot inflate support. A success is
@@ -505,12 +516,13 @@ work sees the new pointer. Rollback must not restart workers, interrupt unrelate
 tasks, or mutate the immutable candidate. This is the ZDD canary contract.
 
 Replay schema expansion follows the same no-downtime discipline. Deploy readers
-that accept `decision.outcome` before enabling any producer. Producer rollback
-comes first: stop new outcome emission, finalize or quarantine in-flight bundles,
-then remove reader support. Existing signed bundles are immutable and must never
-be rewritten for downgrade compatibility. Capture failures do not change the
-active generation or runtime fallback, so this migration remains outside the
-serving decision path.
+that accept `decision.outcome`, then deploy producer code with `capture_identity`
+absent, then add exact identity/retention configuration. Producer rollback comes
+first: remove `capture_identity`, finalize or quarantine in-flight bundles, then
+remove reader support. Existing signed bundles are immutable and must never be
+rewritten for downgrade compatibility. Capture failures do not change the active
+generation or runtime fallback, and the already chosen task outcome is unchanged,
+so this migration remains outside the serving decision path.
 
 ## 12. Privacy, resource limits, and observability
 
@@ -540,6 +552,13 @@ The HTTP analysis boundary is narrower: a 64 KiB body, 256 unique safe run IDs,
 and 128 candidate summaries. Timestamp lifetime, maximum-use, and token-estimate
 parameters retain the bounds in section 3.1. API validation happens before the
 worker thread is started.
+
+Producer capture reserves at most 128 KiB per two-event bundle, limits private
+identifier inputs to 1,024 UTF-8 bytes, bounds retention to 1-366 days, and scans
+at most 1-10,000 store entries. Publication and quota enforcement share one
+cross-process lock. A truncated scan, incomplete size accounting, lock timeout,
+or unmet quota refuses the new capture rather than silently dropping older
+records or writing unsigned evidence.
 
 ### 12.3 Closed-cardinality metrics
 
@@ -738,7 +757,7 @@ with exact-hit reviewer bypass, one-call fallback, stable retry identities,
 conservative action mapping, managed self-improvement refusal, and content-free
 attribution.
 
-### Slice R4d: durable live-flow integration (partially landed)
+### Slice R4d: durable live-flow and producer capture (landed)
 
 Typed default-off configuration now constructs the live adapter automatically,
 with secrets resolved only from named environment variables. A versioned SQLite
@@ -746,10 +765,11 @@ WAL store provides same-host multiworker compare-and-swap, use reservation,
 rollback, revocation, application issuance, and idempotent outcome recording.
 The REVIEW path records success or failure after the downstream decision receipt
 without changing the already-applied task result; unsafe or excessive-failure
-feedback places the generation on a drift hold. Automatic signed replay capture,
-production database/multi-host coordination, and deployed live-traffic proof
-remain. No second branch independently creates shared migration, config, make,
-or daemon wiring.
+feedback places the generation on a drift hold. Automatic signed replay capture
+now writes eligible fallback decisions and terminal outcomes as bounded,
+HMAC-correlated, signed two-event bundles. Production database/multi-host
+coordination and deployed live-traffic proof remain. No second branch
+independently creates shared migration, config, make, or daemon wiring.
 
 ## 17. Primary documentation and user/forum findings
 
@@ -779,6 +799,14 @@ Research performed 2026-10-05:
   demonstrates decision IDs, masking/drop rules, bounded upload behavior, and
   nondeterministic builtin capture. Gludd adopts those evidence properties
   without adding an OPA service.
+- [OpenTelemetry stable log data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md)
+  separates event name, event/observed time, and execution-context correlation.
+  Gludd follows that mature structure with typed decision/outcome events and
+  exact HMAC correlation rather than display-log parsing.
+- [OpenTelemetry Python issue 4336](https://github.com/open-telemetry/opentelemetry-python/issues/4336)
+  records practitioner-observed log loss when a bounded exporter queue discarded
+  old records under pressure. Gludd synchronously reserves quota and atomically
+  persists or refuses; no in-memory queue can silently become training evidence.
 - [OPA issue 2379](https://github.com/open-policy-agent/opa/issues/2379) has
   documented since 2020 that dropping a whole JWT loses useful context while
   retaining it exposes replayable credentials. Gludd extracts an allowlisted,

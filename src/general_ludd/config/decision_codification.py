@@ -8,9 +8,31 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from general_ludd.replay.schema import (
+    ModelIdentityV1,
+    RuntimeIdentityV1,
+    SourceIdentityV1,
+)
+
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
+
+
+class DecisionCaptureIdentityConfig(BaseModel):
+    """Exact, content-safe provenance attached to captured decision bundles."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: SourceIdentityV1
+    runtime: RuntimeIdentityV1
+    model: ModelIdentityV1
+
+    @model_validator(mode="after")
+    def _request_parameters_are_not_persisted(self) -> DecisionCaptureIdentityConfig:
+        if self.model.request_parameters:
+            raise ValueError("capture model request_parameters must be empty")
+        return self
 
 
 class DecisionCodificationConfig(BaseModel):
@@ -29,6 +51,14 @@ class DecisionCodificationConfig(BaseModel):
     artifact_key_env: str | None = None
     rollout_key_env: str | None = None
     busy_timeout_seconds: float = Field(default=10.0, gt=0.0, le=60.0)
+    capture_identity: DecisionCaptureIdentityConfig | None = None
+    capture_retention_days: int = Field(default=30, ge=1, le=366)
+    capture_max_total_bytes: int = Field(
+        default=256 * 1024 * 1024,
+        ge=128 * 1024,
+        le=10 * 1024 * 1024 * 1024,
+    )
+    capture_scan_limit: int = Field(default=1_000, ge=1, le=10_000)
 
     @model_validator(mode="after")
     def _enabled_configuration_is_complete(self) -> Self:
@@ -82,4 +112,4 @@ class DecisionCodificationConfig(BaseModel):
             raise ValueError("key environment variable name is invalid")
 
 
-__all__ = ["DecisionCodificationConfig"]
+__all__ = ["DecisionCaptureIdentityConfig", "DecisionCodificationConfig"]

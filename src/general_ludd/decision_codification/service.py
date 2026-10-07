@@ -11,6 +11,10 @@ from typing import Protocol
 
 from pydantic import ConfigDict, TypeAdapter, ValidationError
 
+from general_ludd.decision_codification.capture import (
+    DecisionCaptureReceipt,
+    DecisionOutcomeRecorder,
+)
 from general_ludd.decision_codification.evaluate import (
     EvaluationError,
     activation_eligible,
@@ -485,6 +489,7 @@ class DecisionCodificationAdapter:
         project_id: str,
         policy_digest: str,
         floors: MiningFloors | None = None,
+        decision_recorder: DecisionOutcomeRecorder | None = None,
     ) -> None:
         """Validate and bind the existing replay and runtime capabilities."""
         try:
@@ -513,11 +518,18 @@ class DecisionCodificationAdapter:
             raise DecisionCodificationIntegrationError(
                 "decision codification requires a DecisionRuntime"
             )
+        if decision_recorder is not None and not isinstance(
+            decision_recorder, DecisionOutcomeRecorder
+        ):
+            raise DecisionCodificationIntegrationError(
+                "decision codification recorder is invalid"
+            )
 
         self._project_id = bound_project_id
         self._policy_digest = bound_policy_digest
         self._analyzer = DecisionLogAnalyzer(bundle_reader, floors=floors)
         self._resolver = DecisionResolver(runtime)
+        self._decision_recorder = decision_recorder
 
     @property
     def project_id(self) -> str:
@@ -605,6 +617,35 @@ class DecisionCodificationAdapter:
             occurred_at=occurred_at,
             terminal_event_id=terminal_event_id,
             evidence_digest=evidence_digest,
+        )
+
+    def record_agent_decision_outcome(
+        self,
+        *,
+        project_id: str,
+        decision_kind: DecisionKind,
+        features: object,
+        decision: str,
+        capture_id: str,
+        root_task_id: str,
+        outcome: VerifiedOutcome,
+        occurred_at: datetime,
+    ) -> DecisionCaptureReceipt | None:
+        """Capture one terminal fallback decision when signed capture is configured."""
+        if project_id != self._project_id:
+            raise DecisionCodificationIntegrationError(
+                "agent decision project scope does not match adapter binding"
+            )
+        if self._decision_recorder is None:
+            return None
+        return self._decision_recorder.capture(
+            capture_id=capture_id,
+            root_task_id=root_task_id,
+            decision_kind=decision_kind,
+            features=features,
+            decision=decision,
+            outcome=outcome,
+            occurred_at=occurred_at,
         )
 
 

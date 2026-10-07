@@ -24,7 +24,8 @@ def test_feature_guide_pins_safe_runtime_and_rollout_boundaries() -> None:
     normalized = " ".join(feature.split())
 
     for marker in (
-        "automatic durable live REVIEW integration implemented",
+        "automatic durable live REVIEW",
+        "signed agent-outcome capture implemented",
         "RunBundleStore.read_verified()",
         "VerifiedDecisionSourceV1",
         "Exact-context abstention",
@@ -40,7 +41,8 @@ def test_feature_guide_pins_safe_runtime_and_rollout_boundaries() -> None:
         "DecisionCodificationConfig",
         "DurableGenerationStore",
         "Terminal application feedback",
-        "automatic signed replay capture and deployed live-traffic proof remain pending",
+        "DecisionOutcomeRecorder",
+        "deployed live-traffic proof remains pending",
     ):
         assert marker in normalized
 
@@ -58,6 +60,8 @@ def test_feature_guide_retains_long_lived_practitioner_findings() -> None:
         "OPA #2379",
         "OPA #1514",
         "OPA #5054",
+        "OpenTelemetry's stable log data model",
+        "OpenTelemetry Python #4336",
         "SQLite forum: WAL with multiple processes",
         "SQLite forum: `BEGIN IMMEDIATE`",
         "SQLite forum: hidden WAL checkpoints",
@@ -87,14 +91,34 @@ def test_docs_pin_non_circular_signed_outcome_ingestion_and_zdd_order() -> None:
             assert marker.lower() in normalized.lower()
 
 
+def test_docs_pin_automatic_capture_privacy_bounds_and_rollback() -> None:
+    """Producer evidence must remain opt-in, bounded, signed, and reversible."""
+    feature = FEATURE.read_text(encoding="utf-8")
+    spec = SPEC.read_text(encoding="utf-8")
+
+    for document in (feature, spec):
+        normalized = " ".join(document.replace("`", "").split())
+        for marker in (
+            "DecisionOutcomeRecorder",
+            "capture_identity",
+            "domain-separated HMAC",
+            "128 KiB",
+            "cross-process capture lock",
+            "configured replay signature",
+            "remove capture_identity",
+            "already chosen task outcome is unchanged",
+        ):
+            assert marker.lower() in normalized.lower()
+
+
 def test_design_spec_records_implemented_runtime_and_pending_evidence() -> None:
     """The design status must not present shipped core as an active daemon path."""
     spec = SPEC.read_text(encoding="utf-8")
     normalized = " ".join(spec.split())
 
     assert (
-        "**Status: CORE, ANALYSIS API/CLI, AND AUTOMATIC DURABLE LIVE REVIEW "
-        "IMPLEMENTED; SIGNED REPLAY CAPTURE AND DEPLOYED PROOF PENDING**"
+        "**Status: CORE, ANALYSIS API/CLI, AUTOMATIC DURABLE LIVE REVIEW, AND "
+        "SIGNED AGENT-OUTCOME CAPTURE IMPLEMENTED; DEPLOYED PROOF PENDING**"
     ) in normalized
     assert "## 0. Implementation status (2026-10-07)" in spec
     assert "DecisionLogAnalyzer" in spec
@@ -104,8 +128,7 @@ def test_design_spec_records_implemented_runtime_and_pending_evidence() -> None:
     assert "DurableGenerationStore" in spec
     assert "BEGIN IMMEDIATE" in spec
     assert (
-        "Automatic signed replay capture, multi-host state, and deployed "
-        "live-traffic proof remain pending"
+        "multi-host state and deployed live-traffic proof remain pending"
     ) in normalized
 
 

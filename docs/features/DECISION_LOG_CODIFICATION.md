@@ -1,7 +1,7 @@
 # Decision-log codification
 
-**Status:** Core, bounded analysis API/CLI, and automatic durable live REVIEW
-integration implemented; signed replay capture and deployed proof pending.
+**Status:** Core, bounded analysis API/CLI, automatic durable live REVIEW, and
+signed agent-outcome capture implemented; deployed proof pending.
 
 **Presentation contract:** `decision-log-codification-v1`
 
@@ -27,10 +27,11 @@ default-off `decision_codification` operator configuration. The authenticated,
 analysis-only HTTP route and operator CLI expose proposal analysis without
 executable artifacts or lifecycle controls. Enabled daemon configuration now
 constructs the adapter automatically, shares generation state safely between
-same-host workers, and records idempotent terminal application outcomes. No
-deployment claim follows from that wiring: automatic signed replay capture and
-deployed live-traffic proof remain pending. Avoided-call metrics therefore
-remain an integration outcome rather than a deployed claim.
+same-host workers, records idempotent terminal application outcomes, and can
+automatically finalize eligible agent fallback outcomes as signed replay
+evidence. No deployment claim follows from that wiring: deployed live-traffic
+proof remains pending. Avoided-call metrics therefore remain an integration
+outcome rather than a deployed claim.
 
 ```text
 verified replay bundle -> safe envelope -> offline candidate + replay report
@@ -66,9 +67,9 @@ outcomes return a content-free refusal.
 
 `DecisionLogAnalyzer` mints that marker internally only after a successful
 `read_verified()` result. Callers cannot provide the marker and must never
-construct one from an arbitrary log or an unverified bundle. The remaining
-recorder integration supplies the signed decision events; it does not weaken
-this verified-read boundary.
+construct one from an arbitrary log or an unverified bundle. Producer capture
+uses the same store and cannot mint a verified-source marker; only the later
+signed read can do that.
 
 ### Durable decision/outcome linking
 
@@ -87,6 +88,35 @@ training rows. The existing 10,000-bundle and 100,000-event analysis limits boun
 the in-memory join; the replay store remains the durable source of truth. Legacy
 self-contained evidence remains readable during migration, but new capture must
 use the non-circular split form.
+
+### Automatic bounded producer capture
+
+When `DecisionCodificationConfig.capture_identity` is present, the configured
+adapter constructs `DecisionOutcomeRecorder` with the existing
+`RunBundleStore`, active replay-signing key, exact project/policy binding, and
+strict source/runtime/model identities. Model request parameters must be empty;
+raw prompts, responses, rationale, audit notes, and application errors are never
+accepted by this producer. Absence of `capture_identity` preserves the previous
+no-write behavior.
+
+After an agent fallback and downstream application attempt, the REVIEW path
+passes only the allowlisted feature map, closed action, terminal outcome, and
+private capture/task identifiers to the recorder off-loop. The recorder runs the
+same pre-decision normalizer before writing anything. It transforms private
+identifiers into domain-separated HMAC correlation values, appends the decision,
+appends its digest-linked outcome, and finalizes the two-event bundle under the
+configured replay signature. A retry with the same identity returns the existing
+receipt only when payload and correlation are exact; changed content is a closed
+conflict. A crash before finalization leaves incomplete evidence that
+`read_verified()` and the analyzer reject.
+
+Each capture is limited to a 128 KiB reserved bundle budget. A cross-process
+capture lock serializes retention and publication, and `RunBundleStore` must
+prove the configured byte quota within its 1-10,000 entry scan bound before a new
+bundle is written. Retention is 1-366 days and never silently deletes held,
+pinned, corrupt, locked, or incomplete evidence. If quota, signing, locking, or
+storage is unavailable, capture emits a content-free warning and the already
+chosen task outcome is unchanged; no unsigned fallback evidence is created.
 
 ## Bounded authenticated analysis API and CLI
 
@@ -303,9 +333,12 @@ artifacts. Revocation and drift hold also stop new codified hits immediately.
 The split-event schema uses an expand/contract ZDD rollout. Deploy readers that
 know `decision.outcome` first while producers continue the old shape; only
 after every analysis worker accepts the additive type may capture producers emit
-it. Producer rollback comes first: stop new outcome emission, drain/finalize
-in-flight bundles, and then roll readers back. Immutable bundles containing the
-new type remain quarantined from older readers rather than being rewritten.
+it. Then deploy producer code with `capture_identity` absent, add exact capture
+identity and bounded retention configuration, and observe signed-bundle counts
+before widening. Producer rollback comes first: remove `capture_identity` to
+stop new outcome emission, drain/finalize in-flight bundles, and then roll
+readers back. Immutable bundles containing the new type remain quarantined from
+older readers rather than being rewritten.
 Runtime decision lookup, active generation pointers, and agent fallback are not
 coupled to capture availability, so capture rollback cannot interrupt serving
 traffic or disable deterministic rollback.
@@ -350,6 +383,16 @@ versions:
   visible under other formats. Gludd therefore never treats console visibility
   as evidence: only events committed into a complete signed replay bundle can
   enter the analyzer.
+- [OpenTelemetry's stable log data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md)
+  treats structured event name, event time, and execution-context identifiers as
+  distinct correlation fields. Gludd likewise emits separate typed decision and
+  outcome events and joins them by exact HMAC correlation plus event digest,
+  rather than parsing display text or correlating by time alone.
+- [OpenTelemetry Python #4336](https://github.com/open-telemetry/opentelemetry-python/issues/4336)
+  reports user-observed data loss when a bounded batch queue silently discarded
+  older log records under exporter pressure. Gludd does not queue training
+  evidence in memory: retention is checked before synchronous atomic append,
+  and any lock/quota/store failure produces no finalized training bundle.
 - [SQLite forum: hidden WAL checkpoints](https://sqlite.org/forum/forumpost/49178f62e9?t=c)
   reports multi-process WAL stalls caused by close-time checkpoint behavior.
   Gludd opens short-lived connections, bounds lock waiting, surfaces storage
@@ -373,9 +416,9 @@ managed self-improvement refuses codified resolution, and retry identities and
 content-free attribution remain stable. CLI tests cover request construction,
 existing authentication, response bounds, safe output, and fixed diagnostics.
 
-The remaining production integration owns automatic signed replay capture,
-permissions, multi-host state if required, and deployed live-traffic proof.
-Durable same-host configuration and application-outcome feedback are now
+The remaining production integration owns permissions, multi-host state if
+required, and deployed live-traffic proof. Durable same-host configuration,
+application-outcome feedback, and automatic signed agent-outcome capture are now
 implemented and tested. Shared schema and infrastructure changes must still land
 once and merge forward.
 

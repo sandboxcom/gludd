@@ -16,6 +16,7 @@ import general_ludd.decision_codification.durable_feedback as durable_feedback_m
 from general_ludd.config.user_config import UserConfig
 from general_ludd.decision_codification.artifact_store import DecisionArtifactStore
 from general_ludd.decision_codification.configuration import (
+    DecisionCaptureIdentityConfig,
     DecisionCodificationConfig,
     DecisionCodificationConfigurationError,
     build_configured_adapter,
@@ -420,6 +421,77 @@ def test_configuration_is_default_off_secret_indirect_and_durable(
                 "TEST_ROLLOUT_KEY": "rollout-key-material-123",
             },
         )
+
+
+def test_configured_adapter_automatically_signs_agent_outcome_capture(
+    tmp_path: Path,
+) -> None:
+    from general_ludd.replay.store import RunBundleStore
+
+    identity = DecisionCaptureIdentityConfig.model_validate(
+        {
+            "source": {
+                "repository_url_sha256": "sha256:" + "1" * 64,
+                "commit_sha": "2" * 40,
+                "tree_sha": "3" * 40,
+                "branch": "development",
+                "dirty": False,
+            },
+            "runtime": {
+                "gludd_version": "0.1.1",
+                "python_version": "3.14.0",
+                "os": "darwin",
+                "architecture": "arm64",
+                "config_sha256": "sha256:" + "4" * 64,
+                "feature_flags": {"decision_codification": True},
+            },
+            "model": {
+                "provider": "openai",
+                "profile": "review",
+                "model": "gpt-6",
+                "request_parameters": {},
+                "provider_revision": None,
+            },
+        }
+    )
+    config = _enabled_config(tmp_path).model_copy(
+        update={
+            "capture_identity": identity,
+            "capture_retention_days": 14,
+            "capture_max_total_bytes": 1_048_576,
+            "capture_scan_limit": 100,
+        }
+    )
+    environment = {
+        "TEST_REPLAY_KEY": "replay-key-material-123",
+        "TEST_ARTIFACT_KEY": "artifact-key-material-123",
+        "TEST_ROLLOUT_KEY": "rollout-key-material-123",
+    }
+    adapter = build_configured_adapter(config, environ=environment)
+    assert adapter is not None
+
+    receipt = adapter.record_agent_decision_outcome(
+        project_id="project-1",
+        decision_kind=DecisionKind.REVIEW,
+        features={"risk_band": "low", "operation_class": "review"},
+        decision="approve",
+        capture_id="return-review:RET-CONFIG-001",
+        root_task_id="TODO-CONFIG-001",
+        outcome=VerifiedOutcome.SUCCESS,
+        occurred_at=NOW,
+    )
+
+    assert receipt is not None
+    store = RunBundleStore(
+        tmp_path / "replays",
+        verification_keys={"primary": b"replay-key-material-123"},
+        active_key_id="primary",
+    )
+    bundle = store.read_verified(receipt.run_id)
+    assert [event.type for event in bundle.events] == [
+        "review.decided",
+        "decision.outcome",
+    ]
 
 
 def test_user_configuration_parses_the_typed_default_off_contract(

@@ -5,8 +5,12 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
-from general_ludd.config.decision_codification import DecisionCodificationConfig
+from general_ludd.config.decision_codification import (
+    DecisionCaptureIdentityConfig,
+    DecisionCodificationConfig,
+)
 from general_ludd.decision_codification.artifact_store import DecisionArtifactStore
+from general_ludd.decision_codification.capture import DecisionOutcomeRecorder
 from general_ludd.decision_codification.durable import DurableGenerationStore
 from general_ludd.decision_codification.rollout import RolloutController
 from general_ludd.decision_codification.runtime import DecisionRuntime
@@ -61,6 +65,23 @@ def build_configured_adapter(
             active_key_id=config.replay_key_id,
             lock_timeout=config.busy_timeout_seconds,
         )
+        capture_identity = config.capture_identity
+        decision_recorder = (
+            None
+            if capture_identity is None
+            else DecisionOutcomeRecorder(
+                replay,
+                project_id=config.project_id,
+                policy_digest=config.policy_digest,
+                correlation_key=verification_keys[config.replay_key_id],
+                source=capture_identity.source,
+                runtime=capture_identity.runtime,
+                model=capture_identity.model,
+                retention_days=config.capture_retention_days,
+                max_total_bytes=config.capture_max_total_bytes,
+                scan_limit=config.capture_scan_limit,
+            )
+        )
         artifacts = DecisionArtifactStore(
             str(config.artifact_root),
             key=artifact_key,
@@ -80,6 +101,7 @@ def build_configured_adapter(
             runtime=runtime,
             project_id=config.project_id,
             policy_digest=config.policy_digest,
+            decision_recorder=decision_recorder,
         )
     except DecisionCodificationConfigurationError:
         raise
@@ -90,6 +112,7 @@ def build_configured_adapter(
 
 
 __all__ = [
+    "DecisionCaptureIdentityConfig",
     "DecisionCodificationConfig",
     "DecisionCodificationConfigurationError",
     "build_configured_adapter",

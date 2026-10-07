@@ -508,6 +508,49 @@ async def _record_codified_outcome(
         )
 
 
+async def _record_agent_decision_outcome(
+    loop: Any,
+    adapter: DecisionCodificationAdapter,
+    attribution: _ReviewDecisionAttribution | None,
+    record: Any,
+    task_return: TaskReturn,
+    decision: TaskDecision,
+    *,
+    outcome: VerifiedOutcome,
+) -> None:
+    """Capture eligible fallback evidence off-loop without changing task outcome."""
+    if (
+        attribution is None
+        or attribution.source is not DecisionResolutionSource.AGENT_FALLBACK
+        or attribution.project_id is None
+        or attribution.decision_kind is None
+        or not isinstance(task_return.todo_id, str)
+        or not task_return.todo_id
+    ):
+        return
+    recorder = getattr(adapter, "record_agent_decision_outcome", None)
+    if not callable(recorder):
+        return
+    try:
+        await loop._bounded_to_thread(
+            recorder,
+            project_id=attribution.project_id,
+            decision_kind=attribution.decision_kind,
+            features=_review_context_features(record, task_return),
+            decision=_review_action_for_fallback(decision),
+            capture_id=f"return-review:{task_return.return_id}",
+            root_task_id=task_return.todo_id,
+            outcome=outcome,
+            occurred_at=datetime.now(UTC),
+        )
+    except Exception as exc:
+        logger.warning(
+            "Agent decision capture failed closed for %s (%s)",
+            task_return.return_id,
+            type(exc).__name__,
+        )
+
+
 class EventLoopReviewMixin:
     """Provide review orchestration without expanding the scheduling core."""
 
@@ -546,13 +589,21 @@ class EventLoopReviewMixin:
             promotion_receipt,
         )
         if adapter is not None:
+            outcome = VerifiedOutcome.SUCCESS if applied else VerifiedOutcome.FAILURE
             await _record_codified_outcome(
                 loop,
                 adapter,
                 attribution,
-                outcome=(
-                    VerifiedOutcome.SUCCESS if applied else VerifiedOutcome.FAILURE
-                ),
+                outcome=outcome,
+            )
+            await _record_agent_decision_outcome(
+                loop,
+                adapter,
+                attribution,
+                record,
+                task_return,
+                decision,
+                outcome=outcome,
             )
         if not applied:
             return
