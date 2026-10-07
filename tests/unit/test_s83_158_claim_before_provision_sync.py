@@ -9,9 +9,9 @@ DECK = ROOT / "docs/presentation/deck/index.html"
 
 
 def _claim_before_provision_contract(content: str) -> str:
-    """Return the contract block while allowing proof metadata on its tag."""
-    start = content.index('<div data-contract="s83-158-claim-before-provision"')
-    return content[start:].split("</div>", 1)[0]
+    """Return the contract slide while allowing proof metadata on its tag."""
+    start = content.index('<section data-contract="s83-158-claim-before-provision"')
+    return content[start:].split("</section>", 1)[0]
 
 
 def test_feature_doc_records_claim_before_provision_and_practitioner_evidence() -> None:
