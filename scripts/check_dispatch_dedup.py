@@ -166,7 +166,7 @@ def _validate_v3_entry(
             if not _is_non_negative_integer(owner.get(field)):
                 errors.append(f"{key}: owner.{field} must be a non-negative integer")
     terminal_reason = raw_entry.get("terminal_reason")
-    expected_reasons = {
+    expected_reasons: dict[str, set[str | None]] = {
         "in_progress": {None},
         "completed": {"success"},
         "failed": {"error"},

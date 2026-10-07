@@ -123,8 +123,8 @@ class TestGitDirDeepEdgeCases:
 
             assert locking._git_dir(tmpdir) is None
 
-    def test_rev_parse_returns_relative_common_dir(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
+    def test_rev_parse_returns_relative_common_dir(self, tmp_path: Path) -> None:
+        with tempfile.TemporaryDirectory(dir=tmp_path) as tmpdir:
             main_repo = os.path.join(tmpdir, "main")
             os.mkdir(main_repo)
             subprocess.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)
@@ -640,13 +640,11 @@ class TestAsyncGitRepoLockEdge:
 
     @pytest.mark.asyncio
     async def test_double_exit_is_idempotent(self) -> None:
-        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
-        try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cm = await locking.async_git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0)
             with cm:
                 pass
             cm.__exit__(None, None, None)
-        finally:
-            pass
 
 
 # ---------------------------------------------------------------------------

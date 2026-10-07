@@ -153,6 +153,19 @@ def _ec_public_from_bytes(data: bytes, group: SPAKE2PlusGroup) -> ec.EllipticCur
     return ec.EllipticCurvePublicKey.from_encoded_point(curve, data)
 
 
+def _validated_peer_point(
+    data: bytes,
+    group: SPAKE2PlusGroup,
+    peer: str,
+) -> tuple[int, int]:
+    """Decode and validate one public SPAKE2+ peer point with the native backend."""
+    try:
+        numbers = _ec_public_from_bytes(data, group).public_numbers()
+    except ValueError as exc:
+        raise PAKEError(f"invalid {peer} message point") from exc
+    return numbers.x, numbers.y
+
+
 # ── Raw point arithmetic on NIST curves ──────────────────────────────────
 
 
@@ -312,8 +325,7 @@ class SPAKE2PlusServer:
 
         if len(client_msg) != 1 + 2 * self._byte_len or client_msg[0] != 4:
             raise PAKEError("invalid client message format")
-        Yx = int.from_bytes(client_msg[1 : 1 + self._byte_len], "big")
-        Yy = int.from_bytes(client_msg[1 + self._byte_len :], "big")
+        Yx, Yy = _validated_peer_point(client_msg, self._group, "client")
 
         neg_w1Nx, neg_w1Ny = _point_neg(*_point_mul(self._w1, self._N[0], self._N[1], a, p), p)
         unmasked_x, unmasked_y = _point_add(Yx, Yy, neg_w1Nx, neg_w1Ny, a, p)
@@ -388,8 +400,7 @@ class SPAKE2PlusClient:
 
         if len(server_msg) != 1 + 2 * self._byte_len or server_msg[0] != 4:
             raise PAKEError("invalid server message format")
-        Xx = int.from_bytes(server_msg[1 : 1 + self._byte_len], "big")
-        Xy = int.from_bytes(server_msg[1 + self._byte_len :], "big")
+        Xx, Xy = _validated_peer_point(server_msg, self._group, "server")
 
         self._y = _secrets.randbelow(n - 1) + 1
         gyp_x, gyp_y = _point_mul(self._y, gx, gy, a, p)
