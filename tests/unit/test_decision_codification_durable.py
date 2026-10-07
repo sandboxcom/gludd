@@ -12,6 +12,7 @@ from typing import Any, cast
 import pytest
 from pydantic import ValidationError
 
+import general_ludd.decision_codification.durable_feedback as durable_feedback_module
 from general_ludd.config.user_config import UserConfig
 from general_ludd.decision_codification.artifact_store import DecisionArtifactStore
 from general_ludd.decision_codification.configuration import (
@@ -39,6 +40,18 @@ SHA_A = "sha256:" + "a" * 64
 SHA_B = "sha256:" + "b" * 64
 SHA_C = "sha256:" + "c" * 64
 NOW = datetime(2026, 10, 7, 12, tzinfo=UTC)
+
+
+def test_split_durable_facades_preserve_the_generation_state_chain() -> None:
+    """Keep public-store behavior routed through both cohesive split modules."""
+    assert issubclass(
+        DurableGenerationStore,
+        durable_feedback_module._DurableFeedbackStore,
+    )
+    assert (
+        durable_feedback_module._DurableFeedbackStore.__mro__[1].__module__
+        == "general_ludd.decision_codification.durable_generation"
+    )
 
 
 def _pointer(candidate_digest: str, receipt_digest: str) -> GenerationPointer:
@@ -393,6 +406,7 @@ def test_configuration_is_default_off_secret_indirect_and_durable(
     assert first.project_id == second.project_id == "project-1"
     assert first.policy_digest == second.policy_digest
     assert config.model_dump(mode="json").get("artifact_key") is None
+    assert config.state_path is not None
     assert config.state_path.is_file()
 
     with pytest.raises(DecisionCodificationConfigurationError, match="unavailable"):

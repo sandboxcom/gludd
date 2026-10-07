@@ -352,3 +352,9 @@ documentation drift test is
 the design status, and the reveal.js contract token. Production changes retain
 the repository floors of at least 85% aggregate coverage and at least 75% in
 each file, with decision-codification modules targeting 90% branch coverage.
+The static coverage-gap gate records both cohesive durable-state implementation
+modules through their real facade chain: `durable` imports `durable_feedback`,
+which imports `durable_generation`, while the focused durable-state suite pins
+that inheritance identity and exercises the public store. This keeps a
+behavior-preserving file split from appearing untested without adding either
+module to a gap allowlist or weakening executable coverage.
