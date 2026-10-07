@@ -67,6 +67,7 @@ OWNED_NODE_CACHE_ROOTS = (
     Path("/tmp/gludd-playwright-browsers"),
 )
 OWNED_NODE_CACHE_NAMES = frozenset(path.name for path in OWNED_NODE_CACHE_ROOTS)
+PRESSURE_RECLAIM_NODE_CACHE_NAMES = frozenset({"gludd-playwright-browsers"})
 OWNED_TERRAFORM_CACHE_ROOTS = (
     Path("/tmp/gludd-azure-containerapp-live-proof"),
     Path("/tmp/gludd-azure-containerapp-environments"),
@@ -1737,7 +1738,10 @@ def _node_cache_metadata_identity(
 
 
 def _node_cache_tree_snapshot(
-    cache_root: Path, *, max_entries: int
+    cache_root: Path,
+    *,
+    max_entries: int,
+    allow_nested_symlinks: bool = False,
 ) -> CacheTreeSnapshot:
     """Hash a cache tree without following links and within a strict entry cap."""
     pending = [cache_root]
@@ -1755,14 +1759,20 @@ def _node_cache_tree_snapshot(
             entry_count += 1
             if entry_count > max_entries:
                 raise OverflowError("node cache entry limit exceeded")
-        if stat.S_ISLNK(metadata.st_mode):
+        is_symlink = stat.S_ISLNK(metadata.st_mode)
+        if is_symlink and (path == cache_root or not allow_nested_symlinks):
             raise ValueError("node cache contains a symlink")
-        if not (stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)):
+        if not is_symlink and not (
+            stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)
+        ):
             raise ValueError("node cache contains an unsupported entry")
         latest_mtime_ns = max(latest_mtime_ns, metadata.st_mtime_ns)
         relative = path.relative_to(cache_root)
         digest.update(os.fsencode(str(relative)))
         digest.update(repr(identity).encode("ascii"))
+        if is_symlink:
+            digest.update(os.fsencode(os.readlink(path)))
+            continue
         if stat.S_ISDIR(metadata.st_mode):
             children = sorted(path.iterdir(), key=lambda item: os.fsencode(item.name))
             pending.extend(reversed(children))
@@ -1803,7 +1813,13 @@ def _active_node_package_manager_pids(cache_root: Path) -> list[int]:
         command = fields[1]
         executable = Path(command.split(maxsplit=1)[0]).name.casefold()
         npm_process = executable in {"npm", "npx"} or "npm-cli.js" in command
-        if pid != os.getpid() and (npm_process or cache_pattern.search(command)):
+        playwright_process = (
+            cache_root.name in PRESSURE_RECLAIM_NODE_CACHE_NAMES
+            and "playwright" in command.casefold()
+        )
+        if pid != os.getpid() and (
+            npm_process or playwright_process or cache_pattern.search(command)
+        ):
             active_pids.add(pid)
     return sorted(active_pids)
 
@@ -1818,8 +1834,9 @@ def clean_stale_node_download_caches(
     active_process_pids: ActiveProcessPids = _active_node_package_manager_pids,
     remove_tree: RemoveTree = _remove_tree,
     dry_run: bool = False,
+    pressure_reclaim: bool = False,
 ) -> CleanupResult:
-    """Remove only exact, stale Gludd node-tool caches after two idle proofs."""
+    """Remove exact Gludd node caches after age or pressure plus two idle proofs."""
     candidates = tuple(dict.fromkeys(cache_roots))
     print(
         "phase=cleanup action=node-download-cache status=starting "
@@ -1834,6 +1851,7 @@ def clean_stale_node_download_caches(
         min_age_seconds < 0
         or max_entries < 1
         or len(candidates) > MAX_NODE_CACHE_CANDIDATES
+        or not isinstance(pressure_reclaim, bool)
     ):
         errors.append("node-download-cache:invalid-bound")
         print(
@@ -1885,9 +1903,19 @@ def clean_stale_node_download_caches(
         ):
             skipped.append(f"{cache_root}:outside-canonical-temp-root")
             continue
+        pressure_owned = (
+            pressure_reclaim
+            and cache_root.name in PRESSURE_RECLAIM_NODE_CACHE_NAMES
+        )
+        allow_nested_symlinks = (
+            cache_root.name in PRESSURE_RECLAIM_NODE_CACHE_NAMES
+            and bool(getattr(shutil.rmtree, "avoids_symlink_attacks", False))
+        )
         try:
             initial = _node_cache_tree_snapshot(
-                cache_root, max_entries=max_entries
+                cache_root,
+                max_entries=max_entries,
+                allow_nested_symlinks=allow_nested_symlinks,
             )
         except OverflowError:
             skipped.append(f"{cache_root}:entry-limit")
@@ -1899,7 +1927,11 @@ def clean_stale_node_download_caches(
             errors.append(f"{cache_root}:tree-inspection-failed")
             continue
         inspected_entries += initial.entry_count
-        if current_time_ns - initial.latest_mtime_ns < min_age_seconds * 1_000_000_000:
+        cache_is_recent = (
+            current_time_ns - initial.latest_mtime_ns
+            < min_age_seconds * 1_000_000_000
+        )
+        if cache_is_recent and not pressure_owned:
             skipped.append(f"{cache_root}:recent")
             continue
         try:
@@ -1926,7 +1958,9 @@ def clean_stale_node_download_caches(
             continue
         try:
             refreshed = _node_cache_tree_snapshot(
-                cache_root, max_entries=max_entries
+                cache_root,
+                max_entries=max_entries,
+                allow_nested_symlinks=allow_nested_symlinks,
             )
         except OverflowError:
             skipped.append(f"{cache_root}:entry-limit")
@@ -2139,7 +2173,10 @@ def _automatic_cleanup(
         )
 
     scratch_result = clean_stale_generated_scratch(dry_run=dry_run)
-    node_cache_result = clean_stale_node_download_caches(dry_run=dry_run)
+    node_cache_result = clean_stale_node_download_caches(
+        dry_run=dry_run,
+        pressure_reclaim=True,
+    )
     uv_result = prune_shared_uv_cache(
         dry_run=dry_run,
         missing_is_clean=True,
