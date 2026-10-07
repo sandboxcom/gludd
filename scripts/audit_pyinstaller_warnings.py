@@ -53,6 +53,7 @@ _IMPORTER_RE = re.compile(
     r"(?:^|, )(?P<importer>[^,]+?) "
     r"\((?P<flags>[^)]+)\)(?=, |$)"
 )
+_PYINSTALLER_HOOK_PATH_MARKER = "/site-packages/PyInstaller/hooks/"
 _HEADER_LINES = frozenset(
     {
         "This file lists modules PyInstaller was not able to find. This does not",
@@ -99,6 +100,19 @@ def _normalize_module(raw_module: str) -> str:
     return module
 
 
+def _normalize_importer(raw_importer: str) -> str:
+    """Remove hosted/native builder roots from PyInstaller hook importers."""
+    importer = raw_importer.strip()
+    portable = importer.replace("\\", "/")
+    marker_index = portable.find(_PYINSTALLER_HOOK_PATH_MARKER)
+    environment_root = portable[:marker_index]
+    is_hosted_venv = environment_root.startswith("/home/runner/work/") and "/.venv/" in environment_root
+    is_isolated_builder = "/pyinstaller-build-env/" in environment_root
+    if marker_index >= 0 and (is_hosted_venv or is_isolated_builder):
+        return f"PyInstaller/hooks/{portable.split(_PYINSTALLER_HOOK_PATH_MARKER, 1)[1]}"
+    return importer
+
+
 def _parse_importers(
     raw_importers: str,
     module: str,
@@ -114,7 +128,7 @@ def _parse_importers(
         if match.start() != cursor:
             raise AuditError(f"unrecognized importer syntax for missing module {module!r}: {raw_importers[cursor:]!r}")
         cursor = match.end()
-        importer = match.group("importer").strip()
+        importer = _normalize_importer(match.group("importer"))
         raw_flags = [flag.strip() for flag in match.group("flags").split(",")]
         if not importer or any(not flag for flag in raw_flags):
             raise AuditError(f"empty importer or flag for missing module {module!r}")

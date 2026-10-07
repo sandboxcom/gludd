@@ -27,20 +27,35 @@ runner afterward.
 
 ## Reviewed warning graph
 
-The retained shard-1 artifact
-`molecule-linux-pyinstaller-warning-shard-1` produced the x86_64 graph
+The retained `molecule-linux-pyinstaller-warning-shard-1` artifacts from runs
+`37684090064` and `37692342280` each contained 861 edges, but the latter
+changed from the reviewed digest
 `250f40043cbf269ea17ec2d6e1bf6fbcd598ff41405b0575e636c61f091fef60`
-with 861 normalized edges. It was compared with the previously accepted
-1,317-edge artifact from run `37549387041`; the deterministic receipt records
-all 101 additions and 557 removals. The additions are dependency-owned optional
-surfaces from the locked HTTPX/OpenAI, Hugging Face, JSON Schema, LangGraph,
-NumPy, and decision-codification graph. Most removals are the test/science-only
-Hypothesis and NumPy pseudo-module surface that contaminated the former shared
-builder, plus superseded compatibility imports. The production fail-closed
-audit accepted every candidate edge and found no unreviewed project import.
-The receipt binds both raw artifact hashes and retains the former digest as a
-reviewed rollback identity; no hash-only exception or missing-import allowlist
-was added.
+to `b2e25c4ef97344329f17b946ba551a7554c07e4ffbc89580360dd40ce6455cb7`.
+The raw artifact comparison found exactly one addition and one removal: the
+importer for `pyimod02_importers` moved from the runner's `.venv` to the
+worktree-namespaced `pyinstaller-build-env`, while both paths ended in the same
+`PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py` file. No module, flags, or graph
+topology changed.
+
+The audit now canonicalizes PyInstaller hook importers from the GitHub runner
+`.venv` and worktree-namespaced `pyinstaller-build-env` to the package-relative
+hook path. Other build roots remain exact, preserving the independently
+reviewed container and aarch64 identities. Both raw artifacts therefore
+produce the reviewed 861-edge digest
+`a833e5857ff994bf49d2f83d620d526faadd974306ebc79dc7adae8f02f9e9b6`.
+The receipt binds the prior and hosted raw artifact hashes and records the exact
+one-edge path canonicalization; no hash-only alternate or missing-import
+allowlist was added.
+
+This is consistent with long-lived user reports. PyInstaller issue
+[#1668](https://github.com/pyinstaller/pyinstaller/issues/1668) has tracked
+environment-sensitive reproducibility since 2015. A later Windows report,
+issue [#8890](https://github.com/pyinstaller/pyinstaller/issues/8890), shows
+`pyi_rth_pkgutil.py` being loaded from an absolute interpreter-specific
+`site-packages` path. Those reports support removing only the installation root
+while retaining the PyInstaller package and hook identity in the reviewed
+graph.
 
 ## Explicit runtime validation boundary
 

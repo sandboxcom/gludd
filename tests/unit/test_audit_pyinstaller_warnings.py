@@ -271,12 +271,12 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
         "aarch64": ("70c6ec35a8d7e0b9095ca2dd7879ef28be05bff279d6d7aca9220e54efbd14ba"),
-        "x86_64": ("250f40043cbf269ea17ec2d6e1bf6fbcd598ff41405b0575e636c61f091fef60"),
+        "x86_64": ("a833e5857ff994bf49d2f83d620d526faadd974306ebc79dc7adae8f02f9e9b6"),
     }
 
 
 def test_current_hosted_x86_64_graph_has_complete_review_receipt() -> None:
-    digest = "250f40043cbf269ea17ec2d6e1bf6fbcd598ff41405b0575e636c61f091fef60"
+    digest = "a833e5857ff994bf49d2f83d620d526faadd974306ebc79dc7adae8f02f9e9b6"
     receipt = json.loads(
         (_LINUX_REVIEW_DIR / f"x86_64-{digest}.json").read_text(encoding="utf-8")
     )
@@ -284,20 +284,31 @@ def test_current_hosted_x86_64_graph_has_complete_review_receipt() -> None:
     assert receipt["architecture"] == "x86_64"
     assert receipt["pyinstaller_version"] == "6.22.3"
     assert receipt["before"] == {
-        "transitive_count": 1317,
-        "transitive_sha256": "d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d",
-        "warning_sha256": "9dc61422e0ee2191104561a750acb72e648625314fec0f87d599c44ca8d80c2e",
+        "transitive_count": 861,
+        "transitive_sha256": "250f40043cbf269ea17ec2d6e1bf6fbcd598ff41405b0575e636c61f091fef60",
+        "warning_sha256": "c4f01714e521e329ec2d2d2d49d8b07a215bf401b099f206c00c36ea6d7a489a",
     }
     assert receipt["after"] == {
         "transitive_count": 861,
         "transitive_sha256": digest,
-        "warning_sha256": "c4f01714e521e329ec2d2d2d49d8b07a215bf401b099f206c00c36ea6d7a489a",
+        "warning_sha256": "8c4f42b63bad3077d93919719e0ccdeb30d10810ecc6987f292c02d01c45a019",
     }
-    assert receipt["delta"]["added_count"] == 101
-    assert receipt["delta"]["removed_count"] == 557
+    assert receipt["delta"] == {
+        "added": [
+            "missing pyimod02_importers <- "
+            "PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py (delayed)"
+        ],
+        "added_count": 1,
+        "removed": [
+            "missing pyimod02_importers <- "
+            "/home/runner/work/gludd/gludd/.venv/lib/python3.12/site-packages/"
+            "PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py (delayed)"
+        ],
+        "removed_count": 1,
+    }
     assert receipt["delta"]["added"] == sorted(set(receipt["delta"]["added"]))
     assert receipt["delta"]["removed"] == sorted(set(receipt["delta"]["removed"]))
-    assert 861 == 1317 + 101 - 557
+    assert 861 == 861 + 1 - 1
 
 
 def test_linux_policy_pins_exact_controller_runtime_boundary_edges() -> None:

@@ -91,6 +91,69 @@ def test_safe_transitive_change_produces_complete_deterministic_receipt(
     }
 
 
+def test_pyinstaller_hook_importer_ignores_environment_root(
+    tmp_path: Path,
+) -> None:
+    runner_importer = (
+        "/home/runner/work/gludd/gludd/.venv/lib/python3.12/site-packages/"
+        "PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py"
+    )
+    isolated_importer = (
+        "/tmp/gludd-resources/gludd-423202248c57/pyinstaller-build-env/"
+        "lib/python3.12/site-packages/PyInstaller/hooks/rthooks/"
+        "pyi_rth_pkgutil.py"
+    )
+    canonical_importer = "PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py"
+    inputs = _inputs(
+        tmp_path,
+        before=_warning("pyimod02_importers", runner_importer, "delayed"),
+        after=_warning("pyimod02_importers", isolated_importer, "delayed"),
+        accepted_before_digest=_digest(
+            "pyimod02_importers",
+            canonical_importer,
+            "delayed",
+        ),
+    )
+
+    receipt = comparison.compare_warning_graphs(inputs)
+
+    assert receipt["before"]["transitive_sha256"] == receipt["after"]["transitive_sha256"]
+    assert receipt["delta"] == {
+        "added_count": 0,
+        "removed_count": 0,
+        "added": [],
+        "removed": [],
+    }
+
+
+def test_pyinstaller_hook_importer_preserves_other_build_roots(
+    tmp_path: Path,
+) -> None:
+    container_importer = (
+        "/tmp/gludd-linux-venv/lib/python3.12/site-packages/"
+        "PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py"
+    )
+    warning = _warning("pyimod02_importers", container_importer, "delayed")
+    inputs = _inputs(
+        tmp_path,
+        before=warning,
+        after=warning,
+        accepted_before_digest=_digest(
+            "pyimod02_importers",
+            container_importer,
+            "delayed",
+        ),
+    )
+
+    receipt = comparison.compare_warning_graphs(inputs)
+
+    assert receipt["before"]["transitive_sha256"] == _digest(
+        "pyimod02_importers",
+        container_importer,
+        "delayed",
+    )
+
+
 def test_comparison_rejects_unrelated_or_unaccepted_before_graph(
     tmp_path: Path,
 ) -> None:
