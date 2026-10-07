@@ -343,7 +343,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sast-summary sbom pip-audit security security-backlog-gate \
-        audit-messages qa validate collect-check pre-commit-check coverage-files observed-status observed-tail gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
+        audit-messages qa validate collect-check pre-commit-check integration-admission coverage-files observed-status observed-tail gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
         status-snapshot audit-evidence deps-audit core-dependency-ownership-refresh dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -475,6 +475,7 @@ help:
 	@echo "  triage-failures       Incrementally group streamed failures (LOG, TRIAGE_STATE, TRIAGE_FORMAT)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  pre-commit-check      Fast lint + collection + typecheck commit preflight"
+	@echo "  integration-admission  Fail-fast feature-branch checks before the full gate"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
 	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace (LOG, TESTPATH, PYTEST_ARGS, RUN_ID)"
 	@echo "  test-xdist-trace-summary  Summarize one durable trace/run (LOG, RUN_ID)"

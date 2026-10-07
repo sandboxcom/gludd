@@ -1341,6 +1341,20 @@
       "behavior": "make pre-commit-check"
     },
     {
+      "name": "integration-admission",
+      "make_variables": [
+        "INTEGRATION_ADMISSION_VALIDATE_ONLY",
+        "FILE_LINE_LIMIT_POLICY",
+        "MARKDOWN_FILES",
+        "MARKDOWNLINT_CONFIG",
+        "PRESENTATION_BROWSER_ENGINES",
+        "PRESENTATION_BROWSER_ROOT",
+        "PRESENTATION_BROWSER_OUTPUT",
+        "PRESENTATION_BROWSER_TIMEOUT"
+      ],
+      "behavior": "make integration-admission INTEGRATION_ADMISSION_VALIDATE_ONLY=1 FILE_LINE_LIMIT_POLICY=config/file_line_limits.json MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser PRESENTATION_BROWSER_TIMEOUT=600"
+    },
+    {
       "name": "list-plugins",
       "make_variables": [],
       "behavior": "make list-plugins"
@@ -1414,7 +1428,7 @@
         "PRESENTATION_BROWSER_OUTPUT",
         "PRESENTATION_BROWSER_TIMEOUT"
       ],
-      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=300"
+      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=600"
     },
     {
       "name": "presentation-browser-install",
