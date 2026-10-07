@@ -29,6 +29,7 @@ GATE_LOCK_MARKER = "gludd-gate-run-v1"
 DEFAULT_GRACE_SECONDS = 10.0
 DEFAULT_KILL_WAIT_SECONDS = 1.0
 DEFAULT_POLL_SECONDS = 0.1
+WAIT_HEARTBEAT_SECONDS = 1.0
 LEGACY_GATE_LOCK_FIELDS = frozenset({"pid", "started_at"})
 LEGACY_LOCK_CLOCK_SLOP_SECONDS = 2.0
 LEGACY_LOCK_MAX_ACQUIRE_DELAY_SECONDS = 300.0
@@ -564,16 +565,47 @@ def _wait_for_exit(
     monotonic: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> list[_TargetProcess]:
+    """Poll to one fixed deadline while surfacing bounded wait progress."""
     bounded_timeout = max(0.0, timeout)
     bounded_poll = max(0.01, poll_seconds)
-    deadline = monotonic() + bounded_timeout
+    started_at = monotonic()
+    deadline = started_at + bounded_timeout
+    next_heartbeat = started_at
     checks = max(1, math.ceil(bounded_timeout / bounded_poll) + 1)
-    for _attempt in range(checks):
+    for attempt in range(checks):
         survivors = _owned_survivors(targets, records_reader)
-        if not survivors or monotonic() >= deadline:
+        now = monotonic()
+        if not survivors:
+            print(
+                f"[gate-kill] wait-complete result=exited attempts={attempt + 1} "
+                f"elapsed={max(0.0, now - started_at):.1f}s",
+                flush=True,
+            )
             return survivors
-        sleep(min(bounded_poll, max(0.0, deadline - monotonic())))
-    return _owned_survivors(targets, records_reader)
+        survivor_pids = ",".join(str(target.record.pid) for target in survivors)
+        if now >= deadline:
+            print(
+                f"[gate-kill] wait-complete result=deadline attempts={attempt + 1} "
+                f"survivors={survivor_pids}",
+                flush=True,
+            )
+            return survivors
+        if now >= next_heartbeat:
+            print(
+                f"[gate-kill] wait-heartbeat attempt={attempt + 1}/{checks} "
+                f"remaining={max(0.0, deadline - now):.1f}s "
+                f"survivors={survivor_pids}",
+                flush=True,
+            )
+            next_heartbeat = now + WAIT_HEARTBEAT_SECONDS
+        sleep(min(bounded_poll, max(0.0, deadline - now)))
+    survivors = _owned_survivors(targets, records_reader)
+    print(
+        f"[gate-kill] wait-complete result=check-limit checks={checks} "
+        f"survivors={','.join(str(target.record.pid) for target in survivors) or 'none'}",
+        flush=True,
+    )
+    return survivors
 
 
 def _lock_still_matches(path: Path, expected: dict[str, Any]) -> bool:
