@@ -928,7 +928,29 @@ typecheck-scope: ## Run strict mypy on explicit FILES without unrelated override
 	@MYPYPATH=src:scripts $(UV) run mypy --explicit-package-bases --no-incremental --no-warn-unused-configs $(FILES)
 # Ansible/YAML lint (#36), fail-on-error (no `|| true`).
 yaml-lint:
-	@ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1 PYTHONWARNINGS=error ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" $(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
+	@set -eu; \
+		ANSIBLE_STATE_DIR=$$(mktemp -d "/tmp/gludd-yaml-lint.XXXXXX"); \
+		mkdir -p "$$ANSIBLE_STATE_DIR/tmp"; \
+		trap 'rm -rf -- "$$ANSIBLE_STATE_DIR"' EXIT INT TERM; \
+		YAML_FILES=$$(git ls-files -- \
+			':(glob)playbooks/**/*.yml' \
+			':(glob)playbooks/**/*.yaml' \
+			':(glob)collections/ansible_collections/general_ludd/agent/roles/**/*.yml' \
+			':(glob)collections/ansible_collections/general_ludd/agent/roles/**/*.yaml'); \
+		test -n "$$YAML_FILES" || { echo "yaml-lint: no tracked YAML files found"; exit 2; }; \
+		ANSIBLE_HOME="$$ANSIBLE_STATE_DIR" \
+		ANSIBLE_LOCAL_TEMP="$$ANSIBLE_STATE_DIR/tmp" \
+		ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1 \
+		PYTHONWARNINGS=error \
+		ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" \
+		$(UV) run python scripts/stream_command.py \
+			--root ".gate-logs/observed" \
+			--label "yaml-lint" \
+			--heartbeat-secs "10" \
+			--quiet-secs "180" \
+			--max-secs "900" \
+			--retain-runs "20" \
+			-- $(UV) run ansible-lint $$YAML_FILES
 
 ci-log:
 	@if [ -n "$(RUN)" ]; then \

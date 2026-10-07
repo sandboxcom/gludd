@@ -685,6 +685,68 @@ opencode-hello:
 gate-fast: disk-cleanup-preflight check-generated-artifact-hygiene lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
+INTEGRATION_ADMISSION_VALIDATE_ONLY ?= 1
+
+# S83.177: reject cheap, deterministic feature-branch failures before a branch
+# occupies the full-gate integration lane. Every phase delegates to the
+# repository's existing checker; this target owns only fail-fast sequencing.
+integration-admission:
+	@case "$(INTEGRATION_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "INTEGRATION_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@test -n "$(strip $(FILE_LINE_LIMIT_POLICY))" || { echo "FILE_LINE_LIMIT_POLICY is required"; exit 2; }
+	@test -n "$(strip $(MARKDOWN_FILES))" || { echo "MARKDOWN_FILES is required"; exit 2; }
+	@test -n "$(strip $(MARKDOWNLINT_CONFIG))" || { echo "MARKDOWNLINT_CONFIG is required"; exit 2; }
+	@test -n "$(strip $(PRESENTATION_BROWSER_ENGINES))" || { echo "PRESENTATION_BROWSER_ENGINES is required"; exit 2; }
+	@test -n "$(strip $(PRESENTATION_BROWSER_ROOT))" || { echo "PRESENTATION_BROWSER_ROOT is required"; exit 2; }
+	@test -n "$(strip $(PRESENTATION_BROWSER_OUTPUT))" || { echo "PRESENTATION_BROWSER_OUTPUT is required"; exit 2; }
+	@test -n "$(strip $(PRESENTATION_BROWSER_TIMEOUT))" || { echo "PRESENTATION_BROWSER_TIMEOUT is required"; exit 2; }
+	@set -eu; \
+	if [ "$(INTEGRATION_ADMISSION_VALIDATE_ONLY)" = "1" ]; then \
+		for phase in \
+			worktree-guard \
+			validate-task-ledger \
+			check-task-registration \
+			check-task-integrity \
+			check-generated-artifact-hygiene \
+			lint-markdown \
+			check-make-target-contract \
+			yaml-lint \
+			presentation-browser-test \
+			pre-commit-check; do \
+			echo "integration-admission phase=$$phase mode=validate-only"; \
+		done; \
+		echo "INTEGRATION-ADMISSION: VALIDATE-ONLY"; \
+		exit 0; \
+	fi; \
+	echo "integration-admission phase=worktree-guard"; \
+	$(MAKE) --no-print-directory worktree-guard; \
+	echo "integration-admission phase=validate-task-ledger"; \
+	$(MAKE) --no-print-directory validate-task-ledger; \
+	echo "integration-admission phase=check-task-registration"; \
+	$(MAKE) --no-print-directory check-task-registration; \
+	echo "integration-admission phase=check-task-integrity"; \
+	$(MAKE) --no-print-directory check-task-integrity; \
+	echo "integration-admission phase=check-generated-artifact-hygiene"; \
+	$(MAKE) --no-print-directory check-generated-artifact-hygiene; \
+	echo "integration-admission phase=lint-markdown"; \
+	$(MAKE) --no-print-directory lint-markdown \
+		MARKDOWN_FILES="$(MARKDOWN_FILES)" \
+		MARKDOWNLINT_CONFIG="$(MARKDOWNLINT_CONFIG)"; \
+	echo "integration-admission phase=check-make-target-contract"; \
+	$(MAKE) --no-print-directory check-make-target-contract; \
+	echo "integration-admission phase=yaml-lint"; \
+	$(MAKE) --no-print-directory yaml-lint; \
+	echo "integration-admission phase=presentation-browser-test"; \
+	$(MAKE) --no-print-directory presentation-browser-test \
+		PRESENTATION_BROWSER_VALIDATE_ONLY=1 \
+		PRESENTATION_BROWSER_ENGINES="$(PRESENTATION_BROWSER_ENGINES)" \
+		PRESENTATION_BROWSER_ROOT="$(PRESENTATION_BROWSER_ROOT)" \
+		PRESENTATION_BROWSER_OUTPUT="$(PRESENTATION_BROWSER_OUTPUT)" \
+		PRESENTATION_BROWSER_TIMEOUT="$(PRESENTATION_BROWSER_TIMEOUT)"; \
+	echo "integration-admission phase=pre-commit-check"; \
+	$(MAKE) --no-print-directory pre-commit-check \
+		FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)"; \
+	echo "INTEGRATION-ADMISSION: PASSED"
+
 _check-windows-tracked-paths:
 	@BT="/tmp/gludd-windows-paths-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/test_cross_platform_binary.py::test_tracked_paths_are_windows_checkout_compatible -q -n 0 --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
