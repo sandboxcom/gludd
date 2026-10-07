@@ -350,6 +350,7 @@ flowchart LR
   <div class="diagram-wrap">
     <div class="mermaid">
 stateDiagram-v2
+  state "Review result" as REVIEWING_RETURN
   [*] --> BACKLOG
   BACKLOG --> SCHEDULED: has schedule
   BACKLOG --> QUEUED: ready now
