@@ -284,17 +284,18 @@ flowchart LR
     </div>
     <div>
       <h3>Fail-closed proof</h3>
-      <p class="honest-note">Zero pre-claim compute; a losing or restarted worker preserves foreign ownership.</p>
-      <ul class="bullets-tight" style="font-size:0.58em;">
-        <li>Commit failure rolls back and clears the detached claim; no provision or dispatch.</li>
-        <li>Competing workers plus restart produce one durable winner and exactly one provision.</li>
-        <li>Non-runnable work allocates nothing.</li>
-        <li>Hermetic closure proves discovery &rarr; approval &rarr; claim &rarr; edit &rarr; review &rarr; completion &rarr; exact release.</li>
-        <li><strong>Completed delivery:</strong> exact workspace and intended task branch. <strong>Unsafe scope:</strong> zero Git mutation.</li>
+      <p class="honest-note">Outcome: zero pre-claim compute; a losing or restarted worker preserves foreign ownership.</p>
+      <ul class="bullets-tight" style="font-size:0.56em;">
+        <li>Commit failure: rollback + clear detached claim; no provision or dispatch.</li>
+        <li>Competing workers + restart: one durable winner, exactly one provision.</li>
+        <li>Non-runnable work: zero allocation.</li>
+        <li><strong>Hermetic closure:</strong> discovery &rarr; approval &rarr; claim &rarr; edit &rarr; review &rarr; completion &rarr; exact release; no injected self-improve row or cancellation.</li>
+        <li><strong>Completed delivery:</strong> exact project workspace and intended task branch.</li>
+        <li>Absent or unsafe scope: zero Git mutation.</li>
       </ul>
     </div>
   </div>
-  <p class="cite">Contracts: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md &middot; docs/features/application-resource-ownership.md; proof: tests/e2e/test_self_improve_private_policy_e2e.py</p>
+  <p class="cite">Contracts: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md:35-79 &middot; docs/features/application-resource-ownership.md:26-48; proof: tests/e2e/test_self_improve_private_policy_e2e.py:730-818</p>
 </section>
 
 <!-- ============================================================ -->

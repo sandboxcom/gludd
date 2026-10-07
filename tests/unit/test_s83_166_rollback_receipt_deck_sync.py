@@ -101,7 +101,7 @@ def test_deck_preserves_prior_contract_and_slide_inventory() -> None:
     assert deck.count(f'data-contract="{CONTRACT_TOKEN}"') == 1
     assert deck.count(f'data-contract="{PRESERVED_CONTRACT}"') == 1
     assert deck.count(f'data-contract="{REPLAY_SCHEMA_TOKEN}"') == 1
-    assert deck.count("<section") == 52
+    assert deck.count("<section") == 57
     assert deck.count('data-contract="decision-log-codification-v1"') == 1
     assert "/api/v1/decision-codification/analyze" in deck
     assert deck.count('data-contract="v0.1.2-completed-backlog"') == 1

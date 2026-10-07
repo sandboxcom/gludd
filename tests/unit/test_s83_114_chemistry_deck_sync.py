@@ -63,7 +63,7 @@ def test_task_closeout_names_measured_chemistry_evidence() -> None:
     task = next(
         line
         for line in TASKS.read_text(encoding="utf-8").splitlines()
-        if "S83.114" in line
+        if line.startswith("- [x] S83.114 ")
     )
 
     for marker in (
