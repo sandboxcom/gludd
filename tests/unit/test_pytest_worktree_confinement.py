@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -376,22 +377,50 @@ def test_confinement_denies_git_worktree_creation_during_test(tmp_path: Path) ->
 
 def test_confinement_allows_git_mutation_in_canonical_pytest_tmp_repo(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A test may mutate its own canonical, isolated temporary repository."""
+    """The serial gate may mutate a repo below its exact owned basetemp."""
     main, linked = _linked_checkout(tmp_path)
-    isolated_repo = tmp_path / "isolated-repo"
-    (isolated_repo / ".git").mkdir(parents=True)
-    guard = _guard(main, linked)
+    with tempfile.TemporaryDirectory(prefix="gludd-7991-", dir="/tmp") as raw_root:
+        gate_root = Path(raw_root).resolve()
+        isolated_repo = gate_root / "pytest" / "test_case" / "isolated-repo"
+        (isolated_repo / ".git").mkdir(parents=True)
+        monkeypatch.setenv("TMPDIR", str(gate_root))
+        guard = _guard(main, linked)
 
-    guard.audit(
-        "subprocess.Popen",
-        (
-            "git",
-            ("git", "checkout", "-b", "feature-test"),
-            str(isolated_repo),
-            {},
-        ),
-    )
+        guard.audit(
+            "subprocess.Popen",
+            (
+                "git",
+                ("git", "checkout", "-b", "feature-test"),
+                str(isolated_repo),
+                {},
+            ),
+        )
+
+
+def test_confinement_gate_tmpdir_exception_is_exact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gate-shaped names do not authorize siblings or a mismatched owner."""
+    main, linked = _linked_checkout(tmp_path)
+    with tempfile.TemporaryDirectory(prefix="gludd-dead-", dir="/tmp") as raw_root:
+        gate_root = Path(raw_root).resolve()
+        pytest_repo = gate_root / "pytest" / "test_case" / "isolated-repo"
+        sibling_repo = gate_root / "not-pytest" / "isolated-repo"
+        for repository in (pytest_repo, sibling_repo):
+            (repository / ".git").mkdir(parents=True)
+        guard = _guard(main, linked)
+        mutation = ("git", "checkout", "-b", "feature-test")
+
+        monkeypatch.setenv("TMPDIR", str(gate_root))
+        with pytest.raises(PermissionError, match="repository mutation subprocess"):
+            guard.audit("subprocess.Popen", ("git", mutation, str(sibling_repo), {}))
+
+        monkeypatch.setenv("TMPDIR", str(gate_root / "pytest"))
+        with pytest.raises(PermissionError, match="repository mutation subprocess"):
+            guard.audit("subprocess.Popen", ("git", mutation, str(pytest_repo), {}))
 
 
 def test_confinement_denies_git_mutation_for_unsafe_repository_cwd(

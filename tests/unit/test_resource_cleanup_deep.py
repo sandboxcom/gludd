@@ -559,6 +559,44 @@ class TestWeakrefLeakDetection:
         gc.collect()
         assert ref() is None
 
+    @pytest.mark.parametrize("_worker_probe", ("first", "second"))
+    def test_async_task_probe_releases_local_collection_and_loop_owners(
+        self, _worker_probe: str
+    ) -> None:
+        class _Tracked:
+            pass
+
+        async def _run() -> weakref.ReferenceType[_Tracked]:
+            started = asyncio.Event()
+            release = asyncio.Event()
+            owners: list[_Tracked] = []
+            refs: list[weakref.ReferenceType[_Tracked]] = []
+
+            async def _owner() -> None:
+                obj = _Tracked()
+                owners.append(obj)
+                refs.append(weakref.ref(obj))
+                started.set()
+                await release.wait()
+                owners.clear()
+                del obj
+
+            task = asyncio.create_task(_owner())
+            await started.wait()
+            ref = refs.pop()
+            try:
+                gc.collect()
+                assert ref() is not None
+            finally:
+                release.set()
+                await task
+            del task
+            return ref
+
+        ref = asyncio.run(_run())
+        gc.collect()
+        assert ref() is None
+
     def test_gc_collect_clears_cyclical_references(self) -> None:
         class _Node:
             def __init__(self, name: str) -> None:
