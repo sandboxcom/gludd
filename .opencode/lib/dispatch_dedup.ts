@@ -525,12 +525,14 @@ function retryOrDenyExact(
   taskIds: string[],
   retry: boolean,
   now: number,
+  claimAllowed: boolean,
 ): string | null {
   if (existing.status === "completed") {
     return denyDuplicate(ledger, existing, "completed_is_terminal", now)
   }
   if (existing.status === "failed" || existing.status === "cancelled") {
     if (!retry) return denyDuplicate(ledger, existing, "explicit_retry_required", now)
+    if (!claimAllowed) return null
     ledger.entries[identity.fingerprint] = claimEntry(
       identity, tool, taskIds, now, existing,
     )
@@ -538,6 +540,7 @@ function retryOrDenyExact(
     return null
   }
   if (retry && canRecoverStaleOwner(existing, now)) {
+    if (!claimAllowed) return null
     ledger.entries[identity.fingerprint] = claimEntry(
       identity, tool, taskIds, now, existing, true,
     )
@@ -562,9 +565,10 @@ function selectTaskCollision(
     || collisions.sort((left, right) => right.updated_at - left.updated_at)[0]
 }
 
-export function registerDispatch(
+function evaluateDispatchAdmission(
   tool: string,
   args: Record<string, unknown> | undefined,
+  claimAllowed: boolean,
 ): string | null {
   if (!DISPATCH_DEDUP_ENABLED) return null
   const prompt = extractDispatchPrompt(args)
@@ -573,7 +577,9 @@ export function registerDispatch(
     dispatchStaleMs()
     const identity = buildIdentity(tool, prompt)
     return withLedgerLock(() => {
-      const { ledger } = loadDispatchLedger(identity)
+      const loaded = loadDispatchLedger(identity)
+      const ledger = loaded.ledger
+      if (loaded.migrated) saveDispatchLedger(ledger)
       const existing = ledger.entries[identity.fingerprint]
       const taskIds = extractTrackedTaskIds(prompt)
       const retry = explicitRetryRequested(args, prompt)
@@ -581,6 +587,7 @@ export function registerDispatch(
       if (existing) {
         return retryOrDenyExact(
           ledger, existing, identity, identity.tool, taskIds, retry, now,
+          claimAllowed,
         )
       }
       const taskCollision = selectTaskCollision(ledger, identity, taskIds)
@@ -593,6 +600,7 @@ export function registerDispatch(
             const reason = retry ? "owner_live_or_claim_fresh" : "existing_task_owner_active"
             return denyDuplicate(ledger, taskCollision, reason, now)
           }
+          if (!claimAllowed) return null
           taskCollision.status = "cancelled"
           taskCollision.terminal_reason = "stale_owner"
           taskCollision.updated_at = now
@@ -605,12 +613,14 @@ export function registerDispatch(
         if (!retry) {
           return denyDuplicate(ledger, taskCollision, "explicit_retry_required", now)
         }
+        if (!claimAllowed) return null
         ledger.entries[identity.fingerprint] = claimEntry(
           identity, identity.tool, taskIds, now, taskCollision,
         )
         saveDispatchLedger(ledger)
         return null
       }
+      if (!claimAllowed) return null
       ledger.entries[identity.fingerprint] = claimEntry(identity, identity.tool, taskIds, now)
       saveDispatchLedger(ledger)
       return null
@@ -622,6 +632,20 @@ export function registerDispatch(
     const detail = code === "dispatch_ledger_lock_busy" ? " dispatch ledger lock is busy." : ""
     return `DISPATCH DEDUP STATE ERROR: reason=${code}.${detail} Dispatch denied because ownership cannot be proven.`
   }
+}
+
+export function preflightDispatch(
+  tool: string,
+  args: Record<string, unknown> | undefined,
+): string | null {
+  return evaluateDispatchAdmission(tool, args, false)
+}
+
+export function registerDispatch(
+  tool: string,
+  args: Record<string, unknown> | undefined,
+): string | null {
+  return evaluateDispatchAdmission(tool, args, true)
 }
 
 function outputWasCancelled(output: Record<string, unknown> | undefined): boolean {

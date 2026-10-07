@@ -11,6 +11,7 @@ from scripts.hook_runtime.fixtures import ROOT
 from scripts.hook_runtime.runner import _run_ts
 
 OWNER_MODULE = ROOT / ".opencode" / "lib" / "dispatch_dedup.ts"
+DELEGATE_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-delegate.ts"
 
 
 def _env(tmp_path: Path, **overrides: str) -> dict[str, str]:
@@ -236,6 +237,108 @@ console.log(JSON.stringify({
     assert result["hasOwner"] is True
     assert "nebula-cedar-884" not in result["duplicate"].lower()
     assert "nebula-cedar-884" not in result["ledgerText"].lower()
+
+
+def test_preflight_reports_terminal_conflicts_without_claiming_novel_work(
+    tmp_path: Path,
+) -> None:
+    result = _run(
+        """
+const prompt = 'Admit a dispatch only after every independent guard passes.'
+const novel = mod.preflightDispatch('task', {prompt})
+const claimedDuringPreflight = fs.existsSync(
+  process.env.GLUDD_DISPATCH_DEDUP_STATE,
+)
+const registered = mod.registerDispatch('task', {prompt})
+mod.finishDispatch('task', {prompt}, {})
+const completed = mod.preflightDispatch('task', {prompt})
+const ledger = JSON.parse(
+  fs.readFileSync(process.env.GLUDD_DISPATCH_DEDUP_STATE, 'utf8'),
+)
+console.log(JSON.stringify({
+  novel,
+  claimedDuringPreflight,
+  registered,
+  completed,
+  entries: Object.keys(ledger.entries).length,
+}))
+""",
+        tmp_path,
+    )
+
+    assert result["novel"] is None
+    assert result["claimedDuringPreflight"] is False
+    assert result["registered"] is None
+    assert "status=completed" in result["completed"]
+    assert result["entries"] == 1
+
+
+def test_plugin_dedup_preflight_wins_without_orphaning_model_denial(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    state_file = tmp_path / "dispatch-ledger.json"
+    model_file = tmp_path / "model-util.json"
+    source = f"""\
+const fs = await import('node:fs')
+const mod = await import('{DELEGATE_PLUGIN}')
+const plugin = await mod.default({{}})
+const before = plugin['tool.execute.before']
+const after = plugin['tool.execute.after']
+const prompt = 'Complete private marker AURORA-PINE-447 exactly once.'
+await before({{tool: 'task'}}, {{args: {{prompt, model: 'sonnet'}}}})
+await after({{tool: 'task'}}, {{args: {{prompt, model: 'sonnet'}}}})
+fs.writeFileSync(
+  process.env.GLUDD_MODEL_UTIL_STATE,
+  JSON.stringify({{history: ['non-sonnet', 'non-sonnet', 'non-sonnet']}}),
+)
+async function denial(args) {{
+  try {{
+    await before({{tool: 'task'}}, {{args}})
+    return null
+  }} catch (error) {{
+    return error instanceof Error ? error.message : String(error)
+  }}
+}}
+const duplicate = await denial({{prompt}})
+const modelDenied = await denial({{
+  prompt: 'Start a distinct model-ratio-blocked task.',
+}})
+const ledger = JSON.parse(fs.readFileSync(
+  process.env.GLUDD_DISPATCH_DEDUP_STATE,
+  'utf8',
+))
+console.log(JSON.stringify({{
+  duplicate,
+  modelDenied,
+  entries: Object.keys(ledger.entries).length,
+}}))
+"""
+    result = _run_ts(
+        source,
+        env_override={
+            "GLUDD_DISPATCH_DEDUP_STATE": str(state_file),
+            "GLUDD_DISPATCH_DEDUP_ENFORCE": "1",
+            "GLUDD_PROJECT_ROOT": str(project),
+            "GLUDD_DISPATCH_SCOPE": "project",
+            "GLUDD_MODEL_UTIL_STATE": str(model_file),
+            "GLUDD_MODEL_UTIL_ENFORCE": "1",
+            "GLUDD_MAIN_MODEL": "opus",
+            "GLUDD_SONNET_TARGET_SHARE": "0.5",
+            "GLUDD_DISK_FREE_OVERRIDE": "999",
+            "GLUDD_VENV_COUNT_OVERRIDE": "0",
+            "GLUDD_MAINTHREAD_STREAK_ENFORCE": "0",
+            "GLUDD_FORCE_DELEGATE": "0",
+        },
+        cwd=tmp_path,
+    )
+
+    assert "status=completed" in result["duplicate"]
+    assert "MODEL-RATIO" not in result["duplicate"]
+    assert "aurora-pine-447" not in result["duplicate"].lower()
+    assert "MODEL-RATIO ENFORCER" in result["modelDenied"]
+    assert result["entries"] == 1
 
 
 def test_v2_state_migrates_without_redispatch_or_plaintext(tmp_path: Path) -> None:
