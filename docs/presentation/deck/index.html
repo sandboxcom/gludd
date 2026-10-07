@@ -1321,6 +1321,23 @@ flowchart LR
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19j.1: INTEGRATED ADMISSION CHAIN -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-157-158-166-177-admission-chain">
+  <p class="stage-kicker">S83.177 / .158 / .157 / .166 &middot; branch to terminal admission</p>
+  <h2>Four gates fail closed before the next side effect <span class="badge-yellow">INTEGRATED &middot; RELEASE PROOF PENDING</span></h2>
+  <ol class="bullets-tight feature-sync-grid">
+    <li><strong>S83.177 &middot; branch:</strong> a clean committed feature branch enters one ordered, fail-fast admission path; it stops on the first failed deterministic check and launches no browser in its static presentation phase.</li>
+    <li><strong>S83.158 &middot; compute:</strong> provision only after the claim transaction committed and active session released; <code>claim_transaction_open</code> yields zero provider or dispatch calls.</li>
+    <li><strong>S83.157 &middot; hosted proof:</strong> verify the exact protected GitHub Environment, reviewer, self-review, admin-bypass, and branch-policy contract before OIDC or paid compute.</li>
+    <li><strong>S83.166 &middot; terminal:</strong> both promotion-time readiness calls force <code>RELEASE_ALLOW_INCOMPLETE_TASKS=0</code> and <code>RELEASE_ALLOW_INVALID_RECEIPT=0</code>; diagnostic bypasses cannot become ambient release authority.</li>
+  </ol>
+  <p class="honest-note">Integrated into development; exact-head full gate, hosted replay, and terminal publication remain pending. No release-completion claim is made. ZDD keeps the serving application unchanged because each rejection precedes its owned mutation.</p>
+  <p class="cite">Sources: docs/features/INTEGRATION_ADMISSION.md:5-42 &middot; docs/features/DURABLE_CLAIM_COMPUTE_FENCE.md:21-33 &middot; docs/azure-gha-oidc-live-proof.md:46-79 &middot; docs/features/RELEASE_PREDECESSOR_ADMISSION.md:11-28</p>
+  <p class="cite">Long-lived practitioner findings: <a href="https://github.com/orgs/community/discussions/43988">duplicate merge-queue checks</a> justify fast admission, not skipping integrated-head replay; <a href="https://github.com/sidekiq/sidekiq/issues/5239">pre-commit effects</a>, <a href="https://github.com/orgs/community/discussions/12241">self-approval</a>, and <a href="https://github.com/actions/runner/issues/789">stale environment state</a> motivate the three later fences.</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 19j: RELEASE AND WORKTREE RESILIENCE -->
 <!-- ============================================================ -->
 <section data-contract="release-resilience-boundaries">
