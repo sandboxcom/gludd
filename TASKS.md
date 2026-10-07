@@ -104,7 +104,22 @@ compact replay; native Safari remains unclaimed. The design record cites Reveal
 issue 16 and discussion 3448, and commit `0667355127890fdc84d940b011f531c4c79fdd39`
 contains the fail-first regression and repair.
 
-- [ ] S83.171 - **Keep cleanup, Molecule CI, deep Makefile tests, and event-loop structural checks compatible with the composed module layouts** across `tests/unit/test_clean_worktree_venvs.py`, `tests/integration/test_molecule_ci_e2e.py`, `tests/unit/test_makefile_audit_deep.py`, `tests/unit/test_ab_to_thread_import_smoke.py`, `config/coverage_gap_test_mappings.json`, `tests/unit/test_check_coverage_gaps.py`, and the split-aware structural contract suite: derive target recipes and repository-wide target inventories from the canonical Makefile composer instead of assuming every target remains in the root include file; preserve temporary-working-directory dry-run safety by supplying the repository include path explicitly; inspect the extracted execution-dispatch mixin when pinning its bounded filesystem offloads. | evidence: the documented validate-only cleanup example first reproduced an `IndexError` and the complete cleanup suite now passes 16/16; the exact-head gate then reproduced five Molecule target-discovery failures plus three deep-audit target/include failures; after routing both consumers through the composer and retaining the temporary-directory sentinel assertion, the combined warning-strict replay passes 47/47; a later gate caught the stale monolithic event-loop source assertion, and the refactor-aware smoke file now passes 8/8 with scoped Ruff and strict mypy green; task validators, commit, exact-head full gate, and development push remain required | priority: high | effort: XS | status: in_progress
+S83.170 section-inventory continuation: the non-short-circuit release gate
+retained the stale 60-slide assertion after the required standalone QEMU slide
+raised the canonical deck to 61 sections. Exact section ownership now lives in
+`tests/unit/test_reveal_render_resilience_spec.py` instead of being duplicated
+across `tests/unit/test_runner_acquisition_recovery_deck_sync.py`,
+`tests/unit/test_release_resilience_deck_sync.py`,
+`tests/unit/test_decision_log_codification_docs_sync.py`,
+`tests/unit/test_s83_166_rollback_receipt_deck_sync.py`,
+`tests/unit/test_v012_completed_backlog_deck_s83128.py`,
+`tests/unit/test_gate_kill_lifecycle_deck_sync.py`,
+`tests/unit/test_hosted_runner_capacity_deck_sync.py`, and
+`tests/unit/test_owned_node_cache_cleanup_deck_sync.py`. The canonical count
+and every feature-specific token remain enforced, and the warning-strict
+combined replay passes 30/30.
+
+- [ ] S83.171 - **Keep cleanup, Molecule CI, deep Makefile tests, and event-loop structural checks compatible with the composed module layouts** across `tests/unit/test_clean_worktree_venvs.py`, `tests/integration/test_molecule_ci_e2e.py`, `tests/unit/test_makefile_audit_deep.py`, `tests/unit/test_ab_to_thread_import_smoke.py`, `config/coverage_gap_test_mappings.json`, `tests/unit/test_check_coverage_gaps.py`, `make/90-infrastructure-and-services.mk`, `tests/unit/test_observability_guardrails.py`, and the split-aware structural contract suite: derive target recipes and repository-wide target inventories from the canonical Makefile composer instead of assuming every target remains in the root include file; preserve temporary-working-directory dry-run safety by supplying the repository include path explicitly; inspect the extracted execution-dispatch mixin when pinning its bounded filesystem offloads. | evidence: the documented validate-only cleanup example first reproduced an `IndexError` and the complete cleanup suite now passes 16/16; the exact-head gate then reproduced five Molecule target-discovery failures plus three deep-audit target/include failures; after routing both consumers through the composer and retaining the temporary-directory sentinel assertion, the combined warning-strict replay passes 47/47; a later gate caught the stale monolithic event-loop source assertion, and the refactor-aware smoke file now passes 8/8 with scoped Ruff and strict mypy green; the resource-pressure repair now also registers the composed cleanup target and its observability guardrail while preserving exact-cache ownership; task validators, commit, exact-head full gate, and development push remain required | priority: high | effort: XS | status: in_progress
 
 S83.171 gate-integration continuation: the same exact-head gate exposed eight
 split modules without durable coverage mappings, 45 moved/new resource-ownership
@@ -225,6 +240,21 @@ general capabilities.
   S83.166 read-only push-admission continuation: after the false-success push recipe was repaired, the next guarded push proved a second independent convergence defect when upstream `detect-secrets-hook --baseline` rewrote the tracked baseline during admission. `.pre-commit-config.yaml` now makes the upstream mutating hook manual-only; `scripts/detect_secrets_readonly.py` runs automatic admission through the same mature scanner against a disposable baseline copy, propagates its real exit status, and cleans temporary state on every path. Three regressions in `tests/unit/test_detect_secrets_readonly.py` failed first against the missing boundary; the expanded eight-test wrapper suite now covers every line and branch, and the combined wrapper, `tests/unit/test_precommit_hooks_deep.py`, `tests/unit/test_security_verification.py`, and workflow-failure replay passes 81/81 with scoped Ruff, strict mypy, and Markdown lint green. `config/coverage_detect_secrets_readonly.ini` pins branch-aware file coverage, while `BUGS.md` and `docs/security/audit-observability.md` record upstream issues #149/#212, read-only admission, explicit maintenance, ZDD, and rollback. The complete candidate gate then ran every remaining phase instead of short-circuiting: test and smoke passed along with lint, typecheck, enforcement, feature-claim, and coverage checks; its sole retained failure was the new wrapper's unregistered owned temporary artifact. `config/resource_ownership_inventory.json` now records the exact path, acquisition, teardown, location, and source hash. Focused ownership validation, a signed exact-tree refresh, guarded commit, exact-SHA development push, hosted all-workflow proof, predecessor live proofs, publication, deployment, and rollback remain open.
   S83.166 admission-convergence follow-up: the first real guarded commit correctly refused the candidate because upstream status 3 also represents a harmless disposable-baseline metadata refresh. A dedicated regression failed 1/10 before the repair. The wrapper now compares counted filename/detector/hash identities only for status 3, admits metadata-only line moves and removals, and still rejects every added occurrence, malformed baseline, scanner error, or other nonzero status. The expanded wrapper replay passes 19/19 at 100% line and branch coverage; the real repository secret scan, scoped Ruff, and strict mypy pass. Automatic cleanup separately reclaimed 499 MiB of Gludd uv cache, `make tf-clean` reclaimed the 2.5 GiB regenerable provider cache while preserving `.gitkeep`, and the canonical cleanup preflight is healthy at the configured 90% ceiling. A replacement signed exact-tree refresh, guarded commit, exact-SHA development push, hosted all-workflow proof, predecessor live proofs, publication, deployment, and rollback remain open.
   S83.166 exact push-admission replay: commit `de275332aa57f8e9c0c4680c6cf813257cf47c81` was bound to signed local attestation state `f299c8125d084f8a38dfecc0568c23f58f62e71b399c4938410185dd68ba8a56`. Its guarded push stayed fail-closed when the broader pre-push file set exposed nine deterministic build/review hashes not yet admitted plus two avoidable secret-keyword fixture literals. The fixtures now construct the schema key without secret-shaped source text, and explicit `make secrets-baseline` maintenance regenerated the reviewed hashed inventory. The focused admission replay passes 92/92, wrapper coverage remains 100% line and branch, and independent TruffleHog verification reports 26,219 hashed findings across 313 files with zero live secrets. A small follow-up commit, refreshed exact-head attestation, development push, hosted all-workflow proof, predecessor live proofs, publication, deployment, and rollback remain open.
+
+  S83.166 cold-gate ownership continuation: the non-short-circuit replay passed
+  four of eight shards and continued into the fifth before the independent
+  one-hour launcher/watchdog defaults killed a healthy 244-batch run. The
+  repair spans `make/00-foundation.mk`,
+  `make/70-orchestration-and-model-runtime.mk`,
+  `scripts/agent_watchdog.py`, `scripts/active_work_status.py`,
+  `tests/unit/test_gate_process_cleanup.py`,
+  `tests/unit/test_gate_background_targets.py`, and
+  `tests/unit/test_active_work_status.py`: both outer owners now allow a bounded
+  six-hour cold gate, while per-test and quiet-output limits remain unchanged;
+  dead `RUNNING` receipts report `ORPHANED`/aborted and explicit timeouts report
+  `TIMEOUT`. Failing-first regressions reproduced both premature defaults and
+  both misleading status surfaces. Focused repaired cases pass; full replay,
+  atomic commit, and replacement exact gate remain required.
 
   S83.166 release-pipeline continuation (2026-10-04): the `development` tip advanced to `a05f94be81c607144fa45136186deeb63cc1995d` after fixing two hosted Build and Release blockers. The Ansible execution-environment build failed because the pinned CentOS Stream 9 manifest digest returned Quay 404; `make refresh-ansible-base-image ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0` resolved a fresh digest (`sha256:63e8d0c2a4a4b67c8bd7456283d12106bedf815d8c27d1a72498ebcf173baf09`), and the pinned test/doc evidence was updated. The FreeLLMAPI upstream build failed a flaky synchronous performance budget on a loaded runner; `.github/workflows/build.yml` now retries the bounded upstream suite up to three times before treating the failure as a real regression. Both families were repaired in the CI failure ledger and the commits pushed to sandboxcom/development. Hosted CI is PENDING for `a05f94be81c607144fa45136186deeb63cc1995d` (Build and Release run 37199842733, Molecule Tests run 37199842757) and the canonical local dual-track producer is running in background; `make release-promote TAG='v0.1.1' RELEASE_ALLOW_INCOMPLETE_TASKS=1 RELEASE_ALLOW_INVALID_RECEIPT=1` remains pending green CI + final attestation.
 
@@ -590,6 +620,54 @@ S83.166 hosted-structural repair continuation: all four structural failures from
 S83.166 terminal-hosted reconciliation continuation: immutable run `37381218767` completed with four failed jobs, 20 passed jobs, and four skipped jobs. The fourth failed job, `test-shard (3.11, other)` (`112007987360`), retained two additional parametrized assertions in `test_self_improve_private_policy_e2e.py`, so the terminal inventory is six assertions rather than the interim four. Candidate `5142ba735f66fbf074a7ec02d80d0d2ced0b582c` passes the exact `fake-local` and `fake-azure` node together 2/2; the four structural assertions also pass together. `BUGS.md`, `docs/features/CI_FAILURE_LEDGER.md`, and `TASKS.md` now distinguish early job-scoped diagnosis from terminal workflow completeness. Replacement hosted Build/Release proof remains required before any family is resolved.
 
 S83.166 combined-candidate preflight continuation: clean development head `1c29450dbeb0c7115dedf5f8ee9a8ec2240b1505` merged the gate-lifecycle, automatic-cleanup, universal-routing, and master histories before push. The CI-ledger evidence replay then exposed two additional deterministic merge regressions: the unchanged maintainability budget counted 222 files below MI 20 against its 220 ceiling, and the commit-lock parser rejected the intentional active-gate prerequisite. Passive FreeLLMAPI replay value contracts and persistent-vector trie primitives now live in cohesive modules with identity-preserving compatibility imports; the lock regression parses prerequisites and requires `_gate-mutation-guard`; and CI status/push blockers emit complete repairable 64-character family IDs. The focused behavior replay passes 72/72, the exact MI and lock checks pass without budget changes, persistent-vector coverage is 98% for both files, the full 77-test three-arm profile is 92% aggregate with every file above 75%, and scoped lint, types, docstrings, and TDD checks are green. The registered surface is `scripts/ci_failure_ledger.py`, `src/general_ludd/algorithms/persistent_vector.py`, `src/general_ludd/algorithms/persistent_vector_nodes.py`, `src/general_ludd/models/freellmapi/three_arm_delta.py`, `src/general_ludd/models/freellmapi/three_arm_types.py`, `config/coverage_freellmapi_three_arm.ini`, `config/coverage_persistent_vector.ini`, `tests/unit/test_ci_failure_ledger.py`, `tests/unit/test_commit_lock_plugin.py`, `tests/unit/test_freellmapi_three_arm_delta.py`, `tests/unit/test_freellmapi_three_arm_types.py`, `tests/unit/test_persistent_vector.py`, `tests/unit/test_persistent_vector_nodes.py`, `BUGS.md`, `docs/features/CI_FAILURE_LEDGER.md`, and `TASKS.md`. Atomic commit, replacement exact-head gate, hosted proof, predecessor live proofs, publication, deployment, and rollback remain required.
+
+S83.166 disk-pressure recovery continuation: exact gate candidate `bd1fb5a354bd2098f382096737cb1231e2e00ac9` passed all eight previously failing regressions together, Node 26 compatibility 6/6, OpenCode E2E 44/44, and collection with 119,691 selected tests before the unchanged 90% disk admission ceiling correctly rejected 91% use. The existing cleanup reclaimed completed worktrees and 616 MiB of uv cache but could not select 245 MiB of reproducible `.gate-logs/ci-artifacts`. `scripts/cache_resource_manager.py`, `config/coverage_cache_resource_manager.ini`, `config/coverage_gap_test_mappings.json`, `src/general_ludd/cloud/video_compare.py`, `tests/unit/test_cache_resource_manager.py`, `tests/unit/test_check_coverage_gaps.py`, `tests/unit/test_decision_codification_durable.py`, `tests/unit/test_reveal_render_resilience_spec.py`, `tests/unit/test_video_compare.py`, `tests/unit/test_cloud_video_compare.py`, `docs/features/DECISION_LOG_CODIFICATION.md`, `docs/features/GATE_RESOURCE_LIFECYCLE.md`, `docs/presentation/DESIGN_revealjs_deck.md`, `docs/presentation/deck/index.html`, `docs/presentation/deck-data.json`, `BUGS.md`, and `TASKS.md` now register a validate-first exact-child recovery path for this checkout's canonical gate-log root, preserve symlink/path-escape rejection, sibling receipts, subprocess-aware coverage, ZDD, and the ceiling itself, reject stale presentation line ranges before browser startup, and retain concrete NumPy `float64` return typing after the combined split. The fail-first cleanup regression is green in the 40-test cache/lifecycle slice at 97% branch coverage; real validation preserved the target, explicit apply removed only `.gate-logs/ci-artifacts`, and default disk admission now passes at 90%. The fail-first source-range regression and 18 presentation structural cases are green; Chromium passes 17/17 plus compact containment; the 146-test video slice and all-1,464-file mypy pass; collection reports 119,693/119,711 with 18 intentional deselections. Two isolated WebKit replays deterministically stalled before the first assertion even after the pinned installer succeeded, matching the macOS 26.5 deadlock reported in Playwright issue #41870; native Safari also remains unclaimed because its operator-controlled Remote Automation setting is disabled. The first replacement gate then failed closed on two missing split-module coverage mappings; the existing exact-map regression failed first, the durable facade/inheritance chain is pinned without an allowlist, 47 focused tests pass, and the audit reports 1,310/1,310 modules covered. Atomic commit, replacement exact gate, push, and hosted proof remain required.
+
+S83.166 composed-Makefile gate continuation: the completed diagnostic gate reached
+every one of its 244 test batches and exposed one remaining literal-root
+Makefile assertion in `tests/e2e/test_obj01_skeleton.py`. Its failing-first
+replay rejected the required split entrypoint because targets intentionally
+live in ordered fragments. The test now uses the canonical composed-Makefile
+reader without weakening its required-target assertions; the exact former
+failure passes, scoped Python lint and the tracked-file `<2500`-line check are
+green. Replacement exact-gate, atomic candidate commit, push, and hosted proof
+remain required.
+
+S83.166 commit-ownership continuation: two scoped commits admitted unrelated
+staged files while their collection preflight was running, and the gate lock's
+recorded start identity did not protect against PID reuse or zombie ownership.
+`make/40-cross-version-and-worktrees.mk` now makes `ship-commit-files` supply its
+exact requested paths and makes `ship-commit` snapshot and revalidate the
+immutable staged tree immediately before publication. `scripts/gate_run_lock.py`
+binds liveness to PID start identity while reporting process state. The
+failing-first regressions in `tests/unit/test_commit_lock_plugin.py` and
+`tests/unit/test_gate_run_lock.py` cover scope drift, index drift, PID reuse,
+zombies, and diagnostics. The combined suite passes 63/63, branch-aware gate-lock
+coverage is 87% with no file below 75%, and Ruff, strict mypy, Make validation,
+target-contract, duplicate-target, practitioner evidence, ZDD, and rollback
+documentation are green. Atomic commit, integration, replacement exact gate,
+push, and hosted proof remain required.
+
+S83.166 replay-spec status continuation: the diagnostic gate found
+`tests/unit/test_run_replay_forensics_spec.py` still requiring
+`READY-TO-IMPLEMENT` after the specification truthfully advanced to the R0
+schema and legacy-reader implementation. The assertion now requires the exact
+incremental status and `G10-RR1-R0-SCHEMA-LEGACY` evidence token while retaining
+the unimplemented-acceptance checks. The complete four-test specification file
+and the combined 40-test presentation/spec replay pass warning-strict. Commit,
+replacement exact gate, push, and hosted proof remain required.
+
+S83.166 presentation-observability continuation: the real `deck-honesty`
+behavioral example ran silently for more than one minute while collecting the
+repository. `make/90-infrastructure-and-services.mk` now delegates that checker
+through the shared `run-watched` owner, and
+`tests/unit/test_observability_guardrails.py` pins the label, command, and
+observable boundary. The failing-first regression is green; the real example
+emitted start plus 30-second and 60-second heartbeats before passing at 65.3
+seconds; Make validation reports 1,111 targets with zero duplicates and the
+196-target contract passes. `docs/features/GATE_RESOURCE_LIFECYCLE.md` and
+`BUGS.md` retain practitioner, ZDD, and rollback evidence. Commit, replacement
+exact gate, push, and hosted proof remain required.
 
 ---
 

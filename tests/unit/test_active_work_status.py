@@ -685,6 +685,19 @@ def test_gate_snapshot_handles_terminal_stale_and_live_pid(
 
     assert active_work_status._gate()["state"] == "UNKNOWN"
 
+    status_path.write_text("RUNNING 1791394048 66607\n", encoding="utf-8")
+    orphaned = active_work_status._gate()
+    assert orphaned["state"] == "ORPHANED"
+    assert orphaned["running_pid"] == ""
+
+    pid_path.write_text("123\n", encoding="utf-8")
+    monkeypatch.setattr("scripts.active_work_status.os.kill", lambda _pid, _signal: None)
+    running = active_work_status._gate()
+    assert running["state"] == "RUNNING"
+    assert running["running_pid"] == "123"
+
+    pid_path.unlink()
+
     status_path.write_text("=== GATE: PASSED ===\n", encoding="utf-8")
     assert active_work_status._gate()["state"] == "PASS"
 
@@ -694,9 +707,8 @@ def test_gate_snapshot_handles_terminal_stale_and_live_pid(
     assert failed["state"] == "FAIL"
     assert failed["running_pid"] == ""
 
-    pid_path.write_text("123\n", encoding="utf-8")
-    monkeypatch.setattr("scripts.active_work_status.os.kill", lambda _pid, _signal: None)
-    assert active_work_status._gate()["running_pid"] == "123"
+    status_path.write_text("GATE_TIMEOUT\n=== GATE: ABORTED (timeout) ===\n")
+    assert active_work_status._gate()["state"] == "TIMEOUT"
 
 
 @pytest.mark.parametrize(

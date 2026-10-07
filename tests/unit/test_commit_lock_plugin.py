@@ -265,6 +265,27 @@ class TestMakefileLockTarget:
             "ship-commit-files missing _commit-lock-acquire prereq"
         )
 
+    def test_ship_commit_files_enforces_exact_staged_scope(self):
+        makefile = compose_makefile(MAKEFILE_PATH)
+        wrapper = re.search(
+            r"^ship-commit-files:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            makefile,
+            re.MULTILINE | re.DOTALL,
+        )
+        ship = re.search(
+            r"^ship-commit:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            makefile,
+            re.MULTILINE | re.DOTALL,
+        )
+        assert wrapper and ship
+        assert "SHIP_COMMIT_EXPECTED_FILES='$(FILES)'" in wrapper.group(1)
+        recipe = ship.group(1)
+        scope_check = recipe.find("git diff --cached --name-only")
+        snapshot = recipe.find("STAGED_TREE=$$(git write-tree)")
+        assert -1 not in (scope_check, snapshot)
+        assert scope_check < snapshot
+        assert "staged files differ from requested commit scope" in recipe
+
     def test_commit_lock_acquire_uses_flock_or_fcntl(self):
         makefile = compose_makefile(MAKEFILE_PATH)
         target_block = re.search(
@@ -281,3 +302,23 @@ class TestMakefileLockTarget:
         assert "flock" in recipe or "fcntl" in recipe, (
             "_commit-lock-acquire must use flock or fcntl fallback"
         )
+
+    def test_ship_commit_rejects_index_drift_after_collection(self):
+        """A concurrent stage during collection must never enter the commit."""
+        makefile = compose_makefile(MAKEFILE_PATH)
+        target = re.search(
+            r"^ship-commit:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            makefile,
+            re.MULTILINE | re.DOTALL,
+        )
+        assert target, "ship-commit recipe block not found"
+        recipe = target.group(1)
+        snapshot = recipe.find("STAGED_TREE=$$(git write-tree)")
+        collection = recipe.find("collect-check")
+        verification = recipe.find("CURRENT_TREE=$$(git write-tree)")
+        commit = recipe.find("git commit")
+        assert -1 not in (snapshot, collection, verification, commit), (
+            "ship-commit must snapshot and revalidate the exact staged tree"
+        )
+        assert snapshot < collection < verification < commit
+        assert "staged index changed during preflight" in recipe

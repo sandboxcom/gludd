@@ -448,12 +448,6 @@ def _git() -> dict[str, str]:
 def _gate() -> dict[str, str | bool]:
     status_path = ROOT / ".gate-status"
     status = status_path.read_text(encoding="utf-8") if status_path.is_file() else ""
-    if "=== GATE: PASSED ===" in status:
-        state = "PASS"
-    elif "=== GATE: FAILED ===" in status:
-        state = "FAIL"
-    else:
-        state = "UNKNOWN"
     running_pid = ""
     pid_path = ROOT / ".gate-background.pid"
     if pid_path.is_file():
@@ -465,6 +459,18 @@ def _gate() -> dict[str, str | bool]:
             pass
         else:
             running_pid = candidate
+    if "=== GATE: PASSED ===" in status:
+        state = "PASS"
+    elif "=== GATE: FAILED ===" in status:
+        state = "FAIL"
+    elif "GATE_TIMEOUT" in status:
+        state = "TIMEOUT"
+    elif status.lstrip().startswith("RUNNING"):
+        state = "RUNNING" if running_pid else "ORPHANED"
+    elif running_pid:
+        state = "RUNNING"
+    else:
+        state = "UNKNOWN"
     return {
         "status_file": str(status_path),
         "state": state,

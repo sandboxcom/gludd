@@ -52,7 +52,7 @@ gate-background:
 gate-background-observed:
 	@case "$(GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY)" in 0|1) ;; *) echo "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
 	if [ "$(GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY)" = "1" ]; then \
-		echo "gate-background-observed: VALIDATE launch timeout=$${GATE_TIMEOUT:-3600}s poll=$(GATE_POLL_INTERVAL)s"; \
+		echo "gate-background-observed: VALIDATE launch timeout=$${GATE_TIMEOUT:-21600}s poll=$(GATE_POLL_INTERVAL)s"; \
 		exit 0; \
 	fi; \
 	$(_GATE_MAKE) --no-print-directory gate-background GATE_TIMEOUT="$(GATE_TIMEOUT)" || exit $$?; \
@@ -114,7 +114,14 @@ gate-status-check:
 			tail -20 "$$LOGF"; \
 		fi; \
 	elif [ -f .gate-status ]; then \
-		echo "FINISHED:"; cat .gate-status; \
+		STATUS=$$(cat .gate-status); \
+		if printf '%s\n' "$$STATUS" | grep -q '^RUNNING'; then \
+			echo "FINISHED: ORPHANED"; \
+			echo "=== GATE: ABORTED ==="; \
+			echo "reason=orphaned-running-status pid=$$PID"; \
+		else \
+			echo "FINISHED:"; printf '%s\n' "$$STATUS"; \
+		fi; \
 	else \
 		echo "(no background gate found)"; \
 	fi

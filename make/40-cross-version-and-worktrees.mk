@@ -334,10 +334,29 @@ repo-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard
 PUSH ?= 0
 ship-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
-	@echo "Running pre-commit collection check..."
-	@$(MAKE) --no-print-directory collect-check
-	@echo "Committing staged changes..."
-	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
+	@STAGED_FILES=$$(git diff --cached --name-only | LC_ALL=C sort); \
+		if [ -n "$(SHIP_COMMIT_EXPECTED_FILES)" ]; then \
+			EXPECTED_FILES=$$(printf '%s\n' $(SHIP_COMMIT_EXPECTED_FILES) | LC_ALL=C sort); \
+			if [ "$$STAGED_FILES" != "$$EXPECTED_FILES" ]; then \
+				echo "BLOCKED: staged files differ from requested commit scope." >&2; \
+				echo "Requested files:" >&2; printf '%s\n' "$$EXPECTED_FILES" >&2; \
+				echo "Actually staged:" >&2; printf '%s\n' "$$STAGED_FILES" >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		STAGED_TREE=$$(git write-tree); \
+		echo "Running pre-commit collection check..."; \
+		$(MAKE) --no-print-directory collect-check || exit $$?; \
+		CURRENT_TREE=$$(git write-tree); \
+		if [ "$$CURRENT_TREE" != "$$STAGED_TREE" ]; then \
+			echo "BLOCKED: staged index changed during preflight; refusing mixed commit." >&2; \
+			echo "Expected staged tree: $$STAGED_TREE" >&2; \
+			echo "Current staged tree:  $$CURRENT_TREE" >&2; \
+			git diff --cached --name-only >&2; \
+			exit 1; \
+		fi; \
+		echo "Committing staged changes..."; \
+		if git diff --cached --quiet; then echo "Nothing to commit"; else git commit -n -m "$(MSG)"; fi
 	@if [ "$(PUSH)" = "1" ]; then $(MAKE) --no-print-directory batch-push; else echo "Committed locally. Use PUSH=1 to push, or make batch-push separately."; fi
 
 # ship-commit-files: atomic staging + commit under the commit lock. Bundles
@@ -346,7 +365,7 @@ ship-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pr
 ship-commit-files: _commit-lock-acquire
 	@[ -n "$(FILES)" ] || { echo "Usage: make ship-commit-files FILES='...' MSG='...'"; exit 1; }
 	@$(MAKE) --no-print-directory git-add FILES='$(FILES)'
-	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
+	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)' SHIP_COMMIT_EXPECTED_FILES='$(FILES)'
 
 commit-and-ship: lint-fix git-add-all
 	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'

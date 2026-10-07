@@ -19,6 +19,37 @@ lower worker count instead of staying stopped.
 
 ## Contract
 
+### Complete-gate deadline and truthful terminal state
+
+The release gate runs 244 fresh-process batches so imported state, native
+allocations, coverage databases, temporary roots, and child processes retain
+bounded owners. A cold run can therefore legitimately exceed one hour. The old
+3,600-second defaults in `make/00-foundation.mk` and
+`scripts/agent_watchdog.py` killed a healthy run in shard 5/8 even though its
+per-test, quiet-output, disk-reserve, and process-identity checks remained
+healthy. The background launcher and independent watchdog now use the same
+21,600-second outer ceiling. This does not relax the 180-second per-test limit,
+quiet-output reaping, or exact process-group cleanup.
+
+Status is a separate ownership contract. A `RUNNING` receipt is authoritative
+only while its exact background PID is live. `active-work-status` reports a
+dead `RUNNING` receipt as `ORPHANED` and recognizes explicit `GATE_TIMEOUT`
+evidence; `gate-status-check` emits `=== GATE: ABORTED ===` with
+`reason=orphaned-running-status` instead of the contradictory
+`FINISHED: RUNNING`. Neither probe fabricates a pass or silently retries.
+
+This follows the long-lived operator evidence in
+[pytest-xdist issue 220](https://github.com/pytest-dev/pytest-xdist/issues/220),
+which requests a controller-owned session timeout, and
+[pytest-xdist issue 61](https://github.com/pytest-dev/pytest-xdist/issues/61),
+which records workers waiting before execution. The per-test/whole-session
+distinction is also documented in
+[pytest-timeout issue 60](https://github.com/pytest-dev/pytest-timeout/issues/60).
+The rollout is ZDD because it changes only validation ownership and reporting;
+it adds no worker or application process. Rollback waits for an active gate to
+finish, then restores the old source values without a service restart or data
+migration.
+
 ### Lightweight diagnostics
 
 `make active-work-status` is dependency-free and runs with
@@ -680,6 +711,43 @@ provides the checkout boundary. GitHub runner
 [issue #2335](https://github.com/giampaolo/psutil/issues/2335) provide long-lived
 practitioner evidence for explicit, fail-closed ownership instead of process or
 filesystem snapshots.
+
+The same ownership rule now covers the Git index and reused process IDs. A
+scoped commit records the exact requested path set and an immutable
+`git write-tree` identity before its collection preflight, then rejects the
+commit if either the staged paths or tree identity changes before publication.
+This closes the observed race where another worker staged unrelated files while
+the preflight was running. The gate lock likewise binds a PID to its recorded
+process start time and treats a zombie as dead; a live PID with a different
+start identity is a reused process, not the original gate owner. Lock refusal
+includes the observed process state so an operator can distinguish live work
+from stale evidence without guessing.
+
+These failures recur in agentic and daemon workflows. OpenAI Codex
+[issue #17482](https://github.com/openai/codex/issues/17482) records parallel
+`git add` and `git commit` operations colliding on the index, while git-ai
+[issue #1240](https://github.com/git-ai-project/git-ai/issues/1240) records
+background checkpoints racing interactive Git and leaving stale index locks.
+Paseo [issue #1304](https://github.com/getpaseo/paseo/issues/1304) demonstrates
+the complementary PID-reuse failure on macOS and recommends comparing the live
+process start time with the lock's recorded identity. Those reports support
+Gludd's exact staged-tree snapshot and PID-plus-start-time contract rather than
+retrying a commit or trusting liveness alone.
+
+The change remains ZDD: it starts no process, modifies no serving application,
+and only rejects a history mutation whose authority changed during validation.
+Rollback is source-only after every active gate lock has reached terminal
+evidence; reverting while a gate or commit is active would reopen the ownership
+race and is therefore prohibited.
+
+Presentation honesty validation now uses the same observed-command boundary.
+Its repository-wide test count can take more than a minute without producing
+child output, so `deck-honesty` emits an immediate start record, periodic
+heartbeats, a retained log identity, and a terminal result while preserving the
+checker exit code. This adds no retry and does not reinterpret silence as
+success. The long-lived pytest-timeout session and child-cleanup discussions
+linked below reinforce that a broad deadline and observable ownership must be
+separate from an individual test timeout.
 
 This division follows years of upstream practitioner discussion. The
 pytest-timeout session-timeout request distinguishes an external CI deadline

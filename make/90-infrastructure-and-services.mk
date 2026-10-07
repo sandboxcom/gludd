@@ -183,7 +183,13 @@ deck-data:
 	@$(UV) run python3 scripts/build_deck.py --data
 
 deck-honesty:
-	@$(UV) run python3 scripts/build_deck.py --check
+	@$(MAKE) --no-print-directory run-watched \
+		CMD='$(UV) run python3 scripts/build_deck.py --check' \
+		OBSERVED_LABEL=deck-honesty \
+		STALL_SECS="$(STALL_SECS)" MAX_SECS="$(MAX_SECS)" \
+		OBSERVED_ROOT="$(OBSERVED_ROOT)" \
+		OBSERVED_HEARTBEAT_SECS="$(OBSERVED_HEARTBEAT_SECS)" \
+		OBSERVED_RETAIN_RUNS="$(OBSERVED_RETAIN_RUNS)"
 
 # --- One-shot guardrail: all enforcement checks in a single target ---
 .PHONY: check-all-guardrails
