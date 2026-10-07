@@ -34,11 +34,8 @@ def model_health_client(
             config_dir=str(config_dir),
             _db_path_override=":memory:",
         )
-        client = TestClient(app)
-        try:
+        with TestClient(app) as client:
             yield app, client
-        finally:
-            client.close()
 
 
 @pytest.mark.xdist_group("model-health-daemon")
