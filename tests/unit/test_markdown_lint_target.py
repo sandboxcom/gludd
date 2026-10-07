@@ -47,7 +47,7 @@ def test_lint_markdown_requires_explicit_files() -> None:
 
 def test_lint_markdown_dependency_and_contract_are_exactly_pinned() -> None:
     package = json.loads((ROOT / ".opencode" / "package.json").read_text())
-    assert package["devDependencies"]["markdownlint-cli2"] == "0.23.2"
+    assert package["devDependencies"]["markdownlint-cli2"] == "0.23.3"
 
     contract = json.loads(
         (ROOT / "config" / "make_target_contract.json").read_text()

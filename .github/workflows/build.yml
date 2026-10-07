@@ -392,7 +392,7 @@ jobs:
         if: steps.css_changes.outputs.css == 'true'
         run: |
           echo "=== CI PHASE: css-lint ==="
-          npx stylelint "**/*.css" "**/*.scss" "**/*.less" --allow-empty-input --config '{"rules":{"block-no-empty":true,"color-no-invalid-hex":true,"declaration-block-no-duplicate-properties":true}}' || {
+          make lint-css CSS_FILES='"**/*.css" "**/*.scss" "**/*.less"' STYLELINT_CONFIG=config/stylelint.config.mjs || {
             echo "::error::CSS LINT FAILED — stylelint found violations. Fix the CSS above."
             exit 1
           }

@@ -24,7 +24,7 @@ an unpinned npx download, or an untracked helper script.
 - Found files, linted-file count, and the final issue count remain visible.
 - The target performs no write or auto-fix operation.
 
-markdownlint-cli2 0.23.2 is pinned exactly in the existing OpenCode Node package
+markdownlint-cli2 0.23.3 is pinned exactly in the existing OpenCode Node package
 and lock. Its upstream documentation recommends local development dependency
 installation and supports explicit configuration plus file globs:
 

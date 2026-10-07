@@ -9,6 +9,11 @@
   },
   "devDependencies": {
     "esbuild": "0.28.1",
-    "markdownlint-cli2": "0.23.2"
+    "markdownlint-cli2": "0.23.3",
+    "stylelint": "17.16.0"
+  },
+  "overrides": {
+    "katex": "0.18.10",
+    "smol-toml": "1.9.0"
   }
 }
