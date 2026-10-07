@@ -230,6 +230,9 @@ build-executable:
 		DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
 		DEPENDENCY_PROFILE_PYTHON=3.12.14 \
 		DEPENDENCY_PROFILE_VALIDATE_ONLY=0
+	@locked_pyinstaller_version=$$($(UV) run --no-sync python scripts/dependency_profiles.py locked-version --root "$(CURDIR)" --profile dev-build --package pyinstaller); \
+		pyinstaller_version=$$($(UV) run --no-sync pyinstaller --version); \
+		test "$$pyinstaller_version" = "$$locked_pyinstaller_version" || { echo "Expected locked PyInstaller $$locked_pyinstaller_version, found $$pyinstaller_version"; exit 1; }
 	@$(UV) run --no-sync pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
@@ -443,8 +446,9 @@ build-linux-executable: worktree-guard ## Build and verify a real Linux PyInstal
 				export UV_NO_SYNC=1; \
 				python_version=$$(uv run python -c "import platform; print(platform.python_version())"); \
 				test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
+				locked_pyinstaller_version=$$(python scripts/dependency_profiles.py locked-version --root /workspace --profile dev-build --package pyinstaller); \
 				pyinstaller_version=$$(uv run pyinstaller --version); \
-				test "$$pyinstaller_version" = "6.20.0"; \
+				test "$$pyinstaller_version" = "$$locked_pyinstaller_version" || { echo "Expected locked PyInstaller $$locked_pyinstaller_version, found $$pyinstaller_version"; exit 1; }; \
 				architecture=$$(uname -m); \
 				pyinstaller_status=0; \
 				uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out || pyinstaller_status=$$?; \
