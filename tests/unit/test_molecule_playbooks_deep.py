@@ -308,6 +308,24 @@ class TestMoleculeTaskOrdering:
         assert not missing_syntax, f"test_sequence missing 'syntax': {', '.join(missing_syntax)}"
 
 
+class TestPromptEvalIsolation:
+    """Pin prompt template discovery to Molecule's repository root."""
+
+    @pytest.mark.parametrize("filename", ["converge.yml", "verify.yml"])
+    def test_templates_use_molecule_project_directory(self, filename: str) -> None:
+        path = PLAYBOOKS_DIR / "prompt_eval" / "default" / filename
+        plays = _load_yaml(path)
+        assert isinstance(plays, list) and len(plays) == 1
+        play = plays[0]
+        assert isinstance(play, dict)
+
+        templates_dir = play["vars"]["templates_dir"]
+        assert templates_dir == (
+            "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/templates/prompts"
+        )
+        assert "PWD" not in templates_dir
+
+
 class TestRuntimeValidateIsolation:
     """Pin the hosted runtime smoke to its explicit root and auth boundary."""
 
