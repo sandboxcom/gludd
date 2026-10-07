@@ -341,6 +341,42 @@ def test_stale_owned_node_cache_cleanup_is_exact_and_visible(
     assert "action=node-download-cache status=complete inspected=2 removed=1" in output
 
 
+def test_stale_playwright_browser_cache_is_owned_and_process_safe(
+    tmp_path: Path,
+) -> None:
+    approved = tmp_path.resolve()
+    cache = approved / "gludd-playwright-browsers"
+    cache.mkdir()
+    browser = cache / "webkit" / "browser"
+    browser.parent.mkdir()
+    browser.write_bytes(b"regenerable")
+    for path in (browser, browser.parent, cache):
+        os.utime(path, (100.0, 100.0))
+
+    active = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [7331],
+    )
+
+    assert active.skipped == (f"{cache}:active-pids=7331",)
+    assert cache.is_dir()
+
+    idle = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert idle.removed == (str(cache),)
+    assert idle.errors == ()
+    assert not cache.exists()
+
+
 def test_node_cache_cleanup_refuses_unsafe_fresh_and_unbounded_candidates(
     tmp_path: Path,
 ) -> None:

@@ -20,7 +20,9 @@ TMP_ROOT = Path("/tmp")
 WORKTREE_ROOT = TMP_ROOT / "gludd-worktrees"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 WORKTREE_GENERATED_DIRS = (".pytest_cache", ".mypy_cache", ".ruff_cache")
-SHARED_DOWNLOAD_CACHE_NAMES = frozenset({"gludd-uv-cache-public-v2"})
+SHARED_DOWNLOAD_CACHE_NAMES = frozenset(
+    {"gludd-playwright-browsers", "gludd-uv-cache-public-v2"}
+)
 WORKTREE_LIST_TIMEOUT_SECONDS = 10
 CLASSIFICATION_ENTRY_LIMIT = 40
 FAILURE_DETAIL_LIMIT = 3
