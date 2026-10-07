@@ -203,6 +203,19 @@ def test_each_mermaid_diagram_gets_an_independent_render_deadline() -> None:
     assert "window.performance.now() + DIAGRAM_DEADLINE_MS" in loop
 
 
+def test_ready_mermaid_svg_uses_the_synchronous_geometry_fast_path() -> None:
+    """Ready SVG geometry must not spend two WebKit frames per diagram."""
+    runtime = (DECK / "presentation.js").read_text(encoding="utf-8")
+    block = runtime.split("async function awaitStableSvg", 1)[1].split(
+        "function initializeMermaid", 1
+    )[0]
+
+    fast_path = "if (stableSvgGeometry(container))"
+    assert fast_path in block
+    assert block.index(fast_path) < block.index("await animationFrame()")
+    assert "await animationFrame();\n    await animationFrame();" not in block
+
+
 def test_boot_diagnostic_is_visible_until_runtime_proves_health() -> None:
     """A parser, file-origin, or CSP failure must be visible without JavaScript."""
     html = (DECK / "index.html").read_text(encoding="utf-8")
