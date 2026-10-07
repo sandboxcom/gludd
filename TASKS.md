@@ -668,6 +668,26 @@ seconds; Make validation reports 1,111 targets with zero duplicates and the
 196-target contract passes. `docs/features/GATE_RESOURCE_LIFECYCLE.md` and
 `BUGS.md` retain practitioner, ZDD, and rollback evidence. Commit, replacement
 exact gate, push, and hosted proof remain required.
+S83.166 terminal predecessor-admission continuation: the promotion target
+delegated to readiness without neutralizing the readiness checker's two
+diagnostic environment overrides. A stale or caller-supplied
+`RELEASE_ALLOW_INCOMPLETE_TASKS=1` or `RELEASE_ALLOW_INVALID_RECEIPT=1` could
+therefore bypass milestone or reviewed-head admission at the terminal boundary.
+The composed-Makefile regression failed first 1/1 and now requires validation
+and live promotion to pass explicit zero values at both readiness calls, while
+direct diagnostic readiness retains its scoped overrides. The unchanged
+regression passes 1/1 after the two-line repair. `make/99-azure-and-local-models.mk`,
+`config/coverage_release_predecessor_admission.ini`,
+`tests/unit/test_release_predecessor_admission.py`,
+`docs/features/RELEASE_PREDECESSOR_ADMISSION.md`, `BUGS.md`, and `TASKS.md` are
+the registered surface. The selected admission/promotion/readiness replay passes
+91/91 under warnings-as-errors; branch-aware coverage is 97% for the measured
+readiness checker, above 85% aggregate and 75% per-file. Scoped Ruff and strict
+mypy, Markdown, Make validation, the 196-target contract, task ledger/integrity,
+and all 237 resource-ownership entries are green. Collection reports
+119,693/119,711 tests with 18 intentional deselections and zero errors. The
+complete exact-candidate gate, hosted proof, predecessor live proofs,
+publication, deployment, and rollback remain open.
 
 ---
 
