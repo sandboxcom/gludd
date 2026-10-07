@@ -41,6 +41,7 @@ class FakeGit:
         subjects: dict[str, str] | None = None,
         changed_paths: dict[str, Sequence[str]] | None = None,
         malformed_path_heads: frozenset[str] = frozenset(),
+        merge_trees: dict[str, tuple[int, str, str]] | None = None,
     ) -> None:
         self.refs = list(refs)
         self.ancestors = ancestors
@@ -54,6 +55,7 @@ class FakeGit:
         self.subjects = subjects or {}
         self.changed_paths = changed_paths or {}
         self.malformed_path_heads = malformed_path_heads
+        self.merge_trees = merge_trees or {}
         self.calls: list[list[str]] = []
 
     def __call__(
@@ -117,6 +119,13 @@ class FakeGit:
             if output and head not in self.malformed_path_heads:
                 output += "\0"
             return self._result(args, 0, output)
+        if args[1] == "merge-tree":
+            head = args[-1]
+            returncode, stdout, stderr = self.merge_trees.get(
+                head,
+                (0, f"{EMPTY_HEAD}\0", ""),
+            )
+            return self._result(args, returncode, stdout, stderr)
         raise AssertionError(f"unexpected Git command: {args}")
 
     @staticmethod
@@ -124,6 +133,23 @@ class FakeGit:
         args: Sequence[str], returncode: int, stdout: str = "", stderr: str = ""
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args, returncode, stdout, stderr)
+
+
+def test_git_runner_turns_undecodable_evidence_into_bounded_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Arbitrary Git path bytes cannot escape as an uncaught decode error."""
+
+    def undecodable(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del args, kwargs
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(subprocess, "run", undecodable)
+
+    result = inventory._run(["git", "merge-tree"])
+
+    assert result.returncode == 124
+    assert "UnicodeDecodeError" not in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -746,6 +772,16 @@ def test_merge_queue_accounts_for_every_branch_and_queues_only_novel_heads() -> 
         "branch_count": 2,
         "expected_tip": UNIQUE_HEAD,
         "order": 1,
+        "preflight": {
+            "conflict_path_count": 0,
+            "conflict_paths": [],
+            "conflict_paths_truncated": False,
+            "expected_source": UNIQUE_HEAD,
+            "expected_target": TARGET_HEAD,
+            "path_redactions": 0,
+            "result_tree": EMPTY_HEAD,
+            "status": "clean",
+        },
         "refs": [
             "refs/heads/feature/novel-a",
             "refs/heads/feature/novel-z",
@@ -760,6 +796,167 @@ def test_merge_queue_accounts_for_every_branch_and_queues_only_novel_heads() -> 
     assert sum(entry["branch_count"] for entry in result["queue"]) + sum(
         group["branch_count"] for group in result["collapsed"]
     ) == result["counts"]["observed_branches"]
+
+
+def test_merge_queue_binds_bounded_conflict_preflight_into_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Git merge-tree evidence is bounded, redacted, and receipt-bound."""
+    monkeypatch.setattr(inventory, "CONFLICT_PATH_LIMIT", 2)
+    monkeypatch.setattr(inventory, "CONFLICT_PATH_CHAR_LIMIT", 12)
+    output = "\0".join(
+        [EMPTY_HEAD, "safe.py", "line\nbreak.py", "third.py", ""]
+    )
+    fake = FakeGit(
+        refs=[("refs/heads/feature/novel", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        merge_trees={UNIQUE_HEAD: (1, output, "")},
+    )
+
+    result = inventory.collect_merge_queue("development", 2, run=fake)
+
+    expected = {
+        "conflict_path_count": 3,
+        "conflict_paths": ["safe.py", "line�break.…"],
+        "conflict_paths_truncated": True,
+        "expected_source": UNIQUE_HEAD,
+        "expected_target": TARGET_HEAD,
+        "path_redactions": 1,
+        "result_tree": EMPTY_HEAD,
+        "status": "conflicted",
+    }
+    assert result["queue"][0]["preflight"] == expected
+    assert result["receipt"]["body"]["queue"][0]["preflight"] == expected
+    assert result["receipt"]["body"]["queue"][0]["preflight"] is not result[
+        "queue"
+    ][0]["preflight"]
+    assert result["bounds"]["conflict_path_limit"] == 2
+    assert result["bounds"]["conflict_path_char_limit"] == 12
+    assert result["bounds"]["merge_tree_output_char_limit"] > 0
+    assert [call for call in fake.calls if call[1] == "merge-tree"] == [
+        [
+            "git",
+            "merge-tree",
+            "--write-tree",
+            "--name-only",
+            "--no-messages",
+            "-z",
+            TARGET_HEAD,
+            UNIQUE_HEAD,
+        ]
+    ]
+
+
+def test_merge_queue_records_clean_conflict_preflight() -> None:
+    """Exit status, rather than an empty path list, proves a clean merge."""
+    fake = FakeGit(
+        refs=[("refs/heads/feature/novel", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+    )
+
+    result = inventory.collect_merge_queue("development", 2, run=fake)
+
+    assert result["queue"][0]["preflight"] == {
+        "conflict_path_count": 0,
+        "conflict_paths": [],
+        "conflict_paths_truncated": False,
+        "expected_source": UNIQUE_HEAD,
+        "expected_target": TARGET_HEAD,
+        "path_redactions": 0,
+        "result_tree": EMPTY_HEAD,
+        "status": "clean",
+    }
+
+
+def test_merge_queue_preserves_conflicted_status_without_file_paths() -> None:
+    """Git can report logical conflicts even when no individual path is listed."""
+    fake = FakeGit(
+        refs=[("refs/heads/feature/novel", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        merge_trees={UNIQUE_HEAD: (1, f"{EMPTY_HEAD}\0", "")},
+    )
+
+    result = inventory.collect_merge_queue("development", 2, run=fake)
+
+    assert result["queue"][0]["preflight"]["status"] == "conflicted"
+    assert result["queue"][0]["preflight"]["conflict_path_count"] == 0
+    assert result["queue"][0]["preflight"]["conflict_paths"] == []
+
+
+def test_merge_queue_fails_closed_when_merge_tree_is_unsupported() -> None:
+    """Unsupported merge-tree cannot degrade to a guessed merge algorithm."""
+    secret = "/Users/operator/private.py"
+    fake = FakeGit(
+        refs=[("refs/heads/feature/novel", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        merge_trees={UNIQUE_HEAD: (129, "", f"unknown option: {secret}")},
+    )
+
+    with pytest.raises(inventory.InventoryError) as error:
+        inventory.collect_merge_queue("development", 2, run=fake)
+
+    assert str(error.value) == "merge-tree conflict preflight unavailable"
+    assert secret not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        (1, f"{EMPTY_HEAD}\0unterminated.py", ""),
+        (1, "not-an-object\0conflict.py\0", ""),
+        (1, f"{EMPTY_HEAD}\0../escape.py\0", ""),
+        (0, f"{EMPTY_HEAD}\0unexpected.py\0", ""),
+        (1, f"{EMPTY_HEAD}\0conflict.py\0", "unexpected stderr"),
+    ],
+    ids=("unterminated", "tree", "unsafe-path", "clean-with-path", "stderr"),
+)
+def test_merge_queue_rejects_malformed_merge_tree_evidence(
+    result: tuple[int, str, str],
+) -> None:
+    """Only the documented NUL-delimited merge-tree shape is accepted."""
+    fake = FakeGit(
+        refs=[("refs/heads/feature/novel", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        merge_trees={UNIQUE_HEAD: result},
+    )
+
+    with pytest.raises(
+        inventory.InventoryError,
+        match="invalid merge-tree conflict preflight evidence",
+    ):
+        inventory.collect_merge_queue("development", 2, run=fake)
+
+
+def test_merge_queue_rejects_oversized_merge_tree_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Conflict inspection output has an independent hard character bound."""
+    monkeypatch.setattr(inventory, "MERGE_TREE_OUTPUT_CHAR_LIMIT", 10)
+    fake = FakeGit(
+        refs=[("refs/heads/feature/novel", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        merge_trees={UNIQUE_HEAD: (0, f"{EMPTY_HEAD}\0", "")},
+    )
+
+    with pytest.raises(inventory.InventoryError, match="output exceeded"):
+        inventory.collect_merge_queue("development", 2, run=fake)
+
+
+def test_merge_queue_rejects_conflict_path_scan_above_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even short merge-tree records cannot exceed the path-count ceiling."""
+    monkeypatch.setattr(inventory, "CONFLICT_PATH_SCAN_LIMIT", 1)
+    fake = FakeGit(
+        refs=[("refs/heads/feature/novel", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        merge_trees={
+            UNIQUE_HEAD: (1, f"{EMPTY_HEAD}\0a.py\0b.py\0", ""),
+        },
+    )
+
+    with pytest.raises(inventory.InventoryError, match="path bound exceeded"):
+        inventory.collect_merge_queue("development", 2, run=fake)
 
 
 def test_merge_queue_fails_closed_when_queued_tip_moves_before_emission() -> None:
@@ -933,7 +1130,7 @@ def test_merge_queue_receipt_binds_all_reconciliation_identities() -> None:
             "input": "development",
             "ref": "refs/heads/development",
         },
-        "version": 1,
+        "version": 2,
     }
     assert result["receipt"]["algorithm"] == "sha256"
     assert len(result["receipt"]["digest"]) == 64
@@ -979,6 +1176,15 @@ def test_receipt_replay_marks_integrated_prefix_and_returns_next_item() -> None:
     replayed = inventory.replay_merge_receipt(queued["receipt"], run=fake)
 
     assert replayed["mode"] == "reconciliation-receipt-replay"
+    assert replayed["bounds"] == {
+        "conflict_path_char_limit": inventory.CONFLICT_PATH_CHAR_LIMIT,
+        "conflict_path_limit": inventory.CONFLICT_PATH_LIMIT,
+        "conflict_path_scan_limit": inventory.CONFLICT_PATH_SCAN_LIMIT,
+        "local_ref_scan_limit": inventory.LOCAL_REF_SCAN_LIMIT,
+        "merge_queue_head_limit": inventory.MERGE_QUEUE_HEAD_LIMIT,
+        "merge_tree_output_char_limit": inventory.MERGE_TREE_OUTPUT_CHAR_LIMIT,
+        "receipt_json_char_limit": inventory.RECEIPT_JSON_CHAR_LIMIT,
+    }
     assert replayed["cursor"] == 1
     assert [entry["expected_tip"] for entry in replayed["integrated"]] == [
         PAGE_HEADS[0]
@@ -1048,7 +1254,10 @@ def test_receipt_replay_fails_closed_on_source_movement(moved_ref_index: int) ->
         inventory.replay_merge_receipt(queued["receipt"], run=fake)
 
 
-@pytest.mark.parametrize("field", ["target", "queue", "collapsed", "cursor"])
+@pytest.mark.parametrize(
+    "field",
+    ["target", "queue", "preflight", "collapsed", "cursor"],
+)
 def test_receipt_replay_rejects_content_tampering(field: str) -> None:
     """Every state-bearing receipt field participates in its digest."""
     queued, fake = _receipt_fixture()
@@ -1057,6 +1266,8 @@ def test_receipt_replay_rejects_content_tampering(field: str) -> None:
         tampered["body"]["target"]["checkpoint_head"] = EMPTY_HEAD
     elif field == "queue":
         tampered["body"]["queue"][0]["expected_tip"] = EMPTY_HEAD
+    elif field == "preflight":
+        tampered["body"]["queue"][0]["preflight"]["status"] = "conflicted"
     elif field == "collapsed":
         tampered["body"]["collapsed"][0]["expected_tip"] = EMPTY_HEAD
     else:
@@ -1066,6 +1277,32 @@ def test_receipt_replay_rejects_content_tampering(field: str) -> None:
         inventory.replay_merge_receipt(tampered, run=fake)
     assert str(error.value) == "invalid reconciliation receipt"
     assert EMPTY_HEAD not in str(error.value)
+
+
+def test_receipt_replay_rejects_resealed_preflight_identity_change() -> None:
+    """A recomputed digest cannot make inconsistent preflight identity valid."""
+    queued, fake = _receipt_fixture()
+    body = copy.deepcopy(queued["receipt"]["body"])
+    body["queue"][0]["preflight"]["expected_target"] = EMPTY_HEAD
+    resealed = inventory._seal_receipt(body)
+
+    with pytest.raises(inventory.InventoryError) as error:
+        inventory.replay_merge_receipt(resealed, run=fake)
+
+    assert str(error.value) == "invalid reconciliation receipt"
+
+
+def test_receipt_replay_rejects_version_without_preflight_contract() -> None:
+    """Version-1 receipts must be regenerated instead of replayed ambiguously."""
+    queued, fake = _receipt_fixture()
+    body = copy.deepcopy(queued["receipt"]["body"])
+    body["version"] = 1
+    resealed = inventory._seal_receipt(body)
+
+    with pytest.raises(inventory.InventoryError) as error:
+        inventory.replay_merge_receipt(resealed, run=fake)
+
+    assert str(error.value) == "invalid reconciliation receipt"
 
 
 def test_receipt_replay_rejects_out_of_order_integrated_head() -> None:

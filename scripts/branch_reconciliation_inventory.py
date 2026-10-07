@@ -18,7 +18,11 @@ MAX_LIMIT = 100
 COMMIT_SCAN_LIMIT = 500
 LOCAL_REF_SCAN_LIMIT = 10_000
 MERGE_QUEUE_HEAD_LIMIT = 256
-RECEIPT_VERSION = 1
+CONFLICT_PATH_SCAN_LIMIT = 10_000
+CONFLICT_PATH_LIMIT = 100
+CONFLICT_PATH_CHAR_LIMIT = 240
+MERGE_TREE_OUTPUT_CHAR_LIMIT = 262_144
+RECEIPT_VERSION = 2
 RECEIPT_JSON_CHAR_LIMIT = 16_777_216
 GIT_TIMEOUT_SECONDS = 10
 # Semantic inspection is exhaustive over the same already-bounded ref snapshot.
@@ -189,10 +193,27 @@ class SemanticCurrentSummaryPayload(CurrentSummaryPayload):
     head_summaries: list[HeadSemanticSummary]
 
 
+class ConflictPreflight(TypedDict):
+    """Bounded native-Git conflict evidence for one exact queue head."""
+
+    conflict_path_count: int
+    conflict_paths: list[str]
+    conflict_paths_truncated: bool
+    expected_source: str
+    expected_target: str
+    path_redactions: int
+    result_tree: str
+    status: Literal["clean", "conflicted"]
+
+
 class MergeQueueBounds(InventoryBounds):
     """Independent bounds for a sequential merge queue."""
 
+    conflict_path_char_limit: int
+    conflict_path_limit: int
+    conflict_path_scan_limit: int
     merge_queue_head_limit: int
+    merge_tree_output_char_limit: int
 
 
 class MergeQueueCounts(TypedDict):
@@ -216,6 +237,7 @@ class MergeQueueEntry(TypedDict):
     branch_count: int
     expected_tip: str
     order: int
+    preflight: ConflictPreflight
     refs: list[str]
     source_ref: str
     unique_commits: int
@@ -278,8 +300,12 @@ class MergeQueuePayload(TypedDict):
 class ReceiptReplayBounds(TypedDict):
     """Independent resource ceilings for receipt replay."""
 
+    conflict_path_char_limit: int
+    conflict_path_limit: int
+    conflict_path_scan_limit: int
     local_ref_scan_limit: int
     merge_queue_head_limit: int
+    merge_tree_output_char_limit: int
     receipt_json_char_limit: int
 
 
@@ -313,7 +339,7 @@ def _run(
             text=True,
             timeout=GIT_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
         return subprocess.CompletedProcess(list(argv), 124, "", str(exc))
 
 
@@ -865,6 +891,81 @@ def collect_summary(
     }
 
 
+def _merge_tree_conflict_preflight(
+    target: str,
+    source: str,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> ConflictPreflight:
+    """Return bounded conflict evidence from Git's native merge machinery."""
+    result = run(
+        [
+            "git",
+            "merge-tree",
+            "--write-tree",
+            "--name-only",
+            "--no-messages",
+            "-z",
+            target,
+            source,
+        ],
+        cwd,
+    )
+    if (
+        len(result.stdout) > MERGE_TREE_OUTPUT_CHAR_LIMIT
+        or len(result.stderr) > MERGE_TREE_OUTPUT_CHAR_LIMIT
+    ):
+        raise InventoryError("merge-tree conflict preflight output exceeded bound")
+    if result.returncode not in {0, 1}:
+        raise InventoryError("merge-tree conflict preflight unavailable")
+    if result.stderr or not result.stdout.endswith("\0"):
+        raise InventoryError("invalid merge-tree conflict preflight evidence")
+
+    records = result.stdout.split("\0")
+    result_tree = records[0]
+    if not _valid_object_id(result_tree):
+        raise InventoryError("invalid merge-tree conflict preflight evidence")
+    if result.returncode == 0:
+        if records != [result_tree, ""]:
+            raise InventoryError("invalid merge-tree conflict preflight evidence")
+        raw_paths: list[str] = []
+        status: Literal["clean", "conflicted"] = "clean"
+    else:
+        raw_paths = records[1:-1]
+        status = "conflicted"
+
+    if len(raw_paths) > CONFLICT_PATH_SCAN_LIMIT:
+        raise InventoryError("merge-tree conflict path bound exceeded")
+    if len(raw_paths) != len(set(raw_paths)) or any(
+        not path
+        or path.startswith("/")
+        or any(part in {"", ".", ".."} for part in path.split("/"))
+        for path in raw_paths
+    ):
+        raise InventoryError("invalid merge-tree conflict preflight evidence")
+
+    conflict_paths: list[str] = []
+    path_redactions = 0
+    for path in raw_paths[:CONFLICT_PATH_LIMIT]:
+        safe_path, _truncated, was_redacted = _redact_bounded(
+            path,
+            CONFLICT_PATH_CHAR_LIMIT,
+        )
+        conflict_paths.append(safe_path)
+        path_redactions += was_redacted
+    return {
+        "conflict_path_count": len(raw_paths),
+        "conflict_paths": conflict_paths,
+        "conflict_paths_truncated": len(raw_paths) > CONFLICT_PATH_LIMIT,
+        "expected_source": source,
+        "expected_target": target,
+        "path_redactions": path_redactions,
+        "result_tree": result_tree,
+        "status": status,
+    }
+
+
 def _verify_merge_queue_preconditions(
     groups: Sequence[SummaryGroup],
     target: TargetRecord,
@@ -987,12 +1088,27 @@ def _seal_receipt(body: ReconciliationReceiptBody) -> ReconciliationReceipt:
     }
 
 
+def _copy_conflict_preflight(preflight: ConflictPreflight) -> ConflictPreflight:
+    """Copy one merge-tree result into independently sealed receipt state."""
+    return {
+        "conflict_path_count": preflight["conflict_path_count"],
+        "conflict_paths": list(preflight["conflict_paths"]),
+        "conflict_paths_truncated": preflight["conflict_paths_truncated"],
+        "expected_source": preflight["expected_source"],
+        "expected_target": preflight["expected_target"],
+        "path_redactions": preflight["path_redactions"],
+        "result_tree": preflight["result_tree"],
+        "status": preflight["status"],
+    }
+
+
 def _copy_queue_entry(entry: MergeQueueEntry) -> MergeQueueEntry:
     """Copy one queue entry so receipt and display payloads cannot alias."""
     return {
         "branch_count": entry["branch_count"],
         "expected_tip": entry["expected_tip"],
         "order": entry["order"],
+        "preflight": _copy_conflict_preflight(entry["preflight"]),
         "refs": list(entry["refs"]),
         "source_ref": entry["source_ref"],
         "unique_commits": entry["unique_commits"],
@@ -1032,6 +1148,87 @@ def _new_receipt_body(
     }
 
 
+def _parse_receipt_preflight(value: object, expected_source: str) -> ConflictPreflight:
+    """Validate bounded merge-tree evidence from an untrusted receipt."""
+    preflight = _receipt_dict(
+        value,
+        frozenset(
+            {
+                "conflict_path_count",
+                "conflict_paths",
+                "conflict_paths_truncated",
+                "expected_source",
+                "expected_target",
+                "path_redactions",
+                "result_tree",
+                "status",
+            }
+        ),
+    )
+    expected_source_value = preflight["expected_source"]
+    expected_target_value = preflight["expected_target"]
+    result_tree_value = preflight["result_tree"]
+    status_value = preflight["status"]
+    truncated_value = preflight["conflict_paths_truncated"]
+    if (
+        expected_source_value != expected_source
+        or not isinstance(expected_target_value, str)
+        or not _valid_object_id(expected_target_value)
+        or not isinstance(result_tree_value, str)
+        or not _valid_object_id(result_tree_value)
+        or not isinstance(status_value, str)
+        or status_value not in {"clean", "conflicted"}
+        or not isinstance(truncated_value, bool)
+    ):
+        raise _invalid_receipt()
+
+    raw_paths = preflight["conflict_paths"]
+    if not isinstance(raw_paths, list) or len(raw_paths) > CONFLICT_PATH_LIMIT:
+        raise _invalid_receipt()
+    paths: list[str] = []
+    for raw_path in raw_paths:
+        if (
+            not isinstance(raw_path, str)
+            or not raw_path
+            or len(raw_path) > CONFLICT_PATH_CHAR_LIMIT
+            or not raw_path.isprintable()
+            or raw_path.startswith("/")
+            or any(part in {"", ".", ".."} for part in raw_path.split("/"))
+        ):
+            raise _invalid_receipt()
+        paths.append(raw_path)
+
+    path_count = _receipt_integer(
+        preflight["conflict_path_count"],
+        minimum=0,
+        maximum=CONFLICT_PATH_SCAN_LIMIT,
+    )
+    path_redactions = _receipt_integer(
+        preflight["path_redactions"],
+        minimum=0,
+        maximum=len(paths),
+    )
+    if (
+        len(paths) != min(path_count, CONFLICT_PATH_LIMIT)
+        or truncated_value != (path_count > CONFLICT_PATH_LIMIT)
+        or (
+            status_value == "clean"
+            and (path_count or paths or path_redactions or truncated_value)
+        )
+    ):
+        raise _invalid_receipt()
+    return {
+        "conflict_path_count": path_count,
+        "conflict_paths": paths,
+        "conflict_paths_truncated": truncated_value,
+        "expected_source": expected_source,
+        "expected_target": expected_target_value,
+        "path_redactions": path_redactions,
+        "result_tree": result_tree_value,
+        "status": cast(Literal["clean", "conflicted"], status_value),
+    }
+
+
 def _parse_receipt_queue(value: object) -> list[MergeQueueEntry]:
     """Validate ordered novel heads from an untrusted receipt body."""
     if not isinstance(value, list) or len(value) > MERGE_QUEUE_HEAD_LIMIT:
@@ -1042,6 +1239,7 @@ def _parse_receipt_queue(value: object) -> list[MergeQueueEntry]:
             "branch_count",
             "expected_tip",
             "order",
+            "preflight",
             "refs",
             "source_ref",
             "unique_commits",
@@ -1074,6 +1272,10 @@ def _parse_receipt_queue(value: object) -> list[MergeQueueEntry]:
                 "branch_count": branch_count,
                 "expected_tip": expected_tip,
                 "order": order,
+                "preflight": _parse_receipt_preflight(
+                    entry["preflight"],
+                    expected_tip,
+                ),
                 "refs": refs,
                 "source_ref": source_ref,
                 "unique_commits": _receipt_integer(
@@ -1184,6 +1386,9 @@ def _parse_receipt_body(value: object) -> ReconciliationReceiptBody:
         or target_ref in all_refs
         or len(all_refs) != len(set(all_refs))
         or len(all_heads) != len(set(all_heads))
+        or any(
+            entry["preflight"]["expected_target"] != base_head for entry in queue
+        )
     ):
         raise _invalid_receipt()
 
@@ -1243,11 +1448,20 @@ def _build_merge_queue(
     queue: list[MergeQueueEntry] = []
     for order, group in enumerate(novel_groups, start=1):
         refs = sorted(group["refs"])
+        if progress is not None:
+            progress(f"preflight={order}/{len(novel_groups)} head={group['head']}")
+        preflight = _merge_tree_conflict_preflight(
+            summary["target"]["head"],
+            group["head"],
+            run=run,
+            cwd=cwd,
+        )
         queue.append(
             {
                 "branch_count": group["branch_count"],
                 "expected_tip": group["head"],
                 "order": order,
+                "preflight": preflight,
                 "refs": refs,
                 "source_ref": refs[0],
                 "unique_commits": group["unique_commits"],
@@ -1326,7 +1540,11 @@ def _build_merge_queue(
     return {
         "bounds": {
             **summary["bounds"],
+            "conflict_path_char_limit": CONFLICT_PATH_CHAR_LIMIT,
+            "conflict_path_limit": CONFLICT_PATH_LIMIT,
+            "conflict_path_scan_limit": CONFLICT_PATH_SCAN_LIMIT,
             "merge_queue_head_limit": MERGE_QUEUE_HEAD_LIMIT,
+            "merge_tree_output_char_limit": MERGE_TREE_OUTPUT_CHAR_LIMIT,
         },
         "collapsed": collapsed,
         "counts": counts,
@@ -1486,8 +1704,12 @@ def replay_merge_receipt(
         progress(f"receipt=replayed cursor={new_cursor}/{len(body['queue'])}")
     return {
         "bounds": {
+            "conflict_path_char_limit": CONFLICT_PATH_CHAR_LIMIT,
+            "conflict_path_limit": CONFLICT_PATH_LIMIT,
+            "conflict_path_scan_limit": CONFLICT_PATH_SCAN_LIMIT,
             "local_ref_scan_limit": LOCAL_REF_SCAN_LIMIT,
             "merge_queue_head_limit": MERGE_QUEUE_HEAD_LIMIT,
+            "merge_tree_output_char_limit": MERGE_TREE_OUTPUT_CHAR_LIMIT,
             "receipt_json_char_limit": RECEIPT_JSON_CHAR_LIMIT,
         },
         "complete": new_cursor == len(body["queue"]),

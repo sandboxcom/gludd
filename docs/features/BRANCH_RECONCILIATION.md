@@ -84,11 +84,12 @@ repository above the 10,000-ref ceiling; no unbounded compatibility retry exists
 
 `make branch-reconciliation-summary RECONCILE_TARGET=development
 RECONCILE_LIMIT=100 RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0
-RECONCILE_QUIET_PROGRESS=0` starts at the empty cursor and consumes each bounded
-page until the terminal page. It preserves every observed branch name and
-canonical ref internally while grouping shared tips by classification and commit
-ID. The default bounded payload omits expanded groups and reports page count,
-total branches, deduplicated heads, `terminal: true`, and `truncated: false`.
+RECONCILE_QUIET_PROGRESS=0 RECONCILE_HEAD_SEMANTICS=0` starts at the empty cursor
+and consumes each bounded page until the terminal page. It preserves every
+observed branch name and canonical ref internally while grouping shared tips by
+classification and commit ID. The default bounded payload omits expanded groups
+and reports page count, total branches, deduplicated heads, `terminal: true`, and
+`truncated: false`.
 Setting `RECONCILE_DETAILS=1` exposes the grouped refs when a focused
 reconciliation needs them. Adding `RECONCILE_CURRENT_ONLY=1` then limits those
 groups to unique current heads and reports explicit selected-head and
@@ -106,7 +107,9 @@ example, the following invocation emits one current-only JSON document with an
 empty successful stderr stream:
 
 ```console
-make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=1 RECONCILE_CURRENT_ONLY=1 RECONCILE_QUIET_PROGRESS=1
+make branch-reconciliation-summary RECONCILE_TARGET=development \
+  RECONCILE_LIMIT=100 RECONCILE_DETAILS=1 RECONCILE_CURRENT_ONLY=1 \
+  RECONCILE_QUIET_PROGRESS=1 RECONCILE_HEAD_SEMANTICS=0
 ```
 
 Quiet mode does not redirect stderr, catch exceptions, or rewrite exit codes.
@@ -150,15 +153,45 @@ source is used. On interruption, conflict, or external ref movement, the consume
 stops without skipping ahead and regenerates the read-only queue from current
 refs. The inventory deliberately performs none of those merges itself.
 
+### Native Git conflict preflight
+
+Every queued head includes a `preflight` generated from the exact recorded target
+and source object IDs with `git merge-tree --write-tree --name-only --no-messages
+-z`. Git's modern
+[`merge-tree` contract](https://git-scm.com/docs/git-merge-tree) uses the same
+three-way content, rename, directory/file, and recursive merge-base machinery as
+a real merge without reading or writing the index or worktree. Gludd does not
+reimplement that algorithm, inspect conflict markers, or infer cleanliness from
+the path list. Exit status 0 means clean, status 1 means conflicted, and every
+other status—including a host Git without modern `--write-tree` support—fails
+closed without copying Git output into the diagnostic.
+
+The entry binds `expected_target`, `expected_source`, Git's resulting tree object
+ID, and a `clean` or `conflicted` status. For conflicts it records the documented
+NUL-delimited conflicted-file section, never the unstable human messages. At most
+10,000 conflict paths are accepted, the first 100 are displayed, displayed paths
+are capped at 240 characters, and controls or overlong values are visibly
+redacted. The complete observed count, truncation flag, and redaction count remain
+explicit. Standard output and error are each capped at 262,144 characters and
+each process retains the existing ten-second timeout. Duplicate, absolute,
+traversing, unterminated, oversized, or otherwise malformed evidence fails closed.
+
+This is a preflight against the receipt's original base target, not a prediction
+of the synthetic target after preceding queue items are integrated. The explicit
+target identity prevents overstatement. A sequential consumer still verifies the
+next exact source and current target immediately before a real merge; after a
+conflict or unrelated target movement it stops and regenerates the queue instead
+of treating historical preflight evidence as current.
+
 ### Resumable reconciliation receipts
 
-Every merge-queue payload includes a versioned `receipt`. Its canonical SHA-256
+Every merge-queue payload includes a version-2 `receipt`. Its canonical SHA-256
 digest covers the original target SHA, latest target checkpoint SHA, ordered
-novel queue entries, collapsed ancestor and patch-equivalent groups, and the
-zero-based integration cursor. Queue entries retain all alias refs and exact
-tips, while collapsed groups preserve the branches intentionally excluded from
-integration. The receipt therefore carries the complete no-branch-left-behind
-accounting across an interrupted sequential run.
+novel queue entries and their conflict preflights, collapsed ancestor and
+patch-equivalent groups, and the zero-based integration cursor. Queue entries
+retain all alias refs and exact tips, while collapsed groups preserve the branches
+intentionally excluded from integration. The receipt therefore carries the
+complete no-branch-left-behind accounting across an interrupted sequential run.
 
 The CLI flag `--replay-receipt` reads exactly one JSON receipt from bounded
 standard input. It remains compatible with the existing required target, limit,
@@ -168,6 +201,11 @@ is capped at 16,777,216 characters. Invalid JSON, schema drift, noncanonical
 ordering, bound violations, and digest mismatch all return the same content-free
 `invalid reconciliation receipt` error; received JSON, refs, and object IDs are
 never copied into diagnostics.
+
+Version 1 receipts predate conflict evidence and are deliberately rejected rather
+than replayed with an unproven field. Regenerate them through the read-only queue
+command. The outer queue remains schema v2 and the new entry member is additive
+for JSON consumers that already ignore unknown keys.
 
 Replay re-resolves the symbolic target, compares the complete bounded local-ref
 snapshot with every queued and collapsed `(ref, expected_tip)` pair, and checks
@@ -187,6 +225,12 @@ a new exhaustive queue after repository activity settles.
 
 ## Opt-in semantic head summaries
 
+The authoritative S83.125 implementation landed in commit
+`b9a9c7ea2d5714c7c076f83f020fa942e7a07abb` (`feat: add bounded reconciliation
+head semantics`). Later queue and receipt work layers on that source commit; a
+reconciliation should preserve its ancestry instead of recreating the feature or
+applying a patch-equivalent duplicate.
+
 Semantic review is explicit and terminal. Set `RECONCILE_DETAILS=1` and
 `RECONCILE_HEAD_SEMANTICS=1` on `branch-reconciliation-summary` to add a
 `head_summaries` array keyed by the already deduplicated full commit ID. The CLI
@@ -196,6 +240,13 @@ paths for that commit, the complete bounded path count, and explicit subject/lis
 truncation and path-redaction signals. Current-only mode enriches only its emitted
 unique heads, making it the narrowest release-review form.
 
+Semantic review and sequential integration are intentionally separate snapshots.
+`--head-semantics` cannot be combined with `--merge-queue` or `--replay-receipt`.
+Operators inspect one stable exhaustive snapshot, then generate a fresh verified
+queue and receipt from the stable refs they intend to integrate. This keeps
+subjects and paths out of the resumable receipt while its exact target, source
+tips, collapsed equivalents, ordering, and cursor remain content-addressed.
+
 The default remains schema v2 with exactly the prior keys and Git command set:
 when the flag is absent there is no `head_summaries` member and no semantic Git
 inspection. Opt-in evidence uses mature `git show --no-patch --format=%s` and
@@ -203,11 +254,13 @@ NUL-delimited `git diff-tree --name-only -z --first-parent` formats. The latter
 avoids newline/path quoting ambiguity and makes merge-head comparison explicit.
 Only validated full object IDs are passed as revisions.
 
-Semantic inspection is bounded to 256 deduplicated heads, 100 returned paths per
-head, 200 subject characters, 240 characters per displayed path, 262,144 output
-characters per Git invocation, and the existing ten-second command timeout. More
-than 256 selected heads or an oversized/malformed Git record fails closed before
-claiming complete evidence. A longer path list remains useful but explicit:
+Semantic inspection covers every deduplicated head in the already bounded
+snapshot, sharing its 10,000-local-ref ceiling. Each head is limited to 100
+returned paths, 200 subject characters, 240 characters per displayed path,
+262,144 output characters per Git invocation, and the existing ten-second command
+timeout. A repository above the shared head/ref ceiling or an oversized/malformed
+Git record fails closed before claiming complete evidence. A longer path list
+remains useful but explicit:
 `changed_path_count` retains the observed total while `changed_paths_truncated`
 marks the first-100 display. Paths stay repository-relative; absolute paths,
 empty/traversal components, and malformed NUL framing are rejected. Control
@@ -319,6 +372,17 @@ resumed. Gludd's receipt applies that durable lesson locally: it preserves the
 exact source tips and completed cursor, but reuses them only after target and
 source identities are proven unchanged or advanced by the next ordered merge.
 
+GitLab's long-lived conflict-service report
+[#28424](https://gitlab.com/gitlab-org/gitlab/-/issues/28424), opened in 2019,
+records `ListConflictFiles` exceeding a 55-second deadline for a moderately sized
+repository with an older merge request, more than 200 changed files, and a very
+large diff. A later GitLab report
+[#383730](https://gitlab.com/gitlab-org/gitlab/-/issues/383730) records conflict
+inspection for a roughly 2,000-commit merge request consuming enough memory to be
+OOM-killed. Those practitioner failures support per-head time and output limits,
+bounded displayed paths, serial preflights, and fail-closed behavior instead of
+an unbounded conflict service.
+
 The long-lived GitHub CLI issue
 [#6642](https://github.com/cli/cli/issues/6642), opened in 2022, records that
 remote file-list queries can be expensive and points practitioners to local
@@ -340,30 +404,42 @@ commit work. Cursor pages use Git's default refname ordering because
 pattern; parsing stops safely at the next ref namespace. It is strictly
 read-only: there is no checkout, merge, delete, ref update, or push path.
 
-Because it changes neither repository nor runtime state, deployment continuity
-is preserved. Default progress messages and structured counts expose bounded
-work and truncation. Quiet mode removes only deterministic narration and does not
-change the Git command set, scan bounds, result schema, or resource namespace.
+Because it changes neither refs, the index, the worktree, nor runtime service
+state, deployment continuity is preserved. Default progress messages and
+structured counts expose bounded work and truncation. Quiet mode removes only
+deterministic narration and does not change the Git command set, scan bounds,
+result schema, or resource namespace.
 Semantic mode is also read-only and foreground-only: at most two fixed list-form
 Git inspections run per bounded head, with progress on stderr and no files, locks,
 daemons, services, ports, background workers, ref changes, or deploy interruption.
+Queue generation and receipt replay have the same foreground-only boundary: they
+verify identities and emit JSON but never merge, delete, rewrite, or push a ref.
+Native preflight does not read or write the index or worktree and never creates a
+commit or ref. Git may materialize the documented result tree as an unreachable
+object; no reference exposes it, and normal Git object maintenance owns its
+lifecycle. No custom cleanup runs during deployment or rollback.
 An exhaustive run adds one terminal target resolution and one explicitly sorted
 local-head scan, emits `verify=terminal-ref-snapshot` progress by default, and
 shares the existing 10,000-ref, output, and timeout bounds. This preserves ZDD
-while keeping CPU, memory, subprocess, and JSON growth bounded. During rollout,
-old and new callers can run concurrently because the schema and Make interface do
-not change; only stale terminal evidence becomes a structured nonzero failure.
-Rollback is a normal revert of the terminal verifier, tests, and this document.
-The older textual inventory and one-branch patch comparison targets remain
-independently available throughout. No service restart, data migration, cleanup,
-or downtime is needed.
+while keeping CPU, memory, subprocess, and JSON growth bounded.
+
+Rollback is layered and requires no coordinated downtime. Stop requesting the
+opt-in semantic, queue, or replay flags first; default schema-v2 inventory callers
+remain unchanged. If code rollback is required, revert receipt and queue support
+before reverting the authoritative semantic source commit, so no surviving mode
+depends on removed types or validation paths. A version-2 receipt can be discarded
+and regenerated after rollback; it is never applied to repository state. The older
+textual inventory and one-branch patch comparison targets remain independently
+available throughout. No service restart, data migration, ref repair, or downtime
+is needed.
 
 Merge-queue mode adds only foreground, read-only Git inspection and bounded JSON
 serialization. It creates no checkout, index, lock, merge, commit, ref update,
-push, file, daemon, port, or service transition, so generation and rollback have
-no runtime outage window. Existing callers remain unchanged because the flag is
-opt-in. Rollback is a normal revert of the queue builder, its focused tests, and
-this documentation; previously emitted payloads can simply be discarded and
+push, daemon, port, or service transition; only Git's unreferenced result-tree
+objects described above may be materialized. Generation and rollback therefore
+have no runtime outage window. Existing callers remain unchanged because the flag
+is opt-in. Rollback is a normal revert of the queue builder, its focused tests,
+and this documentation; previously emitted payloads can simply be discarded and
 regenerated with the older exhaustive summary. There is no repository repair,
 data migration, service restart, or destructive cleanup step.
 
@@ -372,8 +448,9 @@ performs one bounded sorted scan and at most 256 ancestry probes, and writes one
 JSON result; it creates no file, lock, checkout, index entry, commit, merge, ref
 update, deletion, push, worker, daemon, port, or service transition. Rollback is
 a normal revert of receipt creation/replay, its focused tests, and these sections.
-Existing queue payloads can ignore the additive receipt member, and an operator
-can regenerate a fresh exhaustive queue without repository or runtime cleanup.
+Schema-v2 queue consumers can ignore additive members, while version-1 receipts
+must be regenerated rather than replayed. That requires no repository or runtime
+cleanup.
 
 ## Makefile integrity
 
