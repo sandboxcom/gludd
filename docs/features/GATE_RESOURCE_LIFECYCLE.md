@@ -220,6 +220,33 @@ shared browser downloads deliberately. Gludd reconciles those durable needs by
 retaining the cache while healthy and reclaiming only its exact project-owned
 root under measured pressure after repeat idle and identity proofs.
 
+### Repository gate-artifact reclamation
+
+The cache resource manager also recognizes this checkout's canonical
+`.gate-logs` directory as a removable generated-resource root. Removal remains
+operator-selective and fail closed: the candidate must be one existing,
+non-symlink, immediate child of that exact root. It cannot select the root,
+another checkout, a nested path, or a sibling receipt. Validation mode is the
+default; applying removal requires `CACHE_RESOURCE_VALIDATE_ONLY=0`. This lets
+disk-pressure recovery discard reproducible downloads such as
+`.gate-logs/ci-artifacts` without weakening the 90% admission ceiling or
+touching the current gate status.
+
+Practitioners report that local self-hosted runner workspaces otherwise remain
+after a run and recommend explicit end-of-run cleanup to avoid a time sweep
+colliding with active work in
+[GitHub Community discussion #205363](https://github.com/orgs/community/discussions/205363).
+An older runner-space report likewise shows large build layers exhausting the
+available filesystem in
+[GitHub Community discussion #179725](https://github.com/orgs/community/discussions/179725).
+Gludd therefore requires an exact generated child chosen after an ownership
+audit instead of broad host cleanup.
+
+This is ZDD-safe because no service, database, listener, or active process is
+restarted. Remote CI artifacts remain authoritative and may be downloaded
+again. Rollback removes the repository root from the allowlist; already removed
+local copies need no migration and are recreated only when requested.
+
 ### Distribution cleanup
 
 `make clean CLEAN_VALIDATE_ONLY=1` is the safe behavioral contract. Actual mode
