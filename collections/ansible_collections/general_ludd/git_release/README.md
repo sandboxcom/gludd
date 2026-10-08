@@ -8,9 +8,10 @@ investigation, branch planning, release preparation, artifact verification,
 and zero-downtime deployment. Every observation is recorded as
 machine-verifiable evidence so downstream planners can distinguish
 observations, inferences, proposed mutations, completed mutations, and
-verified outcomes. Read-only repository evidence crosses the runtime boundary
-through the authenticated Gludd HTTP API; collection roles do not import the
-core package.
+verified outcomes. Repository-planning operations cross the authenticated
+Gludd API boundary. Artifact verification is deliberately collection-native:
+it reads bounded local files without importing the core package or contacting
+a daemon.
 
 ## Implemented roles (`roles/`)
 
@@ -31,14 +32,29 @@ scoped authorization.
 | `release_plan` | Derive version, change set, compatibility, gate, artifact, provenance, rollout, and rollback plans. |
 | `pipeline_triage` | Correlate failing jobs to a root cause and propose or implement the smallest safe correction. |
 | `artifact_build` | Build once in a clean environment and record immutable inputs, digests, SBOM, and provenance. |
-| `artifact_verify` | Verify signatures, checksums, installability, smoke behavior, and release-page completeness. |
+| `artifact_verify` | Fail closed unless one local regular artifact and its dependency lock match exact SHA-256 evidence. |
 | `deploy_orchestrate` | Execute canary, rolling, or blue-green deployment with health and rollback gates. |
 | `release_recover` | Halt promotion, preserve evidence, roll back safely, and reconcile tags/releases after failure. |
 
 The private `collect_repo_evidence` composition role is the single transport
 owner reused by `repo_assess`, `history_investigate`, and `branch_plan`.
 
-## Python service API (`src/general_ludd/git_release/`)
+## Native artifact module
+
+`general_ludd.git_release.git_release` is a read-only module with identical
+normal and check-mode behavior. It accepts one root-relative artifact, one
+root-relative dependency lock, and exact lowercase SHA-256 values. The module
+rejects symbolic links, root escapes, non-regular inputs, in-read mutation,
+artifacts over 2 GiB, and locks over 16 MiB. Reads use 1 MiB chunks and pre/post
+file-descriptor metadata checks. It has no network, subprocess, listener,
+credential, or key interface.
+
+The canonical provenance and verification implementation lives in
+`plugins/module_utils/provenance.py`. The historical
+`general_ludd.git_release.provenance` path only re-exports that implementation,
+so Ansible and core callers cannot drift into two verifiers.
+
+## Python compatibility API (`src/general_ludd/git_release/`)
 
 Typed entry points consumed by the roles. Public surface is kept narrow on
 purpose — downstream code consumes the `RepoEvidence` shape rather than raw
@@ -51,15 +67,16 @@ subprocess output.
 | `contracts.py` | `ReleasePlan`, `ReleaseVerdict`, `ReleaseVerdictState`, `HelperAuthority` |
 | `release_state.py` | `ReleaseState`, `ReleaseStateMachine`, `AdvanceResult`, `TransitionError` |
 | `deployment.py` | `DeploymentOrchestrator`, `DeploymentConfig`, `DeploymentStrategy`, `HealthGate`, `TrafficShift`, `Decision`, `PromoteDecision`, `RollbackDecision`, `AbortDecision`, `HoldDecision`, `BlueGreenCutComplete` |
-| `provenance.py` | `ProvenanceRecord`, `Attestation`, `SignatureState`, `VerificationResult`, `build_provenance`, `verify_provenance` |
+| `provenance.py` | Compatibility re-exports for collection-owned provenance and artifact verification. |
 | `helper_catalog.py` | `discover_helpers`, `HelperCandidate`, `HelperInput`, `HelperOutput`, `ScoreEvidence` |
 | `helper_ranker.py` | `rank_helpers`, `TaskRequirements`, `GeneratedHelperPlan`, `DEFAULT_THRESHOLD`, `SCORE_CRITERIA`, `helper_build_file_changes` |
 | `source_registry.py` | `SourceRegistry`, `SourceEntry`, `SourceAuthority`, `FreshnessFlag`, `default_registry` |
 
 ## Tests
 
-5 unit-test modules under `tests/unit/test_git_release_*.py` (evidence,
-contracts, state, helpers, provenance).
+Unit, adversarial, integration, and Molecule coverage exercise exact digests,
+symbolic-link and traversal refusal, size ceilings, mutation detection, normal
+and check-mode parity, and zero-downtime rollback behavior.
 
 ```bash
 make test TESTFILE='tests/unit/test_git_release_evidence.py'
