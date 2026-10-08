@@ -1,10 +1,26 @@
 ---
-# prepare: no external fixtures needed; release_plan is self-contained.
-- name: Prepare - noop for git_release_expert
+- name: Prepare bounded git-release artifact fixtures
   hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8864', true) }}"
+    out_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-git-release-{{ mock_port }}"
   tasks:
-    - name: Sentinel (no fixtures required)
-      ansible.builtin.debug:
-        msg: "git_release_expert prepare: release_plan is self-contained."
+    - name: Create isolated fixture root
+      ansible.builtin.file:
+        path: "{{ out_dir }}/dist"
+        state: directory
+        mode: "0700"
+
+    - name: Write deterministic artifact
+      ansible.builtin.copy:
+        content: "gludd verified release artifact\n"
+        dest: "{{ out_dir }}/dist/gludd.whl"
+        mode: "0600"
+
+    - name: Write deterministic dependency lock
+      ansible.builtin.copy:
+        content: "version = 1\n"
+        dest: "{{ out_dir }}/uv.lock"
+        mode: "0600"

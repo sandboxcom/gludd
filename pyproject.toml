@@ -68,7 +68,13 @@ constraint-dependencies = [
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/general_ludd", "LICENSE", "THIRD_PARTY_LICENSES.md", "README.md"]
+include = [
+    "src/general_ludd",
+    "collections/ansible_collections/general_ludd/git_release/plugins/module_utils/provenance.py",
+    "LICENSE",
+    "THIRD_PARTY_LICENSES.md",
+    "README.md",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/general_ludd"]
@@ -77,6 +83,7 @@ packages = ["src/general_ludd"]
 "THIRD_PARTY_LICENSES.md" = "general_ludd/THIRD_PARTY_LICENSES.md"
 "infra/terraform/modules" = "general_ludd/terraform/modules"
 "infra/terraform/stacks" = "general_ludd/terraform/stacks"
+"collections/ansible_collections/general_ludd/git_release/plugins/module_utils/provenance.py" = "ansible_collections/general_ludd/git_release/plugins/module_utils/provenance.py"
 
 [tool.ruff]
 target-version = "py311"
