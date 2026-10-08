@@ -1,0 +1,45 @@
+---
+- name: Validate git-release service request
+  ansible.builtin.assert:
+    that:
+      - git_release_service_enabled | bool
+      - git_release_service_operation in ['artifact_build', 'artifact_verify', 'conflict_resolve', 'deploy_orchestrate', 'helper_build', 'helper_discover', 'helper_select', 'pipeline_triage', 'release_plan', 'release_recover', 'work_recover']
+      - git_release_service_request is mapping
+      - git_release_service_request | to_json | length <= 262144
+      - git_release_service_result_fact is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - git_release_daemon_url is match('^https?://')
+      - git_release_daemon_timeout | int >= 1
+      - git_release_daemon_timeout | int <= 30
+      - git_release_service_output_path | string | length <= 4096
+    quiet: true
+    fail_msg: Git-release execution requires an enabled, bounded typed operation request
+
+- name: Execute git-release operation
+  general_ludd.git_release.git_release_operation:
+    operation: "{{ git_release_service_operation }}"
+    request: "{{ git_release_service_request }}"
+    daemon_url: "{{ git_release_daemon_url }}"
+    psk: "{{ git_release_daemon_psk }}"
+    timeout: "{{ git_release_daemon_timeout | int }}"
+    idempotency_key: "{{ git_release_idempotency_key }}"
+  register: _git_release_operation
+  no_log: "{{ git_release_daemon_psk | length > 0 }}"
+
+- name: Publish git-release operation result
+  ansible.builtin.set_fact:
+    git_release_service_result: "{{ _git_release_operation.result }}"
+    "{{ git_release_service_result_fact }}": "{{ _git_release_operation.result }}"
+
+- name: Create git-release result directory
+  ansible.builtin.file:
+    path: "{{ git_release_service_output_path | dirname }}"
+    state: directory
+    mode: "0755"
+  when: git_release_service_output_path | length > 0
+
+- name: Write git-release operation result
+  ansible.builtin.copy:
+    content: "{{ _git_release_operation.result | to_nice_json }}"
+    dest: "{{ git_release_service_output_path }}"
+    mode: "0644"
+  when: git_release_service_output_path | length > 0

@@ -1,0 +1,45 @@
+---
+- name: Validate materials service request
+  ansible.builtin.assert:
+    that:
+      - materials_service_enabled | bool
+      - materials_service_operation in ['requirements_capture', 'material_select', 'polymer_process_plan', 'metal_forming_plan', 'strength_assess', 'joining_plan', 'welding_plan', 'machining_plan', 'additive_plan', 'textile_plan', 'molding_plan', 'multiphysics_model', 'tolerance_model', 'failure_analyze', 'manufacturing_plan', 'inspection_plan']
+      - materials_service_request is mapping
+      - materials_service_request | to_json | length <= 262144
+      - materials_service_result_fact is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - materials_daemon_url is match('^https?://')
+      - materials_daemon_timeout | int >= 1
+      - materials_daemon_timeout | int <= 30
+      - materials_service_output_path | string | length <= 4096
+    quiet: true
+    fail_msg: Materials execution requires an enabled, bounded typed operation request
+
+- name: Execute materials operation
+  general_ludd.materials.materials_operation:
+    operation: "{{ materials_service_operation }}"
+    request: "{{ materials_service_request }}"
+    daemon_url: "{{ materials_daemon_url }}"
+    psk: "{{ materials_daemon_psk }}"
+    timeout: "{{ materials_daemon_timeout | int }}"
+    idempotency_key: "{{ materials_idempotency_key }}"
+  register: _materials_operation
+  no_log: "{{ materials_daemon_psk | length > 0 }}"
+
+- name: Publish materials operation result
+  ansible.builtin.set_fact:
+    materials_service_result: "{{ _materials_operation.result }}"
+    "{{ materials_service_result_fact }}": "{{ _materials_operation.result }}"
+
+- name: Create materials result directory
+  ansible.builtin.file:
+    path: "{{ materials_service_output_path | dirname }}"
+    state: directory
+    mode: "0755"
+  when: materials_service_output_path | length > 0
+
+- name: Write materials operation result
+  ansible.builtin.copy:
+    content: "{{ _materials_operation.result | to_nice_json }}"
+    dest: "{{ materials_service_output_path }}"
+    mode: "0644"
+  when: materials_service_output_path | length > 0

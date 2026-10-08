@@ -68,7 +68,10 @@ credentials into the cache. Environment values outside `CI`, `GITHUB_ACTIONS`,
 and a restricted-input-present bit are retained. No pickle or executable cache
 format is accepted. Coverage remains Coverage.py's SQLite format and is opened
 through `CoverageData` in branch-aware, read-only validation before and after
-publication.
+publication. Testcase names have a 65,536-character ceiling so legitimate
+pytest-generated parameter IDs remain admissible; class and file identities
+retain their 4,096-character limits, and the complete JUnit artifact retains
+its 64 MiB limit.
 
 The writer creates private `0700` directories and `0600` files, refuses direct
 cache/generation symlinks, foreign owners, unsafe modes, special files, unknown
@@ -82,20 +85,105 @@ the receipt just staged; it is not cache admission and can never skip work.
 The cache admits at most two exact-SHA generation directories and at most 2 GiB
 including the incoming conservative manifest allowance. The disjoint failure
 namespace additionally caps each generation at 256 diagnostic receipts. When a
-bound is reached, the writer refuses new material and testing continues cold.
-This phase does not prune, start a daemon, open a listener, add a worker, change
-a database, or alter a serving process. Existing generations are never
+pass receipt for a third exact SHA arrives, the writer may retire only the
+uniquely oldest complete inactive generation. It validates every pass and
+failure receipt before considering retirement, keeps the newest existing
+generation as the current rollback generation, and never selects the incoming
+candidate. Equal modification times, empty generations, incomplete staging
+directories, unknown children, malformed receipts, symlinks, special files,
+unsafe ownership or modes, a busy mutation lock, and a changing tree all refuse
+rollover without deletion. Failure-only generations remain eligible only when
+every diagnostic is complete and valid; failure publication itself does not
+evict a generation.
+
+The pass and failure writers share the repository's maintained cross-platform
+`filelock` implementation, acquired nonblockingly through an owner-only lock
+file scoped to the private version directory, while they inspect and create
+lifecycle paths. The native implementation refuses symlink/reparse-point
+targets and preserves exclusion across POSIX and Windows. Retirement is also
+entry-bounded at 16,384 paths. Before mutation, the pass writer subtracts only
+the validated retirement candidate from the byte projection; if the new
+receipt would still exceed 2 GiB, it leaves both generations untouched. It then
+atomically renames the selected generation below a private quarantine
+directory, rechecks the no-symlink tree identity, creates the incoming
+generation while the quarantine blocks competing writers, and deletes only the
+unchanged quarantined tree. A rename, recheck, candidate handoff, or deletion
+failure refuses publication and restores the old generation when its complete
+snapshot remains intact. A leftover quarantine is ambiguous layout and fails
+closed on later writes rather than being silently repaired.
+
+Before publication can delete a generation, callers can invoke
+`ShadowBatchReceiptWriter.preview_retirement()` with the same complete request.
+The result is a frozen, content-free `RetirementPreview` containing only a
+decision (`retain`, `retire`, or `fail-closed`), a bounded reason, and a
+retirement count of zero or one. It never returns a cache path, Git SHA, receipt
+identity, environment value, or evidence payload. Preview and publication call
+the same bounded rollover planner, so the two-generation and 2 GiB decisions
+cannot drift into separate policies.
+
+Preview does not create the cache, version directory, lock file, quarantine, or
+candidate generation. When the lock file already exists, it uses `filelock`'s
+nonblocking descriptor primitive to share the writer's native exclusion without
+opening the lock through its mutating path API. It also compares bounded
+before/after cache snapshots. Contention, a newly appearing lock, changed
+evidence, unsafe lock identity, an ambiguous generation, or an entry-limit
+failure therefore produces `fail-closed` without modifying the tree. Repeating
+a preview against unchanged evidence returns the same decision.
+
+This lifecycle does not start a daemon, open a listener, add a worker, change a
+database, or alter a serving process. Existing action paths are never
 overwritten, and a corrupt existing action path is refused rather than repaired
-implicitly.
+implicitly. Receipt reads still cannot admit a test result: the canonical
+runner executes every selected batch, preserves fresh coverage, and reports
+`skips=0`.
 
 That makes rollout zero-downtime by construction: the feature writes optional
 external validation evidence after successful execution and cleanup. Removing
 or disabling the writer cannot change application traffic, the test plan, or
 the current release result. Receipt admission, warm-run reconciliation,
-pruning, and release-attestation consumption require later independently
-reviewed phases. The S83.179 follow-ups add only a bounded post-execution
-eligibility report, estimate-only progress summary, and sanitized non-reusable
-failure diagnostics, all with `skips=0`.
+and release-attestation consumption require later independently reviewed
+phases. This continuation adds only safe retirement of complete inactive
+generations so bounded shadow writes can continue. The other S83.179 follow-ups
+add only a bounded post-execution eligibility report, estimate-only progress
+summary, and sanitized non-reusable failure diagnostics, all with `skips=0`.
+
+### Dependency/public-API admission guard
+
+The read-only preview uses `filelock.lock_descriptor()` and
+`filelock.unlock_descriptor()`. The upstream
+[public API reference](https://py-filelock.readthedocs.io/en/stable/api.html#filelock.lock_descriptor)
+defines these as caller-owned-descriptor primitives that do not open, close,
+truncate, unlink, or fall back, and marks both as added in 3.30.0. The upstream
+[3.30.0 changelog](https://py-filelock.readthedocs.io/en/stable/changelog.html)
+records the same public API addition. Gludd therefore declares
+`filelock>=3.30.0`; the current exact lock resolves 4.0.12.
+
+`config/dependency_api_contracts.json` records that versioned API cohort and its
+exact consumer. `scripts/check_dependency_api_contract.py` fails closed unless
+the direct requirement guarantees at least 3.30.0, every filelock candidate in
+`uv.lock` is at least 3.30.0 and satisfies a direct declaration, the consumer
+imports both configured names from the configured public module, and the
+installed module exposes both names. Missing files, invalid TOML or JSON,
+duplicate or unknown JSON keys, unsupported schema, invalid requirements or
+versions, unsafe consumer paths, syntax errors, absent imports, and import
+failures are violations rather than skipped evidence. Future public APIs can be
+added as further inventory entries instead of adding one-off assertions.
+
+The checker has fixed resource ceilings: 64 KiB of contract metadata, 64
+contracts, 64 APIs and 64 consumers per contract, 256 characters per metadata
+name, 1 MiB of project metadata, 16 MiB of lock metadata, and 2 MiB per exact
+consumer. It parses only those bounded local files and imports configured
+installed modules; it performs no network access, dependency resolution,
+background work, filesystem mutation, or unbounded repository walk. This keeps
+the admission check deterministic and safe to run in the existing serial gate.
+
+Rollout is ZDD because this is a pre-merge validation boundary only: it does not
+change the receipt schema, lock protocol, cache contents, worker count, serving
+traffic, or database state. Rollback is a normal revert of the checker,
+inventory, test, and this documentation; the runtime remains on a compatible
+filelock version and the already-running receipt writer is untouched. A guard
+failure blocks the candidate change while the last green revision continues to
+serve and execute its canonical batches.
 
 ## Long-lived practitioner reports that shaped the boundary
 
@@ -116,6 +204,19 @@ report describes a failure mode that a release cache must not hide:
   reported duplicated and omitted tests across groups in 2024. Stored durations
   can help scheduling, but they are not result evidence and still require exact
   node-set reconciliation.
+- [pytest issue 6881](https://github.com/pytest-dev/pytest/issues/6881) tracked
+  long automatically generated parameter IDs from 2020 through 2026, with
+  explicit IDs as the longstanding workaround. Receipt normalization therefore
+  accommodates bounded long pytest names instead of treating every name above
+  4,096 characters as hostile, while still refusing names above 65,536.
+- [filelock issue 608](https://github.com/tox-dev/filelock/issues/608) records a
+  practitioner request against 3.29.7 for a native adapter over a caller-owned
+  descriptor. The report explains that the prior public surface required
+  adopting filelock's path/object lifecycle or copying private backend code;
+  neither was an acceptable boundary for Gludd's hardened open and identity
+  policy. Upstream closed the request through PR 620 and released the two
+  public descriptor functions in 3.30.0, which is why the guard binds the
+  imported names to that minimum rather than trusting a package name alone.
 - [Pants issue 10379](https://github.com/pantsbuild/pants/issues/10379) describes
   the operational need to force a cold rerun, and
   [issue 11622](https://github.com/pantsbuild/pants/issues/11622) shows how an
@@ -135,11 +236,18 @@ then separately reported the absent JUnit command boundary and runner session.
 Later failing-first cases pinned special permission bits, empty branch-data,
 duplicate JSON keys, ambiguous terminal outcomes, a second disk-reserve check
 immediately before receipt writes, UV toolchain drift, and internally inexact
-source identity. The repaired focused suite is 64/64 green; the five-file
-serial-runner regression slice is 231/231 green. The current integrated
-branch-aware report records 88% for both `scripts/ci_batch_receipts.py` and
-`scripts/run_ci_shards_serial.py`, with no measured file below 75%. Scoped
-Ruff, strict mypy, Markdown lint, task integrity, and task-ledger validation
-are green. Commit and exact-head full-gate evidence remain pending because the
-canonical pre-change gate still owns this worktree; no warm-hit or
-release-speed claim belongs to this phase.
+source identity. The bounded-rollover continuation first failed five focused
+cases because every third exact SHA still returned `generation-limit`. The
+repaired focused suite is 104/104 green and covers oldest-generation retirement,
+current/candidate preservation, active and malformed evidence, equal-age
+ambiguity, advisory-lock contention, pre-quarantine and post-rename races,
+failure-only generations, symlink confinement, byte-budget proof, and rollback
+after rename or deletion faults. It also covers deterministic content-free
+preview decisions, absent-cache retention, read-only descriptor contention,
+and before/after tree identity. The six-file receipt regression slice is
+249/249 green. Its branch-aware report records 89% for
+`scripts/ci_batch_receipts.py`; aggregate and branch coverage exceed 85%, and
+the measured file exceeds 75%. Scoped Ruff, strict mypy, and Markdown lint are
+green, and the feature-branch implementation is committed. Exact-head full-gate
+evidence remains pending integration; no warm-hit or release-speed claim
+belongs to this phase.

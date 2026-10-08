@@ -16,6 +16,7 @@
         }
       ],
       "integration": "ancestor",
+      "release_page_category": "Features",
       "source_branches": [
         "fix/chemistry-entities-268d591c",
         "agent/s83-114-chemistry-integration",
@@ -32,6 +33,7 @@
         }
       ],
       "integration": "ancestor",
+      "release_page_category": "Improvements",
       "source_branches": [
         "beta4-x509-chain-validation",
         "agent/s83-115-x509-integration"
@@ -51,6 +53,7 @@
         }
       ],
       "integration": "ancestor",
+      "release_page_category": "Improvements",
       "source_branches": [
         "fix/debounce-timing-2f52606f",
         "agent/s83-116-debounce-integration"
@@ -70,6 +73,7 @@
         }
       ],
       "integration": "ancestor",
+      "release_page_category": "Features",
       "source_branches": [
         "beta4-tls13-handshake",
         "agent/s83-117-tls13-closeout"
@@ -89,11 +93,32 @@
         }
       ],
       "integration": "ancestor",
+      "release_page_category": "Improvements",
       "source_branches": [
         "s83-128-active-worktree-venv-cleanup"
       ],
       "task_id": "S83.128",
       "title": "Invoking-worktree-safe virtual-environment reclamation"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "0a1ca6f7f7f6662cfb854b9b11f6762d9e52cb8e"
+        },
+        {
+          "role": "promotion_continuation",
+          "sha": "dd144d5f1cf5bc26fb996e7d8e954f40785f327a"
+        }
+      ],
+      "integration": "ancestor",
+      "release_page_category": "Features",
+      "source_branches": [
+        "agent/gate-failure-promotion",
+        "development"
+      ],
+      "task_id": "S83.178",
+      "title": "Fast integration admission for deterministic gate failures"
     }
   ],
   "excluded_open_tasks": [
@@ -113,5 +138,9 @@
     "truncated": false
   },
   "release": "v0.1.2",
+  "release_page": {
+    "repository": "sandboxcom/gludd",
+    "status": "unreleased"
+  },
   "schema_version": 1
 }

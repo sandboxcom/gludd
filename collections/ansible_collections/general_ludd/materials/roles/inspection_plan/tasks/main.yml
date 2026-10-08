@@ -1,11 +1,9 @@
 ---
-# inspection_plan role tasks — materials service.
-
-- name: Load inspection_plan defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _inspection_plan_defaults
-
-- name: Reference inspection_plan service API
-  ansible.builtin.debug:
-    msg: "inspection_plan routes via the materials service API (/api/materials/inspection_plan)."
+- name: Execute inspection_plan through the materials service
+  ansible.builtin.include_role:
+    name: general_ludd.materials.service_request
+  vars:
+    materials_service_enabled: "{{ inspection_plan_enabled }}"
+    materials_service_operation: inspection_plan
+    materials_service_request: "{{ inspection_plan_request }}"
+    materials_service_result_fact: inspection_plan_result

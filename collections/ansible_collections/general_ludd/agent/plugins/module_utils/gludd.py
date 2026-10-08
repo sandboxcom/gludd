@@ -29,11 +29,13 @@ Usage in a module
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -61,6 +63,22 @@ def error_result(msg: str, **extra: Any) -> dict[str, Any]:
     result = {"failed": True, "changed": False, "msg": msg}
     result.update(extra)
     return result
+
+
+def typed_operation_argument_spec(operations: tuple[str, ...]) -> dict[str, Any]:
+    """Return the shared argument contract for domain operation modules."""
+    return {
+        "operation": {
+            "type": "str",
+            "required": True,
+            "choices": list(operations),
+        },
+        "request": {"type": "dict", "required": True},
+        "daemon_url": {"type": "str", "default": DEFAULT_DAEMON_URL},
+        "psk": {"type": "str", "default": "", "no_log": True},
+        "timeout": {"type": "int", "default": DEFAULT_TIMEOUT},
+        "idempotency_key": {"type": "str", "default": ""},
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -279,3 +297,72 @@ class GluddClient:
         if response_schema is not None:
             payload["response_schema"] = response_schema
         return self.post("/admin/models/call", payload)
+
+
+def run_typed_daemon_operation(
+    module: Any,
+    *,
+    namespace: str,
+    endpoint: str,
+    client_factory: Callable[..., GluddClient] = GluddClient,
+    planned_result: dict[str, Any] | None = None,
+) -> None:
+    """Execute a bounded, idempotent domain operation for an Ansible module.
+
+    Domain collections share the transport and failure contract while retaining
+    their own allowlisted operation argument.  ``client_factory`` is injectable
+    so collection tests can keep transport fully offline.
+    """
+    operation: str = module.params["operation"]
+    request: dict[str, Any] = module.params["request"]
+    timeout: int = module.params["timeout"]
+    if timeout < 1 or timeout > DEFAULT_TIMEOUT:
+        module.fail_json(
+            **error_result(
+                f"timeout must be between 1 and {DEFAULT_TIMEOUT} seconds"
+            )
+        )
+        return
+    if module.check_mode:
+        module.exit_json(
+            changed=False,
+            operation=operation,
+            result=planned_result or {},
+        )
+        return
+
+    encoded = json.dumps(
+        {"operation": operation, "request": request},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
+    idempotency_key = module.params["idempotency_key"] or (
+        f"{namespace}:{hashlib.sha256(encoded).hexdigest()}"
+    )
+    client = client_factory(
+        base_url=module.params["daemon_url"],
+        psk=module.params["psk"],
+        timeout=timeout,
+    )
+    response = client.post(
+        endpoint,
+        {
+            "operation": operation,
+            "request": request,
+            "timeout_seconds": float(timeout),
+            "idempotency_key": idempotency_key,
+        },
+    )
+    status = response.get("_status", 0)
+    if response.get("_error") or status not in (200, 201):
+        detail = response.get("detail") or response.get("_error") or f"HTTP {status}"
+        module.fail_json(
+            **error_result(
+                f"{namespace} operation failed: {detail}",
+                status=status,
+            )
+        )
+        return
+    result = {key: value for key, value in response.items() if not key.startswith("_")}
+    module.exit_json(changed=False, result=result, operation=operation)

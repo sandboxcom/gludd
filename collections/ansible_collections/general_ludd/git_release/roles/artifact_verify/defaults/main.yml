@@ -1,2 +1,6 @@
 ---
-{}
+git_release_artifact_verify_enabled: false
+git_release_artifact_verify_request:
+  path: "{{ playbook_dir }}"
+git_release_artifact_verify_result_fact: git_release_artifact_verify_result
+git_release_artifact_verify_output_path: ""

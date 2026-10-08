@@ -1,7 +1,7 @@
-"""SearX metasearch engine connector — SSRF-guarded HTTP client.
+"""SearX metasearch connector with native-local and explicit HTTP paths.
 
-Self-contained: no imports from sibling connectors or a shared base.
-Queries a SearX instance's JSON API and returns structured results.
+Local servers are called directly through their Python integration.  A URL in
+``config`` explicitly selects the SSRF-guarded remote compatibility adapter.
 
 SECURITY NOTES:
   - ``base_url`` is SSRF-guarded via :func:`general_ludd.security.ssrf.host_is_blocked`
@@ -37,6 +37,12 @@ _searx_server: _HasGetInstanceUrl | None = None
 
 class _HasGetInstanceUrl(Protocol):
     def get_instance_url(self) -> str | None: ...
+
+
+class _HasNativeSearch(_HasGetInstanceUrl, Protocol):
+    def search(self, query: str, **kwargs: object) -> dict[str, object]: ...
+
+    def is_running(self) -> bool: ...
 
 
 def _get_local_searx_url() -> str | None:
@@ -101,19 +107,27 @@ def _extract_results(raw: object) -> list[SearXResult]:
 
 
 class SearXConnector:
-    """HTTP client for a SearX metasearch engine instance."""
+    """Native connector for local servers or HTTP adapter for remote ones."""
 
     def __init__(self, config: dict[str, object], local_server: _HasGetInstanceUrl | None = None) -> None:
         """Initialize the connector from config (or a local server instance)."""
         base_url: object = config.get("base_url")
+        self._local_server: _HasNativeSearch | None = None
+
+        if local_server is not None and callable(getattr(local_server, "search", None)):
+            self._local_server = cast(_HasNativeSearch, local_server)
 
         if (not base_url or base_url == "local") and local_server is not None:
             with contextlib.suppress(AttributeError):
                 base_url = local_server.get_instance_url()
 
+        if self._local_server is not None and (not base_url or base_url == "local"):
+            base_url = self._local_server.get_instance_url()
+
         if not base_url or not isinstance(base_url, str):
             raise ConnectorConfigError("base_url is required and must be a string")
         base_url = base_url.rstrip("/")
+        is_native = self._local_server is not None and base_url.startswith("searx+python://")
         parsed_base = base_url
 
         host = parsed_base
@@ -132,7 +146,7 @@ class SearXConnector:
         # metadata (169.254.169.254) and other private ranges by default.
         host_lower = host.strip("[]").lower()
         is_loopback = host_lower in {"localhost", "::1"} or host_lower.startswith("127.")
-        if host_is_blocked(host) and not allow_private and not is_loopback:
+        if not is_native and host_is_blocked(host) and not allow_private and not is_loopback:
             raise ConnectorConfigError(f"base_url host is blocked (loopback/private/metadata): {host!r}")
 
         self.base_url = base_url
@@ -163,6 +177,28 @@ class SearXConnector:
         )
 
     def _get(self, path: str, params: dict[str, str | int] | None = None) -> tuple[int, object]:
+        if self._local_server is not None:
+            if path == _SEARX_HEALTH_PATH:
+                return (200, {"ok": True}) if self._local_server.is_running() else (503, None)
+            selected = params or {}
+            engines_value = selected.get("engines")
+            engines = (
+                [item for item in str(engines_value).split(",") if item]
+                if engines_value
+                else None
+            )
+            categories_value = selected.get("categories", "general")
+            categories = [item for item in str(categories_value).split(",") if item]
+            native_body = self._local_server.search(
+                str(selected.get("q", "")),
+                categories=categories,
+                engines=engines,
+                language=str(selected.get("language", "en")),
+                safe_search=int(selected.get("safesearch", 0)),
+                page=int(selected.get("pageno", 1)),
+            )
+            return 200, native_body
+
         url = urljoin(self.base_url, path)
         try:
             with self._client() as client:
@@ -174,13 +210,13 @@ class SearXConnector:
                     unbound_get = cast(Callable[..., httpx.Response], httpx.Client.get)
                     resp = unbound_get(url, params=params)
             content = resp.content
-            body: object = None
+            remote_body: object = None
             if content:
                 try:
-                    body = _json.loads(content.decode("utf-8"))
+                    remote_body = _json.loads(content.decode("utf-8"))
                 except (ValueError, UnicodeDecodeError):
-                    body = None
-            return int(resp.status_code), body
+                    remote_body = None
+            return int(resp.status_code), remote_body
 
         except httpx.TimeoutException:
             logger.warning("SearX request timed out: %s", url)
@@ -195,10 +231,10 @@ class SearXConnector:
         page: int = 1,
         categories: str = "general",
     ) -> list[SearXResult]:
-        """Query the SearX instance and return structured results.
+        """Query the SearX integration and return structured results.
 
-        HTTP errors (4xx/5xx), timeouts, and non-JSON responses are treated as
-        empty result sets — this method never raises.
+        Native typed errors propagate.  Remote HTTP failures retain the legacy
+        empty-result compatibility behavior.
         """
         params: dict[str, str | int] = {
             "q": query,
@@ -216,6 +252,8 @@ class SearXConnector:
 
     def health(self) -> dict[str, object]:
         """Probe the SearX instance. Never raises — reports failure in the dict."""
+        if self._local_server is not None:
+            return {"ok": self._local_server.is_running(), "transport": "native"}
         try:
             status, _body = self._get(_SEARX_HEALTH_PATH)
             if 200 <= status < 400:

@@ -1,11 +1,10 @@
 ---
-# artifact_verify role tasks — git_release service.
-
-- name: Load artifact_verify defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _artifact_verify_defaults
-
-- name: Reference artifact_verify service API
-  ansible.builtin.debug:
-    msg: "artifact_verify routes via the git_release service API (/api/git_release/artifact_verify)."
+- name: Execute artifact-verify through the git-release service
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.service_request
+  vars:
+    git_release_service_enabled: "{{ git_release_artifact_verify_enabled }}"
+    git_release_service_operation: artifact_verify
+    git_release_service_request: "{{ git_release_artifact_verify_request }}"
+    git_release_service_result_fact: "{{ git_release_artifact_verify_result_fact }}"
+    git_release_service_output_path: "{{ git_release_artifact_verify_output_path }}"

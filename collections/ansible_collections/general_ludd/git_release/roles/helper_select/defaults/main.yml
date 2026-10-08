@@ -1,2 +1,6 @@
 ---
-{}
+git_release_helper_select_enabled: false
+git_release_helper_select_request:
+  path: "{{ playbook_dir }}"
+git_release_helper_select_result_fact: git_release_helper_select_result
+git_release_helper_select_output_path: ""

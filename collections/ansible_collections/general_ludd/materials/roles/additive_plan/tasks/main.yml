@@ -1,11 +1,9 @@
 ---
-# additive_plan role tasks — materials service.
-
-- name: Load additive_plan defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _additive_plan_defaults
-
-- name: Reference additive_plan service API
-  ansible.builtin.debug:
-    msg: "additive_plan routes via the materials service API (/api/materials/additive_plan)."
+- name: Execute additive_plan through the materials service
+  ansible.builtin.include_role:
+    name: general_ludd.materials.service_request
+  vars:
+    materials_service_enabled: "{{ additive_plan_enabled }}"
+    materials_service_operation: additive_plan
+    materials_service_request: "{{ additive_plan_request }}"
+    materials_service_result_fact: additive_plan_result

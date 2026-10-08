@@ -27,7 +27,7 @@ from general_ludd.decision_codification.schema import (
     canonical_sha256,
 )
 from general_ludd.decision_codification.telemetry import DecisionCodificationTelemetry
-from general_ludd.replay.schema import BoundedIdentifier, Sha256Digest
+from general_ludd.schemas.execution_identity import BoundedIdentifier, Sha256Digest
 
 MAX_OBSERVABILITY_RECEIPT_BYTES: Final[int] = 64 * 1024
 MAX_OBSERVATION_LATENCY_US: Final[int] = 300_000_000

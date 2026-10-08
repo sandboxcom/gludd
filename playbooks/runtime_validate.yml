@@ -1,8 +1,46 @@
 ---
 - name: Validate runtime profile
   hosts: localhost
+  connection: local
   gather_facts: false
+  vars:
+    runtime_profile: "{{ runtime_profile | default('native_uv') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-runtime-validate') }}"
+    runtime_probe_commands:
+      native_uv: [uv, --version]
+      native_pip: [python3, -m, pip, --version]
+      podman: [podman, --version]
   tasks:
-    - name: Run runtime profile validation
-      ansible.builtin.debug:
-        msg: "Runtime profile validation placeholder"
+    - name: Validate runtime profile selection
+      ansible.builtin.assert:
+        that:
+          - runtime_profile in runtime_probe_commands
+        fail_msg: Unsupported runtime profile.
+
+    - name: Probe selected runtime
+      ansible.builtin.command:
+        argv: "{{ runtime_probe_commands[runtime_profile] }}"
+      register: runtime_probe_result
+      changed_when: false
+
+    - name: Require a non-empty runtime version
+      ansible.builtin.assert:
+        that:
+          - runtime_probe_result.stdout | default('') | trim | length > 0
+        fail_msg: Selected runtime did not return a version.
+      when: not ansible_check_mode
+
+    - name: Create runtime evidence directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write runtime validation evidence
+      ansible.builtin.copy:
+        content: >-
+          {{ {'status': 'success', 'runtime_profile': runtime_profile,
+              'version': runtime_probe_result.stdout | default('check-mode')} | to_nice_json }}
+        dest: "{{ artifact_dir }}/runtime_validation_result.json"
+        mode: "0644"
+      when: not ansible_check_mode

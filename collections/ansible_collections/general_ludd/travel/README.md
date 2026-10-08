@@ -9,14 +9,15 @@ planning, and SearXNG metasearch integration.
 |---|---|
 | `flight_search` | Search flights between origin/destination with date, cabin, stops, and price filters. |
 | `hotel_search` | Search hotels at a destination with dates, budget, stars, and amenities filters. |
-| `searxng_search` | Query a SearXNG instance for web, news, or image results. |
+| `searxng_instance` | Manage a controller-local native SearXNG runtime idempotently. |
+| `searxng_search` | Search natively on the controller, or use an explicit remote compatibility transport. |
 | `trip_planner` | Generate a multi-day trip itinerary with daily activities and cost estimates. |
 
 ## Implemented roles (`roles/`)
 
 | Role | Purpose |
 |---|---|
-| `searxng_setup` | Install and configure a local SearXNG metasearch instance via Docker. |
+| `searxng_setup` | Configure and start the native controller-local SearXNG integration. |
 | `trip_planner` | Orchestrates the `trip_planner` module: validates inputs, calls the module, writes itinerary artifact. |
 
 ## Module utilities (`plugins/module_utils/`)
@@ -44,3 +45,29 @@ Shared Python utilities consumed by the modules above.
         depart_date: "2026-09-01"
       register: results
 ```
+
+### Native SearXNG search
+
+The official SearXNG source package must provide the `searx.webapp` import on
+the controller. The collection does not install a similarly named PyPI client,
+start Docker, or require a Terraform project.
+
+```yaml
+- hosts: localhost
+  tasks:
+    - name: Start the native runtime
+      general_ludd.travel.searxng_instance:
+        state: started
+        namespace: travel-demo
+
+    - name: Find accessible attractions
+      general_ludd.travel.searxng_search:
+        query: accessible attractions near Central Park
+        category: activities
+        namespace: travel-demo
+      register: attractions
+```
+
+See [Native SearXNG Integration](../../../../docs/features/SEARXNG_NATIVE_INTEGRATION.md)
+for lifecycle, check-mode, security, remote compatibility, and upstream support
+details.

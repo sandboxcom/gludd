@@ -1,11 +1,7 @@
 ---
-# simulate_domain role tasks — ai_ml service.
-
-- name: Load simulate_domain defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _simulate_domain_defaults
-
-- name: Reference simulate_domain service API
-  ansible.builtin.debug:
-    msg: "simulate_domain routes via the ai_ml service API (/api/ai_ml/simulate_domain)."
+- name: Route simulate_domain through the AI/ML service
+  ansible.builtin.include_role:
+    name: general_ludd.ai_ml.service_request
+  vars:
+    ai_ml_service_role: simulate_domain
+    ai_ml_service_task: simulate

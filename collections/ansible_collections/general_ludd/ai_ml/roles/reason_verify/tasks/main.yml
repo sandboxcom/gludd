@@ -1,11 +1,7 @@
 ---
-# reason_verify role tasks — ai_ml service.
-
-- name: Load reason_verify defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _reason_verify_defaults
-
-- name: Reference reason_verify service API
-  ansible.builtin.debug:
-    msg: "reason_verify routes via the ai_ml service API (/api/ai_ml/reason_verify)."
+- name: Route reason_verify through the AI/ML service
+  ansible.builtin.include_role:
+    name: general_ludd.ai_ml.service_request
+  vars:
+    ai_ml_service_role: reason_verify
+    ai_ml_service_task: question

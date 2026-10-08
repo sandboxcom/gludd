@@ -1,0 +1,84 @@
+---
+- name: Validate chemistry service request
+  ansible.builtin.assert:
+    that:
+      - chemistry_service_role | string | trim | length > 0
+      - chemistry_service_task in ['identity', 'research', 'property', 'reaction', 'protocol', 'stoichiometry', 'hazard', 'inventory', 'compute', 'spectra', 'analytical', 'electrochemistry', 'process']
+      - chemistry_tenant_id | string | trim | length > 0
+      - chemistry_entities is sequence
+      - chemistry_entities | length >= 1
+      - chemistry_entities | length <= 128
+      - chemistry_inputs is sequence
+      - chemistry_inputs | length <= 128
+      - chemistry_conditions is sequence
+      - chemistry_conditions | length <= 128
+      - chemistry_constraints is mapping
+      - chemistry_daemon_url is match('^https?://')
+      - chemistry_daemon_timeout | int >= 1
+      - chemistry_daemon_timeout | int <= 30
+    quiet: true
+    fail_msg: Chemistry routing requires a bounded typed request and HTTP(S) daemon URL
+
+- name: Build stable chemistry request
+  ansible.builtin.set_fact:
+    _chemistry_request_body:
+      request_id: >-
+        {{
+          chemistry_request_id
+          if chemistry_request_id | string | trim | length > 0
+          else 'ansible-' ~
+            (
+              (
+                chemistry_tenant_id ~ ':' ~ chemistry_service_task ~ ':' ~
+                (chemistry_entities | to_json)
+              ) | hash('sha256')
+            )
+        }}
+      tenant_id: "{{ chemistry_tenant_id }}"
+      task: "{{ chemistry_service_task }}"
+      entities: "{{ chemistry_entities }}"
+      inputs: "{{ chemistry_inputs }}"
+      conditions: "{{ chemistry_conditions }}"
+      facility_profile_id: "{{ chemistry_facility_profile_id }}"
+      constraints: "{{ chemistry_constraints }}"
+      approval_token: "{{ chemistry_approval_token }}"
+
+- name: Validate chemistry payload bound
+  ansible.builtin.assert:
+    that:
+      - _chemistry_request_body | to_json | length <= 262144
+    quiet: true
+    fail_msg: Chemistry request exceeds the 256 KiB control-plane payload bound
+
+- name: Resolve chemistry request
+  general_ludd.chemistry.chemistry_operation:
+    operation: route
+    request: "{{ _chemistry_request_body }}"
+    daemon_url: "{{ chemistry_daemon_url }}"
+    psk: "{{ chemistry_daemon_psk }}"
+    timeout: "{{ chemistry_daemon_timeout | int }}"
+    idempotency_key: "{{ chemistry_idempotency_key }}"
+  register: _chemistry_operation
+  no_log: "{{ chemistry_daemon_psk | length > 0 }}"
+
+- name: Validate chemistry result
+  ansible.builtin.assert:
+    that:
+      - _chemistry_operation.result is mapping
+    quiet: true
+    fail_msg: Gludd returned a malformed chemistry result
+  when: not ansible_check_mode
+
+- name: Publish chemistry result
+  ansible.builtin.set_fact:
+    chemistry_service_result: >-
+      {{
+        {
+          'planned': true,
+          'service_role': chemistry_service_role,
+          'operation': 'route',
+          'request': _chemistry_request_body,
+        }
+        if ansible_check_mode
+        else _chemistry_operation.result
+      }}

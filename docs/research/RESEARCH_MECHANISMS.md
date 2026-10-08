@@ -8,32 +8,31 @@ databases (arXiv, PubMed, Semantic Scholar, CORE), technical sources (GitHub,
 StackOverflow, MDN, PyPI), and general web engines (DuckDuckGo, Brave) — returning
 structured JSON that agents consume directly.
 
-This replaces ad-hoc web scraping and brittle search-engine wrappers with a single,
-cached, rate-limited API surface that the agent platform can query via the
-`SearxNGClient` in `general_ludd.retrieval`.
+This replaces ad-hoc web scraping and brittle search-engine wrappers with one
+search contract. Controller-local work uses `NativeSearxRuntime` in
+`general_ludd.searx`; the older HTTP client remains an explicit compatibility
+path for an operator-managed remote service.
 
 ## Architecture
 
 ```text
-┌─────────┐     JSON API      ┌───────────┐    80+ engines    ┌──────────────┐
-│  gludd  │ ──────────────────│  SearXNG   │ ──────────────────│  arXiv       │
-│  daemon │                   │ (Docker)   │                   │  PubMed      │
-│  agents │ ←── diskcache ──→ │ :8080      │                   │  Semantic    │
-└─────────┘                   └───────────┘                   │  Scholar     │
-                                                              │  GitHub      │
-                                                              │  StackOver.  │
-                                                              │  DuckDuckGo  │
-                                                              │  ...         │
-                                                              └──────────────┘
+┌─────────┐   direct WSGI    ┌─────────────┐    80+ engines   ┌──────────────┐
+│  gludd  │ ────────────────→│ searx.webapp│ ────────────────→│ arXiv        │
+│  daemon │  /search + JSON  │ in process  │                  │ PubMed       │
+│  agents │ ←─────────────── │ no listener │                  │ GitHub       │
+└─────────┘                  └─────────────┘                  │ DuckDuckGo   │
+                                                             │ ...          │
+                                                             └──────────────┘
 ```
 
 ### Components
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| SearXNG container | `infra/searxng/docker-compose.yml` | Self-hosted meta-search engine |
-| Engine config | `infra/searxng/settings.yml` | Research-optimised engine weights |
-| Python client | `src/general_ludd/retrieval/searx_client.py` | Async client with caching and rate limiting |
+| Native lifecycle | `src/general_ludd/searx/native.py` | Direct WSGI startup, search, health, and cleanup |
+| Generated config | `src/general_ludd/searx/config.py` | Namespaced secure upstream settings |
+| Ansible actions | `collections/ansible_collections/general_ludd/travel/plugins/action/` | Idempotent controller-local lifecycle and search |
+| Remote compatibility | `src/general_ludd/connectors/searx.py` | Explicit HTTP adapter with URL validation |
 
 ## Engine Weighting
 
@@ -178,27 +177,23 @@ the research backend is available.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GLUDD_SEARXNG_URL` | `http://localhost:8080` | SearXNG base URL |
+| `GLUDD_RESOURCE_NAMESPACE` | Project-path digest | Native resource namespace override |
+| `GLUDD_SEARXNG_URL` | Unset | Explicit remote compatibility service URL |
 | `GLUDD_SEARX_CACHE_TTL` | `1800` | Cache TTL in seconds |
 | `GLUDD_SEARX_RATE_LIMIT` | `2.0` | Minimum seconds between requests |
 | `GLUDD_SEARX_TIMEOUT` | `30.0` | HTTP request timeout in seconds |
 
 ## Setup
 
-```bash
-# Start SearXNG
-make searx-up
+Install the official SearXNG source package on the controller so that
+`searx.webapp` imports successfully. Gludd starts it through the native Python
+lifecycle and exposes no local port. Ansible users manage the runtime with
+`general_ludd.travel.searxng_instance`; check mode predicts the transition
+without importing or starting the service.
 
-# Verify it's working
-make searx-test
-
-# Stop and clean up
-make searx-down
-```
-
-SearXNG is exposed **only on 127.0.0.1:8080** — it is never reachable from the
-network. The `docker-compose.yml` drops all capabilities except `CHOWN`, `SETGID`,
-and `SETUID`.
+See [Native SearXNG Integration](../features/SEARXNG_NATIVE_INTEGRATION.md) for
+the supported upstream contract, examples, security posture, practitioner
+reports, and the explicit remote rollback path.
 
 ## Search Strategies for Agents
 

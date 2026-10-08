@@ -505,6 +505,60 @@ signature to the original ref, exact tip, plan digest, signer, and expiry preven
 disappearance, substitution, or stale approval replay from being accepted as
 operator intent; current keyring revocation provides an explicit fail-closed stop.
 
+### Bounded sealed-snapshot diff
+
+`--reconciliation-snapshot-diff` is an additive, read-only handoff for comparing
+two previously emitted `reconciliation-snapshot` documents. Standard input is an
+exact object with `before` and `after` members. Each member must retain the full
+schema-v2 snapshot envelope, redundant counts and head groups, configured bounds,
+and `snapshot_digest`; the diff replays the existing ref, object-ID, timestamp,
+enum, canonical-JSON, and SHA-256 validators before comparing anything. Extra
+keys, malformed or unsorted rows, duplicate refs or head aliases, inconsistent
+counts/statuses, an invalid seal, or more than 10,000 branch rows fails with one
+content-free error. Both snapshots must name the same target input and canonical
+target ref. Their target head, plan digest, and freshness digest may legitimately
+change between observations.
+
+Classification is deliberately structural. A canonical branch ref found only in
+the later snapshot is `added`; one found only in the earlier snapshot is
+`removed`; a ref present in both with a different effective head is
+`changed_head`; all other shared refs are `unchanged`. The effective head is the
+fresh `current_head` when present and the sealed `expected_tip` for an explicitly
+retired ref. This keeps retirement visible without treating a missing current ref
+as a free-form special case. Counts cover every row, while each independently
+sorted detail list is capped at 100 entries and has its own truncation bit.
+Snapshot digests and one digest of the common target identity bind the result.
+
+The two-snapshot canonical input is capped at 33,558,528 characters, each source
+snapshot keeps its existing 16,777,216-character and 10,000-entry ceilings, and
+the diff output is capped at 1,048,576 characters. Output contains only canonical
+branch refs, full object IDs, fixed classification keys, counts, bounds, and
+digests. It does not repeat approval metadata, reviewer data, retirement reasons,
+classifications, timestamps, subjects, paths, commit messages, or arbitrary error
+text. Branch refs can still disclose private work names, so the result belongs in
+the same access-controlled evidence store as its source snapshots.
+
+Diff mode never accepts a Git runner and never fetches, resolves, checks out,
+merges, updates, deletes, or otherwise mutates refs, indexes, objects, or
+worktrees. Rollout is ZDD-safe: deploy the additive reader before a coordinator
+starts retaining pairs of already supported snapshots. Rollback stops requesting
+the optional diff and discards its derived JSON; the sealed snapshots and all
+repository/service state remain unchanged. A rejected comparison is repaired by
+regenerating whole snapshots, never by editing a digest or partial detail list.
+
+The long-lived GitHub Community report
+[#120203](https://github.com/orgs/community/discussions/120203), opened in 2024,
+shows that a generated `gh-readonly-*` queue head can make the original source
+branch difficult to identify and can make a naive up-to-date test always succeed.
+The broader merge-queue feedback thread
+[#46757](https://github.com/orgs/community/discussions/46757), open from 2023 to
+2025, includes reports of removed/re-added queue entries producing unreferenced
+commits and temporary queue refs disappearing while other jobs still need them.
+Those practitioner failures are why the diff compares retained original
+ref/object identities from two sealed observations, reports additions/removals
+explicitly, and never tries to reconstruct prior state from a current temporary
+queue ref.
+
 ## Fresh remote-tracking reconciliation
 
 `--remote-tracking` extends the local inventory to one explicitly selected,

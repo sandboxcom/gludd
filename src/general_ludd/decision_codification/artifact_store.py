@@ -34,6 +34,7 @@ _PROJECT_PATTERN: Final[re.Pattern[str]] = re.compile(
 )
 _RECORD_SCHEMA: Final[str] = "gludd.decision-authenticated-artifact/v1"
 _DOMAIN: Final[bytes] = b"general_ludd.decision_codification.artifacts.v1\x00"
+_GENERATION_STATE_PURPOSE: Final[str] = "shared-generation-state/v1"
 _MAX_RECEIPT_CHAIN: Final[int] = 256
 
 
@@ -116,6 +117,37 @@ class DecisionArtifactStore:
         except IntegrityError:
             raise ArtifactIntegrityError(
                 "observability receipt authentication tag mismatched"
+            ) from None
+
+    def decision_generation_state_hmac(
+        self,
+        state: Mapping[str, object],
+    ) -> str:
+        """Authenticate one bounded shared-generation state record."""
+        payload = self._generation_state_hmac_payload(state)
+        return f"hmac-sha256:{self._integrity.sign(payload)}"
+
+    def verify_decision_generation_state_hmac(
+        self,
+        state: Mapping[str, object],
+        authentication_tag: str,
+    ) -> None:
+        """Verify a shared-generation record through the artifact trust root."""
+        if (
+            not isinstance(authentication_tag, str)
+            or not authentication_tag.startswith("hmac-sha256:")
+        ):
+            raise ArtifactIntegrityError(
+                "generation state authentication tag is invalid"
+            )
+        try:
+            self._integrity.verify(
+                self._generation_state_hmac_payload(state),
+                authentication_tag.removeprefix("hmac-sha256:"),
+            )
+        except (IntegrityError, TypeError, ValueError):
+            raise ArtifactIntegrityError(
+                "generation state authentication tag mismatched"
             ) from None
 
     def create_rule_bundle(self, bundle: DecisionRuleBundleV1) -> None:
@@ -339,6 +371,17 @@ class DecisionArtifactStore:
             "project_id": project_id,
             "policy_digest": policy_digest,
             "receipt_digest": receipt_digest,
+        }
+
+    @staticmethod
+    def _generation_state_hmac_payload(
+        state: Mapping[str, object],
+    ) -> dict[str, object]:
+        if not isinstance(state, dict):
+            raise ArtifactIntegrityError("generation state must be an object")
+        return {
+            "purpose": _GENERATION_STATE_PURPOSE,
+            "state": state,
         }
 
 

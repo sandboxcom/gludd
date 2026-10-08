@@ -1,0 +1,20 @@
+---
+chemistry_daemon_url: "http://127.0.0.1:8000"
+chemistry_daemon_psk: ""
+chemistry_daemon_timeout: 30
+chemistry_idempotency_key: ""
+chemistry_request_id: ""
+chemistry_tenant_id: default
+chemistry_entities: []
+chemistry_inputs: []
+chemistry_conditions: []
+chemistry_facility_profile_id: null
+chemistry_constraints:
+  deadline_s: 300
+  budget_usd: 0.0
+  data_classification: internal
+  allowed_tools: []
+  allowed_licenses: []
+chemistry_approval_token: null
+chemistry_service_role: ""
+chemistry_service_task: ""

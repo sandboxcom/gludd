@@ -2119,6 +2119,14 @@ jobs:
           else
             echo "No stale draft to clean for ${{ github.ref_name }}."
           fi
+      - name: Validate deterministic v0.1.2 release notes
+        if: github.ref_name == 'v0.1.2'
+        run: |
+          make release-page-notes \
+            TAG="${{ github.ref_name }}" \
+            RELEASE_PAGE_NOTES_LEDGER=config/v012_completed_backlog_reconciliation.json \
+            RELEASE_PAGE_NOTES_OUTPUT=docs/releases/v0.1.2.md \
+            RELEASE_PAGE_NOTES_VALIDATE_ONLY=1
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0 (node24)
         with:
           # Use the REAL git tag (with "v" prefix), not the PEP 440 version.
@@ -2133,7 +2141,11 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: release-assets/*
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          # v0.1.2 has an admitted, ledger-backed body. Other tags retain the
+          # mature action's server-generated notes rather than receiving an
+          # empty or accidentally reused v0.1.2 body.
+          body_path: ${{ github.ref_name == 'v0.1.2' && 'docs/releases/v0.1.2.md' || '' }}
+          generate_release_notes: ${{ github.ref_name != 'v0.1.2' }}
       - name: Verify published rollback receipt
         # Re-download the smallest complete receipt evidence set. The local
         # staging directory is not publication evidence: hosted asset bytes,

@@ -17,5 +17,7 @@ networking__scan_ports: ""
 networking__scan_type: "syn"
 networking__dissector_name: ""
 networking__dissector_language: "lua"
+networking__dissector_port: 0
+networking__dissector_fields: []
 networking__diagnostic_scenario: ""
 networking__tool_context: ""

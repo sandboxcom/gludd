@@ -1,4 +1,4 @@
-"""Pin the five-item v0.1.2 completed-backlog Reveal panel."""
+"""Pin the six-item v0.1.2 completed-backlog Reveal panel."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ COMPLETED_ITEMS = (
     ("S83.116", "Monotonic debounce, throttle, and watchdog state"),
     ("S83.117", "Authenticated TLS 1.3 state and directional records"),
     ("S83.128", "invoking-worktree-safe virtual-environment reclamation"),
+    ("S83.178", "Fast integration admission for deterministic gate failures"),
 )
 
 
@@ -22,12 +23,12 @@ def _completed_backlog_contract(deck: str) -> str:
     return deck.split(opening, 1)[1].split("</div>", 1)[0]
 
 
-def test_reveal_panel_names_the_exact_five_completed_items() -> None:
-    """The v0.1.2 panel must add S83.128 without closing later work."""
+def test_reveal_panel_names_the_exact_six_completed_items() -> None:
+    """The v0.1.2 panel must add S83.178 without closing later work."""
     deck = DECK.read_text(encoding="utf-8")
     contract = _completed_backlog_contract(deck)
 
-    assert "5 formally closed" in contract
+    assert "6 formally closed" in contract
     expected_entries = tuple(
         f"<li><strong>{task_id} &mdash; {title}</strong></li>"
         for task_id, title in COMPLETED_ITEMS
@@ -35,7 +36,8 @@ def test_reveal_panel_names_the_exact_five_completed_items() -> None:
     positions = [contract.index(entry) for entry in expected_entries]
     assert positions == sorted(positions)
     assert contract.count("<li><strong>S83.") == len(COMPLETED_ITEMS)
-    assert "S83.169" not in contract
+    for task_id in ("S83.157", "S83.158", "S83.163", "S83.166", "S83.169"):
+        assert f"<li><strong>{task_id}" not in contract
 
 
 def test_reveal_update_preserves_slides_tokens_and_decision_api_content() -> None:

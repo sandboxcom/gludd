@@ -1,7 +1,8 @@
 ---
-- name: restart searxng
-  ansible.builtin.command:
-    cmd: docker compose restart
-    chdir: "{{ searxng_config_dir | default('/etc/searxng') }}"
-  changed_when: true
-  ignore_errors: true
+- name: Restart native searxng
+  general_ludd.travel.searxng_instance:
+    state: restarted
+    namespace: "{{ searxng_namespace }}"
+    settings_path: "{{ searxng_settings_path }}"
+  when: searxng_enabled | bool
+  listen: restart searxng

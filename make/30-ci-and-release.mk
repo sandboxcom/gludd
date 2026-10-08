@@ -503,6 +503,30 @@ check-version-bump-atomicity:
 check-tag-signing:
 	@$(UV) run python scripts/check_tag_signing.py $(TAG)
 
+RELEASE_PAGE_NOTES_LEDGER ?= config/v012_completed_backlog_reconciliation.json
+RELEASE_PAGE_NOTES_OUTPUT ?= docs/releases/v0.1.2.md
+RELEASE_PAGE_NOTES_VALIDATE_ONLY ?= 0
+
+.PHONY: release-page-notes _release-page-notes-preview
+release-page-notes: ## Build or validate deterministic ledger-backed GitHub release-page notes.
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-page-notes TAG=v0.1.2 RELEASE_PAGE_NOTES_LEDGER=path RELEASE_PAGE_NOTES_OUTPUT=path RELEASE_PAGE_NOTES_VALIDATE_ONLY=0|1"; exit 2; }
+	@[ -n "$(RELEASE_PAGE_NOTES_LEDGER)" ] || { echo "ERROR: RELEASE_PAGE_NOTES_LEDGER is required"; exit 2; }
+	@[ -n "$(RELEASE_PAGE_NOTES_OUTPUT)" ] || { echo "ERROR: RELEASE_PAGE_NOTES_OUTPUT is required"; exit 2; }
+	@case "$(RELEASE_PAGE_NOTES_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: RELEASE_PAGE_NOTES_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@$(UV) run python scripts/release_page_notes.py "$(TAG)" \
+		--ledger "$(RELEASE_PAGE_NOTES_LEDGER)" \
+		--output "$(RELEASE_PAGE_NOTES_OUTPUT)" \
+		$(if $(filter 1,$(RELEASE_PAGE_NOTES_VALIDATE_ONLY)),--validate-only,)
+
+_release-page-notes-preview:
+	@if [ "$(TAG)" = "v0.1.2" ]; then \
+		$(MAKE) --no-print-directory release-page-notes \
+			TAG="$(TAG)" \
+			RELEASE_PAGE_NOTES_LEDGER=config/v012_completed_backlog_reconciliation.json \
+			RELEASE_PAGE_NOTES_OUTPUT=docs/releases/v0.1.2.md \
+			RELEASE_PAGE_NOTES_VALIDATE_ONLY=1; \
+	fi
+
 generate-release-notes:
 	@$(UV) run python scripts/generate_release_notes.py $(TAG)
 
@@ -512,7 +536,7 @@ check-asset-retention:
 check-release-audit-trail:
 	@$(UV) run python scripts/check_release_audit_trail.py $(TAG)
 
-release-dry-run: _release-dry-run-guard
+release-dry-run: _release-page-notes-preview _release-dry-run-guard
 	@echo "=== DRY RUN: All preconditions met for $(TAG) ==="
 	@echo "=== Run 'make release-cut TAG=$(TAG) MSG=\"release notes\"' to cut ==="
 
@@ -571,13 +595,18 @@ release-delete:
 # draft by uploading the remaining assets (release-upload-assets) and passing
 # verify-release-completeness, then publish via gh release edit --draft=false.
 # Usage: make release-create TAG=v0.1.0-alpha.1
-release-create:
+release-create: _release-page-notes-preview
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-create TAG=v0.1.0-alpha.1"; exit 1; }
 	@$(MAKE) -s require-ci-green
 	@$(MAKE) -s build-executable
 	@echo "NOTE: INCOMPLETE RELEASE — publishing as DRAFT (single binary only)."
 	@PRE=""; echo "$(TAG)" | grep -q -- "-" && PRE="--prerelease"; \
-	gh release create "$(TAG)" -R sandboxcom/gludd dist/gludd --title "$(TAG)" --notes "Release $(TAG) (manual single-binary draft — complete via CI artifacts before publishing)" --draft $$PRE
+	if [ "$(TAG)" = "v0.1.2" ]; then \
+		set -- --notes-file "docs/releases/v0.1.2.md"; \
+	else \
+		set -- --notes "Release $(TAG) (manual single-binary draft — complete via CI artifacts before publishing)"; \
+	fi; \
+	gh release create "$(TAG)" -R sandboxcom/gludd dist/gludd --title "$(TAG)" "$$@" --draft $$PRE
 	@echo "Draft created. Next: make release-upload-assets TAG=$(TAG) FILES='...' then make verify-release-completeness TAG=$(TAG) before un-drafting."
 
 # Upload additional assets to an EXISTING GitHub Release — the repair path for

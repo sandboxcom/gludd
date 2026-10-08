@@ -454,8 +454,14 @@ def test_promotion_plan_receipt_and_cas_failures_are_detected(
         controller.promote(altered, expected_candidate_digest=bundle.candidate_digest)
 
     def lose_cas(
-        pointer: GenerationPointer, *, expected_candidate_digest: str | None
-    ) -> None:
+        pointer: GenerationPointer,
+        *,
+        expected_candidate_digest: str | None,
+        expected_generation: GenerationPointer | None = None,
+    ) -> GenerationPointer | None:
+        assert expected_generation is not None
+        assert expected_generation.candidate_digest == expected_candidate_digest
+        assert pointer.project_id == expected_generation.project_id
         return None
 
     monkeypatch.setattr(controller.pointers, "compare_and_swap", lose_cas)

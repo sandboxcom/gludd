@@ -1,7 +1,5 @@
 ---
-# searxng_setup role defaults
-
-searxng_version: "latest"
-searxng_port: 8888
-searxng_secret: ""
-searxng_bind_address: "127.0.0.1"
+# Native integration is controller-local and owns no listener or child process.
+searxng_enabled: true
+searxng_namespace: gludd-travel
+searxng_settings_path: ""

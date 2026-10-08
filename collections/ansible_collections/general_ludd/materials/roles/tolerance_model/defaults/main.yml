@@ -1,2 +1,3 @@
 ---
-{}
+tolerance_model_enabled: false
+tolerance_model_request: {}

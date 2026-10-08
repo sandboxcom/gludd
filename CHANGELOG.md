@@ -30,13 +30,24 @@ closed with test, coverage, documentation, and exact commit evidence.
   now preserves the invoking worktree, refuses active peers and stale or
   unreadable registration evidence, and reclaims only inactive registered
   peers. Implementation: `a596897e3`; formal closeout: `5ec87af01`.
+- **S83.178 — Fast integration admission for deterministic gate failures.** A
+  canonical manifest now assigns deterministic full-gate failure
+  families to bounded fast-admission owners while preserving the full gate as
+  mandatory release proof. Implementation: `0a1ca6f7f`; promotion continuation:
+  `dd144d5f1`.
 
 ### Release status
+
+S83.183 adds a deterministic, ledger-backed GitHub release-page preview at
+`docs/releases/v0.1.2.md`. It explicitly separates features from improvements,
+links immutable completion evidence, bounds input and output, and is validated
+without writes as part of the v0.1.2 release dry run. The page and release remain
+unreleased; the generator never creates a tag or contacts GitHub.
 
 S83.157, S83.158, S83.163, S83.166, and S83.169 have substantial implemented
 evidence but are still open; their recorded exact-head, hosted, or release proof
 remains required. They are implemented but still open and are not counted among
-the five completed v0.1.2 backlog items.
+the six completed v0.1.2 backlog items.
 
 S83.180 is also in progress: its opt-in reconciliation plan now emits bounded
 disjoint merge groups, deterministic temporary-candidate recipes, and Git-native

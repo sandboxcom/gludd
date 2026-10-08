@@ -28,6 +28,7 @@ def test_different_project_roots_do_not_share_namespace(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.delenv("GLUDD_PROJECT_NAMESPACE", raising=False)
     monkeypatch.setenv("GLUDD_PROJECT_ROOT", str(tmp_path / "ambient-supervisor"))
     left = project_namespace(tmp_path / "left")
     right = project_namespace(tmp_path / "right")
@@ -61,6 +62,7 @@ def test_independent_projects_get_independent_gate_leases(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.delenv("GLUDD_PROJECT_NAMESPACE", raising=False)
     monkeypatch.setenv("GLUDD_PROJECT_ROOT", str(tmp_path / "ambient-supervisor"))
     first = resource_path("gate", tmp_path / "first")
     second = resource_path("gate", tmp_path / "second")

@@ -6,6 +6,9 @@
   vars:
     log_source: "{{ log_source | default('/var/log/harness') }}"
     artifact_dir: "{{ artifact_dir | default('/tmp/harness-log-audit') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    daemon_psk: "{{ daemon_psk | default('') }}"
+    daemon_timeout: "{{ daemon_timeout | default(30) }}"
 
   tasks:
     - name: Create artifact directory
@@ -14,16 +17,59 @@
         state: directory
         mode: "0755"
 
+    - name: Inspect JSON-lines log source
+      ansible.builtin.stat:
+        path: "{{ log_source }}"
+        follow: false
+      register: log_source_stat
+
+    - name: Require a regular bounded log source
+      ansible.builtin.assert:
+        that:
+          - log_source_stat.stat.exists | default(false)
+          - log_source_stat.stat.isreg | default(false)
+          - log_source_stat.stat.size | default(10485761) | int <= 10485760
+        fail_msg: Log source must be a regular JSON-lines file no larger than 10 MiB.
+
+    - name: Read JSON-lines log source
+      ansible.builtin.slurp:
+        src: "{{ log_source }}"
+      register: log_source_content
+
+    - name: Parse bounded log entries
+      ansible.builtin.set_fact:
+        dogfood_log_entries: >-
+          {{
+            (log_source_content.content | b64decode).splitlines()
+            | reject('equalto', '') | map('from_json') | list
+          }}
+
+    - name: Require bounded log entry count
+      ansible.builtin.assert:
+        that:
+          - dogfood_log_entries | length <= 10000
+        fail_msg: Log source exceeds the 10000-entry audit bound.
+
+    - name: Run bounded daemon log audit
+      ansible.builtin.include_tasks: tasks/dogfood_api_request.yml
+      vars:
+        dogfood_api_path: /admin/log-audit
+        dogfood_api_method: POST
+        dogfood_api_body:
+          log_entries: "{{ dogfood_log_entries }}"
+        dogfood_api_timeout: "{{ daemon_timeout }}"
+        dogfood_api_result_fact: log_audit_result
+        dogfood_api_changed: false
+        dogfood_api_require_success: false
+        dogfood_daemon_url: "{{ daemon_url }}"
+        dogfood_daemon_psk: "{{ daemon_psk }}"
+
     - name: Write log audit artifact
       ansible.builtin.copy:
-        content: |
-          {
-            "log_source": "{{ log_source }}",
-            "playbook": "log_audit.yml",
-            "status": "completed"
-          }
+        content: "{{ log_audit_result | to_nice_json }}"
         dest: "{{ artifact_dir }}/log_audit_result.json"
         mode: "0644"
+      when: not ansible_check_mode
 
     - name: Report log audit completion
       ansible.builtin.debug:

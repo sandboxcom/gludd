@@ -1,11 +1,10 @@
 ---
-# conflict_resolve role tasks — git_release service.
-
-- name: Load conflict_resolve defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _conflict_resolve_defaults
-
-- name: Reference conflict_resolve service API
-  ansible.builtin.debug:
-    msg: "conflict_resolve routes via the git_release service API (/api/git_release/conflict_resolve)."
+- name: Execute conflict-resolve through the git-release service
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.service_request
+  vars:
+    git_release_service_enabled: "{{ git_release_conflict_resolve_enabled }}"
+    git_release_service_operation: conflict_resolve
+    git_release_service_request: "{{ git_release_conflict_resolve_request }}"
+    git_release_service_result_fact: "{{ git_release_conflict_resolve_result_fact }}"
+    git_release_service_output_path: "{{ git_release_conflict_resolve_output_path }}"
