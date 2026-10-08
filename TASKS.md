@@ -37,6 +37,49 @@ ancestry from drifting independently.
 
 - [ ] S37 — **Use dialect-native SQLite and PostgreSQL repository upserts** across `src/general_ludd/db/repositories/shared.py`, `src/general_ludd/db/repositories/projects.py`, `src/general_ludd/db/repositories/metrics.py`, focused unit/live-PostgreSQL acceptance, `config/coverage_dialect_native_repository_upserts.ini`, and `docs/features/DIALECT_NATIVE_REPOSITORY_UPSERTS.md`: select the conflict-capable SQLAlchemy insert from each caller-owned session's bound dialect; fail before database I/O for unsupported backends; preserve atomic conflict keys, last-writer semantics, identity-map refresh, transaction ownership, and schema-free rolling delivery; and use application-image rollback with repair-forward preferred for active PostgreSQL writes. | evidence: SQLAlchemy discussions #7199 and #7007 establish the mature dialect-specific insert contract; warning-fatal focused and adjacent verification passes 354 tests; coverage is 94% aggregate with `shared.py` at 87%, `projects.py` at 98%, and `metrics.py` at 91%, above required floors; unit compilation covers native SQLite/PostgreSQL SQL, all three repositories reject unknown dialects before database access, and bounded two-session PostgreSQL convergence is wired; implementation commit `9bf7437dd18a43b5103e09b7b83dc3983b715cbc`; exact-head full-gate proof remains pending | priority: high | effort: XS | status: in_progress
 
+- [ ] S38 — **Run SearXNG through its official pinned Python application inside the travel collection's controller execution environment** across the exact inventory below: replace synthetic index results and container/listener glue with bounded `searx.webapp` WSGI actions; retain HTTP only as an explicit fail-closed rollback transport; stage the travel artifact and source-pinned dependency in the execution environment; make setup, Molecule, and native Make workflows exercise the controller boundary; and document upstream operational findings plus zero-downtime image rollout, drain, and rollback. | evidence: failing-first acceptance reproduced three travel collection-boundary imports, absent exact backend injection, synthetic `.example.com`/`Simulated` output, absent EE travel staging, obsolete container paths, and nine allocate-before-validation cases; repaired warning-fatal focused coverage passes 212 tests at 91% aggregate with all nine measured files above 75%; strict travel boundary reports zero findings; full Molecule syntax/converge/idempotence/verify passes 4/4 with zero failed, missing, or ignored actions; EE boundary plus build/verify validate-only smoke, Ruff, strict mypy, Markdown, Make contract/help, task, and resource checks are green; duplicate-code reconciliation against the S39-forwarded integration base reports zero new clones; repository collection passes 121242/121260 with 18 intentional deselections and zero errors; implementation commit `1b9d79457`; exact-head full-gate proof remains pending | priority: high | effort: XS | status: in_progress
+
+  S38 owns this exact implementation and evidence inventory:
+
+  ```text
+  .opencode/MAKE_TARGETS.md
+  collections/ansible_collections/general_ludd/travel/README.md
+  collections/ansible_collections/general_ludd/travel/meta/runtime.yml
+  collections/ansible_collections/general_ludd/travel/molecule/default/converge.yml
+  collections/ansible_collections/general_ludd/travel/plugins/action/_searxng.py
+  collections/ansible_collections/general_ludd/travel/plugins/action/searxng_index.py
+  collections/ansible_collections/general_ludd/travel/plugins/action/searxng_instance.py
+  collections/ansible_collections/general_ludd/travel/plugins/action/searxng_search.py
+  collections/ansible_collections/general_ludd/travel/plugins/module_utils/searxng_client.py
+  collections/ansible_collections/general_ludd/travel/plugins/module_utils/searxng_runtime.py
+  collections/ansible_collections/general_ludd/travel/plugins/modules/searxng_index.py
+  collections/ansible_collections/general_ludd/travel/roles/searxng_setup/molecule/default/converge.yml
+  collections/ansible_collections/general_ludd/travel/roles/searxng_setup/molecule/default/molecule.yml
+  collections/ansible_collections/general_ludd/travel/roles/searxng_setup/molecule/default/verify.yml
+  collections/ansible_collections/general_ludd/travel/roles/searxng_setup/templates/docker-compose.yml.j2
+  config/ansible/execution-environment.yml
+  config/ansible/requirements.txt
+  config/ansible/requirements.yml
+  config/ansible/runtime-lock.json
+  config/coverage_native_searxng_controller_runtime.ini
+  config/make_target_contract.json
+  config/resource_ownership_inventory.json
+  docs/DIRECTORY_STRUCTURE.md
+  docs/features/NATIVE_SEARXNG_CONTROLLER_RUNTIME.md
+  docs/specs/FEATURE_TRAVEL_AGENT.md
+  infra/README.md
+  infra/searxng/docker-compose.yml
+  infra/searxng/settings.yml
+  make/00-foundation.mk
+  make/90-infrastructure-and-services.mk
+  scripts/ansible_runtime_artifacts.py
+  src/general_ludd/searx/native.py
+  tests/unit/test_ansible_runtime_artifacts.py
+  tests/unit/test_searx_ansible_actions.py
+  tests/unit/test_searx_native_integration.py
+  tests/unit/test_travel_searxng_index.py
+  ```
+
 - [ ] S11.1 — **Record bounded cost-only shadow estimation feedback** across `src/general_ludd/execution/engine.py`, `src/general_ludd/review/estimation_tracker.py`, `src/general_ludd/review/reviewer.py`, `src/general_ludd/daemon_components/lifecycle.py`, `tests/unit/test_estimation_runtime_wiring.py`, `config/coverage_estimation_runtime.ini`, and `docs/features/TASK_ESTIMATION_CALIBRATION.md`: observe only admitted provider calls, reject missing/non-finite costs, cap pending and completed state at 1,000, preserve routing and calibration behavior, and provide `GLUDD_ESTIMATION_FEEDBACK=0` rolling rollback. | evidence: failing-first runtime acceptance reproduced 9 missing-injection/bounds failures; repaired focused regressions pass 143/143 with warnings fatal, coverage passes 388/388 at 91.3% aggregate lines and 85.8% branches with every scoped file at least 75%, Ruff/strict mypy/Markdown checks pass, and repository collection passes 120761/120779 with 18 deselected; exact-head full-gate evidence remains pending | priority: high | effort: XS | status: in_progress
 
 - [ ] S18 — **Persist one bounded operator escalation for each detected agent stall** across `src/general_ludd/observability/stall_escalation.py`, daemon lifecycle wiring, focused unit/integration tests, scoped coverage, and `docs/features/STALL_ESCALATION.md`: use the existing EventBus, asyncio loop, and HumanTodoRepository; deduplicate each stall event; retain only bounded operation identity and monotonic timing; omit thread stacks; and never cancel, retry, or let persistence failure stop the watchdog. | evidence: failing-first collection reproduced the absent subscriber module; focused unit and adjacent regressions pass 10/10 and 38/38 under warnings-as-errors; the daemon integration persists exactly one stack-free blocker; branch-aware coverage is 100% line and branch for the new module; scoped Ruff, strict mypy, Markdown, task ledger/integrity, and collection of 121064/121082 tests with 18 intentional deselections are green; component commit `f0111590a`; lifecycle commit and exact-head full-gate evidence remain pending | priority: high | effort: XS | status: in_progress

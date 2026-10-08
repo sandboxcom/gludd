@@ -32,6 +32,7 @@ Shared Python utilities consumed by the modules above.
 | `contracts.py` | TypedDict contracts for module I/O |
 | `events.py` | Event-model data classes for itinerary building |
 | `routing.py` | Transit and routing helpers |
+| `searxng_runtime.py` | Bounded in-process `searx.webapp` lifecycle and explicit remote rollback |
 
 ## Quick start
 
@@ -68,6 +69,6 @@ start Docker, or require a Terraform project.
       register: attractions
 ```
 
-See [Native SearXNG Integration](../../../../docs/features/SEARXNG_NATIVE_INTEGRATION.md)
-for lifecycle, check-mode, security, remote compatibility, and upstream support
-details.
+See [Native SearXNG Controller Runtime](../../../../docs/features/NATIVE_SEARXNG_CONTROLLER_RUNTIME.md)
+for lifecycle, check-mode, security, remote compatibility, upstream evidence,
+and zero-downtime image rollout details.

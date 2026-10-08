@@ -132,7 +132,7 @@ def test_tracked_runtime_artifacts_validate() -> None:
     assert artifacts.validate_files() == []
 
 
-def test_runtime_stages_azure_orchestration_and_pinned_opentofu() -> None:
+def test_runtime_stages_collections_native_searx_and_pinned_opentofu() -> None:
     requirements = yaml.safe_load(
         (artifacts.CONFIG_ROOT / "requirements.yml").read_text(encoding="utf-8")
     )["collections"]
@@ -152,8 +152,18 @@ def test_runtime_stages_azure_orchestration_and_pinned_opentofu() -> None:
         "cloud.terraform": "4.0.0",
     }
     assert "collections/general_ludd-azure-0.2.0.tar.gz" in local_artifacts
-    assert len(artifacts.COLLECTION_ARTIFACTS) == 4
+    assert "collections/general_ludd-travel-0.1.0.tar.gz" in local_artifacts
+    assert len(artifacts.COLLECTION_ARTIFACTS) == 5
     assert any(source.name == "azure" for source, _artifact in artifacts.COLLECTION_ARTIFACTS)
+    assert any(source.name == "travel" for source, _artifact in artifacts.COLLECTION_ARTIFACTS)
+    python_requirements = (
+        artifacts.CONFIG_ROOT / "requirements.txt"
+    ).read_text(encoding="utf-8")
+    assert (
+        "searxng @ git+https://github.com/searxng/searxng.git@"
+        "7b4612e86250389dc9d5ee67e4cc2cd64d06602a"
+    ) in python_requirements
+    assert "searx.webapp" in artifacts.EXPECTED_CONTROLLER_IMPORTS
     assert "tofu_1.12.6_linux_amd64.zip" in build_steps
     assert "tofu_1.12.6_linux_arm64.zip" in build_steps
     assert "5dc43da4f750f33873dc25e94587128709e819e544b7be9016b255316153c3a8" in build_steps

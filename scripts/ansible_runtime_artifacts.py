@@ -45,24 +45,28 @@ MANIFEST_ACCEPT = ", ".join(
         "application/vnd.docker.distribution.manifest.v2+json",
     )
 )
-COLLECTION_ARTIFACTS = (
-    (
-        ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent",
-        ROOT / "dist" / "collections" / "general_ludd-agent-0.2.0.tar.gz",
-    ),
-    (
-        ROOT / "collections" / "ansible_collections" / "general_ludd" / "azure",
-        ROOT / "dist" / "collections" / "general_ludd-azure-0.2.0.tar.gz",
-    ),
-    (
-        ROOT / "collections" / "ansible_collections" / "general_ludd" / "language",
-        ROOT / "dist" / "collections" / "general_ludd-language-0.1.0.tar.gz",
-    ),
-    (
-        ROOT / "collections" / "ansible_collections" / "general_ludd" / "networking",
-        ROOT / "dist" / "collections" / "general_ludd-networking-0.2.0.tar.gz",
-    ),
+_COLLECTION_ROOT = ROOT / "collections" / "ansible_collections" / "general_ludd"
+_COLLECTION_DIST_ROOT = ROOT / "dist" / "collections"
+_COLLECTION_VERSIONS = (
+    ("agent", "0.2.0"),
+    ("azure", "0.2.0"),
+    ("language", "0.1.0"),
+    ("networking", "0.2.0"),
+    ("travel", "0.1.0"),
 )
+COLLECTION_ARTIFACTS = tuple(
+    (
+        _COLLECTION_ROOT / name,
+        _COLLECTION_DIST_ROOT / f"general_ludd-{name}-{version}.tar.gz",
+    )
+    for name, version in _COLLECTION_VERSIONS
+)
+SEARXNG_SOURCE_REVISION = "7b4612e86250389dc9d5ee67e4cc2cd64d06602a"
+SEARXNG_REQUIREMENT = (
+    "searxng @ git+https://github.com/searxng/searxng.git@"
+    f"{SEARXNG_SOURCE_REVISION}"
+)
+EXPECTED_CONTROLLER_IMPORTS = ("ansible", "ansible_runner", "searx.webapp")
 EXPECTED_DEPENDENCIES: dict[str, object] = {
     "galaxy": "requirements.yml",
     "python": "requirements.txt",
@@ -139,7 +143,7 @@ def _registry_manifest_digest(reference: str, *, opener: Any | None = None) -> s
     open_request = urlopen if opener is None else opener
     try:
         with open_request(request, timeout=30) as response:
-            digest = response.headers.get("Docker-Content-Digest", "")
+            digest = str(response.headers.get("Docker-Content-Digest", ""))
     except Exception as exc:
         raise RuntimeError(
             f"unable to resolve supported Ansible base image: {exc}"
@@ -263,6 +267,16 @@ def validate_files() -> list[str]:
     for required in ("ansible-core", "ansible-runner"):
         if required not in controller_names:
             errors.append(f"missing optional controller dependency: {required}")
+    python_requirements = INPUTS["python"].read_text(encoding="utf-8").splitlines()
+    pinned_requirements = [
+        line.strip()
+        for line in python_requirements
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if pinned_requirements != [SEARXNG_REQUIREMENT]:
+        errors.append(
+            "controller Python requirements must contain only the pinned official SearXNG source"
+        )
 
     definition: dict[str, Any] = yaml.safe_load(DEFINITION.read_text(encoding="utf-8"))
     base_image = _base_image_from_definition(definition)
@@ -441,7 +455,9 @@ def verify_environment(runtime: str, image: str, validate_only: bool) -> int:
                 image,
                 "python3",
                 "-c",
-                "import ansible, ansible_runner; print('ANSIBLE_EE_IMPORT_OK')",
+                "import "
+                + ", ".join(EXPECTED_CONTROLLER_IMPORTS)
+                + "; print('ANSIBLE_EE_IMPORT_OK')",
             ],
         ),
     )

@@ -381,7 +381,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check disk-cleanup-preflight check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
-        searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
+        searx-up searx-down searx-test searx-molecule searx-start searx-stop searx-status searx-install \
         networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
         networking-healthcheck \
         install-bats test-install check-subagent-guards verify-plugin-manifest \
@@ -797,9 +797,10 @@ help:
 	@echo "  ship-async REF=<hash> [TARGET=master]  Run gate in background job; ff-only merge on green"
 	@echo ""
 	@echo "  --- SearXNG Research Backend ---"
-	@echo "  searx-up              Start SearXNG via Docker Compose"
-	@echo "  searx-down            Stop SearXNG and remove volumes"
-	@echo "  searx-test            Health-check the SearXNG JSON API"
+	@echo "  searx-up              Admit the controller-native SearXNG runtime"
+	@echo "  searx-down            Release controller-native SearXNG resources"
+	@echo "  searx-test            Run the native runtime/action/index contract suite"
+	@echo "  searx-molecule        Validate/run delegated setup role (SEARX_MOLECULE_VALIDATE_ONLY=0|1)"
 	@echo ""
 	@echo "  --- Disk ---"
 	@echo "  fix-hooks-tmp           temp fix target"
@@ -1013,7 +1014,7 @@ COLLECTION_PYTHON_BOUNDARY_ROOT ?= collections/ansible_collections
 COLLECTION_PYTHON_BOUNDARY_INVENTORY ?= config/ansible/collection-python-boundary-inventory.json
 COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO ?= 0
 RESOURCE_OWNERSHIP_ROOT ?= .
-RESOURCE_OWNERSHIP_PATHS ?= src/general_ludd scripts
+RESOURCE_OWNERSHIP_PATHS ?= src/general_ludd scripts collections/ansible_collections/general_ludd/travel/plugins/module_utils/searxng_runtime.py
 RESOURCE_OWNERSHIP_INVENTORY ?= config/resource_ownership_inventory.json
 SECRETS_EXCLUDE_FILES ?= sandboxcom_github_rsa|sandboxcom_github_rsa.pub|^config/resource_ownership_inventory\.json$$
 RESOURCE_OWNERSHIP_WRITE ?= 0
