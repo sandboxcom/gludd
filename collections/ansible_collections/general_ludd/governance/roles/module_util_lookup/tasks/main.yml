@@ -1,0 +1,64 @@
+---
+- name: Build governance module utility request
+  ansible.builtin.set_fact:
+    _governance_module_util_request: >-
+      {{
+        governance_module_util_profile
+        | general_ludd.governance.governance_lookup_plan(vars)
+      }}
+
+- name: Validate governance module utility request
+  ansible.builtin.assert:
+    that:
+      - _governance_module_util_request.filename is match('^[A-Za-z0-9_]+[.]py$')
+      - _governance_module_util_request.output_dir | length > 0
+      - _governance_module_util_request.output_dir | length <= 4096
+      - _governance_module_util_request.output_filename is match('^[A-Za-z0-9_.-]+[.]json$')
+      - _governance_module_util_request.result_fact is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - _governance_module_util_request.argv is sequence
+      - _governance_module_util_request.argv | length >= 2
+      - _governance_module_util_request.argv | length <= 16
+    fail_msg: Invalid or unbounded governance module utility request.
+
+- name: Ensure governance module utility output directory exists
+  ansible.builtin.file:
+    path: "{{ _governance_module_util_request.output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Install governance module utility
+  ansible.builtin.copy:
+    src: >-
+      {{ role_path }}/../../plugins/module_utils/{{ _governance_module_util_request.filename }}
+    dest: >-
+      {{ _governance_module_util_request.output_dir }}/{{ _governance_module_util_request.filename }}
+    mode: "0755"
+
+- name: Run governance module utility
+  ansible.builtin.command:
+    argv: "{{ _governance_module_util_request.argv }}"
+  register: _governance_module_util_result
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Publish governance module utility result
+  ansible.builtin.set_fact:
+    "{{ _governance_module_util_request.result_fact }}": >-
+      {{ _governance_module_util_result.stdout | from_json }}
+  when: not ansible_check_mode
+
+- name: Publish governance module utility check plan
+  ansible.builtin.set_fact:
+    "{{ _governance_module_util_request.result_fact }}":
+      planned: true
+      argv: "{{ _governance_module_util_request.argv }}"
+  when: ansible_check_mode
+
+- name: Write governance module utility result
+  ansible.builtin.copy:
+    content: >-
+      {{ vars[_governance_module_util_request.result_fact] | to_nice_json }}
+    dest: >-
+      {{ _governance_module_util_request.output_dir }}/{{ _governance_module_util_request.output_filename }}
+    mode: "0644"
+  when: not ansible_check_mode

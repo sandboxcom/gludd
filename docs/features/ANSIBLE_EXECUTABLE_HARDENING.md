@@ -77,6 +77,14 @@ simulation-plan contracts, derives stable route IDs, and uses idempotent replay.
 Every role remains default-off and check mode returns the exact operation plan
 without contacting the daemon.
 
+Seven governance lookup roles already ran their packaged Python module
+utilities with `ansible.builtin.command`, but each unconditionally replaced
+Ansible's nonzero-return handling with `failed_when: false`. They now retain
+the mature command module's normal failure propagation: successful read-only
+lookups remain `changed=false`, while missing interpreters, invalid utility
+inputs, and runtime faults stop the play instead of publishing a default empty
+verdict.
+
 ## Long-lived practitioner evidence
 
 This contract follows problems Ansible practitioners have reported for more
@@ -114,6 +122,12 @@ than a decade:
   integer checks. The materials boundary therefore rejects booleans before
   accepting engineering numbers, preventing `True` from silently becoming a
   load, tolerance, quantity, or process parameter.
+- In the 2015 Ansible Project thread
+  [“Ignoring errors in check mode”](https://groups.google.com/g/ansible-project/c/PqthqyRrIuM/m/z_Tuy0fSJQAJ),
+  practitioners noted that blanket error suppression also discards real
+  normal-run failures. The governance roles therefore preserve
+  `changed_when: false` for read-only execution without disabling the command
+  module's nonzero-return failure contract.
 
 Together, these reports support a fail-closed rule: check mode should be
 predictive and non-mutating, while a normal run must never turn an unavailable
