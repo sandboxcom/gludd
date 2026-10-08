@@ -152,20 +152,18 @@ class TestS14WorkerStalenessLifecycle:
         assert hasattr(WorkerBroadcaster, "_is_safe_worker_address") or hasattr(WorkerBroadcaster, "_auth_headers")
 
 
-# ── S15: Validation job pipeline returns honest 501 ────────────────────────
+# ── S15: Validation pipeline returns canonical execution evidence ──────────
 
 
-class TestS15ValidationJobHonest501:
-    def test_validate_job_route_returns_501(self) -> None:
-        """GET /jobs/validate returns 501, not a silent success ack."""
+class TestS15ValidationJobHonestEvidence:
+    def test_validate_job_route_delegates_to_execute_pipeline(self) -> None:
+        """POST /jobs/validate delegates to the canonical execution path."""
         import general_ludd.worker.app as wa
 
         source = inspect.getsource(wa)
-        # The validate job route raises HTTPException with 501
-        assert "validate" in source.lower()
-        assert "501" in source, (
-            "S15 GAP: validation job route does not return 501 — callers will believe validation ran when it didn't"
-        )
+        assert '"playbook": "validate_task.yml"' in source
+        assert '"work_type": "validation"' in source
+        assert "return await execute_job(validation_job)" in source
 
     def test_policy_validate_job_route_returns_501(self) -> None:
         """/jobs/policy-validate also returns honest 501."""

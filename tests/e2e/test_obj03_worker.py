@@ -77,8 +77,7 @@ class TestWorkerE2E:
         )
         assert resp.status_code == 501
 
-    def test_validate_endpoint_returns_501_not_implemented(self, client):
-        # W3.8: /jobs/validate has no backing playbook — must return 501, not fake-success.
+    def test_validate_endpoint_runs_canonical_pipeline(self, client):
         resp = client.post(
             "/jobs/validate",
             json={
@@ -89,9 +88,13 @@ class TestWorkerE2E:
                 "work_type": "validation",
             },
         )
-        assert resp.status_code == 501
+        assert resp.status_code == 200
         data = resp.json()
-        assert data["detail"]["reason"] == "not_implemented"
+        assert data["status"] == "created"
+        assert data["job_id"] == "JOB-VAL-001"
+        assert data["playbook"] == "validate_task.yml"
+        assert "exit_code" in data
+        assert "result_summary" in data
 
     def test_worker_correlation_ids(self, client):
         resp = client.get("/healthz")
