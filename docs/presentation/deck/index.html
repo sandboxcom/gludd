@@ -1112,12 +1112,12 @@ flowchart LR
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-108-105-boundary-evidence">
   <p class="stage-kicker">S83.108 / S83.106 / S83.105 &middot; canonical identity and bounded dispatch</p>
-  <h2>Canonical input, bounded action <span class="badge-yellow">S83.108 / S83.106 / S83.105 MERGED &middot; EXACT GATE PENDING</span></h2>
+  <h2>Canonical input, bounded action <span class="badge-yellow">S83.108 / S83.106 MERGED &middot; S83.105 CANDIDATE ONLY &middot; EXACT GATE PENDING</span></h2>
   <ul class="bullets-tight">
     <li><strong>S83.108:</strong> reject traversal, symlink escape, duplicate aliases, and Git inventory failure; emit <code>identity=rejected</code>, one canonical active marker, or <code>INCONCLUSIVE</code>.</li>
     <li><strong>S83.106:</strong> parse Git's <strong>NUL worktree registry</strong>; exempt only exact active source + venv state, count orphan siblings, and fail closed at <strong>100 MB / 90%</strong>.</li>
     <li><strong>S83.105:</strong> retain one <code>ProjectType | str</code> runtime declaration and reject unsupported discriminators before registry mutation.</li>
-    <li><strong>Measured:</strong> inventory <strong>71/71</strong> at <strong>93%</strong>; disk classification <strong>67/67</strong> at <strong>86%</strong>; project registration <strong>158 passed</strong> / 1 conditional skip at <strong>97%</strong>.</li>
+    <li><strong>Measured:</strong> inventory <strong>71/71</strong> at <strong>93%</strong>; disk classification <strong>67/67</strong> at <strong>86%</strong>; project registration <strong>170/170</strong> reviewed at <strong>96.95%</strong>.</li>
   </ul>
   <div class="diagram-wrap">
     <div class="mermaid">
@@ -1128,7 +1128,7 @@ flowchart LR
     </div>
   </div>
   <p class="honest-note"><strong>No v0.1.2 completion claim:</strong> exact-head gate, CI, and promotion proof remain pending. ZDD adds no runtime artifact or schema; rollback is source-only after canonical inventory and import-adjacency checks.</p>
-  <p class="cite">Code: scripts/check_worktree_health.py:39-118 &middot; scripts/check_worktree_health.py:182-216 &middot; scripts/check_disk_usage.py:72-118 &middot; src/general_ludd/cloud/project_types.py:899-914 &middot; Contracts: docs/features/WORKTREE_AUDIT_IDENTITY_CONTRACT.md:19-43 &middot; docs/features/SOURCE_OVERLOAD_PLACEMENT_CONTRACT.md:9-28</p>
+  <p class="cite">Code: scripts/check_worktree_health.py:39-70 &middot; scripts/check_worktree_health.py:182-216 &middot; scripts/check_disk_usage.py:72-118 &middot; src/general_ludd/cloud/project_types.py:899-914 &middot; Contracts: docs/features/WORKTREE_AUDIT_IDENTITY_CONTRACT.md:19-43 &middot; docs/features/SOURCE_OVERLOAD_PLACEMENT_CONTRACT.md:9-28</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1314,7 +1314,7 @@ flowchart LR
       <li><strong>Measured evidence:</strong> <code>kill_owned_gate.py</code> 91%; coverage consumes a serial base or real parallel fragments, then requires an exact base before reporting.</li>
       <li><strong>Bounds:</strong> <code>SIGTERM</code> &rarr; 10 s at 100 ms polls; <code>SIGKILL</code> &rarr; 1 s.</li>
       <li>Publish ABORTED status + JSON evidence; a survivor retains <code>termination_failed</code> and blocks a replacement gate.</li>
-      <li><strong>ZDD:</strong> keep the running gate's schema, replace only after exact terminal evidence, and roll back only after marked owners clear.</li>
+      <li><strong>ZDD:</strong> preserve a marked <code>gludd-gate-run-v1</code> lock or legacy <code>{pid, started_at}</code> lock, replace only after exact terminal evidence, and roll back only after marked owners clear.</li>
     </ul>
     <p class="cite">Contract: docs/features/GATE_RESOURCE_LIFECYCLE.md:577-608 &middot; docs/features/GATE_RESOURCE_LIFECYCLE.md:1102-1129 &middot; CPython #111873 &middot; Actions runner #3341</p>
   </div>
