@@ -145,7 +145,9 @@ class EstimationTracker:
         self._time_threshold = time_threshold
         self._loc_threshold = loc_threshold
         self._min_samples = min_samples
-        self._max_history = max_history
+        if isinstance(max_history, bool) or not isinstance(max_history, int) or max_history <= 0:
+            raise ValueError("max_history must be a positive integer")
+        self._max_history = min(max_history, 1000)
 
         self._estimates: dict[str, TaskEstimate] = {}
         self._actuals: dict[str, TaskActual] = {}
@@ -157,20 +159,33 @@ class EstimationTracker:
 
     def record_estimate(self, estimate: TaskEstimate) -> None:
         """Record a task estimate at creation time."""
+        # Re-inserting an identifier makes it the newest pending observation.
+        # Plain dicts retain insertion order on every supported Python version.
+        self._estimates.pop(estimate.todo_id, None)
         self._estimates[estimate.todo_id] = estimate
+        self._trim_mapping(self._estimates)
         # Init calibration if not exists
         if estimate.work_type not in self._calibrations:
             self._calibrations[estimate.work_type] = EstimationCalibration(
                 work_type=estimate.work_type
             )
 
-    def record_completion(self, actual: TaskActual) -> EstimateVariance:
+    def record_completion(
+        self,
+        actual: TaskActual,
+        *,
+        cost_only: bool = False,
+    ) -> EstimateVariance:
         """Record actual completion metrics and return variance analysis.
 
         Returns an EstimateVariance indicating whether the completion is
-        suspect (metrics wildly different from estimate).
+        suspect (metrics wildly different from estimate). ``cost_only`` is the
+        runtime shadow path: it classifies only the provider-reported cost and
+        never updates calibration used by corrected estimates.
         """
+        self._actuals.pop(actual.todo_id, None)
         self._actuals[actual.todo_id] = actual
+        self._trim_mapping(self._actuals)
         estimate = self._estimates.get(actual.todo_id)
 
         if estimate is None:
@@ -188,10 +203,17 @@ class EstimationTracker:
         time_var = self._compute_variance(estimate.estimated_time_minutes, actual.actual_time_minutes)
         loc_var = self._compute_variance(estimate.estimated_loc, actual.actual_loc)
 
-        accuracy = self._classify_accuracy(cost_var, time_var, loc_var)
-        is_suspect, reasons = self._determine_suspect(
-            cost_var, time_var, loc_var, accuracy, actual.exit_code
-        )
+        if cost_only:
+            accuracy = self._classify_cost_accuracy(cost_var)
+            is_suspect, reasons = self._determine_cost_suspect(
+                cost_var,
+                actual.exit_code,
+            )
+        else:
+            accuracy = self._classify_accuracy(cost_var, time_var, loc_var)
+            is_suspect, reasons = self._determine_suspect(
+                cost_var, time_var, loc_var, accuracy, actual.exit_code
+            )
 
         variance = EstimateVariance(
             todo_id=actual.todo_id,
@@ -204,6 +226,8 @@ class EstimationTracker:
             suspect_reasons=reasons,
         )
         self._variances.append(variance)
+        if len(self._variances) > self._max_history:
+            self._variances = self._variances[-self._max_history:]
         self._history.append((estimate, actual))
 
         # Trim history
@@ -211,7 +235,7 @@ class EstimationTracker:
             self._history = self._history[-self._max_history:]
 
         # Self-correct if not suspect
-        if not is_suspect:
+        if not is_suspect and not cost_only:
             self._update_calibration(estimate, actual)
 
         return variance
@@ -233,10 +257,29 @@ class EstimationTracker:
 
     def get_variance(self, todo_id: str) -> EstimateVariance | None:
         """Get the variance analysis for a completed task."""
-        for v in self._variances:
+        for v in reversed(self._variances):
             if v.todo_id == todo_id:
                 return v
         return None
+
+    def discard_estimate(self, todo_id: str) -> None:
+        """Discard one pending estimate after its observation window closes."""
+        self._estimates.pop(todo_id, None)
+
+    @property
+    def pending_count(self) -> int:
+        """Return the bounded number of estimates awaiting completion."""
+        return len(self._estimates)
+
+    @property
+    def completed_count(self) -> int:
+        """Return the bounded number of completed variance observations."""
+        return len(self._variances)
+
+    @property
+    def max_history(self) -> int:
+        """Return the effective hard-capped observation bound."""
+        return self._max_history
 
     def get_suspect_tasks(self) -> list[EstimateVariance]:
         """Return all tasks flagged as suspect."""
@@ -303,6 +346,30 @@ class EstimationTracker:
         if cost_var > self._cost_threshold or time_var > self._time_threshold:
             return EstimateAccuracy.OVER_ESTIMATE
         return EstimateAccuracy.UNDER_ESTIMATE
+
+    def _classify_cost_accuracy(self, cost_var: float) -> EstimateAccuracy:
+        """Classify one shadow observation without consulting other dimensions."""
+        if abs(cost_var) <= self._cost_threshold:
+            return EstimateAccuracy.ACCURATE
+        if cost_var > 0:
+            return EstimateAccuracy.UNDER_ESTIMATE
+        return EstimateAccuracy.OVER_ESTIMATE
+
+    def _determine_cost_suspect(
+        self,
+        cost_var: float,
+        exit_code: int,
+    ) -> tuple[bool, list[str]]:
+        """Flag cost-only drift while keeping it out of calibration/routing."""
+        reasons: list[str] = []
+        if exit_code != 0:
+            reasons.append(f"Non-zero exit code ({exit_code})")
+        if abs(cost_var) > self._cost_threshold:
+            reasons.append(
+                f"Cost variance {cost_var:+.1%} exceeds shadow threshold "
+                f"{self._cost_threshold:.1%}"
+            )
+        return bool(reasons), reasons
 
     def _determine_suspect(
         self,
@@ -411,6 +478,11 @@ class EstimationTracker:
         self._variances.clear()
         self._calibrations.clear()
         self._history.clear()
+
+    def _trim_mapping(self, values: dict[str, Any]) -> None:
+        """Keep insertion-ordered tracker maps within the shared hard bound."""
+        while len(values) > self._max_history:
+            values.pop(next(iter(values)))
 
 
 def default_estimation_tracker() -> EstimationTracker:
