@@ -63,6 +63,25 @@ package version than users expect. This is why a later pinned-looking
 positional argument is not sufficient evidence after a directory, prefix, or
 workspace redirect.
 
+Workspace selection has the same explicit-over-ambient requirement. A
+long-running MCP Python SDK practitioner report,
+[python-sdk issue #1520](https://github.com/modelcontextprotocol/python-sdk/issues/1520),
+shows that an MCP server launched through `uvx` may see a cache directory as
+its process cwd instead of the user's workspace. The more direct
+[filesystem-server issue #3929](https://github.com/modelcontextprotocol/servers/issues/3929)
+records a client-provided root unexpectedly replacing a directory explicitly
+configured on the server. Its reporter recommends using the client root only
+as a fallback because merging roots would broaden the explicit allowlist.
+
+Gludd applies that practitioner lesson to its builtin check runner: a
+`BuiltinToolHandler(default_workspace=...)` remains jailed to that explicit
+workspace even when its supervising process exports `GLUDD_PROJECT_ROOT` for
+gate or enforcement work. The environment root is still honored when the
+handler has no configured workspace, and cwd is the last fallback. The current
+MCP Roots specification likewise describes roots as informational rather than
+an access-control mechanism, so the builtin retains its own containment check:
+[MCP Roots security guidance](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/client/roots.mdx#security-considerations).
+
 ## Security and observability
 
 Validation runs before subprocess creation. Invalid commands fail with
@@ -72,6 +91,12 @@ not trip the generic inline-value guard. Benign value-free flags continue to
 work. The registry rejects a duplicate unqualified name before modifying either
 the composite store or the per-server index, and `call_tool` independently
 checks the `(server_id, tool_name)` binding before transport dispatch.
+
+For `run_project_check`, relative model-supplied workspaces resolve against the
+selected jail root, while absolute and resolved paths must equal that root or
+remain below it. An ambient root cannot widen or replace an explicitly bound
+handler workspace. Escapes return a data error without exposing directory
+contents, starting a command, or logging the untrusted candidate.
 
 These are policy errors, not retryable transport failures. Operators should fix
 the MCP configuration and restart only the affected server/client worker. No
@@ -91,6 +116,11 @@ work. The Pydantic constraints are compiled with the model schema at import and
 add no background process. Tests use only in-process validators, so they do not
 consume launcher or daemon slots.
 
+Jail selection adds only bounded path normalization and ancestry checks; it
+creates no daemon, port, migration, or persistent state. The precedence repair
+is therefore compatible with rolling replacement: old workers keep serving,
+while new workers bind each builtin handler to its configured workspace.
+
 Rollback is a single code revision with no data restoration. Rolling back
 re-enables previously accepted unsafe flags, so the safer operational rollback
 is to correct the configuration and roll forward. If code rollback is required,
@@ -108,3 +138,8 @@ registry collision and call-tool binding gates.
 - `tests/unit/test_tool_loop_routing.py` pins fail-closed ambiguous-state routing.
 - `tests/unit/test_mcp_registry_gate.py` pins collision admission and per-server
   call-tool dispatch.
+- `tests/unit/test_mcp_builtins_structural.py` pins explicit-workspace
+  precedence, ambient-root fallback, and fail-closed jail containment.
+- `tests/unit/test_project_runner_tool.py` proves that a conflicting supervisor
+  root cannot block an explicitly bound project check or admit a sibling
+  workspace through the model-supplied dispatch path.

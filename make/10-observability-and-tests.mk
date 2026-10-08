@@ -181,6 +181,7 @@ test-count:
 	@$(UV) run --no-sync python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label test-count \
 		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
 		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --quiet --pytest-trace -- \
+		$(UV) run --no-sync python scripts/collection_lock.py --run \
 		$(UV) run --no-sync python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
 		$(UV) run --no-sync python scripts/stream_command.py --tail 3 --root "$(OBSERVED_ROOT)" --label test-count || TAIL_RC=$$?; \
 		if [ "$$RC" -ne 0 ]; then exit "$$RC"; fi; exit "$${TAIL_RC:-0}"
