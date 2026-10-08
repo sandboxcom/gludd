@@ -691,13 +691,28 @@ class BenchmarkRepository:
         self._session = session
         self._session_factory = session_factory
 
-    async def _execute_with_session(self, fn: Callable[[AsyncSession], Any]) -> Any:
+    async def _execute_with_session(
+        self,
+        fn: Callable[[AsyncSession], Any],
+        *,
+        transactional: bool = False,
+    ) -> Any:
+        """Run one operation without transferring caller session ownership.
+
+        Factory-owned writes receive an explicit transaction that commits or
+        rolls back before its session closes. Factory-owned reads use a plain
+        operation-scoped session: closing it releases the implicit read
+        transaction without a commit that would expire returned ORM rows.
+        """
         if self._session_factory is not None:
-            async with self._session_factory() as session, session.begin():
-                result = await fn(session)
-                if hasattr(result, "_sa_instance_state"):
-                    session.expunge(result)
-                return result
+            if transactional:
+                async with self._session_factory() as session, session.begin():
+                    result = await fn(session)
+                    if hasattr(result, "_sa_instance_state"):
+                        session.expunge(result)
+                    return result
+            async with self._session_factory() as session:
+                return await fn(session)
         if self._session is not None:
             return await fn(self._session)
         raise RuntimeError("BenchmarkRepository: no session or session_factory")
@@ -711,7 +726,10 @@ class BenchmarkRepository:
             await session.flush()
             return row
 
-        return cast(BenchmarkResultModel, await self._execute_with_session(_do))
+        return cast(
+            BenchmarkResultModel,
+            await self._execute_with_session(_do, transactional=True),
+        )
 
     async def get_aggregate_scores(
         self,
