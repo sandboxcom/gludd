@@ -22,7 +22,7 @@ import stat
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +42,7 @@ MAX_RECEIPT_GENERATIONS = 2
 MAX_RECEIPT_BYTES = 2 * 1024**3
 MAX_JSON_BYTES = 64 * 1024**2
 MAX_JUNIT_BYTES = 64 * 1024**2
+MAX_JUNIT_TESTCASE_NAME_CHARS = 64 * 1024
 MAX_SEMANTIC_COVERAGE_ITEMS = 2_000_000
 MAX_FAILURE_NODES = 32
 MAX_FAILURE_RECEIPTS_PER_GENERATION = 256
@@ -252,21 +253,28 @@ def _junit_root(path: Path) -> Any:
     return root
 
 
-def normalize_junit_outcomes(path: Path) -> dict[str, object]:
-    """Return a bounded content-free terminal-outcome manifest from JUnit XML."""
-    root = _junit_root(path)
+def _junit_testcase_identity(case: Any) -> tuple[str, str, str]:
+    """Return one bounded JUnit testcase identity."""
+    name = case.attrib.get("name", "")
+    classname = case.attrib.get("classname", "")
+    source_file = case.attrib.get("file", "")
+    if (
+        not name
+        or len(name) > MAX_JUNIT_TESTCASE_NAME_CHARS
+        or len(classname) > 4096
+        or len(source_file) > 4096
+    ):
+        raise ValueError("JUnit testcase identity is missing or oversized")
+    return name, classname, source_file
 
-    outcomes: list[dict[str, str]] = []
-    counts = {"errors": 0, "failures": 0, "passed": 0, "skipped": 0, "tests": 0}
+
+def _junit_testcases(root: Any) -> Iterator[tuple[str, set[str]]]:
+    """Yield validated testcase identity digests and terminal child tags."""
     seen: set[str] = set()
     for case in root.iter():
         if _xml_tag(case) != "testcase":
             continue
-        name = case.attrib.get("name", "")
-        classname = case.attrib.get("classname", "")
-        source_file = case.attrib.get("file", "")
-        if not name or len(name) > 4096 or len(classname) > 4096 or len(source_file) > 4096:
-            raise ValueError("JUnit testcase identity is missing or oversized")
+        name, classname, source_file = _junit_testcase_identity(case)
         node_digest = canonical_json_sha256(
             {"classname": classname, "file": source_file, "name": name}
         )
@@ -276,6 +284,18 @@ def normalize_junit_outcomes(path: Path) -> dict[str, object]:
         child_tags = {_xml_tag(child) for child in case}
         if len(child_tags.intersection({"error", "failure", "skipped"})) > 1:
             raise ValueError("JUnit testcase has ambiguous terminal outcomes")
+        yield node_digest, child_tags
+
+
+def normalize_junit_outcomes(path: Path) -> dict[str, object]:
+    """Return a bounded content-free terminal-outcome manifest from JUnit XML."""
+    root = _junit_root(path)
+
+    outcomes: list[dict[str, str]] = []
+    counts = {"errors": 0, "failures": 0, "passed": 0, "skipped": 0, "tests": 0}
+    node_digests: list[str] = []
+    for node_digest, child_tags in _junit_testcases(root):
+        node_digests.append(node_digest)
         if "error" in child_tags:
             outcome = "error"
             counts["errors"] += 1
@@ -295,7 +315,7 @@ def normalize_junit_outcomes(path: Path) -> dict[str, object]:
     return {
         "schema_version": 1,
         "counts": counts,
-        "node_id_sha256": canonical_json_sha256(sorted(seen)),
+        "node_id_sha256": canonical_json_sha256(sorted(node_digests)),
         "terminal_outcome_sha256": canonical_json_sha256(outcomes),
     }
 
@@ -305,25 +325,8 @@ def normalize_junit_failure_metadata(path: Path) -> dict[str, object]:
     root = _junit_root(path)
     nodes: list[dict[str, str]] = []
     failing_count = 0
-    seen: set[str] = set()
     digest = hashlib.sha256()
-    for case in root.iter():
-        if _xml_tag(case) != "testcase":
-            continue
-        name = case.attrib.get("name", "")
-        classname = case.attrib.get("classname", "")
-        source_file = case.attrib.get("file", "")
-        if not name or len(name) > 4096 or len(classname) > 4096 or len(source_file) > 4096:
-            raise ValueError("JUnit testcase identity is missing or oversized")
-        node_digest = canonical_json_sha256(
-            {"classname": classname, "file": source_file, "name": name}
-        )
-        if node_digest in seen:
-            raise ValueError("JUnit evidence contains a duplicate testcase identity")
-        seen.add(node_digest)
-        child_tags = {_xml_tag(child) for child in case}
-        if len(child_tags.intersection({"error", "failure", "skipped"})) > 1:
-            raise ValueError("JUnit testcase has ambiguous terminal outcomes")
+    for node_digest, child_tags in _junit_testcases(root):
         outcome = (
             "error"
             if "error" in child_tags
