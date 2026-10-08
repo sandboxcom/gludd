@@ -18,129 +18,28 @@ Exit codes:
 
 from __future__ import annotations
 
-import re
 import sys
 import time
-from collections.abc import Mapping
 from collections import defaultdict
 from pathlib import Path
-from typing import TypedDict
 
-# Support dotted phase IDs (``S53.31``), legacy hyphenated IDs (``FIX-3``),
-# and the multi-segment Beta.3 ledger IDs (``T-BETA3-E2E``).
-ID_PATTERN = re.compile(
-    r"\b((?:[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)|(?:[A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*)?))\b"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_SRC = _REPO_ROOT / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from general_ludd.validation.backlog_sources import ID_PATTERN as ID_PATTERN  # noqa: E402
+from general_ludd.validation.backlog_sources import (  # noqa: E402
+    TaskRecord,
+    extract_tasks,
+    task_is_effectively_complete,
 )
-PRIMARY_ID_PATTERN = re.compile(
-    r"^-\s*\[[ x]\]\s+((?:[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)|(?:[A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*)?))\b"
-)
-EPOCH_PATTERN = re.compile(r"epoch\s+(\d{10,})")
+
 STALE_SECONDS = 24 * 3600
-COMPLETED_STATUSES = frozenset({"complete", "completed", "done"})
-
-
-class TaskRecord(TypedDict):
-    """Normalized TASKS.md checkbox record."""
-
-    line: str
-    ids: list[str]
-    all_ids: list[str]
-    status: str | None
-    epoch: int | None
-
-
-def task_is_effectively_complete(task: Mapping[str, object], *, checked: bool) -> bool:
-    """Require checkbox and explicit status, when present, to agree.
-
-    Historical ledger entries do not all carry a ``status`` field, so a
-    checked item without one keeps its checkbox meaning.  Once a status is
-    present it is authoritative evidence too: completion requires both
-    signals, while an unchecked item always remains open.
-    """
-    if not checked:
-        return False
-    status = task.get("status")
-    if status is None:
-        return True
-    if not isinstance(status, str):
-        return False
-    return status.casefold().rstrip("|,;.") in COMPLETED_STATUSES
-
-
-def _primary_ids(stripped: str) -> list[str]:
-    """Extract the primary task ID(s) from a checkbox line.
-
-    Returns contiguous ID matches immediately after the checkbox marker as
-    primary IDs.
-    Secondary IDs in evidence text are NOT extracted to avoid false
-    re-dispatch/duplicate flags when items reference each other.
-    """
-    marker = re.match(r"^-\s*\[[ x]\]\s+(?P<body>.*)$", stripped)
-    if marker is None:
-        return []
-    body = marker.group("body")
-    ids: list[str] = []
-    pos = 0
-    while pos < len(body):
-        while pos < len(body) and body[pos].isspace():
-            pos += 1
-        match = ID_PATTERN.match(body, pos)
-        if match is None:
-            break
-        ids.append(match.group(1))
-        pos = match.end()
-    return ids
-
-
-def _all_ids(stripped: str) -> list[str]:
-    """Extract all IDs for MISSING-ID detection."""
-    return ID_PATTERN.findall(stripped)
-
-
-def extract_tasks(tasks_path: Path) -> tuple[list[TaskRecord], list[TaskRecord]]:
-    """Parse TASKS.md, return (checked, unchecked) lists of task dicts."""
-    text = tasks_path.read_text(encoding="utf-8")
-    checked: list[TaskRecord] = []
-    unchecked: list[TaskRecord] = []
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith(("- [x]", "- [ ]")):
-            continue
-
-        is_checked = stripped.startswith("- [x]")
-        all_ids = _all_ids(stripped)
-
-        # Primary IDs used for dedup/re-dispatch — only the ID immediately
-        # after the checkbox marker. Secondary IDs in evidence text are
-        # informational cross-references, not task declarations.
-        primary = _primary_ids(stripped)
-
-        # Extract epoch timestamp if present
-        epoch_match = re.search(r"(?:epoch|ts)\s+(\d{10,})", stripped)
-        epoch = int(epoch_match.group(1)) if epoch_match else None
-
-        status_match = re.search(r"status:\s*(\S+)", stripped)
-        status = status_match.group(1) if status_match else None
-
-        task: TaskRecord = {
-            "line": stripped,
-            "ids": primary,
-            "all_ids": all_ids,
-            "status": status,
-            "epoch": epoch,
-        }
-        if is_checked:
-            checked.append(task)
-        else:
-            unchecked.append(task)
-
-    return checked, unchecked
 
 
 def main() -> int:
-    repo_root = Path(__file__).resolve().parent.parent
-    tasks_path = repo_root / "TASKS.md"
+    tasks_path = _REPO_ROOT / "TASKS.md"
 
     if not tasks_path.exists():
         print(f"ERROR: TASKS.md not found at {tasks_path}", file=sys.stderr)
