@@ -4,17 +4,14 @@
 """
 DOCUMENTATION:
   module: gludd_mcp_tool
-  short_description: Invoke an MCP tool (honest placeholder — not yet wired)
+  short_description: Invoke an MCP tool through the authenticated Gludd dispatcher
   description:
-    - Per the W3.9 decision in TASKS.md (MCP honestly fenced): the daemon
-      loads C(mcp_servers) config but passes C(mcp_client=None) — no MCP
-      tools can be called through the daemon today.
-    - This module exists so playbooks can reference C(general_ludd.agent.gludd_mcp_tool)
-      without import errors; it always returns C(not_implemented=true) and
-      C(failed=false) so callers can C(when: not mcp_result.not_implemented)
-      gate around it cleanly.
-    - When MCP wiring (W3.9 option a) is completed, replace the body of this
-      module and remove this note.
+    - Sends one bounded C(kind=mcp) request to the daemon's C(/api/dispatch)
+      endpoint. The daemon routes C(server/tool) to its live MCP client.
+    - Transport, HTTP, dispatcher, capability, and handler failures propagate
+      as Ansible task failures instead of being reported as successful no-ops.
+    - Check mode validates arguments and returns the exact planned dispatch
+      without contacting the daemon.
   options:
     server:
       description: MCP server name.
@@ -42,11 +39,12 @@ DOCUMENTATION:
       type: int
       default: 30
   notes:
-    - Returns C(not_implemented=true) until W3.9 option (a) is completed.
-    - Never fails — callers should gate on C(not not_implemented).
+    - Supports C(check_mode) without executing the MCP tool.
+    - Tool calls are read or mutating according to the selected MCP tool; this
+      module therefore reports C(changed=false) and returns the tool result.
 
 EXAMPLES:
-  - name: Attempt MCP tool call
+  - name: Invoke an MCP tool
     general_ludd.agent.gludd_mcp_tool:
       server: "filesystem"
       tool: "read_file"
@@ -54,38 +52,33 @@ EXAMPLES:
         path: "/workspace/myfile.py"
     register: mcp_result
 
-  - name: Only use result if MCP is wired
+  - name: Use the returned MCP result
     ansible.builtin.debug:
       msg: "MCP result: {{ mcp_result.result }}"
-    when: not mcp_result.not_implemented
 
 RETURN:
-  not_implemented:
-    description: Always true until W3.9 option (a) is completed.
-    type: bool
-    returned: always
-  reason:
-    description: Explanation of why MCP is not yet available.
-    type: str
-    returned: always
   result:
-    description: Tool result (empty until wired).
-    type: dict
-    returned: always
+    description: MCP handler output returned by the daemon dispatcher.
+    type: raw
+    returned: success
 """
 
 from __future__ import annotations
 
-from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import ok_result
+from typing import Any
 
-# W3.9 decision: MCP is honestly fenced.
-# daemon.py:403 passes mcp_client=None; mcp_servers config is loaded but unused.
-# When W3.9 option (a) wiring lands, implement this module for real.
-_W3_9_REASON = (
-    "MCP not yet wired: daemon.py passes mcp_client=None (W3.9 decision). "
-    "See TASKS.md W3.9 for resolution path."
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
 )
+
+_MAX_TIMEOUT_SECONDS = 300
+
+
+def _fail(module: Any, message: str, *, status: object = 0) -> None:
+    module.fail_json(**error_result(message, status=status))
 
 
 def main() -> None:
@@ -101,16 +94,65 @@ def main() -> None:
         supports_check_mode=True,
     )
 
-    module.exit_json(**ok_result(
-        {
-            "not_implemented": True,
-            "reason": _W3_9_REASON,
-            "result": {},
-            "server": module.params["server"],
-            "tool": module.params["tool"],
-        },
-        changed=False,
-    ))
+    server: str = module.params["server"]
+    tool: str = module.params["tool"]
+    arguments: dict[str, Any] = module.params["arguments"] or {}
+    timeout: int = module.params["timeout"]
+    if timeout < 1 or timeout > _MAX_TIMEOUT_SECONDS:
+        _fail(module, f"timeout must be between 1 and {_MAX_TIMEOUT_SECONDS} seconds")
+        return
+
+    call = {
+        "kind": "mcp",
+        "name": f"{server}/{tool}",
+        "args": arguments,
+    }
+    if module.check_mode:
+        module.exit_json(
+            **ok_result(
+                {
+                    "check_mode": True,
+                    "planned_call": call,
+                    "result": {},
+                    "server": server,
+                    "tool": tool,
+                },
+                changed=False,
+            )
+        )
+        return
+
+    response = GluddClient(
+        base_url=module.params["daemon_url"],
+        psk=module.params["psk"],
+        timeout=timeout,
+    ).post("/api/dispatch", call)
+    status = response.get("_status", 0)
+    if response.get("_error") or status != 200:
+        detail = response.get("detail") or response.get("_error") or f"HTTP {status}"
+        _fail(module, f"MCP dispatch failed: {detail}", status=status)
+        return
+
+    results = response.get("results")
+    if not isinstance(results, list) or len(results) != 1 or not isinstance(results[0], dict):
+        _fail(module, "MCP dispatch returned an invalid response", status=status)
+        return
+    dispatch_result = results[0]
+    if dispatch_result.get("ok") is not True:
+        detail = dispatch_result.get("error") or "unknown dispatcher failure"
+        _fail(module, f"MCP dispatch failed: {detail}", status=status)
+        return
+
+    module.exit_json(
+        **ok_result(
+            {
+                "result": dispatch_result.get("output"),
+                "server": server,
+                "tool": tool,
+            },
+            changed=False,
+        )
+    )
 
 
 if __name__ == "__main__":
