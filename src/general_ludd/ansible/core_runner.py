@@ -587,15 +587,16 @@ class CoreAnsibleRunner:
             )
 
         # Track this child (and its setsid process group) in the managed-process
-        # registry so the admin API can inspect/signal it. Registration must
-        # never break job execution, so it is fully guarded.
+        # registry so the admin API can inspect/signal it. The owner lease is the
+        # narrow post-seal mutation path and can remove only this exact record.
+        process_lease: Any | None = None
         try:
             from general_ludd.process.registry import default_registry
 
             _pid = proc.pid
             if _pid is not None:
-                default_registry().register(
-                    _pid,
+                process_lease = default_registry().lease_owned_process(
+                    proc,
                     command=[
                         "ansible-playbook-runner",
                         str(exec_kwargs.get("playbook_path", "")),
@@ -603,7 +604,13 @@ class CoreAnsibleRunner:
                     origin="ansible_runner",
                 )
         except Exception:
-            logger.debug("managed-process registration failed", exc_info=True)
+            # Observability is intentionally content-free: child execution still
+            # proceeds, while operators can see that process management degraded.
+            logger.warning(
+                "MANAGED_PROCESS_LEASE_ACQUIRE_FAILED pid=%s",
+                proc.pid,
+                exc_info=True,
+            )
 
         try:
             deadline = time.monotonic() + timeout
@@ -663,15 +670,17 @@ class CoreAnsibleRunner:
                 return AnsibleResult(**payload)
             return AnsibleResult(status="failed", rc=1, error=str(payload))
         finally:
-            # The child has been joined or terminated; drop it from the registry.
-            try:
-                from general_ludd.process.registry import default_registry
-
-                _pid = proc.pid
-                if _pid is not None:
-                    default_registry().deregister(_pid)
-            except Exception:
-                logger.debug("managed-process deregister failed", exc_info=True)
+            # The child has been joined or terminated; release only the exact
+            # record acquired above. An old lease cannot evict a reused PID.
+            if process_lease is not None:
+                try:
+                    process_lease.release()
+                except Exception:
+                    logger.warning(
+                        "MANAGED_PROCESS_LEASE_RELEASE_FAILED pid=%s",
+                        proc.pid,
+                        exc_info=True,
+                    )
             try:
                 queue.close()
                 queue.join_thread()

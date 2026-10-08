@@ -150,14 +150,22 @@ def _collect_stats(pid: int) -> dict[str, object]:
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register managed-process administration routes on ``app``."""
     @app.get("/admin/processes")
     async def list_processes() -> dict[str, object]:
         reg = default_registry()
-        records = reg.list()
+        # The snapshot performs a bounded PID/create-time prune, so dead or
+        # reused identities cannot accumulate after the runtime registry seals.
+        records = reg.active_snapshot()
         processes = [
             {**r.to_dict(), "alive": reg.is_alive(r.pid)} for r in records
         ]
         return {"processes": processes, "count": len(processes)}
+
+    @app.get("/admin/processes/metrics")
+    async def process_registry_metrics() -> dict[str, int]:
+        """Expose bounded, content-free registry lifecycle counters."""
+        return default_registry().metrics()
 
     @app.post("/admin/processes/{pid}/signal")
     async def signal_process(

@@ -33,7 +33,7 @@ import signal as _signal
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +64,20 @@ _ALLOWED_SIGNALS: dict[str, int] = {
 # create_time() is a float of seconds since epoch; identical reads are exactly
 # equal, but allow a tiny tolerance for float round-tripping through JSON.
 _CREATE_TIME_TOLERANCE_S = 0.5
+_DEFAULT_MAX_RECORDS = 256
 
 
 class ProcessRegistryError(Exception):
     """Raised when a registry operation is refused (unknown/identity/signal)."""
+
+
+class _OwnedProcessHandle(Protocol):
+    """Started process handle accepted by the trusted owner-lease path."""
+
+    @property
+    def pid(self) -> int | None:
+        """Return the child PID after it has started."""
+        ...
 
 
 @dataclass
@@ -88,6 +98,7 @@ class ManagedProcess:
     create_time: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable copy of this process metadata."""
         return {
             "pid": self.pid,
             "command": list(self.command),
@@ -98,6 +109,53 @@ class ManagedProcess:
             "registered_at": self.registered_at,
             "create_time": self.create_time,
         }
+
+
+class ManagedProcessLease:
+    """Single-owner capability for one exact managed-process record.
+
+    A lease can remove only the same record object it created. If the process
+    exits and its PID is later reused, releasing the old lease cannot evict the
+    replacement record.
+    """
+
+    def __init__(
+        self,
+        registry: ProcessRegistry,
+        record: ManagedProcess,
+    ) -> None:
+        """Initialize a lease for one exact registry record."""
+        self._registry = registry
+        self._record = record
+        self._released = False
+
+    @property
+    def pid(self) -> int:
+        """Return the PID captured by this lease."""
+        return self._record.pid
+
+    def release(self) -> bool:
+        """Release this exact record once; return whether it was removed."""
+        if self._released:
+            return False
+        self._released = True
+        return self._registry._release_owned_process(self._record)
+
+    def __enter__(self) -> ManagedProcessLease:
+        """Return this lease for context-managed ownership."""
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: object,
+        _exc: object,
+        _traceback: object,
+    ) -> None:
+        """Release the owned record when its context exits."""
+        self.release()
+
+
+_ManagedProcessList = list[ManagedProcess]
 
 
 def _psutil() -> Any | None:
@@ -124,19 +182,29 @@ def _read_create_time(pid: int) -> float | None:
 class ProcessRegistry:
     """Thread-safe registry of gludd-managed processes."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, max_records: int = _DEFAULT_MAX_RECORDS) -> None:
+        """Initialize an empty registry with a fixed record capacity."""
+        if isinstance(max_records, bool) or not isinstance(max_records, int):
+            raise TypeError("max_records must be an integer")
+        if max_records < 1:
+            raise ValueError("max_records must be at least 1")
         self._procs: dict[int, ManagedProcess] = {}
         self._lock = threading.RLock()
         self._sealed: bool = False
+        self._max_records = max_records
+        self._owner_leases_acquired = 0
+        self._owner_leases_released = 0
+        self._stale_records_pruned = 0
+        self._capacity_rejections = 0
 
     def seal(self) -> None:
         """Prevent further structural modification after daemon initialization.
 
-        Once sealed the registry rejects ``register``, ``deregister``, and
-        ``reap`` — the mutation surface that could be abused to inject or
-        evict entries after the daemon's trusted setup phase is complete.
-        Read-only operations (``get``, ``is_managed``, ``list``, ``is_alive``,
-        ``signal``) remain available.
+        Once sealed the registry rejects the unrestricted ``register``,
+        ``deregister``, and ``reap`` methods. Runtime owners may still use
+        :meth:`lease_owned_process`, which binds registration and cleanup to a
+        concrete started-process handle. :meth:`active_snapshot` may only evict
+        records that fail the PID/create-time identity check.
 
         Sealing is one-way and idempotent: calling ``seal`` a second time is
         a no-op.
@@ -191,6 +259,12 @@ class ProcessRegistry:
             create_time=_read_create_time(pid),
         )
         with self._lock:
+            self._prune_stale_locked(self._max_records)
+            if int(pid) not in self._procs and len(self._procs) >= self._max_records:
+                self._capacity_rejections += 1
+                raise ProcessRegistryError(
+                    f"managed-process registry capacity {self._max_records} reached"
+                )
             self._procs[int(pid)] = record
         logger.debug("registered managed process pid=%s origin=%s", pid, origin)
         return record
@@ -204,13 +278,102 @@ class ProcessRegistry:
         with self._lock:
             return self._procs.pop(int(pid), None)
 
+    def lease_owned_process(
+        self,
+        process: _OwnedProcessHandle,
+        command: list[str] | tuple[str, ...] | str,
+        *,
+        pgid: int | None = None,
+        job_id: str | None = None,
+        project_id: str | None = None,
+        origin: str = "",
+    ) -> ManagedProcessLease:
+        """Register a started child through an identity-bound owner lease.
+
+        This is the narrow runtime mutation path that remains valid after
+        :meth:`seal`. The caller must hold the concrete process handle it
+        started. Registration fails closed when the PID or its creation time
+        cannot be established. Capacity enforcement first performs one bounded
+        PID-safe prune across at most ``max_records`` entries.
+        """
+        pid_value = process.pid
+        if (
+            isinstance(pid_value, bool)
+            or not isinstance(pid_value, int)
+            or pid_value < 1
+        ):
+            raise ProcessRegistryError(
+                "owned process must be started and expose a positive integer pid"
+            )
+        create_time = _read_create_time(pid_value)
+        if create_time is None:
+            raise ProcessRegistryError(
+                f"cannot verify owned process identity for pid {pid_value}"
+            )
+        if pgid is None:
+            try:
+                pgid = os.getpgid(pid_value)
+            except (ProcessLookupError, PermissionError, OSError):
+                pgid = None
+        command_list = [command] if isinstance(command, str) else list(command)
+        record = ManagedProcess(
+            pid=pid_value,
+            command=command_list,
+            pgid=pgid,
+            job_id=job_id,
+            project_id=project_id,
+            origin=origin,
+            create_time=create_time,
+        )
+        if not self._identity_ok(record):
+            raise ProcessRegistryError(
+                f"owned process pid {pid_value} exited or changed identity "
+                "before registration"
+            )
+
+        with self._lock:
+            self._prune_stale_locked(self._max_records)
+            if pid_value in self._procs:
+                raise ProcessRegistryError(
+                    f"owned process pid {pid_value} is already managed"
+                )
+            if len(self._procs) >= self._max_records:
+                self._capacity_rejections += 1
+                raise ProcessRegistryError(
+                    f"managed-process registry capacity {self._max_records} reached"
+                )
+            self._procs[pid_value] = record
+            self._owner_leases_acquired += 1
+        logger.info(
+            "MANAGED_PROCESS_LEASE_ACQUIRED pid=%s origin=%s",
+            pid_value,
+            origin,
+        )
+        return ManagedProcessLease(self, record)
+
+    def _release_owned_process(self, record: ManagedProcess) -> bool:
+        """Release only ``record``; never remove a newer record for its PID."""
+        with self._lock:
+            if self._procs.get(record.pid) is not record:
+                return False
+            del self._procs[record.pid]
+            self._owner_leases_released += 1
+        logger.info(
+            "MANAGED_PROCESS_LEASE_RELEASED pid=%s origin=%s",
+            record.pid,
+            record.origin,
+        )
+        return True
+
     # -- queries ----------------------------------------------------------
 
     def get(self, pid: int) -> ManagedProcess | None:
+        """Return the managed record for ``pid`` when present."""
         with self._lock:
             return self._procs.get(int(pid))
 
     def is_managed(self, pid: int) -> bool:
+        """Return whether ``pid`` currently has a managed record."""
         with self._lock:
             return int(pid) in self._procs
 
@@ -221,6 +384,30 @@ class ProcessRegistry:
         if not active_only:
             return records
         return [r for r in records if self._identity_ok(r)]
+
+    def active_snapshot(self) -> _ManagedProcessList:
+        """Return live records after one bounded, PID-safe stale prune.
+
+        Unlike the unrestricted :meth:`reap` setup API, this method remains
+        safe after sealing because it can only remove a record whose live
+        PID/create-time identity no longer matches. The registry capacity is
+        also the hard upper bound on identity probes per call.
+        """
+        with self._lock:
+            self._prune_stale_locked(self._max_records)
+            return list(self._procs.values())
+
+    def metrics(self) -> dict[str, int]:
+        """Return content-free counters for owner lifecycle observability."""
+        with self._lock:
+            return {
+                "capacity": self._max_records,
+                "current": len(self._procs),
+                "owner_leases_acquired_total": self._owner_leases_acquired,
+                "owner_leases_released_total": self._owner_leases_released,
+                "stale_records_pruned_total": self._stale_records_pruned,
+                "capacity_rejections_total": self._capacity_rejections,
+            }
 
     # -- identity / liveness ---------------------------------------------
 
@@ -326,6 +513,23 @@ class ProcessRegistry:
 
     # -- maintenance ------------------------------------------------------
 
+    def _prune_stale_locked(self, limit: int) -> _PidList:
+        """Prune at most ``limit`` stale identities while ``_lock`` is held."""
+        evicted: list[int] = []
+        for pid, record in list(self._procs.items())[:limit]:
+            if self._identity_ok(record):
+                continue
+            if self._procs.get(pid) is record:
+                del self._procs[pid]
+                evicted.append(pid)
+        self._stale_records_pruned += len(evicted)
+        if evicted:
+            logger.info(
+                "MANAGED_PROCESS_STALE_PRUNED count=%s",
+                len(evicted),
+            )
+        return evicted
+
     def reap(self) -> _PidList:
         """Drop records whose process has exited or whose PID was reused.
 
@@ -335,15 +539,8 @@ class ProcessRegistry:
         Raises :class:`ProcessRegistryError` if the registry is sealed.
         """
         self._require_unsealed("reap")
-        evicted: list[int] = []
         with self._lock:
-            for pid, record in list(self._procs.items()):
-                if not self._identity_ok(record):
-                    del self._procs[pid]
-                    evicted.append(pid)
-        if evicted:
-            logger.debug("reaped %d exited/reused managed pids", len(evicted))
-        return evicted
+            return self._prune_stale_locked(self._max_records)
 
 
 _DEFAULT_REGISTRY: ProcessRegistry | None = None
@@ -364,8 +561,9 @@ def set_default_registry(registry: ProcessRegistry) -> None:
     """Eagerly set the process-wide singleton registry and seal it.
 
     Must be called before any code calls ``default_registry()``. After this
-    call the registry is sealed — ``register``, ``deregister``, and ``reap``
-    are rejected until shutdown.
+    call the registry is sealed — unrestricted ``register``, ``deregister``,
+    and ``reap`` are rejected until shutdown. Started-child owners use
+    ``lease_owned_process`` for the narrow runtime lifecycle path.
 
     Called once from the daemon's startup sequence so the process registry
     exists and is immutable before the HTTP server accepts requests.
