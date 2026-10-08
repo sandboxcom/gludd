@@ -12,11 +12,56 @@
     project_dir: "{{ project_dir | default('.') }}"
 
   tasks:
+    - name: Validate bounded dependency update request
+      ansible.builtin.assert:
+        that:
+          - package_name is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$')
+          - version_constraint is match('^[<>=!~0-9A-Za-z.*+,-]{0,128}$')
+          - project_dir | length > 0
+          - project_dir | length <= 4096
+        fail_msg: Dependency update requires a bounded package and project path.
+
     - name: Create artifact directory
       ansible.builtin.file:
         path: "{{ artifact_dir }}"
         state: directory
         mode: "0755"
+
+    - name: Inspect dependency lock before update
+      ansible.builtin.stat:
+        path: "{{ project_dir }}/uv.lock"
+        get_checksum: true
+        checksum_algorithm: sha256
+      register: dependency_lock_before
+
+    - name: Reconcile dependency lock with uv
+      ansible.builtin.command:
+        argv:
+          - uv
+          - lock
+          - --upgrade-package
+          - "{{ package_name }}{{ version_constraint }}"
+        chdir: "{{ project_dir }}"
+      environment:
+        UV_CACHE_DIR: "{{ project_dir }}/.cache/gludd-dogfood-uv"
+      register: dependency_update_command
+      changed_when: false
+
+    - name: Inspect dependency lock after update
+      ansible.builtin.stat:
+        path: "{{ project_dir }}/uv.lock"
+        get_checksum: true
+        checksum_algorithm: sha256
+      register: dependency_lock_after
+
+    - name: Require dependency lock output
+      ansible.builtin.assert:
+        that:
+          - dependency_lock_after.stat.exists | default(false)
+          - dependency_lock_after.stat.isreg | default(false)
+          - dependency_lock_after.stat.checksum | default('') is match('^[0-9a-f]{64}$')
+        fail_msg: Dependency update did not produce a valid uv.lock.
+      when: not ansible_check_mode
 
     - name: Run lint and check after dependency update
       ansible.builtin.include_role:
@@ -24,23 +69,26 @@
       vars:
         project_dir: "{{ project_dir }}"
         artifact_dir: "{{ artifact_dir }}"
-        fail_on_lint: false
-        fail_on_typecheck: false
+        fail_on_lint: true
+        fail_on_typecheck: true
 
-    - name: Record dependency update task
+    - name: Record dependency update evidence
       ansible.builtin.copy:
-        content: |
-          {
-            "job_id": "{{ job_id }}",
-            "todo_id": "{{ todo_id }}",
-            "package_name": "{{ package_name }}",
-            "version_constraint": "{{ version_constraint }}",
-            "playbook": "dependency_update.yml",
-            "status": "success",
-            "exit_code": 0
-          }
+        content: >-
+          {{
+            {
+              'job_id': job_id,
+              'todo_id': todo_id,
+              'package_name': package_name,
+              'version_constraint': version_constraint,
+              'status': 'success',
+              'changed': dependency_lock_before.stat.checksum | default('')
+                         != dependency_lock_after.stat.checksum | default('')
+            } | to_nice_json
+          }}
         dest: "{{ artifact_dir }}/dependency_update_result.json"
         mode: "0644"
+      when: not ansible_check_mode
 
     - name: Report dependency update completion
       ansible.builtin.debug:

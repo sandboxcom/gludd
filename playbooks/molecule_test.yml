@@ -11,20 +11,36 @@
     artifact_dir: "{{ artifact_dir | default('/tmp/harness-molecule-test') }}"
 
   tasks:
+    - name: Validate bounded Molecule request
+      ansible.builtin.assert:
+        that:
+          - test_dir | length > 0
+          - test_dir | length <= 4096
+          - scenario is match('^[A-Za-z0-9_.-]{1,128}$')
+        fail_msg: Molecule test requires bounded test_dir and scenario inputs.
+
     - name: Create artifact directory
       ansible.builtin.file:
         path: "{{ artifact_dir }}"
         state: directory
         mode: "0755"
 
-    - name: Run test suite via run_tests role
-      ansible.builtin.include_role:
-        name: general_ludd.agent.run_tests
-      vars:
-        test_dir: "{{ test_dir }}"
-        test_cmd: "make test-count"
-        artifact_dir: "{{ artifact_dir }}"
-        allow_failure: true
+    - name: Run bounded Molecule scenario
+      ansible.builtin.command:
+        argv:
+          - uv
+          - run
+          - molecule
+          - test
+          - --scenario-name
+          - "{{ scenario }}"
+        chdir: "{{ test_dir }}"
+      environment:
+        MOLECULE_EPHEMERAL_DIRECTORY: "{{ artifact_dir }}/ephemeral/{{ scenario }}"
+      register: molecule_result
+      changed_when: false
+      async: 900
+      poll: 10
 
     - name: Write molecule test artifact
       ansible.builtin.copy:
@@ -34,11 +50,13 @@
             "todo_id": "{{ todo_id }}",
             "playbook": "molecule_test.yml",
             "scenario": "{{ scenario }}",
-            "status": "completed"
+            "status": "success",
+            "return_code": {{ molecule_result.rc }}
           }
         dest: "{{ artifact_dir }}/molecule_test_result.json"
         mode: "0644"
+      when: not ansible_check_mode
 
     - name: Report molecule test completion
       ansible.builtin.debug:
-        msg: "Molecule test completed for job {{ job_id }} scenario {{ scenario }}"
+        msg: "Molecule test passed for job {{ job_id }} scenario {{ scenario }}"

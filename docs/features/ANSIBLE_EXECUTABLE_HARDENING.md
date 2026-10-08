@@ -85,6 +85,29 @@ lookups remain `changed=false`, while missing interpreters, invalid utility
 inputs, and runtime faults stop the play instead of publishing a default empty
 verdict.
 
+The 11 previously debug-only Git Release Captain roles now call one typed
+`git_release_operation` module over the authenticated
+`/api/git_release/resolve` endpoint. Helper roles execute the existing
+discovery and ranking engine; artifact roles build and verify the existing
+CycloneDX/in-toto provenance records from bounded repository-contained files;
+and deployment consumes the existing canary/rolling/blue-green health-gate
+orchestrator. Recovery and release-planning roles publish evidence-derived
+proposals with `mutation_performed=false`, so a proposal is never mislabeled
+as completed Git or release work. Requests are idempotently replayed, check
+mode performs no network access, missing telemetry holds promotion, and every
+role remains default-off until explicitly enabled.
+
+The dogfood playbook suite no longer treats filenames as sufficient smoke
+coverage. Quality gates and task validation run bounded allowlisted Make
+targets; Molecule runs one bounded scenario; dependency locking uses `uv` and
+then requires lint/type checks; release artifacts are checksummed; pip bundles
+use `ansible.builtin.pip`; runtime and Podman image state are probed before
+work; and gap analysis, log auditing, and reloads call their authenticated
+daemon endpoints. Self-improvement now requires a real repository and todo
+instead of writing a fallback success artifact. Every normal-run failure
+propagates, while network and mutation paths publish deterministic plans in
+check mode without executing.
+
 ## Long-lived practitioner evidence
 
 This contract follows problems Ansible practitioners have reported for more
@@ -128,6 +151,17 @@ than a decade:
   normal-run failures. The governance roles therefore preserve
   `changed_when: false` for read-only execution without disabling the command
   module's nonzero-return failure contract.
+- The 2017 Ansible Project discussion
+  [“Output Failed even if command gets executed successfully”](https://groups.google.com/g/ansible-project/c/_NnsHPwj5kU)
+  distinguishes an expected domain return code from an interpreter or command
+  failure. The dogfood playbooks therefore use narrow, explicit return-code
+  contracts only for read-only existence probes and propagate every other
+  failure.
+- In the 2013 thread
+  [“Abort entire run at one task failure”](https://groups.google.com/g/ansible-project/c/MU_ws7zynnI),
+  operators explicitly rejected blanket `ignore_errors` when later tasks must
+  not run after a failed prerequisite. Validation and Molecule playbooks now
+  write success evidence only after their real commands complete successfully.
 
 Together, these reports support a fail-closed rule: check mode should be
 predictive and non-mutating, while a normal run must never turn an unavailable
@@ -139,4 +173,7 @@ backend into green orchestration evidence.
 transport failure, handler failure, malformed responses, and check-mode
 network isolation. `tests/unit/test_ansible_executable_stub_checker.py`
 exercises detection, false-positive exclusions, Searx ownership boundaries,
-and the repository-wide zero-finding invariant.
+the named dogfood playbooks, and the repository-wide zero-finding invariant.
+The Git-release service, module, router, and role-structure suites verify real
+helper/provenance/ZDD dispatch, path and resource bounds, idempotent replay,
+failure propagation, and check-mode network isolation.

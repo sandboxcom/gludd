@@ -6,10 +6,21 @@
   vars:
     todo_id: "{{ todo_id | default('TODO-00000000') }}"
     worktree_path: "{{ worktree_path | default('/tmp/worktree') }}"
-    test_commands: "{{ test_commands | default(['echo ok']) }}"
+    test_commands: "{{ test_commands | default(['make test-count']) }}"
     artifact_dir: "{{ artifact_dir | default('/tmp/harness-validate') }}"
 
   tasks:
+    - name: Validate bounded task validation request
+      ansible.builtin.assert:
+        that:
+          - worktree_path | length > 0
+          - worktree_path | length <= 4096
+          - test_commands is sequence
+          - test_commands | length >= 1
+          - test_commands | length <= 16
+          - test_commands | reject('match', '^make [A-Za-z0-9_.-]{1,128}$') | list | length == 0
+        fail_msg: Validation accepts only a bounded list of make targets.
+
     - name: Create artifact directory
       ansible.builtin.file:
         path: "{{ artifact_dir }}"
@@ -17,10 +28,13 @@
         mode: "0755"
 
     - name: Run validation commands
-      ansible.builtin.command: "{{ item }}"
+      ansible.builtin.command:
+        argv:
+          - make
+          - "{{ item.split()[1] }}"
+        chdir: "{{ worktree_path }}"
       loop: "{{ test_commands }}"
       register: validation_results
-      ignore_errors: true
       changed_when: false
 
     - name: Write validation result artifact
@@ -30,10 +44,11 @@
             "todo_id": "{{ todo_id }}",
             "playbook": "validate_task.yml",
             "results": {{ validation_results | default([]) | to_json }},
-            "status": "completed"
+            "status": "success"
           }
         dest: "{{ artifact_dir }}/validation_result.json"
         mode: "0644"
+      when: not ansible_check_mode
 
     - name: Report validation completion
       ansible.builtin.debug:

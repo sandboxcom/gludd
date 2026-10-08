@@ -7,6 +7,9 @@
     job_id: "{{ job_id | default('RL-00000000') }}"
     reload_type: "{{ reload_type | default('config') }}"
     artifact_dir: "{{ artifact_dir | default('/tmp/harness-reload') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    daemon_psk: "{{ daemon_psk | default('') }}"
+    daemon_timeout: "{{ daemon_timeout | default(30) }}"
 
   tasks:
     - name: Create artifact directory
@@ -15,18 +18,33 @@
         state: directory
         mode: "0755"
 
+    - name: Validate reload scope
+      ansible.builtin.assert:
+        that:
+          - reload_type in ['models', 'templates', 'playbooks', 'skills', 'config', 'all']
+        fail_msg: Unsupported reload scope.
+
+    - name: Execute bounded harness reload
+      ansible.builtin.include_tasks: tasks/dogfood_api_request.yml
+      vars:
+        dogfood_api_path: >-
+          {{ '/admin/config/reload' if reload_type == 'config' else '/admin/reload' }}
+        dogfood_api_method: POST
+        dogfood_api_body: >-
+          {{ {} if reload_type == 'config' else {'scope': reload_type} }}
+        dogfood_api_timeout: "{{ daemon_timeout }}"
+        dogfood_api_result_fact: reload_result
+        dogfood_api_changed: true
+        dogfood_api_require_success: true
+        dogfood_daemon_url: "{{ daemon_url }}"
+        dogfood_daemon_psk: "{{ daemon_psk }}"
+
     - name: Write reload artifact
       ansible.builtin.copy:
-        content: |
-          {
-            "job_id": "{{ job_id }}",
-            "reload_type": "{{ reload_type }}",
-            "playbook": "reload_harness.yml",
-            "status": "success",
-            "exit_code": 0
-          }
+        content: "{{ reload_result | to_nice_json }}"
         dest: "{{ artifact_dir }}/reload_result.json"
         mode: "0644"
+      when: not ansible_check_mode
 
     - name: Report reload completion
       ansible.builtin.debug:

@@ -1,8 +1,113 @@
 ---
 - name: Build slim agent container
   hosts: localhost
+  connection: local
   gather_facts: false
+  vars:
+    container_context_dir: "{{ container_context_dir | default('.') }}"
+    container_file: "{{ container_file | default('Containerfile') }}"
+    container_image_name: "{{ container_image_name | default('localhost/gludd-agent') }}"
+    container_image_tag: "{{ container_image_tag | default('latest') }}"
+    container_force_rebuild: "{{ container_force_rebuild | default(false) }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-container-build') }}"
   tasks:
-    - name: Build container image
-      ansible.builtin.debug:
-        msg: "Slim agent container build placeholder"
+    - name: Validate bounded container build request
+      ansible.builtin.assert:
+        that:
+          - container_context_dir | length > 0
+          - container_context_dir | length <= 4096
+          - container_file | length > 0
+          - container_file | length <= 4096
+          - container_image_name is match('^[A-Za-z0-9./_-]{1,255}$')
+          - container_image_tag is match('^[A-Za-z0-9_.-]{1,128}$')
+        fail_msg: Invalid or unbounded container build request.
+
+    - name: Inspect container build file
+      ansible.builtin.stat:
+        path: "{{ container_file }}"
+        follow: false
+        get_checksum: true
+        checksum_algorithm: sha256
+      register: container_file_stat
+
+    - name: Require a regular container build file
+      ansible.builtin.assert:
+        that:
+          - container_file_stat.stat.exists | default(false)
+          - container_file_stat.stat.isreg | default(false)
+          - container_file_stat.stat.size | default(1048577) | int <= 1048576
+        fail_msg: Container build file must be a regular file no larger than 1 MiB.
+
+    - name: Check for existing slim agent image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - exists
+          - "{{ container_image_name }}:{{ container_image_tag }}"
+      register: container_image_exists
+      changed_when: false
+      failed_when: container_image_exists.rc not in [0, 1]
+      check_mode: false
+
+    - name: Inspect existing slim agent image labels
+      ansible.builtin.command:
+        argv:
+          - podman
+          - image
+          - inspect
+          - "{{ container_image_name }}:{{ container_image_tag }}"
+      register: container_image_inspect
+      changed_when: false
+      check_mode: false
+      when: container_image_exists.rc == 0
+
+    - name: Normalize existing slim agent image metadata
+      ansible.builtin.set_fact:
+        _container_image_metadata: >-
+          {{
+            (container_image_inspect.stdout | from_json | first)
+            if container_image_exists.rc == 0 else {}
+          }}
+
+    - name: Build missing or explicitly refreshed slim agent image
+      ansible.builtin.command:
+        argv:
+          - podman
+          - build
+          - --file
+          - "{{ container_file }}"
+          - --tag
+          - "{{ container_image_name }}:{{ container_image_tag }}"
+          - --label
+          - "io.gludd.containerfile-sha256={{ container_file_stat.stat.checksum }}"
+          - "{{ container_context_dir }}"
+      register: container_image_result
+      changed_when: true
+      async: 900
+      poll: 10
+      when:
+        - not ansible_check_mode
+        - >-
+          container_image_exists.rc == 1
+          or container_force_rebuild | bool
+          or ((_container_image_metadata.Labels | default({}, true))
+              ['io.gludd.containerfile-sha256'] | default(''))
+             != container_file_stat.stat.checksum
+
+    - name: Create container build evidence directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write container build evidence
+      ansible.builtin.copy:
+        content: >-
+          {{ {'status': 'success', 'image': container_image_name,
+              'tag': container_image_tag,
+              'changed': container_image_result.changed | default(false),
+              'containerfile_sha256': container_file_stat.stat.checksum} | to_nice_json }}
+        dest: "{{ artifact_dir }}/container_build_result.json"
+        mode: "0644"
+      when: not ansible_check_mode

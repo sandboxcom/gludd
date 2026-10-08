@@ -1,8 +1,56 @@
 ---
 - name: Install pip bundle
   hosts: localhost
+  connection: local
   gather_facts: false
+  vars:
+    pip_requirements_file: "{{ pip_requirements_file | default('') }}"
+    pip_virtualenv: "{{ pip_virtualenv | default('') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-pip-install') }}"
   tasks:
-    - name: Run pip bundle install
-      ansible.builtin.debug:
-        msg: "Pip bundle install placeholder"
+    - name: Validate pip bundle paths
+      ansible.builtin.assert:
+        that:
+          - pip_requirements_file | length > 0
+          - pip_requirements_file | length <= 4096
+          - pip_virtualenv | length <= 4096
+        fail_msg: A bounded requirements file is required.
+
+    - name: Inspect pip requirements bundle
+      ansible.builtin.stat:
+        path: "{{ pip_requirements_file }}"
+        follow: false
+        get_checksum: true
+        checksum_algorithm: sha256
+      register: pip_requirements_stat
+
+    - name: Require a regular bounded requirements bundle
+      ansible.builtin.assert:
+        that:
+          - pip_requirements_stat.stat.exists | default(false)
+          - pip_requirements_stat.stat.isreg | default(false)
+          - pip_requirements_stat.stat.size | default(10485761) | int <= 10485760
+        fail_msg: Requirements bundle must be a regular file no larger than 10 MiB.
+
+    - name: Reconcile pip bundle packages
+      ansible.builtin.pip:
+        requirements: "{{ pip_requirements_file }}"
+        state: present
+        virtualenv: "{{ pip_virtualenv if pip_virtualenv | length > 0 else omit }}"
+      register: pip_install_result
+
+    - name: Create pip installation evidence directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write pip installation evidence
+      ansible.builtin.copy:
+        content: >-
+          {{ {'status': 'success',
+              'requirements_sha256': pip_requirements_stat.stat.checksum,
+              'changed': pip_install_result.changed | default(false)} | to_nice_json }}
+        dest: "{{ artifact_dir }}/pip_install_result.json"
+        mode: "0644"
+      when: not ansible_check_mode

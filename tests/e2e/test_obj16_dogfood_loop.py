@@ -1,14 +1,17 @@
 """E2E: Continuous self-dogfooding release loop.
 
 Covers sprint objective 16 — dogfood runner, sprint parsing, seed todo
-generation, smoke tasks, bypass detection, and playbook stubs.
+generation, smoke tasks, bypass detection, and executable playbook contracts.
 """
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+from scripts.check_ansible_executable_stubs import scan_playbook_tree
 
 from general_ludd.dogfood import (
     BypassFinding,
@@ -409,8 +412,8 @@ class TestDogfoodProfile:
         assert profile.enabled is True
 
 
-class TestDogfoodPlaybookStubs:
-    def test_dogfood_related_playbook_stubs_exist(self):
+class TestDogfoodPlaybooks:
+    def test_dogfood_playbooks_are_executable_and_fail_closed(self):
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         playbooks_dir = os.path.join(repo_root, "playbooks")
         required_playbooks = [
@@ -430,4 +433,7 @@ class TestDogfoodPlaybookStubs:
         ]
         for pb in required_playbooks:
             path = os.path.join(playbooks_dir, pb)
-            assert os.path.isfile(path), f"Missing playbook stub: {pb}"
+            assert os.path.isfile(path), f"Missing dogfood playbook: {pb}"
+
+        findings = scan_playbook_tree(Path(playbooks_dir))
+        assert findings == [], "\n".join(finding.render() for finding in findings)

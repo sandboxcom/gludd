@@ -1,8 +1,55 @@
 ---
 - name: Validate release artifacts
   hosts: localhost
+  connection: local
   gather_facts: false
+  vars:
+    release_artifact_paths: "{{ release_artifact_paths | default([]) }}"
+    release_artifact_max_bytes: "{{ release_artifact_max_bytes | default(1073741824) }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-release-artifacts') }}"
   tasks:
-    - name: Run release artifact validation
-      ansible.builtin.debug:
-        msg: "Release artifacts validation placeholder"
+    - name: Validate release artifact request bounds
+      ansible.builtin.assert:
+        that:
+          - release_artifact_paths is sequence
+          - release_artifact_paths | length >= 1
+          - release_artifact_paths | length <= 128
+          - release_artifact_paths | reject('match', '^.{1,4096}$') | list | length == 0
+          - release_artifact_max_bytes | int >= 1
+          - release_artifact_max_bytes | int <= 1073741824
+        fail_msg: Release artifacts must be a bounded non-empty path list.
+
+    - name: Collect release artifact metadata and checksums
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+        get_checksum: true
+        checksum_algorithm: sha256
+      loop: "{{ release_artifact_paths }}"
+      register: release_artifact_stats
+
+    - name: Require regular bounded release artifacts
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists | default(false)
+          - item.stat.isreg | default(false)
+          - item.stat.size | default(release_artifact_max_bytes | int + 1) | int <= release_artifact_max_bytes | int
+          - item.stat.checksum | default('') is match('^[0-9a-f]{64}$')
+        fail_msg: "Invalid release artifact: {{ item.item }}"
+      loop: "{{ release_artifact_stats.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Create release artifact evidence directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write release artifact evidence
+      ansible.builtin.copy:
+        content: >-
+          {{ {'status': 'success', 'artifacts': release_artifact_stats.results} | to_nice_json }}
+        dest: "{{ artifact_dir }}/release_artifacts_result.json"
+        mode: "0644"
+      when: not ansible_check_mode
