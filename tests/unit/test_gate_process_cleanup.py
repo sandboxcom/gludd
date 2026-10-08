@@ -98,25 +98,26 @@ def test_gate_background_has_timeout_watcher():
     assert "=== GATE: ABORTED (timeout {timeout_text}s) ===" in launcher
 
 
-def test_gate_background_timeout_default_3600():
+def test_gate_background_timeout_covers_a_complete_cold_gate():
     content = _makefile_content()
     idx = content.find("gate-background:")
     recipe_block = content[idx : idx + 3000]
-    assert "GATE_TIMEOUT ?= 3600" in content
+    assert "GATE_TIMEOUT ?= 21600" in content
     assert '--timeout-seconds "$(GATE_TIMEOUT)"' in recipe_block, (
-        "gate-background must default GATE_TIMEOUT to 3600s (1 hour)"
+        "gate-background must preserve a six-hour outer deadline for a cold gate"
     )
 
 
 # --- Watchdog _check_gate_background tests ---
 
 
-def test_watchdog_gate_max_runtime_is_one_hour():
+def test_watchdog_gate_max_runtime_matches_the_cold_gate_deadline():
     import scripts.agent_watchdog as aw
     importlib = __import__("importlib")
     importlib.reload(aw)
-    assert aw.GATE_MAX_RUNTIME_SECS == 3600, (
-        f"GATE_MAX_RUNTIME_SECS must be 3600 (1 hour), got {aw.GATE_MAX_RUNTIME_SECS}"
+    assert aw.GATE_MAX_RUNTIME_SECS == 21600, (
+        "GATE_MAX_RUNTIME_SECS must be 21600 (six hours), got "
+        f"{aw.GATE_MAX_RUNTIME_SECS}"
     )
 
 

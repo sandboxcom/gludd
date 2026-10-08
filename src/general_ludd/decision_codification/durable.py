@@ -5,15 +5,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from general_ludd.decision_codification.durable_feedback import (
-    _DurableFeedbackStore,
+from general_ludd.decision_codification.durable_observability import (
+    _DurableObservabilityStore,
 )
 from general_ludd.decision_codification.durable_storage import (
     DurableGenerationStoreError,
 )
 
 
-class DurableGenerationStore(_DurableFeedbackStore):
+class DurableGenerationStore(_DurableObservabilityStore):
     """Cross-process SQLite implementation of the generation-store contract.
 
     Every mutation uses ``BEGIN IMMEDIATE`` and every reader opens a fresh

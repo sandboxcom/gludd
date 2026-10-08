@@ -60,6 +60,13 @@ it is missing or exceeded. They never create or refresh it during collection,
 test execution, or `pytest_sessionfinish`; an automatic rewrite would convert a
 regression into its own new baseline.
 
+That read-only rule is executable. The E9 audit AST-parses every Python test
+source that names the snapshot and rejects direct `pathlib` mutation, writable
+`open` modes, and `os`/`shutil` replacement or copy destinations. Self-tests pin
+both a direct writer and an atomic-replace writer, so moving a baseline refresh
+into a pytest lifecycle hook cannot make count growth self-approving. A reviewed
+normal commit remains the only supported baseline-update path.
+
 S83.110 reconciles the snapshot once against its declared full-suite scope. The
 old `143/0/16` values predated 203 call sites and 20 decorators that the same
 scanner now inspects. Schema version 2 records the scope and reviewing task next

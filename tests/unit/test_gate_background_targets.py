@@ -101,6 +101,17 @@ def test_gate_status_check_reads_pid_file() -> None:
     )
 
 
+def test_gate_status_check_reports_dead_running_owner_as_orphaned() -> None:
+    """A dead PID must never be presented as a normally finished RUNNING gate."""
+    content = _content()
+    start = content.index("gate-status-check:")
+    end = content.index("# Poll the background gate", start)
+    recipe_block = content[start:end]
+
+    assert "ORPHANED" in recipe_block
+    assert "orphaned-running-status" in recipe_block
+
+
 def test_gate_background_observed_keeps_the_launch_owner_alive() -> None:
     """Automation gets one observable command that launches and waits."""
     content = _content()

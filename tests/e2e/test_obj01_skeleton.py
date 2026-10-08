@@ -7,8 +7,10 @@ playbook directory exists, schemas load, initial queues defined.
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 from packaging.version import Version
+from scripts.makefile_layout import compose_makefile
 
 
 class TestRepositorySkeleton:
@@ -94,12 +96,8 @@ class TestRepositorySkeleton:
             assert os.path.isdir(path), f"Missing directory: {d}"
 
     def test_makefile_has_required_targets(self):
-        import os
-
-        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        makefile_path = os.path.join(repo_root, "Makefile")
-        with open(makefile_path) as f:
-            content = f.read()
+        repo_root = Path(__file__).resolve().parents[2]
+        content = compose_makefile(repo_root / "Makefile")
         required = [
             "test", "test-unit", "test-integration", "lint", "lint-fix",
             "typecheck", "healthcheck", "qa", "validate", "sync",

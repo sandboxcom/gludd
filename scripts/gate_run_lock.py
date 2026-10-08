@@ -70,6 +70,35 @@ def _pid_started_at(pid: int) -> str | None:
     return started_at or None
 
 
+def _pid_state(pid: int) -> str | None:
+    """Return the process state so an unreaped zombie cannot hold the gate."""
+    completed = subprocess.run(
+        ["/bin/ps", "-p", str(pid), "-o", "stat="],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    state = completed.stdout.strip()
+    return state or None
+
+
+def _owner_alive(lock_path: Path, pid: int) -> bool:
+    """Return whether the live PID still has the identity recorded by the lock."""
+    if not _pid_alive(pid):
+        return False
+    state = _pid_state(pid)
+    if state is not None and state.upper().startswith("Z"):
+        return False
+    payload = _read_payload(lock_path)
+    recorded_start = payload.get("pid_started_at") if payload is not None else None
+    if not isinstance(recorded_start, str) or not recorded_start:
+        # Legacy locks did not carry a start token. Preserve their fail-closed
+        # behavior until their owning process exits.
+        return True
+    current_start = _pid_started_at(pid)
+    return current_start is None or current_start == recorded_start
+
+
 def _publish_lock(lock_path: Path, pid: int) -> bool:
     started_at = _pid_started_at(pid)
     if started_at is None:
@@ -131,10 +160,11 @@ def acquire(lock_path: Path, pid: int) -> int:
                 file=sys.stderr,
             )
             return 1
-        if _pid_alive(owner):
+        if _owner_alive(lock_path, owner):
+            state = _pid_state(owner) or "unknown"
             print(
                 f"gate-run-lock: another gate is already running "
-                f"(pid={owner}, lock={lock_path})",
+                f"(pid={owner}, state={state}, lock={lock_path})",
                 file=sys.stderr,
             )
             return 1
@@ -188,9 +218,11 @@ def assert_inactive(lock_path: Path, requester_pid: int) -> int:
             file=sys.stderr,
         )
         return 1
-    if _pid_alive(owner):
+    if _owner_alive(lock_path, owner):
+        state = _pid_state(owner) or "unknown"
         print(
-            f"gate-run-lock: active gate pid={owner} blocks repository mutation "
+            f"gate-run-lock: active gate pid={owner} state={state} "
+            "blocks repository mutation "
             f"requester={requester_pid} lock={lock_path}",
             file=sys.stderr,
         )

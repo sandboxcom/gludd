@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import re
 
+import yaml
+
 from tests.unit.test_release_pipeline_structure import BUILD_YML
 
 # Tags that MUST be marked prerelease (task scope: beta/alpha/rc).
@@ -134,10 +136,11 @@ class TestPrereleaseFlag:
         github.ref, 'refs/tags/v')``) — otherwise branch pushes would trigger
         spurious releases.
         """
-        src = _workflow_source()
-        idx = src.find("  release:")
-        assert idx >= 0, "release job not found"
-        section = src[idx : idx + 800]
-        assert "startsWith(github.ref, 'refs/tags/v')" in section or (
-            "startsWith(github.ref, \"refs/tags/v\")" in section
+        workflow = yaml.safe_load(_workflow_source())
+        release_job = workflow.get("jobs", {}).get("release")
+        assert isinstance(release_job, dict), "release job not found"
+        condition = release_job.get("if")
+        assert isinstance(condition, str), "release job has no if condition"
+        assert "startsWith(github.ref, 'refs/tags/v')" in condition or (
+            'startsWith(github.ref, "refs/tags/v")' in condition
         ), "release job must be gated on refs/tags/v*"

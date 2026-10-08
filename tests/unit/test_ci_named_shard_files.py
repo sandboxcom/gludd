@@ -239,6 +239,21 @@ def test_coverage_files_target_namespaces_ansible_temp_under_owned_basetemp() ->
     assert 'ANSIBLE_LOCAL_TEMP="$$BT/ansible-local"' in recipe
 
 
+def test_coverage_files_accepts_serial_or_parallel_coverage_data() -> None:
+    """Serial configs must not fail because no parallel fragments exist."""
+    makefile = compose_makefile(ROOT / "Makefile")
+    recipe = makefile.split("coverage-files:", 1)[1].split("gate-async:", 1)[0]
+
+    fragment_probe = 'set -- "$$GLUDD_COVERAGE_DATA".*;'
+    conditional_combine = 'if [ -e "$$1" ]; then'
+    base_requirement = '[ -f "$$GLUDD_COVERAGE_DATA" ] || {'
+    assert fragment_probe in recipe
+    assert conditional_combine in recipe
+    assert base_requirement in recipe
+    assert recipe.index(fragment_probe) < recipe.index("coverage combine")
+    assert recipe.index(base_requirement) < recipe.index("coverage report")
+
+
 def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
     """GHA and local release evidence must execute the same shard owner."""
     makefile = compose_makefile(ROOT / "Makefile")

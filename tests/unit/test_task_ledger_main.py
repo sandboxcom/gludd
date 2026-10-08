@@ -11,6 +11,7 @@ from scripts.auto_update_task_ledger import (
     build_new_line,
     commit_references_id,
 )
+from scripts.makefile_layout import compose_makefile
 
 
 class TestBuildNewLine:
@@ -260,7 +261,6 @@ class TestAutoUpdate:
 class TestMakeTargetExists:
     def test_auto_update_ledger_target_in_makefile(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent.parent
-        makefile = repo_root / "Makefile"
-        content = makefile.read_text(encoding="utf-8")
+        content = compose_makefile(repo_root / "Makefile")
         assert "auto-update-ledger:" in content
         assert "auto_update_task_ledger.py" in content

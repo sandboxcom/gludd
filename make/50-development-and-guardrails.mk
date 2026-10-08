@@ -230,6 +230,9 @@ build-executable:
 		DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
 		DEPENDENCY_PROFILE_PYTHON=3.12.14 \
 		DEPENDENCY_PROFILE_VALIDATE_ONLY=0
+	@locked_pyinstaller_version=$$($(UV) run --no-sync python scripts/dependency_profiles.py locked-version --root "$(CURDIR)" --profile dev-build --package pyinstaller); \
+		pyinstaller_version=$$($(UV) run --no-sync pyinstaller --version); \
+		test "$$pyinstaller_version" = "$$locked_pyinstaller_version" || { echo "Expected locked PyInstaller $$locked_pyinstaller_version, found $$pyinstaller_version"; exit 1; }
 	@$(UV) run --no-sync pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
@@ -246,7 +249,7 @@ LINUX_BINUTILS_VERSION ?= 2.40-2
 LINUX_APT_UTILS_VERSION ?= 2.6.1
 PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
 PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
-PYINSTALLER_VERSION_LINUX ?= 6.20.0
+PYINSTALLER_VERSION_LINUX ?= 6.22.3
 PYINSTALLER_PYTHON_VERSION_LINUX ?= 3.12.14
 PYINSTALLER_UV_VERSION_LINUX ?= 0.12.19
 PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=
@@ -287,7 +290,7 @@ compare-linux-pyinstaller-warnings: ## Compare accepted/candidate warning graphs
 	@if [ "$(PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY)" = "1" ]; then \
 		echo "PYINSTALLER_WARNING_COMPARE_VALID before=$(PYINSTALLER_WARNING_BEFORE) after=$(PYINSTALLER_WARNING_AFTER) architecture=$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX) receipt=$(PYINSTALLER_WARNING_REVIEW_RECEIPT)"; \
 	else \
-		$(UV) run python scripts/compare_pyinstaller_warning_graphs.py \
+		$(UV) run python -m scripts.compare_pyinstaller_warning_graphs \
 			--before "$(PYINSTALLER_WARNING_BEFORE)" \
 			--after "$(PYINSTALLER_WARNING_AFTER)" \
 			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
@@ -443,8 +446,9 @@ build-linux-executable: worktree-guard ## Build and verify a real Linux PyInstal
 				export UV_NO_SYNC=1; \
 				python_version=$$(uv run python -c "import platform; print(platform.python_version())"); \
 				test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
+				locked_pyinstaller_version=$$(python scripts/dependency_profiles.py locked-version --root /workspace --profile dev-build --package pyinstaller); \
 				pyinstaller_version=$$(uv run pyinstaller --version); \
-				test "$$pyinstaller_version" = "6.20.0"; \
+				test "$$pyinstaller_version" = "$$locked_pyinstaller_version" || { echo "Expected locked PyInstaller $$locked_pyinstaller_version, found $$pyinstaller_version"; exit 1; }; \
 				architecture=$$(uname -m); \
 				pyinstaller_status=0; \
 				uv run pyinstaller gludd.spec --clean --noconfirm --workpath /tmp/gludd-pyinstaller-build --distpath /out || pyinstaller_status=$$?; \

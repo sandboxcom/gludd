@@ -129,6 +129,18 @@ class TestLocalHookEntryPoints:
         "ruff-lint": "uv run ruff check src tests",
         "mypy": "make _precommit-mypy",
         "check-tdd-compliance": "uv run python scripts/check_tdd_compliance.py",
+        "check-file-line-limits": (
+            "make check-file-line-limits "
+            "FILE_LINE_LIMIT_POLICY=config/file_line_limits.json "
+            "FILE_LINE_LIMIT_STAGED=1"
+        ),
+        "check-duplicate-code": (
+            "make check-duplicate-code "
+            "DUPLICATE_CODE_CONFIG=config/duplicate_code.json "
+            "DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd "
+            "DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD "
+            "DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=0"
+        ),
         "check-disk": "make check-disk CHECK_DISK_VALIDATE_ONLY=0",
         "collect-check": "make collect-check",
         "verify-secrets": "make verify-secrets",
@@ -216,7 +228,14 @@ class TestHookStages:
                     assert s == "pre-commit", f"local hook {hook['id']!r} has non-pre-commit stage {s!r}"
 
     def test_no_merge_commit_stages_on_source_quality_hooks(self, config: _PreCommitConfig) -> None:
-        quality_ids = {"ruff-lint", "mypy", "check-tdd-compliance", "collect-check"}
+        quality_ids = {
+            "ruff-lint",
+            "mypy",
+            "check-tdd-compliance",
+            "check-file-line-limits",
+            "check-duplicate-code",
+            "collect-check",
+        }
         for entry in _all_hooks(config):
             hook = entry["hook"]
             if hook["id"] in quality_ids:

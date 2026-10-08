@@ -88,6 +88,7 @@ ReplayEventType: TypeAlias = Literal[
     "policy.decided",
     "budget.decided",
     "reconcile.decided",
+    "decision.outcome",
     "recording.degraded",
 ]
 

@@ -51,7 +51,9 @@ coverage-files:
 			echo "=== COVERAGE FILES: execute aggregate>=$(COVERAGE_AGGREGATE_MIN)% per-file>=$(COVERAGE_PER_FILE_MIN)% ==="; \
 			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage erase --rcfile="$$GLUDD_COVERAGE_RC"; \
 			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage run --rcfile="$$GLUDD_COVERAGE_RC" -m pytest $(COVERAGE_TESTFILES) -v -W error --basetemp="$$GLUDD_COVERAGE_BT" -p scripts.xdist_trace_plugin; \
-			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage combine --rcfile="$$GLUDD_COVERAGE_RC"; \
+			set -- "$$GLUDD_COVERAGE_DATA".*; \
+			if [ -e "$$1" ]; then COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage combine --rcfile="$$GLUDD_COVERAGE_RC"; fi; \
+			[ -f "$$GLUDD_COVERAGE_DATA" ] || { echo "coverage-files: no serial data or parallel fragments produced"; exit 1; }; \
 			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage report --rcfile="$$GLUDD_COVERAGE_RC" --fail-under="$(COVERAGE_AGGREGATE_MIN)"; \
 			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage json --rcfile="$$GLUDD_COVERAGE_RC" -o "$$GLUDD_COVERAGE_REPORT_WORK"; \
 			echo "=== COVERAGE FILES: verify every measured file >=$(COVERAGE_PER_FILE_MIN)% ==="; \
@@ -181,6 +183,7 @@ test-count:
 	@$(UV) run --no-sync python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label test-count \
 		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
 		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --quiet --pytest-trace -- \
+		$(UV) run --no-sync python scripts/collection_lock.py --run \
 		$(UV) run --no-sync python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
 		$(UV) run --no-sync python scripts/stream_command.py --tail 3 --root "$(OBSERVED_ROOT)" --label test-count || TAIL_RC=$$?; \
 		if [ "$$RC" -ne 0 ]; then exit "$$RC"; fi; exit "$${TAIL_RC:-0}"
@@ -684,6 +687,110 @@ opencode-hello:
 
 gate-fast: disk-cleanup-preflight check-generated-artifact-hygiene lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
+
+INTEGRATION_ADMISSION_VALIDATE_ONLY ?= 1
+GATE_FAILURE_PROMOTION_MANIFEST ?= config/gate_failure_promotions.json
+
+# S83.178: keep every deterministic failure promoted out of the full gate bound
+# to one real admission owner and one still-mandatory full-gate phase.
+check-gate-failure-promotions:
+	@test -n "$(strip $(GATE_FAILURE_PROMOTION_MANIFEST))" || { echo "GATE_FAILURE_PROMOTION_MANIFEST is required"; exit 2; }
+	@$(UV) run python -m scripts.check_gate_failure_promotions \
+		--manifest "$(GATE_FAILURE_PROMOTION_MANIFEST)" \
+		--repository-root "$(CURDIR)"
+
+_project-dispatch-integration:
+	@$(MAKE) --no-print-directory test-files \
+		TESTFILES="tests/integration/test_multi_project_integration.py::TestEventLoopProjectScopedIntegration::test_event_loop_dispatch_includes_project_id tests/integration/test_worker_isolation.py::TestWorkerProjectIsolation::test_dispatch_job_contains_only_project_data tests/unit/test_event_loop.py::TestEventLoop::test_event_loop_serializes_concurrent_ticks"
+
+_mcp-workspace-jail-integration:
+	@$(MAKE) --no-print-directory test-files \
+		TESTFILES="tests/unit/test_mcp_builtins_structural.py::TestBuiltinToolHandler::test_contain_workspace_escape_returns_none tests/unit/test_project_runner_tool.py::TestRunProjectCheckDispatch::test_workspace_escaping_jail_is_refused"
+
+_module-graph-classification:
+	@$(MAKE) --no-print-directory test-specific \
+		TESTFILE="tests/unit/test_module_graph_deep.py::test_all_subpackages_classified"
+
+# S83.177: reject cheap, deterministic feature-branch failures before a branch
+# occupies the full-gate integration lane. Every phase delegates to the
+# repository's existing checker; this target owns only fail-fast sequencing.
+integration-admission:
+	@case "$(INTEGRATION_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "INTEGRATION_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@test -n "$(strip $(GATE_FAILURE_PROMOTION_MANIFEST))" || { echo "GATE_FAILURE_PROMOTION_MANIFEST is required"; exit 2; }
+	@test -n "$(strip $(FILE_LINE_LIMIT_POLICY))" || { echo "FILE_LINE_LIMIT_POLICY is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_CONFIG))" || { echo "DUPLICATE_CODE_CONFIG is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_ENGINE))" || { echo "DUPLICATE_CODE_ENGINE is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_BASE_REF))" || { echo "DUPLICATE_CODE_BASE_REF is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_CURRENT_REF))" || { echo "DUPLICATE_CODE_CURRENT_REF is required"; exit 2; }
+	@test -n "$(strip $(MARKDOWN_FILES))" || { echo "MARKDOWN_FILES is required"; exit 2; }
+	@test -n "$(strip $(MARKDOWNLINT_CONFIG))" || { echo "MARKDOWNLINT_CONFIG is required"; exit 2; }
+	@test -n "$(strip $(PRESENTATION_BROWSER_ENGINES))" || { echo "PRESENTATION_BROWSER_ENGINES is required"; exit 2; }
+	@test -n "$(strip $(PRESENTATION_BROWSER_ROOT))" || { echo "PRESENTATION_BROWSER_ROOT is required"; exit 2; }
+	@test -n "$(strip $(PRESENTATION_BROWSER_OUTPUT))" || { echo "PRESENTATION_BROWSER_OUTPUT is required"; exit 2; }
+	@test -n "$(strip $(PRESENTATION_BROWSER_TIMEOUT))" || { echo "PRESENTATION_BROWSER_TIMEOUT is required"; exit 2; }
+	@set -eu; \
+	run_id="integration-admission-$$$$"; \
+	validate_only="$(INTEGRATION_ADMISSION_VALIDATE_ONLY)"; \
+	run_phase() { \
+		phase="$$1"; target="$$2"; budget_class="$$3"; \
+		max_seconds="$$4"; quiet_seconds="$$5"; shift 5; \
+		evidence_label="integration-admission-$$phase"; \
+		echo "integration-admission phase=$$phase budget=$$budget_class max_seconds=$$max_seconds quiet_seconds=$$quiet_seconds"; \
+		printf '{"schema_version":1,"kind":"integration_admission_phase","run_id":"%s","phase":"%s","target":"%s","budget_class":"%s","max_seconds":%s,"quiet_seconds":%s,"evidence_label":"%s%s"}\n' \
+			"$$run_id" "$$phase" "$$target" "$$budget_class" "$$max_seconds" "$$quiet_seconds" "integration-admission-" "$$phase"; \
+		if [ "$$validate_only" = "1" ]; then return 0; fi; \
+		$(UV) run python scripts/stream_command.py \
+			--root ".gate-logs/observed" \
+			--label "integration-admission-$$phase" \
+			--run-id "$$run_id" \
+			--heartbeat-secs "10" \
+			--quiet-secs "$$quiet_seconds" \
+			--max-secs "$$max_seconds" \
+			--retain-runs "20" -- "$$@"; \
+	}; \
+	if [ "$$validate_only" = "1" ]; then \
+		echo "INTEGRATION-ADMISSION: VALIDATE-ONLY"; \
+	else \
+		echo "INTEGRATION-ADMISSION: BEGIN"; \
+	fi; \
+	run_phase "worktree-guard" "worktree-guard" "fast" "90" "60" $(MAKE) --no-print-directory worktree-guard; \
+	run_phase "check-gate-failure-promotions" "check-gate-failure-promotions" "fast" "90" "60" $(MAKE) --no-print-directory check-gate-failure-promotions \
+		GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"; \
+	run_phase "_dead-code-baseline-refresh" "_dead-code-baseline-refresh" "fast" "90" "60" $(MAKE) --no-print-directory _dead-code-baseline-refresh; \
+	run_phase "check-coverage-gaps" "check-coverage-gaps" "fast" "90" "60" $(MAKE) --no-print-directory check-coverage-gaps; \
+	run_phase "check-resource-ownership" "check-resource-ownership" "fast" "90" "60" $(MAKE) --no-print-directory check-resource-ownership \
+		RESOURCE_OWNERSHIP_ROOT="$(CURDIR)" \
+		RESOURCE_OWNERSHIP_PATHS="src/general_ludd scripts" \
+		RESOURCE_OWNERSHIP_INVENTORY="config/resource_ownership_inventory.json" \
+		RESOURCE_OWNERSHIP_WRITE=0; \
+	run_phase "validate-task-ledger" "validate-task-ledger" "fast" "90" "60" $(MAKE) --no-print-directory validate-task-ledger; \
+	run_phase "check-task-registration" "check-task-registration" "fast" "90" "60" $(MAKE) --no-print-directory check-task-registration; \
+	run_phase "check-task-integrity" "check-task-integrity" "fast" "90" "60" $(MAKE) --no-print-directory check-task-integrity; \
+	run_phase "check-generated-artifact-hygiene" "check-generated-artifact-hygiene" "fast" "90" "60" $(MAKE) --no-print-directory check-generated-artifact-hygiene; \
+	run_phase "lint-markdown" "lint-markdown" "fast" "90" "60" $(MAKE) --no-print-directory lint-markdown \
+		MARKDOWN_FILES="$(MARKDOWN_FILES)" \
+		MARKDOWNLINT_CONFIG="$(MARKDOWNLINT_CONFIG)"; \
+	run_phase "check-make-target-contract" "check-make-target-contract" "fast" "90" "60" $(MAKE) --no-print-directory check-make-target-contract; \
+	run_phase "check-duplicate-code" "check-duplicate-code" "standard" "180" "120" $(MAKE) --no-print-directory check-duplicate-code \
+		DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" \
+		DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" \
+		DUPLICATE_CODE_SOURCE="committed" \
+		DUPLICATE_CODE_BASE_REF="$(DUPLICATE_CODE_BASE_REF)" \
+		DUPLICATE_CODE_CURRENT_REF="$(DUPLICATE_CODE_CURRENT_REF)" \
+		DUPLICATE_CODE_VALIDATE_ONLY=0; \
+	run_phase "yaml-lint" "yaml-lint" "standard" "180" "120" $(MAKE) --no-print-directory yaml-lint; \
+	run_phase "project-dispatch-integration" "_project-dispatch-integration" "standard" "180" "120" $(MAKE) --no-print-directory _project-dispatch-integration; \
+	run_phase "mcp-workspace-jail-integration" "_mcp-workspace-jail-integration" "standard" "180" "120" $(MAKE) --no-print-directory _mcp-workspace-jail-integration; \
+	run_phase "module-graph-classification" "_module-graph-classification" "fast" "90" "60" $(MAKE) --no-print-directory _module-graph-classification; \
+	run_phase "presentation-browser-test" "presentation-browser-test" "standard" "180" "120" $(MAKE) --no-print-directory presentation-browser-test \
+		PRESENTATION_BROWSER_VALIDATE_ONLY=1 \
+		PRESENTATION_BROWSER_ENGINES="$(PRESENTATION_BROWSER_ENGINES)" \
+		PRESENTATION_BROWSER_ROOT="$(PRESENTATION_BROWSER_ROOT)" \
+		PRESENTATION_BROWSER_OUTPUT="$(PRESENTATION_BROWSER_OUTPUT)" \
+		PRESENTATION_BROWSER_TIMEOUT="$(PRESENTATION_BROWSER_TIMEOUT)"; \
+	run_phase "pre-commit-check" "pre-commit-check" "slow" "600" "300" $(MAKE) --no-print-directory pre-commit-check \
+		FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)"; \
+	if [ "$$validate_only" = "0" ]; then echo "INTEGRATION-ADMISSION: PASSED"; fi
 
 _check-windows-tracked-paths:
 	@BT="/tmp/gludd-windows-paths-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/test_cross_platform_binary.py::test_tracked_paths_are_windows_checkout_compatible -q -n 0 --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC

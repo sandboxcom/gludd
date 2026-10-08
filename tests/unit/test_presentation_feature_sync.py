@@ -39,7 +39,9 @@ def test_feature_sync_slides_pin_scope_evidence_and_honest_pending_work() -> Non
             "missing PID file",
             "terminal cleanup",
             "pillow&gt;=12.3.0",
-            "94/94",
+            "254/254",
+            "95%",
+            "120,314",
             "500 files",
             "exact-head full-gate and promotion proof remain pending",
             "Ansible #44318",
@@ -54,12 +56,21 @@ def test_feature_sync_slides_pin_scope_evidence_and_honest_pending_work() -> Non
             "10,000-ref ceiling",
             "terminal snapshot",
             "current-only",
-            "30/30",
+            "show-ref --verify",
+            "140/140",
+            "92% aggregate",
+            "120,330",
             "exact-head global-gate and promotion proof remain pending",
             "GitHub CLI #8536",
         ),
         "s91-3-enforcement-executable-modes": (
             "S91.3",
+            "S83.110",
+            "read-only AST audit",
+            "1,055",
+            "S83.111",
+            "deny-first",
+            "113/113",
             "Git index",
             "100755",
             "47 runtime surfaces",
@@ -93,8 +104,9 @@ def test_decision_slide_matches_the_automatic_durable_review_boundary() -> None:
         "same-host SQLite WAL",
         "BEGIN IMMEDIATE",
         "terminal application feedback",
-        "signed replay capture pending",
-        "deployed live-traffic proof pending",
+        "Automatic signed replay capture",
+        "same-host observability are implemented",
+        "deployed live-traffic proof remain pending",
         "multi-host state is not claimed",
     ):
         assert marker in slide
@@ -115,7 +127,7 @@ def test_feature_sync_citations_build_immutable_file_line_source_links() -> None
         ),
         "s83-118-122-branch-reconciliation": (
             "scripts/branch_reconciliation_inventory.py",
-            "590-749",
+            "513-549",
         ),
         "s91-3-enforcement-executable-modes": (
             "tests/unit/test_enforcement_executable_modes.py",
@@ -132,6 +144,21 @@ def test_feature_sync_citations_build_immutable_file_line_source_links() -> None
         assert f"https://github.com/sandboxcom/gludd/blob/{sha}/{path}" in slide
         start, end = lines.split("-", 1)
         assert f"#L{start}-L{end}" in slide
+
+    guardrail_slide = _slide(linked, "s91-3-enforcement-executable-modes")
+    for path, lines in (
+        (
+            "docs/features/NAG_FREE_ENFORCEMENT_SKIP_SMELL_CONTRACT.md",
+            "58-74",
+        ),
+        ("docs/features/EXTERNAL_DIRECTORY_PERMISSION_CONTRACT.md", "37-68"),
+    ):
+        assert path in citations
+        assert f'data-source-path="{path}"' in guardrail_slide
+        assert f'data-source-lines="{lines}"' in guardrail_slide
+        assert f"https://github.com/sandboxcom/gludd/blob/{sha}/{path}" in guardrail_slide
+        start, end = lines.split("-", 1)
+        assert f"#L{start}-L{end}" in guardrail_slide
 
     decision = _decision_slide(linked)
     assert 'data-source-path="src/general_ludd/event_loop/review_orchestration.py"' in decision

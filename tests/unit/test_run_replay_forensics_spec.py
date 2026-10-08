@@ -12,10 +12,11 @@ def _spec_text() -> str:
     return SPEC.read_text(encoding="utf-8")
 
 
-def test_replay_spec_is_implementation_ready_and_grounded() -> None:
+def test_replay_spec_tracks_the_incremental_implementation_and_is_grounded() -> None:
     text = _spec_text()
 
-    assert "Status: READY-TO-IMPLEMENT" in text
+    assert "Status: INCREMENTAL IMPLEMENTATION — R0 schema and legacy reader" in text
+    assert "G10-RR1-R0-SCHEMA-LEGACY" in text
     assert "src/general_ludd/replay/recorder.py" in text
     assert "src/general_ludd/routers/replays.py" in text
     assert "src/general_ludd/cli.py" in text

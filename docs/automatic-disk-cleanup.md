@@ -3,8 +3,9 @@
 The v0.1.1 disk preflight replaces model-directed cleanup with a deterministic,
 non-interactive safety gate. `make gate`, `make gate-fast`, `make gate-lite`,
 `make preflight`, and the pre-commit hook run it before expensive validation.
-It uses the existing 100 MB generated-scratch limit and 90% repository-volume
-limit from `scripts/check_disk_usage.py`.
+It uses the existing 100 MB generated-scratch limit as a soft cleanup trigger
+and the 90% repository-volume limit as the hard admission boundary from
+`scripts/check_disk_usage.py`.
 
 ## Safety boundary
 
@@ -73,15 +74,16 @@ refused. An inactive unregistered worktree can use the disposable-cache tier,
 but never qualifies for `.venv` or checkout removal because it has no
 completion-lease proof.
 
-Under continuing pressure, at most four proven-complete materializations are
+Under continuing hard volume pressure, at most four proven-complete materializations are
 removed per cleanup pass. The preflight remeasures both canonical limits after
 each pass and performs another pass only when scratch MiB or repository-volume
 percentage has strictly decreased. Eight passes is the hard orchestration bound,
 so one invocation can retire no more than 32 proven-complete materializations.
 An unchanged measurement, cleanup refusal/error, inspection error, or exhausted
-pass bound stops fail-closed without asking a model to choose more data. This
+pass bound stops fail-closed while volume use remains above 90%, without asking
+a model to choose more data. This
 bounded convergence matters when the first safe pass reclaims substantial space
-but the remaining 100 MB scratch or 90% volume threshold is still exceeded.
+but the remaining 90% volume threshold is still exceeded.
 Immediately before `git worktree remove` (without `--force`),
 the preflight again requires the same completion lease, unlocked registration,
 no matching PID, no tracked or untracked changes, and an exact local branch ref
@@ -143,12 +145,18 @@ the exact cache root and bounded lock/process timeouts; files are never deleted
 directly. A concurrent uv user is protected by both the three checks and uv's
 cache locking.
 
-After every cleanup pass it re-runs both canonical measurements. A healthy
-measurement returns zero. Residual pressure may trigger another pass only after
-measurable progress; any cleanup safety error, inspection error, stagnation, or
-pressure remaining at the pass bound returns nonzero. Skipping an active or
-protected worktree is expected, and residual pressure still blocks the gate when
-safe candidates cannot converge it automatically.
+After every cleanup pass it re-runs both canonical measurements. A fully healthy
+measurement returns zero. The 100 MB scratch budget remains an automatic-cleanup
+trigger, but is intentionally soft after that bounded attempt: if recent or active
+scratch is still protected and repository-volume use is at or below 90%, the
+preflight emits `phase=recheck status=soft-cap` with the measurements and returns
+zero. This lets a nested gate coexist with an active Molecule run without deleting
+its owned artifacts or recursively repeating cleanup. Residual volume pressure
+may trigger another pass only after measurable progress; any cleanup safety error,
+inspection error, hard-pressure stagnation, or hard pressure remaining at the pass
+bound returns nonzero. Skipping an active or protected worktree is expected, while
+the ownership proofs and hard volume boundary continue to block unsafe cleanup or
+resource exhaustion.
 
 The recovery tiers are operationally independent. If Git worktree or integration
 proof discovery fails, Gludd disables only worktree-cache retirement and evidence
@@ -191,8 +199,9 @@ namespaced workstream-lease, process, and disk observations on each pass. A
 non-mutating preview is available with
 `make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0`
 `DISK_CLEANUP_PREFLIGHT_DRY_RUN=1`
-`DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800`; it still returns nonzero while
-pressure remains, so automation cannot mistake a preview for recovered capacity.
+`DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800`; it returns zero only for healthy or
+scratch-only soft pressure, and remains nonzero for hard volume pressure or any
+safety error, so automation cannot mistake a preview for recovered capacity.
 
 ## Rollback
 
@@ -212,7 +221,8 @@ checkout using the fsynced rehydration manifest. The prior read-only checker rem
 required. Reverting the Playwright allowlist stops future automatic browser-cache
 removal; an already reclaimed installation is restored with
 `make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0`.
-Do not weaken the fail-closed threshold recheck as a rollback shortcut.
+Do not weaken the fail-closed hard-pressure or inspection recheck as a rollback
+shortcut.
 
 ## Long-lived user reports considered
 
@@ -239,6 +249,12 @@ Do not weaken the fail-closed threshold recheck as a rollback shortcut.
   explicit test namespaces and its own registered disposable worktree caches,
   while using registration, process, age, type, and identity proofs rather than
   deleting arbitrary `/tmp` content.
+- [pytest discussion 12283](https://github.com/pytest-dev/pytest/discussions/12283)
+  reports a retained test directory consuming 457 MB and notes that larger
+  projects may control retention outside the immediate caller. This supports
+  keeping the 100 MB signal as an eager cleanup trigger while treating protected,
+  recent scratch as advisory until actual repository-volume pressure reaches the
+  hard boundary.
 - [Playwright issue 15990](https://github.com/microsoft/playwright/issues/15990),
   opened in 2022, reports automatic browser garbage collection removing binaries
   that another project still needed. Gludd therefore requires two exact-path

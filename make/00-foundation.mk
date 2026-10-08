@@ -19,7 +19,7 @@ OPENCODE_MAINTENANCE_FORCE ?= 0
 GLUDD_TASK_TIMEOUT ?= 300
 TIMEOUT ?= 3600
 GATE_POLL_INTERVAL ?= 60
-GATE_TIMEOUT ?= 3600
+GATE_TIMEOUT ?= 21600
 GATE_BACKGROUND_VALIDATE_ONLY ?= 0
 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY ?= 0
 GATE_EXPECTED_PID ?=
@@ -226,6 +226,13 @@ MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
 DOCSTRING_FILES ?=
 FILE_LINE_LIMIT_POLICY ?= config/file_line_limits.json
+FILE_LINE_LIMIT_STAGED ?= 0
+DUPLICATE_CODE_CONFIG ?= config/duplicate_code.json
+DUPLICATE_CODE_ENGINE ?= .opencode/node_modules/.bin/jscpd
+DUPLICATE_CODE_SOURCE ?= staged
+DUPLICATE_CODE_BASE_REF ?= HEAD
+DUPLICATE_CODE_CURRENT_REF ?= HEAD
+DUPLICATE_CODE_VALIDATE_ONLY ?= 0
 MAKEFILE_SPLIT_APPLY ?= 0
 GATE_REFRESH_VALIDATE_ONLY ?= 0
 GATE_RUN_LOCK ?= .gate-logs/gate-run.lock
@@ -313,7 +320,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit check-ansible-base-image refresh-ansible-base-image install-pip lint lint-files lint-markdown lint-docstrings lint-fix check-file-line-limits split-makefile-layout test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
+        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit check-ansible-base-image refresh-ansible-base-image install-pip lint lint-files lint-markdown lint-docstrings lint-fix check-file-line-limits check-duplicate-code split-makefile-layout test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -327,7 +334,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-accelerator-auth-store azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
+        self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-accelerator-auth-store azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-environment-guard azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -343,7 +350,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sast-summary sbom pip-audit security security-backlog-gate \
-        audit-messages qa validate collect-check pre-commit-check coverage-files observed-status observed-tail gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
+        audit-messages qa validate collect-check pre-commit-check check-gate-failure-promotions integration-admission coverage-files observed-status observed-tail gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
         status-snapshot audit-evidence deps-audit core-dependency-ownership-refresh dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -437,7 +444,8 @@ help:
 	@echo "  lint-files            Run ruff linter on FILES only"
 	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
 	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
-	@echo "  check-file-line-limits  Require every tracked text file to stay below 2500 lines (FILE_LINE_LIMIT_POLICY)"
+	@echo "  check-file-line-limits  Enforce <2500 lines on tracked or staged content (FILE_LINE_LIMIT_POLICY, FILE_LINE_LIMIT_STAGED=0|1)"
+	@echo "  check-duplicate-code  Reject new staged/committed production clones with locked jscpd (DUPLICATE_CODE_*)"
 	@echo "  split-makefile-layout  Validate/apply the ordered make/*.mk layout (MAKEFILE_SPLIT_APPLY=0|1)"
 	@echo "  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)"
 	@echo "  presentation-browser-install Check/install pinned Chromium + WebKit (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)"
@@ -475,6 +483,8 @@ help:
 	@echo "  triage-failures       Incrementally group streamed failures (LOG, TRIAGE_STATE, TRIAGE_FORMAT)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  pre-commit-check      Fast lint + collection + typecheck commit preflight"
+	@echo "  check-gate-failure-promotions  Validate owned fast-admission failure nodes"
+	@echo "  integration-admission  Fail-fast feature-branch checks before the full gate"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
 	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace (LOG, TESTPATH, PYTEST_ARGS, RUN_ID)"
 	@echo "  test-xdist-trace-summary  Summarize one durable trace/run (LOG, RUN_ID)"
@@ -639,6 +649,7 @@ help:
 	@echo "  azure-accelerator-auth-store Preserve stdin/source JSON as immutable protected generations"
 	@echo "  azure-containerapp-preflight Traced read-only named-environment GPU sizing and quota proof"
 	@echo "  azure-containerapp-terraform-phase  Owned app-only Terraform phase (AZURE_CONTAINERAPP_TF_*)"
+	@echo "  azure-containerapp-environment-guard  Read-only protected GitHub Environment admission"
 	@echo "  azure-containerapp-live-proof  Hermetic/live bounded deploy-infer-destroy proof (AZURE_CONTAINERAPP_LIVE_PROOF_*)"
 	@echo "  test-azure-containerapp-coverage  Hermetic Azure Container Apps tests with 85/75 coverage gates"
 	@echo "  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)"
@@ -1138,7 +1149,24 @@ lint-python: lint
 lint-make: validate-makefile
 
 check-file-line-limits:
-	@$(UV) run python scripts/check_file_line_limits.py --root "$(CURDIR)" --config "$(FILE_LINE_LIMIT_POLICY)"
+	@case "$(FILE_LINE_LIMIT_STAGED)" in 0|1) ;; *) echo "FILE_LINE_LIMIT_STAGED must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/check_file_line_limits.py --root "$(CURDIR)" --config "$(FILE_LINE_LIMIT_POLICY)" $(if $(filter 1,$(FILE_LINE_LIMIT_STAGED)),--staged,)
+
+check-duplicate-code:
+	@case "$(DUPLICATE_CODE_SOURCE)" in staged|committed) ;; *) echo "DUPLICATE_CODE_SOURCE must be staged or committed"; exit 2;; esac
+	@case "$(DUPLICATE_CODE_VALIDATE_ONLY)" in 0|1) ;; *) echo "DUPLICATE_CODE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@test -n "$(strip $(DUPLICATE_CODE_CONFIG))" || { echo "DUPLICATE_CODE_CONFIG is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_ENGINE))" || { echo "DUPLICATE_CODE_ENGINE is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_BASE_REF))" || { echo "DUPLICATE_CODE_BASE_REF is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_CURRENT_REF))" || { echo "DUPLICATE_CODE_CURRENT_REF is required"; exit 2; }
+	@$(UV) run python scripts/check_duplicate_code.py \
+		--root "$(CURDIR)" \
+		--config "$(DUPLICATE_CODE_CONFIG)" \
+		--engine "$(DUPLICATE_CODE_ENGINE)" \
+		--source "$(DUPLICATE_CODE_SOURCE)" \
+		--base-ref "$(DUPLICATE_CODE_BASE_REF)" \
+		--current-ref "$(DUPLICATE_CODE_CURRENT_REF)" \
+		$(if $(filter 1,$(DUPLICATE_CODE_VALIDATE_ONLY)),--validate-only,)
 
 split-makefile-layout:
 	@case "$(MAKEFILE_SPLIT_APPLY)" in 0|1) ;; *) echo "MAKEFILE_SPLIT_APPLY must be 0 or 1"; exit 2;; esac
@@ -1148,6 +1176,8 @@ split-makefile-layout:
 # the release/full-suite gate remains a separate workflow.
 pre-commit-check:
 	@# AGENTS.md OD.10 fast pre-commit contract.
+	@$(MAKE) --no-print-directory check-file-line-limits FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)" FILE_LINE_LIMIT_STAGED=1
+	@$(MAKE) --no-print-directory check-duplicate-code DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=0
 	@$(MAKE) --no-print-directory lint
 	@$(MAKE) --no-print-directory collect-check
 	@$(MAKE) --no-print-directory typecheck
