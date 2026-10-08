@@ -463,11 +463,25 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S23",
         "S24",
         "S29",
+        "S30",
         "GATE",
     )
+    assert len(ledger.completed_items) == 6
+    s30 = next(item for item in ledger.implemented_items if item.item_id == "S30")
+    assert s30.title == "Transactionally durable, session-safe model-performance telemetry"
+    assert s30.category == "Improvements"
+    assert tuple(
+        (evidence.role, evidence.sha) for evidence in s30.evidence_commits
+    ) == (
+        ("implementation", "0b2629d00dcbfb6050f65e13e1a06f19e8f8fd7e"),
+        ("documentation_coverage", "a7eb66268cf4f2b3829f183582fbd0a92d0deda6"),
+    )
+    assert expected.count(
+        "S30 — Transactionally durable, session-safe model-performance telemetry"
+    ) == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 20."
+        "Implemented candidate items pending exact-head/release proof: 21."
         in expected
     )
 

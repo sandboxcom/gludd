@@ -18,12 +18,12 @@ exact-head and release proof.
 
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
-remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, and the
-train's dependency, ownership, structural, TUI, and coverage repairs. S29 is
-listed from its implementation receipt without claiming train integration or
-an exact-head gate. The preview therefore records useful candidate contents
-without converting implementation evidence into task, gate, release, or
-publication completion.
+remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
+the train's dependency, ownership, structural, TUI, and coverage repairs. S29
+and S30 are listed from immutable implementation receipts without claiming
+train integration or an exact-head gate. The preview therefore records useful
+candidate contents without converting implementation evidence into task, gate,
+release, or publication completion.
 
 ## Existing-tool decision
 
@@ -123,7 +123,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 20-item candidate inventory, and
+ordering, deterministic rendering, the exact 21-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 

@@ -390,6 +390,21 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "0b2629d00dcbfb6050f65e13e1a06f19e8f8fd7e"
+        },
+        {
+          "role": "documentation_coverage",
+          "sha": "a7eb66268cf4f2b3829f183582fbd0a92d0deda6"
+        }
+      ],
+      "item_id": "S30",
+      "release_page_category": "Improvements",
+      "title": "Transactionally durable, session-safe model-performance telemetry"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },
