@@ -19,6 +19,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from alembic import command
@@ -41,6 +42,7 @@ from general_ludd.db.models import (
     TodoStatus,
 )
 from general_ludd.db.repository import TodoRepository
+from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 from general_ludd.events import CustomEvent, EventBus
 from general_ludd.infra.azure_cost_reconciliation import (
     AzureCostLedgerState,
@@ -62,17 +64,187 @@ def migrated_postgres() -> Iterator[None]:
     yield
 
 
-async def _claim(url: str, project_id: str) -> list[str]:
+class _ProcessLifecycleRunner:
+    """Record real-process provider calls without creating external compute."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def reconcile_execution_environment(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append({"pid": os.getpid(), "state": kwargs["state"]})
+        return {"status": "successful", "rc": 0, "events": []}
+
+
+class _PostgresComputeLifecycleLoop(EventLoop):
+    """Exercise only the production claim/provision/release tick boundaries."""
+
+    async def _run_phase_range(self, start: int, end: int) -> None:
+        for phase_name in PHASE_ORDER[start:end]:
+            if phase_name == "claim_runnable_todos":
+                await self._phase_claim_runnable_todos()
+            elif phase_name == "reconcile_compute_demand":
+                await self._phase_reconcile_compute_demand()
+            elif phase_name == "release_compute_demand":
+                await self._phase_release_compute_demand()
+
+
+async def _run_compute_lifecycle_worker(
+    url: str,
+    project_id: str,
+    project_root: str,
+    worker_id: str,
+    start,
+    terminal_verified,
+    first_results,
+    final_results,
+) -> None:
     engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    runner = _ProcessLifecycleRunner()
+    first_reported = False
+    try:
+        project_manager = SimpleNamespace(
+            select_project=lambda: SimpleNamespace(project_id=project_id)
+        )
+        loop = _PostgresComputeLifecycleLoop(
+            session=sessions,
+            runner=runner,
+            daemon_state={},
+            project_manager=project_manager,
+            config={
+                "repo_root": project_root,
+                "execution_environment": {
+                    "machine_cpus": 2,
+                    "machine_memory_mb": 4096,
+                    "machine_disk_gb": 8,
+                },
+            },
+        )
+        if not await asyncio.to_thread(start.wait, 20):
+            raise TimeoutError("compute lifecycle start barrier timed out")
+        await loop.tick()
+        first_results.put(
+            {"worker_id": worker_id, "pid": os.getpid(), "calls": list(runner.calls)}
+        )
+        first_reported = True
+        if not await asyncio.to_thread(terminal_verified.wait, 20):
+            raise TimeoutError("terminal verification barrier timed out")
+        await loop.tick()
+        final_results.put(
+            {"worker_id": worker_id, "pid": os.getpid(), "calls": list(runner.calls)}
+        )
+    except BaseException as exc:
+        payload = {
+            "worker_id": worker_id,
+            "pid": os.getpid(),
+            "calls": list(runner.calls),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        if not first_reported:
+            first_results.put(payload)
+        final_results.put(payload)
+    finally:
+        await engine.dispose()
+
+
+def _compute_lifecycle_process(
+    url: str,
+    project_id: str,
+    project_root: str,
+    worker_id: str,
+    start,
+    terminal_verified,
+    first_results,
+    final_results,
+) -> None:
+    asyncio.run(
+        _run_compute_lifecycle_worker(
+            url,
+            project_id,
+            project_root,
+            worker_id,
+            start,
+            terminal_verified,
+            first_results,
+            final_results,
+        )
+    )
+
+
+async def _seed_compute_lifecycle_todo(project_id: str, todo_id: str) -> None:
+    engine = create_async_engine(POSTGRES_URL, pool_size=1, max_overflow=0)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with sessions() as session:
-            claimed = await TodoRepository(session, project_id=project_id).claim_runnable(
-                limit=6,
+            session.add(ProjectModel(project_id=project_id, name="Postgres lifecycle E2E"))
+            session.add(
+                TodoModel(
+                    todo_id=todo_id,
+                    project_id=project_id,
+                    title="winner-only compute lifecycle",
+                    status=TodoStatus.QUEUED.value,
+                    priority=100,
+                )
+            )
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+
+async def _commit_and_verify_terminal_todo(project_id: str, todo_id: str) -> int:
+    engine = create_async_engine(POSTGRES_URL, pool_size=1, max_overflow=0)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with sessions() as session:
+            repository = TodoRepository(session, project_id=project_id)
+            active = await repository.get_by_id(todo_id, project_id=project_id)
+            assert active is not None
+            assert active.status == TodoStatus.ACTIVE.value
+            terminal = await repository.transition(
+                todo_id,
+                TodoStatus.COMPLETE,
+                expected_version=active.version,
                 project_id=project_id,
             )
             await session.commit()
-            return [todo.todo_id for todo in claimed]
+            terminal_version = terminal.version
+        async with sessions() as verification_session:
+            persisted = await TodoRepository(
+                verification_session,
+                project_id=project_id,
+            ).get_by_id(todo_id, project_id=project_id)
+            assert persisted is not None
+            assert persisted.status == TodoStatus.COMPLETE.value
+            assert persisted.version == terminal_version
+            return persisted.version
+    finally:
+        await engine.dispose()
+
+
+async def _claim(url: str, project_id: str) -> list[str]:
+    engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    claimed_ids: list[str] = []
+    deadline = time.monotonic() + 10
+    try:
+        while len(claimed_ids) < 6:
+            async with sessions() as session:
+                claimed = await TodoRepository(
+                    session,
+                    project_id=project_id,
+                ).claim_runnable(
+                    limit=6 - len(claimed_ids),
+                    project_id=project_id,
+                )
+                await session.commit()
+            claimed_ids.extend(todo.todo_id for todo in claimed)
+            if len(claimed_ids) >= 6 or time.monotonic() >= deadline:
+                break
+            # SKIP LOCKED may return an empty page while the peer still owns its
+            # broader candidate-page locks. Retry only after that transaction
+            # commits; the guarded status/version update still decides ownership.
+            await asyncio.sleep(0.05)
+        return claimed_ids
     finally:
         await engine.dispose()
 
@@ -220,6 +392,77 @@ async def test_postgres_fences_claims_across_worker_processes() -> None:
     assert claimed_sets[0].isdisjoint(claimed_sets[1])
     assert len(claimed_sets[0] | claimed_sets[1]) == 12
     await engine.dispose()
+
+
+def test_postgres_tick_winner_owns_compute_until_terminal_verification() -> None:
+    """Only the durable claim winner may provision and later release compute."""
+    suffix = uuid.uuid4().hex[:12]
+    project_id = f"pg-lifecycle-{suffix}"
+    todo_id = f"PG-LIFECYCLE-{suffix}"
+    asyncio.run(_seed_compute_lifecycle_todo(project_id, todo_id))
+
+    context = multiprocessing.get_context("spawn")
+    start = context.Event()
+    terminal_verified = context.Event()
+    first_results = context.Queue()
+    final_results = context.Queue()
+    project_root = str(Path(__file__).resolve().parents[2])
+    workers = [
+        context.Process(
+            target=_compute_lifecycle_process,
+            args=(
+                POSTGRES_URL,
+                project_id,
+                project_root,
+                f"compute-worker-{index}",
+                start,
+                terminal_verified,
+                first_results,
+                final_results,
+            ),
+        )
+        for index in range(2)
+    ]
+    try:
+        for worker in workers:
+            worker.start()
+        start.set()
+        first_payloads = [first_results.get(timeout=40) for _ in workers]
+        assert all("error" not in payload for payload in first_payloads), first_payloads
+        winners = [payload for payload in first_payloads if payload["calls"]]
+        losers = [payload for payload in first_payloads if not payload["calls"]]
+        assert len(winners) == 1, first_payloads
+        assert len(losers) == 1, first_payloads
+        winner_pid = winners[0]["pid"]
+        assert winners[0]["calls"] == [{"pid": winner_pid, "state": "present"}]
+
+        terminal_version = asyncio.run(
+            _commit_and_verify_terminal_todo(project_id, todo_id)
+        )
+        assert terminal_version >= 2
+        terminal_verified.set()
+
+        final_payloads = [final_results.get(timeout=40) for _ in workers]
+        for worker in workers:
+            worker.join(timeout=10)
+        assert all(worker.exitcode == 0 for worker in workers)
+        assert all("error" not in payload for payload in final_payloads), final_payloads
+
+        winner = next(payload for payload in final_payloads if payload["pid"] == winner_pid)
+        loser = next(payload for payload in final_payloads if payload["pid"] != winner_pid)
+        assert winner["calls"] == [
+            {"pid": winner_pid, "state": "present"},
+            {"pid": winner_pid, "state": "absent"},
+        ]
+        assert loser["calls"] == []
+    finally:
+        terminal_verified.set()
+        for worker in workers:
+            if worker.is_alive():
+                worker.terminate()
+            worker.join(timeout=10)
+        first_results.close()
+        final_results.close()
 
 
 @pytest.mark.asyncio

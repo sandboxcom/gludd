@@ -147,6 +147,50 @@ jobs:
           ALL_PROXY: http://127.0.0.1:9
           NO_PROXY: ""
 
+  # Live S83.158 acceptance on the hosted Linux Docker runtime. The owned
+  # runner starts one namespaced PostgreSQL container on a random loopback port,
+  # bounds readiness, runs the real two-process EventLoop race, and always
+  # removes that exact container. Keeping lifecycle ownership in the runner
+  # avoids service-container DNS and startup-timeout ambiguity.
+  postgres-winner-compute-lifecycle-acceptance:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Install locked dependencies
+        run: |
+          echo "=== CI PHASE: postgres-winner-lifecycle-install ==="
+          make sync \
+            DEPENDENCY_PROFILE_SET=ci \
+            DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
+            DEPENDENCY_PROFILE_PYTHON=3.11 \
+            DEPENDENCY_PROFILE_VALIDATE_ONLY=0
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: PostgreSQL winner-only compute lifecycle acceptance
+        timeout-minutes: 15
+        run: |
+          echo "=== CI PHASE: postgres-winner-compute-lifecycle ==="
+          make test-e2e-postgres-multiworker \
+            POSTGRES_E2E_RUNTIME=docker \
+            POSTGRES_E2E_IMAGE=postgres:16-alpine \
+            POSTGRES_E2E_TIMEOUT_SECS=120 \
+            POSTGRES_E2E_VALIDATE_ONLY=0 \
+            PODMAN_MACHINE=gludd-ci-unused \
+            PODMAN_START_TIMEOUT_SECS=120 \
+            PODMAN_RECREATE=0 \
+            PODMAN_MEMORY_MB=4096 \
+            PODMAN_CPUS=2 \
+            PODMAN_DISK_GB=20
+        env:
+          GLUDD_AUTH_PSK: ""
+
   gate:
     needs: version
     runs-on: ubuntu-24.04
@@ -1814,7 +1858,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, claim-before-provision-acceptance, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
+    needs: [version, gate, claim-before-provision-acceptance, postgres-winner-compute-lifecycle-acceptance, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -1832,6 +1876,7 @@ jobs:
       needs.version.result == 'success' &&
       needs.gate.result == 'success' &&
       needs['claim-before-provision-acceptance'].result == 'success' &&
+      needs['postgres-winner-compute-lifecycle-acceptance'].result == 'success' &&
       needs.release_source_proof.result == 'success' &&
       needs['freellmapi-upstream-build'].result == 'skipped' &&
       needs['test-shard'].result == 'skipped' &&

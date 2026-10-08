@@ -674,14 +674,18 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
         # silent pass.
         return_reviewer = None
         adversarial_detector = AdversarialCodeDetector()
-        estimation_tracker = EstimationTracker()
+        estimation_feedback_enabled = (
+            os.environ.get("GLUDD_ESTIMATION_FEEDBACK", "1").strip() != "0"
+        )
+        estimation_tracker = EstimationTracker() if estimation_feedback_enabled else None
         app.state._adversarial_detector = adversarial_detector
         app.state._estimation_tracker = estimation_tracker
         daemon_state["_adversarial_detector"] = adversarial_detector
         daemon_state["_estimation_tracker"] = estimation_tracker
         logger.info(
-            "Wired adversarial detector (%d patterns) and estimation tracker",
+            "Wired adversarial detector (%d patterns); estimation feedback=%s",
             len(adversarial_detector.get_all_categories()),
+            "shadow" if estimation_tracker is not None else "disabled",
         )
         if model_gateway is not None and uc is not None and uc.service_discovery_enabled:
             from general_ludd.review.reviewer import ReturnReviewer
@@ -938,6 +942,7 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
                 budget_guard=budget_guard,
                 searcher=semantic_searcher,
                 spend_limiter=spend_limiter,
+                estimation_tracker=estimation_tracker,
             )
             app.state._execution_engine = execution_engine
 
@@ -1562,6 +1567,8 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
                         elapsed_s=r.elapsed_s,
                         deadline_s=r.deadline_s,
                         thread_stacks=r.thread_stacks,
+                        correlation_id=r.op_id,
+                        source="stall-watchdog",
                     )
                 ),
                 subsys["bus"].publish(
@@ -1574,6 +1581,14 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
                 ),
             )[0],
         )
+        from general_ludd.observability.stall_escalation import StallEscalationSubscriber
+
+        app.state._stall_escalation = StallEscalationSubscriber(
+            event_bus=subsys["bus"],
+            session_factory=session_factory,
+            loop=asyncio.get_running_loop(),
+        )
+        app.state._stall_escalation.start()
         app.state._stall_watchdog.start_sweeper()
 
         # Wire the shared watchdog into the agent dispatcher so in-flight agent
@@ -1843,6 +1858,12 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
     if _sw is not None:
         with contextlib.suppress(Exception):
             _sw.stop_sweeper()
+    _stall_escalation = getattr(app.state, "_stall_escalation", None)
+    if _stall_escalation is not None:
+        try:
+            await _stall_escalation.aclose()
+        except Exception:
+            logger.warning("Stall escalation drain failed during shutdown")
     # B3.1.3 Slice 4 — drain the WriteQueue and stop the writer subprocess
     # BEFORE disposing the engine: a lingering writer holding a DB handle
     # during engine.dispose() can deadlock. The queue is cleared (best-effort

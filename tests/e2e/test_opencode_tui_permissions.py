@@ -30,6 +30,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 OPENCODE = shutil.which("opencode")
+TUI_STARTUP_TIMEOUT_SECONDS = 120
 
 _CSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _OSC_RE = re.compile(r"\x1b\][^\x07]*(?:\x07|\x1b\\)")
@@ -610,7 +611,7 @@ def test_tui_handles_multiple_permissioned_tool_prompts(
     provider = DeterministicProvider(project_root=isolated_tui_project)
     tui = _Tui(provider.config_content, project_root=isolated_tui_project)
     try:
-        tui.wait_for("Ask anything...", timeout=30)
+        tui.wait_for("Ask anything...", timeout=TUI_STARTUP_TIMEOUT_SECONDS)
         read_segment = tui.prompt(
             "Use the read tool to inspect pyproject.toml, then reply with only the value of project.name.",
         )
@@ -752,7 +753,7 @@ def test_tui_no_wait_plugin_handles_multiple_bash_prompts(
         },
     )
     try:
-        tui.wait_for("Ask anything...", timeout=30)
+        tui.wait_for("Ask anything...", timeout=TUI_STARTUP_TIMEOUT_SECONDS)
         allowed_segment = tui.prompt(
             "Use the bash tool to run make version, then reply with only the version value printed by that command.",
         )

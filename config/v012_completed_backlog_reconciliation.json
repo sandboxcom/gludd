@@ -121,6 +121,300 @@
       "title": "Fast integration admission for deterministic gate failures"
     }
   ],
+  "implemented_items": [
+    {
+      "evidence_commits": [
+        {
+          "role": "runtime",
+          "sha": "5b43328dc15e105304678ffc988480bdb103e633"
+        },
+        {
+          "role": "ansible_actions",
+          "sha": "211c85a103255530e5f6d53f38233bde57c36cfd"
+        },
+        {
+          "role": "documentation",
+          "sha": "50f28f4ddbb9bf5bd7d0af32a2667088be7ce061"
+        }
+      ],
+      "item_id": "SEARXNG",
+      "release_page_category": "Features",
+      "title": "Native in-process SearXNG lifecycle and Ansible actions"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "source_head",
+          "sha": "aff441000c111e7a8425f3a032b832b2bbdac82f"
+        },
+        {
+          "role": "integration",
+          "sha": "f1268379ee1db03ade7d8fc34ad20ab16e066c6f"
+        }
+      ],
+      "item_id": "ANSIBLE",
+      "release_page_category": "Improvements",
+      "title": "Fail-closed executable Ansible collection roles and dogfood paths"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "c76f3bca35587c6060983ead8fc82de086368099"
+        }
+      ],
+      "item_id": "S83.163",
+      "release_page_category": "Features",
+      "title": "Lease-aware bounded FreeLLMAPI rollback draining"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "f2aae8ebfead6ec762e9b23a29edcc4a4b7f0dcd"
+        }
+      ],
+      "item_id": "S83.166",
+      "release_page_category": "Improvements",
+      "title": "Decision-operator environment-error compatibility"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "a2a6e8198268b1b5f2cb51d2707bec806313649c"
+        },
+        {
+          "role": "documentation",
+          "sha": "73d70771a66404740a08457b7c04560bbe5c463c"
+        }
+      ],
+      "item_id": "S83.157",
+      "release_page_category": "Improvements",
+      "title": "Attested Azure environment admission receipts"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "496f5df4908c0f02b4508e455fa40f66af57719b"
+        }
+      ],
+      "item_id": "S83.158",
+      "release_page_category": "Improvements",
+      "title": "Live PostgreSQL winner-lifecycle release gating"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "93327fe5734ad0ad234dbcf10ba3473d564fb41a"
+        }
+      ],
+      "item_id": "#65",
+      "release_page_category": "Features",
+      "title": "Executable backlog-audit task evidence"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "81eb5509158c9550e49ed7ee4d924c3e9e108a84"
+        }
+      ],
+      "item_id": "#75",
+      "release_page_category": "Features",
+      "title": "Shadow-only GitHub and Jira issue-source configuration admission"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "library_migration",
+          "sha": "8e1a8f88122f76c6f78089b14c54403061c28982"
+        },
+        {
+          "role": "web_parameters",
+          "sha": "ea33b6e277b812ebbe200e2cad3e0918589b54ff"
+        }
+      ],
+      "item_id": "FFDH",
+      "release_page_category": "Improvements",
+      "title": "Warning-free modern FFDH parameters and RFC 7919 web groups"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "19719465ca04bcb67fd3e151a8497b8308ceae29"
+        },
+        {
+          "role": "documentation",
+          "sha": "10690a1bf01514a741981ae954e2c80187d169b2"
+        }
+      ],
+      "item_id": "#77",
+      "release_page_category": "Improvements",
+      "title": "Fork-point pipeline merge provenance"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "7cbb696f69c508c65d9ec04410027d96777ea743"
+        }
+      ],
+      "item_id": "S11.1",
+      "release_page_category": "Features",
+      "title": "Bounded cost-only shadow estimation feedback"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "249c78ee28dcebc62fd3b9f09c1b5015c4208498"
+        }
+      ],
+      "item_id": "S14",
+      "release_page_category": "Improvements",
+      "title": "Lease-bound worker broadcast liveness"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "worker_endpoint",
+          "sha": "8b52ffc84a0b15e17925d7d411176cdd434f7267"
+        },
+        {
+          "role": "worker_contract",
+          "sha": "e5890b5b7ab4b82dcf27256e38e374246aa0b1a1"
+        },
+        {
+          "role": "orchestration",
+          "sha": "4e60bc2fb7be9fa5505aed75f7d69b9dacbb698f"
+        },
+        {
+          "role": "failure_contract",
+          "sha": "e867d5bbc97d956a10dd771cff2b132113637462"
+        }
+      ],
+      "item_id": "S15",
+      "release_page_category": "Features",
+      "title": "Validation-job execution and default-off request orchestration"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "d29797fb1b13e624cafd0f2fa3a4b7f32e8ae3d9"
+        },
+        {
+          "role": "documentation",
+          "sha": "9fecef30de9104c922c1d8c2f4f5d20e4ca8c4d8"
+        }
+      ],
+      "item_id": "S16",
+      "release_page_category": "Improvements",
+      "title": "Fail-closed writer subprocess bootstrap and inline rollback"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "cb3c2d181d36b83a88c5477abc4076aaf20c42fc"
+        }
+      ],
+      "item_id": "S17",
+      "release_page_category": "Features",
+      "title": "Fail-closed ZAP DAST project-gate integration"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "subscriber",
+          "sha": "f0111590a516cab8bb5e5429ac5f21c940abb888"
+        },
+        {
+          "role": "daemon_wiring",
+          "sha": "1e08b117ff987105732fda233194cb8d8677fd5d"
+        }
+      ],
+      "item_id": "S18",
+      "release_page_category": "Features",
+      "title": "Durable bounded operator escalation for agent stalls"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "c0ee1c46d35585294050b9f256981619a2beecac"
+        },
+        {
+          "role": "documentation",
+          "sha": "f737ab7192158424957b1a4ae9dcd94abc434187"
+        },
+        {
+          "role": "ledger_evidence",
+          "sha": "7b6c6faef8df7dc094908c1d6b52145545560deb"
+        }
+      ],
+      "item_id": "S23",
+      "release_page_category": "Features",
+      "title": "Bounded nested-dispatch parent hibernation"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "961915f8ebb97916d8a2ceddf0a7a93d8ec49c9f"
+        },
+        {
+          "role": "documentation",
+          "sha": "8c4664e46e393cfd8960aac6a963e44340849b3e"
+        }
+      ],
+      "item_id": "S24",
+      "release_page_category": "Features",
+      "title": "Bounded self-improvement outcome visibility"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "51e22706ac2b23e4e22dc47ccbe411a3fca74081"
+        }
+      ],
+      "item_id": "S29",
+      "release_page_category": "Features",
+      "title": "Leased managed-process registry lifecycle"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "exact_head_integration",
+          "sha": "ad1df073784bdef19f1091d10baaa54232349510"
+        },
+        {
+          "role": "structural_regression",
+          "sha": "94301d27e46e4021ac433ec3405f664cb4a33862"
+        },
+        {
+          "role": "ownership_inventory",
+          "sha": "d61e1f23b0653faab60a98ad1bf5e16c7be47370"
+        },
+        {
+          "role": "tui_regression",
+          "sha": "8a95c89d6ceecc0dfe4617326af930321a473294"
+        },
+        {
+          "role": "coverage_regression",
+          "sha": "a67b81f779edba20ed170b584fdf6eff2ba05e7f"
+        }
+      ],
+      "item_id": "GATE",
+      "release_page_category": "Improvements",
+      "title": "Exact-head dependency, ownership, structural, TUI, and coverage repairs"
+    }
+  ],
   "excluded_open_tasks": [
     "S83.157",
     "S83.158",

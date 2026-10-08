@@ -15,6 +15,7 @@ from general_ludd.decision_codification.rollout import (
     RolloutController,
     RolloutError,
 )
+from general_ludd.decision_codification.runtime_context import build_rule_context
 from general_ludd.decision_codification.runtime_rules import (
     RuleBundleAdapter,
     RulesEngineAdapter,
@@ -35,7 +36,6 @@ from general_ludd.decision_codification.schema import (
 from general_ludd.decision_codification.telemetry import DecisionCodificationTelemetry
 
 SafetyCheck = Callable[[str, DecisionContextV1], bool]
-_RESERVED_RUNTIME_FEATURES: dict[str, object] = {"codification_known": True}
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,20 +214,8 @@ class DecisionRuntime:
                     candidate_digest=bundle.candidate_digest,
                 )
 
-            context: dict[str, object] = dict(context_input.exact_guards)
-            for name, value in context_input.features.items():
-                if name in context and context[name] != value:
-                    return self._abstain(
-                        decision_kind,
-                        FallbackReason.SCOPE_MISS,
-                        context=context_input,
-                        candidate_digest=bundle.candidate_digest,
-                    )
-                context[name] = value
-            for name, reserved_value in _RESERVED_RUNTIME_FEATURES.items():
-                if any(node.feature_id == name for node in bundle.nodes):
-                    context[name] = reserved_value
-            if any(node.feature_id not in context for node in bundle.nodes):
+            context = build_rule_context(context_input, bundle)
+            if context is None:
                 return self._abstain(
                     decision_kind,
                     FallbackReason.SCOPE_MISS,

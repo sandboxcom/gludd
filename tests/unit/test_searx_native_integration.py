@@ -223,9 +223,11 @@ def test_symlink_settings_are_rejected(tmp_path: Path) -> None:
         runtime.start()
 
 
-def test_settings_environment_is_restored_after_upstream_import(tmp_path: Path) -> None:
-    previous = os.environ.get("SEARXNG_SETTINGS_PATH")
-    os.environ["SEARXNG_SETTINGS_PATH"] = "/operator/original.yml"
+def test_settings_environment_is_restored_after_upstream_import(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SEARXNG_SETTINGS_PATH", "/operator/original.yml")
     imported_value: list[str | None] = []
     app = _App([_Client()])
 
@@ -234,21 +236,15 @@ def test_settings_environment_is_restored_after_upstream_import(tmp_path: Path) 
         imported_value.append(os.environ.get("SEARXNG_SETTINGS_PATH"))
         return SimpleNamespace(app=app)
 
-    try:
-        runtime = NativeSearxRuntime(
-            settings_path=_settings(tmp_path),
-            namespace="environment",
-            module_loader=loader,
-        )
-        runtime.start()
-        runtime.stop()
-        assert imported_value == [str((tmp_path / "settings.yml").resolve())]
-        assert os.environ["SEARXNG_SETTINGS_PATH"] == "/operator/original.yml"
-    finally:
-        if previous is None:
-            os.environ.pop("SEARXNG_SETTINGS_PATH", None)
-        else:
-            os.environ["SEARXNG_SETTINGS_PATH"] = previous
+    runtime = NativeSearxRuntime(
+        settings_path=_settings(tmp_path),
+        namespace="environment",
+        module_loader=loader,
+    )
+    runtime.start()
+    runtime.stop()
+    assert imported_value == [str((tmp_path / "settings.yml").resolve())]
+    assert os.environ["SEARXNG_SETTINGS_PATH"] == "/operator/original.yml"
 
 
 def test_default_namespace_honours_explicit_resource_namespace(

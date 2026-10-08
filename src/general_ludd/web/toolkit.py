@@ -7,7 +7,7 @@ import time
 from collections import deque
 from collections.abc import Mapping, Sequence
 from itertools import islice
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
@@ -39,6 +39,7 @@ _CHARSET_RE = re.compile(r"charset\s*=\s*[\"']?([^;\s\"']+)", re.IGNORECASE)
 _CHALLENGE_SAMPLE_BYTES = 64 * 1024
 
 
+@runtime_checkable
 class Fetcher(Protocol):
     """Callable shape supplied by the maintained outbound fetch boundary."""
 
@@ -54,6 +55,7 @@ class Fetcher(Protocol):
         """Fetch one resource under an explicit policy."""
 
 
+@runtime_checkable
 class SearchProvider(Protocol):
     """Bounded operator-injected search seam; no provider is a valid state."""
 
@@ -63,6 +65,7 @@ class SearchProvider(Protocol):
         """Return no more than ``top_n`` provider hits."""
 
 
+@runtime_checkable
 class OfflineRenderer(Protocol):
     """Renderer that accepts fetched HTML and has no navigation capability."""
 

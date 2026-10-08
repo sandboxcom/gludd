@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+from importlib import import_module as _import_module
 from pathlib import Path
 from typing import Any
 
@@ -126,10 +127,8 @@ def validate_spec(spec: dict[str, Any]) -> list[str]:
 
 def _try_parser_validate(spec: dict[str, Any]) -> list[str] | None:
     """Attempt validation via ``PermissionSpecParser`` if it exists; None on absence."""
-    import importlib
-
     try:
-        mod = importlib.import_module("general_ludd.security.permissions")
+        mod = _import_module("general_ludd.security.permissions")
     except Exception:
         return None
     parser_cls = getattr(mod, "PermissionSpecParser", None)

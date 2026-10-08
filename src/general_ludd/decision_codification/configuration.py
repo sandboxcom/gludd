@@ -67,6 +67,38 @@ def _generation_database_url(
     return value
 
 
+def _build_generation_store(
+    config: DecisionCodificationConfig,
+    environment: Mapping[str, str],
+    artifacts: DecisionArtifactStore,
+) -> tuple[GenerationStore, DurableGenerationStore]:
+    """Build the configured local or PostgreSQL generation store."""
+    assert config.state_path is not None
+    local_state = DurableGenerationStore(
+        config.state_path,
+        busy_timeout_seconds=config.busy_timeout_seconds,
+    )
+    if config.generation_database_url_env is None:
+        return local_state, local_state
+    assert config.project_id is not None
+    database_url = _generation_database_url(
+        config.generation_database_url_env,
+        environment,
+    )
+    engine = create_engine(
+        database_url,
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": max(1, int(config.busy_timeout_seconds))},
+    )
+    shared_pointers = PostgresGenerationStore(
+        engine,
+        artifacts,
+        lock_timeout_seconds=config.busy_timeout_seconds,
+    )
+    shared_pointers.verify_ready(config.project_id)
+    return shared_pointers, local_state
+
+
 def build_configured_components(
     config: DecisionCodificationConfig,
     *,
@@ -122,34 +154,11 @@ def build_configured_components(
             str(config.artifact_root),
             key=artifact_key,
         )
-        local_state = DurableGenerationStore(
-            config.state_path,
-            busy_timeout_seconds=config.busy_timeout_seconds,
+        pointers, local_state = _build_generation_store(
+            config,
+            environment,
+            artifacts,
         )
-        if config.generation_database_url_env is None:
-            pointers: GenerationStore = local_state
-        else:
-            database_url = _generation_database_url(
-                config.generation_database_url_env,
-                environment,
-            )
-            engine = create_engine(
-                database_url,
-                pool_pre_ping=True,
-                connect_args={
-                    "connect_timeout": max(
-                        1,
-                        int(config.busy_timeout_seconds),
-                    )
-                },
-            )
-            shared_pointers = PostgresGenerationStore(
-                engine,
-                artifacts,
-                lock_timeout_seconds=config.busy_timeout_seconds,
-            )
-            shared_pointers.verify_ready(config.project_id)
-            pointers = shared_pointers
         rollout = RolloutController(
             artifacts,
             pointers,

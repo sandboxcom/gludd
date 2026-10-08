@@ -15,30 +15,21 @@ import re
 import stat
 import threading
 from collections.abc import Callable, Sequence
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Protocol, cast
+
+from general_ludd.searx.errors import (
+    SearxError,
+    SearxLifecycleError,
+    SearxSearchError,
+    SearxUnavailableError,
+)
+from general_ludd.searx.remote import RemoteSearxAdapter
 
 _NAMESPACE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 _IMPORT_LOCK = threading.RLock()
 _MAX_QUERY_CHARS = 2048
 _MAX_RESULTS = 100
-
-
-class SearxError(RuntimeError):
-    """Base error for the Gludd SearX integration."""
-
-
-class SearxUnavailableError(SearxError):
-    """Raised when the official upstream Python package is unavailable."""
-
-
-class SearxLifecycleError(SearxError):
-    """Raised when native runtime startup, health, or cleanup fails."""
-
-
-class SearxSearchError(SearxError):
-    """Raised when a native search cannot return a valid JSON response."""
 
 
 class _WsgiResponse(Protocol):
@@ -57,14 +48,7 @@ class _WsgiApp(Protocol):
     def test_client(self) -> _WsgiClient: ...
 
 
-class _RemoteConnector(Protocol):
-    def health(self) -> dict[str, object]: ...
-
-    def search(self, query: str, **kwargs: Any) -> Sequence[Any]: ...
-
-
 ModuleLoader = Callable[[str], object]
-ConnectorFactory = Callable[..., _RemoteConnector]
 
 
 def default_namespace() -> str:
@@ -328,74 +312,6 @@ class NativeSearxRuntime:
         """Release the owned WSGI client on every context exit."""
         del exc_type, exc, traceback
         self.stop()
-
-
-class RemoteSearxAdapter:
-    """Explicit compatibility adapter for an operator-managed HTTP instance."""
-
-    def __init__(
-        self,
-        *,
-        base_url: str,
-        timeout: float = 10.0,
-        connector_factory: ConnectorFactory | None = None,
-    ) -> None:
-        """Configure an explicit operator-managed remote SearXNG endpoint."""
-        if not isinstance(base_url, str) or not base_url.strip():
-            raise ValueError("base_url is required for remote SearXNG transport")
-        if connector_factory is None:
-            from general_ludd.connectors.searx import SearXConnector
-
-            selected_factory = cast(ConnectorFactory, SearXConnector)
-        else:
-            selected_factory = connector_factory
-        self.base_url = base_url.rstrip("/")
-        self.instance_uri = self.base_url
-        self.process_pid = None
-        self._connector: _RemoteConnector = selected_factory(
-            {"base_url": self.base_url, "timeout": timeout}
-        )
-        self._started = False
-
-    def start(self) -> bool:
-        """Health-check and mark the remote adapter as started."""
-        if self._started:
-            return False
-        health = self._connector.health()
-        if health.get("ok") is not True:
-            raise SearxLifecycleError("remote SearXNG compatibility endpoint is unhealthy")
-        self._started = True
-        return True
-
-    def stop(self) -> bool:
-        """Mark the compatibility adapter stopped idempotently."""
-        changed = self._started
-        self._started = False
-        return changed
-
-    def is_running(self) -> bool:
-        """Return whether remote startup completed successfully."""
-        return self._started
-
-    def search(
-        self,
-        query: str,
-        *,
-        categories: Sequence[str] | None = None,
-        page: int = 1,
-        max_results: int = 10,
-        **_kwargs: Any,
-    ) -> dict[str, Any]:
-        """Execute one bounded search through the remote connector."""
-        if not self._started:
-            raise SearxLifecycleError("remote SearXNG adapter is not started")
-        results = self._connector.search(
-            query,
-            page=page,
-            categories=",".join(categories or ("general",)),
-        )
-        serialised = [asdict(result) for result in results[:max_results]]
-        return {"query": query, "results": serialised, "number_of_results": len(serialised)}
 
 
 __all__ = [

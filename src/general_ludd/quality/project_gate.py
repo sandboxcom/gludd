@@ -6,7 +6,7 @@ This is a SEPARATE entrypoint from gludd's own self-hosting gate
 
 Where slice 2's ``run_project_check`` runs *one* declared check, slice 3's
 :func:`run_project_gate` runs *several* and aggregates their
-:class:`~general_ludd.project_runner.runner.CheckResult`\\ s into a single
+:class:`~general_ludd.project_runner.runner.CheckResult` instances into a single
 pass/fail gate verdict: the gate PASSES only when every *required* check is
 declared in the project's ``project.yml`` AND exits successfully. Undeclared
 required checks fail the gate (fail-closed — a missing test/lint command must
@@ -16,6 +16,7 @@ not silently "pass").
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from pathlib import Path
 
 from general_ludd.project_runner import (
@@ -24,6 +25,7 @@ from general_ludd.project_runner import (
     ProjectProfileError,
     load_project_profile,
 )
+from general_ludd.project_runner.dast import DastResult, run_dast_scan
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +64,7 @@ def run_project_gate(
         the profile the report carries ``passed=False`` + a top-level ``error``.
     """
     requested = list(checks)
-    required_set = set(requested) if required is None else set(required)
+    caller_requested = set(requested)
 
     ws = Path(workspace)
 
@@ -78,13 +80,25 @@ def run_project_gate(
                 "project": None,
                 "workspace": str(ws),
                 "requested": requested,
-                "required": sorted(required_set),
+                "required": sorted(set(requested) if required is None else set(required)),
                 "checks": [],
-                "missing": sorted(required_set),
+                "missing": sorted(set(requested) if required is None else set(required)),
                 "passed_count": 0,
                 "failed_count": len(requested),
                 "error": str(exc),
             }
+
+    # A typed ``dast`` block opts the project into a structured ZAP check. It
+    # is appended to the ordinary completion gate so production callers that
+    # use DEFAULT_CHECKS cannot accidentally leave the scanner unreachable.
+    if profile.dast is not None and "dast" not in requested:
+        requested.append("dast")
+    required_set = set(requested) if required is None else set(required)
+    if profile.dast is not None:
+        if profile.dast.required:
+            required_set.add("dast")
+        elif "dast" not in caller_requested and required is None:
+            required_set.discard("dast")
 
     try:
         runner = ProjectCommandRunner(ws, profile)
@@ -109,6 +123,46 @@ def run_project_gate(
 
     for check in requested:
         is_required = check in required_set
+
+        if check == "dast" and profile.dast is not None:
+            try:
+                dast_result = run_dast_scan(profile.dast, profile, ws)
+            except Exception as exc:
+                # The completion path catches top-level gate exceptions and
+                # historically leaves the completion decision unchanged. Keep
+                # DAST failures inside the report so they cannot fail open.
+                logger.exception("structured DAST driver failed")
+                dast_result = DastResult(
+                    passed=False,
+                    reason=f"DAST scanner failed: {type(exc).__name__}",
+                )
+            finding_reports = [asdict(finding) for finding in dast_result.findings]
+            reason = dast_result.reason
+            if dast_result.passed:
+                warning_note = " with ZAP warnings" if dast_result.warnings else ""
+                summary = (
+                    f"dast: PASS{warning_note} "
+                    f"({len(finding_reports)} below-threshold finding(s))"
+                )
+            else:
+                summary = f"dast: FAIL — {reason or 'DAST validation failed'}"
+            check_reports.append({
+                "name": "dast",
+                "declared": True,
+                "required": is_required,
+                "passed": dast_result.passed,
+                "exit_code": dast_result.exit_code,
+                "duration_s": round(dast_result.duration_s, 3),
+                "timed_out": bool(reason and "timed out" in reason.lower()),
+                "skipped": dast_result.skipped,
+                "warnings": dast_result.warnings,
+                "error": reason,
+                "summary": summary,
+                "findings": finding_reports,
+            })
+            if is_required and not dast_result.passed:
+                gate_passed = False
+            continue
 
         if not profile.has(check):
             # Undeclared: a required missing check fails the gate; an advisory

@@ -8,6 +8,7 @@ import inspect
 import logging
 import time
 from collections.abc import Callable, Coroutine, Sequence
+from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -27,6 +28,11 @@ if TYPE_CHECKING:
     from general_ludd.config.user_config import OrchestrationGuardConfig
 
 logger = logging.getLogger(__name__)
+
+_CURRENT_DISPATCH_TASK: ContextVar[AgentTask | None] = ContextVar(
+    "general_ludd_current_dispatch_task",
+    default=None,
+)
 
 
 class DispatchStatus(str):
@@ -433,7 +439,11 @@ class AgentDispatcher:
                 )
                 with _watch:
                     async with self._model_call_semaphore:
-                        output = await self._executor(task)
+                        current_task_token = _CURRENT_DISPATCH_TASK.set(task)
+                        try:
+                            output = await self._executor(task)
+                        finally:
+                            _CURRENT_DISPATCH_TASK.reset(current_task_token)
                 duration = time.monotonic() - start
                 # Record the completed duration so the per-agent baseline learns
                 # (and an anomalously-slow run is judged against the prior window).
@@ -548,6 +558,30 @@ class AgentDispatcher:
         """Dispatch a task batch and convert timeouts or exceptions to results."""
         if not tasks:
             return []
+        parent = self._common_executing_parent(tasks)
+        park_parent = getattr(self._hibernation, "parked_dispatch_parent", None)
+        if parent is not None and park_parent is not None:
+            async with park_parent(parent):
+                return await self._dispatch_many_unparked(tasks, timeout)
+        return await self._dispatch_many_unparked(tasks, timeout)
+
+    @staticmethod
+    def _common_executing_parent(tasks: Sequence[AgentTask]) -> AgentTask | None:
+        """Return the task-local parent only for one unambiguous nested batch."""
+        parent = _CURRENT_DISPATCH_TASK.get()
+        if parent is None or not parent.task_id:
+            return None
+        parent_ids = {task.parent_task_id for task in tasks}
+        if parent_ids != {parent.task_id}:
+            return None
+        return parent
+
+    async def _dispatch_many_unparked(
+        self,
+        tasks: list[AgentTask],
+        timeout: float,
+    ) -> list[AgentTaskResult]:
+        """Execute one batch after any parent hibernation decision is settled."""
         futures = [asyncio.ensure_future(self.dispatch_one(t)) for t in tasks]
         try:
             results = await asyncio.wait_for(

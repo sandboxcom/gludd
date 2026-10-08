@@ -1,4 +1,5 @@
 ---
-role_enabled: false
+iam_role_audit_enabled: false
+role_enabled: "{{ iam_role_audit_enabled }}"
 persona: terraform_deploy
 output_path: /tmp/gludd-azure-iam-audit

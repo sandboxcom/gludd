@@ -7,18 +7,19 @@ prints a VERBOSE report:
   fix),
 * guard-coverage gaps (bug classes whose ``guard_test_id`` is not in the set of
   currently-collected pytest node ids), and
-* — *if* :class:`general_ludd.validation.backlog_auditor.BacklogAuditor` is
-  importable — the per-task backlog verdicts.
+* executable per-task backlog verdicts loaded from the canonical ``TASKS.md``
+  parser and supported by one bounded, serial pytest evidence run.
 
-The ``BacklogAuditor`` import is **lazy and guarded**: this script runs
-standalone even when ``backlog_auditor.py`` does not exist yet (it is owned by
-another agent). Exit code is non-zero if there are occurrences OR guard gaps,
-so it can be wired into a gate later.
+Exit code is non-zero if there are occurrences, guard gaps, false/incomplete
+task claims, or a task-source/evidence execution error.  Operators can disable
+only task verdict execution with ``--no-backlog-verdicts`` while retaining the
+pre-existing bug-class and guard reports.
 
 Stdlib + project registry only. Invoke via the integrator-added
 ``make backlog-audit`` target, or directly:
 
     python scripts/backlog_audit.py [--repo-root PATH] [--no-collect]
+                                    [--no-backlog-verdicts]
 """
 from __future__ import annotations
 
@@ -27,12 +28,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Make the registry importable when run as a bare script (no install). The repo
-# root is two levels up from scripts/; src/ is the package root.
+# Make both the canonical ``scripts`` parser and application package importable
+# when this file is run directly from outside the checkout (no editable install).
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC = _REPO_ROOT / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+for _IMPORT_ROOT in (_REPO_ROOT, _SRC):
+    if str(_IMPORT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_IMPORT_ROOT))
 
 from general_ludd.quality.bug_class_registry import (  # noqa: E402
     DEFAULT_BUG_CLASSES,
@@ -41,6 +43,11 @@ from general_ludd.quality.bug_class_registry import (  # noqa: E402
     sweep,
     verify_guards,
 )
+from general_ludd.validation.backlog_audit import (  # noqa: E402
+    BacklogExecutionError,
+    audit_task_ledger,
+)
+from general_ludd.validation.backlog_sources import BacklogSourceError  # noqa: E402
 
 
 def collect_test_ids(repo_root: Path) -> set[str]:
@@ -118,44 +125,40 @@ def _print_guard_gaps(classes: list[BugClass], known_ids: set[str]) -> list[BugC
     return gaps
 
 
-def _print_backlog_verdicts(repo_root: Path) -> None:
-    """Print BacklogAuditor task verdicts if the auditor is importable.
-
-    Lazy, guarded import: another agent owns ``backlog_auditor.py`` and it may
-    not exist yet. We never hard-depend on it.
-    """
+def _print_backlog_verdicts(repo_root: Path, *, enabled: bool) -> bool:
+    """Print task verdicts and return whether every checked claim is verified."""
     print("\n" + "=" * 72)
     print("BACKLOG VERDICTS")
     print("=" * 72)
-    try:
-        from general_ludd.validation.backlog_auditor import (  # type: ignore  # noqa: PLC0415
-            BacklogAuditor,
-        )
-    except ImportError:
+    if not enabled:
         print(
-            "\n(BacklogAuditor not importable yet — skipping task verdicts. "
-            "The sweep + guard report above is standalone.)"
+            "\n(disabled by --no-backlog-verdicts; bug-class sweep and guard "
+            "coverage remain enabled.)"
         )
-        return
+        return True
 
     try:
-        auditor = BacklogAuditor(repo_root=repo_root)  # type: ignore[call-arg]
-        verdicts = auditor.audit()  # type: ignore[attr-defined]
-    except Exception as exc:  # pragma: no cover - depends on external module
-        print(f"\n(BacklogAuditor present but failed to run: {exc!r})")
-        return
+        report = audit_task_ledger(repo_root)
+    except (BacklogSourceError, BacklogExecutionError) as exc:
+        print(f"\nBACKLOG AUDIT ERROR: {exc}")
+        return False
+    except Exception as exc:  # fail closed on unanticipated API/runtime drift
+        print(f"\nBACKLOG AUDIT ERROR: unexpected {type(exc).__name__}: {exc}")
+        return False
 
-    try:
-        items = list(verdicts)
-    except TypeError:  # pragma: no cover - unexpected shape
-        print(f"\n{verdicts}")
-        return
-
-    if not items:
-        print("\n(BacklogAuditor returned no verdicts.)")
-        return
-    for verdict in items:
-        print(f"    - {verdict}")
+    if not report.verdicts:
+        print("\n(No checked completion claims found.)")
+    for verdict in report.verdicts:
+        print(f"\n[{verdict.id}] {verdict.verdict}")
+        for reason in verdict.reasons:
+            print(f"    - {reason}")
+    print(
+        "\nBACKLOG SUMMARY: "
+        f"audited={report.total_audited} "
+        f"verified={report.verified_complete} "
+        f"false_claim={report.false_claim} incomplete={report.incomplete}"
+    )
+    return report.false_claim == 0 and report.incomplete == 0
 
 
 def run_report(
@@ -164,6 +167,7 @@ def run_report(
     collect: bool = True,
     classes: list[BugClass] | None = None,
     known_test_ids: set[str] | None = None,
+    backlog_verdicts: bool = True,
 ) -> int:
     """Run the full verbose audit. Returns a process exit code.
 
@@ -178,15 +182,19 @@ def run_report(
     known_test_ids:
         Override the collected pytest node ids (used by tests). When provided,
         pytest collection is skipped entirely regardless of ``collect``.
+    backlog_verdicts:
+        Execute checked-task evidence. ``False`` is the narrow operational
+        rollback and does not disable either existing report section.
     """
     classes = list(DEFAULT_BUG_CLASSES) if classes is None else list(classes)
     occurrences = sweep(repo_root, classes)
     total_occurrences = _print_occurrences(classes, occurrences)
 
-    if known_test_ids is not None:
-        known_ids = known_test_ids
-    else:
-        known_ids = collect_test_ids(repo_root) if collect else set()
+    known_ids = (
+        known_test_ids
+        if known_test_ids is not None
+        else collect_test_ids(repo_root) if collect else set()
+    )
     if collect and known_test_ids is None and not known_ids:
         print(
             "\n(warning: could not collect pytest node ids — every guard will "
@@ -195,7 +203,7 @@ def run_report(
         )
     gaps = _print_guard_gaps(classes, known_ids)
 
-    _print_backlog_verdicts(repo_root)
+    backlog_clean = _print_backlog_verdicts(repo_root, enabled=backlog_verdicts)
 
     print("\n" + "=" * 72)
     print(
@@ -205,7 +213,7 @@ def run_report(
     )
     print("=" * 72)
 
-    return 1 if (total_occurrences or gaps) else 0
+    return 1 if (total_occurrences or gaps or not backlog_clean) else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -224,9 +232,21 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip pytest --co (faster; every guard then shows as a gap).",
     )
+    parser.add_argument(
+        "--no-backlog-verdicts",
+        action="store_true",
+        help=(
+            "Disable only TASKS.md verdict execution; retain bug-class and "
+            "guard reports."
+        ),
+    )
     args = parser.parse_args(argv)
 
-    return run_report(Path(args.repo_root), collect=not args.no_collect)
+    return run_report(
+        Path(args.repo_root),
+        collect=not args.no_collect,
+        backlog_verdicts=not args.no_backlog_verdicts,
+    )
 
 
 if __name__ == "__main__":

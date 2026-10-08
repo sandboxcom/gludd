@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
 from general_ludd.models.gateway import ModelGateway
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 class ReturnReviewer:
+    """Review task returns and retain their bounded conversation context."""
+
     def __init__(
         self,
         gateway: ModelGateway,
@@ -32,6 +35,7 @@ class ReturnReviewer:
         adversarial_detector: AdversarialCodeDetector | None = None,
         estimation_tracker: EstimationTracker | None = None,
     ) -> None:
+        """Initialize the reviewer and its optional shadow estimation tracker."""
         self._gateway = gateway
         self._registry = prompt_registry
         self._model_profile_id = model_profile_id
@@ -42,6 +46,7 @@ class ReturnReviewer:
         self._conversations: dict[str, Conversation] = conversations if conversations is not None else {}
 
     def get_conversations(self) -> dict[str, Conversation]:
+        """Return a shallow copy of the conversations indexed by todo ID."""
         return dict(self._conversations)
 
     def review_return(
@@ -50,6 +55,7 @@ class ReturnReviewer:
         candidate_todos: list[dict[str, Any]],
         artifacts: list[str],
     ) -> TaskDecision:
+        """Review a returned task against its candidate todos and artifacts."""
         todo_id = task_return.todo_id or ""
         conv = self._conversations.get(todo_id)
         if conv is None:
@@ -129,22 +135,8 @@ class ReturnReviewer:
                 parsed = parsed.model_copy(update={"audit_notes": [*parsed.audit_notes, *evidence_notes]})
 
             if self._estimation_tracker is not None:
-                from general_ludd.review.estimation_tracker import TaskActual
-
-                # S11: extract real actuals from the task_return when available.
-                # Falls back to zeros when cost/time/LOC are unpopulated —
-                # record_estimate() must be called on dispatch for variance
-                # detection to work.
-                actual_cost = getattr(task_return, "cost_estimate", 0.0) or 0.0
-                actual = TaskActual(
-                    todo_id=task_return.todo_id or task_return.return_id,
-                    actual_cost_usd=float(actual_cost),
-                    actual_time_minutes=float(getattr(task_return, "duration_seconds", 0.0) or 0.0) / 60.0,
-                    actual_loc=0,
-                    exit_code=task_return.exit_code,
-                )
-                variance = self._estimation_tracker.record_completion(actual)
-                if variance.is_suspect:
+                variance = self._estimation_variance(task_return)
+                if variance is not None and variance.is_suspect:
                     parsed = parsed.model_copy(
                         update={
                             "estimation_suspect": True,
@@ -171,6 +163,57 @@ class ReturnReviewer:
         )
         conv.add_message("assistant", json.dumps(fallback.model_dump(mode="json")))
         return fallback
+
+    def _estimation_variance(self, task_return: TaskReturn) -> Any | None:
+        """Read runtime feedback, observing legacy attached costs only if finite."""
+        tracker = self._estimation_tracker
+        if tracker is None:
+            return None
+
+        from general_ludd.review.estimation_tracker import (
+            EstimationTracker,
+            TaskActual,
+        )
+
+        observation_id = task_return.todo_id or task_return.job_id
+        if isinstance(tracker, EstimationTracker):
+            variance = tracker.get_variance(observation_id)
+            if variance is not None:
+                return variance
+
+            raw_cost = getattr(task_return, "cost_estimate", None)
+            if isinstance(raw_cost, bool) or not isinstance(
+                raw_cost,
+                (int, float, str),
+            ):
+                return None
+            try:
+                actual_cost = float(raw_cost)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            if not math.isfinite(actual_cost) or actual_cost < 0:
+                return None
+        else:
+            # Keep compatibility with the small tracker protocol used by older
+            # embedders while the concrete runtime takes the fail-open shadow path.
+            actual_cost = float(getattr(task_return, "cost_estimate", 0.0) or 0.0)
+
+        raw_duration = getattr(task_return, "duration_seconds", 0.0) or 0.0
+        try:
+            actual_time_minutes = float(raw_duration) / 60.0
+        except (TypeError, ValueError, OverflowError):
+            actual_time_minutes = 0.0
+        if not math.isfinite(actual_time_minutes) or actual_time_minutes < 0:
+            actual_time_minutes = 0.0
+        return tracker.record_completion(
+            TaskActual(
+                todo_id=observation_id,
+                actual_cost_usd=actual_cost,
+                actual_time_minutes=actual_time_minutes,
+                actual_loc=0,
+                exit_code=task_return.exit_code,
+            )
+        )
 
     def _audit_evidence(self, decision: TaskDecision, artifacts: list[str]) -> list[str]:
         """Flag unsupported factual claims in the model's audit notes.
@@ -238,7 +281,7 @@ class ReturnReviewer:
 
     @staticmethod
     def _extract_json_from_output(text: str) -> str:
-        """Strip markdown code fences and extract the first JSON object.
+        r"""Strip markdown code fences and extract the first JSON object.
 
         Handles ```json\\n{...}\\n``` and ```\\n{...}\\n``` fences, leading/trailing
         prose, and plain JSON (passthrough).  Uses json.JSONDecoder.raw_decode so

@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
+
+import general_ludd.web_server_utils as web_server_utils
 from general_ludd.web_server_utils import (
     CSP_DIRECTIVES,
     LOG_FORMAT_COMBINED,
@@ -31,8 +40,19 @@ from general_ludd.web_server_utils import (
     parse_nginx_config,
     remediate_finding,
     validate_apache_config,
+    validate_certificate,
     validate_nginx_config,
 )
+
+_RFC7919_FFDHE2048_PEM = b"""-----BEGIN DH PARAMETERS-----
+MIIBCAKCAQEA//////////+t+FRYortKmq/cViAnPTzx2LnFg84tNpWp4TZBFGQz
++8yTnc4kmz75fS/jY2MMddj2gbICrsRhetPfHtXV/WVhJDP1H18GbtCFY2VVPe0a
+87VXE15/V8k1mE8McODmi3fipona8+/och3xWKE2rec1MKzKT0g6eXq8CrGCsyT7
+YdEIqUuyyOP7uWrat2DX9GgdT0Kj3jlN9K5W7edjcrsZCwenyO4KbXCeAvzhzffi
+7MA0BM0oNC9hkXL+nOmFg/+OTxIy7vKBg8P+OxtMb61zO7X8vC7CIAXFjvGDfRaD
+ssbzSibBsu/6iGtCOGEoXJf//////////wIBAg==
+-----END DH PARAMETERS-----
+"""
 
 # ---------------------------------------------------------------------------
 # nginx: validation & parsing
@@ -52,6 +72,11 @@ class TestValidateNginxConfig:
         cfg = "server {\n    listen 80;\n}\n}"
         errors = validate_nginx_config(cfg)
         assert any("unexpected" in e.lower() or "closing" in e.lower() for e in errors)
+
+    def test_unclosed_block(self):
+        assert validate_nginx_config("server {") == [
+            "Unclosed block: 1 unmatched {"
+        ]
 
 
 class TestParseNginxConfig:
@@ -123,6 +148,11 @@ class TestValidateApacheConfig:
         errors = validate_apache_config(cfg)
         assert any("mismatched" in e.lower() for e in errors)
 
+    def test_unexpected_closing_tag(self):
+        assert validate_apache_config("</Directory>") == [
+            "Line 1: unexpected closing tag </directory>"
+        ]
+
 
 # ---------------------------------------------------------------------------
 # SSL / TLS
@@ -154,6 +184,75 @@ class TestGenerateSslConfig:
     def test_unknown_profile_falls_back(self):
         cfg = generate_ssl_config("nonexistent")
         assert "ssl_protocols" in cfg
+
+
+class TestValidateCertificate:
+    def test_reads_complete_x509_metadata(self, tmp_path) -> None:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        now = datetime.now(UTC)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "example.test")])
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(42)
+            .not_valid_before(now - timedelta(minutes=1))
+            .not_valid_after(now + timedelta(days=30))
+            .add_extension(
+                x509.SubjectAlternativeName([x509.DNSName("www.example.test")]),
+                critical=False,
+            )
+            .sign(key, hashes.SHA256())
+        )
+        cert_path = tmp_path / "certificate.pem"
+        cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+
+        metadata = validate_certificate(str(cert_path))
+
+        assert metadata["subject"] == "commonName=example.test"
+        assert metadata["issuer"] == "commonName=example.test"
+        assert metadata["serial_number"] == "0x2a"
+        assert metadata["sans"] == ["www.example.test"]
+        assert 29 <= metadata["expires_days"] <= 30
+
+    def test_reports_unreadable_certificate(self, tmp_path) -> None:
+        missing_path = tmp_path / "missing.pem"
+
+        assert validate_certificate(str(missing_path)) == {
+            "error": f"Cannot read certificate: {missing_path}"
+        }
+
+    def test_parses_text_metadata_when_optional_parser_returns_none(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        cert_path = tmp_path / "certificate.txt"
+        cert_path.write_text(
+            "Subject: CN=fallback.example\n"
+            "Issuer: CN=fallback-ca.example\n"
+            "Not Before: Jan 01 00:00:00 2026 GMT\n"
+            "Not After : Jan 01 00:00:00 2027 GMT\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            web_server_utils,
+            "_certificate_metadata_from_cryptography",
+            lambda _cert_data: None,
+        )
+        monkeypatch.setattr(
+            web_server_utils.ssl._ssl,
+            "_test_decode_cert",
+            lambda _cert_path: None,
+        )
+
+        metadata = validate_certificate(str(cert_path))
+
+        assert metadata == {
+            "subject": "CN=fallback.example",
+            "issuer": "CN=fallback-ca.example",
+            "not_before": "Jan 01 00:00:00 2026 GMT",
+            "not_after": "Jan 01 00:00:00 2027 GMT",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +312,11 @@ class TestParseAccessLogLine:
     def test_unparseable_line(self):
         result = parse_access_log_line("not a log line")
         assert "raw" in result
+
+    def test_invalid_json_shaped_line_is_returned_raw(self):
+        line = "{broken-json}"
+
+        assert parse_access_log_line(line) == {"raw": line}
 
 
 class TestGenerateLogrotateConfig:
@@ -293,6 +397,17 @@ class TestGeneratePacFile:
     def test_custom_direct_domains(self):
         pac = generate_pac_file("proxy.local", 8080, direct_domains=["*.example.com"])
         assert "dnsDomainIs" in pac
+
+    def test_ipv6_invalid_network_and_literal_domain_rules(self):
+        pac = generate_pac_file(
+            "proxy.local",
+            8080,
+            direct_domains=["2001:db8::/32", "invalid/network", "host.example"],
+        )
+
+        assert 'shExpMatch(host, "2001:db8::/32")' in pac
+        assert 'dnsDomainIs(host, "invalid/network")' in pac
+        assert 'shExpMatch(host, "host.example")' in pac
 
 
 # ---------------------------------------------------------------------------
@@ -415,31 +530,33 @@ class TestRemediateFinding:
 # generate_dhparam — dependency surface
 # ---------------------------------------------------------------------------
 class TestGenerateDhparam:
-    def test_default_group_does_not_generate_a_random_safe_prime(
+    def test_default_group_writes_exact_rfc7919_fixture(
         self, tmp_path, monkeypatch
     ) -> None:
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric import dh
-
         monkeypatch.chdir(tmp_path)
-
-        def _unexpected_generation(*_args, **_kwargs):
-            raise AssertionError("default DH parameters must use the standard group")
-
-        monkeypatch.setattr(dh, "generate_parameters", _unexpected_generation)
-        generate_dhparam(bits=2048)
+        generate_dhparam()
         pem_path = tmp_path / "dhparam.pem"
-        assert pem_path.is_file()
-        parameters = serialization.load_pem_parameters(pem_path.read_bytes())
-        numbers = parameters.parameter_numbers()
-        assert numbers.p.bit_length() == 2048
-        assert numbers.g == 2
 
-    def test_generates_pem_file(self, tmp_path, monkeypatch) -> None:
+        assert pem_path.is_file()
+        assert pem_path.read_bytes() == _RFC7919_FFDHE2048_PEM
+
+    def test_explicit_2048_writes_exact_rfc7919_fixture(
+        self, tmp_path, monkeypatch
+    ) -> None:
         monkeypatch.chdir(tmp_path)
         generate_dhparam(bits=2048)
         pem_file = tmp_path / "dhparam.pem"
+
         assert pem_file.is_file()
-        content = pem_file.read_bytes()
-        assert content.startswith(b"-----BEGIN DH PARAMETERS-----")
-        assert len(content) > 100
+        assert pem_file.read_bytes() == _RFC7919_FFDHE2048_PEM
+
+    @pytest.mark.parametrize("bits", [1024, 3072, 4096])
+    def test_unsupported_sizes_fail_without_writing(
+        self, tmp_path, monkeypatch, bits: int
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        with pytest.raises(ValueError, match="only RFC 7919 ffdhe2048"):
+            generate_dhparam(bits=bits)
+
+        assert not (tmp_path / "dhparam.pem").exists()

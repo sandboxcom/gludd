@@ -11,7 +11,8 @@ import re
 import subprocess
 import uuid
 from pathlib import PureWindowsPath
-from typing import Any, cast
+from time import perf_counter_ns
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import unquote
 
 from general_ludd.agents.behavior import AgentBehavior, BehaviorRenderer
@@ -25,6 +26,9 @@ from general_ludd.project_runner import (
 from general_ludd.schemas.job import JobSpec
 from general_ludd.schemas.task_return import TaskReturn
 from general_ludd.security.state import project_state, secure_directory
+
+if TYPE_CHECKING:
+    from general_ludd.review.estimation_tracker import EstimationTracker
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +302,7 @@ class ExecutionEngine:
         searcher: Any = None,
         sandbox_enforcer: Any = None,
         spend_limiter: SpendLimiter | None = None,
+        estimation_tracker: EstimationTracker | None = None,
     ) -> None:
         """Initialize a ``ExecutionEngine`` instance."""
         self._model_gateway = model_gateway
@@ -314,6 +319,8 @@ class ExecutionEngine:
         self._searcher = searcher
         self._sandbox_enforcer = sandbox_enforcer
         self._spend_limiter = spend_limiter
+        feedback_enabled = os.environ.get("GLUDD_ESTIMATION_FEEDBACK", "1").strip() != "0"
+        self._estimation_tracker = estimation_tracker if feedback_enabled else None
         self._sandbox_verified = False
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._commit_lock: asyncio.Lock = asyncio.Lock()
@@ -404,6 +411,88 @@ class ExecutionEngine:
             )
 
         return (proj_in + proj_out) / 1000.0 * _UNKNOWN_MODEL_COST_PER_1K
+
+    def _start_estimation_observation(
+        self,
+        job: JobSpec,
+        projected_cost_usd: object,
+    ) -> tuple[str, int] | None:
+        """Open a cost-only shadow observation immediately before provider IO."""
+        tracker = self._estimation_tracker
+        if tracker is None:
+            return None
+        if isinstance(projected_cost_usd, bool) or not isinstance(
+            projected_cost_usd,
+            (int, float),
+        ):
+            return None
+        projected = float(projected_cost_usd)
+        if not math.isfinite(projected) or projected <= 0:
+            return None
+
+        from general_ludd.review.estimation_tracker import TaskEstimate
+
+        observation_id = job.todo_id or job.job_id
+        started_ns = perf_counter_ns()
+        try:
+            tracker.record_estimate(
+                TaskEstimate(
+                    todo_id=observation_id,
+                    work_type=job.work_type or "unknown",
+                    estimated_cost_usd=projected,
+                    estimated_time_minutes=0.0,
+                    estimated_loc=0,
+                )
+            )
+        except Exception:
+            logger.debug("estimation feedback start failed", exc_info=True)
+            return None
+        return observation_id, started_ns
+
+    def _finish_estimation_observation(
+        self,
+        observation: tuple[str, int] | None,
+        actual_cost_usd: object,
+    ) -> None:
+        """Close one shadow observation; invalid provider cost is unobserved."""
+        tracker = self._estimation_tracker
+        if tracker is None or observation is None:
+            return
+        observation_id, started_ns = observation
+        try:
+            if isinstance(actual_cost_usd, bool) or not isinstance(
+                actual_cost_usd,
+                (int, float, str),
+            ):
+                return
+            try:
+                actual = float(actual_cost_usd)
+            except (TypeError, ValueError, OverflowError):
+                return
+            if not math.isfinite(actual) or actual < 0:
+                return
+
+            from general_ludd.review.estimation_tracker import TaskActual
+
+            elapsed_ns = max(perf_counter_ns() - started_ns, 0)
+            tracker.record_completion(
+                TaskActual(
+                    todo_id=observation_id,
+                    actual_cost_usd=actual,
+                    actual_time_minutes=elapsed_ns / 60_000_000_000,
+                    actual_loc=0,
+                    exit_code=0,
+                ),
+                cost_only=True,
+            )
+        except Exception:
+            # Shadow feedback can never alter execution or provider routing.
+            logger.debug("estimation feedback completion failed", exc_info=True)
+        finally:
+            try:
+                tracker.discard_estimate(observation_id)
+            except Exception:
+                logger.debug("estimation feedback cleanup failed", exc_info=True)
 
     def _spend_reserve(self, projected_cost_usd: float | None) -> tuple[str | None, str | None]:
         """Atomically reserve projected spend; return ``(token, denial)``.
@@ -700,6 +789,8 @@ class ExecutionEngine:
                 result_summary=f"Spend check failed: {spend_denial}",
             )
 
+        estimation_observation = self._start_estimation_observation(job, projected_cost)
+        actual_cost: object = None
         try:
             profile_id = getattr(job, "model_profile", None) or "default"
             messages = [
@@ -713,7 +804,7 @@ class ExecutionEngine:
                 work_type=job.work_type or "code",
             )
             try:
-                actual_cost: object = getattr(response, "cost_estimate", None)
+                actual_cost = getattr(response, "cost_estimate", None)
             except Exception:
                 actual_cost = None
             self._spend_record_actual(
@@ -737,6 +828,11 @@ class ExecutionEngine:
                 queue=job.queue or "core",
                 exit_code=1,
                 result_summary=f"Model call failed: {exc}",
+            )
+        finally:
+            self._finish_estimation_observation(
+                estimation_observation,
+                actual_cost,
             )
 
         if not model_output or not model_output.strip():

@@ -62,7 +62,7 @@ def test_parser_validation_adapter_covers_available_and_broken_parsers(
         del name
         return module
 
-    monkeypatch.setattr("importlib.import_module", import_module)
+    monkeypatch.setattr(perm, "_import_module", import_module)
     spec: dict[str, object] = {"agent_type": "agent"}
     assert perm.validate_spec(spec) == ["parser error"]
 
@@ -79,7 +79,7 @@ def test_parser_validation_adapter_covers_available_and_broken_parsers(
         del name
         raise ImportError("missing")
 
-    monkeypatch.setattr("importlib.import_module", fail_import)
+    monkeypatch.setattr(perm, "_import_module", fail_import)
     assert perm._try_parser_validate(spec) is None
 
 

@@ -1,25 +1,19 @@
-"""Parent-side lifecycle for the writer subprocess (B3.1.3 Slice 1 — WP-B1).
+"""Parent-side lifecycle for the fail-closed writer subprocess.
 
-``WriterProcess`` owns the start / readiness-handshake / stop / health-poll of
-the writer child. The child itself is a stub for Slice 1 — it writes the
-parent-generated readiness nonce and sleeps; the real EventLoop integration
-lands in Slice 3.
+``WriterProcess`` normalizes the daemon's flat database mapping into the
+child protocol, then owns spawn, nonce-protected readiness, health polling,
+and bounded shutdown. Readiness is accepted only after the child has created
+and connected its write engine; a child that exits or cannot initialize the
+database never becomes ready.
 
-Design mirrors the A/B-test runner's subprocess pattern
-(:mod:`general_ludd.abtest.runner`): the parent generates a fresh random
-nonce per spawn, hands it AND a dedicated readiness-file path to the child,
-and only considers the child "ready" once the child has written that exact
-nonce back into the readiness file. ``exit 0`` alone is never a readiness
-signal — a child that segfaults before writing the nonce is not ready, even
-if the parent happens to observe a clean exit later.
-
-Stop escalation: SIGTERM, wait up to ``sigterm_timeout`` seconds (default
-10s), then SIGKILL. ``stop()`` is idempotent.
+Stop escalation is bounded: SIGTERM, wait up to ``sigterm_timeout`` seconds
+(default 10s), then SIGKILL. ``stop()`` is idempotent.
 """
 
 from __future__ import annotations
 
 import contextlib
+import copy
 import json
 import logging
 import os
@@ -50,6 +44,35 @@ DEFAULT_SIGTERM_TIMEOUT = 10.0
 # purpose — finer-grained polling buys nothing here and burns CPU.
 _POLL_INTERVAL = 0.05
 
+# These controls belong to the child lifecycle rather than SQLAlchemy. The
+# daemon passes its database mapping directly to WriterProcess, so all other
+# flat keys are nested under "database" at this process boundary.
+_CHILD_CONTROL_KEYS = frozenset(
+    {"ignore_sigterm", "inbound_spool_path", "skip_ready", "tick_interval"}
+)
+
+
+def _normalize_child_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Return the canonical child config without retaining caller references."""
+    copied = copy.deepcopy(config)
+    if "database" in copied:
+        return copied
+
+    database = {
+        key: value
+        for key, value in copied.items()
+        if key not in _CHILD_CONTROL_KEYS
+    }
+    normalized: dict[str, Any] = {"database": database}
+    normalized.update(
+        {
+            key: copied[key]
+            for key in _CHILD_CONTROL_KEYS
+            if key in copied
+        }
+    )
+    return normalized
+
 
 class WriterProcess:
     """Owns the lifecycle of one writer subprocess.
@@ -68,9 +91,10 @@ class WriterProcess:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
+        """Normalize config and initialize single-use lifecycle state."""
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
-        self._config: dict[str, Any] = dict(config)
+        self._config = _normalize_child_config(config)
 
         # Per-spawn UNFORGEABLE readiness token. Fresh random nonce; the child
         # writes it to ``_ready_path`` only after it has finished booting. A
@@ -103,8 +127,8 @@ class WriterProcess:
 
     @property
     def config(self) -> dict[str, Any]:
-        """The caller-supplied config dict (a defensive copy)."""
-        return dict(self._config)
+        """Canonical child config as a recursive defensive copy."""
+        return copy.deepcopy(self._config)
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -177,6 +201,7 @@ class WriterProcess:
         except Exception:
             self._kill_child(force=True)
             self._proc = None
+            self._cleanup_files()
             raise
 
         if not ready:
@@ -185,6 +210,7 @@ class WriterProcess:
             # silently claim ready=True.
             self._kill_child(force=True)
             self._proc = None
+            self._cleanup_files()
             raise TimeoutError(
                 f"writer child pid={proc.pid} did not signal readiness within "
                 f"{timeout}s — killed"
@@ -324,6 +350,7 @@ class WriterProcess:
         self._ready_path = None
 
     def __del__(self) -> None:
+        """Best-effort cleanup for an abandoned child and temp files."""
         # Best-effort: never leak a child or temp files if the parent was
         # abandoned without calling stop(). Re-raises are swallowed because
         # __del__ must never raise.

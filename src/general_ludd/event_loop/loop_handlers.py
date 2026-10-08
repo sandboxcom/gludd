@@ -282,6 +282,9 @@ class EventLoopHandlers:
             return
         try:
             from general_ludd.ornith.training_data import TrainingDataCollector
+            from general_ludd.self_improve.outcome_visibility import (
+                summarize_outcome_examples,
+            )
             from general_ludd.self_improve.outcomes import OutcomeAnalyzer
 
             async with _session_scope(factory) as session:
@@ -336,25 +339,18 @@ class EventLoopHandlers:
                         len(rejected),
                     )
 
-                outcome_analyzer = OutcomeAnalyzer()
-                outcome_records: list[dict[str, Any]] = []
-                for ex in rejected:
-                    outcome_records.append(
-                        {
-                            "task_type": getattr(ex, "work_type", "unknown"),
-                            "model": getattr(ex, "model", "unknown"),
-                            "passed": getattr(ex, "exit_code", 1) == 0,
-                            "tokens_used": getattr(ex, "tokens_used", 0),
-                            "duration_ms": getattr(ex, "duration_ms", 0),
-                        }
-                    )
-                suggestions = outcome_analyzer.analyze(
-                    outcomes=outcome_records,
+                outcome_analysis = summarize_outcome_examples(
+                    rejected,
+                    analyzer=OutcomeAnalyzer(),
                 )
-                if suggestions["suggestions"]:
+                if self._daemon_state is not None:
+                    self._daemon_state["self_improve_outcome_analysis"] = (
+                        outcome_analysis
+                    )
+                if outcome_analysis["group_count"]:
                     logger.info(
                         "OutcomeAnalyzer: %d improvement suggestions",
-                        len(suggestions["suggestions"]),
+                        outcome_analysis["group_count"],
                     )
         except Exception as exc:
             logger.warning(

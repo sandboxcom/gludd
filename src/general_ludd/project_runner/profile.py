@@ -31,8 +31,9 @@ import os
 import re
 import shlex
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Reject any command carrying shell metacharacters — no chaining, piping,
 # redirection, subshells, globbing-to-shell, or env-expansion. Parity with the
@@ -40,6 +41,73 @@ from pydantic import BaseModel, Field, field_validator
 _SHELL_META_RE = re.compile(r"[;&|<>$`\\!(){}\[\]*?~\n\r]")
 
 _ALLOW_ANY_EXEC_ENV = "GLUDD_PROJECT_ALLOW_ANY_EXEC"
+
+_ALLOWED_DAST_FAIL_ON = frozenset({"HIGH", "MEDIUM", "LOW"})
+
+
+class DastConfig(BaseModel):
+    """Typed, opt-in OWASP ZAP baseline settings from ``project.yml``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    start_command: str | None = None
+    target_url: str | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
+    health_path: str = Field(default="/", min_length=1)
+    startup_timeout_s: int = Field(default=60, ge=1, le=900)
+    tool: Literal["zap-baseline.py"] = "zap-baseline.py"
+    max_duration_s: int = Field(default=900, ge=1, le=900)
+    fail_on: str = Field(default="HIGH")
+    required: bool = True
+
+    @field_validator("start_command")
+    @classmethod
+    def _safe_start_command(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        command = value.strip()
+        if not command:
+            raise ValueError("start_command must not be empty")
+        if _SHELL_META_RE.search(command):
+            raise ValueError("start_command contains shell metacharacters")
+        try:
+            if not shlex.split(command):
+                raise ValueError("start_command must not be empty")
+        except ValueError as exc:
+            raise ValueError(f"start_command is unparsable: {exc}") from exc
+        return command
+
+    @field_validator("health_path")
+    @classmethod
+    def _safe_health_path(cls, value: str) -> str:
+        if not value.startswith("/") or "\r" in value or "\n" in value:
+            raise ValueError("health_path must be an absolute HTTP path")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_dast_config(self) -> DastConfig:
+        if self.start_command is not None and self.target_url is not None:
+            raise ValueError(
+                "set exactly one of start_command or target_url, not both "
+                f"(got start_command={self.start_command!r}, target_url={self.target_url!r})"
+            )
+        if self.start_command is None and self.target_url is None:
+            raise ValueError(
+                "set exactly one of start_command or target_url (got neither)"
+            )
+        if self.start_command is not None and self.port is None:
+            raise ValueError(
+                "port is required when start_command is set "
+                f"(start_command={self.start_command!r})"
+            )
+        upper_fail = self.fail_on.strip().upper()
+        if upper_fail not in _ALLOWED_DAST_FAIL_ON:
+            raise ValueError(
+                "fail_on must be one of "
+                f"{sorted(_ALLOWED_DAST_FAIL_ON)} (got {self.fail_on!r})"
+            )
+        self.fail_on = upper_fail
+        return self
 
 
 class ProjectProfileError(ValueError):
@@ -63,6 +131,9 @@ class ProjectProfile(BaseModel):
     # is listed here. Default is a small set of standard, non-secret build-context
     # vars so common toolchains behave; keep additions minimal.
     env_passthrough: list[str] = Field(default_factory=lambda: ["NODE_ENV", "CI"])
+    # DAST is deliberately absent by default. Declaring this typed block opts
+    # the external project into the structured ZAP completion gate.
+    dast: DastConfig | None = None
 
     @field_validator("commands")
     @classmethod

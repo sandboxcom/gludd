@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import signal
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -141,7 +144,7 @@ async def test_drain_spool_handles_missing_unchanged_and_disappearing_files(
     spool.write_text("short")
     assert await child._drain_spool(str(spool), spool.stat().st_size, object()) == 5
 
-    monkeypatch.setattr(child.os.path, "getsize", lambda _path: 10)
+    monkeypatch.setattr(os.path, "getsize", lambda _path: 10)
     monkeypatch.setattr("builtins.open", MagicMock(side_effect=FileNotFoundError))
     assert await child._drain_spool(str(spool), 0, object()) == 0
 
@@ -177,7 +180,7 @@ async def test_run_writer_loop_initializes_ticks_drains_and_cleans_up(
         MagicMock(return_value=session_factory),
     )
     monkeypatch.setattr("general_ludd.event_loop.loop.EventLoop", build_event_loop)
-    monkeypatch.setattr(child.asyncio, "get_running_loop", lambda: signal_loop)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: signal_loop)
     monkeypatch.setattr(child, "_drain_spool", drain)
     monkeypatch.setattr(child, "_write_ready", write_ready)
 
@@ -236,7 +239,7 @@ async def test_run_writer_loop_uses_signal_fallback_and_swallows_cleanup_errors(
         shutdown=AsyncMock(side_effect=RuntimeError("shutdown failed")),
     )
     signal_loop = _SignalLoop(reject_signal_handler=True)
-    original_signal = child.signal.signal
+    original_signal = signal.signal
 
     def install_fallback(
         sig: signal.Signals, callback: MagicMock
@@ -258,8 +261,8 @@ async def test_run_writer_loop_uses_signal_fallback_and_swallows_cleanup_errors(
     monkeypatch.setattr(child, "ensure_tables", AsyncMock())
     monkeypatch.setattr(child, "create_async_session_factory", MagicMock())
     monkeypatch.setattr("general_ludd.event_loop.loop.EventLoop", build_event_loop)
-    monkeypatch.setattr(child.asyncio, "get_running_loop", lambda: signal_loop)
-    monkeypatch.setattr(child.signal, "signal", install_fallback)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: signal_loop)
+    monkeypatch.setattr(signal, "signal", install_fallback)
 
     result = await child._run_writer_loop(
         {"database": {"url": "sqlite+aiosqlite:///writer.db"}},
@@ -287,10 +290,10 @@ def test_main_routes_database_mode_and_sigterm_policy(
         )
     )
     run_writer = AsyncMock(return_value=17)
-    original_signal = child.signal.signal
+    original_signal = signal.signal
 
     def install_signal(
-        sig: signal.Signals, handler: object
+        sig: signal.Signals, handler: Any
     ) -> object:
         if sig == signal.SIGTERM:
             return signal.SIG_DFL
@@ -298,7 +301,7 @@ def test_main_routes_database_mode_and_sigterm_policy(
 
     signal_install = MagicMock(side_effect=install_signal)
     monkeypatch.setattr(child, "_run_writer_loop", run_writer)
-    monkeypatch.setattr(child.signal, "signal", signal_install)
+    monkeypatch.setattr(signal, "signal", signal_install)
 
     result = child.main(
         ["_child", str(config_path), str(tmp_path / "ready.json"), "nonce"]
@@ -330,23 +333,23 @@ def test_main_returns_error_when_database_loop_fails(
     )
 
 
-def test_main_stub_writes_ready_and_exits_after_interrupted_sleep(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_main_missing_database_fails_closed_without_readiness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     config_path = tmp_path / "writer.json"
     config_path.write_text("{}")
     ready = MagicMock()
     monkeypatch.setattr(child, "_write_ready", ready)
-    monkeypatch.setattr(
-        child.time, "sleep", MagicMock(side_effect=InterruptedError)
-    )
 
     result = child.main(
         ["_child", str(config_path), str(tmp_path / "ready.json"), "nonce"]
     )
 
-    assert result == 0
-    ready.assert_called_once_with(str(tmp_path / "ready.json"), "nonce")
+    assert result == 1
+    ready.assert_not_called()
+    assert "database" in capsys.readouterr().err.lower()
 
 
 def test_main_reports_usage_and_config_errors(

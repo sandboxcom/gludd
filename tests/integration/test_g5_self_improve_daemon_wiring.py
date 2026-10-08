@@ -46,6 +46,8 @@ class TestSelfImproveRouterWired:
             assert "status" in data
             assert data["status"] in ("never_run", "completed")
             assert "findings_count" in data
+            assert data["outcome_analysis"]["status"] == "available"
+            assert data["outcome_analysis"]["sample_count"] == 0
         finally:
             await client.aclose()
             await engine.dispose()

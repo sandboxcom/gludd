@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -11,6 +13,7 @@ import pytest
 from scripts import verify_azure_containerapp_environment as guard_cli
 
 from general_ludd.azure_containerapp_environment_guard import (
+    RECEIPT_KIND,
     EnvironmentProtectionError,
     verify_environment_protection,
 )
@@ -109,6 +112,33 @@ def test_verified_environment_receipt_excludes_reviewer_identity() -> None:
     assert len(receipt.configuration_digest) == 64
     assert "cloud-operators" not in receipt.render()
     assert "mutation=false" in receipt.render()
+
+
+def test_verified_environment_receipt_has_one_canonical_bounded_v1_document() -> None:
+    receipt = verify_environment_protection(
+        _environment_payload(),
+        _branch_policy_payload(),
+    )
+
+    encoded = receipt.canonical_json_bytes()
+    document = json.loads(encoded)
+
+    assert RECEIPT_KIND == "azure-containerapp-environment-protection-receipt"
+    assert document == {
+        "branch_policies": ["development", "master", "v*"],
+        "configuration_digest": receipt.configuration_digest,
+        "environment": "azure-containerapp-live",
+        "kind": "azure-containerapp-environment-protection-receipt",
+        "mutation": False,
+        "reviewer_count": 1,
+        "schema_version": 1,
+    }
+    assert encoded == (
+        json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    assert len(encoded) <= 4096
+    assert b"cloud-operators" not in encoded
+    assert b'"reviewers"' not in encoded
 
 
 @pytest.mark.parametrize(
@@ -476,15 +506,138 @@ def test_validate_only_cli_is_network_free_and_emits_safe_receipt(
     assert "cloud-operators" not in captured.out
 
 
+def test_validate_only_cli_atomically_writes_private_receipt(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "receipt.json"
+
+    result = guard_cli.main(
+        [
+            "--repository",
+            "sandboxcom/gludd",
+            "--environment",
+            "azure-containerapp-live",
+            "--receipt-output",
+            str(output),
+            "--validate-only",
+            "1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    document = json.loads(output.read_bytes())
+    assert result == 0
+    assert "AZURE_CONTAINERAPP_ENVIRONMENT_GUARD" in captured.out
+    assert document["kind"] == RECEIPT_KIND
+    assert document["reviewer_count"] == 1
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    assert output.stat().st_size <= 4096
+    assert list(tmp_path.iterdir()) == [output]
+
+
+def test_receipt_output_replaces_regular_file_without_exposing_broad_mode(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "receipt.json"
+    output.write_text("stale", encoding="utf-8")
+    output.chmod(0o644)
+
+    result = guard_cli.main(
+        [
+            "--repository",
+            "sandboxcom/gludd",
+            "--environment",
+            "azure-containerapp-live",
+            "--receipt-output",
+            str(output),
+            "--validate-only",
+            "1",
+        ]
+    )
+
+    assert result == 0
+    assert json.loads(output.read_text(encoding="utf-8"))["schema_version"] == 1
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    assert "GUARD_REJECTED" not in capsys.readouterr().out
+
+
+def test_receipt_output_rejects_symlink_without_touching_target(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "target.json"
+    target.write_text("sentinel", encoding="utf-8")
+    output = tmp_path / "receipt.json"
+    output.symlink_to(target)
+
+    result = guard_cli.main(
+        [
+            "--repository",
+            "sandboxcom/gludd",
+            "--environment",
+            "azure-containerapp-live",
+            "--receipt-output",
+            str(output),
+            "--validate-only",
+            "1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "reason=receipt-output-symlink" in captured.out
+    assert "AZURE_CONTAINERAPP_ENVIRONMENT_GUARD environment=" not in captured.out
+    assert target.read_text(encoding="utf-8") == "sentinel"
+
+
+def test_receipt_output_failure_is_bounded_and_leaves_no_partial_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = tmp_path / "receipt.json"
+
+    def fail_replace(_source: os.PathLike[str], _target: os.PathLike[str]) -> None:
+        raise OSError("private filesystem detail")
+
+    monkeypatch.setattr(guard_cli.os, "replace", fail_replace)
+    result = guard_cli.main(
+        [
+            "--repository",
+            "sandboxcom/gludd",
+            "--environment",
+            "azure-containerapp-live",
+            "--receipt-output",
+            str(output),
+            "--validate-only",
+            "1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "reason=receipt-output-publication-failed" in captured.out
+    assert "private filesystem detail" not in captured.out
+    assert not output.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_workflow_runs_guard_before_minting_oidc_assertion() -> None:
     workflow = (
         ROOT / ".github/workflows/azure-containerapp-live.yml"
     ).read_text(encoding="utf-8")
 
     guard = workflow.index("make azure-containerapp-environment-guard")
+    attest = workflow.index("actions/attest@")
+    upload = workflow.index("actions/upload-artifact@")
     oidc = workflow.index("core.getIDToken('api://AzureADTokenExchange')")
-    assert guard < oidc
+    assert guard < attest < upload < oidc
     assert "actions: read" in workflow
+    assert "attestations: write" in workflow
+    assert "artifact-metadata: write" in workflow
     assert "GH_TOKEN: ${{ github.token }}" in workflow
     assert "AZURE_CONTAINERAPP_GITHUB_REPOSITORY: ${{ github.repository }}" in workflow
     assert "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT: azure-containerapp-live" in workflow
+    assert "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_RECEIPT_OUTPUT:" in workflow

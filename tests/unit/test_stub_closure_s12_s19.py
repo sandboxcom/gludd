@@ -202,13 +202,13 @@ class TestS15ValidationJobHonest501:
 
 class TestS16WriterSubprocessStructuralGaps:
     def test_writer_child_expects_nested_database_config(self) -> None:
-        """_child.py main() expects config['database'] dict, not flat db dict."""
-        import general_ludd.writer._child as child
+        """A direct flat child config fails closed until the parent normalizes it."""
+        from general_ludd.writer._child import _require_database_config
 
-        source = inspect.getsource(child.main)
-        assert 'config.get("database")' in source, (
-            "S16 FIXED: _child.py no longer expects nested 'database' key — config shape matches daemon.py now"
-        )
+        with pytest.raises(ValueError, match="database config must be an object"):
+            _require_database_config(
+                {"url": "sqlite+aiosqlite:///writer.db"}
+            )
 
     def test_write_queue_is_in_process_deque(self) -> None:
         """WriteQueue uses asyncio.Queue/deque, not IPC — no cross-process transfer."""
@@ -312,21 +312,16 @@ class TestS18StallWatchdogPublishOnly:
             "S18 GAP: StallWatchdog sweeper is not started — stalls are never detected"
         )
 
-    def test_stall_detected_event_has_no_subscriber(self) -> None:
-        """No production code subscribes to StallDetectedEvent."""
-        import ast
-
+    def test_stall_detected_event_has_durable_subscriber(self) -> None:
+        """The daemon subscribes the durable operator escalation bridge."""
         import general_ludd.daemon_components.lifecycle as lifecycle
+        from general_ludd.observability.stall_escalation import StallEscalationSubscriber
 
-        source = inspect.getsource(lifecycle)
-        tree = ast.parse(source)
-        has_subscribe = False
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "subscribe":
-                for arg in node.args:
-                    if isinstance(arg, ast.Name) and "Stall" in arg.id:
-                        has_subscribe = True
-        assert not has_subscribe, "S18 FIXED: StallDetectedEvent now has a subscriber — update this test"
+        lifecycle_source = inspect.getsource(lifecycle.lifespan)
+        subscriber_source = inspect.getsource(StallEscalationSubscriber.start)
+        assert "StallEscalationSubscriber" in lifecycle_source
+        assert "_stall_escalation.start()" in lifecycle_source
+        assert ".subscribe(EventType.STALL_DETECTED" in subscriber_source
 
     def test_stall_report_captures_thread_stacks(self) -> None:
         """StallReport supports thread stack capture for debugging."""

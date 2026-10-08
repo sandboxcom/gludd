@@ -1,5 +1,6 @@
 ---
-role_enabled: false
+acr_registry_config_enabled: false
+role_enabled: "{{ acr_registry_config_enabled }}"
 name: ""
 sku: Basic
 region: eastus
