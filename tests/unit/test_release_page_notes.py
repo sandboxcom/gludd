@@ -467,6 +467,8 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S31",
         "S32",
         "S33",
+        "S34",
+        "S35",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
@@ -507,6 +509,22 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
                 ("task_evidence", "15064dfdd2db898e9cfb987c790d36543452c9f1"),
             ),
         ),
+        "S34": (
+            "Bounded agent-message expiry admission",
+            "Improvements",
+            (
+                ("implementation", "e0d1025e779a16a4e9703c4412ab7a7b197d26b5"),
+                ("documentation", "7b3cc726e29d903cafb3ddbfc9a293968bc6c00b"),
+            ),
+        ),
+        "S35": (
+            "Fail-closed SQL memory tenant isolation",
+            "Improvements",
+            (
+                ("implementation", "32a9ec3fa745c4119633e8e597eb40c941b62f37"),
+                ("documentation", "a201bd55d6a38a0bb1c6629f626437832fa9762c"),
+            ),
+        ),
     }
     for item_id, (title, category, evidence) in candidate_contracts.items():
         item = next(
@@ -522,7 +540,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 24."
+        "Implemented candidate items pending exact-head/release proof: 26."
         in expected
     )
 

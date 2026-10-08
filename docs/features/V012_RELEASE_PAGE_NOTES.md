@@ -19,21 +19,39 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-S31-S33, plus the train's dependency, ownership, structural, TUI, and coverage
-repairs. S29-S33 are listed from immutable implementation receipts without
+S31-S35, plus the train's dependency, ownership, structural, TUI, and coverage
+repairs. S29-S35 are listed from immutable implementation receipts without
 claiming train integration or an exact-head gate. The preview therefore records
 useful candidate contents without converting implementation evidence into task,
 gate, release, or publication completion.
 
-S31-S33 describe the user-visible outcome as safer model-performance,
-benchmark, and memory repository lifecycles. Their detailed feature documents
-retain the mature upstream basis for that wording: SQLAlchemy's
+S31-S35 describe the user-visible outcome as safer model-performance,
+benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
+messages before its deterministic 100-message inbox bound, so stale head rows
+cannot hide live work. S35 makes an omitted memory `project_id` select only the
+global partition instead of exposing project-scoped records. Their detailed
+feature documents retain the mature upstream basis for that wording:
+SQLAlchemy's
 [session-per-task guidance][sqlalchemy-async], the long-running shared-session
 failure reports in [discussion #8554][sqlalchemy-8554], the detached-result
 reports in [discussion #8731][sqlalchemy-8731], and the stateful-connection
-clarification in [discussion #10808][sqlalchemy-10808]. The release page links
-immutable Gludd commits, while those feature documents remain the fuller source
-for practitioner findings, resource bounds, and ZDD rollback procedures.
+clarification in [discussion #10808][sqlalchemy-10808]. The S34 evidence also
+retains RabbitMQ's long-running [head-of-line expiry report][rabbitmq-3852] and
+[resource-retention report][rabbitmq-14524]; S35 retains the SQLAlchemy
+[tenant-criteria discussion][sqlalchemy-11389] and FastAPI
+[tenant-context discussion][fastapi-7564]. The release page links immutable
+Gludd commits, while those feature documents remain the fuller source for
+practitioner findings and resource bounds.
+
+Both additions are zero-downtime, application-image-only changes: they add no
+schema, dependency, persistent process, or ownership transfer. Mixed-version
+processes retain compatible rows and payloads. Rollback routes new requests to
+the preceding image and lets updated requests drain; it does not migrate,
+rewrite, or purge data. S34 evidence includes 4 focused and 214 adjacent
+warning-fatal tests with 89% aggregate coverage (`messaging.py` 85%, message
+router 93%). S35 evidence includes 6 focused tests plus adjacent 170-test and
+247-test warning-fatal runs with 99% aggregate coverage (memory repository 99%,
+memory router 100%). Both recorded clean collection evidence.
 
 ## Existing-tool decision
 
@@ -133,7 +151,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 24-item candidate inventory, and
+ordering, deterministic rendering, the exact 26-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -168,3 +186,7 @@ Research was reviewed on 2026-10-08:
 [sqlalchemy-8554]: https://github.com/sqlalchemy/sqlalchemy/discussions/8554
 [sqlalchemy-8731]: https://github.com/sqlalchemy/sqlalchemy/discussions/8731
 [sqlalchemy-10808]: https://github.com/sqlalchemy/sqlalchemy/discussions/10808
+[rabbitmq-3852]: https://github.com/rabbitmq/rabbitmq-server/discussions/3852
+[rabbitmq-14524]: https://github.com/rabbitmq/rabbitmq-server/discussions/14524
+[sqlalchemy-11389]: https://github.com/sqlalchemy/sqlalchemy/discussions/11389
+[fastapi-7564]: https://github.com/fastapi/fastapi/discussions/7564
