@@ -10,11 +10,13 @@ import pytest
 from general_ludd.decision_codification.normalize import (
     FEATURE_SCHEMA_V1_DIGEST,
     normalize_verified_decision_event,
+    normalize_verified_decision_outcome_event,
 )
 from general_ludd.decision_codification.schema import (
     DecisionEnvelopeV1,
     NormalizationRefusalReason,
     NormalizationRefusalV1,
+    OutcomeEvidenceV1,
     VerifiedDecisionSourceV1,
     canonical_decision_json,
 )
@@ -104,6 +106,40 @@ def _normalize(
     )
 
 
+def _outcome_event(
+    *,
+    event_type: str = "decision.outcome",
+    project_id: str | None = "project-1",
+    payload: dict[str, object] | None = None,
+    redaction: RedactionV1 | None = None,
+) -> EventEnvelopeV1:
+    return EventEnvelopeV1(
+        schema="gludd.run-event/v1",
+        sequence=3,
+        event_id="outcome-3",
+        occurred_at=NOW,
+        recorded_at=NOW,
+        type=event_type,  # type: ignore[arg-type]
+        project_id=project_id,
+        correlation=CorrelationV1(
+            todo_id="todo-1", task_id="task-1", trace_id=None
+        ),
+        payload=(
+            {
+                "decision_event_digest": SHA_A,
+                "verified_outcome": "success",
+                "terminal_event_ids": ["terminal-1"],
+                "gate_digests": [SHA_B],
+                "status_digests": [],
+            }
+            if payload is None
+            else payload
+        ),
+        redaction=redaction or RedactionV1(count=0, kinds=()),
+        digest=SHA_C,
+    )
+
+
 def test_normalize_builds_content_safe_canonical_envelope() -> None:
     result = _normalize(_event())
 
@@ -128,6 +164,86 @@ def test_normalize_builds_content_safe_canonical_envelope() -> None:
     reordered = _normalize(_event(payload=payload))
     assert isinstance(reordered, DecisionEnvelopeV1)
     assert canonical_decision_json(reordered) == canonical_decision_json(result)
+
+
+def test_separate_verified_outcome_links_to_the_immutable_decision_digest() -> None:
+    evidence = normalize_verified_decision_outcome_event(
+        _outcome_event(),
+        expected_project_id="project-1",
+    )
+    assert isinstance(evidence, OutcomeEvidenceV1)
+    assert evidence.decision_event_digest == SHA_A
+    assert evidence.outcome.value == "success"
+
+    payload = _payload()
+    payload.pop("verified_outcome")
+    payload.pop("outcome_evidence")
+    normalized = normalize_verified_decision_event(
+        _event(payload=payload),
+        source=_source(),
+        expected_project_id="project-1",
+        linked_outcome=evidence,
+    )
+    assert isinstance(normalized, DecisionEnvelopeV1)
+    assert normalized.source_event_digest == SHA_A
+    assert normalized.verified_outcome.value == "success"
+
+
+@pytest.mark.parametrize(
+    ("event", "expected_project", "reason"),
+    [
+        (
+            _outcome_event(event_type="review.decided"),
+            "project-1",
+            NormalizationRefusalReason.UNSUPPORTED_EVENT,
+        ),
+        (
+            _outcome_event(project_id=None),
+            "project-1",
+            NormalizationRefusalReason.MISSING_PROJECT,
+        ),
+        (
+            _outcome_event(),
+            "project-2",
+            NormalizationRefusalReason.PROJECT_MISMATCH,
+        ),
+        (
+            _outcome_event(payload={**_outcome_event().payload, "prompt": "nope"}),
+            "project-1",
+            NormalizationRefusalReason.UNKNOWN_FIELD,
+        ),
+        (
+            _outcome_event(redaction=RedactionV1(count=1, kinds=("secret_key",))),
+            "project-1",
+            NormalizationRefusalReason.REDACTION_REQUIRED,
+        ),
+        (
+            _outcome_event(
+                payload={**_outcome_event().payload, "verified_outcome": 1}
+            ),
+            "project-1",
+            NormalizationRefusalReason.INVALID_OUTCOME,
+        ),
+        (
+            _outcome_event(
+                payload={**_outcome_event().payload, "terminal_event_ids": []}
+            ),
+            "project-1",
+            NormalizationRefusalReason.INVALID_OUTCOME_EVIDENCE,
+        ),
+    ],
+)
+def test_separate_outcome_event_refuses_ambiguous_or_unsafe_links(
+    event: EventEnvelopeV1,
+    expected_project: str,
+    reason: NormalizationRefusalReason,
+) -> None:
+    result = normalize_verified_decision_outcome_event(
+        event,
+        expected_project_id=expected_project,
+    )
+    assert isinstance(result, NormalizationRefusalV1)
+    assert result.reason is reason
 
 
 @pytest.mark.parametrize(

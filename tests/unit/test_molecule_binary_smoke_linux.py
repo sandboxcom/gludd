@@ -828,6 +828,16 @@ class TestPrepare:
         assert 'rm -rf "$$source_dir"' in makefile
         assert '-v "$$output_dir:/out"' not in makefile
         assert "cp /tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
+        locked_version_command = (
+            "scripts/dependency_profiles.py locked-version "
+            "--root /workspace --profile dev-build --package pyinstaller"
+        )
+        assert locked_version_command in makefile
+        assert (
+            'test "$$pyinstaller_version" = "$$locked_pyinstaller_version"'
+            in makefile
+        )
+        assert 'test "$$pyinstaller_version" = "6.20.0"' not in makefile
         assert "pyinstaller_status=0" in makefile
         assert "|| pyinstaller_status=$$?" in makefile
         assert 'test "$$pyinstaller_status" -eq 0' in makefile

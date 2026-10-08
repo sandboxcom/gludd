@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 
 
@@ -59,7 +61,7 @@ def _loop(
                 "machine_disk_gb": 16,
             },
         },
-        todo_repo=repository,
+        todo_repo=cast(TodoRepository, repository),
         runner=runner,
     )
     return loop, repository
@@ -227,6 +229,69 @@ async def test_two_workers_only_the_durable_claim_winner_provisions(
     await loser._phase_release_compute_demand()
 
     assert [call["state"] for call in runner.calls] == ["present"]
+
+
+@pytest.mark.asyncio
+async def test_open_claim_transaction_cannot_provision_compute(
+    tmp_path: Path,
+) -> None:
+    """An injected live session is not durable authority for provider effects."""
+    runner = _ExecutionEnvironmentRunner()
+    loop, _ = _loop(tmp_path, by_status={"active": 1}, runner=runner)
+    loop._tick_state["claimed_todos"] = [SimpleNamespace(todo_id="TODO-1")]
+    loop._active_session = AsyncMock()
+
+    await loop._phase_reconcile_compute_demand()
+
+    assert runner.calls == []
+    assert loop._tick_state["compute_ready"] is False
+    assert loop._tick_state["compute_demand"] == {
+        "state": "claim_transaction_open",
+        "runnable_todos": 1,
+        "execution_environment": "unchanged",
+    }
+    assert loop._tick_metrics["compute_claim_fence_rejections"] == 1
+
+
+@pytest.mark.asyncio
+async def test_live_session_without_provider_allows_external_dispatch(
+    tmp_path: Path,
+) -> None:
+    """A committed compatibility claim needs no provider lifecycle call."""
+    loop, _ = _loop(tmp_path, by_status={"active": 1}, runner=None)
+    loop._tick_state["claimed_todos"] = [SimpleNamespace(todo_id="TODO-1")]
+    loop._active_session = AsyncMock()
+
+    await loop._phase_reconcile_compute_demand()
+
+    assert loop._tick_state["compute_ready"] is True
+    assert loop._tick_state["compute_demand"] == {
+        "state": "externally_managed",
+        "runnable_todos": 1,
+        "execution_environment": "external",
+    }
+    assert "compute_claim_fence_rejections" not in loop._tick_metrics
+
+
+@pytest.mark.asyncio
+async def test_live_session_with_playbook_only_runner_allows_external_dispatch(
+    tmp_path: Path,
+) -> None:
+    """A runner without a provider lifecycle cannot allocate compute."""
+    runner = SimpleNamespace(run_playbook=lambda **_kwargs: None)
+    loop, _ = _loop(tmp_path, by_status={"active": 1}, runner=runner)
+    loop._tick_state["claimed_todos"] = [SimpleNamespace(todo_id="TODO-1")]
+    loop._active_session = AsyncMock()
+
+    await loop._phase_reconcile_compute_demand()
+
+    assert loop._tick_state["compute_ready"] is True
+    assert loop._tick_state["compute_demand"] == {
+        "state": "externally_managed",
+        "runnable_todos": 1,
+        "execution_environment": "external",
+    }
+    assert "compute_claim_fence_rejections" not in loop._tick_metrics
 
 
 @pytest.mark.asyncio
@@ -432,7 +497,10 @@ async def test_release_reads_durable_demand_in_its_own_short_session(
     def session_factory() -> _SessionContext:
         return _SessionContext()
 
-    loop._session_factory = session_factory
+    loop._session_factory = cast(
+        async_sessionmaker[AsyncSession],
+        session_factory,
+    )
     monkeypatch.setattr(
         "general_ludd.event_loop.loop.TodoRepository",
         lambda _session: repository,

@@ -28,9 +28,13 @@ CONTRACTS = {
         "formally complete",
     ),
     "s83-108-105-boundary-evidence": (
-        "S83.108 / S83.105",
+        "S83.108 / S83.106 / S83.105",
         "S83.105 CANDIDATE ONLY",
         "identity=rejected",
+        "NUL worktree registry",
+        "100 MB / 90%",
+        "67/67",
+        "86%",
         "ProjectType | str",
         "170/170",
         "96.95%",
@@ -48,6 +52,7 @@ SOURCE_RANGES = {
     ),
     "s83-108-105-boundary-evidence": (
         ("scripts/check_worktree_health.py", "39-70"),
+        ("scripts/check_disk_usage.py", "72-118"),
         ("src/general_ludd/cloud/project_types.py", "899-914"),
     ),
 }

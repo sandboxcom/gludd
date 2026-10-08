@@ -80,12 +80,19 @@ from check_version_bump_atomicity import (
     extract_versions,
 )
 from generate_release_notes import COMMIT_CATEGORIES, categorize_commits, find_prev_tag, format_notes
+from scripts.makefile_layout import compose_makefile
 from validate_release_checksums import (
     CHECKSUM_ASSET_NAME,
     parse_checksums,
     validate_checksum_coverage,
 )
 from verify_container_push import image_digest_from_output, try_crane, try_docker, try_skopeo
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _makefile_text() -> str:
+    return compose_makefile(ROOT / "Makefile")
 
 
 class TestCheckTagImmutability:
@@ -1874,23 +1881,20 @@ class TestReleaseDryRunGuard:
     )
 
     def test_dry_run_guard_targets_exist_in_makefile(self):
-        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
-        makefile_content = makefile_path.read_text()
+        makefile_content = _makefile_text()
         for target in self.DRY_RUN_GUARD_TARGETS:
             assert re.search(rf"^{target}:", makefile_content, re.MULTILINE), (
                 f"Guard target '{target}' not found in Makefile"
             )
 
     def test_release_dry_run_target_exists(self):
-        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
-        makefile_content = makefile_path.read_text()
+        makefile_content = _makefile_text()
         assert re.search(r"^release-dry-run:", makefile_content, re.MULTILINE), (
             "release-dry-run target not found in Makefile"
         )
 
     def test_dry_run_guard_calls_all_checks(self):
-        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
-        makefile_content = makefile_path.read_text()
+        makefile_content = _makefile_text()
         start = makefile_content.index("_release-dry-run-guard:")
         end = makefile_content.index("\n\n", start) if "\n\n" in makefile_content[start:] else len(makefile_content)
         guard_block = makefile_content[start:end]
@@ -1903,8 +1907,7 @@ class TestReleaseDryRunGuard:
             assert script in guard_block, f"Guard block missing {script}"
 
     def test_dry_run_target_does_not_push_tag(self):
-        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
-        makefile_content = makefile_path.read_text()
+        makefile_content = _makefile_text()
         start = makefile_content.index("release-dry-run:")
         next_target = re.search(r"\n[^\t\n#][a-zA-Z_-]+:", makefile_content[start + 1 :])
         end_offset = next_target.start() if next_target else len(makefile_content[start:])
@@ -1915,8 +1918,7 @@ class TestReleaseDryRunGuard:
         assert "git-push-sandboxcom" not in recipe_text
 
     def test_dry_run_guard_fail_closed(self):
-        makefile_path = Path(__file__).resolve().parent.parent.parent / "Makefile"
-        makefile_content = makefile_path.read_text()
+        makefile_content = _makefile_text()
         start = makefile_content.index("_release-dry-run-guard:")
         next_target = re.search(r"\n[a-zA-Z_-]+:", makefile_content[start + 1 :])
         end_offset = next_target.start() if next_target else len(makefile_content[start:])

@@ -452,6 +452,35 @@ class TickLifecycleMixin:
         return self._tick_metrics
 
     async def _run_phases(self) -> None:
+        if self.session is not None and self._active_session is self.session:
+            # Preserve the public/patchable phase-runner seam while establishing
+            # the same durable claim boundary as the factory path.  The caller
+            # still owns the reusable live session, so it remains attached.
+            await self._run_phase_range(0, PROVISION_PHASE_INDEX)
+            claim_commit_succeeded = await self._commit_tick_session(self.session)
+            if claim_commit_succeeded is False:
+                self._tick_state["claimed_todos"] = []
+                self._tick_state["compute_ready"] = False
+                self._tick_state["compute_demand"] = {
+                    "state": "claim_commit_failed",
+                    "runnable_todos": 0,
+                    "execution_environment": "unchanged",
+                }
+                self._tick_metrics["claim_commit_failures"] = 1
+                logger.error(
+                    "Execute dispatch skipped because the compatibility claim "
+                    "transaction did not commit"
+                )
+            else:
+                await self._run_phase_range(
+                    PROVISION_PHASE_INDEX,
+                    DISPATCH_PHASE_INDEX + 1,
+                )
+            await self._run_phase_range(
+                DISPATCH_PHASE_INDEX + 1,
+                len(PHASE_ORDER),
+            )
+            return
         await self._run_phase_range(0, len(PHASE_ORDER))
 
     async def _run_phase_range(self, start: int, end: int) -> None:

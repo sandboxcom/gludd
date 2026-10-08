@@ -110,6 +110,17 @@
       "behavior": "make azure-containerapp-terraform-phase AZURE_CONTAINERAPP_TF_PHASE=plan AZURE_CONTAINERAPP_TF_DIR=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa AZURE_CONTAINERAPP_TF_PLAN_FILE=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa/gludd.tfplan AZURE_CONTAINERAPP_TF_JSON_FILE=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa/gludd.plan.json AZURE_CONTAINERAPP_TF_VALIDATE_ONLY=1"
     },
     {
+      "name": "azure-containerapp-environment-guard",
+      "make_variables": [
+        "AZURE_CONTAINERAPP_GITHUB_REPOSITORY",
+        "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT",
+        "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON",
+        "AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON",
+        "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY"
+      ],
+      "behavior": "make azure-containerapp-environment-guard AZURE_CONTAINERAPP_GITHUB_REPOSITORY=sandboxcom/gludd AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT=azure-containerapp-live AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON= AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON= AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "azure-containerapp-live-proof",
       "make_variables": [
         "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE",
@@ -447,7 +458,7 @@
         "PYINSTALLER_VERSION_LINUX",
         "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
       ],
-      "behavior": "make ci-pyinstaller-warning-audit RUN=1 ARTIFACT=molecule-logs-shard-1 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_VERSION_LINUX=6.20.0 CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+      "behavior": "make ci-pyinstaller-warning-audit RUN=1 ARTIFACT=molecule-logs-shard-1 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_VERSION_LINUX=6.22.3 CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
     },
     {
       "name": "ci-coverage-artifact-audit",
@@ -520,7 +531,7 @@
         "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
         "PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
       ],
-      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.22.3 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
     },
     {
       "name": "compare-linux-pyinstaller-warnings",
@@ -533,7 +544,7 @@
         "PYINSTALLER_WARNING_REVIEW_RECEIPT",
         "PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY"
       ],
-      "behavior": "make compare-linux-pyinstaller-warnings PYINSTALLER_WARNING_BEFORE=/tmp/gludd-warning-before.txt PYINSTALLER_WARNING_AFTER=/tmp/gludd-warning-after.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=aarch64 PYINSTALLER_WARNING_REVIEW_RECEIPT=artifacts/pyinstaller-warning-review.json PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY=1"
+      "behavior": "make compare-linux-pyinstaller-warnings PYINSTALLER_WARNING_BEFORE=/tmp/gludd-warning-before.txt PYINSTALLER_WARNING_AFTER=/tmp/gludd-warning-after.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.22.3 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=aarch64 PYINSTALLER_WARNING_REVIEW_RECEIPT=artifacts/pyinstaller-warning-review.json PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY=1"
     },
     {
       "name": "check-pyinstaller-warning-reviews",
@@ -1322,8 +1333,13 @@
     },
     {
       "name": "check-file-line-limits",
-      "make_variables": ["FILE_LINE_LIMIT_POLICY"],
-      "behavior": "make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json"
+      "make_variables": ["FILE_LINE_LIMIT_POLICY", "FILE_LINE_LIMIT_STAGED"],
+      "behavior": "make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json FILE_LINE_LIMIT_STAGED=0"
+    },
+    {
+      "name": "check-duplicate-code",
+      "make_variables": ["DUPLICATE_CODE_CONFIG", "DUPLICATE_CODE_ENGINE", "DUPLICATE_CODE_SOURCE", "DUPLICATE_CODE_BASE_REF", "DUPLICATE_CODE_CURRENT_REF", "DUPLICATE_CODE_VALIDATE_ONLY"],
+      "behavior": "make check-duplicate-code DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=1"
     },
     {
       "name": "split-makefile-layout",
@@ -1337,8 +1353,32 @@
     },
     {
       "name": "pre-commit-check",
-      "make_variables": [],
-      "behavior": "make pre-commit-check"
+      "make_variables": ["FILE_LINE_LIMIT_POLICY", "DUPLICATE_CODE_CONFIG", "DUPLICATE_CODE_ENGINE"],
+      "behavior": "make pre-commit-check FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd"
+    },
+    {
+      "name": "check-gate-failure-promotions",
+      "make_variables": ["GATE_FAILURE_PROMOTION_MANIFEST"],
+      "behavior": "make check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json"
+    },
+    {
+      "name": "integration-admission",
+      "make_variables": [
+        "INTEGRATION_ADMISSION_VALIDATE_ONLY",
+        "GATE_FAILURE_PROMOTION_MANIFEST",
+        "FILE_LINE_LIMIT_POLICY",
+        "DUPLICATE_CODE_CONFIG",
+        "DUPLICATE_CODE_ENGINE",
+        "DUPLICATE_CODE_BASE_REF",
+        "DUPLICATE_CODE_CURRENT_REF",
+        "MARKDOWN_FILES",
+        "MARKDOWNLINT_CONFIG",
+        "PRESENTATION_BROWSER_ENGINES",
+        "PRESENTATION_BROWSER_ROOT",
+        "PRESENTATION_BROWSER_OUTPUT",
+        "PRESENTATION_BROWSER_TIMEOUT"
+      ],
+      "behavior": "make integration-admission INTEGRATION_ADMISSION_VALIDATE_ONLY=1 GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd DUPLICATE_CODE_BASE_REF=development DUPLICATE_CODE_CURRENT_REF=HEAD MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser PRESENTATION_BROWSER_TIMEOUT=600"
     },
     {
       "name": "list-plugins",
@@ -1414,7 +1454,7 @@
         "PRESENTATION_BROWSER_OUTPUT",
         "PRESENTATION_BROWSER_TIMEOUT"
       ],
-      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=300"
+      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=600"
     },
     {
       "name": "presentation-browser-install",

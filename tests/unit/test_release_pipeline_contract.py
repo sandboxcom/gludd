@@ -11,11 +11,17 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def _read(path: str) -> str:
     return (ROOT / path).read_text()
+
+
+def _makefile_text() -> str:
+    return compose_makefile(ROOT / "Makefile")
 
 
 def _current_version() -> str:
@@ -51,11 +57,11 @@ class TestMakefileReleaseTargets:
     """Essential release pipeline targets must exist in the Makefile."""
 
     def test_release_cut_target_exists(self):
-        makefile = _read("Makefile")
+        makefile = _makefile_text()
         assert re.search(r"^release-cut:\s*$", makefile, re.MULTILINE), "release-cut target must exist in Makefile"
 
     def test_verify_release_completeness_target_exists(self):
-        makefile = _read("Makefile")
+        makefile = _makefile_text()
         assert re.search(r"^verify-release-completeness:\s*$", makefile, re.MULTILINE), (
             "verify-release-completeness target must exist in Makefile"
         )

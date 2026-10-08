@@ -14,6 +14,7 @@ jobs:
     if: vars.AZURE_CONTAINERAPP_LIVE_ENABLED == 'true'
     environment: azure-containerapp-live
     permissions:
+      actions: read
       contents: read
       id-token: write
     runs-on: ubuntu-latest
@@ -25,6 +26,15 @@ jobs:
           fetch-depth: 0
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - name: Verify protected paid-compute environment
+        run: make azure-containerapp-environment-guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AZURE_CONTAINERAPP_GITHUB_REPOSITORY: ${{ github.repository }}
+          AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT: azure-containerapp-live
+          AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON: ""
+          AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON: ""
+          AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY: '0'
       - name: Materialize the short-lived GitHub assertion
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:

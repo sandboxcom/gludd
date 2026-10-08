@@ -339,6 +339,44 @@ def validate_catalog(catalog: ProfileCatalog, *, require_locks: bool = True) -> 
             )
 
 
+def locked_package_version(
+    catalog: ProfileCatalog,
+    *,
+    profile: str,
+    package: str,
+) -> str:
+    """Return one package's unambiguous version from an exact profile lock."""
+
+    if not profile:
+        raise ProfileError("profile must be non-empty")
+    if not package:
+        raise ProfileError("package must be non-empty")
+    selected = catalog.profiles.get(profile)
+    if selected is None:
+        raise ProfileError(f"unknown profile {profile!r}")
+    lock_path = selected.project / "uv.lock"
+    try:
+        lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ProfileError(f"cannot load lock {lock_path}: {exc}") from exc
+    packages = lock.get("package")
+    if not isinstance(packages, list):
+        raise ProfileError(f"{lock_path} does not lock package {package!r}")
+    matches: list[Mapping[str, object]] = []
+    for index, value in enumerate(packages):
+        entry = _table(value, f"{lock_path}: package[{index}]")
+        if entry.get("name") == package:
+            matches.append(entry)
+    if not matches:
+        raise ProfileError(f"{lock_path} does not lock package {package!r}")
+    if len(matches) != 1:
+        raise ProfileError(f"{lock_path} must lock package {package!r} exactly once")
+    version = matches[0].get("version")
+    if not isinstance(version, str) or not version:
+        raise ProfileError(f"{lock_path} has an invalid version for package {package!r}")
+    return version
+
+
 def _run_command(command: Command) -> None:
     environment = os.environ.copy()
     environment.update(command.environment)
@@ -439,12 +477,17 @@ def sync_profile_set(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("audit", "check", "export", "lock", "sync"))
+    parser.add_argument(
+        "action",
+        choices=("audit", "check", "export", "lock", "locked-version", "sync"),
+    )
     parser.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     parser.add_argument("--manifest", default="config/dependency_profiles.toml")
     parser.add_argument("--set", dest="profile_set")
     parser.add_argument("--environment", default=".venv")
     parser.add_argument("--output")
+    parser.add_argument("--profile")
+    parser.add_argument("--package")
     parser.add_argument("--python")
     parser.add_argument("--uv", default="uv")
     parser.add_argument("--validate-only", action="store_true")
@@ -485,6 +528,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not args.profile_set or not args.output:
                 raise ProfileError("export requires --set and --output")
             write_requirements(catalog, args.profile_set, Path(args.output))
+        elif args.action == "locked-version":
+            if not args.profile or not args.package:
+                raise ProfileError("locked-version requires --profile and --package")
+            print(
+                locked_package_version(
+                    catalog,
+                    profile=args.profile,
+                    package=args.package,
+                ),
+                flush=True,
+            )
         else:
             if not args.profile_set:
                 raise ProfileError("sync requires --set")

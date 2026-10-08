@@ -1,0 +1,27 @@
+{
+  "path": [
+    ".opencode/plugin",
+    "collections/ansible_collections/general_ludd",
+    "scripts",
+    "src"
+  ],
+  "minLines": 12,
+  "minTokens": 80,
+  "mode": "weak",
+  "ignoreIdentifiers": true,
+  "ignoreLiterals": true,
+  "maxSize": "500kb",
+  "reporters": ["json", "silent"],
+  "ignore": [
+    "**/__pycache__/**",
+    "**/fixtures/**",
+    "**/molecule/**",
+    "**/node_modules/**",
+    "**/tests/**",
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.json",
+    "**/vendor/**"
+  ],
+  "noTips": true
+}

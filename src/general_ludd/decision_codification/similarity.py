@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from importlib import import_module
 from typing import Protocol, cast
 
-import numpy as np
 from rapidfuzz import fuzz
 
 from general_ludd.decision_codification.schema import (
@@ -36,6 +35,35 @@ class SimilarityLimitError(SimilarityError):
 
 class _CompleteLinkClustering(Protocol):
     def fit_predict(self, distances: object) -> Iterable[int]: ...
+
+
+class _NumpyArray(Protocol):
+    def __setitem__(self, key: tuple[int, int], value: float) -> None: ...
+
+
+class _NumpyModule(Protocol):
+    float32: object
+
+    def zeros(
+        self,
+        shape: tuple[int, int],
+        *,
+        dtype: object,
+    ) -> _NumpyArray: ...
+
+
+def _numpy_module() -> _NumpyModule:
+    try:
+        module = import_module("numpy")
+    except ImportError as exc:
+        raise SimilarityError(
+            "NumPy is required for pairwise decision similarity"
+        ) from exc
+    if not callable(getattr(module, "zeros", None)) or not hasattr(
+        module, "float32"
+    ):
+        raise SimilarityError("NumPy does not expose the required array API")
+    return cast(_NumpyModule, module)
 
 
 def _clustering_factory() -> Callable[..., _CompleteLinkClustering]:
@@ -114,6 +142,7 @@ def _labels_for_signatures(
     # float32 caps the largest permitted 5,000-row matrix at 100 MiB before
     # scikit-learn's own bounded working copy, rather than allocating millions
     # of heavyweight Python float objects.
+    np = _numpy_module()
     distances = np.zeros((len(signatures), len(signatures)), dtype=np.float32)
     for left_index, left in enumerate(signatures):
         for right_index in range(left_index + 1, len(signatures)):

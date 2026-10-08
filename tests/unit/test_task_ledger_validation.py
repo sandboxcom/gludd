@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from scripts.makefile_layout import compose_makefile
 from scripts.validate_task_ledger import ID_PATTERN, extract_tasks, main
 
 
@@ -222,8 +223,7 @@ class TestMainExitCodes:
 class TestMakeTargetExists:
     def test_validate_task_ledger_target_exists(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent.parent
-        makefile = repo_root / "Makefile"
-        content = makefile.read_text(encoding="utf-8")
+        content = compose_makefile(repo_root / "Makefile")
         assert "validate-task-ledger:" in content
         assert "validate_task_ledger.py" in content
 
