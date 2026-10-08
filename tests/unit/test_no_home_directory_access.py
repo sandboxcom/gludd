@@ -40,6 +40,15 @@ import pytest
 ROOT = Path(__file__).parent.parent.parent
 OPENCODE_JSON = ROOT / "opencode.json"
 AGENTS_MD = ROOT / "AGENTS.md"
+FEATURE_DOC = ROOT / "docs/features/EXTERNAL_DIRECTORY_PERMISSION_CONTRACT.md"
+
+FILE_PERMISSION_KEYS = (
+    "read",
+    "edit",
+    "glob",
+    "grep",
+    "external_directory",
+)
 
 # The exhaustive set of allowed *external* path prefixes. The active worktree
 # is internal under current OpenCode semantics and needs no external grant.
@@ -93,14 +102,36 @@ FORBIDDEN_HOME_PATHS = (
 )
 
 
-def _load_permission() -> dict[str, object]:
-    """Load opencode.json and return its `permission` block as a dict."""
+def _load_config() -> dict[str, object]:
+    """Load the tracked OpenCode configuration as a typed object."""
     assert OPENCODE_JSON.exists(), "opencode.json must exist at repo root"
-    data = json.loads(OPENCODE_JSON.read_text())
+    data: object = json.loads(OPENCODE_JSON.read_text())
+    assert isinstance(data, dict), "opencode.json must contain an object"
+    assert all(isinstance(key, str) for key in data), (
+        "opencode.json top-level keys must be strings"
+    )
+    return cast("dict[str, object]", data)
+
+
+def _load_permission() -> dict[str, object]:
+    """Return the global ``permission`` block."""
+    data = _load_config()
     assert "permission" in data, "opencode.json must have a `permission` block"
     perm = data["permission"]
     assert isinstance(perm, dict), "permission block must be an object"
-    return perm
+    return cast("dict[str, object]", perm)
+
+
+def _load_build_permission() -> dict[str, object]:
+    """Return the build agent's permission block."""
+    data = _load_config()
+    agent = data.get("agent")
+    assert isinstance(agent, dict), "opencode.json must have an `agent` object"
+    build = agent.get("build")
+    assert isinstance(build, dict), "agent.build must be an object"
+    permission = build.get("permission")
+    assert isinstance(permission, dict), "agent.build.permission must be an object"
+    return cast("dict[str, object]", permission)
 
 
 def _allowed_keys(block: dict[str, str]) -> list[str]:
@@ -136,6 +167,29 @@ def test_file_tools_use_current_opencode_permission_semantics() -> None:
     assert perm["grep"] == "allow"
     assert "write" not in perm, (
         "OpenCode routes write/edit/apply-patch through the edit permission"
+    )
+
+
+def test_build_scope_matches_global_file_permission_contract() -> None:
+    """The build agent must inherit the same centralized file boundary."""
+    global_permission = _load_permission()
+    build_permission = _load_build_permission()
+
+    assert "write" not in build_permission, (
+        "agent.build must route write/edit/apply-patch through edit"
+    )
+    expected = {key: global_permission.get(key) for key in FILE_PERMISSION_KEYS}
+    actual = {key: build_permission.get(key) for key in FILE_PERMISSION_KEYS}
+    assert actual == expected, (
+        "agent.build file permissions must match the global centralized "
+        f"boundary; expected {expected!r}, got {actual!r}"
+    )
+    build_external = build_permission.get("external_directory")
+    assert isinstance(build_external, dict), (
+        "agent.build.permission.external_directory must be an object"
+    )
+    assert next(iter(build_external.items()), None) == ("*", "deny"), (
+        "agent.build.permission.external_directory must keep `*: deny` first"
     )
 
 
@@ -306,3 +360,12 @@ def test_agents_md_lists_structural_test_as_enforcement() -> None:
     assert "tests/unit/test_no_home_directory_access.py" in text, (
         "AGENTS.md must reference this structural test in the Enforcement subsection of No External File Access"
     )
+
+
+def test_feature_evidence_names_both_executable_permission_scopes() -> None:
+    """Feature evidence must identify both guarded configuration surfaces."""
+    documentation = FEATURE_DOC.read_text(encoding="utf-8")
+
+    assert "`permission.external_directory`" in documentation
+    assert "`agent.build.permission.external_directory`" in documentation
+    assert "tests/unit/test_no_home_directory_access.py" in documentation
