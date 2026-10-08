@@ -10,7 +10,6 @@ separate rollout phase.
 from __future__ import annotations
 
 import configparser
-import fcntl
 import hashlib
 import importlib.metadata
 import json
@@ -37,6 +36,7 @@ else:
 from coverage import CoverageData
 from coverage.exceptions import CoverageException
 from defusedxml import ElementTree
+from filelock import FileLock, Timeout
 
 RECEIPT_SCHEMA_VERSION = 1
 MAX_RECEIPT_GENERATIONS = 2
@@ -651,15 +651,19 @@ def _safe_tree_size(path: Path) -> tuple[int, str | None]:
 
 @contextmanager
 def _exclusive_directory_lock(path: Path) -> Iterator[None]:
-    """Serialize receipt-tree mutations without adding persistent lease state."""
-    descriptor = os.open(path, os.O_RDONLY)
+    """Serialize receipt-tree mutations through the maintained platform lock."""
+    lock_path = path.with_name(f".{path.name}.lock")
+    if lock_path.is_symlink():
+        raise OSError("receipt mutation lock must not be a symbolic link")
+    lock = FileLock(str(lock_path), timeout=0, mode=0o600)
     try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        yield
-    finally:
-        with suppress(OSError):
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-        os.close(descriptor)
+        with lock.acquire(timeout=0):
+            lock_error = private_path_error(lock_path, directory=False)
+            if lock_error is not None:
+                raise OSError(f"receipt mutation lock is unsafe: {lock_error}")
+            yield
+    except Timeout as exc:
+        raise BlockingIOError("receipt mutation lock is already held") from exc
 
 
 def _distribution_version(name: str) -> str:

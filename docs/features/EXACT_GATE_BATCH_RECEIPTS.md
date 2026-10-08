@@ -96,10 +96,13 @@ rollover without deletion. Failure-only generations remain eligible only when
 every diagnostic is complete and valid; failure publication itself does not
 evict a generation.
 
-The pass and failure writers share a nonblocking advisory lock on the private
-version directory while they inspect and create lifecycle paths. Retirement is
-also entry-bounded at 16,384 paths. Before mutation, the pass writer subtracts
-only the validated retirement candidate from the byte projection; if the new
+The pass and failure writers share the repository's maintained cross-platform
+`filelock` implementation, acquired nonblockingly through an owner-only lock
+file scoped to the private version directory, while they inspect and create
+lifecycle paths. The native implementation refuses symlink/reparse-point
+targets and preserves exclusion across POSIX and Windows. Retirement is also
+entry-bounded at 16,384 paths. Before mutation, the pass writer subtracts only
+the validated retirement candidate from the byte projection; if the new
 receipt would still exceed 2 GiB, it leaves both generations untouched. It then
 atomically renames the selected generation below a private quarantine
 directory, rechecks the no-symlink tree identity, creates the incoming
@@ -178,6 +181,7 @@ failure-only generations, symlink confinement, byte-budget proof, and rollback
 after rename or deletion faults. The six-file receipt regression slice is
 231/231 green. Its branch-aware report records 88% for
 `scripts/ci_batch_receipts.py`; aggregate and branch coverage exceed 85%, and
-the measured file exceeds 75%. Scoped Ruff and strict mypy are green. Commit,
-Markdown lint, and exact-head full-gate evidence remain pending; no warm-hit or
-release-speed claim belongs to this phase.
+the measured file exceeds 75%. Scoped Ruff, strict mypy, and Markdown lint are
+green, and the feature-branch implementation is committed. Exact-head full-gate
+evidence remains pending integration; no warm-hit or release-speed claim
+belongs to this phase.

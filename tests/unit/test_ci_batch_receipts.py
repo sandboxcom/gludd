@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import fcntl
+import importlib.util
 import json
 import os
 import shutil
@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 from coverage import CoverageData
+from filelock import FileLock
 from scripts import ci_batch_receipts as receipt_module
 from scripts import run_ci_shards_serial as serial_runner
 from scripts.ci_batch_receipts import (
@@ -937,18 +938,69 @@ def test_shadow_writer_preserves_generations_while_mutation_lock_is_leased(
     current = _publish_generation(cache, tmp_path, "c" * 40)
     _set_generation_age(oldest, 1_000_000_000)
     _set_generation_age(current, 2_000_000_000)
-    descriptor = os.open(cache / "v1", os.O_RDONLY)
-    try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    lock_path = cache / ".v1.lock"
+    with FileLock(str(lock_path), timeout=0, mode=0o600):
         result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
-    finally:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
-        os.close(descriptor)
 
     assert result.published is False
     assert result.reason == "generation-busy"
     assert oldest.exists()
     assert current.exists()
+
+
+def test_receipt_module_imports_when_platform_fcntl_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_name = "_ci_batch_receipts_without_fcntl"
+    module_path = Path(receipt_module.__file__)
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    probe = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, module_name, probe)
+    monkeypatch.setitem(sys.modules, "fcntl", None)
+
+    spec.loader.exec_module(probe)
+
+    assert probe.ShadowBatchReceiptWriter is not None
+
+
+def test_shadow_writer_refuses_symlinked_mutation_lock_without_following_it(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    cache.mkdir(mode=0o700)
+    outside = tmp_path / "outside-lock"
+    outside.write_text("preserve", encoding="utf-8")
+    (cache / ".v1.lock").symlink_to(outside)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+
+    assert result.published is False
+    assert result.reason == "generation-unavailable"
+    assert outside.read_text(encoding="utf-8") == "preserve"
+
+
+def test_mutation_lock_refuses_unsafe_file_after_acquisition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    version_root = tmp_path / "batch-receipts" / "v1"
+    version_root.mkdir(parents=True, mode=0o700)
+    original = receipt_module.private_path_error
+
+    def classify(path: Path, *, directory: bool) -> str | None:
+        if path.name == ".v1.lock":
+            return "unsafe-mode"
+        return original(path, directory=directory)
+
+    monkeypatch.setattr(receipt_module, "private_path_error", classify)
+
+    with (
+        pytest.raises(OSError, match="unsafe-mode"),
+        receipt_module._exclusive_directory_lock(version_root),
+    ):
+        pytest.fail("unsafe lock path must not enter the mutation section")
 
 
 def test_shadow_writer_rollover_never_follows_generation_symlink(
