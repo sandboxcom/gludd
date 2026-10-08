@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "contracts": [
+    {
+      "distribution": "filelock",
+      "module": "filelock",
+      "introduced_version": "3.30.0",
+      "public_apis": [
+        "lock_descriptor",
+        "unlock_descriptor"
+      ],
+      "consumers": [
+        "scripts/ci_batch_receipts.py"
+      ]
+    }
+  ]
+}
