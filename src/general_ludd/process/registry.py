@@ -31,7 +31,7 @@ import logging
 import os
 import threading
 
-from general_ludd.process.registry_identity import read_create_time
+from general_ludd.process.registry_identity import identity_matches, read_create_time
 from general_ludd.process.registry_types import (
     ManagedProcess,
     ManagedProcessLease,
@@ -323,12 +323,12 @@ class ProcessRegistry:
         When identity cannot be established (no psutil, or we never captured a
         create_time) this returns False: callers fail closed.
         """
-        live_ct = _read_create_time(record.pid)
-        if live_ct is None:
-            return False
-        if record.create_time is None:
-            return False
-        return abs(live_ct - record.create_time) <= _CREATE_TIME_TOLERANCE_S
+        return identity_matches(
+            record.pid,
+            record.create_time,
+            reader=_read_create_time,
+            tolerance_seconds=_CREATE_TIME_TOLERANCE_S,
+        )
 
     def is_alive(self, pid: int) -> bool:
         """True only if the recorded PID is still our process (identity-checked)."""

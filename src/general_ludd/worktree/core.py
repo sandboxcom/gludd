@@ -5,8 +5,10 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+UTC = timezone(timedelta(0))
 
 # --------------------------------------------------------------------------- #
 # git worktree input hardening                                                #
@@ -286,6 +288,7 @@ class WorktreeScanner:
         config: WorktreeMonitorConfig,
         tracked: dict[str, TrackedWorktree] | None = None,
     ) -> None:
+        """Initialize the scanner with configuration and optional state."""
         self._config = config
         self._tracked: dict[str, TrackedWorktree] = tracked or {}
 
@@ -386,8 +389,9 @@ class WorktreeScanner:
         active_paths: set[str],
         restrict_to: list[str] | None = None,
     ) -> list[str]:
-        """Drop tracking for worktrees that no longer exist AND reclaim the
-        abandoned worktree directory on the filesystem.
+        """Drop tracking for worktrees that no longer exist.
+
+        Reclaim each abandoned worktree directory on the filesystem.
 
         For each tracked path no longer present in ``active_paths`` we both
         forget the in-memory entry (returning its todo id) and invoke
@@ -481,6 +485,7 @@ class WorktreeEventDispatcher:
         monitor: Any | None = None,
         watch_paths: list[str] | None = None,
     ) -> None:
+        """Initialize event dispatch for one scanner and monitor."""
         self._scanner = scanner
         self._config = config
         self._monitor = monitor
@@ -488,6 +493,7 @@ class WorktreeEventDispatcher:
         self._observer: Any = None
 
     def on_agents_md_event(self, event: Any) -> str | None:
+        """Rescan a worktree after an AGENTS.md filesystem event."""
         event_path = getattr(event, "src_path", event) if not isinstance(event, str) else event
         getattr(event, "event_type", "modified") if not isinstance(event, str) else "modified"
 
@@ -508,6 +514,7 @@ class WorktreeEventDispatcher:
         return is_git_worktree(path)
 
     def start_watching(self) -> Any | None:
+        """Start recursive filesystem observation for configured roots."""
         try:
             from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
@@ -532,6 +539,7 @@ class WorktreeEventDispatcher:
         return self._observer
 
     def stop_watching(self) -> None:
+        """Stop and join the active filesystem observer, when present."""
         if self._observer is not None:
             self._observer.stop()
             self._observer.join(timeout=5)
@@ -546,6 +554,7 @@ class WorktreeMonitor:
         scanner: WorktreeScanner | None = None,
         todo_creator: object | None = None,
     ) -> None:
+        """Initialize monitoring with optional scanner and todo creator."""
         self._config = config
         self._scanner = scanner or WorktreeScanner(config)
         self._todo_creator = todo_creator
@@ -617,8 +626,10 @@ class WorktreeMonitor:
 
     @property
     def tracked_worktrees(self) -> dict[str, TrackedWorktree]:
+        """Return the scanner's currently tracked worktree records."""
         return self._scanner._tracked
 
     @property
     def event_dispatcher(self) -> WorktreeEventDispatcher:
+        """Return the filesystem event dispatcher for this monitor."""
         return self._event_dispatcher
