@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
 import heapq
 import json
 import os
@@ -16,11 +15,26 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING or __package__:
+    from scripts.collection_lock import (
+        LeaseInspection,
+        LeaseRecord,
+        RepositoryIdentityError,
+        default_collection_lock,
+        default_resource_lock,
+        inspect_lease,
+    )
     from scripts.resource_arbiter import resource_path, resource_root
     from scripts.task_scope import task_inventory as _task_inventory
 else:  # pragma: no cover - direct script execution
+    _collection_lock = import_module("collection_lock")
     _resource_arbiter = import_module("resource_arbiter")
     _task_scope = import_module("task" + "_scope")
+    LeaseInspection = _collection_lock.LeaseInspection
+    LeaseRecord = _collection_lock.LeaseRecord
+    RepositoryIdentityError = _collection_lock.RepositoryIdentityError
+    default_collection_lock = _collection_lock.default_collection_lock
+    default_resource_lock = _collection_lock.default_resource_lock
+    inspect_lease = _collection_lock.inspect_lease
     resource_path = _resource_arbiter.resource_path
     resource_root = _resource_arbiter.resource_root
     _task_inventory = _task_scope.task_inventory
@@ -52,6 +66,8 @@ _PROCESS_DISPLAY_LIMIT = 512
 _COMMAND_DISPLAY_LIMIT = 240
 _OBSERVER_STATUS_LIMIT = 64
 _OBSERVER_PROCESS_LIMIT = 128
+_COLLECTION_WAITER_LIMIT = 32
+_LEASE_PATH_DISPLAY_LIMIT = 512
 _LOCAL_INFERENCE_PROCESS_TOKENS = ("llama_cpp.server", "llama-server")
 _SELF_IMPROVE_PROCESS_TOKENS = (
     "self-improve",
@@ -61,6 +77,7 @@ _TRACKED_PROCESS_TOKENS = (
     "adaptive_test.py",
     "agent_watchdog.py",
     "audit_coverage.py",
+    "scripts/collection_lock.py",
     "detect-secrets",
     "general_ludd.cli daemon",
     "gunicorn",
@@ -79,6 +96,8 @@ _TRACKED_PROCESS_TOKENS = (
 
 
 def _task_label(command: str) -> str:
+    if "scripts/collection_lock.py" in command:
+        return "collection-lease"
     if "self_improve_local_proposal.py" in command:
         return "self-improve-model-worker"
     if any(token in command for token in _LOCAL_INFERENCE_PROCESS_TOKENS):
@@ -490,22 +509,69 @@ def _worker_limit() -> int:
 
 def _active_gate_refresh_owner(_namespace: str) -> str | None:
     """Return the PID holding this project's gate-refresh lease, if any."""
-    lock_path = resource_path("gate-refresh", ROOT)
     try:
-        with lock_path.open("a+", encoding="utf-8") as handle:
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                handle.seek(0)
-                owner = handle.read().strip()
-                if owner.startswith("pid="):
-                    owner = owner[4:].strip()
-                return owner if owner.isdigit() else None
-            else:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-    except OSError:
+        inspection = inspect_lease(default_resource_lock("gate-refresh", ROOT))
+    except RepositoryIdentityError:
         return None
-    return None
+    if inspection.state != "held" or inspection.record is None:
+        return None
+    return str(inspection.record.pid)
+
+
+def _safe_bounded_text(value: str, *, limit: int) -> str:
+    """Replace control characters and truncate one diagnostic string."""
+
+    safe = "".join(character if character.isprintable() else "?" for character in value)
+    if len(safe) <= limit:
+        return safe
+    return f"{safe[: limit - 3]}..."
+
+
+def _collection_lease_observability(
+    processes: list[dict[str, str]],
+) -> dict[str, object]:
+    """Return bounded holder and waiter evidence for the canonical lease."""
+
+    try:
+        path = default_collection_lock(ROOT)
+        inspection = inspect_lease(path)
+    except RepositoryIdentityError:
+        path = Path("<repository-identity-unavailable>")
+        inspection = LeaseInspection(state="unavailable", record=None)
+    record = inspection.record
+    active_record: LeaseRecord | None = (
+        record if inspection.state == "held" else None
+    )
+    owner_pid = str(active_record.pid) if active_record is not None else ""
+    if inspection.state == "held":
+        record_status = "active" if active_record is not None else "invalid"
+    elif inspection.state == "available":
+        record_status = "stale" if record is not None else "missing"
+    else:
+        record_status = "unreadable"
+    waiter_pids = [
+        process["pid"]
+        for process in processes
+        if process.get("task") == "collection-lease"
+        and process.get("pid", "").isdigit()
+        and process["pid"] != owner_pid
+    ]
+    displayed_waiters = waiter_pids[:_COLLECTION_WAITER_LIMIT]
+    return {
+        "state": inspection.state,
+        "path": _safe_bounded_text(
+            str(path),
+            limit=_LEASE_PATH_DISPLAY_LIMIT,
+        ),
+        "owner_pid": owner_pid,
+        "acquired_unix_ns": (
+            active_record.acquired_unix_ns if active_record is not None else None
+        ),
+        "record_status": record_status,
+        "waiter_count": len(waiter_pids),
+        "waiter_pids": displayed_waiters,
+        "waiter_overflow_count": len(waiter_pids) - len(displayed_waiters),
+    }
 
 
 def _worker_accounting(
@@ -580,6 +646,7 @@ def _resource_observability(processes: list[dict[str, str]]) -> dict[str, object
         "lease_owner": lease_owner,
         "leases": [str(resource_path(name, ROOT)) for name in _RESOURCE_LEASES],
         "lease_inventory": lease_inventory,
+        "collection_lease": _collection_lease_observability(processes),
         "worker_count": min(leased_worker_count, limit),
         "worker_limit": limit,
         **accounting,
