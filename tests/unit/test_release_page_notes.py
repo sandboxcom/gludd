@@ -470,6 +470,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S34",
         "S35",
         "S36",
+        "S37",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
@@ -534,6 +535,13 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
                 ("documentation", "7af995fb69e622df5c5a3e17a9aa6b8a275a0c1e"),
             ),
         ),
+        "S37": (
+            "Dialect-native SQLite and PostgreSQL repository upserts",
+            "Improvements",
+            (
+                ("implementation", "9bf7437dd18a43b5103e09b7b83dc3983b715cbc"),
+            ),
+        ),
     }
     for item_id, (title, category, evidence) in candidate_contracts.items():
         item = next(
@@ -549,9 +557,24 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 27."
+        "Implemented candidate items pending exact-head/release proof: 28."
         in expected
     )
+    release_source = (
+        ROOT / "docs" / "features" / "V012_RELEASE_PAGE_NOTES.md"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "S37",
+        "SQLAlchemy discussion #7199",
+        "SQLAlchemy discussion #7007",
+        "schema-free, application-image-only rolling change",
+        "354 warning-fatal tests",
+        "94% aggregate coverage",
+    ):
+        assert required in release_source
+    task_ledger = (ROOT / "TASKS.md").read_text(encoding="utf-8")
+    assert "- [ ] S37" in task_ledger
+    assert "9bf7437dd18a43b5103e09b7b83dc3983b715cbc" in task_ledger
 
 
 def test_release_dry_run_validates_v012_page_without_publishing() -> None:

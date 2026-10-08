@@ -495,6 +495,17 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "9bf7437dd18a43b5103e09b7b83dc3983b715cbc"
+        }
+      ],
+      "item_id": "S37",
+      "release_page_category": "Improvements",
+      "title": "Dialect-native SQLite and PostgreSQL repository upserts"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },
