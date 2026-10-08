@@ -18,7 +18,7 @@ from general_ludd.db.models import (
     RoleRunModel,
     SpendRecordModel,
 )
-from general_ludd.db.repositories.shared import current_list_limit
+from general_ludd.db.repositories.shared import current_list_limit, dialect_insert
 
 
 class SpendRepository:
@@ -873,8 +873,6 @@ class PromptProfileRepository:
 
     async def upsert(self, data: dict[str, Any]) -> PromptProfileModel:
         """Atomically insert or update a prompt profile by name."""
-        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
         # Upsert on the unique ``name`` key. The old get-then-insert was a TOCTOU
         # race: two concurrent first-writers for the same name both saw None and
         # both INSERTed -> IntegrityError (one write lost). on_conflict_do_update
@@ -884,7 +882,10 @@ class PromptProfileRepository:
         values = {**data, "updated_at": now}
         update_cols = {k: v for k, v in values.items() if k not in ("id", "name")}
         stmt = (
-            sqlite_insert(PromptProfileModel)
+            dialect_insert(
+                PromptProfileModel,
+                self._session.get_bind().dialect.name,
+            )
             .values(**values)
             .on_conflict_do_update(index_elements=["name"], set_=update_cols)
         )
