@@ -179,7 +179,7 @@ class TestRegister:
 class TestListProcesses:
     def test_returns_200_with_mocked_registry(self, client: TestClient):
         mock_reg = MagicMock()
-        mock_reg.list.return_value = []
+        mock_reg.active_snapshot.return_value = []
         with patch(
             "general_ludd.routers.processes.default_registry",
             return_value=mock_reg,
@@ -196,7 +196,7 @@ class TestListProcesses:
         mock_rec.pid = 42
         mock_rec.to_dict.return_value = {"pid": 42, "origin": "unit"}
         mock_reg = MagicMock()
-        mock_reg.list.return_value = [mock_rec]
+        mock_reg.active_snapshot.return_value = [mock_rec]
         mock_reg.is_alive.return_value = True
         with patch(
             "general_ludd.routers.processes.default_registry",

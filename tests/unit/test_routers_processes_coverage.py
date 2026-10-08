@@ -78,7 +78,7 @@ async def _post(app: Any, path: str, **kwargs: Any) -> Any:
 
 @pytest.mark.asyncio
 async def test_list_empty_returns_canonical_schema(app: Any, fake_registry: MagicMock):
-    fake_registry.list.return_value = []
+    fake_registry.active_snapshot.return_value = []
     resp = await _get(app, "/admin/processes")
     assert resp.status_code == 200
     assert resp.json() == {"processes": [], "count": 0}
@@ -88,7 +88,7 @@ async def test_list_empty_returns_canonical_schema(app: Any, fake_registry: Magi
 async def test_list_includes_full_record_schema(
     app: Any, fake_registry: MagicMock, managed_record: ManagedProcess
 ):
-    fake_registry.list.return_value = [managed_record]
+    fake_registry.active_snapshot.return_value = [managed_record]
     fake_registry.is_alive.return_value = True
     resp = await _get(app, "/admin/processes")
     assert resp.status_code == 200
@@ -121,7 +121,7 @@ async def test_list_includes_full_record_schema(
 async def test_list_marks_dead_record_not_alive(
     app: Any, fake_registry: MagicMock, managed_record: ManagedProcess
 ):
-    fake_registry.list.return_value = [managed_record]
+    fake_registry.active_snapshot.return_value = [managed_record]
     fake_registry.is_alive.return_value = False
     resp = await _get(app, "/admin/processes")
     assert resp.status_code == 200
