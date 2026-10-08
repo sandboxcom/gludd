@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import func, inspect, select
+from sqlalchemy import event, func, inspect, select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -181,3 +181,115 @@ async def test_concurrent_factory_calls_use_independent_sessions(
     pool = engine.pool
     assert isinstance(pool, AsyncAdaptedQueuePool)
     assert pool.checkedout() == 0
+
+
+async def test_concurrent_project_lists_are_fail_closed_and_release_connections(
+    lifecycle_database: tuple[AsyncEngine, async_sessionmaker[AsyncSession]],
+) -> None:
+    """Concurrent global and tenant reads must return disjoint partitions."""
+    engine, sessions = lifecycle_database
+    repository = MemoryRepository(session_factory=sessions)
+    await asyncio.gather(
+        repository.set("agent", "global", "shared"),
+        repository.set("agent", "project-a", "secret-a", project_id="project-a"),
+        repository.set("agent", "project-b", "secret-b", project_id="project-b"),
+    )
+
+    global_rows, project_a_rows, project_b_rows = await asyncio.gather(
+        repository.list_by_namespace("agent", namespace="*"),
+        repository.list_by_namespace("agent", namespace="*", project_id="project-a"),
+        repository.list_by_namespace("agent", namespace="*", project_id="project-b"),
+    )
+
+    assert [(row.key, row.project_id) for row in global_rows] == [("global", None)]
+    assert [(row.key, row.project_id) for row in project_a_rows] == [
+        ("project-a", "project-a")
+    ]
+    assert [(row.key, row.project_id) for row in project_b_rows] == [
+        ("project-b", "project-b")
+    ]
+    assert all(inspect(row).detached for row in [*global_rows, *project_a_rows, *project_b_rows])
+    pool = engine.pool
+    assert isinstance(pool, AsyncAdaptedQueuePool)
+    assert pool.checkedout() == 0
+
+
+async def test_caller_owned_scoped_list_preserves_rollback_control(
+    lifecycle_database: tuple[AsyncEngine, async_sessionmaker[AsyncSession]],
+) -> None:
+    """Tenant filtering must not commit or detach caller-owned transactions."""
+    _, sessions = lifecycle_database
+    async with sessions() as session:
+        repository = MemoryRepository(session=session)
+        global_row = await repository.set("agent", "global", "shared")
+        project_row = await repository.set(
+            "agent", "project", "secret", project_id="project-a"
+        )
+
+        listed = await repository.list_by_namespace("agent", namespace="*")
+
+        assert listed == [global_row]
+        assert project_row not in listed
+        assert inspect(global_row).session is session.sync_session
+        await session.rollback()
+
+    async with sessions() as verification_session:
+        count = await verification_session.scalar(select(func.count()).select_from(MemoryRecordModel))
+    assert count == 0
+
+
+async def test_scoped_list_uses_one_bounded_query(
+    lifecycle_database: tuple[AsyncEngine, async_sessionmaker[AsyncSession]],
+) -> None:
+    """Isolation and the public result bound belong to the same SQL statement."""
+    engine, sessions = lifecycle_database
+    repository = MemoryRepository(session_factory=sessions)
+    await repository.set("agent", "global", "shared")
+    await repository.set("agent", "project", "secret", project_id="project-a")
+    statements: list[str] = []
+
+    def record_statement(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record_statement)
+    try:
+        rows = await repository.list_by_namespace("agent", namespace="*", limit=1)
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record_statement)
+
+    assert [(row.key, row.project_id) for row in rows] == [("global", None)]
+    assert len(statements) == 1
+    assert "project_id IS NULL" in statements[0]
+    assert "LIMIT" in statements[0]
+
+
+async def test_factory_list_error_rolls_back_and_releases_connection(
+    lifecycle_database: tuple[AsyncEngine, async_sessionmaker[AsyncSession]],
+) -> None:
+    """A query error must discard its transaction and return the pool lease."""
+    engine, sessions = lifecycle_database
+    repository = MemoryRepository(session_factory=sessions)
+    await repository.set("agent", "global", "shared")
+
+    def fail_query(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("forced scoped-list failure")
+
+    event.listen(engine.sync_engine, "before_cursor_execute", fail_query)
+    try:
+        with pytest.raises(RuntimeError, match="forced scoped-list failure"):
+            await repository.list_by_namespace("agent")
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", fail_query)
+
+    pool = engine.pool
+    assert isinstance(pool, AsyncAdaptedQueuePool)
+    assert pool.checkedout() == 0
+    rows = await repository.list_by_namespace("agent")
+    assert [(row.key, row.project_id) for row in rows] == [("global", None)]

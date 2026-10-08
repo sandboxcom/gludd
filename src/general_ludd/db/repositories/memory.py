@@ -150,7 +150,11 @@ class MemoryRepository:
         project_id: str | None = None,
         limit: int = 100,
     ) -> list[MemoryRecordModel]:
-        """List bounded, unexpired memory values for an agent namespace."""
+        """List bounded, unexpired values from exactly one project partition.
+
+        An omitted ``project_id`` selects only global rows, matching ``get`` and
+        ``delete`` rather than widening the query across every project.
+        """
         async with self._resolve_session() as session:
             stmt = (
                 select(MemoryRecordModel)
@@ -162,7 +166,9 @@ class MemoryRepository:
             )
             if namespace != "*":
                 stmt = stmt.where(MemoryRecordModel.namespace == namespace)
-            if project_id is not None:
+            if project_id is None:
+                stmt = stmt.where(MemoryRecordModel.project_id.is_(None))
+            else:
                 stmt = stmt.where(MemoryRecordModel.project_id == project_id)
             result = await session.execute(stmt)
             rows = list(result.scalars().all())
