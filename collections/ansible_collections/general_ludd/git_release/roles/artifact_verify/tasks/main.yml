@@ -1,10 +1,32 @@
 ---
-- name: Execute artifact-verify through the git-release service
-  ansible.builtin.include_role:
-    name: general_ludd.git_release.service_request
-  vars:
-    git_release_service_enabled: "{{ git_release_artifact_verify_enabled }}"
-    git_release_service_operation: artifact_verify
-    git_release_service_request: "{{ git_release_artifact_verify_request }}"
-    git_release_service_result_fact: "{{ git_release_artifact_verify_result_fact }}"
-    git_release_service_output_path: "{{ git_release_artifact_verify_output_path }}"
+- name: Validate fail-closed artifact verification inputs
+  ansible.builtin.assert:
+    that:
+      - git_release_artifact_verify_enabled | bool
+      - git_release_artifact_verify_root is string
+      - git_release_artifact_verify_root is match('^/')
+      - git_release_artifact_verify_path is string
+      - git_release_artifact_verify_path | length > 0
+      - not git_release_artifact_verify_path.startswith('/')
+      - git_release_artifact_verify_sha256 is match('^[0-9a-f]{64}$')
+      - git_release_artifact_verify_lock_path is string
+      - git_release_artifact_verify_lock_path | length > 0
+      - not git_release_artifact_verify_lock_path.startswith('/')
+      - git_release_artifact_verify_lock_sha256 is match('^[0-9a-f]{64}$')
+      - git_release_artifact_verify_result_fact is match('^[A-Za-z_][A-Za-z0-9_]*$')
+    quiet: true
+    fail_msg: Artifact verification requires explicit root-relative paths and exact SHA-256 digests
+
+- name: Verify the bounded release artifact locally
+  general_ludd.git_release.git_release:
+    root: "{{ git_release_artifact_verify_root }}"
+    artifact_path: "{{ git_release_artifact_verify_path }}"
+    artifact_sha256: "{{ git_release_artifact_verify_sha256 }}"
+    lock_path: "{{ git_release_artifact_verify_lock_path }}"
+    lock_sha256: "{{ git_release_artifact_verify_lock_sha256 }}"
+  register: _git_release_artifact_verification
+
+- name: Publish verified release evidence
+  ansible.builtin.set_fact:
+    git_release_artifact_verify_result: "{{ _git_release_artifact_verification.result }}"
+    "{{ git_release_artifact_verify_result_fact }}": "{{ _git_release_artifact_verification.result }}"
