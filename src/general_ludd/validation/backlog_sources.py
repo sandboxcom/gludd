@@ -14,7 +14,7 @@ import re
 import stat
 from collections.abc import Callable, Mapping
 from pathlib import Path, PurePosixPath
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 MAX_LEDGER_BYTES = 8 * 1024 * 1024
 MAX_TASKS = 512
@@ -58,7 +58,10 @@ _PATH_SUFFIXES = frozenset(
     }
 )
 
-FileReader = Callable[[str], str | None]
+if TYPE_CHECKING:
+    FileReader = Callable[[str], str | None]
+else:
+    FileReader = Callable
 BacklogTask = dict[str, object]
 
 

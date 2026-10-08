@@ -14,6 +14,7 @@ validated before any `git worktree` subprocess runs:
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -27,6 +28,16 @@ from general_ludd.worktree.core import (
     confine_worktree_path,
     validate_branch_name,
 )
+
+
+def test_core_uses_python_39_compatible_utc_definition() -> None:
+    """The system-Python status path must not import datetime.UTC (3.11+)."""
+    source = (
+        Path(__file__).parents[2] / "src/general_ludd/worktree/core.py"
+    ).read_text(encoding="utf-8")
+
+    assert "from datetime import UTC" not in source
+    assert "UTC = timezone(timedelta(0))" in source
 
 
 def _ok(stdout: str = "", stderr: str = "", returncode: int = 0) -> subprocess.CompletedProcess[str]:
