@@ -13,8 +13,8 @@ runtime declaration:
 
 1. A validated `ProjectType` instance may be registered directly.
 2. A legacy string identifier may be paired with a mapping definition.
-3. A string without a definition and every unsupported value still fail
-   closed through the existing validation paths.
+3. A string without a mapping definition, a non-mapping definition, and every
+   unsupported discriminator fail closed before registry mutation.
 4. The public callable has one source declaration and no `@overload`
    decorators. The union signature remains visible to runtime introspection and
    static analysis.
@@ -58,7 +58,10 @@ The explicit string branch is also a security boundary. Python annotations do
 not enforce runtime input types, so a catch-all legacy branch could otherwise
 accept an arbitrary hashable value when the mapping repeated it as `type_id`.
 The executable declaration now rejects that out-of-union value with `TypeError`
-before mutation; no partially registered value or cleanup work remains.
+before mutation. The legacy branch likewise verifies the declared `Mapping`
+boundary before conversion, preventing invalid containers from reaching
+mapping operations or leaking implementation-specific `AttributeError`
+failures. No partially registered value or cleanup work remains.
 
 Removing declaration-only functions avoids constructing redundant function and
 typing-overload registry objects at import time. The repair adds no processes,
@@ -68,9 +71,10 @@ cleanup obligation. The runtime registry and its lifecycle are unchanged.
 ## Zero-downtime delivery and rollback
 
 The callable name, union signature, supported arguments, return type, and
-registry semantics are unchanged. Out-of-union discriminators were never part
-of the API and now receive a deterministic `TypeError`. There is no database,
-configuration, wire-format, or artifact migration. Old and new workers may
+registry semantics are unchanged. Out-of-union discriminators and non-mapping
+legacy definitions were never part of the API and now receive a deterministic
+`TypeError`. There is no database, configuration, wire-format, or artifact
+migration. Old and new workers may
 overlap safely during a rolling deployment because their project-type registries
 are process-local and expose the same supported behavior. Promote after focused
 tests, coverage, static checks, and the full gate are green. Rollback is a source
@@ -84,7 +88,8 @@ compatibility window is required.
 - The registration-specific AST regression finds exactly one undecorated source
   declaration with the canonical union signature, and runtime regressions
   exercise both supported forms plus out-of-union rejection through that
-  callable.
+  callable. Invalid discriminators and non-mapping legacy definitions are both
+  rejected without changing the process-local registry.
 - Aggregate line-and-branch coverage remains at least 85 percent, and every
   touched production file remains at least 75 percent for line and branch
   coverage.

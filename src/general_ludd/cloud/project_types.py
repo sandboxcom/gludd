@@ -908,6 +908,8 @@ def register_project_type(
     elif isinstance(project_type, str):
         if definition is None:
             raise TypeError("legacy registration requires a definition mapping")
+        if not isinstance(definition, Mapping):
+            raise TypeError("definition must be a mapping")
         resolved = _legacy_project_type(project_type, definition)
     else:
         raise TypeError("project_type must be a ProjectType or string type id")
