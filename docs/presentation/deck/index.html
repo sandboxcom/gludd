@@ -1413,7 +1413,7 @@ flowchart LR
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-109-local-game-boundary">
   <p class="stage-kicker">S83.109 &middot; local game generation</p>
-  <h2>Cleanup never hides generation failure <span class="badge-yellow">IMPLEMENTED &middot; PROOF PENDING</span></h2>
+  <h2>Cleanup never hides generation failure <span class="badge-yellow">INTEGRATED &middot; EXACT GATE PENDING</span></h2>
   <div class="two-col">
     <div>
       <h3>One owned lifecycle</h3>
@@ -1427,7 +1427,7 @@ flowchart LR
       <h3>Dependency and replay evidence</h3>
       <ul class="bullets-tight">
         <li>The isolated profile and hash-locked graph require <code>pillow&gt;=12.3.0</code> directly.</li>
-        <li><strong>94/94 warning-strict</strong> focused checks; production ansible-lint processed <strong>500 files</strong> with zero failures or warnings.</li>
+        <li><strong>254/254 warning-strict</strong>; <code>video_compare.py</code> is <strong>95%</strong> covered; <strong>120,314</strong> tests collected; ansible-lint processed <strong>500 files</strong> cleanly.</li>
         <li>ZDD promotes the locked environment first, then the playbook; rollback restores both only after namespaced process ownership clears.</li>
       </ul>
     </div>
@@ -1555,7 +1555,7 @@ flowchart LR
 <!-- SLIDE 19p: ENFORCEMENT EXECUTABLE METADATA -->
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s91-3-enforcement-executable-modes">
-  <p class="stage-kicker">S91.3 &middot; checkout-safe enforcement</p>
+  <p class="stage-kicker">S91.3 / S83.110 / S83.111 &middot; checkout-safe enforcement</p>
   <h2>Guardrails must survive the checkout <span class="badge-yellow">INDEX CONTRACT READY &middot; EXACT-HEAD GATE PENDING</span></h2>
   <div class="two-col">
     <div>
@@ -1575,8 +1575,8 @@ flowchart LR
       </ul>
     </div>
   </div>
-  <p class="honest-note">The local feature commit is present; exact-head full-gate and promotion proof remain pending. No release-completion claim is made.</p>
-  <p class="cite">Sources: tests/unit/test_enforcement_executable_modes.py:12-56 &middot; opencode.json:63-97 &middot; docs/features/OPENCODE_ENFORCEMENT_EXECUTABLE_MODES.md:22-48 &middot; practitioner evidence: <a href="https://github.com/anomalyco/opencode/issues/7006">OpenCode #7006</a></p>
+  <p class="honest-note"><strong>S83.110:</strong> a read-only AST audit rejects snapshot writes, writable opens, replacements, and copies (<strong>1,055</strong> passed). <strong>S83.111:</strong> global/build external-directory scopes stay identical and <strong>deny-first</strong> (<strong>113/113</strong>). The local feature commits are present; exact-head full-gate and promotion proof remain pending.</p>
+  <p class="cite">Sources: tests/unit/test_enforcement_executable_modes.py:12-56 &middot; docs/features/OPENCODE_ENFORCEMENT_EXECUTABLE_MODES.md:22-48 &middot; docs/features/NAG_FREE_ENFORCEMENT_SKIP_SMELL_CONTRACT.md:58-74 &middot; docs/features/EXTERNAL_DIRECTORY_PERMISSION_CONTRACT.md:37-68 &middot; <a href="https://github.com/anomalyco/opencode/issues/7006">OpenCode #7006</a></p>
 </section>
 
 <!-- ============================================================ -->
