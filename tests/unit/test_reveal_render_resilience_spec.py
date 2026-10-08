@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts import build_deck
+
 ROOT = Path(__file__).parent.parent.parent
 SPEC = ROOT / "docs" / "design" / "specs" / "SPEC_REVEAL_RENDER_RESILIENCE.md"
+DECK = ROOT / "docs" / "presentation" / "deck" / "index.html"
 
 
 def _spec_text() -> str:
@@ -98,3 +101,31 @@ def test_spec_requires_subpath_and_fault_injection_browser_proofs() -> None:
         "75%",
     ):
         assert token in text
+
+
+def test_current_deck_source_ranges_resolve_before_browser_startup(
+    tmp_path: Path,
+) -> None:
+    """Every tracked file range must resolve without launching a browser."""
+    preview = tmp_path / "deck"
+    data = {
+        "version": "0.1.2-test",
+        "git_sha": "a" * 7,
+        "git_sha_full": "a" * 40,
+        "test_count": 1,
+        "role_count": 1,
+        "features": [],
+        "generated_at": "2026-10-07T00:00:00Z",
+    }
+
+    result = build_deck.build_preview_copy(preview, data=data)
+
+    assert result == preview
+    assert (preview / build_deck.SOURCE_ALLOWLIST).is_file()
+
+
+def test_current_deck_has_the_canonical_section_count() -> None:
+    """Keep the global slide-count contract in one presentation-owned test."""
+    deck = DECK.read_text(encoding="utf-8")
+
+    assert deck.count("<section") == 61

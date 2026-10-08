@@ -142,6 +142,7 @@ def test_makefile_exposes_review_receipt_target() -> None:
     makefile = compose_makefile(Path(__file__).resolve().parents[2] / "Makefile")
 
     assert "\ncompare-linux-pyinstaller-warnings:" in makefile
+    assert "python -m scripts.compare_pyinstaller_warning_graphs" in makefile
     assert '--before "$(PYINSTALLER_WARNING_BEFORE)"' in makefile
     assert '--after "$(PYINSTALLER_WARNING_AFTER)"' in makefile
     assert '--receipt "$(PYINSTALLER_WARNING_REVIEW_RECEIPT)"' in makefile

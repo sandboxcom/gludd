@@ -189,3 +189,19 @@ def test_pairwise_matrix_uses_bounded_float32_storage(
 
     assert captured[0].dtype == np.float32
     assert captured[0].nbytes == 16
+
+
+def test_optional_numpy_is_loaded_only_for_pairwise_similarity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def numpy_unavailable() -> object:
+        raise SimilarityError("NumPy is required for pairwise decision similarity")
+
+    monkeypatch.setattr(similarity, "_numpy_module", numpy_unavailable)
+
+    singleton = _envelope(1, "alpha")
+    assert group_similar_envelopes([singleton])[0].member_ids == (
+        singleton.envelope_id,
+    )
+    with pytest.raises(SimilarityError, match="NumPy"):
+        group_similar_envelopes([singleton, _envelope(2, "omega")])

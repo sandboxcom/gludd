@@ -24,7 +24,8 @@ def test_feature_guide_pins_safe_runtime_and_rollout_boundaries() -> None:
     normalized = " ".join(feature.split())
 
     for marker in (
-        "automatic durable live REVIEW integration implemented",
+        "automatic durable live REVIEW",
+        "signed agent-outcome capture implemented",
         "RunBundleStore.read_verified()",
         "VerifiedDecisionSourceV1",
         "Exact-context abstention",
@@ -40,7 +41,8 @@ def test_feature_guide_pins_safe_runtime_and_rollout_boundaries() -> None:
         "DecisionCodificationConfig",
         "DurableGenerationStore",
         "Terminal application feedback",
-        "automatic signed replay capture and deployed live-traffic proof remain pending",
+        "DecisionOutcomeRecorder",
+        "deployed live-traffic proof remains pending",
     ):
         assert marker in normalized
 
@@ -57,11 +59,70 @@ def test_feature_guide_retains_long_lived_practitioner_findings() -> None:
         "scikit-learn discussion #25411",
         "OPA #2379",
         "OPA #1514",
+        "OPA #5054",
+        "OpenTelemetry's stable log data model",
+        "OpenTelemetry Python #4336",
+        "PostgreSQL index uniqueness checks",
+        "Kubernetes #23731",
+        "SQLAlchemy discussion #8554",
+        "MLflow #5133",
         "SQLite forum: WAL with multiple processes",
         "SQLite forum: `BEGIN IMMEDIATE`",
         "SQLite forum: hidden WAL checkpoints",
+        "Vault #6501",
+        "Kubernetes #61897",
+        "Helm #5377",
     ):
         assert marker in feature
+
+
+def test_docs_pin_non_circular_signed_outcome_ingestion_and_zdd_order() -> None:
+    """Signed live evidence must stay bounded, linkable, and rollback-safe."""
+    feature = FEATURE.read_text(encoding="utf-8")
+    spec = SPEC.read_text(encoding="utf-8")
+
+    for document in (feature, spec):
+        normalized = " ".join(document.replace("`", "").split())
+        for marker in (
+            "decision.outcome",
+            "same signed bundle",
+            "store-computed",
+            "self-referential digest",
+            "same-project",
+            "same-correlation",
+            "100,000-event",
+            "Deploy readers",
+            "Producer rollback",
+            "immutable",
+        ):
+            assert marker.lower() in normalized.lower()
+
+
+def test_docs_pin_automatic_capture_privacy_bounds_and_rollback() -> None:
+    """Producer evidence must remain opt-in, bounded, signed, and reversible."""
+    feature = FEATURE.read_text(encoding="utf-8")
+    spec = SPEC.read_text(encoding="utf-8")
+
+    for document in (feature, spec):
+        normalized = " ".join(document.replace("`", "").split())
+        for marker in (
+            "DecisionOutcomeRecorder",
+            "capture_identity",
+            "domain-separated HMAC",
+            "128 KiB",
+            "cross-process capture lock",
+            "configured replay signature",
+            "opaque HMAC-derived lease key",
+            "existing unique database lease",
+            "60-second recovery lease",
+            "exact-owner release",
+            "shared PostgreSQL",
+            "shared replay root",
+            "producer-to-reuse proof",
+            "remove capture_identity",
+            "already chosen task outcome is unchanged",
+        ):
+            assert marker.lower() in normalized.lower()
 
 
 def test_design_spec_records_implemented_runtime_and_pending_evidence() -> None:
@@ -70,8 +131,9 @@ def test_design_spec_records_implemented_runtime_and_pending_evidence() -> None:
     normalized = " ".join(spec.split())
 
     assert (
-        "**Status: CORE, ANALYSIS API/CLI, AND AUTOMATIC DURABLE LIVE REVIEW "
-        "IMPLEMENTED; SIGNED REPLAY CAPTURE AND DEPLOYED PROOF PENDING**"
+        "**Status: CORE, ANALYSIS API/CLI, BOUNDED OPERATOR LIFECYCLE CLI, "
+        "AUTOMATIC DURABLE LIVE REVIEW, AND SIGNED AGENT-OUTCOME CAPTURE "
+        "IMPLEMENTED; DEPLOYED PROOF PENDING**"
     ) in normalized
     assert "## 0. Implementation status (2026-10-07)" in spec
     assert "DecisionLogAnalyzer" in spec
@@ -81,8 +143,7 @@ def test_design_spec_records_implemented_runtime_and_pending_evidence() -> None:
     assert "DurableGenerationStore" in spec
     assert "BEGIN IMMEDIATE" in spec
     assert (
-        "Automatic signed replay capture, multi-host state, and deployed "
-        "live-traffic proof remain pending"
+        "multi-host state and deployed live-traffic proof remain pending"
     ) in normalized
 
 
@@ -126,7 +187,7 @@ def test_docs_pin_the_opt_in_live_review_contract() -> None:
 
 
 def test_docs_pin_the_bounded_authenticated_analysis_api_and_cli() -> None:
-    """The guide, spec, and deck must agree on the analysis-only API and CLI."""
+    """The guide, spec, and deck must agree on remote analysis boundaries."""
     feature = FEATURE.read_text(encoding="utf-8")
     spec = SPEC.read_text(encoding="utf-8")
     slide = _decision_log_slide()
@@ -186,6 +247,64 @@ def test_docs_pin_the_bounded_authenticated_analysis_api_and_cli() -> None:
     assert "Bounded analysis API ready; live flow pending" not in slide
 
 
+def test_docs_pin_the_bounded_local_operator_lifecycle() -> None:
+    """Local commands must retain exact scope, privacy, and ZDD boundaries."""
+    feature = FEATURE.read_text(encoding="utf-8")
+    spec = SPEC.read_text(encoding="utf-8")
+
+    for document in (feature, spec):
+        normalized = " ".join(document.replace("`", "").split())
+        for marker in (
+            "capture",
+            "mine",
+            "approve",
+            "activate",
+            "rollback",
+            "regular, non-symlink YAML file",
+            "128 KiB",
+            "GLUDD_DECISION_APPROVER_ID",
+            "exact project",
+            "policy",
+            "candidate and current receipt",
+            "exactly one next approved stage",
+            "digest",
+            "content-free diagnostics",
+            "restores the newest compatible generation",
+            "removes the pointer",
+            "agent/LLM fallback",
+            "default-off",
+        ):
+            assert marker.lower() in normalized.lower()
+
+
+def test_docs_pin_durable_privacy_safe_reuse_observability() -> None:
+    """Operator evidence must stay exact-scope, bounded, and rollback-safe."""
+    feature = FEATURE.read_text(encoding="utf-8")
+    spec = SPEC.read_text(encoding="utf-8")
+
+    for document in (feature, spec):
+        normalized = " ".join(document.replace("`", "").split()).lower()
+        for marker in (
+            "decision-codification status",
+            "exact-rule hits",
+            "typed abstentions",
+            "fallback calls",
+            "avoided agent/llm calls",
+            "latency",
+            "rule-version changes",
+            "hmac-authenticated",
+            "64 kib",
+            "fixed-cardinality",
+            "begin immediate",
+            "prompts, context, decisions, correlation ids",
+            "default-off",
+            "rollback",
+            "prometheus/client_python/issues/568",
+            "prometheus/client_python/issues/431",
+        ):
+            assert marker in normalized
+
+
 def test_reveal_deck_mirrors_the_decision_codification_contract() -> None:
     """The deck must retain the same trust, abstention, and ZDD story."""
     slide = _decision_log_slide()
@@ -214,7 +333,7 @@ def test_reveal_deck_preserves_release_panel_slides_and_tokens() -> None:
     """This slide edit must not disturb the established release deck structure."""
     deck = DECK.read_text(encoding="utf-8")
 
-    assert deck.count("<section") == 60
+    assert deck.count("<section") == 61
     assert deck.count('data-contract="decision-log-codification-v1"') == 1
     assert "v0.1.2 completed backlog" in deck
     assert "5 formally closed" in deck

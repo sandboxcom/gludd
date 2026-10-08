@@ -172,6 +172,28 @@ def test_remove_apply_deletes_only_exact_child(tmp_path: Path, monkeypatch: pyte
     assert sibling.is_dir()
 
 
+def test_project_gate_logs_are_removable_generated_resources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / ".gate-logs"
+    root.mkdir()
+    generated = root / "ci-artifacts"
+    retained = root / "gate-status.json"
+    generated.mkdir()
+    retained.write_text("retained", encoding="utf-8")
+    monkeypatch.setattr(
+        cache_manager,
+        "_project_gate_logs_root",
+        lambda: root,
+        raising=False,
+    )
+
+    assert remove_cache_child(root, generated, apply=True) is True
+    assert not generated.exists()
+    assert retained.read_text(encoding="utf-8") == "retained"
+
+
 @pytest.mark.parametrize("candidate_kind", ["root", "nested", "outside"])
 def test_remove_rejects_non_child_targets(
     tmp_path: Path,

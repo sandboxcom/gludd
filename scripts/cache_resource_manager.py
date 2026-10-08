@@ -32,6 +32,11 @@ class CacheEntry:
         return json.dumps(payload, sort_keys=True)
 
 
+def _project_gate_logs_root() -> Path:
+    """Return this checkout's generated gate-artifact root."""
+    return (Path(__file__).resolve().parents[1] / ".gate-logs").resolve(strict=False)
+
+
 def _removable_roots() -> frozenset[Path]:
     home = Path.home().resolve(strict=False)
     return frozenset(
@@ -39,6 +44,7 @@ def _removable_roots() -> frozenset[Path]:
             (home / ".cache").resolve(strict=False),
             (home / ".local" / "share" / "containers").resolve(strict=False),
             (home / "Library" / "Caches").resolve(strict=False),
+            _project_gate_logs_root(),
         }
     )
 

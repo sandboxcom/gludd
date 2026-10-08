@@ -213,16 +213,17 @@ class BuiltinToolHandler:
     def _jail_root(self) -> Path:
         """Resolved base directory a model-supplied workspace must stay within.
 
-        Precedence: the ``GLUDD_PROJECT_ROOT`` env override, else the daemon's
-        configured ``default_workspace``, else the process cwd. This is the
-        containment boundary for :meth:`_contain_workspace`.
+        Precedence: the handler's explicitly configured ``default_workspace``,
+        else the ambient ``GLUDD_PROJECT_ROOT``, else the process cwd. This
+        keeps a handler bound to its own workspace when a supervising process
+        exports a project root for unrelated gate or enforcement work.
         """
         env_root = os.environ.get("GLUDD_PROJECT_ROOT")
         base_raw: str | Path
-        if env_root and env_root.strip():
-            base_raw = env_root.strip()
-        elif self._default_workspace is not None:
+        if self._default_workspace is not None:
             base_raw = self._default_workspace
+        elif env_root and env_root.strip():
+            base_raw = env_root.strip()
         else:
             base_raw = Path.cwd()
         return Path(base_raw).resolve()

@@ -128,6 +128,14 @@ class TestNoUnseenEvents:
         )
         assert "uv cache prune" not in body
 
+    def test_deck_honesty_uses_the_shared_observed_command_boundary(self) -> None:
+        """Presentation validation must emit heartbeats while counting tests."""
+        body = _recipe("deck-honesty")
+
+        assert "$(MAKE) --no-print-directory run-watched" in body
+        assert "OBSERVED_LABEL=deck-honesty" in body
+        assert "scripts/build_deck.py --check" in body
+
     def test_disk_status_uses_workspace_volume_and_lists_generated_footprints(
         self,
     ) -> None:

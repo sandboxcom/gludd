@@ -54,6 +54,7 @@ def test_all_metrics_use_closed_labels_and_expected_names() -> None:
     assert telemetry.active_rules("review", "active", 2)
     assert telemetry.mining_seconds("success", 1.25)
     assert telemetry.estimated_calls_avoided("review", 3)
+    assert telemetry.resolution_seconds("exact_rule", 0.25)
 
     assert [call[1] for call in backend.calls] == [
         "gludd_decision_codification_envelopes_total",
@@ -65,6 +66,7 @@ def test_all_metrics_use_closed_labels_and_expected_names() -> None:
         "gludd_decision_codification_active_rules",
         "gludd_decision_codification_mining_seconds",
         "gludd_decision_codification_estimated_calls_avoided_total",
+        "gludd_decision_codification_resolution_seconds",
     ]
 
 
@@ -103,4 +105,5 @@ def test_invalid_values_are_ignored_without_reaching_backend() -> None:
     assert not telemetry.active_rules("review", "active", -1)
     assert not telemetry.mining_seconds("success", float("nan"))
     assert not telemetry.estimated_calls_avoided("review", 0)
+    assert not telemetry.resolution_seconds("secret-path", float("inf"))
     assert backend.calls == []

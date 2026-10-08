@@ -405,6 +405,23 @@ observable command before any tag is created.
 
 ### Pending stable release ownership
 
+#### Stable release-tag readiness
+
+Stable release promotion must validate the exact tag after the candidate gate;
+the release event alone is not a tag-pattern boundary. The long-lived
+[GitHub Community discussion #26603](https://github.com/orgs/community/discussions/26603)
+records that release events do not support tag-name filters and require an
+explicit job condition. [SemVer issue #583](https://github.com/semver/semver/issues/583)
+also records persistent ambiguity around numeric prerelease identifiers. Gludd
+therefore parses and validates the requested stable tag before any immutable
+release or deployment mutation, rejects prerelease and malformed identifiers,
+and binds the accepted tag to the already-gated source SHA.
+
+This remains ZDD: a rejected tag leaves the currently serving release and its
+artifacts unchanged. Rollback stops before tag creation, or, if a later
+promotion phase fails, retains the preceding serving release while the bounded
+candidate artifacts are removed by their recorded owner.
+
 The next exact-head replay exposed the complementary lifecycle defect in
 `unit-1b` batch 25. Two objective-plugin tests assumed that a pending release
 must carry a prerelease suffix. Changing those assertions to `0.1.1` would have
@@ -835,6 +852,24 @@ the Make contract without network access or mutable state.
 
 ## Zero-downtime development
 
+Project identity follows explicit argument, ambient environment, then cwd. That
+ordering matters in supervisors that host multiple checkouts: the long-lived
+[actions/checkout issue #150](https://github.com/actions/checkout/issues/150)
+documents an explicit checkout path diverging from the ambient
+`GITHUB_WORKSPACE`, while
+[actions/runner issue #728](https://github.com/actions/runner/issues/728)
+shows container translation rewriting ambient workspace values needed by
+custom operations. Gludd therefore treats a caller-supplied project root as
+authoritative for resource namespaces and gate leases. `GLUDD_PROJECT_ROOT`
+remains the launcher fallback when no root argument is supplied, and cwd is the
+last fallback.
+
+This precedence does not relax path safety. Explicit namespace overrides and
+resource names remain restricted to one validated path component, canonical
+project paths continue to seed the stable digest, and two explicit checkout
+roots cannot collapse onto one namespace merely because their supervisor
+exports a shared project root.
+
 Candidate validation does not mutate the running Gludd service or the external
 local-model endpoint. Mutable test resources live under the project namespace
 returned by `scripts/resource_arbiter.py`; each shard gets an additional unique
@@ -1206,6 +1241,35 @@ and permission-ambiguous preservation.
 ZDD is unchanged: no running service or candidate deployment is mutated.
 Rollback reverts the owner/test/documentation commit; retained JSON evidence is
 not deleted, and a possible live database is never reclaimed speculatively.
+
+## Workflow conditional YAML boundary
+
+The October 2026 replacement-candidate gate caught the canonical workflow
+failing its own two-layer YAML hook before a hosted runner could consume it. The
+Azure Container App coverage step began its plain scalar with
+`!cancelled()`. YAML therefore treated the leading exclamation mark as a tag,
+so the expression never reached the GitHub Actions evaluator. The workflow now
+quotes the complete `${{ ... }}` scalar; its boolean expression and Python 3.11
+selection are unchanged, while both YAML and Actions retain their intended
+parsing boundaries. The existing canonical-workflow regression is the contract:
+the hook must accept the checked-in workflow and must continue rejecting an
+unquoted leading `!cancelled()` fixture.
+
+This is a long-lived practitioner failure rather than a Gludd-only parser edge.
+[GitHub Community discussion 26303](https://github.com/orgs/community/discussions/26303)
+records users receiving `unknown tag !<!cancelled()>` and the explanation that
+the unquoted token is consumed by YAML before Actions expression evaluation.
+[Discussion 25789](https://github.com/orgs/community/discussions/25789) records
+the working quoted `if: "!cancelled()"` form in the related effort to preserve
+workflow cancellation semantics. Gludd consequently fixes the source workflow
+instead of weakening the fail-closed hook or adding a hosted retry.
+
+The change is ZDD: it affects admission of a future immutable CI candidate only;
+it starts, stops, or mutates no running Gludd service and creates no persistent
+resource. A failed validation prevents publication before deployment. Rollback
+reverts this workflow/documentation commit as one unit and invalidates that
+candidate, but must not reinterpret a workflow rejected by the YAML hook as
+release evidence.
 
 ## Rollback and recovery
 
@@ -2404,54 +2468,9 @@ client, or subprocess, so this repair adds no compensating cleanup task.
 
 ### Validated split-module coverage ownership (2026-10-06)
 
-The development gate exposed eight false `UNTESTED` reports after the CLI,
-daemon, and event-loop facades were split: the CLI parser, daemon lifecycle
-ports, and six event-loop lifecycle/dispatch mixins. Their tests deliberately
-exercise behavior through the stable compatibility facades or computed module
-names, so a literal-import-only AST index cannot see the real ownership edge.
-`config/coverage_gap_test_mappings.json` now records those indirect edges.
-
-This mapping is not a coverage-gap allowlist. For each entry, the checker proves
-that the target component and facade both exist, the facade directly imports
-the component, the mapped test exists and has test functions, and that test
-statically imports the facade. Missing files or either broken import edge fail
-the audit as mapping errors; unrelated passing tests cannot conceal an untested
-module. The baseline retains only the pre-existing reviewed gaps.
-
-Long-lived practitioner reports support explicit but verified ownership where
-static inference is incomplete. [pytest-testmon issue #12][testmon-explicit-deps],
-opened in 2015 and reviewed 2026-10-06, requests merging explicit file
-dependencies with measured coverage for inputs automatic analysis cannot see.
-The [pytest discussion on imported test functions][pytest-imported-tests],
-reviewed 2026-10-06, notes that definition ownership cannot reliably be inferred
-from an imported name alone. Gludd therefore requires both source and test import
-edges instead of accepting a filename, prose mention, or unrestricted mapping.
-
-ZDD is unchanged: this checker only reads Python and JSON files and never starts
-or mutates a runtime service. Rollback removes the mapping, checker validation,
-tests, and this note together; the coverage gate then fails closed on all eight
-components again.
-
-[testmon-explicit-deps]: https://github.com/tarpas/pytest-testmon/issues/12
-[pytest-imported-tests]: https://github.com/pytest-dev/pytest/discussions/11366
-
-Exact-run artifact inspection is now a first-class bounded operation through
-`make ci-artifact-context`. It resolves only the resource-arbiter namespace
-bound to the requested run and artifact, accepts an exact safe file basename,
-and rejects symlinks, duplicate matches, traversal, and root escapes. Context
-size is capped by explicit before, after, and match limits; validate-only mode
-performs no network access or checkout write. For run 33345023078, the target
-exposed the downloaded resource and disk diagnostics without broad filesystem
-access. That artifact contained no pytest tail, so the authenticated job log
-provided the traceback after the terminal-red run was canceled.
-
-This inspection path starts no daemon or subprocess beyond its foreground
-checker and leaves no checkout or service state to clean up. Rollback is the
-isolated target, contract, checker, test, and documentation commit. The bounded
-failure-context design also follows the practitioner evidence in
-[pytest-timeout issue 60][pytest-timeout-issue-60]: timeout failures need
-durable, scoped reporting rather than an unbounded or hidden diagnostic scan.
-
+The detailed ownership contract, practitioner evidence, ZDD analysis, and
+bounded artifact-inspection rationale continue in the
+[validated split-module coverage appendix](beta4-dual-track-ci/validated-split-module-coverage.md).
 
 ## Exact-SHA promotion and release operations
 
