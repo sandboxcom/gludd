@@ -57,6 +57,16 @@ effective boundary as before the test migration. Centralizing the external
 decision removes obsolete per-tool duplication; it does not turn an earlier
 deny into an allow.
 
+The executable evidence covers both supported configuration surfaces:
+`permission.external_directory` and
+`agent.build.permission.external_directory`. The S83.111 regression requires
+the build agent's complete file-permission slice to match the global slice and
+independently requires its `"*": "deny"` rule to remain first. The global
+exact-allowlist assertions and that scope-parity assertion therefore fail if
+either surface gains a private path, reintroduces `write`, or changes rule
+order. `tests/unit/test_no_home_directory_access.py` is the authoritative
+regression for this boundary.
+
 ## Practitioner evidence
 
 The migration follows a durable upstream user trail:
@@ -99,11 +109,12 @@ fail the structural gate on configuration drift.
 
 ## Resources and observability
 
-The test performs bounded reads of tracked `opencode.json` and `AGENTS.md` files
-and iterates fixed tuples. It starts no daemon, subprocess, watcher, socket, or
-network request and creates no checkout artifact. Parameterized failures name
-the exact forbidden path; allowlist failures print the expected and observed
-sets; schema failures name the missing or malformed permission.
+The test performs bounded reads of tracked `opencode.json`, `AGENTS.md`, and
+feature-evidence files and iterates fixed tuples. It starts no daemon,
+subprocess, watcher, socket, or network request and creates no checkout artifact.
+Parameterized failures name the exact forbidden path; allowlist failures print
+the expected and observed sets; schema failures name the missing or malformed
+permission.
 
 ## Versioned compatibility
 
