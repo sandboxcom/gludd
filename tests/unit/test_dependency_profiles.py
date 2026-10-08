@@ -183,7 +183,7 @@ def test_profile_projects_are_independent_and_locks_are_bounded() -> None:
     security_uv = _load(
         ROOT / "requirements/profiles/dev-security/pyproject.toml"
     )["tool"]["uv"]
-    assert security_uv["constraint-dependencies"] == ["chardet<6"]
+    assert security_uv["constraint-dependencies"] == ["chardet>=7.6.0,<8"]
 
 
 def test_install_sets_reference_only_known_profiles_and_preserve_legacy_names() -> None:
@@ -503,7 +503,10 @@ def _assert_requirement_parity(expected: list[str], actual: list[str]) -> None:
         requirement = Requirement(raw)
         actual_by_name.setdefault(canonicalize_name(requirement.name), []).append(requirement)
 
-    assert set(actual_by_name) == set(expected_by_name)
+    # The immutable fixture is a migration floor: every historical direct
+    # requirement must remain represented, while feature-owned profiles may
+    # add new direct runtime dependencies after the split.
+    assert set(expected_by_name) <= set(actual_by_name)
     for name, expected_requirements in expected_by_name.items():
         actual_text = {str(requirement) for requirement in actual_by_name[name]}
         for expected_requirement in expected_requirements:

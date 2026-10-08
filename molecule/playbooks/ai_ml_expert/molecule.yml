@@ -25,4 +25,5 @@ scenario:
     - syntax
     - prepare
     - converge
+    - idempotence
     - verify
