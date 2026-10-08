@@ -417,6 +417,57 @@ def test_process_probe_and_capture_fail_closed_on_unavailable_os_evidence(
     assert launcher._capture_identity(os.getpid(), "run") is None
 
 
+def test_stale_receipt_helpers_never_mutate_or_signal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = GatePaths.for_root(tmp_path)
+    identity = GateIdentity("run", 42, "token", 42, 42)
+
+    assert launcher._merge_state(paths, identity, {"state": "finished"}) is False
+    assert launcher._current_log_path(paths, identity) is None
+
+    paths.log_dir.mkdir(parents=True)
+    paths.state_file.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "gludd_gate_background",
+                "run_id": identity.run_id,
+                "pid": identity.pid,
+                "pid_started_at": identity.pid_started_at,
+                "process_group_id": identity.process_group_id,
+                "session_id": identity.session_id,
+                "log_path": "",
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert launcher._current_log_path(paths, identity) is None
+
+    monkeypatch.setattr(launcher, "_process_state", lambda _identity: "gone")
+    assert launcher._signal_session(identity, signal.SIGTERM) is False
+
+    monkeypatch.setattr(launcher, "_process_state", lambda _identity: "owned")
+
+    def deny_signal(_process_group_id: int, _signum: signal.Signals) -> None:
+        raise PermissionError("signal unavailable")
+
+    monkeypatch.setattr(os, "killpg", deny_signal)
+    assert launcher._signal_session(identity, signal.SIGTERM) is False
+
+    monkeypatch.setattr(launcher, "_state_is_current", lambda *_args: True)
+    monkeypatch.setattr(
+        launcher, "_watch_outcome_when_not_owned", lambda _identity: "superseded"
+    )
+    assert launcher._retire_finished_gate(paths, identity) == "superseded"
+
+    monkeypatch.setattr(
+        launcher, "_watch_outcome_when_not_owned", lambda _identity: "finished"
+    )
+    monkeypatch.setattr(launcher, "_merge_state", lambda *_args: False)
+    assert launcher._retire_finished_gate(paths, identity) == "finished"
+
+
 @pytest.mark.parametrize(
     ("timeout_seconds", "poll_seconds", "grace_seconds"),
     ((0.0, 0.1, 0.1), (1.0, 0.0, 0.1), (1.0, 0.1, 0.0)),
@@ -780,6 +831,59 @@ def test_cli_watch_and_launch_error_paths(
         )
         == 0
     )
+
+
+def test_exec_gate_after_publication_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert launcher._exec_gate_after_publication([]) == 126
+
+    published = tmp_path / "published.json"
+    published.write_text(json.dumps({"run_id": "run-1"}), encoding="utf-8")
+
+    def fail_exec(*_args: object, **_kwargs: object) -> None:
+        raise OSError("exec unavailable")
+
+    monkeypatch.setattr(os, "execvpe", fail_exec)
+    assert (
+        launcher._exec_gate_after_publication([str(published), "run-1", "gate"])
+        == 126
+    )
+
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    ticks = iter((0.0, 1.0, 6.0))
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    assert (
+        launcher._exec_gate_after_publication(
+            [str(tmp_path / "missing.json"), "run-2", "gate"]
+        )
+        == 126
+    )
+
+    mismatched = tmp_path / "mismatched.json"
+    mismatched.write_text(json.dumps({"run_id": "other-run"}), encoding="utf-8")
+    ticks = iter((0.0, 1.0, 6.0))
+    assert (
+        launcher._exec_gate_after_publication([str(mismatched), "run-3", "gate"])
+        == 126
+    )
+
+
+def test_private_exec_dispatch_bypasses_public_parser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[str] = []
+
+    def private_exec(arguments: list[str]) -> int:
+        captured.extend(arguments)
+        return 23
+
+    monkeypatch.setattr(launcher, "_exec_gate_after_publication", private_exec)
+    assert (
+        main(["--exec-gate-after-publication", "state", "run", "gate", "--flag"])
+        == 23
+    )
+    assert captured == ["state", "run", "gate", "--flag"]
 
 
 def test_cli_watch_mode_publishes_finished_result(tmp_path: Path) -> None:

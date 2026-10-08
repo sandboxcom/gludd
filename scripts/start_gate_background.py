@@ -43,6 +43,8 @@ WATCH_HEARTBEAT_SECONDS = 30.0
 TERMINATION_HEARTBEAT_SECONDS = 1.0
 STATE_KIND = "gludd_gate_background"
 STATE_SCHEMA_VERSION = 1
+_EXEC_AFTER_PUBLICATION_FLAG = "--exec-gate-after-publication"
+_PUBLICATION_WAIT_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -183,6 +185,31 @@ def _capture_identity(pid: int, run_id: str) -> GateIdentity | None:
         process_group_id=process_group_id,
         session_id=session_id,
     )
+
+
+def _exec_gate_after_publication(arguments: Sequence[str]) -> int:
+    """Hold a new session alive until its parent has published its identity."""
+    if len(arguments) < 3:
+        print("gate-background-exec: state path, run id, and command are required", file=sys.stderr)
+        return 126
+    state_path = Path(arguments[0])
+    run_id = arguments[1]
+    deadline = time.monotonic() + _PUBLICATION_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        state = _read_json(state_path)
+        if state is not None and state.get("run_id") == run_id:
+            break
+        time.sleep(0.005)
+    else:
+        print("gate-background-exec: identity publication unavailable", file=sys.stderr)
+        return 126
+    command = list(arguments[2:])
+    try:
+        os.execvpe(command[0], command, os.environ.copy())
+    except OSError as exc:
+        print(f"gate-background-exec: command failed: {exc}", file=sys.stderr)
+        return 126
+    return 126
 
 
 def _process_state(identity: GateIdentity) -> str:
@@ -645,6 +672,15 @@ def launch_gate(
         environment = os.environ.copy()
         environment["GLUDD_PROJECT_ROOT"] = str(paths.project_root)
         environment["GLUDD_PROJECT_NAMESPACE"] = namespace
+        recorded_gate_command = list(gate_command)
+        gate_command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            _EXEC_AFTER_PUBLICATION_FLAG,
+            str(paths.state_file),
+            run_id,
+            *recorded_gate_command,
+        ]
 
         with log_path.open("wb") as log_file:
             header = (
@@ -682,7 +718,7 @@ def launch_gate(
                     paths=paths,
                     namespace=namespace,
                     log_path=log_path,
-                    command=gate_command,
+                    command=recorded_gate_command,
                     timeout_seconds=timeout_seconds,
                 ),
             )
@@ -790,8 +826,11 @@ def _watch_from_state(args: argparse.Namespace, paths: GatePaths) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Validate, launch, or watch one exact gate run."""
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == [_EXEC_AFTER_PUBLICATION_FLAG]:
+        return _exec_gate_after_publication(arguments[1:])
     try:
-        args = _parser().parse_args(argv)
+        args = _parser().parse_args(arguments)
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else 2
     paths = GatePaths.for_root(args.project_root)

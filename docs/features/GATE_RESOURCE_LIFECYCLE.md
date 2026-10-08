@@ -590,6 +590,9 @@ Each admission publishes an atomic
 PID, OS process-start token, PGID, SID, checkout root, resource namespace,
 command, timeout, and exact log path. `.gate-background.pid` remains the
 compatibility pointer and contains the real Make gate PID, not a wrapper PID.
+The new session leader waits for its matching atomic receipt before it `exec`s
+the gate command, retaining that PID across `exec` while preventing a fast gate
+from disappearing before its ownership identity can be published.
 Duplicate admission is serialized by a worktree-local file lock and compares
 the receipt to live OS identity; a reused PID is never treated as the old gate.
 An old watcher may update state or remove the PID pointer only while both the
