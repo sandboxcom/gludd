@@ -14,10 +14,6 @@ EXPECTED_SPLIT_MAPPINGS = {
         "general_ludd.cli",
         "tests/unit/test_cli_module_split.py",
     ),
-    "general_ludd.decision_codification.durable_feedback": (
-        "general_ludd.decision_codification.durable",
-        "tests/unit/test_decision_codification_durable.py",
-    ),
     "general_ludd.decision_codification.durable_generation": (
         "general_ludd.decision_codification.durable_feedback",
         "tests/unit/test_decision_codification_durable.py",
