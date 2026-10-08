@@ -231,7 +231,10 @@ only through the configuration's environment-variable indirection; there is no
 key, prompt, response, feature, rule body, or evidence-content argument.
 Lifecycle output is a strict digest/stage/epoch projection, and validation,
 storage, authorization, stale-head, and CAS failures collapse to fixed
-content-free diagnostics. The five-stage plan, 128-candidate mining result,
+content-free diagnostics. Library callers can catch the public
+`DecisionOperatorError`; the original `_OperatorCLIError` name remains an exact
+compatibility alias, while CLI commands retain their fixed exit behavior. The
+five-stage plan, 128-candidate mining result,
 256-receipt verification chain, configured capture quota/scan bounds, and
 durable busy timeout bound operator memory, disk, and lock consumption.
 

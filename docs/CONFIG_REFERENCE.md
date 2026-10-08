@@ -132,6 +132,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_DAEMON_PORT` | Auto-indexed (see source) | — | optional | `scripts/smoke_daemon.py:113` |
 | `GLUDD_DATA_DIR` | Auto-indexed (see source) | — | optional | `src/general_ludd/ornith/sandbox.py:41` |
 | `GLUDD_DB_DISK_PRESSURE_THRESHOLD` | Auto-indexed (see source) | — | optional | `src/general_ludd/security/db_telemetry.py:100` |
+| `GLUDD_DECISION_APPROVER_ID` | Exact non-secret identity authorized for local decision approval, promotion, and rollback; it must match `--approver` and be 1-256 UTF-8 bytes. Use a deployment-scoped pseudonymous role ID such as `prod-release-approver-1`, never a credential or personal data; only its HMAC is persisted. | unset (lifecycle mutations fail closed) | required for local lifecycle mutation | `src/general_ludd/cli_decision_codification.py:77` |
 | `GLUDD_DEEPINFRA_API_KEY` | Auto-indexed (see source) | — | optional | `src/general_ludd/ansible/credential_proxy.py:331` |
 | `GLUDD_DEEPSEEK_API_KEY` | Auto-indexed (see source) | — | optional | `src/general_ludd/ansible/credential_proxy.py:367` |
 | `GLUDD_DELETION_GATE_THRESHOLD` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:2789` |
@@ -263,6 +264,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_RELEASE_CHECK_COOLDOWN_SEC` | Auto-indexed (see source) | `600` | optional | `scripts/check_release_completeness_guard.py:31` |
 | `GLUDD_RELEASE_COMPLETENESS_FILE` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:45` |
 | `GLUDD_RELEASE_DEADLINE_ENFORCE` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:3435` |
+| `GLUDD_RECEIPT_REVOKED_SIGNERS` | Comma-separated, duplicate-free lowercase SHA-256 fingerprints denied by local shadow-receipt authentication (maximum 32). Use `""` or reviewed signer fingerprints only; these are identifiers, not keys or secrets, and affect only shadow receipt trust—not the executed gate result. | `""` (none revoked) | optional | `scripts/ci_shadow_receipt_runtime.py:317` |
 | `GLUDD_RESOURCE_NAMESPACE` | Auto-indexed (see source) | — | optional | `scripts/audit_coverage.py:315` |
 | `GLUDD_RESOURCE_ROOT` | Auto-indexed (see source) | — | optional | `scripts/resource_arbiter.py:64` |
 | `GLUDD_RUNTIME_TEST_STATE_DIR` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:78` |
