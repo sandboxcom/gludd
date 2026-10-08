@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
+from threading import Event, Thread
+from time import monotonic
+from typing import cast
 
 import pytest
 
+import general_ludd.models.freellmapi_rollback_workflow as rollback_module
 from general_ludd.models.freellmapi_rollback_workflow import (
     FreeLLMAPIRollbackWorkflow,
     RollbackArtifact,
+    RollbackDrainHeartbeat,
+    RollbackDrainResult,
     RollbackGeneration,
     RollbackWorkflowError,
 )
@@ -93,6 +100,13 @@ def test_promote_requires_unique_artifact_ids() -> None:
 
     with pytest.raises(RollbackWorkflowError):
         workflow.promote((artifact, artifact))
+
+
+def test_promote_requires_sha256_artifact_ids() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+
+    with pytest.raises(RollbackWorkflowError, match="artifact id must be a sha256 uri"):
+        workflow.promote(("not-a-digest",))
 
 
 def test_protected_artifacts_cover_active_and_previous_generations() -> None:
@@ -252,6 +266,10 @@ def test_lease_operations_fail_closed_without_exact_ownership() -> None:
         workflow.generation_for_lease(lease_id)
     with pytest.raises(RollbackWorkflowError, match="lease identity is not active"):
         workflow.release_lease(lease_id)
+    with pytest.raises(RollbackWorkflowError, match="lease identity must be a sha256 uri"):
+        workflow.generation_for_lease("not-a-digest")
+    with pytest.raises(RollbackWorkflowError, match="lease identity must be a sha256 uri"):
+        workflow.release_lease("not-a-digest")
 
 
 def test_lease_context_releases_exact_ownership_after_failure() -> None:
@@ -276,3 +294,225 @@ def test_lease_context_releases_exact_ownership_after_failure() -> None:
 def test_lease_limit_must_be_a_positive_integer(limit: int) -> None:
     with pytest.raises(RollbackWorkflowError, match="max active leases must be positive"):
         FreeLLMAPIRollbackWorkflow(max_active_leases=limit)
+
+
+def test_concurrent_rollback_switches_atomically_and_drains_only_pre_switch_leases() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow(max_active_leases=2)
+    blue = workflow.promote(("sha256:" + "1" * 64,))
+    green = workflow.promote(("sha256:" + "2" * 64,))
+    green_lease = "sha256:" + "a" * 64
+    blue_lease = "sha256:" + "b" * 64
+    assert workflow.acquire_lease(green_lease) == green
+    switched = Event()
+    results: list[RollbackDrainResult] = []
+
+    def heartbeat(event: RollbackDrainHeartbeat) -> None:
+        assert event.remaining_leases == 1
+        switched.set()
+
+    thread = Thread(
+        target=lambda: results.append(
+            workflow.rollback_and_drain(
+                1.0,
+                heartbeat=heartbeat,
+                heartbeat_interval_seconds=0.1,
+            )
+        ),
+        name="gludd-s83163-rollback-drain",
+    )
+    thread.start()
+    assert switched.wait(timeout=2.0)
+
+    assert workflow.acquire_lease(blue_lease) == blue
+    assert workflow.generation_for_lease(green_lease) == green
+    assert workflow.generation_for_lease(blue_lease) == blue
+    assert workflow.release_lease(green_lease) == green
+    thread.join(timeout=2.0)
+
+    assert thread.is_alive() is False
+    assert results == [
+        RollbackDrainResult(
+            active_generation_id=blue.generation_id,
+            draining_generation_id=green.generation_id,
+            drained=True,
+            remaining_leases=0,
+            switched=True,
+        )
+    ]
+    assert workflow.release_lease(blue_lease) == blue
+
+
+def test_rollback_drain_uses_short_monotonic_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_monotonic = monotonic
+    monotonic_calls: list[float] = []
+
+    def tracked_monotonic() -> float:
+        value = real_monotonic()
+        monotonic_calls.append(value)
+        return value
+
+    monkeypatch.setattr(rollback_module, "monotonic", tracked_monotonic)
+    workflow = FreeLLMAPIRollbackWorkflow()
+    workflow.promote(("sha256:" + "1" * 64,))
+    green = workflow.promote(("sha256:" + "2" * 64,))
+    workflow.acquire_lease("sha256:" + "a" * 64)
+
+    started = real_monotonic()
+    result = workflow.rollback_and_drain(0.01, heartbeat_interval_seconds=0.005)
+    elapsed = real_monotonic() - started
+
+    assert result.draining_generation_id == green.generation_id
+    assert result.drained is False
+    assert result.remaining_leases == 1
+    assert result.runtime_admitted is False
+    assert result.candidate_decision == "HOLD"
+    assert len(monotonic_calls) >= 2
+    assert 0.005 <= elapsed < 0.5
+
+
+def test_timeout_keeps_green_protected_until_exact_release_and_retry() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    blue = workflow.promote(("sha256:" + "1" * 64,))
+    green_artifact = "sha256:" + "2" * 64
+    green = workflow.promote((green_artifact,))
+    green_lease = "sha256:" + "a" * 64
+    workflow.acquire_lease(green_lease)
+
+    timed_out = workflow.rollback_and_drain(0.005, heartbeat_interval_seconds=0.002)
+    orange = workflow.promote(("sha256:" + "3" * 64,))
+
+    assert timed_out.drained is False
+    assert workflow.active_generation == orange
+    assert workflow.is_artifact_protected(green_artifact) is True
+    assert green not in workflow.cleanup_eligible_generations()
+    with pytest.raises(RollbackWorkflowError, match="rollback drain is still pending"):
+        workflow.rollback()
+
+    assert workflow.release_lease(green_lease) == green
+    assert workflow.is_artifact_protected(green_artifact) is True
+    retried = workflow.rollback_and_drain(0.1)
+
+    assert retried.active_generation_id == orange.generation_id
+    assert retried.draining_generation_id == green.generation_id
+    assert retried.drained is True
+    assert retried.switched is False
+    assert workflow.active_generation == orange
+    assert green in workflow.cleanup_eligible_generations()
+    assert workflow.is_artifact_protected(green_artifact) is False
+    assert workflow.is_artifact_protected(blue.artifacts[0]) is True
+
+
+def test_only_exact_lease_release_wakes_a_pending_drain() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    workflow.promote(("sha256:" + "1" * 64,))
+    workflow.promote(("sha256:" + "2" * 64,))
+    lease_id = "sha256:" + "a" * 64
+    workflow.acquire_lease(lease_id)
+    waiting = Event()
+    results: list[RollbackDrainResult] = []
+    thread = Thread(
+        target=lambda: results.append(
+            workflow.rollback_and_drain(
+                1.0,
+                heartbeat=lambda _heartbeat: waiting.set(),
+                heartbeat_interval_seconds=0.1,
+            )
+        ),
+        name="gludd-s83163-exact-release",
+    )
+    thread.start()
+    assert waiting.wait(timeout=2.0)
+
+    with pytest.raises(RollbackWorkflowError, match="lease identity is not active"):
+        workflow.release_lease("sha256:" + "b" * 64)
+    assert thread.is_alive() is True
+
+    workflow.release_lease(lease_id)
+    thread.join(timeout=2.0)
+    assert thread.is_alive() is False
+    assert results[0].drained is True
+
+
+@pytest.mark.parametrize("timeout_seconds", [True, 0.0, -0.1, 3600.1, float("inf"), float("nan")])
+def test_rollback_drain_timeout_is_positive_and_bounded(timeout_seconds: float) -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    workflow.promote(("sha256:" + "1" * 64,))
+    workflow.promote(("sha256:" + "2" * 64,))
+
+    with pytest.raises(
+        RollbackWorkflowError,
+        match="rollback drain timeout must be greater than zero and at most 3600 seconds",
+    ):
+        workflow.rollback_and_drain(timeout_seconds)
+
+
+def test_rollback_drain_timeout_and_heartbeat_upper_bounds_are_inclusive() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    workflow.promote(("sha256:" + "1" * 64,))
+    workflow.promote(("sha256:" + "2" * 64,))
+
+    result = workflow.rollback_and_drain(
+        3600.0,
+        heartbeat_interval_seconds=30.0,
+    )
+
+    assert result.drained is True
+    assert result.runtime_admitted is False
+    assert result.candidate_decision == "HOLD"
+
+
+def test_rollback_drain_rejects_non_callable_heartbeat_before_switch() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    blue = workflow.promote(("sha256:" + "1" * 64,))
+    green = workflow.promote(("sha256:" + "2" * 64,))
+    not_callable = cast(Callable[[RollbackDrainHeartbeat], None], object())
+
+    with pytest.raises(RollbackWorkflowError, match="heartbeat must be callable"):
+        workflow.rollback_and_drain(1.0, heartbeat=not_callable)
+
+    assert workflow.active_generation == green
+    assert workflow.previous_generation == blue
+
+
+@pytest.mark.parametrize("heartbeat_seconds", [True, 0.0, -0.1, 30.1, float("inf"), float("nan")])
+def test_rollback_drain_heartbeat_interval_is_positive_and_at_most_30_seconds(
+    heartbeat_seconds: float,
+) -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    workflow.promote(("sha256:" + "1" * 64,))
+    workflow.promote(("sha256:" + "2" * 64,))
+
+    with pytest.raises(
+        RollbackWorkflowError,
+        match="heartbeat interval must be greater than zero and at most 30 seconds",
+    ):
+        workflow.rollback_and_drain(
+            1.0,
+            heartbeat_interval_seconds=heartbeat_seconds,
+        )
+
+
+def test_rollback_drain_heartbeat_contains_no_lease_or_artifact_identity() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    workflow.promote(("sha256:" + "1" * 64,))
+    workflow.promote(("sha256:" + "2" * 64,))
+    workflow.acquire_lease("sha256:" + "a" * 64)
+    heartbeats: list[RollbackDrainHeartbeat] = []
+
+    workflow.rollback_and_drain(
+        0.005,
+        heartbeat=heartbeats.append,
+        heartbeat_interval_seconds=0.002,
+    )
+
+    assert heartbeats
+    assert all(heartbeat.remaining_leases == 1 for heartbeat in heartbeats)
+    assert all(heartbeat.elapsed_seconds >= 0.0 for heartbeat in heartbeats)
+    assert set(RollbackDrainHeartbeat.__dataclass_fields__) == {
+        "active_generation_id",
+        "draining_generation_id",
+        "remaining_leases",
+        "elapsed_seconds",
+    }
