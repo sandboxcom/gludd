@@ -2492,4 +2492,3 @@ def test_reconciliation_snapshot_cli_is_bounded_and_never_invokes_git(
     rc = inventory.main(args, run=forbidden_git)
     payload = json.loads(capsys.readouterr().out)
     assert (rc, payload["mode"], payload["ok"]) == (0, "reconciliation-snapshot", True)
-
