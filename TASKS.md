@@ -93,6 +93,128 @@ S83.179 receipt-authentication follow-up: `scripts/ci_receipt_auth.py` reuses th
 S83.179 legacy failure-log import follow-up: `scripts/ci_legacy_gate_log_import.py` reads one explicit regular file confined below one explicit non-symlink root and emits only bounded aggregate batch/phase totals plus sanitized, content-addressed `NON-REUSABLE` failure diagnostics. It reuses the existing confined-log, canonical-JSON/SHA-256, and stable failure-class primitives; revalidates source identity around the read; rejects traversal, symlinks, unavailable/mutating sources, invalid UTF-8, truncation, mixed runs or terminals, malformed/duplicate/ambiguous markers, count/result drift, and limit breaches; and caps input at 64 MiB/250,000 lines/1 MiB per line, failure receipts at 64, and JSON output at 32 KiB. Output omits source paths, raw run/shard/batch identities, node IDs, test payloads, exception text, environment values, secrets, and arbitrary log lines; it never mutates the source or receipt store, restores coverage, enables reuse, or changes `skips=0`. The motivating completed eight-shard/five-failure log passes a separate 1/1 read-only acceptance with its digest and stat identity unchanged. Failing-first collection proved the missing importer, and the first coverage run exposed unpinned refusal branches at 79%; repaired `test_ci_legacy_gate_log_import.py` passes 36/36 and branch-aware Coverage.py reports 96% for the importer, above the 85% aggregate and 75% per-file floors. The feature document records the five-family incident, bounded migration/privacy/resource policy, discard-only ZDD rollback, and GitHub CLI, Pytest, Coverage.py, and Pants practitioner evidence. Full-gate, commit, merge, push, receipt-store migration, and any reuse claim remain intentionally out of scope while the canonical gate owns the repository.
 
 S83.179 merge-forward integration evidence: current `development` was merged into the feature branch with a merge commit and no owned-path conflict or rebase. The complete ten-file receipt/importer/serial-runner slice passes 404/404 with `GLUDD_XDIST_WORKERS=0`; branch-aware Coverage.py is 89% aggregate across six production files, with `ci_batch_receipts.py` at 88%, `ci_batch_replay_audit.py` at 85%, `ci_gate_progress.py` at 92%, `ci_legacy_gate_log_import.py` at 96%, `ci_receipt_auth.py` at 98%, and `run_ci_shards_serial.py` at 88%, so no file falls below 75%. Scoped Ruff, per-file strict mypy, eight-file Markdown lint, task integrity, and task-ledger validation are green. A live collection under the repository collection lease discovered 120,156 tests, selected 120,138, deselected 18, exited zero, and released its lease. Scope is frozen at the exact 20 registered S83.179 paths; presentation sync, full gate, merge to `development`, and push remain separate owners.
+- [ ] S83.180 - **Plan bounded read-only merge queues from unique current reconciliation heads** across `scripts/branch_reconciliation_inventory.py`, `scripts/branch_reconciliation_plan_types.py`, `tests/unit/test_branch_reconciliation_inventory.py`, `config/coverage_branch_reconciliation_inventory.ini`, `docs/features/BRANCH_RECONCILIATION.md`, and `CHANGELOG.md`: extend the exhaustive JSON reconciliation surface with an opt-in merge-queue plan that reuses reachability and patch-equivalence evidence, deterministically groups disjoint heads, isolates exact changed-path and shared-infrastructure single-writer collisions, caps every head/path/collision/output dimension, revalidates target and local refs before emission, and never mutates refs or worktrees while preserving the existing paginated, exhaustive, queue, and receipt contracts. | evidence: failing-first focused API coverage reproduced a missing `collect_merge_queue_plan` attribute and failing-first CLI coverage reproduced rejection of `--merge-queue-plan`; the repaired focused suite passes 118/118, measured coverage is 93.7% aggregate with 85.6% branch coverage and both planner production files above the 75% per-file floor, scoped Ruff and strict mypy pass, scoped Markdown lint reports zero issues, the file-line policy passes, and the unchanged paginated inventory target emits its schema-v2 page successfully; the feature guide records the bounded ZDD/read-only contract, rollback, GitHub Community and GitLab practitioner evidence, and official Git semantics; exhaustive collection, commit, and an exact-head full gate remain pending while the canonical gate owns shared test capacity | priority: high | effort: S | status: in_progress
+
+  S83.180 owns this exact seven-path active-work inventory:
+
+  ```text
+  CHANGELOG.md
+  TASKS.md
+  config/coverage_branch_reconciliation_inventory.ini
+  docs/features/BRANCH_RECONCILIATION.md
+  scripts/branch_reconciliation_inventory.py
+  scripts/branch_reconciliation_plan_types.py
+  tests/unit/test_branch_reconciliation_inventory.py
+  ```
+
+S83.180 merge-rehearsal continuation: every disjoint group now emits a
+digest-bound, unreferenced commit-chain recipe using exact `merge-tree` and
+`commit-tree` argv templates, target/source freshness checks, NUL path-manifest
+counts and digests, zero shared-path-conflict evidence, independent group,
+branch, head, path, display, and JSON ceilings, plus exact-candidate identity,
+ancestry, gate, and single-writer admission requirements. The planner executes
+none of the emitted merge, commit, ref, or worktree operations. The failing-first
+focused regression reproduced `KeyError: 'rehearsal'`; the repaired focused
+suite passes 120/120, coverage is 92% aggregate with the extracted plan module
+at 96% and both production files above the 75% floor, scoped Ruff and strict
+mypy pass, Markdown lint reports zero issues, and the 10,144-file line-limit
+policy passes. The feature guide records ZDD/rollback, official Git plumbing,
+GitLab #33925's missing temporary-ref failures, and GitHub Community #120203's
+source-freshness ambiguity. Exhaustive collection, commit, and the exact-head
+full gate remain pending while the canonical gate owns shared test capacity.
+
+S83.180 Git-native prediction continuation: each rehearsal group now runs a
+deterministic, injected-runner matrix of target/source and source/source
+`git merge-tree --write-tree --name-only --no-messages -z` probes. The additive
+result is `predicted-clean`, `conflicted`, or fail-closed `blocked`; it contains no
+mergeability claim, and unsupported Git, ambiguous output, timeouts, output/path/
+pair overflow, and terminal freshness drift all block admission while discarding
+partial details. The predictor caps groups at 64 checks, each command at ten
+seconds and 262,144 characters per stream, and conflict paths at 10,000 scanned/
+100 displayed. The failing-first focused regression reproduced
+`KeyError: 'conflict_prediction'`; repaired focused coverage passes 125/125 at 92%
+aggregate, with `branch_reconciliation_inventory.py` at 91% and
+`branch_reconciliation_plan_types.py` at 95%, above both required floors. Scoped
+Ruff, strict mypy, and the 10,144-file line-limit policy pass. The feature guide
+records capability-based Git compatibility, the exact admission sequence,
+pairwise-versus-cumulative limitations, bounded GitLab #28424/#383730 practitioner
+failures, and unreachable-object ZDD/rollback behavior. Broad collection, commit,
+and the exact-head full gate remain pending while the canonical gate owns shared
+test capacity.
+
+S83.180 no-branch-left-behind snapshot continuation: every terminal plan now
+seals the target plus every originally observed ref/tip/classification into a
+sorted `snapshot_basis`, including ancestor and patch-equivalent branches outside
+the candidate queue. The opt-in `--reconciliation-snapshot` CLI consumes that
+plan, its exact basis digest, a fresh exhaustive inventory and exact canonical
+digest, plus bounded exact ref/tip retirements; it emits deterministic branch and
+head states (`pending`, `merged`, `stale`, `blocked`, or `explicitly-retired`),
+complete counts, and a new snapshot digest without invoking Git. Missing,
+duplicate, unknown, malformed, truncated, target-identity-mismatched, or
+digest-mismatched evidence fails with one content-free error. The failing-first
+test reproduced a missing `canonical_document_digest` API; repaired focused tests
+pass 128/128. The first coverage repair attempt honestly failed at 82.9% branch
+coverage; adversarial schema/digest/accounting tests raised final coverage to 90%
+aggregate (`branch_reconciliation_inventory.py` 91%, plan types 90%) with both
+the aggregate branch floor and per-file 75% floors passing. Scoped Ruff, strict
+mypy, and the 10,144-file line policy pass. Documentation records bounded
+resource/privacy behavior, ZDD/rollback, and long-lived GitLab #229156/#1089 lost
+state and moving-inventory reports. Broad collection, commit, and the exact-head
+full gate remain pending while the canonical gate owns shared test capacity.
+
+S83.180 authenticated retirement continuation: `explicitly-retired` can no longer
+turn a missing ref into success from an unverified ref/tip assertion. Each exact
+planned identity now requires either fresh ancestry/patch-equivalence for the same
+head, or a bounded version-2 Ed25519 operator approval binding the plan digest,
+branch, head, fixed reason code, reviewer-identity digest, key ID, and issue/expiry
+times. Verification reuses `general_ludd.self_update.signing.verify_signature`
+and the locked `cryptography` dependency against an explicit sorted public-key
+store with active/revoked state; no new cryptography was invented. Unsigned legacy
+envelopes, unknown/revoked signers, tampering, expiry, cross-plan/head replay,
+duplicates, stale heads, oversized evidence, free-form reasons, and verifier
+failure return the content-free snapshot error. Output records only bounded proof
+metadata and trust digest, never reviewer identity. The failing-first signed
+fixture reproduced `InventoryError: invalid reconciliation snapshot` against the
+legacy digest parser. The repaired focused file passes 130/130; targeted coverage
+passes at 90% aggregate with both production files at 90%, above the 85% aggregate
+and both 75% per-file floors. Scoped checks cover Ruff, strict production mypy,
+file limits, Markdown, task-ledger, and task-integrity. The feature guide records
+migration, exact admission, privacy/resources, ZDD/rollback, and GitLab #229156 /
+GitHub #120203 practitioner boundaries. Broad collection, commit, and an exact-head
+full gate remain pending while the canonical gate owns shared test capacity.
+
+S83.180 remote-tracking continuation: the opt-in `--remote-tracking` mode now
+compares every bounded local branch with one explicitly named, locally available
+remote-tracking namespace using only sorted NUL-field `git for-each-ref` scans.
+A digest-sealed exact ref/tip fetch snapshot plus canonical verification/expiry
+times is mandatory. Output classifies local-only, remote-only, equal, diverged,
+and deleted-upstream identities and emits only retain, review, or delete-candidate
+recommendations; it never fetches, pushes, prunes, updates, or deletes. Symbolic,
+unsafe, duplicate, ambiguous, wrong-namespace, stale, tampered, or oversized
+evidence fails closed. The failing-first regression reproduced a missing
+`collect_remote_tracking_inventory` attribute. The repaired focused suite passes
+132/132; two honest coverage attempts failed the branch floor at 84.2% and 84.9%
+before adversarial namespace/head evidence raised it above 85%, with 91% combined
+coverage and both production files at 91%. Scoped Ruff and strict mypy pass. The
+feature guide records trusted-handoff limitations, remote staleness,
+privacy/resource bounds, ZDD/rollback, Stack Overflow #7726949, and GitHub
+Community #120203 practitioner evidence. Broad collection, commit, and an
+exact-head full gate remain pending while the canonical gate owns shared capacity.
+
+S83.180 merge-forward integration evidence: `development` was merged forward
+without rebasing through terminal merge `f5cfdd2d5`; the first merge's two
+owned documentation/test conflicts retained both sides, and the final merge was
+clean. On that integrated tree the complete focused suite passes 132/132 and
+branch-aware coverage is 91% aggregate, with both production files at 91%.
+Scoped Ruff, strict mypy, Markdown lint, task ledger/integrity/registration, the
+unchanged schema-v2 page target, and the 10,216-file line-limit audit are green.
+The first live collection honestly exposed a worktree missing the locked
+`presentation-test` profile; syncing the existing `ci` profile repaired the
+environment without source changes. Serialized `collect-check` then passed in
+84.3 seconds, and `test-count` selected 120,232 of 120,250 tests with 18
+deselections and zero collection errors. Scope remains frozen at the exact seven
+registered paths; the exact-head full gate, merge to `development`, and push
+remain separate pending integration actions.
 
 - [ ] S83.170 - **Keep Reveal.js Mermaid labels aligned and every presentation element inside the visible canvas in Safari-class rendering** across `docs/presentation/DESIGN_revealjs_deck.md`, `docs/presentation/deck-data.json`, `docs/presentation/deck/index.html`, `docs/presentation/deck/presentation.css`, `docs/presentation/deck/presentation.js`, `scripts/build_deck.py`, `scripts/run_presentation_browser_tests.py`, `scripts/run_presentation_safari_smoke.py`, `tests/browser/test_presentation.py`, `tests/unit/test_presentation_browser_runner.py`, `tests/unit/test_presentation_safari_runner.py`, `tests/unit/test_reveal_render_resilience_coverage.py`, and `tests/unit/test_reveal_render_resilience_runtime.py`: normalize multiline SVG anchors, add a bounded padded viewport, render decoded replaced images with explicit intrinsic geometry, split and regroup overloaded charts, use non-sweeping transitions, reject off-canvas text/diagrams across every slide and fragment, require at least eight effective CSS pixels for chart text, and keep local preview diagnostics free of expected browser-disconnect tracebacks without hiding unexpected failures. | evidence: the strengthened post-transition canvas audit reproduced nine overflowing slides before repair; a failing-first guardrail-label regression pinned WebKit-flattened Mermaid breaks; final canonical WebKit acceptance passes 14/14 in 185.35 seconds with every encoded-SVG label, slide, fragment, Pages-subpath navigation, hash reload, source link, and visible failure fallback verified; the focused presentation suite passes 127/127 at 93% aggregate coverage with all five measured production files at 88%-98%, and the disconnect boundary passes for both reset and broken-pipe errors while delegating unexpected exceptions; after dependency-profile integration, Chromium passes 14/14 in 180.22 seconds and WebKit passes 14/14 in 177.18 seconds through the exact isolated presentation profile, whose fail-first TOML-boundary regression is now pinned; scoped Python and Markdown lint, 16-asset integrity, and the 108-check plugin manifest are green; native Safari remains honestly unclaimed because operator-controlled Remote Automation is disabled; exact-head full gate, follow-up commit, and development push remain required before completion or v0.1.2 assignment | priority: high | effort: S | status: in_progress
 

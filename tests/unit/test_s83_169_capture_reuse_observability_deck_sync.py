@@ -63,7 +63,7 @@ def test_capture_reuse_observability_is_ordered_bounded_and_honest() -> None:
     assert "badge-green" not in slide
     assert slide.count("<li>") == 6
     assert len(slide) < 5_000
-    assert deck.count("<section") == 62
+    assert deck.count("<section") == 63
     assert "Automatic signed replay capture pending" not in deck
 
 
