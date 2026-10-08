@@ -8,7 +8,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from general_ludd.replay.schema import (
+from general_ludd.schemas.execution_identity import (
     ModelIdentityV1,
     RuntimeIdentityV1,
     SourceIdentityV1,
