@@ -28,6 +28,10 @@ from general_ludd.self_improve.approval import (
 from general_ludd.self_improve.gate import SelfImproveGate
 from general_ludd.self_improve.harness import SelfImprovementHarness
 from general_ludd.self_improve.managed_runner import ApprovedSelfImprovePlan
+from general_ludd.self_improve.outcome_visibility import (
+    collect_outcome_analysis,
+    unavailable_outcome_analysis,
+)
 from general_ludd.self_improve.runtime import prepare_managed_self_improve_plan
 from general_ludd.self_improve.staging import (
     MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
@@ -1012,10 +1016,39 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/self-improve/status")
     async def admin_self_improve_status() -> dict[str, object]:
+        factory = _get_session_factory(app)
+        if factory is None:
+            outcome_analysis = unavailable_outcome_analysis(
+                "database_session_factory_unavailable"
+            )
+        else:
+            try:
+                async with factory() as session:
+                    outcome_analysis = await collect_outcome_analysis(session)
+            except Exception:
+                # This is an administrative observation surface. Keep the
+                # existing status available while returning a redacted,
+                # machine-readable database failure state.
+                outcome_analysis = unavailable_outcome_analysis("database_query_failed")
+
         last = _daemon_state.get("self_improve_last_analysis")
         if last is None:
-            return {"status": "never_run", "findings_count": 0}
-        return {"status": "completed", **cast(dict[str, object], last)}
+            sample_count = outcome_analysis.get("sample_count", 0)
+            persisted_outcomes_exist = (
+                isinstance(sample_count, int)
+                and not isinstance(sample_count, bool)
+                and sample_count > 0
+            )
+            return {
+                "status": "completed" if persisted_outcomes_exist else "never_run",
+                "findings_count": 0,
+                "outcome_analysis": outcome_analysis,
+            }
+        return {
+            "status": "completed",
+            **cast(dict[str, object], last),
+            "outcome_analysis": outcome_analysis,
+        }
 
     # Human approval gate for self-authored self-improve todos.
     #
