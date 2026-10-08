@@ -109,6 +109,32 @@ class _DurableStorage:
                 );
                 CREATE INDEX IF NOT EXISTS ix_application_outcomes_window
                 ON application_outcomes(candidate_digest, occurred_at);
+                CREATE TABLE IF NOT EXISTS decision_observability_scope (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    project_id TEXT NOT NULL,
+                    policy_digest TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS decision_observability_totals (
+                    decision_kind TEXT PRIMARY KEY,
+                    sequence INTEGER NOT NULL,
+                    exact_rule_hits INTEGER NOT NULL,
+                    typed_abstentions INTEGER NOT NULL,
+                    fallback_calls INTEGER NOT NULL,
+                    avoided_agent_calls INTEGER NOT NULL,
+                    latency_observations INTEGER NOT NULL,
+                    latency_total_us INTEGER NOT NULL,
+                    latency_max_us INTEGER NOT NULL,
+                    rule_version_changes INTEGER NOT NULL,
+                    drift_events INTEGER NOT NULL,
+                    last_candidate_digest TEXT,
+                    last_observed_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS decision_observability_abstentions (
+                    decision_kind TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    count INTEGER NOT NULL,
+                    PRIMARY KEY(decision_kind, reason)
+                );
                 """
             )
             existing = connection.execute(
