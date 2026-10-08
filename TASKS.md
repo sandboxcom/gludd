@@ -3,9 +3,9 @@
 **Last audited: 2026-09-26 on `release-v0.1.1-closeout`. The prior completion claim was invalid: S83.157, S83.158, S83.163, and the terminal S83.166 release action remain open, and S91.1 is reopened for the ownership/concurrency repair. Checked-task status contradictions now fail closed in the ledger validator, active-work inventory, and release readiness. No v0.1.1 promotion is permitted until each open predecessor has independent completion evidence, the exact candidate passes local and hosted gates, and the published artifacts pass deployment and rollback verification.**
 
 <!-- v0.1.2-completed-backlog -->
-**v0.1.2 completed backlog scope (unreleased):** the five formally completed
-post-v0.1.1 backlog items, S83.114-S83.117 and S83.128, are assigned to v0.1.2
-in task order:
+**v0.1.2 completed backlog scope (unreleased):** the six formally completed
+post-v0.1.1 backlog items, S83.114-S83.117, S83.128, and S83.178, are assigned
+to v0.1.2 in task order:
 
 | Item | Completed outcome | Primary evidence |
 |---|---|---|
@@ -14,6 +14,7 @@ in task order:
 | 116 | Monotonic debounce, throttle, and watchdog state | `13b933128`, `dc5082aac` |
 | 117 | Authenticated TLS 1.3 state and directional records | `06c4c9e25`, `96998fcc9` |
 | 128 | Invoking-worktree-safe virtual-environment reclamation | `a596897e3`, `5ec87af01` |
+| 178 | Fast integration admission for deterministic gate failures | `0a1ca6f7f`, `dd144d5f1` |
 
 S83.157, S83.158, S83.163, S83.166, and S83.169 remain open despite substantial
 implementation evidence; they require their recorded exact-head, hosted, or
