@@ -12,6 +12,8 @@ import general_ludd.decision_codification.service as service_module
 from general_ludd.approval.gate import ApprovalDecision
 from general_ludd.decision_codification.approval import DecisionApprovalService
 from general_ludd.decision_codification.artifact_store import DecisionArtifactStore
+from general_ludd.decision_codification.durable import DurableGenerationStore
+from general_ludd.decision_codification.observability import DecisionReuseObservability
 from general_ludd.decision_codification.rollout import (
     AtomicGenerationStore,
     RolloutController,
@@ -43,7 +45,7 @@ from general_ludd.replay.schema import (
     RuntimeIdentityV1,
     SourceIdentityV1,
 )
-from general_ludd.replay.store import ReplayIntegrityError, VerifiedBundle
+from general_ludd.replay.store import ReplayIntegrityError, RunBundleStore, VerifiedBundle
 
 NOW = datetime(2026, 10, 6, 12, tzinfo=UTC)
 POLICY_DIGEST = "sha256:" + "e" * 64
@@ -187,6 +189,155 @@ def _analysis_kwargs() -> dict[str, Any]:
     }
 
 
+def _signed_split_decision_bundle(
+    root: Path,
+    *,
+    outcome_count: int = 1,
+    outcome_decision_digest: str | None = None,
+    outcome_task_id: str = "task-live-001",
+) -> RunBundleStore:
+    """Persist one real signed decision/outcome pair through the replay store."""
+    store = RunBundleStore(
+        root,
+        verification_keys={"decision-log-test-key": b"decision-log-test-key-material"},
+        active_key_id="decision-log-test-key",
+    )
+    occurred_at = NOW - timedelta(days=1)
+    decision_time = occurred_at.isoformat().replace("+00:00", "Z")
+    outcome_time = (occurred_at + timedelta(seconds=1)).isoformat().replace(
+        "+00:00", "Z"
+    )
+    decision = store.append_event(
+        "live-review-001",
+        {
+            "event_id": "decision-live-001",
+            "occurred_at": decision_time,
+            "recorded_at": decision_time,
+            "type": "review.decided",
+            "project_id": "project-1",
+            "correlation": {
+                "todo_id": "todo-live-001",
+                "task_id": "task-live-001",
+                "trace_id": None,
+            },
+            "payload": {
+                "policy_digest": POLICY_DIGEST,
+                "features": _features(),
+                "decision": "approve",
+            },
+            "redaction": {"count": 0, "kinds": []},
+        },
+    )
+    for index in range(outcome_count):
+        store.append_event(
+            "live-review-001",
+            {
+                "event_id": f"outcome-live-{index:03d}",
+                "occurred_at": outcome_time,
+                "recorded_at": outcome_time,
+                "type": "decision.outcome",
+                "project_id": "project-1",
+                "correlation": {
+                    "todo_id": "todo-live-001",
+                    "task_id": outcome_task_id,
+                    "trace_id": None,
+                },
+                "payload": {
+                    "decision_event_digest": (
+                        decision.digest
+                        if outcome_decision_digest is None
+                        else outcome_decision_digest
+                    ),
+                    "verified_outcome": "success",
+                    "terminal_event_ids": [f"terminal-live-{index:03d}"],
+                    "gate_digests": [SOURCE_DIGEST],
+                    "status_digests": [],
+                },
+                "redaction": {"count": 0, "kinds": []},
+            },
+        )
+    manifest = _verified_bundle(1).manifest.model_copy(
+        update={
+            "run_id": "live-review-001",
+            "created_at": occurred_at,
+            "finalized_at": occurred_at + timedelta(seconds=2),
+        }
+    )
+    store.finalize("live-review-001", manifest)
+    return store
+
+
+def test_real_signed_split_decision_outcome_becomes_mining_evidence(
+    tmp_path: Path,
+) -> None:
+    store = _signed_split_decision_bundle(tmp_path / "replays")
+
+    analysis = DecisionLogAnalyzer(store).analyze(
+        ("live-review-001",),
+        **_analysis_kwargs(),
+    )
+
+    assert analysis.bundles_read == 1
+    assert analysis.events_seen == 2
+    assert analysis.events_eligible == 1
+    assert analysis.candidates == ()
+    assert analysis.rejection_counts == (
+        (AnalysisRejectionReason.NO_SAFE_GROUP, 1),
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "helper_kwargs", "expected_events", "expected_rejections"),
+    [
+        (
+            "missing",
+            {"outcome_count": 0},
+            1,
+            ((AnalysisRejectionReason.MISSING_OUTCOME, 1),),
+        ),
+        (
+            "duplicate",
+            {"outcome_count": 2},
+            3,
+            ((AnalysisRejectionReason.CONFLICTING_OUTCOME, 1),),
+        ),
+        (
+            "orphan",
+            {"outcome_decision_digest": SOURCE_DIGEST},
+            2,
+            (
+                (AnalysisRejectionReason.MISSING_OUTCOME, 1),
+                (AnalysisRejectionReason.ORPHAN_OUTCOME, 1),
+            ),
+        ),
+        (
+            "correlation-mismatch",
+            {"outcome_task_id": "task-other"},
+            2,
+            ((AnalysisRejectionReason.CONFLICTING_OUTCOME, 1),),
+        ),
+    ],
+)
+def test_split_outcome_links_fail_closed_without_mining_ambiguous_evidence(
+    tmp_path: Path,
+    case: str,
+    helper_kwargs: dict[str, Any],
+    expected_events: int,
+    expected_rejections: tuple[tuple[AnalysisRejectionReason, int], ...],
+) -> None:
+    store = _signed_split_decision_bundle(tmp_path / case, **helper_kwargs)
+
+    analysis = DecisionLogAnalyzer(store).analyze(
+        ("live-review-001",),
+        **_analysis_kwargs(),
+    )
+
+    assert analysis.events_seen == expected_events
+    assert analysis.events_eligible == 0
+    assert analysis.candidates == ()
+    assert analysis.rejection_counts == expected_rejections
+
+
 def test_verified_logs_become_an_exact_zero_agent_runtime_path(tmp_path: Path) -> None:
     bundles = tuple(_verified_bundle(index) for index in range(48))
     store = _VerifiedStore(bundles)
@@ -209,7 +360,9 @@ def test_verified_logs_become_an_exact_zero_agent_runtime_path(tmp_path: Path) -
     assert candidate.holdout_report.estimated_agent_calls_avoided == 8
     assert candidate.holdout_report.estimated_tokens_avoided == 16_000
 
-    artifacts = DecisionArtifactStore(tmp_path / "artifacts", key=b"decision-artifacts")
+    artifacts = DecisionArtifactStore(
+        str(tmp_path / "artifacts"), key=b"decision-artifacts"
+    )
     approval = DecisionApprovalService(
         artifacts,
         _UnusedGate(),  # type: ignore[arg-type]
@@ -249,7 +402,22 @@ def test_verified_logs_become_an_exact_zero_agent_runtime_path(tmp_path: Path) -
     )
     rollout.promote(active, expected_candidate_digest=candidate.bundle.candidate_digest)
 
-    resolver = DecisionResolver(DecisionRuntime(artifacts, rollout))
+    timer = iter(
+        (0, 1_000_000, 2_000_000, 5_000_000, 10_000_000, 20_000_000)
+    )
+    observability = DecisionReuseObservability(
+        DurableGenerationStore(tmp_path / "observability.sqlite3"),
+        rollout,
+        artifacts,
+        project_id="project-1",
+        policy_digest=POLICY_DIGEST,
+        clock=lambda: NOW + timedelta(minutes=10),
+    )
+    resolver = DecisionResolver(
+        DecisionRuntime(artifacts, rollout),
+        observability=observability,
+        monotonic_ns=lambda: next(timer),
+    )
     fallback_calls: list[str] = []
 
     def fallback(reason: object) -> str:
@@ -317,6 +485,26 @@ def test_verified_logs_become_an_exact_zero_agent_runtime_path(tmp_path: Path) -
     )
     assert after_rollback.source is DecisionResolutionSource.AGENT_FALLBACK
     assert fallback_calls == ["DecisionAbstentionV1", "DecisionAbstentionV1"]
+    status = observability.status_receipt(
+        project_id="project-1",
+        policy_digest=POLICY_DIGEST,
+    )
+    review = next(
+        item
+        for item in status.summaries
+        if item.decision_kind is DecisionKind.REVIEW
+    )
+    assert review.exact_rule_hits == 1
+    assert review.avoided_agent_calls == 1
+    assert review.typed_abstentions == 2
+    assert review.fallback_calls == 2
+    assert review.latency_observations == 3
+    assert review.latency_total_us == 14_000
+    assert [(item.reason, item.count) for item in review.abstentions] == [
+        (FallbackReason.NO_ACTIVE_RULE, 1),
+        (FallbackReason.SCOPE_MISS, 1),
+    ]
+    assert review.current_candidate_digest is None
 
 
 def test_analyzer_excludes_untrusted_or_unusable_evidence_content_free() -> None:
@@ -440,4 +628,42 @@ def test_resolver_rejects_an_agent_decision_outside_the_closed_vocabulary() -> N
             side_effect_id="invalid-result",
             fallback=invalid_fallback,
         )
+    assert calls == [FallbackReason.NO_ACTIVE_RULE]
+
+
+def test_observability_failure_cannot_change_fallback_decision() -> None:
+    class _AbstainingRuntime:
+        def lookup(self, **kwargs: object) -> DecisionAbstentionV1:
+            return DecisionAbstentionV1(reason=FallbackReason.NO_ACTIVE_RULE)
+
+    class _RaisingObserver:
+        def record_resolution(self, **kwargs: object) -> bool:
+            raise RuntimeError("private observer failure")
+
+    timer = iter((0, 1_000_000))
+    resolver = DecisionResolver(
+        cast(DecisionRuntime, _AbstainingRuntime()),
+        observability=cast(DecisionReuseObservability, _RaisingObserver()),
+        monotonic_ns=lambda: next(timer),
+    )
+    calls: list[FallbackReason] = []
+
+    def fallback(abstention: DecisionAbstentionV1) -> str:
+        calls.append(abstention.reason)
+        return "reject"
+
+    resolved = resolver.resolve(
+        project_id="project-1",
+        expected_project_id="project-1",
+        decision_kind=DecisionKind.REVIEW,
+        policy_digest=POLICY_DIGEST,
+        features=_features(),
+        correlation_id="live-task-observer-failure",
+        now=NOW,
+        side_effect_id="observer-failure-result",
+        fallback=fallback,
+    )
+
+    assert resolved.source is DecisionResolutionSource.AGENT_FALLBACK
+    assert resolved.decision == "reject"
     assert calls == [FallbackReason.NO_ACTIVE_RULE]

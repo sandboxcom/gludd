@@ -1,8 +1,8 @@
 {
   "version": "0.1.1",
-  "git_sha": "09688ac",
-  "git_sha_full": "09688ac39586cd67b1175385344cc205b9cfa3f0",
-  "test_count": 119685,
+  "git_sha": "0b00215",
+  "git_sha_full": "0b0021537987bb227ede828dd456a31b9746c41b",
+  "test_count": 119720,
   "role_count": 127,
   "features": [
     {
@@ -216,5 +216,5 @@
       "evidence": "**PENDING** *(file-refs only)*: 3 provider IAM files, 4 OPA policy files; commit b4612d1a"
     }
   ],
-  "generated_at": "2026-10-07T09:03:21Z"
+  "generated_at": "2026-10-07T17:27:06Z"
 }

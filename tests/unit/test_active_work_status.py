@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import shutil
@@ -685,6 +684,19 @@ def test_gate_snapshot_handles_terminal_stale_and_live_pid(
 
     assert active_work_status._gate()["state"] == "UNKNOWN"
 
+    status_path.write_text("RUNNING 1791394048 66607\n", encoding="utf-8")
+    orphaned = active_work_status._gate()
+    assert orphaned["state"] == "ORPHANED"
+    assert orphaned["running_pid"] == ""
+
+    pid_path.write_text("123\n", encoding="utf-8")
+    monkeypatch.setattr("scripts.active_work_status.os.kill", lambda _pid, _signal: None)
+    running = active_work_status._gate()
+    assert running["state"] == "RUNNING"
+    assert running["running_pid"] == "123"
+
+    pid_path.unlink()
+
     status_path.write_text("=== GATE: PASSED ===\n", encoding="utf-8")
     assert active_work_status._gate()["state"] == "PASS"
 
@@ -694,9 +706,8 @@ def test_gate_snapshot_handles_terminal_stale_and_live_pid(
     assert failed["state"] == "FAIL"
     assert failed["running_pid"] == ""
 
-    pid_path.write_text("123\n", encoding="utf-8")
-    monkeypatch.setattr("scripts.active_work_status.os.kill", lambda _pid, _signal: None)
-    assert active_work_status._gate()["running_pid"] == "123"
+    status_path.write_text("GATE_TIMEOUT\n=== GATE: ABORTED (timeout) ===\n")
+    assert active_work_status._gate()["state"] == "TIMEOUT"
 
 
 @pytest.mark.parametrize(
@@ -717,19 +728,86 @@ def test_gate_owner_reads_contended_lock_and_handles_io_error(
     tmp_path: Path,
 ) -> None:
     lock_path = tmp_path / "gate-refresh.lock"
-    lock_path.write_text("pid=123\n", encoding="utf-8")
-    monkeypatch.setattr(active_work_status, "resource_path", lambda *_args: lock_path)
-
-    def contended_lock(_fd: int, operation: int) -> None:
-        if operation & fcntl.LOCK_NB:
-            raise BlockingIOError
-
-    monkeypatch.setattr("scripts.active_work_status.fcntl.flock", contended_lock)
+    monkeypatch.setattr(
+        active_work_status,
+        "default_resource_lock",
+        lambda *_args: lock_path,
+    )
+    monkeypatch.setattr(
+        active_work_status,
+        "inspect_lease",
+        lambda _path: active_work_status.LeaseInspection(
+            state="held",
+            record=active_work_status.LeaseRecord(pid=123, acquired_unix_ns=456),
+        ),
+    )
     assert active_work_status._active_gate_refresh_owner("namespace") == "123"
 
-    missing = tmp_path / "missing" / "gate-refresh.lock"
-    monkeypatch.setattr(active_work_status, "resource_path", lambda *_args: missing)
+    monkeypatch.setattr(
+        active_work_status,
+        "inspect_lease",
+        lambda _path: active_work_status.LeaseInspection(
+            state="available",
+            record=None,
+        ),
+    )
     assert active_work_status._active_gate_refresh_owner("namespace") is None
+
+
+def test_collection_lease_status_is_content_safe_and_waiters_are_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    lock_path = tmp_path / f"collection\n{'x' * 600}.lock"
+    processes = [
+        {
+            "pid": "123",
+            "ppid": "1",
+            "task": "collection-lease",
+            "command": "python scripts/collection_lock.py --run pytest",
+        },
+        *[
+            {
+                "pid": str(pid),
+                "ppid": "1",
+                "task": "collection-lease",
+                "command": "python scripts/collection_lock.py --run pytest secret",
+            }
+            for pid in range(200, 240)
+        ],
+    ]
+    monkeypatch.setattr(active_work_status, "_COLLECTION_WAITER_LIMIT", 8)
+    monkeypatch.setattr(
+        active_work_status,
+        "default_collection_lock",
+        lambda _root: lock_path,
+    )
+    monkeypatch.setattr(
+        active_work_status,
+        "inspect_lease",
+        lambda _path: active_work_status.LeaseInspection(
+            state="held",
+            record=active_work_status.LeaseRecord(pid=123, acquired_unix_ns=456),
+        ),
+    )
+
+    status = active_work_status._collection_lease_observability(processes)
+
+    path = status.pop("path")
+    assert isinstance(path, str)
+    assert len(path) == active_work_status._LEASE_PATH_DISPLAY_LIMIT
+    assert path.endswith("...")
+    assert "\n" not in path
+    assert status == {
+        "state": "held",
+        "owner_pid": "123",
+        "acquired_unix_ns": 456,
+        "record_status": "active",
+        "waiter_count": 40,
+        "waiter_pids": [str(pid) for pid in range(200, 208)],
+        "waiter_overflow_count": 32,
+    }
+    assert "secret" not in json.dumps(status)
 
 
 def test_worker_accounting_reports_duplicate_singleton(

@@ -6,6 +6,18 @@
         "tests/unit/test_cli_module_split.py"
       ]
     },
+    "general_ludd.decision_codification.durable_feedback": {
+      "via": "general_ludd.decision_codification.durable",
+      "tests": [
+        "tests/unit/test_decision_codification_durable.py"
+      ]
+    },
+    "general_ludd.decision_codification.durable_generation": {
+      "via": "general_ludd.decision_codification.durable_feedback",
+      "tests": [
+        "tests/unit/test_decision_codification_durable.py"
+      ]
+    },
     "general_ludd.daemon_components.ports": {
       "via": "general_ludd.daemon",
       "tests": [

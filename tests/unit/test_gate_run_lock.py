@@ -108,12 +108,35 @@ def test_assert_inactive_blocks_live_owner_and_reclaims_stale_owner(
     refused = _run("assert-inactive", live, os.getppid())
     assert refused.returncode != 0
     assert "active gate" in (refused.stdout + refused.stderr)
+    assert "state=" in (refused.stdout + refused.stderr)
 
     stale = tmp_path / "stale.lock"
     stale.write_text(json.dumps({"pid": 999_999_999}), encoding="utf-8")
     reclaimed = _run("assert-inactive", stale, os.getpid())
     assert reclaimed.returncode == 0
     assert not stale.exists()
+
+
+def test_assert_inactive_reclaims_reused_live_pid_identity(tmp_path: Path) -> None:
+    """A recycled PID must not preserve a dead gate's mutation lock."""
+    lock = tmp_path / "reused-pid.lock"
+    lock.write_text(
+        json.dumps(
+            {
+                "marker": lock_module.GATE_LOCK_MARKER,
+                "state": "active",
+                "pid": os.getpid(),
+                "pid_started_at": "not-the-current-process-start-token",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reclaimed = _run("assert-inactive", lock, os.getppid())
+
+    assert reclaimed.returncode == 0, reclaimed.stderr
+    assert "reclaimed stale owner" in reclaimed.stdout
+    assert not lock.exists()
 
 
 def test_assert_inactive_fails_closed_on_unreadable_owner(tmp_path: Path) -> None:
@@ -180,6 +203,18 @@ def test_pid_and_owner_helpers_fail_closed(
     assert lock_module._read_owner(missing) is None
     missing.write_text("{bad-json", encoding="utf-8")
     assert lock_module._read_owner(missing) is None
+
+
+def test_zombie_gate_owner_is_not_alive(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    lock = tmp_path / "zombie.lock"
+    lock.write_text(json.dumps({"pid": 73}), encoding="utf-8")
+    monkeypatch.setattr(lock_module, "_pid_alive", lambda _pid: True)
+    monkeypatch.setattr(lock_module, "_pid_state", lambda _pid: "Z+")
+
+    assert lock_module._owner_alive(lock, 73) is False
 
 
 def test_publish_release_and_acquire_boundaries(tmp_path: Path) -> None:

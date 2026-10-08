@@ -334,10 +334,29 @@ repo-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard
 PUSH ?= 0
 ship-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
-	@echo "Running pre-commit collection check..."
-	@$(MAKE) --no-print-directory collect-check
-	@echo "Committing staged changes..."
-	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
+	@STAGED_FILES=$$(git diff --cached --name-only | LC_ALL=C sort); \
+		if [ -n "$(SHIP_COMMIT_EXPECTED_FILES)" ]; then \
+			EXPECTED_FILES=$$(printf '%s\n' $(SHIP_COMMIT_EXPECTED_FILES) | LC_ALL=C sort); \
+			if [ "$$STAGED_FILES" != "$$EXPECTED_FILES" ]; then \
+				echo "BLOCKED: staged files differ from requested commit scope." >&2; \
+				echo "Requested files:" >&2; printf '%s\n' "$$EXPECTED_FILES" >&2; \
+				echo "Actually staged:" >&2; printf '%s\n' "$$STAGED_FILES" >&2; \
+				exit 1; \
+			fi; \
+		fi; \
+		STAGED_TREE=$$(git write-tree); \
+		echo "Running pre-commit collection check..."; \
+		$(MAKE) --no-print-directory collect-check || exit $$?; \
+		CURRENT_TREE=$$(git write-tree); \
+		if [ "$$CURRENT_TREE" != "$$STAGED_TREE" ]; then \
+			echo "BLOCKED: staged index changed during preflight; refusing mixed commit." >&2; \
+			echo "Expected staged tree: $$STAGED_TREE" >&2; \
+			echo "Current staged tree:  $$CURRENT_TREE" >&2; \
+			git diff --cached --name-only >&2; \
+			exit 1; \
+		fi; \
+		echo "Committing staged changes..."; \
+		if git diff --cached --quiet; then echo "Nothing to commit"; else git commit -n -m "$(MSG)"; fi
 	@if [ "$(PUSH)" = "1" ]; then $(MAKE) --no-print-directory batch-push; else echo "Committed locally. Use PUSH=1 to push, or make batch-push separately."; fi
 
 # ship-commit-files: atomic staging + commit under the commit lock. Bundles
@@ -346,7 +365,7 @@ ship-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pr
 ship-commit-files: _commit-lock-acquire
 	@[ -n "$(FILES)" ] || { echo "Usage: make ship-commit-files FILES='...' MSG='...'"; exit 1; }
 	@$(MAKE) --no-print-directory git-add FILES='$(FILES)'
-	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
+	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)' SHIP_COMMIT_EXPECTED_FILES='$(FILES)'
 
 commit-and-ship: lint-fix git-add-all
 	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
@@ -780,6 +799,19 @@ azure-containerapp-terraform-phase: tf-cache-setup
 			--json-file "$(AZURE_CONTAINERAPP_TF_JSON_FILE)"; \
 	fi
 
+# Fail closed before paid compute if the GitHub Environment protection drifts.
+azure-containerapp-environment-guard:
+	@# Inputs: AZURE_CONTAINERAPP_GITHUB_REPOSITORY AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY
+	@case "$(AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY)" in 0|1) ;; *) echo "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY must be 0 or 1" >&2; exit 2;; esac
+	@[ -n "$(AZURE_CONTAINERAPP_GITHUB_REPOSITORY)" ] || { echo "AZURE_CONTAINERAPP_GITHUB_REPOSITORY is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT)" ] || { echo "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT is required" >&2; exit 2; }
+	@PYTHONPATH="$(CURDIR)/src" UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python -m scripts.verify_azure_containerapp_environment \
+		--repository "$(AZURE_CONTAINERAPP_GITHUB_REPOSITORY)" \
+		--environment "$(AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT)" \
+		$(if $(strip $(AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON)),--environment-json "$(AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON)",) \
+		$(if $(strip $(AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON)),--branch-policies-json "$(AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON)",) \
+		--validate-only "$(AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY)"
+
 # Hermetic by default; live mode accepts one explicit private auth contract.
 azure-containerapp-live-proof:
 	@# Inputs: AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES AZURE_CONTAINERAPP_LIVE_PROOF_LIVE AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS
@@ -826,7 +858,7 @@ azure-containerapp-live-proof:
 # One credential-free local/GHA contract for every Azure Container Apps boundary.
 test-azure-containerapp-coverage:
 	@$(MAKE) --no-print-directory coverage-files \
-		COVERAGE_TESTFILES='tests/unit/test_ansible_runtime_artifacts.py tests/unit/test_azure_accelerator_credentials.py tests/unit/test_azure_accelerator_openbao.py tests/unit/test_azure_accelerator_role.py tests/unit/test_azure_resource_group_bootstrap.py tests/unit/test_azure_containerapp_ansible_orchestration.py tests/unit/test_azure_containerapp_retention_module_utils.py tests/unit/test_azure_containerapp_arm.py tests/unit/test_azure_containerapp_bootstrap_planning.py tests/unit/test_azure_containerapp_environment_document.py tests/unit/test_azure_containerapp_environment_lifecycle.py tests/unit/test_azure_containerapp_environment_operations.py tests/unit/test_azure_containerapp_environment_retention.py tests/unit/test_azure_containerapp_environment_make_runtime.py tests/unit/test_azure_containerapp_environment_runtime_types.py tests/unit/test_azure_containerapp_environment_state.py tests/unit/test_azure_containerapp_environment_preflight.py tests/unit/test_azure_containerapp_environment_terraform.py tests/unit/test_azure_containerapp_gpu.py tests/unit/test_azure_containerapp_gpu_backend.py tests/unit/test_azure_idle_retention.py tests/unit/test_azure_containerapp_live_proof.py tests/unit/test_azure_containerapp_make_runtime.py tests/unit/test_azure_containerapp_owned_lifecycle.py tests/unit/test_azure_containerapp_preflight.py tests/unit/test_azure_containerapp_preflight_cli.py tests/unit/test_azure_containerapp_runtime_factories.py tests/unit/test_azure_containerapp_runtime_readers.py tests/unit/test_azure_containerapp_resource_owner.py tests/unit/test_azure_containerapp_runtime_resources.py tests/unit/test_azure_containerapp_runtime_state.py tests/unit/test_azure_containerapp_sdk.py tests/unit/test_azure_containerapp_terraform_executor.py tests/unit/test_azure_containerapp_terraform_phase.py tests/unit/test_azure_containerapp_topology.py tests/unit/test_azure_containerapp_tfvars.py tests/unit/test_azure_infrastructure_evidence.py tests/unit/test_azure_self_improve_model_selection.py tests/unit/test_deployment_telemetry.py tests/unit/test_provider_auth.py tests/unit/test_select_azure_self_improve_model.py tests/unit/test_self_improve_azure_containerapp_backend.py tests/unit/test_self_improve_azure_containerapp_bootstrap.py tests/unit/test_self_improve_runtime_config.py tests/e2e/test_azure_containerapp_live_proof_cli.py tests/e2e/test_azure_containerapp_gha_oidc.py' \
+		COVERAGE_TESTFILES='tests/unit/test_ansible_runtime_artifacts.py tests/unit/test_azure_accelerator_credentials.py tests/unit/test_azure_accelerator_openbao.py tests/unit/test_azure_accelerator_role.py tests/unit/test_azure_resource_group_bootstrap.py tests/unit/test_azure_containerapp_ansible_orchestration.py tests/unit/test_azure_containerapp_retention_module_utils.py tests/unit/test_azure_containerapp_arm.py tests/unit/test_azure_containerapp_bootstrap_planning.py tests/unit/test_azure_containerapp_environment_document.py tests/unit/test_azure_containerapp_environment_guard.py tests/unit/test_azure_containerapp_environment_lifecycle.py tests/unit/test_azure_containerapp_environment_operations.py tests/unit/test_azure_containerapp_environment_retention.py tests/unit/test_azure_containerapp_environment_make_runtime.py tests/unit/test_azure_containerapp_environment_runtime_types.py tests/unit/test_azure_containerapp_environment_state.py tests/unit/test_azure_containerapp_environment_preflight.py tests/unit/test_azure_containerapp_environment_terraform.py tests/unit/test_azure_containerapp_gpu.py tests/unit/test_azure_containerapp_gpu_backend.py tests/unit/test_azure_idle_retention.py tests/unit/test_azure_containerapp_live_proof.py tests/unit/test_azure_containerapp_make_runtime.py tests/unit/test_azure_containerapp_owned_lifecycle.py tests/unit/test_azure_containerapp_preflight.py tests/unit/test_azure_containerapp_preflight_cli.py tests/unit/test_azure_containerapp_runtime_factories.py tests/unit/test_azure_containerapp_runtime_readers.py tests/unit/test_azure_containerapp_resource_owner.py tests/unit/test_azure_containerapp_runtime_resources.py tests/unit/test_azure_containerapp_runtime_state.py tests/unit/test_azure_containerapp_sdk.py tests/unit/test_azure_containerapp_terraform_executor.py tests/unit/test_azure_containerapp_terraform_phase.py tests/unit/test_azure_containerapp_topology.py tests/unit/test_azure_containerapp_tfvars.py tests/unit/test_azure_infrastructure_evidence.py tests/unit/test_azure_self_improve_model_selection.py tests/unit/test_deployment_telemetry.py tests/unit/test_provider_auth.py tests/unit/test_select_azure_self_improve_model.py tests/unit/test_self_improve_azure_containerapp_backend.py tests/unit/test_self_improve_azure_containerapp_bootstrap.py tests/unit/test_self_improve_runtime_config.py tests/e2e/test_azure_containerapp_live_proof_cli.py tests/e2e/test_azure_containerapp_gha_oidc.py' \
 		COVERAGE_CONFIG=config/coverage_azure_containerapp.ini \
 		COVERAGE_REPORT=.gate-logs/coverage-azure-containerapp.json \
 		COVERAGE_AGGREGATE_MIN=85 \

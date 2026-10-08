@@ -29,7 +29,7 @@ def test_deck_pins_bounded_hosted_runner_capacity_in_order() -> None:
     )
     positions = [slide.index(marker) for marker in ordered_markers]
     assert positions == sorted(positions)
-    assert deck.count("<section") == 60
+    assert deck.count("<section") == 62
 
     for marker in (
         "S83.166",

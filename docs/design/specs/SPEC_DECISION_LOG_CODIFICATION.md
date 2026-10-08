@@ -1,23 +1,26 @@
 # Decision-log mining and deterministic codification
 
-**Status: CORE, ANALYSIS API/CLI, AND AUTOMATIC DURABLE LIVE REVIEW IMPLEMENTED;
-SIGNED REPLAY CAPTURE AND DEPLOYED PROOF PENDING**
+**Status: CORE, ANALYSIS API/CLI, BOUNDED OPERATOR LIFECYCLE CLI, AUTOMATIC
+DURABLE LIVE REVIEW, AND SIGNED AGENT-OUTCOME CAPTURE IMPLEMENTED; DEPLOYED
+PROOF PENDING**
 
 **Scope:** Mine repeated, successful agent decisions into reviewable, versioned
 decision trees that Gludd can execute without an agent/LLM call. This document
 specifies the safe evidence boundary, offline learner, authenticated analysis
-API and CLI, approval lifecycle, runtime lookup, and zero-downtime operation.
-The standalone core, bounded analysis surfaces, and configured live REVIEW
-decision point are implemented with durable same-host multiworker state;
-automatic signed replay capture and deployed proof are not.
+API, bounded operator CLI, approval lifecycle, runtime lookup, and zero-downtime
+operation. The standalone core, bounded analysis and operator surfaces, and
+configured live REVIEW decision point are implemented with durable same-host
+multiworker state and automatic signed fallback-outcome capture; deployed proof
+is not.
 
 ## 0. Implementation status (2026-10-07)
 
-The earlier checkpoint was **CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW IMPLEMENTED;
-DURABLE INTEGRATION PENDING**. It is retained as status lineage, not as the
-current claim. The status above supersedes it: same-host SQLite WAL durability
-is implemented, while automatic signed capture, multi-host durable integration,
-and deployed proof remain pending.
+The earlier checkpoint was **CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW
+IMPLEMENTED; DURABLE INTEGRATION PENDING**. It is retained as status lineage,
+not as the current claim. The status above supersedes it: same-host SQLite WAL
+generation durability, signed agent-outcome capture, shared-PostgreSQL capture
+coordination, and bounded operator lifecycle commands are implemented, while
+multi-host generation state and deployed proof remain pending.
 
 The contract, normalization, similarity, mining, export, replay evaluation,
 authenticated artifact store, human-approval adapter, deterministic runtime,
@@ -31,8 +34,10 @@ binds those capabilities to one immutable project/policy scope and is available
 through explicit injection or typed default-off daemon configuration.
 `POST /api/v1/decision-codification/analyze` now exposes that adapter through a
 bounded authenticated, analysis-only HTTP surface, and
-`gludd decision-codification analyze` provides its bounded operator client. The
-in-process return-review path resolves `DecisionKind.REVIEW` through that adapter.
+`gludd decision-codification analyze` provides its bounded remote client. Local
+`capture`, `mine`, `approve`, `activate`, and `rollback` commands compose the
+existing durable services without duplicating lifecycle rules. The in-process
+return-review path resolves `DecisionKind.REVIEW` through that adapter.
 
 The core enforces exact observed-context signatures, typed abstention,
 create-only HMAC-authenticated artifacts, digest-bound human approval, stable
@@ -50,9 +55,11 @@ exact active rules skip the reviewer while abstention and adapter failures call
 it exactly once off-loop. A versioned SQLite WAL repository now shares atomic
 pointer, use, rollback, revocation, drift, and application-outcome state between
 same-host workers. Terminal REVIEW application feedback is idempotent and can
-place a generation on immediate durable drift hold. Automatic signed replay
-capture, multi-host state, and deployed live-traffic proof remain pending. No
-production traffic is claimed to use this core today.
+place a generation on immediate durable drift hold. Eligible agent fallback
+outcomes can now be finalized automatically as signed two-event bundles. Their
+producers share one existing database lease across hosts; multi-host state and
+deployed live-traffic proof remain pending for generation serving. No production
+traffic is claimed to use this core today.
 
 ## 1. Outcome and non-goals
 
@@ -84,7 +91,8 @@ storage, policy, or rollout stack.
 |---|---|---|
 | Strict event shape and canonical JSON | `src/general_ludd/replay/schema.py` | Extend the replay event taxonomy through its owner; use the same strict Pydantic and canonical-JSON conventions. |
 | Verified source evidence | `src/general_ludd/replay/store.py` | Mine only `RunBundleStore.read_verified()` output. Never scan arbitrary logs or bypass bundle verification. |
-| Agent decision capture | `src/general_ludd/replay/recorder.py` | Emit normalized decision-source events at the capture boundary after canonical redaction. |
+| Agent decision capture | `src/general_ludd/decision_codification/capture.py`, `src/general_ludd/replay/recorder.py`, and `RunBundleStore` | Reuse the recorder's bounded capture/finalization conventions, pre-normalize, HMAC-correlate, append the decision/outcome pair, and finalize through the existing signed store. |
+| Cross-host capture coordination | `src/general_ludd/event_loop/lease.py` and `BucketLeaseModel` | Reuse the unique database lease, bounded expiry, random holder identity, and exact-owner release; do not add a second lock table or pass a session into the worker thread. |
 | Content redaction | `src/general_ludd/security/redaction.py` | Apply before normalization and record counts, never rejected content. |
 | Learned procedure lifecycle | `src/general_ludd/memory/procedural.py` | Reuse project scoping, success/failure feedback, and procedural-memory concepts; add a stricter rule artifact rather than placing executable code in free-form `steps`. |
 | Deterministic execution | `src/general_ludd/rules/engine.py` | Compile approved tree leaves to its bounded condition/action vocabulary; do not build another runtime policy interpreter. |
@@ -174,10 +182,91 @@ cap while streaming, validates `DecisionAnalysisResponse`, and prints safe
 summaries only.
 
 The API does not approve or activate candidates, write lifecycle receipts, or
-move an active pointer; the CLI likewise exposes analysis only. The CLI accepts
-no credential or key argument and has no lifecycle, key, artifact, or evidence
-surface. Approval and rollout continue through their separate human-authorized
-lifecycle.
+move an active pointer; the remote `analyze` CLI likewise exposes analysis only.
+That subcommand accepts no credential or key argument and has no lifecycle, key,
+artifact, or evidence surface.
+
+### 3.2 Bounded local lifecycle CLI
+
+The local commands load one enabled `DecisionCodificationConfig` from a regular,
+non-symlink YAML file of at most 128 KiB. The supplied `--project` and
+`--policy-digest` must equal its immutable bindings before any replay, artifact,
+or pointer operation. The shared construction function returns the same
+`RunBundleStore`, `DecisionArtifactStore`, `DurableGenerationStore`,
+`RolloutController`, and `DecisionCodificationAdapter` used by the daemon. YAML
+contains only environment-variable names for signing keys. Key values never
+become CLI arguments, JSON output, or exception diagnostics.
+
+The commands preserve separation of authority:
+
+1. `capture` only verifies and summarizes an existing automatically captured
+   signed bundle. It cannot accept event payloads or produce manual evidence.
+2. `mine` reuses `DecisionAnalysisRequest`, the adapter, the 128-candidate output
+   cap, and create-only authenticated artifact storage. Exact reruns are
+   idempotent; conflicting content under a digest is refused.
+3. `approve` loads an exact candidate and holdout report, requires project,
+   policy, kind, source, authorization-evidence, expiry, use, rollout-plan, and
+   confirmation bindings, and delegates to `DecisionApprovalService`. The
+   supplied identity must equal `GLUDD_DECISION_APPROVER_ID`; storage retains
+   only its project-scoped HMAC. The resulting generation is installed only in
+   shadow.
+4. `activate` takes expected candidate and current receipt digests, appends an
+   authorized promotion, and delegates to `RolloutController.promote`. That
+   controller permits exactly one next approved stage in the immutable plan, so the CLI
+   cannot skip an intermediate canary or replace a concurrently changed head.
+5. `rollback` uses the same stale-head guards, appends a rollback receipt, and
+   delegates to `RolloutController.rollback`. One durable CAS restores the newest
+   compatible generation from verified history or removes the pointer so all new
+   traffic abstains.
+
+Outputs are strict digest/count/enum/stage/epoch projections. Inputs contain no
+prompt, response, rationale, feature map, rule body, credential value, or raw
+evidence. Errors collapse to fixed content-free diagnostics. Existing bounds on
+run IDs, events, candidates, five rollout stages, 256 receipt links, capture
+quota/scan count, use count, and durable lock timeout bound time, memory, disk,
+and contention.
+
+ZDD rollout deploys the default-off command surface first, enables one exact
+scope, mines and approves into shadow, then advances one observed stage per
+command. Rollback names the exact current head and never requires a worker
+restart. If compatible history cannot verify, removing the pointer preserves the
+agent/LLM fallback. Operational rollback disables or removes the configuration
+after in-flight commands finish; immutable artifacts remain audit evidence and
+cannot reactivate themselves.
+
+### 3.3 Durable reuse-observability receipt
+
+The configured adapter injects `DecisionReuseObservability` at the real
+`DecisionResolver` seam. One resolution writes exactly one aggregate update:
+exact-rule hits increment avoided agent/LLM calls, while typed abstentions each
+increment exactly one of the fallback calls and one closed reason counter. Integer
+microsecond count/sum/max fields retain latency; candidate changes increment
+rule-version changes, and policy, integrity, ambiguity, or active-hold reasons
+increment drift events. The call accepts no prompts, context, decisions,
+correlation IDs, features, model output, or free-form labels.
+
+`DurableGenerationStore` reuses its WAL, bounded busy timeout, and `BEGIN
+IMMEDIATE` writer boundary. A singleton row binds the file to the exact project
+and policy. Fixed-cardinality tables contain at most five kind totals and the
+Cartesian subset of five kinds by the twelve closed fallback reasons; there is
+no per-request retention. Counters are bounded signed 64-bit integers and an
+individual latency is capped at 300 seconds before persistence.
+
+`gludd decision-codification status` reloads and validates every aggregate,
+then verifies any current rule bundle and lifecycle receipt through
+`RolloutController`. Its five sorted summaries expose only counts, integer
+latency, closed reasons, candidate/receipt digests, stage, epoch, and drift-hold
+state. The canonical receipt is at most 64 KiB, SHA-256 digest-bound, and
+HMAC-authenticated with `DecisionArtifactStore`; an altered scope, count,
+version, digest, or tag fails verification.
+
+Metrics remain the existing closed-label, no-throw secondary signal. A durable
+write, timer, or metrics failure is swallowed only after preserving the actual
+decision or single fallback, while status fails closed and never fabricates a
+receipt. Rollout is default-off. ZDD enablement deploys schema and readers first,
+then enables one exact binding; rollback removes the observer/config binding and
+leaves aggregate rows inert without changing deterministic rollback or the
+agent/LLM fallback.
 
 ## 4. Normalized decision envelope
 
@@ -232,6 +321,26 @@ events are `review.decided`, `policy.decided`, `budget.decided`, and
 `reconcile.decided`; a future routing event must be added through the replay
 schema owner. Legacy, unsigned, incomplete, corrupt, held, cross-project, and
 missing-policy-digest records remain inspectable but are excluded from mining.
+
+New live evidence separates the immutable decision from terminal proof. A
+decision event contains policy, bounded features, and the closed action. A later
+`decision.outcome` event in the same signed bundle binds the store-computed
+decision-event digest to one closed outcome plus bounded terminal IDs and
+gate/status digests. This avoids a self-referential digest in the decision
+payload. The analyzer accepts exactly one same-project, same-correlation,
+non-backdated outcome link. Missing, duplicate, conflicting, or orphan links are
+content-free refusals, never partial evidence. The global 100,000-event analysis
+ceiling also bounds this join.
+
+`DecisionOutcomeRecorder` is enabled only when typed `capture_identity`
+configuration supplies exact source/runtime/model identity. It accepts no model
+request parameters and
+persists no raw capture/task identifier: both become domain-separated HMAC
+correlation fields. Under one cross-process capture lock it proves the bounded
+retention quota, appends the decision, appends its outcome link, and finalizes the
+manifest with the configured replay signature. The identity is idempotent only
+for exact payload/correlation equality; reuse with changed content is a conflict.
+An incomplete or unsigned bundle is never repaired into training evidence.
 
 A decision counts once per root task/correlation family. Retries, duplicated
 events, replayed runs, and child attempts cannot inflate support. A success is
@@ -444,6 +553,48 @@ second process cannot observe a process-local generation or overrun the use
 bound. Network-filesystem and multi-host safety are explicitly out of scope
 until a PostgreSQL implementation lands.
 
+### 9.3 Cross-host producer coordination
+
+Automatic REVIEW capture derives one opaque HMAC-derived lease key from the
+private capture/task scope. Before offloading replay I/O, the event loop acquires
+the existing unique database lease in `bucket_leases` with a fresh content-free
+holder and a 60-second recovery lease. It holds that claim transaction through
+the storage operation and performs an exact-owner release afterward. On a shared
+PostgreSQL application database, the unique index makes a competing host wait or
+fail before writing; after release, a retry can acquire and the deterministic
+recorder returns the exact prior receipt. A busy, lost, malformed, or unavailable
+lease fails closed without changing the already chosen task outcome.
+
+Every participating host must also use the same shared replay root with atomic
+publication visibility. The database lease serializes writers; it does not merge
+host-local replay copies. A deployment without both shared boundaries may not
+claim cross-host capture coordination.
+
+The `AsyncSession` is used sequentially for acquire and release on the event-loop
+task. It is never passed to the worker thread or used concurrently. The existing
+SQLite deployment retains same-host behavior; only deployments sharing
+PostgreSQL may claim cross-host capture coordination. Generation pointers remain
+on the separately documented same-host store.
+
+### 9.4 Hermetic producer-to-reuse proof
+
+The integration proof drives 32 bounded, successful fallback reviews through
+the real `EventLoop`, database lease, `DecisionOutcomeRecorder`, signed replay
+store, analyzer, approval service, rollout controller, and runtime. It spreads
+independent task evidence across four UTC days, verifies every signed two-event
+bundle, activates only the exact human-approved digest, and proves that one
+equivalent live request makes no new reviewer call. Raw return/task identifiers
+are absent from serialized evidence. The fixture caps replay storage at 4 MiB,
+limits retention scanning to 64 entries, and uses no network or model process.
+
+The same proof makes conflict, context mismatch, receipt expiry, and disabled
+configuration observable. Conflict preserves the immutable first bundle and the
+already applied task result; mismatch and expiry each abstain to exactly one
+reviewer call; disabled composition keeps the pre-feature review path. It proves
+the local seam, not production deployment. ZDD still deploys readers first,
+keeps `capture_identity` absent until shared storage is ready, activates only
+after approval, and rolls producers back before readers or generation state.
+
 ## 10. Drift, expiry, and revocation
 
 Every applied rule receives a terminal outcome when one becomes available.
@@ -494,6 +645,18 @@ In-flight work remains bound to the generation that issued its decision; new
 work sees the new pointer. Rollback must not restart workers, interrupt unrelated
 tasks, or mutate the immutable candidate. This is the ZDD canary contract.
 
+Replay schema expansion follows the same no-downtime discipline. Deploy readers
+that accept `decision.outcome`, then deploy producer code with `capture_identity`
+absent, then verify every host shares the migrated PostgreSQL `bucket_leases`
+table and the shared replay root with atomic publication visibility before adding
+exact identity/retention configuration. Producer rollback comes first: remove
+`capture_identity`, allow exact-owner release or the bounded 60-second recovery
+lease, finalize or quarantine in-flight bundles, then remove reader support.
+Existing signed bundles are immutable and must never be rewritten
+for downgrade compatibility. Capture failures do not change the active generation
+or runtime fallback, and the already chosen task outcome is unchanged, so this
+migration remains outside the serving decision path.
+
 ## 12. Privacy, resource limits, and observability
 
 ### 12.1 Privacy and retention
@@ -522,6 +685,14 @@ The HTTP analysis boundary is narrower: a 64 KiB body, 256 unique safe run IDs,
 and 128 candidate summaries. Timestamp lifetime, maximum-use, and token-estimate
 parameters retain the bounds in section 3.1. API validation happens before the
 worker thread is started.
+
+Producer capture reserves at most 128 KiB per two-event bundle, limits private
+identifier inputs to 1,024 UTF-8 bytes, bounds retention to 1-366 days, and scans
+at most 1-10,000 store entries. One 60-second database lease with a 49-character
+random holder bounds cross-host admission; publication and quota enforcement
+share one cross-process store lock. A busy/lost lease, truncated scan, incomplete
+size accounting, lock timeout, or unmet quota refuses the new capture rather
+than silently dropping older records or writing unsigned evidence.
 
 ### 12.3 Closed-cardinality metrics
 
@@ -575,7 +746,9 @@ Tests follow TDD and include:
 - live REVIEW tests for exact-hit bypass, one off-loop fallback, conservative
   action mapping, managed self-improvement refusal, and content-free attribution;
 - CLI tests for bounded request construction, existing authentication, response
-  size/schema validation, safe output, and fixed content-free errors;
+  size/schema validation, config-file admission, capture/mining projections,
+  exact approval scope, one-stage activation, stale-head refusal, ZDD rollback,
+  safe output, and fixed content-free errors;
 - multiworker atomic pointer, cross-process use reservation, idempotent outcome
   recording, canary bucketing, in-flight generation binding, ZDD promotion, and
   rollback tests;
@@ -623,15 +796,23 @@ unit, integration, ZDD, replay, privacy, and coverage phases.
 - **DLC-AC-15:** An injected live REVIEW exact hit skips the reviewer;
   abstention or error invokes it exactly once off-loop, and the default-disabled
   path remains unchanged.
-- **DLC-AC-16:** The proposal-only CLI preserves API bounds and existing auth,
-  enforces its response cap, validates safe summaries, and exposes no lifecycle,
-  key, artifact, or evidence input.
+- **DLC-AC-16:** The proposal-only `analyze` CLI preserves API bounds and
+  existing auth, enforces its response cap, validates safe summaries, and
+  exposes no lifecycle, key, artifact, or evidence input.
 - **DLC-AC-17:** When typed decision-codification configuration is enabled, the
   daemon constructs the live adapter automatically from environment-indirected
   secrets and one durable, project-scoped state path; the default remains off.
 - **DLC-AC-18:** Exact-hit applications are issued atomically across workers and
   terminal outcomes are idempotent, content-free, and able to place the current
   generation on an immediate safety or bounded failure-rate drift hold.
+- **DLC-AC-19:** Local operator commands accept only bounded identifiers,
+  digests, closed enums, and a bounded secret-indirect config; require exact
+  project/policy/head and explicit human authorization; and delegate immutable
+  approval, one-stage promotion, and rollback-or-disable to existing services.
+- **DLC-AC-20:** Every configured resolution aggregates one exact hit or one
+  typed-abstention fallback in fixed-cardinality durable state, and `status`
+  returns a bounded HMAC-authenticated receipt without request content. An
+  observability failure cannot alter the decision or fallback count.
 
 ## 16. Landing record and remaining ownership
 
@@ -713,14 +894,18 @@ content-safe errors, and the absence of approval or activation behavior.
 
 ### Slice R4c: operator CLI and opt-in live REVIEW (landed)
 
-The proposal-only CLI validates the strict request, reuses existing daemon
+The remote `analyze` CLI validates the strict request, reuses existing daemon
 authentication, bounds and validates the response, and prints safe summaries.
-The in-process REVIEW decision point uses an explicitly injected adapter off-loop
+The local `capture`, `mine`, `approve`, `activate`, and `rollback` commands reuse
+the configured replay/artifact/approval/rollout services with secret-indirect
+configuration, exact scope and stale-head guards, shadow-first one-stage
+promotion, digest-only output, and rollback-or-disable ZDD behavior. The
+in-process REVIEW decision point uses an explicitly injected adapter off-loop
 with exact-hit reviewer bypass, one-call fallback, stable retry identities,
 conservative action mapping, managed self-improvement refusal, and content-free
 attribution.
 
-### Slice R4d: durable live-flow integration (partially landed)
+### Slice R4d: durable live-flow and producer capture (landed)
 
 Typed default-off configuration now constructs the live adapter automatically,
 with secrets resolved only from named environment variables. A versioned SQLite
@@ -728,14 +913,27 @@ WAL store provides same-host multiworker compare-and-swap, use reservation,
 rollback, revocation, application issuance, and idempotent outcome recording.
 The REVIEW path records success or failure after the downstream decision receipt
 without changing the already-applied task result; unsafe or excessive-failure
-feedback places the generation on a drift hold. Automatic signed replay capture,
-production database/multi-host coordination, and deployed live-traffic proof
-remain. No second branch independently creates shared migration, config, make,
-or daemon wiring.
+feedback places the generation on a drift hold. Automatic signed replay capture
+now writes eligible fallback decisions and terminal outcomes as bounded,
+HMAC-correlated, signed two-event bundles. The existing durable execution lease
+serializes those producers across hosts sharing PostgreSQL. Multi-host generation
+state and deployed live-traffic proof remain. No second branch independently
+creates shared migration, config, make, or daemon wiring.
+
+### Slice R4e: durable reuse observability (landed)
+
+`DecisionReuseObservability` records resolution counts and integer latency at
+the existing resolver seam. A fixed-row `DurableGenerationStore` extension
+serializes worker updates, binds one project/policy scope, and retains no
+request-level identifiers or content. The local `status` command verifies the
+current generation and returns a 64 KiB-bounded digest- and HMAC-authenticated
+receipt. Tests cover shared-worker aggregation, exact hits, typed abstentions,
+single fallbacks, avoided calls, version/drift evidence, tamper rejection, and
+no-throw serving behavior.
 
 ## 17. Primary documentation and user/forum findings
 
-Research performed 2026-10-05:
+Research performed 2026-10-05 and 2026-10-07:
 
 - [RapidFuzz process documentation](https://rapidfuzz.github.io/RapidFuzz/Usage/process.html)
   defines normalized cutoffs and says equal-score results follow input order.
@@ -761,6 +959,56 @@ Research performed 2026-10-05:
   demonstrates decision IDs, masking/drop rules, bounded upload behavior, and
   nondeterministic builtin capture. Gludd adopts those evidence properties
   without adding an OPA service.
+- [OpenTelemetry stable log data model](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/logs/data-model.md)
+  separates event name, event/observed time, and execution-context correlation.
+  Gludd follows that mature structure with typed decision/outcome events and
+  exact HMAC correlation rather than display-log parsing.
+- [OpenTelemetry Python issue 4336](https://github.com/open-telemetry/opentelemetry-python/issues/4336)
+  records practitioner-observed log loss when a bounded exporter queue discarded
+  old records under pressure. Gludd synchronously reserves quota and atomically
+  persists or refuses; no in-memory queue can silently become training evidence.
+- [Prometheus client_python issue 568](https://github.com/prometheus/client_python/issues/568)
+  has remained open since 2020 after operators reported stale multiprocess metric
+  files and rising Gunicorn collection CPU. Durable evidence therefore uses the
+  existing shared WAL state rather than worker-local metric files.
+- [Prometheus client_python issue 431](https://github.com/prometheus/client_python/issues/431)
+  records a 2019 deadlock involving inherited thread locks in multiprocess mode.
+  Gludd aggregates with short `BEGIN IMMEDIATE` transactions and treats its
+  no-throw metrics backend as supplementary, never authoritative evidence.
+- [Prometheus instrumentation guidance](https://prometheus.io/docs/practices/instrumentation/)
+  calls for query count, failure, and latency signals while advising very low
+  label cardinality. The reuse metrics have only closed enum labels; project,
+  policy, candidate, receipt, context, and correlation values are excluded.
+- [PostgreSQL index uniqueness checks](https://www.postgresql.org/docs/current/index-unique-checks.html)
+  define the mature unique-index behavior: a duplicate inserter waits for an
+  uncommitted conflicting transaction and then rechecks. The existing
+  `bucket_leases.bucket_key` constraint supplies that cross-host serialization.
+- [Kubernetes issue 23731](https://github.com/kubernetes/kubernetes/issues/23731)
+  has recorded a practitioner-observed lease split brain since 2016, when a
+  former leader continued acting. Gludd uses a fresh attempt holder, writes only
+  inside the claim, and treats every uncertain/lost claim as no-write.
+- [SQLAlchemy discussion 8554](https://github.com/sqlalchemy/sqlalchemy/discussions/8554)
+  documents user-visible failures from sharing one `AsyncSession` concurrently.
+  Gludd sequences acquire, worker completion, and release on one task and never
+  passes the session into the worker.
+- [MLflow issue 5133](https://github.com/mlflow/mlflow/issues/5133) records a
+  practitioner deployment where an artifact listed a dependency that remained
+  absent at serving time. Gludd binds dependency/source digests into approval
+  and tests producer evidence through the same runtime seam, while retaining an
+  explicit deployed-environment verification requirement.
+- [Vault issue 6501](https://github.com/hashicorp/vault/issues/6501) has
+  documented since 2019 the confusing precedence and inline exposure created by
+  accepting both environment and command-line token material. Gludd resolves
+  every key through one configured environment pointer and exposes no credential
+  value flag or reflected diagnostic.
+- [Kubernetes issue 61897](https://github.com/kubernetes/kubernetes/issues/61897)
+  has documented since 2018 that optimistic-lock conflicts are routine when two
+  actors update one resource. Gludd requires exact candidate and receipt heads
+  for promotion and rollback, then treats every stale CAS as no transition.
+- [Helm issue 5377](https://github.com/helm/helm/issues/5377) records atomic
+  rollback timeout confusion dating to 2019. Gludd keeps a lifecycle command to
+  one bounded durable CAS: rollback either restores verified compatible history
+  or disables deterministic reuse while fallback stays available.
 - [OPA issue 2379](https://github.com/open-policy-agent/opa/issues/2379) has
   documented since 2020 that dropping a whole JWT loses useful context while
   retaining it exposes replayable credentials. Gludd extracts an allowlisted,

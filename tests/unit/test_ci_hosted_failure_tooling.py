@@ -402,7 +402,7 @@ def test_ci_pyinstaller_warning_audit_replays_the_exact_downloaded_graph() -> No
             "make ci-pyinstaller-warning-audit RUN=1 "
             "ARTIFACT=molecule-logs-shard-1 "
             "PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 "
-            "PYINSTALLER_VERSION_LINUX=6.20.0 "
+            "PYINSTALLER_VERSION_LINUX=6.22.3 "
             "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
         ),
     }

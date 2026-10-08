@@ -45,7 +45,7 @@ def test_reveal_update_preserves_slides_tokens_and_decision_api_content() -> Non
     assert deck.count(f'data-contract="{RELEASE_TOKEN}"') == 1
     assert deck.count('data-contract="decision-log-codification-v1"') == 1
     assert "/api/v1/decision-codification/analyze" in deck
-    assert deck.count("<section") == 60
+    assert deck.count("<section") == 62
     for token in (
         "{{VERSION}}",
         "{{TEST_COUNT}}",
