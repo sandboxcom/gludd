@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 
+from general_ludd.review import estimation_tracker as estimation_tracker_module
 from general_ludd.review.estimation_tracker import (
     EstimateAccuracy,
     EstimateVariance,
@@ -13,6 +14,18 @@ from general_ludd.review.estimation_tracker import (
     TaskActual,
     TaskEstimate,
 )
+
+
+def test_public_api_explicitly_exports_estimation_models() -> None:
+    """The compatibility module must declare every model it re-exports."""
+    assert {
+        "EstimateAccuracy",
+        "EstimateVariance",
+        "EstimationCalibration",
+        "EstimationReport",
+        "TaskActual",
+        "TaskEstimate",
+    } <= set(estimation_tracker_module.__all__)
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -104,6 +104,17 @@ class EstimationReport:
     trend: str = "stable"  # improving, degrading, stable
     generated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
+__all__ = (
+    "EstimateAccuracy",
+    "EstimateVariance",
+    "EstimationCalibration",
+    "EstimationReport",
+    "EstimationTracker",
+    "TaskActual",
+    "TaskEstimate",
+    "default_estimation_tracker",
+)
+
 
 class EstimationTracker:
     """Tracks task estimation accuracy and self-corrects over time.
