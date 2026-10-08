@@ -1,2 +1,6 @@
 ---
-{}
+git_release_release_recover_enabled: false
+git_release_release_recover_request:
+  path: "{{ playbook_dir }}"
+git_release_release_recover_result_fact: git_release_release_recover_result
+git_release_release_recover_output_path: ""

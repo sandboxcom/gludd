@@ -1,11 +1,10 @@
 ---
-# deploy_orchestrate role tasks — git_release service.
-
-- name: Load deploy_orchestrate defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _deploy_orchestrate_defaults
-
-- name: Reference deploy_orchestrate service API
-  ansible.builtin.debug:
-    msg: "deploy_orchestrate routes via the git_release service API (/api/git_release/deploy_orchestrate)."
+- name: Execute deploy-orchestrate through the git-release service
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.service_request
+  vars:
+    git_release_service_enabled: "{{ git_release_deploy_orchestrate_enabled }}"
+    git_release_service_operation: deploy_orchestrate
+    git_release_service_request: "{{ git_release_deploy_orchestrate_request }}"
+    git_release_service_result_fact: "{{ git_release_deploy_orchestrate_result_fact }}"
+    git_release_service_output_path: "{{ git_release_deploy_orchestrate_output_path }}"

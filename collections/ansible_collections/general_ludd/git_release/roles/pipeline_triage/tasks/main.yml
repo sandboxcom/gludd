@@ -1,11 +1,10 @@
 ---
-# pipeline_triage role tasks — git_release service.
-
-- name: Load pipeline_triage defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _pipeline_triage_defaults
-
-- name: Reference pipeline_triage service API
-  ansible.builtin.debug:
-    msg: "pipeline_triage routes via the git_release service API (/api/git_release/pipeline_triage)."
+- name: Execute pipeline-triage through the git-release service
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.service_request
+  vars:
+    git_release_service_enabled: "{{ git_release_pipeline_triage_enabled }}"
+    git_release_service_operation: pipeline_triage
+    git_release_service_request: "{{ git_release_pipeline_triage_request }}"
+    git_release_service_result_fact: "{{ git_release_pipeline_triage_result_fact }}"
+    git_release_service_output_path: "{{ git_release_pipeline_triage_output_path }}"

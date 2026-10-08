@@ -1,11 +1,10 @@
 ---
-# release_plan role tasks — git_release service.
-
-- name: Load release_plan defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _release_plan_defaults
-
-- name: Reference release_plan service API
-  ansible.builtin.debug:
-    msg: "release_plan routes via the git_release service API (/api/git_release/release_plan)."
+- name: Execute release-plan through the git-release service
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.service_request
+  vars:
+    git_release_service_enabled: "{{ git_release_release_plan_enabled }}"
+    git_release_service_operation: release_plan
+    git_release_service_request: "{{ git_release_release_plan_request }}"
+    git_release_service_result_fact: "{{ git_release_release_plan_result_fact }}"
+    git_release_service_output_path: "{{ git_release_release_plan_output_path }}"

@@ -1,2 +1,6 @@
 ---
-{}
+git_release_pipeline_triage_enabled: false
+git_release_pipeline_triage_request:
+  path: "{{ playbook_dir }}"
+git_release_pipeline_triage_result_fact: git_release_pipeline_triage_result
+git_release_pipeline_triage_output_path: ""

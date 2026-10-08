@@ -1,0 +1,10 @@
+---
+git_release_daemon_url: "http://127.0.0.1:8000"
+git_release_daemon_psk: ""
+git_release_daemon_timeout: 30
+git_release_idempotency_key: ""
+git_release_service_enabled: false
+git_release_service_operation: ""
+git_release_service_request: {}
+git_release_service_result_fact: git_release_service_result
+git_release_service_output_path: ""

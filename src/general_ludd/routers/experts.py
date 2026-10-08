@@ -16,6 +16,8 @@ via the daemon alongside the existing PSK-gated admin and public API routes:
     through the daemon-owned implementation.
   - ``GET  /api/git_release/assess`` -- collect read-only repo evidence
     (delegates to :func:`general_ludd.git_release.collect_repo_evidence`).
+  - ``POST /api/git_release/resolve`` -- execute one typed, allowlisted,
+    idempotent release evidence or ZDD decision operation.
 
 These are stubs: they translate a JSON body into the collection's typed
 entry point and serialize the result back to JSON. PSK auth is applied by
@@ -74,6 +76,33 @@ async def _run_domain_operation(
     except Exception as err:
         logger.exception(failure_detail)
         raise HTTPException(status_code=500, detail=failure_detail) from err
+
+
+async def _resolve_typed_domain_request(
+    body: Any,
+    store: IdempotencyStore,
+    dispatch: Callable[[str, dict[str, Any]], dict[str, Any]],
+    *,
+    request_error: type[Exception],
+    timeout_detail: str,
+    failure_detail: str,
+) -> dict[str, Any]:
+    """Run and replay a typed domain request with shared failure semantics."""
+
+    async def _run() -> dict[str, Any]:
+        return await _run_domain_operation(
+            lambda: dispatch(body.operation, body.request),
+            timeout_seconds=body.timeout_seconds,
+            request_error=request_error,
+            timeout_detail=timeout_detail,
+            failure_detail=failure_detail,
+        )
+
+    return await store.run(
+        key=body.idempotency_key,
+        payload=body.model_dump(mode="json", exclude_none=True),
+        producer=_run,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +182,25 @@ class ChemistryResolveRequest(_BoundedDomainOperationRequest):
         "hazard",
     ] = "route"
     _domain: ClassVar[str] = "chemistry"
+
+
+class GitReleaseResolveRequest(_BoundedDomainOperationRequest):
+    """Body for ``POST /api/git_release/resolve``."""
+
+    _domain: ClassVar[str] = "git-release"
+    operation: Literal[
+        "artifact_build",
+        "artifact_verify",
+        "conflict_resolve",
+        "deploy_orchestrate",
+        "helper_build",
+        "helper_discover",
+        "helper_select",
+        "pipeline_triage",
+        "release_plan",
+        "release_recover",
+        "work_recover",
+    ]
 
 
 def _dispatch_chemistry(
@@ -242,6 +290,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     """Register authenticated domain-expert and language routes on ``app``."""
     materials_store = IdempotencyStore()
     chemistry_store = IdempotencyStore()
+    git_release_store = IdempotencyStore()
 
     @app.post("/api/materials/select")
     async def materials_select(body: MaterialsSelectRequest) -> dict[str, Any]:
@@ -256,24 +305,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/api/materials/resolve")
     async def materials_resolve(body: MaterialsResolveRequest) -> dict[str, Any]:
-        async def _run() -> dict[str, Any]:
-            from general_ludd.materials import operations
+        from general_ludd.materials import operations
 
-            return await _run_domain_operation(
-                lambda: operations.dispatch_materials_operation(
-                    body.operation,
-                    body.request,
-                ),
-                timeout_seconds=body.timeout_seconds,
-                request_error=operations.MaterialsRequestError,
-                timeout_detail="materials operation timed out",
-                failure_detail="materials operation failed",
-            )
-
-        return await materials_store.run(
-            key=body.idempotency_key,
-            payload=body.model_dump(mode="json", exclude_none=True),
-            producer=_run,
+        return await _resolve_typed_domain_request(
+            body,
+            materials_store,
+            operations.dispatch_materials_operation,
+            request_error=operations.MaterialsRequestError,
+            timeout_detail="materials operation timed out",
+            failure_detail="materials operation failed",
         )
 
     @app.post("/api/chemistry/resolve")
@@ -365,3 +405,16 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "is_dirty": evidence.is_dirty,
             "is_detached": evidence.is_detached,
         }
+
+    @app.post("/api/git_release/resolve")
+    async def git_release_resolve(body: GitReleaseResolveRequest) -> dict[str, Any]:
+        from general_ludd.git_release import operations
+
+        return await _resolve_typed_domain_request(
+            body,
+            git_release_store,
+            operations.dispatch_git_release_operation,
+            request_error=operations.GitReleaseRequestError,
+            timeout_detail="git-release operation timed out",
+            failure_detail="git-release operation failed",
+        )
