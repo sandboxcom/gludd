@@ -32,4 +32,12 @@
         category: restaurants
         timeout: 5
       register: local_guide_results
-      failed_when: false
+      check_mode: true
+
+    - name: "Assert local guide native check-mode result"
+      ansible.builtin.assert:
+        that:
+          - local_guide_results is succeeded
+          - not local_guide_results.changed
+          - local_guide_results.transport == 'native'
+          - local_guide_results.results == []

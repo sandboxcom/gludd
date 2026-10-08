@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import pytest
 from ansible_collections.general_ludd.travel.plugins.module_utils.searxng_client import (
     TRAVEL_INDEX_ENGINES,
     SearXNGCreateIndexError,
@@ -53,6 +56,30 @@ class TestSearXNGIndex:
         idx = SearXNGIndex(name="test", engines=engines)
         engines.append("kayak")
         assert idx.engines == ["google_flights"]
+
+    @pytest.mark.parametrize(
+        ("name", "engines", "message"),
+        [
+            ("../escape", None, "index name"),
+            ("valid", [], "between 1 and 20"),
+            ("valid", ["../engine"], "invalid name"),
+            ("valid", [f"engine-{index}" for index in range(21)], "between 1 and 20"),
+        ],
+    )
+    def test_index_rejects_unbounded_names_and_engines(
+        self,
+        name: str,
+        engines: list[str] | None,
+        message: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=message):
+            SearXNGIndex(name=name, engines=engines)
+
+    def test_index_from_dict_without_timestamp_uses_current_time(self) -> None:
+        restored = SearXNGIndex.from_dict({"name": "fresh", "engines": ["booking"]})
+
+        assert restored.name == "fresh"
+        assert restored.created_at is not None
 
 
 class TestTravelIndexManager:
@@ -117,17 +144,44 @@ class TestTravelIndexManager:
         mgr = TravelIndexManager()
         assert mgr.list_all() == []
 
-    def test_manager_query_returns_results(self):
-        mgr = TravelIndexManager()
+    def test_manager_query_returns_exact_backend_results(self):
+        expected = [
+            {
+                "title": "Exact backend result",
+                "url": "https://travel.test/offers/42",
+                "engine": "booking",
+                "score": 0.91,
+                "content": "backend-owned content",
+                "category": "travel",
+            }
+        ]
+        calls: list[dict[str, Any]] = []
+
+        def backend(query: str, **kwargs: Any) -> list[dict[str, Any]]:
+            calls.append({"query": query, **kwargs})
+            return expected
+
+        mgr = TravelIndexManager(search_backend=backend)
         mgr.create("travel-meta")
         results = mgr.query("travel-meta", "flights NYC to Paris")
-        assert isinstance(results, list)
-        assert len(results) > 0
-        assert "title" in results[0]
+        assert results == expected
+        assert results is not expected
+        assert calls == [
+            {
+                "query": "flights NYC to Paris",
+                "engines": TRAVEL_INDEX_ENGINES,
+                "max_results": 10,
+            }
+        ]
+
+    def test_manager_query_without_backend_fails_closed(self):
+        mgr = TravelIndexManager()
+        mgr.create("travel-meta")
+
+        with pytest.raises(SearXNGCreateIndexError, match="search backend"):
+            mgr.query("travel-meta", "flights NYC to Paris")
 
     def test_manager_query_on_nonexistent_raises(self):
-        import pytest
-
         mgr = TravelIndexManager()
         with pytest.raises(SearXNGIndexNotFoundError):
             mgr.query("ghost", "flights")
@@ -143,6 +197,46 @@ class TestTravelIndexManager:
         mgr.create("check-me")
         assert mgr.has("check-me") is True
         assert mgr.has("not-here") is False
+
+    def test_manager_enforces_registry_capacity(self) -> None:
+        mgr = TravelIndexManager()
+        for index in range(32):
+            mgr.create(f"index-{index}")
+
+        with pytest.raises(SearXNGCreateIndexError, match="limited to 32"):
+            mgr.create("overflow")
+
+    @pytest.mark.parametrize(
+        ("query", "max_results", "message"),
+        [
+            ("contains\x00nul", 1, "without NUL"),
+            ("valid", True, "between 1 and 100"),
+            ("valid", 0, "between 1 and 100"),
+            ("valid", 101, "between 1 and 100"),
+        ],
+    )
+    def test_manager_rejects_unbounded_query_inputs(
+        self,
+        query: str,
+        max_results: int,
+        message: str,
+    ) -> None:
+        mgr = TravelIndexManager(search_backend=lambda *_args, **_kwargs: [])
+        mgr.create("travel-meta")
+
+        with pytest.raises(ValueError, match=message):
+            mgr.query("travel-meta", query, max_results=max_results)
+
+    @pytest.mark.parametrize("payload", [{"not": "a list"}, ["not-a-dict"]])
+    def test_manager_rejects_invalid_backend_result_schema(self, payload: object) -> None:
+        def backend(*_args: Any, **_kwargs: Any) -> Any:
+            return payload
+
+        mgr = TravelIndexManager(search_backend=backend)
+        mgr.create("travel-meta")
+
+        with pytest.raises(SearXNGCreateIndexError, match="invalid result list"):
+            mgr.query("travel-meta", "valid")
 
 
 class TestModuleFunctions:
@@ -164,22 +258,34 @@ class TestModuleFunctions:
     def test_index_exists_false(self):
         assert index_exists("completely-missing") is False
 
-    def test_query_index_returns_results(self):
+    def test_query_index_returns_exact_injected_results(self):
         create_index("travel-meta")
-        results = query_index("travel-meta", "hotels in Tokyo")
-        assert isinstance(results, list)
-        assert len(results) > 0
+        expected = [{"title": "Tokyo", "url": "https://travel.test/tokyo"}]
+        results = query_index(
+            "travel-meta",
+            "hotels in Tokyo",
+            search_backend=lambda _query, **_kwargs: expected,
+        )
+        assert results == expected
 
-    def test_query_index_includes_engine_info(self):
+    def test_query_index_passes_engine_selection_to_backend(self):
         create_index("travel-meta")
-        results = query_index("travel-meta", "NYC hotels")
-        assert len(results) > 0
-        for r in results:
-            assert "engine" in r or "source" in r
+        received: dict[str, Any] = {}
+
+        def backend(query: str, **kwargs: Any) -> list[dict[str, Any]]:
+            received.update({"query": query, **kwargs})
+            return []
+
+        assert query_index("travel-meta", "NYC hotels", search_backend=backend) == []
+        assert received["engines"] == TRAVEL_INDEX_ENGINES
 
     def test_query_index_empty_query_returns_empty(self):
         create_index("travel-meta")
-        results = query_index("travel-meta", "")
+        results = query_index(
+            "travel-meta",
+            "",
+            search_backend=lambda _query, **_kwargs: [],
+        )
         assert isinstance(results, list)
 
     def test_delete_index_removes(self):

@@ -1,8 +1,9 @@
 ---
 dependency:
   name: galaxy
+  enabled: false
 driver:
-  name: delegated
+  name: default
 platforms:
   - name: localhost
     ansible_connection: local
@@ -11,8 +12,16 @@ provisioner:
   config_options:
     defaults:
       gathering: explicit
-      callbacks_enabled: ansible.posix.profile_tasks
+      connection: local
+      interpreter_python: auto_silent
+      host_key_checking: false
   playbooks:
     converge: converge.yml
 verifier:
   name: ansible
+scenario:
+  test_sequence:
+    - syntax
+    - converge
+    - idempotence
+    - verify
