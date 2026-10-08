@@ -682,7 +682,9 @@ def launch_gate(
             *recorded_gate_command,
         ]
 
-        with log_path.open("wb") as log_file:
+        # Every inherited writer must retain O_APPEND so a child holding an older
+        # file offset cannot overwrite a marker appended by the watcher.
+        with log_path.open("ab") as log_file:
             header = (
                 f"[gate-background] launcher run_id={run_id} namespace={namespace} "
                 f"root={paths.project_root} timeout={_format_seconds(timeout_seconds)}s\n"
