@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -36,7 +37,7 @@ from general_ludd.dispatch.dynamic_dispatcher import (
     structured_tool_calls_to_calls,
 )
 from general_ludd.event_loop.loop import EventLoop
-from general_ludd.schemas.todo import Todo, TodoStatus
+from general_ludd.schemas.todo import ResourceProfile, Todo, TodoStatus, WorkType
 
 # --------------------------------------------------------------------------- #
 # Fixtures / helpers
@@ -88,15 +89,18 @@ def _passthrough_to_thread() -> AsyncMock:
     return AsyncMock(side_effect=_run)
 
 
-def _todo(work_type: str = "code") -> Todo:
+def _todo(
+    work_type: str | WorkType = WorkType.CODE, *, project_id: str | None = None
+) -> Todo:
     return Todo(
         title="generate something",
         todo_id="TODO-GENTOOL",
         status=TodoStatus.ACTIVE,
         queue="core",
-        work_type=work_type,
-        resource_profile="low_resource",
+        work_type=WorkType(work_type),
+        resource_profile=ResourceProfile.LOW_RESOURCE,
         prompt_profile="default",
+        project_id=project_id,
     )
 
 
@@ -233,13 +237,418 @@ class TestDaemonGenerationDispatchesStructuredCalls:
                 return_value=("Here is the code you asked for.", tcs),
             ),
         ):
-            await loop._dispatch_execute_job(_todo("code"))
+            await loop._dispatch_execute_job(_todo("code", project_id="proj-a"))
 
         dispatcher.dispatch_all.assert_awaited_once()
         dispatched = dispatcher.dispatch_all.await_args.args[0]
         assert [c.name for c in dispatched] == ["fs/write_file", "git/commit"]
         assert {c.kind for c in dispatched} == {"mcp"}
         assert dispatched[0].args == {"path": "out.txt", "content": "hello"}
+
+    @pytest.mark.asyncio
+    async def test_structured_tool_result_persists_under_todo_project(self) -> None:
+        """Successful Phase-1 tool output stays in the validated todo project."""
+        dispatcher = MagicMock()
+        dispatcher.dispatch_all = AsyncMock(
+            return_value=[
+                DispatchResult(
+                    ok=True,
+                    kind="mcp",
+                    name="fs/write_file",
+                    output="project-a-output",
+                )
+            ]
+        )
+        variable_repo = AsyncMock()
+        variable_repo.load_vars_for_project.return_value = {}
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=_make_runner(),
+            model_gateway=MagicMock(),
+            dispatcher=dispatcher,
+            variable_repo=variable_repo,
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("generated", _structured_tool_calls()[:1]),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        variable_repo.set_var.assert_awaited_once_with(
+            namespace="tool_results",
+            key="tool_result:fs/write_file",
+            value="project-a-output",
+            project_id="proj-a",
+        )
+
+    @pytest.mark.asyncio
+    async def test_one_failed_project_write_does_not_drop_later_tool_results(
+        self,
+    ) -> None:
+        """Persistence stays best-effort per result without widening its scope."""
+        dispatcher = MagicMock()
+        dispatcher.dispatch_all = AsyncMock(
+            return_value=[
+                DispatchResult(ok=True, kind="mcp", name="first", output="one"),
+                DispatchResult(ok=True, kind="mcp", name="second", output="two"),
+            ]
+        )
+        variable_repo = AsyncMock()
+        variable_repo.load_vars_for_project.return_value = {}
+        variable_repo.set_var.side_effect = [RuntimeError("write unavailable"), None]
+        runner = _make_runner()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=runner,
+            model_gateway=MagicMock(),
+            dispatcher=dispatcher,
+            variable_repo=variable_repo,
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("generated", _structured_tool_calls()),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        assert variable_repo.set_var.await_count == 2
+        assert all(
+            call.kwargs["project_id"] == "proj-a"
+            for call in variable_repo.set_var.await_args_list
+        )
+        runner.run_playbook.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_structured_calls_without_dispatcher_remain_non_fatal(self) -> None:
+        runner = _make_runner()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=runner,
+            model_gateway=MagicMock(),
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("generated", _structured_tool_calls()[:1]),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        runner.run_playbook.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_excess_structured_calls_are_denied_before_dispatch(self) -> None:
+        from general_ludd.dispatch.limits import MAX_CALLS_PER_REQUEST
+
+        dispatcher = MagicMock()
+        dispatcher.dispatch_all = AsyncMock(return_value=[])
+        runner = _make_runner()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=runner,
+            model_gateway=MagicMock(),
+            dispatcher=dispatcher,
+        )
+        excess_calls = _structured_tool_calls()[:1] * (MAX_CALLS_PER_REQUEST + 1)
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("generated", excess_calls),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        dispatcher.dispatch_all.assert_not_awaited()
+        runner.run_playbook.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_mixed_tool_results_record_only_successful_project_output(
+        self,
+    ) -> None:
+        dispatch_results = [
+            DispatchResult(ok=True, kind="mcp", name="first", output="one"),
+            DispatchResult(ok=False, kind="mcp", name="second", error="denied"),
+        ]
+        dispatcher = MagicMock()
+        dispatcher.dispatch_all = AsyncMock(return_value=dispatch_results)
+        variable_repo = AsyncMock()
+        variable_repo.load_vars_for_project.return_value = {}
+        run_recorder = MagicMock()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=_make_runner(),
+            model_gateway=MagicMock(),
+            dispatcher=dispatcher,
+            variable_repo=variable_repo,
+            run_recorder=run_recorder,
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("generated", _structured_tool_calls()),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        variable_repo.set_var.assert_awaited_once_with(
+            namespace="tool_results",
+            key="tool_result:first",
+            value="one",
+            project_id="proj-a",
+        )
+        tool_events = [
+            call.args[1]
+            for call in run_recorder.record.call_args_list
+            if call.args[1]["type"] == "tool_calls_dispatched"
+        ]
+        assert tool_events == [
+            {
+                "type": "tool_calls_dispatched",
+                "timestamp": tool_events[0]["timestamp"],
+                "total": 2,
+                "ok": 1,
+                "error_count": 1,
+                "calls": [result.to_dict() for result in dispatch_results],
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_shared_var_and_model_failures_do_not_abort_runner(self) -> None:
+        variable_repo = AsyncMock()
+        variable_repo.load_vars_for_project.side_effect = RuntimeError("database unavailable")
+        runner = _make_runner()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=runner,
+            model_gateway=MagicMock(),
+            variable_repo=variable_repo,
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                side_effect=RuntimeError("model unavailable"),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        runner.run_playbook.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_missing_prompt_profile_synthesizes_todo_prompt(self) -> None:
+        runner = _make_runner()
+        invoke = MagicMock(return_value=("generated", None))
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=runner,
+            model_gateway=MagicMock(),
+        )
+        todo = _todo(project_id="proj-a").model_copy(update={"prompt_profile": None})
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                invoke,
+            ),
+        ):
+            await loop._dispatch_execute_job(todo)
+
+        assert invoke.call_args.kwargs["prompt_text"] == "Task: generate something"
+
+    @pytest.mark.asyncio
+    async def test_project_dispatch_checkpoints_validated_identity_before_model(
+        self,
+    ) -> None:
+        checkpoint_manager = MagicMock()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=_make_runner(),
+            model_gateway=MagicMock(),
+            checkpoint_manager=checkpoint_manager,
+        )
+        todo = _todo(project_id="proj-a").model_copy(update={"version": 7})
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("generated", None),
+            ),
+        ):
+            await loop._dispatch_execute_job(todo)
+
+        checkpoint_manager.checkpoint.assert_called_once()
+        snapshot = checkpoint_manager.checkpoint.call_args.args[0]
+        assert snapshot.dispatch_state.project_id == "proj-a"
+        assert snapshot.dispatch_state.todo_version == 7
+        assert snapshot.dispatch_state.resume_shard_id == "proj-a:TODO-GENTOOL"
+
+    @pytest.mark.asyncio
+    async def test_unscoped_dispatch_does_not_write_project_checkpoint(self) -> None:
+        checkpoint_manager = MagicMock()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=_make_runner(),
+            model_gateway=MagicMock(),
+            checkpoint_manager=checkpoint_manager,
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("generated", None),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo())
+
+        checkpoint_manager.checkpoint.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_generation_records_routed_deployment_performance(self) -> None:
+        gateway = MagicMock()
+        gateway.get_profile.return_value = SimpleNamespace(
+            provider="provider-a",
+            model_name="model-a",
+            cost_per_input_token=0.01,
+            cost_per_output_token=0.02,
+        )
+        health_router = MagicMock()
+        health_router.check_and_route.return_value = "healthy-fallback"
+        health_router.health_checker = MagicMock()
+        performance_repo = AsyncMock()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=_make_runner(),
+            model_gateway=gateway,
+        )
+        loop._deployment_health_router = health_router
+        loop._model_perf_repo = performance_repo
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("generated", None),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        health_router.health_checker.record_success.assert_called_once_with(
+            "healthy-fallback"
+        )
+        assert performance_repo.record_call.await_args.kwargs["success"] is True
+        assert (
+            performance_repo.record_call.await_args.kwargs["model_profile_id"]
+            == "healthy-fallback"
+        )
+        assert performance_repo.record_call.await_args.kwargs["service"] == "provider-a"
+
+    @pytest.mark.asyncio
+    async def test_unhealthy_deployment_and_model_failure_are_recorded(self) -> None:
+        gateway = MagicMock()
+        gateway.get_profile.return_value = None
+        health_router = MagicMock()
+        health_router.check_and_route.return_value = None
+        health_router.health_checker = MagicMock()
+        performance_repo = AsyncMock()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=_make_runner(),
+            model_gateway=gateway,
+        )
+        loop._deployment_health_router = health_router
+        loop._model_perf_repo = performance_repo
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                side_effect=RuntimeError("model unavailable"),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        health_router.health_checker.record_failure.assert_called_once_with(
+            "default",
+            "model unavailable",
+            kind="error",
+        )
+        assert performance_repo.record_call.await_args.kwargs["success"] is False
+        assert performance_repo.record_call.await_args.kwargs["service"] == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_same_deployment_empty_response_and_perf_failure_are_non_fatal(
+        self,
+    ) -> None:
+        health_router = MagicMock()
+        health_router.check_and_route.return_value = "default"
+        health_router.health_checker = MagicMock()
+        performance_repo = AsyncMock()
+        performance_repo.record_call.side_effect = RuntimeError("metrics unavailable")
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=_make_runner(),
+            model_gateway=MagicMock(),
+        )
+        loop._deployment_health_router = health_router
+        loop._model_perf_repo = performance_repo
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=(None, None),
+            ),
+        ):
+            await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        health_router.health_checker.record_success.assert_not_called()
+        health_router.health_checker.record_failure.assert_not_called()
+        performance_repo.record_call.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_missing_gateway_records_unknown_performance_profile(self) -> None:
+        performance_repo = AsyncMock()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=_make_runner(),
+            model_gateway=None,
+        )
+        loop._model_perf_repo = performance_repo
+
+        await loop._dispatch_execute_job(_todo(project_id="proj-a"))
+
+        assert performance_repo.record_call.await_args.kwargs["service"] == "unknown"
+        assert performance_repo.record_call.await_args.kwargs["success"] is False
 
     @pytest.mark.asyncio
     async def test_no_tool_calls_means_no_dispatch(self) -> None:
@@ -265,7 +674,7 @@ class TestDaemonGenerationDispatchesStructuredCalls:
                 return_value=("just some generated text", None),
             ),
         ):
-            await loop._dispatch_execute_job(_todo("code"))
+            await loop._dispatch_execute_job(_todo("code", project_id="proj-a"))
 
         dispatcher.dispatch_all.assert_not_awaited()
 
@@ -297,14 +706,56 @@ class TestDaemonGenerationDispatchesStructuredCalls:
             patch("general_ludd.execution.tool_loop.ToolCallLoop") as loop_type,
         ):
             loop_type.return_value.run_with_tools = phase_two
-            await loop._dispatch_execute_job(_todo("code"))
+            await loop._dispatch_execute_job(_todo("code", project_id="proj-a"))
 
         phase_two.assert_awaited_once()
         variable_repo.set_var.assert_any_await(
             namespace="tool_results",
             key="tool_loop_result:EXEC-TODO-GENTOOL",
             value="tool-refined output",
+            project_id="proj-a",
         )
+        runner.run_playbook.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_phase_two_project_write_failure_is_non_fatal_and_recorded(
+        self,
+    ) -> None:
+        runner = _make_runner()
+        variable_repo = AsyncMock()
+        variable_repo.load_vars_for_project.return_value = {}
+        variable_repo.set_var.side_effect = RuntimeError("write unavailable")
+        run_recorder = MagicMock()
+        phase_two = AsyncMock(return_value="tool-refined output")
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=runner,
+            model_gateway=MagicMock(),
+            mcp_client=MagicMock(),
+            variable_repo=variable_repo,
+            run_recorder=run_recorder,
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("initial analysis", None),
+            ),
+            patch("general_ludd.execution.tool_loop.ToolCallLoop") as loop_type,
+        ):
+            loop_type.return_value.run_with_tools = phase_two
+            await loop._dispatch_execute_job(_todo(project_id="proj-b"))
+
+        variable_repo.set_var.assert_awaited_once_with(
+            namespace="tool_results",
+            key="tool_loop_result:EXEC-TODO-GENTOOL",
+            value="tool-refined output",
+            project_id="proj-b",
+        )
+        event_types = [call.args[1]["type"] for call in run_recorder.record.call_args_list]
+        assert "tool_loop_completed" in event_types
         runner.run_playbook.assert_called_once()
 
     @pytest.mark.asyncio

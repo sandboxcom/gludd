@@ -8,6 +8,7 @@ from typing import Any, ClassVar, cast
 from sqlalchemy import select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from general_ludd.db.models import (
     FeatureModel,
@@ -31,10 +32,16 @@ class VariableNamespaceRepository:
 
     async def load_vars_for_project(self, project_id: str | None) -> dict[str, str]:
         """Load merged global and project variables with project values winning."""
+        scope_filter: ColumnElement[bool] = VariableNamespaceModel.project_id.is_(None)
+        if project_id is not None:
+            scope_filter = (VariableNamespaceModel.project_id == project_id) | (
+                VariableNamespaceModel.project_id.is_(None)
+                & (VariableNamespaceModel.namespace != "tool_results")
+            )
         stmt = (
             select(VariableValueModel)
             .join(VariableNamespaceModel)
-            .where((VariableNamespaceModel.project_id == project_id) | (VariableNamespaceModel.project_id.is_(None)))
+            .where(scope_filter)
             .order_by(VariableNamespaceModel.project_id.is_(None).desc())
             # P12: defensive cap; variable sets are expected to be small but
             # an unbounded JOIN load is still a risk surface.
