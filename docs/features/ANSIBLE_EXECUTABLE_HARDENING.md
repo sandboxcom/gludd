@@ -37,6 +37,14 @@ path component containing `searx`, and reports only conservative structural
 signatures such as a successful `not_implemented` result or a role whose only
 runtime behavior is naming a service API in `debug`.
 
+The networking dissector role also had a green C-language branch that only
+logged “not yet supported,” and its rescue block suppressed template errors.
+The role now renders real Lua or native Wireshark C source with validated
+identifier, field, offset, size, and UDP-port inputs. Both templates use
+Wireshark's registered dissector APIs, template failures propagate normally,
+and the receipt omits wall-clock-only content so a repeated identical render
+stays idempotent.
+
 ## Long-lived practitioner evidence
 
 This contract follows problems Ansible practitioners have reported for more

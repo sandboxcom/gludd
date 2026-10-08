@@ -1,16 +1,31 @@
 ---
-# dissector_create — generate a Wireshark dissector from template
-#
-# Supports Lua dissector generation using files/dissector_template.lua as base.
-# Accepts networking__dissector_fields (list of dicts: name, type, description,
-# offset, size) and networking__dissector_port. C dissector is future support.
+# Generate an idempotent Wireshark Lua script or native C plugin source.
 
 - name: Validate dissector_create prerequisites
   ansible.builtin.assert:
     that:
-      - networking__dissector_name | default('') | length > 0
+      - networking__dissector_name | default('') is match('^[A-Za-z_][A-Za-z0-9_]*$')
       - networking__dissector_language | default('lua') in ['lua', 'c']
-    fail_msg: "networking__dissector_name and networking__dissector_language (lua or c) are required"
+      - networking__dissector_port | int >= 1
+      - networking__dissector_port | int <= 65535
+      - networking__dissector_fields | default([]) is iterable
+    fail_msg: >-
+      dissector_create requires an identifier-safe name, lua or c language,
+      a UDP port in 1..65535, and a bounded field list
+
+- name: Validate dissector field contracts
+  ansible.builtin.assert:
+    that:
+      - item.name | default('') is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - item.type | default('uint8') in ['uint8', 'uint16', 'uint32', 'uint64', 'string', 'bytes', 'ipv4', 'ether']
+      - item.offset | default(0) | int >= 0
+      - item.size | default(1) | int >= 1
+      - item.size | default(1) | int <= 65535
+    fail_msg: "invalid dissector field: {{ item | to_json }}"
+  loop: "{{ networking__dissector_fields | default([]) }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  no_log: true
 
 - name: Generate Wireshark dissector
   block:
@@ -21,31 +36,6 @@
             'lua' if networking__dissector_language == 'lua' else 'c'
           }}
 
-    - name: Build field registration lines for Lua dissector
-      ansible.builtin.set_fact:
-        _dc_field_lines: >-
-          {%- set lines = [] -%}
-          {%- for f in networking__dissector_fields | default([]) -%}
-          {%-   set def = '[' ~ f.name ~ '] = ProtoField.' ~ f.type | default('uint8') ~ '("' ~ f.name ~ '", "' ~ f.description | default(f.name) ~ '")' -%}
-          {%-   set add = '  proto.fields.' ~ f.name ~ ' = ' ~ def -%}
-          {%-   set _ = lines.append(add) -%}
-          {%- endfor -%}
-          {{ lines }}
-
-    - name: Build field parsing lines for Lua dissector
-      ansible.builtin.set_fact:
-        _dc_parse_lines: >-
-          {%- set lines = [] -%}
-          {%- for f in networking__dissector_fields | default([]) -%}
-          {%-   if f.offset is defined and f.size is defined -%}
-          {%-     set add = '  subtree:add(proto.fields.' ~ f.name ~ ', buf(' ~ f.offset ~ ', ' ~ f.size ~ '))' -%}
-          {%-   else -%}
-          {%-     set add = '  subtree:add(proto.fields.' ~ f.name ~ ', buf(offset, 1)); offset = offset + 1' -%}
-          {%-   endif -%}
-          {%-   set _ = lines.append(add) -%}
-          {%- endfor -%}
-          {{ lines }}
-
     - name: Generate Lua dissector from template
       ansible.builtin.template:
         src: dissector_template.lua
@@ -54,50 +44,39 @@
       when:
         - networking__dissector_language == 'lua'
 
-    - name: Placeholder for C dissector support
-      ansible.builtin.debug:
-        msg: >-
-          C dissector generation is not yet supported.
-          Set networking__dissector_language to 'lua' for Wireshark Lua dissector.
-          Future: C dissector plugin with registration via GSList + dissector_table.
-      when: networking__dissector_language == 'c'
-
-  rescue:
-    - name: Handle dissector creation failure
-      ansible.builtin.debug:
-        msg: >-
-          Dissector creation failed for {{ networking__dissector_name }}.
-          Reason: {{ ansible_failed_result.msg | default('template rendering failed') }}
-      failed_when: false
-
-  always:
-    - name: Set timestamp
-      ansible.builtin.set_fact:
-        _dc_timestamp: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default(ansible_date_time.iso8601) }}"
-
-    - name: Write dissector create artifact JSON
-      ansible.builtin.copy:
-        content: >-
-          {{ {
-            'role': 'networking',
-            'mode': 'dissector_create',
-            'timestamp': _dc_timestamp,
-            'dissector_name': networking__dissector_name,
-            'language': networking__dissector_language,
-            'port': networking__dissector_port | default(0),
-            'field_count': networking__dissector_fields | default([]) | length,
-            'fields': networking__dissector_fields | default([]),
-            'output_file': _dc_output_file | default(''),
-            'template_source': 'files/dissector_template.lua' if networking__dissector_language == 'lua' else 'N/A',
-            'note': 'C dissector is future support' if networking__dissector_language == 'c' else '',
-          } | to_nice_json }}
-        dest: "{{ networking__artifact_dir }}/dissector_created.json"
+    - name: Generate C dissector from template
+      ansible.builtin.template:
+        src: dissector_template.c.j2
+        dest: "{{ _dc_output_file }}"
         mode: "0644"
+      when:
+        - networking__dissector_language == 'c'
 
-    - name: Report dissector creation completion
-      ansible.builtin.debug:
-        msg: >-
-          Dissector created: name={{ networking__dissector_name }}
-          language={{ networking__dissector_language }}
-          output={{ _dc_output_file | default('N/A') }}
-          artifact={{ networking__artifact_dir }}/dissector_created.json
+- name: Write stable dissector creation artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'networking',
+        'mode': 'dissector_create',
+        'dissector_name': networking__dissector_name,
+        'language': networking__dissector_language,
+        'port': networking__dissector_port | int,
+        'field_count': networking__dissector_fields | default([]) | length,
+        'fields': networking__dissector_fields | default([]),
+        'output_file': _dc_output_file,
+        'template_source': (
+          'files/dissector_template.lua'
+          if networking__dissector_language == 'lua'
+          else 'templates/dissector_template.c.j2'
+        ),
+      } | to_nice_json }}
+    dest: "{{ networking__artifact_dir }}/dissector_created.json"
+    mode: "0644"
+
+- name: Report dissector creation completion
+  ansible.builtin.debug:
+    msg: >-
+      Dissector created: name={{ networking__dissector_name }}
+      language={{ networking__dissector_language }}
+      output={{ _dc_output_file }}
+      artifact={{ networking__artifact_dir }}/dissector_created.json
