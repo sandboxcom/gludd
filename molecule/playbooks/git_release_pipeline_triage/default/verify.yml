@@ -1,0 +1,30 @@
+---
+- name: Verify native git-release pipeline triage executed
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8872', true) }}"
+    out_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-git-release-triage-{{ mock_port }}"
+  tasks:
+    - name: Read execution marker
+      ansible.builtin.slurp:
+        src: "{{ out_dir }}/pipeline_triage_ran.ok"
+      register: marker
+
+    - name: Re-read bounded evidence during verification
+      general_ludd.git_release.pipeline_triage:
+        root: "{{ out_dir }}"
+        report_path: junit.xml
+      register: verification
+
+    - name: Assert marker binds the terminal outcome SHA-256
+      ansible.builtin.assert:
+        that:
+          - marker.content | b64decode | trim is match('^[0-9a-f]{64}$')
+          - verification.triage.terminal_outcome_sha256 == marker.content | b64decode | trim
+
+    - name: Remove isolated fixture root
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: absent

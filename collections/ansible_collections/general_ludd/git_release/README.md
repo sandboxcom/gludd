@@ -5,13 +5,14 @@ Git Mastery and Release Captain Expert collection (spec `GRC-001` —
 
 Evidence-driven planner and operator for repository assessment, history
 investigation, branch planning, release preparation, artifact verification,
-and zero-downtime deployment. Every observation is recorded as
+pipeline triage, and zero-downtime deployment. Every observation is recorded as
 machine-verifiable evidence so downstream planners can distinguish
 observations, inferences, proposed mutations, completed mutations, and
 verified outcomes. Repository-planning operations cross the authenticated
 Gludd API boundary. Artifact verification is deliberately collection-native:
 it reads bounded local files without importing the core package or contacting
-a daemon.
+an external service. Pipeline triage likewise keeps bounded JUnit evidence on
+the controller and emits only content-free outcome digests.
 
 ## Implemented roles (`roles/`)
 
@@ -53,6 +54,16 @@ The canonical provenance and verification implementation lives in
 `plugins/module_utils/provenance.py`. The historical
 `general_ludd.git_release.provenance` path only re-exports that implementation,
 so Ansible and core callers cannot drift into two verifiers.
+
+## Native pipeline-triage module
+
+`general_ludd.git_release.pipeline_triage` is intercepted by its controller
+action plugin and reads exactly one root-confined JUnit XML report. It accepts
+at most 16 MiB, 100,000 unique testcase identities, and 64 actionable failures;
+rejects symbolic links, hard links, DTDs, entities, concurrent mutation,
+summary conflicts, and ambiguous outcomes; and returns only counts plus SHA-256
+identities. Failure bodies, properties, stdout, and stderr are discarded. The
+remote companion module always fails closed if action interception is absent.
 
 ## Python compatibility API (`src/general_ludd/git_release/`)
 

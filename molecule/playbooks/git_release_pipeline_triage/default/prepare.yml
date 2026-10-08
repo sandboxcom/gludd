@@ -1,0 +1,27 @@
+---
+- name: Prepare bounded JUnit pipeline-triage fixture
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8872', true) }}"
+    out_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-git-release-triage-{{ mock_port }}"
+  tasks:
+    - name: Create isolated fixture root
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Write deterministic JUnit report
+      ansible.builtin.copy:
+        content: |-
+          <?xml version="1.0" encoding="utf-8"?>
+          <testsuite tests="2" failures="1" errors="0" skipped="0">
+            <testcase classname="molecule.pipeline" name="test_pass" />
+            <testcase classname="molecule.pipeline" name="test_failure">
+              <failure message="must not escape">private traceback</failure>
+            </testcase>
+          </testsuite>
+        dest: "{{ out_dir }}/junit.xml"
+        mode: "0600"
