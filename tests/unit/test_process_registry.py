@@ -162,3 +162,21 @@ def test_reap_evicts_dead_entries() -> None:
     evicted = reg.reap()
     assert proc.pid in evicted
     assert not reg.is_managed(proc.pid)
+
+
+def test_register_keeps_unverifiable_setup_records_until_explicit_reap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Registration must not silently discard earlier setup records."""
+    monkeypatch.setattr(
+        "general_ludd.process.registry._read_create_time",
+        lambda _pid: None,
+    )
+    reg = ProcessRegistry(max_records=2)
+
+    reg.register(810_001, ["first"], pgid=810_001)
+    reg.register(810_002, ["second"], pgid=810_002)
+
+    assert [record.pid for record in reg.list()] == [810_001, 810_002]
+    assert reg.metrics()["stale_records_pruned_total"] == 0
+    assert reg.reap() == [810_001, 810_002]

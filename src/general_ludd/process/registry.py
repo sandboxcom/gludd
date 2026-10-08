@@ -239,6 +239,8 @@ class ProcessRegistry:
 
         ``create_time`` is captured now so later signals can verify identity. If
         ``pgid`` is not supplied it is best-effort resolved via ``os.getpgid``.
+        Existing setup records remain present until :meth:`deregister` or
+        :meth:`reap` is called; registration never performs implicit cleanup.
 
         Raises :class:`ProcessRegistryError` if the registry is sealed.
         """
@@ -259,7 +261,6 @@ class ProcessRegistry:
             create_time=_read_create_time(pid),
         )
         with self._lock:
-            self._prune_stale_locked(self._max_records)
             if int(pid) not in self._procs and len(self._procs) >= self._max_records:
                 self._capacity_rejections += 1
                 raise ProcessRegistryError(
