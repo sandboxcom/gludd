@@ -112,6 +112,24 @@ failure refuses publication and restores the old generation when its complete
 snapshot remains intact. A leftover quarantine is ambiguous layout and fails
 closed on later writes rather than being silently repaired.
 
+Before publication can delete a generation, callers can invoke
+`ShadowBatchReceiptWriter.preview_retirement()` with the same complete request.
+The result is a frozen, content-free `RetirementPreview` containing only a
+decision (`retain`, `retire`, or `fail-closed`), a bounded reason, and a
+retirement count of zero or one. It never returns a cache path, Git SHA, receipt
+identity, environment value, or evidence payload. Preview and publication call
+the same bounded rollover planner, so the two-generation and 2 GiB decisions
+cannot drift into separate policies.
+
+Preview does not create the cache, version directory, lock file, quarantine, or
+candidate generation. When the lock file already exists, it uses `filelock`'s
+nonblocking descriptor primitive to share the writer's native exclusion without
+opening the lock through its mutating path API. It also compares bounded
+before/after cache snapshots. Contention, a newly appearing lock, changed
+evidence, unsafe lock identity, an ambiguous generation, or an entry-limit
+failure therefore produces `fail-closed` without modifying the tree. Repeating
+a preview against unchanged evidence returns the same decision.
+
 This lifecycle does not start a daemon, open a listener, add a worker, change a
 database, or alter a serving process. Existing action paths are never
 overwritten, and a corrupt existing action path is refused rather than repaired
@@ -174,12 +192,14 @@ duplicate JSON keys, ambiguous terminal outcomes, a second disk-reserve check
 immediately before receipt writes, UV toolchain drift, and internally inexact
 source identity. The bounded-rollover continuation first failed five focused
 cases because every third exact SHA still returned `generation-limit`. The
-repaired focused suite is 86/86 green and covers oldest-generation retirement,
+repaired focused suite is 104/104 green and covers oldest-generation retirement,
 current/candidate preservation, active and malformed evidence, equal-age
 ambiguity, advisory-lock contention, pre-quarantine and post-rename races,
 failure-only generations, symlink confinement, byte-budget proof, and rollback
-after rename or deletion faults. The six-file receipt regression slice is
-231/231 green. Its branch-aware report records 88% for
+after rename or deletion faults. It also covers deterministic content-free
+preview decisions, absent-cache retention, read-only descriptor contention,
+and before/after tree identity. The six-file receipt regression slice is
+249/249 green. Its branch-aware report records 89% for
 `scripts/ci_batch_receipts.py`; aggregate and branch coverage exceed 85%, and
 the measured file exceeds 75%. Scoped Ruff, strict mypy, and Markdown lint are
 green, and the feature-branch implementation is committed. Exact-head full-gate

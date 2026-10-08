@@ -36,7 +36,7 @@ else:
 from coverage import CoverageData
 from coverage.exceptions import CoverageException
 from defusedxml import ElementTree
-from filelock import FileLock, Timeout
+from filelock import FileLock, Timeout, lock_descriptor, unlock_descriptor
 
 RECEIPT_SCHEMA_VERSION = 1
 MAX_RECEIPT_GENERATIONS = 2
@@ -120,6 +120,15 @@ class ReceiptPublication:
 
 
 @dataclass(frozen=True)
+class RetirementPreview:
+    """Content-free read-only decision for one prospective pass publication."""
+
+    decision: str
+    reason: str
+    retire_count: int
+
+
+@dataclass(frozen=True)
 class ReceiptValidation:
     """Content-free result of validating one receipt directory."""
 
@@ -136,6 +145,15 @@ class _RetirableGeneration:
     modified_ns: int
     size_bytes: int
     snapshot: tuple[tuple[str, int, int, int, int, int, int, int], ...]
+
+
+@dataclass(frozen=True)
+class _GenerationRolloverPlan:
+    """Internal path-bound plan shared by preview and publication."""
+
+    preview: RetirementPreview
+    generation: Path
+    retirement: _RetirableGeneration | None
 
 
 def canonical_json_bytes(payload: object) -> bytes:
@@ -649,10 +667,28 @@ def _safe_tree_size(path: Path) -> tuple[int, str | None]:
     return total, error
 
 
+def _cache_tree_observation(
+    path: Path,
+) -> tuple[
+    bool,
+    int,
+    tuple[tuple[str, int, int, int, int, int, int, int], ...],
+    str | None,
+]:
+    if not path.exists():
+        return False, 0, (), None
+    size, snapshot, error = _safe_tree_snapshot(path)
+    return True, size, snapshot, error
+
+
+def _mutation_lock_path(path: Path) -> Path:
+    return path.with_name(f".{path.name}.lock")
+
+
 @contextmanager
 def _exclusive_directory_lock(path: Path) -> Iterator[None]:
     """Serialize receipt-tree mutations through the maintained platform lock."""
-    lock_path = path.with_name(f".{path.name}.lock")
+    lock_path = _mutation_lock_path(path)
     if lock_path.is_symlink():
         raise OSError("receipt mutation lock must not be a symbolic link")
     lock = FileLock(str(lock_path), timeout=0, mode=0o600)
@@ -664,6 +700,48 @@ def _exclusive_directory_lock(path: Path) -> Iterator[None]:
             yield
     except Timeout as exc:
         raise BlockingIOError("receipt mutation lock is already held") from exc
+
+
+@contextmanager
+def _readonly_directory_lock(path: Path) -> Iterator[bool]:
+    """Lock an existing mutation file without creating or changing it."""
+    lock_path = _mutation_lock_path(path)
+    try:
+        before = lock_path.lstat()
+    except FileNotFoundError:
+        yield False
+        return
+    if stat.S_ISLNK(before.st_mode) or private_path_error(
+        lock_path,
+        directory=False,
+    ) is not None:
+        raise OSError("receipt mutation lock is unsafe")
+
+    descriptor = os.open(
+        lock_path,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+    )
+    locked = False
+    try:
+        opened = os.fstat(descriptor)
+        current = lock_path.lstat()
+        before_identity = (before.st_dev, before.st_ino, before.st_mode)
+        opened_identity = (opened.st_dev, opened.st_ino, opened.st_mode)
+        current_identity = (current.st_dev, current.st_ino, current.st_mode)
+        if (
+            before_identity != opened_identity
+            or opened_identity != current_identity
+            or stat.S_ISLNK(current.st_mode)
+        ):
+            raise OSError("receipt mutation lock identity changed")
+        if not lock_descriptor(descriptor, blocking=False):
+            raise BlockingIOError("receipt mutation lock is already held")
+        locked = True
+        yield True
+    finally:
+        if locked:
+            unlock_descriptor(descriptor)
+        os.close(descriptor)
 
 
 def _distribution_version(name: str) -> str:
@@ -1254,6 +1332,28 @@ def _prepare_version_root(cache_root: Path) -> tuple[Path | None, str | None]:
     return version_root, None
 
 
+def _existing_version_root(cache_root: Path) -> tuple[Path | None, str | None]:
+    """Validate an existing cache/version root without creating either path."""
+    if cache_root.is_symlink():
+        return None, "cache-root-symlink"
+    if cache_root.parent.is_symlink():
+        return None, "cache-parent-symlink"
+    if not cache_root.exists():
+        return None, None
+    root_error = private_path_error(cache_root, directory=True)
+    if root_error is not None:
+        return None, f"cache-root-{root_error}"
+
+    version_root = cache_root / f"v{RECEIPT_SCHEMA_VERSION}"
+    if version_root.is_symlink():
+        return None, "cache-layout-invalid"
+    if not version_root.exists():
+        return None, None
+    if private_path_error(version_root, directory=True) is not None:
+        return None, "cache-layout-invalid"
+    return version_root, None
+
+
 def _validated_generation_entries(version_root: Path) -> list[Path] | None:
     """Return only private exact-SHA generation directories."""
     generations: list[Path] = []
@@ -1390,6 +1490,67 @@ def _select_retirable_generation(
     return ordered[0], "retirable"
 
 
+def _plan_generation_rollover(
+    *,
+    cache_root: Path,
+    version_root: Path,
+    candidate_sha: str,
+    incoming_bytes: int,
+    max_generations: int,
+    max_bytes: int,
+) -> _GenerationRolloverPlan:
+    """Build the single bounded generation plan used by preview and publish."""
+    generation = version_root / candidate_sha
+    generations = _validated_generation_entries(version_root)
+    if generations is None:
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "cache-layout-invalid", 0),
+            generation,
+            None,
+        )
+    if len(generations) > max_generations:
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "generation-limit", 0),
+            generation,
+            None,
+        )
+
+    current_bytes, size_error = _safe_tree_size(cache_root)
+    if size_error is not None:
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "cache-size-unknown", 0),
+            generation,
+            None,
+        )
+    retirement: _RetirableGeneration | None = None
+    if not generation.exists() and len(generations) >= max_generations:
+        retirement, retirement_reason = _select_retirable_generation(generations)
+        if retirement is None:
+            return _GenerationRolloverPlan(
+                RetirementPreview("fail-closed", retirement_reason, 0),
+                generation,
+                None,
+            )
+    retired_bytes = retirement.size_bytes if retirement is not None else 0
+    if current_bytes - retired_bytes + incoming_bytes > max_bytes:
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "byte-limit", 0),
+            generation,
+            None,
+        )
+    if generation.is_symlink():
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "generation-invalid", 0),
+            generation,
+            None,
+        )
+    if retirement is None:
+        preview = RetirementPreview("retain", "within-bounds", 0)
+    else:
+        preview = RetirementPreview("retire", "oldest-inactive", 1)
+    return _GenerationRolloverPlan(preview, generation, retirement)
+
+
 def _restore_quarantined_generation(
     quarantined: Path,
     original: Path,
@@ -1494,6 +1655,21 @@ def _retire_generation_and_create_candidate(
     return None
 
 
+def _incoming_pass_receipt_bytes(
+    request: BatchReceiptRequest,
+    action_identity: Mapping[str, object],
+) -> tuple[int | None, str | None]:
+    outcome_bytes = canonical_json_bytes(request.outcome_manifest) + b"\n"
+    try:
+        incoming_bytes = request.coverage_path.stat().st_size + len(outcome_bytes)
+    except OSError:
+        return None, "coverage-invalid"
+    # Manifests are small relative to coverage, but count a conservative
+    # canonical preview so the cap is a hard upper bound rather than a hint.
+    incoming_bytes += len(canonical_json_bytes(action_identity)) + 16 * 1024
+    return incoming_bytes, None
+
+
 class ShadowBatchReceiptWriter:
     """Atomically publish bounded candidate receipts without ever reading hits."""
 
@@ -1542,6 +1718,71 @@ class ShadowBatchReceiptWriter:
             return ReceiptPublication(False, "coverage-invalid")
         return None
 
+    def preview_retirement(self, request: BatchReceiptRequest) -> RetirementPreview:
+        """Return a bounded rollover decision without changing cache state."""
+        refused = self._preflight(request)
+        if refused is not None:
+            return RetirementPreview("fail-closed", refused.reason, 0)
+        action_identity = dict(request.action_identity)
+        source = action_identity["source"]
+        assert isinstance(source, Mapping)
+        candidate_sha = str(source["candidate_sha"])
+        incoming_bytes, incoming_error = _incoming_pass_receipt_bytes(
+            request,
+            action_identity,
+        )
+        if incoming_bytes is None:
+            return RetirementPreview(
+                "fail-closed",
+                incoming_error or "coverage-invalid",
+                0,
+            )
+
+        version_root, layout_error = _existing_version_root(self._cache_root)
+        if layout_error is not None:
+            return RetirementPreview("fail-closed", layout_error, 0)
+        if version_root is None:
+            before = _cache_tree_observation(self._cache_root)
+            if before[3] is not None:
+                return RetirementPreview("fail-closed", "cache-size-unknown", 0)
+            decision = (
+                RetirementPreview("fail-closed", "byte-limit", 0)
+                if before[1] + incoming_bytes > self._max_bytes
+                else RetirementPreview("retain", "within-bounds", 0)
+            )
+            after = _cache_tree_observation(self._cache_root)
+            if before != after:
+                return RetirementPreview("fail-closed", "generation-active", 0)
+            return decision
+
+        try:
+            with _readonly_directory_lock(version_root) as lock_existed:
+                before = _cache_tree_observation(self._cache_root)
+                if before[3] is not None:
+                    return RetirementPreview("fail-closed", "cache-size-unknown", 0)
+                plan = _plan_generation_rollover(
+                    cache_root=self._cache_root,
+                    version_root=version_root,
+                    candidate_sha=candidate_sha,
+                    incoming_bytes=incoming_bytes,
+                    max_generations=self._max_generations,
+                    max_bytes=self._max_bytes,
+                )
+                after = _cache_tree_observation(self._cache_root)
+                if (
+                    before != after
+                    or (
+                        not lock_existed
+                        and _mutation_lock_path(version_root).exists()
+                    )
+                ):
+                    return RetirementPreview("fail-closed", "generation-active", 0)
+                return plan.preview
+        except BlockingIOError:
+            return RetirementPreview("fail-closed", "generation-busy", 0)
+        except OSError:
+            return RetirementPreview("fail-closed", "generation-unavailable", 0)
+
     def publish(self, request: BatchReceiptRequest) -> ReceiptPublication:
         """Publish one pass receipt after coverage and cleanup have succeeded."""
         refused = self._preflight(request)
@@ -1560,67 +1801,36 @@ class ShadowBatchReceiptWriter:
                 layout_error or "cache-layout-invalid",
                 action_digest=action_digest,
             )
-        outcome_bytes = canonical_json_bytes(request.outcome_manifest) + b"\n"
-        try:
-            incoming_bytes = request.coverage_path.stat().st_size + len(outcome_bytes)
-        except OSError:
-            return ReceiptPublication(False, "coverage-invalid", action_digest=action_digest)
-        # Manifests are small relative to coverage, but count a conservative
-        # canonical preview so the cap is a hard upper bound rather than a hint.
-        incoming_bytes += len(canonical_json_bytes(action_identity)) + 16 * 1024
+        incoming_bytes, incoming_error = _incoming_pass_receipt_bytes(
+            request,
+            action_identity,
+        )
+        if incoming_bytes is None:
+            return ReceiptPublication(
+                False,
+                incoming_error or "coverage-invalid",
+                action_digest=action_digest,
+            )
         generation = version_root / candidate_sha
         generation_existed = True
         try:
             with _exclusive_directory_lock(version_root):
-                generations = _validated_generation_entries(version_root)
-                if generations is None:
+                plan = _plan_generation_rollover(
+                    cache_root=self._cache_root,
+                    version_root=version_root,
+                    candidate_sha=candidate_sha,
+                    incoming_bytes=incoming_bytes,
+                    max_generations=self._max_generations,
+                    max_bytes=self._max_bytes,
+                )
+                if plan.preview.decision == "fail-closed":
                     return ReceiptPublication(
                         False,
-                        "cache-layout-invalid",
+                        plan.preview.reason,
                         action_digest=action_digest,
                     )
-                if len(generations) > self._max_generations:
-                    return ReceiptPublication(
-                        False,
-                        "generation-limit",
-                        action_digest=action_digest,
-                    )
-
-                current_bytes, size_error = _safe_tree_size(self._cache_root)
-                if size_error is not None:
-                    return ReceiptPublication(
-                        False,
-                        "cache-size-unknown",
-                        action_digest=action_digest,
-                    )
-                retirement: _RetirableGeneration | None = None
-                if (
-                    not generation.exists()
-                    and len(generations) >= self._max_generations
-                ):
-                    retirement, retirement_reason = _select_retirable_generation(
-                        generations
-                    )
-                    if retirement is None:
-                        return ReceiptPublication(
-                            False,
-                            retirement_reason,
-                            action_digest=action_digest,
-                        )
-                retired_bytes = retirement.size_bytes if retirement is not None else 0
-                if current_bytes - retired_bytes + incoming_bytes > self._max_bytes:
-                    return ReceiptPublication(
-                        False,
-                        "byte-limit",
-                        action_digest=action_digest,
-                    )
-
-                if generation.is_symlink():
-                    return ReceiptPublication(
-                        False,
-                        "generation-invalid",
-                        action_digest=action_digest,
-                    )
+                generation = plan.generation
+                retirement = plan.retirement
                 generation_existed = generation.exists()
                 if retirement is not None:
                     retirement_error = _retire_generation_and_create_candidate(
@@ -2069,6 +2279,7 @@ __all__ = [
     "FailureReceiptRequest",
     "ReceiptPublication",
     "ReceiptValidation",
+    "RetirementPreview",
     "ShadowBatchReceiptWriter",
     "ShadowFailureReceiptWriter",
     "action_identity_error",

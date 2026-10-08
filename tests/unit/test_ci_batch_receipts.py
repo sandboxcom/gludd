@@ -1003,6 +1003,289 @@ def test_mutation_lock_refuses_unsafe_file_after_acquisition(
         pytest.fail("unsafe lock path must not enter the mutation section")
 
 
+def test_retirement_preview_retains_without_creating_cache(tmp_path: Path) -> None:
+    cache = tmp_path / "batch-receipts"
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "retain"
+    assert preview.reason == "within-bounds"
+    assert preview.retire_count == 0
+    assert not cache.exists()
+    assert str(tmp_path) not in repr(preview)
+    assert _SHA not in repr(preview)
+
+
+def test_retirement_preview_is_deterministic_and_does_not_mutate_generations(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+    before = receipt_module._safe_tree_snapshot(cache)
+    request = _request(tmp_path)
+    writer = ShadowBatchReceiptWriter(cache)
+
+    first = writer.preview_retirement(request)
+    second = writer.preview_retirement(request)
+
+    assert first == second
+    assert first.decision == "retire"
+    assert first.reason == "oldest-inactive"
+    assert first.retire_count == 1
+    assert receipt_module._safe_tree_snapshot(cache) == before
+    assert oldest.exists()
+    assert current.exists()
+    assert not (cache / "v1" / _SHA).exists()
+    rendered = repr(first)
+    assert str(tmp_path) not in rendered
+    assert "b" * 40 not in rendered
+    assert "c" * 40 not in rendered
+    assert _SHA not in rendered
+
+
+def test_retirement_preview_fails_closed_without_mutating_active_evidence(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+    staging = oldest / ".active-stage"
+    staging.mkdir(mode=0o700)
+    before = receipt_module._safe_tree_snapshot(cache)
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "generation-active"
+    assert preview.retire_count == 0
+    assert receipt_module._safe_tree_snapshot(cache) == before
+    assert staging.exists()
+
+
+def test_retirement_preview_fails_closed_when_mutation_lock_is_busy(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+
+    with FileLock(str(cache / ".v1.lock"), timeout=0, mode=0o600):
+        before = receipt_module._safe_tree_snapshot(cache)
+        preview = ShadowBatchReceiptWriter(cache).preview_retirement(
+            _request(tmp_path)
+        )
+        after = receipt_module._safe_tree_snapshot(cache)
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "generation-busy"
+    assert preview.retire_count == 0
+    assert after == before
+    assert oldest.exists()
+    assert current.exists()
+
+
+def test_retirement_preview_retains_existing_cache_without_creating_lock(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    generation = _publish_generation(cache, tmp_path, "b" * 40)
+    lock_path = cache / ".v1.lock"
+    lock_path.unlink()
+    before = receipt_module._safe_tree_snapshot(cache)
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "retain"
+    assert preview.reason == "within-bounds"
+    assert receipt_module._safe_tree_snapshot(cache) == before
+    assert not lock_path.exists()
+    assert generation.exists()
+
+
+def test_retirement_preview_refuses_symlinked_lock_without_following_it(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    _publish_generation(cache, tmp_path, "b" * 40)
+    lock_path = cache / ".v1.lock"
+    lock_path.unlink()
+    outside = tmp_path / "outside-preview-lock"
+    outside.write_text("preserve", encoding="utf-8")
+    lock_path.symlink_to(outside)
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "generation-unavailable"
+    assert outside.read_text(encoding="utf-8") == "preserve"
+
+
+def test_retirement_preview_refuses_changed_lock_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    _publish_generation(cache, tmp_path, "b" * 40)
+    original = os.fstat
+
+    def changed_identity(descriptor: int) -> SimpleNamespace:
+        metadata = original(descriptor)
+        return SimpleNamespace(
+            st_dev=metadata.st_dev,
+            st_ino=metadata.st_ino + 1,
+            st_mode=metadata.st_mode,
+        )
+
+    monkeypatch.setattr(os, "fstat", changed_identity)
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "generation-unavailable"
+
+
+def test_retirement_preview_refuses_invalid_request_without_creating_cache(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(
+        _request(tmp_path, returncode=1)
+    )
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "batch-not-passing"
+    assert not cache.exists()
+
+
+def test_retirement_preview_enforces_byte_bound_without_creating_cache(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+
+    preview = ShadowBatchReceiptWriter(cache, max_bytes=1).preview_retirement(
+        _request(tmp_path)
+    )
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "byte-limit"
+    assert not cache.exists()
+
+
+def test_retirement_preview_refuses_generation_count_above_bound(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    _publish_generation(cache, tmp_path, "b" * 40)
+    _publish_generation(cache, tmp_path, "c" * 40)
+    extra = cache / "v1" / ("d" * 40)
+    extra.mkdir(mode=0o700)
+    before = receipt_module._safe_tree_snapshot(cache)
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "generation-limit"
+    assert receipt_module._safe_tree_snapshot(cache) == before
+
+
+def test_retirement_preview_refuses_unknown_generation_entry(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    _publish_generation(cache, tmp_path, "b" * 40)
+    unknown = cache / "v1" / "unknown"
+    unknown.write_text("preserve", encoding="utf-8")
+    before = receipt_module._safe_tree_snapshot(cache)
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "cache-layout-invalid"
+    assert receipt_module._safe_tree_snapshot(cache) == before
+
+
+def test_retirement_preview_refuses_symlinked_cache_root_without_following_it(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside-preview-cache"
+    outside.mkdir()
+    marker = outside / "keep"
+    marker.write_text("preserve", encoding="utf-8")
+    cache = tmp_path / "batch-receipts"
+    cache.symlink_to(outside, target_is_directory=True)
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "cache-root-symlink"
+    assert marker.read_text(encoding="utf-8") == "preserve"
+
+
+def test_retirement_preview_refuses_unknown_symlink_before_version_exists(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    cache.mkdir(mode=0o700)
+    outside = tmp_path / "outside-preview-evidence"
+    outside.mkdir()
+    (cache / "unknown-link").symlink_to(outside, target_is_directory=True)
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "cache-size-unknown"
+    assert not (cache / "v1").exists()
+
+
+def test_retirement_preview_refuses_coverage_that_disappears_after_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _request(tmp_path)
+    request.coverage_path.unlink()
+    monkeypatch.setattr(receipt_module, "coverage_data_error", lambda *_a, **_k: None)
+
+    preview = ShadowBatchReceiptWriter(
+        tmp_path / "batch-receipts"
+    ).preview_retirement(request)
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "coverage-invalid"
+
+
+def test_retirement_preview_refuses_cache_change_during_observation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    _publish_generation(cache, tmp_path, "b" * 40)
+    original = receipt_module._cache_tree_observation
+    calls = 0
+
+    def changing(path: Path) -> tuple[object, ...]:
+        nonlocal calls
+        calls += 1
+        observed = original(path)
+        if calls == 2:
+            return (observed[0], observed[1] + 1, *observed[2:])
+        return observed
+
+    monkeypatch.setattr(receipt_module, "_cache_tree_observation", changing)
+
+    preview = ShadowBatchReceiptWriter(cache).preview_retirement(_request(tmp_path))
+
+    assert preview.decision == "fail-closed"
+    assert preview.reason == "generation-active"
+
+
 def test_shadow_writer_rollover_never_follows_generation_symlink(
     tmp_path: Path,
 ) -> None:
