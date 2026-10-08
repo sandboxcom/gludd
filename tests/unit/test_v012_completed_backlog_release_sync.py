@@ -20,6 +20,7 @@ COMPLETED_ITEMS = (
     ("S83.116", "Monotonic debounce, throttle, and watchdog state"),
     ("S83.117", "Authenticated TLS 1.3 state and directional records"),
     ("S83.128", "Invoking-worktree-safe virtual-environment reclamation"),
+    ("S83.178", "Fast integration admission for deterministic gate failures"),
 )
 OPEN_ITEMS = ("S83.157", "S83.158", "S83.163", "S83.166", "S83.169")
 
@@ -83,13 +84,13 @@ def test_task_ledger_declares_the_exact_v012_completed_backlog_scope() -> None:
     opening = f'<!-- {RELEASE_TOKEN} -->'
     contract = tasks.split(opening, 1)[1].split("<!-- /v0.1.2-completed-backlog -->", 1)[0]
 
-    assert "S83.114-S83.117 and S83.128" in contract
+    assert "S83.114-S83.117, S83.128, and S83.178" in contract
     positions = [
         contract.index(f"| {task_id.rsplit('.', 1)[1]} |")
         for task_id, _ in COMPLETED_ITEMS
     ]
     assert positions == sorted(positions)
-    assert "five formally completed" in contract
+    assert "six formally completed" in contract
     for task_id in OPEN_ITEMS:
         assert task_id in contract
     assert "remain open" in contract

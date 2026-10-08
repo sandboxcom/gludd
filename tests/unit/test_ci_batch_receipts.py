@@ -775,6 +775,43 @@ def test_junit_normalization_keeps_only_content_free_terminal_identity(
     assert "api_token" not in serialized
 
 
+def test_junit_normalization_accepts_long_pytest_parameter_ids(
+    tmp_path: Path,
+) -> None:
+    parameter_id = "word " * 1_000
+    testcase_name = f"test_words[{parameter_id}]"
+    assert len(testcase_name) > 4_096
+    junit = tmp_path / "junit.xml"
+    junit.write_text(
+        f'<testsuite><testcase classname="case" name="{testcase_name}" /></testsuite>',
+        encoding="utf-8",
+    )
+
+    outcomes = normalize_junit_outcomes(junit)
+
+    assert outcomes["counts"] == {
+        "errors": 0,
+        "failures": 0,
+        "passed": 1,
+        "skipped": 0,
+        "tests": 1,
+    }
+
+
+def test_junit_normalization_refuses_hostile_testcase_name_size(
+    tmp_path: Path,
+) -> None:
+    testcase_name = "x" * (receipt_module.MAX_JUNIT_TESTCASE_NAME_CHARS + 1)
+    junit = tmp_path / "junit.xml"
+    junit.write_text(
+        f'<testsuite><testcase classname="case" name="{testcase_name}" /></testsuite>',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="identity is missing or oversized"):
+        normalize_junit_outcomes(junit)
+
+
 @pytest.mark.parametrize(
     "xml",
     [

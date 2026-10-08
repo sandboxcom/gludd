@@ -94,6 +94,25 @@
       ],
       "task_id": "S83.128",
       "title": "Invoking-worktree-safe virtual-environment reclamation"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "0a1ca6f7f7f6662cfb854b9b11f6762d9e52cb8e"
+        },
+        {
+          "role": "promotion_continuation",
+          "sha": "dd144d5f1cf5bc26fb996e7d8e954f40785f327a"
+        }
+      ],
+      "integration": "ancestor",
+      "source_branches": [
+        "agent/gate-failure-promotion",
+        "development"
+      ],
+      "task_id": "S83.178",
+      "title": "Fast integration admission for deterministic gate failures"
     }
   ],
   "excluded_open_tasks": [

@@ -15,8 +15,9 @@ is not.
 
 ## 0. Implementation status (2026-10-07)
 
-The earlier checkpoint was **CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW
-IMPLEMENTED; DURABLE INTEGRATION PENDING**. It is retained as status lineage,
+The earlier checkpoint was
+**CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW IMPLEMENTED;
+DURABLE INTEGRATION PENDING**. It is retained as status lineage,
 not as the current claim. The status above supersedes it: same-host SQLite WAL
 generation durability, signed agent-outcome capture, shared-PostgreSQL capture
 coordination, and bounded operator lifecycle commands are implemented, while

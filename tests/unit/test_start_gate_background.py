@@ -35,6 +35,28 @@ def _sleep_command(seconds: float = 30.0) -> list[str]:
     ]
 
 
+def _write_after_trigger_command(trigger: Path) -> list[str]:
+    script = (
+        "import pathlib\n"
+        "import time\n"
+        f"trigger = pathlib.Path({str(trigger)!r})\n"
+        "print('child-ready', flush=True)\n"
+        "while not trigger.exists():\n"
+        "    time.sleep(0.001)\n"
+        "print('child-after-marker', flush=True)\n"
+    )
+    return [sys.executable, "-c", script]
+
+
+def _wait_for_log_text(path: Path, expected: str) -> None:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if path.exists() and expected in path.read_text(encoding="utf-8"):
+            return
+        time.sleep(0.005)
+    raise AssertionError(f"log did not contain {expected!r}")
+
+
 def _stop(result: object) -> None:
     process = result.process  # type: ignore[attr-defined]
     if process.poll() is None:
@@ -212,9 +234,10 @@ def test_timeout_terminates_exact_session_and_removes_owned_pid(tmp_path: Path) 
 def test_timeout_retains_ownership_when_session_cannot_be_terminated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    trigger = tmp_path / "release-child-output"
     result = launch_gate(
         tmp_path,
-        _sleep_command(),
+        _write_after_trigger_command(trigger),
         timeout_seconds=30,
         start_watcher=False,
     )
@@ -222,6 +245,7 @@ def test_timeout_retains_ownership_when_session_cannot_be_terminated(
     assert result.identity is not None
     assert result.log_path is not None
     paths = GatePaths.for_root(tmp_path)
+    _wait_for_log_text(result.log_path, "child-ready")
     monkeypatch.setattr(launcher, "_signal_session", lambda *_args: False)
 
     try:
@@ -239,7 +263,12 @@ def test_timeout_retains_ownership_when_session_cannot_be_terminated(
         assert "GATE_TIMEOUT_TERMINATION_FAILED" in paths.status_file.read_text(
             encoding="utf-8"
         )
-        assert "TERMINATION FAILED" in result.log_path.read_text(encoding="utf-8")
+        trigger.write_text("release\n", encoding="utf-8")
+        assert result.process.wait(timeout=5) == 0
+        log_text = result.log_path.read_text(encoding="utf-8")
+        marker = "=== GATE: TERMINATION FAILED (timeout 0.01s) ==="
+        assert marker in log_text
+        assert log_text.index(marker) < log_text.index("child-after-marker")
         state = json.loads(paths.state_file.read_text(encoding="utf-8"))
         assert state["state"] == "termination_failed"
         assert state["termination_reason"] == "gate-timeout-termination-failed"

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Annotated, Literal, NoReturn, TypeAlias, cast
@@ -13,6 +12,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from general_ludd.integrity.store import canonical_json as _canonical_json
 from general_ludd.replay.run_ids import SafeRunId
 from general_ludd.replay.run_ids import validate_run_id as _validate_run_id
+from general_ludd.schemas.execution_identity import (
+    BoundedIdentifier,
+    BoundedText,
+    ModelIdentityV1,
+    RuntimeIdentityV1,
+    Sha256Digest,
+    SourceIdentityV1,
+)
+from general_ludd.schemas.execution_identity import (
+    validate_json_value as _validate_json_value,
+)
 
 BUNDLE_SCHEMA_V1 = "gludd.run-bundle/v1"
 EVENT_SCHEMA_V1 = "gludd.run-event/v1"
@@ -24,14 +34,6 @@ class ReplaySchemaError(ValueError):
 class UnsupportedReplaySchemaError(ReplaySchemaError):
     """Raised when a reader encounters a schema major it cannot interpret."""
 
-
-BoundedIdentifier = Annotated[
-    str,
-    Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"),
-]
-BoundedText = Annotated[str, Field(min_length=1, max_length=256)]
-Sha256Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
-GitObjectId = Annotated[str, Field(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")]
 
 ReplayOperation: TypeAlias = Literal["record", "simulate", "reexecute"]
 ReplayStatus: TypeAlias = Literal[
@@ -83,23 +85,7 @@ def validate_run_id(value: str) -> str:
 
 def validate_replay_json_value(value: object, *, path: str = "$") -> None:
     """Reject non-JSON or non-finite values before hashing or persistence."""
-    if value is None or isinstance(value, (str, bool, int)):
-        return
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError(f"replay JSON number at {path} must be finite")
-        return
-    if isinstance(value, list):
-        for index, item in enumerate(value):
-            validate_replay_json_value(item, path=f"{path}[{index}]")
-        return
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise TypeError(f"replay JSON object key at {path} must be text")
-            validate_replay_json_value(item, path=f"{path}.{key}")
-        return
-    raise TypeError(f"replay JSON value at {path} has unsupported type {type(value).__name__}")
+    _validate_json_value(value, path=path)
 
 
 def canonical_replay_json(value: object) -> str:
@@ -154,43 +140,6 @@ def _utc_timestamp(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("replay timestamps must be timezone-aware")
     return value.astimezone(UTC)
-
-
-class SourceIdentityV1(_StrictReplayModel):
-    """Credential-free source identity captured at run start."""
-
-    repository_url_sha256: Sha256Digest
-    commit_sha: GitObjectId
-    tree_sha: GitObjectId
-    branch: BoundedText | None
-    dirty: bool
-
-
-class RuntimeIdentityV1(_StrictReplayModel):
-    """Execution runtime fields needed to compare replay environments."""
-
-    gludd_version: BoundedText
-    python_version: BoundedText
-    os: BoundedText
-    architecture: BoundedText
-    config_sha256: Sha256Digest
-    feature_flags: dict[BoundedIdentifier, bool]
-
-
-class ModelIdentityV1(_StrictReplayModel):
-    """Safe model identity and provider-visible request parameters."""
-
-    provider: BoundedIdentifier
-    profile: BoundedIdentifier
-    model: BoundedIdentifier
-    request_parameters: dict[str, object]
-    provider_revision: BoundedText | None
-
-    @field_validator("request_parameters")
-    @classmethod
-    def _request_parameters_are_json(cls, value: dict[str, object]) -> dict[str, object]:
-        validate_replay_json_value(value, path="$.model.request_parameters")
-        return value
 
 
 class AttachmentV1(_StrictReplayModel):
