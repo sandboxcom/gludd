@@ -4,14 +4,11 @@
 """
 DOCUMENTATION:
   module: searxng_search
-  short_description: Query SearXNG metasearch engine for travel data
+  short_description: Search SearXNG natively on the Ansible controller
   description:
-    - Queries a SearXNG instance JSON API (C(/search?format=json)) for
-      flights, hotels, events, and activities.
-    - Maps raw search results to travel contracts (FlightBooking, HotelBooking,
-      EventBooking) with structured pricing and provider info.
-    - SearXNG is a privacy-respecting metasearch engine; this module provides
-      the travel expert with live search data instead of stub results.
+    - The paired action plugin calls the official SearXNG Python WSGI app.
+    - Native mode opens no listener and transfers no Python runtime to hosts.
+    - Remote HTTP is available only through an explicit compatibility mode.
   options:
     query:
       description: Free-text search query for SearXNG.
@@ -22,10 +19,21 @@ DOCUMENTATION:
       type: str
       default: general
       choices: [flights, hotels, events, activities, general, restaurants]
-    searxng_url:
-      description: Base URL of the SearXNG instance.
+    transport:
+      description: Search transport; native is the primary local integration.
       type: str
-      default: "http://localhost:8080"
+      choices: [native, remote]
+      default: native
+    remote_url:
+      description: Explicit remote compatibility endpoint.
+      type: str
+    namespace:
+      description: Native project resource namespace.
+      type: str
+      default: gludd-travel
+    settings_path:
+      description: Optional native SearXNG settings path on the controller.
+      type: path
     engines:
       description: Comma-separated list of SearXNG engines to use. Overrides
         the per-category defaults.
@@ -45,7 +53,7 @@ DOCUMENTATION:
       type: str
       default: "en"
     timeout:
-      description: HTTP request timeout in seconds.
+      description: Remote compatibility timeout in seconds.
       type: int
       default: 10
     structured:
@@ -56,15 +64,6 @@ DOCUMENTATION:
           extract_stars parsers.
       type: bool
       default: false
-    daemon_url:
-      description: Base URL of the daemon.
-      type: str
-      default: "http://localhost:8000"
-    psk:
-      description: Pre-shared key for daemon auth.
-      type: str
-      no_log: true
-      default: ""
 
 EXAMPLES:
   - name: Search for flights from NYC to Paris
@@ -113,13 +112,12 @@ RETURN:
     description: Number of results returned.
     type: int
     returned: always
-  raw_results:
-    description: Raw unprocessed results from SearXNG for debugging.
-    type: list
-    elements: dict
+  instance_uri:
+    description: Native identity or explicit remote endpoint used.
+    type: str
     returned: always
-  search_url:
-    description: The full SearXNG API URL that was queried.
+  transport:
+    description: Selected native or remote transport.
     type: str
     returned: always
 """
@@ -130,9 +128,9 @@ import dataclasses as _dc
 import datetime as _datetime
 import re as _re
 import time as _time
-from typing import Any
+from typing import Any, cast
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.general_ludd.agent.plugins.module_utils.searxng import (
     SearXNGClient,
     extract_price,
@@ -222,7 +220,7 @@ def _parse_flight_result(
         ),
     )
 
-    data = booking.model_dump(mode="json")
+    data = cast(dict[str, Any], booking.model_dump(mode="json"))
     data["title"] = title
     data["url"] = url
     return data
@@ -277,7 +275,7 @@ def _parse_hotel_result(
         ),
     )
 
-    data = booking.model_dump(mode="json")
+    data = cast(dict[str, Any], booking.model_dump(mode="json"))
     data["title"] = title
     data["url"] = url
     if stars:
@@ -312,7 +310,7 @@ def _parse_event_result(
         ),
     )
 
-    data = booking.model_dump(mode="json")
+    data = cast(dict[str, Any], booking.model_dump(mode="json"))
     data["title"] = title
     data["url"] = url
     data["snippet"] = snippet
@@ -423,6 +421,7 @@ def search_searxng(
 
 
 def main() -> None:
+    """Fail closed when Ansible bypasses the controller action plugin."""
     module = AnsibleModule(
         argument_spec=dict(
             query=dict(type="str", required=True),
@@ -431,43 +430,21 @@ def main() -> None:
                 default="general",
                 choices=["flights", "hotels", "events", "activities", "general", "restaurants"],
             ),
-            searxng_url=dict(type="str", default="http://localhost:8080"),
+            transport=dict(type="str", default="native", choices=["native", "remote"]),
+            remote_url=dict(type="str", required=False),
+            namespace=dict(type="str", default="gludd-travel"),
+            settings_path=dict(type="path", default=""),
             engines=dict(type="str", default=""),
             max_results=dict(type="int", default=10),
             safe_search=dict(type="int", default=0, choices=[0, 1, 2]),
             language=dict(type="str", default="en"),
             timeout=dict(type="int", default=10),
             structured=dict(type="bool", default=False),
-            daemon_url=dict(type="str", default="http://localhost:8000"),
-            psk=dict(type="str", default="", no_log=True),
         ),
         supports_check_mode=True,
+        required_if=[("transport", "remote", ("remote_url",))],
     )
-
-    params = module.params
-    try:
-        results, raw, search_url = search_searxng(
-            params["query"],
-            params["category"],
-            params["searxng_url"],
-            params["engines"],
-            params["max_results"],
-            params["safe_search"],
-            params["language"],
-            params["timeout"],
-            params["structured"],
-        )
-        module.exit_json(
-            changed=False,
-            results=results,
-            raw_results=raw,
-            result_count=len(results),
-            query=params["query"],
-            category=params["category"],
-            search_url=search_url,
-        )
-    except Exception as exc:
-        module.fail_json(msg=f"searxng_search failed: {exc}")
+    module.fail_json(msg="searxng_search requires its controller-side action plugin")
 
 
 if __name__ == "__main__":
