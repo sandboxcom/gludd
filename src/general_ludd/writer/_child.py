@@ -1,32 +1,11 @@
-"""Writer subprocess child entrypoint (B3.1.3 — WP-B1, Slices 1 + 3).
+"""Fail-closed writer subprocess child entrypoint.
 
-Invoked as::
-
-    python -m general_ludd.writer._child <config_path> <ready_path> <nonce>
-
-The child has two operating modes, selected by the config file's contents:
-
-  * **Slice-1 stub** (config has no ``database.url``): writes the readiness
-    nonce and sleeps until killed — exercises the parent's lifecycle only.
-  * **Slice-3 real** (config has ``database.url``): builds a WRITE engine,
-    ensures tables, writes the readiness nonce, then runs the EventLoop tick
-    loop + drains the inbound WriteQueue spool between ticks. SIGTERM finishes
-    the current tick and exits 0.
-
-Readiness handshake (identical in both modes): the child writes
-``{"nonce": nonce}`` into ``ready_path`` AFTER successful initialisation. The
-parent (:class:`~general_ludd.writer.process.WriterProcess`) compares the
-file content against the nonce it generated and fail-closes on mismatch.
-
-Test hooks (read from the config file):
-
-  * ``skip_ready=True`` — child never writes the nonce (exercises the parent's
-    handshake-timeout path).
-  * ``ignore_sigterm=True`` — child installs a no-op SIGTERM handler
-    (exercises the parent's SIGKILL-escalation path).
-
-Nothing in this module is imported by the parent at runtime — it only ever
-runs inside the child interpreter.
+The parent supplies canonical JSON containing a non-empty ``database``
+mapping. The child creates the project's locked SQLAlchemy async engine,
+initializes a real connection, applies any envelope already in the inbound
+spool, and only then writes the parent nonce. Missing or invalid database
+configuration exits non-zero; there is no readiness-only stub or unbounded
+sleep fallback.
 """
 
 from __future__ import annotations
@@ -38,7 +17,6 @@ import logging
 import os
 import signal
 import sys
-import time
 from typing import Any
 
 from sqlalchemy import text
@@ -61,6 +39,24 @@ def _load_config(config_path: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"writer child config must be a JSON object, got {type(data)!r}")
     return data
+
+
+def _require_database_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Return an explicit database mapping or fail before readiness."""
+    database = config.get("database")
+    if not isinstance(database, dict):
+        raise ValueError("writer child database config must be an object")
+
+    if "url" in database:
+        url = database["url"]
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("writer child database.url must be a non-empty string")
+        return database
+
+    host = database.get("host")
+    if not isinstance(host, str) or not host.strip():
+        raise ValueError("writer child database config requires url or host")
+    return database
 
 
 def _write_ready(ready_path: str, nonce: str) -> None:
@@ -148,46 +144,54 @@ async def _apply_envelope(engine: Any, envelope: dict[str, Any]) -> None:
 async def _run_writer_loop(
     config: dict[str, Any], ready_path: str, nonce: str, skip_ready: bool
 ) -> int:
-    """Slice-3 main loop: build engine → ensure tables → write nonce → run."""
+    """Build a connected engine, apply startup writes, signal ready, and run."""
     from general_ludd.event_loop.loop import EventLoop
 
-    db_config = config["database"]
+    db_config = _require_database_config(config)
     engine = init_engine_from_config(db_config)
-    try:
-        await ensure_tables(engine)
-    except Exception:
-        logger.exception("writer child: ensure_tables failed")
-        await engine.dispose()
-        raise
-
-    session_factory = create_async_session_factory(engine)
-    event_loop = EventLoop(config=config, session=session_factory)
-
-    if not skip_ready:
-        _write_ready(ready_path, nonce)
-    logger.info("writer child: readiness nonce written, entering tick loop")
-
-    stopping = asyncio.Event()
-    loop = asyncio.get_running_loop()
-
-    def _on_sigterm() -> None:
-        logger.info("writer child: SIGTERM received, draining after current tick")
-        stopping.set()
-
+    event_loop: Any | None = None
+    signal_loop: asyncio.AbstractEventLoop | None = None
     sigterm_installed = False
     try:
-        loop.add_signal_handler(signal.SIGTERM, _on_sigterm)
-        sigterm_installed = True
-    except (NotImplementedError, RuntimeError):
-        # Fallback for platforms without loop.add_signal_handler (Windows).
-        signal.signal(signal.SIGTERM, lambda *_: stopping.set())
-        sigterm_installed = True
+        try:
+            await ensure_tables(engine)
+            async with engine.begin() as connection:
+                await connection.execute(text("SELECT 1"))
+        except Exception:
+            logger.exception("writer child: database initialization failed")
+            raise
 
-    spool_path = config.get("inbound_spool_path", "")
-    tick_interval = float(config.get("tick_interval", 0.5))
-    offset = 0
+        session_factory = create_async_session_factory(engine)
+        event_loop = EventLoop(config=config, session=session_factory)
+        spool_path = config.get("inbound_spool_path", "")
+        tick_interval = float(config.get("tick_interval", 0.5))
+        if tick_interval <= 0:
+            raise ValueError("writer child tick_interval must be positive")
 
-    try:
+        offset = 0
+        if spool_path and os.path.exists(spool_path):
+            offset = await _drain_spool(spool_path, offset, engine)
+
+        if not skip_ready:
+            _write_ready(ready_path, nonce)
+        logger.info("writer child: connected and ready; entering tick loop")
+
+        stopping = asyncio.Event()
+        signal_loop = asyncio.get_running_loop()
+
+        def _on_sigterm() -> None:
+            logger.info("writer child: SIGTERM received, draining after current tick")
+            stopping.set()
+
+        if not bool(config.get("ignore_sigterm", False)):
+            try:
+                signal_loop.add_signal_handler(signal.SIGTERM, _on_sigterm)
+                sigterm_installed = True
+            except (NotImplementedError, RuntimeError):
+                # Fallback for platforms without loop signal handlers.
+                signal.signal(signal.SIGTERM, lambda *_: stopping.set())
+                sigterm_installed = True
+
         while not stopping.is_set():
             try:
                 await event_loop.tick()
@@ -206,16 +210,17 @@ async def _run_writer_loop(
                 await asyncio.wait_for(stopping.wait(), timeout=tick_interval)
 
         logger.info("writer child: tick loop stopped, disposing engine")
+        return 0
     finally:
-        event_loop.stop()
-        with _suppress_exc():
-            await event_loop.shutdown()
-        await engine.dispose()
-        if sigterm_installed:
+        if event_loop is not None:
+            with _suppress_exc():
+                event_loop.stop()
+            with _suppress_exc():
+                await event_loop.shutdown()
+        if sigterm_installed and signal_loop is not None:
             with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
-                loop.remove_signal_handler(signal.SIGTERM)
-
-    return 0
+                signal_loop.remove_signal_handler(signal.SIGTERM)
+        await engine.dispose()
 
 
 class _suppress_exc:
@@ -254,25 +259,13 @@ def main(argv: list[str]) -> int:
     if ignore_sigterm:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
-    db_config = config.get("database")
-    has_db_url = isinstance(db_config, dict) and bool(db_config.get("url"))
-
-    if has_db_url:
-        try:
-            return asyncio.run(_run_writer_loop(config, ready_path, nonce, skip_ready))
-        except Exception:
-            logger.exception("writer child: _run_writer_loop exited with error")
-            return 1
-
-    # Slice-1 stub path: write nonce and sleep until killed.
-    if not skip_ready:
-        _write_ready(ready_path, nonce)
     try:
-        while True:
-            time.sleep(3600)
-    except InterruptedError:
-        pass
-    return 0
+        _require_database_config(config)
+        return asyncio.run(_run_writer_loop(config, ready_path, nonce, skip_ready))
+    except Exception as exc:
+        sys.stderr.write(f"database initialization error: {exc}\n")
+        logger.exception("writer child: _run_writer_loop exited with error")
+        return 1
 
 
 if __name__ == "__main__":
