@@ -727,22 +727,104 @@ class SelfImproveLifecycleMixin:
                 exc,
             )
 
-    async def _dispatch_validate_job(self, todo: Any) -> None:
+    async def _dispatch_validate_job(
+        self,
+        todo: Any,
+        *,
+        decision_id: str | None = None,
+        worktree_path: str | None = None,
+        test_commands: tuple[str, ...] = (),
+        timeout_seconds: float = 300.0,
+    ) -> bool:
+        """Run one canonical worker validation and persist its honest result."""
+        import hashlib as _hashlib
+        import inspect as _inspect
+
+        import httpx as _httpx
+
         if self._http_client is None:
-            return
+            logger.warning("Validation worker unavailable for todo %s", todo.todo_id)
+            return False
+        decision_digest = (
+            _hashlib.sha256(decision_id.encode("utf-8")).hexdigest()[:16]
+            if decision_id is not None
+            else None
+        )
+        job_id = f"VALIDATE-{todo.todo_id}"
+        if decision_digest is not None:
+            job_id = f"{job_id}-{decision_digest}"
+        budget_context: dict[str, object] = {}
+        if worktree_path is not None and test_commands:
+            budget_context = {
+                "worktree_path": worktree_path,
+                "test_commands": list(test_commands),
+            }
         job = JobSpec(
-            job_id=f"VALIDATE-{todo.todo_id}",
+            job_id=job_id,
             todo_id=todo.todo_id,
             playbook="validate_task.yml",
             queue=_safe_str(todo, "queue", "core") or "core",
-            work_type=_safe_str(todo, "work_type", "unknown") or "unknown",
+            work_type="validation",
             project_id=getattr(todo, "project_id", None),
+            budget_context=budget_context,
+            timeout=timeout_seconds,
         )
-        resp = await self._http_client.post(
-            f"{self.worker_base_url}/jobs/validate",
-            json=job.model_dump(mode="json"),
+        try:
+            response = await self._http_client.post(
+                f"{self.worker_base_url}/jobs/validate",
+                json=job.model_dump(mode="json"),
+                timeout=timeout_seconds,
+            )
+            status_code = getattr(response, "status_code", None)
+            if not isinstance(status_code, int) or not 200 <= status_code < 300:
+                logger.warning(
+                    "Validation worker rejected todo %s: status=%s",
+                    todo.todo_id,
+                    status_code,
+                )
+                return False
+            body_reader = getattr(response, "json", None)
+            if not callable(body_reader):
+                return False
+            data = body_reader()
+            if _inspect.isawaitable(data):
+                data = await data
+        except (TimeoutError, _httpx.TimeoutException):
+            logger.warning("Validation worker timed out for todo %s", todo.todo_id)
+            return False
+        except (_httpx.HTTPError, TypeError, ValueError):
+            logger.warning(
+                "Validation worker returned an unusable response for todo %s",
+                todo.todo_id,
+                exc_info=True,
+            )
+            return False
+        except Exception:
+            logger.warning(
+                "Validation worker unavailable for todo %s",
+                todo.todo_id,
+                exc_info=True,
+            )
+            return False
+        if not self._valid_validation_response(data, todo, job):
+            logger.warning("Validation worker response malformed for todo %s", todo.todo_id)
+            return False
+        return await self._persist_task_return(todo, job, data)
+
+    @staticmethod
+    def _valid_validation_response(data: object, todo: Any, job: JobSpec) -> bool:
+        """Require the canonical worker identity and reviewable result fields."""
+        if not isinstance(data, dict):
+            return False
+        exit_code = data.get("exit_code")
+        return (
+            data.get("return_id") == f"RET-{job.job_id}"
+            and data.get("todo_id") == todo.todo_id
+            and data.get("job_id") == job.job_id
+            and isinstance(exit_code, int)
+            and not isinstance(exit_code, bool)
+            and isinstance(data.get("result_summary"), str)
         )
-        logger.info("Validation dispatch for todo %s: status=%s", todo.todo_id, getattr(resp, "status_code", None))
 
     async def _persist_task_return(
         self,
@@ -752,7 +834,9 @@ class SelfImproveLifecycleMixin:
         *,
         _task_return_repo_override: TaskReturnRepository | None = None,
         _session_override: AsyncSession | None = None,
-    ) -> None:
+    ) -> bool:
+        import inspect as _inspect
+
         eff_repo = _task_return_repo_override if _task_return_repo_override is not None else self._task_return_repo
         eff_session = _session_override if _session_override is not None else self._active_session
         real_session = eff_session is not None and issubclass(
@@ -760,18 +844,20 @@ class SelfImproveLifecycleMixin:
             AsyncSession,
         )
         if eff_repo is None:
-            return
+            return False
         try:
-            async def _persist_and_advance() -> None:
+            async def _persist_and_advance() -> bool:
                 body = getattr(resp, "json", None)
                 if callable(body):
-                    data = await body()
+                    data = body()
+                    if _inspect.isawaitable(data):
+                        data = await data
                 elif isinstance(resp, dict):
                     data = resp
                 else:
-                    return
+                    return False
                 if not isinstance(data, dict):
-                    return
+                    return False
                 await eff_repo.create(
                     data={
                         "return_id": data.get("return_id", f"RET-{job.job_id}"),
@@ -814,15 +900,19 @@ class SelfImproveLifecycleMixin:
                     )
                 if eff_session is not None:
                     await eff_session.flush()
+                return True
 
             if real_session:
                 # A SAVEPOINT makes TaskReturn creation and todo advancement one
                 # unit without rolling back unrelated work in the tick session.
                 assert eff_session is not None
                 async with eff_session.begin_nested():
-                    await _persist_and_advance()
+                    persisted = await _persist_and_advance()
             else:
-                await _persist_and_advance()
-            logger.info("Persisted TaskReturn for todo %s", todo.todo_id)
+                persisted = await _persist_and_advance()
+            if persisted:
+                logger.info("Persisted TaskReturn for todo %s", todo.todo_id)
+            return persisted
         except Exception as exc:
             logger.warning("Failed to persist task return for %s: %s", todo.todo_id, exc)
+            return False
