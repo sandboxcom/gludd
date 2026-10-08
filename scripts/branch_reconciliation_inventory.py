@@ -12,7 +12,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from general_ludd.self_update.signing import verify_signature as _verify_signature
 
@@ -32,31 +32,55 @@ REMOTE_JSON_CHAR_LIMIT = _plan_types.REMOTE_JSON_CHAR_LIMIT
 REMOTE_REF_SCAN_LIMIT = _plan_types.REMOTE_REF_SCAN_LIMIT
 if TYPE_CHECKING:
     from branch_reconciliation_plan_types import (
+        BranchRecord,
         CollapsedMergeQueueGroup,
         ConflictPreflight,
+        CurrentSummaryPayload,
+        HeadSemanticSummary,
+        InventoryCounts,
+        InventoryPayload,
         MergePlanCollision,
         MergePlanCounts,
         MergePlanGroup,
         MergePlanHead,
         MergePlanPayload,
-        MergeQueueBounds,
         MergeQueueCounts,
         MergeQueueEntry,
         MergeRehearsalPlan,
+        ReceiptReplayPayload,
         ReconciliationReceipt,
         ReconciliationReceiptBody,
         ReconciliationReceiptTarget,
         ReconciliationSnapshotPayload,
         RemoteTrackingPayload,
+        SemanticCurrentSummaryPayload,
+        SemanticSummaryPayload,
+        SummaryCounts,
+        SummaryCountsPayload,
+        SummaryPayload,
+        TargetRecord,
     )
+    from branch_reconciliation_plan_types import InventoryBounds as InventoryBounds
+    from branch_reconciliation_plan_types import MergeQueueBounds as MergeQueueBounds
+    from branch_reconciliation_plan_types import MergeQueuePayload as MergeQueuePayload
+    from branch_reconciliation_plan_types import (
+        ReceiptReplayBounds as ReceiptReplayBounds,
+    )
+    from branch_reconciliation_plan_types import SummaryGroup as SummaryGroup
 else:
     for _exported_type in (
-        "CollapsedMergeQueueGroup", "ConflictPreflight", "MergePlanCollision",
+        "BranchRecord", "CollapsedMergeQueueGroup", "ConflictPreflight",
+        "CurrentSummaryPayload", "HeadSemanticSummary", "InventoryBounds",
+        "InventoryCounts", "InventoryPayload", "MergePlanCollision",
         "MergePlanCounts", "MergePlanGroup", "MergePlanHead", "MergePlanPayload",
         "MergeQueueBounds", "MergeQueueCounts", "MergeQueueEntry",
-        "MergeRehearsalPlan", "ReconciliationReceipt", "ReconciliationReceiptBody",
-        "ReconciliationReceiptTarget", "ReconciliationSnapshotPayload",
-        "RemoteTrackingPayload",
+        "MergeQueuePayload", "MergeRehearsalPlan", "ReconciliationReceipt",
+        "ReconciliationReceiptBody", "ReconciliationReceiptTarget",
+        "ReconciliationSnapshotPayload", "ReceiptReplayBounds",
+        "ReceiptReplayPayload", "RemoteTrackingPayload",
+        "SemanticCurrentSummaryPayload", "SemanticSummaryPayload",
+        "SummaryCounts", "SummaryCountsPayload", "SummaryGroup",
+        "SummaryPayload", "TargetRecord",
     ):
         globals()[_exported_type] = getattr(_plan_types, _exported_type)
     del _exported_type
@@ -113,168 +137,9 @@ ProgressFn = Callable[[str], None]
 
 
 class InventoryError(RuntimeError):
+    """Raised when Git evidence cannot prove a safe classification."""
+
     pass
-
-
-class BranchRecord(TypedDict):
-    classification: Literal["ancestor", "patch-equivalent", "unique"]
-    head: str
-    lifecycle: Literal["current", "historical"]
-    name: str
-    patch_equivalent_commits: int
-    ref: str
-    unique_commits: int
-
-
-class InventoryCounts(TypedDict):
-    ancestor: int
-    current: int
-    historical: int
-    patch_equivalent: int
-    returned: int
-    unique: int
-
-
-class TargetRecord(TypedDict):
-    head: str
-    input: str
-    ref: str
-
-
-class InventoryBounds(TypedDict):
-    branch_limit: int
-    commit_scan_limit: int
-    local_ref_scan_limit: int
-
-
-class InventoryPayload(TypedDict):
-    after: str | None
-    bounds: InventoryBounds
-    branches: list[BranchRecord]
-    counts: InventoryCounts
-    limit: int
-    next_cursor: str | None
-    ok: bool
-    schema_version: int
-    target: TargetRecord
-    truncated: bool
-
-
-class SummaryCounts(InventoryCounts):
-    deduplicated_heads: int
-
-
-class SummaryGroup(TypedDict):
-    branch_count: int
-    classification: Literal["ancestor", "patch-equivalent", "unique"]
-    head: str
-    lifecycle: Literal["current", "historical"]
-    names: list[str]
-    patch_equivalent_commits: int
-    refs: list[str]
-    unique_commits: int
-
-
-class HeadSemanticSummary(TypedDict):
-    changed_path_count: int
-    changed_paths: list[str]
-    changed_paths_truncated: bool
-    head: str
-    path_redactions: int
-    subject: str
-    subject_truncated: bool
-
-
-class SummaryPayload(TypedDict):
-    bounds: InventoryBounds
-    counts: SummaryCounts
-    groups: list[SummaryGroup]
-    mode: Literal["exhaustive-summary"]
-    ok: bool
-    page_size: int
-    pages: int
-    schema_version: int
-    target: TargetRecord
-    terminal: bool
-    truncated: bool
-
-
-class SummaryCountsPayload(TypedDict):
-    bounds: InventoryBounds
-    counts: SummaryCounts
-    mode: Literal["exhaustive-counts"]
-    ok: bool
-    page_size: int
-    pages: int
-    schema_version: int
-    target: TargetRecord
-    terminal: bool
-    truncated: bool
-
-
-class CurrentSummaryPayload(TypedDict):
-    bounds: InventoryBounds
-    counts: SummaryCounts
-    groups: list[SummaryGroup]
-    mode: Literal["exhaustive-current"]
-    ok: bool
-    page_size: int
-    pages: int
-    schema_version: int
-    selected_branches: int
-    selected_heads: int
-    target: TargetRecord
-    terminal: bool
-    truncated: bool
-
-
-class SemanticSummaryPayload(SummaryPayload):
-    head_summaries: list[HeadSemanticSummary]
-
-
-class SemanticCurrentSummaryPayload(CurrentSummaryPayload):
-    head_summaries: list[HeadSemanticSummary]
-
-
-class MergeQueuePayload(TypedDict):
-    bounds: MergeQueueBounds
-    collapsed: list[CollapsedMergeQueueGroup]
-    counts: MergeQueueCounts
-    mode: Literal["sequential-merge-queue"]
-    ok: bool
-    page_size: int
-    pages: int
-    queue: list[MergeQueueEntry]
-    receipt: ReconciliationReceipt
-    schema_version: int
-    target: TargetRecord
-    terminal: bool
-    truncated: bool
-
-
-class ReceiptReplayBounds(TypedDict):
-    conflict_path_char_limit: int
-    conflict_path_limit: int
-    conflict_path_scan_limit: int
-    local_ref_scan_limit: int
-    merge_queue_head_limit: int
-    merge_tree_output_char_limit: int
-    receipt_json_char_limit: int
-
-
-class ReceiptReplayPayload(TypedDict):
-    bounds: ReceiptReplayBounds
-    complete: bool
-    cursor: int
-    integrated: list[MergeQueueEntry]
-    mode: Literal["reconciliation-receipt-replay"]
-    newly_integrated: list[MergeQueueEntry]
-    next: MergeQueueEntry | None
-    ok: bool
-    receipt: ReconciliationReceipt
-    remaining_heads: int
-    schema_version: int
-    target: TargetRecord
 
 
 def _run(
@@ -712,6 +577,7 @@ def collect_inventory(
     cwd: str | None = None,
     progress: ProgressFn | None = None,
 ) -> InventoryPayload:
+    """Classify one bounded page and verify its exact ref snapshot."""
     if limit < 1 or limit > MAX_LIMIT:
         raise InventoryError(f"limit must be between 1 and {MAX_LIMIT}")
     after_ref = _validate_after(after, run=run, cwd=cwd)
@@ -770,6 +636,7 @@ def collect_summary(
     cwd: str | None = None,
     progress: ProgressFn | None = None,
 ) -> SummaryPayload:
+    """Collect every bounded page and verify one terminal ref snapshot."""
     if page_size < 1 or page_size > MAX_LIMIT:
         raise InventoryError(f"limit must be between 1 and {MAX_LIMIT}")
     after = ""
