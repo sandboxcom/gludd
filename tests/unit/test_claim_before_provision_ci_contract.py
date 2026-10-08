@@ -10,6 +10,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/build.yml"
 JOB_NAME = "claim-before-provision-acceptance"
+POSTGRES_JOB_NAME = "postgres-winner-compute-lifecycle-acceptance"
 
 
 def _workflow() -> dict[str, Any]:
@@ -88,5 +89,49 @@ def test_release_requires_claim_before_provision_acceptance() -> None:
     assert JOB_NAME in needs
     assert (
         "needs['claim-before-provision-acceptance'].result == 'success'"
+        in str(release["if"])
+    )
+
+
+def test_postgres_winner_lifecycle_job_is_bounded_and_uses_owned_runner() -> None:
+    """Hosted CI runs the real PostgreSQL process race through the owned harness."""
+    job = _workflow()["jobs"][POSTGRES_JOB_NAME]
+
+    assert job["needs"] == "version"
+    assert job["runs-on"] == "ubuntu-24.04"
+    assert job["timeout-minutes"] == 20
+    assert job["permissions"] == {"contents": "read"}
+    assert "services" not in job
+
+    commands = _job_commands(job)
+    assert "make sync" in commands
+    assert "make test-e2e-postgres-multiworker" in commands
+    for setting in (
+        "POSTGRES_E2E_RUNTIME=docker",
+        "POSTGRES_E2E_IMAGE=postgres:16-alpine",
+        "POSTGRES_E2E_TIMEOUT_SECS=120",
+        "POSTGRES_E2E_VALIDATE_ONLY=0",
+        "PODMAN_RECREATE=0",
+    ):
+        assert setting in commands
+
+    acceptance_step = next(
+        step
+        for step in job["steps"]
+        if isinstance(step, dict)
+        and "make test-e2e-postgres-multiworker" in str(step.get("run", ""))
+    )
+    assert acceptance_step["timeout-minutes"] == 15
+    assert acceptance_step["env"]["GLUDD_AUTH_PSK"] == ""
+
+
+def test_release_requires_postgres_winner_lifecycle_acceptance() -> None:
+    """A release cannot bypass the hosted winner-only lifecycle proof."""
+    release = _workflow()["jobs"]["release"]
+    needs = release["needs"]
+    assert isinstance(needs, list)
+    assert POSTGRES_JOB_NAME in needs
+    assert (
+        "needs['postgres-winner-compute-lifecycle-acceptance'].result == 'success'"
         in str(release["if"])
     )
