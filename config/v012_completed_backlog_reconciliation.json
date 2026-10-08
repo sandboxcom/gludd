@@ -566,6 +566,21 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "fd5faf302dd01bf1ab2df958e5112fc70ad17cfa"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "3a539a9640a9283ca655ab1b46b4cb25e609fdcb"
+        }
+      ],
+      "item_id": "S42",
+      "release_page_category": "Features",
+      "title": "Native fail-closed JUnit pipeline triage"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },
