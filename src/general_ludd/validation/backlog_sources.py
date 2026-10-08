@@ -1,27 +1,33 @@
-"""Bounded adapters from the canonical task ledger to backlog-audit tasks.
+"""Canonical task-ledger parsing and bounded backlog-audit adapters.
 
-The task ledger remains owned by :mod:`scripts.validate_task_ledger`.  This
-module intentionally calls its ``extract_tasks`` function instead of growing a
-second checkbox parser.  The adapter adds only the stricter runtime boundary
-needed by the executable backlog audit: repository confinement, input limits,
-evidence-node extraction, and fail-closed handling of syntax the canonical
-parser cannot represent.
+Both the repository validation script and the executable backlog audit consume
+the parser in this module.  Keeping that reusable boundary in the application
+package prevents production code from importing the repository-only
+``scripts`` namespace while retaining one checkbox grammar.  The backlog
+adapter adds repository confinement, input limits, evidence-node extraction,
+and fail-closed handling of syntax the canonical parser cannot represent.
 """
 
 from __future__ import annotations
 
 import re
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path, PurePosixPath
-
-from scripts.validate_task_ledger import extract_tasks, task_is_effectively_complete
+from typing import TypedDict
 
 MAX_LEDGER_BYTES = 8 * 1024 * 1024
 MAX_TASKS = 512
 MAX_EVIDENCE_IDS = 64
 MAX_TOUCHED_FILES = 32
 MAX_REFERENCE_LENGTH = 1024
+
+# Support dotted phase IDs (``S53.31``), legacy hyphenated IDs (``FIX-3``),
+# and multi-segment release IDs (``T-BETA3-E2E``).
+ID_PATTERN = re.compile(
+    r"\b((?:[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)|(?:[A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*)?))\b"
+)
+COMPLETED_STATUSES = frozenset({"complete", "completed", "done"})
 
 _TASK_MARKER = re.compile(r"^\s*[-+*]\s+\[(?P<state>[^\]])\]\s+")
 _FIELD = re.compile(r"^\s*(?P<name>[a-z][a-z _-]*)\s*:\s*(?P<value>.*?)\s*$", re.I)
@@ -54,6 +60,77 @@ _PATH_SUFFIXES = frozenset(
 
 FileReader = Callable[[str], str | None]
 BacklogTask = dict[str, object]
+
+
+class TaskRecord(TypedDict):
+    """Normalized TASKS.md checkbox record."""
+
+    line: str
+    ids: list[str]
+    all_ids: list[str]
+    status: str | None
+    epoch: int | None
+
+
+def task_is_effectively_complete(
+    task: Mapping[str, object],
+    *,
+    checked: bool,
+) -> bool:
+    """Require checkbox and explicit status, when present, to agree."""
+    if not checked:
+        return False
+    status = task.get("status")
+    if status is None:
+        return True
+    if not isinstance(status, str):
+        return False
+    return status.casefold().rstrip("|,;.") in COMPLETED_STATUSES
+
+
+def _primary_ids(stripped: str) -> list[str]:
+    """Return contiguous task IDs immediately after a checkbox marker."""
+    marker = re.match(r"^-\s*\[[ x]\]\s+(?P<body>.*)$", stripped)
+    if marker is None:
+        return []
+    body = marker.group("body")
+    ids: list[str] = []
+    position = 0
+    while position < len(body):
+        while position < len(body) and body[position].isspace():
+            position += 1
+        match = ID_PATTERN.match(body, position)
+        if match is None:
+            break
+        ids.append(match.group(1))
+        position = match.end()
+    return ids
+
+
+def extract_tasks(tasks_path: Path) -> tuple[list[TaskRecord], list[TaskRecord]]:
+    """Parse TASKS.md and return its checked and unchecked task records."""
+    text = tasks_path.read_text(encoding="utf-8")
+    checked: list[TaskRecord] = []
+    unchecked: list[TaskRecord] = []
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(("- [x]", "- [ ]")):
+            continue
+
+        is_checked = stripped.startswith("- [x]")
+        epoch_match = re.search(r"(?:epoch|ts)\s+(\d{10,})", stripped)
+        status_match = re.search(r"status:\s*(\S+)", stripped)
+        task: TaskRecord = {
+            "line": stripped,
+            "ids": _primary_ids(stripped),
+            "all_ids": ID_PATTERN.findall(stripped),
+            "status": status_match.group(1) if status_match else None,
+            "epoch": int(epoch_match.group(1)) if epoch_match else None,
+        }
+        (checked if is_checked else unchecked).append(task)
+
+    return checked, unchecked
 
 
 class BacklogSourceError(ValueError):

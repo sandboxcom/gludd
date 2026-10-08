@@ -74,6 +74,15 @@ shadow path without draining traffic, changing routes, or migrating data.
 Re-enable it with the variable unset or set to any value other than the exact
 rollback value `0`.
 
+The value is startup configuration, not a live mutation channel. Kubernetes
+issue [#91477](https://github.com/kubernetes/kubernetes/issues/91477), opened in
+2020, records an operator being unable to patch an environment variable on an
+existing Pod because that portion of the Pod specification is immutable. The
+same process boundary applies here: change the workload template and roll
+workers; do not assume editing the parent environment will reconfigure an
+already-running worker. Old and new workers may overlap safely because feedback
+does not affect admission, routing, schemas, or wire payloads.
+
 ## Verification
 
 `tests/unit/test_estimation_runtime_wiring.py` exercises a real

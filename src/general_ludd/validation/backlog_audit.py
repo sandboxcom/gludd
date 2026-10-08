@@ -13,8 +13,6 @@ from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
-import pytest
-
 from general_ludd.validation.backlog_auditor import BacklogAuditor, BacklogAuditReport
 from general_ludd.validation.backlog_sources import (
     MAX_EVIDENCE_IDS,
@@ -23,6 +21,9 @@ from general_ludd.validation.backlog_sources import (
 )
 
 EVIDENCE_TIMEOUT_SECONDS = 180
+_PYTEST_OK = 0
+_PYTEST_TESTS_FAILED = 1
+_PYTEST_FATAL_EXIT_CODES = frozenset({2, 3, 4, 5})
 
 
 class BacklogExecutionError(ValueError):
@@ -38,9 +39,25 @@ class PytestMain(Protocol):
         args: list[str],
         *,
         plugins: list[object],
-    ) -> int | pytest.ExitCode:
+    ) -> int:
         """Invoke pytest with explicit arguments and result plugins."""
         ...
+
+
+class CollectReport(Protocol):
+    """Public collection-report attributes consumed by the result plugin."""
+
+    failed: bool
+    nodeid: str
+
+
+class TestReport(Protocol):
+    """Public test-report attributes consumed by the result plugin."""
+
+    nodeid: str
+    when: str
+    passed: bool
+    skipped: bool
 
 
 class EvidenceResultPlugin:
@@ -52,12 +69,12 @@ class EvidenceResultPlugin:
         self.results: dict[str, bool] = {}
         self.collection_errors: list[str] = []
 
-    def pytest_collectreport(self, report: pytest.CollectReport) -> None:
+    def pytest_collectreport(self, report: CollectReport) -> None:
         """Retain bounded identifiers for any failed collection report."""
         if report.failed and len(self.collection_errors) < MAX_EVIDENCE_IDS:
             self.collection_errors.append(str(report.nodeid)[:1024])
 
-    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+    def pytest_runtest_logreport(self, report: TestReport) -> None:
         """Treat a node as passing only after all three phases pass."""
         if report.when not in {"setup", "call", "teardown"}:
             return
@@ -141,13 +158,15 @@ def run_evidence_tests(
     repo_root: str | Path,
     node_ids: Sequence[str],
     *,
-    pytest_main: PytestMain = pytest.main,
+    pytest_main: PytestMain | None = None,
 ) -> dict[str, bool]:
     """Run a bounded, deduplicated evidence set in one serial pytest session."""
     root = _resolved_repo_root(repo_root)
     requested = _deduplicate_node_ids(root, node_ids)
     if not requested:
         return {}
+    if pytest_main is None:
+        raise BacklogExecutionError("a pytest runner is required for evidence execution")
 
     plugin = EvidenceResultPlugin()
     args = [
@@ -177,18 +196,12 @@ def run_evidence_tests(
         os.chdir(previous)
 
     try:
-        exit_code = pytest.ExitCode(int(raw_exit_code))
+        exit_code = int(raw_exit_code)
     except (TypeError, ValueError):
-        exit_code = pytest.ExitCode.INTERNAL_ERROR
-    fatal_exit_codes = {
-        pytest.ExitCode.INTERRUPTED,
-        pytest.ExitCode.INTERNAL_ERROR,
-        pytest.ExitCode.USAGE_ERROR,
-        pytest.ExitCode.NO_TESTS_COLLECTED,
-    }
-    if plugin.collection_errors or exit_code in fatal_exit_codes:
+        exit_code = 3
+    if plugin.collection_errors or exit_code in _PYTEST_FATAL_EXIT_CODES:
         results = dict.fromkeys(requested, False)
-    elif exit_code in {pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED}:
+    elif exit_code in {_PYTEST_OK, _PYTEST_TESTS_FAILED}:
         results = {
             node_id: _requested_result(node_id, plugin.results)
             for node_id in requested
@@ -201,7 +214,7 @@ def run_evidence_tests(
         print(f"BACKLOG-EVIDENCE {state} {node_id}")
     print(
         "BACKLOG-EVIDENCE END "
-        f"exit={int(exit_code)} collection_errors={len(plugin.collection_errors)}"
+        f"exit={exit_code} collection_errors={len(plugin.collection_errors)}"
     )
     return results
 
@@ -210,7 +223,7 @@ def audit_task_ledger(
     repo_root: str | Path,
     *,
     tasks_path: str | Path | None = None,
-    pytest_main: PytestMain = pytest.main,
+    pytest_main: PytestMain | None = None,
 ) -> BacklogAuditReport:
     """Load checked tasks, execute all evidence once, and adjudicate claims."""
     root = _resolved_repo_root(repo_root)

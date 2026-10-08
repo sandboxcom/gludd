@@ -71,6 +71,13 @@ why this first production wiring does not infer authentication from a project
 context. Authentication should arrive as a separately typed, tested profile
 extension rather than hidden command text.
 
+ZAP issue [#6993][report-permission], opened in 2021, records a mounted work
+directory owned by the wrong user preventing the scanner from writing its
+configuration and report. That durable practitioner failure is why a successful
+child exit is never sufficient evidence here: Gludd requires its owned private
+report, fails closed when it is missing, and uses a project/workspace namespace
+for scanner identity instead of sharing an anonymous process or output path.
+
 ## Security and resource ownership
 
 - Profile validation rejects shell metacharacters in `start_command`, and both
@@ -83,9 +90,11 @@ extension rather than hidden command text.
   children receive a sanitized environment with proxy variables removed and
   `NO_PROXY=*`.
 - A process-local single-scanner slot prevents overlapping scans. Scanner
-  processes carry a stable project/workspace namespace, and an owned target is
+  processes receive an internal `GLUDD_PROCESS_NAMESPACE` value in the form
+  `gludd-dast-scanner-<project/workspace namespace>`, and an owned target is
   confined to its declared loopback port so parallel projects do not share
-  identity.
+  identity. The runner derives this child-only value; operators should not set
+  it globally.
 - Scanner duration is capped at 900 seconds. Owned target processes start in a
   new process group and teardown escalates from `SIGTERM` to `SIGKILL`; the
   namespaced temporary JSON report is removed in the same `finally` path.
@@ -120,3 +129,4 @@ repository's 75% per-file floor.
 [automation]: https://www.zaproxy.org/docs/automate/automation-framework/
 [baseline-2021]: https://www.zaproxy.org/blog/2021-06-15-baseline-scan-changes/
 [auth-report]: https://stackoverflow.com/questions/66374190/owasp-zap-against-netlify-password-protected-site
+[report-permission]: https://github.com/zaproxy/zaproxy/issues/6993

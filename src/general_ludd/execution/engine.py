@@ -319,7 +319,10 @@ class ExecutionEngine:
         self._searcher = searcher
         self._sandbox_enforcer = sandbox_enforcer
         self._spend_limiter = spend_limiter
-        feedback_enabled = os.environ.get("GLUDD_ESTIMATION_FEEDBACK", "1").strip() != "0"
+        feedback_override = os.environ.get("GLUDD_ESTIMATION_FEEDBACK")
+        feedback_enabled = (
+            feedback_override is None or feedback_override.strip() != "0"
+        )
         self._estimation_tracker = estimation_tracker if feedback_enabled else None
         self._sandbox_verified = False
         self._background_tasks: set[asyncio.Task[Any]] = set()

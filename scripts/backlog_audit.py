@@ -28,6 +28,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 # Make both the canonical ``scripts`` parser and application package importable
 # when this file is run directly from outside the checkout (no editable install).
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -138,7 +140,7 @@ def _print_backlog_verdicts(repo_root: Path, *, enabled: bool) -> bool:
         return True
 
     try:
-        report = audit_task_ledger(repo_root)
+        report = audit_task_ledger(repo_root, pytest_main=pytest.main)
     except (BacklogSourceError, BacklogExecutionError) as exc:
         print(f"\nBACKLOG AUDIT ERROR: {exc}")
         return False

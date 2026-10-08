@@ -150,6 +150,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_ENHANCEMENT_RATIO_ENFORCE` | Auto-indexed (see source) | `1` | optional | `scripts/audit_observability.py:860` |
 | `GLUDD_ENHANCEMENT_RATIO_STATE` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:53` |
 | `GLUDD_ENVELOPE_KEK_B64` | Auto-indexed (see source) | — | optional | `src/general_ludd/security/envelope_encryption.py:378` |
+| `GLUDD_ESTIMATION_FEEDBACK` | Enable bounded, cost-only shadow estimation feedback. Set the exact value `0` before worker startup to disable tracker construction and use; unset or any other value keeps it enabled. | `1` (enabled) | optional | `src/general_ludd/daemon_components/lifecycle.py:678`, `src/general_ludd/execution/engine.py:322` |
 | `GLUDD_FALSE_DONE_BLOCKS` | Auto-indexed (see source) | `/tmp/gludd-false-done-blocks.json` | optional | `scripts/agent_watchdog.py:338` |
 | `GLUDD_FALSE_DONE_BLOCKS_FILE` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:176` |
 | `GLUDD_FALSE_DONE_MAXOUT` | Auto-indexed (see source) | `/tmp/gludd-false-done-maxout.json` | optional | `scripts/agent_watchdog.py:339` |
@@ -253,6 +254,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_PLUGIN_LOADED_LOG` | Auto-indexed (see source) | `/tmp/gludd-plugin-loaded.log` | optional | `scripts/verify_plugin_liveness.py:42` |
 | `GLUDD_PLUGIN_MANIFEST` | Auto-indexed (see source) | `.opencode/plugin-hashes.json` | optional | `scripts/check_plugin_hashes.py:27` |
 | `GLUDD_POST_RESULTS_STATE_FILE` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:48` |
+| `GLUDD_PROCESS_NAMESPACE` | Internal identity injected into an owned DAST scanner child so process discovery and teardown remain project/workspace scoped. The runner derives this value; operators should not set it globally. | `gludd-dast-scanner-<project/workspace namespace>` | internal | `src/general_ludd/project_runner/dast.py:397` |
 | `GLUDD_PROJECT_ALLOW_ANY_EXEC` | Auto-indexed (see source) | — | optional | `src/general_ludd/project_runner/dast.py:42` |
 | `GLUDD_PROJECT_NAMESPACE` | Auto-indexed (see source) | `gludd` | optional | `src/general_ludd/cli.py:1997` |
 | `GLUDD_PROJECT_REPOSITORY_BINDINGS` | Canonical, bounded JSON snapshot binding stable project IDs to confined workspace keys and repository fingerprints. Empty selects an empty registry; malformed, duplicate, non-canonical, oversized, or unsupported snapshots fail closed. | `""` (empty registry) | optional | `src/general_ludd/projects/repository_binding.py:307` |
