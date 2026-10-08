@@ -2285,31 +2285,15 @@ def main() -> int:
         default=None,
         help="path to the resume state file (default: <resource-root>/ci-shards/resume.json)",
     )
-    parser.add_argument(
-        "--no-shadow-batch-receipts",
-        action="store_true",
-        help="execute every batch without publishing any shadow receipt",
+    shadow_toggles = (
+        ("--no-shadow-batch-receipts", "execute every batch without publishing any shadow receipt"),
+        ("--no-shadow-failure-receipts", "keep pass receipts but disable sanitized non-reusable failure receipts"),
+        ("--no-shadow-receipt-authentication", "write legacy unsigned shadow receipts and disable future eligibility"),
+        ("--no-shadow-replay-audit", "keep shadow writes but disable prior-receipt eligibility reports"),
+        ("--no-shadow-gate-progress", "keep shadow writes and replay auditing but disable progress/ETA reports"),
     )
-    parser.add_argument(
-        "--no-shadow-failure-receipts",
-        action="store_true",
-        help="keep pass receipts but disable sanitized non-reusable failure receipts",
-    )
-    parser.add_argument(
-        "--no-shadow-receipt-authentication",
-        action="store_true",
-        help="write legacy unsigned shadow receipts and disable future eligibility",
-    )
-    parser.add_argument(
-        "--no-shadow-replay-audit",
-        action="store_true",
-        help="keep shadow writes but disable prior-receipt eligibility reports",
-    )
-    parser.add_argument(
-        "--no-shadow-gate-progress",
-        action="store_true",
-        help="keep shadow writes and replay auditing but disable progress/ETA reports",
-    )
+    for flag, help_text in shadow_toggles:
+        parser.add_argument(flag, action="store_true", help=help_text)
     parser.add_argument(
         "--watchdog-owned-gate",
         action="store_true",

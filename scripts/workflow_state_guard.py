@@ -564,41 +564,25 @@ def main(argv: Sequence[str] | None = None, run: RunFn = _run) -> int:
         default=DEFAULT_RECONCILED_PRESERVE_HEAD_FILE,
         help="repo-relative file listing audited preserved branch HEAD SHAs",
     )
-    parser.add_argument(
-        "--assert-clean",
-        action="store_true",
-        help="fail if the worktree is dirty",
-    )
-    parser.add_argument(
-        "--assert-no-feature-on-master",
-        action="store_true",
-        help="fail if master has local edits",
-    )
-    parser.add_argument(
-        "--assert-merge-ready",
-        action="store_true",
-        help="fail if development cannot merge cleanly to master topology",
-    )
-    parser.add_argument(
-        "--assert-remote-head",
-        action="store_true",
-        help="fail if remote ref is missing or not local HEAD",
-    )
-    parser.add_argument(
-        "--assert-gha-matches-local",
-        action="store_true",
-        help="fail if provided GHA head SHA is not local HEAD",
-    )
-    parser.add_argument(
-        "--assert-no-unintegrated-worktrees",
-        action="store_true",
-        help="fail if sibling worktrees contain dirty or unmerged changes",
-    )
-    parser.add_argument(
-        "--assert-no-unintegrated-branches",
-        action="store_true",
-        help="fail if preserved local branches contain unreconciled patches",
-    )
+    workflow_assertions = {
+        "--assert-clean": "fail if the worktree is dirty",
+        "--assert-no-feature-on-master": "fail if master has local edits",
+        "--assert-merge-ready": (
+            "fail if development cannot merge cleanly to master topology"
+        ),
+        "--assert-remote-head": "fail if remote ref is missing or not local HEAD",
+        "--assert-gha-matches-local": (
+            "fail if provided GHA head SHA is not local HEAD"
+        ),
+        "--assert-no-unintegrated-worktrees": (
+            "fail if sibling worktrees contain dirty or unmerged changes"
+        ),
+        "--assert-no-unintegrated-branches": (
+            "fail if preserved local branches contain unreconciled patches"
+        ),
+    }
+    for flag, help_text in workflow_assertions.items():
+        parser.add_argument(flag, action="store_true", help=help_text)
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     try:
