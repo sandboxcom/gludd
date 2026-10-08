@@ -7,11 +7,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from general_ludd.config.decision_codification import DecisionCodificationConfig
 from general_ludd.config.model_routing import ModelRoutingConfig
+from general_ludd.issue_sources.config import (
+    MAX_ISSUE_SOURCES,
+    IssueSourceConfig,
+    ensure_unique_issue_source_names,
+)
 
 
 def _parse_bind_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
@@ -341,6 +346,12 @@ class UserConfig(BaseSettings):
     # Deletion gate: threshold for lines removed before requiring DELETION_REASON env var.
     # Set to 0 to disable the gate. Override via GLUDD_DELETION_GATE_THRESHOLD.
     issues: IssuesConfig = IssuesConfig()
+    # Issue-source admission is shadow-only. Validation creates no adapters,
+    # performs no I/O, and preserves the legacy ``issues`` block above.
+    issue_sources: list[IssueSourceConfig] = Field(
+        default_factory=list,
+        max_length=MAX_ISSUE_SOURCES,
+    )
     notifications: NotificationsConfig = NotificationsConfig()
     deletion_gate_threshold: int = 5
     # LangChain/LangGraph integration feature flags. All default OFF so existing
@@ -360,6 +371,14 @@ class UserConfig(BaseSettings):
     default_spot: bool = True
     slurm_max_resubmits: int = 3
     slurm_preemption_backoff_schedule: list[int] = [30, 60, 120]
+
+    @field_validator("issue_sources")
+    @classmethod
+    def _require_unique_issue_source_names(
+        cls, sources: list[IssueSourceConfig]
+    ) -> list[IssueSourceConfig]:
+        ensure_unique_issue_source_names(sources)
+        return sources
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> UserConfig:
