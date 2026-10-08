@@ -714,6 +714,21 @@ class ReconciliationSnapshotPayload(TypedDict):
     verification_time: str | None
 
 
+class ReconciliationSnapshotDiffPayload(TypedDict):
+    """Deterministic structural diff of two validated sealed snapshots."""
+
+    after_snapshot_digest: str
+    before_snapshot_digest: str
+    bounds: dict[str, int]
+    counts: dict[str, int]
+    details: dict[str, list[dict[str, str]]]
+    details_truncated: dict[str, bool]
+    mode: Literal["reconciliation-snapshot-diff"]
+    ok: bool
+    schema_version: int
+    target_identity_digest: str
+
+
 RemoteClassification = Literal[
     "deleted-upstream", "diverged", "equal", "local-only", "remote-only"
 ]
@@ -1333,9 +1348,14 @@ def _parse_plan_snapshot_basis(
                 "expected_tip": _snapshot_object_id(
                     entry["expected_tip"], valid_object_id
                 ),
-                "initial_classification": classification,
-                "initial_lifecycle": lifecycle,
-                "plan_state": plan_state,
+                "initial_classification": cast(
+                    Literal["ancestor", "patch-equivalent", "unique"],
+                    classification,
+                ),
+                "initial_lifecycle": cast(
+                    Literal["current", "historical"], lifecycle
+                ),
+                "plan_state": cast(PlanSnapshotState, plan_state),
                 "ref": ref,
             }
         )
@@ -1526,7 +1546,7 @@ def _parse_approval_trust_store(
             "reviewer_identity_digest": _snapshot_digest(
                 key_data["reviewer_identity_digest"]
             ),
-            "status": status_value,
+            "status": cast(Literal["active", "revoked"], status_value),
         }
         keys[key_id] = key
         order.append(key_id)

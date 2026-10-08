@@ -18,18 +18,24 @@ from general_ludd.self_update.signing import verify_signature as _verify_signatu
 
 if TYPE_CHECKING:
     import branch_reconciliation_plan_types as _plan_types
+    import branch_reconciliation_snapshot_diff as _snapshot_diff
 else:
     if not __package__:
         import importlib
 
         _plan_types = importlib.import_module("branch_reconciliation_plan_types")
+        _snapshot_diff = importlib.import_module(
+            "branch_reconciliation_snapshot_diff"
+        )
     else:
         from scripts import branch_reconciliation_plan_types as _plan_types
+        from scripts import branch_reconciliation_snapshot_diff as _snapshot_diff
 
 APPROVAL_KEYRING_JSON_CHAR_LIMIT = _plan_types.APPROVAL_KEYRING_JSON_CHAR_LIMIT
 REMOTE_GIT_OUTPUT_CHAR_LIMIT = _plan_types.REMOTE_GIT_OUTPUT_CHAR_LIMIT
 REMOTE_JSON_CHAR_LIMIT = _plan_types.REMOTE_JSON_CHAR_LIMIT
 REMOTE_REF_SCAN_LIMIT = _plan_types.REMOTE_REF_SCAN_LIMIT
+SNAPSHOT_DIFF_INPUT_JSON_CHAR_LIMIT = _snapshot_diff.SNAPSHOT_DIFF_INPUT_JSON_CHAR_LIMIT
 if TYPE_CHECKING:
     from branch_reconciliation_plan_types import (
         BranchRecord,
@@ -51,6 +57,7 @@ if TYPE_CHECKING:
         ReconciliationReceipt,
         ReconciliationReceiptBody,
         ReconciliationReceiptTarget,
+        ReconciliationSnapshotDiffPayload,
         ReconciliationSnapshotPayload,
         RemoteTrackingPayload,
         SemanticCurrentSummaryPayload,
@@ -76,7 +83,8 @@ else:
         "MergeQueueBounds", "MergeQueueCounts", "MergeQueueEntry",
         "MergeQueuePayload", "MergeRehearsalPlan", "ReconciliationReceipt",
         "ReconciliationReceiptBody", "ReconciliationReceiptTarget",
-        "ReconciliationSnapshotPayload", "ReceiptReplayBounds",
+        "ReconciliationSnapshotDiffPayload", "ReconciliationSnapshotPayload",
+        "ReceiptReplayBounds",
         "ReceiptReplayPayload", "RemoteTrackingPayload",
         "SemanticCurrentSummaryPayload", "SemanticSummaryPayload",
         "SummaryCounts", "SummaryCountsPayload", "SummaryGroup",
@@ -89,6 +97,7 @@ build_merge_rehearsal = _plan_types.build_merge_rehearsal
 build_plan_snapshot_basis = _plan_types.build_plan_snapshot_basis
 plan_collision = _plan_types.plan_collision
 _build_reconciliation_snapshot = _plan_types.build_reconciliation_snapshot
+_build_reconciliation_snapshot_diff = _snapshot_diff.build_reconciliation_snapshot_diff
 _build_remote_tracking_inventory = _plan_types.build_remote_tracking_inventory
 _canonical_document_digest = _plan_types.canonical_document_digest
 _is_shared_infrastructure_path = _plan_types.is_shared_infrastructure_path
@@ -899,6 +908,27 @@ def build_reconciliation_snapshot(
         raise InventoryError("invalid reconciliation snapshot") from exc
 
 
+def build_reconciliation_snapshot_diff(
+    request_value: object,
+    *,
+    expected_target: str | None = None,
+    detail_limit: int = _snapshot_diff.SNAPSHOT_DIFF_DETAIL_LIMIT,
+    entry_limit: int = _plan_types.SNAPSHOT_ENTRY_LIMIT,
+) -> ReconciliationSnapshotDiffPayload:
+    """Compare two sealed snapshots without consulting repository state."""
+    try:
+        return _build_reconciliation_snapshot_diff(
+            request_value,
+            valid_ref=_receipt_ref,
+            valid_object_id=_valid_object_id,
+            expected_target=expected_target,
+            detail_limit=detail_limit,
+            entry_limit=entry_limit,
+        )
+    except (InventoryError, ValueError) as exc:
+        raise InventoryError("invalid reconciliation snapshot diff") from exc
+
+
 def collect_remote_tracking_inventory(
     remote: object,
     freshness_evidence: object,
@@ -1220,7 +1250,9 @@ def _parse_receipt_collapsed(
         collapsed.append(
             {
                 "branch_count": branch_count,
-                "classification": classification_value,
+                "classification": cast(
+                    Literal["ancestor", "patch-equivalent"], classification_value
+                ),
                 "expected_tip": expected_tip,
                 "refs": refs,
             }
@@ -2148,6 +2180,7 @@ def main(
         "--merge-queue-plan": "group current heads by changed-path independence",
         "--replay-receipt": "verify a bounded receipt from stdin",
         "--reconciliation-snapshot": "classify a plan against fresh inventory from stdin",
+        "--reconciliation-snapshot-diff": "compare two sealed snapshots from stdin",
         "--remote-tracking": "compare local and local remote-tracking refs",
     }
     for flag, help_text in boolean_modes.items():
@@ -2195,11 +2228,17 @@ def main(
             | MergeQueuePayload
             | MergePlanPayload
             | ReceiptReplayPayload
+            | ReconciliationSnapshotDiffPayload
             | ReconciliationSnapshotPayload
             | RemoteTrackingPayload
         )
         handoff_modes = sum(
-            (args.replay_receipt, args.reconciliation_snapshot, args.remote_tracking)
+            (
+                args.replay_receipt,
+                args.reconciliation_snapshot,
+                args.reconciliation_snapshot_diff,
+                args.remote_tracking,
+            )
         )
         if handoff_modes:
             if limit < 1 or limit > MAX_LIMIT:
@@ -2219,12 +2258,21 @@ def main(
                 _invalid_receipt()
                 if args.replay_receipt
                 else InventoryError(
-                    "invalid reconciliation snapshot"
-                    if args.reconciliation_snapshot
-                    else "invalid remote tracking inventory"
+                    "invalid reconciliation snapshot diff"
+                    if args.reconciliation_snapshot_diff
+                    else (
+                        "invalid reconciliation snapshot"
+                        if args.reconciliation_snapshot
+                        else "invalid remote tracking inventory"
+                    )
                 )
             )
-            handoff_value = _read_json_stdin(error, RECEIPT_JSON_CHAR_LIMIT)
+            handoff_value = _read_json_stdin(
+                error,
+                SNAPSHOT_DIFF_INPUT_JSON_CHAR_LIMIT
+                if args.reconciliation_snapshot_diff
+                else RECEIPT_JSON_CHAR_LIMIT,
+            )
             if args.remote_tracking:
                 payload = collect_remote_tracking_inventory(
                     args.remote_name,
@@ -2245,6 +2293,11 @@ def main(
                 )
                 if payload["target"]["input"] != args.target:
                     raise InventoryError("invalid reconciliation snapshot")
+            elif args.reconciliation_snapshot_diff:
+                payload = build_reconciliation_snapshot_diff(
+                    handoff_value,
+                    expected_target=args.target,
+                )
             else:
                 payload = replay_merge_receipt(
                     handoff_value,
