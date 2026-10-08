@@ -1,4 +1,4 @@
-"""W3.8 (H3): Worker stub endpoints must not silently ack — return HTTP 501.
+"""W3.8 (H3): Unimplemented worker endpoints must return HTTP 501.
 
 TDD: write the test first.
 """
@@ -8,28 +8,45 @@ from fastapi.testclient import TestClient
 
 
 class TestWorkerStub501:
-    def test_validate_returns_501(self):
-        """/jobs/validate must return 501 Not Implemented (not 200 ack)."""
+    def test_validate_uses_real_validation_pipeline(self):
+        """/jobs/validate must return canonical runner evidence, not a silent ack."""
+        from unittest.mock import MagicMock
+
+        import general_ludd.worker.app as wapp
         from general_ludd.worker.app import create_app
 
-        app = create_app(gateway=None)
-        client = TestClient(app)
-        payload = {
-            "job_id": "V-001",
-            "todo_id": "T-001",
-            "playbook": "noop.yml",
-            "queue": "core",
-            "work_type": "code",
+        runner = MagicMock()
+        runner.list_playbooks.return_value = ["validate_task.yml"]
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/validate-test"}
+        runner.write_vars.return_value = None
+        runner.run_playbook.return_value = {
+            "rc": 0,
+            "output": "validation passed",
+            "events": [{"event": "runner_on_ok"}],
         }
-        resp = client.post("/jobs/validate", json=payload)
-        assert resp.status_code == 501, (
-            f"/jobs/validate returned {resp.status_code}, expected 501. "
-            "Silent ack makes callers believe validation ran."
-        )
+
+        original = wapp._runner
+        wapp._runner = runner
+        try:
+            app = create_app(gateway=None)
+            client = TestClient(app)
+            payload = {
+                "job_id": "V-001",
+                "todo_id": "T-001",
+                "playbook": "noop.yml",
+                "queue": "core",
+                "work_type": "code",
+            }
+            resp = client.post("/jobs/validate", json=payload)
+        finally:
+            wapp._runner = original
+
+        assert resp.status_code == 200
         data = resp.json()
-        assert "reason" in data or "detail" in data, (
-            "501 response must include a reason so callers understand why"
-        )
+        assert data["status"] == "created"
+        assert data["playbook"] == "validate_task.yml"
+        assert data["exit_code"] == 0
+        assert data["result_summary"] == "validation passed"
 
     def test_policy_validate_returns_501(self):
         """/jobs/policy-validate must return 501 Not Implemented."""

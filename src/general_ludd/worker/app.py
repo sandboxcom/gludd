@@ -842,20 +842,13 @@ def create_app(
 
     @application.post("/jobs/validate")
     async def validate_job(job: JobSpec) -> dict[str, Any]:
-        # H3 (W3.8): returning a silent ack made callers believe validation
-        # had run.  Until a real validation playbook is wired, return 501 so
-        # callers know this path is unimplemented.
-        raise HTTPException(
-            status_code=501,
-            detail={
-                "reason": "not_implemented",
-                "description": (
-                    "/jobs/validate has no backing playbook yet. "
-                    "POST to /jobs/execute with work_type='validation' to run a real validation job."
-                ),
-                "job_id": job.job_id,
-            },
+        validation_job = job.model_copy(
+            update={
+                "playbook": "validate_task.yml",
+                "work_type": "validation",
+            }
         )
+        return await execute_job(validation_job)
 
     @application.post("/jobs/policy-validate")
     async def policy_validate_job(job: JobSpec) -> dict[str, Any]:
