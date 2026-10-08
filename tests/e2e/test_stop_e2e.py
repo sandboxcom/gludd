@@ -1,7 +1,9 @@
 """E2e test for enforce-stop.ts: text.complete blocking, subagent guard, env disable, fail-open, false-done phrases.
 
 Invokes the actual TypeScript plugin via node --experimental-strip-types
-in isolated temp directories, verifying the text.complete hook behaviors.
+in isolated temp directories, verifying the text.complete hook behaviors. Each
+child binds ``GLUDD_PROJECT_ROOT`` to its execution directory so the parent
+repository's ledgers cannot change a fixture project's expected stop decision.
 """
 
 from __future__ import annotations
@@ -12,6 +14,9 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any, cast
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
@@ -21,11 +26,11 @@ _ts_counter = 0
 
 def _run_plugin(
     ts_code: str,
-    env_override: dict | None = None,
+    env_override: dict[str, str] | None = None,
     cwd: str | None = None,
     timeout: int = 15,
-) -> dict | None:
-    """Write TS to temp file, run via node, return last JSON line of stdout."""
+) -> dict[str, Any] | None:
+    """Run the plugin with state and project discovery bound to ``cwd``."""
     global _ts_counter
     _ts_counter += 1
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"stop_e2e_{_ts_counter}_"))
@@ -70,10 +75,12 @@ def _run_plugin(
         env["GLUDD_WATCHDOG_CI_FILE"] = f"{state_prefix}-watchdog-ci.json"
         if env_override:
             env.update(env_override)
+        run_cwd = Path(cwd or ROOT).resolve()
+        env["GLUDD_PROJECT_ROOT"] = str(run_cwd)
         proc = subprocess.run(
             ["node", "--experimental-strip-types", str(tmp)],
             capture_output=True, text=True, timeout=timeout,
-            cwd=cwd or str(ROOT), env=env,
+            cwd=run_cwd, env=env,
         )
         if proc.returncode != 0:
             raise AssertionError(
@@ -87,7 +94,7 @@ def _run_plugin(
             if not line:
                 continue
             try:
-                return json.loads(line)
+                return cast(dict[str, Any], json.loads(line))
             except json.JSONDecodeError:
                 continue
         return None
@@ -107,9 +114,15 @@ def _setup_pending_work_dir(tmp_path: Path) -> Path:
 # ─── Pending work blocks text-only responses ─────────────────────────────────
 
 
-def test_text_complete_blocks_when_ratchet_has_entries(tmp_path):
+def test_text_complete_blocks_when_ratchet_has_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """config/ratchet.yml with entries -> text.complete returns blocked text."""
     cwd = _setup_pending_work_dir(tmp_path)
+    ambient_root = tmp_path / "ambient-supervisor"
+    ambient_root.mkdir()
+    monkeypatch.setenv("GLUDD_PROJECT_ROOT", str(ambient_root))
 
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
@@ -128,10 +141,16 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     )
 
 
-def test_text_complete_blocks_when_tasks_md_has_unchecked(tmp_path):
+def test_text_complete_blocks_when_tasks_md_has_unchecked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """TASKS.md with unchecked items -> text.complete blocks."""
     cwd = tmp_path
     (cwd / "TASKS.md").write_text("- [ ] pending item\n- [x] done item\n")
+    ambient_root = tmp_path / "ambient-supervisor"
+    ambient_root.mkdir()
+    monkeypatch.setenv("GLUDD_PROJECT_ROOT", str(ambient_root))
 
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
@@ -153,9 +172,16 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── No pending work allows text through ─────────────────────────────────────
 
 
-def test_text_complete_allows_when_no_pending_work(tmp_path):
+def test_text_complete_allows_when_no_pending_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """No ratchet entries, no TASKS.md unchecked items -> output passes through."""
     cwd = tmp_path
+    ambient_root = tmp_path / "ambient-supervisor"
+    ambient_root.mkdir()
+    (ambient_root / "TASKS.md").write_text("- [ ] parent project work\n")
+    monkeypatch.setenv("GLUDD_PROJECT_ROOT", str(ambient_root))
 
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
@@ -176,7 +202,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── Subagent guard skips enforcement ────────────────────────────────────────
 
 
-def test_subagent_guard_skips_text_complete(tmp_path):
+def test_subagent_guard_skips_text_complete(tmp_path: Path) -> None:
     """OPENCODE_SUBAGENT=1 -> text.complete returns output unchanged."""
     cwd = _setup_pending_work_dir(tmp_path)
 
@@ -199,7 +225,9 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── Env var disable skips enforcement ───────────────────────────────────────
 
 
-def test_gludd_stop_enforce_zero_preserves_mandatory_text_complete(tmp_path):
+def test_gludd_stop_enforce_zero_preserves_mandatory_text_complete(
+    tmp_path: Path,
+) -> None:
     """The env switch cannot bypass pending-work terminal-response safety."""
     cwd = _setup_pending_work_dir(tmp_path)
 
@@ -221,7 +249,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── False-done completion phrases blocked without evidence ──────────────────
 
 
-def test_false_done_all_done_blocked_without_evidence(tmp_path):
+def test_false_done_all_done_blocked_without_evidence(tmp_path: Path) -> None:
     """'All done' in text + ratchet entries + no evidence -> blocked."""
     cwd = _setup_pending_work_dir(tmp_path)
 
@@ -242,7 +270,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     )
 
 
-def test_false_done_checkmark_blocked_without_evidence(tmp_path):
+def test_false_done_checkmark_blocked_without_evidence(tmp_path: Path) -> None:
     """Checkmark in text + ratchet entries + no evidence -> blocked."""
     cwd = _setup_pending_work_dir(tmp_path)
 
@@ -263,7 +291,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     )
 
 
-def test_false_done_ready_for_review_blocked_without_evidence(tmp_path):
+def test_false_done_ready_for_review_blocked_without_evidence(tmp_path: Path) -> None:
     """'Ready for review' + ratchet entries + no evidence -> blocked."""
     cwd = _setup_pending_work_dir(tmp_path)
 
@@ -287,7 +315,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── QA summary patterns blocked ─────────────────────────────────────────────
 
 
-def test_qa_summary_blocked_when_pending_work(tmp_path):
+def test_qa_summary_blocked_when_pending_work(tmp_path: Path) -> None:
     """'completed in this session' + TASKS.md unchecked -> QA summary blocked."""
     cwd = tmp_path
     (cwd / "TASKS.md").write_text("- [ ] pending item\n")
@@ -312,7 +340,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── Already-blocked output passes through (idempotency) ─────────────────────
 
 
-def test_already_blocked_output_passes_through(tmp_path):
+def test_already_blocked_output_passes_through(tmp_path: Path) -> None:
     """Output already starting with ⛔ passes through unchanged."""
     cwd = _setup_pending_work_dir(tmp_path)
 
@@ -334,7 +362,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── tool.execute.before: question tool is denied ────────────────────────────
 
 
-def test_question_tool_is_denied(tmp_path):
+def test_question_tool_is_denied(tmp_path: Path) -> None:
     """tool.execute.before denies 'question' tool."""
     cwd = tmp_path
 
@@ -361,7 +389,7 @@ try {{
 # ─── Disengaged watchdog skips enforcement ───────────────────────────────────
 
 
-def test_disengaged_watchdog_skips_text_complete(tmp_path):
+def test_disengaged_watchdog_skips_text_complete(tmp_path: Path) -> None:
     """Valid disengage file does not bypass the fundamental pending-work block."""
     cwd = _setup_pending_work_dir(tmp_path)
     import time
@@ -396,7 +424,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── Full cycle: pending -> no pending ───────────────────────────────────────
 
 
-def test_full_cycle_pending_then_clean(tmp_path):
+def test_full_cycle_pending_then_clean(tmp_path: Path) -> None:
     """Pending work blocks; remove ratchet; subsequent text passes through."""
     cwd = tmp_path
     config_dir = cwd / "config"
@@ -435,7 +463,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 # ─── tool.execute.before: non-dispatch tools not blocked ─────────────────────
 
 
-def test_read_tool_allowed_with_pending_work(tmp_path):
+def test_read_tool_allowed_with_pending_work(tmp_path: Path) -> None:
     """tool.execute.before allows 'read' tool even with pending work."""
     cwd = _setup_pending_work_dir(tmp_path)
 

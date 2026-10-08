@@ -852,6 +852,24 @@ the Make contract without network access or mutable state.
 
 ## Zero-downtime development
 
+Project identity follows explicit argument, ambient environment, then cwd. That
+ordering matters in supervisors that host multiple checkouts: the long-lived
+[actions/checkout issue #150](https://github.com/actions/checkout/issues/150)
+documents an explicit checkout path diverging from the ambient
+`GITHUB_WORKSPACE`, while
+[actions/runner issue #728](https://github.com/actions/runner/issues/728)
+shows container translation rewriting ambient workspace values needed by
+custom operations. Gludd therefore treats a caller-supplied project root as
+authoritative for resource namespaces and gate leases. `GLUDD_PROJECT_ROOT`
+remains the launcher fallback when no root argument is supplied, and cwd is the
+last fallback.
+
+This precedence does not relax path safety. Explicit namespace overrides and
+resource names remain restricted to one validated path component, canonical
+project paths continue to seed the stable digest, and two explicit checkout
+roots cannot collapse onto one namespace merely because their supervisor
+exports a shared project root.
+
 Candidate validation does not mutate the running Gludd service or the external
 local-model endpoint. Mutable test resources live under the project namespace
 returned by `scripts/resource_arbiter.py`; each shard gets an additional unique
