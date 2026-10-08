@@ -15,7 +15,7 @@ import re
 from collections import deque
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +37,7 @@ _MAX_SECONDS = 31_536_000.0
 _SAFE_TOKEN = re.compile(r"[^A-Za-z0-9._:-]+")
 
 
+@runtime_checkable
 class SessionFactory(Protocol):
     """Callable creating one short-lived async database session."""
 
