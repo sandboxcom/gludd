@@ -1232,6 +1232,7 @@ class ExecutionDispatchMixin:
                                             namespace="tool_results",
                                             key=f"tool_result:{r.name}",
                                             value=str(r.output),
+                                            project_id=project_id_val,
                                         )
                                     except Exception:
                                         # Best-effort persistence of a tool result;
@@ -1438,6 +1439,7 @@ class ExecutionDispatchMixin:
                                 namespace="tool_results",
                                 key=f"tool_loop_result:{job_id}",
                                 value=str(tool_result),
+                                project_id=project_id_val,
                             )
                         except Exception:
                             logger.debug(
