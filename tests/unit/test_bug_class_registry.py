@@ -20,6 +20,7 @@ import importlib.util
 import re
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -212,30 +213,22 @@ def _load_backlog_audit_script():
     return module
 
 
-def test_backlog_audit_script_runs_standalone(tmp_path: Path, capsys):
-    # A repo root with one seeded shell_true file and NO backlog_auditor.
-    # The CLI must still produce a report (standalone) and exit non-zero
-    # because there is an occurrence. collect=False keeps it fast.
+def test_backlog_audit_rollback_keeps_bug_class_sections(tmp_path: Path, capsys):
+    # The rollback disables only task verdict execution. The pre-existing
+    # system-wide sweep and guard coverage sections remain intact.
     src = tmp_path / "src" / "general_ludd"
     src.mkdir(parents=True)
     (src / "danger.py").write_text(
         "import subprocess\nsubprocess.run(x, shell=True)\n", encoding="utf-8"
     )
     mod = _load_backlog_audit_script()
-    rc = mod.run_report(tmp_path, collect=False)
+    rc = mod.run_report(tmp_path, collect=False, backlog_verdicts=False)
     out = capsys.readouterr().out
     assert "BUG-CLASS SWEEP" in out
     assert "GUARD COVERAGE" in out
     assert "BACKLOG VERDICTS" in out
-    # Standalone: BacklogAuditor may or may not be importable; either way the
-    # sweep runs without raising.  Accept both the "not importable" and the
-    # "present but failed to run" messages so the test remains valid after the
-    # BacklogAuditor module is added (it requires a test_runner arg that the
-    # script does not supply, so it fails gracefully).
-    assert (
-        "BacklogAuditor not importable" in out
-        or "BacklogAuditor present but failed to run" in out
-    ), f"expected standalone fallback message in output, got:\n{out}"
+    assert "disabled by --no-backlog-verdicts" in out
+    assert "present but failed to run" not in out
     assert "shell_true" in out
     assert rc == 1  # occurrence present → non-zero
 
@@ -263,10 +256,163 @@ def test_backlog_audit_clean_repo_exits_zero(tmp_path: Path, capsys):
         collect=False,
         classes=[bc],
         known_test_ids={"tests/unit/test_x.py::test_x"},
+        backlog_verdicts=False,
     )
     out = capsys.readouterr().out
     assert "No prevention gaps" in out
     assert rc == 0
+
+
+def test_backlog_audit_source_failure_is_visible_and_nonzero(
+    tmp_path: Path,
+    capsys,
+):
+    src = tmp_path / "src" / "general_ludd"
+    src.mkdir(parents=True)
+    (src / "clean.py").write_text("x = 1\n", encoding="utf-8")
+    mod = _load_backlog_audit_script()
+    bc = BugClass(
+        id="never",
+        description="never matches",
+        detector=re.compile(r"ZZZ_NEVER_MATCHES"),
+        guard_test_id="tests/unit/test_x.py::test_x",
+        remediation="n/a",
+    )
+
+    rc = mod.run_report(
+        tmp_path,
+        collect=False,
+        classes=[bc],
+        known_test_ids={"tests/unit/test_x.py::test_x"},
+    )
+
+    out = capsys.readouterr().out
+    assert "BACKLOG VERDICTS" in out
+    assert "BACKLOG AUDIT ERROR" in out
+    assert "present but failed to run" not in out
+    assert rc == 1
+
+
+def test_backlog_audit_cli_exposes_narrow_rollback(monkeypatch):
+    mod = _load_backlog_audit_script()
+    received: dict[str, object] = {}
+
+    def fake_run_report(repo_root: Path, **kwargs):
+        received["repo_root"] = repo_root
+        received.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(mod, "run_report", fake_run_report)
+
+    assert mod.main(["--repo-root", "/tmp/example", "--no-backlog-verdicts"]) == 0
+    assert received["repo_root"] == Path("/tmp/example")
+    assert received["backlog_verdicts"] is False
+
+
+def test_collect_test_ids_keeps_only_pytest_node_ids(tmp_path: Path, monkeypatch):
+    mod = _load_backlog_audit_script()
+    completed = SimpleNamespace(
+        stdout=(
+            "tests/unit/test_a.py::test_a\n"
+            "tests/unit/test_a.py::test_b[param]\n"
+            "2 tests collected in 0.01s\n"
+            "<Function test_not_a_quiet_node>)\n"
+        )
+    )
+    monkeypatch.setattr(mod.subprocess, "run", lambda *_args, **_kwargs: completed)
+
+    assert mod.collect_test_ids(tmp_path) == {
+        "tests/unit/test_a.py::test_a",
+        "tests/unit/test_a.py::test_b[param]",
+    }
+
+
+def test_collect_test_ids_fails_loud_as_empty_set(tmp_path: Path, monkeypatch):
+    mod = _load_backlog_audit_script()
+
+    def fail(*_args, **_kwargs):
+        raise OSError("pytest unavailable")
+
+    monkeypatch.setattr(mod.subprocess, "run", fail)
+
+    assert mod.collect_test_ids(tmp_path) == set()
+
+
+def test_backlog_verdict_renderer_prints_results_and_reasons(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    mod = _load_backlog_audit_script()
+    report = SimpleNamespace(
+        verdicts=[
+            SimpleNamespace(
+                id="T-OK",
+                verdict="VERIFIED_COMPLETE",
+                reasons=["evidence passed"],
+            )
+        ],
+        total_audited=1,
+        verified_complete=1,
+        false_claim=0,
+        incomplete=0,
+    )
+    monkeypatch.setattr(mod, "audit_task_ledger", lambda _root: report)
+
+    assert mod._print_backlog_verdicts(tmp_path, enabled=True) is True
+    output = capsys.readouterr().out
+    assert "[T-OK] VERIFIED_COMPLETE" in output
+    assert "evidence passed" in output
+    assert "audited=1 verified=1" in output
+
+
+def test_backlog_verdict_renderer_fails_closed_on_unexpected_drift(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    mod = _load_backlog_audit_script()
+
+    def fail(_root):
+        raise TypeError("changed API")
+
+    monkeypatch.setattr(mod, "audit_task_ledger", fail)
+
+    assert mod._print_backlog_verdicts(tmp_path, enabled=True) is False
+    output = capsys.readouterr().out
+    assert "BACKLOG AUDIT ERROR: unexpected TypeError" in output
+
+
+def test_collection_warning_is_visible_without_hiding_existing_sections(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    src = tmp_path / "src/general_ludd"
+    src.mkdir(parents=True)
+    (src / "clean.py").write_text("VALUE = 1\n", encoding="utf-8")
+    mod = _load_backlog_audit_script()
+    bc = BugClass(
+        id="guard-gap",
+        description="missing collected guard",
+        detector=re.compile(r"NEVER_MATCH"),
+        guard_test_id="tests/unit/test_missing.py::test_missing",
+        remediation="collect the guard",
+    )
+    monkeypatch.setattr(mod, "collect_test_ids", lambda _root: set())
+
+    rc = mod.run_report(
+        tmp_path,
+        collect=True,
+        classes=[bc],
+        backlog_verdicts=False,
+    )
+
+    output = capsys.readouterr().out
+    assert "warning: could not collect pytest node ids" in output
+    assert "GUARD GAP" in output
+    assert "disabled by --no-backlog-verdicts" in output
+    assert rc == 1
 
 
 if __name__ == "__main__":  # pragma: no cover
