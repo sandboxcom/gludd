@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts import build_deck
+
 ROOT = Path(__file__).resolve().parents[2]
 DECK = ROOT / "docs/presentation/deck/index.html"
 SERVICE_DISCOVERY_CONTRACT = (
@@ -47,12 +49,46 @@ def test_reveal_deck_composes_the_four_reliability_boundaries_in_order() -> None
         "closed log stream",
         "stderr file descriptor 2",
         "restore handlers + propagation",
+        "S83.112",
+        "publish its matching receipt before exec",
+        "serial base or real parallel fragments",
+        "S83.113",
+        "prefix-scoped import probe",
+        "external dependencies cached",
         "docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md",
         "docs/features/FLOOR_TEST_ENV_ISOLATION.md",
         "docs/features/READINESS_LIFESPAN_TESTING.md",
         "docs/features/RESOURCE_LIFECYCLE_SHUTDOWN_LOGGING.md",
     ):
         assert marker in slide
+
+
+def test_gate_and_import_boundaries_have_exact_local_and_github_links() -> None:
+    """New reliability evidence must open at the cited repository lines."""
+    deck = DECK.read_text(encoding="utf-8")
+    sha = "f" * 40
+    linked, citations = build_deck.link_source_citations(deck, sha)
+    slide = linked.split(
+        '<section data-contract="service-reliability-boundaries">', 1
+    )[1].split("</section>", 1)[0]
+    expected = {
+        "docs/features/GATE_RESOURCE_LIFECYCLE.md": (
+            "577-608",
+            "1102-1129",
+        ),
+        "docs/features/QEMU_IMPORT_ISOLATION.md": ("18-43",),
+    }
+
+    for path, ranges in expected.items():
+        assert path in citations
+        for lines in ranges:
+            start, end = lines.split("-", 1)
+            assert f'data-source-path="{path}"' in slide
+            assert f'data-source-lines="{lines}"' in slide
+            assert (
+                f"https://github.com/sandboxcom/gludd/blob/{sha}/{path}"
+                f"#L{start}-L{end}"
+            ) in slide
 
 
 def test_reveal_deck_retains_prior_decisions_and_live_tokens() -> None:
