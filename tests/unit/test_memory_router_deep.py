@@ -239,7 +239,7 @@ class TestProjectIdIsolation:
         resp2 = client.get(f"{self.LIST.format(agent_id='a1')}?namespace=*&project_id=p2")
         assert len(resp2.json()) == 1
 
-    def test_same_key_different_project_ids(self, client):
+    def test_omitted_project_id_lists_global_row_only(self, client):
         client.post(
             self.POST,
             json={"agent_id": "a1", "key": "shared", "value": "vp1", "project_id": "p1"},
@@ -253,7 +253,10 @@ class TestProjectIdIsolation:
             json={"agent_id": "a1", "key": "shared", "value": "vnull"},
         )
         resp = client.get(f"{self.LIST.format(agent_id='a1')}?namespace=*")
-        assert len(resp.json()) == 3
+        assert resp.status_code == 200
+        assert [(row["value"], row["project_id"]) for row in resp.json()] == [
+            ("vnull", None)
+        ]
 
     def test_project_id_none_on_create(self, client):
         resp = client.post(self.POST, json={"agent_id": "a1", "key": "k1"})
