@@ -1,11 +1,7 @@
 ---
-# chemistry_research role tasks — chemistry service.
-
-- name: Load chemistry_research defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _chemistry_research_defaults
-
-- name: Reference chemistry_research service API
-  ansible.builtin.debug:
-    msg: "chemistry_research routes via the chemistry service API (/api/chemistry/chemistry_research)."
+- name: Route chemistry_research through the chemistry service
+  ansible.builtin.include_role:
+    name: general_ludd.chemistry.service_request
+  vars:
+    chemistry_service_role: chemistry_research
+    chemistry_service_task: research

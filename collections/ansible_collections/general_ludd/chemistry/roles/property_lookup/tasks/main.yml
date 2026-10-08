@@ -1,11 +1,7 @@
 ---
-# property_lookup role tasks — chemistry service.
-
-- name: Load property_lookup defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _property_lookup_defaults
-
-- name: Reference property_lookup service API
-  ansible.builtin.debug:
-    msg: "property_lookup routes via the chemistry service API (/api/chemistry/property_lookup)."
+- name: Route property_lookup through the chemistry service
+  ansible.builtin.include_role:
+    name: general_ludd.chemistry.service_request
+  vars:
+    chemistry_service_role: property_lookup
+    chemistry_service_task: property

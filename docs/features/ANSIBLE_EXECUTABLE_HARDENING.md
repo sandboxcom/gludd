@@ -60,6 +60,13 @@ bounds, and calls the authenticated `/api/ai_ml/query` endpoint through
 check mode performs no network I/O and publishes the same deterministic
 request plan that a normal run would submit.
 
+The 15 chemistry service roles now share a typed request composition role over
+the existing `general_ludd.chemistry.chemistry_operation` module. Each wrapper
+maps to a valid chemistry task kind, validates collection and payload bounds,
+derives a stable request identity, and uses the module's idempotency key and
+check-mode contract. A normal run publishes only a validated service result;
+check mode publishes the complete non-mutating request plan.
+
 ## Long-lived practitioner evidence
 
 This contract follows problems Ansible practitioners have reported for more

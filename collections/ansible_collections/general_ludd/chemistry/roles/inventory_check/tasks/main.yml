@@ -1,11 +1,7 @@
 ---
-# inventory_check role tasks — chemistry service.
-
-- name: Load inventory_check defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _inventory_check_defaults
-
-- name: Reference inventory_check service API
-  ansible.builtin.debug:
-    msg: "inventory_check routes via the chemistry service API (/api/chemistry/inventory_check)."
+- name: Route inventory_check through the chemistry service
+  ansible.builtin.include_role:
+    name: general_ludd.chemistry.service_request
+  vars:
+    chemistry_service_role: inventory_check
+    chemistry_service_task: inventory
