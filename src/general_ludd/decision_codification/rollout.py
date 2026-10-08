@@ -75,8 +75,9 @@ class GenerationStore(Protocol):
         pointer: GenerationPointer,
         *,
         expected_candidate_digest: str | None,
+        expected_generation: GenerationPointer | None = None,
     ) -> GenerationPointer | None:
-        """Publish a pointer only when its candidate expectation matches."""
+        """Publish only when candidate and optional full identity match."""
         ...
 
     def mark_drift_hold(self, candidate_digest: str, reason: str) -> None:
@@ -94,6 +95,7 @@ class GenerationStore(Protocol):
         expected_candidate_digest: str,
         *,
         remove_pointer: bool,
+        expected_generation: GenerationPointer | None = None,
     ) -> bool:
         """Revoke the expected current candidate atomically."""
         ...
@@ -148,9 +150,30 @@ class GenerationStore(Protocol):
         decision_kind: DecisionKind,
         expected_candidate_digest: str,
         eligible: Callable[[GenerationPointer], bool],
+        *,
+        expected_generation: GenerationPointer | None = None,
     ) -> GenerationPointer | None:
         """Restore the newest eligible prior generation or disable lookup."""
         ...
+
+
+def artifacts_have_exact_bindings(
+    bundle: DecisionRuleBundleV1,
+    receipt: ApprovalReceiptV1,
+) -> bool:
+    """Return whether an approval receipt binds the exact immutable bundle."""
+    return (
+        receipt.candidate_digest == bundle.candidate_digest
+        and receipt.corpus_digest == bundle.corpus_digest
+        and receipt.feature_schema == bundle.feature_schema
+        and receipt.dependency_lock_digest == bundle.dependency_lock_digest
+        and receipt.training_recipe_digest == bundle.training_recipe_digest
+        and receipt.project_id == bundle.project_id
+        and receipt.decision_kind is bundle.decision_kind
+        and receipt.risk_class == bundle.risk_scope
+        and receipt.policy_digest in bundle.policy_compatibility
+        and receipt.maximum_use_count <= bundle.maximum_use_count
+    )
 
 
 def stable_canary_bucket(
@@ -204,6 +227,7 @@ class AtomicGenerationStore:
         pointer: GenerationPointer,
         *,
         expected_candidate_digest: str | None,
+        expected_generation: GenerationPointer | None = None,
     ) -> GenerationPointer | None:
         """Atomically replace an exact scope pointer if expectation matches."""
         scope = (pointer.project_id, pointer.decision_kind)
@@ -211,6 +235,8 @@ class AtomicGenerationStore:
             current = self._pointers.get(scope)
             current_digest = current.candidate_digest if current is not None else None
             if current_digest != expected_candidate_digest:
+                return None
+            if expected_generation is not None and current != expected_generation:
                 return None
             if current is not None and current.candidate_digest != pointer.candidate_digest:
                 self._history.setdefault(scope, []).append(current)
@@ -238,12 +264,15 @@ class AtomicGenerationStore:
         expected_candidate_digest: str,
         *,
         remove_pointer: bool,
+        expected_generation: GenerationPointer | None = None,
     ) -> bool:
         """Atomically mark a candidate revoked and optionally remove its pointer."""
         scope = (project_id, decision_kind)
         with self._lock:
             current = self._pointers.get(scope)
             if current is None or current.candidate_digest != expected_candidate_digest:
+                return False
+            if expected_generation is not None and current != expected_generation:
                 return False
             self._revoked.add(expected_candidate_digest)
             if remove_pointer:
@@ -336,12 +365,16 @@ class AtomicGenerationStore:
         decision_kind: DecisionKind,
         expected_candidate_digest: str,
         eligible: Callable[[GenerationPointer], bool],
+        *,
+        expected_generation: GenerationPointer | None = None,
     ) -> GenerationPointer | None:
         """Atomically restore the newest eligible history entry or disable."""
         scope = (project_id, decision_kind)
         with self._lock:
             current = self._pointers.get(scope)
             if current is None or current.candidate_digest != expected_candidate_digest:
+                raise RolloutError("rollback compare-and-swap expectation failed")
+            if expected_generation is not None and current != expected_generation:
                 raise RolloutError("rollback compare-and-swap expectation failed")
             history = self._history.get(scope, [])
             selected_index: int | None = None
@@ -410,6 +443,18 @@ class RolloutController:
             or stored_receipt.lifecycle_state is not LifecycleState.SHADOW
         ):
             raise RolloutError("generation installation requires a shadow approval")
+        expected_generation = None
+        if expected_candidate_digest is not None:
+            expected_generation = self.current(
+                stored_bundle.project_id,
+                stored_bundle.decision_kind,
+            )
+            if (
+                expected_generation is None
+                or expected_generation.candidate_digest
+                != expected_candidate_digest
+            ):
+                return None
         pointer = GenerationPointer(
             project_id=stored_bundle.project_id,
             decision_kind=stored_bundle.decision_kind,
@@ -419,7 +464,9 @@ class RolloutController:
             epoch=0,
         )
         return self.pointers.compare_and_swap(
-            pointer, expected_candidate_digest=expected_candidate_digest
+            pointer,
+            expected_candidate_digest=expected_candidate_digest,
+            expected_generation=expected_generation,
         )
 
     def promote(
@@ -457,7 +504,9 @@ class RolloutController:
             epoch=0,
         )
         installed = self.pointers.compare_and_swap(
-            pointer, expected_candidate_digest=expected_candidate_digest
+            pointer,
+            expected_candidate_digest=expected_candidate_digest,
+            expected_generation=current,
         )
         if installed is None:
             raise RolloutError("promotion lost its atomic generation race")
@@ -517,6 +566,7 @@ class RolloutController:
             receipt.decision_kind,
             expected_candidate_digest,
             remove_pointer=True,
+            expected_generation=current,
         )
 
     def force_revoke_for_integrity(self, candidate_digest: str) -> bool:
@@ -563,6 +613,7 @@ class RolloutController:
             receipt.decision_kind,
             expected_candidate_digest,
             eligible,
+            expected_generation=current,
         )
 
     def verified_generation(
@@ -642,18 +693,7 @@ class RolloutController:
     def _validate_bindings(
         bundle: DecisionRuleBundleV1, receipt: ApprovalReceiptV1
     ) -> None:
-        if (
-            receipt.candidate_digest != bundle.candidate_digest
-            or receipt.corpus_digest != bundle.corpus_digest
-            or receipt.feature_schema != bundle.feature_schema
-            or receipt.dependency_lock_digest != bundle.dependency_lock_digest
-            or receipt.training_recipe_digest != bundle.training_recipe_digest
-            or receipt.project_id != bundle.project_id
-            or receipt.decision_kind is not bundle.decision_kind
-            or receipt.risk_class != bundle.risk_scope
-            or receipt.policy_digest not in bundle.policy_compatibility
-            or receipt.maximum_use_count > bundle.maximum_use_count
-        ):
+        if not artifacts_have_exact_bindings(bundle, receipt):
             raise RolloutError("approval receipt does not bind the rule artifact")
 
     @staticmethod
@@ -671,5 +711,6 @@ __all__ = [
     "OutcomeFeedback",
     "RolloutController",
     "RolloutError",
+    "artifacts_have_exact_bindings",
     "stable_canary_bucket",
 ]

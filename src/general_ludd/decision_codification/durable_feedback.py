@@ -170,6 +170,8 @@ class _DurableFeedbackStore(_DurableGenerationState):
         decision_kind: DecisionKind,
         expected_candidate_digest: str,
         eligible: Callable[[GenerationPointer], bool],
+        *,
+        expected_generation: GenerationPointer | None = None,
     ) -> GenerationPointer | None:
         """Atomically restore the newest eligible durable history entry."""
         self._validate_scope(project_id, decision_kind)
@@ -188,6 +190,8 @@ class _DurableFeedbackStore(_DurableGenerationState):
                 raise RolloutError("rollback compare-and-swap expectation failed")
             current = self._pointer_from_row(current_row)
             if current.candidate_digest != expected_candidate_digest:
+                raise RolloutError("rollback compare-and-swap expectation failed")
+            if expected_generation is not None and current != expected_generation:
                 raise RolloutError("rollback compare-and-swap expectation failed")
             history_rows = connection.execute(
                 """

@@ -6,6 +6,8 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from sqlalchemy import create_engine
+
 from general_ludd.config.decision_codification import (
     DecisionCaptureIdentityConfig,
     DecisionCodificationConfig,
@@ -14,9 +16,12 @@ from general_ludd.decision_codification.artifact_store import DecisionArtifactSt
 from general_ludd.decision_codification.capture import DecisionOutcomeRecorder
 from general_ludd.decision_codification.durable import DurableGenerationStore
 from general_ludd.decision_codification.observability import DecisionReuseObservability
-from general_ludd.decision_codification.rollout import RolloutController
+from general_ludd.decision_codification.rollout import GenerationStore, RolloutController
 from general_ludd.decision_codification.runtime import DecisionRuntime
 from general_ludd.decision_codification.service import DecisionCodificationAdapter
+from general_ludd.decision_codification.shared_generation import (
+    PostgresGenerationStore,
+)
 from general_ludd.decision_codification.telemetry import DecisionCodificationTelemetry
 from general_ludd.replay.store import RunBundleStore
 
@@ -32,7 +37,7 @@ class DecisionCodificationComponents:
     adapter: DecisionCodificationAdapter
     replay: RunBundleStore
     artifacts: DecisionArtifactStore
-    pointers: DurableGenerationStore
+    pointers: GenerationStore
     rollout: RolloutController
     observability: DecisionReuseObservability
 
@@ -44,6 +49,22 @@ def _secret_key(environment_name: str, environ: Mapping[str, str]) -> bytes:
             "decision codification key material is unavailable"
         )
     return value.encode("utf-8")
+
+
+def _generation_database_url(
+    environment_name: str,
+    environ: Mapping[str, str],
+) -> str:
+    value = environ.get(environment_name)
+    if not value:
+        raise DecisionCodificationConfigurationError(
+            "decision generation database URL is unavailable"
+        )
+    if not value.startswith("postgresql+psycopg://"):
+        raise DecisionCodificationConfigurationError(
+            "decision generation database URL must use PostgreSQL psycopg"
+        )
+    return value
 
 
 def build_configured_components(
@@ -101,10 +122,34 @@ def build_configured_components(
             str(config.artifact_root),
             key=artifact_key,
         )
-        pointers = DurableGenerationStore(
+        local_state = DurableGenerationStore(
             config.state_path,
             busy_timeout_seconds=config.busy_timeout_seconds,
         )
+        if config.generation_database_url_env is None:
+            pointers: GenerationStore = local_state
+        else:
+            database_url = _generation_database_url(
+                config.generation_database_url_env,
+                environment,
+            )
+            engine = create_engine(
+                database_url,
+                pool_pre_ping=True,
+                connect_args={
+                    "connect_timeout": max(
+                        1,
+                        int(config.busy_timeout_seconds),
+                    )
+                },
+            )
+            shared_pointers = PostgresGenerationStore(
+                engine,
+                artifacts,
+                lock_timeout_seconds=config.busy_timeout_seconds,
+            )
+            shared_pointers.verify_ready(config.project_id)
+            pointers = shared_pointers
         rollout = RolloutController(
             artifacts,
             pointers,
@@ -112,7 +157,7 @@ def build_configured_components(
         )
         telemetry = DecisionCodificationTelemetry()
         observability = DecisionReuseObservability(
-            pointers,
+            local_state,
             rollout,
             artifacts,
             project_id=config.project_id,
