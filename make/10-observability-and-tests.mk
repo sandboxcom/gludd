@@ -755,6 +755,12 @@ integration-admission:
 	run_phase "check-gate-failure-promotions" "check-gate-failure-promotions" "fast" "90" "60" $(MAKE) --no-print-directory check-gate-failure-promotions \
 		GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"; \
 	run_phase "_dead-code-baseline-refresh" "_dead-code-baseline-refresh" "fast" "90" "60" $(MAKE) --no-print-directory _dead-code-baseline-refresh; \
+	run_phase "check-coverage-gaps" "check-coverage-gaps" "fast" "90" "60" $(MAKE) --no-print-directory check-coverage-gaps; \
+	run_phase "check-resource-ownership" "check-resource-ownership" "fast" "90" "60" $(MAKE) --no-print-directory check-resource-ownership \
+		RESOURCE_OWNERSHIP_ROOT="$(CURDIR)" \
+		RESOURCE_OWNERSHIP_PATHS="src/general_ludd scripts" \
+		RESOURCE_OWNERSHIP_INVENTORY="config/resource_ownership_inventory.json" \
+		RESOURCE_OWNERSHIP_WRITE=0; \
 	run_phase "validate-task-ledger" "validate-task-ledger" "fast" "90" "60" $(MAKE) --no-print-directory validate-task-ledger; \
 	run_phase "check-task-registration" "check-task-registration" "fast" "90" "60" $(MAKE) --no-print-directory check-task-registration; \
 	run_phase "check-task-integrity" "check-task-integrity" "fast" "90" "60" $(MAKE) --no-print-directory check-task-integrity; \
