@@ -339,8 +339,24 @@ class TestWorkerAppE2E:
         assert data["type"] == "worker_pong"
         assert "correlation_id" in data
 
-    def test_validate_job_returns_501(self, unauthed_client):
+    def test_validate_job_runs_canonical_worker_pipeline(
+        self,
+        unauthed_client,
+        monkeypatch,
+    ):
+        import general_ludd.worker.app as worker_app
         from general_ludd.schemas.job import JobSpec
+
+        runner = MagicMock()
+        runner.list_playbooks.return_value = ["validate_task.yml"]
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/e2e-validate-job"}
+        runner.write_vars.return_value = None
+        runner.run_playbook.return_value = {
+            "rc": 0,
+            "output": "validation passed",
+            "events": [{"event": "runner_on_ok"}],
+        }
+        monkeypatch.setattr(worker_app, "_runner", runner)
 
         job = JobSpec(
             job_id="j-1",
@@ -351,7 +367,10 @@ class TestWorkerAppE2E:
             prompt_text="test",
         )
         resp = unauthed_client.post("/jobs/validate", json=job.model_dump())
-        assert resp.status_code == 501
+        assert resp.status_code == 200
+        assert resp.json()["playbook"] == "validate_task.yml"
+        assert resp.json()["exit_code"] == 0
+        assert resp.json()["result_summary"] == "validation passed"
 
     def test_policy_validate_returns_501(self, unauthed_client):
         from general_ludd.schemas.job import JobSpec

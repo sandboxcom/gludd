@@ -231,8 +231,7 @@ class TestWorkerApp:
             assert resp.status_code == 501
 
     @pytest.mark.asyncio
-    async def test_worker_validate_endpoint_returns_501_not_implemented(self, transport):
-        # W3.8: /jobs/validate has no backing playbook — must return 501, not fake-success.
+    async def test_worker_validate_endpoint_uses_canonical_pipeline(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/jobs/validate",
@@ -242,9 +241,10 @@ class TestWorkerApp:
                     "queue": "qa",
                 },
             )
-            assert resp.status_code == 501
+            assert resp.status_code == 200
             data = resp.json()
-            assert data["detail"]["reason"] == "not_implemented"
+            assert data["status"] == "created"
+            assert data["playbook"] == "validate_task.yml"
 
     @pytest.mark.asyncio
     async def test_worker_gunicorn_config_exists(self):
