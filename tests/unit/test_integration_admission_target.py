@@ -38,6 +38,8 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
         "worktree-guard",
         "check-gate-failure-promotions",
         "_dead-code-baseline-refresh",
+        "check-coverage-gaps",
+        "check-resource-ownership",
         "validate-task-ledger",
         "check-task-registration",
         "check-task-integrity",
@@ -61,6 +63,13 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     assert 'DUPLICATE_CODE_SOURCE="committed"' in stanza
     assert 'DUPLICATE_CODE_BASE_REF="$(DUPLICATE_CODE_BASE_REF)"' in stanza
     assert 'DUPLICATE_CODE_CURRENT_REF="$(DUPLICATE_CODE_CURRENT_REF)"' in stanza
+    assert 'RESOURCE_OWNERSHIP_ROOT="$(CURDIR)"' in stanza
+    assert 'RESOURCE_OWNERSHIP_PATHS="src/general_ludd scripts"' in stanza
+    assert (
+        'RESOURCE_OWNERSHIP_INVENTORY="config/resource_ownership_inventory.json"'
+        in stanza
+    )
+    assert "RESOURCE_OWNERSHIP_WRITE=0" in stanza
     assert "MARKDOWN_FILES=\"$(MARKDOWN_FILES)\"" in stanza
     assert "MARKDOWNLINT_CONFIG=\"$(MARKDOWNLINT_CONFIG)\"" in stanza
     assert (
@@ -223,6 +232,8 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         "worktree-guard",
         "check-gate-failure-promotions",
         "_dead-code-baseline-refresh",
+        "check-coverage-gaps",
+        "check-resource-ownership",
         "validate-task-ledger",
         "check-task-registration",
         "check-task-integrity",
@@ -243,11 +254,13 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         for line in output.splitlines()
         if line.startswith("{") and '"kind":"integration_admission_phase"' in line
     ]
-    assert len(evidence) == 16
+    assert len(evidence) == 18
     assert [item["phase"] for item in evidence] == [
         "worktree-guard",
         "check-gate-failure-promotions",
         "_dead-code-baseline-refresh",
+        "check-coverage-gaps",
+        "check-resource-ownership",
         "validate-task-ledger",
         "check-task-registration",
         "check-task-integrity",
@@ -304,7 +317,9 @@ def test_integration_admission_document_records_queue_evidence_and_boundaries() 
         "machine-readable",
         "max-runtime-timeout",
         "quiet-output-timeout",
-        "2,400 seconds",
+        "2,580 seconds",
+        "coverage-gap-drift",
+        "resource-ownership-drift",
         "247.53 seconds",
         "43.73 seconds",
         "300-second outer bound",
