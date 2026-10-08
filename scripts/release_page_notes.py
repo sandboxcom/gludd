@@ -92,19 +92,50 @@ def _text(
     return value
 
 
+def _reject_duplicate_json_keys(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    decoded: dict[str, object] = {}
+    for key, value in pairs:
+        if key in decoded:
+            raise ReleaseNotesError(f"duplicate JSON key is not allowed: {key}")
+        decoded[key] = value
+    return decoded
+
+
+def _file_identity(metadata: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
+
+
 def _load_json(path: Path) -> Mapping[str, object]:
     if path.is_symlink() or not path.is_file():
         raise ReleaseNotesError(f"ledger must be a regular non-symlink file: {path}")
-    size = path.stat().st_size
-    if size > MAX_LEDGER_BYTES:
+    before = path.stat()
+    if before.st_size > MAX_LEDGER_BYTES:
         raise ReleaseNotesError(
-            f"ledger size {size} exceeds {MAX_LEDGER_BYTES} bytes"
+            f"ledger size {before.st_size} exceeds {MAX_LEDGER_BYTES} bytes"
         )
     raw = path.read_bytes()
-    if len(raw) != size:
+    try:
+        after = path.stat()
+    except OSError as exc:
+        raise ReleaseNotesError("ledger changed while it was being read") from exc
+    if (
+        path.is_symlink()
+        or len(raw) != before.st_size
+        or _file_identity(before) != _file_identity(after)
+    ):
         raise ReleaseNotesError("ledger changed while it was being read")
     try:
-        decoded = json.loads(raw.decode("utf-8"))
+        decoded = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ReleaseNotesError(f"ledger is not valid UTF-8 JSON: {exc}") from exc
     return _mapping(cast(object, decoded), "ledger")

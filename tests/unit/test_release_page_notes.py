@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import json
-import sys
+import os
 from pathlib import Path
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "scripts"))
-
-from release_page_notes import (  # noqa: E402
+from scripts.makefile_layout import compose_makefile
+from scripts.release_page_notes import (
     MAX_LEDGER_BYTES,
     MAX_OUTPUT_BYTES,
     ReleaseNotesError,
@@ -20,7 +17,8 @@ from release_page_notes import (  # noqa: E402
     main,
     sync_release_page_notes,
 )
-from scripts.makefile_layout import compose_makefile  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _ledger() -> dict[str, object]:
@@ -132,6 +130,49 @@ def test_load_release_ledger_rejects_oversized_input(tmp_path: Path) -> None:
     path.write_bytes(b" " * (MAX_LEDGER_BYTES + 1))
 
     with pytest.raises(ReleaseNotesError, match="exceeds"):
+        load_release_ledger(path, "v0.1.2")
+
+
+def test_load_release_ledger_rejects_duplicate_json_keys(tmp_path: Path) -> None:
+    path = tmp_path / "ledger.json"
+    path.write_text('{"schema_version": 1, "schema_version": 1}', encoding="utf-8")
+
+    with pytest.raises(ReleaseNotesError, match="duplicate JSON key"):
+        load_release_ledger(path, "v0.1.2")
+
+
+@pytest.mark.parametrize("drift", ["same-size", "inode", "mtime"])
+def test_load_release_ledger_rejects_file_identity_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    drift: str,
+) -> None:
+    path = _write_ledger(tmp_path, _ledger())
+    original_read_bytes = Path.read_bytes
+
+    def read_then_drift(candidate: Path) -> bytes:
+        raw = original_read_bytes(candidate)
+        if candidate != path:
+            return raw
+        if drift == "same-size":
+            changed = raw.replace(b"v0.1.2", b"v0.1.3", 1)
+            assert len(changed) == len(raw)
+            candidate.write_bytes(changed)
+        elif drift == "inode":
+            replacement = tmp_path / "replacement.json"
+            replacement.write_bytes(raw)
+            replacement.replace(candidate)
+        else:
+            before = candidate.stat()
+            os.utime(
+                candidate,
+                ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000),
+            )
+        return raw
+
+    monkeypatch.setattr(Path, "read_bytes", read_then_drift)
+
+    with pytest.raises(ReleaseNotesError, match="changed while it was being read"):
         load_release_ledger(path, "v0.1.2")
 
 
@@ -375,3 +416,31 @@ def test_release_dry_run_validates_v012_page_without_publishing() -> None:
     preview = makefile.split("_release-page-notes-preview:", 1)[1].split("\n\n", 1)[0]
     assert "RELEASE_PAGE_NOTES_VALIDATE_ONLY=1" in preview
     assert "gh release" not in preview
+
+
+def test_release_publication_uses_v012_page_and_safe_other_tag_fallback() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
+        encoding="utf-8"
+    )
+    validation = "- name: Validate deterministic v0.1.2 release notes"
+    action = "uses: softprops/action-gh-release@"
+    assert validation in workflow
+    assert workflow.index(validation) < workflow.index(action, workflow.index(validation))
+
+    release_action = workflow.rsplit(action, 1)[1].split("\n      - name:", 1)[0]
+    assert (
+        "body_path: ${{ github.ref_name == 'v0.1.2' "
+        "&& 'docs/releases/v0.1.2.md' || '' }}"
+    ) in release_action
+    assert (
+        "generate_release_notes: ${{ github.ref_name != 'v0.1.2' }}"
+        in release_action
+    )
+    assert "generate_release_notes: true" not in release_action
+
+    makefile = compose_makefile(ROOT / "Makefile")
+    release_create = makefile.split("release-create:", 1)[1].split("\n\n", 1)[0]
+    assert release_create.startswith(" _release-page-notes-preview")
+    assert 'if [ "$(TAG)" = "v0.1.2" ]' in release_create
+    assert '--notes-file "docs/releases/v0.1.2.md"' in release_create
+    assert '--notes "Release $(TAG) (manual single-binary draft' in release_create

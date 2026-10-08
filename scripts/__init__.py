@@ -1,1 +1,1 @@
-"""Repository quality and maintenance scripts."""
+"""Importable repository automation scripts."""

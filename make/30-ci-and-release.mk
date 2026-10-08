@@ -595,13 +595,18 @@ release-delete:
 # draft by uploading the remaining assets (release-upload-assets) and passing
 # verify-release-completeness, then publish via gh release edit --draft=false.
 # Usage: make release-create TAG=v0.1.0-alpha.1
-release-create:
+release-create: _release-page-notes-preview
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-create TAG=v0.1.0-alpha.1"; exit 1; }
 	@$(MAKE) -s require-ci-green
 	@$(MAKE) -s build-executable
 	@echo "NOTE: INCOMPLETE RELEASE — publishing as DRAFT (single binary only)."
 	@PRE=""; echo "$(TAG)" | grep -q -- "-" && PRE="--prerelease"; \
-	gh release create "$(TAG)" -R sandboxcom/gludd dist/gludd --title "$(TAG)" --notes "Release $(TAG) (manual single-binary draft — complete via CI artifacts before publishing)" --draft $$PRE
+	if [ "$(TAG)" = "v0.1.2" ]; then \
+		set -- --notes-file "docs/releases/v0.1.2.md"; \
+	else \
+		set -- --notes "Release $(TAG) (manual single-binary draft — complete via CI artifacts before publishing)"; \
+	fi; \
+	gh release create "$(TAG)" -R sandboxcom/gludd dist/gludd --title "$(TAG)" "$$@" --draft $$PRE
 	@echo "Draft created. Next: make release-upload-assets TAG=$(TAG) FILES='...' then make verify-release-completeness TAG=$(TAG) before un-drafting."
 
 # Upload additional assets to an EXISTING GitHub Release — the repair path for

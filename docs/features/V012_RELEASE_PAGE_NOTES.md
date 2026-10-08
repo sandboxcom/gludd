@@ -20,19 +20,22 @@ conventional-commit generator for an already-existing tag. It is not used to
 infer the untagged v0.1.2 backlog: conventional commit categories do not encode
 the formally reconciled task set or distinguish implemented-but-open work.
 
-The output is deliberately compatible with the mature GitHub CLI
-`--notes-file` interface. The official [`gh release create` manual][gh-create]
-documents `--notes-file`, `--draft`, and `--verify-tag`; it also warns that a
-missing tag is created automatically unless the caller verifies it. Therefore
-this feature only builds and validates the file. A separately authorized future
-release operation can consume the exact file with all three safety flags after
-the release tag and complete artifact set exist. Neither the builder nor its
-Make targets invoke `gh`.
+The output is deliberately compatible with the mature GitHub release
+interfaces. The hosted release action consumes the validated v0.1.2 document
+through `body_path`; manual `release-create` consumes it through `gh
+release create --notes-file`. The official [`gh release create`
+manual][gh-create] documents `--notes-file`, `--draft`, and `--verify-tag`; it
+also warns that a missing tag is created automatically unless the caller
+verifies it. Existing release authorization, tag, artifact, CI, and draft
+guards remain responsible for the eventual operation. The builder and preview
+targets themselves never invoke `gh`.
 
 GitHub's server-side `--generate-notes` facility remains useful for repositories
 whose release scope is defined by merged pull requests. It is intentionally not
 the authoritative source here because Gludd's completed-backlog receipt is the
-release admission boundary.
+release admission boundary. Tags other than v0.1.2 explicitly retain that
+server-generated fallback in the hosted workflow and the existing bounded
+generic draft text in manual `release-create`.
 
 ## Ledger contract
 
@@ -57,6 +60,8 @@ same Markdown on every host.
 - The input and output must be regular non-symlink files. Invalid UTF-8, JSON,
   schema, semantic version, repository identity, category, task identity,
   baseline, or evidence stops generation.
+- Duplicate JSON keys are rejected, and the input device, inode, byte size, and
+  nanosecond modification time must remain unchanged across the read.
 - Apply mode writes a private sibling temporary file, flushes and fsyncs it,
   sets the final documentation mode, and atomically replaces the preview.
 - Validation mode performs no write and requires byte-for-byte equality with
@@ -72,6 +77,13 @@ mode with every path and behavior variable explicit. Other versions retain the
 existing release path. Preview validation uses no network, process daemon,
 listener, database, tag, release, or application-traffic mutation; the later
 release guards remain mandatory and unchanged.
+
+The hosted release job performs the same no-write validation before handing
+v0.1.2 to `softprops/action-gh-release` through `body_path`. Manual
+`release-create` depends on the preview validator and passes the same file to
+`gh --notes-file`. Conditional inputs keep every other tag on its prior safe
+generated/generic fallback. These paths are wired but are not invoked by the
+feature tests or dry run.
 
 Generate the tracked preview:
 
