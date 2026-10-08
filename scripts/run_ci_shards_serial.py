@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import hashlib
 import json
 import os
@@ -18,7 +19,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,12 +30,64 @@ from coverage import CoverageData
 from coverage.exceptions import CoverageException
 
 if TYPE_CHECKING:
+    from scripts.ci_batch_receipts import (
+        MAX_FAILURE_NODES,
+        MAX_FAILURE_RECEIPTS_PER_GENERATION,
+        BatchReceiptRequest,
+        FailureReceiptRequest,
+        ShadowBatchReceiptWriter,
+        ShadowFailureReceiptWriter,
+        build_batch_runtime_identity,
+        normalize_junit_failure_metadata,
+        normalize_junit_outcomes,
+    )
+    from scripts.ci_batch_replay_audit import ReplayAuditRequest, ShadowReplayAuditor
+    from scripts.ci_gate_progress import (
+        MAX_PROGRESS_BATCHES,
+        MAX_PROGRESS_OUTPUT_BYTES,
+        MAX_TIMING_SAMPLES,
+        ProgressBatch,
+        ProgressExecution,
+        ReceiptStatus,
+        ShadowGateProgress,
+    )
     from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+    from scripts.ci_receipt_auth import (
+        AUTH_ALGORITHM,
+        load_gate_receipt_auth_context,
+        parse_revoked_signers,
+    )
     from scripts.gate_status_attestation import repository_state_id
     from scripts.resource_arbiter import resource_root as project_resource_root
     from scripts.run_ci_shards_parallel import _env_for_shard, _parse_shards
 else:
+    from ci_batch_receipts import (
+        MAX_FAILURE_NODES,
+        MAX_FAILURE_RECEIPTS_PER_GENERATION,
+        BatchReceiptRequest,
+        FailureReceiptRequest,
+        ShadowBatchReceiptWriter,
+        ShadowFailureReceiptWriter,
+        build_batch_runtime_identity,
+        normalize_junit_failure_metadata,
+        normalize_junit_outcomes,
+    )
+    from ci_batch_replay_audit import ReplayAuditRequest, ShadowReplayAuditor
+    from ci_gate_progress import (
+        MAX_PROGRESS_BATCHES,
+        MAX_PROGRESS_OUTPUT_BYTES,
+        MAX_TIMING_SAMPLES,
+        ProgressBatch,
+        ProgressExecution,
+        ReceiptStatus,
+        ShadowGateProgress,
+    )
     from ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+    from ci_receipt_auth import (
+        AUTH_ALGORITHM,
+        load_gate_receipt_auth_context,
+        parse_revoked_signers,
+    )
     from gate_status_attestation import repository_state_id
     from resource_arbiter import resource_root as project_resource_root
     from run_ci_shards_parallel import _env_for_shard, _parse_shards
@@ -172,6 +225,22 @@ class ResourcePaths:
     resume: Path | None = None
 
 
+BatchIdentityFactory = Callable[[str, int, list[str]], dict[str, object]]
+
+
+@dataclass(frozen=True)
+class BatchReceiptSession:
+    """Shadow-only receipt dependencies for one serial runner invocation."""
+
+    writer: ShadowBatchReceiptWriter
+    run_id: str
+    expected_identity: BatchIdentityFactory
+    observed_identity: BatchIdentityFactory
+    failure_writer: ShadowFailureReceiptWriter | None = None
+    auditor: ShadowReplayAuditor | None = None
+    progress: ShadowGateProgress | None = None
+
+
 def _resource_paths() -> ResourcePaths:
     """Resolve mutable shard evidence outside the tested checkout."""
     root = project_resource_root(ROOT) / "ci-shards"
@@ -250,7 +319,17 @@ def _repository_identity(*, expected_sha: str | None) -> dict[str, object]:
 
 def _identity_is_release_eligible(identity: dict[str, object]) -> bool:
     """Return whether an attestation identifies one clean immutable commit."""
-    return bool(identity.get("queries_ok", True) and identity.get("clean") and identity.get("exact_sha"))
+    head = identity.get("head_sha")
+    expected = identity.get("expected_sha")
+    return bool(
+        identity.get("queries_ok", True)
+        and identity.get("clean")
+        and identity.get("exact_sha")
+        and isinstance(head, str)
+        and isinstance(expected, str)
+        and re.fullmatch(r"[0-9a-f]{40}", head)
+        and head == expected
+    )
 
 
 def _identity_is_execution_eligible(
@@ -432,6 +511,232 @@ def _interpreter_is_unchanged(
     return False
 
 
+
+def _receipt_base_identity(
+    *,
+    repository_identity: Mapping[str, object],
+    repository_state_identifier: str,
+    pytest_args: list[str],
+    max_files_per_batch: int,
+    heartbeat_seconds: float,
+    no_progress_seconds: float,
+    include_uv_probe: bool,
+) -> dict[str, object]:
+    """Build exact run-scoped identity shared by all batch actions."""
+    policy = execution_policy(pytest_args)
+    runtime = build_batch_runtime_identity(
+        root=ROOT,
+        scripts=SCRIPTS,
+        runner=Path(__file__).resolve(),
+        coverage_config=GREENLET_COVERAGE_CONFIG,
+        interpreter=_interpreter_identity(),
+        include_uv_probe=include_uv_probe,
+        environment=os.environ,
+    )
+    runner = runtime["runner"]
+    runner.update(
+        {
+            "pytest_args": list(pytest_args),
+            "heartbeat_seconds": heartbeat_seconds,
+            "no_progress_seconds": no_progress_seconds,
+            "worker_count": 1,
+            "distribution": "none",
+            "cleanup_policy_version": 1,
+        }
+    )
+    return {
+        "schema_version": 1,
+        "source": {
+            "candidate_sha": repository_identity.get("head_sha"),
+            "expected_sha": repository_identity.get("expected_sha"),
+            "branch": repository_identity.get("branch"),
+            "clean": repository_identity.get("clean") is True,
+            "exact_sha": repository_identity.get("exact_sha") is True,
+            "queries_ok": repository_identity.get("queries_ok") is True,
+            "repository_state_id": repository_state_identifier,
+        },
+        "plan": {
+            "max_files_per_batch": max_files_per_batch,
+            "execution_policy_sha256": canonical_json_sha256(policy),
+        },
+        "runner": runner,
+        "toolchain": runtime["toolchain"],
+        "plugins": runtime["plugins"],
+        "coverage": runtime["coverage"],
+        "platform": runtime["platform"],
+        "environment": runtime["environment"],
+        "external_inputs": [],
+    }
+
+
+def _batch_receipt_action_identity(
+    base_identity: Mapping[str, object],
+    shard_plan_sha256: Mapping[str, str],
+    complete_plan_sha256: str,
+    shard: str,
+    batch_index: int,
+    files: list[str],
+) -> dict[str, object]:
+    """Bind one batch to its full source, plan, and runtime action identity."""
+    identity = copy.deepcopy(dict(base_identity))
+    source = identity["source"]
+    plan = identity["plan"]
+    assert isinstance(source, dict)
+    assert isinstance(plan, dict)
+    source.update(
+        {
+            "test_files": list(files),
+            "test_files_sha256": canonical_json_sha256(files),
+        }
+    )
+    plan.update(
+        {
+            "shard": shard,
+            "batch_index": batch_index,
+            "shard_plan_sha256": shard_plan_sha256[shard],
+            "complete_plan_sha256": complete_plan_sha256,
+            "collection_manifest_kind": "canonical-test-file-plan-v1",
+            "collection_manifest_sha256": canonical_json_sha256(files),
+        }
+    )
+    return identity
+
+
+def _create_shadow_receipt_session(
+    *,
+    repository_identity: Mapping[str, object],
+    shards: list[str],
+    pytest_args: list[str],
+    max_files_per_batch: int,
+    heartbeat_seconds: float,
+    no_progress_seconds: float,
+    replay_audit_enabled: bool = True,
+    progress_enabled: bool = True,
+    failure_receipts_enabled: bool = True,
+    receipt_authentication_enabled: bool = True,
+) -> BatchReceiptSession:
+    """Create shadow writers and optional report-only replay auditing."""
+    plans = _plan_shards(shards, max_files_per_batch=max_files_per_batch)
+    canonical_plan = [
+        {"shard": shard, "batches": batches} for shard, batches in plans
+    ]
+    shard_plan_sha256 = {
+        shard: canonical_json_sha256(batches) for shard, batches in plans
+    }
+    complete_plan_sha256 = canonical_json_sha256(canonical_plan)
+    repository_state_identifier = repository_state_id(ROOT, source="index")
+    expected_base = _receipt_base_identity(
+        repository_identity=repository_identity,
+        repository_state_identifier=repository_state_identifier,
+        pytest_args=pytest_args,
+        max_files_per_batch=max_files_per_batch,
+        heartbeat_seconds=heartbeat_seconds,
+        no_progress_seconds=no_progress_seconds,
+        include_uv_probe=True,
+    )
+    candidate_sha = str(repository_identity["expected_sha"])
+
+    def expected(shard: str, batch_index: int, files: list[str]) -> dict[str, object]:
+        return _batch_receipt_action_identity(
+            expected_base,
+            shard_plan_sha256,
+            complete_plan_sha256,
+            shard,
+            batch_index,
+            files,
+        )
+
+    def observed(shard: str, batch_index: int, files: list[str]) -> dict[str, object]:
+        current_repository = _repository_identity(expected_sha=candidate_sha)
+        observed_base = _receipt_base_identity(
+            repository_identity=current_repository,
+            repository_state_identifier=repository_state_identifier,
+            pytest_args=pytest_args,
+            max_files_per_batch=max_files_per_batch,
+            heartbeat_seconds=heartbeat_seconds,
+            no_progress_seconds=no_progress_seconds,
+            include_uv_probe=True,
+        )
+        return _batch_receipt_action_identity(
+            observed_base,
+            shard_plan_sha256,
+            complete_plan_sha256,
+            shard,
+            batch_index,
+            files,
+        )
+
+    run_id = canonical_json_sha256(
+        {
+            "candidate_sha": candidate_sha,
+            "pid": os.getpid(),
+            "root": str(ROOT),
+            "started_ns": time.time_ns(),
+        }
+    )[:32]
+    cache_root = _resource_paths().root / "batch-receipts"
+    auth_context = None
+    if receipt_authentication_enabled:
+        key_path = Path(
+            os.environ.get(
+                "GLUDD_GATE_KEY_PATH",
+                str(Path.home() / ".config" / "gludd" / "gate-attestation.key"),
+            )
+        )
+        auth_context = load_gate_receipt_auth_context(
+            key_path,
+            issued_at=int(time.time()),
+            revoked_signers=parse_revoked_signers(
+                os.environ.get("GLUDD_RECEIPT_REVOKED_SIGNERS", "")
+            ),
+        )
+    signer = None if auth_context is None else auth_context.signer
+    trust_policy = None if auth_context is None else auth_context.trust_policy
+    auditor = (
+        ShadowReplayAuditor(
+            cache_root,
+            candidate_sha=candidate_sha,
+            trust_policy=trust_policy,
+        )
+        if replay_audit_enabled
+        else None
+    )
+    progress_batches = [
+        ProgressBatch(
+            shard=shard,
+            batch_index=batch_index,
+            test_files_sha256=canonical_json_sha256(files),
+            collection_manifest_sha256=canonical_json_sha256(files),
+        )
+        for shard, batches in plans
+        for batch_index, files in enumerate(batches, start=1)
+    ]
+    return BatchReceiptSession(
+        writer=ShadowBatchReceiptWriter(cache_root, signer=signer),
+        run_id=run_id,
+        expected_identity=expected,
+        observed_identity=observed,
+        failure_writer=(
+            ShadowFailureReceiptWriter(cache_root, signer=signer)
+            if failure_receipts_enabled
+            else None
+        ),
+        auditor=auditor,
+        progress=(
+            ShadowGateProgress(
+                trust_policy=trust_policy,
+                candidate_sha=candidate_sha,
+                batches=progress_batches,
+                completed_receipts=(
+                    auditor.snapshot_receipts() if auditor is not None else ()
+                ),
+            )
+            if progress_enabled
+            else None
+        ),
+    )
+
+
 def _is_xdist_worker_death_line(line: str) -> bool:
     """Accept only complete xdist controller diagnostics, never payload text."""
     normalized = ANSI_ESCAPE.sub("", line).strip()
@@ -453,6 +758,7 @@ def _pytest_command(
     pytest_args: list[str],
     *,
     watchdog_owned_gate: bool = False,
+    junit_xml: Path | None = None,
 ) -> list[str]:
     # Coverage.py refuses to combine statement-only and branch-aware data.
     # Every batch therefore uses the same branch-aware concurrency config,
@@ -471,6 +777,14 @@ def _pytest_command(
         *pytest_args,
         f"--basetemp={basetemp / 'pytest'}",
     ]
+    if junit_xml is not None:
+        command.extend(
+            [
+                f"--junitxml={junit_xml}",
+                "--override-ini",
+                "junit_family=xunit2",
+            ]
+        )
     if watchdog_owned_gate:
         command.extend(
             [
@@ -1225,6 +1539,180 @@ def _record_phase_result(
     print(f"SERIAL-SHARD-PHASE phase={phase} result={result}", flush=True)
 
 
+def _report_shadow_replay_eligibility(
+    session: BatchReceiptSession,
+    *,
+    shard: str,
+    batch_index: int,
+    action_identity: Mapping[str, object],
+    observed_action_identity: Mapping[str, object],
+    coverage_path: Path,
+    outcome_manifest: Mapping[str, object] | None,
+    returncode: int,
+    cleanup_returncode: int,
+) -> ReceiptStatus:
+    """Emit bounded audit-only evidence without changing execution control flow."""
+    if session.auditor is None:
+        return "ineligible"
+    try:
+        result = session.auditor.audit(
+            ReplayAuditRequest(
+                action_identity=action_identity,
+                observed_action_identity=observed_action_identity,
+                coverage_path=coverage_path,
+                outcome_manifest=outcome_manifest,
+                returncode=returncode,
+                cleanup_returncode=cleanup_returncode,
+            )
+        )
+        if result.skip_authorized:
+            status = "refused"
+            reason = "skip-authorization-forbidden"
+            receipt_status: ReceiptStatus = "ineligible"
+        elif result.eligible:
+            status = "candidate"
+            reason = result.reason
+            receipt_status = "eligible"
+        elif result.reason == "no-prior-candidate":
+            status = "miss"
+            reason = result.reason
+            receipt_status = "missing"
+        else:
+            status = "refused"
+            reason = result.reason
+            receipt_status = "ineligible"
+        print(
+            f"BATCH-REPLAY-SHADOW status={status} shard={shard} "
+            f"batch={batch_index} reason={reason} "
+            f"action={result.action_digest or 'none'} "
+            f"authentication={result.authentication} skips=0",
+            flush=True,
+        )
+        return receipt_status
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(
+            f"BATCH-REPLAY-SHADOW status=refused shard={shard} "
+            f"batch={batch_index} reason=auditor-{type(exc).__name__} skips=0",
+            flush=True,
+        )
+        return "ineligible"
+
+
+def _publish_shadow_failure_receipt(
+    session: BatchReceiptSession,
+    *,
+    shard: str,
+    batch_index: int,
+    files: list[str],
+    failure_node_metadata: Mapping[str, object] | None,
+    elapsed_seconds: float,
+    returncode: int,
+    cleanup_returncode: int,
+) -> bool:
+    """Publish sanitized diagnostics without making the failure reusable."""
+    if session.failure_writer is None:
+        return False
+    if cleanup_returncode != 0:
+        print(
+            f"BATCH-FAILURE-RECEIPT-SHADOW status=refused shard={shard} "
+            f"batch={batch_index} reason=cleanup-incomplete skips=0",
+            flush=True,
+        )
+        return False
+    try:
+        action_identity = session.expected_identity(shard, batch_index, files)
+        observed_action_identity = session.observed_identity(
+            shard,
+            batch_index,
+            files,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(
+            f"BATCH-FAILURE-RECEIPT-SHADOW status=refused shard={shard} "
+            f"batch={batch_index} reason=identity-{type(exc).__name__} skips=0",
+            flush=True,
+        )
+        return False
+    if not _disk_headroom_available(
+        _resource_paths().root,
+        context=f"{shard}:batch-{batch_index:03d}:failure-receipt-write",
+    ):
+        print(
+            f"BATCH-FAILURE-RECEIPT-SHADOW status=refused shard={shard} "
+            f"batch={batch_index} reason=disk-headroom skips=0",
+            flush=True,
+        )
+        return False
+    try:
+        publication = session.failure_writer.publish(
+            FailureReceiptRequest(
+                action_identity=action_identity,
+                observed_action_identity=observed_action_identity,
+                failure_node_metadata=failure_node_metadata,
+                originating_run_id=session.run_id,
+                elapsed_seconds=elapsed_seconds,
+                returncode=returncode,
+                cleanup_returncode=cleanup_returncode,
+            )
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(
+            f"BATCH-FAILURE-RECEIPT-SHADOW status=refused shard={shard} "
+            f"batch={batch_index} reason=publisher-{type(exc).__name__} skips=0",
+            flush=True,
+        )
+        return False
+    recorded = publication.published or (
+        publication.reason == "already-present" and publication.path is not None
+    )
+    print(
+        "BATCH-FAILURE-RECEIPT-SHADOW "
+        f"status={'published' if recorded else 'refused'} "
+        f"shard={shard} batch={batch_index} reason={publication.reason} "
+        f"action={publication.action_digest or 'none'} reusable=false skips=0",
+        flush=True,
+    )
+    return recorded
+
+
+def _report_shadow_gate_progress(
+    session: BatchReceiptSession,
+    *,
+    batch: ProgressBatch,
+    passed: bool,
+    receipt_status: ReceiptStatus,
+    completed_receipt: Path | None,
+) -> None:
+    """Emit one bounded JSON estimate without claiming terminal gate status."""
+    if session.progress is None:
+        return
+    try:
+        summary = session.progress.record(
+            ProgressExecution(
+                batch=batch,
+                passed=passed,
+                receipt_status=receipt_status,
+            ),
+            completed_receipt=completed_receipt,
+        )
+        rendered = session.progress.render(summary)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        rendered = json.dumps(
+            {
+                "error": f"progress-{type(exc).__name__}",
+                "gate_result": "unknown",
+                "kind": "shadow-gate-progress-error",
+                "overall_green": None,
+                "schema_version": 1,
+                "skips": 0,
+                "terminal_phases_complete": False,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    print(f"GATE-PROGRESS-SHADOW {rendered}", flush=True)
+
+
 def _print_serial_summary(
     shards: list[str],
     failures: dict[str, int],
@@ -1251,6 +1739,7 @@ def run(
     coverage_output: Path | None = None,
     resume_path: Path | None = None,
     watchdog_owned_gate: bool = False,
+    receipt_session: BatchReceiptSession | None = None,
 ) -> int:
     """Run bounded batches serially and aggregate their coverage fragments."""
     if max_files_per_batch < 1:
@@ -1445,6 +1934,8 @@ def run(
             )
             shard_failed = False
             for batch_index, files in enumerate(batches, start=1):
+                batch_started_at = _utc_now()
+                batch_started_monotonic = time.monotonic()
                 batch_name = f"{shard}-batch-{batch_index:03d}"
                 failure_phase = f"{shard}:batch-{batch_index:03d}"
                 batch_setup_phase = f"{failure_phase}:setup"
@@ -1568,6 +2059,11 @@ def run(
                 owned_tmpdirs.append(owned_entry)
                 env["TMPDIR"] = str(owned_tmpdir)
                 env["COVERAGE_FILE"] = str(batchtemp / ".coverage")
+                junit_xml = (
+                    batchtemp / "junit.xml"
+                    if receipt_session is not None
+                    else None
+                )
                 print(
                     f"SHARD-BATCH shard={shard} batch={batch_index}/{len(batches)} "
                     f"files={len(files)} basetemp={owned_tmpdir / 'pytest'}",
@@ -1602,6 +2098,7 @@ def run(
                         owned_tmpdir,
                         pytest_args,
                         watchdog_owned_gate=watchdog_owned_gate,
+                        junit_xml=junit_xml,
                     ),
                     env=_owned_test_environment(env),
                     label=f"{shard}:batch-{batch_index:03d}",
@@ -1625,6 +2122,26 @@ def run(
                     f"{failure_phase}:coverage",
                     0 if coverage_saved else 1,
                 )
+                outcome_manifest: dict[str, object] | None = None
+                failure_node_metadata: dict[str, object] | None = None
+                outcome_error: str | None = None
+                if receipt_session is not None and junit_xml is not None:
+                    try:
+                        outcome_manifest = normalize_junit_outcomes(junit_xml)
+                    except (OSError, ValueError) as exc:
+                        outcome_error = type(exc).__name__
+                        print(
+                            f"BATCH-RECEIPT-REFUSED shard={shard} "
+                            f"batch={batch_index} reason=outcomes-{outcome_error}",
+                            flush=True,
+                        )
+                    if rc != 0:
+                        try:
+                            failure_node_metadata = normalize_junit_failure_metadata(
+                                junit_xml
+                            )
+                        except (OSError, ValueError):
+                            failure_node_metadata = None
                 if resume_path is not None and rc == 0 and coverage_saved:
                     fragment_name = f".coverage.{shard}.batch-{batch_index:03d}"
                     resume_state[_batch_key(shard, batch_index, files)] = {
@@ -1643,7 +2160,160 @@ def run(
                 )
                 if not owned_tmpdir.exists():
                     owned_tmpdirs.remove(owned_entry)
+                batch_workspace_cleanup_rc = 0
+                if receipt_session is not None:
+                    batch_workspace_cleanup_rc = _cleanup_owned_tree(
+                        batchtemp,
+                        context=f"{failure_phase}:batch-workspace-cleanup",
+                    )
+                    _record_phase_result(
+                        phase_results,
+                        f"{failure_phase}:batch-workspace-cleanup",
+                        batch_workspace_cleanup_rc,
+                    )
+                    batch_cleanup_rc = max(
+                        batch_cleanup_rc,
+                        batch_workspace_cleanup_rc,
+                    )
                 cleanup_rc = max(cleanup_rc, batch_cleanup_rc)
+                if receipt_session is not None:
+                    progress_receipt_status: ReceiptStatus = "ineligible"
+                    completed_receipt: Path | None = None
+                    batch_passed = (
+                        rc == 0
+                        and coverage_saved
+                        and outcome_manifest is not None
+                        and batch_cleanup_rc == 0
+                    )
+                    refusal_reason: str | None = None
+                    if rc != 0:
+                        refusal_reason = "batch-not-passing"
+                    elif not coverage_saved:
+                        refusal_reason = "coverage-invalid"
+                    elif outcome_manifest is None:
+                        refusal_reason = f"outcomes-{outcome_error or 'invalid'}"
+                    elif batch_cleanup_rc != 0:
+                        refusal_reason = "cleanup-incomplete"
+                    if refusal_reason is not None:
+                        if receipt_session.auditor is not None:
+                            print(
+                                f"BATCH-REPLAY-SHADOW status=refused shard={shard} "
+                                f"batch={batch_index} reason={refusal_reason} skips=0",
+                                flush=True,
+                            )
+                        print(
+                            f"BATCH-RECEIPT-SHADOW status=refused shard={shard} "
+                            f"batch={batch_index} reason={refusal_reason}",
+                            flush=True,
+                        )
+                        if rc != 0 and _publish_shadow_failure_receipt(
+                            receipt_session,
+                            shard=shard,
+                            batch_index=batch_index,
+                            files=files,
+                            failure_node_metadata=failure_node_metadata,
+                            elapsed_seconds=max(
+                                0.0,
+                                time.monotonic() - batch_started_monotonic,
+                            ),
+                            returncode=rc,
+                            cleanup_returncode=batch_cleanup_rc,
+                        ):
+                            progress_receipt_status = "failure"
+                    else:
+                        fragment = (
+                            COVERAGE_SHARDS
+                            / f".coverage.{shard}.batch-{batch_index:03d}"
+                        )
+                        try:
+                            action_identity = receipt_session.expected_identity(
+                                shard,
+                                batch_index,
+                                files,
+                            )
+                            observed_action_identity = receipt_session.observed_identity(
+                                shard,
+                                batch_index,
+                                files,
+                            )
+                        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                            if receipt_session.auditor is not None:
+                                print(
+                                    f"BATCH-REPLAY-SHADOW status=refused shard={shard} "
+                                    f"batch={batch_index} "
+                                    f"reason=identity-{type(exc).__name__} skips=0",
+                                    flush=True,
+                                )
+                            print(
+                                f"BATCH-RECEIPT-SHADOW status=refused shard={shard} "
+                                f"batch={batch_index} "
+                                f"reason=publisher-{type(exc).__name__}",
+                                flush=True,
+                            )
+                        else:
+                            progress_receipt_status = _report_shadow_replay_eligibility(
+                                receipt_session,
+                                shard=shard,
+                                batch_index=batch_index,
+                                action_identity=action_identity,
+                                observed_action_identity=observed_action_identity,
+                                coverage_path=fragment,
+                                outcome_manifest=outcome_manifest,
+                                returncode=rc,
+                                cleanup_returncode=batch_cleanup_rc,
+                            )
+                            if not _disk_headroom_available(
+                                fragment.parent,
+                                context=f"{shard}:batch-{batch_index:03d}:receipt-write",
+                            ):
+                                print(
+                                    f"BATCH-RECEIPT-SHADOW status=refused shard={shard} "
+                                    f"batch={batch_index} reason=disk-headroom",
+                                    flush=True,
+                                )
+                            else:
+                                try:
+                                    publication = receipt_session.writer.publish(
+                                        BatchReceiptRequest(
+                                            action_identity=action_identity,
+                                            observed_action_identity=observed_action_identity,
+                                            coverage_path=fragment,
+                                            outcome_manifest=outcome_manifest,
+                                            originating_run_id=receipt_session.run_id,
+                                            started_at=batch_started_at,
+                                            completed_at=_utc_now(),
+                                            returncode=rc,
+                                            cleanup_returncode=batch_cleanup_rc,
+                                        )
+                                    )
+                                    print(
+                                        "BATCH-RECEIPT-SHADOW "
+                                        f"status={'published' if publication.published else 'refused'} "
+                                        f"shard={shard} batch={batch_index} "
+                                        f"reason={publication.reason} "
+                                        f"action={publication.action_digest or 'none'}",
+                                        flush=True,
+                                    )
+                                    if publication.path is not None:
+                                        completed_receipt = publication.path
+                                except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                                    print(
+                                        f"BATCH-RECEIPT-SHADOW status=refused shard={shard} "
+                                        f"batch={batch_index} reason=publisher-{type(exc).__name__}",
+                                        flush=True,
+                                    )
+                    _report_shadow_gate_progress(
+                        receipt_session,
+                        batch=ProgressBatch(
+                            shard=shard,
+                            batch_index=batch_index,
+                            test_files_sha256=canonical_json_sha256(files),
+                            collection_manifest_sha256=canonical_json_sha256(files),
+                        ),
+                        passed=batch_passed,
+                        receipt_status=progress_receipt_status,
+                        completed_receipt=completed_receipt,
+                    )
                 if rc != 0:
                     failures[failure_phase] = rc
                     shard_failure_rc = max(shard_failure_rc, rc)
@@ -1873,6 +2543,31 @@ def main() -> int:
         help="path to the resume state file (default: <resource-root>/ci-shards/resume.json)",
     )
     parser.add_argument(
+        "--no-shadow-batch-receipts",
+        action="store_true",
+        help="execute every batch without publishing any shadow receipt",
+    )
+    parser.add_argument(
+        "--no-shadow-failure-receipts",
+        action="store_true",
+        help="keep pass receipts but disable sanitized non-reusable failure receipts",
+    )
+    parser.add_argument(
+        "--no-shadow-receipt-authentication",
+        action="store_true",
+        help="write legacy unsigned shadow receipts and disable future eligibility",
+    )
+    parser.add_argument(
+        "--no-shadow-replay-audit",
+        action="store_true",
+        help="keep shadow writes but disable prior-receipt eligibility reports",
+    )
+    parser.add_argument(
+        "--no-shadow-gate-progress",
+        action="store_true",
+        help="keep shadow writes and replay auditing but disable progress/ETA reports",
+    )
+    parser.add_argument(
         "--watchdog-owned-gate",
         action="store_true",
         help="mark the gate runner and pytest children for legacy watchdog exclusion",
@@ -1916,22 +2611,188 @@ def main() -> int:
         allow_dirty_worktree=args.allow_dirty_worktree,
     ):
         try:
+            receipt_session: BatchReceiptSession | None = None
+            if args.no_shadow_batch_receipts:
+                print(
+                    "BATCH-RECEIPT-SHADOW status=disabled reason=operator-off",
+                    flush=True,
+                )
+                print(
+                    "BATCH-REPLAY-SHADOW status=disabled reason=writer-off skips=0",
+                    flush=True,
+                )
+                print(
+                    "BATCH-RECEIPT-AUTH-SHADOW status=disabled "
+                    "reason=writer-off future_eligible=0 skips=0",
+                    flush=True,
+                )
+                print(
+                    "BATCH-FAILURE-RECEIPT-SHADOW status=disabled "
+                    "reason=writer-off skips=0",
+                    flush=True,
+                )
+                print(
+                    "GATE-PROGRESS-SHADOW status=disabled reason=writer-off skips=0",
+                    flush=True,
+                )
+            elif _identity_is_release_eligible(identity):
+                try:
+                    receipt_session = _create_shadow_receipt_session(
+                        repository_identity=identity,
+                        shards=shards,
+                        pytest_args=pytest_args,
+                        max_files_per_batch=args.max_files_per_batch,
+                        heartbeat_seconds=args.heartbeat_seconds,
+                        no_progress_seconds=args.no_progress_seconds,
+                        replay_audit_enabled=not args.no_shadow_replay_audit,
+                        progress_enabled=not args.no_shadow_gate_progress,
+                        failure_receipts_enabled=not args.no_shadow_failure_receipts,
+                        receipt_authentication_enabled=(
+                            not args.no_shadow_receipt_authentication
+                        ),
+                    )
+                    print(
+                        "BATCH-RECEIPT-SHADOW status=enabled admission_reads=0 skips=0 "
+                        "workers=1 max_generations=2 max_bytes=2147483648",
+                        flush=True,
+                    )
+                    if args.no_shadow_receipt_authentication:
+                        print(
+                            "BATCH-RECEIPT-AUTH-SHADOW status=disabled "
+                            "reason=operator-off future_eligible=0 skips=0",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            "BATCH-RECEIPT-AUTH-SHADOW status=enabled "
+                            f"algorithm={AUTH_ALGORITHM} mode=offline-shadow "
+                            "future_eligible=verified-only skips=0",
+                            flush=True,
+                        )
+                    if args.no_shadow_failure_receipts:
+                        print(
+                            "BATCH-FAILURE-RECEIPT-SHADOW status=disabled "
+                            "reason=operator-off skips=0",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            "BATCH-FAILURE-RECEIPT-SHADOW status=enabled "
+                            "mode=non-reusable skips=0 "
+                            f"max_per_generation={MAX_FAILURE_RECEIPTS_PER_GENERATION} "
+                            f"max_nodes={MAX_FAILURE_NODES}",
+                            flush=True,
+                        )
+                    if args.no_shadow_replay_audit:
+                        print(
+                            "BATCH-REPLAY-SHADOW status=disabled "
+                            "reason=operator-off skips=0",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            "BATCH-REPLAY-SHADOW status=enabled mode=audit-only "
+                            "skips=0 max_candidates=512 max_index_bytes=16777216",
+                            flush=True,
+                        )
+                    if args.no_shadow_gate_progress:
+                        print(
+                            "GATE-PROGRESS-SHADOW status=disabled "
+                            "reason=operator-off skips=0",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            "GATE-PROGRESS-SHADOW status=enabled "
+                            "mode=estimate-only skips=0 gate_result=unknown "
+                            f"max_batches={MAX_PROGRESS_BATCHES} "
+                            f"max_samples={MAX_TIMING_SAMPLES} "
+                            f"max_output_bytes={MAX_PROGRESS_OUTPUT_BYTES}",
+                            flush=True,
+                        )
+                except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                    print(
+                        "BATCH-RECEIPT-SHADOW status=disabled "
+                        f"reason=identity-{type(exc).__name__}",
+                        flush=True,
+                    )
+                    print(
+                        "BATCH-REPLAY-SHADOW status=disabled "
+                        f"reason=identity-{type(exc).__name__} skips=0",
+                        flush=True,
+                    )
+                    print(
+                        "BATCH-RECEIPT-AUTH-SHADOW status=disabled "
+                        f"reason=identity-{type(exc).__name__} "
+                        "future_eligible=0 skips=0",
+                        flush=True,
+                    )
+                    print(
+                        "BATCH-FAILURE-RECEIPT-SHADOW status=disabled "
+                        f"reason=identity-{type(exc).__name__} skips=0",
+                        flush=True,
+                    )
+                    print(
+                        "GATE-PROGRESS-SHADOW status=disabled "
+                        f"reason=identity-{type(exc).__name__} skips=0",
+                        flush=True,
+                    )
+            else:
+                print(
+                    "BATCH-RECEIPT-SHADOW status=disabled reason=source-ineligible",
+                    flush=True,
+                )
+                print(
+                    "BATCH-REPLAY-SHADOW status=disabled "
+                    "reason=source-ineligible skips=0",
+                    flush=True,
+                )
+                print(
+                    "BATCH-RECEIPT-AUTH-SHADOW status=disabled "
+                    "reason=source-ineligible future_eligible=0 skips=0",
+                    flush=True,
+                )
+                print(
+                    "BATCH-FAILURE-RECEIPT-SHADOW status=disabled "
+                    "reason=source-ineligible skips=0",
+                    flush=True,
+                )
+                print(
+                    "GATE-PROGRESS-SHADOW status=disabled "
+                    "reason=source-ineligible skips=0",
+                    flush=True,
+                )
             initial_worktree_state = None
             if args.allow_dirty_worktree:
                 initial_worktree_state = _worktree_state_id()
                 identity["worktree_state_id"] = initial_worktree_state
-            returncode = run(
-                shards,
-                pytest_args,
-                max_files_per_batch=args.max_files_per_batch,
-                heartbeat_seconds=args.heartbeat_seconds,
-                no_progress_seconds=args.no_progress_seconds,
-                run_isolated=not args.skip_isolated,
-                aggregate_coverage=not args.skip_aggregate,
-                coverage_output=args.coverage_output,
-                resume_path=resume_path,
-                watchdog_owned_gate=args.watchdog_owned_gate,
-            )
+            if receipt_session is None:
+                returncode = run(
+                    shards,
+                    pytest_args,
+                    max_files_per_batch=args.max_files_per_batch,
+                    heartbeat_seconds=args.heartbeat_seconds,
+                    no_progress_seconds=args.no_progress_seconds,
+                    run_isolated=not args.skip_isolated,
+                    aggregate_coverage=not args.skip_aggregate,
+                    coverage_output=args.coverage_output,
+                    resume_path=resume_path,
+                    watchdog_owned_gate=args.watchdog_owned_gate,
+                )
+            else:
+                returncode = run(
+                    shards,
+                    pytest_args,
+                    max_files_per_batch=args.max_files_per_batch,
+                    heartbeat_seconds=args.heartbeat_seconds,
+                    no_progress_seconds=args.no_progress_seconds,
+                    run_isolated=not args.skip_isolated,
+                    aggregate_coverage=not args.skip_aggregate,
+                    coverage_output=args.coverage_output,
+                    resume_path=resume_path,
+                    watchdog_owned_gate=args.watchdog_owned_gate,
+                    receipt_session=receipt_session,
+                )
             error = None
             if (
                 returncode == 0
