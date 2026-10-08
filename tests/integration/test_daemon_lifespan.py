@@ -145,6 +145,41 @@ class TestDaemonLifespanWithRealDB:
             # After teardown the background sweeper thread must be stopped.
             assert app.state._stall_watchdog._sweeper is None
 
+    @pytest.mark.asyncio
+    async def test_daemon_stall_event_persists_operator_blocker(self, tmp_path):
+        """A daemon stall event reaches the durable human-operator queue once."""
+        from general_ludd.db.repository import HumanTodoRepository
+        from general_ludd.events.types import StallDetectedEvent
+
+        config_dir = _make_db_config(tmp_path)
+        with patch(
+            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+            return_value=MagicMock(),
+        ):
+            app = create_daemon_app(tick_interval=300.0, config_dir=config_dir)
+            async with daemon_mod._lifespan(app):
+                event = StallDetectedEvent(
+                    operation="integration-agent",
+                    elapsed_s=60.0,
+                    deadline_s=30.0,
+                    thread_stacks={"worker": "must-not-persist"},
+                    correlation_id="integration-todo",
+                    source="stall-watchdog",
+                    event_id="integration-stall",
+                )
+                assert app.state._event_bus.publish(event) == 1
+                assert app.state._event_bus.publish(event) == 1
+                await app.state._stall_escalation.drain()
+
+                async with app.state._session_factory() as session:
+                    rows = await HumanTodoRepository(session).list_all(
+                        agent_id="stall-watchdog"
+                    )
+                assert len(rows) == 1
+                assert rows[0].category == "blocker"
+                assert rows[0].session_id == "stall:integration-stall"
+                assert "must-not-persist" not in rows[0].body
+
     def test_daemon_with_config_dir(self, tmp_path):
         config_dir = tmp_path / "config"
         config_dir.mkdir()

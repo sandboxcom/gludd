@@ -1567,6 +1567,8 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
                         elapsed_s=r.elapsed_s,
                         deadline_s=r.deadline_s,
                         thread_stacks=r.thread_stacks,
+                        correlation_id=r.op_id,
+                        source="stall-watchdog",
                     )
                 ),
                 subsys["bus"].publish(
@@ -1579,6 +1581,14 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
                 ),
             )[0],
         )
+        from general_ludd.observability.stall_escalation import StallEscalationSubscriber
+
+        app.state._stall_escalation = StallEscalationSubscriber(
+            event_bus=subsys["bus"],
+            session_factory=session_factory,
+            loop=asyncio.get_running_loop(),
+        )
+        app.state._stall_escalation.start()
         app.state._stall_watchdog.start_sweeper()
 
         # Wire the shared watchdog into the agent dispatcher so in-flight agent
@@ -1848,6 +1858,12 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
     if _sw is not None:
         with contextlib.suppress(Exception):
             _sw.stop_sweeper()
+    _stall_escalation = getattr(app.state, "_stall_escalation", None)
+    if _stall_escalation is not None:
+        try:
+            await _stall_escalation.aclose()
+        except Exception:
+            logger.warning("Stall escalation drain failed during shutdown")
     # B3.1.3 Slice 4 — drain the WriteQueue and stop the writer subprocess
     # BEFORE disposing the engine: a lingering writer holding a DB handle
     # during engine.dispose() can deadlock. The queue is cleared (best-effort
