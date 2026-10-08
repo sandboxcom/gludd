@@ -9,19 +9,19 @@ decision trees that Gludd can execute without an agent/LLM call. This document
 specifies the safe evidence boundary, offline learner, authenticated analysis
 API, bounded operator CLI, approval lifecycle, runtime lookup, and zero-downtime
 operation. The standalone core, bounded analysis and operator surfaces, and
-configured live REVIEW decision point are implemented with durable same-host
-multiworker state and automatic signed fallback-outcome capture; deployed proof
-is not.
+configured live REVIEW decision point are implemented with durable local or
+shared-PostgreSQL generation state and automatic signed fallback-outcome capture;
+deployed proof is not.
 
-## 0. Implementation status (2026-10-07)
+## 0. Implementation status (2026-10-08)
 
 The earlier checkpoint was
 **CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW IMPLEMENTED;
 DURABLE INTEGRATION PENDING**. It is retained as status lineage,
 not as the current claim. The status above supersedes it: same-host SQLite WAL
 generation durability, signed agent-outcome capture, shared-PostgreSQL capture
-coordination, and bounded operator lifecycle commands are implemented, while
-multi-host generation state and deployed proof remain pending.
+coordination, multi-host generation state, and bounded operator lifecycle
+commands are implemented, while deployed proof remains pending.
 
 The contract, normalization, similarity, mining, export, replay evaluation,
 authenticated artifact store, human-approval adapter, deterministic runtime,
@@ -58,8 +58,8 @@ pointer, use, rollback, revocation, drift, and application-outcome state between
 same-host workers. Terminal REVIEW application feedback is idempotent and can
 place a generation on immediate durable drift hold. Eligible agent fallback
 outcomes can now be finalized automatically as signed two-event bundles. Their
-producers share one existing database lease across hosts; multi-host state and
-deployed live-traffic proof remain pending for generation serving. No production
+producers share one existing database lease across hosts. Multi-host generation
+state is implemented; deployed live-traffic proof remains pending. No production
 traffic is claimed to use this core today.
 
 ## 1. Outcome and non-goals
@@ -537,13 +537,16 @@ never return summaries or feature values.
 indirect. An enabled block requires one bounded project ID, exact policy digest,
 replay/artifact/state paths, active replay key ID, a replay-key-ID to environment
 name map, artifact-key environment name, rollout-key environment name, and a
-bounded busy timeout. Key bytes never appear in YAML or the model dump.
+bounded busy timeout. The optional `generation_database_url_env` contains only an
+environment-variable name. Key bytes and database URLs never appear in YAML or
+the model dump.
 
 At daemon construction, enabled configuration builds `RunBundleStore`,
-`DecisionArtifactStore`, `DurableGenerationStore`, `RolloutController`,
+`DecisionArtifactStore`, a generation repository, `RolloutController`,
 `DecisionRuntime`, and `DecisionCodificationAdapter`. Explicit test/operator
-injection takes precedence. Missing secrets or invalid/unusable state fail closed
-before the event loop starts; disabled configuration leaves behavior unchanged.
+injection takes precedence. Missing secrets, invalid URL schemes, unavailable
+projects, or invalid/unusable state fail closed before the event loop starts;
+disabled configuration leaves behavior unchanged.
 
 `DurableGenerationStore` is a versioned SQLite database in WAL mode for
 same-host workers. Readers use independent connections. Writers use short
@@ -551,10 +554,35 @@ same-host workers. Readers use independent connections. Writers use short
 pointers, rollback history, revocation, drift holds, issued application IDs,
 maximum-use enforcement, and outcomes are committed in the same database, so a
 second process cannot observe a process-local generation or overrun the use
-bound. Network-filesystem and multi-host safety are explicitly out of scope
-until a PostgreSQL implementation lands.
+bound. When `generation_database_url_env` is absent, this established local and
+single-host-compatible behavior is unchanged.
 
-### 9.3 Cross-host producer coordination
+### 9.3 Cross-host generation and producer coordination
+
+`PostgresGenerationStore` is the optional multi-host generation repository. It
+accepts only a secret-indirected `postgresql+psycopg://` URL and verifies the
+migrated project, `bucket_leases`, and `variable_values` tables during startup.
+It reuses the existing SQLAlchemy models, the existing `bucket_leases` unique
+row, and the existing `DecisionArtifactStore`; no custom consensus service or
+new coordination schema is introduced.
+
+Each mutation derives one opaque project lease key, opens one bounded
+transaction, locks coordination and state with `SELECT FOR UPDATE`, verifies the
+expected head, applies the transition, and performs an exact-owner release. A
+live foreign owner refuses mutation. An expired owner is reclaimed only under
+the row lock, and a crash rolls back its lease and writes together. The
+compare-and-swap fence is the complete project, decision kind, candidate digest,
+receipt digest, stage, and epoch, so stale hosts cannot exploit an ABA return to
+the same candidate.
+
+Project heads, epochs, rollback history, revocations, holds, application IDs,
+counts, and outcome indexes are canonical JSON in project-scoped
+`variable_values`. The `DecisionArtifactStore` authenticates each record with a
+domain-separated HMAC. Reads also revalidate immutable rule bundles and receipt
+chains. A tampered, malformed, orphaned, stale, or unavailable record produces a
+typed abstention and invokes fallback exactly once. History is bounded to 256
+generations, application IDs to 100,000 per candidate, outcomes to the newest
+100, and every record to 64 KiB.
 
 Automatic REVIEW capture derives one opaque HMAC-derived lease key from the
 private capture/task scope. Before offloading replay I/O, the event loop acquires
@@ -574,8 +602,9 @@ claim cross-host capture coordination.
 The `AsyncSession` is used sequentially for acquire and release on the event-loop
 task. It is never passed to the worker thread or used concurrently. The existing
 SQLite deployment retains same-host behavior; only deployments sharing
-PostgreSQL may claim cross-host capture coordination. Generation pointers remain
-on the separately documented same-host store.
+PostgreSQL may claim cross-host capture coordination. Shared generation state
+uses a separate synchronous SQLAlchemy session per bounded lifecycle operation;
+the two lease domains remain opaque and independent.
 
 ### 9.4 Hermetic producer-to-reuse proof
 
@@ -658,6 +687,14 @@ for downgrade compatibility. Capture failures do not change the active generatio
 or runtime fallback, and the already chosen task outcome is unchanged, so this
 migration remains outside the serving decision path.
 
+Deploy readers first for shared generation too. Leave
+`generation_database_url_env` absent while all hosts receive the new reader,
+migrate the existing application tables and project once, then enable one bounded
+host cohort against the same PostgreSQL URL. Verify startup readiness, exact-head
+reads, and fallback before allowing promotion. Rollback stops promotions first,
+keeps agent/LLM fallback available, drains shared-state hosts, and removes the
+environment binding only after they no longer serve through that repository.
+
 ## 12. Privacy, resource limits, and observability
 
 ### 12.1 Privacy and retention
@@ -694,6 +731,12 @@ random holder bounds cross-host admission; publication and quota enforcement
 share one cross-process store lock. A busy/lost lease, truncated scan, incomplete
 size accounting, lock timeout, or unmet quota refuses the new capture rather
 than silently dropping older records or writing unsigned evidence.
+
+Shared generation mutations use a 1-60 second lock/statement timeout and a
+1-60 second lease, one 49-character random holder, a 64 KiB record ceiling, 256
+history entries, 100,000 application identities per candidate, and 100 recent
+outcomes. Database URLs, holder IDs, project IDs, digests, and exception text
+never become metric labels or user-facing diagnostics.
 
 ### 12.3 Closed-cardinality metrics
 
@@ -753,6 +796,9 @@ Tests follow TDD and include:
 - multiworker atomic pointer, cross-process use reservation, idempotent outcome
   recording, canary bucketing, in-flight generation binding, ZDD promotion, and
   rollback tests;
+- concurrent-host CAS, stale/expired owner, crash recovery, full-identity ABA
+  fencing, tamper/orphan refusal, exact scope, rollback, and single-fallback
+  tests for shared PostgreSQL generation state;
 - metrics cardinality and privacy tests;
 - end-to-end evidence showing repeated decisions move from model fallback to
   approved rule execution, then safely roll back without task interruption.
@@ -814,6 +860,10 @@ unit, integration, ZDD, replay, privacy, and coverage phases.
   typed-abstention fallback in fixed-cardinality durable state, and `status`
   returns a bounded HMAC-authenticated receipt without request content. An
   observability failure cannot alter the decision or fallback count.
+- **DLC-AC-21:** Optional PostgreSQL generation state serializes hosts through
+  existing leases and row locks, authenticates bounded shared records, fences the
+  full generation identity, recovers expired/crashed owners, and fails tampered,
+  orphaned, or stale state to exactly one fallback without changing local mode.
 
 ## 16. Landing record and remaining ownership
 
@@ -917,9 +967,11 @@ without changing the already-applied task result; unsafe or excessive-failure
 feedback places the generation on a drift hold. Automatic signed replay capture
 now writes eligible fallback decisions and terminal outcomes as bounded,
 HMAC-correlated, signed two-event bundles. The existing durable execution lease
-serializes those producers across hosts sharing PostgreSQL. Multi-host generation
-state and deployed live-traffic proof remain. No second branch independently
-creates shared migration, config, make, or daemon wiring.
+serializes those producers across hosts sharing PostgreSQL.
+`PostgresGenerationStore` now reuses that existing lease table and variable
+storage for authenticated, full-identity-fenced generation state across hosts.
+Deployed live-traffic proof remains. No second branch independently creates
+shared migration, config, make, or daemon wiring.
 
 ### Slice R4e: durable reuse observability (landed)
 
@@ -934,7 +986,7 @@ no-throw serving behavior.
 
 ## 17. Primary documentation and user/forum findings
 
-Research performed 2026-10-05 and 2026-10-07:
+Research performed 2026-10-05, 2026-10-07, and 2026-10-08:
 
 - [RapidFuzz process documentation](https://rapidfuzz.github.io/RapidFuzz/Usage/process.html)
   defines normalized cutoffs and says equal-score results follow input order.
@@ -984,10 +1036,19 @@ Research performed 2026-10-05 and 2026-10-07:
   define the mature unique-index behavior: a duplicate inserter waits for an
   uncommitted conflicting transaction and then rechecks. The existing
   `bucket_leases.bucket_key` constraint supplies that cross-host serialization.
+- [PostgreSQL explicit locking](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS)
+  defines row-level `FOR UPDATE` exclusion, and its
+  [application consistency guidance](https://www.postgresql.org/docs/current/applevel-consistency.html)
+  directs applications to lock rows that establish a consistency rule. Shared
+  generation mutation locks its lease and state before testing the exact head.
+- [SQLAlchemy transaction documentation](https://docs.sqlalchemy.org/en/20/orm/session_transaction.html)
+  specifies commit-on-success and rollback-on-exception for `Session.begin()`.
+  One synchronous session owns one generation mutation and is then closed.
 - [Kubernetes issue 23731](https://github.com/kubernetes/kubernetes/issues/23731)
   has recorded a practitioner-observed lease split brain since 2016, when a
-  former leader continued acting. Gludd uses a fresh attempt holder, writes only
-  inside the claim, and treats every uncertain/lost claim as no-write.
+  former leader continued acting. Gludd uses a fresh attempt holder, reclaims an
+  expired owner only under lock, fences the full generation identity, and treats
+  every uncertain/lost claim as no-write.
 - [SQLAlchemy discussion 8554](https://github.com/sqlalchemy/sqlalchemy/discussions/8554)
   documents user-visible failures from sharing one `AsyncSession` concurrently.
   Gludd sequences acquire, worker completion, and release on one task and never
@@ -1004,8 +1065,9 @@ Research performed 2026-10-05 and 2026-10-07:
   value flag or reflected diagnostic.
 - [Kubernetes issue 61897](https://github.com/kubernetes/kubernetes/issues/61897)
   has documented since 2018 that optimistic-lock conflicts are routine when two
-  actors update one resource. Gludd requires exact candidate and receipt heads
-  for promotion and rollback, then treats every stale CAS as no transition.
+  actors update one resource. Gludd requires the exact project, decision kind,
+  candidate, receipt, stage, and epoch for lifecycle mutation, then treats every
+  stale CAS as no transition.
 - [Helm issue 5377](https://github.com/helm/helm/issues/5377) records atomic
   rollback timeout confusion dating to 2019. Gludd keeps a lifecycle command to
   one bounded durable CAS: rollback either restores verified compatible history
@@ -1031,5 +1093,5 @@ Research performed 2026-10-05 and 2026-10-07:
   claim network-filesystem or multi-host safety.
 
 These findings favor a small offline learner, strict exported rules, immutable
-provenance, bounded same-host durable state, and pervasive abstention over
+provenance, bounded local or shared durable state, and pervasive abstention over
 model-object serving or autonomous policy activation.

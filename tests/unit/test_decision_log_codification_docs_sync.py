@@ -135,16 +135,41 @@ def test_design_spec_records_implemented_runtime_and_pending_evidence() -> None:
         "AUTOMATIC DURABLE LIVE REVIEW, AND SIGNED AGENT-OUTCOME CAPTURE "
         "IMPLEMENTED; DEPLOYED PROOF PENDING**"
     ) in normalized
-    assert "## 0. Implementation status (2026-10-07)" in spec
+    assert "## 0. Implementation status (2026-10-08)" in spec
     assert "DecisionLogAnalyzer" in spec
     assert "DecisionResolver" in spec
     assert "DecisionCodificationAdapter" in spec
     assert "explicit injection or typed default-off daemon configuration" in spec
     assert "DurableGenerationStore" in spec
     assert "BEGIN IMMEDIATE" in spec
-    assert (
-        "multi-host state and deployed live-traffic proof remain pending"
-    ) in normalized
+    assert "Multi-host generation state is implemented" in normalized
+    assert "deployed live-traffic proof remains pending" in normalized
+
+
+def test_docs_pin_shared_generation_fencing_and_zdd() -> None:
+    """Cross-host serving state must remain exact, authenticated, and reversible."""
+    feature = FEATURE.read_text(encoding="utf-8")
+    spec = SPEC.read_text(encoding="utf-8")
+
+    for document in (feature, spec):
+        normalized = " ".join(document.replace("`", "").split()).lower()
+        for marker in (
+            "postgresgenerationstore",
+            "generation_database_url_env",
+            "existing bucket_leases",
+            "select for update",
+            "variable_values",
+            "decisionartifactstore",
+            "project, decision kind, candidate digest, receipt digest, stage, and epoch",
+            "expired owner",
+            "exact-owner release",
+            "deploy readers first",
+            "rollback",
+            "fallback exactly once",
+        ):
+            assert marker in normalized
+
+    assert "multi-host generation state and deployed proof remain pending" not in spec
 
 
 def test_docs_pin_the_opt_in_live_review_contract() -> None:
@@ -336,7 +361,7 @@ def test_reveal_deck_preserves_release_panel_slides_and_tokens() -> None:
     assert deck.count("<section") == 63
     assert deck.count('data-contract="decision-log-codification-v1"') == 1
     assert "v0.1.2 completed backlog" in deck
-    assert "5 formally closed" in deck
+    assert "6 formally closed" in deck
     assert "S83.128 &mdash; invoking-worktree-safe virtual-environment reclamation" in deck
     assert "<li><strong>S83.169" not in deck
     for token in (
