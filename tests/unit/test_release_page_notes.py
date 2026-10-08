@@ -464,6 +464,17 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S24",
         "S29",
         "S30",
+        "S31",
+        "S32",
+        "S33",
+        "S34",
+        "S35",
+        "S36",
+        "S37",
+        "S38",
+        "S39",
+        "S40",
+        "S41",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
@@ -479,11 +490,144 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
     assert expected.count(
         "S30 — Transactionally durable, session-safe model-performance telemetry"
     ) == 1
+    candidate_contracts = {
+        "S31": (
+            "Operation-scoped model-performance query lifecycle",
+            "Improvements",
+            (
+                ("implementation", "80835b29e79174bc0a4643c4643a552383693e8a"),
+                ("documentation", "4daa46c3b59c6bd8afac4a7535f72bcd262750ed"),
+            ),
+        ),
+        "S32": (
+            "Operation-scoped benchmark-query lifecycle",
+            "Improvements",
+            (
+                ("implementation", "6ac5f05f04d2fe117ff579719d60af0b6dec6305"),
+                ("documentation", "de6f637c28f6e55d40d3bd8fb83d80f5adbe7add"),
+            ),
+        ),
+        "S33": (
+            "Factory-owned MemoryRepository result lifecycle",
+            "Improvements",
+            (
+                ("implementation", "0d03819879e56beecf3df665c46ebe70d76a4925"),
+                ("task_evidence", "15064dfdd2db898e9cfb987c790d36543452c9f1"),
+            ),
+        ),
+        "S34": (
+            "Bounded agent-message expiry admission",
+            "Improvements",
+            (
+                ("implementation", "e0d1025e779a16a4e9703c4412ab7a7b197d26b5"),
+                ("documentation", "7b3cc726e29d903cafb3ddbfc9a293968bc6c00b"),
+            ),
+        ),
+        "S35": (
+            "Fail-closed SQL memory tenant isolation",
+            "Improvements",
+            (
+                ("implementation", "32a9ec3fa745c4119633e8e597eb40c941b62f37"),
+                ("documentation", "a201bd55d6a38a0bb1c6629f626437832fa9762c"),
+            ),
+        ),
+        "S36": (
+            "Project-isolated persisted tool outputs",
+            "Improvements",
+            (
+                ("implementation", "cb0959465fc940467e826bde3a634c72f21805b6"),
+                ("documentation", "7af995fb69e622df5c5a3e17a9aa6b8a275a0c1e"),
+            ),
+        ),
+        "S37": (
+            "Dialect-native SQLite and PostgreSQL repository upserts",
+            "Improvements",
+            (
+                ("implementation", "9bf7437dd18a43b5103e09b7b83dc3983b715cbc"),
+            ),
+        ),
+        "S38": (
+            "Native SearXNG controller runtime",
+            "Features",
+            (
+                ("implementation", "1b9d79457bd7be583ef5b5ae60a3383be0c4db71"),
+                ("task_evidence", "5bea57b1ed220ff28cacd05fa3a005d11db993b3"),
+            ),
+        ),
+        "S39": (
+            "Native git-release artifact verification",
+            "Improvements",
+            (
+                ("implementation", "5cc1bb2556f2f9b0ea45c4fd64a335adc7a40fe7"),
+            ),
+        ),
+        "S40": (
+            "Native Frictionless dataset admission",
+            "Features",
+            (
+                ("implementation", "24fd14135d1bdaf3813650736dce8c58f6efd51e"),
+                ("task_evidence", "90d79105b265df060472279e46466f64ca554cd2"),
+            ),
+        ),
+        "S41": (
+            "Collection-native chemical lot admission",
+            "Features",
+            (
+                ("implementation", "1cf229c408110e5389f317472da1560c7b852a3f"),
+                ("resource_ownership", "7ad01a472f617260e422feddd4d5cf1f9242ad28"),
+                ("inventory_refresh", "14643699ec9a740b36b6b44e7687bb8082754bf9"),
+            ),
+        ),
+    }
+    for item_id, (title, category, evidence) in candidate_contracts.items():
+        item = next(
+            candidate
+            for candidate in ledger.implemented_items
+            if candidate.item_id == item_id
+        )
+        assert item.title == title
+        assert item.category == category
+        assert tuple(
+            (receipt.role, receipt.sha) for receipt in item.evidence_commits
+        ) == evidence
+        assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 21."
+        "Implemented candidate items pending exact-head/release proof: 32."
         in expected
     )
+    release_source = (
+        ROOT / "docs" / "features" / "V012_RELEASE_PAGE_NOTES.md"
+    ).read_text(encoding="utf-8")
+    for required in (
+        "S37",
+        "SQLAlchemy discussion #7199",
+        "SQLAlchemy discussion #7007",
+        "schema-free, application-image-only rolling change",
+        "354 warning-fatal tests",
+        "94% aggregate coverage",
+        "S38-S41",
+        "Native SearXNG controller runtime",
+        "Native git-release artifact verification",
+        "Native Frictionless dataset admission",
+        "Collection-native chemical lot admission",
+        "Ansible Release 1.2.3",
+        "Frictionless discussion #675",
+        "ansible/ansible#50579",
+        "95% aggregate coverage",
+        "exact 32-item candidate inventory",
+    ):
+        assert required in release_source
+    task_ledger = (ROOT / "TASKS.md").read_text(encoding="utf-8")
+    for task_id, evidence_sha in (
+        ("S37", "9bf7437dd18a43b5103e09b7b83dc3983b715cbc"),
+        ("S38", "1b9d79457bd7be583ef5b5ae60a3383be0c4db71"),
+        ("S39", "5cc1bb2556f2f9b0ea45c4fd64a335adc7a40fe7"),
+        ("S40", "24fd14135d1bdaf3813650736dce8c58f6efd51e"),
+        ("S41", "1cf229c408110e5389f317472da1560c7b852a3f"),
+    ):
+        assert f"- [ ] {task_id}" in task_ledger
+        assert evidence_sha in task_ledger
 
 
 def test_release_dry_run_validates_v012_page_without_publishing() -> None:

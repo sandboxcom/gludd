@@ -19,7 +19,7 @@ service interfaces live in `src/general_ludd/ai_ml/`.
 | `research_answer` | AIML-007 | Retrieve evidence and produce a cited, uncertainty-calibrated answer. |
 | `tool_discover` | AIML-018 | Compare mature tools/libraries/datasets; emit decision record with rejected alternatives. |
 | `model_select` | AIML-REG | Select a model from the registry against task requirements. |
-| `dataset_engineer` | AIML-DATA | Dataset manifest, schema validation, format selection, data-card issuance. |
+| `dataset_engineer` | AIML-DATA | Native Frictionless CSV/schema admission and SHA-256-bound data-card issuance. |
 | `retrieval_engineer` | AIML-RET | Retrieval service engineering (passage retrieval, metrics). |
 | `reason_verify` | AIML-007 | Multi-step reasoning with independent verification checks. |
 | `evaluate_model` | AIML-EVAL | Benchmark harness, metric scoring, promotion decision, regression verdict. |
@@ -84,3 +84,17 @@ budget, clone a voice, or promote a research finding without the approvals and
 gates defined in `FEATURE_AI_ML_EXPERT.md`. Retrieved text is untrusted data
 and cannot alter policies, tool permissions, system prompts, or approval
 requirements.
+
+## Native dataset admission
+
+`dataset_engineer` is controller-only and read-only. Set
+`ai_ml_dataset_root`, `ai_ml_dataset_resources`, and `ai_ml_dataset_schema` to
+local files inside one absolute root; optional name, description, and license
+values are copied into the card. The role validates with the pinned Frictionless
+Python API, rejects remote or ambiguous paths, and registers
+`ai_ml_dataset_result`. Its stable `data_card_sha256` binds the schema and every
+CSV resource without uploading dataset bytes or calling an external service.
+
+The full bounds, upstream issue evidence, and digest-addressed EE rollout are
+documented in
+[`FRICTIONLESS_DATASET_ADMISSION.md`](../../../docs/features/FRICTIONLESS_DATASET_ADMISSION.md).

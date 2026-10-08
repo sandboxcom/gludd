@@ -75,7 +75,8 @@ class MemoryRepository:
     ) -> MemoryRecordModel | None:
         """Return an unexpired memory value from an agent namespace."""
         async with self._resolve_session() as session:
-            return await self._get_with_session(session, agent_id, key, namespace, project_id)
+            row = await self._get_with_session(session, agent_id, key, namespace, project_id)
+            return self._detach_factory_owned(session, row)
 
     async def set(
         self,
@@ -122,6 +123,8 @@ class MemoryRepository:
                 existing.updated_at = now
             await session.flush()
             await session.refresh(existing)
+            if self._session is None:
+                session.expunge(existing)
             return existing
 
     async def delete(
@@ -147,7 +150,11 @@ class MemoryRepository:
         project_id: str | None = None,
         limit: int = 100,
     ) -> list[MemoryRecordModel]:
-        """List bounded, unexpired memory values for an agent namespace."""
+        """List bounded, unexpired values from exactly one project partition.
+
+        An omitted ``project_id`` selects only global rows, matching ``get`` and
+        ``delete`` rather than widening the query across every project.
+        """
         async with self._resolve_session() as session:
             stmt = (
                 select(MemoryRecordModel)
@@ -159,11 +166,17 @@ class MemoryRepository:
             )
             if namespace != "*":
                 stmt = stmt.where(MemoryRecordModel.namespace == namespace)
-            if project_id is not None:
+            if project_id is None:
+                stmt = stmt.where(MemoryRecordModel.project_id.is_(None))
+            else:
                 stmt = stmt.where(MemoryRecordModel.project_id == project_id)
             result = await session.execute(stmt)
             rows = list(result.scalars().all())
-            return [r for r in rows if not self._is_expired(r)]
+            live_rows = [row for row in rows if not self._is_expired(row)]
+            if self._session is None:
+                for row in live_rows:
+                    session.expunge(row)
+            return live_rows
 
     async def purge_expired(self) -> int:
         """Delete expired memory records and return the number removed."""
@@ -192,3 +205,13 @@ class MemoryRepository:
         if created.tzinfo is None:
             created = created.replace(tzinfo=UTC)
         return (now - created).total_seconds() > row.ttl_seconds
+
+    def _detach_factory_owned(
+        self,
+        session: AsyncSession,
+        row: MemoryRecordModel | None,
+    ) -> MemoryRecordModel | None:
+        """Detach a returned row only when this repository owns its session."""
+        if row is not None and self._session is None:
+            session.expunge(row)
+        return row

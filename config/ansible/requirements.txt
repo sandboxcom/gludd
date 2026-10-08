@@ -1,3 +1,5 @@
 # Additional controller Python dependencies belong here. Ansible Core and
 # Runner are pinned once in execution-environment.yml because Ansible Builder
 # must install them before its Galaxy validation phase.
+frictionless==5.19.1
+searxng @ git+https://github.com/searxng/searxng.git@7b4612e86250389dc9d5ee67e4cc2cd64d06602a

@@ -405,6 +405,167 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "80835b29e79174bc0a4643c4643a552383693e8a"
+        },
+        {
+          "role": "documentation",
+          "sha": "4daa46c3b59c6bd8afac4a7535f72bcd262750ed"
+        }
+      ],
+      "item_id": "S31",
+      "release_page_category": "Improvements",
+      "title": "Operation-scoped model-performance query lifecycle"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "6ac5f05f04d2fe117ff579719d60af0b6dec6305"
+        },
+        {
+          "role": "documentation",
+          "sha": "de6f637c28f6e55d40d3bd8fb83d80f5adbe7add"
+        }
+      ],
+      "item_id": "S32",
+      "release_page_category": "Improvements",
+      "title": "Operation-scoped benchmark-query lifecycle"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "0d03819879e56beecf3df665c46ebe70d76a4925"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "15064dfdd2db898e9cfb987c790d36543452c9f1"
+        }
+      ],
+      "item_id": "S33",
+      "release_page_category": "Improvements",
+      "title": "Factory-owned MemoryRepository result lifecycle"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "e0d1025e779a16a4e9703c4412ab7a7b197d26b5"
+        },
+        {
+          "role": "documentation",
+          "sha": "7b3cc726e29d903cafb3ddbfc9a293968bc6c00b"
+        }
+      ],
+      "item_id": "S34",
+      "release_page_category": "Improvements",
+      "title": "Bounded agent-message expiry admission"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "32a9ec3fa745c4119633e8e597eb40c941b62f37"
+        },
+        {
+          "role": "documentation",
+          "sha": "a201bd55d6a38a0bb1c6629f626437832fa9762c"
+        }
+      ],
+      "item_id": "S35",
+      "release_page_category": "Improvements",
+      "title": "Fail-closed SQL memory tenant isolation"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "cb0959465fc940467e826bde3a634c72f21805b6"
+        },
+        {
+          "role": "documentation",
+          "sha": "7af995fb69e622df5c5a3e17a9aa6b8a275a0c1e"
+        }
+      ],
+      "item_id": "S36",
+      "release_page_category": "Improvements",
+      "title": "Project-isolated persisted tool outputs"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "9bf7437dd18a43b5103e09b7b83dc3983b715cbc"
+        }
+      ],
+      "item_id": "S37",
+      "release_page_category": "Improvements",
+      "title": "Dialect-native SQLite and PostgreSQL repository upserts"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "1b9d79457bd7be583ef5b5ae60a3383be0c4db71"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "5bea57b1ed220ff28cacd05fa3a005d11db993b3"
+        }
+      ],
+      "item_id": "S38",
+      "release_page_category": "Features",
+      "title": "Native SearXNG controller runtime"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "5cc1bb2556f2f9b0ea45c4fd64a335adc7a40fe7"
+        }
+      ],
+      "item_id": "S39",
+      "release_page_category": "Improvements",
+      "title": "Native git-release artifact verification"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "24fd14135d1bdaf3813650736dce8c58f6efd51e"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "90d79105b265df060472279e46466f64ca554cd2"
+        }
+      ],
+      "item_id": "S40",
+      "release_page_category": "Features",
+      "title": "Native Frictionless dataset admission"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "1cf229c408110e5389f317472da1560c7b852a3f"
+        },
+        {
+          "role": "resource_ownership",
+          "sha": "7ad01a472f617260e422feddd4d5cf1f9242ad28"
+        },
+        {
+          "role": "inventory_refresh",
+          "sha": "14643699ec9a740b36b6b44e7687bb8082754bf9"
+        }
+      ],
+      "item_id": "S41",
+      "release_page_category": "Features",
+      "title": "Collection-native chemical lot admission"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },

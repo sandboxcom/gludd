@@ -141,21 +141,53 @@ class TestDeadWorkerEndpoints:
         assert "/jobs/policy-validate" in routes
         assert "/jobs/reload-request" in routes
 
-    def test_validate_endpoint_returns_501_not_implemented(self):
+    def test_validate_endpoint_returns_canonical_runner_evidence(self):
         from fastapi.testclient import TestClient
 
         from general_ludd.worker.app import create_app
 
+        runner = MagicMock()
+        runner.list_playbooks.return_value = ["validate_task.yml"]
+        runner.prepare_job_dirs.return_value = {
+            "root": "/tmp/gludd-audit-validation-job",
+        }
+        runner.run_playbook.return_value = {
+            "rc": 0,
+            "output": "validation passed",
+            "artifacts": ["validation_result.json"],
+            "events": [{"event": "runner_on_ok"}],
+        }
         app = create_app()
         client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/jobs/validate", json={
+        with patch("general_ludd.worker.app.get_runner", return_value=runner):
+            resp = client.post("/jobs/validate", json={
+                "job_id": "EXEC-TEST123",
+                "playbook": "caller-supplied.yml",
+                "queue": "core",
+            })
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "status": "created",
+            "return_id": "RET-EXEC-TEST123",
+            "todo_id": None,
             "job_id": "EXEC-TEST123",
             "playbook": "validate_task.yml",
-            "queue": "core",
-        })
-        assert resp.status_code == 501, (
-            f"Worker validate endpoint not implemented, "
-            f"expected 501 got {resp.status_code}"
+            "model_response": None,
+            "tool_calls_detected": [],
+            "tool_dispatch_results": [],
+            "exit_code": 0,
+            "result_summary": "validation passed",
+            "artifacts": ["validation_result.json"],
+            "events": [{"event": "runner_on_ok"}],
+        }
+        written_vars = runner.write_vars.call_args.kwargs["job_vars"]
+        assert written_vars["work_type"] == "validation"
+        runner.run_playbook.assert_called_once_with(
+            playbook_name="validate_task.yml",
+            private_data_dir="/tmp/gludd-audit-validation-job",
+            extravars=None,
+            timeout=600.0,
         )
 
     def test_policy_validate_endpoint_returns_501_not_implemented(self):

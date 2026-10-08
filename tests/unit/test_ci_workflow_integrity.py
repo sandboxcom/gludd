@@ -244,6 +244,7 @@ class TestReleaseJobStructure:
             "version",
             "gate",
             "claim-before-provision-acceptance",
+            "postgres-winner-compute-lifecycle-acceptance",
             "release_source_proof",
             "freellmapi-upstream-build",
             "test-shard",

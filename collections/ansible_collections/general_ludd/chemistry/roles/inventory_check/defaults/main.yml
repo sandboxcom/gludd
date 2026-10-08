@@ -1,2 +1,7 @@
 ---
-{}
+inventory_check_lot: ""
+inventory_check_purity: 0.0
+inventory_check_expiry: ""
+inventory_check_restrictions: []
+inventory_check_required_purity: 0.0
+inventory_check_as_of: ""

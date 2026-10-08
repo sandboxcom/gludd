@@ -11,29 +11,25 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from general_ludd.reload.worker_liveness import (
+    MAX_WORKERS as _MAX_WORKERS,
+)
+from general_ludd.reload.worker_liveness import (
+    NANOSECONDS_PER_SECOND as _NANOSECONDS_PER_SECOND,
+)
+from general_ludd.reload.worker_liveness import (
+    enforcement_enabled as _liveness_enforced,
+)
+from general_ludd.reload.worker_liveness import (
+    probe_deadline_ns,
+    probe_timeout_seconds,
+)
 from general_ludd.security import is_safe_fetch_url
 
 logger = logging.getLogger(__name__)
 
-_MAX_WORKERS = 64
-_LIVENESS_PROBE_TIMEOUT_SECONDS = 1.0
-_LIVENESS_TOTAL_TIMEOUT_SECONDS = 10.0
-_NANOSECONDS_PER_SECOND = 1_000_000_000
-
-
 def _is_safe_worker_address(address: str) -> bool:
-    """SSRF guard for a worker address BEFORE the daemon PSK is ever sent to it.
-
-    Delegates to the canonical :func:`general_ludd.security.is_safe_fetch_url`
-    (https-only + literal-host deny) — the SAME guard the webhook-registration
-    endpoint uses — so the policy can never drift. Returns ``True`` only when the
-    address uses ``https`` and does not target a loopback / link-local /
-    RFC-1918 / cloud-metadata (``169.254.169.254``, ``::1``, ``127.0.0.0/8`` …)
-    host. A worker registered with a plain-http or metadata/loopback address
-    would otherwise receive the ``Authorization: Bearer <GLUDD_AUTH_PSK>`` header in
-    cleartext or exfiltrate it to an attacker/SSRF target. Performs NO DNS
-    resolution and NO network I/O, so it is safe on the broadcast hot path.
-    """
+    """Apply the canonical no-I/O HTTPS/SSRF policy before sending a PSK."""
     return is_safe_fetch_url(address)
 
 
@@ -199,11 +195,6 @@ class WorkerBroadcaster:
             verify=True,
         )
 
-    @staticmethod
-    def _liveness_enforced() -> bool:
-        """Return false only for the explicit emergency rollback value ``0``."""
-        return os.environ.get("GLUDD_WORKER_LIVENESS_ENFORCE", "1").strip() != "0"
-
     def _lease_is_active(self, worker: WorkerInfo) -> bool:
         """Check one process-local monotonic lease without wall-clock input."""
         now_ns = self._monotonic_ns()
@@ -230,10 +221,7 @@ class WorkerBroadcaster:
         remaining_ns = deadline_ns - self._monotonic_ns()
         if remaining_ns <= 0:
             return False
-        timeout = min(
-            _LIVENESS_PROBE_TIMEOUT_SECONDS,
-            remaining_ns / _NANOSECONDS_PER_SECOND,
-        )
+        timeout = probe_timeout_seconds(remaining_ns)
         try:
             response = self._get_request(f"{worker.address}/healthz", timeout=timeout)
         except Exception as exc:
@@ -326,10 +314,8 @@ class WorkerBroadcaster:
         results: list[BroadcastResult] = []
         headers = self._auth_headers()
         allowlist = self._resolve_allowlist()
-        require_live_lease = bool(headers) and self._liveness_enforced()
-        probe_deadline_ns = self._monotonic_ns() + int(
-            _LIVENESS_TOTAL_TIMEOUT_SECONDS * _NANOSECONDS_PER_SECOND
-        )
+        require_live_lease = bool(headers) and _liveness_enforced()
+        probe_deadline = probe_deadline_ns(self._monotonic_ns())
         if not allowlist:
             logger.warning(
                 "No worker allowlist configured (GLUDD_WORKER_ALLOWLIST unset/empty)"
@@ -343,7 +329,7 @@ class WorkerBroadcaster:
                 allowlist=allowlist,
                 operation=operation,
                 require_live_lease=require_live_lease,
-                probe_deadline_ns=probe_deadline_ns,
+                probe_deadline_ns=probe_deadline,
             )
             if guard_error is not None:
                 results.append(BroadcastResult(worker_id=w.worker_id, success=False, error=guard_error))
@@ -391,9 +377,7 @@ class WorkerBroadcaster:
     def ping_all(self) -> dict[str, bool]:
         """Health-check every worker's /healthz endpoint; worker_id -> reachable."""
         results = {}
-        probe_deadline_ns = self._monotonic_ns() + int(
-            _LIVENESS_TOTAL_TIMEOUT_SECONDS * _NANOSECONDS_PER_SECOND
-        )
+        probe_deadline = probe_deadline_ns(self._monotonic_ns())
         for w in self._snapshot_workers():
             # Defense in depth (task #37): re-validate the address at send time,
             # identically to the PSK-bearing broadcast_* methods, so the health
@@ -411,5 +395,5 @@ class WorkerBroadcaster:
                 )
                 results[w.worker_id] = False
                 continue
-            results[w.worker_id] = self._probe_liveness(w, deadline_ns=probe_deadline_ns)
+            results[w.worker_id] = self._probe_liveness(w, deadline_ns=probe_deadline)
         return results

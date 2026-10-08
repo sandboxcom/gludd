@@ -37,11 +37,21 @@ from general_ludd.db.models import (
     AuditEventModel,
     AzureCostOutboxEventModel,
     DeploymentRecordModel,
+    FeatureModel,
+    FeatureStatus,
     ProjectModel,
+    PromptProfileModel,
     TodoModel,
     TodoStatus,
+    VariableNamespaceModel,
+    VariableValueModel,
 )
-from general_ludd.db.repository import TodoRepository
+from general_ludd.db.repository import (
+    FeatureRepository,
+    PromptProfileRepository,
+    TodoRepository,
+    VariableNamespaceRepository,
+)
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 from general_ludd.events import CustomEvent, EventBus
 from general_ludd.infra.azure_cost_reconciliation import (
@@ -392,6 +402,91 @@ async def test_postgres_fences_claims_across_worker_processes() -> None:
     assert claimed_sets[0].isdisjoint(claimed_sets[1])
     assert len(claimed_sets[0] | claimed_sets[1]) == 12
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_upserts_converge_across_sessions() -> None:
+    """Two bounded writers converge through PostgreSQL-native ON CONFLICT."""
+    suffix = uuid.uuid4().hex[:12]
+    project_id = f"pg-upsert-{suffix}"
+    namespace = f"upsert-{suffix}"
+    feature_name = f"dialect-upsert-{suffix}"
+    profile_name = f"dialect-profile-{suffix}"
+    engine = create_async_engine(POSTGRES_URL, pool_size=2, max_overflow=0)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _writer(label: str) -> None:
+        async with sessions() as session:
+            await VariableNamespaceRepository(session).set_var(
+                namespace,
+                "winner",
+                label,
+                project_id=project_id,
+            )
+            await FeatureRepository(session).upsert(
+                {
+                    "name": feature_name,
+                    "project_id": project_id,
+                    "description": label,
+                    "category": "database",
+                    "status": FeatureStatus.IMPLEMENTED,
+                }
+            )
+            await PromptProfileRepository(session).upsert(
+                {
+                    "name": profile_name,
+                    "source": "postgres-e2e",
+                    "prompt_text": label,
+                }
+            )
+            await session.commit()
+
+    try:
+        async with sessions() as session:
+            session.add(ProjectModel(project_id=project_id, name="Postgres upsert E2E"))
+            await session.commit()
+
+        await asyncio.wait_for(
+            asyncio.gather(_writer("writer-a"), _writer("writer-b")),
+            timeout=20,
+        )
+
+        async with sessions() as session:
+            namespace_count = await session.scalar(
+                select(func.count())
+                .select_from(VariableNamespaceModel)
+                .where(
+                    VariableNamespaceModel.namespace == namespace,
+                    VariableNamespaceModel.project_id == project_id,
+                )
+            )
+            value_count = await session.scalar(
+                select(func.count())
+                .select_from(VariableValueModel)
+                .join(VariableNamespaceModel)
+                .where(
+                    VariableNamespaceModel.namespace == namespace,
+                    VariableNamespaceModel.project_id == project_id,
+                    VariableValueModel.key == "winner",
+                )
+            )
+            feature_count = await session.scalar(
+                select(func.count())
+                .select_from(FeatureModel)
+                .where(FeatureModel.name == feature_name)
+            )
+            profile_count = await session.scalar(
+                select(func.count())
+                .select_from(PromptProfileModel)
+                .where(PromptProfileModel.name == profile_name)
+            )
+
+        assert namespace_count == 1
+        assert value_count == 1
+        assert feature_count == 1
+        assert profile_count == 1
+    finally:
+        await engine.dispose()
 
 
 def test_postgres_tick_winner_owns_compute_until_terminal_verification() -> None:

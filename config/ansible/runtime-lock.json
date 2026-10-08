@@ -3,10 +3,10 @@
   "release": "0.1.0-beta.4",
   "base_image": "quay.io/centos/centos:stream9@sha256:63e8d0c2a4a4b67c8bd7456283d12106bedf815d8c27d1a72498ebcf173baf09",
   "inputs": {
-    "galaxy": "sha256:7d382e9a9b24b62b5a2c11a5b89454efb902601827ee77ff36b85c7695015369",
-    "python": "sha256:bd37e115cde6af95ceaf3a279f24b4408851b6882af34785b6ee4f1c5d1dfb01",
+    "galaxy": "sha256:517fc43942d20c9c2a477e2482183e5ccf991877d557f02f8bf93956ab26a4f2",
+    "python": "sha256:d6c71c8b2a3a8d4a8132c1f7978304fd2e6b8a57d7350aca05ca464ff0476af2",
     "system": "sha256:64c87891f336f9c13148b3cf13db2d46d503813b5d5b1d890c06fb221e691d39",
-    "definition": "sha256:cfce8e051a5ed6d06a9b7cdb2492698c902514cf5a5ea60ea2eb9d4d94f0d780"
+    "definition": "sha256:ddcad741cc670768ef95768d384c008d1a2749e9a203ad1af2e93b08a4c2dca5"
   },
   "promotion": "build-and-warm-beside-active-then-switch-new-jobs",
   "rollback": "switch-new-jobs-to-previous-digest-and-drain-in-flight-jobs",

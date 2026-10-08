@@ -308,7 +308,6 @@ Molecule test suites for Ansible roles and playbooks, including role-level tests
 | `infra/local-models/` | Local model deployment (ollama, vllm, llamacpp via Docker Compose) |
 | `infra/kubernetes/` | Kubernetes deployment manifests |
 | `infra/slurm/` | SLURM job scripts |
-| `infra/searxng/` | SearXNG deployment config |
 
 ### `templates/` — Jinja2 Templates
 

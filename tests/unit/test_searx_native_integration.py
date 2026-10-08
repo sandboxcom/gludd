@@ -9,8 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
-from general_ludd.searx.native import (
+from ansible_collections.general_ludd.travel.plugins.module_utils.searxng_runtime import (
     NativeSearxRuntime,
     RemoteSearxAdapter,
     SearxLifecycleError,
@@ -18,6 +17,15 @@ from general_ludd.searx.native import (
     SearxUnavailableError,
     default_namespace,
 )
+
+from general_ludd.searx import native as core_native
+
+
+def test_core_runtime_is_a_compatibility_reexport_of_collection_runtime() -> None:
+    """Keep one implementation source while old Python imports roll back safely."""
+    assert core_native.NativeSearxRuntime is NativeSearxRuntime
+    assert core_native.RemoteSearxAdapter is RemoteSearxAdapter
+    assert core_native.SearxLifecycleError is SearxLifecycleError
 
 
 class _Response:

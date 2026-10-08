@@ -1,25 +1,50 @@
 ---
-# Converge: run general_ludd.chemistry.property_lookup and prove it executes.
-- name: Converge - run chemistry.property_lookup role
+# Converge: prove fail-closed lot admission through the collection role.
+- name: Converge - run chemistry.inventory_check role
   hosts: localhost
   connection: local
   gather_facts: false
-  vars:
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
-    out_dir: "/tmp/gludd-chemistry-expert-{{ mock_port }}"
   tasks:
-    - name: Invoke property_lookup
+    - name: Reject one expired restricted under-purity lot
       ansible.builtin.include_role:
-        name: general_ludd.chemistry.property_lookup
+        name: general_ludd.chemistry.inventory_check
+      vars:
+        inventory_check_lot: LOT-MOLECULE-REJECT
+        inventory_check_purity: 0.75
+        inventory_check_expiry: "2026-10-07"
+        inventory_check_restrictions:
+          - quarantine
+        inventory_check_required_purity: 0.99
+        inventory_check_as_of: "2026-10-08"
 
-    - name: Ensure marker directory exists
-      ansible.builtin.file:
-        path: "{{ out_dir }}"
-        state: directory
-        mode: "0755"
+    - name: Assert every bounded rejection without a substitution
+      ansible.builtin.assert:
+        that:
+          - not inventory_check_result.admitted
+          - inventory_check_result.requires_review
+          - inventory_check_result.reason_codes == expected_reason_codes
+          - inventory_check_result.lot == 'LOT-MOLECULE-REJECT'
+          - inventory_check_result.substituted_lot is not defined
+      vars:
+        expected_reason_codes:
+          - lot_expired
+          - lot_restricted
+          - lot_purity_insufficient
 
-    - name: Write execution marker
-      ansible.builtin.copy:
-        content: "chemistry.property_lookup ran\n"
-        dest: "{{ out_dir }}/property_lookup_ran.ok"
-        mode: "0644"
+    - name: Re-evaluate the same lot in check mode
+      general_ludd.chemistry.chemical_lot_admission:
+        lot: LOT-MOLECULE-REJECT
+        purity: 0.75
+        expiry: "2026-10-07"
+        restrictions:
+          - quarantine
+        required_purity: 0.99
+        as_of: "2026-10-08"
+      check_mode: true
+      register: check_mode_admission
+
+    - name: Assert check mode is read-only and deterministic
+      ansible.builtin.assert:
+        that:
+          - not check_mode_admission.changed
+          - check_mode_admission.result == inventory_check_result

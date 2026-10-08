@@ -5,15 +5,86 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from general_ludd.db.models import (
     AgentMessageModel,
     AuditEventModel,
     AuditEventType,
 )
+
+MAX_INBOX_MESSAGES = 100
+_SQLITE_EXPIRY_TOLERANCE_SECONDS = 0.001
+
+
+def _utc_now() -> datetime:
+    """Return the clock instant shared by one repository operation."""
+    return datetime.now(UTC)
+
+
+def _message_is_expired(
+    created_at: datetime | None,
+    ttl_seconds: int | None,
+    now: datetime,
+) -> bool:
+    """Return whether a message is no longer admissible at ``now``.
+
+    TTL admission is fail-closed at the exact boundary. Database rows always
+    have ``created_at`` and positive TTL values, while the defensive checks keep
+    degraded or manually constructed rows from becoming immortal.
+    """
+    if ttl_seconds is None:
+        return False
+    if created_at is None or ttl_seconds <= 0:
+        return True
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    return (now - created_at).total_seconds() >= ttl_seconds
+
+
+def _message_age_seconds(now: datetime, dialect_name: str) -> ColumnElement[float]:
+    """Build the backend-specific elapsed-seconds expression for one query."""
+    if dialect_name == "postgresql":
+        return cast(
+            "ColumnElement[float]",
+            func.extract("epoch", literal(now) - AgentMessageModel.created_at),
+        )
+    sqlite_age = cast(
+        "ColumnElement[float]",
+        (func.julianday(literal(now)) - func.julianday(AgentMessageModel.created_at))
+        * 86400.0,
+    )
+    # SQLite's Julian-day representation has sub-millisecond floating-point
+    # drift. Bias that uncertainty toward rejection so an exact-boundary row
+    # can never be admitted as live.
+    return sqlite_age + _SQLITE_EXPIRY_TOLERANCE_SECONDS
+
+
+def _live_message_predicate(now: datetime, dialect_name: str) -> ColumnElement[bool]:
+    """Admit only rows whose TTL has not reached its boundary."""
+    age_seconds = _message_age_seconds(now, dialect_name)
+    return or_(
+        AgentMessageModel.ttl_seconds.is_(None),
+        and_(
+            AgentMessageModel.ttl_seconds > 0,
+            age_seconds < AgentMessageModel.ttl_seconds,
+        ),
+    )
+
+
+def _expired_message_predicate(now: datetime, dialect_name: str) -> ColumnElement[bool]:
+    """Select TTL rows at or beyond their fail-closed expiry boundary."""
+    age_seconds = _message_age_seconds(now, dialect_name)
+    return and_(
+        AgentMessageModel.ttl_seconds.is_not(None),
+        or_(
+            AgentMessageModel.ttl_seconds <= 0,
+            age_seconds >= AgentMessageModel.ttl_seconds,
+        ),
+    )
 
 
 class AuditEventRepository:
@@ -162,14 +233,18 @@ class AgentMessageRepository:
 
         Expired messages (past their ttl) are never returned.
         """
-        from sqlalchemy import or_
-
         target: Any
         if include_broadcast:
             target = AgentMessageModel.recipient.in_([recipient, BROADCAST_RECIPIENT])
         else:
             target = AgentMessageModel.recipient == recipient
-        stmt = select(AgentMessageModel).where(target)
+        now = _utc_now()
+        dialect_name = self._session.get_bind().dialect.name
+        bounded_limit = min(max(limit, 0), MAX_INBOX_MESSAGES)
+        stmt = select(AgentMessageModel).where(
+            target,
+            _live_message_predicate(now, dialect_name),
+        )
         if unread_only:
             stmt = stmt.where(AgentMessageModel.read_at.is_(None))
         if project_id is not None:
@@ -179,11 +254,12 @@ class AgentMessageRepository:
                     AgentMessageModel.project_id.is_(None),
                 )
             )
-        stmt = stmt.order_by(AgentMessageModel.created_at.asc()).limit(limit)
+        stmt = stmt.order_by(
+            AgentMessageModel.created_at.asc(),
+            AgentMessageModel.id.asc(),
+        ).limit(bounded_limit)
         result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        now = datetime.now(UTC)
-        return [r for r in rows if not self._is_expired(r, now)]
+        return list(result.scalars().all())
 
     async def ack(self, message_id: str, project_id: str | None = None) -> AgentMessageModel | bool | None:
         """Mark a message read. Returns the row, or None if it does not exist.
@@ -204,7 +280,7 @@ class AgentMessageRepository:
         # let two concurrent acks both see read_at None and both write, clobbering
         # the first ack's timestamp. Guarding on read_at IS NULL means only the
         # first ack writes; a later ack affects zero rows and leaves it untouched.
-        now = datetime.now(UTC)
+        now = _utc_now()
         guard = _update(AgentMessageModel).where(
             AgentMessageModel.id == message_id,
             AgentMessageModel.read_at.is_(None),
@@ -229,17 +305,18 @@ class AgentMessageRepository:
 
         Single set-based DELETE pushed into SQL rather than fetch-all + per-row
         ``session.delete()``: the expiry predicate mirrors :meth:`_is_expired`
-        (``elapsed_seconds > ttl_seconds``) using SQLite ``julianday`` day-diff
-        arithmetic. AgentMessageModel declares no child relationships (its only
-        FK is ``project_id`` ondelete=SET NULL, an outbound reference), so the
-        bulk delete bypasses no ORM cascade.
+        (``elapsed_seconds >= ttl_seconds``), using PostgreSQL epoch extraction
+        or fail-closed SQLite Julian-day arithmetic. AgentMessageModel declares
+        no child relationships (its only FK is ``project_id``
+        ``ondelete=SET NULL``, an outbound reference), so the bulk delete
+        bypasses no ORM cascade.
         """
-        from sqlalchemy import delete, func
+        from sqlalchemy import delete
 
-        elapsed_seconds = (func.julianday("now") - func.julianday(AgentMessageModel.created_at)) * 86400.0
+        now = _utc_now()
+        dialect_name = self._session.get_bind().dialect.name
         stmt = delete(AgentMessageModel).where(
-            AgentMessageModel.ttl_seconds.isnot(None),
-            elapsed_seconds > AgentMessageModel.ttl_seconds,
+            _expired_message_predicate(now, dialect_name)
         )
         result = await self._session.execute(stmt)
         purged = int(cast("CursorResult[Any]", result).rowcount or 0)
@@ -256,17 +333,13 @@ class AgentMessageRepository:
         instead of a full-table load + Python aggregation. ``recipient`` is
         NOT NULL, so there is no None bucket.
         """
-        from sqlalchemy import func, or_
-
-        elapsed_seconds = (func.julianday("now") - func.julianday(AgentMessageModel.created_at)) * 86400.0
+        now = _utc_now()
+        dialect_name = self._session.get_bind().dialect.name
         stmt = (
             select(AgentMessageModel.recipient, func.count())
             .where(
                 AgentMessageModel.read_at.is_(None),
-                or_(
-                    AgentMessageModel.ttl_seconds.is_(None),
-                    elapsed_seconds <= AgentMessageModel.ttl_seconds,
-                ),
+                _live_message_predicate(now, dialect_name),
             )
             .group_by(AgentMessageModel.recipient)
         )
@@ -282,11 +355,4 @@ class AgentMessageRepository:
 
     @staticmethod
     def _is_expired(row: AgentMessageModel, now: datetime) -> bool:
-        if row.ttl_seconds is None:
-            return False
-        created = row.created_at
-        if created is None:
-            return False
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=UTC)
-        return (now - created).total_seconds() > row.ttl_seconds
+        return _message_is_expired(row.created_at, row.ttl_seconds, now)

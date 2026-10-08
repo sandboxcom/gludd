@@ -36,11 +36,11 @@ from general_ludd.routers.processes import (
 
 
 class TestRouterRegistration:
-    def test_register_adds_three_routes(self) -> None:
+    def test_register_adds_four_routes(self) -> None:
         app = FastAPI()
         before = len(app.routes)
         register(app, {})
-        assert len(app.routes) == before + 3
+        assert len(app.routes) == before + 4
 
     def test_routes_have_correct_methods_and_paths(self) -> None:
         app = FastAPI()
@@ -52,9 +52,10 @@ class TestRouterRegistration:
             if r.path not in defaults
         }
         assert (frozenset({"GET"}), "/admin/processes") in app_routes
+        assert (frozenset({"GET"}), "/admin/processes/metrics") in app_routes
         assert (frozenset({"POST"}), "/admin/processes/{pid}/signal") in app_routes
         assert (frozenset({"GET"}), "/admin/processes/{pid}/stats") in app_routes
-        assert len(app_routes) == 3
+        assert len(app_routes) == 4
 
 
 # ── SignalProcessRequest model validation ──────────────────────────────

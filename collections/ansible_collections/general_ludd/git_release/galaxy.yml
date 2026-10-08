@@ -10,8 +10,9 @@ description: >-
   and operator for all 14 spec §3 roles: repository assessment, history
   investigation, work recovery, branch planning, conflict resolution, helper
   discovery/selection/build, release planning, pipeline triage, artifact
-  build/verification, deployment orchestration, and release recovery. Backed
-  by the Python evidence module src/general_ludd/git_release/ — every
+  build/verification, deployment orchestration, and release recovery. Native
+  artifact verification is collection-owned and bounded; compatibility callers
+  reuse it through src/general_ludd/git_release/. Every
   observation is recorded as machine-verifiable evidence distinguishing
   observations, inferences, proposed mutations, completed mutations, and
   verified outcomes.

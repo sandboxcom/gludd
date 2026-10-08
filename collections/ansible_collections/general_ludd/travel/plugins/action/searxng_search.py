@@ -5,10 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable, MutableMapping, Sequence
 from typing import Any, Protocol, cast
 
-from general_ludd.searx.native import (
+from ansible_collections.general_ludd.travel.plugins.module_utils.searxng_runtime import (
     NativeSearxRuntime,
     RemoteSearxAdapter,
     validate_namespace,
+    validate_query,
+    validate_search_inputs,
 )
 
 from ._searxng import ControllerSearxAction
@@ -39,7 +41,7 @@ RemoteFactory = Callable[..., SearchRuntime]
 
 
 def _remote_factory(*, base_url: str, timeout: float) -> SearchRuntime:
-    return RemoteSearxAdapter(base_url=base_url, timeout=timeout)
+    return cast(SearchRuntime, RemoteSearxAdapter(base_url=base_url, timeout=timeout))
 
 
 def _engines(value: object, category: str) -> Sequence[str] | None:
@@ -77,46 +79,17 @@ def execute_action(
     if transport == "remote" and (not isinstance(remote_url, str) or not remote_url.strip()):
         raise ValueError("remote_url is required with transport=remote")
 
-    if check_mode:
-        return {
-            "changed": False,
-            "check_mode": True,
-            "query": query,
-            "result_count": 0,
-            "results": [],
-            "transport": transport,
-        }
-
     timeout = args.get("timeout", 10)
-    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
-        raise ValueError("timeout must be positive")
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not 0 < timeout <= 120
+    ):
+        raise ValueError("timeout must be between 0 and 120 seconds")
     namespace = args.get("namespace", "gludd-travel")
     if not isinstance(namespace, str) or not namespace:
         raise ValueError("namespace must be a non-empty string")
     namespace = validate_namespace(namespace)
-
-    owned_runtime = False
-    if transport == "native":
-        selected_registry = cast(
-            MutableMapping[str, SearchRuntime],
-            registry if registry is not None else _RUNTIMES,
-        )
-        existing = selected_registry.get(namespace)
-        runtime = existing if existing is not None else None
-        if runtime is None:
-            settings_path = args.get("settings_path") or None
-            if settings_path is not None and not isinstance(settings_path, str):
-                raise TypeError("settings_path must be a string")
-            runtime_builder = runtime_factory or cast(RuntimeFactory, NativeSearxRuntime)
-            runtime = runtime_builder(settings_path=settings_path, namespace=namespace)
-            runtime.start()
-            owned_runtime = True
-        instance_uri = runtime.instance_uri
-    else:
-        runtime = remote_factory(base_url=remote_url, timeout=float(timeout))
-        runtime.start()
-        owned_runtime = True
-        instance_uri = runtime.instance_uri
 
     category = args.get("category", "general")
     if not isinstance(category, str) or not category:
@@ -127,6 +100,48 @@ def execute_action(
     language = args.get("language", "en")
     page = args.get("page", 1)
     time_range = args.get("time_range")
+    validate_query(query, max_results)
+    validate_search_inputs(
+        categories=(category,),
+        engines=selected_engines,
+        language=language,
+        safe_search=safe_search,
+        page=page,
+        time_range=time_range,
+    )
+    settings_path = args.get("settings_path") or None
+    if settings_path is not None and not isinstance(settings_path, str):
+        raise TypeError("settings_path must be a string")
+
+    if check_mode:
+        return {
+            "changed": False,
+            "check_mode": True,
+            "query": query,
+            "result_count": 0,
+            "results": [],
+            "transport": transport,
+        }
+
+    owned_runtime = False
+    if transport == "native":
+        selected_registry = cast(
+            MutableMapping[str, SearchRuntime],
+            registry if registry is not None else _RUNTIMES,
+        )
+        existing = selected_registry.get(namespace)
+        runtime = existing if existing is not None else None
+        if runtime is None:
+            runtime_builder = runtime_factory or cast(RuntimeFactory, NativeSearxRuntime)
+            runtime = runtime_builder(settings_path=settings_path, namespace=namespace)
+            runtime.start()
+            owned_runtime = True
+        instance_uri = runtime.instance_uri
+    else:
+        runtime = remote_factory(base_url=remote_url, timeout=float(timeout))
+        runtime.start()
+        owned_runtime = True
+        instance_uri = runtime.instance_uri
 
     try:
         payload = runtime.search(

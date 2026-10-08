@@ -1,7 +1,15 @@
 ---
-- name: Route inventory_check through the chemistry service
-  ansible.builtin.include_role:
-    name: general_ludd.chemistry.service_request
-  vars:
-    chemistry_service_role: inventory_check
-    chemistry_service_task: inventory
+- name: Evaluate one declared chemical inventory lot locally
+  general_ludd.chemistry.chemical_lot_admission:
+    lot: "{{ inventory_check_lot }}"
+    purity: "{{ inventory_check_purity }}"
+    expiry: "{{ inventory_check_expiry }}"
+    restrictions: "{{ inventory_check_restrictions }}"
+    required_purity: "{{ inventory_check_required_purity }}"
+    as_of: "{{ inventory_check_as_of }}"
+  register: _inventory_check_admission
+
+- name: Publish the bounded chemical lot verdict
+  ansible.builtin.set_fact:
+    inventory_check_result: "{{ _inventory_check_admission.result }}"
+  changed_when: false

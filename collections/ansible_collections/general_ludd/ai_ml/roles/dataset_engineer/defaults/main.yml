@@ -1,2 +1,7 @@
 ---
-{}
+ai_ml_dataset_root: ""
+ai_ml_dataset_resources: []
+ai_ml_dataset_schema: ""
+ai_ml_dataset_name: ""
+ai_ml_dataset_description: ""
+ai_ml_dataset_license: ""

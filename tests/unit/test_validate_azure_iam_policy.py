@@ -72,6 +72,17 @@ def all_actions_cli(policy_cli: dict) -> list[str]:
     return perm.get("actions", []) + perm.get("notActions", [])
 
 
+@pytest.fixture(scope="module")
+def gh_references() -> list[dict]:
+    """Load the immutable GitHub reference-role catalog once per module."""
+    path = INFRA_DIR / "azure-github-reference-roles.json"
+    assert path.exists(), f"Missing: {path}"
+    data = json.loads(path.read_text())
+    assert isinstance(data, list), "GitHub reference file must be a JSON array"
+    assert len(data) == 3, f"Expected 3 reference roles, got {len(data)}"
+    return data
+
+
 # ---------------------------------------------------------------------------
 # JSON validity and required fields — CLI (PascalCase) format
 # ---------------------------------------------------------------------------
@@ -730,15 +741,6 @@ class TestGitHubReferenceRoles:
         r"read|write|delete|action|"
         r"\*)$"
     )
-
-    @pytest.fixture(scope="class")
-    def gh_references(self) -> list[dict]:
-        path = INFRA_DIR / "azure-github-reference-roles.json"
-        assert path.exists(), f"Missing: {path}"
-        data = json.loads(path.read_text())
-        assert isinstance(data, list), "GitHub reference file must be a JSON array"
-        assert len(data) == 3, f"Expected 3 reference roles, got {len(data)}"
-        return data
 
     def test_all_parse_as_valid_json(self, gh_references: list[dict]) -> None:
         for i, role in enumerate(gh_references):

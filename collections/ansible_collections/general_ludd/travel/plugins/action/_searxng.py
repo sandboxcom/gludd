@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from general_ludd.searx.native import SearxError
+from ansible_collections.general_ludd.travel.plugins.module_utils.searxng_runtime import (
+    SearxError,
+)
 
 if TYPE_CHECKING:
 

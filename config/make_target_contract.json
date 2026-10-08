@@ -1518,6 +1518,13 @@
         "EXECUTABLE"
       ],
       "behavior": "make secrets-baseline-check SECRETS_BASELINE_FILE=.secrets.baseline POLICY=config/detect_secrets_baseline_policy.json REPO_ROOT=. EXECUTABLE=detect-secrets"
+    },
+    {
+      "name": "searx-molecule",
+      "make_variables": [
+        "SEARX_MOLECULE_VALIDATE_ONLY"
+      ],
+      "behavior": "make searx-molecule SEARX_MOLECULE_VALIDATE_ONLY=1"
     }
   ]
 }

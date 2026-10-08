@@ -204,32 +204,39 @@ check-clean-tree-status:
 	@$(UV) run python3 scripts/check_clean_tree.py
 
 # --------------------------------------------------------------------------- #
-# SearXNG research backend — privacy-respecting meta-search
+# SearXNG research backend — controller-native privacy-respecting meta-search
 # --------------------------------------------------------------------------- #
-SEARXNG_DIR := infra/searxng
-SEARXNG_URL ?= http://localhost:8080
+SEARX_MOLECULE_VALIDATE_ONLY ?= 1
 
-searx-up:
-	@if ! command -v docker >/dev/null 2>&1; then echo "docker not found"; exit 1; fi
-	@cd "$(SEARXNG_DIR)" && docker compose up -d
-	@echo "SearXNG starting at $(SEARXNG_URL)"
-	@echo "Health check:  make searx-test"
+# Compatibility aliases retain operator muscle memory without reviving the
+# removed Compose/listener path.  Native lifecycle is owned by Python.
+searx-up: searx-start
+	@echo "SearXNG native runtime admission complete (no listener or container)"
 
-searx-down:
-	@if ! command -v docker >/dev/null 2>&1; then echo "docker not found"; exit 1; fi
-	@cd "$(SEARXNG_DIR)" && docker compose down -v
-	@echo "SearXNG stopped, volumes removed"
+searx-down: searx-stop
+	@echo "SearXNG native runtime resources released"
 
 searx-test:
-	@URL="$(SEARXNG_URL)/search?q=test&format=json"; \
-	code=$$(curl -s -o /tmp/gludd-searx-test.json -w '%{http_code}' "$$URL" 2>&1); \
-	if [ "$$code" = "200" ]; then \
-		count=$$($(PYTHON) -c "import json;d=json.load(open('/tmp/gludd-searx-test.json'));print(len(d.get('results',[])))" 2>/dev/null); \
-		echo "SearXNG OK (HTTP $$code, $$count results)"; \
-	else \
-		echo "SearXNG FAIL: HTTP $$code (is it running? try 'make searx-up')"; \
-		exit 1; \
-	fi
+	@$(UV) run python -m pytest \
+		tests/unit/test_searx_native_integration.py \
+		tests/unit/test_searx_ansible_actions.py \
+		tests/unit/test_travel_searxng_index.py \
+		-W error -q
+
+searx-molecule:
+	@case "$(SEARX_MOLECULE_VALIDATE_ONLY)" in 0|1) ;; *) echo "SEARX_MOLECULE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@SEARX_MOLECULE_STATE=$$(mktemp -d /tmp/gludd-searx-molecule.XXXXXX); \
+		trap 'rm -rf "$$SEARX_MOLECULE_STATE"' EXIT HUP INT TERM; \
+		cd collections/ansible_collections/general_ludd/travel/roles/searxng_setup && \
+		if [ "$(SEARX_MOLECULE_VALIDATE_ONLY)" = "1" ]; then \
+			MOLECULE_EPHEMERAL_DIRECTORY="$$SEARX_MOLECULE_STATE" \
+			ANSIBLE_HOME="$$SEARX_MOLECULE_STATE/ansible" \
+			$(UV) run molecule syntax -s default; \
+		else \
+			MOLECULE_EPHEMERAL_DIRECTORY="$$SEARX_MOLECULE_STATE" \
+			ANSIBLE_HOME="$$SEARX_MOLECULE_STATE/ansible" \
+			$(UV) run molecule test -s default; \
+		fi
 
 searx-start:
 	@$(PYTHON) -m general_ludd.cli searx start
@@ -241,7 +248,8 @@ searx-status:
 	@$(PYTHON) -m general_ludd.cli searx status
 
 searx-install:
-	@$(PYTHON) -c "from general_ludd.searx.install import ensure_searx_installed; ensure_searx_installed(); print('OK')"
+	@$(MAKE) --no-print-directory validate-ansible-runtime-boundary
+	@echo "Official pinned SearXNG source is staged by the controller execution environment"
 
 # --- Service Discovery ---
 test-service-discovery:

@@ -19,11 +19,128 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-the train's dependency, ownership, structural, TUI, and coverage repairs. S29
-and S30 are listed from immutable implementation receipts without claiming
-train integration or an exact-head gate. The preview therefore records useful
-candidate contents without converting implementation evidence into task, gate,
-release, or publication completion.
+S31-S41, plus the train's dependency, ownership, structural, TUI, and coverage
+repairs. S29-S41 are listed from immutable implementation receipts without
+claiming train integration or an exact-head gate. The preview therefore records
+useful candidate contents without converting implementation evidence into task,
+gate, release, or publication completion.
+
+S31-S37 describe the user-visible outcome as safer model-performance,
+benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
+messages before its deterministic 100-message inbox bound, so stale head rows
+cannot hide live work. S35 makes an omitted memory `project_id` select only the
+global partition instead of exposing project-scoped records. S36 persists
+generated-tool results only in the validated originating project and
+quarantines legacy-global tool outputs from project reads. Their detailed
+feature documents retain the mature upstream basis for that wording:
+SQLAlchemy's
+[session-per-task guidance][sqlalchemy-async], the long-running shared-session
+failure reports in [discussion #8554][sqlalchemy-8554], the detached-result
+reports in [discussion #8731][sqlalchemy-8731], and the stateful-connection
+clarification in [discussion #10808][sqlalchemy-10808]. The S34 evidence also
+retains RabbitMQ's long-running [head-of-line expiry report][rabbitmq-3852] and
+[resource-retention report][rabbitmq-14524]; S35 retains the SQLAlchemy
+[tenant-criteria discussion][sqlalchemy-11389] and FastAPI
+[tenant-context discussion][fastapi-7564]. S36 retains FastAPI's
+[parallel-session report][fastapi-11625] and MCP's
+[cross-user-state report][mcp-1087]. The release page links immutable Gludd
+commits, while those feature documents remain the fuller source for practitioner
+findings and resource bounds.
+
+S37 makes variable, feature, and prompt-profile upserts work with the native
+conflict-capable statement for the caller's bound SQLite or PostgreSQL session,
+while unsupported dialects fail before database I/O. Its design follows the
+maintainer guidance in [SQLAlchemy discussion #7199][sqlalchemy-7199] to select
+the builder after discovering the live dialect and in
+[SQLAlchemy discussion #7007][sqlalchemy-7007] to use SQLite's dialect insert
+instead of attaching conflict methods to the generic statement.
+
+Both additions are zero-downtime, application-image-only changes: they add no
+schema, dependency, persistent process, or ownership transfer. Mixed-version
+processes retain compatible rows and payloads. Rollback routes new requests to
+the preceding image and lets updated requests drain; it does not migrate,
+rewrite, or purge data. S34 evidence includes 4 focused and 214 adjacent
+warning-fatal tests with 89% aggregate coverage (`messaging.py` 85%, message
+router 93%). S35 evidence includes 6 focused tests plus adjacent 170-test and
+247-test warning-fatal runs with 99% aggregate coverage (memory repository 99%,
+memory router 100%). Both recorded clean collection evidence.
+
+S36 is also a schema-free, application-image-only rolling change, but its
+rollback is deliberately fail-closed: reverting the reader would re-expose
+quarantined legacy-global `tool_results` to project reads. Operators should keep
+the isolated reader serving and repair forward; a compatibility rollback must
+first stop new tool dispatch, preserve evidence, and explicitly accept that
+confidentiality risk. Its evidence includes 34 warning-fatal focused tests and
+a 583-test coverage run with one intentional skip, reaching 91.0% aggregate
+line and 85.1% branch coverage (`projects.py` 98.2%/90.0%, dispatch
+88.7%/84.2%), plus clean repository collection.
+
+S37 is a schema-free, application-image-only rolling change with no new
+dependency, worker, listener, or ownership transfer. Old and new workers retain
+the same tables, conflict keys, and row formats. Rollback stops new work, drains
+or rolls back active transactions, and returns traffic to the preceding image;
+no migration downgrade, row rewrite, cache flush, or data deletion is needed.
+Repair forward is preferred while PostgreSQL writes are active because the
+preceding implementation hard-codes SQLite's statement subclass. Its evidence
+includes 354 warning-fatal tests and 94% aggregate coverage (`shared.py` 87%,
+`projects.py` 98%, `metrics.py` 91%), with native SQL compilation, unsupported
+dialect rejection before I/O, and bounded two-session PostgreSQL convergence.
+
+S38-S41 move four collection workflows onto native, owned library boundaries:
+
+- **S38 — Native SearXNG controller runtime.** Travel searches now call the
+  official pinned `searx.webapp` WSGI application inside the controller EE;
+  unavailable backends can no longer become invented `.example.com` results.
+  The digest-addressed EE rolls out beside the active digest, takes only new
+  jobs, and drains before retirement. Rollback returns new jobs to the prior EE
+  or uses the explicit bounded remote transport without restoring Compose,
+  Terraform, or an implicit listener. Its 212 warning-fatal tests pass at 91%
+  aggregate coverage with all nine measured files above 75%; all four Molecule
+  phases and the 121,242-test collection pass. SearXNG
+  [discussion #1789][searxng-1789] records disabled JSON output and bot-abuse
+  pressure, [discussion #3106][searxng-3106] records an untested ARM source
+  build, and issues [#3896][searxng-3896] and [#3474][searxng-3474] record
+  dependency and concurrency failures addressed by the pin and fail-closed
+  adapter.
+- **S39 — Native git-release artifact verification.** The managed host now
+  verifies the release artifact and dependency lock itself with root-confined,
+  streamed SHA-256 reads; the role no longer delegates the promotion decision
+  to a daemon. Verification is read-only, so a rejected candidate never alters
+  the active artifact, and rollback keeps or restores traffic to the previously
+  admitted digest without undoing verifier state. All 74 warning-fatal tests,
+  four `git_release_expert` Molecule phases, and the 121,217-test collection
+  pass; coverage is 89% aggregate and every measured file is at least 88%.
+  The policy is grounded in the [Ansible Release 1.2.3][ansible-123] symlink
+  advisory, an [AWX escaping-link report][awx-linkname], the long-lived Ansible
+  [FIPS/MD5 report #9429][ansible-9429], and
+  [privilege-boundary checksum report #69383][ansible-69383].
+- **S40 — Native Frictionless dataset admission.** Dataset-engineer jobs now
+  validate root-confined CSV resources and an explicit Table Schema with pinned
+  `frictionless==5.19.1`, returning a stable SHA-256-bound data card without a
+  service call, listener, subprocess, or state mutation. The controller EE uses
+  an immutable-digest canary and drain; rollback routes new jobs to the previous
+  digest and requires no data repair. Focused tests pass 26/26, adjacent tests
+  pass 112/112, coverage is 89% aggregate with every measured file at least
+  88%, all five Molecule phases pass, and collection selects 121,269 tests with
+  zero errors. [Frictionless discussion #675][frictionless-675] supports a
+  separately stored schema, [discussion #653][frictionless-653] records schema
+  synchronization ambiguity, and issues [#609][frictionless-609] and
+  [#1646][frictionless-1646] document schema-path and misleading-report failure
+  modes covered by explicit in-memory schema and task-shape admission.
+- **S41 — Collection-native chemical lot admission.** Inventory checks now use
+  one deterministic collection evaluator for expiry, restrictions, and purity;
+  unsuitable lots require human review and automation never proposes a
+  substitute. The additive module owns no durable state, so old and new
+  controllers coexist and rollback only repins the prior collection artifact.
+  The evidence includes 27 focused warning-fatal tests, 71 focused and adjacent
+  tests, and a 1,265-test chemistry slice with 10 explicit skips. Measured code
+  has 95% aggregate coverage, with every file above the 75% floor; all Molecule
+  phases and a 121,272-test zero-error collection also pass. Long-lived
+  [ansible/ansible#50579][ansible-50579] and
+  [ansible/ansible#77935][ansible-77935] motivate collection-qualified public
+  imports, while the archived [check-mode report][ansible-check-mode] and
+  [read-only module discussion][ansible-read-only-module] motivate explicit
+  check-mode parity without shell tasks.
 
 ## Existing-tool decision
 
@@ -123,7 +240,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 21-item candidate inventory, and
+ordering, deterministic rendering, the exact 32-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -154,3 +271,31 @@ Research was reviewed on 2026-10-08:
 [community-template]: https://github.com/orgs/community/discussions/120836
 [community-size]: https://github.com/orgs/community/discussions/63414
 [community-tag-config]: https://github.com/orgs/community/discussions/50886
+[sqlalchemy-async]: https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html#using-asyncsession-with-concurrent-tasks
+[sqlalchemy-8554]: https://github.com/sqlalchemy/sqlalchemy/discussions/8554
+[sqlalchemy-8731]: https://github.com/sqlalchemy/sqlalchemy/discussions/8731
+[sqlalchemy-10808]: https://github.com/sqlalchemy/sqlalchemy/discussions/10808
+[rabbitmq-3852]: https://github.com/rabbitmq/rabbitmq-server/discussions/3852
+[rabbitmq-14524]: https://github.com/rabbitmq/rabbitmq-server/discussions/14524
+[sqlalchemy-11389]: https://github.com/sqlalchemy/sqlalchemy/discussions/11389
+[fastapi-7564]: https://github.com/fastapi/fastapi/discussions/7564
+[fastapi-11625]: https://github.com/fastapi/fastapi/discussions/11625
+[mcp-1087]: https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1087
+[sqlalchemy-7199]: https://github.com/sqlalchemy/sqlalchemy/discussions/7199
+[sqlalchemy-7007]: https://github.com/sqlalchemy/sqlalchemy/discussions/7007
+[searxng-1789]: https://github.com/searxng/searxng/discussions/1789
+[searxng-3106]: https://github.com/searxng/searxng/discussions/3106
+[searxng-3896]: https://github.com/searxng/searxng/issues/3896
+[searxng-3474]: https://github.com/searxng/searxng/issues/3474
+[ansible-123]: https://forum.ansible.com/t/ansible-release-1-2-3/13342
+[awx-linkname]: https://forum.ansible.com/t/awx-23-8-1-getting-error-invalid-linkname-for-tarfile-member/6242/2
+[ansible-9429]: https://github.com/ansible/ansible/issues/9429
+[ansible-69383]: https://github.com/ansible/ansible/issues/69383
+[frictionless-675]: https://github.com/frictionlessdata/frictionlessdata.io/discussions/675
+[frictionless-653]: https://github.com/frictionlessdata/frictionlessdata.io/discussions/653
+[frictionless-609]: https://github.com/frictionlessdata/frictionless-py/issues/609
+[frictionless-1646]: https://github.com/frictionlessdata/frictionless-py/issues/1646
+[ansible-50579]: https://github.com/ansible/ansible/issues/50579
+[ansible-77935]: https://github.com/ansible/ansible/issues/77935
+[ansible-check-mode]: https://forum.ansible.com/t/cannot-get-customized-facts-when-pushing-with-check/17103
+[ansible-read-only-module]: https://forum.ansible.com/t/add-condition-when-command-shell-modules-should-return-ok-not-changed/37686

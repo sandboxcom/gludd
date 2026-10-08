@@ -224,6 +224,18 @@ class TestIsExpired:
 
 
 class TestMemoryListByNamespace:
+    async def test_list_without_project_id_returns_global_rows_only(
+        self, repo: MemoryRepository
+    ) -> None:
+        """An omitted tenant must never widen the query to every tenant."""
+        await repo.set("agent-1", "global", "shared")
+        await repo.set("agent-1", "project-a", "secret-a", project_id="proj-A")
+        await repo.set("agent-1", "project-b", "secret-b", project_id="proj-B")
+
+        rows = await repo.list_by_namespace("agent-1", namespace="*")
+
+        assert [(row.key, row.project_id) for row in rows] == [("global", None)]
+
     async def test_list_returns_matching_namespace(self, repo: MemoryRepository):
         await repo.set("agent-1", "k1", "v1", namespace="ns1")
         await repo.set("agent-1", "k2", "v2", namespace="ns1")

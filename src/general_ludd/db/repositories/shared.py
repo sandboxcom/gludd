@@ -5,10 +5,36 @@ from __future__ import annotations
 import contextlib
 import sys
 from collections.abc import Generator
+from typing import TypeAlias
 
+from sqlalchemy.dialects.postgresql import Insert as PostgreSQLInsert
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import Insert as SQLiteInsert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import DeclarativeBase
 
 DEFAULT_LIST_LIMIT = 1000
+DialectInsert: TypeAlias = PostgreSQLInsert | SQLiteInsert
+
+
+def dialect_insert(
+    model: type[DeclarativeBase],
+    dialect_name: str,
+) -> DialectInsert:
+    """Return the native upsert-capable INSERT for a supported SQL dialect.
+
+    SQLAlchemy exposes ``ON CONFLICT`` only on dialect-specific INSERT
+    subclasses.  Repositories resolve the dialect from their already-bound
+    session and call this helper before performing any I/O.  Failing closed on
+    unknown backends prevents accidentally compiling SQLite SQL for a different
+    database.
+    """
+    if dialect_name == "postgresql":
+        return postgresql_insert(model)
+    if dialect_name == "sqlite":
+        return sqlite_insert(model)
+    raise ValueError(f"Repository upserts do not support SQL dialect {dialect_name!r}")
 
 
 def current_list_limit() -> int:

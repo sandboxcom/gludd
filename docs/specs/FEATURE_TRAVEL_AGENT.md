@@ -88,7 +88,7 @@ travel domain model:
 | Create | `collections/ansible_collections/general_ludd/travel/plugins/module_utils/events.py` |
 | Create | `collections/ansible_collections/general_ludd/travel/roles/trip_planner/tasks/main.yml` |
 | Create | `collections/ansible_collections/general_ludd/travel/roles/searxng_setup/tasks/main.yml` |
-| Create | `collections/ansible_collections/general_ludd/travel/roles/searxng_setup/templates/docker-compose.yml.j2` |
+| Create | `collections/ansible_collections/general_ludd/travel/plugins/module_utils/searxng_runtime.py` |
 | Create | `collections/ansible_collections/general_ludd/travel/roles/searxng_setup/templates/searxng_settings.yml.j2` |
 | Create | `collections/ansible_collections/general_ludd/travel/roles/searxng_setup/molecule/default/converge.yml` |
 | Create | `collections/ansible_collections/general_ludd/travel/roles/searxng_setup/molecule/default/molecule.yml` |
@@ -99,6 +99,7 @@ travel domain model:
 |---------|---------|
 | pydantic (>=2.0) | Typed contract validation |
 | ansible-core (>=2.16) | Module runtime |
+| official SearXNG source (exact revision) | Controller-local `searx.webapp` runtime |
 | molecule (test) | Role integration testing |
 
 ## 8. Test Plan — VERIFIED (2026-08-03)

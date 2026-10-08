@@ -20,6 +20,7 @@ from general_ludd.events.types import StallDetectedEvent
 from general_ludd.observability.stall_escalation import (
     MAX_BODY_CHARS,
     MAX_TITLE_CHARS,
+    SessionFactory,
     StallEscalationSubscriber,
 )
 
@@ -35,6 +36,16 @@ async def sessions() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
         yield factory
     finally:
         await engine.dispose()
+
+
+def test_session_factory_supports_runtime_boundary_validation() -> None:
+    """The injected session factory remains structurally checkable at runtime."""
+
+    class SessionFactoryStub:
+        def __call__(self) -> AbstractAsyncContextManager[AsyncSession]:
+            raise NotImplementedError
+
+    assert isinstance(SessionFactoryStub(), SessionFactory)
 
 
 def _stall_event(*, event_id: str = "stall-event-1") -> StallDetectedEvent:

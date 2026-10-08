@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import collections
 import logging
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import FastAPI, HTTPException
@@ -23,12 +24,18 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.db.models import AgentMessageModel
+from general_ludd.db.repositories.messaging import (
+    MAX_INBOX_MESSAGES,
+    _message_is_expired,
+)
 from general_ludd.db.repository import AgentMessageRepository
 
 logger = logging.getLogger(__name__)
 
 
 class SendMessageRequest(BaseModel):
+    """Validate one inter-agent message submission payload."""
+
     sender: str = Field(min_length=1, max_length=128)
     recipient: str = Field(min_length=1, max_length=128)
     topic: str = Field(default="", max_length=256)
@@ -67,7 +74,36 @@ def _msg_to_dict(msg: AgentMessageModel) -> dict[str, object]:
 _MAX_INMEMORY_MESSAGES = 5000
 
 
+def _utc_now() -> datetime:
+    """Return the clock instant shared by one degraded-mode operation."""
+    return datetime.now(UTC)
+
+
+def _inmemory_message_is_expired(message: dict[str, object], now: datetime) -> bool:
+    """Apply repository-equivalent, fail-closed TTL admission to a dict row."""
+    ttl = message.get("ttl_seconds")
+    if ttl is not None and (isinstance(ttl, bool) or not isinstance(ttl, int)):
+        return True
+    created_at = message.get("created_at")
+    if created_at is not None and not isinstance(created_at, datetime):
+        return ttl is not None
+    return _message_is_expired(created_at, ttl, now)
+
+
+def _inmemory_message_order(message: dict[str, object]) -> tuple[datetime, str]:
+    """Mirror the database's ``created_at, id`` deterministic ordering."""
+    created_at = message.get("created_at")
+    if not isinstance(created_at, datetime):
+        created_at = datetime.min.replace(tzinfo=UTC)
+    elif created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    else:
+        created_at = created_at.astimezone(UTC)
+    return created_at, str(message.get("id", ""))
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register persistent and bounded degraded message routes on ``app``."""
     # Bound the in-memory fallback. Preserve any pre-seeded entries; idempotent if
     # already a deque with the right cap.
     _existing = _daemon_state.get("messages")
@@ -98,11 +134,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 return _msg_to_dict(row)
         # Degraded fallback: in-memory.
         import uuid
-        from datetime import UTC, datetime
 
         mem = dict(data)
         mem["id"] = f"MSG-{uuid.uuid4().hex[:12].upper()}"
-        mem["created_at"] = datetime.now(UTC)
+        mem["created_at"] = _utc_now()
         mem["read_at"] = None
         messages.append(mem)
         return {**mem, "created_at": str(mem["created_at"]), "read_at": None}
@@ -127,7 +162,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 results = [_msg_to_dict(m) for m in msgs]
                 return {"messages": results, "count": len(results), "recipient": recipient}
         # Degraded fallback: in-memory.
-        results = []
+        now = _utc_now()
+        admitted: list[dict[str, object]] = []
         for m in messages:
             target = m.get("recipient")
             if target == recipient or (include_broadcast and target == "broadcast"):
@@ -138,7 +174,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 # in-memory fallback would leak messages across projects.
                 if project_id is not None and m.get("project_id") != project_id:
                     continue
-                results.append({**m, "created_at": str(m.get("created_at"))})
+                if _inmemory_message_is_expired(m, now):
+                    continue
+                admitted.append(m)
+        admitted.sort(key=_inmemory_message_order)
+        results = [
+            {**message, "created_at": str(message.get("created_at"))}
+            for message in admitted[:MAX_INBOX_MESSAGES]
+        ]
         return {"messages": results, "count": len(results), "recipient": recipient}
 
     @app.post("/api/messages/{message_id}/ack")
@@ -169,8 +212,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 # cross-tenant ack, matching the DB path.
                 if project_id is not None and m.get("project_id") != project_id:
                     continue
-                from datetime import UTC, datetime
-
-                m["read_at"] = datetime.now(UTC)
+                m["read_at"] = _utc_now()
                 return {"acked": True, "id": message_id, "read_at": str(m["read_at"])}
         raise HTTPException(status_code=404, detail="message not found")

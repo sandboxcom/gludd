@@ -48,6 +48,7 @@ DEP002 = [
     "aiosqlite",
     "ansible-builder",
     "boto3",
+    "frictionless",
     "greenlet",
     "gunicorn",
     "langchain-openai",

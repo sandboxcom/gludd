@@ -29,11 +29,38 @@ from __future__ import annotations
 
 import logging
 import os
-import signal as _signal
 import threading
-import time
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+
+from general_ludd.process.registry_identity import read_create_time
+from general_ludd.process.registry_types import (
+    ManagedProcess,
+    ManagedProcessLease,
+    ProcessRegistryError,
+)
+from general_ludd.process.registry_types import (
+    OwnedProcessHandle as _OwnedProcessHandle,
+)
+from general_ludd.process.signal_policy import (
+    allowed_signals as _allowed_signals,
+)
+from general_ludd.process.signal_policy import (
+    deliver_signal as _deliver_signal,
+)
+from general_ludd.process.signal_policy import (
+    resolve_signal as _resolve_signal,
+)
+from general_ludd.process.signal_policy import (
+    validate_target as _validate_signal_target,
+)
+
+__all__ = [
+    "ManagedProcess",
+    "ManagedProcessLease",
+    "ProcessRegistry",
+    "ProcessRegistryError",
+    "default_registry",
+    "set_default_registry",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -41,142 +68,18 @@ logger = logging.getLogger(__name__)
 # named `list` that shadows the builtin in class body) resolve the builtin.
 _PidList = list[int]
 
-# The signals an agent may deliver to a managed process. This is an allow-list:
-# anything outside it is rejected before it reaches the kernel. It covers the
-# graceful-shutdown, reload, user-defined "event", and hard-stop families the
-# feature needs, plus job-control stop/continue.
-_ALLOWED_SIGNALS: dict[str, int] = {
-    name: int(getattr(_signal, name))
-    for name in (
-        "SIGTERM",
-        "SIGINT",
-        "SIGHUP",
-        "SIGQUIT",
-        "SIGUSR1",
-        "SIGUSR2",
-        "SIGKILL",
-        "SIGSTOP",
-        "SIGCONT",
-    )
-    if hasattr(_signal, name)
-}
-
 # create_time() is a float of seconds since epoch; identical reads are exactly
 # equal, but allow a tiny tolerance for float round-tripping through JSON.
 _CREATE_TIME_TOLERANCE_S = 0.5
 _DEFAULT_MAX_RECORDS = 256
 
 
-class ProcessRegistryError(Exception):
-    """Raised when a registry operation is refused (unknown/identity/signal)."""
-
-
-class _OwnedProcessHandle(Protocol):
-    """Started process handle accepted by the trusted owner-lease path."""
-
-    @property
-    def pid(self) -> int | None:
-        """Return the child PID after it has started."""
-        ...
-
-
-@dataclass
-class ManagedProcess:
-    """Metadata for a single gludd-started OS process."""
-
-    pid: int
-    command: list[str]
-    pgid: int | None = None
-    job_id: str | None = None
-    project_id: str | None = None
-    # Free-form provenance, e.g. "ansible_runner", "compute_deploy", "mcp_stdio".
-    origin: str = ""
-    # Wall-clock epoch when gludd registered the process.
-    registered_at: float = field(default_factory=time.time)
-    # OS process creation time (psutil.Process.create_time()); the identity key
-    # used to detect PID reuse. None when psutil was unavailable at registration.
-    create_time: float | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Return a JSON-serializable copy of this process metadata."""
-        return {
-            "pid": self.pid,
-            "command": list(self.command),
-            "pgid": self.pgid,
-            "job_id": self.job_id,
-            "project_id": self.project_id,
-            "origin": self.origin,
-            "registered_at": self.registered_at,
-            "create_time": self.create_time,
-        }
-
-
-class ManagedProcessLease:
-    """Single-owner capability for one exact managed-process record.
-
-    A lease can remove only the same record object it created. If the process
-    exits and its PID is later reused, releasing the old lease cannot evict the
-    replacement record.
-    """
-
-    def __init__(
-        self,
-        registry: ProcessRegistry,
-        record: ManagedProcess,
-    ) -> None:
-        """Initialize a lease for one exact registry record."""
-        self._registry = registry
-        self._record = record
-        self._released = False
-
-    @property
-    def pid(self) -> int:
-        """Return the PID captured by this lease."""
-        return self._record.pid
-
-    def release(self) -> bool:
-        """Release this exact record once; return whether it was removed."""
-        if self._released:
-            return False
-        self._released = True
-        return self._registry._release_owned_process(self._record)
-
-    def __enter__(self) -> ManagedProcessLease:
-        """Return this lease for context-managed ownership."""
-        return self
-
-    def __exit__(
-        self,
-        _exc_type: object,
-        _exc: object,
-        _traceback: object,
-    ) -> None:
-        """Release the owned record when its context exits."""
-        self.release()
-
-
 _ManagedProcessList = list[ManagedProcess]
-
-
-def _psutil() -> Any | None:
-    """Return the psutil module, or None if it is not importable."""
-    try:
-        import psutil
-
-        return psutil
-    except Exception:
-        return None
 
 
 def _read_create_time(pid: int) -> float | None:
     """Return the live process's create_time, or None if absent/unreadable."""
-    ps = _psutil()
-    if ps is None:
-        return None
-    try:
-        return float(ps.Process(pid).create_time())
-    except Exception:
-        return None
+    return read_create_time(pid)
 
 
 class ProcessRegistry:
@@ -239,6 +142,8 @@ class ProcessRegistry:
 
         ``create_time`` is captured now so later signals can verify identity. If
         ``pgid`` is not supplied it is best-effort resolved via ``os.getpgid``.
+        Existing setup records remain present until :meth:`deregister` or
+        :meth:`reap` is called; registration never performs implicit cleanup.
 
         Raises :class:`ProcessRegistryError` if the registry is sealed.
         """
@@ -259,7 +164,6 @@ class ProcessRegistry:
             create_time=_read_create_time(pid),
         )
         with self._lock:
-            self._prune_stale_locked(self._max_records)
             if int(pid) not in self._procs and len(self._procs) >= self._max_records:
                 self._capacity_rejections += 1
                 raise ProcessRegistryError(
@@ -460,56 +364,23 @@ class ProcessRegistry:
                 raise ProcessRegistryError(
                     f"refusing to signal pid {pid}: not a gludd-managed process"
                 )
-            if not self._identity_ok(record):
-                raise ProcessRegistryError(
-                    f"refusing to signal pid {pid}: process is gone or its PID was "
-                    f"reused by a different process (identity check failed)"
-                )
-            target_pgid = record.pgid
-        try:
-            if group and target_pgid is not None:
-                os.killpg(target_pgid, signum)
-            else:
-                os.kill(int(pid), signum)
-        except ProcessLookupError as exc:
-            raise ProcessRegistryError(
-                f"process {pid} disappeared before the signal was delivered"
-            ) from exc
-        except PermissionError as exc:
-            raise ProcessRegistryError(
-                f"not permitted to signal process {pid}"
-            ) from exc
-        logger.info(
-            "delivered %s to managed pid=%s (group=%s)",
-            _signal.Signals(signum).name,
-            pid,
-            group,
+            target_pgid = _validate_signal_target(record, self._identity_ok)
+        _deliver_signal(
+            int(pid),
+            signum,
+            group=group,
+            pgid=target_pgid,
         )
 
     @staticmethod
     def resolve_signal(sig: int | str) -> int:
         """Map a signal name or number to an allowed signal number, else raise."""
-        if isinstance(sig, str):
-            name = sig.strip().upper()
-            if not name.startswith("SIG"):
-                name = "SIG" + name
-            if name not in _ALLOWED_SIGNALS:
-                raise ProcessRegistryError(
-                    f"signal {sig!r} is not in the allow-list "
-                    f"({', '.join(sorted(_ALLOWED_SIGNALS))})"
-                )
-            return _ALLOWED_SIGNALS[name]
-        signum = int(sig)
-        if signum not in _ALLOWED_SIGNALS.values():
-            raise ProcessRegistryError(
-                f"signal number {signum} is not in the allow-list"
-            )
-        return signum
+        return _resolve_signal(sig)
 
     @staticmethod
     def allowed_signals() -> dict[str, int]:
         """Return a copy of the signal allow-list (name -> number)."""
-        return dict(_ALLOWED_SIGNALS)
+        return _allowed_signals()
 
     # -- maintenance ------------------------------------------------------
 

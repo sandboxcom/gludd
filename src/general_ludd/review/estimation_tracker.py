@@ -22,87 +22,29 @@ Thresholds (configurable):
 from __future__ import annotations
 
 import statistics
-from collections import defaultdict
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any
 
+from general_ludd.review.estimation_reporting import build_estimation_report
+from general_ludd.review.estimation_types import (
+    EstimateAccuracy,
+    EstimateVariance,
+    EstimationCalibration,
+    EstimationReport,
+    TaskActual,
+    TaskEstimate,
+)
 
-class EstimateAccuracy(StrEnum):
-    """Classification of actual work against its recorded estimate."""
-
-    ACCURATE = "accurate"       # within threshold
-    OVER_ESTIMATE = "over"      # estimate was too high
-    UNDER_ESTIMATE = "under"    # estimate was too low
-    SUSPECT = "suspect"         # variance extreme — possible incomplete work
-
-
-@dataclass
-class TaskEstimate:
-    """Estimate recorded at task creation time."""
-
-    todo_id: str
-    work_type: str
-    estimated_cost_usd: float
-    estimated_time_minutes: float
-    estimated_loc: int
-    complexity: str = "medium"  # low, medium, high
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-
-
-@dataclass
-class TaskActual:
-    """Actual metrics recorded at task completion."""
-
-    todo_id: str
-    actual_cost_usd: float
-    actual_time_minutes: float
-    actual_loc: int
-    exit_code: int
-    completed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-
-
-@dataclass
-class EstimateVariance:
-    """Variance between estimate and actual."""
-
-    todo_id: str
-    work_type: str
-    cost_variance: float  # (actual - estimate) / max(estimate, 0.01)
-    time_variance: float
-    loc_variance: float
-    accuracy: EstimateAccuracy
-    is_suspect: bool
-    suspect_reasons: list[str] = field(default_factory=list)
-
-
-@dataclass
-class EstimationCalibration:
-    """Per-work-type calibration parameters that self-adjust over time."""
-
-    work_type: str
-    cost_multiplier: float = 1.0   # 1.0 = no adjustment needed
-    time_multiplier: float = 1.0
-    loc_multiplier: float = 1.0
-    sample_count: int = 0
-    last_adjusted: datetime | None = None
-    mean_cost_error: float = 0.0   # running mean of (actual/estimate)
-    mean_time_error: float = 0.0
-    mean_loc_error: float = 0.0
-
-
-@dataclass
-class EstimationReport:
-    """Aggregated estimation accuracy report."""
-
-    total_estimates: int = 0
-    total_suspect: int = 0
-    by_work_type: dict[str, dict[str, Any]] = field(default_factory=dict)
-    calibrations: dict[str, EstimationCalibration] = field(default_factory=dict)
-    overall_accuracy: float = 1.0  # fraction of accurate estimates
-    trend: str = "stable"  # improving, degrading, stable
-    generated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+__all__ = (
+    "EstimateAccuracy",
+    "EstimateVariance",
+    "EstimationCalibration",
+    "EstimationReport",
+    "EstimationTracker",
+    "TaskActual",
+    "TaskEstimate",
+    "default_estimation_tracker",
+)
 
 
 class EstimationTracker:
@@ -287,40 +229,11 @@ class EstimationTracker:
 
     def generate_report(self) -> EstimationReport:
         """Generate an aggregated estimation accuracy report."""
-        report = EstimationReport()
-        report.total_estimates = len(self._variances)
-        report.total_suspect = len(self.get_suspect_tasks())
-
-        by_type: dict[str, list[EstimateVariance]] = defaultdict(list)
-        for v in self._variances:
-            by_type[v.work_type].append(v)
-
-        for wt, variances in sorted(by_type.items()):
-            accurate = sum(1 for v in variances if v.accuracy == EstimateAccuracy.ACCURATE)
-            suspect = sum(1 for v in variances if v.is_suspect)
-            costs = [abs(v.cost_variance) for v in variances if abs(v.cost_variance) < 100]
-            times = [abs(v.time_variance) for v in variances if abs(v.time_variance) < 100]
-
-            report.by_work_type[wt] = {
-                "total": len(variances),
-                "accurate": accurate,
-                "accuracy_rate": accurate / max(len(variances), 1),
-                "suspect": suspect,
-                "mean_cost_variance": statistics.mean(costs) if costs else 0.0,
-                "mean_time_variance": statistics.mean(times) if times else 0.0,
-            }
-
-        report.calibrations = dict(self._calibrations)
-
-        if report.total_estimates > 0:
-            total_accurate = sum(
-                d["accurate"] for d in report.by_work_type.values()
-            )
-            report.overall_accuracy = total_accurate / max(report.total_estimates, 1)
-
-        report.trend = self._compute_trend()
-
-        return report
+        return build_estimation_report(
+            self._variances,
+            self._calibrations,
+            trend=self._compute_trend(),
+        )
 
     def get_calibration(self, work_type: str) -> EstimationCalibration | None:
         """Get calibration data for a work type."""

@@ -21,7 +21,7 @@ DOCUMENTATION:
       description: Desired state of the index.
       type: str
       default: present
-      choices: [present, absent, query]
+      choices: [present, absent, list, query]
     engines:
       description: >
         Comma-separated engine list for index creation. When omitted the
@@ -36,19 +36,14 @@ DOCUMENTATION:
       description: Maximum results when querying.
       type: int
       default: 10
-    searxng_url:
-      description: Base URL of the SearXNG instance.
+    transport:
+      description: Native controller execution or explicit remote rollback.
       type: str
-      default: "http://localhost:8080"
-    daemon_url:
-      description: Base URL of the daemon.
+      choices: [native, remote]
+      default: native
+    remote_url:
+      description: Endpoint used only when transport is remote.
       type: str
-      default: "http://localhost:8000"
-    psk:
-      description: Pre-shared key for daemon auth.
-      type: str
-      no_log: true
-      default: ""
 
 EXAMPLES:
   - name: Create the default travel index
@@ -114,12 +109,11 @@ RETURN:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.general_ludd.travel.plugins.module_utils.searxng_client import (
-    TRAVEL_INDEX_ENGINES,
-    SearXNGIndexNotFoundError,
+    SearchBackend,
     TravelIndexManager,
 )
 
@@ -135,87 +129,69 @@ def _get_manager() -> TravelIndexManager:
 
 def create_index(name: str, engines: list[str] | None = None) -> dict[str, Any]:
     mgr = _get_manager()
-    return mgr.create(name, engines=engines)
+    return cast(dict[str, Any], mgr.create(name, engines=engines))
 
 
 def index_exists(name: str) -> bool:
     mgr = _get_manager()
-    return mgr.has(name)
+    return cast(bool, mgr.has(name))
 
 
-def query_index(name: str, query_text: str, max_results: int = 10) -> list[dict[str, Any]]:
+def query_index(
+    name: str,
+    query_text: str,
+    max_results: int = 10,
+    *,
+    search_backend: SearchBackend | None = None,
+) -> list[dict[str, Any]]:
     mgr = _get_manager()
-    return mgr.query(name, query_text, max_results=max_results)
+    return cast(
+        list[dict[str, Any]],
+        mgr.query(
+            name,
+            query_text,
+            max_results=max_results,
+            search_backend=search_backend,
+        ),
+    )
 
 
 def delete_index(name: str) -> dict[str, Any]:
     mgr = _get_manager()
-    return mgr.delete(name)
+    return cast(dict[str, Any], mgr.delete(name))
 
 
 def list_indices() -> list[str]:
     mgr = _get_manager()
-    return mgr.list_all()
+    return cast(list[str], mgr.list_all())
 
 
 def main() -> None:
+    """Fail closed when Ansible bypasses the controller action plugin."""
     module = AnsibleModule(
         argument_spec=dict(
             name=dict(type="str", default="travel-meta"),
-            state=dict(type="str", default="present", choices=["present", "absent", "query"]),
+            state=dict(
+                type="str",
+                default="present",
+                choices=["present", "absent", "list", "query"],
+            ),
             engines=dict(type="str", default=""),
             query=dict(type="str", required=False),
             max_results=dict(type="int", default=10),
-            searxng_url=dict(type="str", default="http://localhost:8080"),
-            daemon_url=dict(type="str", default="http://localhost:8000"),
-            psk=dict(type="str", default="", no_log=True),
+            transport=dict(type="str", default="native", choices=["native", "remote"]),
+            remote_url=dict(type="str", required=False),
+            namespace=dict(type="str", default="gludd-travel"),
+            settings_path=dict(type="path", default=""),
+            timeout=dict(type="int", default=10),
         ),
         supports_check_mode=True,
         required_if=[
             ("state", "query", ("query",)),
+            ("transport", "remote", ("remote_url",)),
         ],
     )
-
-    params = module.params
-    name: str = params["name"]
-    state: str = params["state"]
-    engines_str: str = params["engines"]
-    query: str | None = params.get("query")
-    max_results: int = params["max_results"]
-
-    try:
-        if state == "present":
-            engines: list[str] | None = None
-            if engines_str:
-                engines = [e.strip() for e in engines_str.split(",") if e.strip()]
-            result = create_index(name, engines=engines)
-            module.exit_json(changed=not result.get("existed", False), **result)
-
-        elif state == "query":
-            if not query:
-                module.fail_json(msg="query is required when state=query")
-            assert query is not None
-            results = query_index(name, query, max_results=max_results)
-            mgr = _get_manager()
-            idx_info = mgr.get(name) if mgr.has(name) else {"engines": TRAVEL_INDEX_ENGINES}
-            module.exit_json(
-                changed=False,
-                name=name,
-                state="query",
-                engines=idx_info.get("engines", TRAVEL_INDEX_ENGINES),
-                query=query,
-                results=results,
-                result_count=len(results),
-            )
-
-        elif state == "absent":
-            delete_index(name)
-            module.exit_json(changed=True, name=name, state="absent")
-
-    except SearXNGIndexNotFoundError as exc:
-        module.fail_json(msg=str(exc))
-    except Exception as exc:
-        module.fail_json(msg=f"searxng_index failed: {exc}")
+    module.fail_json(msg="searxng_index requires its controller-side action plugin")
 
 
 if __name__ == "__main__":
