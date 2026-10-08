@@ -39,10 +39,10 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
-    pass
+    from general_ludd.agents.types import AgentTask
 
 from pydantic import BaseModel, Field
 
@@ -51,6 +51,7 @@ from general_ludd.agents.context import ContextMessage
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 2
+MAX_DISPATCH_SNAPSHOT_BYTES = 16 * 1024 * 1024
 
 
 class TokenCreds(BaseModel):
@@ -362,13 +363,23 @@ class HibernationStore:
             self._mac_key, payload.encode("utf-8"), hashlib.sha256
         ).hexdigest()
 
-    def dehydrate(self, snap: AgentEnvironmentSnapshot) -> HibernationHandle:
-        """Serialize *snap* to disk and return a lightweight handle.
-
-        The write is atomic (temp file + ``replace``) so a crash mid-write can
-        never leave a half-written snapshot that would fail to hydrate.
-        """
+    def _dehydrate(
+        self,
+        snap: AgentEnvironmentSnapshot,
+        *,
+        max_payload_bytes: int | None,
+    ) -> HibernationHandle | None:
+        """Serialize and atomically persist one optionally bounded snapshot."""
         payload = snap.model_dump_json()
+        payload_bytes = len(payload.encode("utf-8"))
+        if max_payload_bytes is not None and payload_bytes > max_payload_bytes:
+            logger.info(
+                "skipping oversized hibernation snapshot task=%s bytes=%d limit=%d",
+                snap.task_id,
+                payload_bytes,
+                max_payload_bytes,
+            )
+            return None
         checksum = self._checksum(payload)
         envelope = json.dumps(
             {
@@ -405,6 +416,27 @@ class HibernationStore:
             size_bytes=len(envelope),
             depth=snap.depth,
         )
+
+    def dehydrate(self, snap: AgentEnvironmentSnapshot) -> HibernationHandle:
+        """Serialize *snap* to disk and return a lightweight handle.
+
+        The write is atomic (temp file + ``replace``) so a crash mid-write can
+        never leave a half-written snapshot that would fail to hydrate.
+        """
+        handle = self._dehydrate(snap, max_payload_bytes=None)
+        if handle is None:  # pragma: no cover - an unbounded write cannot skip
+            raise AssertionError("unbounded hibernation snapshot was skipped")
+        return handle
+
+    def dehydrate_bounded(
+        self,
+        snap: AgentEnvironmentSnapshot,
+        max_payload_bytes: int,
+    ) -> HibernationHandle | None:
+        """Persist *snap* only when its UTF-8 JSON payload fits the hard cap."""
+        if max_payload_bytes <= 0:
+            raise ValueError("max_payload_bytes must be positive")
+        return self._dehydrate(snap, max_payload_bytes=max_payload_bytes)
 
     def hydrate(self, handle: HibernationHandle) -> AgentEnvironmentSnapshot:
         """Read, integrity-check, and validate the snapshot for *handle*.
@@ -460,6 +492,18 @@ class HibernationStore:
     ) -> HibernationHandle:
         """Serialize a snapshot without blocking the event loop."""
         return await asyncio.to_thread(self.dehydrate, snap)
+
+    async def dehydrate_bounded_async(
+        self,
+        snap: AgentEnvironmentSnapshot,
+        max_payload_bytes: int,
+    ) -> HibernationHandle | None:
+        """Serialize and write a bounded snapshot off the event-loop thread."""
+        return await asyncio.to_thread(
+            self.dehydrate_bounded,
+            snap,
+            max_payload_bytes,
+        )
 
     async def hydrate_async(
         self, handle: HibernationHandle
@@ -560,13 +604,17 @@ class HibernationController:
         *,
         min_depth: int = 3,
         min_context_messages: int = 8,
+        max_snapshot_bytes: int = MAX_DISPATCH_SNAPSHOT_BYTES,
         clock: Callable[[], float] | None = None,
         token_reviver: TokenReviver | None = None,
     ) -> None:
         """Configure thresholds and optional token renewal for parked agents."""
+        if max_snapshot_bytes <= 0:
+            raise ValueError("max_snapshot_bytes must be positive")
         self._store = store
         self._min_depth = min_depth
         self._min_context_messages = min_context_messages
+        self._max_snapshot_bytes = max_snapshot_bytes
         self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
         self._paused_projects: set[str] = set()
         self._token_reviver = token_reviver
@@ -596,6 +644,86 @@ class HibernationController:
             and len(snap.messages) >= self._min_context_messages
         )
 
+    def should_dehydrate_task(self, task: AgentTask) -> bool:
+        """Apply the cheap dispatch-parent thresholds before snapshot creation."""
+        return (
+            task.depth >= self._min_depth
+            and len(task.messages) >= self._min_context_messages
+        )
+
+    @staticmethod
+    def _snapshot_for_task(task: AgentTask) -> AgentEnvironmentSnapshot:
+        """Build one validated snapshot from an executing parent task."""
+        messages: list[ContextMessage] = []
+        for raw_message in task.messages:
+            if isinstance(raw_message, ContextMessage):
+                messages.append(raw_message)
+            elif isinstance(raw_message, dict):
+                messages.extend(
+                    messages_from_dicts([cast(dict[str, object], raw_message)])
+                )
+            else:
+                raise TypeError(
+                    "dispatch parent messages must be ContextMessage or dict"
+                )
+        return AgentEnvironmentSnapshot(
+            task_id=task.task_id,
+            agent_name=task.agent_name,
+            parent_task_id=task.parent_task_id,
+            invoker_name=task.invoker_name,
+            depth=task.depth,
+            messages=messages,
+            scratch={
+                "description": task.description,
+                "prompt": task.prompt,
+                "project_id": task.project_id or "",
+            },
+            created_at=time.time(),
+        )
+
+    @asynccontextmanager
+    async def parked_dispatch_parent(
+        self,
+        task: AgentTask,
+    ) -> AsyncIterator[bool]:
+        """Park one eligible parent while its common-child batch is running.
+
+        The parent task remains the stable control object, but its heavy message
+        list is released only after a bounded, authenticated snapshot is safely
+        on disk. The list is restored before this context manager exits on
+        success, child failure, timeout, or cancellation.
+        """
+        if not self.should_dehydrate_task(task):
+            yield False
+            return
+        try:
+            snapshot = self._snapshot_for_task(task)
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "dispatch parent %s cannot be hibernated: %s",
+                task.task_id,
+                type(exc).__name__,
+            )
+            yield False
+            return
+
+        parked: ParkedEnv | None = None
+        try:
+            async with self.parked(snapshot) as current:
+                parked = current
+                if not current.dehydrated:
+                    yield False
+                    return
+                # ``parked()`` deliberately drops its reference after writing,
+                # but this outer generator otherwise pins the same heavy model
+                # across the child wait.  Release it before clearing the task.
+                del snapshot
+                task.messages = []
+                yield True
+        finally:
+            if parked is not None and parked.dehydrated and parked.snapshot is not None:
+                task.messages = list(parked.snapshot.messages)
+
     @asynccontextmanager
     async def parked(
         self, snap: AgentEnvironmentSnapshot
@@ -612,7 +740,10 @@ class HibernationController:
         """
         handle: HibernationHandle | None = None
         if self.should_dehydrate(snap):
-            handle = await self._store.dehydrate_async(snap)
+            handle = await self._store.dehydrate_bounded_async(
+                snap,
+                self._max_snapshot_bytes,
+            )
         parked = ParkedEnv(self._store, snap, handle,
                            token_reviver=self._token_reviver)
         if handle is not None:
