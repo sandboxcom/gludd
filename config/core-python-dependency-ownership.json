@@ -141,7 +141,9 @@
       "runtime_evidence": []
     },
     "defusedxml": {
-      "collection_import_paths": [],
+      "collection_import_paths": [
+        "collections/ansible_collections/general_ludd/git_release/plugins/module_utils/pipeline_triage.py"
+      ],
       "collection_requirement_paths": [],
       "core_import_paths": [
         "src/general_ludd/code_intelligence/introspect.py",
