@@ -19,8 +19,8 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-S31-S41, plus the train's dependency, ownership, structural, TUI, and coverage
-repairs. S29-S41 are listed from immutable implementation receipts without
+S31-S42, plus the train's dependency, ownership, structural, TUI, and coverage
+repairs. S29-S42 are listed from immutable implementation receipts without
 claiming train integration or an exact-head gate. The preview therefore records
 useful candidate contents without converting implementation evidence into task,
 gate, release, or publication completion.
@@ -86,7 +86,7 @@ includes 354 warning-fatal tests and 94% aggregate coverage (`shared.py` 87%,
 `projects.py` 98%, `metrics.py` 91%), with native SQL compilation, unsupported
 dialect rejection before I/O, and bounded two-session PostgreSQL convergence.
 
-S38-S41 move four collection workflows onto native, owned library boundaries:
+S38-S42 move five collection workflows onto native, owned library boundaries:
 
 - **S38 — Native SearXNG controller runtime.** Travel searches now call the
   official pinned `searx.webapp` WSGI application inside the controller EE;
@@ -141,6 +141,26 @@ S38-S41 move four collection workflows onto native, owned library boundaries:
   imports, while the archived [check-mode report][ansible-check-mode] and
   [read-only module discussion][ansible-read-only-module] motivate explicit
   check-mode parity without shell tasks.
+- **S42 — Native fail-closed JUnit pipeline triage.** Git-release controllers
+  now parse one root-confined JUnit report through the collection-owned action
+  and locked `defusedxml.ElementTree`; the companion module fails closed if the
+  action boundary is bypassed. Receipts expose only counts and SHA-256
+  identities, never failure bodies, properties, stdout, stderr, or raw test
+  names. Admission rejects reports over 16 MiB, more than 100,000 testcases,
+  more than 64 failures or errors, links, unstable file identity, DTDs,
+  entities, duplicate identities, and ambiguous outcomes.
+  A digest-addressed canary takes only bounded new work; old controllers drain
+  before replacement, and rollback drains the candidate before routing new
+  reports to the prior verified digest; no report, schema, or managed-host state
+  needs repair. The
+  evidence includes 26 focused tests and 54 warning-fatal focused/compatibility
+  tests, 97% aggregate coverage (100% action and module, 97% parser), all five
+  Molecule phases, strict boundary and resource-ownership checks, and a
+  121,418-test zero-error collection with 18 intentional deselections. A
+  decade-old [Ansible JUnit integration thread][ansible-junit-thread], an
+  [unbounded callback-payload report][ansible-junit-payload], and pytest's
+  [parameter identity issue #469][pytest-469] motivate the native artifact,
+  hard bounds, and digest-only identities.
 
 ## Existing-tool decision
 
@@ -240,7 +260,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 32-item candidate inventory, and
+ordering, deterministic rendering, the exact 33-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -299,3 +319,6 @@ Research was reviewed on 2026-10-08:
 [ansible-77935]: https://github.com/ansible/ansible/issues/77935
 [ansible-check-mode]: https://forum.ansible.com/t/cannot-get-customized-facts-when-pushing-with-check/17103
 [ansible-read-only-module]: https://forum.ansible.com/t/add-condition-when-command-shell-modules-should-return-ok-not-changed/37686
+[ansible-junit-thread]: https://groups.google.com/g/ansible-project/c/0ic8kasUqbQ
+[ansible-junit-payload]: https://www.reddit.com/r/ansible/comments/1cus9rt
+[pytest-469]: https://github.com/pytest-dev/pytest/issues/469
