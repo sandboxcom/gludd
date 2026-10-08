@@ -68,7 +68,10 @@ credentials into the cache. Environment values outside `CI`, `GITHUB_ACTIONS`,
 and a restricted-input-present bit are retained. No pickle or executable cache
 format is accepted. Coverage remains Coverage.py's SQLite format and is opened
 through `CoverageData` in branch-aware, read-only validation before and after
-publication.
+publication. Testcase names have a 65,536-character ceiling so legitimate
+pytest-generated parameter IDs remain admissible; class and file identities
+retain their 4,096-character limits, and the complete JUnit artifact retains
+its 64 MiB limit.
 
 The writer creates private `0700` directories and `0600` files, refuses direct
 cache/generation symlinks, foreign owners, unsafe modes, special files, unknown
@@ -116,6 +119,11 @@ report describes a failure mode that a release cache must not hide:
   reported duplicated and omitted tests across groups in 2024. Stored durations
   can help scheduling, but they are not result evidence and still require exact
   node-set reconciliation.
+- [pytest issue 6881](https://github.com/pytest-dev/pytest/issues/6881) tracked
+  long automatically generated parameter IDs from 2020 through 2026, with
+  explicit IDs as the longstanding workaround. Receipt normalization therefore
+  accommodates bounded long pytest names instead of treating every name above
+  4,096 characters as hostile, while still refusing names above 65,536.
 - [Pants issue 10379](https://github.com/pantsbuild/pants/issues/10379) describes
   the operational need to force a cold rerun, and
   [issue 11622](https://github.com/pantsbuild/pants/issues/11622) shows how an
@@ -135,7 +143,7 @@ then separately reported the absent JUnit command boundary and runner session.
 Later failing-first cases pinned special permission bits, empty branch-data,
 duplicate JSON keys, ambiguous terminal outcomes, a second disk-reserve check
 immediately before receipt writes, UV toolchain drift, and internally inexact
-source identity. The repaired focused suite is 64/64 green; the five-file
+source identity. The repaired focused suite is 66/66 green; the five-file
 serial-runner regression slice is 231/231 green. The current integrated
 branch-aware report records 88% for both `scripts/ci_batch_receipts.py` and
 `scripts/run_ci_shards_serial.py`, with no measured file below 75%. Scoped
