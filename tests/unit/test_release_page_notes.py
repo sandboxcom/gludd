@@ -464,6 +464,9 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S24",
         "S29",
         "S30",
+        "S31",
+        "S32",
+        "S33",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
@@ -479,9 +482,47 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
     assert expected.count(
         "S30 — Transactionally durable, session-safe model-performance telemetry"
     ) == 1
+    candidate_contracts = {
+        "S31": (
+            "Operation-scoped model-performance query lifecycle",
+            "Improvements",
+            (
+                ("implementation", "80835b29e79174bc0a4643c4643a552383693e8a"),
+                ("documentation", "4daa46c3b59c6bd8afac4a7535f72bcd262750ed"),
+            ),
+        ),
+        "S32": (
+            "Operation-scoped benchmark-query lifecycle",
+            "Improvements",
+            (
+                ("implementation", "6ac5f05f04d2fe117ff579719d60af0b6dec6305"),
+                ("documentation", "de6f637c28f6e55d40d3bd8fb83d80f5adbe7add"),
+            ),
+        ),
+        "S33": (
+            "Factory-owned MemoryRepository result lifecycle",
+            "Improvements",
+            (
+                ("implementation", "0d03819879e56beecf3df665c46ebe70d76a4925"),
+                ("task_evidence", "15064dfdd2db898e9cfb987c790d36543452c9f1"),
+            ),
+        ),
+    }
+    for item_id, (title, category, evidence) in candidate_contracts.items():
+        item = next(
+            candidate
+            for candidate in ledger.implemented_items
+            if candidate.item_id == item_id
+        )
+        assert item.title == title
+        assert item.category == category
+        assert tuple(
+            (receipt.role, receipt.sha) for receipt in item.evidence_commits
+        ) == evidence
+        assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 21."
+        "Implemented candidate items pending exact-head/release proof: 24."
         in expected
     )
 
