@@ -23,7 +23,7 @@ def test_deck_mirrors_measured_owned_node_cache_reclamation() -> None:
     deck = DECK.read_text(encoding="utf-8")
     token = _cleanup_token()
 
-    assert deck.count("<section") == 61
+    assert deck.count("<section") == 62
     for marker in (
         "142.2 MiB",
         "52.6 MiB",
