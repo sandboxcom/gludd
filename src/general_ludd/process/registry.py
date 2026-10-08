@@ -53,6 +53,15 @@ from general_ludd.process.signal_policy import (
     validate_target as _validate_signal_target,
 )
 
+__all__ = [
+    "ManagedProcess",
+    "ManagedProcessLease",
+    "ProcessRegistry",
+    "ProcessRegistryError",
+    "default_registry",
+    "set_default_registry",
+]
+
 logger = logging.getLogger(__name__)
 
 # Module-scope alias so annotations inside ProcessRegistry (which has a method
