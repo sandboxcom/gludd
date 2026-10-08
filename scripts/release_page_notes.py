@@ -16,12 +16,14 @@ from typing import cast
 MAX_LEDGER_BYTES = 256 * 1024
 MAX_OUTPUT_BYTES = 64 * 1024
 MAX_COMPLETED_ITEMS = 64
+MAX_IMPLEMENTED_ITEMS = 64
 MAX_EXCLUDED_ITEMS = 64
 MAX_EVIDENCE_COMMITS = 8
 RELEASE_CATEGORIES = ("Features", "Improvements")
 
 _RELEASE_RE = re.compile(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\Z")
 _TASK_RE = re.compile(r"S\d+(?:\.[0-9A-Za-z]+)+\Z")
+_ITEM_RE = re.compile(r"(?:S\d+(?:\.[0-9A-Za-z]+)*|#[1-9]\d*|[A-Z][A-Z0-9_-]{1,31})\Z")
 _SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 _ROLE_RE = re.compile(r"[a-z][a-z0-9_]{0,31}\Z")
 _REPOSITORY_RE = re.compile(r"[0-9A-Za-z_.-]+/[0-9A-Za-z_.-]+\Z")
@@ -50,6 +52,16 @@ class CompletedItem:
 
 
 @dataclass(frozen=True)
+class ImplementedItem:
+    """One implemented candidate that still lacks release-completion proof."""
+
+    item_id: str
+    title: str
+    category: str
+    evidence_commits: tuple[EvidenceCommit, ...]
+
+
+@dataclass(frozen=True)
 class ReleaseLedger:
     """Validated release-page projection of the completed-backlog ledger."""
 
@@ -60,6 +72,7 @@ class ReleaseLedger:
     baseline_ref: str
     baseline_commit: str
     completed_items: tuple[CompletedItem, ...]
+    implemented_items: tuple[ImplementedItem, ...]
     excluded_open_tasks: tuple[str, ...]
 
 
@@ -165,6 +178,26 @@ def _parse_evidence(value: object, item_label: str) -> tuple[EvidenceCommit, ...
     return tuple(evidence)
 
 
+def _parse_item_fields(
+    record: Mapping[str, object],
+    label: str,
+    *,
+    identifier_key: str,
+    identifier_pattern: re.Pattern[str],
+) -> tuple[str, str, str, tuple[EvidenceCommit, ...]]:
+    identifier = _text(record, identifier_key, label, maximum=32)
+    title = _text(record, "title", label, maximum=180)
+    category = _text(record, "release_page_category", label, maximum=16)
+    if not identifier_pattern.fullmatch(identifier):
+        raise ReleaseNotesError(f"{label}.{identifier_key} is invalid")
+    if category not in RELEASE_CATEGORIES:
+        raise ReleaseNotesError(
+            f"{label}.release_page_category must be Features or Improvements"
+        )
+    evidence = _parse_evidence(record.get("evidence_commits"), label)
+    return identifier, title, category, evidence
+
+
 def _parse_completed_items(value: object) -> tuple[CompletedItem, ...]:
     records = _sequence(value, "completed_items", MAX_COMPLETED_ITEMS)
     items: list[CompletedItem] = []
@@ -173,15 +206,12 @@ def _parse_completed_items(value: object) -> tuple[CompletedItem, ...]:
     for index, raw_record in enumerate(records):
         label = f"completed_items[{index}]"
         record = _mapping(raw_record, label)
-        task_id = _text(record, "task_id", label, maximum=32)
-        title = _text(record, "title", label, maximum=180)
-        category = _text(record, "release_page_category", label, maximum=16)
-        if not _TASK_RE.fullmatch(task_id):
-            raise ReleaseNotesError(f"{label}.task_id is invalid")
-        if category not in RELEASE_CATEGORIES:
-            raise ReleaseNotesError(
-                f"{label}.release_page_category must be Features or Improvements"
-            )
+        task_id, title, category, evidence = _parse_item_fields(
+            record,
+            label,
+            identifier_key="task_id",
+            identifier_pattern=_TASK_RE,
+        )
         if task_id in task_ids:
             raise ReleaseNotesError("completed task identifiers must be unique")
         task_ids.add(task_id)
@@ -191,11 +221,40 @@ def _parse_completed_items(value: object) -> tuple[CompletedItem, ...]:
                 task_id=task_id,
                 title=title,
                 category=category,
-                evidence_commits=_parse_evidence(record.get("evidence_commits"), label),
+                evidence_commits=evidence,
             )
         )
     if categories != set(RELEASE_CATEGORIES):
         raise ReleaseNotesError("completed items must include both Features and Improvements")
+    return tuple(items)
+
+
+def _parse_implemented_items(value: object) -> tuple[ImplementedItem, ...]:
+    if value is None:
+        return ()
+    records = _sequence(value, "implemented_items", MAX_IMPLEMENTED_ITEMS)
+    items: list[ImplementedItem] = []
+    item_ids: set[str] = set()
+    for index, raw_record in enumerate(records):
+        label = f"implemented_items[{index}]"
+        record = _mapping(raw_record, label)
+        item_id, title, category, evidence = _parse_item_fields(
+            record,
+            label,
+            identifier_key="item_id",
+            identifier_pattern=_ITEM_RE,
+        )
+        if item_id in item_ids:
+            raise ReleaseNotesError("implemented item identifiers must be unique")
+        item_ids.add(item_id)
+        items.append(
+            ImplementedItem(
+                item_id=item_id,
+                title=title,
+                category=category,
+                evidence_commits=evidence,
+            )
+        )
     return tuple(items)
 
 
@@ -237,9 +296,15 @@ def load_release_ledger(path: Path, expected_release: str) -> ReleaseLedger:
     if not _RELEASE_RE.fullmatch(baseline_ref) or not _SHA_RE.fullmatch(baseline_commit):
         raise ReleaseNotesError("ledger baseline must contain a release ref and full commit")
     completed_items = _parse_completed_items(root.get("completed_items"))
+    implemented_items = _parse_implemented_items(root.get("implemented_items"))
+    completed_ids = {item.task_id for item in completed_items}
+    if completed_ids & {item.item_id for item in implemented_items}:
+        raise ReleaseNotesError(
+            "implemented item identifiers must not duplicate completed tasks"
+        )
     excluded = _parse_excluded(
         root.get("excluded_open_tasks"),
-        {item.task_id for item in completed_items},
+        completed_ids,
     )
     return ReleaseLedger(
         schema_version=schema_version,
@@ -249,6 +314,7 @@ def load_release_ledger(path: Path, expected_release: str) -> ReleaseLedger:
         baseline_ref=baseline_ref,
         baseline_commit=baseline_commit,
         completed_items=completed_items,
+        implemented_items=implemented_items,
         excluded_open_tasks=excluded,
     )
 
@@ -259,29 +325,51 @@ def build_release_page_notes(ledger: ReleaseLedger) -> str:
         f"# Gludd {ledger.release}",
         "",
         "> **Status: Unreleased.** This deterministic preview comes from the",
-        "> completed-backlog ledger and does not create or publish a GitHub release.",
+        "> release ledger and does not create or publish a GitHub release. Candidate",
+        "> entries do not claim an exact-head gate, release completion, or publication.",
         "",
     ]
     for category in RELEASE_CATEGORIES:
         lines.extend((f"## {category}", ""))
-        for item in ledger.completed_items:
-            if item.category != category:
+        lines.extend(("### Formally completed backlog", ""))
+        for completed_item in ledger.completed_items:
+            if completed_item.category != category:
                 continue
             links = "; ".join(
                 "["
                 + evidence.role.replace("_", " ")
                 + f" `{evidence.sha[:9]}`](https://github.com/{ledger.repository}/commit/{evidence.sha})"
-                for evidence in item.evidence_commits
+                for evidence in completed_item.evidence_commits
             )
-            lines.append(f"- **{item.task_id} — {item.title}.** Evidence: {links}.")
+            lines.append(
+                f"- **{completed_item.task_id} — {completed_item.title}.** "
+                f"Evidence: {links}."
+            )
+        if ledger.implemented_items:
+            lines.extend(("", "### Implemented candidate scope", ""))
+        for implemented_item in ledger.implemented_items:
+            if implemented_item.category != category:
+                continue
+            links = "; ".join(
+                "["
+                + evidence.role.replace("_", " ")
+                + f" `{evidence.sha[:9]}`](https://github.com/{ledger.repository}/commit/{evidence.sha})"
+                for evidence in implemented_item.evidence_commits
+            )
+            lines.append(
+                f"- **{implemented_item.item_id} — {implemented_item.title}.** "
+                f"Implementation evidence; exact-head/release proof pending. Evidence: {links}."
+            )
         lines.append("")
     excluded = ", ".join(f"`{task_id}`" for task_id in ledger.excluded_open_tasks)
     lines.extend(
         (
             "## Release scope",
             "",
-            f"- Completed backlog items: {len(ledger.completed_items)}.",
-            f"- Excluded open work: {excluded}.",
+            f"- Formally completed backlog items: {len(ledger.completed_items)}.",
+            "- Implemented candidate items pending exact-head/release proof: "
+            f"{len(ledger.implemented_items)}.",
+            f"- Open work excluded from completion claims: {excluded}.",
             "- Baseline: "
             f"[`{ledger.baseline_ref}`](https://github.com/{ledger.repository}/releases/tag/{ledger.baseline_ref}) "
             f"at `{ledger.baseline_commit}`.",

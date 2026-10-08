@@ -51,6 +51,16 @@ def _ledger() -> dict[str, object]:
                 ],
             },
         ],
+        "implemented_items": [
+            {
+                "item_id": "S29",
+                "title": "Managed-process registry lifecycle",
+                "release_page_category": "Features",
+                "evidence_commits": [
+                    {"role": "implementation", "sha": "d" * 40},
+                ],
+            },
+        ],
         "excluded_open_tasks": ["S83.157"],
     }
 
@@ -74,8 +84,11 @@ def test_build_notes_is_deterministic_categorized_and_unreleased(tmp_path: Path)
     assert first.index("## Features") < first.index("## Improvements")
     assert first.count("S83.117 — Authenticated TLS state") == 1
     assert first.count("S83.128 — Worktree-safe reclamation") == 1
+    assert first.count("S29 — Managed-process registry lifecycle") == 1
+    assert "Implementation evidence; exact-head/release proof pending." in first
     assert "https://github.com/sandboxcom/gludd/commit/" + "b" * 40 in first
-    assert "Excluded open work: `S83.157`." in first
+    assert "https://github.com/sandboxcom/gludd/commit/" + "d" * 40 in first
+    assert "Open work excluded from completion claims: `S83.157`." in first
     assert len(first.encode("utf-8")) <= MAX_OUTPUT_BYTES
 
 
@@ -122,6 +135,30 @@ def test_load_release_ledger_rejects_duplicate_or_uncategorized_items(tmp_path: 
     completed.pop()
     completed[1]["release_page_category"] = "Features"
     with pytest.raises(ReleaseNotesError, match="Features and Improvements"):
+        load_release_ledger(_write_ledger(tmp_path, payload), "v0.1.2")
+
+
+def test_load_release_ledger_rejects_duplicate_or_unsafe_implemented_items(
+    tmp_path: Path,
+) -> None:
+    payload = _ledger()
+    implemented = payload["implemented_items"]
+    assert isinstance(implemented, list)
+    implemented.append(dict(implemented[0]))
+
+    with pytest.raises(ReleaseNotesError, match="implemented item identifiers"):
+        load_release_ledger(_write_ledger(tmp_path, payload), "v0.1.2")
+
+    implemented.pop()
+    implemented[0]["item_id"] = "unsafe item"
+    with pytest.raises(ReleaseNotesError, match="item_id"):
+        load_release_ledger(_write_ledger(tmp_path, payload), "v0.1.2")
+
+    payload = _ledger()
+    implemented = payload["implemented_items"]
+    assert isinstance(implemented, list)
+    implemented[0]["item_id"] = "S83.117"
+    with pytest.raises(ReleaseNotesError, match="must not duplicate completed"):
         load_release_ledger(_write_ledger(tmp_path, payload), "v0.1.2")
 
 
@@ -406,6 +443,33 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "Features",
         "Improvements",
     }
+    assert tuple(item.item_id for item in ledger.implemented_items) == (
+        "SEARXNG",
+        "ANSIBLE",
+        "S83.163",
+        "S83.166",
+        "S83.157",
+        "S83.158",
+        "#65",
+        "#75",
+        "FFDH",
+        "#77",
+        "S11.1",
+        "S14",
+        "S15",
+        "S16",
+        "S17",
+        "S18",
+        "S23",
+        "S24",
+        "S29",
+        "GATE",
+    )
+    assert "Formally completed backlog items: 6." in expected
+    assert (
+        "Implemented candidate items pending exact-head/release proof: 20."
+        in expected
+    )
 
 
 def test_release_dry_run_validates_v012_page_without_publishing() -> None:
