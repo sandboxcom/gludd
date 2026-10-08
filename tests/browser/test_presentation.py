@@ -25,6 +25,7 @@ FEATURE_SYNC_CONTRACTS = (
     "s83-109-local-game-boundary",
     "s83-118-122-branch-reconciliation",
     "s83-169-capture-reuse-observability",
+    "s83-179-180-shadow-reconciliation",
     "s91-3-enforcement-executable-modes",
     "decision-log-codification-v1",
 )

@@ -1522,7 +1522,36 @@ flowchart LR
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19o: ENFORCEMENT EXECUTABLE METADATA -->
+<!-- SLIDE 19o: SHADOW GATE RECEIPTS + RECONCILIATION QUEUE -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-179-180-shadow-reconciliation">
+  <p class="stage-kicker">S83.179 + S83.180 &middot; signed shadow evidence &middot; reconciliation queue</p>
+  <h2>Evidence can inform&mdash;but never authorize <span class="badge-yellow">SHADOW / READ-ONLY &middot; RELEASE PROOF PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Signed shadow gate</h3>
+      <ul class="bullets-tight">
+        <li><strong>Authenticate:</strong> HMAC-SHA256 binds action, manifest, kind, signer, issue time, and expiry. <code>verified</code> means future-eligible only; <code>skip_authorized=false</code> and <code>skips=0</code>.</li>
+        <li><strong>Import legacy failures:</strong> one stable confined log yields <code>NON-REUSABLE</code> diagnostics (64 MiB / 250,000 lines / 64 failures / 32 KiB output) and never enters the pass-receipt store.</li>
+        <li><strong>Keep execution mandatory:</strong> one worker / 16-file execution and the terminal gate remains authoritative; unsigned, unknown, tampered, revoked, expired, or malformed evidence is refused.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Read-only reconciliation</h3>
+      <ul class="bullets-tight">
+        <li><strong>Inventory:</strong> a terminal ref/head snapshot queues unique heads; ancestor and patch-equivalent heads stay collapsed under a 256-head ceiling.</li>
+        <li><strong>Preflight + checkpoint:</strong> <code>git merge-tree</code> over exact object IDs reports <code>predicted-clean</code>, conflicted, or blocked&mdash;never mergeable; a version-2 receipt seals target + source tips + collapsed groups + cursor.</li>
+        <li><strong>Replay only:</strong> rechecks every ref, accepts only an ordered reachable prefix, exposes the next item, and never performs a merge.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">No test is skipped, and no ref, index, worktree, or push is mutated. Full gate, hosted provenance, merge, push, and release proof remain pending.</p>
+  <p class="cite">Auth: scripts/ci_receipt_auth.py:225-321 &middot; Import: scripts/ci_legacy_gate_log_import.py:102-338 &middot; Queue: scripts/branch_reconciliation_inventory.py:1406-1565 &middot; Replay: scripts/branch_reconciliation_inventory.py:1891-2034</p>
+  <p class="cite">Practitioner evidence: <a href="https://github.com/sigstore/cosign/issues/1273">cosign #1273</a> &middot; <a href="https://github.com/pytest-dev/pytest/issues/6399">Pytest #6399</a> &middot; <a href="https://github.com/orgs/community/discussions/46757">GitHub #46757</a> &middot; <a href="https://gitlab.com/gitlab-org/gitlab/-/issues/229156">GitLab #229156</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19p: ENFORCEMENT EXECUTABLE METADATA -->
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s91-3-enforcement-executable-modes">
   <p class="stage-kicker">S91.3 &middot; checkout-safe enforcement</p>
