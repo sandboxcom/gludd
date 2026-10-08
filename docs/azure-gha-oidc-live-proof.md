@@ -61,6 +61,48 @@ a SHA-256 digest over the verified configuration. Reviewer identities and raw
 API responses never reach logs. GitHub CLI launch failures, timeouts, and
 nonzero responses collapse to content-free lookup rejection codes.
 
+The same success can optionally publish one canonical JSON receipt. Schema v1
+has exactly `kind`, `schema_version`, `environment`, `reviewer_count`,
+`branch_policies`, `configuration_digest`, and `mutation`; `kind` is
+`azure-containerapp-environment-protection-receipt`, policies are sorted, and
+`mutation` is false. The document is at most 4 KiB and contains neither
+reviewer identities nor GitHub API bodies. Publication uses an owner-private
+mode-`0600` temporary file in the destination directory, synchronizes it, and
+atomically replaces a regular destination. A symlink, non-regular destination,
+missing parent, write/sync/rename failure, or broader final mode rejects the
+admission. Omitting the output path preserves the original stdout-only
+contract.
+
+The hosted workflow names the receipt with the full source SHA, run ID, and run
+attempt. It first verifies and writes the receipt, then uses the immutable
+[`actions/attest` v4.2.2 release](https://github.com/actions/attest/releases/tag/v4.2.2)
+to sign and persist SLSA provenance, and then uses the immutable
+[`actions/upload-artifact` v7.0.2 release](https://github.com/actions/upload-artifact/releases/tag/v7.0.2)
+to upload the single file without an archive. Missing-file, attestation, and
+upload failures stop the job before it asks GitHub for the Azure token-exchange
+assertion. The artifact is retained for 30 days; the attestation remains the
+cryptographic binding to the repository, workflow, Environment, and commit.
+GitHub's [artifact-attestation documentation](https://docs.github.com/en/actions/concepts/security/artifact-attestations)
+explains that this binding uses Sigstore, while the maintained action documents
+the required `id-token: write`, `attestations: write`, and
+`artifact-metadata: write` permissions.
+
+After a hosted acceptance run downloads the direct receipt file, verify the
+repository, exact signer workflow, and exact source commit rather than merely
+checking that some attestation exists:
+
+```console
+gh attestation verify gludd-azure-environment-protection-*.json \
+  --repo sandboxcom/gludd \
+  --signer-workflow sandboxcom/gludd/.github/workflows/azure-containerapp-live.yml \
+  --source-digest FULL_SOURCE_SHA
+```
+
+The [`gh attestation verify` manual](https://cli.github.com/manual/gh_attestation_verify)
+documents these identity and digest constraints. Attestation proves origin and
+integrity, not that the admitted configuration is inherently safe; consumers
+must also validate the seven-field receipt schema and policy.
+
 The module graph classifies this guard in the security layer: it decides
 whether a protected Environment may cross the credential-minting and paid
 compute admission boundary, while deliberately importing no Azure SDK or
@@ -80,6 +122,7 @@ make azure-containerapp-environment-guard \
   AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT=azure-containerapp-live \
   AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON= \
   AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON= \
+  AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_RECEIPT_OUTPUT= \
   AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY=1
 ```
 
@@ -150,6 +193,16 @@ OIDC setup failures as generic Azure failures:
   reports surprising ref selection when Environment branch protection meets a
   chained workflow. Gludd keeps this paid workflow direct and pins its admitted
   refs explicitly.
+- [GitHub Community discussion 45415](https://github.com/orgs/community/discussions/45415)
+  records that a full workflow rerun deletes artifacts from prior attempts.
+  Gludd therefore embeds `run_id` and `run_attempt` in the receipt filename and
+  never treats an earlier attempt's artifact as available; operators needing a
+  longer audit trail must export verified receipts before rerunning.
+- [GitHub Community discussion 123969](https://github.com/orgs/community/discussions/123969)
+  documents the long-lived audit gap caused by expiring Actions logs and its
+  impact on provenance review. Gludd makes admission evidence a small signed
+  document instead of relying on log text, but its explicit 30-day artifact
+  retention is still a bounded availability window, not permanent archival.
 - [go-github issue 2722](https://github.com/google/go-github/issues/2722)
   documents that GitHub returned `can_admins_bypass` before its REST schema
   documented the field. The guard deliberately requires the live field to be
