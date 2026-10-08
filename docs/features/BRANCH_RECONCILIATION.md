@@ -55,6 +55,17 @@ must match the classified rows. A branch created before the active cursor,
 deleted after an earlier page, or moved to a new head therefore fails closed as
 changed evidence instead of producing a stale release decision.
 
+Each individual page closes the smaller classification race as well. After
+classification and before JSON emission, one mature `git show-ref --verify --`
+invocation re-reads the resolved target plus every returned local branch by
+exact canonical ref. Its full `(ref, head)` mapping must equal the observations
+used for classification. A missing ref, moved head, command failure, duplicate
+row, unexpected ref, or malformed object ID fails closed; no partly stale page
+is emitted. The operation is bounded to the target plus at most 100 returned
+branches and adds one foreground subprocess per page. It is a verification
+point rather than a repository lock: callers still restart after later ref
+changes, while the exhaustive mode retains its final whole-inventory scan.
+
 Pagination follows Git's documented
 [`for-each-ref --start-after`](https://git-scm.com/docs/git-for-each-ref.html)
 lexicographic boundary. The cursor itself is excluded, so every returned ref is
@@ -691,9 +702,11 @@ The GitLab CLI practitioner request
 out pagination oddities when the underlying collection changes during an
 operation. Cursor ordering prevents boundary duplication, but it cannot reveal a
 new ref inserted before an already-consumed cursor or a previously observed ref
-that moved. That long-lived operational concern is why the exhaustive path
-compares its ordered observations with a final ref/head snapshot before making a
-terminal claim. The Git project's 2024 performance report
+that moved. That long-lived operational concern is why every page verifies its
+classified refs with Git's exact, read-only
+[`show-ref --verify`](https://git-scm.com/docs/git-show-ref) primitive and why the
+exhaustive path additionally compares all ordered observations with a final
+ref/head snapshot before making a terminal claim. The Git project's 2024 performance report
 [#401](https://gitlab.com/gitlab-org/git/-/issues/401) demonstrates that sorted
 `for-each-ref` work scales with repository ref count even when `--count` is
 small. Gludd consequently permits exactly one additional sorted verification
@@ -790,6 +803,10 @@ result schema, or resource namespace.
 Semantic mode is also read-only and foreground-only: at most two fixed list-form
 Git inspections run per bounded head, with progress on stderr and no files, locks,
 daemons, services, ports, background workers, ref changes, or deploy interruption.
+Page classification adds one exact `show-ref` verification over at most 101 refs;
+the `--` option boundary prevents any validated ref from becoming an option, and
+the parser accepts only the expected canonical refs and full object IDs. Default
+progress exposes `verify=page-ref-snapshot` before that bounded check.
 Queue generation and receipt replay have the same foreground-only boundary: they
 verify identities and emit JSON but never merge, delete, rewrite, or push a ref.
 Planning adds bounded path reads, pair comparisons, and native pairwise probes; it
@@ -804,18 +821,18 @@ local-head scan, emits `verify=terminal-ref-snapshot` progress by default, and
 shares the existing 10,000-ref, output, and timeout bounds. This preserves ZDD
 while keeping CPU, memory, subprocess, and JSON growth bounded. During rollout,
 old and new callers can run concurrently because the schema and Make interface do
-not change; only stale terminal evidence becomes a structured nonzero failure.
+not change; stale page or terminal evidence becomes a structured nonzero failure.
 
 Rollback is layered and requires no coordinated downtime. Stop requesting the
 opt-in semantic, planning, queue, or replay flags first; default schema-v2
 inventory callers remain unchanged. If code rollback is required, revert
-planning, receipt, and queue support before reverting the authoritative semantic
-source commit, so no surviving mode
-depends on removed types or validation paths. A version-2 receipt can be discarded
-and regenerated after rollback; it is never applied to repository state. The older
+planning, receipt, and queue support before reverting page/terminal verification
+or the authoritative semantic source commit, so no surviving mode depends on
+removed types or validation paths. A version-2 receipt can be discarded and
+regenerated after rollback; it is never applied to repository state. The older
 textual inventory and one-branch patch comparison targets remain independently
-available throughout. No service restart, data migration, ref repair, or downtime
-is needed.
+available throughout. No service restart, data migration, ref repair, or
+downtime is needed.
 
 Merge-queue mode adds only foreground, read-only Git inspection and bounded JSON
 serialization. It creates no checkout, index, lock, merge, commit, ref update,

@@ -9,6 +9,152 @@ from datetime import datetime
 from typing import Literal, TypedDict, cast
 
 
+class BranchRecord(TypedDict):
+    """Machine-readable classification for one local branch."""
+
+    classification: Literal["ancestor", "patch-equivalent", "unique"]
+    head: str
+    lifecycle: Literal["current", "historical"]
+    name: str
+    patch_equivalent_commits: int
+    ref: str
+    unique_commits: int
+
+
+class InventoryCounts(TypedDict):
+    """Counts for one bounded branch inventory."""
+
+    ancestor: int
+    current: int
+    historical: int
+    patch_equivalent: int
+    returned: int
+    unique: int
+
+
+class TargetRecord(TypedDict):
+    """Resolved symbolic target identity."""
+
+    head: str
+    input: str
+    ref: str
+
+
+class InventoryBounds(TypedDict):
+    """Hard bounds applied to Git traversal and output."""
+
+    branch_limit: int
+    commit_scan_limit: int
+    local_ref_scan_limit: int
+
+
+class InventoryPayload(TypedDict):
+    """One bounded page of classified local branches."""
+
+    after: str | None
+    bounds: InventoryBounds
+    branches: list[BranchRecord]
+    counts: InventoryCounts
+    limit: int
+    next_cursor: str | None
+    ok: bool
+    schema_version: int
+    target: TargetRecord
+    truncated: bool
+
+
+class SummaryCounts(InventoryCounts):
+    """Counts for a terminal deduplicated inventory."""
+
+    deduplicated_heads: int
+
+
+class SummaryGroup(TypedDict):
+    """Branches sharing one classified commit identity."""
+
+    branch_count: int
+    classification: Literal["ancestor", "patch-equivalent", "unique"]
+    head: str
+    lifecycle: Literal["current", "historical"]
+    names: list[str]
+    patch_equivalent_commits: int
+    refs: list[str]
+    unique_commits: int
+
+
+class HeadSemanticSummary(TypedDict):
+    """Bounded semantic evidence for one deduplicated head."""
+
+    changed_path_count: int
+    changed_paths: list[str]
+    changed_paths_truncated: bool
+    head: str
+    path_redactions: int
+    subject: str
+    subject_truncated: bool
+
+
+class SummaryPayload(TypedDict):
+    """Terminal inventory with expanded branch groups."""
+
+    bounds: InventoryBounds
+    counts: SummaryCounts
+    groups: list[SummaryGroup]
+    mode: Literal["exhaustive-summary"]
+    ok: bool
+    page_size: int
+    pages: int
+    schema_version: int
+    target: TargetRecord
+    terminal: bool
+    truncated: bool
+
+
+class SummaryCountsPayload(TypedDict):
+    """Terminal inventory without expanded branch groups."""
+
+    bounds: InventoryBounds
+    counts: SummaryCounts
+    mode: Literal["exhaustive-counts"]
+    ok: bool
+    page_size: int
+    pages: int
+    schema_version: int
+    target: TargetRecord
+    terminal: bool
+    truncated: bool
+
+
+class CurrentSummaryPayload(TypedDict):
+    """Terminal inventory restricted to unique current heads."""
+
+    bounds: InventoryBounds
+    counts: SummaryCounts
+    groups: list[SummaryGroup]
+    mode: Literal["exhaustive-current"]
+    ok: bool
+    page_size: int
+    pages: int
+    schema_version: int
+    selected_branches: int
+    selected_heads: int
+    target: TargetRecord
+    terminal: bool
+    truncated: bool
+
+
+class SemanticSummaryPayload(SummaryPayload):
+    """Expanded terminal summary with semantic head evidence."""
+
+    head_summaries: list[HeadSemanticSummary]
+
+
+class SemanticCurrentSummaryPayload(CurrentSummaryPayload):
+    """Current-only terminal summary with semantic head evidence."""
+
+    head_summaries: list[HeadSemanticSummary]
+
+
 class ConflictPreflight(TypedDict):
     """Bounded native-Git conflict evidence for one exact queue head."""
 
@@ -96,6 +242,53 @@ class ReconciliationReceipt(TypedDict):
     algorithm: Literal["sha256"]
     body: ReconciliationReceiptBody
     digest: str
+
+
+class MergeQueuePayload(TypedDict):
+    """Terminal queue of novel heads and collapsed historical evidence."""
+
+    bounds: MergeQueueBounds
+    collapsed: list[CollapsedMergeQueueGroup]
+    counts: MergeQueueCounts
+    mode: Literal["sequential-merge-queue"]
+    ok: bool
+    page_size: int
+    pages: int
+    queue: list[MergeQueueEntry]
+    receipt: ReconciliationReceipt
+    schema_version: int
+    target: TargetRecord
+    terminal: bool
+    truncated: bool
+
+
+class ReceiptReplayBounds(TypedDict):
+    """Hard bounds applied while replaying a reconciliation receipt."""
+
+    conflict_path_char_limit: int
+    conflict_path_limit: int
+    conflict_path_scan_limit: int
+    local_ref_scan_limit: int
+    merge_queue_head_limit: int
+    merge_tree_output_char_limit: int
+    receipt_json_char_limit: int
+
+
+class ReceiptReplayPayload(TypedDict):
+    """Bounded result of replaying one reconciliation receipt."""
+
+    bounds: ReceiptReplayBounds
+    complete: bool
+    cursor: int
+    integrated: list[MergeQueueEntry]
+    mode: Literal["reconciliation-receipt-replay"]
+    newly_integrated: list[MergeQueueEntry]
+    next: MergeQueueEntry | None
+    ok: bool
+    receipt: ReconciliationReceipt
+    remaining_heads: int
+    schema_version: int
+    target: TargetRecord
 
 
 class MergePlanHead(TypedDict):
