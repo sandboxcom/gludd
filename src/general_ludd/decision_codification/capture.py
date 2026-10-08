@@ -22,13 +22,12 @@ from general_ludd.decision_codification.schema import (
     canonical_sha256,
 )
 from general_ludd.replay.schema import (
-    BoundedIdentifier,
     ModelIdentityV1,
     RuntimeIdentityV1,
-    Sha256Digest,
     SourceIdentityV1,
 )
 from general_ludd.replay.store import ReplayStoreError, RunBundleStore, VerifiedBundle
+from general_ludd.schemas.execution_identity import BoundedIdentifier, Sha256Digest
 
 MAX_CAPTURE_IDENTIFIER_BYTES: Final[int] = 1_024
 MAX_CAPTURE_BUNDLE_BYTES: Final[int] = 128 * 1_024
