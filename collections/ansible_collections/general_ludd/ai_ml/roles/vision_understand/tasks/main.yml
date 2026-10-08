@@ -1,11 +1,7 @@
 ---
-# vision_understand role tasks — ai_ml service.
-
-- name: Load vision_understand defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _vision_understand_defaults
-
-- name: Reference vision_understand service API
-  ansible.builtin.debug:
-    msg: "vision_understand routes via the ai_ml service API (/api/ai_ml/vision_understand)."
+- name: Route vision_understand through the AI/ML service
+  ansible.builtin.include_role:
+    name: general_ludd.ai_ml.service_request
+  vars:
+    ai_ml_service_role: vision_understand
+    ai_ml_service_task: vision

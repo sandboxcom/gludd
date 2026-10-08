@@ -1,11 +1,7 @@
 ---
-# speech_recognize role tasks — ai_ml service.
-
-- name: Load speech_recognize defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _speech_recognize_defaults
-
-- name: Reference speech_recognize service API
-  ansible.builtin.debug:
-    msg: "speech_recognize routes via the ai_ml service API (/api/ai_ml/speech_recognize)."
+- name: Route speech_recognize through the AI/ML service
+  ansible.builtin.include_role:
+    name: general_ludd.ai_ml.service_request
+  vars:
+    ai_ml_service_role: speech_recognize
+    ai_ml_service_task: speech

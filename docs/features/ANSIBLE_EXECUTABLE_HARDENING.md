@@ -53,6 +53,13 @@ details are hidden. Its PSRemoting and DSC mutation scripts now declare
 PowerShell `SupportsShouldProcess`, predict changes before mutation, and no
 longer suppress operational failures.
 
+The 15 AI/ML service roles now share one live request composition role. Each
+wrapper maps to an allowlisted `ExpertTask`, validates request and resource
+bounds, and calls the authenticated `/api/ai_ml/query` endpoint through
+`ansible.builtin.uri`. Normal runs validate the response before publishing it;
+check mode performs no network I/O and publishes the same deterministic
+request plan that a normal run would submit.
+
 ## Long-lived practitioner evidence
 
 This contract follows problems Ansible practitioners have reported for more
@@ -68,6 +75,12 @@ than a decade:
   operators described downstream failures when skipped tasks did not populate
   registered data. That is why this module returns a stable planned-call
   schema instead of allowing Ansible to skip it implicitly.
+- A 2017 practitioner thread,
+  [“How to avoid error when using a registered variable in check mode?”](https://groups.google.com/g/ansible-project/c/H1JwC9i4y3U),
+  shows the recurring failure when a skipped task leaves its registered result
+  unavailable to dependent tasks. The shared AI/ML role separates its normal
+  response validation from check mode and publishes a complete planned result
+  instead of dereferencing a skipped `uri` result.
 - The long-running custom-module discussion
   [“Custom Module Output parsing”](https://forum.ansible.com/t/custom-module-output-parsing/25196)
   reinforces the standard distinction used here: `exit_json` is for an actual

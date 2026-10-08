@@ -1,0 +1,89 @@
+---
+- name: Validate AI/ML service request
+  ansible.builtin.assert:
+    that:
+      - ai_ml_service_role | string | trim | length > 0
+      - ai_ml_service_task in ['question', 'research', 'dataset', 'train', 'distill', 'speech', 'vision', 'image', 'world_model', 'simulate', 'evaluate', 'deploy']
+      - ai_ml_tenant_id | string | trim | length > 0
+      - ai_ml_query | string | trim | length > 0
+      - ai_ml_query | string | length <= 16384
+      - ai_ml_daemon_url is match('^https?://')
+      - ai_ml_daemon_timeout | int >= 1
+      - ai_ml_daemon_timeout | int <= 300
+      - ai_ml_deadline_s | int >= 1
+      - ai_ml_deadline_s | int <= 3600
+      - ai_ml_budget_usd | float >= 0.0
+    quiet: true
+    fail_msg: AI/ML routing requires a bounded typed request and HTTP(S) daemon URL
+
+- name: Build stable AI/ML request
+  ansible.builtin.set_fact:
+    _ai_ml_request_body:
+      request_id: >-
+        {{
+          ai_ml_request_id
+          if ai_ml_request_id | string | trim | length > 0
+          else 'ansible-' ~
+            (
+              (
+                ai_ml_tenant_id ~ ':' ~ ai_ml_service_task ~ ':' ~ ai_ml_query
+              ) | hash('sha256')
+            )
+        }}
+      tenant_id: "{{ ai_ml_tenant_id }}"
+      task: "{{ ai_ml_service_task }}"
+      query: "{{ ai_ml_query }}"
+      approval_token: "{{ ai_ml_approval_token }}"
+      offline: "{{ ai_ml_offline | bool }}"
+      deadline_s: "{{ ai_ml_deadline_s | int }}"
+      budget_usd: "{{ ai_ml_budget_usd | float }}"
+
+- name: Route AI/ML request
+  ansible.builtin.uri:
+    url: "{{ ai_ml_daemon_url | trim | regex_replace('/+$', '') }}/api/ai_ml/query"
+    method: POST
+    headers: >-
+      {{
+        {
+          'Authorization': 'Bearer ' ~ ai_ml_daemon_psk,
+          'X-PSK': ai_ml_daemon_psk,
+        }
+        if ai_ml_daemon_psk | length > 0
+        else {}
+      }}
+    body_format: json
+    body: "{{ _ai_ml_request_body }}"
+    follow_redirects: none
+    return_content: true
+    status_code: 200
+    timeout: "{{ ai_ml_daemon_timeout | int }}"
+    use_netrc: false
+    validate_certs: "{{ ai_ml_daemon_validate_certs | bool }}"
+  register: _ai_ml_response
+  when: not ansible_check_mode
+  no_log: "{{ ai_ml_daemon_psk | length > 0 }}"
+
+- name: Validate AI/ML routing response
+  ansible.builtin.assert:
+    that:
+      - _ai_ml_response.json is mapping
+      - _ai_ml_response.json.request_id == _ai_ml_request_body.request_id
+      - _ai_ml_response.json.matched_roles is sequence
+      - _ai_ml_response.json.refusal_reason is defined
+    quiet: true
+    fail_msg: Gludd returned a malformed AI/ML routing response
+  when: not ansible_check_mode
+
+- name: Publish AI/ML routing result
+  ansible.builtin.set_fact:
+    ai_ml_service_result: >-
+      {{
+        {
+          'planned': true,
+          'service_role': ai_ml_service_role,
+          'endpoint': ai_ml_daemon_url | trim | regex_replace('/+$', '') ~ '/api/ai_ml/query',
+          'request': _ai_ml_request_body,
+        }
+        if ansible_check_mode
+        else _ai_ml_response.json
+      }}
