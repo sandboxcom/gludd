@@ -11,9 +11,10 @@ from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from general_ludd.config.decision_codification import DecisionCodificationConfig
+from general_ludd.config.issue_sources import IssueSourceConfigs
 from general_ludd.config.model_routing import ModelRoutingConfig
-from general_ludd.config.user_config_blocks import IssuesConfig, NotificationsConfig
-from general_ludd.issue_sources.config import IssueSourceConfigs
+from general_ludd.config.user_config_blocks import IssuesConfig as IssuesConfig
+from general_ludd.config.user_config_blocks import NotificationsConfig as NotificationsConfig
 
 
 def _parse_bind_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
