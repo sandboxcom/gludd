@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import pytest
 
@@ -29,6 +29,7 @@ class BacklogExecutionError(ValueError):
     """Raised when evidence execution cannot be confined or bounded."""
 
 
+@runtime_checkable
 class PytestMain(Protocol):
     """Callable shape used for the real and injected ``pytest.main`` entrypoint."""
 
