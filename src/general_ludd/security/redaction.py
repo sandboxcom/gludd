@@ -8,58 +8,13 @@ serialization or hashing boundary first.
 
 from __future__ import annotations
 
-import json
-import math
-import re
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Final, Literal, TypeAlias, cast
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | dict[str, "JsonValue"] | list["JsonValue"]
-SensitiveKeyAction: TypeAlias = Literal["replace", "drop"]
-
-REDACTED_VALUE: Final[str] = "[REDACTED]"
-UNSUPPORTED_VALUE: Final[str] = "[REDACTED:unsupported]"
-
-_SECRET_KEY_MARKERS: Final[tuple[str, ...]] = (
-    "access_key",
-    "api_key",
-    "apikey",
-    "auth_token",
-    "authorization",
-    "client_secret",
-    "cookie",
-    "credential",
-    "passwd",
-    "password",
-    "private_key",
-    "psk",
-    "secret",
-    "session_token",
-    "set_cookie",
-    "token",
-)
-_HIDDEN_REASONING_MARKERS: Final[tuple[str, ...]] = (
-    "analysis",
-    "chain_of_thought",
-    "hidden_reasoning",
-    "internal_monologue",
-    "reasoning",
-    "thinking",
-)
-_TOKEN_USAGE_KEYS: Final[frozenset[str]] = frozenset({"input", "output"})
-_MAX_TOKEN_USAGE_COUNT: Final[int] = 9_223_372_036_854_775_807
-_URL_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?P<url>[A-Za-z][A-Za-z0-9+.-]*://[^\s<>\"']+)"
-)
-_CREDENTIAL_ASSIGNMENT_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?i)(\b(?:api[_-]?key|authorization|credential|passwd|password|psk|secret|token)"
-    r"\b\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"
-)
-_AUTH_SCHEME_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+"
+from general_ludd.security.redaction_core import (
+    REDACTED_VALUE,
+    JsonValue,
+    SensitiveKeyAction,
+    redact_value,
 )
 
 
@@ -80,7 +35,10 @@ class RedactionLimits:
             (self.max_string_chars, 1, 1_000_000),
             (self.max_total_bytes, 64, 67_108_864),
         )
-        if any(type(value) is not int or not low <= value <= high for value, low, high in bounds):
+        if any(
+            type(value) is not int or not low <= value <= high
+            for value, low, high in bounds
+        ):
             raise ValueError("redaction limits are invalid")
 
 
@@ -124,136 +82,6 @@ class RedactionResult:
         return self._canonical_bytes
 
 
-@dataclass(slots=True)
-class _Metrics:
-    redaction_count: int = 0
-    redaction_kinds: set[str] = field(default_factory=set)
-    truncation_count: int = 0
-    truncation_kinds: set[str] = field(default_factory=set)
-    visited_items: int = 0
-
-    def redact(self, kind: str) -> None:
-        self.redaction_count += 1
-        self.redaction_kinds.add(kind)
-
-    def truncate(self, kind: str) -> None:
-        self.truncation_count += 1
-        self.truncation_kinds.add(kind)
-
-
-def _canonical_json(value: JsonValue) -> bytes:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-
-
-def _normalized_key(key: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", key.casefold()).strip("_")
-
-
-def _sensitive_key_kind(key: str) -> str | None:
-    normalized = _normalized_key(key)
-    if any(marker in normalized for marker in _HIDDEN_REASONING_MARKERS):
-        return "hidden_reasoning"
-    if any(marker in normalized for marker in _SECRET_KEY_MARKERS):
-        return "secret_key"
-    return None
-
-
-def _is_safe_token_usage_counts(key: str, value: object) -> bool:
-    """Accept only the exact, bounded completion-usage counter shape."""
-    if key != "tokens" or type(value) is not dict:
-        return False
-    counts = cast(dict[object, object], value)
-    if frozenset(counts) != _TOKEN_USAGE_KEYS:
-        return False
-    return all(
-        type(count) is int and 0 <= count <= _MAX_TOKEN_USAGE_COUNT
-        for count in counts.values()
-    )
-
-
-def _redact_url(match: re.Match[str], metrics: _Metrics) -> str:
-    raw_url = match.group("url")
-    trailing = ""
-    while raw_url.endswith((".", ",", ")", "]", "}")):
-        trailing = raw_url[-1] + trailing
-        raw_url = raw_url[:-1]
-    try:
-        split = urlsplit(raw_url)
-        hostname = split.hostname
-        port = split.port
-    except ValueError:
-        metrics.redact("credential_url")
-        return "[REDACTED:credential_url]" + trailing
-
-    changed = split.username is not None or split.password is not None
-    netloc = split.netloc
-    if changed:
-        if hostname is None:
-            metrics.redact("credential_url")
-            return "[REDACTED:credential_url]" + trailing
-        rendered_host = f"[{hostname}]" if ":" in hostname else hostname
-        rendered_port = "" if port is None else f":{port}"
-        netloc = f"{REDACTED_VALUE}@{rendered_host}{rendered_port}"
-
-    query_pairs: list[tuple[str, str]] = []
-    for key, value in parse_qsl(split.query, keep_blank_values=True):
-        if _sensitive_key_kind(key) is not None:
-            query_pairs.append((key, REDACTED_VALUE))
-            changed = True
-        else:
-            query_pairs.append((key, value))
-    query = urlencode(query_pairs)
-
-    fragment = split.fragment
-    if _CREDENTIAL_ASSIGNMENT_RE.search(fragment):
-        fragment = REDACTED_VALUE
-        changed = True
-
-    if not changed:
-        return raw_url + trailing
-    metrics.redact("credential_url")
-    return urlunsplit((split.scheme, netloc, split.path, query, fragment)) + trailing
-
-
-def _redact_text(value: str, metrics: _Metrics, limits: RedactionLimits) -> str:
-    string_was_truncated = len(value) > limits.max_string_chars
-    if string_was_truncated:
-        metrics.truncate("string")
-        value = value[: limits.max_string_chars]
-    redacted = _URL_RE.sub(lambda match: _redact_url(match, metrics), value)
-
-    assignment_count = 0
-
-    def replace_assignment(match: re.Match[str]) -> str:
-        nonlocal assignment_count
-        assignment_count += 1
-        return f"{match.group(1)}{REDACTED_VALUE}"
-
-    redacted = _CREDENTIAL_ASSIGNMENT_RE.sub(replace_assignment, redacted)
-    auth_count = 0
-
-    def replace_auth(match: re.Match[str]) -> str:
-        nonlocal auth_count
-        auth_count += 1
-        return f"{match.group(1)} {REDACTED_VALUE}"
-
-    redacted = _AUTH_SCHEME_RE.sub(replace_auth, redacted)
-    for _ in range(assignment_count + auth_count):
-        metrics.redact("credential_text")
-
-    if len(redacted) > limits.max_string_chars:
-        if not string_was_truncated:
-            metrics.truncate("string")
-        return redacted[: limits.max_string_chars]
-    return redacted
-
-
 def redact_for_persistence(
     value: object,
     *,
@@ -266,114 +94,22 @@ def redact_for_persistence(
     string conversion.  ``drop`` exists only for callers whose established API
     omits credential-bearing keys; the canonical capture form uses ``replace``.
     """
-    active_limits = limits or RedactionLimits()
-    if sensitive_key_action not in {"replace", "drop"}:
-        raise ValueError("sensitive_key_action is invalid")
-    metrics = _Metrics()
-    active_containers: set[int] = set()
-
-    def visit(current: object, depth: int) -> JsonValue:
-        if depth > active_limits.max_depth:
-            metrics.truncate("depth")
-            return "[TRUNCATED:depth]"
-
-        if current is None or type(current) in (bool, int):
-            return cast(JsonScalar, current)
-        if type(current) is float:
-            if math.isfinite(current):
-                return current
-            metrics.redact("unsupported_type")
-            return UNSUPPORTED_VALUE
-        if type(current) is str:
-            return _redact_text(current, metrics, active_limits)
-
-        if isinstance(current, Mapping):
-            identity = id(current)
-            if identity in active_containers:
-                metrics.truncate("cycle")
-                return "[TRUNCATED:cycle]"
-            active_containers.add(identity)
-            safe_mapping: dict[str, JsonValue] = {}
-            try:
-                try:
-                    iterator = iter(current.items())
-                    while True:
-                        try:
-                            raw_key, child = next(iterator)
-                        except StopIteration:
-                            break
-                        if metrics.visited_items >= active_limits.max_items:
-                            metrics.truncate("items")
-                            break
-                        metrics.visited_items += 1
-                        if type(raw_key) is not str:
-                            metrics.redact("unsupported_key")
-                            continue
-                        key = raw_key
-                        sensitive_kind = _sensitive_key_kind(key)
-                        if sensitive_kind is not None and not _is_safe_token_usage_counts(
-                            key, child
-                        ):
-                            metrics.redact(sensitive_kind)
-                            if sensitive_key_action == "replace":
-                                safe_mapping[key] = REDACTED_VALUE
-                            continue
-                        safe_mapping[key] = visit(child, depth + 1)
-                except Exception:
-                    metrics.redact("unsupported_type")
-                    return UNSUPPORTED_VALUE
-            finally:
-                active_containers.remove(identity)
-            return safe_mapping
-
-        if isinstance(current, Sequence) and not isinstance(current, (str, bytes, bytearray)):
-            identity = id(current)
-            if identity in active_containers:
-                metrics.truncate("cycle")
-                return "[TRUNCATED:cycle]"
-            active_containers.add(identity)
-            safe_sequence: list[JsonValue] = []
-            try:
-                try:
-                    iterator = iter(current)
-                    while True:
-                        try:
-                            child = next(iterator)
-                        except StopIteration:
-                            break
-                        if metrics.visited_items >= active_limits.max_items:
-                            metrics.truncate("items")
-                            break
-                        metrics.visited_items += 1
-                        safe_sequence.append(visit(child, depth + 1))
-                except Exception:
-                    metrics.redact("unsupported_type")
-                    return UNSUPPORTED_VALUE
-            finally:
-                active_containers.remove(identity)
-            return safe_sequence
-
-        metrics.redact("unsupported_type")
-        return UNSUPPORTED_VALUE
-
-    safe_value = visit(value, 0)
-    canonical = _canonical_json(safe_value)
-    if len(canonical) > active_limits.max_total_bytes:
-        metrics.truncate("total_bytes")
-        safe_value = "[TRUNCATED:total_bytes]"
-        canonical = _canonical_json(safe_value)
-
+    core_result = redact_value(
+        value,
+        limits=limits or RedactionLimits(),
+        sensitive_key_action=sensitive_key_action,
+    )
     metadata = RedactionMetadata(
-        redaction_count=metrics.redaction_count,
-        redaction_kinds=tuple(sorted(metrics.redaction_kinds)),
-        truncation_count=metrics.truncation_count,
-        truncation_kinds=tuple(sorted(metrics.truncation_kinds)),
-        stored_bytes=len(canonical),
+        redaction_count=core_result.redaction_count,
+        redaction_kinds=core_result.redaction_kinds,
+        truncation_count=core_result.truncation_count,
+        truncation_kinds=core_result.truncation_kinds,
+        stored_bytes=len(core_result.canonical_bytes),
     )
     return RedactionResult(
-        value=safe_value,
+        value=core_result.value,
         metadata=metadata,
-        _canonical_bytes=canonical,
+        _canonical_bytes=core_result.canonical_bytes,
     )
 
 
