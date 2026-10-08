@@ -2,7 +2,7 @@
 galaxy_info:
   role_name: inventory_check
   author: Agentic Harness Agent
-  description: inventory_check role for the chemistry service.
+  description: Read-only fail-closed admission for one declared chemical lot.
   license: MIT
   min_ansible_version: "2.14"
   galaxy_tags: [chemistry]

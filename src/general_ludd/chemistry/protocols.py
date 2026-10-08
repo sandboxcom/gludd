@@ -28,21 +28,16 @@ import json
 import os
 import uuid
 from datetime import UTC, datetime
-from types import ModuleType
 from typing import Any
 
 _CORE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core.py")
-
-
-def _load_core() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("chemistry_core_for_protocols", _CORE_PATH)
-    assert spec is not None and spec.loader is not None, "chemistry core spec failed"
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_core = _load_core()
+_CORE_SPEC = importlib.util.spec_from_file_location(
+    "chemistry_core_for_protocols", _CORE_PATH
+)
+if _CORE_SPEC is None or _CORE_SPEC.loader is None:
+    raise ImportError("chemistry core spec failed")
+_core = importlib.util.module_from_spec(_CORE_SPEC)
+_CORE_SPEC.loader.exec_module(_core)
 
 SCHEMA_VERSION = _core.SCHEMA_VERSION
 
