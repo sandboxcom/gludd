@@ -38,6 +38,8 @@ class FakeGit:
         subjects: dict[str, str] | None = None,
         changed_paths: dict[str, Sequence[str]] | None = None,
         malformed_path_heads: frozenset[str] = frozenset(),
+        verification_refs: Sequence[tuple[str, str]] | None = None,
+        verification_output: str | None = None,
     ) -> None:
         self.refs = list(refs)
         self.ancestors = ancestors
@@ -51,6 +53,10 @@ class FakeGit:
         self.subjects = subjects or {}
         self.changed_paths = changed_paths or {}
         self.malformed_path_heads = malformed_path_heads
+        self.verification_refs = (
+            None if verification_refs is None else list(verification_refs)
+        )
+        self.verification_output = verification_output
         self.calls: list[list[str]] = []
 
     def __call__(
@@ -69,6 +75,21 @@ class FakeGit:
             return self._result(args, 1)
         if args[1] == "check-ref-format":
             return self._result(args, 0) if self.cursor_valid else self._result(args, 1)
+        if args[1:3] == ["show-ref", "--verify"]:
+            if self.verification_output is not None:
+                return self._result(args, 0, self.verification_output)
+            current_refs = dict(self.refs)
+            current_refs.setdefault("refs/heads/development", TARGET_HEAD)
+            if self.verification_refs is not None:
+                current_refs = dict(self.verification_refs)
+            requested = args[4:]
+            output = "".join(
+                f"{current_refs[ref]} {ref}\n"
+                for ref in requested
+                if ref in current_refs
+            )
+            returncode = 0 if all(ref in current_refs for ref in requested) else 1
+            return self._result(args, returncode, output)
         if args[1] == "for-each-ref":
             if (
                 not self.start_after_supported
@@ -265,6 +286,110 @@ def test_nonancestor_without_comparable_patch_rows_fails_closed_as_unique() -> N
     assert branch["lifecycle"] == "current"
     assert branch["patch_equivalent_commits"] == 0
     assert branch["unique_commits"] == 0
+
+
+@pytest.mark.parametrize(
+    "verification_refs",
+    [
+        [
+            ("refs/heads/development", PATCH_HEAD),
+            ("refs/heads/feature/current", UNIQUE_HEAD),
+        ],
+        [
+            ("refs/heads/development", TARGET_HEAD),
+            ("refs/heads/feature/current", PATCH_HEAD),
+        ],
+        [("refs/heads/development", TARGET_HEAD)],
+    ],
+)
+def test_page_snapshot_rejects_target_or_branch_movement(
+    verification_refs: Sequence[tuple[str, str]],
+) -> None:
+    fake = FakeGit(
+        refs=[("refs/heads/feature/current", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        verification_refs=verification_refs,
+    )
+
+    with pytest.raises(inventory.InventoryError, match="page refs changed"):
+        inventory.collect_inventory("development", 10, run=fake)
+
+
+@pytest.mark.parametrize(
+    "verification_output",
+    [
+        (
+            f"{TARGET_HEAD} refs/heads/development\n"
+            "not-an-object-id refs/heads/feature/current\n"
+        ),
+        (
+            f"{TARGET_HEAD} refs/heads/development\n"
+            f"{TARGET_HEAD} refs/heads/development\n"
+            f"{UNIQUE_HEAD} refs/heads/feature/current\n"
+        ),
+        (
+            f"{TARGET_HEAD} refs/heads/development\n"
+            f"{UNIQUE_HEAD} refs/heads/feature/current\n"
+            f"{PATCH_HEAD} refs/heads/feature/unrequested\n"
+        ),
+    ],
+)
+def test_page_snapshot_rejects_malformed_git_evidence(
+    verification_output: str,
+) -> None:
+    fake = FakeGit(
+        refs=[("refs/heads/feature/current", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+        verification_output=verification_output,
+    )
+
+    with pytest.raises(inventory.InventoryError, match="malformed page ref snapshot"):
+        inventory.collect_inventory("development", 10, run=fake)
+
+
+def test_page_snapshot_rejects_git_verification_failure() -> None:
+    def failed_show_ref(
+        argv: Sequence[str], cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        del cwd
+        return subprocess.CompletedProcess(argv, 128, "", "repository unavailable")
+
+    with pytest.raises(
+        inventory.InventoryError,
+        match="page ref verification failed: repository unavailable",
+    ):
+        inventory._verify_page_snapshot(
+            [],
+            {
+                "head": TARGET_HEAD,
+                "input": "development",
+                "ref": "refs/heads/development",
+            },
+            run=failed_show_ref,
+            cwd=None,
+        )
+
+
+def test_page_snapshot_uses_one_exact_bounded_show_ref_command() -> None:
+    branch_ref = "refs/heads/feature/current"
+    fake = FakeGit(
+        refs=[(branch_ref, UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+    )
+
+    inventory.collect_inventory("development", 10, run=fake)
+
+    verification_calls = [call for call in fake.calls if call[1] == "show-ref"]
+    assert verification_calls == [
+        [
+            "git",
+            "show-ref",
+            "--verify",
+            "--",
+            "refs/heads/development",
+            branch_ref,
+        ]
+    ]
 
 
 def test_branch_over_commit_scan_bound_fails_closed_without_cherry() -> None:
@@ -590,6 +715,7 @@ def test_git_command_set_is_read_only() -> None:
         "for-each-ref",
         "merge-base",
         "cherry",
+        "show-ref",
     }
 
 

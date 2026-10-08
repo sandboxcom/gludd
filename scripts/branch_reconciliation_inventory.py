@@ -566,6 +566,45 @@ def _counts(branches: Sequence[BranchRecord]) -> InventoryCounts:
     }
 
 
+def _verify_page_snapshot(
+    branches: Sequence[BranchRecord],
+    target: TargetRecord,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> None:
+    """Fail when a target or classified branch moved during one page."""
+    expected = {target["ref"]: target["head"]}
+    for branch in branches:
+        if branch["ref"] in expected:
+            raise InventoryError("malformed page ref snapshot")
+        expected[branch["ref"]] = branch["head"]
+
+    result = run(
+        ["git", "show-ref", "--verify", "--", *expected],
+        cwd,
+    )
+    if result.returncode != 0:
+        if result.returncode == 1:
+            raise InventoryError("page refs changed during classification")
+        detail = (result.stderr or result.stdout or "git command failed").strip()
+        raise InventoryError(f"page ref verification failed: {detail[:400]}")
+
+    observed: dict[str, str] = {}
+    for row in result.stdout.splitlines():
+        fields = row.split(" ", maxsplit=1)
+        if (
+            len(fields) != 2
+            or not _valid_object_id(fields[0])
+            or fields[1] not in expected
+            or fields[1] in observed
+        ):
+            raise InventoryError("malformed page ref snapshot")
+        observed[fields[1]] = fields[0]
+    if observed != expected:
+        raise InventoryError("page refs changed during classification")
+
+
 def _verify_terminal_snapshot(
     branches: Sequence[BranchRecord],
     target: TargetRecord,
@@ -621,6 +660,14 @@ def collect_inventory(
                 cwd=cwd,
             )
         )
+    if progress is not None:
+        progress("verify=page-ref-snapshot")
+    _verify_page_snapshot(
+        branches,
+        target_record,
+        run=run,
+        cwd=cwd,
+    )
     return {
         "after": after_ref,
         "bounds": {
