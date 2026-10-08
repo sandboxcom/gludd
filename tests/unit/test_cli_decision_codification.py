@@ -31,6 +31,7 @@ from general_ludd.cli_decision_codification import (
     _OperatorCLIError,
     _post_analysis,
     _request_payload,
+    _terminal_capture_status,
     _utc_timestamp,
     add_decision_codification_subparser,
 )
@@ -772,6 +773,31 @@ def test_operator_lifecycle_mismatch_fails_closed_without_reflecting_input(
 def test_operator_timestamp_rejects_unbounded_or_naive_values(value: object) -> None:
     with pytest.raises(_OperatorCLIError):
         _utc_timestamp(value)
+
+
+def test_terminal_capture_status_admits_only_terminal_states() -> None:
+    for status in ("completed", "failed", "cancelled"):
+        assert _terminal_capture_status(status) == status
+
+    for status in ("running", "incomplete", "unknown", None):
+        with pytest.raises(_OperatorCLIError):
+            _terminal_capture_status(status)
+
+
+@pytest.mark.parametrize("status", ["running", "incomplete"])
+def test_operator_capture_rejects_nonterminal_manifest_status(
+    tmp_path: Path,
+    status: str,
+) -> None:
+    operator, _bundle = _operator(tmp_path)
+    operator._replay.bundle.manifest.status = status  # type: ignore[attr-defined]
+
+    with pytest.raises(_OperatorCLIError):
+        operator.capture(
+            project_id="project-alpha",
+            policy_digest=_DIGEST_E,
+            run_id="run-1",
+        )
 
 
 def test_operator_rejects_unsigned_capture_shadow_skip_stale_head_and_bad_clock(
