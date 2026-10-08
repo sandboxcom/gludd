@@ -1314,7 +1314,7 @@ flowchart LR
       <li><strong>Measured evidence:</strong> <code>kill_owned_gate.py</code> 91%; coverage consumes a serial base or real parallel fragments, then requires an exact base before reporting.</li>
       <li><strong>Bounds:</strong> <code>SIGTERM</code> &rarr; 10 s at 100 ms polls; <code>SIGKILL</code> &rarr; 1 s.</li>
       <li>Publish ABORTED status + JSON evidence; a survivor retains <code>termination_failed</code> and blocks a replacement gate.</li>
-      <li><strong>ZDD:</strong> keep the running gate's schema, replace only after exact terminal evidence, and roll back only after marked owners clear.</li>
+      <li><strong>ZDD:</strong> preserve a marked <code>gludd-gate-run-v1</code> lock or legacy <code>{pid, started_at}</code> lock, replace only after exact terminal evidence, and roll back only after marked owners clear.</li>
     </ul>
     <p class="cite">Contract: docs/features/GATE_RESOURCE_LIFECYCLE.md:577-608 &middot; docs/features/GATE_RESOURCE_LIFECYCLE.md:1102-1129 &middot; CPython #111873 &middot; Actions runner #3341</p>
   </div>
