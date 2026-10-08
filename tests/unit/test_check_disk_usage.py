@@ -3,7 +3,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
+from typing import NoReturn
 
 import pytest
 from scripts.makefile_layout import compose_makefile
@@ -15,7 +18,7 @@ MAKEFILE = ROOT / "Makefile"
 COVERAGE_CONFIG = ROOT / "config" / "coverage_check_disk.ini"
 
 
-def _load_module():
+def _load_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location("check_disk_usage_under_test", SCRIPT)
     assert spec is not None
     assert spec.loader is not None
@@ -247,8 +250,8 @@ def test_worktree_registry_failure_is_fail_closed(
 ) -> None:
     module = _load_module()
 
-    def fail_registry(*args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        raise subprocess.CalledProcessError(128, args[0])
+    def fail_registry(command: list[str], **kwargs: object) -> NoReturn:
+        raise subprocess.CalledProcessError(128, command)
 
     monkeypatch.setattr(module.subprocess, "run", fail_registry)
 
@@ -264,7 +267,7 @@ def test_unreadable_worktree_namespace_is_fail_closed(
     worktree_root.mkdir()
     original_iterdir = Path.iterdir
 
-    def fail_for_namespace(path: Path):
+    def fail_for_namespace(path: Path) -> Iterator[Path]:
         if path == worktree_root:
             raise PermissionError("denied")
         return original_iterdir(path)
@@ -409,7 +412,7 @@ def test_main_fails_if_worktree_registry_is_unavailable(
     module = _load_module()
     monkeypatch.setattr(module, "_disk_usage_pct", lambda: 0.0)
 
-    def fail_registry():
+    def fail_registry() -> None:
         raise module.WorktreeRegistryError("registry unavailable")
 
     monkeypatch.setattr(module, "_gludd_tmp_inspection", fail_registry)
@@ -424,7 +427,7 @@ def test_main_fails_if_scratch_cannot_be_inspected(
     module = _load_module()
     monkeypatch.setattr(module, "_disk_usage_pct", lambda: 0.0)
 
-    def fail_scratch():
+    def fail_scratch() -> None:
         raise module.DiskInspectionError("scratch inspection failed")
 
     monkeypatch.setattr(module, "_gludd_tmp_inspection", fail_scratch)
