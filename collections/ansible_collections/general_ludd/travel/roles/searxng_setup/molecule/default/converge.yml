@@ -2,10 +2,6 @@
 - name: Converge
   hosts: localhost
   gather_facts: false
-  vars:
-    searxng_config_dir: "/tmp/gludd-searxng-test"
-    searxng_port: 18080
-    artifact_dir: "/tmp/gludd-searxng-test-artifacts"
   tasks:
     - name: "Include searxng_setup"
       ansible.builtin.include_role:
@@ -17,7 +13,7 @@
       general_ludd.travel.searxng_search:
         query: "flights JFK to LHR"
         category: flights
-        searxng_url: "http://localhost:18080"
+        namespace: "gludd-molecule-searxng"
         max_results: 5
         timeout: 5
       register: flight_result
