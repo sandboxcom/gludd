@@ -7,6 +7,9 @@
     sprint_path: "{{ sprint_path | default('sprint0') }}"
     repo_root: "{{ repo_root | default('.') }}"
     artifact_dir: "{{ artifact_dir | default('/tmp/harness-gap-analysis') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    daemon_psk: "{{ daemon_psk | default('') }}"
+    daemon_timeout: "{{ daemon_timeout | default(30) }}"
 
   tasks:
     - name: Create artifact directory
@@ -15,17 +18,27 @@
         state: directory
         mode: "0755"
 
+    - name: Run bounded daemon gap analysis
+      ansible.builtin.include_tasks: tasks/dogfood_api_request.yml
+      vars:
+        dogfood_api_path: /admin/gap-analysis
+        dogfood_api_method: POST
+        dogfood_api_body:
+          sprint_path: "{{ sprint_path }}"
+          repo_root: "{{ repo_root }}"
+        dogfood_api_timeout: "{{ daemon_timeout }}"
+        dogfood_api_result_fact: gap_analysis_result
+        dogfood_api_changed: false
+        dogfood_api_require_success: false
+        dogfood_daemon_url: "{{ daemon_url }}"
+        dogfood_daemon_psk: "{{ daemon_psk }}"
+
     - name: Write gap analysis artifact
       ansible.builtin.copy:
-        content: |
-          {
-            "sprint_path": "{{ sprint_path }}",
-            "repo_root": "{{ repo_root }}",
-            "playbook": "gap_analysis.yml",
-            "status": "completed"
-          }
+        content: "{{ gap_analysis_result | to_nice_json }}"
         dest: "{{ artifact_dir }}/gap_analysis_result.json"
         mode: "0644"
+      when: not ansible_check_mode
 
     - name: Report gap analysis completion
       ansible.builtin.debug:

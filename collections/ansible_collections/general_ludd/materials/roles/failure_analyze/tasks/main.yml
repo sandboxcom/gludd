@@ -1,11 +1,9 @@
 ---
-# failure_analyze role tasks — materials service.
-
-- name: Load failure_analyze defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _failure_analyze_defaults
-
-- name: Reference failure_analyze service API
-  ansible.builtin.debug:
-    msg: "failure_analyze routes via the materials service API (/api/materials/failure_analyze)."
+- name: Execute failure_analyze through the materials service
+  ansible.builtin.include_role:
+    name: general_ludd.materials.service_request
+  vars:
+    materials_service_enabled: "{{ failure_analyze_enabled }}"
+    materials_service_operation: failure_analyze
+    materials_service_request: "{{ failure_analyze_request }}"
+    materials_service_result_fact: failure_analyze_result

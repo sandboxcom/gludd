@@ -1,2 +1,6 @@
 ---
-{}
+git_release_release_plan_enabled: false
+git_release_release_plan_request:
+  path: "{{ playbook_dir }}"
+git_release_release_plan_result_fact: git_release_release_plan_result
+git_release_release_plan_output_path: ""

@@ -1,11 +1,7 @@
 ---
-# protocol_draft role tasks — chemistry service.
-
-- name: Load protocol_draft defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _protocol_draft_defaults
-
-- name: Reference protocol_draft service API
-  ansible.builtin.debug:
-    msg: "protocol_draft routes via the chemistry service API (/api/chemistry/protocol_draft)."
+- name: Route protocol_draft through the chemistry service
+  ansible.builtin.include_role:
+    name: general_ludd.chemistry.service_request
+  vars:
+    chemistry_service_role: protocol_draft
+    chemistry_service_task: protocol

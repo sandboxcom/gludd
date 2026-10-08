@@ -1,0 +1,54 @@
+---
+- name: Validate bounded dogfood daemon request
+  ansible.builtin.assert:
+    that:
+      - dogfood_api_path is match('^/admin/[A-Za-z0-9_./-]+$')
+      - dogfood_api_method in ['GET', 'POST']
+      - dogfood_api_body is mapping
+      - dogfood_api_body | to_json | length <= 262144
+      - dogfood_api_timeout | int >= 1
+      - dogfood_api_timeout | int <= 30
+      - dogfood_api_result_fact is match('^[A-Za-z_][A-Za-z0-9_]*$')
+    fail_msg: Invalid or unbounded dogfood daemon request.
+
+- name: Publish dogfood daemon check plan
+  ansible.builtin.set_fact:
+    "{{ dogfood_api_result_fact }}":
+      planned: true
+      method: "{{ dogfood_api_method }}"
+      path: "{{ dogfood_api_path }}"
+      body: "{{ dogfood_api_body }}"
+  when: ansible_check_mode
+
+- name: Execute dogfood daemon request
+  ansible.builtin.uri:
+    url: "{{ dogfood_daemon_url | trim('/') }}{{ dogfood_api_path }}"
+    method: "{{ dogfood_api_method }}"
+    headers: >-
+      {{
+        {'Authorization': 'Bearer ' ~ dogfood_daemon_psk}
+        if dogfood_daemon_psk | length > 0 else {}
+      }}
+    body: "{{ dogfood_api_body }}"
+    body_format: json
+    return_content: true
+    status_code: [200, 201]
+    timeout: "{{ dogfood_api_timeout }}"
+  register: _dogfood_api_response
+  changed_when: dogfood_api_changed | bool
+  no_log: "{{ dogfood_daemon_psk | length > 0 }}"
+  when: not ansible_check_mode
+
+- name: Publish dogfood daemon result
+  ansible.builtin.set_fact:
+    "{{ dogfood_api_result_fact }}": "{{ _dogfood_api_response.json }}"
+  when: not ansible_check_mode
+
+- name: Require successful dogfood daemon mutation
+  ansible.builtin.assert:
+    that:
+      - vars[dogfood_api_result_fact].success | default(false) | bool
+    fail_msg: Dogfood daemon mutation reported failure.
+  when:
+    - not ansible_check_mode
+    - dogfood_api_require_success | bool

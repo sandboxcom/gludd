@@ -1,11 +1,10 @@
 ---
-# helper_build role tasks — git_release service.
-
-- name: Load helper_build defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _helper_build_defaults
-
-- name: Reference helper_build service API
-  ansible.builtin.debug:
-    msg: "helper_build routes via the git_release service API (/api/git_release/helper_build)."
+- name: Execute helper-build through the git-release service
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.service_request
+  vars:
+    git_release_service_enabled: "{{ git_release_helper_build_enabled }}"
+    git_release_service_operation: helper_build
+    git_release_service_request: "{{ git_release_helper_build_request }}"
+    git_release_service_result_fact: "{{ git_release_helper_build_result_fact }}"
+    git_release_service_output_path: "{{ git_release_helper_build_output_path }}"

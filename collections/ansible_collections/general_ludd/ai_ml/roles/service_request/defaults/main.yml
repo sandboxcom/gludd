@@ -1,0 +1,14 @@
+---
+ai_ml_daemon_url: "http://127.0.0.1:8000"
+ai_ml_daemon_psk: ""
+ai_ml_daemon_timeout: 30
+ai_ml_daemon_validate_certs: true
+ai_ml_request_id: ""
+ai_ml_tenant_id: default
+ai_ml_query: ""
+ai_ml_approval_token: null
+ai_ml_offline: false
+ai_ml_deadline_s: 300
+ai_ml_budget_usd: 0.0
+ai_ml_service_role: ""
+ai_ml_service_task: ""

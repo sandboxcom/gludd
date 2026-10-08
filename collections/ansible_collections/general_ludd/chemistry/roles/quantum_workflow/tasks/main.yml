@@ -1,11 +1,7 @@
 ---
-# quantum_workflow role tasks — chemistry service.
-
-- name: Load quantum_workflow defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _quantum_workflow_defaults
-
-- name: Reference quantum_workflow service API
-  ansible.builtin.debug:
-    msg: "quantum_workflow routes via the chemistry service API (/api/chemistry/quantum_workflow)."
+- name: Route quantum_workflow through the chemistry service
+  ansible.builtin.include_role:
+    name: general_ludd.chemistry.service_request
+  vars:
+    chemistry_service_role: quantum_workflow
+    chemistry_service_task: compute

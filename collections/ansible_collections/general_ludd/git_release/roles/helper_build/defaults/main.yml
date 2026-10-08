@@ -1,2 +1,6 @@
 ---
-{}
+git_release_helper_build_enabled: false
+git_release_helper_build_request:
+  path: "{{ playbook_dir }}"
+git_release_helper_build_result_fact: git_release_helper_build_result
+git_release_helper_build_output_path: ""

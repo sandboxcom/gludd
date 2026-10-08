@@ -1,11 +1,9 @@
 ---
-# tolerance_model role tasks — materials service.
-
-- name: Load tolerance_model defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _tolerance_model_defaults
-
-- name: Reference tolerance_model service API
-  ansible.builtin.debug:
-    msg: "tolerance_model routes via the materials service API (/api/materials/tolerance_model)."
+- name: Execute tolerance_model through the materials service
+  ansible.builtin.include_role:
+    name: general_ludd.materials.service_request
+  vars:
+    materials_service_enabled: "{{ tolerance_model_enabled }}"
+    materials_service_operation: tolerance_model
+    materials_service_request: "{{ tolerance_model_request }}"
+    materials_service_result_fact: tolerance_model_result

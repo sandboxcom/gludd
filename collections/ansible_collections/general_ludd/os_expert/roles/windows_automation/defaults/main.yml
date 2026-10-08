@@ -11,4 +11,18 @@ manage_dsc: false
 manage_schtasks: false
 manage_unattended_install: false
 
+scheduled_task_name: ""
+scheduled_task_path: "\\"
+scheduled_task_actions: []
+scheduled_task_triggers: []
+scheduled_task_username: SYSTEM
+scheduled_task_logon_type: service_account
+scheduled_task_run_level: limited
+scheduled_task_enabled: true
+scheduled_task_state: present
+
+unattended_install_template_src: ""
+unattended_install_dest: "C:\\Windows\\Panther\\unattend.xml"
+unattended_install_backup: false
+
 enable_git_push: false

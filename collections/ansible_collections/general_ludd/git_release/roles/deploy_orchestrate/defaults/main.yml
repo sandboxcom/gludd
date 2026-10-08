@@ -1,2 +1,6 @@
 ---
-{}
+git_release_deploy_orchestrate_enabled: false
+git_release_deploy_orchestrate_request:
+  path: "{{ playbook_dir }}"
+git_release_deploy_orchestrate_result_fact: git_release_deploy_orchestrate_result
+git_release_deploy_orchestrate_output_path: ""

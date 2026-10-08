@@ -3,7 +3,43 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    project_dir: "{{ project_dir | default('.') }}"
+    quality_gate_targets: "{{ quality_gate_targets | default(['test-count']) }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-quality-gate') }}"
   tasks:
-    - name: Validate quality gates
-      ansible.builtin.debug:
-        msg: "Quality gate validation placeholder"
+    - name: Validate bounded quality gate request
+      ansible.builtin.assert:
+        that:
+          - project_dir | length > 0
+          - project_dir | length <= 4096
+          - quality_gate_targets is sequence
+          - quality_gate_targets | length >= 1
+          - quality_gate_targets | length <= 16
+          - quality_gate_targets | reject('match', '^[A-Za-z0-9_.-]{1,128}$') | list | length == 0
+        fail_msg: Quality gate targets must be bounded make target names.
+
+    - name: Create quality gate artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Execute quality gate targets
+      ansible.builtin.command:
+        argv:
+          - make
+          - "{{ item }}"
+        chdir: "{{ project_dir }}"
+      loop: "{{ quality_gate_targets }}"
+      register: quality_gate_results
+      changed_when: false
+
+    - name: Write quality gate evidence
+      ansible.builtin.copy:
+        content: >-
+          {{ {'status': 'success', 'targets': quality_gate_targets,
+              'results': quality_gate_results.results | default([])} | to_nice_json }}
+        dest: "{{ artifact_dir }}/quality_gate_result.json"
+        mode: "0644"
+      when: not ansible_check_mode

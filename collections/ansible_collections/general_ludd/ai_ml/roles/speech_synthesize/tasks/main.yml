@@ -1,11 +1,7 @@
 ---
-# speech_synthesize role tasks — ai_ml service.
-
-- name: Load speech_synthesize defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _speech_synthesize_defaults
-
-- name: Reference speech_synthesize service API
-  ansible.builtin.debug:
-    msg: "speech_synthesize routes via the ai_ml service API (/api/ai_ml/speech_synthesize)."
+- name: Route speech_synthesize through the AI/ML service
+  ansible.builtin.include_role:
+    name: general_ludd.ai_ml.service_request
+  vars:
+    ai_ml_service_role: speech_synthesize
+    ai_ml_service_task: speech

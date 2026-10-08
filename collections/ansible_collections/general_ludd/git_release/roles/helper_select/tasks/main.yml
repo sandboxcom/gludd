@@ -1,11 +1,10 @@
 ---
-# helper_select role tasks — git_release service.
-
-- name: Load helper_select defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _helper_select_defaults
-
-- name: Reference helper_select service API
-  ansible.builtin.debug:
-    msg: "helper_select routes via the git_release service API (/api/git_release/helper_select)."
+- name: Execute helper-select through the git-release service
+  ansible.builtin.include_role:
+    name: general_ludd.git_release.service_request
+  vars:
+    git_release_service_enabled: "{{ git_release_helper_select_enabled }}"
+    git_release_service_operation: helper_select
+    git_release_service_request: "{{ git_release_helper_select_request }}"
+    git_release_service_result_fact: "{{ git_release_helper_select_result_fact }}"
+    git_release_service_output_path: "{{ git_release_helper_select_output_path }}"
