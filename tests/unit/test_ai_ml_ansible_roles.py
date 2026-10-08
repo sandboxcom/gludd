@@ -12,7 +12,6 @@ ROLES = ROOT / "collections/ansible_collections/general_ludd/ai_ml/roles"
 ROLE_TASKS = {
     "accelerator_job": "train",
     "adapter_train": "train",
-    "dataset_engineer": "dataset",
     "evaluate_model": "evaluate",
     "image_create": "image",
     "model_distill": "distill",
@@ -59,3 +58,13 @@ def test_shared_role_calls_the_typed_endpoint_and_is_check_mode_safe() -> None:
     assert request["when"] == "not ansible_check_mode"
     assert request.get("ignore_errors") is None
     assert "ansible_check_mode" in publish["ansible.builtin.set_fact"]["ai_ml_service_result"]
+
+
+def test_dataset_engineer_uses_its_native_controller_module() -> None:
+    source = (ROLES / "dataset_engineer/tasks/main.yml").read_text(encoding="utf-8")
+    tasks = _load(ROLES / "dataset_engineer/tasks/main.yml")
+
+    assert len(tasks) == 1
+    assert "general_ludd.ai_ml.dataset_admit" in tasks[0]
+    assert "service_request" not in source
+    assert "ansible.builtin.uri" not in source

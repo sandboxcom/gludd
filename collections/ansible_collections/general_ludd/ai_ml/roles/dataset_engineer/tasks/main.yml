@@ -1,7 +1,10 @@
 ---
-- name: Route dataset_engineer through the AI/ML service
-  ansible.builtin.include_role:
-    name: general_ludd.ai_ml.service_request
-  vars:
-    ai_ml_service_role: dataset_engineer
-    ai_ml_service_task: dataset
+- name: Admit a controller-local dataset with Frictionless
+  general_ludd.ai_ml.dataset_admit:
+    root: "{{ ai_ml_dataset_root }}"
+    resources: "{{ ai_ml_dataset_resources }}"
+    schema: "{{ ai_ml_dataset_schema }}"
+    name: "{{ ai_ml_dataset_name }}"
+    description: "{{ ai_ml_dataset_description }}"
+    license: "{{ ai_ml_dataset_license }}"
+  register: ai_ml_dataset_result

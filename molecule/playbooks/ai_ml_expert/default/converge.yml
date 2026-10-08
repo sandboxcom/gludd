@@ -1,25 +1,37 @@
 ---
-# Converge: run general_ludd.ai_ml.model_select and prove it executes.
-- name: Converge - run ai_ml.model_select role
+# Converge: run the native, read-only dataset engineer role.
+- name: Converge - run ai_ml.dataset_engineer role
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8863', true) }}"
     out_dir: "/tmp/gludd-ai-ml-expert-{{ mock_port }}"
+    dataset_root: "{{ out_dir }}/dataset"
   tasks:
-    - name: Invoke model_select
+    - name: Invoke dataset engineer
       ansible.builtin.include_role:
-        name: general_ludd.ai_ml.model_select
+        name: general_ludd.ai_ml.dataset_engineer
+      vars:
+        ai_ml_dataset_root: "{{ dataset_root }}"
+        ai_ml_dataset_resources:
+          - records.csv
+        ai_ml_dataset_schema: schema.json
+        ai_ml_dataset_name: molecule-records
+        ai_ml_dataset_description: Molecule validation fixture
+        ai_ml_dataset_license: CC0-1.0
 
-    - name: Ensure marker directory exists
-      ansible.builtin.file:
-        path: "{{ out_dir }}"
-        state: directory
-        mode: "0755"
+    - name: Assert native admission result
+      ansible.builtin.assert:
+        that:
+          - ai_ml_dataset_result.admitted | bool
+          - not ai_ml_dataset_result.changed | bool
+          - ai_ml_dataset_result.resource_count | int == 1
+          - ai_ml_dataset_result.data_card_sha256 | length == 64
+        quiet: true
 
-    - name: Write execution marker
+    - name: Persist stable admission receipt for verification
       ansible.builtin.copy:
-        content: "ai_ml.model_select ran\n"
-        dest: "{{ out_dir }}/model_select_ran.ok"
+        content: "{{ ai_ml_dataset_result | to_nice_json }}\n"
+        dest: "{{ out_dir }}/dataset_admission.json"
         mode: "0644"
