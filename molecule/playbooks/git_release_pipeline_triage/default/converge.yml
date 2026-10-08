@@ -1,0 +1,39 @@
+---
+- name: Converge native git-release pipeline triage
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8872', true) }}"
+    out_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-git-release-triage-{{ mock_port }}"
+  tasks:
+    - name: Invoke native pipeline triage role
+      ansible.builtin.include_role:
+        name: general_ludd.git_release.pipeline_triage
+      vars:
+        git_release_pipeline_triage_enabled: true
+        git_release_pipeline_triage_root: "{{ out_dir }}"
+        git_release_pipeline_triage_report_path: junit.xml
+
+    - name: Repeat identical triage in check mode
+      general_ludd.git_release.pipeline_triage:
+        root: "{{ out_dir }}"
+        report_path: junit.xml
+      check_mode: true
+      register: _check_triage
+
+    - name: Assert normal and check-mode content-free evidence
+      ansible.builtin.assert:
+        that:
+          - not _check_triage.changed | bool
+          - _check_triage.triage == git_release_pipeline_triage_result
+          - git_release_pipeline_triage_result.outcome == 'failed'
+          - git_release_pipeline_triage_result.counts.failures == 1
+          - git_release_pipeline_triage_result.actionable_failures | length == 1
+          - git_release_pipeline_triage_result.actionable_failures[0].identity_sha256 | length == 64
+
+    - name: Write execution marker
+      ansible.builtin.copy:
+        content: "{{ git_release_pipeline_triage_result.terminal_outcome_sha256 }}\n"
+        dest: "{{ out_dir }}/pipeline_triage_ran.ok"
+        mode: "0600"

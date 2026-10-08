@@ -1,10 +1,24 @@
 ---
-- name: Execute pipeline-triage through the git-release service
-  ansible.builtin.include_role:
-    name: general_ludd.git_release.service_request
-  vars:
-    git_release_service_enabled: "{{ git_release_pipeline_triage_enabled }}"
-    git_release_service_operation: pipeline_triage
-    git_release_service_request: "{{ git_release_pipeline_triage_request }}"
-    git_release_service_result_fact: "{{ git_release_pipeline_triage_result_fact }}"
-    git_release_service_output_path: "{{ git_release_pipeline_triage_output_path }}"
+- name: Validate fail-closed pipeline triage inputs
+  ansible.builtin.assert:
+    that:
+      - git_release_pipeline_triage_enabled | bool
+      - git_release_pipeline_triage_root is string
+      - git_release_pipeline_triage_root is match('^/')
+      - git_release_pipeline_triage_report_path is string
+      - git_release_pipeline_triage_report_path | length > 0
+      - not git_release_pipeline_triage_report_path.startswith('/')
+      - git_release_pipeline_triage_result_fact is match('^[A-Za-z_][A-Za-z0-9_]*$')
+    quiet: true
+    fail_msg: Pipeline triage requires one explicit root-relative JUnit report
+
+- name: Triage the bounded JUnit report on the controller
+  general_ludd.git_release.pipeline_triage:
+    root: "{{ git_release_pipeline_triage_root }}"
+    report_path: "{{ git_release_pipeline_triage_report_path }}"
+  register: _git_release_pipeline_triage
+
+- name: Publish content-free pipeline triage evidence
+  ansible.builtin.set_fact:
+    git_release_pipeline_triage_result: "{{ _git_release_pipeline_triage.triage }}"
+    "{{ git_release_pipeline_triage_result_fact }}": "{{ _git_release_pipeline_triage.triage }}"
