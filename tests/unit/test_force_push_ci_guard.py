@@ -15,13 +15,14 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 
 
 def _makefile_src() -> str:
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 class TestForcePushDoesNotBypassCIInFlight:

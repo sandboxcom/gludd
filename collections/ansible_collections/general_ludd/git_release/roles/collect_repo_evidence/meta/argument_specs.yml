@@ -1,0 +1,19 @@
+---
+argument_specs:
+  main:
+    short_description: Collect read-only repository evidence from Gludd core
+    options:
+      git_release_repo_path:
+        type: str
+        required: true
+      git_release_daemon_url:
+        type: str
+        required: true
+      git_release_daemon_psk:
+        type: str
+        no_log: true
+      git_release_daemon_timeout:
+        type: int
+      git_release_daemon_validate_certs:
+        type: bool
+

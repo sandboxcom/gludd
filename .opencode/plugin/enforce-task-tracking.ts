@@ -220,8 +220,8 @@ const defaultImpl: HotModule = {
 export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
+      if (isSubagent()) return;
       try {
-        if (isSubagent()) return;
         const impl = loadHotModule("task-tracking", defaultImpl);
         const fn = impl["tool.execute.before"];
         return fn ? await fn(input, output) : undefined;
@@ -230,8 +230,8 @@ export default (({ }) => {
       }
     },
     "experimental.text.complete": async (_input: unknown, output: unknown) => {
+      if (isSubagent()) return output;
       try {
-        if (isSubagent()) return output;
         const impl = loadHotModule("task-tracking", defaultImpl);
         const fn = impl["text.complete"];
         return fn ? await fn(_input, output) : output;
@@ -243,8 +243,8 @@ export default (({ }) => {
       _input: unknown,
       output: unknown,
     ) => {
+      if (isSubagent()) return output;
       try {
-        if (isSubagent()) return output;
         const impl = loadHotModule("task-tracking", defaultImpl);
         const fn = impl["experimental.chat.system.transform"];
         return fn ? await fn(_input, output) : output;

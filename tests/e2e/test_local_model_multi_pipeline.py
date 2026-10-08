@@ -27,10 +27,21 @@ import socket
 import tempfile
 import time
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 
-_MULTI_PIPELINE_MODELS = {
+
+class _PipelineModel(TypedDict):
+    """Static configuration for one role-specific local model."""
+
+    name: str
+    repo: str
+    filename: str
+    context_size: int
+
+
+_MULTI_PIPELINE_MODELS: dict[str, _PipelineModel] = {
     "planner": {
         "name": "SmolLM2-360M",
         "repo": "bartowski/SmolLM2-360M-Instruct-GGUF",
@@ -66,12 +77,7 @@ _SNAKE_DESCRIPTION = (
 
 
 def _has_llama_cpp() -> bool:
-    try:
-        import llama_cpp  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("llama_cpp") is not None
 
 
 def _has_huggingface_hub() -> bool:
@@ -143,7 +149,7 @@ if _REASON is not None:
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def _find_cached_gguf(cache_dir: str, filename: str) -> str | None:
@@ -165,7 +171,7 @@ async def _wait_for_server(base_url: str, timeout: float = 60.0) -> None:
     async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
         for _attempt in range(int(timeout)):
             try:
-                resp = await client.get("/health")
+                resp = await client.get("/v1/models")
                 if resp.status_code == 200:
                     # Warm-up
                     warmup = await client.post(
@@ -177,7 +183,7 @@ async def _wait_for_server(base_url: str, timeout: float = 60.0) -> None:
             except httpx.TransportError:
                 pass
             await asyncio.sleep(1.0)
-    raise RuntimeError(f"Server /health did not become 200 within {timeout}s at {base_url}")
+    raise RuntimeError(f"Server /v1/models did not become 200 within {timeout}s at {base_url}")
 
 
 def _verify_generated_code(code: str, tmpdir: str) -> dict[str, object]:

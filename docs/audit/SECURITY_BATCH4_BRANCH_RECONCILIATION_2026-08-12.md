@@ -51,7 +51,7 @@ make git-patch-equivalence PATCH_UPSTREAM=HEAD \
   PATCH_HEAD=feature/security-batch4-rooted PATCH_LIMIT=10
 # patch-equivalent=2 unique=1
 
-make test-files GLUDD_XDIST=0 \
+make test-files GLUDD_XDIST_WORKERS=0 \
   TESTFILES='tests/models/test_gateway.py tests/connectors/test_security_batch4.py'
 # 18 passed
 ```

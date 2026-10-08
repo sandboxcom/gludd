@@ -1,9 +1,12 @@
+"""PSK-secured reload/model-sync broadcast from the daemon to registered workers."""
+
 from __future__ import annotations
 
 import logging
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import httpx
@@ -22,7 +25,7 @@ def _is_safe_worker_address(address: str) -> bool:
     address uses ``https`` and does not target a loopback / link-local /
     RFC-1918 / cloud-metadata (``169.254.169.254``, ``::1``, ``127.0.0.0/8`` …)
     host. A worker registered with a plain-http or metadata/loopback address
-    would otherwise receive the ``Authorization: Bearer <GLUDD_PSK>`` header in
+    would otherwise receive the ``Authorization: Bearer <GLUDD_AUTH_PSK>`` header in
     cleartext or exfiltrate it to an attacker/SSRF target. Performs NO DNS
     resolution and NO network I/O, so it is safe on the broadcast hot path.
     """
@@ -31,6 +34,8 @@ def _is_safe_worker_address(address: str) -> bool:
 
 @dataclass
 class WorkerInfo:
+    """Registry entry for one worker: id, https address, and liveness stamps."""
+
     worker_id: str
     address: str
     registered_at: float = field(default_factory=time.time)
@@ -39,20 +44,30 @@ class WorkerInfo:
 
 @dataclass
 class BroadcastResult:
+    """Per-worker outcome of one broadcast attempt."""
+
     worker_id: str
     success: bool
     error: str | None = None
 
 
 class WorkerBroadcaster:
+    """Thread-safe registry that broadcasts reloads/model updates to workers."""
+
     def __init__(
         self,
         stale_threshold_seconds: float = 300.0,
         allowlist: set[str] | None = None,
+        post: Callable[..., httpx.Response] | None = None,
     ) -> None:
+        """Initialize the registry, policy, and instance-owned HTTP transport."""
         self._workers: dict[str, WorkerInfo] = {}
         self._lock = threading.Lock()
         self._stale_threshold = stale_threshold_seconds
+        # Bind once per broadcaster so concurrent callers cannot replace or
+        # restore a mutable module-global HTTP function underneath one another.
+        # Lazy binding preserves the existing patch-before-first-call seam.
+        self._post: Callable[..., httpx.Response] | None = post
         # Defense-in-depth worker-identity allowlist (task #18). When configured,
         # the daemon only broadcasts a reload / model-sync — and, critically, the
         # PSK Bearer header — to workers whose ``worker_id`` OR ``address`` appears
@@ -84,9 +99,10 @@ class WorkerBroadcaster:
         return worker.worker_id in allowlist or worker.address in allowlist
 
     def register(self, worker: WorkerInfo) -> None:
+        """Add a worker after verifying its address is a safe https target."""
         # SSRF / PSK-leak guard: never register a worker whose address is not a
         # safe https target. Sending the daemon PSK (broadcast_reload /
-        # broadcast_model_update attach `Authorization: Bearer <GLUDD_PSK>`) to a
+        # broadcast_model_update attach `Authorization: Bearer <GLUDD_AUTH_PSK>`) to a
         # plain-http, loopback, link-local, or cloud-metadata address would leak
         # the credential in cleartext or to an attacker. Fail closed: refuse to
         # store the worker and warn, rather than crash the caller.
@@ -103,10 +119,12 @@ class WorkerBroadcaster:
             self._workers[worker.worker_id] = worker
 
     def unregister(self, worker_id: str) -> None:
+        """Remove a worker from the registry by id."""
         with self._lock:
             self._workers.pop(worker_id, None)
 
     def heartbeat(self, worker_id: str) -> None:
+        """Refresh the last-seen timestamp for one worker."""
         with self._lock:
             w = self._workers.get(worker_id)
             if w:
@@ -116,11 +134,34 @@ class WorkerBroadcaster:
         with self._lock:
             return list(self._workers.values())
 
+    def _post_request(
+        self,
+        url: str,
+        *,
+        payload: dict[str, object],
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        """Send through the broadcaster's stable, lazily bound transport."""
+        with self._lock:
+            if self._post is None:
+                self._post = httpx.post
+            post = self._post
+        return post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=10.0,
+            follow_redirects=False,
+            verify=True,
+        )
+
     def list_workers(self) -> list[WorkerInfo]:
+        """Return a snapshot of all registered workers."""
         with self._lock:
             return list(self._workers.values())
 
     def cleanup_stale(self) -> None:
+        """Drop workers whose last heartbeat is older than the threshold."""
         now = time.time()
         with self._lock:
             stale = [wid for wid, w in self._workers.items() if now - w.last_seen > self._stale_threshold]
@@ -129,14 +170,17 @@ class WorkerBroadcaster:
 
     @staticmethod
     def _auth_headers() -> dict[str, str]:
-        """Attach the daemon PSK as a Bearer token so internal /admin POSTs are
-        accepted by a secured worker (GLUDD_REQUIRE_AUTH). Without this the
-        reload/model-sync broadcasts 401 silently and the fleet never converges.
-        Fail-open only when no PSK is configured (auth disabled)."""
-        psk = os.environ.get("GLUDD_PSK", "")
+        """Attach the daemon PSK as a Bearer token for secured worker POSTs.
+
+        Without this the reload/model-sync broadcasts 401 silently and the
+        fleet never converges. Fail-open only when no PSK is configured (auth
+        disabled).
+        """
+        psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
         return {"Authorization": f"Bearer {psk}"} if psk else {}
 
     def broadcast_reload(self, scope: object) -> list[BroadcastResult]:
+        """POST a reload with the given scope to every eligible worker."""
         results = []
         scope_value = scope.value if hasattr(scope, "value") else str(scope)
         headers = self._auth_headers()
@@ -158,9 +202,7 @@ class WorkerBroadcaster:
                     w.worker_id,
                     w.address,
                 )
-                results.append(
-                    BroadcastResult(worker_id=w.worker_id, success=False, error="not allowlisted")
-                )
+                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="not allowlisted"))
                 continue
             # Defense in depth: re-validate the address at send time so the PSK
             # Bearer header is NEVER POSTed to a plain-http / loopback / link-local
@@ -172,23 +214,13 @@ class WorkerBroadcaster:
                     w.worker_id,
                     w.address,
                 )
-                results.append(
-                    BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address")
-                )
+                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address"))
                 continue
             try:
-                resp = httpx.post(
+                resp = self._post_request(
                     f"{w.address}/admin/reload",
-                    json={"scope": scope_value},
+                    payload={"scope": scope_value},
                     headers=headers,
-                    timeout=10.0,
-                    # Defense in depth (task #37): make the SSRF-via-redirect and
-                    # TLS guarantees independent of httpx defaults. follow_redirects
-                    # =False prevents an SSRF-validated URL from being redirected to
-                    # an internal host (leaking the PSK) AFTER the check; verify=True
-                    # enforces TLS certificate verification.
-                    follow_redirects=False,
-                    verify=True,
                 )
                 if resp.status_code == 200:
                     results.append(BroadcastResult(worker_id=w.worker_id, success=True))
@@ -207,9 +239,8 @@ class WorkerBroadcaster:
                 results.append(BroadcastResult(worker_id=w.worker_id, success=False, error=str(exc)))
         return results
 
-    def broadcast_model_update(
-        self, action: str, model_id: str, profile: dict[str, object]
-    ) -> list[BroadcastResult]:
+    def broadcast_model_update(self, action: str, model_id: str, profile: dict[str, object]) -> list[BroadcastResult]:
+        """POST a model sync action for one model to every eligible worker."""
         results = []
         headers = self._auth_headers()
         allowlist = self._resolve_allowlist()
@@ -231,9 +262,7 @@ class WorkerBroadcaster:
                     w.worker_id,
                     w.address,
                 )
-                results.append(
-                    BroadcastResult(worker_id=w.worker_id, success=False, error="not allowlisted")
-                )
+                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="not allowlisted"))
                 continue
             # Defense in depth: re-validate the address at send time so the PSK
             # Bearer header is NEVER POSTed to a plain-http / loopback / link-local
@@ -245,23 +274,13 @@ class WorkerBroadcaster:
                     w.worker_id,
                     w.address,
                 )
-                results.append(
-                    BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address")
-                )
+                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address"))
                 continue
             try:
-                resp = httpx.post(
+                resp = self._post_request(
                     f"{w.address}/admin/models/sync",
-                    json={"action": action, "model_id": model_id, "profile": profile},
+                    payload={"action": action, "model_id": model_id, "profile": profile},
                     headers=headers,
-                    timeout=10.0,
-                    # Defense in depth (task #37): make the SSRF-via-redirect and
-                    # TLS guarantees independent of httpx defaults. follow_redirects
-                    # =False prevents an SSRF-validated URL from being redirected to
-                    # an internal host (leaking the PSK) AFTER the check; verify=True
-                    # enforces TLS certificate verification.
-                    follow_redirects=False,
-                    verify=True,
                 )
                 if resp.status_code == 200:
                     results.append(BroadcastResult(worker_id=w.worker_id, success=True))
@@ -280,6 +299,7 @@ class WorkerBroadcaster:
         return results
 
     def ping_all(self) -> dict[str, bool]:
+        """Health-check every worker's /healthz endpoint; worker_id -> reachable."""
         results = {}
         for w in self._snapshot_workers():
             # Defense in depth (task #37): re-validate the address at send time,

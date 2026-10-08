@@ -714,6 +714,8 @@ class TestGitReleaseSecurity:
             artifact_bytes=b"artifact bytes",
             dependency_lock_bytes=lock,
             builder_identity="builder-01",
+            release_id="security-test",
+            source_sha="0" * 40,
             signature_state=SignatureState.UNSIGNED,
         )
         result = verify_provenance(record, expected_signature_state=SignatureState.VERIFIED)
@@ -733,6 +735,8 @@ class TestGitReleaseSecurity:
             artifact_bytes=b"data",
             dependency_lock_bytes=lock,
             builder_identity="builder-01",
+            release_id="security-test",
+            source_sha="0" * 40,
             signature_state=SignatureState.FAILED,
         )
         result = verify_provenance(record, expected_signature_state=SignatureState.VERIFIED)
@@ -753,6 +757,8 @@ class TestGitReleaseSecurity:
                 artifact_bytes=b"data",
                 dependency_lock_bytes=lock,
                 builder_identity="",
+                release_id="security-test",
+                source_sha="0" * 40,
             )
 
     # --- ReleasePlan rejects command injection in version/SHA ---
@@ -806,6 +812,8 @@ class TestGitReleaseSecurity:
             artifact_bytes=original,
             dependency_lock_bytes=lock,
             builder_identity="builder-01",
+            release_id="security-test",
+            source_sha="0" * 40,
             signature_state=SignatureState.VERIFIED,
         )
         tampered = b"TAMPERED artifact bytes"

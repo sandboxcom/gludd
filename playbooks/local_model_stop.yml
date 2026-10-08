@@ -10,51 +10,102 @@
     pid_file: "/tmp/gludd-model-{{ server_id }}.pid"
 
   tasks:
-    - name: Read PID from file if not provided
-      ansible.builtin.slurp:
-        path: "{{ pid_file }}"
-      register: _pid_slurp
-      when: server_pid is none and pid_file is defined
+    - name: Report local model cleanup start
+      ansible.builtin.debug:
+        msg: "local model cleanup started for {{ server_id }}"
 
-    - name: Parse PID from file
-      ansible.builtin.set_fact:
-        resolved_pid: "{{ server_pid | string if server_pid is not none else _pid_slurp.content | b64decode | trim }}"
-      when: server_pid is not none or _pid_slurp is defined
+    - name: Resolve and reconcile the owned local model process
+      block:
+        - name: Inspect the optional PID file
+          ansible.builtin.stat:
+            path: "{{ pid_file }}"
+            follow: false
+          register: _pid_file_stat
+          when:
+            - server_pid is none
+            - pid_file is defined
 
-    - name: Kill server process with SIGTERM
-      ansible.builtin.command: "kill -TERM {{ resolved_pid }}"
-      register: _term_result
-      failed_when: false
-      changed_when: _term_result.rc == 0
-      when: resolved_pid is defined and resolved_pid | int > 0
+        - name: Read the regular PID file when present
+          ansible.builtin.slurp:
+            src: "{{ pid_file }}"
+          register: _pid_slurp
+          failed_when: false
+          when:
+            - server_pid is none
+            - pid_file is defined
+            - _pid_file_stat.stat.exists | default(false)
+            - _pid_file_stat.stat.isreg | default(false)
 
-    - name: Wait for process to exit
-      ansible.builtin.shell: "ps -p {{ resolved_pid }} > /dev/null 2>&1 && echo running || echo stopped"
-      register: _ps_result
-      until: "'stopped' in _ps_result.stdout"
-      changed_when: false
-      retries: 10
-      delay: 1
-      when: resolved_pid is defined and resolved_pid | int > 0
+        - name: Resolve the optional process identity
+          ansible.builtin.set_fact:
+            _local_model_pid_candidate: >-
+              {{ (server_pid | string)
+                 if server_pid is not none
+                 else (_pid_slurp.content | default('') | b64decode | trim) }}
 
-    - name: Force kill if still running
-      ansible.builtin.command: "kill -KILL {{ resolved_pid }}"
-      register: _kill_result
-      failed_when: false
-      changed_when: _kill_result.rc == 0
-      when:
-        - resolved_pid is defined
-        - resolved_pid | int > 0
-        - "'stopped' not in _ps_result.stdout"
+        - name: Reject a malformed process identity
+          ansible.builtin.assert:
+            that:
+              - _local_model_pid_candidate is match('^[1-9][0-9]*$')
+            fail_msg: "refusing malformed local-model PID identity"
+          when: _local_model_pid_candidate | length > 0
+      always:
+        - name: Terminate the owned process and retire its PID file
+          block:
+            - name: Kill server process with SIGTERM
+              ansible.builtin.command:
+                argv:
+                  - /bin/kill
+                  - -TERM
+                  - "{{ _local_model_pid_candidate }}"
+              register: _term_result
+              failed_when: false
+              changed_when: _term_result.rc == 0
+              when: >-
+                (_local_model_pid_candidate | default(''))
+                is match('^[1-9][0-9]*$')
 
-    - name: Remove PID file
-      ansible.builtin.file:
-        path: "{{ pid_file }}"
-        state: absent
-      when: pid_file is defined
+            - name: Wait for process to exit
+              ansible.builtin.command:
+                argv:
+                  - /bin/ps
+                  - -p
+                  - "{{ _local_model_pid_candidate }}"
+              register: _ps_result
+              until: _ps_result.rc != 0
+              failed_when: false
+              changed_when: false
+              retries: 10
+              delay: 1
+              when: >-
+                (_local_model_pid_candidate | default(''))
+                is match('^[1-9][0-9]*$')
+          rescue:
+            - name: Force kill a process that outlived the grace period
+              ansible.builtin.command:
+                argv:
+                  - /bin/kill
+                  - -KILL
+                  - "{{ _local_model_pid_candidate }}"
+              register: _kill_result
+              failed_when: false
+              changed_when: _kill_result.rc == 0
+              when: >-
+                (_local_model_pid_candidate | default(''))
+                is match('^[1-9][0-9]*$')
+          always:
+            - name: Remove PID file
+              ansible.builtin.file:
+                path: "{{ pid_file }}"
+                state: absent
+              when: pid_file is defined
 
     - name: Capture server stopped fact
       ansible.builtin.set_fact:
         gludd_local_server:
           server_id: "{{ server_id }}"
           status: stopped
+
+    - name: Report local model cleanup completion
+      ansible.builtin.debug:
+        msg: "local model cleanup completed for {{ server_id }}"

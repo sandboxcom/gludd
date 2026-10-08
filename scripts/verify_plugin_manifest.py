@@ -4,7 +4,8 @@
 Cross-references the plugin list in opencode.json against actual .ts files in
 .opencode/plugin/ and .opencode/plugins/, then checks that every plugin
 registering tool.execute.before or experimental.text.complete hooks carries
-the OPENCODE_SUBAGENT early-return guard.
+the OPENCODE_SUBAGENT early-return guard.  The depth limiter is the single
+scoped exception: it must enforce its dispatch-only boundary in subagents.
 
 Exit 0 if all checks pass, exit 1 if any gap found.
 
@@ -18,6 +19,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 OPENCODE_JSON = WORKSPACE / "opencode.json"
@@ -48,10 +50,22 @@ UTILITY_FILES = {
     ".opencode/lib/shared.ts",
 }
 
+DEPTH_PLUGIN_REL = ".opencode/plugin/enforce-depth.ts"
+DEPTH_HOOK = "tool.execute.before"
+DEPTH_CONTRACT_TOKENS = (
+    "process.env.OPENCODE_DEPTH",
+    "process.env.GLUDD_MAX_DEPTH",
+    "isDispatchTool",
+    "depth >= MAX_DEPTH",
+    'permissionDecision: "deny"',
+)
 
-def _read_json(path: Path) -> dict:
+
+def _read_json(path: Path) -> dict[str, list[str]]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return cast(
+            dict[str, list[str]], json.loads(path.read_text(encoding="utf-8"))
+        )
     except (FileNotFoundError, json.JSONDecodeError) as exc:
         print(f"ERROR: cannot read {path}: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
@@ -117,7 +131,7 @@ def _guard_present(filepath: Path, hook_key: str) -> bool | None:
         return None
     lines = src.split("\n")
 
-    patterns: list[re.Pattern] = []
+    patterns: list[re.Pattern[str]] = []
     if hook_key == "tool.execute.before":
         patterns = [
             re.compile(r'"tool\.execute\.before"'),
@@ -147,9 +161,8 @@ def _guard_present(filepath: Path, hook_key: str) -> bool | None:
             return True
 
         # Mode 2 — _isSubagent() called in window; verify function definition
-        if ISUBAGENT_CALL_RE.search(window):
-            if _is_subagent_func_valid(src):
-                return True
+        if ISUBAGENT_CALL_RE.search(window) and _is_subagent_func_valid(src):
+            return True
 
         # Mode 3 — isSubagent() imported from shared.ts; verify shared.ts has guard
         if ISUBAGENT_SHARED_CALL_RE.search(window):
@@ -173,9 +186,7 @@ def _is_subagent_func_valid(src: str) -> bool:
     if GUARD_BALLOT not in src:
         return False
     # Must NOT have the recursion self-call
-    if ISUBAGENT_RECURSION_RE.search(src):
-        return False
-    return True
+    return not ISUBAGENT_RECURSION_RE.search(src)
 
 
 def _is_subagent_recursion_bug(filepath: Path) -> bool:
@@ -185,6 +196,36 @@ def _is_subagent_recursion_bug(filepath: Path) -> bool:
     except OSError:
         return False
     return bool(ISUBAGENT_RECURSION_RE.search(src))
+
+
+def _depth_boundary_contract_present(filepath: Path) -> bool:
+    """Validate the only plugin allowed to enforce inside subagents.
+
+    The exemption is deliberately mechanical and narrow: the plugin must be
+    driven by OpenCode's depth, affect dispatch tools only, and deny at the
+    configured boundary.  Reintroducing a generic subagent bypass invalidates
+    the exemption.
+    """
+    try:
+        src = filepath.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    has_bypass = (
+        "OPENCODE_SUBAGENT" in src
+        or ISUBAGENT_CALL_RE.search(src) is not None
+        or ISUBAGENT_SHARED_CALL_RE.search(src) is not None
+    )
+    return not has_bypass and all(token in src for token in DEPTH_CONTRACT_TOKENS)
+
+
+def _subagent_safety_present(plugin_rel: str, filepath: Path, hook: str) -> bool | None:
+    """Return whether a hook has isolation or the exact depth-boundary contract."""
+    guarded = _guard_present(filepath, hook)
+    if guarded is not False:
+        return guarded
+    if plugin_rel == DEPTH_PLUGIN_REL and hook == DEPTH_HOOK:
+        return _depth_boundary_contract_present(filepath)
+    return False
 
 
 def run() -> tuple[int, list[str]]:
@@ -209,11 +250,14 @@ def run() -> tuple[int, list[str]]:
         hooks = _hook_types_in_file(fpath)
         for hook in sorted(hooks):
             label = HOOK_ALIAS.get(hook, hook)
-            present = _guard_present(fpath, hook)
+            present = _subagent_safety_present(plugin_rel, fpath, hook)
             if present is None:
                 continue
             if not present:
-                issues.append(f"MISSING-GUARD: {plugin_rel} registers {label} but has no OPENCODE_SUBAGENT guard")
+                issues.append(
+                    f"MISSING-GUARD: {plugin_rel} registers {label} but has "
+                    "neither an OPENCODE_SUBAGENT guard nor the valid depth-boundary exemption"
+                )
 
         # --- Recurrence bug: _isSubagent() calls itself ---
         if _is_subagent_recursion_bug(fpath):
@@ -241,11 +285,13 @@ def run() -> tuple[int, list[str]]:
         hooks = _hook_types_in_file(WORKSPACE / plugin_rel)
         for hook in sorted(hooks):
             label = HOOK_ALIAS.get(hook, hook)
-            present = _guard_present(WORKSPACE / plugin_rel, hook)
+            present = _subagent_safety_present(
+                plugin_rel, WORKSPACE / plugin_rel, hook
+            )
             if present is None:
                 continue
             status = "OK" if present else "MISSING"
-            rows.append((fname, f"OPENCODE_SUBAGENT guard in {label}", status))
+            rows.append((fname, f"subagent safety in {label}", status))
 
         # Check _isSubagent function correctness (if defined)
         try:

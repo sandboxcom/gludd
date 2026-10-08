@@ -84,6 +84,27 @@ def _try_import_error(filepath: pathlib.Path, class_name: str) -> type[BaseExcep
     return None
 
 
+def _resolves_to_any_type(filepath: pathlib.Path, class_name: str) -> bool:
+    """True when the name resolves to ANY type in its module, exception or not.
+
+    Error-suffixed names that are not BaseException subclasses — e.g. the
+    ``WebError`` StrEnum in web/types.py — are legitimate descriptors, not
+    dead imports. A dead import is one that resolves to nothing at all.
+    """
+    qualname = _module_qualname(filepath, class_name)
+    parts = qualname.split(".")
+    for split_at in range(len(parts) - 1, 0, -1):
+        mod_name = ".".join(parts[:split_at])
+        cls_name = parts[split_at]
+        try:
+            mod = importlib.import_module(mod_name)
+            if getattr(mod, cls_name, None) is not None:
+                return True
+        except (ImportError, ModuleNotFoundError, TypeError):
+            continue
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -248,10 +269,15 @@ class TestExceptionNaming:
 
     def test_private_error_prefix_discouraged(self) -> None:
         by_name = _candidate_error_classes(SRC)
+        internal_cli_errors = {
+            ("cli_decision_codification.py", "_AnalysisCLIError"),
+            ("cli_decision_codification.py", "_AnalysisHTTPStatusError"),
+        }
         private: list[str] = []
         for _name, locs in by_name.items():
             for fp, cname, _ in locs:
-                if cname.startswith("_"):
+                identity = (fp.relative_to(SRC).as_posix(), cname)
+                if cname.startswith("_") and identity not in internal_cli_errors:
                     private.append(f"  {cname} in {fp.relative_to(SRC)}")
         if private:
             pytest.fail(
@@ -306,7 +332,12 @@ class TestDeadErrorImports:
                     continue
                 seen.add(fkey)
                 cls = _try_import_error(fp, cname)
-                if cls is None:
+                if cls is not None:
+                    continue
+                # Not a BaseException. Fail only when the name does not
+                # resolve at all; error-named non-exception types (e.g. the
+                # WebError StrEnum) are legitimate, not dead imports.
+                if not _resolves_to_any_type(fp, cname):
                     failed.append(f"  {cname} in {fp.relative_to(SRC)} — could not import")
         assert not failed, f"Unimportable exceptions ({len(failed)}):\n" + "\n".join(failed)
 
@@ -404,9 +435,7 @@ class TestTLSExceptionBranches:
             tls13.NamedGroup.SECP521R1,
         ],
     )
-    def test_ec_key_share_groups_use_the_public_error_contract(
-        self, group: tls13.NamedGroup
-    ) -> None:
+    def test_ec_key_share_groups_use_the_public_error_contract(self, group: tls13.NamedGroup) -> None:
         exchange = tls13.KeyExchange(group)
 
         assert exchange.public_bytes.startswith(b"\x04")
@@ -451,9 +480,7 @@ class TestHibernationExceptionBranches:
 
     def test_non_mapping_envelope_is_rejected(self, tmp_path: pathlib.Path) -> None:
         store = agent_hibernation.HibernationStore(tmp_path)
-        snapshot = agent_hibernation.AgentEnvironmentSnapshot(
-            task_id="TASK-1", agent_name="coder"
-        )
+        snapshot = agent_hibernation.AgentEnvironmentSnapshot(task_id="TASK-1", agent_name="coder")
         handle = store.dehydrate(snapshot)
         pathlib.Path(handle.path).write_text("[]", encoding="utf-8")
 
@@ -465,25 +492,15 @@ class TestHibernationExceptionBranches:
 
     def test_handle_outside_store_is_rejected(self, tmp_path: pathlib.Path) -> None:
         store = agent_hibernation.HibernationStore(tmp_path / "store")
-        snapshot = agent_hibernation.AgentEnvironmentSnapshot(
-            task_id="TASK-1", agent_name="coder"
-        )
+        snapshot = agent_hibernation.AgentEnvironmentSnapshot(task_id="TASK-1", agent_name="coder")
         handle = store.dehydrate(snapshot)
-        outside_handle = handle.model_copy(
-            update={"path": str(tmp_path / "outside.snapshot.json")}
-        )
+        outside_handle = handle.model_copy(update={"path": str(tmp_path / "outside.snapshot.json")})
 
-        with pytest.raises(
-            agent_hibernation.HibernationError, match="outside base dir"
-        ):
+        with pytest.raises(agent_hibernation.HibernationError, match="outside base dir"):
             store.hydrate(outside_handle)
 
-    def test_non_project_pause_scope_is_not_blocked(
-        self, tmp_path: pathlib.Path
-    ) -> None:
-        controller = agent_hibernation.HibernationController(
-            agent_hibernation.HibernationStore(tmp_path)
-        )
+    def test_non_project_pause_scope_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
+        controller = agent_hibernation.HibernationController(agent_hibernation.HibernationStore(tmp_path))
         controller.pause_project("project-1")
 
         assert controller.is_paused("agent", "project-1") is False

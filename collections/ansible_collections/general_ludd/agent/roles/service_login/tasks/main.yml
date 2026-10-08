@@ -47,10 +47,55 @@
     _login_non_interactive: "{{ login_non_interactive | default(false) }}"
     _login_api_key: "{{ login_api_key | default('') }}"
 
+- name: Preflight managed-host runtime for interactive login
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+  when:
+    - not _login_non_interactive | bool
+    - _login_api_key | length == 0
+
+- name: Validate explicit Gludd core executable for interactive login
+  ansible.builtin.assert:
+    that:
+      - gludd_cli_executable is defined
+      - gludd_cli_executable is match('^/')
+    fail_msg: >-
+      Interactive login requires an explicit absolute gludd_cli_executable from
+      the Gludd core runtime; collection roles do not import the core package.
+  when:
+    - not _login_non_interactive | bool
+    - _login_api_key | length == 0
+
+- name: Inspect Gludd core executable
+  ansible.builtin.stat:
+    path: "{{ gludd_cli_executable }}"
+  register: _login_cli_stat
+  when:
+    - not _login_non_interactive | bool
+    - _login_api_key | length == 0
+
+- name: Fail closed when Gludd core executable is unavailable
+  ansible.builtin.assert:
+    that:
+      - _login_cli_stat.stat.exists | bool
+      - _login_cli_stat.stat.executable | bool
+    fail_msg: >-
+      {{ gludd_cli_executable }} is not an executable Gludd core artifact.
+      Retain the prior verified artifact and update inventory before retrying.
+  when:
+    - not _login_non_interactive | bool
+    - _login_api_key | length == 0
+
 - name: Run browser login via gludd CLI
   ansible.builtin.command:
     cmd: >-
-      python3 -m general_ludd.cli login {{ _login_service }}
+      {{ gludd_cli_executable }} login {{ _login_service }}
       --store {{ _login_store }}
       --timeout {{ _login_timeout }}
     chdir: "{{ repo_path | default(playbook_dir) }}"

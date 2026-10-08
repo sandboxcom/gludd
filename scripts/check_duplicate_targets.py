@@ -8,7 +8,7 @@ the same target) is a hard error — it causes merge conflicts and silent
 makefile breakage.
 
 Usage:
-    python3 scripts/check_duplicate_targets.py [MAKEFILE]
+    python3 -m scripts.check_duplicate_targets [MAKEFILE]
 
 Exit codes:
     0   Clean — no duplicate targets found.
@@ -21,6 +21,15 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from scripts.makefile_layout import compose_makefile
+else:
+    try:
+        from scripts.makefile_layout import compose_makefile
+    except ModuleNotFoundError:
+        from makefile_layout import compose_makefile
 
 TARGET_PATTERN = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_.-]*):")
 TARGET_VAR_ASSIGN_PATTERN = re.compile(
@@ -30,7 +39,7 @@ TARGET_VAR_ASSIGN_PATTERN = re.compile(
 
 def extract_targets(makefile_path: Path) -> Counter[str]:
     targets: Counter[str] = Counter()
-    for line in makefile_path.read_text(encoding="utf-8").splitlines():
+    for line in compose_makefile(makefile_path).splitlines():
         stripped = line.lstrip()
         if stripped.startswith("#") or stripped.startswith("."):
             continue

@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from scripts.behavioral_specs import load_behavioral_specs
+from scripts.makefile_layout import compose_makefile
 
 from tests.unit._plugin_contract import plugin_contract_source
 
@@ -31,7 +33,12 @@ OPENCODE_JSON = ROOT / "opencode.json"
 def read_specs() -> str:
     if not SPECS_PATH.exists():
         pytest.fail(f"BEHAVIORAL_SPECS.md not found at {SPECS_PATH}")
-    return SPECS_PATH.read_text()
+    return load_behavioral_specs(SPECS_PATH)
+
+
+def read_makefile() -> str:
+    """Return the logical Makefile composed from its ordered fragments."""
+    return compose_makefile(MAKEFILE_PATH)
 
 
 def spec_ids(specs_text: str) -> list[str]:
@@ -543,13 +550,15 @@ class TestEnforceObjective:
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()
         assert "text.complete" in content, "enforce-objective.ts missing text.complete hook"
 
-    def test_objective_plugin_exports_get_primary_objective(self):
+    def test_objective_plugin_defines_get_primary_objective(self):
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()
-        assert "getPrimaryObjective" in content, "getPrimaryObjective must be exported"
+        assert "function getPrimaryObjective" in content
+        assert "export function getPrimaryObjective" not in content
 
-    def test_objective_plugin_exports_is_objective_met(self):
+    def test_objective_plugin_defines_is_objective_met(self):
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()
-        assert "isObjectiveMet" in content, "isObjectiveMet must be exported"
+        assert "function isObjectiveMet" in content
+        assert "export function isObjectiveMet" not in content
 
     def test_objective_plugin_ci_green_detection(self):
         content = (PLUGIN_DIR / "enforce-objective.ts").read_text()
@@ -690,19 +699,19 @@ class TestMakefileGuards:
         assert MAKEFILE_PATH.exists()
 
     def test_push_rate_guard_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "_push-rate-guard" in content, "_push-rate-guard target missing"
 
     def test_ci_busy_check_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "ci-busy-check" in content, "ci-busy-check target missing"
 
     def test_gate_fresh_check_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "_gate-fresh-check" in content, "_gate-fresh-check target missing"
 
     def test_test_disabled_guard_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert (
             "_test-disabled-guard" in content
             or "test-disabled" in content
@@ -712,83 +721,83 @@ class TestMakefileGuards:
         ), "Test-disabling guard missing in Makefile."
 
     def test_check_duplicate_targets_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "check-duplicate-targets" in content, "check-duplicate-targets target missing"
 
     def test_gate_background_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "gate-background" in content, "gate-background target missing"
 
     def test_gate_status_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "gate-status:" in content, "gate-status target missing"
 
     def test_gate_lite_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "gate-lite:" in content, "gate-lite target missing"
 
     def test_release_cut_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "release-cut:" in content, "release-cut target missing"
 
     def test_verify_release_completeness_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "verify-release-completeness" in content, "verify-release-completeness target missing"
 
     def test_require_ci_green_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "require-ci-green" in content, "require-ci-green target missing"
 
     def test_deploy_and_forget_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "deploy-and-forget" in content, "deploy-and-forget target missing"
 
     def test_agent_worktree_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "agent-worktree:" in content, "agent-worktree target missing"
 
     def test_agent_merge_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "agent-merge:" in content, "agent-merge target missing"
 
     def test_feature_start_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "feature-start:" in content, "feature-start target missing"
 
     def test_feature_done_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "feature-done:" in content, "feature-done target missing"
 
     def test_gated_merge_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "gated-merge:" in content, "gated-merge target missing"
 
     def test_git_merge_abort_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "git-merge-abort" in content, "git-merge-abort target missing"
 
     def test_ci_verdict_safe_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "ci-verdict-safe" in content, "ci-verdict-safe target missing"
 
     def test_collect_check_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "collect-check:" in content, "collect-check target missing"
 
     def test_check_plugin_registration_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "check-plugin-registration:" in content, "check-plugin-registration target missing (AA056)"
 
     def test_check_plugin_order_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "check-plugin-order:" in content, "check-plugin-order target missing (AA077)"
 
     def test_check_plugin_overlap_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "check-plugin-overlap:" in content, "check-plugin-overlap target missing (AA097)"
 
     def test_check_ratchet_population_exists(self):
-        content = MAKEFILE_PATH.read_text()
+        content = read_makefile()
         assert "check-ratchet-population:" in content, "check-ratchet-population target missing (AA091)"
 
 

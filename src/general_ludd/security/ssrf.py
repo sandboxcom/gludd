@@ -236,15 +236,14 @@ def host_is_blocked(host: str) -> bool:
     # and must be denied, not just the bare "localhost" name in
     # BLOCKED_HOST_NAMES. This restores the ".localhost" suffix coverage the
     # prom_scrape connector had before it delegated to this canonical guard.
-    if host == "localhost" or host.endswith(".localhost"):
-        return True
-    if host in BLOCKED_HOST_NAMES:
-        return True
-    if host in BLOCKED_METADATA_IPS:
-        return True
-    if _is_single_label_hostname(host):
-        return True
-    if _nonstandard_ip_blocked(host):
+    if (
+        host == "localhost"
+        or host.endswith(".localhost")
+        or host in BLOCKED_HOST_NAMES
+        or host in BLOCKED_METADATA_IPS
+        or _is_single_label_hostname(host)
+        or _nonstandard_ip_blocked(host)
+    ):
         return True
     try:
         ip = ipaddress.ip_address(host)
@@ -272,13 +271,10 @@ def is_url_blocked(
         parts = urlsplit(url)
     except ValueError:
         return True
-    allowed = {s.lower() for s in scheme_allowlist}
-    if parts.scheme.lower() not in allowed:
+    if parts.scheme.lower() not in {s.lower() for s in scheme_allowlist}:
         return True
     host = parts.hostname
-    if not host:
-        return True
-    return host_is_blocked(host)
+    return not host or host_is_blocked(host)
 
 
 def resolve_and_pin(

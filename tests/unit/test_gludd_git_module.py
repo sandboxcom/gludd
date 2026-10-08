@@ -1,55 +1,22 @@
-"""Unit test for the gludd_git Ansible module.
-
-Loads the real shipped module via importlib, drives main() with a mocked
-AnsibleModule + an injected fake GitAutomation (NO real git runs), and asserts
-the commit/branch behaviour plus the worktree/merge/push ops added on top of the
-hardened Python control plane. Every git boundary is mocked; the module is a
-thin delegating wrapper, so the test pins that it (a) delegates to the library,
-(b) routes the commit dirty-check through changed_files() (under the lock, not a
-bare `git status`), and (c) surfaces the typed results.
-"""
+"""HTTP compatibility tests for the daemon-backed ``gludd_git`` module."""
 
 from __future__ import annotations
 
 import importlib.util
-import subprocess
-import sys
-import types
 from pathlib import Path
 from types import ModuleType
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
-from general_ludd.git_automation.types import (
-    BatchPushResult,
-    CloneResult,
-    GatedCommitResult,
-    GitStateResult,
-    InitResult,
-    MergeResult,
-    PushResult,
-    WorktreeInfo,
-    WorktreeResult,
-)
-
-ROOT = Path(__file__).parent.parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = (
-    ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent"
-    / "plugins" / "modules" / "gludd_git.py"
+    ROOT / "collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_git.py"
 )
-
-
-def _load_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("gludd_git", str(MODULE_PATH))
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 class _FakeAnsibleModule:
-    def __init__(self, params: dict[str, Any], check_mode: bool = False) -> None:
+    def __init__(self, params: dict[str, Any], *, check_mode: bool = False) -> None:
         self.params = params
         self.check_mode = check_mode
         self.exited: dict[str, Any] | None = None
@@ -62,808 +29,180 @@ class _FakeAnsibleModule:
         self.failed = kwargs
 
 
-class _FakeGit:
-    """Records calls and returns canned typed results."""
+class _FakeClient:
+    def __init__(self, response: dict[str, Any] | None = None) -> None:
+        self.response = response or {
+            "_status": 200,
+            "result": {"sha": "abc1234", "success": True},
+            "changed": True,
+        }
+        self.posts: list[tuple[str, dict[str, Any]]] = []
+        self.init: dict[str, Any] = {}
 
-    def __init__(self, repo_path: str = ".", **behaviour: Any) -> None:
-        self.repo_path = repo_path
-        self.calls: list[tuple] = []
-        self._behaviour = behaviour
+    def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        self.posts.append((path, body))
+        return self.response
 
-    def changed_files(self) -> list[str]:
-        self.calls.append(("changed_files",))
-        return self._behaviour.get("changed_files", [])
 
-    def init_repo(self, path: str | None = None) -> InitResult:
-        self.calls.append(("init_repo", path))
-        return InitResult(
-            path=path or self.repo_path,
-            created=not self._behaviour.get("init_existing", False),
-            message="initialized",
-        )
+def _load_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("gludd_git", MODULE_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-    def commit(self, message: str) -> str:
-        self.calls.append(("commit", message))
-        return self._behaviour.get("commit_sha", "abc1234")
 
-    def create_branch(self, name: str) -> str:
-        self.calls.append(("create_branch", name))
-        if self._behaviour.get("branch_exists"):
-            raise subprocess.CalledProcessError(
-                1, "git branch", stderr="fatal: a branch named 'x' already exists"
-            )
-        return name
-
-    def list_branches(self) -> list[str]:
-        self.calls.append(("list_branches",))
-        return ["main", "feature/x"]
-
-    def delete_branch(self, name: str) -> bool:
-        self.calls.append(("delete_branch", name))
-        return not self._behaviour.get("branch_delete_missing", False)
-
-    def current_branch(self) -> str:
-        self.calls.append(("current_branch",))
-        return self._behaviour.get("current_branch", "main")
-
-    def clone(
-        self,
-        url: str,
-        target_dir: str,
-        timeout: float = 120.0,
-        *,
-        allow_local: bool = True,
-    ) -> CloneResult:
-        self.calls.append(("clone", url, target_dir, timeout, allow_local))
-        failure = self._behaviour.get("clone_failure", "")
-        return CloneResult(
-            path=target_dir,
-            url=url,
-            success=not bool(failure),
-            already_present=bool(self._behaviour.get("clone_already_present", False)),
-            message=failure or "cloned",
-        )
-
-    def list_worktrees(self, repo_path: str) -> list[WorktreeInfo]:
-        self.calls.append(("list_worktrees", repo_path))
-        return [WorktreeInfo(path="/wt/a", branch="main", commit="deadbeef")]
-
-    def create_worktree(self, repo_path: str, branch: str, wt_path: str) -> WorktreeResult:
-        self.calls.append(("create_worktree", repo_path, branch, wt_path))
-        if self._behaviour.get("worktree_reject"):
-            raise ValueError("refusing worktree path containing '..' traversal")
-        return WorktreeResult(path=wt_path, branch=branch, success=True)
-
-    def remove_worktree(self, repo_path: str, wt_path: str) -> bool:
-        self.calls.append(("remove_worktree", repo_path, wt_path))
-        return True
-
-    def merge_branch(self, repo_path: str, source: str, target: str, strategy: str = "ff") -> MergeResult:
-        self.calls.append(("merge_branch", repo_path, source, target, strategy))
-        return MergeResult(success=True, strategy=strategy, message="merged")
-
-    def push_to_remote(self, repo_path: str, remote: str = "origin", branch: str | None = None) -> PushResult:
-        self.calls.append(("push_to_remote", repo_path, remote, branch))
-        return PushResult(success=True, remote=remote, branch=branch or "")
-
-    def tag_release(self, tag: str) -> str:
-        self.calls.append(("tag_release", tag))
-        return tag
-
-    def tag_checkpoint(self, tag: str) -> str:
-        self.calls.append(("tag_checkpoint", tag))
-        return tag
-
-    def create_release_tag(self, repo_path: str) -> str:
-        self.calls.append(("create_release_tag", repo_path))
-        return "20260722123456"
-
-    def create_checkpoint_tag(self, repo_path: str, todo_id: str, sha: str) -> str:
-        self.calls.append(("create_checkpoint_tag", repo_path, todo_id, sha))
-        return f"agent/{todo_id}/20260722123456/{sha[:7]}"
-
-    def gated_commit(self, files: list[str], message: str, gate_cmd: list[str]) -> GatedCommitResult:
-        self.calls.append(("gated_commit", files, message, gate_cmd))
-        failure = self._behaviour.get("gated_commit_failure", "")
-        return GatedCommitResult(
-            success=not bool(failure),
-            commit_sha=None if failure else "gate1234",
-            gate_returncode=1 if failure else 0,
-            message=failure or "committed",
-        )
-
-    def gated_merge(self, source: str, target: str, gate_cmd: list[str], strategy: str = "ff") -> GatedCommitResult:
-        self.calls.append(("gated_merge", source, target, gate_cmd, strategy))
-        failure = self._behaviour.get("gated_merge_failure", "")
-        return GatedCommitResult(
-            success=not bool(failure),
-            commit_sha=None if failure else "merge1234",
-            gate_returncode=1 if failure else 0,
-            message=failure or "merged",
-        )
-
-    def workflow_state(self, **kwargs: Any) -> GitStateResult:
-        self.calls.append(("workflow_state", kwargs))
-        errors = self._behaviour.get("state_errors", [])
-        return GitStateResult(
-            success=not errors,
-            branch="development",
-            head="abc1234",
-            dirty_count=0,
-            remote=kwargs.get("remote", "sandboxcom"),
-            remote_ref="refs/heads/development",
-            remote_head="abc1234",
-            errors=errors,
-        )
-
-def _params(**overrides: Any) -> dict[str, Any]:
-    params: dict[str, Any] = {
-        "path": "/repo",
-        "op": "commit",
-        "clone_url": None,
-        "target_dir": None,
-        "git_clone_timeout": 120,
-        "clone_allow_local": True,
-        "message": None,
-        "files": [],
-        "gate_cmd": [],
-        "branch": None,
-        "worktree_path": None,
-        "source": None,
-        "target": None,
-        "strategy": "ff",
-        "tag": None,
-        "todo_id": None,
-        "sha": None,
-        "remote": "origin",
-        "threshold": 5,
-        "force": False,
-        "check_ci": True,
-        "release_tag": None,
-        "release_message": "",
-        "release_remote": "sandboxcom",
-        "release_repo": "sandboxcom/gludd",
-        "skip_readme_check": False,
-        "skip_ci_check": False,
-        "run_id": None,
-        "state_ref": "",
-        "state_gha_head_sha": "",
-        "state_worktree_target_ref": "HEAD",
-        "state_preserve_branch_patterns": [],
-        "state_reconciled_preserve_heads": [],
-        "state_reconciled_preserve_head_file": "config/reconciled_preserved_heads.txt",
-        "state_assert_clean": False,
-        "state_assert_no_feature_on_master": False,
-        "state_assert_merge_ready": False,
-        "state_assert_remote_head": False,
-        "state_assert_gha_matches_local": False,
-        "state_assert_no_unintegrated_worktrees": False,
-        "state_assert_no_unintegrated_branches": False,
+def _params(module: ModuleType, **overrides: Any) -> dict[str, Any]:
+    params = {
+        name: option.get("default")
+        for name, option in module._argument_spec().items()
     }
+    params.update(
+        {
+            "path": "/repo",
+            "op": "commit",
+            "daemon_url": "http://daemon:8000",
+            "psk": "secret",
+            "timeout": 45,
+        }
+    )
     params.update(overrides)
     return params
 
 
-@pytest.fixture
-def module() -> ModuleType:
-    return _load_module()
+def _run(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    response: dict[str, Any] | None = None,
+    check_mode: bool = False,
+    **overrides: Any,
+) -> tuple[_FakeAnsibleModule, _FakeClient, ModuleType]:
+    module = _load_module()
+    ansible = _FakeAnsibleModule(_params(module, **overrides), check_mode=check_mode)
+    client = _FakeClient(response)
 
+    def _client_factory(**kwargs: Any) -> _FakeClient:
+        client.init = kwargs
+        return client
 
-def _inject_fake_git(module: ModuleType, monkeypatch: pytest.MonkeyPatch, **behaviour: Any) -> dict:
-    """Inject a fake general_ludd.git_automation.repo.GitAutomation; capture instance."""
-    holder: dict = {}
-
-    def _factory(repo_path: str = ".") -> _FakeGit:
-        git = _FakeGit(repo_path, **behaviour)
-        holder["git"] = git
-        return git
-
-    fake_pkg = types.ModuleType("general_ludd.git_automation.repo")
-    cast(Any, fake_pkg).GitAutomation = _factory
-    monkeypatch.setitem(sys.modules, "general_ludd.git_automation.repo", fake_pkg)
-    return holder
-
-
-def _run(module: ModuleType, monkeypatch: pytest.MonkeyPatch, params: dict, **behaviour: Any):
-    fake_mod = _FakeAnsibleModule(params, check_mode=params.pop("_check_mode", False))
-    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
-    holder = _inject_fake_git(module, monkeypatch, **behaviour)
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: ansible)
+    monkeypatch.setattr(module, "GluddClient", _client_factory)
     module.main()
-    return fake_mod, holder.get("git")
+    return ansible, client, module
 
 
-# --- commit -----------------------------------------------------------------
+def test_commit_posts_typed_request_and_preserves_result_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ansible, client, _ = _run(
+        monkeypatch,
+        message="boundary migration",
+        files=["src/app.py"],
+        idempotency_key="commit:boundary",
+    )
+
+    assert ansible.failed is None
+    assert ansible.exited is not None
+    assert ansible.exited["changed"] is True
+    assert ansible.exited["sha"] == "abc1234"
+    assert ansible.exited["result"] == {"sha": "abc1234", "success": True}
+    assert client.init == {"base_url": "http://daemon:8000", "psk": "secret", "timeout": 45}
+    assert client.posts[0][0] == "/admin/git/operation"
+    assert client.posts[0][1]["op"] == "commit"
+    assert client.posts[0][1]["idempotency_key"] == "commit:boundary"
+    assert "psk" not in client.posts[0][1]
 
 
-def test_init_delegates_to_hardened_git_automation(module, monkeypatch):
-    fake_mod, git = _run(module, monkeypatch, _params(op="init"))
+def test_read_only_operation_runs_in_check_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = {"_status": 200, "result": {"branch": "development"}, "changed": False}
+    ansible, client, _ = _run(
+        monkeypatch,
+        response=response,
+        check_mode=True,
+        op="current_branch",
+    )
 
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"] == {
-        "path": "/repo",
-        "created": True,
-        "message": "initialized",
+    assert ansible.failed is None
+    assert ansible.exited is not None
+    assert ansible.exited["changed"] is False
+    assert ansible.exited["branch"] == "development"
+    assert len(client.posts) == 1
+
+
+def test_mutation_check_mode_has_no_http_side_effect(monkeypatch: pytest.MonkeyPatch) -> None:
+    ansible, client, _ = _run(
+        monkeypatch,
+        check_mode=True,
+        op="push",
+        branch="development",
+    )
+
+    assert ansible.failed is None
+    assert ansible.exited is not None
+    assert ansible.exited["result"]["would_change"] is True
+    assert ansible.exited["changed"] is True
+    assert client.posts == []
+
+
+@pytest.mark.parametrize("op", ["gated_commit", "gated_merge"])
+def test_gated_operations_require_make_argv_before_http(
+    monkeypatch: pytest.MonkeyPatch,
+    op: str,
+) -> None:
+    ansible, client, _ = _run(monkeypatch, op=op, gate_cmd=[])
+
+    assert ansible.exited is None
+    assert ansible.failed is not None
+    assert ansible.failed["msg"] == f"{op} requires non-empty gate_cmd"
+    assert client.posts == []
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"_status": 401, "detail": "unauthorized"},
+        {"_status": 0, "_error": "connection refused"},
+        {"_status": 503, "detail": "git service unavailable"},
+    ],
+)
+def test_http_failures_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    response: dict[str, Any],
+) -> None:
+    ansible, _, _ = _run(monkeypatch, response=response, message="x")
+
+    assert ansible.exited is None
+    assert ansible.failed is not None
+    assert ansible.failed["changed"] is False
+    assert ansible.failed["status"] == response["_status"]
+
+
+def test_server_changed_flag_controls_compatibility_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = {
+        "_status": 200,
+        "result": {"already_present": True, "branch": "feature/x"},
+        "changed": False,
     }
-    assert ("init_repo", "/repo") in git.calls
-
-
-def test_init_existing_repository_is_unchanged(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
+    ansible, _, _ = _run(
         monkeypatch,
-        _params(op="init"),
-        init_existing=True,
+        response=response,
+        op="branch",
+        branch="feature/x",
     )
 
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert ("init_repo", "/repo") in git.calls
-
-def test_commit_with_changes_uses_changed_files_not_bare_status(module, monkeypatch):
-    fake_mod, git = _run(
-        module, monkeypatch, _params(op="commit", message="m"), changed_files=["a.py"]
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["sha"] == "abc1234"
-    # Lock-respecting dirty-check: changed_files() was called, no bare git status.
-    assert ("changed_files",) in git.calls
-    assert ("commit", "m") in git.calls
-
-
-def test_commit_nothing_to_commit_is_unchanged(module, monkeypatch):
-    fake_mod, git = _run(
-        module, monkeypatch, _params(op="commit", message="m"), changed_files=[]
-    )
-    assert fake_mod.exited["changed"] is False
-    assert ("commit", "m") not in git.calls
-
-
-# --- branch -----------------------------------------------------------------
-
-
-def test_current_branch_is_read_only(module, monkeypatch):
-    fake_mod, git = _run(module, monkeypatch, _params(op="current_branch"))
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert fake_mod.exited["branch"] == "main"
-    assert ("current_branch",) in git.calls
-
-
-def test_branch_list_is_read_only(module, monkeypatch):
-    fake_mod, git = _run(module, monkeypatch, _params(op="branch_list"))
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert fake_mod.exited["result"]["branches"] == ["main", "feature/x"]
-    assert ("list_branches",) in git.calls
-
-
-def test_branch_create_is_changed(module, monkeypatch):
-    fake_mod, _git = _run(module, monkeypatch, _params(op="branch", branch="feature/x"))
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["branch"] == "feature/x"
-
-
-def test_branch_already_exists_is_unchanged(module, monkeypatch):
-    fake_mod, _git = _run(
-        module, monkeypatch, _params(op="branch", branch="feature/x"), branch_exists=True
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-
-
-def test_branch_delete_delegates(module, monkeypatch):
-    fake_mod, git = _run(module, monkeypatch, _params(op="branch_delete", branch="old/x"))
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["deleted"] is True
-    assert ("delete_branch", "old/x") in git.calls
-
-
-def test_ci_verdict_is_read_only_and_dispatches(module, monkeypatch):
-    calls: list[tuple] = []
-    import general_ludd.git_automation.ci_ops as ci_ops
-
-    monkeypatch.setattr(
-        ci_ops,
-        "ci_verdict",
-        lambda branch="development", sha=None: calls.append((branch, sha))
-        or {"verdict": "GREEN", "headSha": sha or "abc"},
-    )
-    fake_mod, _ = _run(
-        module,
-        monkeypatch,
-        _params(op="ci_verdict", branch="development", sha="abc"),
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert calls == [("development", "abc")]
-
-
-def test_release_delete_dispatches_typed_result(module, monkeypatch):
-    import general_ludd.git_automation.release_ops as release_ops
-    from general_ludd.git_automation.types import ReleaseDeleteResult
-
-    monkeypatch.setattr(
-        release_ops,
-        "release_delete",
-        lambda **kwargs: ReleaseDeleteResult(success=True, tag=kwargs["tag"], message="ok"),
-    )
-    fake_mod, _ = _run(
-        module,
-        monkeypatch,
-        _params(op="release_delete", release_tag="v1.2.3"),
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["tag"] == "v1.2.3"
-
-
-def test_release_cut_check_mode_has_no_side_effect(module, monkeypatch):
-    import general_ludd.git_automation.release_ops as release_ops
-    monkeypatch.setattr(release_ops, "release_cut", lambda **_: pytest.fail("called in check mode"))
-    fake_mod, _ = _run(
-        module,
-        monkeypatch,
-        _params(op="release_cut", release_tag="v1.2.3", _check_mode=True),
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["would_change"] is True
-
-
-def test_release_recut_dispatches_typed_result(module, monkeypatch):
-    import general_ludd.git_automation.release_ops as release_ops
-    from general_ludd.git_automation.types import ReleaseRecutResult
-
-    monkeypatch.setattr(
-        release_ops,
-        "release_recut",
-        lambda **kwargs: ReleaseRecutResult(success=True, tag=kwargs["tag"], message="ok"),
-    )
-    fake_mod, _ = _run(module, monkeypatch, _params(op="release_recut", release_tag="v1.2.3"))
-    assert fake_mod.failed is None
-    assert fake_mod.exited["result"]["tag"] == "v1.2.3"
-
-
-def test_ci_cancel_dispatches_and_surfaces_failure(module, monkeypatch):
-    import general_ludd.git_automation.ci_ops as ci_ops
-
-    monkeypatch.setattr(ci_ops, "ci_cancel", lambda run_id: {"success": True, "run_id": run_id})
-    fake_mod, _ = _run(module, monkeypatch, _params(op="ci_cancel", run_id="42"))
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["run_id"] == "42"
-
-
-# --- clone -------------------------------------------------------------------
-
-
-def test_clone_delegates_to_git_automation(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="clone",
-            clone_url="https://example.invalid/repo.git",
-            target_dir="/tmp/repo",
-            git_clone_timeout=30,
-            clone_allow_local=False,
-        ),
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["success"] is True
-    assert (
-        "clone",
-        "https://example.invalid/repo.git",
-        "/tmp/repo",
-        30.0,
-        False,
-    ) in git.calls
-
-
-def test_clone_existing_checkout_is_unchanged(module, monkeypatch):
-    fake_mod, _git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="clone",
-            clone_url="https://example.invalid/repo.git",
-            target_dir="/tmp/repo",
-        ),
-        clone_already_present=True,
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-
-
-def test_clone_failure_fails_closed_with_payload(module, monkeypatch):
-    fake_mod, _git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="clone",
-            clone_url="https://example.invalid/repo.git",
-            target_dir="/tmp/repo",
-        ),
-        clone_failure="clone failed",
-    )
-    assert fake_mod.exited is None
-    assert fake_mod.failed["msg"] == "clone failed"
-    assert fake_mod.failed["result"]["success"] is False
-
-
-# --- worktree_list (read-only, check-mode safe) -----------------------------
-
-def test_worktree_list_returns_typed_rows(module, monkeypatch):
-    fake_mod, _git = _run(module, monkeypatch, _params(op="worktree_list"))
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    wts = fake_mod.exited["result"]["worktrees"]
-    assert wts[0]["path"] == "/wt/a"
-    assert wts[0]["branch"] == "main"
-
-
-def test_worktree_list_runs_in_check_mode(module, monkeypatch):
-    fake_mod, git = _run(
-        module, monkeypatch, _params(op="worktree_list", _check_mode=True)
-    )
-    assert fake_mod.failed is None
-    assert ("list_worktrees", "/repo") in git.calls
-
-
-# --- worktree_create / remove ----------------------------------------------
-
-def test_worktree_create_delegates(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(op="worktree_create", branch="agent/x", worktree_path="/wt/x"),
-    )
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["success"] is True
-    assert ("create_worktree", "/repo", "agent/x", "/wt/x") in git.calls
-
-
-def test_worktree_create_security_reject_is_clean_failure(module, monkeypatch):
-    fake_mod, _git = _run(
-        module,
-        monkeypatch,
-        _params(op="worktree_create", branch="agent/x", worktree_path="../evil"),
-        worktree_reject=True,
-    )
-    assert fake_mod.exited is None
-    assert "rejected" in fake_mod.failed["msg"]
-
-
-def test_worktree_remove_delegates(module, monkeypatch):
-    fake_mod, _git = _run(
-        module, monkeypatch, _params(op="worktree_remove", worktree_path="/wt/x")
-    )
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["removed"] is True
-
-
-# --- merge / push -----------------------------------------------------------
-
-def test_merge_delegates_with_strategy(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(op="merge", source="feature/x", target="main", strategy="no-ff"),
-    )
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["strategy"] == "no-ff"
-    assert ("merge_branch", "/repo", "feature/x", "main", "no-ff") in git.calls
-
-
-def test_push_delegates(module, monkeypatch):
-    fake_mod, git = _run(
-        module, monkeypatch, _params(op="push", branch="main", remote="upstream")
-    )
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["remote"] == "upstream"
-    assert ("push_to_remote", "/repo", "upstream", "main") in git.calls
-
-
-def test_batch_push_delegates_threshold_and_ci_controls(module, monkeypatch):
-    result = BatchPushResult(
-        pushed=False,
-        unpushed_count=2,
-        threshold=5,
-        reason="below_threshold",
-    )
-    monkeypatch.setattr(module, "batch_push", lambda **kwargs: result, raising=False)
-    fake_mod, _git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="batch_push",
-            remote="sandboxcom",
-            branch="development",
-            threshold=5,
-            force=False,
-            check_ci=True,
-        ),
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert fake_mod.exited["result"]["reason"] == "below_threshold"
-
-
-def test_tag_release_delegates(module, monkeypatch):
-    fake_mod, git = _run(module, monkeypatch, _params(op="tag_release", tag="v1.0.0"))
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["tag"] == "v1.0.0"
-    assert ("tag_release", "v1.0.0") in git.calls
-
-
-def test_tag_checkpoint_delegates(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(op="tag_checkpoint", tag="agent/TODO-1/20260722123456/abcdef1"),
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert ("tag_checkpoint", "agent/TODO-1/20260722123456/abcdef1") in git.calls
-
-
-def test_release_tag_generates_tag(module, monkeypatch):
-    fake_mod, git = _run(module, monkeypatch, _params(op="release_tag"))
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["tag"] == "20260722123456"
-    assert ("create_release_tag", "/repo") in git.calls
-
-
-def test_checkpoint_tag_generates_tag(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(op="checkpoint_tag", todo_id="TODO-1", sha="abcdef123456"),
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["tag"] == "agent/TODO-1/20260722123456/abcdef1"
-    assert ("create_checkpoint_tag", "/repo", "TODO-1", "abcdef123456") in git.calls
-
-
-def test_mutating_op_check_mode_does_not_call_git(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(op="push", branch="main", _check_mode=True),
-    )
-    assert fake_mod.failed is None
-    assert fake_mod.exited["result"]["would_change"] is True
-    # No real push happened.
-    assert all(c[0] != "push_to_remote" for c in git.calls)
-
-
-# --- workflow state ----------------------------------------------------------
-
-
-def test_state_op_delegates_to_workflow_state(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="state",
-            remote="sandboxcom",
-            state_ref="development",
-            state_assert_clean=True,
-            state_assert_remote_head=True,
-        ),
-    )
-
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert fake_mod.exited["result"]["success"] is True
-    assert fake_mod.exited["result"]["remote"] == "sandboxcom"
-    assert git.calls[0][0] == "workflow_state"
-    assert git.calls[0][1]["assert_clean"] is True
-    assert git.calls[0][1]["assert_remote_head"] is True
-
-
-def test_state_op_delegates_complete_state_machine_surface(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="state",
-            remote="sandboxcom",
-            state_ref="fix/full-run",
-            state_gha_head_sha="abc123def456",
-            state_worktree_target_ref="development",
-            state_preserve_branch_patterns=["main-dirty-preserve-*", "preserve-*"],
-            state_reconciled_preserve_heads=["1111111", "2222222"],
-            state_reconciled_preserve_head_file="config/custom-preserve-heads.txt",
-            state_assert_clean=True,
-            state_assert_no_feature_on_master=True,
-            state_assert_merge_ready=True,
-            state_assert_remote_head=True,
-            state_assert_gha_matches_local=True,
-            state_assert_no_unintegrated_worktrees=True,
-            state_assert_no_unintegrated_branches=True,
-        ),
-    )
-
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert git.calls[0][0] == "workflow_state"
-    assert git.calls[0][1] == {
-        "remote": "sandboxcom",
-        "ref": "fix/full-run",
-        "gha_head_sha": "abc123def456",
-        "worktree_target_ref": "development",
-        "preserve_branch_patterns": ("main-dirty-preserve-*", "preserve-*"),
-        "reconciled_preserve_heads": ("1111111", "2222222"),
-        "reconciled_preserve_head_file": "config/custom-preserve-heads.txt",
-        "assert_clean": True,
-        "assert_no_feature_on_master": True,
-        "assert_merge_ready": True,
-        "assert_remote_head": True,
-        "assert_gha_matches_local": True,
-        "assert_no_unintegrated_worktrees": True,
-        "assert_no_unintegrated_branches": True,
-    }
-
-def test_state_op_fails_when_workflow_state_has_errors(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(op="state", state_assert_merge_ready=True),
-        state_errors=["master has commits not contained in development"],
-    )
-
-    assert fake_mod.exited is None
-    assert fake_mod.failed["msg"] == "git state guard failed"
-    assert fake_mod.failed["result"]["success"] is False
-    assert git.calls[0][0] == "workflow_state"
-
-
-def test_state_op_delegates_unintegrated_worktree_guard(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="state",
-            state_worktree_target_ref="development",
-            state_assert_no_unintegrated_worktrees=True,
-        ),
-    )
-
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert git.calls[0][0] == "workflow_state"
-    assert git.calls[0][1]["worktree_target_ref"] == "development"
-    assert git.calls[0][1]["assert_no_unintegrated_worktrees"] is True
-
-
-def test_state_op_delegates_unintegrated_branch_guard(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="state",
-            state_worktree_target_ref="development",
-            state_preserve_branch_patterns=["main-dirty-preserve-*"],
-            state_assert_no_unintegrated_branches=True,
-        ),
-    )
-
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert git.calls[0][0] == "workflow_state"
-    assert git.calls[0][1]["worktree_target_ref"] == "development"
-    assert git.calls[0][1]["preserve_branch_patterns"] == ("main-dirty-preserve-*",)
-    assert git.calls[0][1]["assert_no_unintegrated_branches"] is True
-
-
-def test_state_op_delegates_reconciled_preserved_head_inputs(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="state",
-            state_reconciled_preserve_heads=["preservehead"],
-            state_reconciled_preserve_head_file="config/custom-preserve-heads.txt",
-            state_assert_no_unintegrated_branches=True,
-        ),
-    )
-
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is False
-    assert git.calls[0][0] == "workflow_state"
-    assert git.calls[0][1]["reconciled_preserve_heads"] == ("preservehead",)
-    assert git.calls[0][1]["reconciled_preserve_head_file"] == "config/custom-preserve-heads.txt"
-    assert git.calls[0][1]["assert_no_unintegrated_branches"] is True
-
-
-# --- gated commit / merge ----------------------------------------------------
-
-
-def test_gated_commit_delegates_files_and_gate_command(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="gated_commit",
-            message="m",
-            files=["a.py", "b.py"],
-            gate_cmd=["make", "gate"],
-        ),
-    )
-
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["commit_sha"] == "gate1234"
-    assert ("gated_commit", ["a.py", "b.py"], "m", ["make", "gate"]) in git.calls
-
-
-def test_gated_commit_requires_non_empty_gate_command(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(op="gated_commit", message="m", files=["."]),
-    )
-
-    assert fake_mod.exited is None
-    assert fake_mod.failed["msg"] == "gated_commit requires non-empty gate_cmd"
-    assert git.calls == []
-
-
-def test_gated_commit_fails_closed_with_result_payload(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(op="gated_commit", message="m", files=["."], gate_cmd=["make", "gate"]),
-        gated_commit_failure="gate failed",
-    )
-
-    assert fake_mod.exited is None
-    assert fake_mod.failed["msg"] == "gated_commit failed"
-    assert fake_mod.failed["result"]["success"] is False
-    assert ("gated_commit", ["."], "m", ["make", "gate"]) in git.calls
-
-
-def test_gated_merge_delegates_gate_command_and_strategy(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="gated_merge",
-            source="feature/x",
-            target="main",
-            strategy="no-ff",
-            gate_cmd=["make", "gate"],
-        ),
-    )
-
-    assert fake_mod.failed is None
-    assert fake_mod.exited["changed"] is True
-    assert fake_mod.exited["result"]["commit_sha"] == "merge1234"
-    assert ("gated_merge", "feature/x", "main", ["make", "gate"], "no-ff") in git.calls
-
-
-def test_gated_merge_fails_closed_with_result_payload(module, monkeypatch):
-    fake_mod, git = _run(
-        module,
-        monkeypatch,
-        _params(
-            op="gated_merge",
-            source="feature/x",
-            target="main",
-            gate_cmd=["make", "gate"],
-        ),
-        gated_merge_failure="gate failed",
-    )
-
-    assert fake_mod.exited is None
-    assert fake_mod.failed["msg"] == "gated_merge failed"
-    assert fake_mod.failed["result"]["success"] is False
-    assert ("gated_merge", "feature/x", "main", ["make", "gate"], "ff") in git.calls
+    assert ansible.failed is None
+    assert ansible.exited is not None
+    assert ansible.exited["changed"] is False
+    assert ansible.exited["branch"] == "feature/x"
+
+
+def test_module_has_complete_allowlist_and_no_core_import() -> None:
+    module = _load_module()
+    choices = set(module._argument_spec()["op"]["choices"])
+
+    assert {"commit", "worktree_create", "state", "release_cut", "ci_cancel"} <= choices
+    source = MODULE_PATH.read_text(encoding="utf-8")
+    assert "from general_ludd" not in source
+    assert "import general_ludd" not in source

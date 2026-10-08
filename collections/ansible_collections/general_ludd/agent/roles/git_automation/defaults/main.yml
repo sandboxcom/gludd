@@ -48,6 +48,11 @@ git_worktree_timeout: 120
 git_retry_count: 3
 git_retry_delay: 5             # seconds between retries
 
+# ── Authenticated Gludd control plane ─────────────────────────────────────
+daemon_url: "http://localhost:8000"
+psk: ""
+git_api_timeout: 300
+
 # ── Environment ────────────────────────────────────────────────────────────
 git_non_interactive_env:
   GIT_TERMINAL_PROMPT: "0"

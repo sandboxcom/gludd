@@ -42,6 +42,18 @@ def transport(app):
     return ASGITransport(app=app)
 
 
+def test_clean_event_loop_completion_is_not_reported_as_an_error(caplog) -> None:
+    task = MagicMock()
+    task.cancelled.return_value = False
+    task.exception.return_value = None
+
+    with caplog.at_level(logging.INFO, logger=daemon_mod.__name__):
+        daemon_mod._on_event_loop_done(task)
+
+    assert "completed normally" in caplog.text
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
 class TestDaemonApp:
     def test_create_daemon_app_returns_fastapi(self):
         from fastapi import FastAPI
@@ -228,9 +240,18 @@ class TestDaemonStartupConfig:
         config_dir.mkdir()
         ansible_dir = config_dir / "ansible"
         ansible_dir.mkdir()
-        (ansible_dir / "isolation.yml").write_text("process_isolation:\n  enabled: true\n  executable: docker\n")
+        digest = "a" * 64
+        (ansible_dir / "isolation.yml").write_text(
+            "process_isolation:\n"
+            "  enabled: true\n"
+            "  executable: docker\n"
+            f"  container_image: registry.example/gludd-ee:beta4@sha256:{digest}\n"
+        )
         cfg = load_startup_config(config_dir=str(config_dir))
-        assert cfg["process_isolation"] is not None
+        isolation = cfg["process_isolation"]
+        assert isolation is not None
+        assert isolation.enabled is True
+        assert isolation.container_image.endswith(digest)
 
 
 def _lifespan_patches(mock_loop):
@@ -275,6 +296,18 @@ def _lifespan_patches(mock_loop):
     stack.enter_context(_patch("general_ludd.daemon._init_project_workspaces", return_value={}))
     stack.enter_context(_patch("general_ludd.models.timeout_detector.ModelHealthTracker", return_value=_MagicMock()))
     stack.enter_context(_patch("general_ludd.daemon.ModelHealthTracker", return_value=_MagicMock()))
+    # These lifecycle unit tests deliberately replace app.state owners while
+    # the lifespan is running.  Keep their setup hermetic: constructing the
+    # real diskcache-backed owners here would open SQLite handles that become
+    # unreachable when a test installs its shutdown doubles.
+    for cache_factory in (
+        "general_ludd.retrieval.indexer.open_safe_diskcache",
+        "general_ludd.retrieval.research_index.open_safe_diskcache",
+        "general_ludd.retrieval.searx_client.open_safe_diskcache",
+        "general_ludd.retrieval.searcher.open_safe_diskcache",
+        "general_ludd.memory.local.open_safe_diskcache",
+    ):
+        stack.enter_context(_patch(cache_factory, return_value=_MagicMock()))
     # The lifespan shutdown path does `await task`, plus task.cancel() and
     # task.add_done_callback(). A completed asyncio.Future supports all three
     # and is directly awaitable; a bare AsyncMock instance is NOT awaitable
@@ -363,6 +396,25 @@ class TestDaemonLifespan:
 
 
 class TestExtendedSubsystemsWiring:
+    def test_extended_state_initialization_is_idempotent(self):
+        """The extracted base initializer creates and reuses shared state."""
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _ensure_extended_state
+
+        app = FastAPI()
+        _ensure_extended_state(app)
+        first_metrics = app.state._metrics_collector
+        first_registry = app.state._model_registry
+
+        _ensure_extended_state(app)
+
+        assert app.state._metrics_collector is first_metrics
+        assert app.state._model_registry is first_registry
+        assert app.state._receiver_buffer is not None
+        assert app.state._project_manager is not None
+        assert app.state._utilization_tracker is not None
+
     def test_extended_subsystems_includes_skill_registry(self):
         from fastapi import FastAPI
 

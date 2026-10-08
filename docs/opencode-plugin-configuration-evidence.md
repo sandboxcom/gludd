@@ -47,6 +47,8 @@ The OpenCode configuration E2E suite should demonstrate all of these conditions:
 
 - Node 26 loads every checked-in TypeScript plugin with
   `--experimental-strip-types`.
+- `.opencode/scripts/verify-plugins.mjs` is checked in and invoked by the E2E
+  suite; a missing verifier is a hard failure, never a skipped test.
 - No plugin source uses `require()`; use ESM imports with explicit compatible paths.
 - Plugin configuration contains no external entry without an explicit release version.
 - The harness reports dependency-install and module-load failures as test failures.

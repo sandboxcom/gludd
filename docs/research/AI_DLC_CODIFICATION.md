@@ -41,7 +41,7 @@ The output is:
 
 gludd's daemon event loop runs a 5-phase cycle every tick:
 
-```
+```text
 claim → dispatch → review → reconcile → (repeat)
 ```
 
@@ -139,7 +139,7 @@ The AI-SDLC Protocol Language defines a chain of validation tokens that
 track a task's passage through the pipeline. Each token is produced by
 one stage and consumed by the next:
 
-```
+```text
 spec_token  →  approach_token  →  code_token  →  review_token
     →  gate_token  →  merge_token  →  release_token  →  production_token
 ```
@@ -219,12 +219,12 @@ The paper proposes a "2+N" team: 2 humans (product owner + domain expert)
 and N AI agents (implementers + reviewer + integrator). gludd maps this to:
 
 - **Human pair:** `story_create` (product owner), `estimate_story` (domain expert)
-- **Agent cluster:** `agent_task` × N (10-agent floor), `code_reviewer` (reviewer),
+- **Agent cluster:** `agent_task` × N (zero to three useful owners), `code_reviewer` (reviewer),
   `agent_orchestrate` (integrator)
 
-The 10-agent floor (`CLAUDE_AGENT_FLOOR=10`) ensures sufficient parallel
-implementation capacity, while the review/reconcile phases provide the
-independent verification that the 2+N model requires.
+The canonical hard cap (`HARD_MAX_DISPATCHES=3`) bounds resource use while N
+varies with task complexity. Review/reconcile phases provide the independent
+verification that the 2+N model requires.
 
 ### 3.7 NIST AI RMF GenAI Action Tracking
 
@@ -241,7 +241,7 @@ gludd already has 109 Ansible roles covering every SDLC phase. The
 `config/ai_sdlc.yml` `role_stage_mapping` section categorizes them into
 the 8 pipeline stages:
 
-```
+```text
 ┌──────────────┐   ┌───────────────┐   ┌────────────────┐   ┌──────────────┐
 │   INTAKE     │   │   PLANNING    │   │ IMPLEMENTATION │   │    REVIEW    │
 │              │   │               │   │                │   │              │
@@ -403,9 +403,9 @@ Areas where the research implies capability not yet implemented:
    Currently gludd requires explicit `approve_task` — a future `conversation_monitor`
    role could detect the boundary automatically.
 
-2. **Dynamic team sizing (2+N):** The 2+N paper allows N to vary by task complexity.
-   gludd's 10-agent floor is static. A future `dynamic_floor_adjuster` could scale
-   the pool based on `estimate_story` size.
+2. **Dynamic team sizing (2+N):** Implemented at the orchestration boundary:
+   simple work stays inline and independent work uses up to three agents. Future
+   work may use `estimate_story` to recommend a width inside that hard cap.
 
 3. **Cross-project token chain:** Validation tokens are currently per-task. A
    cross-project token (e.g., a "platform_token" that gates multi-project releases)

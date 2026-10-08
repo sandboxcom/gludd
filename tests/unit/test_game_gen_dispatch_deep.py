@@ -17,6 +17,7 @@ from general_ludd.cloud.game_e2e import (
     AzureGameE2E,
     DeploymentConfig,
     E2EResult,
+    Frame,
     FrameComparator,
     GameGenerationCache,
     GameGenerator,
@@ -427,6 +428,8 @@ class TestGameRunnerLifecycle:
     def test_run_headless_timeout_kills_process(self) -> None:
         runner = GameRunner()
         proc = MagicMock(spec=subprocess.Popen)
+        proc.stdout = MagicMock()
+        proc.stderr = MagicMock()
         proc.wait.side_effect = [subprocess.TimeoutExpired(cmd="python", timeout=120), None]
         with (
             patch.object(subprocess, "Popen", return_value=proc),
@@ -437,6 +440,31 @@ class TestGameRunnerLifecycle:
         assert result == []
         assert proc.kill.called
         assert proc.wait.call_count == 2
+        assert runner._processes == []
+        proc.stdout.close.assert_called_once()
+        proc.stderr.close.assert_called_once()
+
+        runner.cleanup()
+        assert proc.wait.call_count == 2
+
+    def test_run_headless_releases_completed_process_resources(self) -> None:
+        runner = GameRunner()
+        proc = MagicMock(spec=subprocess.Popen)
+        proc.stdout = MagicMock()
+        proc.stderr = MagicMock()
+        with (
+            patch.object(subprocess, "Popen", return_value=proc),
+            patch.object(os, "environ", {"SDL_VIDEODRIVER": "dummy"}),
+            patch("general_ludd.cloud.game_e2e._require_pygame", return_value=MagicMock()),
+        ):
+            assert runner.run_headless("/fake/game.py", num_frames=1) == []
+
+        assert runner._processes == []
+        proc.stdout.close.assert_called_once()
+        proc.stderr.close.assert_called_once()
+
+        runner.cleanup()
+        proc.wait.assert_called_once()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -683,8 +711,8 @@ class TestFrameComparatorDeep:
 
     def test_compare_frames_different_lengths_uses_common_prefix(self) -> None:
         fc = FrameComparator()
-        a = [np.zeros((10, 10, 3), dtype=np.uint8)] * 5
-        b = [np.zeros((10, 10, 3), dtype=np.uint8)] * 3
+        a: list[Frame] = [np.zeros((10, 10, 3), dtype=np.uint8)] * 5
+        b: list[Frame] = [np.zeros((10, 10, 3), dtype=np.uint8)] * 3
         result = fc.compare_frames(a, b, threshold=0.4)
         assert result["frame_count"] == 3
         assert result["pass"] is True

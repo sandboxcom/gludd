@@ -17,13 +17,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
 
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target. Assert target exists."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
@@ -37,13 +39,13 @@ class TestLanguageExpertE2eTarget:
     """The spec's E2E target exists and is wired to the required components."""
 
     def test_target_exists(self) -> None:
-        assert "\ntest-language-expert:" in MAKEFILE.read_text(), (
+        assert "\ntest-language-expert:" in compose_makefile(MAKEFILE), (
             "Makefile missing 'test-language-expert:' target — "
             "required by FEATURE_LANGUAGE_EXPERT.md Section 8"
         )
 
     def test_target_in_help(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "test-language-expert" in content, (
             "test-language-expert not referenced anywhere in Makefile"
         )
@@ -110,6 +112,6 @@ class TestLanguageExpertE2eTarget:
 
     def test_target_caps_adaptive_workers_without_disabling_oom_retry(self) -> None:
         recipe = _recipe("test-language-expert")
-        assert "GLUDD_XDIST=2" in recipe
+        assert "GLUDD_XDIST_WORKERS=2" in recipe
         assert "-n 2" not in recipe
         assert "--maxprocesses=2" not in recipe

@@ -1,6 +1,8 @@
 ---
 # self_improve_ab_test defaults — SAFE BY DEFAULT.
 self_improve_enabled: false
+daemon_url: "http://localhost:8000"
+psk: ""
 
 # Candidate worktree root (its src holds the variant) + baseline.
 candidate_worktree: ""

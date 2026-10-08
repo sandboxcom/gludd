@@ -108,7 +108,7 @@ All five fix vectors confirmed present, active, and matching the spec in
 
 ### Runtime verification
 
-```
+```text
 make test-hook-runtime → 52 functional tests across 8 plugins (PASS)
 make test TESTFILE=tests/unit/test_verified_claims_plugin.py → 23 tests (PASS)
 make test TESTFILE=tests/unit/test_stop_pattern_qa.py → structural pin (PASS)

@@ -8,6 +8,7 @@ first error. It is a FAST pre-check intended to run before every commit
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
@@ -15,7 +16,7 @@ MAKEFILE = ROOT / "Makefile"
 
 def _content() -> str:
     assert MAKEFILE.exists(), "Makefile must exist"
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _target_block(content: str) -> str:
@@ -45,6 +46,17 @@ def test_target_references_lint():
     assert "lint" in block, (
         "pre-commit-check recipe must reference the 'lint' target"
     )
+
+
+def test_target_runs_staged_line_and_duplicate_guards_before_lint() -> None:
+    block = _target_block(_content())
+
+    assert "check-file-line-limits" in block
+    assert "FILE_LINE_LIMIT_STAGED=1" in block
+    assert "check-duplicate-code" in block
+    assert "DUPLICATE_CODE_SOURCE=staged" in block
+    assert block.index("check-file-line-limits") < block.index("lint")
+    assert block.index("check-duplicate-code") < block.index("lint")
 
 
 def test_target_references_collect_check():

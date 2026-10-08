@@ -49,15 +49,8 @@ def test_valid_wave_exits_0(tmp_path: Path) -> None:
         wave_file,
         [
             "fix SEC.1 sandbox hardening controls",
-            "fix SEC.1 extravars validation",
             "implement NF.5 coverage heatmap",
-            "implement NF.5 scenario generator",
             "audit ENF.2 process isolation",
-            "write tests for daemon startup",
-            "refactor ansible runner paths",
-            "add documentation for release runbook",
-            "fix typecheck errors in gateway.py",
-            "update AGENTS.md with new policy",
         ],
     )
 
@@ -66,7 +59,7 @@ def test_valid_wave_exits_0(tmp_path: Path) -> None:
     assert "PASS" in stdout
 
 
-def test_exactly_10_required(tmp_path: Path) -> None:
+def test_more_than_three_dispatches_are_rejected(tmp_path: Path) -> None:
     tasks_dir = tmp_path / "repo"
     tasks_dir.mkdir()
     _write_tasks(
@@ -77,14 +70,38 @@ def test_exactly_10_required(tmp_path: Path) -> None:
     )
 
     wave_file = tmp_path / "wave.json"
-    _write_wave(wave_file, ["task 1", "task 2", "task 3"])
+    _write_wave(
+        wave_file,
+        [
+            "fix SEC.1 controls",
+            "implement NF.5 coverage",
+            "audit ENF.2 isolation",
+            "document REL.1 release",
+        ],
+    )
 
     rc, _stdout, stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
     assert rc == 1
-    assert "3" in stderr
+    assert "at most 3" in stderr
 
 
-def test_at_least_3_topics_required(tmp_path: Path) -> None:
+def test_single_concrete_continuation_is_allowed(tmp_path: Path) -> None:
+    tasks_dir = tmp_path / "repo"
+    tasks_dir.mkdir()
+    _write_tasks(
+        tasks_dir / "TASKS.md",
+        ["- [ ] SEC.1 — fix controls | status: in_progress"],
+    )
+
+    wave_file = tmp_path / "wave.json"
+    _write_wave(wave_file, ["fix SEC.1 controls"])
+
+    rc, stdout, stderr = _run(wave_file, tasks_dir, tasks_dir / "TASKS.md")
+    assert rc == 0, f"exit={rc} stderr={stderr}"
+    assert "PASS" in stdout
+
+
+def test_multi_prompt_wave_requires_multiple_topics(tmp_path: Path) -> None:
     tasks_dir = tmp_path / "repo"
     tasks_dir.mkdir()
     _write_tasks(
@@ -101,13 +118,6 @@ def test_at_least_3_topics_required(tmp_path: Path) -> None:
             "fix SEC.1 sandbox 1",
             "fix SEC.1 sandbox 2",
             "fix SEC.1 sandbox 3",
-            "fix SEC.1 sandbox 4",
-            "fix SEC.1 sandbox 5",
-            "fix SEC.1 sandbox 6",
-            "fix SEC.1 sandbox 7",
-            "fix SEC.1 sandbox 8",
-            "fix SEC.1 sandbox 9",
-            "fix SEC.1 sandbox 10",
         ],
     )
 
@@ -116,7 +126,7 @@ def test_at_least_3_topics_required(tmp_path: Path) -> None:
     assert "TOPIC DIVERSITY" in stderr
 
 
-def test_no_single_topic_exceeds_50_percent(tmp_path: Path) -> None:
+def test_one_topic_cannot_consume_an_entire_multi_prompt_wave(tmp_path: Path) -> None:
     tasks_dir = tmp_path / "repo"
     tasks_dir.mkdir()
     _write_tasks(
@@ -132,14 +142,6 @@ def test_no_single_topic_exceeds_50_percent(tmp_path: Path) -> None:
         [
             "fix SEC.1 sandbox 1",
             "fix SEC.1 sandbox 2",
-            "fix SEC.1 sandbox 3",
-            "fix SEC.1 sandbox 4",
-            "fix SEC.1 sandbox 5",
-            "fix SEC.1 sandbox 6",
-            "write tests for module A",
-            "write tests for module B",
-            "write tests for module C",
-            "write tests for module D",
         ],
     )
 
@@ -166,13 +168,6 @@ def test_at_least_1_continuation_required(tmp_path: Path) -> None:
             "write tests for module A",
             "write tests for module B",
             "write tests for module C",
-            "refactor ansible paths",
-            "add documentation",
-            "fix typecheck errors",
-            "update AGENTS.md",
-            "improve coverage",
-            "clean dead code",
-            "audit lint errors",
         ],
     )
 
@@ -197,16 +192,9 @@ def test_multiple_continuations_pass(tmp_path: Path) -> None:
     _write_wave(
         wave_file,
         [
-            "fix SEC.1 extras 1",
-            "fix SEC.1 extras 2",
-            "implement NF.5 coverage 1",
-            "implement NF.5 coverage 2",
+            "fix SEC.1 extras",
+            "implement NF.5 coverage",
             "audit ENF.2 isolation",
-            "write tests for daemon",
-            "refactor ansible paths",
-            "add release docs",
-            "improve coverage gaps",
-            "fix lint in gateway",
         ],
     )
 
@@ -309,13 +297,6 @@ def test_without_id_uses_keyword_topics(tmp_path: Path) -> None:
             "fix SEC.1 sandbox 1",
             "write tests for daemon",
             "refactor ansible paths",
-            "implement caching layer",
-            "document release process",
-            "audit security posture",
-            "improve coverage gaps",
-            "clean dead code",
-            "update dependencies",
-            "review error handling",
         ],
     )
 

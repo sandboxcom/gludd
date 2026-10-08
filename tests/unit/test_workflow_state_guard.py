@@ -172,6 +172,51 @@ def test_unintegrated_sibling_worktree_blocks_release_ci_gate(capsys) -> None:
     assert "dirty,head_not_merged" in captured.out
 
 
+def test_prunable_worktree_is_reported_without_running_git_in_missing_path(capsys) -> None:
+    newline = chr(10)
+    output = (
+        "worktree /repo" + newline
+        + "HEAD devhead" + newline
+        + "branch refs/heads/development" + newline
+        + newline
+        + "worktree /repo-gone" + newline
+        + "HEAD oldhead" + newline
+        + "branch refs/heads/fix/old" + newline
+        + "prunable gitdir file points to non-existent location" + newline
+        + newline
+    )
+
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if args == ["git", "branch", "--show-current"]:
+            return _completed(args, "development" + newline)
+        if args == ["git", "rev-parse", "--verify", "HEAD"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            assert cwd != "/repo-gone"
+            return _completed(args)
+        if args == ["git", "ls-remote", "sandboxcom", "refs/heads/development"]:
+            return _completed(args)
+        if args == ["git", "rev-parse", "--verify", "master"]:
+            return _completed(args, "masterhead" + newline)
+        if args == ["git", "rev-parse", "--verify", "development"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "merge-base", "--is-ancestor", "masterhead", "devhead"]:
+            return _completed(args)
+        if args == ["git", "rev-parse", "--show-toplevel"]:
+            return _completed(args, "/repo" + newline)
+        if args == ["git", "worktree", "list", "--porcelain"]:
+            return _completed(args, output)
+        raise AssertionError(f"unexpected argv={args!r} cwd={cwd!r}")
+
+    rc = main(["--assert-no-unintegrated-worktrees"], run=run)
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "UNINTEGRATED: path=/repo-gone" in captured.out
+    assert "prunable_registration" in captured.out
+
+
 def test_clean_trunk_sibling_does_not_block_feature_branch_ci_push(capsys) -> None:
     newline = chr(10)
     tab = chr(9)

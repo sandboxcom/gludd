@@ -1,50 +1,75 @@
+"""RFC 9562 UUID and ULID helpers with monotonic UUIDv7 generation."""
+
 from __future__ import annotations
 
 import os
+import threading
 import time
 import uuid as _uuid
 
+_UUID7_COUNTER_BITS = 42
+_UUID7_COUNTER_MAX = (1 << _UUID7_COUNTER_BITS) - 1
+_UUID7_COUNTER_SEED_MASK = (1 << (_UUID7_COUNTER_BITS - 1)) - 1
+_UUID7_LOCK = threading.Lock()
+_uuid7_last_timestamp_ms: int | None = None
+_uuid7_last_counter = 0
+
 
 def uuid4() -> _uuid.UUID:
+    """Return a cryptographically random UUIDv4."""
     return _uuid.uuid4()
 
 
 def uuid7(timestamp_ms: int | None = None) -> _uuid.UUID:
+    """Return a time-ordered UUIDv7 with same-millisecond monotonicity.
+
+    The 42-bit counter and 32-bit random tail follow RFC 9562 section 6.2
+    Method 1 and the CPython UUIDv7 layout. Explicit timestamps remain exact;
+    live clock rollback reuses the prior timestamp and advances the counter.
+    """
+    global _uuid7_last_counter, _uuid7_last_timestamp_ms
+
     ms = timestamp_ms if timestamp_ms is not None else int(time.time() * 1000)
+    if not 0 <= ms < (1 << 48):
+        raise ValueError("timestamp_ms must fit in 48 unsigned bits")
 
-    rand_bytes = os.urandom(10)
-    rand_a = (rand_bytes[0] << 4) | (rand_bytes[1] >> 4)
-    rand_b = int.from_bytes(rand_bytes[1:], "big") & ((1 << 74) - 1)
+    with _UUID7_LOCK:
+        if timestamp_ms is None and _uuid7_last_timestamp_ms is not None and ms < _uuid7_last_timestamp_ms:
+            ms = _uuid7_last_timestamp_ms
 
-    time_low = (ms >> 16) & 0xFFFFFFFF
-    time_mid = ms & 0xFFFF
-    time_hi_version = 0x7000 | (rand_a & 0xFFF)
+        if ms == _uuid7_last_timestamp_ms:
+            counter = _uuid7_last_counter + 1
+            if counter > _UUID7_COUNTER_MAX:
+                ms += 1
+                counter, tail = _uuid7_counter_and_tail()
+            else:
+                tail = int.from_bytes(os.urandom(4), "big")
+        else:
+            counter, tail = _uuid7_counter_and_tail()
 
-    clock_seq_hi_variant = 0x80 | ((rand_b >> 56) & 0x3F)
-    clock_seq_low = (rand_b >> 48) & 0xFF
-    node = rand_b & 0xFFFFFFFFFFFF
+        _uuid7_last_timestamp_ms = ms
+        _uuid7_last_counter = counter
 
-    return _uuid.UUID(
-        fields=(
-            time_low,
-            time_mid,
-            time_hi_version,
-            clock_seq_hi_variant,
-            clock_seq_low,
-            node,
-        )
-    )
+    counter_hi = (counter >> 30) & 0xFFF
+    counter_lo = counter & 0x3FFFFFFF
+    value = ms << 80
+    value |= 0x7 << 76
+    value |= counter_hi << 64
+    value |= 0x2 << 62
+    value |= counter_lo << 32
+    value |= tail & 0xFFFFFFFF
+    return _uuid.UUID(int=value)
 
 
-def _uuid7_raw() -> tuple[int, ...]:
-    ms = int(time.time() * 1000)
-    rand_bytes = os.urandom(10)
-    rand_a = (rand_bytes[0] << 4) | (rand_bytes[1] >> 4)
-    rand_b = int.from_bytes(rand_bytes[1:], "big") & ((1 << 74) - 1)
-    return (ms, rand_a, rand_b)
+def _uuid7_counter_and_tail() -> tuple[int, int]:
+    random_bits = int.from_bytes(os.urandom(10), "big")
+    counter = (random_bits >> 32) & _UUID7_COUNTER_SEED_MASK
+    tail = random_bits & 0xFFFFFFFF
+    return counter, tail
 
 
 def uuid8(custom_a: bytes, custom_b: bytes, custom_c: bytes) -> _uuid.UUID:
+    """Return a UUIDv8 assembled from three caller-provided byte fields."""
     a = custom_a[:6].ljust(6, b"\x00")
     b = custom_b[:4].ljust(4, b"\x00")
     c = custom_c[:6].ljust(6, b"\x00")
@@ -84,6 +109,7 @@ def _crockford_encode(data: bytes) -> str:
 
 
 def ulid(timestamp_ms: int | None = None) -> str:
+    """Return a Crockford-base32 ULID for the supplied or current timestamp."""
     ms = timestamp_ms if timestamp_ms is not None else int(time.time() * 1000)
     time_part = ms.to_bytes(6, "big")
     rand_part = os.urandom(10)
@@ -92,6 +118,7 @@ def ulid(timestamp_ms: int | None = None) -> str:
 
 
 def parse_ulid(ulid_str: str) -> int:
+    """Decode one canonical 26-character ULID into its integer value."""
     if len(ulid_str) != 26:
         raise ValueError(f"ULID must be 26 characters, got {len(ulid_str)}")
     decoded = 0
@@ -104,6 +131,7 @@ def parse_ulid(ulid_str: str) -> int:
 
 
 def is_valid_uuid(value: str | None, version: int | None = None) -> bool:
+    """Return whether a string is a UUID of the optional requested version."""
     if value is None:
         return False
     try:
@@ -114,12 +142,14 @@ def is_valid_uuid(value: str | None, version: int | None = None) -> bool:
 
 
 def is_valid_ulid(value: str) -> bool:
+    """Return whether a string is a canonical 26-character Crockford ULID."""
     if not isinstance(value, str) or len(value) != 26:
         return False
     return all(ch in _CROCKFORD for ch in value)
 
 
 def extract_timestamp(u: _uuid.UUID) -> int | None:
+    """Extract Unix milliseconds from UUIDv7 or UUIDv1, when available."""
     if u.version == 7:
         fields = u.fields
         ts = (fields[0] << 16) | fields[1]
@@ -130,6 +160,7 @@ def extract_timestamp(u: _uuid.UUID) -> int | None:
 
 
 def extract_ulid_timestamp(ulid_str: str) -> int:
+    """Extract Unix milliseconds from a validated ULID string."""
     if not is_valid_ulid(ulid_str):
         raise ValueError(f"Invalid ULID: {ulid_str!r}")
     decoded = parse_ulid(ulid_str)

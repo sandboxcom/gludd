@@ -6,13 +6,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 REPLACE_TEXT = ROOT / "scripts" / "replace_text.py"
 
 
 def _target_block(target: str) -> str:
-    text = MAKEFILE.read_text(encoding="utf-8")
+    text = compose_makefile(MAKEFILE)
     pattern = rf"^{re.escape(target)}:[^\n]*\n(?P<body>(?:\t.*\n)+)"
     match = re.search(pattern, text, re.MULTILINE)
     assert match, f"Makefile target {target} not found"
@@ -209,13 +211,17 @@ def test_no_prompt_prone_checker_defaults_pass() -> None:
 
 
 def test_no_prompt_prone_checker_is_in_fast_and_full_gates() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
-    gate_dep_line = next(line for line in content.splitlines() if line.startswith("gate:"))
+    content = compose_makefile(MAKEFILE)
+    gate = content.split("\ngate:", 1)[1].split("\n\n", 1)[0]
+    gate_preflights = content.split("GATE_PREFLIGHT_TARGETS :=", 1)[1].split(
+        "GATE_PREFLIGHT_STATUS", 1
+    )[0]
     gate_lite_dep_line = next(
         line
         for line in content.splitlines()
         if line.startswith("gate-lite:")
     )
 
-    assert "check-no-prompt-prone-edit-tools" in gate_dep_line
+    assert "check-no-prompt-prone-edit-tools" in gate_preflights
+    assert "_gate-preflights" in gate
     assert "check-no-prompt-prone-edit-tools" in gate_lite_dep_line

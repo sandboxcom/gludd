@@ -11,7 +11,9 @@ Exercises the full pipeline with actual classes:
 Models are defined in tests/e2e/_local_model_configs.py (LOCAL_GGUF_MODELS).
 Filter via E2E_LOCAL_MODEL env var (e.g. E2E_LOCAL_MODEL=SmolLM2-360M).
 
-Skips with reason when llama.cpp / huggingface_hub tools are not installed.
+Opt-in only: set ``GLUDD_LIVE_MODEL_E2E=1``.  Otherwise the module is
+collected but skipped before any model download.  It also skips with a clear
+reason when llama.cpp / huggingface_hub tools are not installed.
 
 Pre-cached model: set GLUDD_E2E_MODEL_CACHE_DIR to a directory containing
 the pre-downloaded GGUF + pre-quantized q4_0 GGUF to skip the download step.
@@ -20,6 +22,7 @@ the pre-downloaded GGUF + pre-quantized q4_0 GGUF to skip the download step.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
 import shutil
 import socket
@@ -67,21 +70,11 @@ def _has_llama_quantize() -> bool:
 
 
 def _has_llama_cpp_server() -> bool:
-    try:
-        import llama_cpp  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("llama_cpp") is not None
 
 
 def _has_huggingface_hub() -> bool:
-    try:
-        import huggingface_hub  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    return importlib.util.find_spec("huggingface_hub") is not None
 
 
 def _tools_reason() -> str | None:
@@ -96,14 +89,20 @@ def _tools_reason() -> str | None:
 
 
 _REASON = _tools_reason()
-if _REASON is not None:
-    pytestmark = pytest.mark.skip(reason=_REASON)
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(
+        os.environ.get("GLUDD_LIVE_MODEL_E2E") != "1",
+        reason="Live local-model pipeline disabled; set GLUDD_LIVE_MODEL_E2E=1 to opt in",
+    ),
+    pytest.mark.skipif(_REASON is not None, reason=_REASON or "local model tools unavailable"),
+]
 
 
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def _find_cached_model_dir(config: LocalModelConfig) -> str | None:
@@ -377,7 +376,7 @@ class TestSmallModelPipelineReal:
             )
             client = TestClient(app, raise_server_exceptions=False)
 
-            resp = client.post(
+            serve_response = client.post(
                 "/api/dispatch",
                 json={
                     "capability": "local_model_serve",
@@ -394,15 +393,17 @@ class TestSmallModelPipelineReal:
                     },
                 },
             )
-            assert resp.status_code == 200, f"dispatch serve: {resp.status_code} {resp.text}"
-            data = resp.json()
+            assert serve_response.status_code == 200, (
+                f"dispatch serve: {serve_response.status_code} {serve_response.text}"
+            )
+            data = serve_response.json()
             assert data.get("ok_count", 0) > 0, f"Serve dispatch had errors: {data}"
 
             async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as hclient:
                 for _attempt in range(30):
                     try:
-                        resp = await hclient.get("/v1/models")
-                        if resp.status_code == 200:
+                        readiness_response = await hclient.get("/v1/models")
+                        if readiness_response.status_code == 200:
                             break
                     except httpx.TransportError:
                         pass
@@ -416,7 +417,7 @@ class TestSmallModelPipelineReal:
                 )
                 assert completion_resp.status_code == 200, completion_resp.text
 
-            resp = client.post(
+            stop_response = client.post(
                 "/api/dispatch",
                 json={
                     "capability": "local_model_stop",
@@ -424,8 +425,10 @@ class TestSmallModelPipelineReal:
                     "args": {"server_id": "e2e-api-dispatch"},
                 },
             )
-            assert resp.status_code == 200, f"dispatch stop: {resp.status_code} {resp.text}"
-            data = resp.json()
+            assert stop_response.status_code == 200, (
+                f"dispatch stop: {stop_response.status_code} {stop_response.text}"
+            )
+            data = stop_response.json()
             assert data.get("ok_count", 0) > 0, f"Stop dispatch had errors: {data}"
 
         finally:

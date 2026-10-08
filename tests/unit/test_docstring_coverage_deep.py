@@ -12,6 +12,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 DOCSTRING_FIXTURE = "src/general_ludd/security/xmss.py"
 
@@ -52,28 +54,19 @@ def test_lint_docstrings_rejects_files_outside_production_package() -> None:
     )
     output = result.stdout + result.stderr
     assert result.returncode == 2
-    assert "only accepts tracked Python files under src/general_ludd" in output
+    assert "only accepts tracked production Python files under src/general_ludd or scripts" in output
 
 
 def test_docstring_policy_is_registered_and_commit_guarded() -> None:
     """Target metadata and every local commit path share the same policy."""
-    contract = json.loads(
-        (ROOT / "config" / "make_target_contract.json").read_text()
-    )
-    entry = next(
-        item for item in contract["targets"] if item["name"] == "lint-docstrings"
-    )
+    contract = json.loads((ROOT / "config" / "make_target_contract.json").read_text())
+    entry = next(item for item in contract["targets"] if item["name"] == "lint-docstrings")
     assert entry["make_variables"] == ["DOCSTRING_FILES"]
-    assert entry["behavior"] == (
-        "make lint-docstrings "
-        "DOCSTRING_FILES=src/general_ludd/security/xmss.py"
-    )
+    assert entry["behavior"] == ("make lint-docstrings DOCSTRING_FILES=src/general_ludd/security/xmss.py")
 
-    makefile = (ROOT / "Makefile").read_text()
+    makefile = compose_makefile(ROOT / "Makefile")
     for target in ("git-commit", "commit-no-verify", "repo-commit", "ship-commit"):
-        declaration = next(
-            line for line in makefile.splitlines() if line.startswith(f"{target}:")
-        )
+        declaration = next(line for line in makefile.splitlines() if line.startswith(f"{target}:"))
         assert "_commit-docstring-guard" in declaration
 
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -82,7 +75,7 @@ def test_docstring_policy_is_registered_and_commit_guarded() -> None:
 
 def test_commit_guard_flattens_multiline_staged_source_paths() -> None:
     """Multiple staged source paths must remain one safe recursive Make argument."""
-    lines = (ROOT / "Makefile").read_text().splitlines()
+    lines = compose_makefile(ROOT / "Makefile").splitlines()
     target_index = lines.index("_commit-docstring-guard:")
     recipe = lines[target_index + 1]
     assert "| tr '\\n' ' '" in recipe

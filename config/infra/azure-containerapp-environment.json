@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "location": {
+      "type": "string"
+    },
+    "workloadProfileName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "workloadProfileType": {
+      "type": "string",
+      "allowedValues": [
+        "Consumption-GPU-NC8as-T4",
+        "Consumption-GPU-NC24-A100"
+      ]
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2025-01-01",
+      "name": "[parameters('environmentName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "workloadProfiles": [
+          {
+            "name": "[parameters('workloadProfileName')]",
+            "workloadProfileType": "[parameters('workloadProfileType')]"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "managedEnvironmentId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]"
+    }
+  }
+}

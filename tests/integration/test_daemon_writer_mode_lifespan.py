@@ -29,6 +29,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import general_ludd.daemon as daemon_mod
 from general_ludd.daemon import create_daemon_app
+from general_ludd.daemon_components import lifecycle as lifecycle_mod
 from general_ludd.ipc import Envelope, WriteQueue
 from general_ludd.writer.bridge import HTTP_ENQUEUED, enqueue_or_commit
 
@@ -220,6 +221,75 @@ class TestSubprocessMode:
             assert not wp.is_alive()
 
     @pytest.mark.asyncio
+    async def test_body_and_earlier_shutdown_failure_still_stop_writer(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GLUDD_WRITER_MODE", "subprocess")
+        config_dir = _make_db_config(tmp_path)
+
+        class BrokenPipeline:
+            async def stop(self) -> None:
+                raise RuntimeError("pipeline cleanup failed")
+
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+            pytest.raises(ExceptionGroup),
+        ):
+            app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
+            async with daemon_mod._lifespan(app):
+                wp = app.state._writer_process
+                app.state._pipeline_controller = BrokenPipeline()
+                raise RuntimeError("request body failed")
+
+        assert wp.stop_calls >= 1
+        assert not wp.is_alive()
+
+    @pytest.mark.asyncio
+    async def test_body_cancellation_still_stops_writer(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import asyncio
+
+        monkeypatch.setenv("GLUDD_WRITER_MODE", "subprocess")
+        config_dir = _make_db_config(tmp_path)
+        ready = asyncio.Event()
+        release = asyncio.Event()
+        writer: _FakeWriterProcess | None = None
+
+        async def run_lifespan() -> None:
+            nonlocal writer
+            app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
+            async with daemon_mod._lifespan(app):
+                writer = app.state._writer_process
+                ready.set()
+                await release.wait()
+
+        with (
+            patch(
+                "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                return_value=MagicMock(),
+            ),
+            patch("general_ludd.daemon.WriterProcess", _FakeWriterProcess),
+        ):
+            task = asyncio.create_task(run_lifespan())
+            await ready.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        assert writer is not None
+        assert writer.stop_calls >= 1
+        assert not writer.is_alive()
+
+    @pytest.mark.asyncio
     async def test_subprocess_mode_teardown_drains_before_stop(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -282,10 +352,10 @@ class TestStructural:
         appear positionally before the ``init_engine_from_config`` call inside
         ``_lifespan`` so the engine-construction branch can depend on it.
         """
-        src = Path(daemon_mod.__file__).read_text()
+        src = Path(lifecycle_mod.__file__).read_text()
         tree = ast.parse(src)
         lifespan = next(
-            node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "_lifespan"
+            node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "lifespan"
         )
 
         env_read_line: int | None = None
@@ -320,9 +390,9 @@ class TestStructural:
 
     def test_lifespan_references_writer_mode_branch(self) -> None:
         """The implementation must textually reference the two modes."""
-        src = Path(daemon_mod.__file__).read_text()
-        assert re.search(r"GLUDD_WRITER_MODE", src), "GLUDD_WRITER_MODE not referenced in daemon.py"
-        assert re.search(r'"subprocess"', src), "subprocess mode branch not present in daemon.py"
+        src = Path(lifecycle_mod.__file__).read_text()
+        assert re.search(r"GLUDD_WRITER_MODE", src), "GLUDD_WRITER_MODE not referenced in lifecycle.py"
+        assert re.search(r'"subprocess"', src), "subprocess mode branch not present in lifecycle.py"
 
 
 class TestWritesFlowThroughQueue:

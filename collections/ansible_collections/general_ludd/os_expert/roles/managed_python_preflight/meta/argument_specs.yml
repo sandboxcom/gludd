@@ -1,0 +1,16 @@
+---
+argument_specs:
+  main:
+    short_description: Resolve and verify an isolated Python runtime
+    options:
+      os_expert_python_preflight_contract:
+        description: Interpreter selection contract for the Python backend.
+        type: str
+        choices:
+          - discovered
+          - managed
+        required: true
+      os_expert_python_preflight_managed_interpreter:
+        description: Absolute interpreter path required by the managed contract.
+        type: str
+        default: ""

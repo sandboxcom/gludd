@@ -8,6 +8,16 @@
 #
 # With no paths, scans all git-tracked files via git ls-files.
 
+- name: Preflight managed-host runtime
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
@@ -17,7 +27,7 @@
 - name: Scan for conflict markers
   ansible.builtin.command:
     cmd: >-
-      uv run python scripts/scan_conflicts.py
+      {{ ansible_python_interpreter }} scripts/scan_conflicts.py
       {% for path in scan_paths %}{{ path }} {% endfor %}
     chdir: "{{ repo_path }}"
   register: _scm_result

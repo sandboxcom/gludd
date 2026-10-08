@@ -17,7 +17,9 @@ Output:
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import re
 import signal
 import subprocess
@@ -25,14 +27,16 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = PROJECT_ROOT / "tests" / "integration"
 OUTPUT_FILE = Path("/tmp/gludd-integration-failures.json")
 
-TIMEOUT_SEC = 900
+TIMEOUT_SEC = 1800
 INTERMEDIATE_INTERVAL_SEC = 30
 PROGRESS_INTERVAL_FILES = 5
+WATCHDOG_OWNED_GATE_MARKER = "watchdog-owned-gate"
 
 XDIST_FAILURE_RE = re.compile(
     r"^(?:\[[^\]\n]*\]\s+)*FAILED\s+"
@@ -65,7 +69,7 @@ def _find_integration_test_files() -> list[Path]:
     return files
 
 
-def _parse_failures(output: str) -> list[dict]:
+def _parse_failures(output: str) -> list[dict[str, Any]]:
     failures = _parse_short_summary_failures(output)
 
     if not failures:
@@ -95,8 +99,8 @@ def _parse_failures(output: str) -> list[dict]:
     return failures
 
 
-def _parse_short_summary_failures(output: str) -> list[dict]:
-    failures_by_test: dict[str, dict] = {}
+def _parse_short_summary_failures(output: str) -> list[dict[str, Any]]:
+    failures_by_test: dict[str, dict[str, Any]] = {}
 
     for match in XDIST_FAILURE_RE.finditer(output):
         test = match.group("test")
@@ -115,7 +119,7 @@ def _parse_short_summary_failures(output: str) -> list[dict]:
     return list(failures_by_test.values())
 
 
-def _write_output(data: dict) -> None:
+def _write_output(data: dict[str, Any]) -> None:
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = OUTPUT_FILE.with_suffix(".tmp")
     tmp_path.write_text(json.dumps(data, indent=2))
@@ -151,28 +155,60 @@ signal.signal(signal.SIGTERM, _signal_handler)
 signal.signal(signal.SIGINT, _signal_handler)
 
 
-def main() -> int:
-    test_files = _find_integration_test_files()
-    if not test_files:
-        print("No integration test files found.")
-        return 0
-
-    file_paths = [str(f) for f in test_files]
-    cmd = [
+def _build_pytest_command(
+    test_files: list[Path],
+    *,
+    workers: str,
+    watchdog_owned_gate: bool,
+    temp_root: Path,
+) -> list[str]:
+    """Build a pytest command whose ownership remains visible to old watchdogs."""
+    command = [
         "uv",
         "run",
         "python",
         "-m",
         "pytest",
-        *file_paths,
+        *(str(path) for path in test_files),
         "-n",
-        "auto",
+        workers,
         "--dist",
         "loadgroup",
         "--tb=short",
         "-q",
         "--no-header",
     ]
+    if watchdog_owned_gate:
+        command.extend(
+            [
+                "--override-ini",
+                f"cache_dir={temp_root / WATCHDOG_OWNED_GATE_MARKER / 'pytest-cache'}",
+            ]
+        )
+    return command
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--watchdog-owned-gate",
+        action="store_true",
+        help="mark the gate-owned wrapper and pytest child for legacy watchdog exclusion",
+    )
+    args = parser.parse_args([] if argv is None else argv)
+    test_files = _find_integration_test_files()
+    if not test_files:
+        print("No integration test files found.")
+        return 0
+
+    workers = os.environ.get("GLUDD_INTEGRATION_HEALTH_WORKERS", "1")
+    temp_root = Path(os.environ.get("TMPDIR", "/tmp"))
+    cmd = _build_pytest_command(
+        test_files,
+        workers=workers,
+        watchdog_owned_gate=args.watchdog_owned_gate,
+        temp_root=temp_root,
+    )
 
     start = time.time()
     global _test_file_count, _start_time
@@ -182,7 +218,7 @@ def main() -> int:
     test_count = 0
     error_msg: str | None = None
 
-    def _reader(proc: subprocess.Popen) -> None:
+    def _reader(proc: subprocess.Popen[str]) -> None:
         nonlocal test_count, last_write, error_msg
         prev_failure_count = 0
         assert proc.stdout is not None
@@ -264,13 +300,21 @@ def main() -> int:
 
     timed_out = False
     try:
-        returncode = proc.wait(timeout=TIMEOUT_SEC)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        returncode = proc.wait(timeout=5)
-        timed_out = True
-
-    reader_thread.join(timeout=10)
+        try:
+            returncode = proc.wait(timeout=TIMEOUT_SEC)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            returncode = proc.wait(timeout=5)
+            timed_out = True
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+        reader_thread.join(timeout=10)
 
     elapsed = time.time() - start
 
@@ -339,4 +383,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

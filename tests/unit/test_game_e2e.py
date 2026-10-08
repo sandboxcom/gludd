@@ -129,6 +129,21 @@ class TestGameGeneratorUnit:
 
         assert generator.generate_game(GAME_SPECS[0]) == code.strip()
 
+    def test_generate_game_owns_lifecycle_normalization(self) -> None:
+        code = "class Snake:\n    def __init__(self):\n        self.state = 'ready'"
+
+        class Gateway:
+            def call_model(self, *args: Any, **kwargs: Any) -> str:
+                return code
+
+        generated = GameGenerator(cast(Any, Gateway())).generate_game(GAME_SPECS[0])
+        namespace: dict[str, object] = {}
+        exec(generated, namespace)
+        snake = cast(Any, namespace["Snake"])()
+        snake.start()
+
+        assert snake.state == "playing"
+
     def test_validate_valid_code(self) -> None:
         gen = GameGenerator(None)  # type: ignore[arg-type]
         code = """

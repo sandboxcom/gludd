@@ -15,6 +15,7 @@ import json
 import math
 import os
 import sys
+from collections.abc import Callable
 from typing import Any
 
 
@@ -43,7 +44,7 @@ def hamming_weight(bits: list[int]) -> int:
 def ber_estimate(received: list[int], expected: list[int]) -> float:
     if len(received) != len(expected) or len(received) == 0:
         return 1.0
-    errors = sum(1 for r, e in zip(received, expected) if r != e)
+    errors = sum(1 for r, e in zip(received, expected, strict=True) if r != e)
     return errors / len(received)
 
 
@@ -229,7 +230,8 @@ def decode_aprs(data: bytes, sample_rate: int) -> dict[str, Any]:
             return _stub_result("aprs", "signal too short")
         mag = np.abs(iq)
         threshold = np.mean(mag) + 2.0 * np.std(mag)
-        bits = [1 if m > threshold else 0 for m in mag[::sample_rate // 2400]]
+        sample_step = max(sample_rate // 2400, 1)
+        bits = [1 if m > threshold else 0 for m in mag[::sample_step]]
     except ImportError:
         bits = [int(b > 127) for b in data[:256]] if len(data) >= 64 else []
 
@@ -274,29 +276,34 @@ def decode_ft8(data: bytes, sample_rate: int) -> dict[str, Any]:
     tones = [6.25, 12.5, 18.75, 25.0, 31.25, 37.5, 43.75, 50.0]
 
     message = ""
+    error: str | None = None
+    detected_tones: list[dict[str, float]]
     try:
         import numpy as np
         samples = np.frombuffer(data, dtype=np.int16).astype(np.float64)
         if len(samples) < sample_rate * 12:
-            return _stub_result("ft8", "signal too short (need 12.64s)")
+            detected_tones = []
+            snr_estimate = 0.0
+            error = "signal too short (need 12.64s)"
+        else:
+            segment = samples[:max(sample_rate // 200, 1)]
+            fft = np.abs(np.fft.rfft(segment))
+            freqs = np.fft.rfftfreq(len(segment), 1.0 / sample_rate)
 
-        segment = samples[:sample_rate // 200]
-        fft = np.abs(np.fft.rfft(segment))
-        freqs = np.fft.rfftfreq(len(segment), 1.0 / sample_rate)
+            detected_tones = []
+            for tone_hz in tones:
+                idx = np.argmin(np.abs(freqs - tone_hz))
+                power = float(fft[idx])
+                detected_tones.append({"tone_hz": tone_hz, "power": round(power, 2)})
 
-        detected_tones = []
-        for tone_hz in tones:
-            idx = np.argmin(np.abs(freqs - tone_hz))
-            power = float(fft[idx])
-            detected_tones.append({"tone_hz": tone_hz, "power": round(power, 2)})
-
-        noise_floor = float(np.mean(fft[:len(fft) // 4]))
-        snr_estimate = round(10.0 * math.log10(max(t["power"] for t in detected_tones) / (noise_floor + 1e-12)), 1)
+            noise_window = max(len(fft) // 4, 1)
+            noise_floor = float(np.mean(fft[:noise_window]))
+            snr_estimate = round(10.0 * math.log10(max(t["power"] for t in detected_tones) / (noise_floor + 1e-12)), 1)
     except ImportError:
         detected_tones = []
         snr_estimate = 0.0
 
-    return {
+    result: dict[str, Any] = {
         "mode": "FT8",
         "standard": "WSJT-X (K1JT, G4WJS)",
         "modulation": "8-tone FSK",
@@ -321,6 +328,9 @@ def decode_ft8(data: bytes, sample_rate: int) -> dict[str, Any]:
             "ft4_companion": True,
         },
     }
+    if error is not None:
+        result["error"] = error
+    return result
 
 
 def decode_rtty(data: bytes, sample_rate: int) -> dict[str, Any]:
@@ -349,14 +359,14 @@ def decode_rtty(data: bytes, sample_rate: int) -> dict[str, Any]:
         samples = np.frombuffer(data, dtype=np.int16).astype(np.float64)
         iq = samples[::2] + 1j * samples[1::2]
         if len(iq) >= sample_rate // 45:
-            bytes_per_char = sample_rate // 45 // 8
-            for char_idx in range(min(len(iq) // bytes_per_char // 8, 200)):
+            samples_per_bit = max(sample_rate // 45 // 8, 1)
+            for char_idx in range(min(len(iq) // samples_per_bit // 8, 200)):
                 try:
                     byte_val = 0
                     for bit_idx in range(7, -1, -1):
-                        offset = char_idx * bytes_per_char * 8 + bit_idx * bytes_per_char
+                        offset = char_idx * samples_per_bit * 8 + bit_idx * samples_per_bit
                         if offset < len(iq):
-                            power = np.mean(np.abs(iq[offset:offset + bytes_per_char]))
+                            power = np.mean(np.abs(iq[offset:offset + samples_per_bit]))
                             byte_val = (byte_val << 1) | (1 if power > np.mean(np.abs(iq)) else 0)
 
                     baudot_val = byte_val & 0x1F
@@ -393,18 +403,21 @@ def decode_rtty(data: bytes, sample_rate: int) -> dict[str, Any]:
 
 
 def decode_auto(data: bytes, sample_rate: int, center_freq: int) -> dict[str, Any]:
-    freq_mhz = center_freq / 1_000_000.0
-
     try:
         import numpy as np
         samples = np.frombuffer(data, dtype=np.int16).astype(np.float64)
         iq = samples[::2] + 1j * samples[1::2]
         magnitude = np.abs(iq)
-        rms = float(np.sqrt(np.mean(magnitude**2)))
+        rms = float(np.sqrt(np.mean(magnitude**2))) if len(magnitude) else 0.0
     except ImportError:
         rms = 0.0
 
-    bandwidth = len(data) / (sample_rate / len(data)) if len(data) <= sample_rate // 100 else 2_000
+    if not data or sample_rate <= 0:
+        bandwidth = 0.0
+    elif len(data) <= sample_rate // 100:
+        bandwidth = len(data) / (sample_rate / len(data))
+    else:
+        bandwidth = 2_000
 
     return {
         "mode": "auto",
@@ -474,13 +487,13 @@ def _ax25_addr(data: bytes, offset: int) -> str:
             val = data[offset + i]
             if val & 0x01:
                 break
-            ch = chr((val >> 1) & 0x3F)
+            ch = chr((val >> 1) & 0x7F)
             if 32 <= ord(ch) < 127:
                 result += ch
     return result.strip()
 
 
-DECODERS = {
+DECODERS: dict[str, Callable[..., dict[str, Any]]] = {
     "dmr": decode_dmr,
     "p25": decode_p25,
     "nxdn": decode_nxdn,
@@ -509,7 +522,11 @@ def main() -> None:
 
     decoder = DECODERS[args.mode]
     try:
-        result = decoder(data, args.sample_rate)
+        result = (
+            decoder(data, args.sample_rate, args.center_freq)
+            if args.mode == "auto"
+            else decoder(data, args.sample_rate)
+        )
     except Exception as exc:
         result = {"error": str(exc), "mode": args.mode}
 

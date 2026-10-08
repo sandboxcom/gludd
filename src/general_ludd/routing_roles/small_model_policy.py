@@ -14,7 +14,7 @@ import json
 import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum, StrEnum
 from types import MappingProxyType
 
 from general_ludd.schemas.benchmark import TaskRole
@@ -76,6 +76,36 @@ FORBIDDEN_IMPACTS = frozenset(
 _BOUNDED_IMPACTS = frozenset({TaskImpact.READ_SOURCE, TaskImpact.WRITE_ARTIFACT})
 
 
+def _canonical_role(role: object) -> TaskRole:
+    """Return the canonical TaskRole for a member, rejecting raw strings.
+
+    The package is importable from two roots (``src/`` and the installed
+    distribution), which can materialize two distinct ``TaskRole`` class
+    objects; identity checks then fail even for genuine members. Members
+    from a foreign class copy are canonicalized by their ``.value`` while
+    raw strings and unknown values stay fail-closed.
+
+    ``StrEnum`` members are ``str`` instances, so the enum-membership
+    branch must run before the plain-string rejection.
+    """
+    if isinstance(role, TaskRole):
+        return role
+    if isinstance(role, Enum):
+        try:
+            return TaskRole(role.value)
+        except ValueError:
+            raise ValueError("role must be a TaskRole value") from None
+    if isinstance(role, str):
+        raise ValueError("role must be a TaskRole value")
+    value = getattr(role, "value", None)
+    if isinstance(value, str):
+        try:
+            return TaskRole(value)
+        except ValueError:
+            pass
+    raise ValueError("role must be a TaskRole value")
+
+
 @dataclass(frozen=True)
 class TaskContract:
     """Static eligibility contract for one bounded task kind."""
@@ -86,6 +116,7 @@ class TaskContract:
     required_acceptance_checks: frozenset[str]
 
     def __post_init__(self) -> None:
+        """Validate the contract's fields fail-closed."""
         _require_pattern("task_kind", self.task_kind, _TASK_KIND_RE)
         if not isinstance(self.allowed_roles, frozenset) or not all(
             isinstance(role, TaskRole) for role in self.allowed_roles
@@ -188,6 +219,7 @@ class PolicyConfig:
     min_evaluation_cases: int = 20
 
     def __post_init__(self) -> None:
+        """Validate the tunable bounds fail-closed."""
         if isinstance(self.max_attempts, bool) or not 1 <= self.max_attempts <= 3:
             raise ValueError("max_attempts must be between 1 and 3")
         if isinstance(self.min_evaluation_cases, bool) or not 1 <= self.min_evaluation_cases <= 10_000:
@@ -207,10 +239,11 @@ class SmallModelTaskSpec:
     acceptance_checks: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        """Validate the task metadata fail-closed."""
         _require_pattern("task_id", self.task_id, _IDENTIFIER_RE)
         _require_pattern("task_kind", self.task_kind, _TASK_KIND_RE)
         if not isinstance(self.role, TaskRole):
-            raise ValueError("role must be a TaskRole value")
+            object.__setattr__(self, "role", _canonical_role(self.role))
         _require_pattern("collection", self.collection, _COLLECTION_RE)
         _require_digest("input_digest", self.input_digest)
         if not isinstance(self.impacts, frozenset) or not all(
@@ -227,6 +260,7 @@ class SmallModelTaskSpec:
 
     @property
     def acceptance_contract_digest(self) -> str:
+        """The digest of the acceptance contract for this task."""
         return _stable_digest(
             {
                 "acceptance_checks": sorted(self.acceptance_checks),
@@ -238,6 +272,7 @@ class SmallModelTaskSpec:
 
     @property
     def fingerprint(self) -> str:
+        """The deduplication fingerprint for this task."""
         return _stable_digest(
             {
                 "acceptance_contract_digest": self.acceptance_contract_digest,
@@ -258,6 +293,7 @@ class ModelIdentity:
     prompt_contract_digest: str
 
     def __post_init__(self) -> None:
+        """Validate the model identity fields fail-closed."""
         _require_pattern("model_profile_id", self.model_profile_id, _IDENTIFIER_RE)
         _require_digest("model_artifact_digest", self.model_artifact_digest)
         _require_digest("runtime_config_digest", self.runtime_config_digest)
@@ -265,6 +301,7 @@ class ModelIdentity:
 
     @property
     def fingerprint(self) -> str:
+        """The deduplication fingerprint for this model identity."""
         return _stable_digest(
             {
                 "model_artifact_digest": self.model_artifact_digest,
@@ -294,11 +331,12 @@ class CapabilityEvidence:
     evidence_digest: str
 
     def __post_init__(self) -> None:
+        """Validate the capability evidence fail-closed."""
         _require_pattern("model_profile_id", self.model_profile_id, _IDENTIFIER_RE)
         _require_digest("model_identity_digest", self.model_identity_digest)
         _require_pattern("task_kind", self.task_kind, _TASK_KIND_RE)
         if not isinstance(self.role, TaskRole):
-            raise ValueError("role must be a TaskRole value")
+            object.__setattr__(self, "role", _canonical_role(self.role))
         _require_pattern("collection", self.collection, _COLLECTION_RE)
         _require_pattern("suite_id", self.suite_id, _IDENTIFIER_RE)
         _require_pattern("suite_revision", self.suite_revision, _IDENTIFIER_RE)
@@ -315,12 +353,16 @@ class CapabilityEvidence:
 
 
 class DispatchAction(StrEnum):
+    """Action returned by the policy when authorizing a dispatch."""
+
     LOCAL = "local"
     ESCALATE = "escalate"
 
 
 @dataclass(frozen=True)
 class DispatchDecision:
+    """Authorization outcome for a proposed dispatch."""
+
     action: DispatchAction
     task_fingerprint: str
     reason: str
@@ -328,10 +370,13 @@ class DispatchDecision:
 
     @property
     def approved(self) -> bool:
+        """Whether this decision authorizes local dispatch."""
         return self.action is DispatchAction.LOCAL
 
 
 class CompletionAction(StrEnum):
+    """Action returned by the policy when verifying completion evidence."""
+
     ACCEPT = "accept"
     RETRY = "retry"
     ESCALATE = "escalate"
@@ -339,6 +384,8 @@ class CompletionAction(StrEnum):
 
 @dataclass(frozen=True)
 class CompletionEvidence:
+    """Evidence that a bounded task completed and passed acceptance checks."""
+
     task_fingerprint: str
     attempt: int
     artifact_digest: str
@@ -347,6 +394,7 @@ class CompletionEvidence:
     evidence_digest: str
 
     def __post_init__(self) -> None:
+        """Validate the completion evidence fail-closed."""
         _require_digest("task_fingerprint", self.task_fingerprint)
         _require_digest("artifact_digest", self.artifact_digest)
         _require_digest("evidence_digest", self.evidence_digest)
@@ -364,6 +412,8 @@ class CompletionEvidence:
 
 @dataclass(frozen=True)
 class CompletionDecision:
+    """Verification outcome for a completion claim."""
+
     action: CompletionAction
     reason: str
     attempts_used: int
@@ -391,6 +441,7 @@ class SmallModelTaskPolicy:
         config: PolicyConfig | None = None,
         contracts: Mapping[str, TaskContract] | None = None,
     ) -> None:
+        """Create a request-scope policy with the given config and contracts."""
         self.config = config or PolicyConfig()
         source = contracts if contracts is not None else DEFAULT_TASK_CONTRACTS
         self._contracts = dict(source)
@@ -406,7 +457,6 @@ class SmallModelTaskPolicy:
         evidence: Sequence[CapabilityEvidence],
     ) -> DispatchDecision:
         """Return LOCAL only when exact, adequate capability evidence exists."""
-
         fingerprint = task.fingerprint
         contract = self._contracts.get(task.task_kind)
         if contract is None:
@@ -452,7 +502,6 @@ class SmallModelTaskPolicy:
 
     def record_completion(self, evidence: CompletionEvidence) -> CompletionDecision:
         """Accept, retry, or escalate using exact acceptance evidence."""
-
         claim = self._claims.get(evidence.task_fingerprint)
         if claim is None:
             return CompletionDecision(CompletionAction.ESCALATE, "task_not_authorized", 0)

@@ -108,9 +108,7 @@ def _parse_conftest(path: Path) -> _ConftestData | None:
                         if kw.arg is not None:
                             fixture_kwargs[kw.arg] = _resolve_fixture_kwarg_value(kw.value)
             elif isinstance(decorator, ast.Attribute) and (
-                isinstance(decorator.value, ast.Name)
-                and decorator.value.id == "pytest"
-                and decorator.attr == "fixture"
+                isinstance(decorator.value, ast.Name) and decorator.value.id == "pytest" and decorator.attr == "fixture"
             ):
                 is_fixture = True
 
@@ -397,6 +395,10 @@ def test_external_conftests_recognized() -> None:
     for dirpath, _, filenames in os.walk(str(ext_root)):
         if "conftest.py" in filenames:
             external_paths.append(Path(dirpath) / "conftest.py")
+    if not external_paths:
+        # external/ holds git-submodule content (e.g. external/llamacpp); a
+        # CI checkout without initialized submodules has no conftests at all.
+        pytest.skip("external/ contains no conftest.py (submodules uninitialized)")
     assert len(external_paths) >= 2, f"Expected >=2 external conftest files; found {len(external_paths)}"
     for ep in external_paths:
         rel = ep.relative_to(REPO_ROOT)
@@ -521,6 +523,7 @@ def test_fixture_parameters_match_dependencies() -> None:
         "pytestconfig",
         "testrun_uid",
         "worker_id",
+        "page",  # pytest-playwright fixture used by presentation browser tests.
         "recwarn",
         "doctest_namespace",
     }

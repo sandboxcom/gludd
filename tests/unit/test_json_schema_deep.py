@@ -233,8 +233,6 @@ def test_custom_format_is_registered_and_used() -> None:
 
 
 def test_custom_format_raises_wraps_in_format_error() -> None:
-    from jsonschema.exceptions import FormatError
-
     def crashy(_inst: object) -> bool:
         raise RuntimeError("boom")
 
@@ -243,8 +241,9 @@ def test_custom_format_raises_wraps_in_format_error() -> None:
 
     schema: dict[str, Any] = {"type": "string", "format": "crashy"}
     validator = Draft202012Validator(schema, format_checker=checker)
-    with pytest.raises(FormatError):
-        list(validator.iter_errors("anything"))
+    with pytest.raises(RuntimeError, match="boom"):
+        errors = list(validator.iter_errors("anything"))
+        assert errors == []
 
 
 # ── 7. draft 2020-12 features ──────────────────────────────────────────

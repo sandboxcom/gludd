@@ -1,6 +1,5 @@
 ---
-# regulation_lookup role -- frequency allocation, band plan, license-class lookup
-# Invokes the standalone files/regulation_lookup.py CLI backend.
+# regulation_lookup role -- frequency allocations through the packaged runtime.
 
 - name: Validate regulation lookup parameters
   ansible.builtin.assert:
@@ -22,41 +21,29 @@
     mode: "0755"
   when: regulation_lookup_enabled | bool
 
-- name: Run regulation_lookup.py
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter }} {{ role_path }}/files/regulation_lookup.py
-    --country {{ regulation_lookup_country }}
-    --output-dir {{ regulation_lookup_output_dir }}
-    {% if regulation_lookup_freq_mhz is defined and regulation_lookup_freq_mhz | float > 0 %}
-    --freq-mhz {{ regulation_lookup_freq_mhz }}
-    {% endif %}
-    {% if regulation_lookup_band_name is defined and regulation_lookup_band_name | length > 0 %}
-    --band {{ regulation_lookup_band_name }}
-    {% endif %}
-    {% if regulation_lookup_license_class is defined and regulation_lookup_license_class | length > 0 %}
-    --license-class {{ regulation_lookup_license_class }}
-    {% endif %}
-    {% if regulation_lookup_marine_channel is defined and regulation_lookup_marine_channel | int > 0 %}
-    --marine-channel {{ regulation_lookup_marine_channel }}
-    {% endif %}
-  register: _reg_result
-  changed_when: false
+- name: Look up regulation through packaged runtime
+  general_ludd.radio.radio_runtime:
+    operation: regulation_lookup
+    params:
+      country: "{{ regulation_lookup_country }}"
+      freq_mhz: "{{ regulation_lookup_freq_mhz | default(omit, true) }}"
+      band_name: "{{ regulation_lookup_band_name | default(omit, true) }}"
+      license_class: "{{ regulation_lookup_license_class | default(omit, true) }}"
+      marine_channel: "{{ regulation_lookup_marine_channel | default(omit, true) }}"
+  register: _regulation_runtime
   when: regulation_lookup_enabled | bool
 
-- name: Parse regulation lookup result
+- name: Publish regulation lookup result
   ansible.builtin.set_fact:
-    regulation_lookup_result: "{{ (_reg_result.stdout | from_json) if _reg_result.stdout is defined and _reg_result.stdout | length > 0 else {} }}"
+    regulation_lookup_result: "{{ _regulation_runtime.result }}"
   when: regulation_lookup_enabled | bool
 
-- name: Write JSON output
+- name: Write JSON output atomically
   ansible.builtin.copy:
-    content: "{{ regulation_lookup_result | to_nice_json }}"
-    dest: "{{ regulation_lookup_output_dir }}/regulation_lookup.json"
+    content: "{{ _regulation_runtime.artifact_content }}"
+    dest: "{{ regulation_lookup_output_dir }}/{{ _regulation_runtime.artifact_filename }}"
     mode: "0644"
-  when:
-    - regulation_lookup_enabled | bool
-    - regulation_lookup_result is defined
-    - regulation_lookup_result | length > 0
+  when: regulation_lookup_enabled | bool
 
 - name: Register regulation lookup verdict
   ansible.builtin.set_fact:

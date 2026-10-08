@@ -1,0 +1,126 @@
+---
+- name: Capture the caller's current Podman default connection
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - system
+      - connection
+      - list
+      - --format
+      - json
+  register: _execution_environment_bootstrap_connections
+  changed_when: false
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  when: _execution_environment_bootstrap_machine_required | bool
+
+- name: Remember the caller-owned default connection
+  ansible.builtin.set_fact:
+    _execution_environment_bootstrap_previous_connection: >-
+      {{ (_execution_environment_bootstrap_connections.stdout | from_json
+          | selectattr('Default', 'equalto', true)
+          | map(attribute='Name') | first) | default('') }}
+  when: _execution_environment_bootstrap_machine_required | bool
+
+- name: Operate the exact Gludd-owned Podman machine
+  when: _execution_environment_bootstrap_machine_required | bool
+  block:
+    - name: Inspect the exact Gludd-owned Podman machine
+      ansible.builtin.command:
+        argv:
+          - "{{ execution_environment_bootstrap_podman_executable }}"
+          - machine
+          - inspect
+          - "{{ execution_environment_bootstrap_machine_name }}"
+          - --format
+          - json
+      register: _execution_environment_bootstrap_machine_inspect
+      changed_when: false
+      failed_when: false
+      environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+
+    - name: Initialize the bounded Gludd-owned Podman machine asynchronously
+      ansible.builtin.command:
+        argv:
+          - "{{ execution_environment_bootstrap_podman_executable }}"
+          - machine
+          - init
+          - --cpus
+          - "{{ execution_environment_bootstrap_machine_cpus | string }}"
+          - --memory
+          - "{{ execution_environment_bootstrap_machine_memory_mb | string }}"
+          - --disk-size
+          - "{{ execution_environment_bootstrap_machine_disk_gb | string }}"
+          - --rootful=false
+          - "{{ execution_environment_bootstrap_machine_name }}"
+      async: "{{ execution_environment_bootstrap_machine_start_timeout_seconds | int }}"
+      poll: 0
+      register: _execution_environment_bootstrap_machine_init_job
+      changed_when: true
+      environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+      when: _execution_environment_bootstrap_machine_inspect.rc != 0
+
+    - name: Podman machine bootstrap heartbeat while image downloads
+      ansible.builtin.async_status:
+        jid: "{{ _execution_environment_bootstrap_machine_init_job.ansible_job_id }}"
+      register: _execution_environment_bootstrap_machine_init_status
+      until: _execution_environment_bootstrap_machine_init_status.finished
+      retries: >-
+        {{ (execution_environment_bootstrap_machine_start_timeout_seconds | int /
+            execution_environment_bootstrap_poll_seconds | int) | round(0, 'ceil') | int }}
+      delay: "{{ execution_environment_bootstrap_poll_seconds | int }}"
+      when: _execution_environment_bootstrap_machine_init_job is not skipped
+
+    - name: Start the exact Gludd-owned Podman machine asynchronously
+      ansible.builtin.command:
+        argv:
+          - "{{ execution_environment_bootstrap_podman_executable }}"
+          - machine
+          - start
+          - "{{ execution_environment_bootstrap_machine_name }}"
+      async: "{{ execution_environment_bootstrap_machine_start_timeout_seconds | int }}"
+      poll: 0
+      register: _execution_environment_bootstrap_machine_start_job
+      changed_when: true
+      environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+
+    - name: Podman machine start bootstrap heartbeat
+      ansible.builtin.async_status:
+        jid: "{{ _execution_environment_bootstrap_machine_start_job.ansible_job_id }}"
+      register: _execution_environment_bootstrap_machine_start_status
+      until: _execution_environment_bootstrap_machine_start_status.finished
+      retries: >-
+        {{ (execution_environment_bootstrap_machine_start_timeout_seconds | int /
+            execution_environment_bootstrap_poll_seconds | int) | round(0, 'ceil') | int }}
+      delay: "{{ execution_environment_bootstrap_poll_seconds | int }}"
+
+    - name: Podman connection readiness bootstrap heartbeat
+      ansible.builtin.command:
+        argv:
+          - "{{ execution_environment_bootstrap_podman_executable }}"
+          - --connection
+          - "{{ execution_environment_bootstrap_machine_name }}"
+          - info
+          - --format
+          - json
+      environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+      register: _execution_environment_bootstrap_machine_ready
+      until: _execution_environment_bootstrap_machine_ready.rc == 0
+      retries: >-
+        {{ (execution_environment_bootstrap_machine_start_timeout_seconds | int /
+            execution_environment_bootstrap_poll_seconds | int) | round(0, 'ceil') | int }}
+      delay: "{{ execution_environment_bootstrap_poll_seconds | int }}"
+      changed_when: false
+  always:
+    - name: Restore the caller-owned Podman default connection
+      ansible.builtin.command:
+        argv:
+          - "{{ execution_environment_bootstrap_podman_executable }}"
+          - system
+          - connection
+          - default
+          - "{{ _execution_environment_bootstrap_previous_connection }}"
+      changed_when: true
+      environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+      when:
+        - _execution_environment_bootstrap_previous_connection | default('') | length > 0
+        - _execution_environment_bootstrap_previous_connection != execution_environment_bootstrap_machine_name

@@ -11,6 +11,13 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+    from makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 MAKEFILE = ROOT / "Makefile"
@@ -25,7 +32,7 @@ MAX_UNIMPLEMENTED = 5
 def parse_specs() -> list[dict]:
     if not SPECS_FILE.exists():
         return []
-    content = SPECS_FILE.read_text()
+    content = load_behavioral_specs(SPECS_FILE)
     specs: list[dict] = []
     current: dict | None = None
     for line in content.split("\n"):
@@ -58,7 +65,7 @@ def enforcement_exists(enforcement_text: str) -> bool:
         if target.startswith("make "):
             target = target[5:]
         if MAKEFILE.exists():
-            makefile_content = MAKEFILE.read_text()
+            makefile_content = compose_makefile(MAKEFILE)
             if re.search(rf"^{target}:", makefile_content, re.MULTILINE):
                 return True
 
@@ -70,11 +77,10 @@ def enforcement_exists(enforcement_text: str) -> bool:
 
     # Check scripts
     script_matches = re.findall(r"`?([a-z][a-z0-9_]+\.py)`?", enforcement_text)
-    for script in script_matches:
-        if script.endswith(".py") and (SCRIPTS_DIR / script).exists():
-            return True
-
-    return False
+    return any(
+        script.endswith(".py") and (SCRIPTS_DIR / script).exists()
+        for script in script_matches
+    )
 
 
 def main() -> int:
@@ -87,7 +93,9 @@ def main() -> int:
 
     if len(unimplemented) > MAX_UNIMPLEMENTED:
         print(
-            f"audit-spec-implementation-age: {len(unimplemented)}/{len(specs)} unimplemented — exceeds threshold of {MAX_UNIMPLEMENTED}"
+            "audit-spec-implementation-age: "
+            f"{len(unimplemented)}/{len(specs)} unimplemented — "
+            f"exceeds threshold of {MAX_UNIMPLEMENTED}"
         )
         for s in unimplemented[:20]:
             print(s)

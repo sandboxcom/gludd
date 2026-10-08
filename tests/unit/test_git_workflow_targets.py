@@ -10,11 +10,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE_PATH = Path(__file__).resolve().parents[2] / "Makefile"
 
 
 def _makefile_src() -> str:
-    return MAKEFILE_PATH.read_text()
+    return compose_makefile(MAKEFILE_PATH)
 
 
 class TestGitWorkflowTargetExistence:
@@ -85,7 +87,7 @@ class TestGitWorkflowTargetRecipeContent:
 
     def _recipe(self, target: str) -> str | None:
         m = re.search(
-            rf"{re.escape(target)}:\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            rf"{re.escape(target)}:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
             _makefile_src(), re.DOTALL,
         )
         return m.group(1) if m else None

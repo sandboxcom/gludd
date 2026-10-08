@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+from general_ludd import __version__
 from general_ludd.cli import build_parser, main
 
 # ---------------------------------------------------------------------------
@@ -179,14 +180,14 @@ def test_version_flag_via_argument(capsys):
     with patch("sys.argv", ["gludd", "--version"]), contextlib.suppress(SystemExit):
         main()
     captured = capsys.readouterr()
-    assert "0.1.0" in captured.out or "0.1.0" in captured.err
+    assert (captured.out + captured.err).strip() == f"gludd {__version__}"
 
 
 def test_version_command_output(capsys):
     with patch("sys.argv", ["gludd", "version"]), contextlib.suppress(SystemExit):
         main()
     captured = capsys.readouterr()
-    assert "0.1.0" in captured.out or "general-ludd" in captured.out
+    assert captured.out.strip() == f"general-ludd-agent {__version__}"
 
 
 # ---------------------------------------------------------------------------

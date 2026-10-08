@@ -569,8 +569,8 @@ class TestUniqueConstraints:
 
     def test_bucket_lease_unique(self):
         uqs = _uq_constraints(m.BucketLeaseModel)
-        names = {u.name for u in uqs}
-        assert "uq_bucket_lease" in names
+        columns = {u.name: tuple(column.name for column in u.columns) for u in uqs}
+        assert columns["uq_bucket_lease_bucket_key"] == ("bucket_key",)
 
     def test_azure_cost_observation_identity_unique(self):
         uqs = _uq_constraints(m.AzureCostObservationModel)
@@ -628,7 +628,10 @@ class TestPrimaryKeys:
             assert len(pk_cols) >= 1, f"{cls.__name__} has no primary key column"
 
     def test_most_models_have_single_column_pk(self):
-        exceptions = {"AzureCostPredictionModel"}  # composite PK
+        exceptions = {
+            "AzureCostPredictionModel",
+            "DeploymentRecordModel",
+        }  # intentional composite identities
         for cls in _all_model_classes():
             if cls.__name__ in exceptions:
                 continue
@@ -638,6 +641,10 @@ class TestPrimaryKeys:
     def test_azure_cost_prediction_has_composite_pk(self):
         pk_cols = [c.name for c in _columns(m.AzureCostPredictionModel) if c.primary_key]
         assert set(pk_cols) == {"prediction_id", "prediction_version"}
+
+    def test_deployment_record_has_composite_owner_pk(self):
+        pk_cols = [c.name for c in _columns(m.DeploymentRecordModel) if c.primary_key]
+        assert set(pk_cols) == {"project_id", "provider", "instance_id"}
 
 
 # ── 11. Default-value coverage ──────────────────────────────────────────────
@@ -690,11 +697,14 @@ class TestColumnDefaults:
 
 class TestModelCount:
     def test_model_count_matches_expected(self):
-        expected = 33
+        expected = 34
         actual = len(_all_model_classes())
         assert actual == expected, (
             f"Expected {expected} model classes, found {actual}. Update this test if models were added/removed."
         )
+
+    def test_managed_self_improve_promotion_model_is_discovered(self):
+        assert m.ManagedSelfImprovePromotionModel in _all_model_classes()
 
 
 # ── 13. Versioned model (optimistic concurrency) ────────────────────────────

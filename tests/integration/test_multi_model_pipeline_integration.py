@@ -162,6 +162,7 @@ class TestSoftwareGeneratorGamePipeline:
             _make_code_response(),
             failing_review,
             _make_code_response(),
+            failing_review,
         ]
         sg = SoftwareGenerator(gateway)
 

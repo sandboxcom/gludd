@@ -8,7 +8,14 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}"
     ab_base: "/tmp/gludd-abtest-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}"
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: A/B a good candidate against the baseline (expect promote=true)
       general_ludd.agent.gludd_abtest:
         baseline_root: "{{ ab_base }}/baseline"
@@ -17,6 +24,8 @@
         expect_attr: "value"
         timeout: 30.0
         verdict_path: "{{ ab_base }}/verdict_good.json"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: ab_good
 
     - name: A/B a crashing candidate against the baseline (expect promote=false)
@@ -26,6 +35,8 @@
         module: "abmod"
         timeout: 30.0
         verdict_path: "{{ ab_base }}/verdict_crash.json"
+        daemon_url: "{{ daemon_url }}"
+        psk: ""
       register: ab_crash
 
     - name: Persist both verdicts for verify

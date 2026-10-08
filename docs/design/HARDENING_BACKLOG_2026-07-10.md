@@ -247,7 +247,7 @@ rather than in one sweep. Also add the 4 missing `follow_redirects=False`.
 `169.254.169.254` on call #2 → assert the resolver is called exactly **once**
 and the transport connects to the pinned IP, never the re-resolved name (the old
 code path resolves twice and would connect to the metadata IP); blocked-on-call-
-#1 raises `SSRFError` fail-closed, and `health()` surfaces `ok:false` rather than
+Finding #1 raises `SSRFError` fail-closed, and `health()` surfaces `ok:false` rather than
 raising; size cap enforced via `Content-Length` precheck (body never read) and
 via streamed-abort when no `Content-Length` is present; redaction scrubs
 `Authorization`/`X-Nomad-Token`/`token=` from error messages; a 302 response
@@ -697,11 +697,11 @@ construction is asserted to pass a non-`None` `inbound_queue`
 ### H-ADMIN-PSK-ONLY (HIGH) — entire /admin/* mutating surface has no capability/RBAC check, only the shared PSK
 
 **Defect:** every `/admin/*` endpoint is gated by nothing but the single
-shared `GLUDD_PSK` (`auth_and_stats_middleware`, `daemon.py:2468-2523`,
+shared `GLUDD_AUTH_PSK` (`auth_and_stats_middleware`, `daemon.py:2468-2523`,
 constant-time `check_bearer_token`) — there is no `@Depends`/router split by
 privilege tier and zero `can_invoke`/`has_permission` calls in any router
 handler. Every dispatched agent holds this same PSK
-(`renderers/runner.py:227-229` injects `GLUDD_PSK` into the agent subprocess
+(`renderers/runner.py:227-229` injects `GLUDD_AUTH_PSK` into the agent subprocess
 env), so any agent — or any caller who obtains a leaked PSK — can reach the
 entire privileged surface: compute deploy/destroy, spend reconfigure, STS
 issue/revoke, perm-spec `PUT` (`security.py:406`), escalation approve/deny,
@@ -902,7 +902,7 @@ cannot catch because they always start from a fresh `upgrade` at base.
 
 ### H-OBS-TENANT-LEAK (HIGH, CONFIRMED) — observability/reporting endpoints leak cross-tenant data because the PSK carries no tenant identity
 
-**Defect:** the daemon's single global `GLUDD_PSK` middleware
+**Defect:** the daemon's single global `GLUDD_AUTH_PSK` middleware
 (`daemon.py:2468-2504`) authenticates a request but carries **no tenant
 identity** — `AuthPosture` has no `project_id` field (`security/auth.py:32-49`).
 Consequently every `project_id` query param across the observability/reporting

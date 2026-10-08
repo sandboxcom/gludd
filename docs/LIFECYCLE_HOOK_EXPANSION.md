@@ -40,7 +40,7 @@ Ten lifecycle hooks organized into five domains. Each hook is a named event that
 #### `model.call.before`
 Fires **before** a model API call is made.
 
-```
+```text
 Input: {
   model: string,            // e.g. "deepseek-v4-pro"
   messages: Message[],      // conversation context being sent
@@ -74,7 +74,7 @@ Output (mutable): {
 #### `model.call.after`
 Fires **after** a model API call completes.
 
-```
+```text
 Input: {
   model: string,
   messages: Message[],
@@ -106,7 +106,7 @@ Output (mutable): {
 #### `agent.think.before`
 Fires **before** the model generates chain-of-thought (or equivalent reasoning phase).
 
-```
+```text
 Input: {
   context: {
     currentTask: string,
@@ -141,7 +141,7 @@ Output (mutable): {
 #### `agent.think.after`
 Fires **after** the model completes its reasoning phase (CoT or equivalent).
 
-```
+```text
 Input: {
   reasoning: string,          // the model's chain-of-thought (if exposed)
   decision: {
@@ -176,7 +176,7 @@ Output (mutable): {
 #### `task.dispatch.before`
 Fires **before** a subagent is dispatched (via `Task` / `Agent` / `Workflow` tool).
 
-```
+```text
 Input: {
   task: {
     description: string,       // the task description / dispatch label
@@ -218,7 +218,7 @@ Output (mutable): {
 #### `task.complete.after`
 Fires **after** a subagent returns its final result.
 
-```
+```text
 Input: {
   task: {
     id: string,
@@ -264,7 +264,7 @@ Output (mutable): {
 #### `human.escalation.before`
 Fires **before** a blocking question or permission prompt is surfaced to the user.
 
-```
+```bash
 Input: {
   escalation: {
     type: "question" | "permission" | "error" | "escalation",
@@ -300,7 +300,7 @@ Output (mutable): {
 #### `session.compact.before`
 Fires **before** the context window is compacted (old messages truncated/removed).
 
-```
+```text
 Input: {
   compaction: {
     trigger: "auto" | "manual",  // what triggered compaction

@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import uuid
 from enum import StrEnum
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION = "1.0"
 
@@ -34,6 +34,8 @@ def _new_uuid() -> str:
 
 
 class EntityKind(StrEnum):
+    """Classify the kind of chemical entity represented by a record."""
+
     compound = "compound"
     mixture = "mixture"
     polymer = "polymer"
@@ -43,18 +45,24 @@ class EntityKind(StrEnum):
 
 
 class StereoStatus(StrEnum):
+    """Describe how completely stereochemistry is specified."""
+
     specified = "specified"
     partial = "partial"
     unknown = "unknown"
 
 
 class IsotopeStatus(StrEnum):
+    """Describe whether isotope composition is explicit or inferred."""
+
     specified = "specified"
     natural = "natural"
     unknown = "unknown"
 
 
 class StructureRepresentation(StrEnum):
+    """Enumerate accepted chemical structure representation formats."""
+
     smiles = "smiles"
     cxsmiles = "cxsmiles"
     inchi = "inchi"
@@ -66,6 +74,8 @@ class StructureRepresentation(StrEnum):
 
 
 class TaskKind(StrEnum):
+    """Enumerate supported chemistry request operations."""
+
     identity = "identity"
     research = "research"
     property = "property"
@@ -82,6 +92,8 @@ class TaskKind(StrEnum):
 
 
 class ResultStatus(StrEnum):
+    """Describe the terminal or approval state of a chemistry result."""
+
     succeeded = "succeeded"
     degraded = "degraded"
     refused = "refused"
@@ -90,6 +102,8 @@ class ResultStatus(StrEnum):
 
 
 class RiskTier(StrEnum):
+    """Classify the safety risk assigned to a chemistry operation."""
+
     low = "low"
     moderate = "moderate"
     high = "high"
@@ -97,6 +111,8 @@ class RiskTier(StrEnum):
 
 
 class DataClassification(StrEnum):
+    """Classify the sensitivity of request data."""
+
     public = "public"
     internal = "internal"
     confidential = "confidential"
@@ -104,12 +120,16 @@ class DataClassification(StrEnum):
 
 
 class FractionBasis(StrEnum):
+    """Define the measurement basis for a component fraction."""
+
     mass = "mass"
     mole = "mole"
     volume = "volume"
 
 
 class ValidationStatus(StrEnum):
+    """Describe the outcome of an entity validation check."""
+
     pass_ = "pass"
     fail = "fail"
     warning = "warning"
@@ -121,6 +141,8 @@ class ValidationStatus(StrEnum):
 
 
 class NameRecord(BaseModel):
+    """Store one sourced name for a chemical entity."""
+
     model_config = ConfigDict(extra="forbid")
 
     value: str = Field(min_length=1)
@@ -139,22 +161,33 @@ class ChemicalStructure(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     representation: StructureRepresentation
-    value: str = Field(min_length=1)
-    submitted: str = Field(min_length=1)
+    value: str
+    submitted: str
     canonicalizer: str = Field(min_length=1)
     stereochemistry: StereoStatus
     isotopes: IsotopeStatus = IsotopeStatus.natural
     charge: int = 0
 
-    @field_validator("submitted")
-    @classmethod
-    def _submitted_must_match_when_canonical_missing(cls, v: str) -> str:
-        if not v.strip():
+    @model_validator(mode="after")
+    def _validate_structure_text(self) -> Self:
+        """Allow an empty failure sentinel only for an unknown representation."""
+        has_value = bool(self.value.strip())
+        has_submitted = bool(self.submitted.strip())
+        if self.representation == StructureRepresentation.unknown:
+            empty_sentinel = self.value == "" and self.submitted == ""
+            if not empty_sentinel and not (has_value and has_submitted):
+                raise ValueError("unknown structure text must be non-blank in both fields or use the empty sentinel")
+            return self
+        if not has_value:
+            raise ValueError("canonical structure value must not be empty")
+        if not has_submitted:
             raise ValueError("submitted representation must not be empty")
-        return v
+        return self
 
 
 class ComponentRecord(BaseModel):
+    """Describe one component and its bounded mixture fraction."""
+
     model_config = ConfigDict(extra="forbid")
 
     entity_id: str = Field(min_length=1)
@@ -164,6 +197,8 @@ class ComponentRecord(BaseModel):
 
 
 class IdentifierRecord(BaseModel):
+    """Store one namespaced identifier for a chemical entity."""
+
     model_config = ConfigDict(extra="forbid")
 
     scheme: str = Field(min_length=1)
@@ -172,6 +207,8 @@ class IdentifierRecord(BaseModel):
 
 
 class ValidationRecord(BaseModel):
+    """Record one validation outcome and optional explanatory note."""
+
     model_config = ConfigDict(extra="forbid")
 
     check: str = Field(min_length=1)
@@ -200,6 +237,8 @@ class ChemicalEntity(BaseModel):
 
 
 class ArtifactInput(BaseModel):
+    """Identify an input artifact and its optional integrity metadata."""
+
     model_config = ConfigDict(extra="forbid")
 
     uri: str = Field(min_length=1)
@@ -224,6 +263,8 @@ class ConditionRecord(BaseModel):
 
 
 class ChemistryConstraints(BaseModel):
+    """Bound execution time, cost, data handling, and allowed tools."""
+
     model_config = ConfigDict(extra="forbid")
 
     deadline_s: int = Field(default=300, ge=0)
@@ -274,6 +315,8 @@ class ValueRecord(BaseModel):
 
 
 class CitationRecord(BaseModel):
+    """Link a source locator to the claims it supports."""
+
     model_config = ConfigDict(extra="forbid")
 
     source_id: str = Field(min_length=1)
@@ -282,6 +325,8 @@ class CitationRecord(BaseModel):
 
 
 class SafetyRecord(BaseModel):
+    """Record the safety tier, review, and approvals for a result."""
+
     model_config = ConfigDict(extra="forbid")
 
     risk_tier: RiskTier = RiskTier.low
@@ -290,6 +335,8 @@ class SafetyRecord(BaseModel):
 
 
 class VerificationRecord(BaseModel):
+    """Record a named verification check and its optional artifact."""
+
     model_config = ConfigDict(extra="forbid")
 
     check: str = Field(min_length=1)
@@ -298,6 +345,8 @@ class VerificationRecord(BaseModel):
 
 
 class ErrorRecord(BaseModel):
+    """Describe a stable chemistry error and whether it is retryable."""
+
     model_config = ConfigDict(extra="forbid")
 
     code: str = Field(min_length=1)

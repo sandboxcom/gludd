@@ -158,12 +158,17 @@ async def _run_greenfield_scenario(
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.pool import StaticPool
 
-    from general_ludd.db.models import Base, TaskDecisionModel, TaskReturnModel
-    from general_ludd.db.repository import TodoRepository
+    from general_ludd.db.models import (
+        Base,
+        ProjectModel,
+        TaskDecisionModel,
+        TaskReturnModel,
+    )
+    from general_ludd.db.repository import ProjectRepository, TodoRepository
     from general_ludd.event_loop.loop import EventLoop
     from general_ludd.execution.engine import ExecutionEngine
     from general_ludd.git_automation.repo import GitAutomation
-    from general_ludd.projects.manager import ProjectManager
+    from general_ludd.projects.manager import ProjectManager, persist_project
     from general_ludd.routers.todos import register as register_todos
     from general_ludd.schemas.job import JobSpec
     from general_ludd.schemas.task_return import TaskReturn
@@ -192,6 +197,24 @@ async def _run_greenfield_scenario(
     )
     project.project_id = _PROJECT_ID
     project_manager._projects = {_PROJECT_ID: project}
+
+    async with factory() as session:
+        await persist_project(
+            ProjectRepository(session),
+            project_id=_PROJECT_ID,
+            name=project.name,
+            weight=project.weight,
+            workspace_path=str(workspace),
+            dispatch_mode=project.dispatch_mode,
+        )
+        await session.commit()
+
+    async with factory() as session:
+        registered_project = await session.get(ProjectModel, _PROJECT_ID)
+        assert registered_project is not None, (
+            "dogfood project ownership must exist in the same database that "
+            "serializes project-scoped todo claims"
+        )
 
     daemon_state: dict[str, object] = {"todos": []}
     app = FastAPI()

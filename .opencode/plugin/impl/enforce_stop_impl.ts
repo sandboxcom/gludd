@@ -55,8 +55,10 @@ import {
   writeJsonFile,
   getProjectRoot,
   hasTasksMdPendingWork,
+  tasksMdPendingStats,
 } from "../../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../../lib/hot_reload.ts"
+import { HARD_MAX_DISPATCHES, MIN_DISPATCHES, clampDispatchCount } from "../../lib/multitask_config.ts"
 
 
 
@@ -96,19 +98,17 @@ const PUSH_STATE_FILE = process.env.GLUDD_PUSH_STATE_FILE || "/tmp/gludd-push-st
 const POST_RESULTS_STATE_FILE = process.env.GLUDD_POST_RESULTS_STATE_FILE || "/tmp/gludd-post-results-state.json"
 const TEXT_ONLY_STATE_FILE = process.env.GLUDD_TEXT_ONLY_STATE_FILE || "/tmp/gludd-text-only-state.json"
 const WAVE_RESULT_THRESHOLD = 3
-const HARD_MAX_DISPATCHES = 10
 const CONFIGURED_AGENT_MIN =
   process.env.CLAUDE_AGENT_FLOOR ||
   process.env.GLUDD_MIN_DISPATCHES ||
   process.env.GLUDD_MULTITASK_MIN_DISPATCHES
-// Ten is retained as the recommendation for genuinely broad work. It becomes
+// Three is the resource-safe recommendation for genuinely broad work. It becomes
 // a mandatory minimum only when an operator explicitly configures one.
-const AGENT_FLOOR_DEFAULT = parseInt(CONFIGURED_AGENT_MIN || "10", 10)
+const AGENT_FLOOR_DEFAULT = clampDispatchCount(
+  parseInt(CONFIGURED_AGENT_MIN || String(MIN_DISPATCHES), 10),
+)
 const REQUIRED_AGENT_MIN = CONFIGURED_AGENT_MIN !== undefined
-  ? Math.max(0, Math.min(
-      HARD_MAX_DISPATCHES,
-      Number.isFinite(AGENT_FLOOR_DEFAULT) ? AGENT_FLOOR_DEFAULT : 0,
-    ))
+  ? clampDispatchCount(Number.isFinite(AGENT_FLOOR_DEFAULT) ? AGENT_FLOOR_DEFAULT : 0)
   : 0
 const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"
 
@@ -596,16 +596,9 @@ function hasRealPendingWork(): WorkState {
 
   try {
     const tasksPath = path.join(root, "TASKS.md")
-    if (fs.existsSync(tasksPath)) {
-      const content = fs.readFileSync(tasksPath, "utf8")
-      const checkboxMatches = content.match(/^[ \t]*[-*]\s*\[\s*\]/gm)
-      const tableMatches = content.match(/\|\s*(NOT STARTED|IN PROGRESS|PENDING)\s*\|/gim)
-      const total = (checkboxMatches?.length ?? 0) + (tableMatches?.length ?? 0)
-      if (total > 0) {
-        tasksMdUncheckedCount = total
-        tasksMdUnchecked = true
-      }
-    }
+    const stats = tasksMdPendingStats(tasksPath)
+    tasksMdUnchecked = stats.pending
+    tasksMdUncheckedCount = stats.count
   } catch {}
 
   try {
@@ -810,11 +803,16 @@ function hasRealPendingWork(): WorkState {
   } catch {}
 
   // ── BINARY LATCH — any signal true = pending work ─────────────────────────
+  // tasksMdUnverified is deliberately NOT a latch signal: a fully-ticked
+  // TASKS.md (even without evidence tokens on every line) is NOT open work —
+  // blocking text-only forever on evidence formatting would prevent the
+  // session from ever going idle (pinned by tests/e2e/test_enforce_stop_live.py
+  // test_empty_tasks_md_is_no_pending_work). It stays in the reported state.
   const signals: PendingWorkSignals = {
     gateStatusRed, gateStale, ciVerdictPendingOrRed, ciVerdictUnknown,
     tasksMdUnchecked, bugsOpen, repoPending, multitaskingBacklogOpen, underFloor,
     coverageIncomplete, fullE2eIncomplete,
-    pushBlocked, gateLiteTestFailed, ciNeverRunOnHead, uncommittedChanges, tasksMdUnverified,
+    pushBlocked, gateLiteTestFailed, ciNeverRunOnHead, uncommittedChanges,
     ratchetHasEntries: ratchetEntries > 0,
   }
   const hasPendingWork = computeHealthScore(signals)
@@ -874,6 +872,7 @@ const STOP_LIKE_TARGETS_RE = /^make\s+(git-commit|commit-no-verify|ship-commit|g
 const COMMIT_TARGET_RE = /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/
 const PUSH_TARGET_RE = /^make\s+(git-push-branch|git-push-branch-nv|git-push-sandboxcom|git-push-sandboxcom-main|git-push-master|git-tag-push|release-cut|release-promote|ship-commit|release-recut|release-branch-new)(\s|$)/
 const GIT_SHIPPING_TARGETS_RE = /^make\s+(ship-commit|batch-push|git-push-sandboxcom|git-tag-push)(\s|$)/
+const CANONICAL_RELEASE_PREFLIGHT_TARGET_RE = /^make\s+(release-cut|release-promote)(\s|$)/
 
 function issueStopChallenge(): string {
   const challenge_token = randomUUID().replace(/-/g, "").slice(0, 16)
@@ -901,25 +900,15 @@ function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number, extraReaso
   ].join("\n")
 }
 
-// ── Legacy checkers (used by tool.execute.before for backwards compat) ──────
+// ── Stop-like tool checkers ─────────────────────────────────────────────────
 
 function tasksMdHasUnchecked(): boolean {
-  try {
-    const tasksPath = path.join(process.cwd(), "TASKS.md")
-    if (!fs.existsSync(tasksPath)) return false
-    const content = fs.readFileSync(tasksPath, "utf8")
-    return /-\s+\[\s*\]/.test(content) || /\*\s+\[\s*\][^xX]/i.test(content)
-  } catch { return false }
-}
-
-function countTasksMdUnchecked(): number {
-  try {
-    const tasksPath = path.join(process.cwd(), "TASKS.md")
-    if (!fs.existsSync(tasksPath)) return 0
-    const content = fs.readFileSync(tasksPath, "utf8")
-    const matches = content.match(/^[-*]\s+\[ \]/gm)
-    return matches ? matches.length : 0
-  } catch { return 0 }
+  // Shipping must use the same ownership boundary as text completion. A
+  // completed active release may coexist with visible future-version backlog;
+  // malformed or absent milestone metadata still falls back to repository-wide
+  // blocking inside tasksMdPendingStats().
+  const tasksPath = path.join(getProjectRoot(), "TASKS.md")
+  return tasksMdPendingStats(tasksPath).pending
 }
 
 function ratchetHasEntries(): number {
@@ -1262,7 +1251,11 @@ const defaultImpl: HotModule = {
     }
 
     // ── SUBAGENT-RESULTS INGESTION GUARD (>=3 <task_result> markers) ───────
-    if (isTextOnly && postResultsState.lastResultCount >= WAVE_RESULT_THRESHOLD && !hasWorkArtifact) {
+    if (
+      isTextOnly
+      && (postResultsState.lastTurnHadResults || postResultsState.lastTurnHadWave)
+      && !hasWorkArtifact
+    ) {
       recordBlock("after-results-text-only")
       logFalseDoneBlock("after-results-text-only", text)
       recordBlankedResponse("after-results-text-only", text)
@@ -1273,6 +1266,7 @@ const defaultImpl: HotModule = {
         text: [
           "RESULTS INGESTION PROTOCOL: " + String(postResultsState.lastResultCount) + " subagent results arrived.",
           "Codify results (commit/tick TASKS.md), then dispatch next wave.",
+          "RESUME WORK: dispatch subagents immediately.",
           "Text-only after results is a stop.",
         ].join("\n"),
       }
@@ -1288,7 +1282,7 @@ const defaultImpl: HotModule = {
 
       return {
         text: [
-          "POST-SHIP CONTINUATION: after shipping, continue to next pending item.",
+          "POST-SHIP CONTINUATION BLOCKED: after shipping, continue to next pending item.",
           "Text-only after commit/push is a stop.",
         ].join("\n"),
       }
@@ -1641,7 +1635,13 @@ const defaultImpl: HotModule = {
       const args = (output as Record<string, unknown> | undefined)?.args as { command?: string } | undefined
       const command = typeof args?.command === "string" ? args.command.trim() : ""
       if (command.startsWith("make ") && STOP_LIKE_TARGETS_RE.test(command)) {
-        const taskMd = tasksMdHasUnchecked()
+        // release-cut and release-promote run the canonical release-readiness
+        // preflight, which owns the terminal publication-task exception. If
+        // this generic guard also required that terminal task to be complete,
+        // the command needed to complete it could never start.
+        const taskMd = CANONICAL_RELEASE_PREFLIGHT_TARGET_RE.test(command)
+          ? false
+          : tasksMdHasUnchecked()
         const ratchetCount = ratchetHasEntries()
         const bugsOpen = bugsMdHasOpenIncidents()
         const gateRed = gateStatusIsRed()

@@ -25,7 +25,7 @@ def _usage(
     name: str,
     current: int | None,
     limit: int | None,
-) -> SimpleNamespace:
+) -> AzureUsage:
     return SimpleNamespace(
         name=SimpleNamespace(value=name, localized_value=name),
         current_value=current,
@@ -38,7 +38,7 @@ def _sku(
     location: str = "eastus",
     *,
     restrictions: list[SimpleNamespace] | None = None,
-) -> SimpleNamespace:
+) -> AzureResourceSku:
     return SimpleNamespace(
         name=name,
         resource_type="virtualMachines",
@@ -47,15 +47,35 @@ def _sku(
     )
 
 
+class _ResourceSkuOperations:
+    def __init__(self, skus: list[AzureResourceSku]) -> None:
+        self._skus = skus
+
+    def list(self) -> list[AzureResourceSku]:
+        return self._skus
+
+
+class _UsageOperations:
+    def __init__(self, usages: list[AzureUsage]) -> None:
+        self._usages = usages
+
+    def list(self, location: str) -> list[AzureUsage]:
+        del location
+        return self._usages
+
+
 class _ComputeClient:
+    resource_skus: AzureResourceSkuOperations
+    usage: AzureUsageOperations
+
     def __init__(
         self,
         *,
-        skus: list[SimpleNamespace],
-        usages: list[SimpleNamespace],
+        skus: list[AzureResourceSku],
+        usages: list[AzureUsage],
     ) -> None:
-        self.resource_skus = SimpleNamespace(list=lambda: skus)
-        self.usage = SimpleNamespace(list=lambda location: usages)
+        self.resource_skus = _ResourceSkuOperations(skus)
+        self.usage = _UsageOperations(usages)
 
 
 def test_azure_sdk_protocols_support_runtime_validation() -> None:

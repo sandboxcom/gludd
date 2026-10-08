@@ -9,9 +9,9 @@ contract and its behavioral example is `make deps-audit`.
 
 The first authoritative replay reported 109 findings while the old target still
 returned success. Configuring PEP 621 development groups and import-name
-mappings reduced that to nine intentional dynamic/entrypoint cases. Those cases
-are explicitly adjudicated in `[tool.deptry.per_rule_ignores]`, after which the
-audit reports zero findings.
+mappings reduced that to a narrow set of intentional dynamic/entrypoint cases.
+Those cases are explicitly adjudicated in `[tool.deptry.per_rule_ignores]`, after
+which the audit reports zero findings.
 
 ## Dependency model
 
@@ -29,9 +29,33 @@ The manifest distinguishes four dependency shapes:
    (`scikit-image` to `skimage`, Azure distributions to the `azure`
    namespace, and similar cases) are represented explicitly.
 
-The unused `structlog` runtime dependency and Pillow entries in the game extras
-were removed. The observability extra now directly declares
-`opentelemetry-proto`, whose modules are imported by the receiver.
+The unused `structlog` runtime dependency was removed. The Pillow entries in
+the game extras are intentional and restored: the `game-e2e` and `e2e-all`
+extras declare `pillow>=12.3.0` as a security floor so the game pipeline never
+resolves an image decoder below the current security-fix release, even though
+Pillow is only reached transitively (via scikit-image). Pillow is therefore
+adjudicated in `[tool.deptry.per_rule_ignores]`. The observability extra now
+directly declares `opentelemetry-proto`, whose modules are imported by the
+receiver.
+
+## Exact core ownership inventory (2026-08-29)
+
+The beta4 ownership replay now complements deptry with
+`config/core-python-dependency-ownership.json`. The focused unit contract
+mechanically enumerates every PEP 621 core dependency, parses production AST
+imports under `src/general_ludd` and `collections/ansible_collections`, and
+compares collection execution-environment requirement manifests. Collection
+test imports are deliberately excluded because they prove development usage,
+not controller or managed-host runtime ownership. Any added, removed, moved, or
+stale consumer therefore makes the normal unit suite fail with an exact path
+diff.
+
+Every direct dependency has at least one static core production consumer except
+five exact runtime-selected dependencies: `aiosqlite` is named by the default
+SQLAlchemy URL, `greenlet` by the SQLAlchemy asyncio implementation, `langchain-openai`
+by the default provider registry, `msgpack` by the safe-cache importlib seam, and
+`uvicorn-worker` by Gunicorn's worker-class string. Those five references are pinned
+by path and token rather than hidden behind a broad unused-dependency allowlist.
 
 ## Dynamic and entrypoint adjudications
 
@@ -39,7 +63,11 @@ The narrow DEP002 list is not a blanket rule suppression:
 
 - Gunicorn, uvicorn-worker, vLLM, and llama-cpp are executed through process or
   module entrypoints.
+- `ansible-builder` is controller-only build tooling. The artifact builder uses
+  the managed interpreter's `python -m ansible_builder` entrypoint, avoiding a
+  host wrapper while keeping Ansible imports outside Gludd's core runtime.
 - aiosqlite is selected through the SQLAlchemy URL scheme.
+- greenlet is required by SQLAlchemy's asyncio implementation.
 - boto3, msgpack, OpenTelemetry, Torch, and langchain-openai are loaded with
   guarded `importlib` calls.
 - pqcrypto selects a versioned KEM module dynamically.
@@ -47,6 +75,31 @@ The narrow DEP002 list is not a blanket rule suppression:
 Each remains a declared dependency because the corresponding runtime path would
 otherwise fail when selected. Adding a new ignored package requires updating
 this document and the focused contract test.
+
+Hindsight is intentionally **not** on that ignore list. On 2026-08-20 the
+repository's literal `importlib.import_module("hindsight_client")` call still
+produced DEP002 despite the distribution-to-module mapping. The adapter now uses
+a guarded static import, so the extra remains optional at runtime while its
+dependency truth is mechanically visible. This avoids turning a real adapter
+dependency into a permanent audit exception.
+
+`quickjs-ng` is likewise intentionally absent from the ignore list. The pinned
+FreeLLMAPI shadow-scoring engine maps that distribution to the `quickjs` module
+and uses a lazy static import inside its context factory. The import remains
+deferred until the opt-in engine is selected, preserves the content-free
+fallback when the native module is unavailable, and stays visible to deptry and
+the exact core-ownership inventory without a permanent DEP002 suppression.
+
+The `quickjs-ng==0.16.2.1` wheel follows the PEP 639 file form: its installed
+metadata declares `License-File: LICENSE` and places the MIT text under
+`.dist-info/licenses/`, but it publishes neither `License-Expression`, the
+legacy `License` field, nor a license classifier. The license gate therefore
+reads only safe relative paths declared by `License-File` through
+`importlib.metadata.Distribution`; absolute and parent-traversal paths are
+rejected. The resulting text is subjected to the same GPL/AGPL checks as field
+metadata, so this is verified package evidence rather than an allowlist or a
+missing-license suppression. A focused regression pins this behavior for the
+exact installed package.
 
 ## Practitioner evidence
 
@@ -62,8 +115,31 @@ this document and the focused contract test.
 - Deptry's [current configuration
   reference](https://deptry.com/usage/) documents development-group
   classification, known-first-party namespaces, package/module mappings, and
-  per-rule adjudication. Gludd uses those native capabilities instead of a
-  custom scanner.
+  limited dynamic-import extraction. Its [0.18.0 changelog
+  entry](https://deptry.com/CHANGELOG/#0180-2024-07-31) records the original
+  `importlib.import_module` support. Gludd uses those native capabilities and a
+  statically auditable guarded import instead of adding a custom scanner or a
+  Hindsight suppression.
+- The `quickjs-ng` [upstream project metadata](https://github.com/genotrance/quickjs-ng/blob/main/pyproject.toml)
+  contains no license declaration even though the repository carries an MIT
+  `LICENSE`; its issue tracker had no matching license-metadata report when
+  checked on 2026-09-17 (the sole open user report was source-build issue
+  [#11](https://github.com/genotrance/quickjs-ng/issues/11)). The long-lived
+  PyPA Hatch discussion
+  [#679](https://github.com/pypa/hatch/issues/679) documents the wider
+  practitioner confusion around wheels publishing `License-File` instead of
+  `License` or `License-Expression`. Gludd consequently implements the PEP 639
+  file path rather than inventing package-specific license metadata.
+
+The sources were revalidated on 2026-08-29. The upstream deptry reference still
+states that it derives dependency truth by comparing declared packages with
+Python imports and supports explicit distribution-to-module mappings. Poetry
+issue #4135, opened in June 2021, records the long-lived practitioner need,
+Poetry maintainers' conclusion that source parsing belongs in a separate tool,
+and the later community recommendation of deptry. That division of
+responsibility is why Gludd retains deptry for general package truth and adds
+only a repository-specific exact ownership inventory for runtime-selected and
+collection-boundary evidence.
 
 ## Security, resources, and ZDD
 
@@ -78,3 +154,8 @@ quality gates, not live workers, schemas, or network routes. A candidate artifac
 must pass deptry, lock integrity, license, vulnerability, test, and coverage
 checks before promotion. Existing workers keep their immutable environment until
 the new artifact is healthy; rollback selects the previous artifact and lock.
+The ownership replay is read-only, performs bounded single-process AST scans,
+and starts no daemons. Rolling it back removes the inventory, checker, and
+focused test together; it never mutates an installed environment or a managed
+host. Keeping the lock unchanged also avoids candidate churn and preserves the
+existing zero-downtime promotion and rollback artifact pair.

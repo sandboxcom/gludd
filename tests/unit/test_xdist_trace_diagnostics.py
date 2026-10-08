@@ -3,13 +3,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
+
+import pytest
+from scripts.makefile_layout import compose_makefile
 
 
-def test_trace_event_writes_jsonl_with_resource_fields(tmp_path, monkeypatch) -> None:
+def test_trace_event_writes_jsonl_with_resource_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from scripts import xdist_trace_plugin as trace
 
     log_path = tmp_path / "trace.jsonl"
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", None)
+    monkeypatch.setattr(trace, "_ACTIVE_RUN_ID", None)
     monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(log_path))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "observed-run-7")
     monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw7")
 
     trace.write_event("START", nodeid="tests/demo.py::test_demo")
@@ -18,6 +27,7 @@ def test_trace_event_writes_jsonl_with_resource_fields(tmp_path, monkeypatch) ->
     assert payload["event"] == "START"
     assert payload["nodeid"] == "tests/demo.py::test_demo"
     assert payload["worker"] == "gw7"
+    assert payload["run_id"] == "observed-run-7"
     assert payload["pid"] > 0
     assert "timestamp" in payload
     assert "loadavg" in payload
@@ -25,7 +35,73 @@ def test_trace_event_writes_jsonl_with_resource_fields(tmp_path, monkeypatch) ->
     assert "rss_kb" in payload
 
 
-def test_controller_sessionstart_truncates_trace_once(tmp_path, monkeypatch) -> None:
+def test_collection_finish_records_only_the_bounded_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    log_path = tmp_path / "trace.jsonl"
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", log_path)
+    monkeypatch.setattr(trace, "_ACTIVE_RUN_ID", "collect-run")
+    session = SimpleNamespace(items=[object(), object(), object()])
+
+    trace.pytest_collection_finish(cast(pytest.Session, session))
+
+    payload = json.loads(log_path.read_text(encoding="utf-8"))
+    assert payload["event"] == "COLLECTION_FINISH"
+    assert payload["run_id"] == "collect-run"
+    assert payload["collected"] == 3
+    assert "nodeids" not in payload
+
+
+def test_trace_resource_probes_degrade_to_bounded_empty_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    def unavailable(*_args: object, **_kwargs: object) -> None:
+        raise OSError("resource probe unavailable")
+
+    monkeypatch.setattr(trace.os, "getloadavg", unavailable)
+    monkeypatch.setattr(trace.resource, "getrusage", unavailable)
+    monkeypatch.setattr(trace.shutil, "disk_usage", unavailable)
+
+    assert trace._loadavg() == []
+    assert trace._rss_kb() == 0
+    assert trace._disk_free_bytes() == 0
+
+
+def test_trace_protocol_records_exception_and_ignores_passing_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    log_path = tmp_path / "trace.jsonl"
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", log_path)
+    monkeypatch.setattr(trace, "_ACTIVE_RUN_ID", "exception-run")
+    item = SimpleNamespace(nodeid="tests/demo.py::test_error")
+    protocol = trace.pytest_runtest_protocol(cast(pytest.Item, item), None)
+
+    next(protocol)
+    with pytest.raises(StopIteration):
+        protocol.send(
+            SimpleNamespace(excinfo=(ValueError, ValueError("broken protocol"), None))
+        )
+    trace.pytest_runtest_logreport(
+        cast(pytest.TestReport, SimpleNamespace(failed=False))
+    )
+
+    events = [
+        json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [event["event"] for event in events] == ["START", "FINISH"]
+    assert events[1]["outcome"] == "exception"
+    assert events[1]["exc_type"] == "ValueError"
+
+
+def test_controller_sessionstart_truncates_trace_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from scripts import xdist_trace_plugin as trace
 
     log_path = tmp_path / "trace.jsonl"
@@ -34,13 +110,13 @@ def test_controller_sessionstart_truncates_trace_once(tmp_path, monkeypatch) -> 
     monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "1")
 
     session = SimpleNamespace(config=SimpleNamespace(workerinput=None))
-    trace.pytest_sessionstart(session)
+    trace.pytest_sessionstart(cast(pytest.Session, session))
 
     events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
     assert [event["event"] for event in events] == ["RUN_START"]
 
 
-def test_summary_identifies_unfinished_nodeids(tmp_path) -> None:
+def test_summary_identifies_unfinished_nodeids(tmp_path: Path) -> None:
     from scripts.summarize_xdist_trace import summarize_log
 
     log_path = tmp_path / "trace.jsonl"
@@ -63,7 +139,225 @@ def test_summary_identifies_unfinished_nodeids(tmp_path) -> None:
     assert summary["unfinished"] == [{"worker": "gw1", "nodeid": "tests/b.py::test_b"}]
 
 
-def test_summary_reports_worker_memory_growth_and_largest_jumps(tmp_path) -> None:
+def test_summary_filters_an_append_only_trace_by_run_id(tmp_path: Path) -> None:
+    from scripts.summarize_xdist_trace import summarize_log
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        chr(10).join(
+            [
+                "not json from an unrelated historical run",
+                json.dumps(
+                    {
+                        "event": "START",
+                        "run_id": "old-run",
+                        "worker": "gw0",
+                        "nodeid": "tests/old.py::test_old",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "START",
+                        "run_id": "current-run",
+                        "worker": "gw1",
+                        "nodeid": "tests/current.py::test_current",
+                    }
+                ),
+            ]
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    summary = summarize_log(log_path, run_id="current-run")
+
+    assert summary["run_id"] == "current-run"
+    assert summary["events"] == 1
+    assert summary["started"] == 1
+    assert summary["last_by_worker"] == {
+        "gw1": "tests/current.py::test_current"
+    }
+
+
+def test_summary_cli_accepts_run_id_filter(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scripts.summarize_xdist_trace import main
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "event": "RUN_FINISH",
+                "run_id": "selected-run",
+                "worker": "controller",
+            }
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    assert main(["--run-id", "selected-run", str(log_path)]) == 0
+    assert json.loads(capsys.readouterr().out)["run_id"] == "selected-run"
+
+    with pytest.raises(SystemExit):
+        main(["--run-id", "../other-run", str(log_path)])
+
+
+def test_compact_summary_keeps_every_unique_failure_without_tracebacks(tmp_path: Path) -> None:
+    from scripts.summarize_xdist_trace import compact_summary, summarize_log
+
+    log_path = tmp_path / "trace.jsonl"
+    events: list[str] = []
+    for index in range(60):
+        nodeid = f"tests/failures/test_{index}.py::test_failure"
+        for worker in ("gw0", "controller"):
+            events.append(
+                json.dumps(
+                    {
+                        "event": "REPORT",
+                        "worker": worker,
+                        "nodeid": nodeid,
+                        "outcome": "failed",
+                        "when": "call",
+                        "longrepr": "x" * 4000,
+                    }
+                )
+            )
+    log_path.write_text(chr(10).join(events) + chr(10), encoding="utf-8")
+
+    summary = summarize_log(log_path)
+    compact = compact_summary(summary)
+
+    assert summary["failure_report_count"] == 120
+    assert summary["failure_nodeid_count"] == 60
+    assert compact["failure_nodeids"] == [
+        f"tests/failures/test_{index}.py::test_failure" for index in range(60)
+    ]
+    assert "failures" not in compact
+    assert "longrepr" not in json.dumps(compact)
+
+
+def test_compact_summary_omits_memory_arrays_unless_requested(tmp_path: Path) -> None:
+    from scripts.summarize_xdist_trace import compact_summary, summarize_log
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "event": "START",
+                "worker": "gw0",
+                "nodeid": "tests/demo.py::test_demo",
+                "rss_kb": 100,
+            }
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    summary = summarize_log(log_path)
+
+    compact = compact_summary(summary)
+    assert "memory_by_worker" not in compact
+    assert "largest_rss_increases" not in compact
+
+    compact_with_memory = compact_summary(summary, include_memory=True)
+    assert compact_with_memory["memory_by_worker"] == summary["memory_by_worker"]
+    assert compact_with_memory["largest_rss_increases"] == summary["largest_rss_increases"]
+
+
+def test_summary_tolerates_missing_blank_malformed_and_non_mapping_events(tmp_path: Path) -> None:
+    from scripts.summarize_xdist_trace import summarize_log
+
+    log_path = tmp_path / "trace.jsonl"
+    assert summarize_log(log_path)["events"] == 0
+
+    log_path.write_text(chr(10) + "not-json" + chr(10) + "[]" + chr(10) + "{}" + chr(10), encoding="utf-8")
+    summary = summarize_log(log_path)
+
+    assert summary["events"] == 2
+    assert summary["failure_nodeids"] == []
+
+
+def test_summary_cli_defaults_compact_and_retains_verbose_mode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scripts.summarize_xdist_trace import main
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "event": "REPORT",
+                "worker": "gw0",
+                "nodeid": "tests/demo.py::test_failure",
+                "outcome": "failed",
+                "when": "call",
+                "longrepr": "secret traceback detail",
+            }
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    assert main([str(log_path)]) == 0
+    compact = json.loads(capsys.readouterr().out)
+    assert compact["failure_nodeids"] == ["tests/demo.py::test_failure"]
+    assert "failures" not in compact
+
+    assert main(["--verbose", str(log_path)]) == 0
+    verbose = json.loads(capsys.readouterr().out)
+    assert verbose["failures"][0]["longrepr"] == "secret traceback detail"
+
+
+def test_summary_cli_has_concise_failures_only_mode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scripts.summarize_xdist_trace import main
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        chr(10).join(
+            [
+                json.dumps(
+                    {
+                        "event": "START",
+                        "worker": "gw1",
+                        "nodeid": "tests/demo.py::test_worker_exit",
+                        "rss_kb": 100,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "REPORT",
+                        "worker": "controller",
+                        "nodeid": "tests/demo.py::test_worker_exit",
+                        "outcome": "failed",
+                        "when": "call",
+                        "longrepr": "worker gw1 crashed with a very long traceback",
+                    }
+                ),
+            ]
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    assert main(["--failures-only", str(log_path)]) == 0
+    failures_only = json.loads(capsys.readouterr().out)
+
+    assert failures_only == {
+        "failure_nodeid_count": 1,
+        "failure_nodeids": ["tests/demo.py::test_worker_exit"],
+        "failure_report_count": 1,
+        "path": str(log_path),
+        "unfinished": [
+            {"nodeid": "tests/demo.py::test_worker_exit", "worker": "gw1"}
+        ],
+    }
+
+
+def test_summary_reports_worker_memory_growth_and_largest_jumps(tmp_path: Path) -> None:
     from scripts.summarize_xdist_trace import summarize_log
 
     log_path = tmp_path / "trace.jsonl"
@@ -111,31 +405,84 @@ def test_summary_reports_worker_memory_growth_and_largest_jumps(tmp_path) -> Non
     summary = summarize_log(log_path)
 
     assert summary["memory_by_worker"]["gw0"] == {
-        "first_rss_kb": 100,
-        "peak_rss_kb": 220,
-        "growth_rss_kb": 120,
+        "first_rss_bytes": 100 * 1024,
+        "first_rss_kib": 100,
+        "peak_rss_bytes": 220 * 1024,
+        "peak_rss_kib": 220,
+        "growth_rss_bytes": 120 * 1024,
+        "growth_rss_kib": 120,
         "peak_nodeid": "tests/b.py::test_b",
     }
     assert summary["largest_rss_increases"][0] == {
         "worker": "gw0",
         "nodeid": "tests/b.py::test_b",
         "event": "START",
-        "rss_kb": 220,
-        "increase_rss_kb": 80,
+        "rss_bytes": 220 * 1024,
+        "rss_kib": 220,
+        "increase_rss_bytes": 80 * 1024,
+        "increase_rss_kib": 80,
+    }
+    assert summary["legacy_rss_input_unit"] == "kib"
+
+
+def test_summary_normalizes_legacy_macos_rss_bytes_without_inflation(
+    tmp_path: Path,
+) -> None:
+    from scripts.summarize_xdist_trace import summarize_log
+
+    log_path = tmp_path / "trace.jsonl"
+    log_path.write_text(
+        chr(10).join(
+            [
+                json.dumps(
+                    {
+                        "event": "START",
+                        "worker": "gw0",
+                        "nodeid": "tests/a.py::test_a",
+                        "rss_kb": 92_684_288,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event": "FINISH",
+                        "worker": "gw0",
+                        "nodeid": "tests/a.py::test_a",
+                        "rss_kb": 93_011_968,
+                    }
+                ),
+            ]
+        )
+        + chr(10),
+        encoding="utf-8",
+    )
+
+    summary = summarize_log(log_path)
+
+    assert summary["legacy_rss_input_unit"] == "bytes"
+    assert summary["memory_by_worker"]["gw0"] == {
+        "first_rss_bytes": 92_684_288,
+        "first_rss_kib": 90_512,
+        "peak_rss_bytes": 93_011_968,
+        "peak_rss_kib": 90_832,
+        "growth_rss_bytes": 327_680,
+        "growth_rss_kib": 320,
+        "peak_nodeid": "tests/a.py::test_a",
     }
 
 
 def test_make_targets_run_traced_full_suite() -> None:
-    makefile = Path("Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path("Makefile"))
 
     assert chr(10) + "test-xdist-trace:" in makefile
     assert "scripts/run_xdist_trace.py" in makefile
     assert "--max-worker-restart=0" in makefile
     assert "-p scripts.xdist_trace_plugin" in makefile
+    assert "GLUDD_XDIST_TRACE_RUN_ID" in makefile
     assert chr(10) + "test-xdist-trace-summary:" in makefile
+    assert '--run-id "$(RUN_ID)"' in makefile
 
 
-def test_runner_exports_repo_root_for_plugin_import(monkeypatch) -> None:
+def test_runner_exports_repo_root_for_plugin_import(monkeypatch: pytest.MonkeyPatch) -> None:
     import os
     import sys
 
@@ -153,7 +500,9 @@ def test_runner_exports_repo_root_for_plugin_import(monkeypatch) -> None:
     assert os.environ["GLUDD_XDIST_TRACE_LOG"] == "/tmp/gludd-xdist-test.jsonl"
 
 
-def test_trace_path_is_stable_after_session_start(tmp_path, monkeypatch) -> None:
+def test_trace_path_is_stable_after_session_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from scripts import xdist_trace_plugin as trace
 
     first_log = tmp_path / "first.jsonl"
@@ -164,7 +513,7 @@ def test_trace_path_is_stable_after_session_start(tmp_path, monkeypatch) -> None
 
     try:
         session = SimpleNamespace(config=SimpleNamespace(workerinput=None))
-        trace.pytest_sessionstart(session)
+        trace.pytest_sessionstart(cast(pytest.Session, session))
         monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(second_log))
         trace.write_event("START", nodeid="tests/demo.py::test_demo")
     finally:

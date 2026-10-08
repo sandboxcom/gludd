@@ -178,7 +178,19 @@ class TestRecursiveWatching:
 
         (dir_a / "a.txt").write_text("a")
         (dir_b / "b.txt").write_text("b")
-        changes = _poll_changes(watcher, min_count=2, timeout=10.0)
+
+        # get_changes() drains the buffer, and the two watch-trees deliver
+        # their events independently — on CI filesystems one of the two events
+        # can lag the other. Accumulate changes across a bounded 5s poll window
+        # instead of expecting both events in a single drain.
+        changes: list[dict] = []
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            changes.extend(watcher.get_changes())
+            files = [str(c.get("file", "")) for c in changes]
+            if any("a.txt" in f for f in files) and any("b.txt" in f for f in files):
+                break
+            time.sleep(0.05)
         watcher.stop()
 
         files = [str(c.get("file", "")) for c in changes]

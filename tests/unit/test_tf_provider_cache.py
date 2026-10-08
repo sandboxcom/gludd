@@ -13,6 +13,8 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 checker = importlib.import_module("check_tf_provider_versions")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -20,7 +22,7 @@ TF_ROOT = REPO_ROOT / "infra" / "terraform"
 
 
 def test_tf_clean_preserves_tracked_cache_sentinel() -> None:
-    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(REPO_ROOT / "Makefile")
     recipe = makefile.split("\ntf-clean:\n", 1)[1].split("\n\n", 1)[0]
 
     assert "mkdir -p $(TF_PLUGIN_CACHE)" in recipe
@@ -38,10 +40,9 @@ def test_versions_tf_is_the_canonical_contract() -> None:
         "hashicorp/azurerm": "~> 4.55",
         "Azure/azapi": "~> 2.0",
         "hashicorp/kubernetes": "~> 2.31",
-        "hashicorp/vsphere": "~> 2.8",
+        "vmware/vsphere": "~> 2.8",
         "runpod/runpod": "~> 1.0",
         "dmacvicar/libvirt": "~> 0.7",
-        "jvzq/qemu": "~> 0.1",
     }
     assert contract == expected
 

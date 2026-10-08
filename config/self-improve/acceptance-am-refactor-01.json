@@ -1,0 +1,1 @@
+{"canonical_make_commands":["make test-files TESTFILES=tests/unit/test_self_improve_failure_corpus.py PYTEST_ARGS=-q"],"objective":"Refactor existing code without changing observable behavior: normalize canonical corpus JSON ordering, preserve its semantics, prove idempotence, and keep its invariant test green.","reference_elapsed_seconds":157,"task_id":"S83.202"}

@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 
 
 class HealthStatus(enum.Enum):
+    """Aggregated health state for checks and probes."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
@@ -29,6 +31,8 @@ class HealthStatus(enum.Enum):
 
 @dataclass
 class CheckResult:
+    """Outcome of a single health-check run."""
+
     name: str
     status: HealthStatus = HealthStatus.HEALTHY
     detail: str = ""
@@ -43,6 +47,8 @@ class CheckResult:
 
 @dataclass
 class HealthCheck:
+    """A single pluggable check: name, async check_fn, timeout, and tags."""
+
     name: str
     check_fn: Callable[[], Coroutine[None, None, object]]
     timeout_s: float = 10.0
@@ -51,10 +57,12 @@ class HealthCheck:
     _RESULT_OK = CheckResult(name="", status=HealthStatus.HEALTHY, detail="ok")
 
     def __post_init__(self) -> None:
+        """Coerce mutable tag sets to frozenset so checks are hashable."""
         if not isinstance(self.tags, frozenset):
             object.__setattr__(self, "tags", frozenset(self.tags))
 
     async def run(self) -> CheckResult:
+        """Run the check under its timeout and normalise the outcome."""
         start = time.monotonic()
         try:
             async with asyncio.timeout(self.timeout_s):
@@ -92,7 +100,7 @@ class HealthCheck:
                     name=self.name,
                     status=outcome.status,
                     detail=outcome.detail,
-                    duration_s=outcome.duration_s or duration_s,
+                    duration_s=outcome.duration_s,
                     error=outcome.error,
                 )
         elif isinstance(outcome, HealthStatus):
@@ -131,6 +139,14 @@ class HealthCheck:
                 duration_s=result.duration_s,
                 error=result.error,
             )
+        if not result.duration_s:
+            result = CheckResult(
+                name=result.name,
+                status=result.status,
+                detail=result.detail,
+                duration_s=duration_s,
+                error=result.error,
+            )
         return result
 
 
@@ -147,28 +163,35 @@ _AGGREGATION_PRIORITY = (
 
 @dataclass
 class HealthChecker:
+    """Aggregate runner for a list of HealthCheck instances."""
+
     checks: list[HealthCheck] = field(default_factory=list)
 
     def add_check(self, check: HealthCheck) -> None:
+        """Register a check."""
         self.checks.append(check)
 
     def remove_check(self, name: str) -> bool:
+        """Remove a check by name; return True when one was removed."""
         before = len(self.checks)
         self.checks = [c for c in self.checks if c.name != name]
         return len(self.checks) < before
 
     def get_check(self, name: str) -> HealthCheck | None:
+        """Return the check with the given name, or None."""
         for c in self.checks:
             if c.name == name:
                 return c
         return None
 
     def list_checks(self) -> list[str]:
+        """Return the names of all registered checks."""
         return [c.name for c in self.checks]
 
     # -- running ---------------------------------------------------------------
 
     async def run_all(self) -> tuple[HealthStatus, list[CheckResult]]:
+        """Run all checks sequentially and aggregate the status."""
         results: list[CheckResult] = []
         for check in self.checks:
             result = await check.run()
@@ -176,6 +199,7 @@ class HealthChecker:
         return _aggregate_status(results), results
 
     async def run_all_parallel(self) -> tuple[HealthStatus, list[CheckResult]]:
+        """Run all checks concurrently and aggregate the status."""
         tasks = {asyncio.ensure_future(check.run()): check for check in self.checks}
         if not tasks:
             return HealthStatus.HEALTHY, []
@@ -185,6 +209,7 @@ class HealthChecker:
         return _aggregate_status(results), results
 
     async def run_by_name(self, name: str) -> CheckResult:
+        """Run the named check and return its result."""
         check = self.get_check(name)
         if check is None:
             return CheckResult(
@@ -195,6 +220,7 @@ class HealthChecker:
         return await check.run()
 
     async def run_by_tag(self, tag: str) -> tuple[HealthStatus, list[CheckResult]]:
+        """Run checks carrying the given tag and aggregate the status."""
         tagged = [c for c in self.checks if tag in c.tags]
         tasks = {asyncio.ensure_future(c.run()): c for c in tagged}
         if not tasks:

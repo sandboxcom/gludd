@@ -61,17 +61,22 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.4 — 2026-08-09**
+**Status as of v0.1.1 — 2026-09-25**
 
-Version: `v0.1.0-beta.4` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
+Version: `v0.1.1` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
 when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is gated on
 `startsWith(github.ref, 'refs/tags/v')`).
 
+### v0.1.1
+
+S83.166 release documentation and version bump. This patch updates the project
+version, README status line, CHANGELOG, release runbook, and release notes to
+reflect the v0.1.1 release. No functional code changes are included.
+
 ---
 
 ## Feature & Task Completion Status
-
 <!-- STATUS-TABLE:START -->
 *(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
 
@@ -102,7 +107,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| J.1-J.4 — HTTP state backend (lock/unlock/get/update), daemon wiring, local-to-HTTP migration, HMAC+OpenBao encryption | ✗ 100% | **PENDING** *(file-refs only)*: State integrity with HMAC signatures, at-rest encryption via OpenBao |
+| J.1-J.4 — HTTP state backend (lock/unlock/get/update), daemon wiring, local-to-HTTP migration, HMAC+OpenBao encryption | ~ 100% | **PARTIAL** *(file-refs only)*: State integrity with HMAC signatures, at-rest encryption via OpenBao |
 
 ### Phase K — Workload-Aware Deployment
 
@@ -166,7 +171,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
-| A.1-A.9 — CI fixes, push, release workflow, shard matrix, coverage policy | current gate | **EVIDENCE** *(file refs only)*: run `make gate`; authoritative shard, coverage, CI, and release results are recorded in `.gate-status` and `TASKS.md` |
+| A.1-A.9 — CI fixes, push, release v0.1.0-beta.3 ready, shard matrix (6 shards), test-quality threshold | ✓ 100% | **PASS** *(file-refs only)*: CI shard matrix (6 shards), fail_under 85, CI GREEN for v0.1.0-beta.3 |
 
 ### Session 53 — Documentation & Release Polish
 
@@ -174,12 +179,11 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 |---|---|---|
 | S53.7-S53.11 — Prompt profiles, config audit, README config guide, 54-playbook docs, template docs | ~ 100% | **PARTIAL** *(file-refs only)*: 6 config files documented, README Configuration Guide section; commits 68da61a1, 0a912a72, 704ed529, d145ccaf |
 | S53.1-S53.3, S53.12-S53.15 — Binary fixes, smoke tests, functional tests, bundled resources, cross-platform specs | ✓ 100% | **PASS** *(file-refs only)*: macOS crash fix, smoke tests on all platforms, 21 verified assets; commits bd92fd8a..10f03137 |
-| S53.44-S53.45 — Stop-prevention codification (5 gaps, 3-layer) + CI check cooldown (machine-enforced) | ~ 100% | **PARTIAL** *(file-refs only)*: 5 anti-pattern gaps fixed, CI check cooldown 600s; commits 05d18f6f, b3878d2c, 6992be7d, ad09cc0a |
+| S53.44-S53.45 — Stop-prevention codification (5 gaps, 3-layer) + CI check cooldown (machine-enforced) | ✓ 100% | **PASS** *(file-refs only)*: 5 anti-pattern gaps fixed, CI check cooldown 600s; commits 05d18f6f, b3878d2c, 6992be7d, ad09cc0a |
 | S53.31-S53.32 — Agentic memory: embedding store, consolidation cascade, hybrid search (97 tests) | ✓ 100% | **PASS** *(file-refs only)*: Procedural + semantic + hybrid search + embedding; commit 97432526 |
 | S53.33-S53.34 — PaaS IAM least-privilege roles (AWS/GCP/Azure) + OPA policies for Terraform/IAM (32 tests) | ✗ 100% | **PENDING** *(file-refs only)*: 3 provider IAM files, 4 OPA policy files; commit b4612d1a |
 
 <!-- STATUS-TABLE:END -->
-
 ## Backlog
 
 Completed features are documented in CHANGELOG.md. Only in-progress items are tracked here.
@@ -204,7 +208,7 @@ serves that, leaving the tracked template byte-for-byte untouched. The
 published Pages URL below is built the same way (via `make deck-build` in CI),
 so it always shows resolved numbers.
 
-**Live URL (GitHub Pages):** [https://sandboxcom.github.io/gludd/](https://sandboxcom.github.io/gludd/)
+**Live URL (GitHub Pages):** [GitHub Pages site](https://sandboxcom.github.io/gludd/)
 &mdash; deployed by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to
 `master` that touches the deck source. Pages was just enabled for this repo; the
 URL goes live once that workflow completes its next successful run &mdash; check
@@ -510,7 +514,7 @@ Agents can now invoke MCP tools via the `gludd_mcp_tool` Ansible module:
 #### Scenario 5: Run gludd on a Remote Server
 
 By default, gludd binds to `127.0.0.1` (loopback only). To expose it on a remote
-host — **and you MUST configure authentication first** (PSK via `GLUDD_PSK` env var) —
+host — **and you MUST configure authentication first** (PSK via `GLUDD_AUTH_PSK` env var) —
 edit `general-ludd.yml`:
 
 ```yaml
@@ -527,18 +531,18 @@ network:
 **⚠ Security warning:** Binding to `0.0.0.0` without `allowed_cidr` exposes the daemon
 to the entire network. Always configure both:
 
-1. **PSK auth** — set `GLUDD_PSK` env var to a strong random secret on both the daemon
-   and any client (`gludd --psk "$GLUDD_PSK" ...`).
+1. **PSK auth** — set `GLUDD_AUTH_PSK` env var to a strong random secret on both the daemon
+   and any client (`gludd --psk "$GLUDD_AUTH_PSK" ...`).
 2. **CIDR allowlist** — restrict `network.allowed_cidr` to the IPs/networks that need
    access.
 
 ```bash
 # On the remote server
-export GLUDD_PSK="$(openssl rand -hex 32)"
+export GLUDD_AUTH_PSK="$(openssl rand -hex 32)"
 GLUDD_CONFIG_DIR="/etc/general-ludd" uv run gludd daemon --port 8000
 
 # On a client
-export GLUDD_PSK="<same-secret>"
+export GLUDD_AUTH_PSK="<same-secret>"
 gludd --host https://remote.example.com:8000 status
 ```
 
@@ -1062,10 +1066,11 @@ the CI release job), and then verifies the published release.
 
 **A tag is not a release, and "has assets" is not "complete".**
 
-- **`make verify-release-completeness TAG=...` is the real gate.** It checks 12 artifact
-  categories — 4 platform binaries (linux-x86_64, linux-aarch64, macos-arm64,
-  windows-x86_64), `.deb`, `.rpm`, `.dmg`, `.exe` installer, checksums, SBOM, `LICENSE`,
-  `THIRD_PARTY_LICENSES` — plus: the prerelease flag must match the tag shape
+- **`make verify-release-completeness TAG=...` is the real gate.** It checks 28 artifact
+  categories spanning platform binaries, native installers, Python packages,
+  collections, the locked Ansible execution boundary, image metadata, smoke
+  attestations, manifests, checksums, SBOM, and licenses; it also requires at
+  least 30 assets. The prerelease flag must match the tag shape
   (`-alpha`/`-beta`/`-rc` ⇒ prerelease), asset names must carry the tag's version, and no
   asset may be zero-size. CI runs it as a **blocking step** on tag builds.
 - **`make verify-release-artifact` is NOT the gate.** It only proves "non-draft and at

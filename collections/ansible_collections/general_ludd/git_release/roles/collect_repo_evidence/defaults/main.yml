@@ -1,0 +1,7 @@
+---
+git_release_repo_path: ""
+git_release_daemon_url: "http://127.0.0.1:8000"
+git_release_daemon_psk: ""
+git_release_daemon_timeout: 30
+git_release_daemon_validate_certs: true
+

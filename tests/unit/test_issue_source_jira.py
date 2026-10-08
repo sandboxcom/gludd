@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from general_ludd.issue_sources.jira import JiraIssueSource, _adf, _parse_updated
@@ -64,6 +65,25 @@ def test_jira_construction_defaults(monkeypatch):
     )
     assert source.base_url == "https://example.atlassian.net"
     assert source.name == "jira"
+
+
+def test_jira_closes_only_its_default_transport(monkeypatch):
+    class Client:
+        closed = 0
+
+        def close(self):
+            self.closed += 1
+
+    client = Client()
+    monkeypatch.setattr(httpx, "Client", lambda: client)
+    owned = JiraIssueSource(_make_config())
+    owned.close()
+    owned.close()
+    assert client.closed == 1
+
+    injected = FakeHttpTransport()
+    injected.close = lambda: pytest.fail("injected transport is externally owned")
+    JiraIssueSource(_make_config(), transport=injected).close()
 
 
 def test_jira_auth_header(monkeypatch):

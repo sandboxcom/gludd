@@ -18,6 +18,8 @@ from typing import ClassVar, Final, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from general_ludd.security.redaction import redact_for_persistence
+
 
 @dataclass(frozen=True, slots=True)
 class JobIngressLimits:
@@ -54,6 +56,7 @@ class JobIngressLimits:
     }
 
     def __post_init__(self) -> None:
+        """Reject any limit outside its pinned safe bounds at construction."""
         env_by_field = dict(self._ENV_FIELDS)
         for field_name, (minimum, maximum) in self._SAFE_BOUNDS.items():
             value = getattr(self, field_name)
@@ -72,7 +75,6 @@ class JobIngressLimits:
         permissive default. Passing a mapping makes configuration validation
         deterministic without mutating process-global environment state.
         """
-
         source = os.environ if environ is None else environ
         values: dict[str, int] = {}
         for field_name, env_name in cls._ENV_FIELDS:
@@ -94,11 +96,11 @@ JOB_INGRESS_LIMITS = JobIngressLimits.from_environment()
 _JOB_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _QUEUE_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 _PLAYBOOK_SEGMENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def _validate_payload_bounds(payload: dict[str, object], limits: JobIngressLimits) -> None:
     """Reject excessive or non-JSON payloads before Pydantic field coercion."""
-
     collection_items = 0
     serialized_bytes = 0
     active_containers: set[int] = set()
@@ -202,6 +204,8 @@ def _required_string(value: object, field_name: str) -> str:
 
 
 class JobSpec(BaseModel):
+    """A validated job specification with fail-closed ingress boundary checks."""
+
     model_config = ConfigDict(extra="forbid")
 
     job_id: str
@@ -220,6 +224,7 @@ class JobSpec(BaseModel):
     candidate_todos: list[str] = Field(default_factory=list)
     artifact_summaries: list[str] = Field(default_factory=list)
     plan_artifact: str | None = None
+    repository_binding_digest: str | None = None
     prompt_text: str | None = None
     skill_body: str | None = None
     ansible_roles_path: str | None = None
@@ -287,14 +292,27 @@ class JobSpec(BaseModel):
             raise ValueError("queue must be an identifier-like slug")
         return cleaned
 
+    @field_validator("repository_binding_digest", mode="before")
+    @classmethod
+    def _validate_repository_binding_digest(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if type(value) is not str or _SHA256_PATTERN.fullmatch(value) is None:
+            raise ValueError(
+                "repository_binding_digest must be a lowercase SHA-256 digest"
+            )
+        return value
+
     # ── D-09: ownership ──
 
     ownership: OwnershipSpec | None = None
 
     def policy_version(self) -> str:
+        """Return the versioned policy identifier for this jobspec schema."""
         return f"jobspec-v1:{_JOBSPEC_POLICY_DIGEST_PREFIX}"
 
     def policy_hash(self) -> str:
+        """Return a SHA-256 digest over the policy version and ownership."""
         h = hashlib.sha256()
         h.update(b"jobspec-v1")
         if self.ownership is not None:
@@ -381,6 +399,7 @@ class WorkCeilingSpec(BaseModel):
 
     @classmethod
     def for_work_type(cls, work_type: str) -> WorkCeilingSpec:
+        """Return the ceiling defaults for one work type, falling back to base defaults."""
         defaults: dict[str, dict[str, int]] = {
             "code": {
                 "max_wall_seconds": 1800,
@@ -411,37 +430,15 @@ class WorkCeilingSpec(BaseModel):
 # ── D-09: Bounded denial audit ──
 
 _DENIAL_AUDIT_MAX_BYTES: Final[int] = 131_072
-_REDACTED_FIELDS: Final[frozenset[str]] = frozenset(
-    {
-        "api_key",
-        "psk",
-        "token",
-        "secret",
-        "password",
-        "credential",
-        "authorization",
-        "GLUDD_PSK",
-    }
-)
 _JOBSPEC_POLICY_DIGEST_PREFIX: Final[str] = "sha256"
 
 
 def _redact_payload(raw: dict[str, object]) -> dict[str, object]:
-    safe: dict[str, object] = {}
-    for k, v in raw.items():
-        lower = k.lower()
-        if any(needle in lower for needle in _REDACTED_FIELDS):
-            safe[k] = "[REDACTED]"
-        elif isinstance(v, dict):
-            safe[k] = _redact_payload(cast(dict[str, object], v))
-        elif isinstance(v, (list, tuple)):
-            safe[k] = [
-                _redact_payload(cast(dict[str, object], item)) if isinstance(item, dict) else item
-                for item in cast(list[object], v)
-            ]
-        else:
-            safe[k] = v
-    return safe
+    """Preserve marker-based denial-audit redaction via the canonical boundary."""
+    result = redact_for_persistence(raw)
+    if not isinstance(result.value, dict):
+        return {}
+    return cast(dict[str, object], result.value)
 
 
 @dataclass(frozen=True, slots=True)

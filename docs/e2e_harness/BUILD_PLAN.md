@@ -8,7 +8,7 @@
 
 ## Dependency Graph
 
-```
+```text
 ZAI-BUG-1 (ZAI_API_KEY case) ──┐
 ZAI-BUG-2 (zai_api_base alias) ─┼──► all live-gateway tests (dogfood + providers)
 SSRF-OPT  (ALLOW_LOCAL flag)   ─┘──► all local-provider gateway-path tests

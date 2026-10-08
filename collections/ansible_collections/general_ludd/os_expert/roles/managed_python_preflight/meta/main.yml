@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: managed_python_preflight
+  author: Agentic Harness Agent
+  description: >-
+    Resolve and verify an explicit discovered-or-managed Python contract on the
+    target host before publishing private runtime facts.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

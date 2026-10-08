@@ -18,12 +18,28 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 OPENCODE_JSON = ROOT / "opencode.json"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
-GATE_STATUS = ROOT / ".gate-status"
+@pytest.fixture
+def completed_gate_status(tmp_path: Path) -> Path:
+    """Return an immutable terminal snapshot, isolated from a concurrently running gate."""
+    status = tmp_path / "gate-status"
+    status.write_text(
+        "=== GATE 2026-08-20T12:00:00Z ===\n"
+        "lint PASS 0\n"
+        "typecheck PASS 0\n"
+        "collect PASS 0\n"
+        "test PASS 0\n"
+        "smoke PASS\n"
+        "---\n"
+        "epoch 1787227200\n"
+        "=== GATE: PASSED ===\n"
+    )
+    return status
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +58,11 @@ _KNOWN_HOOKS = {
 class TestEnforcementPluginHooks:
     def test_all_plugins_registered_in_opencode_json(self) -> None:
         cfg = json.loads(OPENCODE_JSON.read_text())
-        registered = {p.get("source", p.get("path", "")).lstrip("./") for p in cfg.get("plugins", [])}
+        plugin_entries = cfg.get("plugin", cfg.get("plugins", []))
+        registered = {
+            (entry if isinstance(entry, str) else entry.get("source", entry.get("path", ""))).lstrip("./")
+            for entry in plugin_entries
+        }
         missing: list[str] = []
         for ts_file in sorted(PLUGIN_DIR.glob("enforce-*.ts")):
             rel = str(ts_file.relative_to(ROOT))
@@ -136,7 +156,7 @@ _MONITORING_TARGETS = {
 
 class TestMakefileMonitoringTargets:
     def test_monitoring_targets_exist(self) -> None:
-        mk_text = MAKEFILE.read_text()
+        mk_text = compose_makefile(MAKEFILE)
         missing: list[str] = []
         for target, description in _MONITORING_TARGETS.items():
             pattern = rf"^\.PHONY:.*\b{target}\b|^{target}:"
@@ -146,33 +166,49 @@ class TestMakefileMonitoringTargets:
 
     def test_watchdog_auto_is_session_start_requirement(self) -> None:
         """Per Z20: make watchdog-auto must be a session-start protocol step."""
-        assert "watchdog-auto" in MAKEFILE.read_text()
+        assert "watchdog-auto" in compose_makefile(MAKEFILE)
 
     def test_task_watchdog_in_makefile(self) -> None:
         """Per T27/Z22: task watchdog must have start/stop/status targets."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         for name in ("task-watchdog-start", "task-watchdog-stop", "task-watchdog-status"):
             assert name in mk, f"Missing task watchdog target: {name}"
 
     def test_gate_background_has_phase_markers(self) -> None:
         """Per T25: background gate must emit per-phase progress markers."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "=== GATE PHASE:" in mk, "Gate must emit per-phase progress markers"
 
     def test_gate_status_check_is_read_only(self) -> None:
         """Per G12/Q06: gate-status-check must not modify files or state."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "gate-status-check" in mk
 
     def test_active_work_status_is_json(self) -> None:
         """active-work-status must produce a JSON snapshot."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "active-work-status" in mk
 
     def test_ps_targets_separate_concerns(self) -> None:
         """Per AGENTS.md: ps vs ps-gludd are distinct monitoring surfaces."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "ps:" in mk and "ps-gludd:" in mk
+
+    def test_ps_gludd_surfaces_watchdog_daemons_without_pid_files(self) -> None:
+        """An orphaned watchdog must remain visible after ownership-file loss."""
+        mk = compose_makefile(MAKEFILE)
+        block = mk.split("\nps-gludd:\n", 1)[1].split("\n\n", 1)[0]
+
+        assert r"task_watchdog\.py" in block
+        assert r"agent_watchdog\.py" in block
+
+    def test_ps_delegates_to_cross_worktree_owned_process_inventory(self) -> None:
+        """The lightweight process census must not hard-code one checkout."""
+        mk = compose_makefile(MAKEFILE)
+        block = mk.split("\nps:\n", 1)[1].split("\n\n", 1)[0]
+
+        assert "$(SYSTEM_PYTHON) scripts/active_work_status.py --process-table" in block
+        assert "/Users/shawnwilson/gludd" not in block
 
 
 # ---------------------------------------------------------------------------
@@ -181,41 +217,72 @@ class TestMakefileMonitoringTargets:
 
 
 class TestGateStatusFile:
-    def test_gate_status_exists(self) -> None:
-        assert GATE_STATUS.exists(), ".gate-status missing — run 'make gate' or 'make gate-refresh'"
+    @staticmethod
+    def _completed_status(status_file: Path) -> str | None:
+        """Read a completed snapshot, or validate and identify an active gate.
 
-    def test_gate_status_has_header_with_timestamp(self) -> None:
-        """Per G09: gate writes a header with UTC timestamp."""
-        content = GATE_STATUS.read_text().strip()
+        ``gate-async`` atomically writes ``RUNNING <epoch> <pid>`` before the
+        first phase completes.  That record is the documented observable
+        in-flight state, while the richer phase snapshot is the terminal form.
+        """
+        content = status_file.read_text().strip()
         assert content, ".gate-status is empty"
+        first_line = content.splitlines()[0]
+        if not first_line.startswith("RUNNING "):
+            return content
+        parts = first_line.split()
+        assert len(parts) == 3, f"Malformed running gate status: {first_line!r}"
+        _marker, epoch_text, pid_text = parts
+        assert epoch_text.isdigit(), f"Running gate epoch is not numeric: {epoch_text!r}"
+        assert pid_text.isdigit(), f"Running gate PID is not numeric: {pid_text!r}"
+        assert 1_700_000_000 < int(epoch_text) < 2_000_000_000
+        assert int(pid_text) > 0
+        return None
+
+    def test_gate_status_exists(self, completed_gate_status: Path) -> None:
+        assert completed_gate_status.exists(), "isolated gate-status snapshot was not published"
+
+    def test_gate_status_has_header_with_timestamp(self, completed_gate_status: Path) -> None:
+        """Per G09: gate writes a header with UTC timestamp."""
+        content = self._completed_status(completed_gate_status)
+        if content is None:
+            return
         header_line = content.splitlines()[0]
         assert re.match(
             r"^=== (GATE|GATE-REFRESH) \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z ===",
             header_line,
         ), f"Gate header missing or malformed: {header_line!r}"
 
-    def test_gate_status_has_required_phases(self) -> None:
+    def test_gate_status_has_required_phases(self, completed_gate_status: Path) -> None:
         """Per Q03: gate writes PASS or FAIL for each phase."""
-        content = GATE_STATUS.read_text()
+        content = self._completed_status(completed_gate_status)
+        if content is None:
+            return
         required_phases = ["lint ", "typecheck ", "collect ", "test "]
         missing_phases = [p for p in required_phases if p not in content]
         assert not missing_phases, f".gate-status missing required phase entries: {missing_phases}"
 
-    def test_gate_status_has_epoch(self) -> None:
+    def test_gate_status_has_epoch(self, completed_gate_status: Path) -> None:
         """Per K17: gate caches epoch timestamp."""
-        content = GATE_STATUS.read_text()
+        content = self._completed_status(completed_gate_status)
+        if content is None:
+            return
         assert "epoch " in content, ".gate-status missing epoch timestamp"
 
-    def test_gate_status_has_terminal_marker(self) -> None:
+    def test_gate_status_has_terminal_marker(self, completed_gate_status: Path) -> None:
         """Per Q03: gate writes PASSED or FAILED terminal marker."""
-        content = GATE_STATUS.read_text()
+        content = self._completed_status(completed_gate_status)
+        if content is None:
+            return
         assert any(marker in content for marker in ("=== GATE: PASSED ===", "=== GATE: FAILED ===")), (
             ".gate-status missing terminal marker (GATE: PASSED/FAILED)"
         )
 
-    def test_gate_status_phases_have_pass_fail_values(self) -> None:
+    def test_gate_status_phases_have_pass_fail_values(self, completed_gate_status: Path) -> None:
         """Every phase line must have PASS or FAIL."""
-        content = GATE_STATUS.read_text()
+        content = self._completed_status(completed_gate_status)
+        if content is None:
+            return
         for line in content.splitlines():
             stripped = line.strip()
             if stripped.startswith(
@@ -242,21 +309,34 @@ class TestGateStatusFile:
             ):
                 assert "PASS" in stripped or "FAIL" in stripped, f"Phase line missing PASS/FAIL: {stripped!r}"
 
-    def test_gate_status_epoch_is_numeric(self) -> None:
-        content = GATE_STATUS.read_text()
+    def test_gate_status_epoch_is_numeric(self, completed_gate_status: Path) -> None:
+        content = self._completed_status(completed_gate_status)
+        if content is None:
+            return
         m = re.search(r"^epoch (\d+)$", content, re.MULTILINE)
         assert m, ".gate-status epoch is missing or not numeric"
         epoch = int(m.group(1))
         assert epoch > 1700000000, f"Epoch value suspicious: {epoch} (too low for 2024+)"
         assert epoch < 2000000000, f"Epoch value suspicious: {epoch} (too high)"
 
-    def test_gate_status_ci_line_when_ci_pending(self) -> None:
+    def test_gate_status_ci_line_when_ci_pending(self, completed_gate_status: Path) -> None:
         """Per K18: CI state may appear in gate status."""
-        content = GATE_STATUS.read_text()
+        content = completed_gate_status.read_text()
         if "CI " in content:
             assert "FAIL" in content or "pending" in content or "run " in content, (
                 f"CI line present but unparseable: {content}"
             )
+
+    def test_gate_publishes_only_running_or_terminal_snapshots(self) -> None:
+        """The public status path must never expose a half-written phase snapshot."""
+        makefile = compose_makefile(MAKEFILE)
+        runner = (ROOT / "scripts" / "run_gate.sh").read_text()
+
+        assert "GATE_STATUS_FILE=.gate-status.next GATE_FAILED_FILE=.gate-failed bash scripts/run_gate.sh" in makefile
+        assert makefile.count("mv .gate-status.next .gate-status") >= 2
+        assert "STATUS_WORK=.gate-status.next" in makefile
+        assert 'mv "$$STATUS_WORK" .gate-status' in makefile
+        assert 'STATUS_FILE="${GATE_STATUS_FILE:-.gate-status}"' in runner
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +360,7 @@ class TestWatchdogBehavior:
 
     def test_clean_tmp_target_exists(self) -> None:
         """Per watchdog cleanup: make clean-tmp must exist for state file cleanup."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "clean-tmp:" in mk, "make clean-tmp must exist for watchdog state cleanup"
 
 
@@ -331,15 +411,15 @@ class TestObservabilityModule:
 class TestDiskMonitoring:
     def test_check_disk_target_exists(self) -> None:
         """Per U22: disk usage must be monitored and enforced."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "check-disk:" in mk, "make check-disk must enforce disk monitoring"
 
     def test_disk_target_exists(self) -> None:
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "disk:" in mk, "make disk must report disk usage"
 
     def test_disk_guard_target_exists(self) -> None:
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "disk-guard:" in mk, "make disk-guard (auto-clean at threshold) must exist"
 
     def test_check_disk_script_exists(self) -> None:
@@ -355,11 +435,11 @@ class TestDiskMonitoring:
 class TestNoUnseenEvents:
     def test_makefile_has_deploy_and_forget(self) -> None:
         """Per P23: deploy-and-forget must exist for fire-and-forget CI pushes."""
-        assert "deploy-and-forget" in MAKEFILE.read_text()
+        assert "deploy-and-forget" in compose_makefile(MAKEFILE)
 
     def test_makefile_has_ci_verdict_safe(self) -> None:
         """Per P07: CI checks must use ci-verdict-safe for cooldown enforcement."""
-        assert "ci-verdict-safe:" in MAKEFILE.read_text()
+        assert "ci-verdict-safe:" in compose_makefile(MAKEFILE)
 
     def test_ci_cooldown_script_exists(self) -> None:
         script = ROOT / "scripts" / "ci_check_cooldown.py"

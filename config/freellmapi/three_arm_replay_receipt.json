@@ -1,0 +1,54 @@
+{
+  "admitted_bundle_sha256": "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d",
+  "all_gates_passed": false,
+  "bridge_fault_count": 0,
+  "candidate_bundle_sha256": "e9e5d87a0d1e9697e0681b52afb719b7fd1fcdd601bd7fcbaf430cc502114845",
+  "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "candidate_max_latency_ms": 0.244458,
+  "comparisons": {
+    "freellmapi_v0_9_9": {
+      "candidate_only_correct": 0,
+      "comparator_only_correct": 0,
+      "max_stratum_loss": 0.0,
+      "mcnemar_pvalue": 1.0,
+      "p95_added_latency_ms": 0.0,
+      "quality_delta_mean": 0.0,
+      "quality_lcb": 0.0
+    },
+    "gludd_native": {
+      "candidate_only_correct": 32,
+      "comparator_only_correct": 0,
+      "max_stratum_loss": 0.0,
+      "mcnemar_pvalue": 4.656612873077393e-10,
+      "p95_added_latency_ms": 0.22718604999999997,
+      "quality_delta_mean": 0.5165816326530612,
+      "quality_lcb": 0.5165816326530612
+    }
+  },
+  "corpus_id": "sha256:8437a26977a28f1840b5369f0f11382d8f580e4b32c3de4c6ca4becdb3ee8cf1",
+  "cost_usd": 0.0,
+  "decision": "HOLD",
+  "evidence_id": "sha256:f01bca4c2d3687819b22269e05191eb3747da3112f2d579ea77d92d9f0a506bf",
+  "exclusion_count": 8,
+  "failed_gates": [
+    "quality_lcb:freellmapi_v0_9_9",
+    "mcnemar:freellmapi_v0_9_9"
+  ],
+  "gate": "freellmapi-exact-three-arm-v1",
+  "group_count": 32,
+  "network_calls": 0,
+  "node_crosscheck_passed": true,
+  "plan_id": "sha256:69efb3954e3850c27c454b51255867063ac9872da5213c402de4943b696bbf9f",
+  "promotion_permitted": false,
+  "rss_delta_mib": 0.015625,
+  "rss_samples_mib": [
+    64.0625,
+    64.0625,
+    64.0625,
+    64.0625,
+    64.078125
+  ],
+  "runtime_admitted": false,
+  "schema_version": 1,
+  "serving_bundle_sha256": "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d"
+}

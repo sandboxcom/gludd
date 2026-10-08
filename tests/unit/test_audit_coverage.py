@@ -5,6 +5,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 AUDIT_SCRIPT = ROOT / "scripts" / "audit_coverage.py"
@@ -111,7 +113,7 @@ class TestAuditCoverageScript:
             "total_branches": 4,
             "covered_branches": 3,
         }
-        assert parsed["per_file_thresholds"] == {"line": 70, "branch": 75.0}
+        assert parsed["per_file_thresholds"] == {"line": 75.0, "branch": 75.0}
         assert parsed["per_file_results"]["general_ludd/branchy.py"]["passed"] is True
         assert parsed["missing_arcs"]["general_ludd/branchy.py"] == [[10, 12]]
         assert parsed["contexts"]["general_ludd/branchy.py"] == ["10"]
@@ -139,6 +141,65 @@ class TestAuditCoverageScript:
         )
         assert not passed
         assert "general_ludd/low.py" in under
+
+    def test_aggregate_floor_does_not_replace_lower_per_file_line_floor(self, tmp_path):
+        """A file between the 75% file floor and 85% aggregate floor must pass."""
+        coverage_json = tmp_path / "coverage.json"
+        coverage_json.write_text(json.dumps({
+            "files": {
+                "src/general_ludd/eighty.py": {"summary": {
+                    "num_statements": 10, "covered_lines": 8,
+                    "num_branches": 4, "covered_branches": 4,
+                }},
+                "src/general_ludd/perfect.py": {"summary": {
+                    "num_statements": 10, "covered_lines": 10,
+                    "num_branches": 4, "covered_branches": 4,
+                }},
+            }
+        }))
+        spec = importlib.util.spec_from_file_location("audit_coverage_line_floors", AUDIT_SCRIPT)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        report, under, passed = module.parse_coverage_json(
+            str(coverage_json), 85, "src/general_ludd", per_file_threshold=75
+        )
+
+        assert report["line_coverage"] == 90.0
+        assert under == []
+        assert passed
+        assert report["per_file_results"]["general_ludd/eighty.py"]["passed"] is True
+
+    def test_cli_names_the_branch_ratio_when_only_branch_floor_fails(self, tmp_path):
+        """Failure output must not print a passing line ratio as the cause."""
+        coverage_json = tmp_path / "coverage.json"
+        coverage_json.write_text(json.dumps({
+            "files": {
+                "src/general_ludd/branchy.py": {"summary": {
+                    "num_statements": 10, "covered_lines": 10,
+                    "num_branches": 4, "covered_branches": 2,
+                }},
+            }
+        }))
+
+        result = subprocess.run(
+            [
+                "python3",
+                str(AUDIT_SCRIPT),
+                f"--json-file={coverage_json}",
+                "--threshold=75",
+                "--per-file-threshold=75",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+        )
+
+        assert result.returncode == 1
+        assert "line=100.0%" in result.stdout
+        assert "branch=50.0%" in result.stdout
+        assert "branch<75.0%" in result.stdout
 
     def test_json_report_written(self, tmp_path):
         coverage_json = tmp_path / "coverage.json"
@@ -284,24 +345,24 @@ class TestMakefileTargets:
     """Integration-level tests that the Make targets exist and are wired."""
 
     def test_audit_coverage_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "audit-coverage:" in content, "Makefile missing audit-coverage target"
 
     def test_gate_audit_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "gate-audit:" in content, "Makefile missing gate-audit target"
 
     def test_coverage_json_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "coverage-json:" in content, "Makefile missing coverage-json target"
 
     def test_targets_in_phony(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "audit-coverage" in content
         assert "gate-audit" in content
 
     def test_uses_python_variable(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         lines = content.splitlines()
         # Find the audit-coverage target section
         in_target = False
@@ -319,7 +380,7 @@ class TestMakefileTargets:
 
     def test_audit_targets_use_project_environment(self):
         """Coverage must run through uv so imports match the E2E environment."""
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         for target in ("audit-coverage:", "coverage-json:"):
             start = content.index(target)
             recipe = content[start:content.find("\n\n", start)]
@@ -327,7 +388,7 @@ class TestMakefileTargets:
             assert "$(PYTHON) scripts/audit_coverage.py" not in recipe
 
     def test_make_audit_coverage_help_listed(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "audit-coverage" in content
         assert "Run coverage audit" in content
 

@@ -5,6 +5,6 @@
   tasks:
     - name: "Include sdr_capture"
       ansible.builtin.include_role:
-        name: "sdr_capture"
+        name: "general_ludd.radio.sdr_capture"
       vars:
         sdr_capture_enabled: false

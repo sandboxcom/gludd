@@ -3,8 +3,9 @@
 ``SelfImproveGate.auto_queue`` defaults to False, so admitted self-improve todos
 are parked in APPROVAL_REQUIRED. These tests prove there is a WIRED release path
 (``SelfImproveApprovalManager.approve_by_id`` / ``reject_by_id``) that persists
-APPROVAL_REQUIRED -> QUEUED (approve) and APPROVAL_REQUIRED -> CANCELLED (reject)
-through a real ``TodoRepository`` — so a held self-improve todo can never strand.
+APPROVAL_REQUIRED -> APPROVED (legacy approve) and APPROVAL_REQUIRED ->
+CANCELLED (reject) through a real ``TodoRepository`` — so a held self-improve
+todo can never strand or leak into the generic scheduler.
 
 This exercises the repository's OWN ``VALID_TRANSITIONS`` table (db/repository.py),
 which must contain an APPROVAL_REQUIRED entry or ``TodoRepository.transition``
@@ -13,6 +14,8 @@ would reject the release with ``InvalidTransitionError``.
 asyncio_mode = "auto" (pyproject.toml) — no @pytest.mark.asyncio needed.
 """
 from __future__ import annotations
+
+import json
 
 import pytest
 import pytest_asyncio
@@ -81,13 +84,22 @@ async def _seed(
             "work_type": work_type,
             "priority": 10,
             "created_by": "self_improve_harness",
+            "plan_artifact": json.dumps(
+                {
+                    "capability_required": "config_write",
+                    "change_content": "enabled: true\n",
+                    "kind": "config",
+                    "reason": "release test",
+                    "target_paths": ["config/test.yml"],
+                }
+            ),
         }
     )
     await session.commit()
 
 
-class TestApproveByIdReleasesToQueued:
-    async def test_approve_moves_approval_required_to_queued(
+class TestApproveByIdReleasesToApproved:
+    async def test_approve_moves_approval_required_to_approved(
         self, async_session: AsyncSession
     ) -> None:
         await _seed(async_session, todo_id="TODO-SI-1")
@@ -97,12 +109,13 @@ class TestApproveByIdReleasesToQueued:
         released = await mgr.approve_by_id(repo, "TODO-SI-1")
         await async_session.commit()
 
-        assert released.status == TodoStatus.QUEUED.value
+        assert released.status == TodoStatus.APPROVED.value
+        assert released.approved_artifact_digest is not None
         # Persisted, not just in-memory.
         fetched = await repo.get_by_id("TODO-SI-1")
         assert fetched is not None
-        assert fetched.status == TodoStatus.QUEUED.value
-        assert fetched.version == 2  # version bumped by the guarded transition
+        assert fetched.status == TodoStatus.APPROVED.value
+        assert fetched.version == 3  # digest binding + guarded transition
 
     async def test_reject_moves_approval_required_to_cancelled(
         self, async_session: AsyncSession

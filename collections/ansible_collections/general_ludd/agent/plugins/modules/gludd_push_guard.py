@@ -119,65 +119,12 @@ RETURN:
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-
-def _find_repo_root() -> str | None:
-    """Walk ancestor directories to find the repository root (looks for pyproject.toml)."""
-    start = os.getcwd()
-    try:
-        candidate = os.path.abspath(start)
-    except Exception:
-        candidate = os.path.dirname(os.path.abspath(__file__))
-    for _ in range(10):
-        if os.path.isfile(os.path.join(candidate, "pyproject.toml")):
-            return candidate
-        parent = os.path.dirname(candidate)
-        if parent == candidate:
-            break
-        candidate = parent
-    return None
-
-
-def _import_force_push_tracker():
-    """Import ForcePushTracker with fallback for in-tree testing."""
-    try:
-        from scripts.push_rate_guard import ForcePushTracker  # type: ignore[import]
-        return ForcePushTracker
-    except ImportError:
-        pass
-
-    for root_dir in (
-        os.environ.get("MOLECULE_PROJECT_DIRECTORY"),
-        _find_repo_root(),
-    ):
-        if not root_dir:
-            continue
-        scripts_dir = os.path.join(root_dir, "scripts")
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
-        try:
-            from push_rate_guard import ForcePushTracker  # type: ignore[import]
-            return ForcePushTracker
-        except ImportError:
-            pass
-
-    # Last-resort: relative from __file__
-    _scripts_dir = os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "scripts"
-    )
-    _scripts_dir = os.path.abspath(_scripts_dir)
-    if _scripts_dir not in sys.path:
-        sys.path.insert(0, _scripts_dir)
-    try:
-        from push_rate_guard import ForcePushTracker  # type: ignore[import]
-        return ForcePushTracker
-    except ImportError:
-        return None
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.push_rate_guard import (
+    ForcePushTracker,
+)
 
 
 def main() -> None:
@@ -202,17 +149,6 @@ def main() -> None:
     state_file: str = module.params["state_file"]
     max_bypasses: int = module.params["max_bypasses"]
     window_hours: float = module.params["window_hours"]
-
-    ForcePushTracker = _import_force_push_tracker()
-    if ForcePushTracker is None:
-        module.fail_json(
-            failed=True,
-            changed=False,
-            msg="Cannot import ForcePushTracker from scripts/push_rate_guard.py. "
-                "Ensure the repository root is accessible.",
-            state_file=state_file,
-        )
-        return
 
     tracker = ForcePushTracker(
         state_file=Path(state_file),

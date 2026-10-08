@@ -10,6 +10,7 @@ from general_ludd.infra.terraform import TerraformGenerator
 STACKS_DIR = Path("infra/terraform/stacks")
 WATCHDOG_SOURCE = '"../../modules/gpu-cost-watchdog"'
 MODULE_REF = 'module "gpu_cost_watchdog"'
+CONTROL_PLANE_ONLY_STACKS = frozenset({"azure-container-app-environment"})
 
 
 def _read_file(path: Path) -> str:
@@ -22,6 +23,14 @@ def collect_stacks() -> list[Path]:
     return stacks
 
 
+def collect_compute_stacks() -> list[Path]:
+    return [
+        stack
+        for stack in collect_stacks()
+        if stack.parent.name not in CONTROL_PLANE_ONLY_STACKS
+    ]
+
+
 def all_stack_tf_files(stack_dir: Path) -> list[Path]:
     return sorted(stack_dir.glob("*.tf"))
 
@@ -29,7 +38,7 @@ def all_stack_tf_files(stack_dir: Path) -> list[Path]:
 class TestTerraformWatchdogE2E:
     def test_all_stacks_have_watchdog_module(self):
         missing: list[str] = []
-        for stack_main in collect_stacks():
+        for stack_main in collect_compute_stacks():
             content = _read_file(stack_main)
             if MODULE_REF not in content:
                 missing.append(stack_main.parent.name)
@@ -40,7 +49,7 @@ class TestTerraformWatchdogE2E:
 
     def test_all_stacks_emit_watchdog_user_data_output(self):
         missing: list[str] = []
-        for stack_main in collect_stacks():
+        for stack_main in collect_compute_stacks():
             stack_dir = stack_main.parent
             stack_name = stack_dir.name
             found = False
@@ -55,12 +64,21 @@ class TestTerraformWatchdogE2E:
 
         assert not missing, f"Stacks missing watchdog_user_data output: {missing}"
 
-    def test_exact_18_stacks_exist(self):
+    def test_exact_18_compute_stacks_and_one_control_plane_stack_exist(self):
         stacks = collect_stacks()
-        assert len(stacks) == 18, (
-            f"Expected 18 stacks, found {len(stacks)}: "
-            + ", ".join(s.parent.name for s in stacks)
-        )
+        compute_stacks = collect_compute_stacks()
+
+        assert len(compute_stacks) == 18
+        assert {stack.parent.name for stack in stacks} - {
+            stack.parent.name for stack in compute_stacks
+        } == CONTROL_PLANE_ONLY_STACKS
+
+    def test_environment_control_plane_emits_no_runner_watchdog_output(self):
+        stack_dir = STACKS_DIR / "azure-container-app-environment"
+        rendered = "\n".join(_read_file(path) for path in all_stack_tf_files(stack_dir))
+
+        assert MODULE_REF not in rendered
+        assert "module.gpu_cost_watchdog.user_data" not in rendered
 
     def test_watchdog_module_variables_include_kubernetes(self):
         vars_file = Path("infra/terraform/modules/gpu-cost-watchdog/variables.tf")

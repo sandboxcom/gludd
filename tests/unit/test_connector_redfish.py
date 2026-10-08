@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from general_ludd.connectors.redfish import RedfishSource, TransportResponse
+from general_ludd.connectors.redfish import RedfishSource, Transport, TransportResponse
 
 # ---- canned Redfish payloads ----------------------------------------------
 
@@ -215,16 +215,16 @@ def test_loopback_host_blocked_by_default() -> None:
 
 
 @pytest.mark.parametrize(
-    "base_url",
+    "candidate_url",
     [
         "https://localhost",  # named loopback (blocked by the canonical guard)
         "http://metadata.google.internal/",  # cloud metadata NAME (new coverage)
         "http://169.254.169.254/",  # cloud metadata IP (regression)
     ],
 )
-def test_internal_named_host_blocked_by_default(base_url: str) -> None:
+def test_internal_named_host_blocked_by_default(candidate_url: str) -> None:
     src = RedfishSource(
-        {"base_url": base_url},  # allow_private defaults False
+        {"base_url": candidate_url},  # allow_private defaults False
         transport=_transport(),
         env=_env(),
     )
@@ -340,7 +340,7 @@ def test_httpx_style_transport_response_is_normalized() -> None:
 
     src = RedfishSource(
         {"base_url": "https://10.0.0.5", "allow_private": True},
-        transport=transport,
+        transport=cast(Transport, transport),
         env=_env(),
     )
     assert src.health()["ok"] is True

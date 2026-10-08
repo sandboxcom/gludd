@@ -1,4 +1,4 @@
-"""Regression tests for the beta.3 integration/E2E/Molecule release gate."""
+"""Regression tests for the beta4 integration/E2E/Molecule release gate."""
 
 from __future__ import annotations
 
@@ -10,13 +10,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 
 
 def _makefile() -> str:
-    return MAKEFILE.read_text(encoding="utf-8")
+    return compose_makefile(MAKEFILE)
 
 
 def _target_block(name: str) -> str:
@@ -124,14 +125,15 @@ def test_release_phase_recipe_contains_real_bounded_commands() -> None:
 
 
 def test_direct_release_pytest_targets_own_unique_basetemps() -> None:
-    for target, prefix in (
-        ("test-integration", "gludd-test-integration-"),
-        ("test-e2e", "gludd-test-e2e-"),
+    for target, prefix, basetemp in (
+        ("test-integration", "gludd-test-integration-", '--basetemp="$$BT"'),
+        ("test-e2e", "gludd-test-e2e-", '--basetemp=\\"$$FILE_BT\\"'),
     ):
         recipe = _target_block(target)
         assert f"mktemp -d /tmp/{prefix}XXXXXX" in recipe
-        assert '--basetemp="$$BT"' in recipe
+        assert basetemp in recipe
         assert "trap 'exit 130' INT TERM" in recipe
+    assert 'FILE_BT="$$BT/$$file_key"' in _target_block("test-e2e")
 
 
 def test_release_pytest_phases_bound_failure_output() -> None:
@@ -146,6 +148,16 @@ def test_release_pytest_phases_bound_failure_output() -> None:
         assert "--maxfail=1" in line
         assert "--tb=line" in line
     assert "-n 1" in e2e_line
+
+
+def test_release_phase_streaming_is_fail_closed() -> None:
+    """A broken tee/log sink must fail the phase even if its command passed."""
+    recipe = _target_block("gate-release-phases")
+
+    assert "STREAM_RC=$$?" in recipe
+    assert '"$$COMMAND_RC" -eq 0' in recipe
+    assert '"$$STREAM_RC" -ne 0' in recipe
+    assert "release phase $$PHASE output stream failed" in recipe
 
 
 def test_release_phases_stream_live_output_and_record_terminal_success(
@@ -165,6 +177,19 @@ def test_release_phases_stream_live_output_and_record_terminal_success(
     assert "molecule PASS 0" in status
     assert status.count("=== GATE: PASSED ===") == 1
     assert "=== GATE: FAILED ===" not in status
+
+
+def test_release_phases_build_native_macos_artifact_before_smoke(
+    tmp_path: Path,
+) -> None:
+    """The unpublished candidate must be built before its macOS smoke runs."""
+    result, _status, calls = _run_release_phases(tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    call_lines = calls.splitlines()
+    build_index = call_lines.index("build-executable")
+    smoke_index = call_lines.index("molecule-test SCENARIO=binary_smoke_macos")
+    assert build_index < smoke_index
 
 
 @pytest.mark.parametrize(

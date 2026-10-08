@@ -54,7 +54,7 @@ class TestScrubChildEnv:
             "AWS_ACCESS_KEY_ID",
             "AWS_SECRET_ACCESS_KEY",
             "DATABASE_URL",
-            "GLUDD_PSK",
+            "GLUDD_AUTH_PSK",
             "OPENAI_API_KEY",
             "ANTHROPIC_API_KEY",
             "GOOGLE_API_KEY",
@@ -116,7 +116,7 @@ class TestStreamPlaybookEnvAllowlist:
             "OPENAI_API_KEY",
             "ANTHROPIC_API_KEY",
             "GOOGLE_API_KEY",
-            "GLUDD_PSK",
+            "GLUDD_AUTH_PSK",
         }
         for key in _STREAM_PLAYBOOK_ENV_ALLOWLIST:
             assert key not in whole_key_block, f"Secret key {key!r} in stream playbook env allowlist"

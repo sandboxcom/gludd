@@ -24,7 +24,6 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 ALLOWLIST = frozenset({
     # Daemon/watchdog infrastructure — legitimate sleep-in-loop for background polling.
-    "agent_watchdog.py",
     "task_watchdog.py",
     "azure_event_guard.sh",
     # Background test runners supervise child processes and emit visible heartbeats.
@@ -34,12 +33,28 @@ ALLOWLIST = frozenset({
     "token_window_monitor.py",
     # Bounded service-readiness loop; it never occupies a delegated agent slot.
     "smoke_daemon.py",
+    # Bounded infrastructure readiness/locking loops surface attempt heartbeats.
+    "collection_lock.py",
+    "postgres_e2e_runner.py",
+    # Background lifecycle supervisors are signal-stoppable and continuously observable.
+    "disk-guard.sh",
+    "e2e_supervisor.py",
+    # Exact gate-tree waits have computed attempt ceilings and emit wait heartbeats.
+    "kill_owned_gate.py",
+    # Native Safari driver readiness has a fixed ten-second deadline and one-second heartbeats.
+    "run_presentation_safari_smoke.py",
+    # The gate watcher has an explicit total timeout and periodic log heartbeats;
+    # termination waits have fixed deadlines and the identity retry is capped at 20 attempts.
+    "start_gate_background.py",
     # Release-only CI observers are bounded, emit heartbeats, and remain blocked
     # from delegated-agent prompts by enforce-no-wait.ts.
     "ci_annotations_poll.py",
     "ci_await.py",
     "ci_poll.py",
     "ci_push_and_verify.sh",
+    "ci_signal_exact_sha.py",
+    # The local-model E2E readiness loop is bounded to 120 seconds and test-owned.
+    "test_llama_3_2_game_gen.py",
 })
 
 

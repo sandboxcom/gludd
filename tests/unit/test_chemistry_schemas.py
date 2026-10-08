@@ -21,9 +21,11 @@ from general_ludd.chemistry.entities import (
 )
 from general_ludd.chemistry.schemas import (
     ChemicalEntity,
+    ChemicalStructure,
     ChemistryRequest,
     ChemistryResult,
     EntityKind,
+    IsotopeStatus,
     ResultStatus,
     StereoStatus,
     StructureRepresentation,
@@ -36,6 +38,32 @@ from general_ludd.chemistry.schemas import (
 
 
 class TestChemicalEntityStructure:
+    @pytest.mark.parametrize(
+        ("representation", "value", "submitted"),
+        [
+            (StructureRepresentation.smiles, "", ""),
+            (StructureRepresentation.unknown, "CCO", ""),
+            (StructureRepresentation.unknown, "", "CCO"),
+            (StructureRepresentation.unknown, " ", "\t"),
+        ],
+    )
+    def test_empty_structure_is_limited_to_complete_unknown_sentinel(
+        self,
+        representation: StructureRepresentation,
+        value: str,
+        submitted: str,
+    ) -> None:
+        with pytest.raises(ValidationError):
+            ChemicalStructure(
+                representation=representation,
+                value=value,
+                submitted=submitted,
+                canonicalizer="test@0.1",
+                stereochemistry=StereoStatus.unknown,
+                isotopes=IsotopeStatus.unknown,
+                charge=0,
+            )
+
     def test_preserves_submitted_smiles_when_canonicalizing(self):
         submitted = "C[C@H](N)C(=O)O"
         entity = ChemicalEntity(

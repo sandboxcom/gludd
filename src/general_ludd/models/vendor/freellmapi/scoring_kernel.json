@@ -1,0 +1,15 @@
+{
+  "bundle_sha256": "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d",
+  "exports": [
+    "reliabilityPosterior",
+    "expectedReliability",
+    "speedScore",
+    "headroomFactor",
+    "rateWindowHeadroomFactor",
+    "rateLimitFactor"
+  ],
+  "license": "MIT",
+  "source": "server/src/services/scoring.ts",
+  "upstream": "https://github.com/tashfeenahmed/freellmapi",
+  "upstream_commit": "780a7d8d6dcbc818eb10ec17da210635b569ae22"
+}

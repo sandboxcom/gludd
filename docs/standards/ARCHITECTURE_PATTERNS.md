@@ -32,7 +32,7 @@ input, calls Model logic, and hands structured output to a View.
 
 ### Example: travel/trip_planner (MVC-aligned)
 
-```
+```text
 Model:   plugins/module_utils/contracts.py     → TripRequest, Itinerary, TimelineEntry
 Controller: roles/trip_planner/tasks/main.yml  → validates input, calls trip_planner module, writes artifact
 View:    tasks/main.yml `ansible.builtin.debug` → renders trip plan summary
@@ -68,7 +68,7 @@ Model and View.
 
 ### Example: language/locale_format (MVVM-aligned)
 
-```
+```text
 Model:     src/general_ludd/language/locale_data.py  → CLDR_FIRST_DAY_OF_WEEK, format_number, format_currency
 ViewModel: roles/locale_format/vars/main.yml         → date_lengths, plural_categories, rtl_languages
            roles/locale_format/defaults/main.yml     → display defaults (locale, date_style)
@@ -103,7 +103,7 @@ through the Model. The View renders the resulting state.
 
 ### Example: travel/hotel_search (MVI-aligned)
 
-```
+```text
 Intent: role input vars → destination, check_in, check_out, guests, rooms, min_stars, amenities
 Model:  HotelSearch (Pydantic), HotelBooking (output)
 View:   module exit_json → hotels, total_nights, search_params
@@ -139,7 +139,7 @@ The Presenter mediates all Model ↔ View interaction. In Ansible, the role's
 
 ### Example: travel/trip_planner (MVP-aligned)
 
-```
+```text
 Model:     plugins/modules/trip_planner.py           → constructs TripRequest, Itinerary, returns structured result
 Presenter: roles/trip_planner/tasks/main.yml         → receives trip_result, routes to artifact write + debug output
 View:      artifact JSON file + ansible.builtin.debug → two different views of the same model output

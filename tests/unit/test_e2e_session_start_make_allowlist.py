@@ -17,6 +17,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-session-start.ts"
 SHARED_PATH = ROOT / ".opencode" / "lib" / "shared.ts"
@@ -84,7 +86,7 @@ def _plugin_src() -> str:
 
 
 def _makefile_src() -> str:
-    return MAKEFILE_PATH.read_text()
+    return compose_makefile(MAKEFILE_PATH)
 
 
 def _has_makefile_target(target: str, makefile_src: str) -> bool:

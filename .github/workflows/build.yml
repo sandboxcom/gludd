@@ -59,9 +59,14 @@ permissions:
   contents: write
   packages: write
 
+env:
+  # Profile environments are composed from several independently locked
+  # projects; later uv invocations must never exact-sync them back to root-only.
+  UV_NO_SYNC: "1"
+
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       version: ${{ steps.ver.outputs.version }}
@@ -76,9 +81,75 @@ jobs:
             echo "version=0.1.0-alpha.$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
           fi
 
+  # A release tag points at the same immutable commit that already completed
+  # the development workflow. Prove that exact source run before reusing its
+  # heavyweight validation; tag-specific artifact builds still run below.
+  release_source_proof:
+    needs: version
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - name: Prove exact SHA already passed development CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== CI PHASE: release-source-proof ==="
+          python scripts/require_ci_green.py "$GITHUB_SHA" development
+
+  # Dedicated S83.158 acceptance: the selected tests use only SQLite plus
+  # in-process fake-local/fake-Azure providers. Empty Azure identity variables
+  # and loopback-only proxies make accidental cloud access fail before spend.
+  claim-before-provision-acceptance:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Install locked dependencies
+        run: |
+          echo "=== CI PHASE: claim-before-provision-install ==="
+          make sync \
+            DEPENDENCY_PROFILE_SET=ci \
+            DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
+            DEPENDENCY_PROFILE_PYTHON=3.11 \
+            DEPENDENCY_PROFILE_VALIDATE_ONLY=0
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Claim-before-provision local and fake-Azure acceptance
+        run: |
+          echo "=== CI PHASE: claim-before-provision-acceptance ==="
+          make test-files \
+            TESTFILES='tests/unit/test_claim_before_provision_acceptance.py tests/unit/test_db_session_dispatch.py tests/unit/test_tick_session.py tests/unit/test_e10_db_session_dispatch.py tests/unit/test_todo_compute_demand_lifecycle.py tests/e2e/test_self_improve_private_policy_e2e.py' \
+            PYTEST_ARGS='-W error'
+        env:
+          GLUDD_AUTH_PSK: ""
+          AZURE_CLIENT_ID: ""
+          AZURE_TENANT_ID: ""
+          AZURE_CLIENT_SECRET: ""
+          AZURE_SUBSCRIPTION_ID: ""
+          AZURE_CONFIG_DIR: /tmp/gludd-claim-before-provision-no-credentials
+          AZURE_CORE_COLLECT_TELEMETRY: "0"
+          AZURE_CONTAINERAPP_LIVE_PROOF_LIVE: "0"
+          HTTPS_PROXY: http://127.0.0.1:9
+          HTTP_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+          NO_PROXY: ""
+
   gate:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Lint + typecheck + collection-check + smoke only — the full test run is
     # split across parallel shards in the `test-shard` job below so failures
     # surface at job granularity in minutes rather than after a 33-min monolith.
@@ -87,6 +158,9 @@ jobs:
       # Don't cancel the 3.12 leg when 3.11 fails (or vice-versa): we want both
       # Python versions' results on every run, not just the first failure.
       fail-fast: false
+      # Development also starts the standalone six-leg Molecule workflow. Keep
+      # startup runner requests bounded so every leg is acquired reliably.
+      max-parallel: 1
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
@@ -100,14 +174,49 @@ jobs:
           test "$actual" = "$GITHUB_SHA"
           echo "CI_HEAD_SHA=$actual"
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
-      - name: Inject version
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # pinned Node 26 runtime for plugin checks
+        with:
+          node-version: "26"
+      - name: Install pinned esbuild
         run: |
-          sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
-          sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
+          echo "=== CI PHASE: esbuild ==="
+          npm install --no-save --no-package-lock esbuild@0.28.1
+        env:
+          GLUDD_AUTH_PSK: ""
       - name: Install deps
         run: |
           echo "=== CI PHASE: install ==="
-          uv sync --python ${{ matrix.python-version }}
+          python scripts/dependency_profiles.py sync \
+            --set ci --environment .venv --python ${{ matrix.python-version }}
+      - name: Inject version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
+      - name: Azure Container App proof contract (hermetic)
+        run: |
+          make azure-containerapp-live-proof \
+            AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE=file \
+            AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/tmp/gludd-contract-absent.json \
+            AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment \
+            AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME=gpu-t4 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION=eastus \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR=203.0.113.7/32 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD=5 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES=60 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=dry-run \
+            AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT=. \
+            AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH=src/general_ludd/__init__.py \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS=21600
+        env:
+          GLUDD_AUTH_PSK: ""
       - name: Lint
         run: |
           echo "=== CI PHASE: lint ==="
@@ -116,7 +225,14 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
+      - name: Azure Container App coverage (hermetic)
+        if: "${{ !cancelled() && matrix.python-version == '3.11' }}"
+        run: |
+          echo "=== CI PHASE: azure-containerapp-coverage ==="
+          make test-azure-containerapp-coverage
+        env:
+          GLUDD_AUTH_PSK: ""
       - name: Typecheck
         run: |
           echo "=== CI PHASE: typecheck ==="
@@ -125,7 +241,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Test collection check
         run: |
           echo "=== CI PHASE: test-count ==="
@@ -134,8 +250,8 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
-          GLUDD_XDIST: auto
+          GLUDD_AUTH_PSK: ""
+          GLUDD_XDIST_WORKERS: auto
       - name: Smoke test
         run: |
           echo "=== CI PHASE: smoke ==="
@@ -144,7 +260,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: IAM headless smoke
         run: |
           echo "=== CI PHASE: iam-headless-smoke ==="
@@ -153,7 +269,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Validate Terraform and IAM OPA policies
         # The make target uses a local OPA binary when available and otherwise
         # runs the pinned OPA image through Docker. This keeps policy checks
@@ -165,7 +281,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Verify feature claims (full evidence check)
         # Runs the ansible playbook that loads docs/features.yml and verifies
         # EVERY evidence ref (test:, file:, role:, module:, molecule:) — including
@@ -182,7 +298,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Install locked Node build dependencies
         run: |
@@ -192,7 +308,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Build hot-reload modules
         # Auto-build hot-reload JS modules from current plugin .ts source so CI
@@ -205,7 +321,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Verify hot-reload modules fresh
         # Fails if any /tmp/gludd-hot-*.js is stale (older than its .ts source)
@@ -218,7 +334,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Enforcement hook runtime tests
         # Verifies all 10 enforcement plugins are structurally in BLOCKING mode
@@ -232,7 +348,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Check status table current (fast)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -247,7 +363,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Verify secrets baseline (truffleHog)
         # Cross-references .secrets.baseline entries against truffleHog's live
@@ -261,9 +377,9 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2 (node24)
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3 (node24)
         id: css_changes
         with:
           filters: |
@@ -281,7 +397,7 @@ jobs:
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
       - name: Collect failure diagnostics (gate, Python ${{ matrix.python-version }})
         if: failure()
@@ -363,214 +479,178 @@ jobs:
   # Every shard collects coverage data (.coverage SQLite file) and uploads it
   # as a shard-unique artifact; the downstream `coverage` job combines them
   # into a single canonical coverage.xml for the whole suite.
-  test-shard:
+  freellmapi-upstream-build:
     needs: [version, gate]
-    runs-on: ubuntu-latest
-    # Every named shard is a release prerequisite. Failures and missing coverage
-    # stay red instead of being reclassified as an informational result.
-    # unit-3 (test_[n-z]* + secrets/) is the fattest shard and runs ~18m — right
-    # at the old 20m limit, so a slightly slower runner CANCELS it (a timeout, not
-    # a test failure). 120m gives generous headroom for slow runners.
-    # Durable follow-up: rebalance shards so no single shard nears 30m.
-    timeout-minutes: 120
+    # The exact-SHA development run is required before a release tag can reach
+    # publication, so the tag run does not repeat this 2-version upstream suite.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
+      # Two Node versions remain mandatory but share one hosted slot so this
+      # supporting suite cannot amplify the larger test fan-out.
+      max-parallel: 1
       matrix:
-        # The blocking `gate` matrix above already exercises both 3.11 and
-        # 3.12. Keep each named coverage shard on canonical Python 3.11 so
-        # every test has one shard execution lane instead of a duplicate run.
-        python-version: ["3.11"]
-        shard: [unit-1a1, unit-1a2, unit-1b, unit-1d, unit-2, unit-3, other]
-        include:
-          # Map each shard label to the pytest path(s) it owns.
-          # Bash glob expansion inside `run:` handles the wildcard patterns.
-          #
-          # unit-1 was split (2026-07-08) into unit-1a (test_[a-bd]*.py) +
-          # unit-1b (test_[ce]*.py) after CI run 28923533095 hit the 30m
-          # timeout on both 3.11 + 3.12 (the a-e range was ~235 files / ~63k
-          # lines, ~30m — 3x the 10-12m baseline). unit-1a itself KEPT hitting
-          # the 30m timeout on both pythons in later runs (29055665462,
-          # 29053789829, 29051813598) because the a-bd split point was sized
-          # by file/line count, not measured runtime. It is split again
-          # (2026-07-09) into unit-1a (test_a*.py) + unit-1d (test_[bd]*.py)
-          # so neither new shard carries more than ~60% of the old unit-1a
-          # load. unit-1b (test_[ce]*.py) is unaffected and unchanged.
-          #
-          # Every letter-range shard below ALSO excludes test_*_e2e.py so
-          # e2e-suffixed files are collected exactly once, by the 'other'
-          # shard, regardless of which letter they start with — see the
-          # 'other' entry. Without this, e.g. tests/unit/test_data_flow_e2e.py
-          # (starts with 'd', in unit-1d's range) would run BOTH in its letter
-          # shard AND in 'other'.
-          #
-          # `exclude` is a space-separated list of shell glob patterns filtered
-          # OUT of the shard's expanded file list by the run step below,
-          # BEFORE pytest is invoked. It must be a shell-level filter, NOT
-          # pytest --ignore-glob: bash expands $TESTPATHS into explicit
-          # filenames, and pytest registers explicitly-named files as initial
-          # args, which unconditionally BYPASS pytest_ignore_collect /
-          # --ignore-glob (those hooks only apply while pytest itself walks
-          # directories — see _pytest/main.py). An --ignore-glob here is dead
-          # code that silently double-runs the "ejected" files.
-          - shard: unit-1a1
-            testpaths: "tests/unit/test_a[a-m]*.py"
-            exclude: "*/test_*_e2e.py */test_all_plugins_runtime.py"
-            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py"
-          - shard: unit-1a2
-            # test_a[0-9]*.py: digit-prefixed files (a03, a3, a6...) belong to
-            # neither [a-m] nor [n-z]; routed here (smaller half) for balance.
-            testpaths: "tests/unit/test_a[n-z]*.py tests/unit/test_a[0-9]*.py"
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-1d
-            testpaths: "tests/unit/test_[bd]*.py"
-            # Ejects test_data_flow_e2e.py ('d') to the 'other' shard.
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-1b
-            testpaths: "tests/unit/test_[ce]*.py"
-            # The ~88 test_connector*.py suites (start with 'c', so they land
-            # in unit-1b's range) are moved to the fast 'other' shard below to
-            # keep unit-1b slim. Exclude them HERE so they don't also run in
-            # unit-1b. Also eject mislabeled e2e tests (test_*_e2e.py) that
-            # start with 'e' or 'c' (e.g. test_cross_project_borrowing_e2e.py)
-            # — they belong in the 'other' shard.
-            exclude: "*/test_connector*.py */test_*_e2e.py"
-          - shard: unit-2
-            testpaths: "tests/unit/test_[f-m]*.py"
-            exclude: "*/test_*_e2e.py"
-          - shard: unit-3
-            testpaths: "tests/unit/test_[n-z]*.py tests/unit/secrets/"
-            # Ejects test_project_isolation_e2e.py ('p') and
-            # test_tui_navigation_e2e.py ('t') to the 'other' shard. The
-            # tests/unit/secrets/ DIRECTORY token passes through the filter
-            # untouched (excludes only match tests/unit/*.py file tokens).
-            exclude: "*/test_*_e2e.py"
-          - shard: other
-            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py tests/unit/test_connector*.py tests/unit/test_*_e2e.py tests/unit/auth/ tests/unit/sts/ tests/unit/test_e2e_test_generation/"
+        node-version: ["20.20.2", "22.23.2"]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
-      # Node >= 22.6 for `node --experimental-strip-types` (tests/unit/_hook_fixtures.py's
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v5.0.0 (node24)
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install locked Gludd dependencies
+        run: python scripts/dependency_profiles.py sync --set ci --environment .venv --python 3.11
+      - name: Build and test exact-pinned FreeLLMAPI source
+        run: |
+          # The upstream suite includes a tight synchronous performance budget
+          # that can flake on heavily-loaded GitHub-hosted runners. Retry the
+          # whole bounded suite a small number of times before treating the
+          # failure as a real upstream regression.
+          for attempt in 1 2 3; do
+            echo "=== FreeLLMAPI upstream build attempt $attempt ==="
+            if make freellmapi-upstream-build \
+              FREELLMAPI_BUILD_LIVE=1 \
+              FREELLMAPI_BUILD_CANDIDATE=config/freellmapi/upstream_candidate.json \
+              FREELLMAPI_BUILD_PLAN=config/freellmapi/upstream_build_plan.json \
+              FREELLMAPI_BUILD_REPORT=/tmp/gludd-freellmapi-upstream-build-${{ matrix.node-version }}/evidence.json; then
+              exit 0
+            fi
+          done
+          exit 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GLUDD_AUTH_PSK: ""
+      - name: Upload content-free upstream build evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: freellmapi-upstream-build-node-${{ matrix.node-version }}
+          path: /tmp/gludd-freellmapi-upstream-build-${{ matrix.node-version }}/evidence.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  test-shard:
+    needs: [version, gate]
+    # Release tags reuse only an exact successful development workflow; branch,
+    # PR, and dispatch runs continue to execute every canonical coverage shard.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    # Every named shard is a release prerequisite. Failures and missing coverage
+    # stay red instead of being reclassified as an informational result.
+    # The old unit-3 (test_[n-z]* + secrets/) exceeded its 25m step budget on a
+    # hosted runner. It is partitioned into disjoint unit-3a/unit-3b lanes.
+    # The test step retains 90m for the long unit-2/other lanes while the 120m
+    # job ceiling reserves 30m for owner cleanup, diagnostics, and artifacts.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      # Three lanes retain broad parallel coverage without requesting all eight
+      # hosted runners in one acquisition burst.
+      max-parallel: 3
+      matrix:
+        # The blocking `gate` matrix above already exercises both 3.11 and
+        # 3.12. Keep each named coverage shard on canonical Python 3.11 so
+        # every test has one shard execution lane instead of a duplicate run.
+        python-version: ["3.11"]
+        shard: [unit-1a1, unit-1a2, unit-1b, unit-1d, unit-2, unit-3a, unit-3b, other]
+        include:
+          # scripts/ci_named_shard_files.py is the single source of truth for
+          # every shard's paths and exclusions.  Keeping duplicate testpaths or
+          # exclude data here lets hosted and local release plans drift even
+          # when their shard labels match.  The only workflow-local addition is
+          # the isolated fresh-process suites owned by unit-1a1.
+          - shard: unit-1a1
+            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py tests/unit/test_makefile_audit_deep.py"
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      # Node 26 for `node --experimental-strip-types` (tests/unit/_hook_fixtures.py's
       # hook_plugin_env fixture, which runs scripts/hook_plugin_harness.mjs against
       # .opencode/plugin/*.ts — see tests/unit/test_hook_runtime_verification.py,
       # test_hooks_actually_fire.py). Without this, ubuntu-latest's default node may be
       # too old and the fixture would skip those assertions instead of running them.
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0 (node20)
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # pinned Node 26 runtime for plugin checks
         with:
-          node-version: "22"
-      - name: Inject version
+          node-version: "26"
+      - name: Install pinned esbuild
         run: |
-          sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
-          sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
+          echo "=== CI PHASE: esbuild ==="
+          npm install --no-save --no-package-lock esbuild@0.28.1
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Install pinned OpenCode CLI (other shard only)
+        if: matrix.shard == 'other'
+        run: |
+          echo "=== CI PHASE: opencode ==="
+          npm install --global opencode-ai@1.18.9
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Download pinned OPA CLI (other shard only)
+        if: matrix.shard == 'other'
+        run: |
+          echo "=== CI PHASE: opa ==="
+          curl -fL -o /usr/local/bin/opa "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static"
+          chmod +x /usr/local/bin/opa
+        env:
+          OPA_VERSION: "1.18.2"
+          GLUDD_AUTH_PSK: ""
       - name: Install deps
         run: |
           echo "=== CI PHASE: install ==="
-          uv sync --python ${{ matrix.python-version }}
-      - name: Run isolated Node plugin syntax in fresh process
+          python scripts/dependency_profiles.py sync \
+            --set ci --environment .venv --python ${{ matrix.python-version }}
+      - name: Inject version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
+      - name: Run isolated subprocess suites in fresh process
         if: matrix.shard == 'unit-1a1'
         timeout-minutes: 5
         run: |
-          echo "=== CI PHASE: isolated-node-plugin-syntax ==="
+          echo "=== CI PHASE: isolated-subprocess-suites ==="
           uv run python -m pytest ${{ matrix.isolated_testpaths }} -q -W error
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         id: test-run
-        timeout-minutes: 25
-        # Expand $TESTPATHS with bash so wildcard patterns like test_[a-e]*.py
-        # are resolved by the shell before pytest sees them.  When the glob
-        # matches nothing (e.g. a new shard boundary) pytest exits 5 (no tests
-        # collected); we treat that as a pass so adding new letters never
-        # hard-blocks CI — the empty shard is just a no-op.
-        #
-        # EVERY shard collects coverage data (.coverage SQLite file) so the
-        # `coverage` job downstream can merge them into a single canonical
-        # coverage.xml.  --cov-report= suppresses per-shard terminal/xml output
-        # (noise across 12 shard legs); the merged report is produced by the
-        # `coverage` job.  Coverage gate is enforced by the `coverage` job
-        # downstream via pyproject.toml fail_under=70.
-        #
-        # RETRY: flaky tests get up to 2 retries with exponential backoff
-        # (10s → 20s). Only retries on non-zero exit codes (test failures,
-        # worker crashes, runner OOM). Exit code 5 (no tests collected) is not
-        # retried — an empty shard is always a pass.
+        timeout-minutes: 90
         run: |
-          retry_test() {
-            local max_attempts=2
-            local delay=10
-            local attempt=1
-            local rc=0
-            while [ $attempt -le $max_attempts ]; do
-              echo "::group::Test attempt ${attempt}/${max_attempts} (shard ${{ matrix.shard }})"
-              set +e
-              "_run_tests" "$@"
-              rc=$?
-              set -e
-              echo "::endgroup::"
-              if [ $rc -eq 0 ]; then
-                echo "Test passed on attempt ${attempt}"
-                return 0
-              fi
-              if [ $rc -eq 5 ]; then
-                echo "::error::No tests collected (exit 5) for required shard"
-                return $rc
-              fi
-              if [ $attempt -lt $max_attempts ]; then
-                echo "::warning::Test attempt ${attempt} failed (exit ${rc}), retrying in ${delay}s..."
-                sleep $delay
-                delay=$((delay * 2))
-              fi
-              attempt=$((attempt + 1))
-            done
-            echo "::error::All ${max_attempts} test attempts failed (last exit: ${rc})"
-            return $rc
-          }
-          _run_tests() {
-            echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
-            TESTPATHS="${{ matrix.testpaths }}"
-            EXCLUDES="${{ matrix.exclude }}"
-            FILES=""
-            for f in $TESTPATHS; do
-              keep=1
-              for pat in $EXCLUDES; do
-                case "$f" in
-                  $pat) keep=0 ;;
-                esac
-              done
-              if [ "$keep" -eq 1 ]; then
-                FILES="$FILES $f"
-              fi
-            done
-            if [ -z "${FILES// /}" ]; then
-              echo "::error::Shard '${{ matrix.shard }}' selected no files after exclusions"
-              exit 1
-            fi
-            set +e
-            uv run python scripts/adaptive_test.py $FILES \
-              --cov=general_ludd \
-              --cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils \
-              --cov-report= \
-              --cov-fail-under=0 \
-              -v
-            rc=$?
-            set -e
-            if [ $rc -ne 0 ]; then
-              return $rc
-            fi
-            uv run coverage combine
-            COVERAGE_FILE=".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
-            cp .coverage "$COVERAGE_FILE"
-            test -s "$COVERAGE_FILE"
-            return 0
-          }
-          retry_test
+          echo "=== CI PHASE: test-shard-${{ matrix.shard }} ==="
+          uv run python scripts/run_ci_shards_serial.py \
+            --shards "${{ matrix.shard }}" \
+            --pytest-args="-W error" \
+            --require-release-policy \
+            --max-files-per-batch 16 \
+            --skip-isolated \
+            --skip-aggregate \
+            --coverage-output ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}" \
+            --attestation-output "ci-shard-attestation.json"
+          echo "${{ matrix.shard }}" > coverage-shard-marker.txt
         env:
-          GLUDD_PSK: ""
-          GLUDD_XDIST: auto
+          # Shard-scoped coverage data file: parallel shards share this
+          # workspace cwd, and coverage's default data/part files would
+          # collide across shards (round-14/15 coverage race).
+          COVERAGE_FILE: ".coverage.${{ matrix.shard }}-${{ matrix.python-version }}"
+          GLUDD_AUTH_PSK: ""
+          GLUDD_XDIST_WORKERS: auto
+          # Piped pytest stdout is block-buffered without this, so the
+          # adaptive runner's no-progress watchdog sees zero lines for a
+          # healthy-but-slow shard and kills it (CI unit-3 no-progress
+          # timeout, 2026-08-15). Line-buffering keeps the heartbeat fed.
+          PYTHONUNBUFFERED: "1"
           # GitHub Actions already sets CI=true for every step; set it explicitly
           # here so the adaptive runner's CI branch (skip the load cap, size by
           # RAM + cores) is deterministic and self-documenting even if that
           # default ever changes. This is what un-throttles the isolated shards.
           CI: "true"
+          GLUDD_RESOURCE_ROOT: "${{ runner.temp }}/gludd-resources"
           # Per-xdist-worker RLIMIT_AS backstop (conftest.py pytest_configure).
           # RLIMIT_AS caps VIRTUAL address space, which for this dependency set
           # (eager tree_sitter C-ext, OpenSSL via cryptography, psycopg binary,
@@ -583,30 +663,35 @@ jobs:
       - name: Collect failure diagnostics (shard ${{ matrix.shard }})
         if: failure() && steps.test-run.outcome == 'failure'
         run: |
-          echo "::group::Failure diagnostics — shard ${{ matrix.shard }}"
-          echo "--- Disk usage ---"
-          df -h
-          echo "--- Memory ---"
-          if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
-          echo "--- Runner OOM kills (last 50 lines) ---"
-          dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
-          echo "--- Top processes by memory ---"
-          ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
-          echo "--- Core dumps ---"
-          ls -la /var/lib/systemd/coredump/ 2>/dev/null || echo "(no coredump dir)"
-          echo "--- /tmp usage ---"
-          du -sh /tmp
-          echo "--- Workspace test artifacts ---"
-          find . -name '*.coverage*' -ls
-          echo "--- Last 100 lines of pytest output ---"
-          find /tmp -name '.pytest_cache' -type d 2>/dev/null | head -1 | xargs -I{} find {} -name '*.log' 2>/dev/null | head -1 | xargs tail -100 2>/dev/null || echo "(no pytest cache log)"
-          echo "::endgroup::"
+          DIAG_PATH="failure-diagnostics-${{ matrix.shard }}-${{ matrix.python-version }}.log"
+          {
+            echo "::group::Failure diagnostics — shard ${{ matrix.shard }}"
+            echo "--- Disk usage ---"
+            df -h || echo "(disk usage unavailable)"
+            echo "--- Memory ---"
+            if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
+            echo "--- Runner OOM kills (last 50 lines) ---"
+            dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
+            echo "--- Top processes by memory ---"
+            ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
+            echo "--- Core dumps ---"
+            ls -la /var/lib/systemd/coredump/ 2>/dev/null || echo "(no coredump dir)"
+            echo "--- /tmp usage ---"
+            du -sh /tmp 2>&1 || echo "(tmp usage incomplete)"
+            echo "--- Workspace test artifacts ---"
+            find . -name '.coverage*' -ls || echo "(coverage inventory unavailable)"
+            echo "--- Last 100 lines of pytest output ---"
+            find /tmp -name '.pytest_cache' -type d 2>/dev/null | head -1 | xargs -I{} find {} -name '*.log' 2>/dev/null | head -1 | xargs tail -100 2>/dev/null || echo "(no pytest cache log)"
+            echo "::endgroup::"
+          } 2>&1 | tee "$DIAG_PATH"
+          test -s "$DIAG_PATH"
       - name: Upload failure diagnostics (shard ${{ matrix.shard }})
         if: always() && failure() && steps.test-run.outcome == 'failure'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: failure-diag-${{ matrix.shard }}-${{ matrix.python-version }}-${{ github.run_id }}
           path: |
+            failure-diagnostics-${{ matrix.shard }}-${{ matrix.python-version }}.log
             /tmp/gludd-*.log
             .coverage*
           if-no-files-found: error
@@ -618,7 +703,15 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: coverage-${{ matrix.shard }}-${{ matrix.python-version }}
-          path: .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
+          # The atomic terminal attestation exists on pass or failure. The
+          # aggregate job still gates the exact real .coverage.* file count.
+          path: |
+            .coverage.${{ matrix.shard }}-${{ matrix.python-version }}
+            coverage-shard-marker.txt
+            ci-shard-attestation.json
+          # Coverage databases are dotfiles; upload-artifact excludes hidden
+          # files by default even when an explicit path names them.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
@@ -630,21 +723,21 @@ jobs:
   # coverage by ~75%.
   coverage:
     needs: [version, test-shard]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Install deps
+        run: |
+          echo "=== CI PHASE: install ==="
+          python scripts/dependency_profiles.py sync --set ci --environment .venv --python 3.11
       - name: Inject version
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
-      - name: Install deps
-        run: |
-          echo "=== CI PHASE: install ==="
-          uv sync --python 3.11
       - name: Download all shard coverage data
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1 (node24)
         with:
@@ -657,7 +750,7 @@ jobs:
         # debugging the merged data file is possible from the artifact.
         run: |
           echo "=== CI PHASE: coverage-combine ==="
-          EXPECTED_SHARD_COVERAGE_FILES=7
+          EXPECTED_SHARD_COVERAGE_FILES=8
           mkdir -p .coverage-shards
           if [ ! -d coverage-data ]; then
             echo "::error::Coverage artifact directory is missing"
@@ -666,14 +759,14 @@ jobs:
           find coverage-data -name '.coverage.*' -type f -exec cp {} .coverage-shards/ \;
           ACTUAL_SHARD_COVERAGE_FILES=$(find .coverage-shards -name '.coverage.*' -type f | wc -l | tr -d '[:space:]')
           if [ "$ACTUAL_SHARD_COVERAGE_FILES" -ne "$EXPECTED_SHARD_COVERAGE_FILES" ]; then
-            echo "::error::Expected $EXPECTED_SHARD_COVERAGE_FILES shard coverage files, found $ACTUAL_SHARD_COVERAGE_FILES"
+            echo "::error::Expected exactly $EXPECTED_SHARD_COVERAGE_FILES shard coverage files, found $ACTUAL_SHARD_COVERAGE_FILES"
             exit 1
           fi
           uv run coverage combine --keep .coverage-shards/.coverage.*
           uv run coverage xml
           uv run coverage json -o coverage.json
           uv run coverage report --skip-covered --fail-under=85
-          uv run python scripts/audit_coverage.py --json-file=coverage.json --threshold=75 --per-file-threshold=75 --source=src/general_ludd
+          uv run python scripts/audit_coverage.py --json-file=coverage.json --threshold=85 --per-file-threshold=75 --source=src/general_ludd
       - name: Upload merged coverage report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
@@ -685,8 +778,12 @@ jobs:
 
   molecule:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The exact same scenarios already passed for this SHA on development.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    # Each shard owns one bounded pass plus cleanup/log publication. Re-running
+    # a whole shard duplicated completed scenarios and exhausted this ceiling.
+    timeout-minutes: 45
     # Molecule validates release-bound Ansible content and is therefore blocking.
     strategy:
       # Don't cancel the remaining shards when one fails — we want all 4
@@ -695,54 +792,35 @@ jobs:
       # to ~15 min (kept at the 15-min timeout below) and a failure surfaces
       # at shard granularity within minutes.
       fail-fast: false
+      # Keep real shard parallelism while halving this matrix's runner burst.
+      max-parallel: 2
       matrix:
         shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0 (node24)
+        with:
+          python-version: "3.12.14"
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Run molecule shard ${{ matrix.shard }}/4
         id: molecule-run
-        timeout-minutes: 12
+        # local_game_gen lives in shard 1: its CI run downloads a real GGUF,
+        # serves llama.cpp, generates with up to max_attempts=3 (retry +
+        # corrective prompt), and verifies via the acceptance engine — the
+        # previous 12-minute cap expired mid-scenario (2026-08-16 round 9).
+        timeout-minutes: 40
         # The `default` (localhost) driver needs no container, so this runs on
         # plain GH runners. Each scenario starts its own stdlib mock daemon via
         # prepare.yml — nothing external is required. Scenarios are sorted and
         # split into 4 contiguous groups by molecule-test-shard.
-        # RETRY: molecule scenarios can be timing-sensitive in CI; 2 attempts
-        # with 15s → 30s backoff catches transient failures.
         run: |
-          retry_molecule() {
-            local max_attempts=2
-            local delay=15
-            local attempt=1
-            local rc=0
-            while [ $attempt -le $max_attempts ]; do
-              echo "::group::Molecule attempt ${attempt}/${max_attempts} (shard ${{ matrix.shard }}/4)"
-              set +e
-              echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
-              uv sync
-              make molecule-test-shard SHARD=${{ matrix.shard }}/4
-              rc=$?
-              set -e
-              echo "::endgroup::"
-              if [ $rc -eq 0 ]; then
-                echo "Molecule shard ${{ matrix.shard }}/4 passed on attempt ${attempt}"
-                return 0
-              fi
-              if [ $attempt -lt $max_attempts ]; then
-                echo "::warning::Molecule attempt ${attempt} failed (exit ${rc}), retrying in ${delay}s..."
-                sleep $delay
-                delay=$((delay * 2))
-              fi
-              attempt=$((attempt + 1))
-            done
-            echo "::error::MOLECULE SHARD ${{ matrix.shard }}/4 FAILED after ${max_attempts} attempts — check molecule logs above for details."
-            return $rc
-          }
-          retry_molecule
+          echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
+          python scripts/dependency_profiles.py sync --set ci --environment .venv --python 3.12.14
+          make molecule-test-shard SHARD=${{ matrix.shard }}/4
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Tail molecule logs (quick triage)
         # `molecule-test-shard` (Makefile) writes one log per scenario to
         # /tmp/gludd-molecule-<scenario>.log and NEVER surfaces it in CI output
@@ -763,8 +841,15 @@ jobs:
               echo "::group::$(basename "$f") (last 100 lines)"
               tail -n 100 "$f"
               echo "::endgroup::"
-            done
+           done
           fi
+      - name: Verify Linux PyInstaller warning graph artifact
+        # upload-artifact's if-no-files-found applies to the path set as a
+        # whole, so the always-present Molecule logs cannot prove this second
+        # diagnostic exists. Shard 1 owns binary_smoke_linux and must retain
+        # the raw graph independently before upload.
+        if: always() && matrix.shard == 1
+        run: test -s dist/linux/warn-gludd.txt
       - name: Upload molecule logs (shard ${{ matrix.shard }}/4)
         # Primary fix for the observability gap: the full per-scenario logs
         # (not just the tail above) are uploaded so a failure can be diagnosed
@@ -774,13 +859,15 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: molecule-logs-shard-${{ matrix.shard }}
-          path: /tmp/gludd-molecule-*.log
+          path: |
+            /tmp/gludd-molecule-*.log
+            dist/linux/warn-gludd.txt
           if-no-files-found: error
           retention-days: 7
 
   linux:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Linux binaries and packages are required release artifacts. Build,
     # smoke, packaging, and upload failures remain blocking.
@@ -791,7 +878,12 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0 (node24)
+        with:
+          python-version: "3.12.14"
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Install locked build dependencies
+        run: python scripts/dependency_profiles.py sync --set build-azure --environment .venv --python 3.12.14
       - name: Inject version
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
@@ -800,11 +892,26 @@ jobs:
         timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-linux-x86_64 ==="
-          uv sync
-          uv run pyinstaller gludd.spec --clean --noconfirm || {
+          uv run --no-sync pyinstaller gludd.spec --clean --noconfirm || {
             echo "::error::LINUX BUILD FAILED — pyinstaller failed for linux-x86_64. Check gludd.spec."
             exit 1
           }
+      - name: Audit Linux PyInstaller warning graph
+        run: |
+          pyinstaller_version="$(python scripts/dependency_profiles.py locked-version --root . --profile dev-build --package pyinstaller)"
+          make audit-linux-pyinstaller-warnings \
+            PYINSTALLER_WARNING_FILE_LINUX=build/gludd/warn-gludd.txt \
+            PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 \
+            PYINSTALLER_VERSION_LINUX="$pyinstaller_version" \
+            PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=0
+      - name: Upload Linux PyInstaller warning graph
+        if: always() && hashFiles('build/gludd/warn-gludd.txt') != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: linux-pyinstaller-warning-x86_64
+          path: build/gludd/warn-gludd.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Smoke test binary
         # Fail closed before packaging: a binary that cannot start must never
         # become a publishable artifact.
@@ -824,9 +931,10 @@ jobs:
         # promptly on success, timeout, or failure.
         run: |
           set -e
-          ./dist/gludd daemon start &
+          ./dist/gludd daemon --host 127.0.0.1 --port 8000 &
           DAEMON_PID=$!
           cleanup_daemon() {
+            primary_status=$?
             if kill -0 "$DAEMON_PID" 2>/dev/null; then
               kill "$DAEMON_PID"
               if wait "$DAEMON_PID" 2>/dev/null; then
@@ -835,17 +943,30 @@ jobs:
                 echo "Daemon terminated after smoke test."
               fi
             fi
+            return "$primary_status"
           }
           trap cleanup_daemon EXIT
           ready=0
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            if curl -sf http://127.0.0.1:8000/health >/dev/null; then
+            if curl -sf http://127.0.0.1:8000/healthz >/dev/null; then
               ready=1
               break
             fi
+            if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
+              set +e
+              wait "$DAEMON_PID"
+              daemon_status=$?
+              set -e
+              if [ "$daemon_status" -eq 0 ]; then daemon_status=1; fi
+              echo "::error::daemon exited before becoming healthy (rc=$daemon_status)"
+              exit "$daemon_status"
+            fi
             sleep 1
           done
-          test "$ready" -eq 1
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::daemon did not become healthy after 10 attempts"
+            exit 1
+          fi
       - name: Package tarball
         run: |
           echo "=== CI PHASE: package-tarball-linux ==="
@@ -871,11 +992,44 @@ jobs:
       - name: Build RPM package
         run: |
           echo "=== CI PHASE: package-rpm-linux ==="
-          sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm cpio
           make rpm-package || {
             echo "::error::RPM PACKAGE FAILED — .rpm build for linux-x86_64 failed. Run 'make rpm-package' locally for details."
             exit 1
           }
+      - name: Smoke packaged Linux artifacts
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: smoke-packages-linux ==="
+          smoke_root="/tmp/gludd-linux-package-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$smoke_root/gludd-linux-tar-smoke" "$smoke_root/deb" "$smoke_root/rpm"
+          trap 'rm -rf "$smoke_root"' EXIT
+
+          tar -xzf "dist/gludd-${VERSION}-linux-x86_64.tar.gz" -C "$smoke_root/gludd-linux-tar-smoke"
+          tar_bin=$(find "$smoke_root/gludd-linux-tar-smoke" -type f -name gludd -print -quit)
+          test -n "$tar_bin"
+          chmod +x "$tar_bin"
+          "$tar_bin" version
+          "$tar_bin" --help >/dev/null
+
+          dpkg-deb -x "dist/gludd_${VERSION}_amd64.deb" "$smoke_root/deb"
+          deb_bin=$(find "$smoke_root/deb" -type f -name gludd -print -quit)
+          test -n "$deb_bin"
+          chmod +x "$deb_bin"
+          "$deb_bin" version
+
+          rpm2cpio "dist/gludd-${VERSION}-1.x86_64.rpm" | (
+            cd "$smoke_root/rpm"
+            cpio -idm --quiet
+          )
+          rpm_bin=$(find "$smoke_root/rpm" -type f -name gludd -print -quit)
+          test -n "$rpm_bin"
+          chmod +x "$rpm_bin"
+          "$rpm_bin" version
+
+          cat > "dist/gludd-smoke-linux-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"linux_tar":"passed","linux_deb":"passed","linux_rpm":"passed"}}
+          JSON
       - name: CI Summary
         if: always()
         run: |
@@ -903,6 +1057,7 @@ jobs:
             dist/gludd_${{ env.VERSION }}_amd64.deb.sha256
             dist/gludd-${{ env.VERSION }}-1.x86_64.rpm
             dist/gludd-${{ env.VERSION }}-1.x86_64.rpm.sha256
+            dist/gludd-smoke-linux-${{ env.VERSION }}.json
   macos:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     runs-on: macos-latest
@@ -917,6 +1072,8 @@ jobs:
         with:
           ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Install locked build dependencies
+        run: python scripts/dependency_profiles.py sync --set build-azure --environment .venv --python 3.12
       - name: Inject version
         run: |
           sed -i "" "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
@@ -925,8 +1082,7 @@ jobs:
         timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-macos-arm64 ==="
-          uv sync
-          uv run pyinstaller gludd.spec --clean --noconfirm || {
+          uv run --no-sync pyinstaller gludd.spec --clean --noconfirm || {
             echo "::error::MACOS BUILD FAILED — pyinstaller failed for macos-arm64. Check gludd.spec."
             exit 1
           }
@@ -979,6 +1135,56 @@ jobs:
           }
           rm -rf dist/dmg-staging
           shasum -a 256 "dist/gludd-${VERSION}-macos-arm64.dmg" > "dist/gludd-${VERSION}-macos-arm64.dmg.sha256"
+      - name: Smoke packaged macOS artifacts
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: smoke-packages-macos ==="
+          smoke_root="/tmp/gludd-macos-package-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mount_point="$smoke_root/gludd-macos-dmg-smoke"
+          mkdir -p "$smoke_root/tar" "$mount_point"
+          mounted=0
+          cleanup_macos_smoke() {
+            primary_status=$?
+            cleanup_failed=0
+            if [ "$mounted" -eq 1 ]; then
+              if ! hdiutil detach "$mount_point" -force >/dev/null 2>&1; then
+                echo "::error::macOS smoke cleanup could not detach $mount_point"
+                cleanup_failed=1
+              fi
+            fi
+            if ! rm -rf "$smoke_root"; then
+              echo "::error::macOS smoke cleanup could not remove $smoke_root"
+              cleanup_failed=1
+            fi
+            if [ "$primary_status" -ne 0 ]; then
+              return "$primary_status"
+            fi
+            return "$cleanup_failed"
+          }
+          trap cleanup_macos_smoke EXIT
+
+          tar -xzf "dist/gludd-${VERSION}-macos-arm64.tar.gz" -C "$smoke_root/tar"
+          tar_bin=$(find "$smoke_root/tar" -type f -name gludd -print -quit)
+          test -n "$tar_bin"
+          chmod +x "$tar_bin"
+          "$tar_bin" version
+          "$tar_bin" --help >/dev/null
+
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" \
+            "dist/gludd-${VERSION}-macos-arm64.dmg"
+          mounted=1
+          dmg_bin=$(find "$mount_point" -type f -name gludd -print -quit)
+          test -n "$dmg_bin"
+          chmod +x "$dmg_bin"
+          "$dmg_bin" version
+          "$dmg_bin" --help >/dev/null
+          hdiutil detach "$mount_point" -force
+          mounted=0
+          mkdir -p "$mount_point"
+
+          cat > "dist/gludd-smoke-macos-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"macos_tar":"passed","macos_dmg":"passed"}}
+          JSON
       - name: CI Summary
         if: always()
         run: |
@@ -1002,9 +1208,10 @@ jobs:
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz.sha256
             dist/gludd-${{ env.VERSION }}-macos-arm64.dmg
             dist/gludd-${{ env.VERSION }}-macos-arm64.dmg.sha256
+            dist/gludd-smoke-macos-${{ env.VERSION }}.json
 
   windows:
-    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
+    needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     # PyInstaller artifacts are OS-specific. Pin the stable image rather than
     # inheriting windows-latest image migrations during a release.
     runs-on: windows-2022
@@ -1027,6 +1234,9 @@ jobs:
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
         with:
           python-version: "3.12"
+      - name: Install locked build dependencies
+        shell: pwsh
+        run: python scripts/dependency_profiles.py sync --set build-azure --environment .venv --python 3.12
       - name: Inject version
         shell: pwsh
         run: |
@@ -1037,8 +1247,8 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "=== CI PHASE: build-windows-x86_64 ==="
-          uv sync --python 3.12
-          uv run --python 3.12 pyinstaller gludd.spec --clean --noconfirm
+          uv run --no-sync --python 3.12 python -W error scripts/smoke_sphincs_backend.py
+          uv run --no-sync --python 3.12 pyinstaller gludd.spec --clean --noconfirm
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::WINDOWS BUILD FAILED — pyinstaller failed for windows-x86_64. Check gludd.spec."
             exit 1
@@ -1080,10 +1290,14 @@ jobs:
           Copy-Item -r templates dist/release/templates
           Copy-Item -r playbooks dist/release/playbooks
           $zipPath = "dist/gludd-$env:VERSION-windows-x86_64.zip"
-          Compress-Archive -Path dist/release/* -DestinationPath $zipPath
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::ZIP PACKAGE FAILED — Compress-Archive failed for windows-x86_64."
-            exit 1
+          try {
+            Compress-Archive -Path dist/release/* -DestinationPath $zipPath -ErrorAction Stop
+          } catch {
+            Write-Host "::error::ZIP PACKAGE FAILED — $($_.Exception.Message)"
+            throw
+          }
+          if (-not (Test-Path -LiteralPath $zipPath -PathType Leaf)) {
+            throw "ZIP PACKAGE FAILED — archive was not created: $zipPath"
           }
           $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           "$zipHash  $(Split-Path -Leaf $zipPath)" | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ascii
@@ -1111,6 +1325,43 @@ jobs:
           }
           $installerHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
           "$installerHash  $(Split-Path -Leaf $installerPath)" | Set-Content -LiteralPath "$installerPath.sha256" -Encoding ascii
+      - name: Smoke packaged Windows artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "=== CI PHASE: smoke-packages-windows ==="
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "gludd-windows-package-smoke-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $zipRoot = Join-Path $smokeRoot "zip"
+          $installDir = Join-Path $smokeRoot "gludd-windows-nsis-smoke"
+          New-Item -ItemType Directory -Force -Path $zipRoot | Out-Null
+          try {
+            Expand-Archive -LiteralPath "dist/gludd-$env:VERSION-windows-x86_64.zip" -DestinationPath $zipRoot
+            $zipBinary = Get-ChildItem -Path $zipRoot -Filter gludd.exe -Recurse | Select-Object -First 1
+            if ($null -eq $zipBinary) { throw "zip does not contain gludd.exe" }
+            & $zipBinary.FullName version
+            if ($LASTEXITCODE -ne 0) { throw "zip gludd.exe version smoke failed" }
+            & $zipBinary.FullName --help | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "zip gludd.exe help smoke failed" }
+
+            $installer = "dist/gludd-$env:VERSION-setup-x86_64.exe"
+            $install = Start-Process -FilePath $installer -ArgumentList @("/S", "/D=$installDir") -Wait -PassThru
+            if ($install.ExitCode -ne 0) { throw "NSIS silent install failed: $($install.ExitCode)" }
+            $installedBinary = Join-Path $installDir "gludd.exe"
+            if (-not (Test-Path -LiteralPath $installedBinary)) { throw "NSIS did not install gludd.exe" }
+            & $installedBinary version
+            if ($LASTEXITCODE -ne 0) { throw "installed gludd.exe version smoke failed" }
+            $uninstaller = Join-Path $installDir "uninstall.exe"
+            $uninstall = Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait -PassThru
+            if ($uninstall.ExitCode -ne 0) { throw "NSIS silent uninstall failed: $($uninstall.ExitCode)" }
+
+            @{
+              version = $env:VERSION
+              checks = @{ windows_zip = "passed"; windows_nsis = "passed" }
+            } | ConvertTo-Json -Depth 3 | Set-Content "dist/gludd-smoke-windows-$env:VERSION.json" -Encoding utf8
+          }
+          finally {
+            Remove-Item -Path $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: CI Summary
         if: always()
         shell: pwsh
@@ -1120,6 +1371,7 @@ jobs:
           Write-Host "============================================="
           Write-Host "  Platform          : windows-x86_64 (windows-2022)"
           Write-Host "  Build executable  : check step 'Build executable' above"
+          Write-Host "  SPHINCS backend   : check step 'Build executable' above"
           Write-Host "  Smoke test        : check step 'Smoke test binary' above"
           Write-Host "  Package zip       : check step 'Package zip' above"
           Write-Host "  NSIS installer    : check step 'Build NSIS installer' above"
@@ -1134,6 +1386,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
             dist/gludd-${{env.VERSION}}-setup-x86_64.exe
             dist/gludd-${{env.VERSION}}-setup-x86_64.exe.sha256
+            dist/gludd-smoke-windows-${{ env.VERSION }}.json
 
   termux:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
@@ -1149,6 +1402,8 @@ jobs:
         with:
           ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Install locked build dependencies
+        run: python scripts/dependency_profiles.py sync --set build --environment .venv --python 3.11
       - name: Inject version
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
@@ -1157,8 +1412,7 @@ jobs:
         timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-linux-aarch64 ==="
-          uv sync
-          uv run pyinstaller gludd.spec --clean --noconfirm || {
+          uv run --no-sync pyinstaller gludd.spec --clean --noconfirm || {
             echo "::error::TERMUX BUILD FAILED — pyinstaller failed for linux-aarch64. Check gludd.spec."
             exit 1
           }
@@ -1196,6 +1450,22 @@ jobs:
             exit 1
           }
           sha256sum "../gludd-${VERSION}-linux-aarch64.tar.gz" > "../gludd-${VERSION}-linux-aarch64.tar.gz.sha256"
+      - name: Smoke packaged Linux aarch64 artifact
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: smoke-package-linux-aarch64 ==="
+          smoke_root="/tmp/gludd-linux-aarch64-tar-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$smoke_root"
+          trap 'rm -rf "$smoke_root"' EXIT
+          tar -xzf "dist/gludd-${VERSION}-linux-aarch64.tar.gz" -C "$smoke_root"
+          binary=$(find "$smoke_root" -type f -name gludd -print -quit)
+          test -n "$binary"
+          chmod +x "$binary"
+          "$binary" version
+          "$binary" --help >/dev/null
+          cat > "dist/gludd-smoke-linux-aarch64-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"linux_aarch64_tar":"passed"}}
+          JSON
       - name: CI Summary
         if: always()
         run: |
@@ -1216,13 +1486,14 @@ jobs:
           path: |
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz.sha256
+            dist/gludd-smoke-linux-aarch64-${{ env.VERSION }}.json
 
   # Container image -> GHCR (so the repo's Packages section is populated). Builds
   # on every triggering event (validating the Dockerfile) but only PUSHES on tag
   # pushes and master. Gated on the same green gate+tests as the build jobs.
   container:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # The container is a required release artifact. Build and registry failures
     # remain blocking; PR builds still validate without pushing.
@@ -1242,16 +1513,16 @@ jobs:
           sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0 (node24)
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0 (node24)
       - name: Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0 (node24)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0 (node24)
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Compute image tags and labels
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051  # v5.10.0 (node24)
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0 (node24)
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -1260,31 +1531,216 @@ jobs:
             type=sha
             type=ref,event=branch
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) }}
-      - name: Build and push image
+      - name: Build container image
         id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2 (node24)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0 (node24)
         with:
           context: .
           file: ./Dockerfile
           build-args: |
             VERSION=${{ env.VERSION }}
-          push: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') }}
+          push: false
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Smoke container health endpoint
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: smoke-container-health ==="
+          container_name="gludd-container-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          image_tag=$(printf '%s\n' '${{ steps.meta.outputs.tags }}' | head -n 1)
+          test -n "$image_tag"
+          container_started=0
+          cleanup_container() {
+            primary_status=$?
+            cleanup_failed=0
+            if [ "$container_started" -eq 1 ]; then
+              if ! docker rm -f "$container_name" >/dev/null 2>&1; then
+                echo "::error::container smoke cleanup could not remove $container_name"
+                cleanup_failed=1
+              fi
+            fi
+            if [ "$primary_status" -ne 0 ]; then
+              return "$primary_status"
+            fi
+            return "$cleanup_failed"
+          }
+          trap cleanup_container EXIT
+          bridge_gateway=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
+          if ! printf '%s\n' "$bridge_gateway" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+            echo "::error::could not resolve the Docker bridge IPv4 gateway"
+            exit 1
+          fi
+          allowed_cidrs=$(printf '["127.0.0.0/8","::1/128","%s/32"]' "$bridge_gateway")
+          docker run -d --name "$container_name" \
+            -e GLUDD_ALLOW_NO_AUTH=1 \
+            -e GLUDD_NETWORK__ALLOWED_CIDR="$allowed_cidrs" \
+            -p 127.0.0.1::8000 "$image_tag"
+          container_started=1
+          port=$(docker port "$container_name" 8000/tcp | head -n 1 | awk -F: '{print $NF}')
+          test -n "$port"
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "http://127.0.0.1:${port}/healthz" >/dev/null; then
+              ready=1
+              break
+            fi
+            container_running=$(docker inspect --format='{{.State.Running}}' "$container_name")
+            if [ "$container_running" != "true" ]; then
+              echo "::error::container exited before becoming healthy"
+              docker inspect --format='{{json .State}}' "$container_name"
+              docker logs "$container_name"
+              exit 1
+            fi
+            echo "container health attempt ${attempt}/30"
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::container did not become healthy after 30 attempts"
+            docker inspect --format='{{json .State}}' "$container_name"
+            docker logs "$container_name"
+            exit 1
+          fi
+          cat > "gludd-smoke-container-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"container":"passed"}}
+          JSON
+      - name: Publish verified container image
+        if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master')
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: container-publish ==="
+          printf '%s\n' '${{ steps.meta.outputs.tags }}' |
+            while IFS= read -r image_tag; do
+              test -n "$image_tag" || continue
+              echo "pushing verified image tag: $image_tag"
+              docker push "$image_tag"
+            done
+      - name: Write container digest metadata
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: container-digest-metadata ==="
+          image_tag=$(printf '%s\n' '${{ steps.meta.outputs.tags }}' | head -n 1)
+          test -n "$image_tag"
+          if [[ "${GITHUB_REF}" == refs/tags/v* || "${GITHUB_REF}" == refs/heads/master ]]; then
+            image_ref=$(docker image inspect --format='{{index .RepoDigests 0}}' "$image_tag")
+          else
+            image_id=$(docker image inspect --format='{{.Id}}' "$image_tag")
+            image_name=${image_tag%:*}
+            image_ref="${image_name}@${image_id}"
+          fi
+          echo "$image_ref" | grep -Eq '@sha256:[0-9a-f]{64}$'
+          cat > "gludd-container-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","image":"${image_ref}"}
+          JSON
+      - name: Upload container release metadata
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: gludd-container-metadata
+          if-no-files-found: error
+          path: |
+            gludd-container-${{ env.VERSION }}.json
+            gludd-smoke-container-${{ env.VERSION }}.json
       - name: CI Summary
         if: always()
         run: |
           echo "============================================="
           echo "=== CI SUMMARY: container build ==="
           echo "============================================="
-          echo "  Platform          : linux/amd64 (ubuntu-latest)"
+          echo "  Platform          : linux/amd64 (ubuntu-24.04)"
           echo "  Registry          : ghcr.io/\${{ github.repository }}"
           echo "  Image tags        : \${{ steps.meta.outputs.tags }}"
           echo "  Push enabled      : \${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') }}"
           echo "  Cache             : type=gha (mode=max)"
           echo "============================================="
+
+  ansible-ee:
+    needs: [version, gate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      EE_TAG: ghcr.io/${{ github.repository }}/ansible-ee:${{ needs.version.outputs.version }}
+      EE_CONTEXT: /tmp/gludd-ansible-ee-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Install locked build dependencies
+        run: python scripts/dependency_profiles.py sync --set development --environment .venv --python 3.11
+      - name: Inject version
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"${VERSION}\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
+      - name: Validate canonical Ansible runtime boundary
+        run: |
+          echo "=== CI PHASE: ansible-ee-boundary ==="
+          make validate-ansible-runtime-boundary
+      - name: Build Ansible execution environment
+        run: |
+          echo "=== CI PHASE: ansible-ee-build ==="
+          make build-ansible-execution-environment             ANSIBLE_EE_VALIDATE_ONLY=0             ANSIBLE_EE_RUNTIME=docker             ANSIBLE_EE_IMAGE="${EE_TAG}"             ANSIBLE_EE_CONTEXT="${EE_CONTEXT}"
+      - name: Smoke Ansible execution environment
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: ansible-ee-smoke ==="
+          docker run --rm --network=none "${EE_TAG}" /usr/local/bin/tofu version
+          docker run --rm --network=none "${EE_TAG}"             /usr/bin/python3.11 -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0 (node24)
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push tagged execution environment
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: ansible-ee-push ==="
+          docker push "${EE_TAG}"
+      - name: Stage execution-environment release metadata
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: ansible-ee-stage ==="
+          mkdir -p dist/ee-release
+          cp config/ansible/execution-environment.yml dist/ee-release/ansible-ee-execution-environment.yml
+          cp config/ansible/requirements.yml dist/ee-release/ansible-ee-requirements.yml
+          cp config/ansible/requirements.txt dist/ee-release/ansible-ee-requirements.txt
+          cp config/ansible/bindep.txt dist/ee-release/ansible-ee-bindep.txt
+          cp config/ansible/runtime-lock.json dist/ee-release/ansible-ee-runtime-lock.json
+          cp config/ansible/managed-host-python.lock.json dist/ee-release/ansible-managed-host-python.lock.json
+          cp config/ansible/collection-python-boundary-inventory.json             dist/ee-release/ansible-collection-python-boundary-inventory.json
+          cp dist/collections/*.tar.gz dist/ee-release/
+
+          image_id=$(docker image inspect --format='{{.Id}}' "${EE_TAG}")
+          image_ref="ghcr.io/${{ github.repository }}/ansible-ee@${image_id}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            image_ref=$(docker image inspect --format='{{index .RepoDigests 0}}' "${EE_TAG}")
+          fi
+          echo "$image_ref" | grep -Eq '@sha256:[0-9a-f]{64}$'
+          cat > "dist/ee-release/gludd-ee-image-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","image":"${image_ref}"}
+          JSON
+          cat > "dist/ee-release/gludd-smoke-ansible-ee-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"ansible_ee":"passed","collections":"passed"}}
+          JSON
+          cat > "dist/ee-release/gludd-collections-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","artifacts":["general_ludd-agent-0.2.0.tar.gz","general_ludd-azure-0.2.0.tar.gz","general_ludd-language-0.1.0.tar.gz","general_ludd-networking-0.2.0.tar.gz"]}
+          JSON
+      - name: Upload execution-environment artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: gludd-ansible-ee
+          if-no-files-found: error
+          path: |
+            dist/ee-release/*
 
   # Manual-dispatch-only E2E job for the local-provider tests
   # (tests/e2e/providers/). NEVER runs on push or PR — the whole point of the
@@ -1293,7 +1749,7 @@ jobs:
   # URLs (or opts into the spawn variant) when they want a real end-to-end run.
   e2e-providers:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       VLLM_BASE_URL: ${{ inputs.vllm_base_url }}
@@ -1309,10 +1765,10 @@ jobs:
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Run provider E2E
         run: |
-          uv sync
+          python scripts/dependency_profiles.py sync --set development --environment .venv --python 3.11
           uv run python -m pytest tests/e2e/providers/ -v
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
 
   # Game-building E2E tests — verifies gludd can autonomously build simple games
   # (Snake, Tetris, Checkers, Minesweeper, SkiFree, Banana) via the DeepSeek API.
@@ -1325,12 +1781,13 @@ jobs:
   #   Add:  DEEPSEEK_API_KEY = sk-...
   game-building:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Skip on PRs — these tests need DEEPSEEK_API_KEY (repository secret,
     # unavailable in PR workflows from forks) and would silently skip every
-    # time, wasting a runner slot.  Tag, push, and workflow_dispatch only.
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    # time, wasting a runner slot. Release tags reuse the exact-SHA development
+    # result; non-tag pushes and workflow_dispatch still execute this job.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v'))
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
@@ -1350,17 +1807,43 @@ jobs:
       - name: Run game-building tests
         if: steps.check-key.outputs.skipped == 'false'
         run: |
-          uv sync
+          python scripts/dependency_profiles.py sync --set ci-game-e2e --environment .venv --python 3.11
           make test-games
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, test-shard, coverage, molecule, linux, macos, windows, termux, container, game-building]
-    runs-on: ubuntu-latest
+    needs: [version, gate, claim-before-provision-acceptance, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
-    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    # A skipped prerequisite normally skips dependent jobs. Here skips are the
+    # expected tag state only for heavyweight validation already proved by the
+    # exact-SHA development run. Every tag-specific producer must still pass.
+    # !cancelled() avoids always()'s cancellation/hang semantics while the
+    # explicit result matrix remains fail-closed on every other state.
+    if: startsWith(github.ref, 'refs/tags/v') &&
+      !cancelled() &&
+      needs.version.result == 'success' &&
+      needs.gate.result == 'success' &&
+      needs['claim-before-provision-acceptance'].result == 'success' &&
+      needs.release_source_proof.result == 'success' &&
+      needs['freellmapi-upstream-build'].result == 'skipped' &&
+      needs['test-shard'].result == 'skipped' &&
+      needs.coverage.result == 'skipped' &&
+      needs.molecule.result == 'skipped' &&
+      needs['game-building'].result == 'skipped' &&
+      needs.linux.result == 'success' &&
+      needs.macos.result == 'success' &&
+      needs.windows.result == 'success' &&
+      needs.termux.result == 'success' &&
+      needs.container.result == 'success' &&
+      needs['ansible-ee'].result == 'success'
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -1368,29 +1851,54 @@ jobs:
         with:
           ref: ${{ github.sha }}
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
-      - name: Inject version
-        run: |
-          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+      - name: Install locked release dependencies
+        run: python scripts/dependency_profiles.py sync --set ci --environment .venv --python 3.11
       - name: Verify status table current (release gate)
         # On tag builds the release must not be cut with a stale status table.
         run: |
           echo "=== CI PHASE: release-status-table ==="
-          uv sync
           make check-status-table || {
             echo "::error::RELEASE STATUS TABLE STALE — README.md status table does not match docs/features.yml. Run 'make gen-status-table' and commit the result."
             exit 1
           }
         env:
-          GLUDD_PSK: ""
+          GLUDD_AUTH_PSK: ""
       - name: Generate SBOM
         run: |
           echo "=== CI PHASE: release-sbom ==="
-          uv sync
           make sbom || {
             echo "::error::RELEASE SBOM FAILED — CycloneDX SBOM generation failed. Run 'make sbom' locally for details."
             exit 1
           }
+      - name: Inject version
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+      - name: Build and smoke Python distributions
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: release-python-distributions ==="
+          mkdir -p dist/python
+          uv build --wheel --sdist --out-dir dist/python
+          wheel=$(find dist/python -maxdepth 1 -name '*.whl' -print -quit)
+          sdist=$(find dist/python -maxdepth 1 -name '*.tar.gz' -print -quit)
+          test -n "$wheel"
+          test -n "$sdist"
+
+          wheel_env="/tmp/gludd-wheel-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          sdist_env="/tmp/gludd-sdist-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'rm -rf "$wheel_env" "$sdist_env"' EXIT
+          uv venv "$wheel_env"
+          uv pip install --python "$wheel_env/bin/python" "$wheel"
+          "$wheel_env/bin/gludd" version
+          "$wheel_env/bin/gludd" --help >/dev/null
+          uv venv "$sdist_env"
+          uv pip install --python "$sdist_env/bin/python" "$sdist"
+          "$sdist_env/bin/gludd" version
+          "$sdist_env/bin/gludd" --help >/dev/null
+          cat > "dist/gludd-smoke-python-${VERSION}.json" <<JSON
+          {"version":"${VERSION}","checks":{"wheel":"passed","sdist":"passed"}}
+          JSON
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1 (node24)
         with:
           path: artifacts
@@ -1401,17 +1909,124 @@ jobs:
           echo "=== CI PHASE: release-stage-assets ==="
           mkdir -p release-assets
           cp -v artifacts/* release-assets/
+          cp -v dist/python/* release-assets/
+          cp -v "dist/gludd-smoke-python-${VERSION}.json" release-assets/
           cp -v dist/sbom.json release-assets/sbom.json
           cp -v dist/install.sh release-assets/install.sh
           cp -v LICENSE release-assets/LICENSE
           cp -v THIRD_PARTY_LICENSES.md release-assets/THIRD_PARTY_LICENSES.md
           echo "--- staged release assets ---"
           ls -la release-assets/
-      - name: Verify staged assets (pre-publish gate)
-        # ALL 12 artifact categories are REQUIRED — no exceptions.
-        # User mandate (2026-07-24): "i want all of the artifacts i asked
-        # for with NO exceptions." Optional categories weaken the gate and
-        # allowed incomplete releases through. Fix builds, not lower the bar.
+      - name: Smoke install script and release metadata
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: release-installer-metadata-smoke ==="
+          uv run python -c "import json, pathlib; data=json.loads(pathlib.Path('release-assets/sbom.json').read_text()); assert data.get('bomFormat') == 'CycloneDX'; assert isinstance(data.get('components'), list)"
+
+          smoke_root="/tmp/gludd-install-script-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          install_root="$smoke_root/install"
+          mkdir -p "$smoke_root/archive" "$install_root"
+          trap 'rm -rf "$smoke_root"' EXIT
+          tar -xzf "release-assets/gludd-${VERSION}-linux-x86_64.tar.gz" -C "$smoke_root/archive"
+          binary=$(find "$smoke_root/archive" -type f -name gludd -print -quit)
+          test -n "$binary"
+          binary_dir=$(dirname "$binary")
+          cp release-assets/install.sh "$binary_dir/install.sh"
+          chmod +x "$binary_dir/install.sh"
+          "$binary_dir/install.sh" "$install_root"
+          "$install_root/gludd" version
+          "$install_root/gludd" --help >/dev/null
+          cat > "release-assets/gludd-smoke-release-${VERSION}.json" <<JSON
+           {"version":"${VERSION}","checks":{"sbom":"passed","install_script":"passed"}}
+           JSON
+      - name: Write checksum-bound rollback receipt
+        # Hermetic control-plane rehearsal only: it mutates one namespaced /tmp
+        # route, executes the staged candidate, restores the byte-identical
+        # prior route, and proves the in-flight work snapshot never changed.
+        # The receipt is staged before the release manifest/SHA256SUMS so the
+        # existing publish and provenance actions bind it without another upload.
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: release-rollback-receipt ==="
+          rollback_root="/tmp/gludd-rollback-rehearsal-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          candidate_dir="$rollback_root/candidate"
+          prior_route="$rollback_root/prior-route.json"
+          candidate_route="$rollback_root/candidate-route.json"
+          active_route="$rollback_root/active-route.json"
+          active_work="$rollback_root/active-work.json"
+          prior_version="0.1.0-beta.4"
+          candidate_archive="release-assets/gludd-${VERSION}-linux-x86_64.tar.gz"
+          cleanup_rollback_rehearsal() {
+            primary_status=$?
+            cleanup_failed=0
+            if ! rm -rf "$rollback_root"; then
+              echo "::error::rollback rehearsal cleanup failed for $rollback_root"
+              cleanup_failed=1
+            fi
+            if [ "$primary_status" -ne 0 ]; then
+              return "$primary_status"
+            fi
+            return "$cleanup_failed"
+          }
+          trap cleanup_rollback_rehearsal EXIT
+
+          mkdir -p "$candidate_dir"
+          printf '%s\n' \
+            "{\"version\":\"${prior_version}\",\"health\":\"passed\",\"route\":\"stable\"}" \
+            > "$prior_route"
+          printf '%s\n' \
+            "{\"version\":\"${VERSION}\",\"health\":\"passed\",\"route\":\"candidate\"}" \
+            > "$candidate_route"
+          printf '%s\n' \
+            '{"work_ids":["release-existing-1","release-existing-2"],"state":"in-flight"}' \
+            > "$active_work"
+
+          cp "$prior_route" "$active_route"
+          prior_route_before_sha256=$(sha256sum "$active_route" | awk '{print $1}')
+          active_work_before_sha256=$(sha256sum "$active_work" | awk '{print $1}')
+
+          tar -xzf "$candidate_archive" -C "$candidate_dir"
+          candidate_binary=$(find "$candidate_dir" -type f -name gludd -print -quit)
+          test -n "$candidate_binary"
+          chmod +x "$candidate_binary"
+          candidate_output=$("$candidate_binary" version 2>&1)
+          printf '%s\n' "$candidate_output" | grep -F "$VERSION"
+          "$candidate_binary" --help >/dev/null
+          candidate_observed_version="$VERSION"
+          candidate_health="passed"
+
+          cp "$candidate_route" "$active_route"
+          grep -F "\"version\":\"${VERSION}\"" "$active_route" >/dev/null
+          cp "$prior_route" "$active_route"
+          cmp "$prior_route" "$active_route"
+          grep -F "\"version\":\"${prior_version}\"" "$active_route" >/dev/null
+          grep -F '"health":"passed"' "$active_route" >/dev/null
+          prior_route_after_sha256=$(sha256sum "$active_route" | awk '{print $1}')
+          active_work_after_sha256=$(sha256sum "$active_work" | awk '{print $1}')
+          restored_observed_version="$prior_version"
+          restored_health="passed"
+
+          uv run python scripts/verify_release_asset_matrix.py \
+            write-rollback-receipt release-assets "$VERSION" \
+            --source-sha "$GITHUB_SHA" \
+            --prior-version "$prior_version" \
+            --candidate-asset "gludd-${VERSION}-linux-x86_64.tar.gz" \
+            --candidate-observed-version "$candidate_observed_version" \
+            --restored-observed-version "$restored_observed_version" \
+            --candidate-health "$candidate_health" \
+            --restored-health "$restored_health" \
+            --prior-route-before-sha256 "$prior_route_before_sha256" \
+            --prior-route-after-sha256 "$prior_route_after_sha256" \
+            --active-work-before-sha256 "$active_work_before_sha256" \
+            --active-work-after-sha256 "$active_work_after_sha256"
+      - name: Write release provenance manifest
+        run: |
+          echo "=== CI PHASE: release-manifest ==="
+          uv run python scripts/verify_release_asset_matrix.py write-manifest release-assets "${VERSION}" --source-sha "${GITHUB_SHA}"
+      - name: Verify core native asset baseline (fast-fail)
+        # This early presence check gives concise failures for the core native
+        # formats. The later verifier is authoritative for all 28 categories,
+        # archive contents, smoke attestations, checksums, and metadata.
         run: |
           echo "=== CI PHASE: release-pre-publish-gate ==="
           set -e
@@ -1449,21 +2064,38 @@ jobs:
           check_required 'LICENSE'             'LICENSE'
           check_required 'THIRD_PARTY*'        'THIRD_PARTY_LICENSES'
           echo
-          echo "PRE-PUBLISH GATE: $missing required missing"
+          echo "CORE ASSET BASELINE: $missing pattern(s) missing"
           if [ "$missing" -gt 0 ]; then
-            echo "FAIL — $missing required asset category(ies) missing. ALL 12 categories are required."
+            echo "FAIL -- $missing core native asset pattern(s) missing."
             exit 1
           fi
-          echo "PRE-PUBLISH GATE: PASS — all 12 asset categories present."
+          echo "CORE ASSET BASELINE: PASS -- full functional matrix follows."
       - name: Generate SHA256SUMS aggregate
         run: |
           echo "=== CI PHASE: release-sha256sums ==="
           cd release-assets
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
+      - name: Verify complete functional artifact matrix
+        run: |
+          echo "=== CI PHASE: release-functional-matrix ==="
+          uv run python scripts/verify_release_asset_matrix.py verify \
+            release-assets "${VERSION}" --repository-root . || {
+            echo "::error::RELEASE FUNCTIONAL MATRIX FAILED"
+            exit 1
+          }
+      - name: Attest release asset provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2 (node24)
+        with:
+          # The aggregate contains every staged asset except itself. Passing the
+          # same digest index used by the matrix verifier prevents the
+          # attestation subject set from drifting from the published files.
+          subject-checksums: release-assets/SHA256SUMS
       - name: Inspect existing release
         # action-gh-release updates the release for an existing tag. Inspect it
-        # for audit visibility without deleting published state before upload.
+        # for audit visibility; a stale DRAFT left from a prior aborted run is
+        # deleted below so the re-publish step never fails with
+        # 'release already_exists'.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -1472,6 +2104,20 @@ jobs:
             echo "Existing release found; assets will be updated in place."
           else
             echo "No existing release found; a new release will be created."
+          fi
+      - name: Clean stale release (already_exists guard)
+        # A previous run's draft/partial release for this tag makes
+        # action-gh-release fail with 'release already_exists'. Delete only
+        # the DRAFT (never a published release) and let the next step recreate.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== CI PHASE: release-clean-stale ==="
+          if gh release view ${{ github.ref_name }} --json isDraft -q .isDraft 2>/dev/null | grep -q true; then
+            echo "Stale draft release for ${{ github.ref_name }} — deleting so action-gh-release can recreate it."
+            gh release delete ${{ github.ref_name }} --yes --cleanup-tag
+          else
+            echo "No stale draft to clean for ${{ github.ref_name }}."
           fi
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0 (node24)
         with:
@@ -1488,12 +2134,47 @@ jobs:
           files: release-assets/*
           fail_on_unmatched_files: true
           generate_release_notes: true
+      - name: Verify published rollback receipt
+        # Re-download the smallest complete receipt evidence set. The local
+        # staging directory is not publication evidence: hosted asset bytes,
+        # their aggregate checksums, and their manifest must agree again.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: release-published-rollback-receipt ==="
+          TAG="${{ github.ref_name }}"
+          published_root="/tmp/gludd-published-rollback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup_published_rollback() {
+            primary_status=$?
+            cleanup_failed=0
+            if ! rm -rf "$published_root"; then
+              echo "::error::published rollback evidence cleanup failed"
+              cleanup_failed=1
+            fi
+            if [ "$primary_status" -ne 0 ]; then
+              return "$primary_status"
+            fi
+            return "$cleanup_failed"
+          }
+          trap cleanup_published_rollback EXIT
+
+          mkdir -p "$published_root"
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --dir "$published_root" \
+            --pattern "gludd-rollback-receipt-${VERSION}.json" \
+            --pattern "gludd-release-manifest-${VERSION}.json" \
+            --pattern "gludd-${VERSION}-linux-x86_64.tar.gz" \
+            --pattern "gludd-smoke-*-${VERSION}.json" \
+            --pattern "SHA256SUMS"
+          uv run python scripts/verify_release_asset_matrix.py \
+            verify-published-rollback "$published_root" "$VERSION"
       - name: Verify release completeness (blocking)
         # Single source of truth for "the release actually shipped": the same
-        # scripts/verify_release_completeness.py used locally checks every
-        # artifact category (4 platform binaries, .deb/.rpm/.dmg/.exe,
-        # checksums, SBOM, licenses), the >=12 asset floor, the prerelease
-        # flag vs tag shape, version-stamped names, and zero-size assets.
+        # scripts/verify_release_completeness.py used locally checks all 28
+        # beta4 categories, the >=30 asset floor, prerelease/tag consistency,
+        # version-stamped names, and zero-size assets.
         # Replaces the old inline `assets | length >= 6` check, whose threshold
         # had drifted from the verifier's and which counted names only —
         # 6 .sha256 files and no binaries would have passed. v0.1.0-beta.1
@@ -1522,14 +2203,18 @@ jobs:
           echo "--- Staged files ---"
           ls -la /tmp/gludd-smoke
           echo "--- Extracting ---"
-          BIN=$(find /tmp/gludd-smoke -type f -not -name '*.sha256' -not -name '*.tar.gz' | head -1)
-          if file "$BIN" | grep -q 'gzip compressed'; then
-            mv "$BIN" /tmp/gludd-smoke/gludd.tar.gz
-            tar -xzf /tmp/gludd-smoke/gludd.tar.gz -C /tmp/gludd-smoke
-          else
-            mv "$BIN" /tmp/gludd-smoke/gludd
+          ARCHIVE="/tmp/gludd-smoke/gludd-${VERSION}-linux-x86_64.tar.gz"
+          if [ ! -f "$ARCHIVE" ]; then
+            echo "FAIL: expected release archive missing: $ARCHIVE"
+            exit 1
           fi
-          chmod +x /tmp/gludd-smoke/gludd
+          tar -xzf "$ARCHIVE" -C /tmp/gludd-smoke
+          BIN="/tmp/gludd-smoke/gludd"
+          if [ ! -f "$BIN" ]; then
+            echo "FAIL: release archive did not contain gludd"
+            exit 1
+          fi
+          chmod +x "$BIN"
           find /tmp/gludd-smoke -name gludd -exec chmod +x {} \;
           echo "--- Running gludd version ---"
           /tmp/gludd-smoke/gludd version || {
@@ -1582,6 +2267,7 @@ jobs:
           echo "  Status table      : check step 'Verify status table current' above"
           echo "  SBOM              : check step 'Generate SBOM' above"
           echo "  Stage assets      : check step 'Stage release assets' above"
+          echo "  Rollback receipt  : check step 'Write checksum-bound rollback receipt' above"
           echo "  Pre-publish gate  : check step 'Verify staged assets' above"
           echo "  SHA256SUMS        : check step 'Generate SHA256SUMS aggregate' above"
           echo "  GitHub Release    : check step 'softprops/action-gh-release' above"

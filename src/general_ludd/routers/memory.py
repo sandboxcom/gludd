@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryCreateRequest(BaseModel):
+    """Validated body for creating or updating a memory record."""
+
     agent_id: str = Field(min_length=1, max_length=128)
     key: str = Field(min_length=1, max_length=256)
     value: str = Field(default="")
@@ -29,6 +31,8 @@ class MemoryCreateRequest(BaseModel):
 
 
 class MemoryRecordResponse(BaseModel):
+    """API representation of a persisted memory record."""
+
     id: str
     agent_id: str
     key: str
@@ -41,6 +45,7 @@ class MemoryRecordResponse(BaseModel):
 
     @staticmethod
     def from_model(row: MemoryRecordModel) -> MemoryRecordResponse:
+        """Build the response from a persisted memory record model."""
         return MemoryRecordResponse(
             id=row.id,
             agent_id=row.agent_id,
@@ -62,6 +67,7 @@ def _get_memory_repo(app: FastAPI) -> MemoryRepository:
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register memory CRUD endpoints on the FastAPI app."""
 
     @app.post("/api/memory", status_code=201)
     async def api_memory_create(req: MemoryCreateRequest) -> MemoryRecordResponse:
@@ -69,7 +75,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         row = await repo.set(
             agent_id=req.agent_id,
             key=req.key,
-            value=req.value,
+            value=req.value if "value" in req.model_fields_set else None,
             namespace=req.namespace,
             project_id=req.project_id,
             ttl_seconds=req.ttl_seconds,

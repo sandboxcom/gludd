@@ -293,9 +293,12 @@ class TestCiCooldown:
         ), mock.patch(
             "general_ludd.git_automation.ci_ops.ci_verdict",
             return_value={"verdict": "GREEN", "run_id": "1", "headSha": "abc"},
-        ):
+        ), mock.patch(
+            "general_ludd.git_automation.ci_ops._save_cooldown_state"
+        ) as save_state:
             result = ci_verdict_safe(branch="development", force=True)
             assert result["verdict"] == "GREEN"
+            save_state.assert_called_once()
 
     def test_verdict_safe_allows_after_expiry(self):
         now = time.time()

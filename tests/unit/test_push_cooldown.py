@@ -28,6 +28,8 @@ import re
 import time
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 
@@ -36,7 +38,7 @@ MAKEFILE_STATE_PATH = Path("/tmp/gludd-watchdog-push-timestamps.json")
 
 
 def _makefile_src() -> str:
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _cooldown_section() -> str:
@@ -252,10 +254,10 @@ class TestStatePathConfigurability:
         )
 
     def test_env_var_not_yet_honored(self) -> None:
-        """GLUDD_PUSH_STATE_FILE is the desired override knob (not yet wired)."""
-        src = _makefile_src()
-        assert "GLUDD_PUSH_STATE_FILE" not in src, (
-            "GLUDD_PUSH_STATE_FILE is not yet honored by the Makefile — "
+        """The inline timestamp cooldown still lacks its own override knob."""
+        section = _cooldown_section()
+        assert "GLUDD_PUSH_STATE_FILE" not in section, (
+            "GLUDD_PUSH_STATE_FILE is not yet honored by the cooldown section — "
             "this is the configurability gap (TDD red). Extract cooldown into "
             "scripts/push_cooldown.py mirroring ci_check_cooldown.py."
         )

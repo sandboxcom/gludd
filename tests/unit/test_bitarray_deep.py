@@ -7,6 +7,7 @@ bitwise ops, serialization, range operations.
 from __future__ import annotations
 
 import copy
+from typing import cast
 
 import pytest
 
@@ -31,6 +32,11 @@ class TestConstruction:
         assert ba[0] is True
         assert ba[1] is False
         assert ba[2] is True
+
+    def test_invalid_source_type_fails_closed(self) -> None:
+        source = cast(int, "101")
+        with pytest.raises(TypeError, match="Invalid source type"):
+            BitArray(source)
 
     def test_from_int(self) -> None:
         ba = BitArray.from_int(0b101, 3)

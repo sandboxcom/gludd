@@ -80,8 +80,10 @@ class TestHuffmanTree:
         root = build_huffman_tree(freqs)
         codes = build_huffman_codes(root)
         bit = huffman_encode(["a"], codes)
-        with pytest.raises(ValueError, match="mid-symbol"):
-            huffman_decode(bit + "1", root)
+        extra = "1" if bit[-1] == "0" else "0"
+        with pytest.raises(ValueError, match="mid-symbol") as excinfo:
+            huffman_decode(bit + extra, root)
+        assert "mid-symbol" in str(excinfo.value)
 
     def test_many_symbols_round_trip(self) -> None:
         freqs = {chr(ord("a") + i): i + 1 for i in range(15)}

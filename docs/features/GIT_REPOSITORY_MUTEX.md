@@ -11,8 +11,8 @@ repositories remain independently namespaced and can make progress in parallel.
 
 The implementation composes two mature standard-library/platform primitives:
 
-- a per-common-directory `threading.RLock` serializes threads and supports
-  same-thread re-entry;
+- a per-common-directory `threading.RLock` serializes threads, supports
+  same-thread re-entry, and provides a bounded acquire operation;
 - POSIX `fcntl.flock` serializes independent processes on one stable inode.
 
 The contract is mutual exclusion, not FIFO scheduling. Operating-system process
@@ -35,9 +35,13 @@ continues to use the existing inode. The kernel releases ownership when all
 descriptors close, including abnormal owner exit. This makes a crash recoverable
 without creating a second inode that another process could lock concurrently.
 
-Every contended acquisition uses a monotonic deadline. Exceeding it raises
-`TimeoutError` with the bounded duration and lock path. `stale_after` remains an
-API-compatible diagnostic threshold; it never authorizes lock deletion.
+Every contended acquisition uses one monotonic deadline across both layers.
+Time spent waiting for the in-process `RLock` is deducted from the time left for
+`flock`, so the public timeout is a total acquisition budget rather than an
+unbounded thread wait followed by a fresh process wait. Exceeding either layer
+raises `TimeoutError` with the bounded duration and contested identity.
+`stale_after` remains an API-compatible diagnostic threshold; it never
+authorizes lock deletion.
 
 ## Compatibility and limitations
 
@@ -52,6 +56,22 @@ No FIFO queue or third-party locking service is added. A queue would create a
 new persistence, cleanup, and recovery protocol without improving the repository
 mutation requirement.
 
+### Linked-worktree path spelling
+
+Git may persist a physical common-directory path even when the caller entered a
+linked worktree through a lexical alias. On macOS, the common example is a
+caller under `/tmp` whose Git metadata points through `/private/tmp`. Gludd now
+finds the nearest caller ancestor whose physical path contains the metadata
+target and rebuilds only that descendant suffix through the caller's spelling.
+The returned path is therefore stable for logs, assertions, and downstream
+joins, while `_normalize` still resolves aliases before selecting the mutex.
+
+The transformation is read-only and bounded by the number of path ancestors.
+It creates no directory, process, descriptor, cache, or cleanup obligation. If
+no matching ancestor exists, Gludd returns the validated absolute metadata path
+unchanged. Rollback is a source revert; no on-disk repair or lock-file deletion
+is required, so rolling workers remain compatible throughout a ZDD deployment.
+
 ## Security, resources, and observability
 
 - Newly created lock files use mode `0600`; ownership metadata remains in
@@ -60,6 +80,8 @@ mutation requirement.
   background thread, socket, semaphore, or untracked script is created.
 - Child-process regressions join and close every process and pipe. A crashed
   child deliberately bypasses Python cleanup, proving kernel-level release.
+- Thread contention uses `RLock.acquire(timeout=...)`; it creates no polling
+  thread and cannot wait indefinitely before reaching the process-lock layer.
 - A timeout is a fail-closed operational error. A stale timestamp is logged once
   per acquisition attempt but never weakens exclusion.
 - Repository common-directory resolution keeps worktrees serialized while
@@ -84,7 +106,8 @@ repository state is transferred between lock implementations.
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork
   reset, spawn timeout, abnormal-exit recovery, stable-inode behavior, and
-  worktree serialization.
+  worktree serialization. It also proves that same-process contention consumes
+  the same bounded acquisition budget as process contention.
 - `tests/unit/test_git_automation_locking_deep.py`,
   `tests/unit/test_git_automation_deep.py`, and `tests/unit/test_mutex_deep.py`
   verify re-entry, bounded contention, multiple waiters, and no overlap.
@@ -92,8 +115,23 @@ repository state is transferred between lock implementations.
   line and branch coverage for `locking.py`; warnings are errors. The beta4
   focused result is 169 passed with 89.0% line, 85.3% branch, and 86.36%
   combined coverage for the production module.
+- The 2026-08-21 alias regression is platform-independent: a synthetic linked
+  worktree enters through a directory symlink while its metadata records the
+  physical path. The focused contract result is 99 passed with warnings as
+  errors; `locking.py` retains 89% branch-aware coverage.
 
 ## Practitioner evidence
+
+- [GitLab Runner issue #31003](https://gitlab.com/gitlab-org/gitlab-runner/-/issues/31003),
+  reviewed 2026-08-21, reproduces the same long-lived macOS alias failure:
+  `/tmp` and `/private/tmp` name one location, but relativizing across the two
+  spellings produces a nonexistent path. Gludd preserves the caller spelling
+  at its return boundary and canonicalizes only the internal lock identity.
+- Git's official [worktree documentation](https://github.com/git/git/blob/master/Documentation/git-worktree.adoc),
+  reviewed 2026-08-21, defines the private `.git` pointer and shared common Git
+  directory used by linked worktrees. The implementation reads those bounded
+  metadata files and does not infer that the checkout-local `.git` path is the
+  shared lock root.
 
 - A long-lived [Stack Overflow report about deleting a locked file](https://stackoverflow.com/questions/17708885/flock-removing-locked-file-without-race-condition)
   demonstrates the old-inode/new-inode split-brain race. This contract retains
@@ -113,3 +151,6 @@ repository state is transferred between lock implementations.
   invalidation for fork-sensitive cached state.
 - The [Python `os.register_at_fork` documentation](https://docs.python.org/3/library/os.html#os.register_at_fork)
   defines the supported child hook used to discard inherited ownership.
+- The [Python `threading.RLock` documentation](https://docs.python.org/3/library/threading.html#threading.RLock.acquire)
+  defines the timed, re-entrant acquire primitive used to bound thread
+  contention without replacing the mature standard-library lock.

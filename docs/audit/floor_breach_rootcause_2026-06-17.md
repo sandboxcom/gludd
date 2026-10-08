@@ -46,7 +46,7 @@ Key parameters per hook invocation:
 | `dec` (SubagentStop) | 0.8 | default 6 |
 | `stop` (Stop) | default 2.5 | default 6 |
 | `userprompt` | 0.6 | 4 |
-| `plugin` (enforce-floor.ts) | n/a — uses raw mtime<45 000 ms (line 58-59) |
+| `plugin` (enforce-floor.ts) | n/a — uses raw mtime<45 000 ms (lines 58-59) | — |
 
 The plugin (`enforce-floor.ts`) does **NOT** use the delta-mtime probe at all. It counts any `.output` file whose `mtime` is within 45 s of now (line 59). This is the old mtime-window heuristic that `liveness.py`'s own docstring (lines 6-10) identifies as the original bug: a burst of completions all landing inside the window over-counts. The plugin and the shell hooks are measuring **fundamentally different things** and will frequently disagree.
 

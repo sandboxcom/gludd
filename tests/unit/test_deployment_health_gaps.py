@@ -16,6 +16,8 @@ import json
 import threading
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from general_ludd.models.deployment_health import (
     DeploymentHealthChecker,
     DeploymentIncident,
@@ -91,6 +93,32 @@ class TestDeploymentIncidentLogPersistAsync:
             loop.close()
 
         # Must not have raised — exception is logged, not propagated.
+
+    @pytest.mark.asyncio
+    async def test_aclose_cancels_and_awaits_pending_persistence(self) -> None:
+        started = asyncio.Event()
+
+        async def create(**_kwargs: object) -> None:
+            started.set()
+            await asyncio.Event().wait()
+
+        repo = MagicMock()
+        repo.create.side_effect = create
+        log = DeploymentIncidentLog(audit_repo=repo)
+        log.record(
+            DeploymentIncident(
+                timestamp=1.0,
+                deployment_id="dep",
+                model_id="model",
+                error_type="failure",
+                error_message="boom",
+            )
+        )
+        await started.wait()
+
+        await log.aclose()
+
+        assert not log._persistence_tasks
 
     def test_persist_without_routed_to_or_remediation(self) -> None:
         """Minimal incident (no routed_to, no remediation fields) still

@@ -21,6 +21,8 @@ htmlcov/
 # windows-installer read them — a fresh clone cannot build the release matrix
 # without them. Build OUTPUTS are ignored below. Do not blanket-ignore dist/.
 dist/gludd
+dist/linux/gludd
+dist/linux/warn-gludd.txt
 dist/general-ludd-agent-*
 dist/build/
 dist/deb-root/
@@ -42,6 +44,9 @@ dist/*.json
 build/
 *.egg-info/
 .gate-failed
+.gate-status
+.gate-status.next
+.gate-status.running
 .gate-lite-status
 .gate-lite-failed
 .gate-background.pid
@@ -97,9 +102,13 @@ infra/terraform/.plugin-cache/*
 zai.key
 zai.api
 sandboxcom_github_rsa
+# Azure CLI output from the self-improvement service-principal bootstrap.
+gludd-azure-self-improve-auth.*
+gludd-azure-accelerator-auth.*
 
 /tmp/
-web_retriever/
+web_retriever/*
+!web_retriever/.gitkeep
 
 Makefile.tmp
 
@@ -124,7 +133,8 @@ opencode.json.orig
 .claude/shell-snapshots/    # machine-local shell history snapshots
 .claude/projects/           # machine-local project memory
 .claude/settings.local.json # machine-local permission overrides (keep settings.json)
-web_retriever/
+web_retriever/*
+!web_retriever/.gitkeep
 
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -139,3 +149,8 @@ web_retriever/
 *.tfvars
 !*.tfvars.example
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Generated test/gate artifacts (never tracked, never task-registered)
+coverage.json
+test.db
+nonexistent_edge_case_999.db

@@ -1,11 +1,12 @@
 # SPEC — Run Replay and Forensic Bundles
 
-Status: READY-TO-IMPLEMENT (2026-08-12)
+Status: INCREMENTAL IMPLEMENTATION — R0 schema and legacy reader (2026-10-05)
 
-**Feature ID:** G10-RR1  
+**Feature ID:** G10-RR1
+**Implementation evidence token:** `G10-RR1-R0-SCHEMA-LEGACY`
 **Target compatibility:** Gludd `0.1.x`, bundle schema
-`gludd.run-bundle/v1`  
-**Priority / effort:** HIGH / M  
+`gludd.run-bundle/v1`
+**Priority / effort:** HIGH / M
 **Owners:** replay, dispatch, API/CLI, security, observability
 
 This specification closes the remaining half of G10. Gludd already records a
@@ -14,8 +15,9 @@ cannot inspect a complete run, prove that the record is intact, export it, or
 replay it safely. The word `replay()` currently means only “read JSON files.” It
 does not reproduce a run.
 
-The implementer should assume no prior audit context. All repository claims in
-this document were checked against the development worktree on 2026-08-12.
+The implementer should assume no prior audit context. The original gap analysis
+was checked against the development worktree on 2026-08-12; R0 implementation
+and practitioner-source claims were rechecked on 2026-10-05.
 
 ---
 
@@ -99,26 +101,35 @@ persisting across mature coding agents.
    March 2026 user report demonstrates that the UI can render the ordered tool
    activity but the exported transcript loses it. Cursor support acknowledged
    the issue and said there was no ETA. Gludd must define one canonical bundle,
-   not a lossy export assembled from a second data path.  
+   not a lossy export assembled from a second data path.
    <https://forum.cursor.com/t/exporting-transcript-doesnt-export-agent-commands/155837>
 2. **Cursor’s on-disk transcript omits tool outputs.** An April 2026 user wanted
    full traces to learn a repeatable pipeline from prior agent work. Cursor
    confirmed that JSONL includes tool inputs but intentionally excludes outputs
    and suggested custom hooks. Gludd needs bounded tool output with explicit
-   truncation markers so audit completeness and disk safety are both visible.  
+   truncation markers so audit completeness and disk safety are both visible.
    <https://forum.cursor.com/t/accessing-the-full-agent-transcript-in-cursor/157311>
 3. **Cline checkpoint restore deleted most of a user’s workspace.** The issue
-   was opened in 2024 and reopened after another user reported widespread file
-   deletion in February 2025. That history is why Gludd simulation is read-only
-   and why any actual rerun must use a disposable worktree, never a destructive
-   “restore the old workspace” operation.  
+   was opened in January 2025 and reopened after another user reported
+   widespread file deletion in February 2025. That history is why Gludd
+   simulation is read-only and why any actual rerun must use a disposable
+   worktree, never a destructive “restore the old workspace” operation.
    <https://github.com/cline/cline/issues/1213>
 4. **Cline checkpoints blocked task activity and degraded on large repos.** The
    June–July 2025 investigation connected checkpoint storage and disk speed to
    severe performance problems, with maintainers planning a redesign for large
    repositories. Gludd therefore needs explicit byte limits, retention,
-   asynchronous cleanup, and capture-latency telemetry.  
+   asynchronous cleanup, and capture-latency telemetry.
    <https://github.com/cline/cline/issues/4578>
+5. **Cursor’s incomplete transcript export persisted for months.** A January
+   2026 report was still unresolved in May; Cursor support described terminal
+   I/O and tool calls as intentionally excluded and said there was no ETA. This
+   reinforces that Gludd’s forensic representation must be the primary durable
+   record rather than a lossy presentation-layer export.
+   <https://forum.cursor.com/t/transcripts-no-longer-exported-in-full/150214>
+
+These reports were rechecked on 2026-10-05. The tests below are hermetic and do
+not fetch or depend on the cited services.
 
 The product lesson is narrow: a transcript that cannot prove tool activity is
 not a forensic record, and a replay feature that mutates the original workspace
@@ -228,6 +239,29 @@ output. `tool.responded` stores bounded stdout/stderr/result attachments.
 `workspace.diff` stores a redacted patch only within its cap plus the complete
 diff digest and file statistics. A truncation flag is never optional when
 captured bytes differ from original bytes.
+
+### 4.3.1 Implemented R0 schema boundary
+
+The reader-first R0 slice is executable under evidence token
+`G10-RR1-R0-SCHEMA-LEGACY`:
+
+- `BundleManifestV1` and `EventEnvelopeV1` use strict, frozen Pydantic models,
+  forbid unknown fields, retain the exact wire keys `gludd.run-bundle/v1` and
+  `gludd.run-event/v1`, and reject unsupported schema identifiers.
+- Run IDs are ASCII-only, length-bounded, path-separator-free, and reject
+  traversal tokens, Unicode confusables, trailing dots, and Windows device
+  names before any storage path is constructed.
+- Replay JSON is recursively limited to JSON values and rejects duplicate keys,
+  NaN, and infinities. Canonical output delegates to the repository’s existing
+  `general_ludd.integrity.store.canonical_json` helper.
+- `LegacyReplayReader` reads the existing `runs/<id>/events/<integer>.json`
+  files in numeric order and exposes `schema="legacy-v0"` with
+  `integrity="unverified"`. Its API has no write path and does not migrate or
+  rewrite legacy storage.
+- This slice intentionally does not alter `RunRecorder`, routing, or CLI
+  behavior. Atomic v1 storage, verification, dual-write, simulation, and
+  re-execution remain later landing-plan items and must not be claimed from the
+  R0 token.
 
 ### 4.4 Atomicity and concurrency
 
@@ -523,6 +557,17 @@ custom fuzzer when the existing property-test dependency covers the input.
   cross-platform jobs must pass with zero warnings before promotion.
 - Any new Make target must be added through the target contract, followed by
   `make check-make-target-contract` and its documented behavioral example.
+
+R0 evidence for `G10-RR1-R0-SCHEMA-LEGACY` (2026-10-05): the first focused
+schema contract failed before implementation because `replay.schema` did not
+exist; the completed schema/legacy suite then passed 41 tests under warnings as
+errors. Branch-aware coverage is 99% aggregate, 100% for `replay/schema.py`, and
+97% for `replay/legacy.py`. Scoped Ruff and strict mypy pass, Markdown reports
+zero issues, and the specification linter reports 225 specs with zero
+violations. Repository collection found 117,869 of 117,870 tests with one
+intentional deselection and zero errors. These results prove only the bounded
+R0 schema/legacy-reader slice; they do not close the later bundle-store,
+recorder, service, or execution acceptance criteria.
 
 ## 10. Acceptance criteria
 

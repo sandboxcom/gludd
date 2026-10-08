@@ -1,0 +1,250 @@
+html,
+body {
+  background: #0d1117;
+}
+
+/* Mermaid measures text while rendering. Reveal display:none's inactive slides,
+   so pending diagrams render in one opaque-zero, offscreen staging area instead.
+   Unlike visibility:hidden, opacity preserves SVG text geometry in WebKit. */
+.gludd-mermaid-stage {
+  font-size: 40px;
+  left: -200vw;
+  opacity: 0;
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  width: 1100px;
+  z-index: -1;
+}
+
+.gludd-mermaid-stage .mermaid {
+  display: block;
+  width: 100%;
+}
+
+.mermaid[data-mermaid-viewport="stable"] {
+  margin-inline: auto;
+}
+
+.gludd-mermaid-stage .mermaid[data-mermaid-viewport="stable"] > svg {
+  display: block;
+  height: auto;
+  max-width: none;
+  width: 100%;
+}
+
+.reveal .mermaid[data-mermaid-viewport="stable"] > .mermaid-image {
+  display: block;
+  height: auto;
+  margin-inline: auto;
+  max-height: var(--gludd-diagram-max-height);
+  max-width: 100%;
+  object-fit: contain;
+  width: auto;
+}
+
+.reveal .diagram-wrap {
+  --gludd-diagram-max-height: 500px;
+  box-sizing: border-box;
+}
+
+.reveal .diagram-wrap.diagram-compact {
+  --gludd-diagram-max-height: 320px;
+}
+
+.mermaid-host {
+  min-height: 2rem;
+  position: relative;
+}
+
+.mermaid-source {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  font-size: 0.45em;
+  line-height: 1.35;
+  margin: 0;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.75rem;
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+.mermaid-host[data-mermaid-state="rendered"] > .mermaid-source,
+.mermaid-host[data-mermaid-state="rendered"] > .mermaid-failure {
+  display: none;
+}
+
+.mermaid-host[data-mermaid-state="failed"] > .mermaid {
+  display: none;
+}
+
+.mermaid-failure,
+#presentation-render-status {
+  background: #2d1b16;
+  border: 1px solid #d29922;
+  color: #f0c674;
+  font-size: 0.5em;
+  padding: 0.5rem;
+}
+
+#presentation-render-status {
+  bottom: 0.5rem;
+  left: 0.5rem;
+  margin: 0;
+  position: fixed;
+  z-index: 30;
+}
+
+#presentation-render-status[hidden] {
+  display: none;
+}
+
+.source-link {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 0.15em;
+}
+
+#source-viewer-dialog {
+  background: #0d1117;
+  border: 1px solid #58a6ff;
+  color: #c9d1d9;
+  height: min(82vh, 900px);
+  padding: 0;
+  width: min(92vw, 1200px);
+}
+
+#source-viewer-dialog::backdrop {
+  background: rgb(1 4 9 / 82%);
+}
+
+.source-viewer-header {
+  align-items: center;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.65rem 0.8rem;
+}
+
+#source-viewer-path {
+  color: #79c0ff;
+  font-family: "SF Mono", Menlo, Monaco, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.source-viewer-actions {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: 0.75rem;
+}
+
+#source-viewer-editor {
+  height: calc(100% - 3.25rem);
+  width: 100%;
+}
+
+#source-viewer-close {
+  background: #21262d;
+  border: 1px solid #8b949e;
+  color: #f0f6fc;
+  cursor: pointer;
+  padding: 0.35rem 0.6rem;
+}
+
+@media (max-width: 640px) {
+  #source-viewer-dialog {
+    height: 94vh;
+    width: 96vw;
+  }
+
+  .source-viewer-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  #source-viewer-editor {
+    height: calc(100% - 5.5rem);
+  }
+}
+
+/* Reveal's fixed 1150x820 stage makes text unreadable on portrait phones and
+   short landscape canvases. Use the available canvas at its native scale;
+   dense slides scroll vertically, while wide diagrams keep readable labels in
+   their existing horizontal scroller. */
+@media (max-width: 640px) and (orientation: portrait), (max-height: 640px) {
+  .reveal {
+    font-size: 21px;
+  }
+
+  .reveal .slides {
+    bottom: auto !important;
+    height: 100% !important;
+    left: 0 !important;
+    margin: 0 !important;
+    right: auto !important;
+    top: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+    zoom: 1 !important;
+  }
+
+  .reveal .slides > section.present,
+  .reveal .slides > section > section.present {
+    box-sizing: border-box;
+    height: 100% !important;
+    left: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 1rem 1rem 3rem;
+    top: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+  }
+
+  .reveal-viewport.reveal-scroll .scroll-page,
+  .reveal-viewport.reveal-scroll .scroll-page-sticky {
+    height: 100vh !important;
+    height: 100svh !important;
+  }
+
+  .reveal-viewport.reveal-scroll .scroll-page section {
+    box-sizing: border-box;
+    height: 100% !important;
+    left: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 1rem 1rem 3rem !important;
+    top: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+  }
+
+  .reveal .mermaid[data-mermaid-viewport="stable"] > .mermaid-image {
+    max-height: none;
+    max-width: none;
+  }
+
+  .reveal .cite :is(.badge-blue, .badge-green, .badge-red, .badge-yellow) {
+    font-size: 1em;
+  }
+
+  .reveal table {
+    display: table;
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .reveal :not(pre) > code,
+  .reveal a,
+  .reveal li,
+  .reveal td,
+  .reveal th {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}

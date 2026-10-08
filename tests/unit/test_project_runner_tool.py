@@ -55,7 +55,15 @@ class TestBuiltinRegistration:
         register_builtins(client)
 
         scoped = await client.list_tools(BUILTIN_SERVER_ID)
-        assert set(t.name for t in scoped) == {"run_project_check", "web_retrieve"}
+        assert set(t.name for t in scoped) == {
+            "run_project_check",
+            "web_retrieve",
+            "web_fetch",
+            "web_fetch_parsed",
+            "web_search",
+            "web_crawl",
+            "web_render",
+        }
         # server_id is stamped by the registry on registration.
         assert scoped[0].server_id == BUILTIN_SERVER_ID
 
@@ -98,7 +106,14 @@ class TestRegisterBuiltinMechanism:
 
 class TestRunProjectCheckDispatch:
     @pytest.mark.asyncio
-    async def test_dispatch_returns_passed_check_result(self, tmp_path: Path) -> None:
+    async def test_dispatch_returns_passed_check_result(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ambient_root = tmp_path / "ambient-supervisor"
+        ambient_root.mkdir()
+        monkeypatch.setenv("GLUDD_PROJECT_ROOT", str(ambient_root))
         _write_true_project(tmp_path)
         client = _make_client()
         # tmp_path is the jail root here (the agent workspace), so a model-supplied
@@ -166,7 +181,11 @@ class TestRunProjectCheckDispatch:
         assert result["check"] == "nonexistent"
 
     @pytest.mark.asyncio
-    async def test_workspace_escaping_jail_is_refused(self, tmp_path: Path) -> None:
+    async def test_workspace_escaping_jail_is_refused(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         # SECURITY (path-escape guard): the jail root is `jail` (the agent
         # workspace). A model-supplied workspace pointing OUTSIDE it — even a
         # sibling dir with its own valid project.yml — must be refused fail-closed
@@ -177,6 +196,9 @@ class TestRunProjectCheckDispatch:
         outside = tmp_path / "elsewhere"
         outside.mkdir()
         _write_true_project(outside)  # a real project.yml on a forbidden path
+        ambient_root = tmp_path / "ambient-supervisor"
+        ambient_root.mkdir()
+        monkeypatch.setenv("GLUDD_PROJECT_ROOT", str(ambient_root))
 
         client = _make_client()
         register_builtins(client, default_workspace=str(jail))

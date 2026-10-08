@@ -37,6 +37,22 @@ from general_ludd.issue_sources.base import IssueRecord, IssueSource, Transition
 
 _DEFAULT_BASE_URL = "https://api.github.com"
 _DEFAULT_TIMEOUT = 30.0
+_MAX_ISSUE_NUMBER_DIGITS = 20
+
+
+def _issue_number_path_segment(external_id: str) -> str:
+    """Return a canonical positive ASCII issue number or fail closed."""
+    if (
+        not external_id
+        or len(external_id) > _MAX_ISSUE_NUMBER_DIGITS
+        or not external_id.isascii()
+        or not external_id.isdecimal()
+        or external_id.startswith("0")
+    ):
+        raise ValueError(
+            "GitHub issue external_id must be a 1-20 digit positive ASCII decimal"
+        )
+    return external_id
 
 
 class GitHubIssuesSource(IssueSource):
@@ -64,6 +80,7 @@ class GitHubIssuesSource(IssueSource):
         transport: Any | None = None,
         env: dict[str, str] | None = None,
     ) -> None:
+        """Initialize one repository-scoped adapter with an optional transport."""
         # Validate ``repo`` early; fail closed on a missing slash.
         repo = str(config.get("repo") or "")
         if "/" not in repo:
@@ -174,10 +191,11 @@ class GitHubIssuesSource(IssueSource):
 
     def write_back(self, external_id: str, transition: Transition) -> bool:
         """Apply ``transition`` to the issue; return True on success."""
+        issue_number = _issue_number_path_segment(external_id)
         if transition is Transition.DONE:
             status_code, _ = self._call(
                 "PATCH",
-                f"/repos/{self._repo}/issues/{external_id}",
+                f"/repos/{self._repo}/issues/{issue_number}",
                 {"state": "closed"},
             )
             return 200 <= status_code < 300
@@ -185,7 +203,7 @@ class GitHubIssuesSource(IssueSource):
             if self._claim_label:
                 status_code, _ = self._call(
                     "POST",
-                    f"/repos/{self._repo}/issues/{external_id}/labels",
+                    f"/repos/{self._repo}/issues/{issue_number}/labels",
                     {"labels": [self._claim_label]},
                 )
                 return 200 <= status_code < 300

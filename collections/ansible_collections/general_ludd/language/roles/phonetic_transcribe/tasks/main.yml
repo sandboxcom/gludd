@@ -5,13 +5,25 @@
     state: directory
     mode: "0755"
 
-- name: Run phonetic_transcribe standalone script
-  ansible.builtin.script:
-    cmd: "files/phonetic_transcribe.py --input '{{ input_text }}' --method '{{ method }}' --output '{{ artifact_dir }}/phonetic_transcription.json' {% if cmu_dict_lookup | default(true) %}--cmu-dict-lookup{% endif %}"
-    executable: "{{ ansible_python_interpreter | default('python3') }}"
+- name: Transcribe phonetics through Gludd
+  general_ludd.language.language_operation:
+    operation: phonetic_transcribe
+    payload:
+      input_text: "{{ input_text }}"
+      method: "{{ method }}"
+      cmu_dict_lookup: "{{ cmu_dict_lookup }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
   register: phonetic_result
+  no_log: true
   changed_when: false
+
+- name: Write phonetic transcription artifact atomically
+  ansible.builtin.copy:
+    content: "{{ phonetic_result.result | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/phonetic_transcription.json"
+    mode: "0600"
 
 - name: Print phonetic transcription summary
   ansible.builtin.debug:
-    msg: "{{ phonetic_result.stdout_lines }}"
+    var: phonetic_result.result

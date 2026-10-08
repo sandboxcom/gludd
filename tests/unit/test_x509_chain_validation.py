@@ -4,6 +4,7 @@ import datetime
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.oid import NameOID
@@ -12,6 +13,7 @@ from general_ludd.ssl.certificate import (
     build_chain,
     generate_csr,
     generate_key,
+    parse_cert,
     self_sign,
     sign_csr,
     validate_chain,
@@ -91,6 +93,97 @@ def _leaf_cert(
     csr = generate_csr(key, {"CN": cn}, sans=sans, extended_key_usage=["server_auth", "client_auth"])
     cert = sign_csr(csr, parent_cert, parent_key, validity_days=365)
     return cert, key
+
+
+def _ca_with_path_length(
+    parent_cert_pem: bytes,
+    parent_key_pem: bytes,
+    *,
+    cn: str,
+    path_length: int,
+) -> tuple[bytes, bytes]:
+    key_pem = _rsa_key()
+    csr = x509.load_pem_x509_csr(
+        generate_csr(
+            key_pem,
+            {"CN": cn, "O": "TestOrg"},
+            key_usage=["key_cert_sign", "crl_sign"],
+        )
+    )
+    parent = x509.load_pem_x509_certificate(parent_cert_pem)
+    now = datetime.datetime.now(datetime.UTC)
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(csr.subject)
+        .issuer_name(parent.subject)
+        .public_key(csr.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=365))
+    )
+    for extension in csr.extensions:
+        value = extension.value
+        if isinstance(value, x509.BasicConstraints):
+            value = x509.BasicConstraints(ca=True, path_length=path_length)
+        builder = builder.add_extension(value, critical=extension.critical)
+    parent_key: Any = _load_private(parent_key_pem)
+    cert_pem = builder.sign(parent_key, hashes.SHA256()).public_bytes(serialization.Encoding.PEM)
+    return cert_pem, key_pem
+
+
+def _leaf_with_unknown_critical_extension(
+    parent_cert_pem: bytes,
+    parent_key_pem: bytes,
+) -> bytes:
+    key_pem = _rsa_key()
+    csr = x509.load_pem_x509_csr(generate_csr(key_pem, {"CN": "critical.example.com"}))
+    parent = x509.load_pem_x509_certificate(parent_cert_pem)
+    now = datetime.datetime.now(datetime.UTC)
+    parent_key: Any = _load_private(parent_key_pem)
+    return (
+        x509.CertificateBuilder()
+        .subject_name(csr.subject)
+        .issuer_name(parent.subject)
+        .public_key(csr.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=365))
+        .add_extension(
+            x509.UnrecognizedExtension(
+                x509.ObjectIdentifier("1.3.6.1.4.1.55555.1"),
+                b"unhandled-policy",
+            ),
+            critical=True,
+        )
+        .sign(parent_key, hashes.SHA256())
+        .public_bytes(serialization.Encoding.PEM)
+    )
+
+
+def _sign_csr_unchecked(
+    csr_pem: bytes,
+    issuer_cert_pem: bytes,
+    issuer_key_pem: bytes,
+    *,
+    validity_days: int = 365,
+) -> bytes:
+    """Construct deliberately invalid test chains without the issuance API."""
+    csr = x509.load_pem_x509_csr(csr_pem)
+    issuer = x509.load_pem_x509_certificate(issuer_cert_pem)
+    issuer_key: Any = _load_private(issuer_key_pem)
+    now = datetime.datetime.now(datetime.UTC)
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(csr.subject)
+        .issuer_name(issuer.subject)
+        .public_key(csr.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now)
+        .not_valid_after(now + datetime.timedelta(days=validity_days))
+    )
+    for extension in csr.extensions:
+        builder = builder.add_extension(extension.value, critical=extension.critical)
+    return builder.sign(issuer_key, hashes.SHA256()).public_bytes(serialization.Encoding.PEM)
 
 
 def _load_public_key(cert_pem: bytes) -> Any:
@@ -239,6 +332,14 @@ class _Val:
 
 
 class TestValidateChainBasic:
+    def test_generated_ca_has_critical_basic_constraints(self) -> None:
+        root, _ = _root_ca()
+        cert = x509.load_pem_x509_certificate(root)
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints)
+        assert constraints.critical is True
+        assert constraints.value.ca is True
+        assert constraints.value.path_length is None
+
     def test_valid_two_level_chain(self) -> None:
         root, root_key = _root_ca()
         leaf, _ = _leaf_cert(root, root_key)
@@ -277,11 +378,8 @@ class TestValidateChainExpiry:
             validity_days=1,
         )
         leaf = x509.load_pem_x509_certificate(leaf_pem)
-        if leaf.not_valid_after_utc > datetime.datetime.now(datetime.UTC):
-            import time
-
-            time.sleep(2)
-        result = validate_chain([leaf_pem, root])
+        validation_time = leaf.not_valid_after_utc + datetime.timedelta(microseconds=1)
+        result = validate_chain([leaf_pem, root], validation_time=validation_time)
         has_expiry_error = any("expired" in e.lower() or "not yet valid" in e.lower() for e in result.errors)
         has_date_error = any("valid" in e.lower() for e in result.errors)
         assert result.valid is False
@@ -327,10 +425,10 @@ class TestValidateChainExpiry:
         from cryptography.hazmat.primitives import serialization as cser
 
         past = datetime.datetime.now(UTC) - ctimedelta(days=30)
-        rk = serialization.load_pem_private_key(generate_key("rsa"), password=None)
+        expired_int_key = generate_key("rsa")
         csr = cx509.load_pem_x509_csr(
             generate_csr(
-                generate_key("rsa"),
+                expired_int_key,
                 {"CN": "ExpiredInt", "O": "TestOrg"},
                 key_usage=["key_cert_sign", "crl_sign"],
             )
@@ -349,9 +447,7 @@ class TestValidateChainExpiry:
             .public_bytes(cser.Encoding.PEM)
         )
 
-        leaf, _ = _leaf_cert(
-            expired_int_pem, rk.private_bytes(cser.Encoding.PEM, cser.PrivateFormat.PKCS8, cser.NoEncryption())
-        )
+        leaf, _ = _leaf_cert(expired_int_pem, expired_int_key)
         result = validate_chain([leaf, expired_int_pem, root])
         assert result.valid is False
         assert any("expired" in e.lower() for e in result.errors)
@@ -363,44 +459,44 @@ class TestValidateChainBasicConstraints:
         end_key = _rsa_key()
         end_csr = generate_csr(end_key, {"CN": "NotCA"}, extended_key_usage=["server_auth"])
         end_cert = self_sign(end_csr, end_key)
-        leaf, _ = _leaf_cert(end_cert, end_key)
+        leaf_key = _rsa_key()
+        leaf_csr = generate_csr(leaf_key, {"CN": "leaf.example.com"})
+        leaf = _sign_csr_unchecked(leaf_csr, end_cert, end_key)
         result = validate_chain([leaf, end_cert])
         assert result.valid is False
         assert any("path length" in e.lower() or len(result.errors) > 0 for e in result.errors)
 
     def test_path_length_exceeded_reported(self) -> None:
         root, root_key = _root_ca()
-        from cryptography import x509 as cx509
-        from cryptography.hazmat.primitives import hashes as chashes
-        from cryptography.hazmat.primitives import serialization as cser
-
-        rk = serialization.load_pem_private_key(generate_key("rsa"), password=None)
-        csr = cx509.load_pem_x509_csr(
-            generate_csr(
-                generate_key("rsa"),
-                {"CN": "Ltd CA", "O": "TestOrg"},
-                key_usage=["key_cert_sign", "crl_sign"],
-            )
+        limited_int, limited_key = _ca_with_path_length(
+            root,
+            root_key,
+            cn="Limited CA",
+            path_length=0,
         )
-        ca_key: Any = _load_private(root_key)
-        limited_int = (
-            cx509.CertificateBuilder()
-            .subject_name(csr.subject)
-            .issuer_name(cx509.load_pem_x509_certificate(root).subject)
-            .public_key(csr.public_key())
-            .serial_number(cx509.random_serial_number())
-            .not_valid_before(datetime.datetime.now(datetime.UTC))
-            .not_valid_after(datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365))
-            .add_extension(cx509.BasicConstraints(ca=True, path_length=0), critical=True)
-            .sign(ca_key, chashes.SHA256())
-            .public_bytes(cser.Encoding.PEM)
+        int_key = _rsa_key()
+        int_csr = generate_csr(
+            int_key,
+            {"CN": "Sub Int", "O": "TestOrg"},
+            key_usage=["key_cert_sign", "crl_sign"],
         )
-
-        int_key_pem = rk.private_bytes(cser.Encoding.PEM, cser.PrivateFormat.PKCS8, cser.NoEncryption())
-        int_ca, int_key = _intermediate_ca(limited_int, int_key_pem, cn="Sub Int")
+        int_ca = _sign_csr_unchecked(int_csr, limited_int, limited_key)
         leaf, _ = _leaf_cert(int_ca, int_key)
         result = validate_chain([leaf, int_ca, limited_int, root])
         assert result.valid is False
+        assert any("path_length=0 exceeded" in error for error in result.errors)
+
+    def test_path_length_zero_allows_direct_leaf(self) -> None:
+        root, root_key = _root_ca()
+        limited_int, limited_key = _ca_with_path_length(
+            root,
+            root_key,
+            cn="Limited CA",
+            path_length=0,
+        )
+        leaf, _ = _leaf_cert(limited_int, limited_key)
+        result = validate_chain([leaf, limited_int, root])
+        assert result.valid is True
 
     def test_self_signed_leaf_with_ca_true_validates_self_trust(self) -> None:
         root, _root_key = _root_ca()
@@ -447,7 +543,9 @@ class TestValidateChainKeyUsage:
             .public_bytes(cser.Encoding.PEM)
         )
 
-        leaf, _ = _leaf_cert(bad_int_pem, bad_int_key)
+        leaf_key = _rsa_key()
+        leaf_csr = generate_csr(leaf_key, {"CN": "leaf.example.com"})
+        leaf = _sign_csr_unchecked(leaf_csr, bad_int_pem, bad_int_key)
         result = validate_chain([leaf, bad_int_pem, root])
         assert result.valid is False
         assert any("key_cert_sign" in e.lower() or "key usage" in e.lower() for e in result.errors)
@@ -536,6 +634,122 @@ class TestValidateChainEdgeCases:
         assert r2.valid is False
         assert r3.valid is False
 
+    def test_naive_validation_time_fails_closed(self) -> None:
+        root, root_key = _root_ca()
+        leaf, _ = _leaf_cert(root, root_key)
+        result = validate_chain([leaf, root], validation_time=datetime.datetime.now())
+        assert result.valid is False
+        assert result.errors == ["validation_time must be timezone-aware"]
+
+    def test_unknown_critical_extension_fails_closed(self) -> None:
+        root, root_key = _root_ca()
+        leaf = _leaf_with_unknown_critical_extension(root, root_key)
+        result = validate_chain([leaf, root])
+        assert result.valid is False
+        assert any("unrecognized critical extension" in error for error in result.errors)
+
+
+class TestIssuancePolicy:
+    def test_generate_csr_rejects_unknown_key_usage(self) -> None:
+        with pytest.raises(ValueError, match="Unknown key usage"):
+            generate_csr(
+                _rsa_key(),
+                {"CN": "usage.example.com"},
+                key_usage=["key_cert_sing"],
+            )
+
+    def test_generate_csr_rejects_unknown_extended_key_usage(self) -> None:
+        with pytest.raises(ValueError, match="Unknown extended key usage"):
+            generate_csr(
+                _rsa_key(),
+                {"CN": "usage.example.com"},
+                extended_key_usage=["sever_auth"],
+            )
+
+    def test_self_sign_rejects_invalid_csr_signature(self) -> None:
+        key = _rsa_key()
+        csr = x509.load_pem_x509_csr(generate_csr(key, {"CN": "tampered.example.com"}))
+        tampered_der = bytearray(csr.public_bytes(serialization.Encoding.DER))
+        tampered_der[-1] ^= 1
+        tampered_csr = x509.load_der_x509_csr(bytes(tampered_der)).public_bytes(
+            serialization.Encoding.PEM
+        )
+        with pytest.raises(ValueError, match="CSR signature is invalid"):
+            self_sign(tampered_csr, key)
+
+    def test_self_sign_rejects_nonpositive_validity(self) -> None:
+        key = _rsa_key()
+        csr = generate_csr(key, {"CN": "validity.example.com"})
+        with pytest.raises(ValueError, match="validity_days must be positive"):
+            self_sign(csr, key, validity_days=0)
+
+    def test_self_sign_rejects_key_not_matching_csr(self) -> None:
+        csr_key = _rsa_key()
+        other_key = _rsa_key()
+        csr = generate_csr(csr_key, {"CN": "mismatch.example.com"})
+        with pytest.raises(ValueError, match="private key does not match CSR"):
+            self_sign(csr, other_key)
+
+    def test_sign_csr_rejects_key_not_matching_ca_certificate(self) -> None:
+        root, _root_key = _root_ca()
+        leaf_key = _rsa_key()
+        leaf_csr = generate_csr(leaf_key, {"CN": "leaf.example.com"})
+        with pytest.raises(ValueError, match="private key does not match CA certificate"):
+            sign_csr(leaf_csr, root, _rsa_key())
+
+    def test_sign_csr_rejects_non_ca_issuer(self) -> None:
+        issuer_key = _rsa_key()
+        issuer_csr = generate_csr(issuer_key, {"CN": "not-a-ca.example.com"})
+        issuer_cert = self_sign(issuer_csr, issuer_key)
+        leaf_key = _rsa_key()
+        leaf_csr = generate_csr(leaf_key, {"CN": "leaf.example.com"})
+        with pytest.raises(ValueError, match="not authorized as a CA"):
+            sign_csr(leaf_csr, issuer_cert, issuer_key)
+
+    def test_sign_csr_rejects_subordinate_ca_beyond_path_length(self) -> None:
+        root, root_key = _root_ca()
+        limited_ca, limited_key = _ca_with_path_length(
+            root,
+            root_key,
+            cn="Limited CA",
+            path_length=0,
+        )
+        subordinate_key = _rsa_key()
+        subordinate_csr = generate_csr(
+            subordinate_key,
+            {"CN": "Forbidden subordinate"},
+            key_usage=["key_cert_sign", "crl_sign"],
+        )
+        with pytest.raises(ValueError, match="path-length constraint"):
+            sign_csr(subordinate_csr, limited_ca, limited_key)
+
+
+class TestCertificateParsingPolicy:
+    def test_parse_cert_reports_all_key_usage_flags(self) -> None:
+        key = _rsa_key()
+        usages = [
+            "digital_signature",
+            "content_commitment",
+            "key_encipherment",
+            "data_encipherment",
+            "key_agreement",
+            "key_cert_sign",
+            "crl_sign",
+            "encipher_only",
+            "decipher_only",
+        ]
+        csr = generate_csr(key, {"CN": "usage.example.com"}, key_usage=usages)
+        details = parse_cert(self_sign(csr, key))
+        assert details["key_usage"] == usages
+
+    def test_parse_cert_reports_absent_optional_extensions(self) -> None:
+        key = _rsa_key()
+        csr = generate_csr(key, {"CN": "minimal.example.com"})
+        details = parse_cert(self_sign(csr, key))
+        assert details["sans"] == []
+        assert details["key_usage"] == []
+        assert details["extended_key_usage"] == []
+
 
 # --- build_chain tests (existing function) -------------------------------------------------
 
@@ -580,3 +794,10 @@ class TestBuildChainExtended:
         leaf, _ = _leaf_cert(root, root_key)
         chain = build_chain(leaf, [root, root, root])
         assert len(chain) == 2
+
+    def test_same_subject_candidates_select_actual_signer(self) -> None:
+        wrong_root, _ = _root_ca(cn="Shared Root")
+        right_root, right_key = _root_ca(cn="Shared Root")
+        leaf, _ = _leaf_cert(right_root, right_key)
+        chain = build_chain(leaf, [wrong_root, right_root])
+        assert chain == [leaf, right_root]

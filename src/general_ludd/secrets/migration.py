@@ -27,12 +27,13 @@ def migrate_profile_secrets(
     mgr: SecretsManager,
     profiles: list[dict[str, object]],
 ) -> dict[str, object]:
+    """Resolve profile credential aliases and write them into the vault backend."""
     aliases_to_migrate: list[tuple[str, str, str]] = []
     skipped: list[str] = []
 
     # S-1: resolve alias values through the fail-closed EnvSecretsManager
     # allowlist rather than reading os.environ directly. An attacker-controlled
-    # credential_alias like GLUDD_PSK / PATH / AWS_SECRET_ACCESS_KEY therefore
+    # credential_alias like GLUDD_AUTH_PSK / PATH / AWS_SECRET_ACCESS_KEY therefore
     # resolves to None (and is skipped) instead of being copied into the vault;
     # legitimate *_API_KEY / *_API_BASE aliases still migrate.
     env_resolver = EnvSecretsManager()
@@ -66,9 +67,7 @@ def migrate_profile_secrets(
             # Log only the exception TYPE, never str(exc): a vault/backend error
             # message can embed the secret value being written (e.g. "value
             # 'sk-...' rejected"), which would leak it into logs.
-            logger.warning(
-                "Failed to migrate %s: %s", alias_name, type(exc).__name__
-            )
+            logger.warning("Failed to migrate %s: %s", alias_name, type(exc).__name__)
             skipped.append(alias_name)
 
     return {
@@ -82,6 +81,7 @@ def scrub_inline_secrets(
     config_path: Path,
     secret_fields: list[str] | None = None,
 ) -> list[str]:
+    """Remove inline secret values from a YAML config file; return scrubbed field names."""
     if secret_fields is None:
         secret_fields = [
             "api_key",

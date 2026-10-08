@@ -1,19 +1,19 @@
 """Verify enforce-stop.ts SUBAGENT_DEFICIT block.
 
-2026-07-27: Agent sends text summarizing subagent results ("Agent 1 did X,
-Agent 2 did Y...") between dispatch waves with <10 dispatches. This is a
-stop-by-another-name — listing completed work instead of refilling the floor.
+2026-07-27: Agent sends text summarizing subagent results between dispatch
+waves while an explicitly configured positive floor is unmet. This is a
+stop-by-another-name when work still remains.
 
 Fixes:
   1. hasRealPendingWork() treats underFloor as pending work independently
   2. SUBAGENT_DEFICIT_RE blanks text mentioning subagent results when
-     dispatchCount < 10 AND hasPendingWork is true
+     dispatchCount is below the configured floor AND hasPendingWork is true
 
 Tests:
   (a) SUBAGENT_DEFICIT_RE matches subagent-result summary phrases
   (b) hasRealPendingWork() returns hasPendingWork=true when underFloor
-  (c) text.complete blanks subagent-deficit text when dispatchCount < 10
-  (d) text.complete does NOT blank when dispatchCount >= 10 (full floor)
+  (c) text.complete blanks subagent-deficit text below a configured floor
+  (d) text.complete does NOT blank at the configured floor
   (e) text.complete does NOT block when text has no subagent-result markers
   (f) Persist block written with "subagent-deficit" reason
 """
@@ -153,13 +153,13 @@ def test_subagent_deficit_regex_match(text: str, should_match: bool):
     )
 
 
-# ── (b) text.complete blanks subagent-deficit text when dispatchCount < 10 ──
+# ── (b) text.complete blanks text below an explicit positive floor ──────────
 
 
-def test_subagent_deficit_text_complete_blanks_3_dispatch_summary(
+def test_subagent_deficit_text_complete_blanks_1_dispatch_summary(
     hook_plugin_env: HookEnv,
 ):
-    """Text mentioning subagent results with only 3 dispatches is blanked."""
+    """Text mentioning results below an explicit three-agent floor is blanked."""
     _clean_leaked_state_files()
     now_ms = int(_time.time() * 1000)
 
@@ -169,13 +169,13 @@ def test_subagent_deficit_text_complete_blanks_3_dispatch_summary(
     # Create TASKS.md with unchecked items so hasRealPendingWork() finds work
     (hook_plugin_env.cwd / "TASKS.md").write_text("- [ ] Fix critical bug A\n- [ ] Implement feature B\n")
 
-    # Pre-seed multitask state with thisMessageDispatches < 10
+    # Pre-seed multitask state below an explicitly configured floor.
     multitask_path = hook_plugin_env.state_path("GLUDD_MULTITASK_STATE_FILE")
     multitask_path.write_text(
         json.dumps(
             {
-                "thisMessageDispatches": 3,
-                "minDispatches": 10,
+                "thisMessageDispatches": 1,
+                "minDispatches": 3,
                 "ts": now_ms,
             }
         )
@@ -184,18 +184,15 @@ def test_subagent_deficit_text_complete_blanks_3_dispatch_summary(
     try:
         parsed, raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
-            "Agent 1 fixed the null pointer in daemon.py. "
-            "Agent 2 added the missing migration file. "
-            "Agent 3 wrote tests for the new endpoint. "
-            "Continuing with remaining work.",
-            dispatch_count=3,
+            "Agent 1 fixed the null pointer in daemon.py. Continuing with remaining work.",
+            dispatch_count=1,
         )
         assert rc == 0, stderr
 
         if parsed is None:
             pb = _read_persist_block(hook_plugin_env)
             assert pb is not None, (
-                f"SUBAGENT_DEFICIT must block text summarizing results with 3 dispatches. persist_block={pb} raw={raw}"
+                f"SUBAGENT_DEFICIT must block text below the configured floor. persist_block={pb} raw={raw}"
             )
             assert pb.get("blocked") is True, f"Block must be recorded; got: {pb}"
             assert "subagent-deficit" in pb.get("reason", ""), f"Reason must be 'subagent-deficit'; got: {pb}"
@@ -228,7 +225,7 @@ def test_subagent_deficit_text_complete_blanks_text_only_summary(
         json.dumps(
             {
                 "thisMessageDispatches": 0,
-                "minDispatches": 10,
+                "minDispatches": 3,
                 "ts": now_ms,
             }
         )
@@ -253,14 +250,13 @@ def test_subagent_deficit_text_complete_blanks_text_only_summary(
             CI_CACHE_PATH.unlink()
 
 
-# ── (c) text.complete does NOT blank when dispatchCount >= 10 ──────────────
+# ── (c) text.complete does NOT blank at the configured floor ────────────────
 
 
 def test_subagent_deficit_not_blocked_at_full_floor(
     hook_plugin_env: HookEnv,
 ):
-    """Text mentioning subagent results with 10 dispatches is NOT blanked —
-    the floor is full, so this is a legitimate full-wave dispatch message."""
+    """Text mentioning results at the configured three-agent floor is allowed."""
     _clean_leaked_state_files()
     int(_time.time() * 1000)
 
@@ -272,18 +268,16 @@ def test_subagent_deficit_not_blocked_at_full_floor(
     try:
         _parsed, _raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
-            "Agent 1 fixed the parser, Agent 2 wrote tests, Agent 3 added docs, "
-            "Agent 4 refactored config, Agent 5 updated CI, Agent 6 fixed lint, "
-            "Agent 7 audited security, Agent 8 improved coverage, Agent 9 cleaned deps, "
-            "Agent 10 deployed staging. Full wave dispatched.",
-            dispatch_count=10,
+            "Agent 1 fixed the parser, Agent 2 wrote tests, Agent 3 added docs. "
+            "Full bounded wave dispatched.",
+            dispatch_count=3,
         )
         assert rc == 0, stderr
 
         pb = _read_persist_block(hook_plugin_env)
         if pb and pb.get("reason") == "subagent-deficit":
             pytest.fail(
-                f"SUBAGENT_DEFICIT must NOT fire when dispatchCount >= 10. "
+                f"SUBAGENT_DEFICIT must NOT fire at the configured floor. "
                 f"Text has subagent results but floor is full. persist_block={pb}"
             )
     finally:
@@ -313,8 +307,8 @@ def test_subagent_deficit_not_blocked_on_plain_text(
     multitask_path.write_text(
         json.dumps(
             {
-                "thisMessageDispatches": 3,
-                "minDispatches": 10,
+                "thisMessageDispatches": 1,
+                "minDispatches": 3,
                 "ts": now_ms,
             }
         )
@@ -325,7 +319,7 @@ def test_subagent_deficit_not_blocked_on_plain_text(
             hook_plugin_env,
             "Now dispatching more subagents to continue the work. "
             "The CI is green and the previous wave committed successfully.",
-            dispatch_count=3,
+            dispatch_count=1,
         )
         assert rc == 0, stderr
 
@@ -345,7 +339,7 @@ def test_subagent_deficit_not_blocked_on_plain_text(
 def test_under_floor_alone_makes_has_pending_work_true(
     hook_plugin_env: HookEnv,
 ):
-    """When underFloor is true (multitask state shows <10 dispatches) but no
+    """When a configured floor is unmet but no
     other work exists, hasRealPendingWork() should still report
     hasPendingWork=true — the under-dispatch itself IS pending work."""
     _clean_leaked_state_files()
@@ -355,14 +349,14 @@ def test_under_floor_alone_makes_has_pending_work_true(
     _seed_ci_cache("SUCCESS")
 
     # No TASKS.md — no file-based pending work
-    # But multitask state says underFloor (3 dispatches)
+    # But multitask state says underFloor (one of three dispatches).
 
     multitask_path = hook_plugin_env.state_path("GLUDD_MULTITASK_STATE_FILE")
     multitask_path.write_text(
         json.dumps(
             {
-                "thisMessageDispatches": 3,
-                "minDispatches": 10,
+                "thisMessageDispatches": 1,
+                "minDispatches": 3,
                 "ts": now_ms,
             }
         )
@@ -372,7 +366,7 @@ def test_under_floor_alone_makes_has_pending_work_true(
         _parsed, raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
             "All done. Everything is complete.",
-            dispatch_count=3,
+            dispatch_count=1,
         )
         assert rc == 0, stderr
 
@@ -399,7 +393,7 @@ def test_under_floor_alone_makes_has_pending_work_true(
 # ── (f) SUBAGENT_DEFICIT blocked before evidence check ──────────────────────
 
 
-def test_subagent_deficit_blocks_even_with_evidence_in_text(
+def test_subagent_deficit_defers_to_evidence_in_text(
     hook_plugin_env: HookEnv,
 ):
     """Subagent-deficit text with evidence (commit hash) is STILL blocked
@@ -417,8 +411,8 @@ def test_subagent_deficit_blocks_even_with_evidence_in_text(
     multitask_path.write_text(
         json.dumps(
             {
-                "thisMessageDispatches": 5,
-                "minDispatches": 10,
+                "thisMessageDispatches": 1,
+                "minDispatches": 3,
                 "ts": now_ms,
             }
         )
@@ -431,9 +425,9 @@ def test_subagent_deficit_blocks_even_with_evidence_in_text(
         # Verify that evidence DOES prevent the subagent-deficit block.
         _parsed, _raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
-            "Agent 1 fixed the parser a1b2c3d, Agent 2 added tests e4f5g6h. "
-            "42 tests passed. Continuing with remaining work.",
-            dispatch_count=5,
+            "Agent 1 fixed the parser a1b2c3d. 42 tests passed. "
+            "Continuing with remaining work.",
+            dispatch_count=1,
         )
         assert rc == 0, stderr
 

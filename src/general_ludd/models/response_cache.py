@@ -41,13 +41,17 @@ def _make_cache_key(
 
 
 class ModelResponseCache:
+    """Cache model responses in the strict MessagePack namespace."""
+
     def __init__(self, cache_dir: str | None = None) -> None:
+        """Open an owner-only response cache at cache_dir or the default path."""
         self._cache: SafeCache = open_safe_diskcache(
             cache_dir or DEFAULT_CACHE_DIR,
         )
         self._closed = False
 
     def __enter__(self) -> ModelResponseCache:
+        """Return this cache as an owned context-manager resource."""
         return self
 
     def __exit__(
@@ -56,9 +60,11 @@ class ModelResponseCache:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        """Close the owned cache when leaving its context."""
         self.close()
 
     def __del__(self) -> None:
+        """Best-effort close a cache whose deterministic owner was missed."""
         # A context manager is the deterministic ownership path.  Keep this
         # narrow fallback so a forgotten close cannot leave diskcache's SQLite
         # connection to emit an unraisable ResourceWarning during GC.
@@ -66,6 +72,7 @@ class ModelResponseCache:
             self.close()
 
     def get(self, cache_key: str) -> dict[str, object] | None:
+        """Return a cached response mapping, or None for misses/invalid values."""
         result: object = self._cache.get(cache_key)
         if isinstance(result, dict):
             return cast(dict[str, object], result)
@@ -78,15 +85,19 @@ class ModelResponseCache:
         *,
         expire: float | None = DEFAULT_CACHE_TTL_SECONDS,
     ) -> None:
+        """Store a response under cache_key with the requested expiration."""
         self._cache.set(cache_key, response, expire=expire)
 
     def invalidate(self, cache_key: str) -> None:
+        """Remove cache_key if it exists."""
         self._cache.delete(cache_key)
 
     def clear(self) -> None:
+        """Remove every response from this safe cache namespace."""
         self._cache.clear()
 
     def close(self) -> None:
+        """Close the owned cache exactly once."""
         if getattr(self, "_closed", True):
             return
         self._cache.close()

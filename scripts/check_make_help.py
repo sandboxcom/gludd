@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 TARGET_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]*):(?:\s|$)")
 HELP_TARGET_RE = re.compile(r'^\s*@echo\s+"  ([A-Za-z0-9][A-Za-z0-9_.-]*)\s+')
 INTERNAL_PREFIXES = ("_", ".")
@@ -38,7 +40,7 @@ def _repo_root() -> Path:
 
 def public_targets(makefile: Path) -> list[str]:
     targets: set[str] = set()
-    for line in makefile.read_text(encoding="utf-8").splitlines():
+    for line in compose_makefile(makefile).splitlines():
         match = TARGET_RE.match(line)
         if not match:
             continue
@@ -51,7 +53,7 @@ def public_targets(makefile: Path) -> list[str]:
 
 def help_targets_from_makefile(makefile: Path) -> set[str]:
     targets: set[str] = set()
-    for line in makefile.read_text(encoding="utf-8").splitlines():
+    for line in compose_makefile(makefile).splitlines():
         match = HELP_TARGET_RE.match(line)
         if match:
             targets.add(match.group(1))

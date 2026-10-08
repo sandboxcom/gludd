@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-check_green_branch_guard.py — pre-push guard for git-push-branch* targets.
+"""Protect immutable CI-green release branches before push.
 
 Policy: once a release branch's remote tip is CI-GREEN, no new commits may
 be pushed onto it.  Future work must go on a NEW branch cut via
@@ -29,15 +28,12 @@ def _run(cmd: list[str]) -> tuple[int, str, str]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         return result.returncode, result.stdout.strip(), result.stderr.strip()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return 2, "", str(exc)
 
 
 def _remote_tip(branch: str, remote: str = "sandboxcom") -> str | None:
-    """
-    Return the remote HEAD SHA for branch, or None if the branch does not exist
-    on the remote (new branch — no protection needed).
-    """
+    """Return the remote branch tip, or ``None`` for a new branch."""
     override = os.environ.get("GLUDD_GUARD_REMOTE_SHA_OVERRIDE")
     if override is not None:
         return override if override else None  # empty string -> no remote branch
@@ -52,10 +48,7 @@ def _remote_tip(branch: str, remote: str = "sandboxcom") -> str | None:
 
 
 def _ci_verdict(sha: str) -> str:
-    """
-    Return 'GREEN', 'RED', 'PENDING', or 'NONE' for the given commit SHA.
-    Reuses scripts/require_ci_green.py (exit 0=green, 1=red/missing, 2=pending).
-    """
+    """Return the stable hosted-CI verdict for one commit SHA."""
     override = os.environ.get("GLUDD_GUARD_CI_VERDICT_OVERRIDE")
     if override is not None:
         return override
@@ -63,7 +56,7 @@ def _ci_verdict(sha: str) -> str:
     # Locate require_ci_green.py relative to this script (scripts/)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     checker = os.path.join(script_dir, "require_ci_green.py")
-    rc, out, err = _run(["python3", checker, sha])
+    rc, _, _ = _run(["python3", checker, sha])
     if rc == 0:
         return "GREEN"
     if rc == 2:
@@ -81,10 +74,7 @@ def _local_head() -> str:
 
 
 def _commits_ahead(remote_sha: str, local_head: str) -> int:
-    """
-    Return the number of commits HEAD adds beyond remote_sha.
-    Returns 0 if HEAD == remote_sha (same tip), or if the count cannot be computed.
-    """
+    """Return commits added beyond the remote, or zero when inconclusive."""
     override = os.environ.get("GLUDD_GUARD_AHEAD_OVERRIDE")
     if override is not None:
         try:
@@ -107,6 +97,7 @@ def _commits_ahead(remote_sha: str, local_head: str) -> int:
 
 
 def main(argv: list[str]) -> int:
+    """Validate one branch push against the immutable-green policy."""
     branch: str | None = None
     i = 1
     while i < len(argv):
@@ -154,7 +145,7 @@ def main(argv: list[str]) -> int:
         f"Policy: a CI-green release branch is frozen.  New work goes on a NEW branch:\n"
         f"\n"
         f"  make release-branch-new NAME=release/<new-version>   # cut from the green base\n"
-        f"  make release-promote TAG=<tag>                        # tag + ff-merge to master\n"
+        f"  make release-promote TAG=<tag>                        # tag + ff-only merge to master\n"
         f"\n"
         f"To fix-forward on THIS branch (e.g. a CI regression that went red AFTER the green\n"
         f"run), push only when the remote tip is no longer CI-GREEN (the branch is not frozen).\n",

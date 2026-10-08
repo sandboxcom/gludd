@@ -43,12 +43,16 @@ def _invoke_get(transport: object, url: str, **kwargs: object) -> HttpResponse:
     else:
         raise TypeError("transport must expose get or be callable")
     if isinstance(result, tuple) and len(result) == 2:
+
         class _TupleResponse:
             status_code = int(result[0]) if isinstance(result[0], int) else 0
+
             def json(self) -> object:
                 return result[1]
+
         return cast(HttpResponse, _TupleResponse())
     return cast(HttpResponse, result)
+
 
 DEFAULT_BASE_URL = "https://api.pagerduty.com"
 DEFAULT_TIMEOUT = 15.0
@@ -122,6 +126,8 @@ class PagerDutyQuerySpec(TypedDict, total=False):
 
 @runtime_checkable
 class HttpTransport(Protocol):
+    """Minimal injectable transport returning an ``HttpResponse``."""
+
     def get(
         self,
         url: str,
@@ -129,7 +135,9 @@ class HttpTransport(Protocol):
         headers: dict[str, str] | None = ...,
         params: Mapping[str, object] | None = ...,
         timeout: float | None = ...,
-    ) -> HttpResponse: ...
+    ) -> HttpResponse:
+        """Fetch ``url`` and return an ``HttpResponse``."""
+        ...
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -174,12 +182,21 @@ class _TupleTransport:
         params: Mapping[str, object] | None = None,
         timeout: float | None = None,
     ) -> HttpResponse:
-        result = self._fn(url, headers or {})
+        result = self._fn(
+            "GET",
+            url,
+            headers=headers or {},
+            params=params,
+            timeout=timeout,
+        )
         status, payload = result if isinstance(result, tuple) and len(result) == 2 else (0, {})
+
         class Response:
             status_code = int(status)
+
             def json(self_nonlocal) -> object:
                 return payload
+
         return cast(HttpResponse, Response())
 
 
@@ -194,15 +211,15 @@ class PagerDutySource:
         *,
         transport: HttpTransport | None = None,
     ) -> None:
+        """Build the source from connector config and select the transport."""
         self.config = dict(config)
         self.name = str(self.config.get("name", "pagerduty"))
-        self.base_url = _validate_base_url(
-            str(self.config.get("base_url", DEFAULT_BASE_URL))
-        )
+        self.base_url = _validate_base_url(str(self.config.get("base_url", DEFAULT_BASE_URL)))
         self.token_env = str(self.config.get("token_env", "PAGERDUTY_TOKEN"))
         self.timeout = float(cast(float | int | str | bool, self.config.get("timeout", DEFAULT_TIMEOUT)))
         self._transport: HttpTransport = (
-            _TupleTransport(transport) if callable(transport) and not hasattr(transport, "get")
+            _TupleTransport(transport)
+            if callable(transport) and not hasattr(transport, "get")
             else transport or _DefaultTransport()
         )
 
@@ -211,10 +228,7 @@ class PagerDutySource:
     def _token(self) -> str:
         token = os.environ.get(self.token_env)
         if not token:
-            raise RuntimeError(
-                f"PagerDuty token not found in environment variable "
-                f"{self.token_env!r}"
-            )
+            raise RuntimeError(f"PagerDuty token not found in environment variable {self.token_env!r}")
         return token
 
     def _headers(self) -> dict[str, str]:
@@ -226,6 +240,7 @@ class PagerDutySource:
     # -- public API -------------------------------------------------------
 
     def query(self, spec: PagerDutyQuerySpec | None = None) -> list[dict[str, object]]:
+        """Return normalized incidents from ``/incidents``."""
         spec = spec or {}
         params: dict[str, object] = {}
         since = spec.get("since")
@@ -249,22 +264,17 @@ class PagerDutySource:
             timeout=self.timeout,
         )
         if resp.status_code >= 400:
-            raise RuntimeError(
-                f"PagerDuty /incidents returned status {resp.status_code}"
-            )
+            raise RuntimeError(f"PagerDuty /incidents returned status {resp.status_code}")
         payload = resp.json() or {}
         incidents: list[object] = []
         if isinstance(payload, Mapping):
             raw_incidents = payload.get("incidents")
             if isinstance(raw_incidents, list):
                 incidents = raw_incidents
-        return [
-            self._normalize(cast("Mapping[str, object]", inc))
-            for inc in incidents
-            if isinstance(inc, Mapping)
-        ]
+        return [self._normalize(cast("Mapping[str, object]", inc)) for inc in incidents if isinstance(inc, Mapping)]
 
     def fetch_log_entries(self, incident_id: str) -> list[Mapping[str, object]]:
+        """Fetch raw log entries for one incident."""
         resp = _invoke_get(
             self._transport,
             url=f"{self.base_url}/incidents/{incident_id}/log_entries",
@@ -273,9 +283,7 @@ class PagerDutySource:
             timeout=self.timeout,
         )
         if resp.status_code >= 400:
-            raise RuntimeError(
-                f"PagerDuty log_entries returned status {resp.status_code}"
-            )
+            raise RuntimeError(f"PagerDuty log_entries returned status {resp.status_code}")
         payload = resp.json() or {}
         if isinstance(payload, Mapping):
             entries = payload.get("log_entries")
@@ -284,6 +292,7 @@ class PagerDutySource:
         return []
 
     def health(self) -> dict[str, object]:
+        """Probe the source. Never raises."""
         try:
             resp = _invoke_get(
                 self._transport,
@@ -312,9 +321,7 @@ class PagerDutySource:
         service_obj = inc.get("service") or {}
         service: Mapping[str, object] = service_obj if isinstance(service_obj, Mapping) else {}
         escalation_obj = inc.get("escalation_policy") or {}
-        escalation: Mapping[str, object] = (
-            escalation_obj if isinstance(escalation_obj, Mapping) else {}
-        )
+        escalation: Mapping[str, object] = escalation_obj if isinstance(escalation_obj, Mapping) else {}
         assignments_obj = inc.get("assignments") or []
         assignments: list[object] = assignments_obj if isinstance(assignments_obj, list) else []
         assignees: list[str] = []

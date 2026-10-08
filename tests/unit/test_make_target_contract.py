@@ -10,6 +10,7 @@ from scripts.check_make_target_contract import (
     load_contract,
     validate_contract,
 )
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -20,31 +21,25 @@ def test_make_target_contract_is_valid() -> None:
     assert errors == [], "\n".join(errors)
 
 
-def test_sync_llama_cpp_uses_locked_extra_and_dry_run_contract() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+def test_sync_llama_cpp_uses_locked_profile_and_dry_run_contract() -> None:
+    makefile = compose_makefile(ROOT / "Makefile")
     target = makefile.split("\nsync-llama-cpp:", 1)[1].split("\n\n", 1)[0]
 
     assert "0.1.0-beta" not in target
-    assert "sync --locked --extra local-inference" in target
+    assert "sync" in target
+    assert "DEPENDENCY_PROFILE_SET=local-inference" in target
+    assert "DEPENDENCY_PROFILE_VALIDATE_ONLY=$(SYNC_LLAMA_CPP_VALIDATE_ONLY)" in target
     assert "SYNC_LLAMA_CPP_VALIDATE_ONLY" in target
 
     contract = load_contract(ROOT / "config/make_target_contract.json")
-    entry = next(
-        item for item in contract["targets"]
-        if item["name"] == "sync-llama-cpp"
-    )
+    entry = next(item for item in contract["targets"] if item["name"] == "sync-llama-cpp")
     assert entry["make_variables"] == ["SYNC_LLAMA_CPP_VALIDATE_ONLY"]
-    assert entry["behavior"] == (
-        "make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1"
-    )
+    assert entry["behavior"] == ("make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1")
 
 
 def test_typecheck_scope_keeps_errors_but_drops_global_unused_override_noise() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    command = next(
-        line for line in makefile.splitlines()
-        if "run mypy" in line and "$(FILES)" in line
-    )
+    makefile = compose_makefile(ROOT / "Makefile")
+    command = next(line for line in makefile.splitlines() if "run mypy" in line and "$(FILES)" in line)
 
     assert "--no-warn-unused-configs" in command
     assert "--no-incremental" in command
@@ -52,10 +47,7 @@ def test_typecheck_scope_keeps_errors_but_drops_global_unused_override_noise() -
     assert "|| true" not in command
 
     contract = load_contract(ROOT / "config/make_target_contract.json")
-    entry = next(
-        item for item in contract["targets"]
-        if item["name"] == "typecheck-scope"
-    )
+    entry = next(item for item in contract["targets"] if item["name"] == "typecheck-scope")
     assert entry["make_variables"] == ["FILES"]
     assert entry["behavior"] == "make typecheck-scope FILES=scripts/status_snapshot.py"
 
@@ -90,7 +82,7 @@ def test_azure_and_runpod_wrappers_use_declared_variables() -> None:
 
 
 def test_development_conflict_recovery_is_tracked_and_dry_runnable() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert "resolve-development-conflicts:" in makefile
     assert 'APPLY="$(APPLY)"' in makefile
     assert 'MERGE_SOURCE="$(MERGE_SOURCE)"' in makefile
@@ -108,12 +100,25 @@ def test_development_conflict_recovery_is_tracked_and_dry_runnable() -> None:
         text=True,
         timeout=60,
     )
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    ).stdout.strip()
+    if branch != "development":
+        # CI shards check out detached HEADs; the target must REFUSE there.
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert "Refusing conflict resolution on branch" in result.stdout
+        assert "expected development" in result.stdout
+        return
     assert result.returncode == 0, result.stdout + result.stderr
     assert "DRY RUN" in result.stdout
 
 
 def test_patch_equivalence_target_uses_git_cherry() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert "git-patch-equivalence:" in makefile
     assert 'PATCH_UPSTREAM="$(PATCH_UPSTREAM)"' in makefile
     assert 'PATCH_HEAD="$(PATCH_HEAD)"' in makefile

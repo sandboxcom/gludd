@@ -9,7 +9,7 @@ Configuration guide for model profiles, routing, and versioning in General Ludd.
 ## Quick Reference
 
 ### Profile File Location
-```
+```text
 config/model_profiles/
   ├── strong_coder.yml
   ├── cheap_coder.yml
@@ -17,7 +17,7 @@ config/model_profiles/
 ```
 
 ### Routing File Location
-```
+```text
 config/model_routing.yml
 ```
 

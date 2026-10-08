@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-commit-lock.ts"
@@ -126,7 +127,7 @@ class TestCommitTargetsList:
 class TestDenyOnHeld:
     """Simulate the deny path: lock file exists, not stale → DENY."""
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture
     def targets(self) -> list[str]:
         return _extract_commit_targets(_helper_source())
 
@@ -238,41 +239,86 @@ class TestStaleBreak:
 class TestMakefileLockTarget:
     def test_commit_lock_acquire_target_exists(self):
         assert MAKEFILE_PATH.exists()
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         assert "_commit-lock-acquire" in makefile, (
             "_commit-lock-acquire target missing from Makefile"
         )
 
     @pytest.mark.parametrize("target", EXPECTED_COMMIT_TARGETS)
     def test_commit_target_has_lock_prereq(self, target):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         pattern = rf"^{target}:\s+.*_commit-lock-acquire"
         assert re.search(pattern, makefile, re.MULTILINE), (
             f"Target '{target}' missing _commit-lock-acquire prerequisite"
         )
 
     def test_ship_commit_files_target_exists(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         assert "ship-commit-files" in makefile, (
             "ship-commit-files target missing from Makefile"
         )
 
     def test_ship_commit_files_has_lock_prereq(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         pattern = r"^ship-commit-files:\s+_commit-lock-acquire"
         assert re.search(pattern, makefile, re.MULTILINE), (
             "ship-commit-files missing _commit-lock-acquire prereq"
         )
 
+    def test_ship_commit_files_enforces_exact_staged_scope(self):
+        makefile = compose_makefile(MAKEFILE_PATH)
+        wrapper = re.search(
+            r"^ship-commit-files:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            makefile,
+            re.MULTILINE | re.DOTALL,
+        )
+        ship = re.search(
+            r"^ship-commit:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            makefile,
+            re.MULTILINE | re.DOTALL,
+        )
+        assert wrapper and ship
+        assert "SHIP_COMMIT_EXPECTED_FILES='$(FILES)'" in wrapper.group(1)
+        recipe = ship.group(1)
+        scope_check = recipe.find("git diff --cached --name-only")
+        snapshot = recipe.find("STAGED_TREE=$$(git write-tree)")
+        assert -1 not in (scope_check, snapshot)
+        assert scope_check < snapshot
+        assert "staged files differ from requested commit scope" in recipe
+
     def test_commit_lock_acquire_uses_flock_or_fcntl(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         target_block = re.search(
-            r"_commit-lock-acquire:\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            r"_commit-lock-acquire:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
             makefile,
             re.DOTALL,
         )
         assert target_block, "_commit-lock-acquire recipe block not found"
+        declaration = makefile[target_block.start() : target_block.start(1)]
+        assert "_gate-mutation-guard" in declaration, (
+            "_commit-lock-acquire must preserve the active-gate history guard"
+        )
         recipe = target_block.group(1)
         assert "flock" in recipe or "fcntl" in recipe, (
             "_commit-lock-acquire must use flock or fcntl fallback"
         )
+
+    def test_ship_commit_rejects_index_drift_after_collection(self):
+        """A concurrent stage during collection must never enter the commit."""
+        makefile = compose_makefile(MAKEFILE_PATH)
+        target = re.search(
+            r"^ship-commit:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            makefile,
+            re.MULTILINE | re.DOTALL,
+        )
+        assert target, "ship-commit recipe block not found"
+        recipe = target.group(1)
+        snapshot = recipe.find("STAGED_TREE=$$(git write-tree)")
+        collection = recipe.find("collect-check")
+        verification = recipe.find("CURRENT_TREE=$$(git write-tree)")
+        commit = recipe.find("git commit")
+        assert -1 not in (snapshot, collection, verification, commit), (
+            "ship-commit must snapshot and revalidate the exact staged tree"
+        )
+        assert snapshot < collection < verification < commit
+        assert "staged index changed during preflight" in recipe

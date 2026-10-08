@@ -23,7 +23,11 @@ Coverage map (CID item -> test class):
 """
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
+
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-no-ci-poll.ts"
@@ -50,7 +54,7 @@ def _cooldown_src() -> str:
 
 
 def _makefile() -> str:
-    return MAKEFILE.read_text(encoding="utf-8")
+    return compose_makefile(MAKEFILE)
 
 
 def _target_recipe(makefile: str, target: str) -> str:
@@ -270,6 +274,52 @@ class TestDeployAndForget:
         assert "ci_check_cooldown.py deploy" in recipe, (
             "deploy-and-forget must record push timestamp via cooldown script (CID.3)"
         )
+
+    def test_invokes_one_push_path_without_threshold_retry(self) -> None:
+        """A rejected push must not fall through to a second guarded push."""
+        recipe = _target_recipe(_makefile(), "deploy-and-forget")
+        assert "COMMIT_THRESHOLD=1" not in recipe, (
+            "deploy-and-forget must not invoke the forbidden one-commit threshold"
+        )
+        assert "batch-push" not in recipe, (
+            "deploy-and-forget must select one direct guarded push target, not retry"
+        )
+        assert recipe.count("git-push-sandboxcom") == 1
+        assert recipe.count("push-dev") == 1
+
+    def test_validate_only_exercises_routing_without_network_or_push(self, tmp_path: Path) -> None:
+        state_file = tmp_path / "cooldown.json"
+        history_file = tmp_path / "history.json"
+        restart_file = tmp_path / "restart-count"
+        env = os.environ.copy()
+        env.update(
+            {
+                "GLUDD_CI_STATE_FILE": str(state_file),
+                "GLUDD_CI_HISTORY_FILE": str(history_file),
+                "GLUDD_CI_RESTART_COUNT_FILE": str(restart_file),
+            }
+        )
+        result = subprocess.run(
+            [
+                "make",
+                "deploy-and-forget",
+                "BRANCH=feature/hermetic-ci",
+                "DEPLOY_AND_FORGET_VALIDATE_ONLY=1",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "DEPLOY-AND-FORGET-VALID" in result.stdout
+        assert "route=current-branch" in result.stdout
+        assert "no network, push, or state mutation" in result.stdout
+        assert not state_file.exists()
+        assert not history_file.exists()
+        assert not restart_file.exists()
 
     def test_prints_checkback_time(self):
         src = _cooldown_src()

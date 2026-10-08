@@ -6,6 +6,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from general_ludd.connectors.searx import SearXConnector, SearXResult
 from general_ludd.infra.service_catalog import (
@@ -14,6 +15,7 @@ from general_ludd.infra.service_catalog import (
     ServiceCatalog,
     diff_catalog,
 )
+from general_ludd.security.sandboxes.state import safe_state_component
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,8 @@ class ServiceDiscoveryPipeline:
         searx_url: str,
         catalog_path: str = DEFAULT_CATALOG_PATH,
         search_terms: Sequence[str | tuple[str, str]] | None = None,
+        *,
+        project_namespace: str | None = None,
     ) -> None:
         """Initialize a validated discovery pipeline.
 
@@ -55,21 +59,46 @@ class ServiceDiscoveryPipeline:
             catalog_path: Path to the catalog reconciled by a later run.
             search_terms: Legacy query strings or labeled ``(identifier, query)``
                 pairs. ``None`` and empty sequences select the built-in defaults.
+            project_namespace: Optional concurrent-project boundary. When set,
+                the catalog filename is placed beneath a safe namespace
+                directory adjacent to ``catalog_path``.
 
         Raises:
             TypeError: If a search-term entry has an unsupported shape or type.
-            ValueError: If a search-term tuple has the wrong arity or blank text.
+            ValueError: If a search-term tuple has the wrong arity, text is
+                blank, or ``project_namespace`` is blank.
         """
-        selected_terms: Sequence[object] = search_terms or DEFAULT_SEARCH_TERMS
+        selected_terms: Sequence[object] = (
+            DEFAULT_SEARCH_TERMS if search_terms is None else search_terms
+        )
         normalized_terms = _normalize_search_terms(selected_terms)
+        if not normalized_terms:
+            normalized_terms = _normalize_search_terms(DEFAULT_SEARCH_TERMS)
+        resolved_catalog_path = _namespace_catalog_path(
+            catalog_path,
+            project_namespace,
+        )
         self._searx = SearXConnector({
             "base_url": searx_url,
             # The bundled managed SearX service binds to loopback; this is an
             # explicit local-service opt-in, while external URLs remain guarded.
             "allow_private": searx_url.startswith("http://localhost"),
         })
-        self._catalog = ServiceCatalog(path=catalog_path)
+        self._catalog = ServiceCatalog(path=resolved_catalog_path)
         self._search_terms = normalized_terms
+
+    def _search_configured_terms(self) -> tuple[list[SearXResult], list[str]]:
+        """Search every configured term while isolating individual failures."""
+        results: list[SearXResult] = []
+        errors: list[str] = []
+        for term in self._search_terms:
+            try:
+                results.extend(self._searx.search(term))
+            except Exception as exc:
+                msg = f"SearX search failed for term {term!r}: {exc}"
+                logger.warning(msg, exc_info=True)
+                errors.append(msg)
+        return results, errors
 
     def run_discovery_pipeline(self) -> DiscoveryReport:
         """Search configured queries and reconcile all successful results.
@@ -78,20 +107,14 @@ class ServiceDiscoveryPipeline:
             A report of catalog changes and isolated query/serialization errors.
         """
         report = DiscoveryReport()
-        errors: list[str] = []
+        results, errors = self._search_configured_terms()
 
-        results: list[SearXResult] = []
-        for term in self._search_terms:
-            try:
-                batch = self._searx.search(term)
-                results.extend(batch)
-            except Exception as exc:
-                msg = f"SearX search failed for term {term!r}: {exc}"
-                logger.warning(msg, exc_info=True)
-                errors.append(msg)
-
-        if not results and errors:
+        # An empty search snapshot is not proof that every known service has
+        # disappeared.  Treat it as an inconclusive run so a transient SearX
+        # outage or a temporarily empty result page cannot retire the catalog.
+        if not results:
             report.errors = errors
+            report.total_discovered = len(self._catalog.services)
             return report
 
         snapshot = ServiceCatalog()
@@ -195,6 +218,9 @@ def _extract_service_name(result: SearXResult) -> str | None:
 
 def _normalize_search_terms(search_terms: Sequence[object]) -> list[str]:
     """Validate labeled/default and legacy plain-string search terms."""
+    if isinstance(search_terms, (str, bytes)):
+        raise TypeError("search_terms must be a sequence of entries, not a scalar string")
+
     normalized: list[str] = []
     for index, entry in enumerate(search_terms):
         if isinstance(entry, str):
@@ -220,3 +246,14 @@ def _normalize_search_terms(search_terms: Sequence[object]) -> list[str]:
         normalized.append(query)
 
     return normalized
+
+
+def _namespace_catalog_path(catalog_path: str, project_namespace: str | None) -> str:
+    """Return a catalog path confined to one optional project namespace."""
+    if project_namespace is None:
+        return catalog_path
+    if not project_namespace.strip():
+        raise ValueError("project_namespace must not be blank")
+    path = Path(catalog_path)
+    namespace = safe_state_component(project_namespace)
+    return str(path.parent / namespace / path.name)

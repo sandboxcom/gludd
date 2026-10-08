@@ -193,7 +193,7 @@ The `entity_research` role follows a structured pipeline:
 
 ### 2.1 Entity Discovery
 
-```
+```text
 SearX metasearch (entity_name + aliases)
     |
     v
@@ -220,7 +220,7 @@ Canonical entity record (legal name, reg number, jurisdiction, status)
 
 ### 2.2 Association Mapping
 
-```
+```text
 Board members (Crunchbase, EDGAR DEF 14A, Companies House officers)
     |
     v
@@ -247,7 +247,7 @@ personal, contractual, or competitive. Traversal is bounded by
 
 ### 2.3 Asset Discovery
 
-```
+```text
 Domains (WHOIS/RDAP, crt.sh, Shodan DNS)
     |
     v

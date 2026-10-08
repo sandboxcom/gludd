@@ -2,8 +2,8 @@
 
 Verifies: additive task violation (all new-task with >=2 unchecked),
 continuation slot passes (task ID reference present),
-subagent guard, env disable, soft mode, exact 10/10 ratio violation,
-wave reset after 10 dispatches.
+subagent guard, env disable, soft mode, clean-project allowance,
+and wave reset after the canonical three dispatches.
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ def _make_clean_workspace(path: Path) -> None:
 
 
 def test_all_new_task_with_unchecked_denied(tmp_path):
-    """2 dispatches, both new-task (no task ID), >=2 unchecked → ADDITIVE TASK VIOLATION."""
+    """Three new-task dispatches with pending work trigger a violation."""
     ws = tmp_path / "all-new"
     ws.mkdir()
     _make_unchecked_workspace(ws)
@@ -107,6 +107,8 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Add a new enforcement plugin for guardrails'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Document a separate future feature'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test for coverage'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -120,7 +122,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 def test_continuation_slot_passes(tmp_path):
-    """1 continuation (has task ID) + 1 new-task with >=2 unchecked → passes."""
+    """One continuation in a complete three-slot wave permits the wave."""
     ws = tmp_path / "continuation"
     ws.mkdir()
     _make_unchecked_workspace(ws)
@@ -130,6 +132,8 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Continue work on SEC.1 - fix guardrail enforcement plugin'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new documentation example'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test for coverage'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -139,36 +143,33 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert r is None or r.get("permissionDecision") != "deny", f"Continuation slot with task ID should pass, got: {r}"
 
 
-# ─── Exact 10/10 ratio violation ────────────────────────────────────────────
+# ─── Clean-project allowance ─────────────────────────────────────────────────
 
 
-def test_ten_out_of_ten_new_task_ratio_violation(tmp_path):
-    """10 dispatches, all new-task, with 0 unchecked items (so Rule 1 doesn't
-    fire first) → ADDITIVE TASK RATIO VIOLATION. Rule 1 requires >=2 unchecked
-    but Rule 2's ratio check fires regardless when all 10 are new-task."""
-    ws = tmp_path / "ten-new-ratio"
+def test_three_new_tasks_allowed_when_no_unchecked_items(tmp_path):
+    """A complete new-task wave is valid when no existing work is pending."""
+    ws = tmp_path / "three-new-clean"
     ws.mkdir()
     _make_clean_workspace(ws)
 
     dispatches = "\n".join(
         f"await plugin['tool.execute.before']("
         f"{{tool: 'task', args: {{prompt: 'New task description {i}'}}}}, undefined)"
-        for i in range(9)
+        for i in range(2)
     )
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 {dispatches}
 const r = await plugin['tool.execute.before'](
-  {{tool: 'task', args: {{prompt: 'New task description 9'}}}}, undefined)
+  {{tool: 'task', args: {{prompt: 'New task description 2'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws))
     r = _last_json(result)
-    assert r is not None and r.get("permissionDecision") == "deny", (
-        f"10/10 new-task dispatches should trigger ratio violation, got: {r}"
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"A clean project should allow a complete all-new wave, got: {r}"
     )
-    assert "ADDITIVE TASK RATIO VIOLATION" in r.get("message", "")
 
 
 # ─── Subagent guard ─────────────────────────────────────────────────────────
@@ -185,6 +186,8 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Add a new enforcement plugin'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new operator guide'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -210,6 +213,8 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Add a new enforcement plugin'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new operator guide'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -233,6 +238,8 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Add a new enforcement plugin'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new operator guide'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -256,6 +263,8 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Add a new enforcement plugin'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new operator guide'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -301,8 +310,10 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Continue work on D-13: fix the database migration'}}}}, undefined)
-const r = await plugin['tool.execute.before'](
+await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Fix FIX-5: resolve the config loading bug'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new operator guide'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws))
@@ -323,8 +334,10 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'SEC.1: audit the enforcement plugin codebase'}}}}, undefined)
-const r = await plugin['tool.execute.before'](
+await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test for coverage'}}}}, undefined)
+const r = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new operator guide'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws))
@@ -345,6 +358,8 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Add a new enforcement plugin'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new operator guide'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -368,6 +383,8 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Add a new enforcement plugin'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new operator guide'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -378,33 +395,35 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert "3 items unchecked" in msg, f"Deny message must include unchecked count (3), got: {msg}"
 
 
-# ─── Wave reset after 10 dispatches ─────────────────────────────────────────
+# ─── Wave reset after three dispatches ──────────────────────────────────────
 
 
-def test_wave_resets_after_ten_dispatches(tmp_path):
-    """After 10 dispatches, wave array resets to empty. The 11th dispatch
-    (new-task, no continuation) starts a fresh wave. Rule 1 fires because
-    cCount=0 and unchecked>=2."""
+def test_wave_resets_after_three_dispatches(tmp_path):
+    """A completed continuation wave does not leak into the next wave."""
     ws = tmp_path / "wave-reset"
     ws.mkdir()
     _make_unchecked_workspace(ws)
 
     dispatches = "\n".join(
         f"await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'Continue SEC.1 task {i}'}}}}, undefined)"
-        for i in range(10)
+        for i in range(3)
     )
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 {dispatches}
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add new feature implementation A'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add new feature implementation B'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
-  {{tool: 'task', args: {{prompt: 'Add new feature implementation'}}}}, undefined)
+  {{tool: 'task', args: {{prompt: 'Add new feature implementation C'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws))
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", (
-        f"After wave reset, new-task with unchecked should trigger Rule 1, got: {r}"
+        f"After reset, a complete all-new wave with pending work must be denied, got: {r}"
     )
     assert "ADDITIVE TASK VIOLATION" in r.get("message", "")
 
@@ -423,6 +442,8 @@ const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Add a new enforcement plugin'}}}}, undefined)
+await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: 'Add a new operator guide'}}}}, undefined)
 const r = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Write a new test'}}}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))

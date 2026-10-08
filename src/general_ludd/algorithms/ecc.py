@@ -40,6 +40,7 @@ class ECCurve:
 
     @property
     def identity(self) -> ECPoint:
+        """Execute ``identity``."""
         return ECPoint(None, None, self)
 
 
@@ -52,14 +53,23 @@ class ECPoint:
     curve: ECCurve
 
     def __post_init__(self) -> None:
+        """Validate the initialized instance."""
         if (self.x is None) != (self.y is None):
             raise ECCError("point must have both x and y, or neither (identity)")
 
     @property
     def is_identity(self) -> bool:
+        """Return whether is identity."""
         return self.x is None
 
+    def _coordinates(self) -> tuple[int, int]:
+        """Return finite coordinates, rejecting the identity point."""
+        if self.x is None or self.y is None:
+            raise ECCError("identity point has no finite coordinates")
+        return self.x, self.y
+
     def __eq__(self, other: object) -> bool:
+        """Compare this instance with another value."""
         if not isinstance(other, ECPoint):
             return NotImplemented
         if self.curve.p != other.curve.p:
@@ -73,16 +83,16 @@ class ECPoint:
         )
 
     def __neg__(self) -> ECPoint:
+        """Return the negated value."""
         if self.is_identity:
             return self
-        y: int = self.y  # type: ignore[assignment]
-        return ECPoint(self.x, (-y) % self.curve.p, self.curve)
+        x, y = self._coordinates()
+        return ECPoint(x, (-y) % self.curve.p, self.curve)
 
     def _double(self) -> ECPoint:
         if self.is_identity:
             return self
-        x: int = self.x  # type: ignore[assignment]
-        y: int = self.y  # type: ignore[assignment]
+        x, y = self._coordinates()
         p = self.curve.p
         lam = (3 * x * x + self.curve.a) * pow(2 * y, -1, p) % p
         x3 = (lam * lam - 2 * x) % p
@@ -94,10 +104,8 @@ class ECPoint:
             return other
         if other.is_identity:
             return self
-        sx: int = self.x  # type: ignore[assignment]
-        sy: int = self.y  # type: ignore[assignment]
-        ox: int = other.x  # type: ignore[assignment]
-        oy: int = other.y  # type: ignore[assignment]
+        sx, sy = self._coordinates()
+        ox, oy = other._coordinates()
         if sx == ox:
             if (sy + oy) % self.curve.p == 0:
                 return self.curve.identity
@@ -109,6 +117,7 @@ class ECPoint:
         return ECPoint(x3, y3, self.curve)
 
     def __add__(self, other: object) -> ECPoint:
+        """Add another value."""
         if not isinstance(other, ECPoint):
             return NotImplemented
         if self.curve.p != other.curve.p:
@@ -116,11 +125,13 @@ class ECPoint:
         return self._add(other)
 
     def __rmul__(self, scalar: object) -> ECPoint:
+        """Multiply by another value."""
         if not isinstance(scalar, int):
             return NotImplemented
         return self * scalar
 
     def __mul__(self, scalar: int) -> ECPoint:
+        """Multiply by another value."""
         if scalar == 0:
             return self.curve.identity
         if scalar < 0:
@@ -136,10 +147,12 @@ class ECPoint:
         return result
 
     def on_curve(self) -> bool:
+        """Execute ``on_curve``."""
         if self.is_identity:
             return True
         p = self.curve.p
-        lhs = (self.y * self.y - self.x * self.x * self.x - self.curve.a * self.x - self.curve.b) % p  # type: ignore[operator]
+        x, y = self._coordinates()
+        lhs = (y * y - x * x * x - self.curve.a * x - self.curve.b) % p
         return lhs == 0
 
 
@@ -208,6 +221,7 @@ def _hash_alg_for_msg(msg_hash: bytes) -> _hashes.HashAlgorithm:
 
 
 def generate_keypair(curve: ECCurve | None = None) -> ECKeyPair:
+    """Generate keypair."""
     if curve is None:
         curve = SECP256K1
 
@@ -226,6 +240,7 @@ def generate_keypair(curve: ECCurve | None = None) -> ECKeyPair:
 
 
 def ecdh_shared_secret(private: int, public: ECPoint) -> bytes:
+    """Execute ``ecdh_shared_secret``."""
     if _is_secp256k1(public.curve):
         priv_key = _private_key_from_int(private, public.curve)
         pub_key = _public_key_from_point(public)
@@ -234,10 +249,12 @@ def ecdh_shared_secret(private: int, public: ECPoint) -> bytes:
     S = public * private
     if S.is_identity:
         raise ECCError("shared secret is identity point")
-    return S.x.to_bytes((S.x.bit_length() + 7) // 8, "big")  # type: ignore[union-attr]
+    x, _ = S._coordinates()
+    return x.to_bytes((x.bit_length() + 7) // 8, "big")
 
 
 def ecdsa_sign(msg_hash: bytes, private: int, curve: ECCurve | None = None) -> tuple[int, int]:
+    """Execute ``ecdsa_sign``."""
     if curve is None:
         curve = SECP256K1
 
@@ -252,6 +269,7 @@ def ecdsa_sign(msg_hash: bytes, private: int, curve: ECCurve | None = None) -> t
 
 
 def ecdsa_verify(msg_hash: bytes, signature: tuple[int, int], public: ECPoint) -> bool:
+    """Execute ``ecdsa_verify``."""
     r, s = signature
     curve = public.curve
     n = curve.n
@@ -275,7 +293,12 @@ def ecdsa_verify(msg_hash: bytes, signature: tuple[int, int], public: ECPoint) -
 # ── Fallback implementations for non-secp256k1 curves ──────────────────
 
 
-def _nonce_rfc6979(msg_hash: bytes, private: int, curve: ECCurve) -> int:
+def _nonce_rfc6979(
+    msg_hash: bytes,
+    private: int,
+    curve: ECCurve,
+    candidate_index: int = 0,
+) -> int:
     n = curve.n
     qlen = n.bit_length()
     holen = 32
@@ -287,14 +310,20 @@ def _nonce_rfc6979(msg_hash: bytes, private: int, curve: ECCurve) -> int:
     v = _hmac.new(k, v, _hashlib.sha256).digest()
     k = _hmac.new(k, v + b"\x01" + bx, _hashlib.sha256).digest()
     v = _hmac.new(k, v, _hashlib.sha256).digest()
+    valid_candidates = 0
     while True:
         t = b""
         while len(t) < rolen:
             v = _hmac.new(k, v, _hashlib.sha256).digest()
             t += v
         k_candidate = int.from_bytes(t[:rolen], "big")
+        excess_bits = rolen * 8 - qlen
+        if excess_bits > 0:
+            k_candidate >>= excess_bits
         if 1 <= k_candidate < n:
-            return k_candidate
+            if valid_candidates == candidate_index:
+                return k_candidate
+            valid_candidates += 1
         k = _hmac.new(k, v + b"\x00", _hashlib.sha256).digest()
         v = _hmac.new(k, v, _hashlib.sha256).digest()
 
@@ -303,8 +332,10 @@ def _ecdsa_sign_fallback(msg_hash: bytes, private: int, curve: ECCurve) -> tuple
     n = curve.n
     G = ECPoint(curve.Gx, curve.Gy, curve)
     z = int.from_bytes(msg_hash, "big") % n
+    candidate_index = 0
     while True:
-        k = _nonce_rfc6979(msg_hash, private, curve)
+        k = _nonce_rfc6979(msg_hash, private, curve, candidate_index)
+        candidate_index += 1
         R = G * k
         assert R.x is not None
         r = R.x % n

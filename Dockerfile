@@ -5,12 +5,12 @@
 #
 #   docker build --build-arg VERSION=0.1.0-alpha.5 \
 #       -t ghcr.io/<owner>/general-ludd-agent:0.1.0-alpha.5 .
-#   docker run --rm -p 8000:8000 -e GLUDD_PSK=<secret> \
+#   docker run --rm -p 8000:8000 -e GLUDD_AUTH_PSK=<secret> \
 #       -v gludd-data:/var/lib/general-ludd \
 #       ghcr.io/<owner>/general-ludd-agent:0.1.0-alpha.5
 #
 # The daemon binds 0.0.0.0 inside the container; because that is an external
-# interface, it fail-closes (HTTP 503 on protected paths) UNLESS GLUDD_PSK is
+# interface, it fail-closes (HTTP 503 on protected paths) UNLESS GLUDD_AUTH_PSK is
 # supplied at runtime. For throwaway/dev only, pass GLUDD_ALLOW_NO_AUTH=1.
 
 ARG PYTHON_VERSION=3.12
@@ -19,6 +19,8 @@ ARG PYTHON_VERSION=3.12
 # Stage 1 — builder (uv)   #
 ############################
 FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS builder
+
+ARG PYTHON_VERSION
 
 # Reproducible, hermetic uv install into a self-contained venv at /app/.venv.
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
@@ -36,27 +38,33 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# 1) Resolve and install ONLY third-party dependencies first (cached layer).
-# --frozen (not --locked): CI and stage-2 below inject a timestamp build version
-# into pyproject.toml, which no longer matches uv.lock's pinned project version.
-# --locked would reject that mismatch (exit 1); --frozen installs straight from
-# the lockfile without re-validating it against pyproject.toml. Third-party deps
-# are unchanged, so the resolved dependency set is identical.
-COPY pyproject.toml uv.lock ./
+# 1) Validate and install only the locked core dependency set. The application
+# itself is deliberately excluded until its versioned wheel exists.
+COPY pyproject.toml uv.lock README.md ./
+COPY config/dependency_profiles.toml ./config/dependency_profiles.toml
+COPY scripts/dependency_profiles.py ./scripts/dependency_profiles.py
+COPY requirements/profiles ./requirements/profiles
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+    python scripts/dependency_profiles.py sync \
+        --root /app \
+        --manifest config/dependency_profiles.toml \
+        --set core \
+        --environment /app/.venv \
+        --python "${PYTHON_VERSION}" \
+        --uv uv \
+        --no-install-project
 
-# 2) Copy the source + packaging metadata the wheel build needs, inject the
-#    build version (parity with .github/workflows/build.yml), then install the
-#    project itself into the venv.
+# 2) Build the versioned application wheel, then install it without resolving
+# dependencies again. Every third-party package remains bound to the core locks.
 ARG VERSION=0.1.0-alpha.5
 COPY src ./src
 COPY infra/terraform ./infra/terraform
-COPY README.md LICENSE THIRD_PARTY_LICENSES.md ./
+COPY LICENSE THIRD_PARTY_LICENSES.md ./
 RUN sed -i "s/^__version__ = \".*\"/__version__ = \"${VERSION}\"/" src/general_ludd/__init__.py \
  && sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv build --wheel --out-dir /app/dist \
+ && uv pip install --python /app/.venv/bin/python --no-deps --reinstall /app/dist/*.whl
 
 ############################
 # Stage 2 — runtime        #
@@ -96,16 +104,14 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     GLUDD_PLAYBOOKS_DIR=/app/playbooks \
     GLUDD_LOG_LEVEL=info
 # AI provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ZAI_API_KEY,
-# OPENROUTER_API_KEY) and GLUDD_PSK must be injected at runtime via
+# OPENROUTER_API_KEY) and GLUDD_AUTH_PSK must be injected at runtime via
 # --env / --env-file / secrets — never baked into the image.
 
 WORKDIR /app
 
-# The venv installs the project in editable mode, so the source tree must be
-# present at the same path it was built at (/app/src). Bring over the venv,
-# source, and the default config/templates/playbooks asset dirs.
+# Bring over the relocatable locked environment and runtime asset directories.
 COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/src /app/src
+COPY --from=builder /app/LICENSE /app/LICENSE
 COPY config /app/config
 COPY templates /app/templates
 COPY playbooks /app/playbooks
@@ -121,6 +127,9 @@ LABEL org.opencontainers.image.title="general-ludd-agent" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.source="https://github.com/sandboxcom/gludd"
 
+# Runtime-relative state (including the git-history ``.gludd`` directory) must
+# resolve beneath the owned persistent volume, never beneath read-only /app.
+WORKDIR ${APP_HOME}
 USER gludd
 
 EXPOSE 8000
@@ -130,5 +139,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4).status==200 else 1)"
 
-# tini reaps the gunicorn subprocess the CLI spawns; gludd binds 0.0.0.0:8000.
-ENTRYPOINT ["tini", "--", "gludd", "daemon", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application server as the foreground service. Tini owns and reaps the
+# single Gunicorn tree, while startup exceptions and request/error logs remain
+# attached to container stdio for health-smoke and operator diagnostics.
+ENTRYPOINT ["tini", "--", "gunicorn", "general_ludd.daemon:create_daemon_app()", "--worker-class", "uvicorn_worker.UvicornWorker", "--workers", "1", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-", "--capture-output"]

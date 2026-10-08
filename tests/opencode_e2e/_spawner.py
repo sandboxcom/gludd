@@ -6,16 +6,16 @@ Usage::
 
     spawner = OpencodeSpawner(
         project_dir="/tmp/opencode-e2e-test/",
-        prompt="Read TASKS.md, dispatch 10 subagents to complete tasks.",
+        prompt="Read TASKS.md and dispatch up to three useful subagents.",
         timeout_sec=3600,
-        prompt_sequence=["Read TASKS.md and dispatch 10 subagents.",
+        prompt_sequence=["Read TASKS.md and dispatch up to three useful subagents.",
                          "Keep working. Complete all remaining tasks."],
         prompt_interval_sec=300,
     )
     result = spawner.run()
     print(result.verdict)          # "PASS" or "FAIL"
     print(result.dispatch_waves)   # list[dict]
-    print(result.per_wave_violations)  # waves with <10 dispatches
+    print(result.per_wave_violations)  # waves outside configured bounds
     print(result.depth_count)      # max nesting depth observed
 """
 
@@ -23,15 +23,22 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
+import signal
 import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import IO
 
 OPENCODE_BIN = "opencode"
+_CAPTURE_POLL_SEC = 0.05
+_TERMINATE_GRACE_SEC = 1.0
+_KILL_GRACE_SEC = 1.0
+HARD_MAX_DISPATCHES = 3
 
-TOOL_CALL_RE = re.compile(r'(?:tool_use|"type"\s*:\s*"tool_use"|"type":"tool_use")')
+TOOL_CALL_RE = re.compile(r'(?:\btool_use\b|"type"\s*:\s*"tool_use"|"type":"tool_use")')
 TOOL_RESULT_RE = re.compile(r'(?:tool_result|"type"\s*:\s*"tool_result")')
 TASK_TOOL_NAME_RE = re.compile(
     r'(?:"name"\s*:\s*"(task|agent|workflow)"'
@@ -57,7 +64,7 @@ NESTED_DISPATCH_RE = re.compile(
 class ToolCallSnapshot:
     name: str
     timestamp: float = 0.0
-    args: dict = field(default_factory=dict)
+    args: dict[str, object] = field(default_factory=dict)
     tool_use_id: str = ""
     is_error: bool = False
 
@@ -103,20 +110,28 @@ class OpencodeSpawner:
         project_dir: str,
         prompt: str,
         *,
-        timeout_sec: int = 120,
+        timeout_sec: float = 120,
         log_dir: str = "/tmp/gludd-opencode-e2e",
         agent: str = "build",
         model: str | None = None,
         env: dict[str, str] | None = None,
         prompt_sequence: list[str] | None = None,
         prompt_interval_sec: int = 300,
-        progress_interval_sec: int = 30,
+        progress_interval_sec: float = 30,
+        minimum_dispatches: int = 0,
+        maximum_dispatches: int = HARD_MAX_DISPATCHES,
     ) -> None:
         self._project_dir = os.path.abspath(project_dir)
         self._prompt = prompt
         self._prompt_sequence = prompt_sequence or []
         self._prompt_interval_sec = prompt_interval_sec
         self._progress_interval_sec = progress_interval_sec
+        bounded_maximum = max(1, min(HARD_MAX_DISPATCHES, int(maximum_dispatches)))
+        self._maximum_dispatches = bounded_maximum
+        self._minimum_dispatches = max(
+            0,
+            min(bounded_maximum, int(minimum_dispatches)),
+        )
         self._timeout_sec = timeout_sec
         self._agent = agent
         self._model = model
@@ -133,21 +148,22 @@ class OpencodeSpawner:
         self._env.setdefault("GLUDD_VERIFIED_CLAIMS_ENFORCE", "0")
         self._env.setdefault("GLUDD_MODEL_UTIL_ENFORCE", "0")
         self._env.setdefault("OPENCODE_DISABLE_CLAUDE_CODE", "0")
+        raw_namespace = self._env.get("GLUDD_PROJECT_NAMESPACE") or os.path.basename(self._project_dir)
+        self._namespace = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_namespace).strip("-")[:64] or "gludd"
         os.makedirs(log_dir, exist_ok=True)
         self._log_dir = log_dir
         self._log_path = ""
         self._progress_log_path = ""
         self._prompts_sent = 0
-        self._progress_stop = threading.Event()
 
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
 
     def run(self) -> SpawnResult:
-        ts = int(time.time())
-        self._log_path = os.path.join(self._log_dir, f"opencode-e2e-{ts}.ndjson")
-        self._progress_log_path = os.path.join(self._log_dir, f"opencode-e2e-{ts}.progress.log")
+        run_id = f"{self._namespace}-{os.getpid()}-{time.time_ns()}"
+        self._log_path = os.path.join(self._log_dir, f"opencode-e2e-{run_id}.ndjson")
+        self._progress_log_path = os.path.join(self._log_dir, f"opencode-e2e-{run_id}.progress.log")
         frames, elapsed, killed, raw_stdout, raw_stderr, depth_count = self._spawn_and_capture()
         result = self._analyze(frames, elapsed, killed, depth_count)
         self._write_structured_log(result, frames)
@@ -170,6 +186,7 @@ class OpencodeSpawner:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            start_new_session=os.name == "posix",
         )
 
         frames: list[ResponseFrame] = []
@@ -177,29 +194,40 @@ class OpencodeSpawner:
         in_assistant = False
         killed = False
         errored_tool_ids: set[str] = set()
-        t0 = time.time()
+        t0 = time.monotonic()
         stderr_lines: list[str] = []
         raw_stdout_lines: list[str] = []
+        stdout_queue: queue.Queue[str | None] = queue.Queue()
+        stdout_done = False
         depth_count = 0
         nesting_stack: list[bool] = []
+        progress_stop = threading.Event()
 
         _lock = threading.Lock()
 
-        def _read_stderr() -> None:
+        def _read_stdout() -> None:
+            stream: IO[str] | None = proc.stdout
             try:
-                while proc.poll() is None:
-                    line = proc.stderr.readline() if proc.stderr else ""
-                    if not line:
-                        time.sleep(0.05)
-                        continue
+                if stream is None:
+                    return
+                for line in stream:
+                    raw_stdout_lines.append(line.rstrip("\n"))
+                    stdout_queue.put(line)
+            finally:
+                stdout_queue.put(None)
+
+        def _read_stderr() -> None:
+            stream: IO[str] | None = proc.stderr
+            if stream is None:
+                return
+            for line in stream:
+                if line:
                     stderr_lines.append(line.rstrip("\n"))
-            except Exception:
-                pass
 
         def _write_progress() -> None:
             with open(self._progress_log_path, "w") as pfh:
-                while not self._progress_stop.wait(self._progress_interval_sec):
-                    elapsed = time.time() - t0
+                while True:
+                    elapsed = time.monotonic() - t0
                     with _lock:
                         wave_count = len(frames)
                         total_disp = sum(f.dispatch_count for f in frames)
@@ -209,6 +237,11 @@ class OpencodeSpawner:
                         f"dispatches={total_disp}  prompts_sent={self._prompts_sent}\n"
                     )
                     pfh.flush()
+                    if progress_stop.wait(self._progress_interval_sec):
+                        break
+
+        stdout_thread = threading.Thread(target=_read_stdout, daemon=True)
+        stdout_thread.start()
 
         stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
         stderr_thread.start()
@@ -218,16 +251,21 @@ class OpencodeSpawner:
 
         try:
             while True:
-                if time.time() - t0 > self._timeout_sec:
+                process_active = proc.poll() is None or self._process_group_running(proc)
+                if not killed and process_active and time.monotonic() - t0 >= self._timeout_sec:
                     killed = True
-                    break
-                if proc.poll() is not None:
-                    break
-                line = proc.stdout.readline() if proc.stdout else ""
-                if not line:
-                    time.sleep(0.05)
+                    self._terminate_process_group(proc)
+                try:
+                    line = stdout_queue.get(timeout=_CAPTURE_POLL_SEC)
+                except queue.Empty:
+                    if proc.poll() is not None and stdout_done:
+                        break
                     continue
-                raw_stdout_lines.append(line.rstrip("\n"))
+                if line is None:
+                    stdout_done = True
+                    if proc.poll() is not None and stdout_queue.empty():
+                        break
+                    continue
                 stripped = line.strip()
                 if not stripped:
                     continue
@@ -329,24 +367,20 @@ class OpencodeSpawner:
                 current.text_content += stripped + "\n"
 
         finally:
-            self._progress_stop.set()
-            elapsed = time.time() - t0
-            if killed:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait(timeout=5)
+            progress_stop.set()
+            if proc.poll() is None or self._process_group_running(proc):
+                self._terminate_process_group(proc)
             else:
-                try:
-                    proc.terminate()
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait(timeout=5)
-            stderr_thread.join(timeout=2)
-            progress_thread.join(timeout=2)
+                proc.wait()
+            stdout_thread.join(timeout=_KILL_GRACE_SEC)
+            stderr_thread.join(timeout=_KILL_GRACE_SEC)
+            for stream in (proc.stdout, proc.stderr):
+                if stream is not None:
+                    stream.close()
+            stdout_thread.join(timeout=_CAPTURE_POLL_SEC)
+            stderr_thread.join(timeout=_CAPTURE_POLL_SEC)
+            progress_thread.join(timeout=_KILL_GRACE_SEC)
+            elapsed = time.monotonic() - t0
 
         if in_assistant and (current.text_content or current.tool_calls):
             self._correct_dispatch_count(current, errored_tool_ids)
@@ -354,6 +388,51 @@ class OpencodeSpawner:
                 frames.append(current)
 
         return frames, elapsed, killed, raw_stdout_lines, stderr_lines, depth_count
+
+    @staticmethod
+    def _process_group_running(proc: subprocess.Popen[str]) -> bool:
+        if os.name != "posix":
+            return proc.poll() is None
+        try:
+            os.killpg(proc.pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    @staticmethod
+    def _signal_process_group(proc: subprocess.Popen[str], sig: signal.Signals) -> None:
+        try:
+            if os.name == "posix":
+                os.killpg(proc.pid, sig)
+            elif sig == signal.SIGTERM:
+                proc.terminate()
+            else:
+                proc.kill()
+        except ProcessLookupError:
+            return
+
+    @classmethod
+    def _terminate_process_group(cls, proc: subprocess.Popen[str]) -> None:
+        """Bound TERM→KILL for the isolated child process group and reap its leader."""
+        if proc.poll() is not None and not cls._process_group_running(proc):
+            proc.wait()
+            return
+
+        cls._signal_process_group(proc, signal.SIGTERM)
+        deadline = time.monotonic() + _TERMINATE_GRACE_SEC
+        while time.monotonic() < deadline:
+            if proc.poll() is not None and not cls._process_group_running(proc):
+                break
+            time.sleep(_CAPTURE_POLL_SEC)
+
+        if proc.poll() is None or cls._process_group_running(proc):
+            cls._signal_process_group(proc, signal.SIGKILL)
+        try:
+            proc.wait(timeout=_KILL_GRACE_SEC)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"failed to reap timed-out process group {proc.pid}") from exc
 
     def _build_command(self) -> list[str]:
         cmd = [
@@ -483,13 +562,24 @@ class OpencodeSpawner:
                 }
             )
 
-            if 0 < f.dispatch_count < 10:
+            violation_reason = ""
+            if f.dispatch_count > self._maximum_dispatches:
+                violation_reason = (
+                    f"Wave {f.sequence} had {f.dispatch_count} dispatches "
+                    f"(ceiling={self._maximum_dispatches})"
+                )
+            elif 0 < f.dispatch_count < self._minimum_dispatches:
+                violation_reason = (
+                    f"Wave {f.sequence} had {f.dispatch_count} dispatches "
+                    f"(configured minimum={self._minimum_dispatches})"
+                )
+            if violation_reason:
                 per_wave_violations.append(
                     {
                         "sequence": f.sequence,
                         "timestamp": f.timestamp,
                         "dispatch_count": f.dispatch_count,
-                        "reason": f"Wave {f.sequence} had {f.dispatch_count} dispatches (floor=10)",
+                        "reason": violation_reason,
                     }
                 )
 

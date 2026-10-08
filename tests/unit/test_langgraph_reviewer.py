@@ -653,10 +653,12 @@ class TestReviewReturn:
     def test_graph_invoke_returns_no_final_decision(self):
         call_model = MagicMock(return_value=_make_review_json(confidence=0.3))
         reviewer = LangGraphReflexiveReviewer(call_model, max_iterations=1)
+        reviewer._graph = MagicMock(invoke=MagicMock(return_value={}))
         tr = _make_task_return()
         decision = reviewer.review_return(tr, [], [])
         assert isinstance(decision, TaskDecision)
         assert decision.decision == "manual_hold"
+        assert any("no final_decision" in n for n in decision.audit_notes)
 
 
 # ---------------------------------------------------------------------------

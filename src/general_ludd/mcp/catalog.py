@@ -9,8 +9,9 @@ from __future__ import annotations
 import logging
 from urllib.parse import urlencode
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
+from general_ludd.mcp._validators import TrimmedNonEmptyStr
 from general_ludd.security.url_fetch import FetchPolicy, secure_fetch
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,9 @@ _REGISTRY_RESPONSE_MAX_BYTES = 2 * 1024 * 1024  # 2 MB hard cap per registry res
 
 
 class MCPCatalogEntry(BaseModel):
-    server_name: str
+    """Describe one curated or remotely discovered MCP server."""
+
+    server_name: TrimmedNonEmptyStr
     display_name: str = ""
     description: str = ""
     source: str = ""
@@ -29,20 +32,11 @@ class MCPCatalogEntry(BaseModel):
     tags: list[str] = Field(default_factory=list)
     downloads: int = 0
 
-    @field_validator("server_name", mode="before")
-    @classmethod
-    def _strip_and_require(cls, v: str) -> str:
-        if isinstance(v, str):
-            v = v.strip()
-        if not v:
-            raise ValueError("server_name must not be empty")
-        return v
-
-
 class MCPCatalog:
     """Search and discover MCP servers from public registries."""
 
     def __init__(self, registries: list[str] | None = None) -> None:
+        """Initialize the catalog with explicit or default registry hosts."""
         self._registries = registries if registries is not None else [
             "registry.modelcontextprotocol.io",
             "smithery.ai",
@@ -74,8 +68,10 @@ class MCPCatalog:
         limit: int = 20,
         source: str | None = None,
     ) -> list[MCPCatalogEntry]:
-        """Async search() — dispatches blocking network I/O to a thread pool.
-        Use from any async caller (FastAPI route, event-loop task)."""
+        """Run ``search`` without blocking the caller's event loop.
+
+        Use from any async caller, including FastAPI routes and loop tasks.
+        """
         import asyncio
 
         results: list[MCPCatalogEntry] = []
@@ -90,9 +86,11 @@ class MCPCatalog:
         return results[:limit]
 
     def get_known_servers(self) -> list[MCPCatalogEntry]:
+        """Return the curated, locally trusted server entries."""
         return list(_KNOWN_SERVERS.values())
 
     def get_server(self, name: str) -> MCPCatalogEntry | None:
+        """Return a curated or cached server entry by exact name."""
         if name in _KNOWN_SERVERS:
             return _KNOWN_SERVERS[name]
         for entry in self._cache:
@@ -101,6 +99,7 @@ class MCPCatalog:
         return None
 
     def refresh(self) -> None:
+        """Clear remotely discovered entries while retaining curated entries."""
         self._cache.clear()
 
     @staticmethod

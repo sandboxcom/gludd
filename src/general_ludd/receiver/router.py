@@ -24,7 +24,7 @@ Security invariants
 -------------------
 * **Ingest-token auth, separate from admin PSK.** The receiver authenticates with
   its OWN token (``GLUDD_INGEST_TOKEN`` by default — env-var NAME only, never the
-  value, is referenced/logged), NOT the admin ``GLUDD_PSK``. This is least-
+  value, is referenced/logged), NOT the admin ``GLUDD_AUTH_PSK``. This is least-
   privilege: a leaked ingest token can push telemetry but cannot touch ``/admin``.
 * **Fail-closed.** With no ingest token configured every endpoint returns **503**
   ``ingest_disabled`` — the receiver refuses to run as an unauthenticated open
@@ -106,7 +106,7 @@ __all__ = ["register"]
 MAX_BODY_BYTES = parsers.MAX_PAYLOAD_BYTES
 
 # Env var that NAMES the ingest token (the value lives in the env; only the NAME
-# appears in code/logs). Separate from GLUDD_PSK (admin) by design.
+# appears in code/logs). Separate from GLUDD_AUTH_PSK (admin) by design.
 INGEST_TOKEN_ENV = "GLUDD_INGEST_TOKEN"  # env-var NAME, not a secret value
 
 # Default per-token rate limit (requests per second, with a small burst).
@@ -117,15 +117,22 @@ DEFAULT_RATE_BURST = 100.0
 class _TokenBucket:
     """A simple monotonic token-bucket rate limiter, one per ingest token."""
 
-    def __init__(self, rate_per_sec: float, burst: float) -> None:
+    def __init__(
+        self,
+        rate_per_sec: float,
+        burst: float,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._rate = rate_per_sec
         self._burst = burst
         self._tokens = burst
-        self._last = time.monotonic()
+        self._clock = clock
+        self._last = self._clock()
         self._lock = threading.Lock()
 
     def allow(self) -> bool:
-        now = time.monotonic()
+        now = self._clock()
         with self._lock:
             elapsed = now - self._last
             self._last = now

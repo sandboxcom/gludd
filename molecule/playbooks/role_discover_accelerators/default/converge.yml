@@ -1,0 +1,48 @@
+---
+- name: Converge - publish local and Slurm accelerator facts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: >-
+        {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml
+  vars:
+    artifact_path: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/accelerator-facts.json
+    request_artifact_path: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/accelerator-requests.json
+  tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: >-
+        {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml
+
+    - name: Invoke the real provider-neutral discovery role
+      ansible.builtin.include_role:
+        name: general_ludd.agent.discover_accelerators
+      vars:
+        gludd_daemon_url: "{{ mock_daemon_url }}"
+        gludd_daemon_psk: ""
+        gludd_accelerator_scope: all
+        gludd_accelerator_timeout: 5
+
+    - name: Persist exact facts for the verifier
+      ansible.builtin.copy:
+        content: "{{ gludd_accelerators | to_nice_json }}"
+        dest: "{{ artifact_path }}"
+        mode: "0600"
+
+    - name: Read the mock daemon request ledger
+      ansible.builtin.uri:
+        url: "{{ mock_daemon_url }}/__requests"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: request_ledger
+
+    - name: Persist the request ledger for the verifier
+      ansible.builtin.copy:
+        content: "{{ request_ledger.json | to_nice_json }}"
+        dest: "{{ request_artifact_path }}"
+        mode: "0600"

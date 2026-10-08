@@ -375,7 +375,7 @@ class TestThresholdErrorMessages:
             cwd=str(ROOT),
         )
         assert result.returncode == 1
-        assert "Files below threshold" in result.stdout
+        assert "Files below per-file threshold" in result.stdout
         assert "bad.py" in result.stdout
 
     def test_exit_zero_when_all_above_threshold(self, tmp_path):

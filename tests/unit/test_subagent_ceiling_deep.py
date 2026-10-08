@@ -1,6 +1,6 @@
 """Deep ceiling-enforcement behavioral tests for enforce-floor.ts.
 
-Covers CEILING constant, WAVE_WIDTH, max-10-concurrent block, CLAUDE_AGENT_CEILING
+Covers CEILING constant, WAVE_WIDTH, max-three-concurrent block, CLAUDE_AGENT_CEILING
 override, CLAUDE_AGENT_TARGET capped-by-ceiling, ceiling override file, wave width
 violation message, OPENCODE_SUBAGENT guard, load-throttle ceiling reduction, and
 ceiling-floor relationship invariants.
@@ -8,7 +8,6 @@ ceiling-floor relationship invariants.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,11 +40,12 @@ class TestCeilingPluginExistence:
 
 
 class TestCeilingConstant:
-    def test_ceiling_default_is_10(self):
+    def test_ceiling_uses_canonical_three_agent_cap(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_CEILING",\s*"(\d+)"', src)
-        assert m
-        assert m.group(1) == "10"
+        assert "../lib/multitask_config.ts" in src
+        assert "CLAUDE_AGENT_CEILING" in src
+        assert "String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_ceiling_reads_env_var(self):
         src = _src()
@@ -53,8 +53,9 @@ class TestCeilingConstant:
 
     def test_ceiling_uses_tunable_function(self):
         src = _src()
-        idx = src.find("const CEILING = _tunable(")
+        idx = src.find("const CEILING = clampDispatchCount(")
         assert idx > 0
+        assert "_tunable(" in src[idx : idx + 250]
 
     def test_ceiling_override_file_path(self):
         src = _src()
@@ -62,9 +63,9 @@ class TestCeilingConstant:
 
     def test_ceiling_override_file_path_near_ceiling_constant(self):
         src = _src()
-        idx = src.find("const CEILING = _tunable(")
+        idx = src.find("const CEILING = clampDispatchCount(")
         assert idx > 0
-        after = src[idx : idx + 120]
+        after = src[idx : idx + 250]
         assert "/tmp/gludd-ceiling-override" in after
 
     def test_tunable_has_fail_open_catch(self):
@@ -86,15 +87,19 @@ class TestCeilingConstant:
 
 
 class TestWaveWidth:
-    def test_wave_width_default_is_10(self):
+    def test_wave_width_uses_canonical_three_agent_default(self):
         src = _src()
-        m = re.search(r'GLUDD_DISPATCH_WAVE_WIDTH",\s*"(\d+)"', src)
-        assert m
-        assert m.group(1) == "10"
+        idx = src.find("const WAVE_WIDTH = Math.min(")
+        assert idx > 0
+        after = src[idx : idx + 300]
+        assert "GLUDD_DISPATCH_WAVE_WIDTH" in after
+        assert "String(HARD_MAX_DISPATCHES)" in after
 
     def test_wave_width_uses_tunable_function(self):
         src = _src()
-        assert "const WAVE_WIDTH = _tunable(" in src
+        idx = src.find("const WAVE_WIDTH = Math.min(")
+        assert idx > 0
+        assert "_tunable(" in src[idx : idx + 300]
 
     def test_wave_width_override_file_path(self):
         src = _src()
@@ -123,11 +128,10 @@ class TestTargetCappedByCeiling:
         assert "Math.min" in after
         assert "CEILING" in after
 
-    def test_target_default_is_10(self):
+    def test_target_uses_canonical_three_agent_cap(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_TARGET\s*\|\|\s*"(\d+)"', src)
-        assert m
-        assert m.group(1) == "10"
+        assert "CLAUDE_AGENT_TARGET || String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_target_reads_env_var(self):
         src = _src()
@@ -143,7 +147,7 @@ class TestTargetCappedByCeiling:
 
 
 # ---------------------------------------------------------------------------
-# Max-10-concurrent dispatch block (wave width violation)
+# Max-three-concurrent dispatch block (wave width violation)
 # ---------------------------------------------------------------------------
 
 
@@ -161,12 +165,12 @@ class TestMaxConcurrentDispatchBlock:
 
     def test_wave_width_gated_on_message_dispatch_count(self):
         src = _src()
-        idx = src.find("_thisMessageDispatchCount >= eff.waveWidth")
+        idx = src.find("_thisMessageDispatchCount >= dispatchCeiling")
         assert idx > 0
 
     def test_wave_width_only_blocks_dispatch_tools(self):
         src = _src()
-        idx = src.find("_thisMessageDispatchCount >= eff.waveWidth")
+        idx = src.find("_thisMessageDispatchCount >= dispatchCeiling")
         assert idx > 0
         chunk_start = max(0, idx - 30)
         chunk = src[chunk_start : idx + 60]
@@ -174,16 +178,16 @@ class TestMaxConcurrentDispatchBlock:
 
     def test_wave_width_gated_on_open_work_exists(self):
         src = _src()
-        idx = src.find("_thisMessageDispatchCount >= eff.waveWidth")
+        idx = src.find("_thisMessageDispatchCount >= dispatchCeiling")
         assert idx > 0
         after = src[idx : idx + 80]
         assert "openWorkExists()" in after
 
-    def test_wave_width_uses_effective_floor_not_raw_wave_width(self):
+    def test_wave_width_uses_effective_dispatch_ceiling(self):
         src = _src()
-        idx = src.find("_thisMessageDispatchCount >= eff.waveWidth")
+        idx = src.find("_thisMessageDispatchCount >= dispatchCeiling")
         assert idx > 0
-        assert "eff.waveWidth" in src
+        assert "const dispatchCeiling = eff.waveWidth > 0" in src
 
     def test_wave_width_violation_message_wording(self):
         src = _src()
@@ -207,7 +211,7 @@ class TestMaxConcurrentDispatchBlock:
 
     def test_dispatch_wave_complete_recorded_at_exact_width(self):
         src = _src()
-        idx = src.find("_thisMessageDispatchCount === eff.waveWidth")
+        idx = src.find("_thisMessageDispatchCount === dispatchCeiling")
         assert idx > 0
         after = src[idx : idx + 100]
         assert "recordDispatchWaveComplete" in after
@@ -280,41 +284,36 @@ class TestCeilingFloorRelationship:
     def test_floor_and_ceiling_use_same_tunable_pattern(self):
         src = _src()
         assert "_tunable" in src
-        src.count("_tunable")
         assert src.count("_tunable(") >= 3
 
     def test_ceiling_is_not_less_than_floor_by_default(self):
         src = _src()
-        floor_m = re.search(r'CLAUDE_AGENT_FLOOR",\s*"(\d+)"', src)
-        ceiling_m = re.search(r'CLAUDE_AGENT_CEILING",\s*"(\d+)"', src)
-        assert floor_m and ceiling_m
-        assert int(ceiling_m.group(1)) >= int(floor_m.group(1)), "CEILING default must be >= FLOOR default"
+        assert '"CLAUDE_AGENT_FLOOR", String(MIN_DISPATCHES)' in src
+        assert '"CLAUDE_AGENT_CEILING", String(HARD_MAX_DISPATCHES)' in src
+        assert "const FLOOR = Math.min(" in src
 
     def test_wave_width_equals_ceiling_by_default(self):
         src = _src()
-        ceiling_m = re.search(r'CLAUDE_AGENT_CEILING",\s*"(\d+)"', src)
-        wave_m = re.search(r'GLUDD_DISPATCH_WAVE_WIDTH",\s*"(\d+)"', src)
-        assert ceiling_m and wave_m
-        assert ceiling_m.group(1) == wave_m.group(1), "WAVE_WIDTH default should equal CEILING default (both 10)"
+        assert '"CLAUDE_AGENT_CEILING", String(HARD_MAX_DISPATCHES)' in src
+        assert "GLUDD_DISPATCH_WAVE_WIDTH" in src
+        assert src.count("String(HARD_MAX_DISPATCHES)") >= 3
+        assert "const WAVE_WIDTH = Math.min(" in src
 
-    def test_target_ceiling_and_wave_width_all_default_to_10(self):
+    def test_target_ceiling_and_wave_width_all_use_canonical_cap(self):
         src = _src()
-        ceiling_m = re.search(r'CLAUDE_AGENT_CEILING",\s*"(\d+)"', src)
-        wave_m = re.search(r'GLUDD_DISPATCH_WAVE_WIDTH",\s*"(\d+)"', src)
-        target_m = re.search(r'CLAUDE_AGENT_TARGET\s*\|\|\s*"(\d+)"', src)
-        assert ceiling_m and wave_m and target_m
-        assert ceiling_m.group(1) == "10"
-        assert wave_m.group(1) == "10"
-        assert target_m.group(1) == "10"
+        assert "CLAUDE_AGENT_CEILING" in src
+        assert "GLUDD_DISPATCH_WAVE_WIDTH" in src
+        assert "CLAUDE_AGENT_TARGET" in src
+        assert src.count("clampDispatchCount(") >= 4
 
     def test_prev_message_dispatch_checked_against_wave_width(self):
         src = _src()
-        idx = src.find("_prevMessageDispatchCount < eff.waveWidth")
+        idx = src.find("_prevMessageDispatchCount < eff.floor")
         assert idx > 0
 
     def test_prev_message_undersize_is_hard_deny(self):
         src = _src()
-        idx = src.find("_prevMessageDispatchCount < eff.waveWidth")
+        idx = src.find("_prevMessageDispatchCount < eff.floor")
         assert idx > 0
         after = src[idx : idx + 600]
         assert 'permissionDecision: "deny"' in after

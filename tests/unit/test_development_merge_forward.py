@@ -6,6 +6,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -32,7 +34,7 @@ def _run_batch(*variables: str) -> subprocess.CompletedProcess[str]:
 
 
 def _recipe() -> str:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     match = re.search(
         r"^development-merge-forward:\n(?P<recipe>(?:\t.*\n)+)",
         makefile,
@@ -78,6 +80,38 @@ def test_target_has_transactional_apply_guards() -> None:
         assert fragment in recipe
 
 
+def test_apply_refreshes_attestation_for_merged_tree_before_freshness_check() -> None:
+    """A pre-merge attestation cannot authorize the staged merge result."""
+    recipe = _recipe()
+
+    refresh = "gate-refresh GATE_REFRESH_VALIDATE_ONLY=0"
+    freshness = "_gate-fresh-check"
+    assert refresh in recipe
+    assert recipe.index(refresh) < recipe.index(freshness)
+    assert "Merged-tree gate refresh failed; aborting transaction" in recipe
+
+
+def test_apply_normalizes_hooks_and_can_abort_after_hook_mutation() -> None:
+    """Merge commits own hook normalization and remain transactionally reversible."""
+    recipe = _recipe()
+
+    hook_command = "pre-commit run detect-secrets --all-files"
+    refresh = "gate-refresh GATE_REFRESH_VALIDATE_ONLY=0"
+    hooks = "pre-commit run --files"
+    commit = "git commit -n"
+    for fragment in (
+        "git restore --worktree -- .",
+        hook_command,
+        "git add .secrets.baseline",
+        hooks,
+        commit,
+    ):
+        assert fragment in recipe
+    assert recipe.index(hook_command) < recipe.index(refresh)
+    assert recipe.index(refresh) < recipe.index(hooks)
+    assert recipe.index(hooks) < recipe.index(commit)
+
+
 def test_ancestry_only_forbids_master_source() -> None:
     result = _run_target("SOURCE=master", "MODE=ancestry-only", "APPLY=0")
 
@@ -100,7 +134,7 @@ def test_batch_ancestry_dry_run_is_auditable_and_non_mutating() -> None:
 
 
 def test_batch_ancestry_target_has_atomic_apply_guards() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     match = re.search(
         r"^development-merge-forward-batch:\n(?P<recipe>(?:\t.*(?:\n|$))+)",
         makefile,

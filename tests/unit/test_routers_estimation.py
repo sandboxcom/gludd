@@ -42,7 +42,7 @@ def _make_calibration(
     time_multiplier: float = 0.9,
     loc_multiplier: float = 1.1,
     sample_count: int = 12,
-    last_adjusted: datetime | None = None,
+    last_adjusted: datetime | None = datetime(2026, 8, 11, tzinfo=UTC),
 ) -> EstimationCalibration:
     return EstimationCalibration(
         work_type=work_type,
@@ -50,7 +50,7 @@ def _make_calibration(
         time_multiplier=time_multiplier,
         loc_multiplier=loc_multiplier,
         sample_count=sample_count,
-        last_adjusted=last_adjusted or datetime(2026, 8, 11, tzinfo=UTC),
+        last_adjusted=last_adjusted,
     )
 
 
@@ -165,24 +165,6 @@ class TestReportEndpoint:
         dt = datetime(2026, 8, 10, tzinfo=UTC)
         cal = _make_calibration("ml", cost_multiplier=1.5, sample_count=8, last_adjusted=dt)
         tracker._calibrations["ml"] = cal
-        tracker.record_estimate(
-            TaskEstimate(
-                todo_id="M",
-                work_type="ml",
-                estimated_cost_usd=5,
-                estimated_time_minutes=30,
-                estimated_loc=200,
-            )
-        )
-        tracker.record_completion(
-            TaskActual(
-                todo_id="M",
-                actual_cost_usd=5,
-                actual_time_minutes=30,
-                actual_loc=200,
-                exit_code=0,
-            )
-        )
         app.state._estimation_tracker = tracker
         resp = TestClient(app).get("/admin/estimation/report")
         data = resp.json()
@@ -564,9 +546,9 @@ def test_variance_with_accuracy_enum_uses_value_when_hasattr():
     tracker.record_completion(
         TaskActual(
             todo_id="E",
-            actual_cost_usd=30,
-            actual_time_minutes=30,
-            actual_loc=30,
+            actual_cost_usd=40,
+            actual_time_minutes=40,
+            actual_loc=40,
             exit_code=0,
         )
     )

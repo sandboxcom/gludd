@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "task_queries": {
+    "bounded_enumeration": "code",
+    "coding": "code",
+    "context_compaction": "summarization",
+    "documentation_draft": "documentation",
+    "failure_classification": "debugging",
+    "format_normalization": "code",
+    "schema_extraction": "code"
+  },
+  "search_limit": 20,
+  "allowed_publishers": [
+    "Qwen",
+    "bigcode",
+    "deepseek-ai",
+    "gludd-ci",
+    "HuggingFaceH4",
+    "microsoft",
+    "mistralai"
+  ],
+  "allowed_licenses": [
+    "apache-2.0",
+    "mit"
+  ],
+  "required_tags": [
+    "safetensors",
+    "text-generation"
+  ],
+  "blocked_tags": [
+    "custom_code"
+  ],
+  "minimum_context_tokens": 28672,
+  "container_image": "vllm/vllm-openai@sha256:df2607b26bdda2875de4832f4d08da0055b4b6e3570347f3a849bcc652771dd6",
+  "profile_capacities": [
+    {
+      "name": "T4",
+      "workload_profile_name": "gpu-t4",
+      "workload_profile_type": "Consumption-GPU-NC8as-T4",
+      "gpu_vram_mib": 16384,
+      "usable_vram_mib": 14745,
+      "cpu_cores": 8,
+      "memory_gib": 56,
+      "max_replicas": 1,
+      "hourly_cost_microusd_per_replica": 900000
+    },
+    {
+      "name": "A100",
+      "workload_profile_name": "gpu-a100",
+      "workload_profile_type": "Consumption-GPU-NC24-A100",
+      "gpu_vram_mib": 81920,
+      "usable_vram_mib": 73728,
+      "cpu_cores": 24,
+      "memory_gib": 220,
+      "max_replicas": 1,
+      "hourly_cost_microusd_per_replica": 3500000
+    }
+  ],
+  "max_hourly_cost_microusd": 4000000,
+  "kv_cache_mib": 2048,
+  "runtime_overhead_mib": 3072,
+  "infrastructure_failure_threshold": 2,
+  "infrastructure_failure_ttl_seconds": 3600
+}

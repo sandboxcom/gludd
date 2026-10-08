@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import sys
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -26,12 +28,20 @@ TESTS_DIR = ROOT / "tests"
 
 
 def _import_leaky_env_vars() -> frozenset[str]:
+    # Python 3.14's dataclass annotation resolver (and Ansible's compatibility
+    # patch) require the defining module to be registered while it executes.
+    module_name = "_gludd_pollution_guard_conftest"
     spec = importlib.util.spec_from_file_location(
-        "conftest", TESTS_DIR / "conftest.py"
+        module_name, TESTS_DIR / "conftest.py"
     )
+    assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod._LEAKY_ENV_VARS
+    sys.modules[module_name] = mod
+    try:
+        spec.loader.exec_module(mod)
+        return cast(frozenset[str], mod.__dict__["_LEAKY_ENV_VARS"])
+    finally:
+        sys.modules.pop(module_name, None)
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +84,7 @@ def _collect_test_py_files() -> list[Path]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_setenv_literals_are_in_leaky_env_vars():
+def test_all_setenv_literals_are_in_leaky_env_vars() -> None:
     """Every monkeypatch.setenv / os.environ[...] = literal in tests/ must be
     listed in _LEAKY_ENV_VARS so the autouse restore fixture cleans it up."""
     leaky = _import_leaky_env_vars()

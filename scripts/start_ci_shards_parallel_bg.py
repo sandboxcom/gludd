@@ -12,6 +12,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from run_ci_shards_parallel import DEFAULT_MAX_RUNTIME_SECONDS, parse_positive_int
+
 STATE_FILE = Path(".gate-logs/ci-shards-parallel-state.json")
 LOG_DIR = Path(".gate-logs")
 
@@ -29,6 +31,11 @@ def main() -> int:
     parser.add_argument("--shards", required=True, help="space or comma separated shard names")
     parser.add_argument("--pytest-args", default="")
     parser.add_argument("--workers-per-shard", type=int, default=1)
+    parser.add_argument(
+        "--max-runtime-seconds",
+        type=parse_positive_int,
+        default=DEFAULT_MAX_RUNTIME_SECONDS,
+    )
     args = parser.parse_args()
 
     shards = _parse_shards(args.shards)
@@ -48,6 +55,8 @@ def main() -> int:
         args.pytest_args,
         "--workers-per-shard",
         str(args.workers_per_shard),
+        "--max-runtime-seconds",
+        str(args.max_runtime_seconds),
     ]
 
     with log_path.open("wb") as log_file:
@@ -63,6 +72,7 @@ def main() -> int:
         "log": str(log_path),
         "shards": shards,
         "workers_per_shard": args.workers_per_shard,
+        "max_runtime_seconds": args.max_runtime_seconds,
         "pytest_args": args.pytest_args,
         "command": command,
         "command_text": _quote(command),

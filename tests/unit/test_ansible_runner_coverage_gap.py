@@ -268,8 +268,14 @@ class TestConvertRoleArgs:
         assert result == ["--input", "xyz"]
 
     def test_i18n_extract_with_directory(self):
-        result = _convert_role_args("i18n_extract", {"directory": "/src"})
-        assert result == ["--source-dir", "/src", "--output-dir", "/src"]
+        with patch("tempfile.gettempdir", return_value="/tmp"):
+            result = _convert_role_args("i18n_extract", {"directory": "/src"})
+        assert result[:2] == ["--source-dir", "/src"]
+        assert result[2] == "--output-dir"
+        assert result[3].startswith("/tmp/gludd-i18n-extract-")
+        suffix = result[3].rsplit("-", 1)[-1]
+        assert len(suffix) == 12
+        assert all(c in "0123456789abcdef" for c in suffix)
 
     def test_locale_format_with_locale(self):
         result = _convert_role_args("locale_format", {"locale": "en_US.UTF-8"})
@@ -678,7 +684,11 @@ class TestRunPlaybookIsolationPath:
     def test_isolation_enabled_delegates_to_runner_backend(self):
         from general_ludd.ansible.isolation import ProcessIsolationConfig
 
-        iso = ProcessIsolationConfig(enabled=True, executable="podman")
+        iso = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
+        )
         runner = CoreAnsibleRunner(process_isolation=iso)
         mock_result = AnsibleResult(status="successful", rc=0)
         with patch.object(runner, "_execute_with_runner", return_value=mock_result) as mock_runner:
@@ -687,11 +697,32 @@ class TestRunPlaybookIsolationPath:
         mock_runner.assert_called_once()
 
     @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True)
+    def test_isolation_enabled_forwards_absolute_timeout_to_runner_backend(self):
+        from general_ludd.ansible.isolation import ProcessIsolationConfig
+
+        iso = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
+        )
+        runner = CoreAnsibleRunner(process_isolation=iso)
+        mock_result = AnsibleResult(status="successful", rc=0)
+        with patch.object(runner, "_execute_with_runner", return_value=mock_result) as mock_runner:
+            result = runner.run_playbook("/tmp/playbook.yml", timeout=17.0)
+
+        assert result == mock_result
+        assert mock_runner.call_args.kwargs["timeout"] == 17.0
+
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True)
     @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_RUNNER", False)
     def test_isolation_enabled_no_ansible_runner_package(self):
         from general_ludd.ansible.isolation import ProcessIsolationConfig
 
-        iso = ProcessIsolationConfig(enabled=True, executable="podman")
+        iso = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
+        )
         runner = CoreAnsibleRunner(process_isolation=iso)
         result = runner.run_playbook("/tmp/playbook.yml")
         assert result.status == "failed"

@@ -10,10 +10,14 @@ Provides programmatic equivalents of:
 from __future__ import annotations
 
 import os
-import re
 import subprocess
-from pathlib import Path
 
+from general_ludd.git_automation.release_checks import (
+    check_readme_status_inner as _release_readme_check,
+)
+from general_ludd.git_automation.release_checks import (
+    require_ci_green,
+)
 from general_ludd.git_automation.types import (
     ReleaseCutResult,
     ReleaseDeleteResult,
@@ -160,41 +164,13 @@ def _gh_release_delete(tag: str, repo: str) -> tuple[int, str]:
 
 def _run_require_ci_green(sha: str | None = None, branch: str = "development") -> tuple[int, str]:
     """Check if CI is green via gh CLI. Ported from ``scripts/require_ci_green.py``."""
-    if sha is None:
-        sha = _git_rev_parse(".", "HEAD")
-        if not sha:
-            return (1, "Could not determine HEAD SHA")
-
-    rc, out = _run_gh(
-        ["run", "list", "--commit", sha, "--branch", branch,
-         "-R", DEFAULT_REPO, "--json", "conclusion,databaseId,status,headSha",
-         "--limit", "3"],
+    return require_ci_green(
+        sha,
+        branch,
+        git_rev_parse=_git_rev_parse,
+        run_gh=_run_gh,
+        repo=DEFAULT_REPO,
     )
-    if rc != 0:
-        return (1, f"CI ERROR: gh run list failed: {out}")
-
-    import json
-    try:
-        runs = json.loads(out)
-    except json.JSONDecodeError:
-        return (1, f"CI ERROR: could not parse gh output: {out}")
-
-    if not runs:
-        return (1, f"CI RED: no run found for SHA {sha}")
-
-    latest = runs[0]
-    conclusion = latest.get("conclusion")
-    rid = latest.get("databaseId", "?")
-    status = latest.get("status", "?")
-
-    if conclusion == "success":
-        return (0, f"CI GREEN: sha={sha} run={rid}")
-    elif conclusion in ("cancelled", "skipped"):
-        return (0, f"CI BYPASS: sha={sha} run={rid} conclusion={conclusion}")
-    elif conclusion in ("failure", "timed_out"):
-        return (1, f"CI RED: sha={sha} run={rid} conclusion={conclusion}")
-    else:
-        return (2, f"CI PENDING: sha={sha} run={rid} status={status}")
 
 
 def _run_check_readme_status(tag: str) -> tuple[int, str]:
@@ -203,29 +179,8 @@ def _run_check_readme_status(tag: str) -> tuple[int, str]:
 
 
 def _check_readme_status_inner(tag: str) -> tuple[int, str]:
-    """Core logic: verify README.md 'Status as of' line matches the release tag."""
-    repo_root = Path(__file__).resolve().parent.parent.parent.parent
-    readme = repo_root / "README.md"
-
-    if not readme.exists():
-        return (1, "ERROR: README.md not found")
-
-    release_version = tag.strip()
-
-    text = readme.read_text(encoding="utf-8")
-    m = re.search(r"[Ss]tatus\s+as\s+of\s+(v?[\w.\-]+)", text)
-    if not m:
-        return (1, "ERROR: README status table is stale — no 'Status as of <version>' line found in README.md")
-
-    readme_version_raw = m.group(1)
-
-    norm_release = release_version.lower().removeprefix("v")
-    norm_readme = readme_version_raw.lower().removeprefix("v")
-
-    if norm_readme == norm_release:
-        return (0, f"OK — README status table is current (says {readme_version_raw!r}, releasing {release_version!r})")
-    else:
-        return (1, f"ERROR: README status table is stale: says {readme_version_raw!r}, releasing {release_version!r}")
+    """Resolve README relative to this patchable compatibility module."""
+    return _release_readme_check(tag, module_file=__file__)
 
 
 def verify_readme_status(tag: str) -> tuple[int, str]:

@@ -38,6 +38,22 @@ file-like storage, and non-bytes namespaces. Context-manager cleanup remains
 explicitly typed, preventing callers from silently losing the close boundary.
 The change adds no process, thread, socket, cache entry, or disk allocation.
 
+### Local-memory acquisition lifecycle (2026-08-20)
+
+`LocalAgentMemory` creates its owner-only directory at construction but opens
+the DiskCache/SQLite resource only when the first data operation needs it.
+Pure key derivation therefore owns no database connection. `close()` closes an
+opened cache, clears the owned reference, and is idempotent both before first
+use and after shutdown. A later data operation may deliberately acquire a new
+cache instance, preserving the existing reusable-store behavior.
+
+This changes neither cache keys nor the MessagePack namespace, so old and new
+workers can overlap during a rolling deployment without a schema or file-format
+migration. Rollback restores eager acquisition; operators need not drain
+traffic, but should close stores before replacing a worker. The lazy boundary
+adds no task, thread, process, socket, or temporary artifact, and avoids opening
+SQLite for metadata-only work.
+
 ## Practitioner evidence
 
 A Stack Overflow user reported the same `Callable` class-attribute binding
@@ -57,10 +73,21 @@ the current instance as a primary use of a self-typed method:
 
 - [CPython typing implementation](https://github.com/python/cpython/blob/main/Lib/typing.py)
 
+On 2023-06-08, CPython maintainers opened
+[issue #105539](https://github.com/python/cpython/issues/105539) after
+practitioners observed that unclosed connections were invisible. Python 3.13
+then made missing explicit SQLite closure a `ResourceWarning`, as recorded in
+the [upstream release notes](https://docs.python.org/3/whatsnew/3.13.html#sqlite3).
+Gludd treats that warning as lifecycle evidence and prevents unnecessary
+acquisition instead of suppressing finalizer diagnostics.
+
 ## Verification
 
 - `tests/unit/test_safe_diskcache.py` structurally asserts that all six slots
   are real protocol methods and exercises serialization and permission safety.
+- `tests/unit/test_cache_strategy_deep.py` proves key-only local-memory work and
+  close-before-open do not acquire SQLite, while the cumulative file remains
+  warning-clean on Python 3.14.
 - The focused suite runs under strict warnings and covers the changed source at
   more than the repository's 85 percent aggregate and 75 percent file floors.
 - Repository-wide mypy validates every cache consumer, including local memory,

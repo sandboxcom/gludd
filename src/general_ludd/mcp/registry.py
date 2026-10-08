@@ -1,9 +1,13 @@
+"""Fail-closed MCP tool registration and server-bound lookup."""
+
 from __future__ import annotations
 
 import re
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+from general_ludd.mcp._validators import TrimmedNonEmptyStr
 
 # Tool names are used as the right-hand component of a "server_id/tool_name"
 # routing key.  A name containing '/' would corrupt the split and allow one
@@ -13,14 +17,16 @@ _TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
 class MCPTool(BaseModel):
-    name: str
+    """Describe a validated MCP tool advertised by one server."""
+
+    name: TrimmedNonEmptyStr
     description: str = ""
     input_schema: dict[str, Any] = Field(default_factory=dict)
     server_id: str = ""
 
     @field_validator("name", mode="before")
     @classmethod
-    def _strip_and_require(cls, v: str) -> str:
+    def _require_safe_name(cls, v: str) -> str:
         if isinstance(v, str):
             v = v.strip()
         if not v:
@@ -34,11 +40,15 @@ class MCPTool(BaseModel):
 
 
 class MCPToolRegistry:
+    """Store MCP tools by server and prevent unqualified-name hijacking."""
+
     def __init__(self) -> None:
+        """Initialize empty composite and per-server indexes."""
         self._tools: dict[tuple[str, str], MCPTool] = {}
         self._server_tools: dict[str, list[str]] = {}
 
     def register_tool(self, server_id: str, tool: MCPTool) -> None:
+        """Register a tool unless another server already owns its name."""
         # Security gate: reject tool-name collision across servers.
         # If the same name is already registered to a *different* server, that
         # is a configuration error (or a malicious server trying to shadow an
@@ -61,12 +71,14 @@ class MCPToolRegistry:
             self._server_tools[server_id].append(tool.name)
 
     def list_tools(self, server_id: str | None = None) -> list[MCPTool]:
+        """List all tools or only tools registered to ``server_id``."""
         if server_id is not None:
             names = self._server_tools.get(server_id, [])
             return [self._tools[(server_id, n)] for n in names if (server_id, n) in self._tools]
         return list(self._tools.values())
 
     def get_tool(self, name: str, server_id: str | None = None) -> MCPTool | None:
+        """Return a server-pinned tool or one unique unqualified match."""
         if server_id is not None:
             return self._tools.get((server_id, name))
         # Back-compat: name-only scan returns the unique match, or None if
@@ -75,10 +87,12 @@ class MCPToolRegistry:
         return matches[0] if len(matches) == 1 else None
 
     def remove_server(self, server_id: str) -> int:
+        """Remove one server's tools and return the number removed."""
         names = self._server_tools.pop(server_id, [])
         for n in names:
             self._tools.pop((server_id, n), None)
         return len(names)
 
     def tool_names(self) -> list[str]:
+        """Return sorted unique tool names across registered servers."""
         return sorted(set(n for (_, n) in self._tools))

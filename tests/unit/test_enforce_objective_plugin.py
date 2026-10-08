@@ -57,17 +57,20 @@ class TestPluginStructure:
 
 
 class TestHelperFunctions:
-    def test_getPrimaryObjective_exported(self):
+    def test_getPrimaryObjective_is_private(self):
         src = _plugin_source()
-        assert "export function getPrimaryObjective" in src
+        assert "function getPrimaryObjective" in src
+        assert "export function getPrimaryObjective" not in src
 
-    def test_isObjectiveMet_exported(self):
+    def test_isObjectiveMet_is_private(self):
         src = _plugin_source()
-        assert "export function isObjectiveMet" in src
+        assert "function isObjectiveMet" in src
+        assert "export function isObjectiveMet" not in src
 
-    def test_isCiGreenFromCache_exported(self):
+    def test_isCiGreenFromCache_is_private(self):
         src = _plugin_source()
-        assert "export function isCiGreenFromCache" in src
+        assert "function isCiGreenFromCache" in src
+        assert "export function isCiGreenFromCache" not in src
 
     def test_nag_prefix_present(self):
         src = _plugin_source()
@@ -76,8 +79,8 @@ class TestHelperFunctions:
 
     def test_getPrimaryObjective_reads_session_md(self):
         src = _plugin_source()
-        pidx = src.index("export function getPrimaryObjective")
-        end = src.find("export function", pidx + 1)
+        pidx = src.index("function getPrimaryObjective")
+        end = src.find("function getStackedObjective", pidx + 1)
         if end == -1:
             end = len(src)
         body = src[pidx:end]
@@ -98,6 +101,21 @@ class TestHelperFunctions:
     def test_read_tools_allowed(self):
         src = _plugin_source()
         assert '"read"' in src and '"grep"' in src and '"glob"' in src
+
+    def test_spec_velocity_composes_and_verifies_routed_corpus(self):
+        src = _plugin_source()
+
+        assert "function readBehavioralSpecCorpus" in src
+        assert "SPEC_MANIFEST_START" in src
+        assert "SPEC_CONTENT_START" in src
+        assert 'createHash("sha256")' in src
+        assert "behavioral spec source digest mismatch" in src
+
+    def test_spec_velocity_recognizes_shard_writes(self):
+        src = _plugin_source()
+
+        assert "function isBehavioralSpecPath" in src
+        assert 'normalized.includes("/docs/specs/behavioral/")' in src
 
 
 class TestObjectiveExtraction:

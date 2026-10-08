@@ -1,6 +1,6 @@
 ---
 # Prepare the DECISIVE crash-isolation scenario:
-#   * start the mock daemon (for the parent-liveness /healthz probe)
+#   * leave daemon acquisition to the converge play's owned task scope
 #   * build a BASELINE candidate root whose target module imports cleanly
 #   * build a CRASHING candidate root whose target module does
 #       import os; os._exit(139)
@@ -17,25 +17,6 @@
     candidate_root: "/tmp/gludd-ab-crash-candidate"
     module_rel: "gludd_ab_target/leaf.py"
   tasks:
-    - name: Launch mock daemon (background, nohup)
-      ansible.builtin.shell:
-        cmd: >-
-          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
-          "{{ project_dir }}/molecule/mock_daemon/server.py"
-          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
-          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
-      changed_when: true
-
-    - name: Wait for mock daemon /healthz
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ mock_port }}/healthz"
-        method: GET
-        status_code: 200
-      register: health
-      until: health.status == 200
-      retries: 20
-      delay: 0.5
-
     # ---- baseline candidate root (A): imports cleanly ----
     - name: Create baseline src package dir
       ansible.builtin.file:

@@ -1,0 +1,24 @@
+---
+- name: Converge — local_model_server role (live mode gated by MOLECULE_LIVE_MODEL)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    model_repo: "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
+    model_file: "Qwen2.5-0.5B-Instruct-Q5_K_M.gguf"
+  tasks:
+    - name: Invoke local_model_server role (live mode only)
+      when: lookup('env', 'MOLECULE_LIVE_MODEL') == '1'
+      ansible.builtin.include_role:
+        name: general_ludd.agent.local_model_server
+      vars:
+        health_check_retries: 30
+        health_check_delay: 2
+
+    - name: Skip live converge (CI-cheap syntax-only mode)
+      when: lookup('env', 'MOLECULE_LIVE_MODEL') != '1'
+      ansible.builtin.debug:
+        msg: >-
+          MOLECULE_LIVE_MODEL not set — skipping live local model server
+          converge (CI-cheap mode; set MOLECULE_LIVE_MODEL=1 to run the
+          full download → serve → health-check → shutdown pipeline)

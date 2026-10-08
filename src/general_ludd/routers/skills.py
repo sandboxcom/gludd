@@ -1,11 +1,19 @@
+"""Skill discovery, installation, fetching, and rendering HTTP routes."""
+
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, HTTPException
+from jinja2 import meta
+from jinja2.sandbox import SandboxedEnvironment
+from pydantic import BaseModel, Field, StrictStr, field_validator, model_validator
 
+from general_ludd.routers._runtime import StrictRuntimeRequest
+from general_ludd.security.capability_guard import RequireCapability
 from general_ludd.security.sanitize import is_path_within
 from general_ludd.skills.catalog import SkillCatalog
 from general_ludd.skills.fetcher import (
@@ -14,9 +22,13 @@ from general_ludd.skills.fetcher import (
     _safe_skill_filename,
     build_skill_frontmatter,
 )
+from general_ludd.skills.loader import discover_skills
+from general_ludd.skills.renderer import SkillRenderError, render_skill
 
 
 class SkillCatalogSearchRequest(BaseModel):
+    """Filter and bound a skill catalog search."""
+
     query: str = ""
     tags: list[str] | None = None
     category: str | None = None
@@ -24,17 +36,45 @@ class SkillCatalogSearchRequest(BaseModel):
 
 
 class SkillCatalogInstallRequest(BaseModel):
+    """Select a named catalog skill for installation."""
+
     name: str = ""
 
 
 class SkillFetchRequest(BaseModel):
+    """Select a remote skill URL for safe fetching."""
+
     url: str = ""
 
 
 class SkillFetchGithubRequest(BaseModel):
+    """Select a repository path and branch for safe skill fetching."""
+
     repo: str = ""
     path: str = ""
     branch: str = "main"
+
+
+class SkillRenderRequest(StrictRuntimeRequest):
+    """Bounded skill selection and rendering request."""
+
+    name: StrictStr | None = Field(default=None, min_length=1, max_length=256)
+    trigger: StrictStr | None = Field(default=None, min_length=1, max_length=4096)
+    variables: dict[StrictStr, object] = Field(default_factory=dict)
+    skills_path: StrictStr | None = Field(default=None, max_length=4096)
+
+    @model_validator(mode="after")
+    def _select_exactly_one(self) -> SkillRenderRequest:
+        if (self.name is None) == (self.trigger is None):
+            raise ValueError("exactly one of name or trigger is required")
+        return self
+
+    @field_validator("variables")
+    @classmethod
+    def _bound_variables(cls, value: dict[str, object]) -> dict[str, object]:
+        if len(value) > 128 or len(json.dumps(value, default=str)) > 65_536:
+            raise ValueError("skill variables exceed the bounded payload size")
+        return value
 
 
 def _get_catalog(app: FastAPI) -> SkillCatalog:
@@ -45,7 +85,70 @@ def _get_catalog(app: FastAPI) -> SkillCatalog:
     return catalog
 
 
+def _allowed_skill_roots(app: FastAPI) -> list[Path]:
+    roots: list[Path] = []
+    config_dir = getattr(app.state, "_config_dir", None)
+    if config_dir:
+        roots.append(Path(config_dir) / "skills")
+    project_dir = getattr(app.state, "_project_gludd_dir", None)
+    if project_dir:
+        roots.append(Path(project_dir) / "skills")
+    return roots
+
+
+def _required_skill_variables(body: str) -> list[str]:
+    environment = SandboxedEnvironment(autoescape=False)
+    environment.globals.clear()
+    return sorted(meta.find_undeclared_variables(environment.parse(body)))
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register skill management and bounded rendering routes."""
+
+    @app.post(
+        "/admin/skills/render",
+        dependencies=[Depends(RequireCapability(resource="admin:skills", action="render"))],
+    )
+    async def admin_skills_render(req: SkillRenderRequest) -> dict[str, object]:
+        roots = _allowed_skill_roots(app)
+        if req.skills_path is not None:
+            requested = Path(req.skills_path)
+            if not requested.is_absolute() or not any(
+                is_path_within(str(requested), str(root)) for root in roots
+            ):
+                raise HTTPException(status_code=422, detail="skills_path is outside daemon skill roots")
+            search_paths = [str(requested)]
+        else:
+            search_paths = [str(root) for root in roots]
+
+        skills = await asyncio.to_thread(discover_skills, *search_paths)
+        selected = next((skill for skill in skills if req.name and skill.name == req.name), None)
+        if selected is None and req.trigger is not None:
+            trigger = req.trigger.lower()
+            selected = next(
+                (
+                    skill
+                    for skill in skills
+                    if any(pattern.lower() in trigger for pattern in skill.trigger_patterns)
+                ),
+                None,
+            )
+        if selected is None:
+            raise HTTPException(status_code=404, detail="skill not found")
+        required_vars = _required_skill_variables(selected.body)
+        try:
+            rendered = await asyncio.to_thread(render_skill, selected.body, req.variables)
+        except SkillRenderError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ImportError as exc:
+            raise HTTPException(status_code=503, detail="skill renderer unavailable") from exc
+        if len(rendered.encode("utf-8")) > 1_048_576:
+            raise HTTPException(status_code=413, detail="rendered skill exceeds response limit")
+        return {
+            "skill_name": selected.name,
+            "rendered_body": rendered.strip(),
+            "required_vars": required_vars,
+        }
 
     @app.post("/admin/skills/catalog/search")
     async def admin_skills_catalog_search(

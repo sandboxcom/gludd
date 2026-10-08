@@ -2,6 +2,7 @@
 // Extended: AB001 frustration signals, AB002 spec velocity, AB003 CI-check-while-spec-target,
 // AB007 objective stacking, AB008 behavioral change measurement.
 import type { Plugin } from "@opencode-ai/plugin";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createRequire } from "node:module";
@@ -11,9 +12,12 @@ const nodeRequire = typeof require === "function" ? require : createRequire(impo
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args);
 }
+function execFileSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execFileSync(...args);
+}
 const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
-const SPEC_VELOCITY_FILE = "/tmp/gludd-spec-velocity.json";
-const SPEC_BEHAVIOR_FILE = "/tmp/gludd-spec-behavior.json";
+const SPEC_VELOCITY_FILE = process.env.GLUDD_SPEC_VELOCITY_FILE || "/tmp/gludd-spec-velocity.json";
+const SPEC_BEHAVIOR_FILE = process.env.GLUDD_SPEC_BEHAVIOR_FILE || "/tmp/gludd-spec-behavior.json";
 // AB002: minimum specs per 5-minute window to maintain velocity.
 // If pace is below this, non-spec activities are blocked.
 const MIN_SPECS_PER_WINDOW = 25; // 100 specs in 20 min = 25 per 5-min window
@@ -22,10 +26,75 @@ const SPEC_TARGET_TOTAL = 8000;
 // AB003: max CI checks per spec window while spec target is unmet.
 const MAX_CI_CHECKS_PER_SPEC_WINDOW = 3;
 // AB007: objective stacking — secondary requests don't overwrite primary.
-const OBJECTIVE_STACK_FILE = "/tmp/gludd-objective-stack.json";
+const OBJECTIVE_STACK_FILE = process.env.GLUDD_OBJECTIVE_STACK_FILE || "/tmp/gludd-objective-stack.json";
 // AB008: behavioral failure recurrence tracking.
 const MAX_RECURRENCE_BEFORE_BLOCK = 3;
-export function getPrimaryObjective(): string {
+const SPEC_MANIFEST_START = "<!-- behavioral-spec-shards:start -->";
+const SPEC_MANIFEST_END = "<!-- behavioral-spec-shards:end -->";
+const SPEC_PROLOGUE_START = "<!-- behavioral-spec-prologue:start -->";
+const SPEC_PROLOGUE_END = "<!-- behavioral-spec-prologue:end -->";
+const SPEC_CONTENT_START = "<!-- behavioral-spec-content:start -->";
+const SPEC_CONTENT_END = "<!-- behavioral-spec-content:end -->";
+
+function extractMarked(content: string, start: string, end: string): string {
+  if (content.split(start).length !== 2 || content.split(end).length !== 2) {
+    throw new Error(`behavioral spec marker must be unique: ${start}`);
+  }
+  const opening = `${start}\n`;
+  const closing = `\n${end}`;
+  const startAt = content.indexOf(opening);
+  const endAt = content.indexOf(closing, startAt + opening.length);
+  if (startAt < 0 || endAt < 0) {
+    throw new Error(`behavioral spec marker pair is malformed: ${start}`);
+  }
+  return content.slice(startAt + opening.length, endAt);
+}
+
+function readBehavioralSpecCorpus(root: string): string {
+  const indexPath = path.join(root, "docs", "specs", "BEHAVIORAL_SPECS.md");
+  const index = fs.readFileSync(indexPath, "utf8");
+  if (!index.includes(SPEC_MANIFEST_START)) return index;
+
+  const manifest = extractMarked(index, SPEC_MANIFEST_START, SPEC_MANIFEST_END);
+  const routes = manifest.split("\n").filter((line) => line.trim()).map((line) => {
+    const match = line.match(/^- `([^`]+)`$/);
+    if (!match) throw new Error(`invalid behavioral spec route: ${line}`);
+    return match[1];
+  });
+  if (routes.length === 0 || new Set(routes).size !== routes.length) {
+    throw new Error("behavioral spec routes must be nonempty and unique");
+  }
+  const payload = routes.map((route) => {
+    if (!/^behavioral\/[a-z0-9-]+\.md$/.test(route)) {
+      throw new Error(`unsafe behavioral spec route: ${route}`);
+    }
+    const shardPath = path.join(root, "docs", "specs", route);
+    return extractMarked(
+      fs.readFileSync(shardPath, "utf8"),
+      SPEC_CONTENT_START,
+      SPEC_CONTENT_END,
+    );
+  }).join("");
+  const corpus = `${extractMarked(index, SPEC_PROLOGUE_START, SPEC_PROLOGUE_END)}\n\n${payload}`;
+  const digestMatches = [...index.matchAll(/^<!-- behavioral-spec-source-sha256: ([0-9a-f]{64}) -->$/gm)];
+  if (digestMatches.length !== 1) {
+    throw new Error("behavioral spec index must contain one source digest");
+  }
+  const actual = createHash("sha256").update(corpus, "utf8").digest("hex");
+  if (actual !== digestMatches[0][1]) {
+    throw new Error("behavioral spec source digest mismatch");
+  }
+  return corpus;
+}
+
+function isBehavioralSpecPath(filePath: string): boolean {
+  const normalized = filePath.replaceAll("\\", "/").toLowerCase();
+  return normalized.endsWith("/docs/specs/behavioral_specs.md") ||
+    normalized.includes("/docs/specs/behavioral/") ||
+    normalized.includes("behavioral_specs");
+}
+
+function getPrimaryObjective(): string {
   try {
     const root = getProjectRoot();
     const sessionPath = path.join(root, "SESSION.md");
@@ -65,7 +134,7 @@ function persistObjectiveToStack(objective: string): void {
     }
   } catch { /* fail-open */ }
 }
-export function isCiGreenFromCache(): boolean {
+function isCiGreenFromCache(): boolean {
   try {
     const p = "/tmp/gludd-watchdog-ci.json";
     if (!fs.existsSync(p)) return false;
@@ -77,7 +146,7 @@ export function isCiGreenFromCache(): boolean {
     return false;
   }
 }
-export function isObjectiveMet(): boolean {
+function isObjectiveMet(): boolean {
   const obj = getPrimaryObjective();
   if (!obj) return true;
   if (/\bCI\s*GREEN\b|\bGREEN\s*CI\b/i.test(obj)) {
@@ -109,6 +178,40 @@ function getUnpushedCommitCount(): number {
     return 0;
   }
 }
+function releaseTagExists(root: string, version: string): boolean {
+  if (!/^[0-9A-Za-z][0-9A-Za-z.+-]*$/.test(version)) return false;
+  try {
+    const ref = `refs/tags/v${version}`;
+    execFileSync(
+      "git",
+      ["show-ref", "--verify", "--quiet", ref],
+      {
+        cwd: root,
+        timeout: 10000,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    const tagType = execFileSync("git", ["cat-file", "-t", ref], {
+      cwd: root,
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).toString().trim();
+    if (tagType !== "tag") return false;
+    const taggedCommit = execFileSync("git", ["rev-parse", `${ref}^{}`], {
+      cwd: root,
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).toString().trim();
+    const headCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).toString().trim();
+    return taggedCommit === headCommit;
+  } catch {
+    return false;
+  }
+}
 function getPendingReleaseVersion(): string {
   try {
     const root = getProjectRoot();
@@ -118,8 +221,7 @@ function getPendingReleaseVersion(): string {
     const match = content.match(/^\s*version\s*=\s*"([^"]+)"/m);
     if (!match) return "";
     const version = match[1];
-    if (/-(?:alpha|beta|rc|dev)/.test(version)) return version;
-    return "";
+    return releaseTagExists(root, version) ? "" : version;
   } catch {
     return "";
   }
@@ -174,7 +276,7 @@ function recordSpecWrite(): void {
     const root = getProjectRoot();
     const specPath = path.join(root, "docs", "specs", "BEHAVIORAL_SPECS.md");
     if (fs.existsSync(specPath)) {
-      const content = fs.readFileSync(specPath, "utf8");
+      const content = readBehavioralSpecCorpus(root);
       const matches = content.match(/^### [A-Z]+\d{3} — /gm);
       v.totalSpecs = matches ? matches.length : v.totalSpecs;
     }
@@ -212,7 +314,7 @@ const defaultImpl: HotModule = {
       if (tool === "edit" || tool === "write") {
         const filePath = typeof input?.args?.filePath === "string" ? input.args.filePath
           : typeof input?.args?.path === "string" ? input.args.path : "";
-        if (filePath.includes("BEHAVIORAL_SPECS.md") || filePath.includes("behavioral_specs")) {
+        if (isBehavioralSpecPath(filePath)) {
           recordSpecWrite();
         }
       }
@@ -230,7 +332,7 @@ const defaultImpl: HotModule = {
             : typeof input?.args?.path === "string" ? input.args.path : "";
           const cmd = typeof input?.args?.command === "string" ? input.args.command : "";
           // Allow spec-related writes and CI-advancing commands.
-          if (!filePath.includes("BEHAVIORAL_SPECS.md") &&
+          if (!isBehavioralSpecPath(filePath) &&
               !/\bmake\s+(ci-verdict|batch-push|release-cut|test)\b/.test(cmd)) {
             return {
               permissionDecision: "deny" as const,

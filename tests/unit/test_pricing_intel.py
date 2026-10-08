@@ -12,7 +12,7 @@ Coverage:
       Anthropic → postpaid_per_use + per_token
       OpenRouter → postpaid_per_use + per_token
   - PricingCatalog aggregation and lookup
-  - Fail-soft: source errors return [] / None; catalog never raises
+  - Fail-soft: availability errors return [] / stale cache; auth/data errors raise
   - Source integrity: no price stored without source URL
   - ModelPrice.__post_init__ raises ValueError on missing source
   - ComputePrice.usd_per_hour() normalizes across granularities
@@ -333,6 +333,73 @@ class TestOpenRouterSource:
             prices = OpenRouterSource().fetch_model_prices()
 
         assert prices == []
+
+    def test_fetch_model_prices_auth_error_is_not_hidden(self) -> None:
+        """Authentication failures are configuration errors, not availability probes."""
+        mock_resp = MagicMock(status_code=401)
+        mock_client_instance = MagicMock()
+        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
+        mock_client_instance.__exit__ = MagicMock(return_value=False)
+        mock_client_instance.get = MagicMock(return_value=mock_resp)
+
+        with (
+            patch("general_ludd.pricing_intel.sources.httpx.Client", return_value=mock_client_instance),
+            pytest.raises(RuntimeError, match="authentication"),
+        ):
+            OpenRouterSource().fetch_model_prices()
+
+    def test_fetch_model_prices_invalid_price_is_not_hidden(self) -> None:
+        """A reachable provider returning corrupt prices must fail visibly."""
+        mock_resp = _mock_openrouter_response(
+            [{"id": "broken/model", "pricing": {"prompt": "not-a-price", "completion": "0.1"}}]
+        )
+        mock_client_instance = MagicMock()
+        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
+        mock_client_instance.__exit__ = MagicMock(return_value=False)
+        mock_client_instance.get = MagicMock(return_value=mock_resp)
+
+        with (
+            patch("general_ludd.pricing_intel.sources.httpx.Client", return_value=mock_client_instance),
+            pytest.raises(ValueError, match="invalid OpenRouter pricing"),
+        ):
+            OpenRouterSource().fetch_model_prices()
+
+    def test_fetch_model_prices_negative_sentinel_is_omitted_not_zeroed(self) -> None:
+        """Provider sentinel rates are unavailable, never free model prices."""
+        mock_resp = _mock_openrouter_response(
+            [
+                {"id": "openrouter/auto", "pricing": {"prompt": "-1", "completion": "-1"}},
+                {"id": "valid/model", "pricing": {"prompt": "0.001", "completion": "0.002"}},
+            ]
+        )
+        mock_client_instance = MagicMock()
+        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
+        mock_client_instance.__exit__ = MagicMock(return_value=False)
+        mock_client_instance.get = MagicMock(return_value=mock_resp)
+
+        with patch(
+            "general_ludd.pricing_intel.sources.httpx.Client",
+            return_value=mock_client_instance,
+        ):
+            prices = OpenRouterSource().fetch_model_prices()
+
+        assert [price.model_id for price in prices] == ["valid/model"]
+
+    def test_catalog_does_not_hide_openrouter_auth_errors(self) -> None:
+        """The catalog may fail soft on outages but must surface bad credentials."""
+        mock_resp = MagicMock(status_code=403)
+        mock_client_instance = MagicMock()
+        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
+        mock_client_instance.__exit__ = MagicMock(return_value=False)
+        mock_client_instance.get = MagicMock(return_value=mock_resp)
+
+        with (
+            patch("general_ludd.pricing_intel.sources.httpx.Client", return_value=mock_client_instance),
+            pytest.raises(RuntimeError, match="authentication"),
+        ):
+            PricingCatalog(sources=[OpenRouterSource()]).all_model_prices(
+                "openrouter", refresh=True
+            )
 
     def test_all_fetched_prices_have_source(self) -> None:
         """Every ModelPrice from OpenRouter must have a source URL."""

@@ -15,31 +15,189 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal, TextIO
 
-try:
-    from scripts.resource_arbiter import resource_path
-except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from resource_arbiter import resource_path
+if TYPE_CHECKING or __package__:
+    from scripts.resource_arbiter import project_root, resource_path
+else:  # pragma: no cover - direct script execution
+    _resource_arbiter = import_module("resource_arbiter")
+    project_root = _resource_arbiter.project_root
+    resource_path = _resource_arbiter.resource_path
 
 DEFAULT_COLLECTION_LOCK_TIMEOUT = 900.0
 DEFAULT_GATE_REFRESH_LOCK_TIMEOUT = 120.0
+GIT_IDENTITY_TIMEOUT = 5.0
+MAX_LEASE_RECORD_BYTES = 512
 
 
-def default_resource_lock(resource: str = "collection") -> Path:
+class RepositoryIdentityError(RuntimeError):
+    """The shared Git repository identity could not be proven."""
+
+
+@dataclass(frozen=True)
+class LeaseRecord:
+    """Content-safe owner fields parsed from a bounded lock record."""
+
+    pid: int
+    acquired_unix_ns: int | None
+
+
+@dataclass(frozen=True)
+class LeaseInspection:
+    """Kernel lock state plus a bounded advisory owner record."""
+
+    state: Literal["available", "held", "unavailable"]
+    record: LeaseRecord | None
+
+
+def _positive_decimal(value: str, *, maximum: int) -> int | None:
+    """Parse one canonical positive decimal within an explicit bound."""
+
+    if not value.isascii() or not value.isdecimal() or value.startswith("0"):
+        return None
+    parsed = int(value)
+    return parsed if 0 < parsed <= maximum else None
+
+
+def parse_lease_record(payload: str) -> LeaseRecord | None:
+    """Parse only allowlisted fields from one bounded advisory record."""
+
+    try:
+        if len(payload.encode("utf-8")) > MAX_LEASE_RECORD_BYTES:
+            return None
+    except UnicodeEncodeError:
+        return None
+    fields: dict[str, str] = {}
+    for line in payload.splitlines():
+        key, separator, value = line.partition("=")
+        if not separator or key not in {"pid", "acquired_unix_ns"}:
+            continue
+        if key in fields:
+            return None
+        fields[key] = value
+    pid = _positive_decimal(fields.get("pid", ""), maximum=2**31 - 1)
+    if pid is None:
+        return None
+    acquired_value = fields.get("acquired_unix_ns")
+    acquired = None
+    if acquired_value is not None:
+        acquired = _positive_decimal(acquired_value, maximum=2**63 - 1)
+        if acquired is None:
+            return None
+    return LeaseRecord(pid=pid, acquired_unix_ns=acquired)
+
+
+def _read_lease_record(handle: TextIO) -> LeaseRecord | None:
+    """Read no more than the public record bound from an open lease."""
+
+    handle.seek(0)
+    return parse_lease_record(handle.read(MAX_LEASE_RECORD_BYTES + 1))
+
+
+def inspect_lease(path: Path | str) -> LeaseInspection:
+    """Observe a lease without creating, unlinking, or trusting its record."""
+
+    lock_path = Path(path).expanduser()
+    try:
+        identity = lock_path.lstat()
+    except FileNotFoundError:
+        return LeaseInspection(state="available", record=None)
+    except OSError:
+        return LeaseInspection(state="unavailable", record=None)
+    if not lock_path.is_file() or lock_path.is_symlink():
+        return LeaseInspection(state="unavailable", record=None)
+    try:
+        with lock_path.open("r+", encoding="utf-8") as handle:
+            opened = os.fstat(handle.fileno())
+            if (identity.st_dev, identity.st_ino) != (opened.st_dev, opened.st_ino):
+                return LeaseInspection(state="unavailable", record=None)
+            record = _read_lease_record(handle)
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return LeaseInspection(state="held", record=record)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                return LeaseInspection(state="available", record=record)
+    except (OSError, UnicodeError):
+        return LeaseInspection(state="unavailable", record=None)
+
+
+def repository_common_dir(start: Path | str | None = None) -> Path:
+    """Return Git's canonical directory shared by all linked worktrees."""
+
+    checkout = project_root(start)
+    command = ["git", "-C", str(checkout), "rev-parse", "--git-common-dir"]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=GIT_IDENTITY_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RepositoryIdentityError(
+            f"Git common directory inspection failed for {checkout}"
+        ) from exc
+    output = result.stdout.strip()
+    if result.returncode != 0 or not output or "\n" in output:
+        detail = result.stderr.strip() or f"git exited {result.returncode}"
+        raise RepositoryIdentityError(
+            f"Git common directory unavailable for {checkout}: {detail}"
+        )
+    candidate = Path(output).expanduser()
+    if not candidate.is_absolute():
+        candidate = checkout / candidate
+    try:
+        common_dir = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise RepositoryIdentityError(
+            f"Git common directory cannot be resolved for {checkout}"
+        ) from exc
+    if not common_dir.is_dir():
+        raise RepositoryIdentityError(
+            f"Git common directory is not a directory: {common_dir}"
+        )
+    return common_dir
+
+
+def repository_resource_lock(
+    resource: str = "collection", start: Path | str | None = None
+) -> Path:
+    """Return one resource lease shared by every worktree of a repository."""
+
+    common_dir = repository_common_dir(start)
+    prototype = resource_path(resource, common_dir)
+    return common_dir / "gludd" / "locks" / prototype.name
+
+
+def default_resource_lock(
+    resource: str = "collection", start: Path | str | None = None
+) -> Path:
     """Return a stable project-scoped lock path for one resource."""
 
-    if resource == "collection":
-        configured = os.environ.get("GLUDD_COLLECTION_LOCK", "").strip()
-        if configured:
-            return Path(configured).expanduser()
-    return resource_path(resource)
+    canonical = repository_resource_lock(resource, start)
+    if resource != "collection":
+        return canonical
+    configured = os.environ.get("GLUDD_COLLECTION_LOCK", "").strip()
+    if not configured:
+        return canonical
+    configured_path = Path(configured).expanduser().resolve(strict=False)
+    if configured_path != canonical.resolve(strict=False):
+        raise RepositoryIdentityError(
+            "GLUDD_COLLECTION_LOCK cannot redirect the canonical repository lease"
+        )
+    return canonical
 
 
-def default_collection_lock() -> Path:
+def default_collection_lock(start: Path | str | None = None) -> Path:
     """Return the stable lock path for repository-wide collection."""
 
-    return default_resource_lock()
+    return default_resource_lock(start=start)
 
 
 def lock_timeout(resource: str = "collection") -> float:
@@ -93,7 +251,10 @@ def collection_lock(
         try:
             handle.seek(0)
             handle.truncate()
-            handle.write(f"pid={os.getpid()}\n")
+            handle.write(
+                f"pid={os.getpid()}\n"
+                f"acquired_unix_ns={time.time_ns()}\n"
+            )
             handle.flush()
             yield lock_path
         finally:
@@ -109,10 +270,31 @@ def run_locked(
     wait = lock_timeout(resource)
     if timeout is not None:
         wait = timeout
-    print(f"collection lock waiting: {lock}", flush=True)
-    with collection_lock(lock, timeout=wait):
-        print(f"collection lock acquired: {lock}", flush=True)
-        return subprocess.run(command, check=False).returncode
+    started = time.monotonic()
+    print(
+        f"collection lock waiting: resource={resource} path={lock} "
+        f"timeout={wait:.3f}s",
+        flush=True,
+    )
+    acquired = False
+    try:
+        with collection_lock(lock, timeout=wait):
+            acquired = True
+            waited = time.monotonic() - started
+            print(
+                f"collection lock acquired: resource={resource} path={lock} "
+                f"waited={waited:.3f}s pid={os.getpid()}",
+                flush=True,
+            )
+            return subprocess.run(command, check=False).returncode
+    finally:
+        if acquired:
+            held = time.monotonic() - started
+            print(
+                f"collection lock released: resource={resource} path={lock} "
+                f"elapsed={held:.3f}s pid={os.getpid()}",
+                flush=True,
+            )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -131,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         return run_locked(args[1:], resource=resource)
-    except TimeoutError as exc:
+    except (RepositoryIdentityError, TimeoutError) as exc:
         print(f"collection lock unavailable: {exc}", file=sys.stderr)
         return 75
 

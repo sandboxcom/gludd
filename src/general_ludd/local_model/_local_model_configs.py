@@ -46,8 +46,8 @@ _LOCAL_MODELS: list[LocalModelConfig] = [
     ),
     LocalModelConfig(
         name="deepseek-coder-1.3b",
-        repo="bartowski/DeepSeek-Coder-1.3B-Instruct-GGUF",
-        filename="DeepSeek-Coder-1.3B-Instruct-Q4_K_M.gguf",
+        repo="TheBloke/deepseek-coder-1.3b-instruct-GGUF",
+        filename="deepseek-coder-1.3b-instruct.Q4_K_M.gguf",
         context_size=16384,
         ollama_tag="deepseek-coder:1.3b",
         size_mb=792,
@@ -66,8 +66,8 @@ _LOCAL_MODELS: list[LocalModelConfig] = [
     ),
     LocalModelConfig(
         name="starcoder2-3b",
-        repo="bartowski/StarCoder2-3B-Instruct-GGUF",
-        filename="StarCoder2-3B-Instruct-Q4_K_M.gguf",
+        repo="QuantFactory/starcoder2-3b-instruct-GGUF",
+        filename="starcoder2-3b-instruct.Q4_K_M.gguf",
         context_size=16384,
         ollama_tag="starcoder2:3b",
         size_mb=1808,

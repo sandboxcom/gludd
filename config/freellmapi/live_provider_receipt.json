@@ -1,0 +1,23 @@
+{
+  "accepted_count": 0,
+  "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "candidate_identity_digest": "8fd77b537ffb2ed410ccbfc27900fb93144f117a55a0f00f9755a1a5ff5a14ee",
+  "corpus_evidence_id": "sha256:33003e2239bb8e30bff3577c246e16b5bea4408fca524a16020203e3333b7daa",
+  "decision": "live_provider_rejected",
+  "evidence_id": "sha256:dd1732ff83f62d8799155f69369ab5c8c098b5cc918ae6dbdc770949757e6b20",
+  "external_opt_in": true,
+  "gate": "freellmapi-live-provider-proof-v1",
+  "observed_at": "2026-09-27T05:44:40.259848Z",
+  "provider": "zai",
+  "provider_failure": "rate_limited",
+  "provider_input_tokens": 0,
+  "provider_model_sha256": "597e72de98bc2044367728b5d81af89bd5128a8a62d6850dd109f277b384f403",
+  "provider_output_tokens": 0,
+  "provider_total_tokens": 0,
+  "provisioned_compute_remaining": 0,
+  "queue_empty_after": true,
+  "request_count": 1,
+  "runtime_admitted": false,
+  "schema_version": 1,
+  "transport_owner": "general_ludd.models.gateway"
+}

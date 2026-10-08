@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>gludd — Autonomous Software Development</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css">
+<link rel="stylesheet" href="./vendor/reveal/reveal.css">
+<link rel="stylesheet" href="./presentation.css?v={{GIT_SHA_FULL}}">
 <style>
 :root {
   --r-heading-text-transform: none;
@@ -43,7 +43,7 @@
 .metric-box .cite { font-size: 0.4em; color: #484f58; display: block; margin-top: 4px; }
 .fragment.small { font-size: 0.75em; }
 .diagram-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin: 16px auto; max-width: 94%; text-align: center; }
-.diagram-wrap img { width: 100%; height: auto; display: block; }
+.diagram-wrap img { max-width: 100%; height: auto; display: block; margin-inline: auto; }
 .reveal .mermaid svg { max-width: 100%; height: auto; }
 .reveal .mermaid { max-width: 100%; overflow-x: auto; }
 .honest-note { border-left: 3px solid #d29922; padding-left: 12px; color: #d29922; font-size: 0.55em; margin-top: 12px; }
@@ -54,6 +54,75 @@
 .stage-kicker { color: #8b949e; font-size: 0.55em; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 4px; }
 .bullets-tight li { margin-bottom: 6px; font-size: 0.85em; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.feature-sync-slide h2 { font-size: 1.35em; line-height: 1.1; margin-bottom: 0.25em; }
+.feature-sync-slide h2 .badge-yellow { font-size: 0.58em; }
+.feature-sync-slide h3 { font-size: 1em; margin: 0.2em 0; }
+.feature-sync-slide .stage-kicker { font-size: 0.6em; margin: 0; }
+.feature-sync-slide .two-col { gap: 18px; }
+.feature-sync-slide .bullets-tight { margin: 0.25em 0; }
+.feature-sync-slide .bullets-tight li { margin-bottom: 3px; font-size: 0.66em; line-height: 1.24; }
+.feature-sync-slide .diagram-wrap { margin: 6px auto; padding: 8px; }
+.feature-sync-slide .diagram-wrap .mermaid { font-size: 14px; }
+.feature-sync-slide code { font-size: 1.05em; }
+.feature-sync-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; }
+.feature-sync-slide .honest-note { font-size: 0.6em; line-height: 1.18; margin-top: 5px; }
+.feature-sync-slide .cite { font-size: 0.6em; line-height: 1.18; }
+section[data-contract^="decision-log-codification"] .decision-bullets { font-size: 0.74em; }
+section[data-contract^="decision-log-codification"] .stage-kicker,
+section[data-contract^="decision-log-codification"] .honest-note,
+section[data-contract^="decision-log-codification"] .cite { font-size: 0.6em; line-height: 1.2; }
+@media (max-height: 640px) {
+  .feature-sync-slide { padding: 0.5rem 0.75rem 1rem !important; }
+  .feature-sync-slide h2 { font-size: 1.15em; margin: 0 0 0.12em; }
+  .feature-sync-slide h3 { font-size: 0.86em; }
+  .feature-sync-slide .stage-kicker { font-size: 0.5em; }
+  .feature-sync-slide .bullets-tight { margin: 0.1em 0; }
+  .feature-sync-slide .bullets-tight li { font-size: 0.6em; line-height: 1.14; margin-bottom: 2px; }
+  .feature-sync-slide .diagram-wrap { margin: 3px auto; padding: 3px; }
+  .feature-sync-slide .diagram-wrap .mermaid-image { max-height: 82px !important; max-width: 100% !important; }
+  section[data-contract="s83-101-104-concurrency-authority"] .diagram-wrap .mermaid-image {
+    max-height: 140px !important;
+  }
+  section[data-contract="s83-108-105-boundary-evidence"] .diagram-wrap .mermaid-image {
+    max-height: 120px !important;
+  }
+  .feature-sync-slide .honest-note,
+  .feature-sync-slide .cite { font-size: 0.5em; line-height: 1.08; margin: 3px 0; }
+  section[data-contract^="decision-log-codification"] {
+    padding: 0.4rem 0.7rem 0.7rem !important;
+  }
+  section[data-contract^="decision-log-codification"] h2 {
+    font-size: 1.05em;
+    margin: 0 0 0.12em;
+  }
+  section[data-contract^="decision-log-codification"] h3 {
+    font-size: 0.8em;
+    margin: 0.1em 0;
+  }
+  section[data-contract^="decision-log-codification"] .stage-kicker {
+    font-size: 0.46em;
+    margin: 0;
+  }
+  section[data-contract^="decision-log-codification"] .two-col { gap: 10px; }
+  section[data-contract^="decision-log-codification"] .bullets-tight { margin: 0.08em 0; }
+  section[data-contract^="decision-log-codification"] .decision-bullets {
+    font-size: 0.54em;
+  }
+  section[data-contract^="decision-log-codification"] .bullets-tight li {
+    line-height: 1.1;
+    margin-bottom: 1px;
+  }
+  section[data-contract^="decision-log-codification"] .honest-note {
+    font-size: 0.48em;
+    line-height: 1.08;
+    margin: 3px 0;
+  }
+  section[data-contract^="decision-log-codification"] .cite {
+    font-size: 0.46em;
+    line-height: 1.08;
+    margin: 3px 0;
+  }
+}
 /* --- Mobile / narrow-screen: keep every slide on-screen, never scroll the body sideways --- */
 @media (max-width: 640px) {
   :root {
@@ -93,7 +162,7 @@
     &mdash; explained, with exact code paths
   </p>
   <p style="margin-top:30px; font-size:0.5em; color:#484f58;">
-    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-14
+    v{{VERSION}} &middot; MIT License &middot; commit {{GIT_SHA}} &middot; generated {{GENERATED_AT}}
   </p>
 </section>
 
@@ -134,37 +203,11 @@
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 4: ARCHITECTURE AT A GLANCE -->
-<!-- ============================================================ -->
-<section>
-  <h2>Architecture at a glance</h2>
-  <p><span class="path">daemon.py</span> boots a FastAPI process and wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>) that ticks forever.</p>
-  <ul class="bullets-tight">
-    <li class="fragment">Every tick opens <strong>one DB session</strong> and runs 16 named phases in a fixed order</li>
-    <li class="fragment">A todo moves through a state machine: BACKLOG &rarr; SCHEDULED/QUEUED &rarr; ACTIVE &rarr; done/reconciled</li>
-    <li class="fragment">Every state change, dispatch, review verdict, and commit is a database row &mdash; nothing lives only in memory</li>
-  </ul>
-  <div class="diagram-wrap">
-    <div class="mermaid">
-graph TD
-  User["You"] -->|POST /api/todos| Daemon["daemon.py + EventLoop<br/>event_loop/loop.py"]
-  Daemon -->|dispatch| Model["Model gateway<br/>models/gateway.py"]
-  Daemon -->|execute| Runner["Ansible / worker<br/>ansible/runner.py, worker/app.py"]
-  Model --> Review["Reviewer<br/>review/reviewer.py"]
-  Runner --> Review
-  Review -->|approve| Git[("git_automation/repo.py<br/>commit + push")]
-  Daemon -.->|next tick, ~1s| Daemon
-    </div>
-  </div>
-  <p class="cite">Source: src/general_ludd/daemon.py, src/general_ludd/event_loop/loop.py</p>
-</section>
-
-<!-- ============================================================ -->
-<!-- SLIDE 4b: DAEMON OVERVIEW -->
+<!-- SLIDE 4: DAEMON OVERVIEW -->
 <!-- ============================================================ -->
 <section>
   <h2>Daemon overview &mdash; the central orchestrator</h2>
-  <p><span class="path">src/general_ludd/daemon.py</span> (3,126 lines) is the single entry point. It boots a FastAPI process, wires every subsystem, and runs the EventLoop forever.</p>
+  <p><span class="path">src/general_ludd/daemon.py</span> is the central entry point. It boots a FastAPI process, wires every subsystem, and runs the EventLoop forever.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
 graph TD
@@ -175,8 +218,8 @@ graph TD
     A4 --> A5["start EventLoop<br/>asyncio.create_task"]
   end
   subgraph Runtime["Per-tick (event_loop/loop.py)"]
-    B1["open DB session"] --> B2["run 16 PHASE_ORDER phases"]
-    B2 --> B3["commit + close session"]
+    B1["open short DB session"] --> B2["run 25 PHASE_ORDER phases<br/>across commit boundaries"]
+    B2 --> B3["close claim session<br/>before provider effects"]
   end
   subgraph Shutdown["Lifespan teardown"]
     C1["drain background tasks"] --> C2["close MCP subprocesses"]
@@ -188,11 +231,47 @@ graph TD
     </div>
   </div>
   <ul class="bullets-tight">
-    <li class="fragment"><strong>Wired at boot:</strong> 24 model providers, 109 Ansible roles, 14 enforcement plugins, 27 DB tables</li>
+    <li class="fragment"><strong>Wired at boot:</strong> 24 model providers, {{ROLE_COUNT}} Ansible roles, 14 enforcement plugins, 27 DB tables</li>
     <li class="fragment"><strong>Routers registered:</strong> todos, review, admin, MCP, self-improve, compute, pause, remediation, eval, security, account, memory, worktree, stream, files, facts, ornith, benchmark, model-performance</li>
     <li class="fragment"><strong>Daemon state:</strong> single source of truth (&lt;code&gt;app.state&lt;/code&gt;) — DB factory, controllers, agent registry, dispatcher, all in one process</li>
   </ul>
-  <p class="cite">Source: src/general_ludd/daemon.py:1-3126, src/general_ludd/event_loop/loop.py</p>
+  <p class="cite">Source: src/general_ludd/daemon.py, src/general_ludd/event_loop/loop.py</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 4b: PRESENTATION RENDERING RELIABILITY -->
+<!-- ============================================================ -->
+<section data-contract="presentation-browser-resilience">
+  <p class="stage-kicker">Documentation reliability &middot; v0.1.2</p>
+  <h2>Every diagram now has a measured browser proof</h2>
+  <div class="two-col">
+    <div>
+      <h3>Render without moving live slides</h3>
+      <ul class="bullets-tight">
+        <li>After fonts load, render <strong>one diagram at a time</strong> in an independent body scratch node</li>
+        <li>Keep the authored node in Reveal; decode each validated SVG as a <strong>replaced image</strong></li>
+        <li>Give every image explicit intrinsic dimensions and every diagram its own deadline</li>
+        <li>Reject descendant <code>undefined</code>, <code>NaN</code>, or <code>Infinity</code> geometry</li>
+        <li>Keep accessible Mermaid source visible for every isolated failure</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Prove the artifact users receive</h3>
+      <ul class="bullets-tight">
+        <li><strong>Chromium + WebKit:</strong> cold/cache, every slide, resize, decoded-image geometry, and failure fallbacks</li>
+        <li><strong>Safari regression:</strong> forced inline-SVG collapse must not hide any chart</li>
+        <li><strong>Native Safari:</strong> separate bounded <code>safaridriver</code>; operator automation remains required</li>
+        <li><strong>Pages:</strong> development validates; master alone deploys the exact tested SHA</li>
+        <li><strong>ZDD:</strong> controller and manifest-bound Mermaid transform roll back together</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    The native Safari probe currently reports Remote Automation disabled and keeps
+    exact operator guidance. Safari compatibility remains pending until that
+    user-controlled setting is enabled and the same geometry contract passes.
+  </p>
+  <p class="cite">Sources: docs/presentation/deck/presentation.js, scripts/vendor_presentation_assets.py, scripts/run_presentation_browser_tests.py, scripts/run_presentation_safari_smoke.py, tests/browser/test_presentation.py</p>
 </section>
 
 <!-- ============================================================ -->
@@ -203,19 +282,63 @@ graph TD
   <p>Nine stages, each backed by a named function and a database table. The next slides walk each one.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
-  n1["1 Submit<br/>routers/todos.py"] --> n2["2 Tick loop<br/>event_loop/loop.py"]
-  n2 --> n3["3 Schedule<br/>event_loop/scheduler.py"]
-  n3 --> n4["4 Claim<br/>db/repository.py"]
-  n4 --> n5["5 Dispatch<br/>loop.py _dispatch_execute_job"]
-  n5 --> n6["6 Model call<br/>models/gateway.py"]
-  n6 --> n7["7 Execute<br/>ansible/runner.py or worker/app.py"]
-  n7 --> n8["8 Review<br/>review/reviewer.py"]
-  n8 --> n9["9 Reconcile + commit<br/>git_automation/repo.py"]
-  n8 -.->|reject: retry| n6
+flowchart LR
+  subgraph Intake["Intake"]
+    direction TB
+    n1["1 Submit — routers/todos.py"] --> n2["2 Tick — event_loop/loop.py"]
+    n2 --> n3["3 Schedule — scheduler.py"]
+  end
+  subgraph Work["Own + generate"]
+    direction TB
+    n4["4 Claim — db/repository.py"] --> n5["5 Dispatch — _dispatch_execute_job"]
+    n5 --> n6["6 Model call — models/gateway.py"]
+  end
+  subgraph Delivery["Execute + deliver"]
+    direction TB
+    n7["7 Execute — runner or worker"] --> n8["8 Review — reviewer.py"]
+    n8 --> n9["9 Reconcile + commit — repo.py"]
+  end
+  Intake --> Work --> Delivery
+  Delivery -.->|reject: retry| Work
     </div>
   </div>
   <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 5a: CLAIM-BEFORE-PROVISION PROOF -->
+<!-- ============================================================ -->
+<section data-contract="s83-158-claim-before-provision" data-proof="s83-158-durable-chain-acceptance">
+  <p class="stage-kicker">Flagship flow &middot; ownership boundary</p>
+  <h2>Claim before provision</h2>
+  <div class="two-col">
+    <div>
+      <h3>Durable ownership path</h3>
+      <ol class="bullets-tight" style="font-size:0.7em;">
+        <li>Produce durable todo</li>
+        <li>Approval boundary</li>
+        <li>Claim + lease</li>
+        <li>Commit + close</li>
+        <li>Provision</li>
+        <li>Execute + verify</li>
+        <li>Terminal commit</li>
+        <li>Exact release</li>
+      </ol>
+    </div>
+    <div>
+      <h3>Fail-closed proof</h3>
+      <p class="honest-note">Outcome: zero pre-claim compute; a losing or restarted worker preserves foreign ownership.</p>
+      <ul class="bullets-tight" style="font-size:0.56em;">
+        <li>Commit failure: rollback + clear detached claim; no provision or dispatch.</li>
+        <li>Competing workers + restart: one durable winner, exactly one provision.</li>
+        <li>Non-runnable work: zero allocation.</li>
+        <li><strong>Hermetic closure:</strong> discovery &rarr; approval &rarr; claim &rarr; edit &rarr; review &rarr; completion &rarr; exact release; no injected self-improve row or cancellation.</li>
+        <li><strong>Completed delivery:</strong> exact project workspace and intended task branch.</li>
+        <li>Absent or unsafe scope: zero Git mutation.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="cite">Contracts: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md:35-79 &middot; docs/features/application-resource-ownership.md:26-48; proof: tests/e2e/test_self_improve_private_policy_e2e.py:730-818</p>
 </section>
 
 <!-- ============================================================ -->
@@ -227,6 +350,7 @@ flowchart TD
   <div class="diagram-wrap">
     <div class="mermaid">
 stateDiagram-v2
+  state "Review result" as REVIEWING_RETURN
   [*] --> BACKLOG
   BACKLOG --> SCHEDULED: has schedule
   BACKLOG --> QUEUED: ready now
@@ -274,8 +398,8 @@ flowchart TD
 <!-- ============================================================ -->
 <section>
   <div class="stage-kicker">Flagship flow &middot; stage 2 of 9</div>
-  <h2><span class="step-number">2</span>The tick loop &mdash; 17 phases</h2>
-  <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:88</span>) &mdash; the same 17 phases, in the same order, inside one DB session.</p>
+  <h2><span class="step-number">2</span>The tick loop &mdash; 25 phases</h2>
+  <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:151</span>) &mdash; the same 25 phases in the same order, with the claim transaction committed and closed before provisioning or dispatch.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
 flowchart TD
@@ -288,10 +412,13 @@ flowchart TD
     B1["refill_task_buckets"] --> B2["run_scheduler"]
     B2 --> B3["claim_runnable_todos"]
     B3 --> B4["evaluate_rules"]
+    B4 --> B5["commit + close"]
+    B5 --> B6["reconcile_compute_demand"]
   end
   subgraph G3["Execution + reconcile"]
     C1["dispatch_execute_jobs"] --> C2["reconcile_completed_<br/>decisions"]
-    C2 --> C3["refresh_model_<br/>performance"]
+    C2 --> C3["release_compute_<br/>demand"]
+    C3 --> C4["refresh_model_<br/>performance"]
   end
   subgraph G4["Compute + credits"]
     D1["check_compute_<br/>utilization"] --> D2["check_service_credits"]
@@ -307,7 +434,7 @@ flowchart TD
   G4 --> G5
     </div>
   </div>
-  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-106 (PHASE_ORDER, 17 entries)</p>
+  <p class="cite">Source: src/general_ludd/event_loop/loop.py:151-177 (PHASE_ORDER, 25 entries)</p>
 </section>
 
 <!-- ============================================================ -->
@@ -315,22 +442,29 @@ flowchart TD
 <!-- ============================================================ -->
 <section>
   <h2>One tick, in order</h2>
-  <p>The load-bearing phases of <span class="path">PHASE_ORDER</span>, in the exact order they run inside a single tick's DB session.</p>
+  <p>The load-bearing phases of <span class="path">PHASE_ORDER</span>, in the exact order they cross short database sessions and sessionless provider-effect boundaries.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
-  A["load_config<br/>snapshot"] --> B["claim + dispatch<br/>return review"]
-  B --> C["run_scheduler<br/>promote due todos"]
-  C --> D["claim_runnable<br/>todos (CAS)"]
-  D --> E["evaluate_rules"]
-  E --> F["dispatch_execute<br/>jobs (spend gate)"]
-  F --> G["reconcile_completed<br/>decisions + commit"]
-  G --> H["self_improve"]
-  H --> I["emit_tick_metrics"]
-  I -.->|next tick ~1s| A
+flowchart LR
+  subgraph Observe["Observe + approve"]
+    direction TB
+    A["load config snapshot"] --> B["claim + dispatch return review"]
+    B --> C["run scheduler"] --> D["producer + approval boundary"]
+  end
+  subgraph Execute["Own + execute"]
+    direction TB
+    E["claim todo + lease"] --> F["commit + close claim session"]
+    F --> G["provision exact compute"] --> H["dispatch + verify"]
+  end
+  subgraph Finish["Finish + release"]
+    direction TB
+    I["terminal commit"] --> J["release exact compute"] --> K["emit tick metrics"]
+  end
+  Observe --> Execute --> Finish
+  Finish -.->|next tick ~1s| Observe
     </div>
   </div>
-  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-106 (PHASE_ORDER)</p>
+  <p class="cite">Source: src/general_ludd/event_loop/loop.py:151-177 (PHASE_ORDER)</p>
 </section>
 
 <!-- ============================================================ -->
@@ -385,9 +519,9 @@ flowchart TD
   <div class="stage-kicker">Flagship flow &middot; stage 5 of 9</div>
   <h2><span class="step-number">5</span>Dispatch &mdash; the spend gate</h2>
   <p><span class="path">_dispatch_execute_job</span> (<span class="path">event_loop/loop.py:1844</span>) runs from the <code>dispatch_execute_jobs</code> phase &mdash; but it checks the budget before it checks anything else.</p>
-  <div class="diagram-wrap">
+  <div class="diagram-wrap diagram-compact">
     <div class="mermaid">
-flowchart TD
+flowchart LR
   A["_dispatch_execute_job"] --> B{"SpendLimiter.try_charge<br/>(in-memory gate)"}
   B -->|accepted| C["proceed to model call"]
   B -->|rejected| D["defer todo<br/>(retry later tick)"]
@@ -455,14 +589,18 @@ flowchart TD
   <h2>Submit &rarr; execute, and what each step writes</h2>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
-  s1["1 POST /api/todos<br/>(You -> routers/todos.py)"] --> s2["2 INSERT todos<br/>(BACKLOG)"]
-  s2 --> s3["3 claim QUEUED -> ACTIVE<br/>+ todo_events (EventLoop)"]
-  s3 --> s4["4 SpendLimiter.try_charge<br/>(gate)"]
-  s4 --> s5["5 call_model<br/>(models/gateway.py)"]
-  s5 --> s6["6 INSERT model_call_logs"]
-  s6 --> s7["7 execute job<br/>(runner / worker)"]
-  s7 --> s8["8 INSERT task_returns<br/>(unreviewed)"]
+flowchart LR
+  subgraph Durable["Durable intake"]
+    direction TB
+    s1["1 POST /api/todos"] --> s2["2 INSERT todos — BACKLOG"]
+    s2 --> s3["3 claim ACTIVE + todo_events"] --> s4["4 SpendLimiter gate"]
+  end
+  subgraph Effects["Effects + result"]
+    direction TB
+    s5["5 call_model"] --> s6["6 INSERT model_call_logs"]
+    s6 --> s7["7 execute — runner or worker"] --> s8["8 INSERT task_returns"]
+  end
+  Durable --> Effects
     </div>
   </div>
   <p class="cite">Source: routers/todos.py api_add_todo, event_loop/loop.py (_dispatch_execute_job, _persist_task_return), models/gateway.py call_model</p>
@@ -500,7 +638,7 @@ flowchart TD
   <h2>The review loop, in detail</h2>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
+flowchart LR
   A["Execute (stage 7)<br/>job result"] --> B["INSERT task_returns<br/>(loop.py:3016)"]
   B --> C["ReturnReviewer.review_return()<br/>adversarial scan + JSON-fence-tolerant parse"]
   C --> D{"output parsed?"}
@@ -546,25 +684,43 @@ flowchart TD
   <p>Every hop from HTTP submission to a git commit, with the file that implements it.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
-  A["POST /api/todos<br/>routers/todos.py:170"] --> B["todos table<br/>db/models.py:180"]
-  B --> C["EventLoop tick<br/>PHASE_ORDER (event_loop/loop.py)"]
-  C --> D["claim_runnable + bucket_leases<br/>db/repository.py"]
-  D --> E["dispatch_execute_jobs<br/>event_loop/loop.py"]
-  E --> F["two-phase model call<br/>models/job_invocation.py + execution/tool_loop.py"]
-  F --> G["task_returns<br/>_persist_task_return (loop.py:3068)"]
-  G --> H["review -&gt; task_decisions<br/>review/reviewer.py"]
-  H --> I["reconcile + commit<br/>loop.py:3066 -&gt; git_automation/repo.py:180"]
+flowchart LR
+  subgraph Intake["Intake"]
+    direction TB
+    A["POST /api/todos"] --> B["INSERT todos"] --> C["EventLoop tick"]
+  end
+  subgraph Execution["Claim + execute"]
+    direction TB
+    D["claim + bucket lease"] --> E["dispatch execute job"] --> F["two-phase model call"]
+  end
+  subgraph Delivery["Review + deliver"]
+    direction TB
+    G["persist task return"] --> H["review → task decision"] --> I["reconcile + git commit"]
+  end
+  Intake --> Execution --> Delivery
     </div>
   </div>
-  <ul class="bullets-tight">
-    <li class="fragment"><span class="path">Submit</span> &mdash; <span class="path">routers/todos.py:170</span> inserts one <code>todos</code> row (<span class="path">db/models.py:180</span>)</li>
-    <li class="fragment"><span class="path">Claim</span> &mdash; version-guarded CAS in <span class="path">db/repository.py</span> (<span class="path">claim_runnable</span>), leased via <code>bucket_leases</code></li>
-    <li class="fragment"><span class="path">Dispatch</span> &mdash; <span class="path">event_loop/loop.py</span> (<span class="path">dispatch_execute_jobs</span>) builds the <code>JobSpec</code> and runs the model</li>
-    <li class="fragment"><span class="path">Two-phase model call</span> &mdash; tool-free generation (<span class="path">models/job_invocation.py</span> via <span class="path">models/gateway.py</span>), then the autonomous tool loop (<span class="path">execution/tool_loop.py</span>)</li>
-    <li class="fragment"><span class="path">Return &amp; review</span> &mdash; worker output lands in <code>task_returns</code> (<span class="path">loop.py:3068</span>); a second model reviews it (<span class="path">review/reviewer.py</span>) and writes <code>task_decisions</code></li>
-    <li class="fragment"><span class="path">Reconcile + commit</span> &mdash; <span class="path">loop.py:3066</span> applies the decision; <span class="path">git_automation/repo.py:180</span> commits + pushes</li>
-  </ul>
+  <p class="cite">Source: code-trace audit against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 15c: COMPLETE CODE PATH ANNOTATIONS -->
+<!-- ============================================================ -->
+<section>
+  <div class="stage-kicker">Flagship flow &middot; durable effects</div>
+  <h2>The complete code path &mdash; what each hop persists</h2>
+  <div class="two-col">
+    <ul class="bullets-tight">
+      <li><span class="path">Submit</span> &mdash; <span class="path">routers/todos.py:170</span> inserts one <code>todos</code> row (<span class="path">db/models.py:180</span>)</li>
+      <li><span class="path">Claim</span> &mdash; version-guarded CAS in <span class="path">db/repository.py</span>, leased via <code>bucket_leases</code></li>
+      <li><span class="path">Dispatch</span> &mdash; <span class="path">event_loop/loop.py</span> builds the <code>JobSpec</code> and runs the model</li>
+    </ul>
+    <ul class="bullets-tight">
+      <li><span class="path">Two-phase model call</span> &mdash; tool-free generation, then the autonomous tool loop</li>
+      <li><span class="path">Return &amp; review</span> &mdash; worker output lands in <code>task_returns</code>; a second model writes <code>task_decisions</code></li>
+      <li><span class="path">Reconcile + commit</span> &mdash; the decision is applied before <span class="path">git_automation/repo.py:180</span> commits and pushes</li>
+    </ul>
+  </div>
   <p class="cite">Source: code-trace audit against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
 </section>
 
@@ -797,65 +953,693 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19e: SESSION-ISOLATED ASYNC GATE -->
+<!-- ============================================================ -->
+<section data-contract="gate-session-launcher">
+  <p class="stage-kicker">Release control &middot; identity-bound async work</p>
+  <h2>Background gates survive the caller &mdash; without losing ownership</h2>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  C["caller Make<br/>may receive group SIGTERM"] --> L["Python launcher<br/>atomic admission"]
+  L --> G["gate session<br/>PID = PGID = SID"]
+  L --> W["bounded watcher<br/>separate session"]
+  G --> O["exact gate-*.log<br/>phase + terminal markers"]
+  L --> R["atomic receipt<br/>run_id + start token + namespace"]
+  W -->|"exit with gate"| R
+  W -->|"timeout: TERM then KILL<br/>only exact group"| G
+    </div>
+  </div>
+  <ul class="bullets-tight">
+    <li><code>start_new_session=True</code> keeps caller-group termination out of the gate process group</li>
+    <li>The compatibility PID is the real Make gate PID; the receipt binds it to OS start time, log, checkout, and namespace</li>
+    <li>The watcher polls instead of sleeping for an hour, and removes the PID file only if it still owns that exact value</li>
+    <li><code>gate-status-check</code>, <code>gate-wait</code>, timeout markers, and service availability remain unchanged &mdash; a ZDD control-plane swap</li>
+  </ul>
+  <p class="cite">Source: scripts/start_gate_background.py, Makefile gate-background, docs/features/GATE_RESOURCE_LIFECYCLE.md</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f: S83.157 NEXT BOUNDED GPU PROOF -->
+<!-- ============================================================ -->
+<section data-contract="s83-157-next-live-proof">
+  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; next live proof</p>
+  <h2>S83.157 &mdash; bounded alternate-region T4 proof</h2>
+  <div class="two-col">
+    <div>
+      <h3>One placement at a time</h3>
+      <ul class="bullets-tight">
+        <li><strong>Profile:</strong> one owner-tagged <code>Consumption-GPU-NC8as-T4</code> app/environment pair</li>
+        <li><strong>Pins:</strong> one task, model revision, and image digest; <code>minReplicas=1</code>, <code>maxReplicas=1</code></li>
+        <li><strong>Lease:</strong> <code>$5 / 60 min</code>, acquisition through independently verified cleanup</li>
+        <li><strong>T4 order:</strong> <code>westus</code> &rarr; <code>westus2</code> &rarr; <code>canadacentral</code></li>
+        <li><strong>A100:</strong> only after two cleaned placement failures</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Evidence before quality</h3>
+      <ul class="bullets-tight">
+        <li>Bind status and replicas to the <strong>exact revision</strong></li>
+        <li>Retain <strong>startup + readiness probes</strong> and app/environment <strong>system events</strong></li>
+        <li>Require in-container <strong>CUDA attestation</strong> and revision/pod <code>GpuUtilizationPercentage</code></li>
+        <li>On every terminal path: <strong>destroy + verified absence</strong> before failover</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    Never score placement as model quality. Placement, image, probe, CUDA, metric,
+    timeout, and cleanup outcomes stay in the operational channel; inference quality
+    begins only after every readiness and GPU check succeeds.
+  </p>
+  <p class="cite">Sources: docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md &middot; docs/research/AZURE_TERRAFORM_EVENT_ELASTICITY_E2E_EVIDENCE.md</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f: S83.163 FREELLMAPI FROZEN-DELTA HOLD -->
+<!-- ============================================================ -->
+<section data-contract="s83-163-frozen-delta-hold">
+  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; exact three-arm replay</p>
+  <h2>S83.163 &mdash; FreeLLMAPI promotion remains <span class="badge-yellow">HOLD</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Exact evidence executed</h3>
+      <ul class="bullets-tight">
+        <li><strong>Current evidence:</strong> exact v0.11.1 executed from signed 4191d8e7</li>
+        <li><strong>Paired arms:</strong> native Gludd / <code>v0.9.9</code> / exact <code>v0.11.1</code></li>
+        <li><strong>Corpus:</strong> 32 route groups &times; 3 = 96 observations, plus 8 exclusions frozen before scoring</li>
+        <li><strong>Next serial review:</strong> upstream <code>v0.12.0</code>; no retargeting here</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Why HOLD is mandatory</h3>
+      <ul class="bullets-tight">
+        <li><strong>vs native:</strong> LCB +0.5166; McNemar p = 4.66e-10</li>
+        <li><strong>vs v0.9.9:</strong> LCB 0.0; McNemar p = 1.0 &rarr; two gates fail</li>
+        <li><strong>Resources:</strong> 0.244458 ms max; 0.015625 MiB RSS delta</li>
+        <li><strong>Isolation:</strong> Node = QuickJS; network/cost/faults = 0</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    No retargeting and no promotion: v0.9.9 stays serving, runtime admission remains false,
+    and even an all-green replay could only enter a separate build/provenance/ZDD review.
+  </p>
+  <p class="cite">Practitioner inputs: #456, discussion #533, #608, #666, #880, #1210, #1262 &middot; Source: docs/design/FREELLMAPI_UPSTREAM_INTEGRATION.md</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.1: S83.101 + S83.104 CONCURRENCY AUTHORITY -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-101-104-concurrency-authority">
+  <p class="stage-kicker">S83.101 / S83.104 &middot; database and process authority</p>
+  <h2>Concurrency authority fails closed <span class="badge-yellow">INTEGRATED CANDIDATES &middot; EXACT GATE PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Exact database lease</h3>
+      <ul class="bullets-tight">
+        <li><strong>S83.101:</strong> require owner + fencing token + persisted expiry as one exact lease authority; forged extension and the expiry boundary reject before mutation.</li>
+        <li><strong>Measured:</strong> 110/110 warning-strict at 95.7% line, 88.9% branch, and 94.04% combined coverage.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Bounded repository mutex</h3>
+      <ul class="bullets-tight">
+        <li><strong>S83.104:</strong> bind re-entry to PID + thread ownership, discard fork inheritance, retain one inode, and spend one timeout budget across the in-process and file locks.</li>
+        <li><strong>Measured:</strong> 169/169 warning-strict at 89.0% line, 85.3% branch, and 86.36% combined coverage.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  A[Acquire exact authority] --> V{Owner, fence, expiry valid?}
+  V -->|yes| M[Permit bounded mutation]
+  V -->|no| R[Reject without partial state]
+    </div>
+  </div>
+  <p class="honest-note">Invalid authority leaves no partial state; rolling replacement and source-only rollback require no schema or service migration. The exact-head gate, CI, and promotion evidence remain pending; neither task is formally closed here.</p>
+  <p class="cite">Code: src/general_ludd/db/azure_cost_repository.py:412-438 &middot; src/general_ludd/git_automation/locking.py:98-113 &middot; Practitioner evidence: fencing-token, flock/fork, and FIFO reports in the linked feature contracts.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.2: S83.103 CANONICAL WORKTREE PATHS -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-103-canonical-worktree-paths">
+  <p class="stage-kicker">S83.103 &middot; canonical identity before any Git mutation</p>
+  <h2>Worktree paths stay inside the repository <span class="badge-yellow">INTEGRATED CANDIDATE &middot; EXACT GATE PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Authorize before mutation</h3>
+      <ul class="bullets-tight">
+        <li>Reject a leading dash, raw .. traversal, dangling or looping ancestors, symlink escape, and foreign project namespace before Git or storage mutation.</li>
+        <li>Allow only <code>gludd-worktree-</code> plus 32 lowercase hexadecimal UUID characters below the canonical platform temp root.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and reversible</h3>
+      <ul class="bullets-tight">
+        <li><strong>Evidence:</strong> 35/35 warning-strict path + adjacency checks, 421/421 Git repository family checks, and <code>repo.py</code> at 86.00% line + branch coverage.</li>
+        <li><strong>Resources:</strong> bounded checks, one existing bounded Git subprocess, and zero network or background workers.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">A rolling replacement lets old and new workers validate independently; an invalid path creates no partial worktree, and source-only rollback remains available. This candidate is not formally complete: exact-head gate, CI, and promotion evidence remain pending.</p>
+  <p class="cite">Code: src/general_ludd/git_automation/repo.py:1119-1189 &middot; Contract: docs/features/GIT_WORKTREE_CREATION_PATHS.md &middot; Practitioner evidence: long-lived Stack Overflow worktree and symlink reports.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.3: S83.108 + S83.105 BOUNDARIES -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-108-105-boundary-evidence">
+  <p class="stage-kicker">S83.108 / S83.105 &middot; canonical identity and bounded dispatch</p>
+  <h2>Canonical input, bounded action <span class="badge-yellow">S83.105 CANDIDATE ONLY</span></h2>
+  <ul class="bullets-tight">
+    <li><strong>S83.108:</strong> reject traversal, symlink escape, duplicate aliases, and Git inventory failure; emit <code>identity=rejected</code>, one canonical active marker, or <code>INCONCLUSIVE</code>.</li>
+    <li><strong>S83.105:</strong> retain one <code>ProjectType | str</code> runtime declaration and reject unsupported discriminators before registry mutation.</li>
+    <li><strong>Measured:</strong> inventory 33/33 at 90% aggregate; registration 60 passed / 1 conditional skip and 170/170 runtime, with <code>project_types.py</code> at 96.95%.</li>
+  </ul>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  I[Untrusted identity] --> C{Canonical and supported?}
+  C -->|yes| D[Bounded dispatch]
+  C -->|no| X[Reject before mutation]
+    </div>
+  </div>
+  <p class="honest-note"><strong>No v0.1.2 completion claim:</strong> exact-head gate, CI, merge, and promotion proof remain pending. ZDD adds no runtime artifact or schema; rollback is source-only after canonical inventory and import-adjacency checks.</p>
+  <p class="cite">Code: scripts/check_worktree_health.py:39-70 &middot; src/general_ludd/cloud/project_types.py:899-914 &middot; Practitioner evidence: canonical-path reports in the linked feature contracts.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.4: S83.113 QEMU IMPORT ISOLATION -->
+<!-- ============================================================ -->
+<section data-contract="s83-113-qemu-import-isolation">
+  <p class="stage-kicker">S83.113 &middot; process-local import isolation</p>
+  <h2>QEMU probes restore only what they own <span class="badge-yellow">INTEGRATED CANDIDATE</span></h2>
+  <ul class="bullets-tight">
+    <li>A prefix-scoped <code>sys.modules</code> snapshot restores only <code>general_ludd</code> modules and saved parent-to-child bindings; third-party dependencies stay cached.</li>
+    <li>QEMU detection semantics remain unchanged, including fail-closed unsupported-host and missing-binary outcomes.</li>
+    <li><strong>Measured:</strong> 75/75 warning-strict QEMU + Terraform adjacency; QEMU source is 100% line and branch covered.</li>
+    <li><strong>Resource boundary:</strong> process-local state only, zero network, and no runtime artifact, API, schema, process, or deployment change.</li>
+  </ul>
+  <p class="honest-note">A source-only test-harness rollback restores the prior probe without migration or downtime.</p>
+  <p class="cite">Contract: docs/features/QEMU_IMPORT_ISOLATION.md &middot; Practitioner evidence: CPython #27515 and Python Help module-alias reports.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19g: S83.114 FAIL-CLOSED CHEMISTRY ENTITY RESOLUTION -->
+<!-- ============================================================ -->
+<section data-contract="s83-114-chemistry-entity-resolution">
+  <p class="stage-kicker">Chemistry contract &middot; typed failure to reversible rollout</p>
+  <h2>S83.114 &mdash; Chemistry identities <span class="badge-green">Fail closed</span></h2>
+  <div data-contract="v0.1.2-completed-backlog">
+    <h3>v0.1.2 completed backlog <span class="badge-green">5 formally closed</span></h3>
+    <ol style="font-size:0.48em;">
+      <li><strong>S83.114 &mdash; Fail-closed chemistry entity resolution</strong></li>
+      <li><strong>S83.115 &mdash; Standards-consistent X.509 chain validation</strong></li>
+      <li><strong>S83.116 &mdash; Monotonic debounce, throttle, and watchdog state</strong></li>
+      <li><strong>S83.117 &mdash; Authenticated TLS 1.3 state and directional records</strong></li>
+      <li><strong>S83.128 &mdash; invoking-worktree-safe virtual-environment reclamation</strong></li>
+    </ol>
+    <p class="honest-note" style="font-size:0.42em;"><strong>Implemented &ne; closed:</strong> S83.158 and S83.166 retain open exact-head/hosted release evidence and are not counted here.</p>
+  </div>
+  <div class="two-col">
+    <div>
+      <h3>Evidence, never inference</h3>
+      <ul class="bullets-tight">
+        <li>Only an unknown representation may carry the <strong>complete empty sentinel</strong>; one-sided empty states are rejected.</li>
+        <li>Stereo text evidence stays <code>specified / partial / unknown</code>; isotope evidence stays <code>specified / natural / unknown</code>.</li>
+        <li>The submitted text survives canonicalization, while the marker adapter remains a narrow <strong>RDKit adapter seam</strong>, not a molecular parser.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 116/116 warning-strict focused + adjacent checks</li>
+        <li><strong>Coverage:</strong> 94% aggregate; <code>core.py</code> / <code>schemas.py</code> = 92% / 99%</li>
+        <li><strong>Resources:</strong> fixed regex scans, linear input work, constant state, and zero network access</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD canary status counts distinguish unknown, partial, natural, and specified evidence.
+    Keep resolution and validation on the same worker; on rollback, drain or pin sentinel-bearing requests
+    before a source-only rollback.
+  </p>
+  <p class="cite">Sources: docs/features/CHEMISTRY_ENTITY_FAIL_CLOSED_RESOLUTION.md &middot; Pydantic model validators &middot; RDKit stereochemistry guidance and long-lived practitioner threads</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19h: S83.115 X.509 CHAIN VALIDATION -->
+<!-- ============================================================ -->
+<section data-contract="s83-115-x509-chain-validation">
+  <p class="stage-kicker">Security contract &middot; standards-consistent issuance to rollback</p>
+  <h2>S83.115 &mdash; X.509 chains <span class="badge-green">Fail closed</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Issue only authorized certificates</h3>
+      <ul class="bullets-tight">
+        <li>Verify the <strong>CSR proof-of-possession</strong> and require that the signing key matches issuer identity.</li>
+        <li>A CA needs critical BasicConstraints plus certificate-signing key use; unknown uses and invalid windows are rejected.</li>
+        <li>Choose each issuer by <strong>verified signature</strong>, reject cycles and unknown critical extensions, and count path length toward subordinate CAs.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 210/210 warning-strict focused + adjacent checks</li>
+        <li><strong>Coverage:</strong> 95% aggregate; 90% branch coverage in the touched production file</li>
+        <li><strong>Boundary:</strong> caller-supplied trust boundary; <code>O(n)</code> walk and zero network access</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD uses rolling replacement and categorized rejection metrics. Existing malformed CA
+    material stays rejected; drain in-flight issuance before a source-only rollback.
+  </p>
+  <p class="cite">Sources: docs/features/X509_CHAIN_VALIDATION.md &middot; cryptography <code>verify_directly_issued_by</code> &middot; pyca/cryptography #10276 and GHSA-m959-cc7f-wv43</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19h: S83.116 MONOTONIC DEBOUNCE STATE -->
+<!-- ============================================================ -->
+<section data-contract="s83-116-monotonic-debounce">
+  <p class="stage-kicker">Reliability contract &middot; deterministic clocks to rollback</p>
+  <h2>S83.116 &mdash; Monotonic state <span class="badge-green">Deterministic</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Preserve timing truth</h3>
+      <ul class="bullets-tight">
+        <li><code>None</code>, never a zero clock epoch, represents missing state.</li>
+        <li>A trailing debounce restarts its quiet-period deadline from the latest call; max-wait caps a sustained burst.</li>
+        <li>Throttle windows use their logical timer deadline, so late test or scheduler delivery cannot shift the next window.</li>
+        <li>Async leading callbacks and the replaceable trailing timer have separate task ownership on the event loop clock.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured, bounded, observable</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 160/160 warning-strict focused + adjacent checks</li>
+        <li><strong>Coverage:</strong> 95% aggregate; <code>debounce.py</code> / <code>debounce_v2.py</code> / <code>timing.py</code> = 90% / 93% / 98%</li>
+        <li><strong>Watchdog:</strong> live registration is idempotent until <code>finish</code> starts a new generation.</li>
+        <li><strong>Resources:</strong> one trailing timer and latest argument record per instance; only live leading tasks are retained; zero network or filesystem access.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD uses rolling replacement and categorized timing metrics; drain old workers so admitted
+    callbacks finish or cancel normally; source-only rollback restores no test-local prototype.
+  </p>
+  <p class="cite">Sources: docs/features/DEBOUNCE_MONOTONIC_STATE.md &middot; Python <code>time.monotonic</code> / <code>loop.time</code> &middot; Lodash debounce model &middot; long-lived asyncio cancellation reports</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19i: S83.117 AUTHENTICATED TLS 1.3 STATE -->
+<!-- ============================================================ -->
+<section data-contract="s83-117-authenticated-tls13-state">
+  <p class="stage-kicker">Security contract &middot; authenticated records to reversible rollout</p>
+  <h2>S83.117 &mdash; Authenticated TLS 1.3 <span class="badge-green">Fail closed</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Authenticate before transition</h3>
+      <ul class="bullets-tight">
+        <li>Decrypt the AEAD record, then validate its <strong>exact handshake frame</strong> before changing the transcript or state.</li>
+        <li><code>CertificateVerify</code> signs the RFC server context plus transcript digest; <strong>server Finished</strong> must authenticate before client Finished.</li>
+        <li>An invalid tag, signature, or Finished value <strong>poisons</strong> the inbound protector; application traffic starts with independent read/write protectors only after client Finished.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 79/79 warning-strict TLS + public-error adjacency</li>
+        <li><strong>Coverage:</strong> 89% aggregate; production module = 92.2% line / 76.3% branch</li>
+        <li><strong>Resources:</strong> constant state per connection, monotonic directional nonces, and zero network or background processes</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD uses rolling replacement and sanitized authentication-failure metrics; drain in-flight handshakes
+    before a source-only rollback; reconnect instead of transferring keys, nonces, or poisoned state.
+  </p>
+  <p class="cite">Sources: docs/features/TLS13_AUTHENTICATED_STATE.md &middot; RFC 9846 &middot; cryptography AEAD guidance &middot; long-lived CPython #91826 trust-boundary report</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19j: SERVICE RELIABILITY BOUNDARIES -->
+<!-- ============================================================ -->
+<section data-contract="service-reliability-boundaries">
+  <p class="stage-kicker">Reliability sequence &middot; input to teardown</p>
+  <h2>Four boundaries keep failure contained</h2>
+  <ol class="bullets-tight">
+    <li><strong>Validate before I/O:</strong> labeled <code>(identifier, query)</code> defaults; plain strings stay compatible; malformed shapes fail closed, while empty results preserve the catalog. Opt-in <code>project_namespace</code> creates a project-scoped catalog, so reconciling one health-socket state cannot retire another.</li>
+    <li><strong>Isolate every test:</strong> <code>monkeypatch</code> owns teardown and PID + counter state stays namespaced; <strong>S83.113</strong> uses a prefix-scoped import probe that restores Gludd parent/child identities while leaving external dependencies cached.</li>
+    <li><strong>Choose lifecycle explicitly:</strong> pre-startup <code>/readyz</code> proves the 503 boundary; context-managed startup proves 200 readiness; model-health checks keep a per-app in-memory database.</li>
+    <li><strong>Keep shutdown observable:</strong> a closed log stream falls back to stderr file descriptor 2, then restore handlers + propagation after cleanup.</li>
+  </ol>
+  <div data-contract="owned-node-cache-reclamation">
+    <p><strong>Measured disk-pressure recovery:</strong> 142.2 MiB &rarr; 52.6 MiB.</p>
+    <ul class="bullets-tight" style="font-size:0.58em;">
+      <li>Reclaim only exact stale, inactive, owned npm caches.</li>
+      <li>Refuse regular <code>.sock</code> lookalikes and ambiguous or active caches.</li>
+      <li>Recheck tree identity with immediate <code>lstat</code>; gate logs allow one non-symlink child, validation-first, without relaxing 90%.</li>
+    </ul>
+    <p class="cite">Source: docs/features/GATE_RESOURCE_LIFECYCLE.md &middot; GitHub Community #205363 / #179725</p>
+  </div>
+  <div data-contract="gate-tree-termination">
+    <p><strong>Identity-verified gate-tree termination</strong> <span class="badge-green">47/47 warning-strict</span></p>
+    <ul class="bullets-tight" style="font-size:0.52em; columns:2; column-gap:22px;">
+      <li><strong>S83.112:</strong> a new session leader must publish its matching receipt before exec; duplicate launch stays serialized by exact PID/start/session identity.</li>
+      <li>Revalidate PID + start + command + root + namespace, then signal the deepest descendant first across process groups; unrelated PIDs remain untouched.</li>
+      <li><strong>Measured evidence:</strong> <code>kill_owned_gate.py</code> 91%; coverage consumes a serial base or real parallel fragments, then requires an exact base before reporting.</li>
+      <li><strong>Bounds:</strong> <code>SIGTERM</code> &rarr; 10 s at 100 ms polls; <code>SIGKILL</code> &rarr; 1 s.</li>
+      <li>Publish ABORTED status + JSON evidence; a survivor retains <code>termination_failed</code> and blocks a replacement gate.</li>
+      <li><strong>ZDD:</strong> keep the running gate's schema, replace only after exact terminal evidence, and roll back only after marked owners clear.</li>
+    </ul>
+    <p class="cite">Contract: docs/features/GATE_RESOURCE_LIFECYCLE.md:577-608 &middot; docs/features/GATE_RESOURCE_LIFECYCLE.md:1102-1129 &middot; CPython #111873 &middot; Actions runner #3341</p>
+  </div>
+  <p class="honest-note">No new runtime service or persisted schema: validation happens before network work, test state is namespaced, lifespan ownership is explicit, and late cleanup remains visible.</p>
+  <p class="cite">Sources: docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md &middot; docs/features/FLOOR_TEST_ENV_ISOLATION.md &middot; docs/features/READINESS_LIFESPAN_TESTING.md &middot; docs/features/RESOURCE_LIFECYCLE_SHUTDOWN_LOGGING.md &middot; docs/features/QEMU_IMPORT_ISOLATION.md:18-43</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19j.1: INTEGRATED ADMISSION CHAIN -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-157-158-166-177-admission-chain">
+  <p class="stage-kicker">S83.178 / .177 / .158 / .157 / .166 &middot; branch to terminal admission</p>
+  <h2>Promoted failures stop before the next side effect <span class="badge-yellow">S83.178 INTEGRATED &middot; RELEASE PROOF PENDING</span></h2>
+  <ol class="bullets-tight feature-sync-grid">
+    <li><strong>S83.178 + S83.177 &middot; branch:</strong> a clean committed feature branch enters one ordered, fail-fast admission path. <code>gate_failure_promotions.json</code> maps nine families&mdash;<code>dead-code-baseline-drift</code>, <code>coverage-gap-drift</code>, <code>resource-ownership-drift</code>, <code>claim-fence</code>, <code>project-isolation</code>, <code>concurrent-tick</code>, <code>mcp-workspace-containment</code>, <code>mcp-workspace-dispatch-jail</code>, and <code>module-graph-classification-drift</code>&mdash;to an exact Make or pytest owner; missing, duplicate, or stale nodes stop. The two newest checks catch unmapped modules and lifecycle-inventory drift before browser work or the expensive full gate. Per-phase 90s / 180s / 600s runtime budgets reuse the bounded observer, emit <code>observed_command/v1</code> evidence, and timeout exits 124 before the next phase. Admission stops on the first failed deterministic check, its static presentation phase launches no browser, and the full gate remains mandatory.</li>
+    <li><strong>S83.158 &middot; compute:</strong> provision only after the claim transaction committed and active session released; <code>claim_transaction_open</code> yields zero provider or dispatch calls.</li>
+    <li><strong>S83.157 &middot; hosted proof:</strong> verify the exact protected GitHub Environment, reviewer, self-review, admin-bypass, and branch-policy contract before OIDC or paid compute.</li>
+    <li><strong>S83.166 &middot; terminal:</strong> both promotion-time readiness calls force <code>RELEASE_ALLOW_INCOMPLETE_TASKS=0</code> and <code>RELEASE_ALLOW_INVALID_RECEIPT=0</code>; diagnostic bypasses cannot become ambient release authority.</li>
+  </ol>
+  <p class="honest-note">S83.178/.177/.158/.157/.166 are integrated into development. The exact-head full gate, hosted replay, and terminal publication remain pending. No release-completion claim is made. ZDD keeps the serving application unchanged because each rejection precedes its owned mutation.</p>
+  <p class="cite">Sources: config/gate_failure_promotions.json:1-206 &middot; scripts/check_gate_failure_promotions.py:213-313 &middot; docs/features/INTEGRATION_ADMISSION.md:17-124 &middot; docs/features/DURABLE_CLAIM_COMPUTE_FENCE.md:21-33 &middot; docs/azure-gha-oidc-live-proof.md:46-79 &middot; docs/features/RELEASE_PREDECESSOR_ADMISSION.md:11-28</p>
+  <p class="cite">Long-lived practitioner findings: <a href="https://github.com/orgs/community/discussions/41726">optional merge-queue checks</a>, <a href="https://github.com/orgs/community/discussions/43988">duplicate merge-queue checks</a>, <a href="https://github.com/modelcontextprotocol/servers/issues/1838">MCP path-validation drift</a>, <a href="https://github.com/seddonym/import-linter/issues/93">graph-discovery blind spots</a>, and <a href="https://github.com/orgs/community/discussions/25631">hung-test runtime waste</a> justify bounded manifest-owned admission, not skipping integrated-head replay; <a href="https://github.com/sidekiq/sidekiq/issues/5239">pre-commit effects</a>, <a href="https://github.com/orgs/community/discussions/12241">self-approval</a>, and <a href="https://github.com/actions/runner/issues/789">stale environment state</a> motivate the three later fences.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19j: RELEASE AND WORKTREE RESILIENCE -->
+<!-- ============================================================ -->
+<section data-contract="release-resilience-boundaries">
+  <p class="stage-kicker">Resilience sequence &middot; evidence to confinement</p>
+  <h2>Recover safely without weakening identity</h2>
+  <ol class="bullets-tight">
+    <li><strong>Prove the release:</strong> bind CI and functional artifact smoke to the <strong>exact tagged SHA</strong>. The v0.1.1 receipt records <strong>46 artifacts</strong>, <strong>32 completeness checks</strong>, and <strong>zero zero-byte assets</strong>.</li>
+    <li><strong>Replay bounded recovery:</strong> open the <strong>read-only thread projection</strong>, select one thread + inclusive ordinals, replay in a temporary tree, and publish only after the whole batch validates.</li>
+    <li><strong>Confine worktree identity:</strong> resolve canonical filesystem identity; aliases and escapes fail closed before Git operations. In linked-worktree tests, main-checkout writes are denied before they occur while reads remain allowed.</li>
+  </ol>
+  <p class="honest-note">v0.1.1 stays immutable: its unsigned tag and no SLSA attestation are recorded exceptions. New releases fix forward with signed-tag verification before push and <code>gh release verify</code> over <code>SHA256SUMS</code>; recovery complements isolated worktrees.</p>
+  <p class="cite">Sources: docs/RELEASE_RUNBOOK.md &middot; docs/releases/audit-0.1.1.json &middot; docs/features/CODEX_FILE_CHANGE_RECOVERY.md &middot; docs/features/WORKTREE_AUDIT_IDENTITY_CONTRACT.md</p>
+  <!-- S83.166 HOSTED RUNNER CAPACITY SUBSECTION -->
+  <div data-contract="hosted-runner-capacity">
+  <h3>S83.166 &mdash; bound the runners, preserve the evidence</h3>
+  <ol class="bullets-tight" style="font-size:0.68em;">
+    <li><strong>Bound acquisition:</strong> every Linux job pins <code>ubuntu-24.04</code>; Build gate max-parallel=1 plus standalone Molecule max-parallel=3 requests four Linux runners instead of eight.</li>
+    <li><strong>Keep coverage parallel:</strong> later fan-out 1 / 3 / 2 caps FreeLLMAPI, test, and Build Molecule matrices at six instead of fourteen; <code>fail-fast=false</code>, so every version and shard still reports.</li>
+    <li><strong>Classify before retry:</strong> <code>not acquired by Runner</code> before any step ran is hosted-capacity evidence. Preserve the run and attempt, permit one annotation-proven retry, then no automatic attempt 3.</li>
+    <li><strong>Roll forward without downtime:</strong> the current candidate completes and only a newer exact SHA gets the bounded topology. Rollback is the inverse YAML change, with no release artifact, application state, credential, or production resource mutation.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.48em;">Runs 37363551133 and 37363666474 lost hosted legs before repository code ran. Capacity is bounded, not coverage; unresolved attempt-2 failure requires a topology or platform change.</p>
+  <p class="cite">Sources: docs/features/HOSTED_RUNNER_CAPACITY.md &middot; .github/workflows/build.yml &middot; .github/workflows/molecule.yml &middot; TASKS.md</p>
+  </div>
+  <!-- HOSTED RUNNER ACQUISITION RECOVERY SUBSECTION -->
+  <div data-contract="runner-acquisition-recovery">
+  <h3>Bounded acquisition recovery &mdash; ledger before rerun</h3>
+  <ol class="bullets-tight" style="font-size:0.68em;">
+    <li><strong>Record first:</strong> <code>ci-view</code> persists the complete terminal attempt before admission, keyed by run ID/attempt + full SHA.</li>
+    <li><strong>Prove exact acquisition:</strong> every non-successful job must have no executed failing step and the exact annotation <code>The job was not acquired by Runner of type hosted even after multiple attempts</code>.</li>
+    <li><strong>Rerun coherently:</strong> <code>ci-recover-runner-acquisition</code> admits attempt 1 only and requests a full same-SHA rerun, so dependent jobs and artifacts remain one coherent candidate proof.</li>
+    <li><strong>Stop at attempt 2:</strong> attempt 2 is a hard stop that requires diagnosis instead of an automatic loop.</li>
+    <li><strong>Keep recovery control-plane only:</strong> admission precedes the rerun; there is no live restart, traffic shift, tag move, artifact upload, or credential mutation.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.48em;">Conclusion alone never authorizes retry. Practitioner reports #27083, #52505, #17854, #186208, #165291, #166283, and #126539 remain tied to the exact guardrails in the source contract.</p>
+  <p class="cite">Sources: docs/features/CI_FAILURE_LEDGER.md &middot; Makefile <code>ci-recover-runner-acquisition</code> &middot; tests/unit/test_ci_failure_ledger.py</p>
+  </div>
+  <!-- S83.166 PUBLISHED ROLLBACK RECEIPT SUBSECTION -->
+  <div data-contract="s83-166-published-rollback-receipt">
+  <h3>S83.166 &mdash; published rollback receipt <span class="badge-green">CHECKSUM-BOUND</span></h3>
+  <ol class="bullets-tight" style="font-size:0.58em; columns:2; column-gap:22px;">
+    <li><strong>Fan-in:</strong> 15/15 platform-category smoke fan-in must pass before the receipt exists.</li>
+    <li><strong>Candidate activation:</strong> candidate SHA + version + health bind the staged route to the exact release.</li>
+    <li><strong>Restoration:</strong> byte-identical prior route restored, with its version and health rechecked.</li>
+    <li><strong>Active work:</strong> active-work SHA unchanged across the rehearsal.</li>
+    <li><strong>Publication binding:</strong> the receipt is inventoried, checksummed, and attested with the release assets.</li>
+    <li><strong>Published-byte acquisition:</strong> After publication, download the exact rollback receipt, checksum index, release manifest, candidate archive, and smoke attestations.</li>
+    <li><strong>Local replay gate:</strong> <code>verify-published-rollback</code> revalidates receipt/checksum/manifest/candidate/smoke bytes before remote completeness.</li>
+    <li><strong>Bounded cleanup:</strong> use a run/attempt-namespaced directory; cleanup failure blocks the job.</li>
+    <li><strong>Mutation boundary:</strong> zero new network mutation; the proof reuses the hermetic release runner and refuses incomplete or mismatched evidence.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.46em;">This is a post-publication evidence replay of a build-time rollback rehearsal, not a claim that live production traffic moved. ZDD remains fail-closed: the prior route and active work stay unchanged unless every downloaded receipt invariant passes.</p>
+  <p class="cite">Practitioner evidence: Argo Rollouts #501 &middot; Kubernetes #50021 &middot; GitHub Community #161656 &middot; Source: docs/RELEASE_RUNBOOK.md</p>
+  </div>
+  <!-- G10/RR1/R0 FROZEN REPLAY SCHEMA + LEGACY READ SUBSECTION -->
+  <div data-contract="G10-RR1-R0-SCHEMA-LEGACY">
+  <h3>G10/RR1/R0 &mdash; replay schema and legacy reads <span class="badge-green">FROZEN V1</span></h3>
+  <ol class="bullets-tight" style="font-size:0.58em; columns:2; column-gap:22px;">
+    <li><strong>Frozen v1 surface:</strong> strict frozen v1 manifest/event schemas reject drift before replay evidence can be trusted.</li>
+    <li><strong>Fail closed:</strong> unsafe, traversal, confusable, or device IDs; extras or unknown schemas; and duplicate keys or non-finite JSON are rejected.</li>
+    <li><strong>Canonical integrity:</strong> canonical integrity serialization makes equivalent accepted evidence hash identically.</li>
+    <li><strong>Legacy reads:</strong> ordered legacy reads expose <code>schema=legacy-v0</code> and <code>integrity=unverified</code> without writes.</li>
+    <li><strong>Explicit nonclaim:</strong> recorder, router, CLI, signing, store, simulation, and re-execution remain pending.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.46em;">This lands parsing, validation, and read-only compatibility only. Legacy evidence stays visibly unverified; no migration, replay execution, or runtime service changes occur.</p>
+  <p class="cite">Sources: src/general_ludd/replay/schema.py &middot; src/general_ludd/replay/legacy.py &middot; tests/unit/test_replay_schema.py &middot; tests/unit/test_replay_legacy.py</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19k: LOCAL GAME PIPELINE BOUNDARY -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-109-local-game-boundary">
+  <p class="stage-kicker">S83.109 &middot; local game generation</p>
+  <h2>Cleanup never hides generation failure <span class="badge-yellow">IMPLEMENTED &middot; PROOF PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>One owned lifecycle</h3>
+      <ul class="bullets-tight">
+        <li>An absent or raced-away <strong>missing PID file</strong> is an observable no-op, not a cleanup failure.</li>
+        <li>Only a positive numeric PID reaches list-form <code>kill</code>; <code>SIGTERM</code>, bounded probes, optional <code>SIGKILL</code>, and PID removal stay in <strong>terminal cleanup</strong>.</li>
+        <li>Verification commands retain normal failure semantics: cleanup never converts a bad game artifact into success.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Dependency and replay evidence</h3>
+      <ul class="bullets-tight">
+        <li>The isolated profile and hash-locked graph require <code>pillow&gt;=12.3.0</code> directly.</li>
+        <li><strong>94/94 warning-strict</strong> focused checks; production ansible-lint processed <strong>500 files</strong> with zero failures or warnings.</li>
+        <li>ZDD promotes the locked environment first, then the playbook; rollback restores both only after namespaced process ownership clears.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">The local feature commit is present; exact-head full-gate and promotion proof remain pending. No release-completion claim is made.</p>
+  <p class="cite">Code: playbooks/local_model_stop.yml:17-101 &middot; requirements/profiles/game-e2e/pyproject.toml:1-10 &middot; Contract: docs/features/LOCAL_GAME_PIPELINE_CLEANUP.md:18-39 &middot; Reports: <a href="https://github.com/ansible/ansible/issues/44318">Ansible #44318</a>, <a href="https://github.com/python-pillow/Pillow/issues/515">Pillow #515</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19l: BOUNDED BRANCH RECONCILIATION -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-118-122-branch-reconciliation">
+  <p class="stage-kicker">S83.118 / .119 / .121 / .122 &middot; release review</p>
+  <h2>Read every branch; change none <span class="badge-yellow">BOUNDED TOOLING READY &middot; COMMIT PENDING</span></h2>
+  <div class="diagram-wrap diagram-compact">
+    <div class="mermaid">
+flowchart LR
+  Page["page up to 100 refs"] --> Cursor["strict-greater cursor"]
+  Cursor --> Verify["terminal snapshot"]
+  Verify --> View["deduplicated current-only view"]
+    </div>
+  </div>
+  <ul class="bullets-tight feature-sync-grid">
+    <li>Classify every tip <strong>ancestor</strong>, <strong>patch-equivalent</strong>, or <strong>unique/current</strong>; malformed evidence fails closed.</li>
+    <li>Exclude the cursor boundary; cap comparisons; fall back to one sorted scan under a <strong>10,000-ref ceiling</strong>.</li>
+    <li>Re-resolve the target, verify the <strong>terminal snapshot</strong>, deduplicate shared heads, then emit a <strong>current-only</strong> view.</li>
+    <li><strong>30/30 warning-strict</strong>; the live 13-page proof read 1,212 refs and 559 distinct heads without mutation.</li>
+  </ul>
+  <p class="honest-note">The read-only implementation is committed; exact-head global-gate and promotion proof remain pending.</p>
+  <p class="cite">Code: scripts/branch_reconciliation_inventory.py:590-749 &middot; Contract: docs/features/BRANCH_RECONCILIATION.md:30-115 &middot; Reports: <a href="https://www.spinics.net/lists/git/msg110170.html">Git patch identity</a>, <a href="https://github.com/cli/cli/issues/8536">GitHub CLI #8536</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19m: DECISION-LOG CODIFICATION -->
+<!-- ============================================================ -->
+<section data-contract="decision-log-codification-v1">
+  <p class="stage-kicker">S83.169 &middot; repeated decisions &middot; reversible automation</p>
+  <h2>Decision-log codification <span class="badge-yellow">AUTOMATIC REVIEW &middot; PROOF PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Trust only exact evidence</h3>
+      <ul class="bullets-tight decision-bullets">
+        <li><strong>Verified signed bundles:</strong> <code>DecisionLogAnalyzer</code> mints source markers only after complete <code>RunBundleStore.read_verified()</code> output.</li>
+        <li><strong>Exact context or abstain:</strong> project, policy, guards, schema, and an observed context signature must match; uncertainty returns <code>DecisionAbstentionV1</code>.</li>
+        <li><strong>zero-LLM hit / Live REVIEW:</strong> <code>DecisionResolver</code> exact hit: zero reviewer calls; abstention/error: one off-loop reviewer call.</li>
+        <li><strong>Conservative mapping:</strong> approve -> complete; request_changes -> needs_more_work; reject -> failed. <strong>Stable idempotency:</strong> stable correlation + side-effect IDs; managed self-improvement refuses codified resolution.</li>
+        <li><strong>Safe opt-in:</strong> <code>DecisionCodificationAdapter</code> is opt-in; disabled by default. Codification keeps content-free attribution to source, digests, and closed reasons.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Bounded interface and durable state</h3>
+      <ul class="bullets-tight decision-bullets">
+        <li><strong>Auth before analysis:</strong> <code>/api/v1/decision-codification/analyze</code> binds authenticated/request/adapter scope; request caps are 1-256 unique safe run IDs and 64 KiB.</li>
+        <li><strong>CLI:</strong> <code>gludd decision-codification analyze</code> has explicit project/run/digest/time/use bounds and existing auth; its 128 KiB response cap returns safe summaries only (at most 128 digest/count summaries), with no lifecycle/key/artifact/evidence surface.</li>
+        <li><strong>Analysis only:</strong> no approval or activation; Human approval remains bound to one exact candidate/report digest.</li>
+        <li><strong>Durable same-host state:</strong> automatic durable live REVIEW uses same-host SQLite WAL with <code>BEGIN IMMEDIATE</code>; multi-host state is not claimed.</li>
+        <li><strong>terminal application feedback:</strong> digest-only success/failure closes the loop and drift-holds unsafe or over-1% failure candidates.</li>
+        <li><strong>ZDD:</strong> shadow 0% &rarr; canary 1% &rarr; 10% &rarr; 50% &rarr; active 100%. <strong>Atomic rollback:</strong> restore a verified generation or make all traffic abstain.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">Opt-in/default-off. Automatic signed replay capture and same-host observability are implemented; multi-host generation state and deployed live-traffic proof remain pending. No deployed avoided-call claim.</p>
+  <p class="cite">Code: src/general_ludd/event_loop/review_orchestration.py:222-285 &middot; src/general_ludd/decision_codification/durable.py:13-47 &middot; src/general_ludd/decision_codification/durable_storage.py:144-183 &middot; Contract: docs/features/DECISION_LOG_CODIFICATION.md:161-243</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19n: DECISION-LOG CAPTURE, REUSE, AND OBSERVABILITY -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-169-capture-reuse-observability">
+  <p class="stage-kicker">S83.169 &middot; signed capture &middot; exact reuse &middot; durable observability</p>
+  <h2>Signed fallbacks become bounded reuse evidence <span class="badge-yellow">IMPLEMENTED &middot; DEPLOYED PROOF PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Capture + prove</h3>
+      <ul class="bullets-tight">
+        <li><strong>Capture:</strong> <code>capture_identity</code> installs <code>DecisionOutcomeRecorder</code>; no raw prompts, responses, rationale, or model parameters enter evidence.</li>
+        <li><strong>Coordinate:</strong> domain-separated HMAC identifiers bind a signed decision + digest-linked outcome under a 128 KiB budget and 60-second exact-owner lease.</li>
+        <li><strong>Prove reuse:</strong> 32 signed bundles across four UTC days reach human approval; exact REVIEW reuse makes zero reviewer calls, while mismatch and expiry each fall back once.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Observe + roll back</h3>
+      <ul class="bullets-tight">
+        <li><strong>Observe:</strong> exact-rule hits, typed abstentions, fallbacks, avoided agent/LLM calls, capped latency, rule-version changes, and drift.</li>
+        <li><strong>Bound cardinality:</strong> fixed-cardinality rows update with <code>BEGIN IMMEDIATE</code>; no per-request rows or sensitive payload fields survive.</li>
+        <li><strong>Attest:</strong> a 64 KiB sorted status receipt carries a SHA-256 digest + HMAC and fails closed when exact project/policy scope is unavailable.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">Opt-in and default-off. A capture/telemetry failure cannot change the selected decision; deployed live-traffic proof remains pending, and agent/LLM fallback remains the rollback path.</p>
+  <p class="cite">Contract: docs/features/DECISION_LOG_CODIFICATION.md:95-158 &middot; Capture: src/general_ludd/decision_codification/capture.py:118-210 &middot; Metrics: src/general_ludd/decision_codification/observability.py:69-213 &middot; Proof: tests/integration/test_decision_codification_producer_reuse.py:220-356</p>
+  <p class="cite">Practitioner evidence: <a href="https://github.com/prometheus/client_python/issues/568">Prometheus #568</a> &middot; <a href="https://github.com/prometheus/client_python/issues/431">Prometheus #431</a> &middot; <a href="https://github.com/kubernetes/kubernetes/issues/23731">Kubernetes #23731</a> &middot; <a href="https://github.com/sqlalchemy/sqlalchemy/discussions/8554">SQLAlchemy #8554</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19o: SHADOW GATE RECEIPTS + RECONCILIATION QUEUE -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-179-180-shadow-reconciliation">
+  <p class="stage-kicker">S83.179 + S83.180 &middot; signed shadow evidence &middot; reconciliation queue</p>
+  <h2>Evidence can inform&mdash;but never authorize <span class="badge-yellow">SHADOW / READ-ONLY &middot; RELEASE PROOF PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Signed shadow gate</h3>
+      <ul class="bullets-tight">
+        <li><strong>Authenticate:</strong> HMAC-SHA256 binds action, manifest, kind, signer, issue time, and expiry. <code>verified</code> means future-eligible only; <code>skip_authorized=false</code> and <code>skips=0</code>.</li>
+        <li><strong>Import legacy failures:</strong> one stable confined log yields <code>NON-REUSABLE</code> diagnostics (64 MiB / 250,000 lines / 64 failures / 32 KiB output) and never enters the pass-receipt store.</li>
+        <li><strong>Keep execution mandatory:</strong> one worker / 16-file execution and the terminal gate remains authoritative; unsigned, unknown, tampered, revoked, expired, or malformed evidence is refused.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Read-only reconciliation</h3>
+      <ul class="bullets-tight">
+        <li><strong>Inventory:</strong> a terminal ref/head snapshot queues unique heads; ancestor and patch-equivalent heads stay collapsed under a 256-head ceiling.</li>
+        <li><strong>Preflight + checkpoint:</strong> <code>git merge-tree</code> over exact object IDs reports <code>predicted-clean</code>, conflicted, or blocked&mdash;never mergeable; a version-2 receipt seals target + source tips + collapsed groups + cursor.</li>
+        <li><strong>Replay only:</strong> rechecks every ref, accepts only an ordered reachable prefix, exposes the next item, and never performs a merge.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">No test is skipped, and no ref, index, worktree, or push is mutated. Full gate, hosted provenance, merge, push, and release proof remain pending.</p>
+  <p class="cite">Auth: scripts/ci_receipt_auth.py:225-321 &middot; Import: scripts/ci_legacy_gate_log_import.py:102-338 &middot; Queue: scripts/branch_reconciliation_inventory.py:1406-1565 &middot; Replay: scripts/branch_reconciliation_inventory.py:1891-2034</p>
+  <p class="cite">Practitioner evidence: <a href="https://github.com/sigstore/cosign/issues/1273">cosign #1273</a> &middot; <a href="https://github.com/pytest-dev/pytest/issues/6399">Pytest #6399</a> &middot; <a href="https://github.com/orgs/community/discussions/46757">GitHub #46757</a> &middot; <a href="https://gitlab.com/gitlab-org/gitlab/-/issues/229156">GitLab #229156</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19p: ENFORCEMENT EXECUTABLE METADATA -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s91-3-enforcement-executable-modes">
+  <p class="stage-kicker">S91.3 &middot; checkout-safe enforcement</p>
+  <h2>Guardrails must survive the checkout <span class="badge-yellow">INDEX CONTRACT READY &middot; EXACT-HEAD GATE PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Commit the runtime, not host luck</h3>
+      <ul class="bullets-tight">
+        <li>Derive <strong>47 runtime surfaces</strong> from <code>opencode.json</code>, shared libraries, implementation modules, and direct Node tests.</li>
+        <li>Read the candidate <strong>Git index</strong> and require mode <code>100755</code>; filesystem permission reporting and <code>core.fileMode</code> cannot hide drift.</li>
+        <li>Keep metadata and behavior separate: an executable bit cannot prove a hook actually fires.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Independent behavior proof</h3>
+      <ul class="bullets-tight">
+        <li><strong>151 hook-runtime checks</strong> with 18 intentional skips exercise registered hook paths.</li>
+        <li>The plugin manifest is <strong>108/108 manifest</strong>; Node v26 parse/factory compatibility is 5/5.</li>
+        <li>The candidate changes metadata only, with <strong>source bytes unchanged</strong>; rollout needs no OpenCode restart.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">The local feature commit is present; exact-head full-gate and promotion proof remain pending. No release-completion claim is made.</p>
+  <p class="cite">Sources: tests/unit/test_enforcement_executable_modes.py:12-56 &middot; opencode.json:63-97 &middot; docs/features/OPENCODE_ENFORCEMENT_EXECUTABLE_MODES.md:22-48 &middot; practitioner evidence: <a href="https://github.com/anomalyco/opencode/issues/7006">OpenCode #7006</a></p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 20: SECURITY -->
 <!-- ============================================================ -->
 <section>
   <h2>Security &mdash; built in, not bolted on</h2>
-  <p>gludd has <strong>three layers of protection</strong> on every action:</p>
+  <p>Every action crosses <strong>three enforceable layers</strong>; no single layer is trusted alone:</p>
   <ul>
     <li><span class="badge-blue">Layer 1</span> <strong>Permissions</strong> &mdash; hard rules on what gludd is allowed to do</li>
-    <li><span class="badge-blue">Layer 2</span> <strong>Runtime guards</strong> &mdash; 11 plugins that watch every action in real time</li>
+    <li><span class="badge-blue">Layer 2</span> <strong>Runtime guards</strong> &mdash; registered blocking plugins watch every action in real time</li>
     <li><span class="badge-blue">Layer 3</span> <strong>Prompt rules</strong> &mdash; the AI is instructed to follow safe practices</li>
   </ul>
   <div class="diagram-wrap">
     <div class="mermaid">
 graph TD
-  L1["Layer 1 - Permissions<br/>hard rules in config files"] --> L2["Layer 2 - Runtime Guards<br/>11 plugins watch every action"]
-  L2 --> L3["Layer 3 - Prompt Rules<br/>AI instructed to follow safe practices"]
+  C["Layer 1 — Config: permission + Make-only gate"] --> R["Layer 2 — Runtime: blocking hooks"]
+  R --> P["Layer 3 — Prompt: TDD + evidence policy"]
     </div>
   </div>
   <p><strong>Security findings: 14 of 15 fixed</strong> &mdash; one remains open and tracked.</p>
-  <p class="cite">13 BLOCKING enforcement plugins <span class="badge-green">VERIFIED</span> &middot; 99 hook-runtime tests &middot; 14/15 findings fixed &middot; Source: <code>.opencode/plugin/</code>, <code>docs/audit/</code></p>
+  <p class="cite">Registered enforcement plugins <span class="badge-green">VERIFIED</span> &middot; hook-runtime suite &middot; 14/15 findings fixed &middot; Sources: <code>.opencode/plugin/</code>, <code>opencode.json</code>, <code>tests/unit/test_*_plugin*.py</code>, <code>docs/audit/</code></p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 20b: GUARDRAILS ARCHITECTURE -->
+<!-- SLIDE 20c: RUNTIME GUARD GROUPS -->
 <!-- ============================================================ -->
 <section>
-  <h2>Guardrails architecture &mdash; 14 plugins, 3 layers</h2>
-  <p>Every agent action passes through <strong>three enforceable layers</strong>. No single layer is trusted alone.</p>
+  <h2>Runtime guardrails &mdash; grouped for inspection</h2>
   <div class="diagram-wrap">
     <div class="mermaid">
-graph TD
-  subgraph L1["Layer 1 — Config (hard gate)"]
-    C1["opencode.json<br/>permission block"]
-    C2["Make only: deny *,<br/>allow make *"]
+flowchart LR
+  subgraph Actions["Action boundaries"]
+    direction TB
+    A1["Make-only shell"] --> A2["clean-tree gate"] --> A3["no suppression"]
   end
-  subgraph L2["Layer 2 — Runtime (real-time hooks)"]
-    P1["enforce-make.ts<br/>Bash make-only"]
-    P2["enforce-floor.ts<br/>agent-count floor"]
-    P3["enforce-stop.ts<br/>premature-stop block"]
-    P4["enforce-delegate.ts<br/>delegation budget"]
-    P5["enforce-no-wait.ts<br/>anti-wait CI poll"]
-    P6["enforce-session-start.ts<br/>dispatch-on-start"]
-    P7["enforce-verified-claims.ts<br/>evidence-required"]
-    P8["enforce-clean-tree.ts<br/>dirty-tree dispatch deny"]
-    P9["+5 more plugins<br/>(13 BLOCKING total)"]
+  subgraph Workflow["Workflow discipline"]
+    direction TB
+    W1["agent floor"] --> W2["delegation budget"] --> W3["session-start dispatch"]
   end
-  subgraph L3["Layer 3 — Prompt (instruction)"]
-    D1["AGENTS.md<br/>policy sections"]
-    D2["TDD, commit-after-green,<br/>guardrail integrity..."]
+  subgraph Evidence["Evidence + safety"]
+    direction TB
+    E1["verified claims"] --> E2["premature-stop block"] --> E3["deadline + no-wait"]
   end
-  L1 --> L2 --> L3
+  Actions --> Workflow --> Evidence
     </div>
   </div>
-  <ul class="bullets-tight">
-    <li class="fragment"><strong>13 BLOCKING plugins</strong> in <span class="path">.opencode/plugin/</span>, all hot-reload capable, zero advisory-only</li>
-    <li class="fragment"><strong>99 hook-runtime tests</strong> across 52 functional tests in 8 plugins (<span class="path">make test-hook-runtime</span>)</li>
-    <li class="fragment"><strong>Fail-open on error</strong>: a broken hook never blocks legitimate work; the next layer still enforces</li>
-    <li class="fragment">All 13 verified active via <span class="path">make verify-plugin-manifest</span></li>
+  <p class="cite">Representative groups from .opencode/plugin/; blocking plugins are verified by the manifest and hook-runtime suites.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 20d: GUARDRAIL PROOF -->
+<!-- ============================================================ -->
+<section>
+  <h2>Guardrails architecture &mdash; measured proof</h2>
+  <ul>
+    <li><strong>Every registered plugin is blocking</strong> in <span class="path">.opencode/plugin/</span>; zero are advisory-only</li>
+    <li><strong>Hook-runtime acceptance</strong> exercises the active plugins through <span class="path">make test-hook-runtime</span></li>
+    <li><strong>Fail-open on hook error:</strong> a broken hook does not block legitimate work; the next layer still enforces</li>
+    <li>Every registered hook is verified via <span class="path">make verify-plugin-manifest</span></li>
   </ul>
-  <p class="cite">Source: .opencode/plugin/ (13 BLOCKING), opencode.json, tests/unit/test_*_plugin*.py</p>
+  <p class="honest-note">The runtime, configuration, and prompt layers are independently testable; no single layer is treated as sufficient evidence.</p>
+  <p class="cite">Source: .opencode/plugin/, opencode.json, tests/unit/test_*_plugin*.py</p>
 </section>
 
 <!-- ============================================================ -->
@@ -871,12 +1655,12 @@ graph TD
       <span class="cite"><code>find src -name '*.py'</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">38,207</div>
+      <div class="number">{{TEST_COUNT}}</div>
       <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">111</div>
+      <div class="number">{{ROLE_COUNT}}</div>
       <div class="label">Ansible roles</div>
       <span class="cite"><code>make collection-roles</code></span>
     </div>
@@ -1056,12 +1840,12 @@ make init</code></pre>
   </p>
   <div class="metrics-grid">
     <div class="metric-box">
-      <div class="number">v0.1.0-beta.2</div>
+      <div class="number">v{{VERSION}}</div>
       <div class="label">current version</div>
       <span class="cite"><code>pyproject.toml</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">38,207</div>
+      <div class="number">{{TEST_COUNT}}</div>
       <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
@@ -1083,7 +1867,7 @@ make init</code></pre>
       <span class="cite"><code>254 total</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">13 BLOCKING</div>
+      <div class="number">BLOCKING</div>
       <div class="label">enforcement plugins</div>
       <span class="cite"><code>make verify-plugin-manifest</code></span>
     </div>
@@ -1133,7 +1917,7 @@ make init</code></pre>
   <p style="color:#8b949e; margin-top:20px;">Questions?</p>
   <p style="font-size:0.6em; margin-top:40px;">
     gludd &mdash; Autonomous Software Development<br>
-    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-14
+    v{{VERSION}} &middot; MIT License &middot; commit {{GIT_SHA}} &middot; generated {{GENERATED_AT}}
   </p>
   <p style="font-size:0.5em; margin-top:20px;">
     <a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a><br>
@@ -1149,46 +1933,32 @@ make init</code></pre>
 </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
-<!-- Mermaid plugin for inline diagrams -->
-<script src="https://cdn.jsdelivr.net/npm/reveal.js-mermaid-plugin@2.1.0/plugin/mermaid/mermaid.js"></script>
-<script>
-Reveal.initialize({
-  hash: true,
-  center: true,
-  width: 1150,
-  height: 820,
-  margin: 0.045,
-  minScale: 0.2,
-  maxScale: 1.8,
-  overflow: 'scroll',
-  transition: 'slide',
-  transitionSpeed: 'default',
-  backgroundTransition: 'fade',
-  slideNumber: 'c/t',
-  plugins: [ RevealHighlight, RevealNotes ]
-}).then(() => {
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: 'base',
-    themeVariables: {
-      primaryColor: '#161b22',
-      primaryTextColor: '#c9d1d9',
-      primaryBorderColor: '#58a6ff',
-      lineColor: '#58a6ff',
-      secondaryColor: '#1f6feb',
-      tertiaryColor: '#238636',
-      background: '#161b22',
-      mainBkg: '#161b22',
-      secondBkg: '#1f6feb',
-      fontSize: '16px'
-    }
-  });
-  mermaid.run();
-  Reveal.on('slidechanged', () => mermaid.run());
-});
-</script>
+<p id="presentation-render-status" role="status" aria-live="polite">Presentation scripts did not finish; diagram source remains available.</p>
+<dialog id="source-viewer-dialog" aria-labelledby="source-viewer-path">
+  <div class="source-viewer-header">
+    <strong id="source-viewer-path">Repository source</strong>
+    <span class="source-viewer-actions">
+      <a id="source-viewer-github" href="https://github.com/sandboxcom/gludd">Open on GitHub</a>
+      <button id="source-viewer-close" type="button">Close</button>
+    </span>
+  </div>
+  <div id="source-viewer-editor" aria-label="Read-only repository source"></div>
+</dialog>
+
+<script src="./vendor/reveal/reveal.js"></script>
+<script src="./vendor/reveal/plugin/highlight/highlight.js"></script>
+<script src="./vendor/reveal/plugin/notes/notes.js"></script>
+<script src="./vendor/mermaid/mermaid.js"></script>
+<script src="./vendor/ace/ace.js"></script>
+<script src="./vendor/ace/theme-tomorrow_night.js"></script>
+<script src="./vendor/ace/mode-css.js"></script>
+<script src="./vendor/ace/mode-html.js"></script>
+<script src="./vendor/ace/mode-javascript.js"></script>
+<script src="./vendor/ace/mode-json.js"></script>
+<script src="./vendor/ace/mode-markdown.js"></script>
+<script src="./vendor/ace/mode-python.js"></script>
+<script src="./vendor/ace/mode-sh.js"></script>
+<script src="./vendor/ace/mode-yaml.js"></script>
+<script src="./presentation.js?v={{GIT_SHA_FULL}}"></script>
 </body>
 </html>

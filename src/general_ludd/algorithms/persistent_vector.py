@@ -13,86 +13,22 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import Any, Generic, TypeVar, cast
 
+from general_ludd.algorithms.persistent_vector_nodes import (
+    _BRANCH,
+    _MASK,
+    _SHIFT_INC,
+    _array_for,
+    _new_path,
+    _node_copy_set,
+    _pop_tail,
+    _push_tail,
+    _tailoff,
+)
+from general_ludd.algorithms.persistent_vector_nodes import (
+    _node_new as _node_new,
+)
+
 T = TypeVar("T")
-
-_SHIFT_INC = 5
-_BRANCH = 1 << _SHIFT_INC  # 32
-_MASK = _BRANCH - 1
-
-
-def _node_new() -> list[Any]:
-    return [None] * _BRANCH
-
-
-def _node_copy(node: list[Any]) -> list[Any]:
-    return node[:]
-
-
-def _node_copy_set(node: list[Any], idx: int, val: Any) -> list[Any]:
-    c = node[:]
-    c[idx] = val
-    return c
-
-
-def _tailoff(cnt: int) -> int:
-    if cnt < _BRANCH:
-        return 0
-    return ((cnt - 1) >> _SHIFT_INC) << _SHIFT_INC
-
-
-def _new_path(shift: int, node: list[Any]) -> list[Any]:
-    """Create a path from shift down to leaf, storing node at the leaf."""
-    if shift == 0:
-        return node
-    n = _node_new()
-    n[0] = _new_path(shift - _SHIFT_INC, node)
-    return n
-
-
-def _push_tail(cnt: int, shift: int, root: list[Any], tail: list[Any]) -> list[Any]:
-    """Insert tail into the trie via path copying.  cnt is the count BEFORE conj."""
-    tail_off = cnt - len(tail)
-    subidx = (tail_off >> shift) & _MASK
-    if shift == _SHIFT_INC:
-        return _node_copy_set(root, subidx, tail)
-    child = root[subidx]
-    if child is None:
-        child = _node_new()
-    ns = _push_tail(cnt, shift - _SHIFT_INC, child, tail)
-    return _node_copy_set(root, subidx, ns)
-
-
-def _array_for(cnt: int, shift: int, root: list[Any], tail: list[Any]) -> list[Any]:
-    if cnt == 0:
-        return tail
-    node = root
-    for level in range(shift, 0, -_SHIFT_INC):
-        idx = (cnt >> level) & _MASK
-        n = node[idx]
-        if n is None:
-            return tail
-        node = n
-    return node
-
-
-def _pop_tail(cnt: int, shift: int, root: list[Any]) -> list[Any] | None:
-    """Remove the tail leaf from the trie.  cnt is the count AFTER pop."""
-    subidx = (cnt >> shift) & _MASK
-    if shift > _SHIFT_INC:
-        child = root[subidx]
-        if child is None:
-            return None
-        newchild = _pop_tail(cnt, shift - _SHIFT_INC, child)
-        if newchild is None:
-            if subidx == 0:
-                return None
-            return _node_copy_set(root, subidx, None)
-        return _node_copy_set(root, subidx, newchild)
-    # shift == _SHIFT_INC: leaf level
-    if subidx == 0:
-        return None
-    return _node_copy_set(root, subidx, None)
-
 
 class PersistentVector(Generic[T]):
     """Immutable persistent vector with structural sharing.
@@ -110,6 +46,7 @@ class PersistentVector(Generic[T]):
         root: list[Any],
         tail: list[Any],
     ) -> None:
+        """Initialize an immutable vector from its trie components."""
         self._cnt = cnt
         self._shift = shift
         self._root = root
@@ -131,9 +68,11 @@ class PersistentVector(Generic[T]):
     # ---- Public immutable API ----
 
     def __len__(self) -> int:
+        """Return the number of elements."""
         return self._cnt
 
     def __getitem__(self, index: int) -> Any:
+        """Return an element by positive or negative index."""
         if index < 0:
             index += self._cnt
         if not (0 <= index < self._cnt):
@@ -142,10 +81,12 @@ class PersistentVector(Generic[T]):
         return arr[index & _MASK]
 
     def __iter__(self) -> Iterator[Any]:
+        """Iterate over elements in insertion order."""
         for i in range(self._cnt):
             yield self[i]
 
     def __eq__(self, other: object) -> bool:
+        """Compare vectors by type, length, and ordered contents."""
         if not isinstance(other, PersistentVector):
             return NotImplemented
         if self._cnt != other._cnt:
@@ -153,6 +94,7 @@ class PersistentVector(Generic[T]):
         return all(self[i] == other[i] for i in range(self._cnt))
 
     def __repr__(self) -> str:
+        """Return a bounded representation of the vector contents."""
         if self._cnt <= 20:
             items = ", ".join(repr(self[i]) for i in range(self._cnt))
         else:
@@ -197,9 +139,6 @@ class PersistentVector(Generic[T]):
 
         # tail has 0 or 1 element; pull a new tail from the trie
         newcnt = self._cnt - 1
-        if newcnt == 0:
-            return PersistentVector(0, _SHIFT_INC, _node_new(), [])
-
         newtail = list(_array_for(newcnt - 1, self._shift, self._root, self._tail))
         newroot = self._root
         newshift = self._shift
@@ -235,6 +174,7 @@ class PersistentVector(Generic[T]):
         return _node_copy_set(node, subidx, ns)
 
     def peek(self) -> T | None:
+        """Return the final element, or ``None`` when empty."""
         if self._cnt == 0:
             return None
         return cast(T, self[self._cnt - 1])
@@ -251,6 +191,7 @@ class PersistentVector(Generic[T]):
     # ---- Transient bridge ----
 
     def transient(self) -> TransientVector[T]:
+        """Return a mutable transient view for batched changes."""
         return TransientVector(self._cnt, self._shift, self._root, self._tail)
 
 
@@ -270,6 +211,7 @@ class TransientVector(Generic[T]):
         root: list[Any],
         tail: list[Any],
     ) -> None:
+        """Initialize a transient vector from mutable trie components."""
         self._cnt = cnt
         self._shift = shift
         self._root = root
@@ -279,6 +221,7 @@ class TransientVector(Generic[T]):
 
     @classmethod
     def empty(cls) -> TransientVector[T]:
+        """Return an empty transient vector."""
         r = _node_new()
         return cls(0, _SHIFT_INC, r, [])
 
@@ -290,6 +233,7 @@ class TransientVector(Generic[T]):
         return n
 
     def conj(self, val: T) -> TransientVector[T]:
+        """Append a value in place and return this transient vector."""
         if self._sealed:
             raise RuntimeError("transient vector already sealed")
 
@@ -321,6 +265,7 @@ class TransientVector(Generic[T]):
         return self
 
     def pop(self) -> TransientVector[T]:
+        """Remove the final value in place and return this transient vector."""
         if self._sealed:
             raise RuntimeError("transient vector already sealed")
         if self._cnt == 0:
@@ -340,15 +285,6 @@ class TransientVector(Generic[T]):
 
         # tail has 0 or 1 element; pull a new tail from the trie
         newcnt = self._cnt - 1
-        if newcnt == 0:
-            self._cnt = 0
-            self._tail = []
-            self._editable.add(id(self._tail))
-            self._root = _node_new()
-            self._editable.add(id(self._root))
-            self._shift = _SHIFT_INC
-            return self
-
         newtail = list(_array_for(newcnt - 1, self._shift, self._root, self._tail))
         self._editable.add(id(newtail))
 
@@ -373,6 +309,7 @@ class TransientVector(Generic[T]):
         return self
 
     def assoc(self, index: int, val: T) -> TransientVector[T]:
+        """Replace an indexed value in place and return this transient vector."""
         if self._sealed:
             raise RuntimeError("transient vector already sealed")
         if index < 0:
@@ -395,13 +332,16 @@ class TransientVector(Generic[T]):
         return node
 
     def persistent(self) -> PersistentVector[T]:
+        """Seal this transient and return its immutable vector."""
         self._sealed = True
         return PersistentVector(self._cnt, self._shift, self._root, self._tail)
 
     def __len__(self) -> int:
+        """Return the number of elements."""
         return self._cnt
 
     def __getitem__(self, index: int) -> Any:
+        """Return an element by positive or negative index."""
         if index < 0:
             index += self._cnt
         if not (0 <= index < self._cnt):

@@ -5,12 +5,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 
 
 def _target_block(target: str) -> str:
-    lines = MAKEFILE.read_text(encoding="utf-8").splitlines()
+    lines = compose_makefile(MAKEFILE).splitlines()
     start = next(i for i, line in enumerate(lines) if line.startswith(f"{target}:"))
     end = len(lines)
     for i in range(start + 1, len(lines)):
@@ -21,8 +23,8 @@ def _target_block(target: str) -> str:
 
 
 def test_ssh_key_defaults_outside_repository() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
-    assert "SSH_KEY ?= $(HOME)/.ssh/sandboxcom_github_rsa" in content
+    content = compose_makefile(MAKEFILE)
+    assert "SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa" in content
     assert "sandboxcom SSH key is missing or unreadable" in _target_block(
         "require-sandboxcom-ssh-key"
     )
@@ -32,7 +34,7 @@ def test_development_push_uses_external_key_guard() -> None:
     block = _target_block("development-push")
     assert "require-sandboxcom-ssh-key" in block
     assert "ssh -i $(SSH_KEY)" in block
-    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" not in block
+    assert "/Users/shawnwilson/gludd/sandboxcom_gludd_rsa" not in block
 
 
 def test_missing_key_fails_closed_with_setup_hint(tmp_path: Path) -> None:

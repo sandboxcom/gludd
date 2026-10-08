@@ -218,6 +218,22 @@ class TestModelHashDB:
             assert files[0].filename == "x.bin"
             assert files[0].sha256 == "a" * 64
 
+    def test_atomic_persist_failure_preserves_previous_file(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "hashes.json"
+        original = '{"org/existing": [{"filename": "safe.bin", "sha256": "safe"}]}'
+        db_path.write_text(original)
+        db = ModelHashDB(db_path=str(db_path))
+        db._entries["org/new"] = [FileHash("new.bin", "n" * 64)]
+
+        with (
+            patch("general_ludd.small_models.model_hash_db.json.dump", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            db._persist()
+
+        assert db_path.read_text() == original
+        assert list(tmp_path.iterdir()) == [db_path]
+
     def test_json_persistence_empty_db(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "hashes.json"
@@ -300,7 +316,7 @@ class TestModelDownloaderHashIntegration:
                 with contextlib.suppress(ModelIntegrityError):
                     dl.download("HuggingFaceTB/SmolLM2-135M", verify_hash=True)
 
-    def test_download_skips_hash_verify_when_disabled(self):
+    def test_download_skips_hash_verify_when_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             from general_ludd.small_models.download import ModelDownloader
 
@@ -308,7 +324,10 @@ class TestModelDownloaderHashIntegration:
             dl._hash_db = ModelHashDB()
 
             with patch.object(dl, "download_huggingface") as mock_dl:
-                mock_dl.return_value.local_path = tmpdir
+                mock_dl.return_value = DownloadedModel(
+                    model_id="org/model",
+                    local_path=tmpdir,
+                )
                 result = dl.download("org/model", verify_hash=False)
             assert result.model_id == "org/model"
 
@@ -620,15 +639,22 @@ class TestModelDownloaderResilience:
             scheduling_small = dl.check_download_scheduling(0.1)
             assert scheduling_small["size_gb"] == 0.1
 
-    def test_download_force_overrides_defer(self):
+    def test_download_force_overrides_defer(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             from general_ludd.small_models.download import ModelDownloader
 
             dl = ModelDownloader(cache_dir=tmpdir)
-            with patch.object(dl, "download_huggingface") as mock_dl:
-                mock_dl.return_value.local_path = tmpdir
+            with (
+                patch("general_ludd.small_models.cost.should_defer_download") as mock_defer,
+                patch.object(dl, "download_huggingface") as mock_dl,
+            ):
+                mock_dl.return_value = DownloadedModel(
+                    model_id="org/model",
+                    local_path=tmpdir,
+                )
                 result = dl.download("org/model", force=True, verify_hash=False)
             assert result.model_id == "org/model"
+            mock_defer.assert_not_called()
 
     def test_download_respects_timeout_configuration(self):
 

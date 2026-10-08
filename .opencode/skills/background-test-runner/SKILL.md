@@ -1,14 +1,15 @@
 ---
 name: background-test-runner
-description: Launch long-lived tests in the background and poll their status, so no task thread is ever blocked waiting for a test.
+description: Launch and observe long-lived tests with bounded ownership and continuous evidence, using background execution when it materially frees the owning thread.
 metadata:
   category: engineering
 ---
 
 # Background Test Runner
 
-Never run a test that takes >30s in the foreground. Use the background test
-runner to keep the subagent pool full while tests execute.
+Use the background test runner when it lets the owning thread perform another
+concrete deliverable while tests execute. A foreground run is valid when it is
+bounded and streams progress; never create filler work or a polling-only subagent.
 
 ---
 
@@ -36,7 +37,7 @@ runner to keep the subagent pool full while tests execute.
    │  └────────────────┘  │
    └──────────┬───────────┘
               │
-              │  poll from subagent every ~30s
+              │  observe at natural checkpoints
               ▼
    ┌──────────────────────┐
    │  test-bg-runner       │
@@ -85,16 +86,17 @@ Result ingestion
 
 ```makefile
 # Makefile excerpt
+.RECIPEPREFIX := >
 test-bg:
-	@test -n "$(TESTFILE)" || (echo "ERROR: TESTFILE is required" && exit 1)
-	@SANITIZED=$$(echo "$(TESTFILE)" | tr '/' '_' | tr '.' '_'); \
-	TIMESTAMP=$$(date +%Y%m%d_%H%M%S); \
-	mkdir -p .gate-logs; \
-	nohup .venv/bin/python -m pytest $(TESTFILE) -v \
-		> .gate-logs/test-$${SANITIZED}-$${TIMESTAMP}.log 2>&1 & \
-	echo $$! > .gate-logs/.test-$${SANITIZED}.pid; \
-	echo "Launched $(TESTFILE) [PID: $$!]"; \
-	echo "Log: .gate-logs/test-$${SANITIZED}-$${TIMESTAMP}.log"
+> @test -n "$(TESTFILE)" || (echo "ERROR: TESTFILE is required" && exit 1)
+> @SANITIZED=$$(echo "$(TESTFILE)" | tr '/' '_' | tr '.' '_'); \
+> TIMESTAMP=$$(date +%Y%m%d_%H%M%S); \
+> mkdir -p .gate-logs; \
+> nohup .venv/bin/python -m pytest $(TESTFILE) -v \
+> > .gate-logs/test-$${SANITIZED}-$${TIMESTAMP}.log 2>&1 & \
+> echo $$! > .gate-logs/.test-$${SANITIZED}.pid; \
+> echo "Launched $(TESTFILE) [PID: $$!]"; \
+> echo "Log: .gate-logs/test-$${SANITIZED}-$${TIMESTAMP}.log"
 ```
 
 **What it does:**
@@ -109,10 +111,11 @@ test-bg:
 
 ```makefile
 # Makefile excerpt
+.RECIPEPREFIX := >
 test-bg-runner:
-	@python3 scripts/background_test_runner_cli.py \
-		--action $(ACTION) \
-		$(if $(TESTFILE),--testfile $(TESTFILE),)
+> @python3 scripts/background_test_runner_cli.py \
+> --action $(ACTION) \
+> $(if $(TESTFILE),--testfile $(TESTFILE),)
 ```
 
 **What it does:**
@@ -927,7 +930,9 @@ When the subagent returns, the orchestrator parses:
    $ make test-bg TESTFILE='tests/unit/test_worktree_parse.py'
    → Launched tests/unit/test_worktree_parse.py [PID: 12346]
 
-3. Dispatch real work (10 subagents) while BOTH run in background.
+3. Continue real work inline or dispatch up to three independent deliverables
+   while BOTH run in background; zero subagents is valid when delegation adds
+   no value.
 
 4. Poll gate from a subagent every 60s:
    $ make gate-status-check
@@ -1191,11 +1196,12 @@ class TestBackgroundTestRunner:
 
 ```makefile
 # Override defaults in Makefile:
+.RECIPEPREFIX := >
 test-bg:
-	@GLUDD_TEST_LOG_DIR=$(TEST_LOG_DIR) \
-	GLUDD_TEST_HEARTBEAT_INTERVAL=$(HEARTBEAT_INTERVAL) \
-	.venv/bin/python -m scripts.background_test_runner_cli \
-		--action launch --testfile $(TESTFILE)
+> @GLUDD_TEST_LOG_DIR=$(TEST_LOG_DIR) \
+> GLUDD_TEST_HEARTBEAT_INTERVAL=$(HEARTBEAT_INTERVAL) \
+> .venv/bin/python -m scripts.background_test_runner_cli \
+> --action launch --testfile $(TESTFILE)
 ```
 
 ---
@@ -1216,12 +1222,12 @@ test-bg:
 
 ## Rules
 
-1. **Never run a test that takes >30s in the foreground** — it blocks ALL
-   subagent dispatch. Use `make test-bg` instead.
-2. **Never wait for a test result without dispatching other work** — launch the
-   test in background, dispatch other subagents, then poll from a subagent.
-3. **Poll from subagents, not the main thread** — use `make test-bg-runner ACTION=status`
-   in a read-only research subagent, or call `runner.poll_all()` from a subagent task.
+1. **Keep long tests bounded and observable** — a foreground test is valid when
+   it streams progress; use `make test-bg` when background ownership is useful.
+2. **Do useful work while a background test runs when such work exists** — never
+   manufacture filler merely to occupy an agent slot.
+3. **Observe from the owning thread at natural checkpoints** — use
+   `make test-bg-runner ACTION=status`; do not dedicate a subagent to polling.
 4. **Always verify the terminal marker** — a finished process does NOT mean a
    passing test. Check for PASS/FAIL before declaring done.
 5. **Clean up PID files** — `runner.cleanup()` after results are ingested.

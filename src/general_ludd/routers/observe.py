@@ -46,14 +46,19 @@ lines if hookup is centralized there instead. No edit to ``daemon.py`` /
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import asdict
+from typing import Literal
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, Field, StrictFloat, StrictInt, StrictStr, field_validator, model_validator
 
 from general_ludd.connectors.registry import ConnectorRegistry
+from general_ludd.observe.facade import GluddObserve
 from general_ludd.pricing_intel.catalog import PricingCatalog
+from general_ludd.routers._runtime import StrictRuntimeRequest
+from general_ludd.security.capability_guard import RequireCapability
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +74,54 @@ class ObserveQueryRequest(BaseModel):
 
     source: str = Field(min_length=1, max_length=256)
     spec: dict[str, object] = Field(default_factory=dict)
+
+
+class ObserveFacadeRequest(StrictRuntimeRequest):
+    """Bounded cross-source facade request over registered connectors only."""
+
+    operation: Literal["query_sources", "timeline", "correlate_incident", "topology"]
+    role: StrictStr = Field(default="observe", min_length=1, max_length=128)
+    seed: dict[StrictStr, object] = Field(default_factory=dict)
+    kinds: list[StrictStr] = Field(
+        default_factory=lambda: ["logs", "traces", "metrics", "events"],
+        min_length=1,
+        max_length=32,
+    )
+    by: StrictStr = Field(default="trace_id", pattern=r"^[A-Za-z_][A-Za-z0-9_.-]{0,127}$")
+    window_s: StrictFloat = Field(default=300.0, ge=0.0, le=86_400.0)
+    spec: dict[StrictStr, object] = Field(default_factory=dict)
+    start: StrictFloat | None = None
+    end: StrictFloat | None = None
+    timeout_seconds: StrictInt = Field(default=30, ge=1, le=120)
+
+    @field_validator("seed", "spec")
+    @classmethod
+    def _bound_mapping(cls, value: dict[str, object]) -> dict[str, object]:
+        if len(value) > 256 or len(json.dumps(value, default=str)) > 65_536:
+            raise ValueError("observability mapping exceeds the bounded payload size")
+        return value
+
+    @field_validator("kinds")
+    @classmethod
+    def _bound_kinds(cls, value: list[str]) -> list[str]:
+        if any(not item or len(item) > 128 for item in value):
+            raise ValueError("connector kinds must be non-empty and bounded")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_operation(self) -> ObserveFacadeRequest:
+        if self.operation == "correlate_incident" and not self.seed:
+            raise ValueError("correlate_incident requires a non-empty seed")
+        if self.start is not None and self.end is not None and self.start > self.end:
+            raise ValueError("start must not exceed end")
+        return self
+
+
+def _json_topology(topology: dict[str, dict[str, set[str]]]) -> dict[str, dict[str, list[str]]]:
+    return {
+        side: {name: sorted(values) for name, values in sorted(adjacency.items())}
+        for side, adjacency in topology.items()
+    }
 
 
 def _get_registry(app: FastAPI) -> ConnectorRegistry | None:
@@ -97,6 +150,69 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     result rather than erroring — a daemon with no connectors configured is a
     valid, safe state.
     """
+
+    @app.post(
+        "/api/observe/facade",
+        dependencies=[Depends(RequireCapability(resource="api:observe", action="query"))],
+    )
+    async def observe_facade(req: ObserveFacadeRequest) -> dict[str, object]:
+        reg = _get_registry(app)
+        sources = (
+            {name: source for name in reg.names() if (source := reg.get(name)) is not None}
+            if reg is not None
+            else {}
+        )
+
+        def _run() -> dict[str, object]:
+            facade = GluddObserve(sources)
+            if req.operation == "query_sources":
+                result: dict[str, object] = {
+                    "records": facade.query_sources(
+                        req.kinds,
+                        req.spec,
+                        start=req.start,
+                        end=req.end,
+                    )
+                }
+            elif req.operation == "timeline":
+                result = {
+                    "records": facade.timeline(
+                        req.kinds,
+                        spec=req.spec,
+                        start=req.start,
+                        end=req.end,
+                    )
+                }
+            elif req.operation == "correlate_incident":
+                result = {
+                    "groups": facade.correlate_incident(
+                        req.seed,
+                        kinds=req.kinds,
+                        by=req.by,
+                        window_s=req.window_s,
+                        spec=req.spec,
+                    )
+                }
+            else:
+                result = {
+                    "topology": _json_topology(
+                        facade.topology(kinds=req.kinds, spec=req.spec)
+                    )
+                }
+            result["errors"] = list(facade.errors)
+            result["role"] = req.role
+            if len(json.dumps(result, default=str)) > 2_097_152:
+                raise HTTPException(status_code=413, detail="observability result exceeds response limit")
+            return result
+
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(_run),
+                timeout=float(req.timeout_seconds),
+            )
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail="observability operation timed out") from exc
+        return {"result": result}
 
     @app.get("/api/observe/sources")
     async def observe_sources() -> dict[str, object]:

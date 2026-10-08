@@ -18,13 +18,17 @@ import subprocess
 import sys
 import tomllib
 from collections import deque
+from pathlib import PurePosixPath
 
 import pytest
+from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
 PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PYPROJECT = os.path.join(PROJECT_ROOT, "pyproject.toml")
 UV_LOCK = os.path.join(PROJECT_ROOT, "uv.lock")
+THIRD_PARTY_LICENSES = os.path.join(PROJECT_ROOT, "THIRD_PARTY_LICENSES.md")
+PROFILE_CATALOG = os.path.join(PROJECT_ROOT, "config", "dependency_profiles.toml")
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -37,6 +41,19 @@ def _read(path: str) -> str:
 def _load_pyproject() -> dict:
     with open(PYPROJECT, "rb") as f:
         return tomllib.load(f)
+
+
+def _load_toml(path: str) -> dict:
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def _profile_paths() -> dict[str, str]:
+    catalog = _load_toml(PROFILE_CATALOG)
+    return {
+        name: os.path.join(PROJECT_ROOT, metadata["project"])
+        for name, metadata in catalog["profiles"].items()
+    }
 
 
 def _parse_uvlock_packages(raw: str) -> list[dict]:
@@ -102,15 +119,30 @@ def _dep_depth(graph: dict[str, set[str]], root: str) -> dict[str, int]:
 def _package_info(name: str) -> dict | None:
     """Get package metadata via importlib.metadata."""
     try:
-        from importlib.metadata import metadata
+        from importlib.metadata import distribution
 
-        meta = metadata(name)
+        dist = distribution(name)
+        meta = dist.metadata
         license_val = meta.get("License-Expression") or meta.get("License") or ""
+        license_files = list(meta.get_all("License-File") or [])
+        if not license_val:
+            texts: list[str] = []
+            for declared in license_files:
+                path = PurePosixPath(declared)
+                if path.is_absolute() or ".." in path.parts:
+                    continue
+                for candidate in (f"licenses/{path.as_posix()}", path.as_posix()):
+                    content = dist.read_text(candidate)
+                    if content:
+                        texts.append(content)
+                        break
+            license_val = "\n\n".join(texts)
         classifiers = meta.get_all("Classifier") or []
         return {
             "name": name,
             "version": meta.get("Version", ""),
             "license": license_val,
+            "license_files": license_files,
             "classifiers": list(classifiers),
             "summary": meta.get("Summary", ""),
             "home_page": meta.get("Home-page", "") or meta.get("Project-URL", ""),
@@ -170,12 +202,14 @@ _GPL_ALLOWLIST = {
 
 _LGPL_ALLOWLIST = {
     "chardet",
+    "pygame",
     "psycopg",
     "psycopg-binary",
 }
 
 _EXPECTED_DUPLICATE_PACKAGES = {
     "ansible-core",
+    "anyio",
     "tifffile",
     "scipy",
 }
@@ -210,7 +244,9 @@ def test_uv_lock_parseable() -> None:
     assert len(packages) > 50, f"Expected >50 packages, found {len(packages)}"
     names = {p["name"] for p in packages}
     assert "fastapi" in names, "core dep fastapi missing from uv.lock"
-    assert "pytest" in names, "dev dep pytest missing from uv.lock"
+    dev_test_lock = os.path.join(_profile_paths()["dev-test"], "uv.lock")
+    dev_names = _all_package_names(_parse_uvlock_packages(_read(dev_test_lock)))
+    assert "pytest" in dev_names, "dev dep pytest missing from dev-test lock"
 
 
 def test_uv_lock_all_entries_have_name_and_version() -> None:
@@ -383,6 +419,7 @@ def test_no_gpl_licensed_dependencies() -> None:
 def test_lgpl_dependencies_documented() -> None:
     """LGPL dependencies are enumerated and verified to be in the allowlist."""
     text = _read(UV_LOCK)
+    notices = _read(THIRD_PARTY_LICENSES).lower()
     packages = _parse_uvlock_packages(text)
 
     lgpl_found: list[tuple[str, str, str]] = []
@@ -395,6 +432,12 @@ def test_lgpl_dependencies_documented() -> None:
     undocumented = [(n, v, lic) for n, v, lic in lgpl_found if n not in _LGPL_ALLOWLIST]
     assert not undocumented, "LGPL packages not in allowlist (review and add if acceptable):\n" + "\n".join(
         f"  {n} v{v} — {lic}" for n, v, lic in undocumented
+    )
+
+    missing_notices = sorted(name for name in _LGPL_ALLOWLIST if name not in notices)
+    assert not missing_notices, (
+        "LGPL allowlist entries missing from THIRD_PARTY_LICENSES.md: "
+        f"{missing_notices}"
     )
 
     assert len(lgpl_found) > 0, "Expected some LGPL dependencies but found none"
@@ -418,8 +461,16 @@ def test_all_installed_deps_have_license() -> None:
     )
 
 
+def test_quickjs_ng_pep639_license_file_is_consumed() -> None:
+    """PEP 639 ``License-File`` evidence counts when SPDX fields are absent."""
+    info = _package_info("quickjs-ng")
+    assert info is not None
+    assert info["license_files"] == ["LICENSE"]
+    assert "MIT License" in (_get_license("quickjs-ng") or "")
+
+
 def test_core_deps_license_from_classifier_or_field() -> None:
-    """Core dependencies have license info via classifier or License field."""
+    """Core dependencies expose a classifier, SPDX field, or declared file."""
     data = _load_pyproject()
     core_deps_raw: list[str] = data["project"]["dependencies"]
     core_names = {d.split(">=")[0].split("==")[0].split("~=")[0].split("[")[0].strip() for d in core_deps_raw}
@@ -510,29 +561,26 @@ def test_pip_audit_available() -> None:
 
 
 def test_uv_lock_package_count_sanity() -> None:
-    """uv.lock has a reasonable number of packages (100-800)."""
+    """The independently locked core has a bounded, non-trivial closure."""
     text = _read(UV_LOCK)
     pkg_count = text.count("[[package]]")
-    assert pkg_count >= 100, f"Only {pkg_count} packages — uv.lock may be incomplete"
-    assert pkg_count <= 800, f"{pkg_count} packages — suspiciously many, review bloat"
+    assert pkg_count >= 50, f"Only {pkg_count} packages — uv.lock may be incomplete"
+    assert pkg_count <= 250, f"{pkg_count} packages — suspiciously many, review bloat"
 
 
 def test_pyproject_direct_deps_in_uvlock() -> None:
-    """Every pyproject.toml direct dependency appears as a top-level dep in uv.lock."""
-    data = _load_pyproject()
-    all_deps: set[str] = set()
-    for dep_list in data["project"]["optional-dependencies"].values():
-        for d in dep_list:
-            all_deps.add(_normalize_name(d.split(">=")[0].split("==")[0].split("~=")[0].split("[")[0].strip()))
-    for d in data["project"]["dependencies"]:
-        all_deps.add(_normalize_name(d.split(">=")[0].split("==")[0].split("~=")[0].split("[")[0].strip()))
-
-    text = _read(UV_LOCK)
-    packages = _parse_uvlock_packages(text)
-    lock_names = {p["name"] for p in packages}
-
-    missing = all_deps - lock_names
-    assert not missing, f"pyproject.toml deps not in uv.lock: {missing}"
+    """Every independent project's direct dependencies appear in its own lock."""
+    projects = {"core": PROJECT_ROOT, **_profile_paths()}
+    for name, project_path in projects.items():
+        project = _load_toml(os.path.join(project_path, "pyproject.toml"))
+        direct = {
+            canonicalize_name(Requirement(dependency).name)
+            for dependency in project["project"]["dependencies"]
+        }
+        packages = _parse_uvlock_packages(_read(os.path.join(project_path, "uv.lock")))
+        lock_names = _all_package_names(packages)
+        missing = direct - lock_names
+        assert not missing, f"{name} direct deps not in its lock: {missing}"
 
 
 def test_most_direct_deps_have_transitive_deps() -> None:

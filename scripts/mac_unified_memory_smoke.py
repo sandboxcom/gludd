@@ -127,7 +127,7 @@ def _capabilities(torch_module: Any | None, requested: str) -> dict[str, Any]:
         "platform": platform.system(),
         "machine": platform.machine(),
         "is_apple_silicon": platform.system() == "Darwin" and platform.machine() in {"arm64", "aarch64"},
-        "is_container": os.path.exists("/.dockerenv") or bool(os.environ.get("GLUDD_CONTAINER")),
+        "is_container": os.path.exists("/.dockerenv") or bool(os.environ.get("GLUDD_CONTAINER_RUNTIME")),
         "backend_requested": requested,
         "mps_built": mps_built,
         "mps_available": mps_available,

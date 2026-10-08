@@ -7,11 +7,16 @@ fit queries.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Annotated, cast
 
 from fastapi import FastAPI, HTTPException, Query
 
+from general_ludd.hardware.accelerator_discovery import (
+    AcceleratorInventory,
+    HardwareDiscovery,
+)
 from general_ludd.hardware.survey import HardwareInventory
 
 logger = logging.getLogger(__name__)
@@ -35,6 +40,7 @@ _MODEL_VRAM_GB: dict[str, float] = {
 
 
 def can_run_model(inventory: HardwareInventory, model: str) -> dict[str, object]:
+    """Return the legacy named-model fit response for a hardware snapshot."""
     required_vram = _MODEL_VRAM_GB.get(model.lower(), 4.0)
     gpu_vram = max((g.vram_gb for g in inventory.gpus), default=0.0)
     extra_ram = max(0.0, inventory.total_ram_gb - 2.0)
@@ -66,6 +72,27 @@ def can_run_model(inventory: HardwareInventory, model: str) -> dict[str, object]
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register hardware inventory, accelerator discovery, and fit routes."""
+
+    @app.get(
+        "/admin/hardware/accelerators",
+        summary="Normalized local accelerator inventory",
+        description=(
+            "Discovers Apple Metal, NVIDIA, AMD, Intel XPU, and JAX TPU runtime "
+            "resources without provisioning compute. Results are cached for this daemon."
+        ),
+    )
+    async def admin_accelerator_inventory() -> dict[str, object]:
+        inventory = getattr(app.state, "_accelerator_inventory", None)
+        if inventory is None:
+            discovery = getattr(app.state, "_accelerator_discovery", None)
+            if discovery is None:
+                discovery = HardwareDiscovery()
+                app.state._accelerator_discovery = discovery
+            inventory = await asyncio.to_thread(discovery.discover_local)
+            app.state._accelerator_inventory = inventory
+        accelerator_inventory = cast(AcceleratorInventory, inventory)
+        return accelerator_inventory.to_dict()
 
     @app.get(
         "/admin/hardware/inventory",

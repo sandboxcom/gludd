@@ -3,7 +3,10 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        # Vendored presentation bytes are digest-pinned; never rewrite them.
+        exclude: ^docs/presentation/deck/vendor/
       - id: end-of-file-fixer
+        exclude: ^(config/self-improve/catalog-truth\.json|docs/presentation/deck/vendor/)
       - id: check-yaml
         args: [--allow-multiple-documents]
       - id: check-json
@@ -20,6 +23,10 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .secrets.baseline]
+        # Upstream intentionally refreshes baseline line metadata. Keep that
+        # mutating maintenance path explicit; normal gates use the local
+        # disposable-copy wrapper below.
+        stages: [manual]
         exclude: >
           (?x)^(
             uv.lock|
@@ -36,6 +43,26 @@ repos:
 
   - repo: local
     hooks:
+      - id: detect-secrets-readonly
+        name: Detect secrets
+        entry: uv run python scripts/detect_secrets_readonly.py
+        language: system
+        pass_filenames: true
+        require_serial: true
+        exclude: >
+          (?x)^(
+            uv.lock|
+            .secrets.baseline|
+            \.opencode/plugin-hashes\.json|
+            dist/.*|
+            \.venv/.*|
+            \.opencode/node_modules/.*|
+            \.mypy_cache/.*|
+            \.pytest_cache/.*|
+            \.ruff_cache/.*|
+            __pycache__/.*
+          )$
+
       - id: scan-conflicts
         name: scan for git conflict markers
         entry: python scripts/scan_conflicts.py
@@ -74,16 +101,34 @@ repos:
         require_serial: true
         stages: [pre-commit]
 
+      - id: check-file-line-limits
+        name: staged file line limits
+        entry: make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json FILE_LINE_LIMIT_STAGED=1
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        stages: [pre-commit]
+
+      - id: check-duplicate-code
+        name: staged duplicate code
+        entry: make check-duplicate-code DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=0
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        stages: [pre-commit]
+
       - id: check-disk
-        name: disk usage check (/tmp/gludd-* and disk %)
-        entry: uv run python scripts/check_disk_usage.py
+        name: automatic inactive-worktree cache cleanup and disk check
+        entry: make check-disk CHECK_DISK_VALIDATE_ONLY=0
         language: system
         pass_filenames: false
         stages: [pre-commit]
 
       - id: collect-check
         name: test collection check
-        entry: uv run python -m pytest tests/ --co -q
+        entry: make collect-check
         language: system
         types: [python]
         pass_filenames: false

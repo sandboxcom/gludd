@@ -48,13 +48,15 @@ def test_prompt_evaluator_bounded_slices_are_valid_jinja() -> None:
         "recommendations": ["first", "second", "third"],
     }
 
-    rendered_waste = environment.from_string(
+    rendered_waste: object = environment.from_string(
         waste_facts["_lpe_top_waste_patterns"]
     ).render(_lpe_eval=evaluation, max_recommendations="2")
-    rendered_recommendations = environment.from_string(
+    rendered_recommendations: object = environment.from_string(
         recommendations["_lpe_top_recs"]
     ).render(_lpe_eval=evaluation, max_recommendations="2")
 
+    assert isinstance(rendered_waste, list)
+    assert isinstance(rendered_recommendations, list)
     assert rendered_waste == ["duplicate context", "verbose preamble"]
     assert rendered_recommendations == ["first", "second"]
 

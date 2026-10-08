@@ -36,8 +36,24 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = PROJECT_ROOT / "src" / "general_ludd"
 TESTS_DIR = PROJECT_ROOT / "tests" / "unit"
 DEFAULT_BASELINE = "config/coverage_gaps_baseline.json"
+DEFAULT_TEST_MAPPINGS = "config/coverage_gap_test_mappings.json"
 
 ModuleTests: TypeAlias = dict[str, tuple[Path, ...]]
+TestIndex: TypeAlias = tuple[ModuleTests, dict[Path, int]]
+
+
+class IndirectTestMapping(TypedDict):
+    """One validated component-to-facade test ownership declaration."""
+
+    via: str
+    tests: tuple[Path, ...]
+
+
+TestMappings: TypeAlias = dict[str, IndirectTestMapping]
+
+
+class CoverageMappingError(ValueError):
+    """Raised when an indirect mapping cannot prove real component coverage."""
 
 
 class CoverageResult(TypedDict):
@@ -57,6 +73,53 @@ def _load_baseline(baseline_path: Path) -> set[str]:
     except (json.JSONDecodeError, OSError):
         return set()
     return set(data.get("allowed_gaps", []))
+
+
+def _load_test_mappings(mapping_path: Path) -> TestMappings:
+    """Load strict indirect mappings without treating them as gap allowlists."""
+    if not mapping_path.is_file():
+        return {}
+    try:
+        data = json.loads(mapping_path.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        raise CoverageMappingError(f"invalid test mapping file: {mapping_path}") from exc
+    if not isinstance(data, dict):
+        raise CoverageMappingError("test mapping document must be an object")
+    raw_mappings = data.get("indirect_test_mappings")
+    if not isinstance(raw_mappings, dict):
+        raise CoverageMappingError("indirect_test_mappings must be an object")
+
+    project_root = PROJECT_ROOT.resolve()
+    tests_root = (project_root / "tests").resolve()
+    mappings: TestMappings = {}
+    for module, raw_entry in raw_mappings.items():
+        if not isinstance(module, str) or not module:
+            raise CoverageMappingError("mapped module names must be non-empty strings")
+        if not isinstance(raw_entry, dict):
+            raise CoverageMappingError(f"mapping for {module} must be an object")
+        via = raw_entry.get("via")
+        raw_tests = raw_entry.get("tests")
+        if not isinstance(via, str) or not via:
+            raise CoverageMappingError(f"mapping for {module} needs a facade in 'via'")
+        if not isinstance(raw_tests, list) or not raw_tests:
+            raise CoverageMappingError(f"mapping for {module} needs at least one test")
+
+        tests: list[Path] = []
+        for raw_test in raw_tests:
+            if not isinstance(raw_test, str) or not raw_test:
+                raise CoverageMappingError(f"mapping for {module} has an invalid test path")
+            test_path = (project_root / raw_test).resolve()
+            if not test_path.is_relative_to(tests_root) or test_path.suffix != ".py":
+                raise CoverageMappingError(
+                    f"mapping for {module} escapes the Python test tree: {raw_test}"
+                )
+            if not test_path.is_file():
+                raise CoverageMappingError(
+                    f"mapping for {module} references a missing test: {raw_test}"
+                )
+            tests.append(test_path)
+        mappings[module] = {"via": via, "tests": tuple(tests)}
+    return mappings
 
 
 def _generate_baseline(gap_modules: list[str], baseline_path: Path) -> int:
@@ -144,21 +207,22 @@ def _absolute_import_from(node: ast.ImportFrom, current_package: str) -> str | N
     return ".".join(base)
 
 
-def _package_reexports(
+def _module_reexports(
     source_modules: dict[str, Path],
 ) -> dict[tuple[str, str], str]:
-    """Map public package attributes to the module that defines them."""
+    """Map public module attributes to the module that defines them."""
     exports: dict[tuple[str, str], str] = {}
-    for package, init_file in source_modules.items():
-        if init_file.name != "__init__.py":
-            continue
-        tree = _parse_python(init_file)
+    for module, source_file in source_modules.items():
+        tree = _parse_python(source_file)
         if tree is None:
             continue
+        current_package = (
+            module if source_file.name == "__init__.py" else module.rpartition(".")[0]
+        )
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
-            imported_from = _absolute_import_from(node, package)
+            imported_from = _absolute_import_from(node, current_package)
             if imported_from is None:
                 continue
             for alias in node.names:
@@ -170,7 +234,7 @@ def _package_reexports(
                     child_module if child_module in source_modules else imported_from
                 )
                 if defining_module in source_modules:
-                    exports[(package, public_name)] = defining_module
+                    exports[(module, public_name)] = defining_module
     return exports
 
 
@@ -359,13 +423,85 @@ def _modules_imported_by_test(
     return imported
 
 
-def _build_test_index() -> tuple[ModuleTests, dict[Path, int]]:
-    """Parse every test once and index modules by real static imports."""
+def _modules_imported_by_source(
+    module: str,
+    source_file: Path,
+    source_modules: dict[str, Path],
+) -> set[str]:
+    """Return concrete project modules imported directly by one source module."""
+    tree = _parse_python(source_file)
+    if tree is None:
+        return set()
+    current_package = (
+        module if source_file.name == "__init__.py" else module.rpartition(".")[0]
+    )
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(
+                alias.name for alias in node.names if alias.name in source_modules
+            )
+        elif isinstance(node, ast.ImportFrom):
+            imported_from = _absolute_import_from(node, current_package)
+            if imported_from is None:
+                continue
+            if imported_from in source_modules:
+                imported.add(imported_from)
+            imported.update(
+                child
+                for alias in node.names
+                if (child := f"{imported_from}.{alias.name}") in source_modules
+            )
+    return imported
+
+
+def _apply_indirect_test_mappings(
+    tests_by_module: defaultdict[str, set[Path]],
+    counts: dict[Path, int],
+    source_modules: dict[str, Path],
+    selected_tests: set[Path] | None,
+) -> None:
+    """Credit declared facade tests only after verifying both import edges."""
+    mapping_path = PROJECT_ROOT / DEFAULT_TEST_MAPPINGS
+    for module, entry in _load_test_mappings(mapping_path).items():
+        target_file = source_modules.get(module)
+        via = entry["via"]
+        facade_file = source_modules.get(via)
+        if target_file is None:
+            raise CoverageMappingError(f"mapped source module does not exist: {module}")
+        if facade_file is None:
+            raise CoverageMappingError(f"mapped facade module does not exist: {via}")
+        facade_imports = _modules_imported_by_source(via, facade_file, source_modules)
+        if module not in facade_imports:
+            raise CoverageMappingError(f"mapped facade {via} does not import {module}")
+
+        for test_file in entry["tests"]:
+            if selected_tests is not None and test_file not in selected_tests:
+                continue
+            if counts.get(test_file, 0) <= 0:
+                raise CoverageMappingError(
+                    f"mapped test has no test functions: {test_file.relative_to(PROJECT_ROOT)}"
+                )
+            if test_file not in tests_by_module.get(via, set()):
+                raise CoverageMappingError(
+                    f"mapped test {test_file.relative_to(PROJECT_ROOT)} "
+                    f"does not import facade {via}"
+                )
+            tests_by_module[module].add(test_file)
+
+
+def _build_test_index(test_files: tuple[Path, ...] | None = None) -> TestIndex:
+    """Parse the selected tests once and index modules by real static imports."""
     source_modules = _source_module_paths()
-    reexports = _package_reexports(source_modules)
+    reexports = _module_reexports(source_modules)
     tests_by_module: defaultdict[str, set[Path]] = defaultdict(set)
     counts: dict[Path, int] = {}
-    for test_file in sorted(TESTS_DIR.rglob("test_*.py")):
+    selected = (
+        sorted(test_files)
+        if test_files is not None
+        else sorted(TESTS_DIR.rglob("test_*.py"))
+    )
+    for test_file in selected:
         tree = _parse_python(test_file)
         if tree is None:
             continue
@@ -378,6 +514,13 @@ def _build_test_index() -> tuple[ModuleTests, dict[Path, int]]:
         counts[test_file] = count
         for module in _modules_imported_by_test(tree, source_modules, reexports):
             tests_by_module[module].add(test_file)
+    selected_tests = set(selected) if test_files is not None else None
+    _apply_indirect_test_mappings(
+        tests_by_module,
+        counts,
+        source_modules,
+        selected_tests,
+    )
     return (
         {module: tuple(sorted(paths)) for module, paths in tests_by_module.items()},
         counts,
@@ -409,6 +552,15 @@ def _check_module(
     module_path = _module_path(src_file)
     candidates = _candidate_test_paths(src_file)
     existing = [c for c in candidates if c.is_file()]
+    if test_index is None and existing:
+        candidate_index = _build_test_index(tuple(existing))
+        candidate_modules, candidate_counts = candidate_index
+        candidate_covering = [
+            path
+            for path in candidate_modules.get(module_path, ())
+            if candidate_counts.get(path, 0) > 0
+        ]
+        test_index = candidate_index if candidate_covering else _build_test_index()
     tests_by_module, test_counts = test_index or _build_test_index()
     covering = [
         path for path in tests_by_module.get(module_path, ()) if test_counts.get(path, 0) > 0
@@ -474,7 +626,11 @@ def main(argv: list[str]) -> int:
             baseline_provided = True
 
     modules = _walk_source_modules()
-    test_index = _build_test_index()
+    try:
+        test_index = _build_test_index()
+    except CoverageMappingError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     results = [_check_module(module, test_index) for module in modules]
 
     ok_results = [r for r in results if r["status"] == "OK"]

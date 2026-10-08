@@ -86,7 +86,7 @@ class TestMainthreadBudgetBeforeExemption:
 
     def test_lint_exempt_returns_null_like_git_shipping(self):
         after = _function_region("mainthreadBudgetBefore", "mainthreadBudgetAfter")
-        git_line = after.find("isGitShippingTarget(command)) return null")
+        git_line = after.find("isGitShippingTarget(command)")
         lint_line = after.find("isLintTarget(command)) return null")
         assert git_line > 0
         assert lint_line > 0
@@ -123,13 +123,22 @@ class TestLintTargetsDisjointFromGitShipping:
 class TestLintTargetsBehavioral:
     """Python mirror of the isLintTarget function for behavioral testing."""
 
-    LINT: frozenset[str] = frozenset({
-        "lint", "lint-fix", "typecheck", "collect-check",
-        "test-count", "healthcheck", "smoke", "check-coverage-gaps",
-    })
+    LINT: frozenset[str] = frozenset(
+        {
+            "lint",
+            "lint-fix",
+            "typecheck",
+            "collect-check",
+            "test-count",
+            "healthcheck",
+            "smoke",
+            "check-coverage-gaps",
+        }
+    )
 
     def _is_lint(self, command: str) -> bool:
         import re
+
         m = re.match(r"(?:^|\s)make\s+(\S+)", command)
         if not m:
             return False

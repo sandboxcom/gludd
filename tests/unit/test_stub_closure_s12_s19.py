@@ -184,14 +184,17 @@ class TestS15ValidationJobHonest501:
         source = inspect.getsource(wa)
         assert "return-review" in source or "return_review" in source
 
-    def test_no_validation_phase_stub_in_event_loop(self) -> None:
-        """The event loop should not have a validator stub that spins idle."""
-        import general_ludd.event_loop.loop as loop_mod
+    def test_validation_dispatch_is_wired_through_split_lifecycle(self) -> None:
+        """The EventLoop facade inherits the concrete validation dispatcher."""
+        from general_ludd.event_loop.loop import EventLoop
+        from general_ludd.event_loop.self_improve_lifecycle import SelfImproveLifecycleMixin
 
-        source = inspect.getsource(loop_mod)
-        # S15: original loop.py:3198-3212 was a validation stub with no phase.
-        # Verify it no longer exists or is gated behind a 501.
-        assert "def _dispatch_validate_job" in source, "S15 GAP: validate job dispatch removed entirely"
+        assert issubclass(EventLoop, SelfImproveLifecycleMixin)
+        assert EventLoop._dispatch_validate_job is SelfImproveLifecycleMixin._dispatch_validate_job
+
+        source = inspect.getsource(SelfImproveLifecycleMixin._dispatch_validate_job)
+        assert "await self._http_client.post" in source
+        assert 'f"{self.worker_base_url}/jobs/validate"' in source
 
 
 # ── S16: Writer subprocess mode structural gaps ────────────────────────────
@@ -253,10 +256,10 @@ class TestS17DastStartAppNoShell:
         source = inspect.getsource(dast._start_app)
 
         class ShellTrueChecker(ast.NodeVisitor):
-            def __init__(self):
-                self.has_shell_true = False
+            def __init__(self) -> None:
+                self.has_shell_true: bool = False
 
-            def visit_Call(self, node):
+            def visit_Call(self, node: ast.Call) -> None:
                 if len(node.keywords) > 0:
                     for kw in node.keywords:
                         if kw.arg == "shell" and hasattr(kw.value, "value") and kw.value.value is True:
@@ -291,26 +294,31 @@ class TestS17DastStartAppNoShell:
 class TestS18StallWatchdogPublishOnly:
     def test_stall_watchdog_on_stall_publishes_events(self) -> None:
         """StallWatchdog's on_stall callback publishes StallDetectedEvent + SlowOperationEvent."""
-        import general_ludd.daemon as dm
+        import general_ludd.daemon_components.lifecycle as lifecycle
 
-        source = inspect.getsource(dm)
+        source = inspect.getsource(lifecycle.lifespan)
         assert "StallDetectedEvent" in source
         assert "SlowOperationEvent" in source
 
     def test_stall_watchdog_sweeper_is_started(self) -> None:
-        """The daemon starts the StallWatchdog sweeper thread."""
+        """The daemon facade delegates to lifecycle code that starts the sweeper."""
         import general_ludd.daemon as dm
+        import general_ludd.daemon_components.lifecycle as lifecycle
 
-        source = inspect.getsource(dm)
-        assert "start_sweeper" in source, "S18 GAP: StallWatchdog sweeper is not started — stalls are never detected"
+        facade_source = inspect.getsource(dm._lifespan)
+        lifecycle_source = inspect.getsource(lifecycle.lifespan)
+        assert "_component_lifespan" in facade_source
+        assert "start_sweeper" in lifecycle_source, (
+            "S18 GAP: StallWatchdog sweeper is not started — stalls are never detected"
+        )
 
     def test_stall_detected_event_has_no_subscriber(self) -> None:
         """No production code subscribes to StallDetectedEvent."""
         import ast
 
-        import general_ludd.daemon as dm
+        import general_ludd.daemon_components.lifecycle as lifecycle
 
-        source = inspect.getsource(dm)
+        source = inspect.getsource(lifecycle)
         tree = ast.parse(source)
         has_subscribe = False
         for node in ast.walk(tree):
@@ -347,7 +355,7 @@ class TestS19CodeQualityScore:
 
         trace = ExecutionTrace()
         # With test_results present, should derive quality from pass/total
-        trace.test_results = {"total": 10, "passed": 8}
+        trace.__dict__["test_results"] = {"total": 10, "passed": 8}
         scores = compute_scores_from_trace(trace, success=True)
         assert scores["code_quality"] == 0.8
 
@@ -366,7 +374,7 @@ class TestS19CodeQualityScore:
         from general_ludd.observability.tracer import ExecutionTrace
 
         trace = ExecutionTrace()
-        trace.test_results = {"total": 0, "passed": 0}
+        trace.__dict__["test_results"] = {"total": 0, "passed": 0}
         scores = compute_scores_from_trace(trace, success=True)
         assert scores["code_quality"] == 0.5
 
@@ -387,14 +395,15 @@ class TestS19CodeQualityScore:
         assert "test_exit_code" in sig.parameters
         assert "test_summary" in sig.parameters
 
-    def test_loop_dispatch_call_does_not_pass_test_data(self) -> None:
-        """loop.py call to record_job_benchmark does not pass test_exit_code."""
-        import general_ludd.event_loop.loop as lm
+    def test_split_dispatch_records_job_benchmark(self) -> None:
+        """The EventLoop facade inherits dispatch benchmarking from its mixin."""
+        from general_ludd.event_loop.execution_dispatch import ExecutionDispatchMixin
+        from general_ludd.event_loop.loop import EventLoop
 
-        source = inspect.getsource(lm)
-        # Find the record_job_benchmark call site around line 2744
-        # S19 GAP: this call site does not pass test_exit_code,
-        # so dispatched jobs always get 0.5 code_quality
+        assert issubclass(EventLoop, ExecutionDispatchMixin)
+        assert EventLoop._dispatch_execute_job is ExecutionDispatchMixin._dispatch_execute_job
+
+        source = inspect.getsource(ExecutionDispatchMixin._dispatch_execute_job)
         assert "record_job_benchmark" in source
 
     def test_engine_call_site_does_not_pass_test_data(self) -> None:

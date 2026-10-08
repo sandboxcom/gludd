@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import types
 import typing as t
 from typing import NamedTuple
 
@@ -89,7 +90,10 @@ def test_migration_plan_no_mutable_fields() -> None:
     for field_type in hints.values():
         origin = t.get_origin(field_type)
         if origin is not None:
-            assert origin in (t.Union,), f"MigrationPlan has unexpected mutable origin {origin}"
+            assert origin in (
+                t.Union,
+                types.UnionType,
+            ), f"MigrationPlan has unexpected mutable origin {origin}"
         else:
             assert field_type in (str, int), f"MigrationPlan has unexpected bare field type {field_type}"
 

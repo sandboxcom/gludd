@@ -1,64 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
-# Ansible ships YAML config files (ansible/config/base.yml, etc.) that are
-# loaded at runtime via importlib resources. PyInstaller doesn't auto-detect
-# these — without explicit collection, the binary crashes on startup with
-# "Missing base YAML definition file (bad install?)".
-# collect_data_files pulls all non-.py files from the ansible package.
-_ansible_datas = collect_data_files('ansible')
-_ansible_binaries = []
+# safehttpx reads its version.txt via importlib.resources at import time
+# (general_ludd/security/url_fetch.py); PyInstaller does not auto-collect it,
+# so the frozen CLI crashes with FileNotFoundError .../safehttpx/version.txt.
+_safehttpx_datas = collect_data_files('safehttpx')
 
 datas = [
     ('config', 'config'),
-    ('collections', 'collections'),
     ('templates', 'templates'),
-    ('playbooks', 'playbooks'),
     ('infra/terraform', 'general_ludd/terraform_assets'),
     ('LICENSE', '.'),
     ('THIRD_PARTY_LICENSES.md', '.'),
-] + _ansible_datas
-
-# Also collect ansible submodules that aren't auto-detected by the static
-# analyzer (module_utils, plugins, etc. are imported dynamically).
-_ABSENT_ANSIBLE_SUBMODULES = {
-    'ansible.module_utils.distro.__main__',
-    'ansible.module_utils.distro.distro',
-}
-
-
-def _is_collectable_ansible_submodule(name):
-    return name not in _ABSENT_ANSIBLE_SUBMODULES
-
-
-# Ansible is not a supported native-Windows control node. Its recursive
-# packages import POSIX stdlib modules while PyInstaller enumerates dynamic
-# children, even though non-Ansible Gludd commands do not use those paths.
-# PyInstaller documents ``on_error="ignore"`` for skipping those known
-# unimportable children without emitting misleading build warnings.
-_ansible_collect_error_mode = "ignore" if sys.platform == "win32" else "warn once"
-
-_hidden_ansible = collect_submodules(
-    'ansible.module_utils',
-    filter=_is_collectable_ansible_submodule,
-    on_error=_ansible_collect_error_mode,
-)
-_hidden_ansible += collect_submodules(
-    'ansible.plugins',
-    on_error=_ansible_collect_error_mode,
-)
-_hidden_ansible += collect_submodules(
-    'ansible.template',
-    on_error=_ansible_collect_error_mode,
-)
-_hidden_ansible += collect_submodules(
-    'ansible.galaxy',
-    on_error=_ansible_collect_error_mode,
-)
+] + _safehttpx_datas
 
 # PyInstaller follows conditional imports from both platform branches. Exclude
 # unavailable stdlib modules on Windows and Windows-only implementation modules
@@ -81,7 +39,11 @@ if sys.platform != "win32":
         'asyncio.windows_utils',
         'click._winconsole',
         'dateutil.tz.win',
-        'filelock._windows',
+        # filelock._windows must NOT be excluded: filelock/__init__.py imports
+        # it via an importlib path that fires in the frozen bundle regardless
+        # of platform, so excluding it crashes the frozen daemon with
+        # ModuleNotFoundError: No module named 'filelock._windows'
+        # (CI binary_smoke_linux/macos, 2026-08-15).
         'mcp.os.win32',
         'multiprocessing.popen_spawn_win32',
         'platformdirs.windows',
@@ -99,18 +61,33 @@ a = Analysis(
     datas=datas,
     hiddenimports=[
         'general_ludd',
+        # general_ludd.compat is imported at package init via a dynamic
+        # importlib.import_module call (src/general_ludd/__init__.py), so
+        # PyInstaller's static analyzer cannot discover it. Without these
+        # hiddenimports the frozen CLI crashes on startup with
+        # "ModuleNotFoundError: No module named 'general_ludd.compat'".
+        'general_ludd.compat',
+        'general_ludd.compat.annotated_types',
         'general_ludd.cli',
+        # The SPHINCS+ adapter and pqcrypto's CFFI/native backend are loaded
+        # across module boundaries that PyInstaller cannot infer reliably on
+        # every platform. Keep the public wrapper and its native implementation
+        # explicit so a frozen Windows executable never ships a latent backend.
+        'general_ludd.algorithms.sphincs_plus',
+        'pqcrypto.sign.sphincs_shake_256s_simple',
+        'pqcrypto._sign.sphincs_shake_256s_simple',
         'general_ludd.daemon',
         'general_ludd.worker.app',
         'general_ludd.event_loop.loop',
         'general_ludd.event_loop.lease',
-        'general_ludd.ansible.runner',
-        'general_ludd.ansible.core_runner',
-        'general_ludd.ansible.templating',
         'general_ludd.models.gateway',
         'general_ludd.models.router',
         'general_ludd.db.models',
         'general_ludd.db.repository',
+        # SQLAlchemy resolves the sqlite+aiosqlite dialect from the configured
+        # database URL at runtime. PyInstaller cannot follow that entry-point
+        # lookup, so keep the core async driver explicit in the frozen graph.
+        'aiosqlite',
         'general_ludd.secrets.manager',
         'general_ludd.mcp.client',
         'general_ludd.mcp.transport',
@@ -132,14 +109,23 @@ a = Analysis(
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
-    ] + _hidden_ansible,
+        # Azure SDK modules are imported inside functions (delayed/conditional)
+        # throughout the azure/infra/onboard/self_improve subpackages. Static
+        # PyInstaller analysis discovers the importer modules but not the Azure
+        # top-level packages themselves, so the frozen binary reports them as
+        # missing and the warning audit fails.
+        'azure.core',
+        'azure.identity',
+        'azure.mgmt',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # ansible.cli is excluded: gludd drives ansible-core's executor API
-    # (ansible.runner/core_runner/templating), never the CLI. Bundling ansible.cli
-    # makes pyinstaller import it at build time, and ansible.cli.initialize_locale()
-    # hard-fails on Windows' cp1252 locale ("Ansible requires UTF-8; Detected 1252").
+    # The beta4 core executable and Ansible controller are separate Python
+    # dependency planes. Playbooks run in the digest-pinned execution
+    # environment, so no ansible-core/runner implementation belongs in this
+    # frozen artifact. Excluding the complete controller runtime also avoids
+    # ansible.cli's Windows cp1252 locale failure during PyInstaller analysis.
     excludes=[
         'pytest',
         'mypy',
@@ -147,11 +133,23 @@ a = Analysis(
         'pre_commit',
         'molecule',
         'ansible_lint',
+        # Ansible controller code and collections ship in the separately
+        # locked execution-environment artifact.  The frozen core talks to
+        # that controller boundary and must not carry a second Python runtime.
+        'ansible',
+        'ansible_runner',
         'ansible.cli',
         # The application uses stdlib sqlite3 and psycopg 3. SQLAlchemy's
         # generic hook otherwise probes these absent legacy/optional drivers.
         'pysqlite2',
         'MySQLdb',
+        # PyInstaller's CFFI hook probes pycparser's optional generated table
+        # modules. Modern pycparser installations build their tables in
+        # memory, so these names are intentionally absent and never imported
+        # by the frozen application. Excluding them prevents false missing
+        # hidden-import warnings without changing the packaged runtime.
+        'pycparser.lextab',
+        'pycparser.yacctab',
     ] + _platform_excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

@@ -41,7 +41,7 @@ log_analyzer_cot_log: "/tmp/gludd-log-analyzer/log_analyzer_cot.log"
 
 The CoT log format:
 
-```
+```text
 === log_analyzer chain-of-thought log ===
 started: 2026-07-12T14:30:00Z
 analysis_window_hours: 24

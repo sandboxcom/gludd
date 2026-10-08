@@ -1,6 +1,6 @@
 # Collection Structure — Terraform + OPA Content
 
-Status: **stable** · Last updated 2026-07-29
+Status: **stable** · Last updated 2026-09-29
 
 This document specifies the layout of terraform and OPA policy content shipped
 inside a gludd ansible-galaxy collection, and the import-time contract enforced
@@ -11,7 +11,7 @@ by `src/general_ludd/collections/importer.py` (`TerraformCollectionImporter`).
 A collection that ships terraform/OPA content MUST place it under
 `plugins/terraform/`:
 
-```
+```text
 <collection-root>/
 ├── galaxy.yml                                   # ansible-galaxy metadata
 └── plugins/
@@ -39,7 +39,7 @@ The operator ships core OPA policies at `infra/terraform/policies/core.rego`
 (`package main`, set `deny[level]`). At evaluation time `conftest test` is
 invoked with BOTH policy paths:
 
-```
+```text
 conftest test -p infra/terraform/policies/ -p <collection>/plugins/terraform/policies/ <plan.json>
 ```
 
@@ -101,6 +101,34 @@ Matching is name-suffix tolerant: `vmware/vsphere` matches
 trust list is an import ERROR (not a warning) — see `_check_provider_trust()` in
 `importer.py`.
 
+### Runtime trust-anchor resolution
+
+The default trust anchor is resolved from Gludd's installed module location,
+never from the process current working directory. Resolution checks, in order:
+
+1. the source checkout at `infra/terraform/policies/data.json`;
+2. the PyInstaller payload at
+   `general_ludd/terraform_assets/policies/data.json`;
+3. the legacy packaged path at
+   `general_ludd/terraform/policies/data.json`.
+
+An explicitly supplied `operator_trust_data_path` remains authoritative. This
+keeps project switching safe: changing directories cannot silently change or
+hide the operator's provider policy.
+
+This rule follows long-lived PyInstaller practitioner guidance. In
+[issue #2640](https://github.com/pyinstaller/pyinstaller/issues/2640), a
+maintainer explains that IDE-launched programs often conceal a broken current
+working-directory assumption and recommends anchoring bundled resources to
+`__file__`. The same failure mode appears in
+[discussion #7377](https://github.com/orgs/pyinstaller/discussions/7377),
+where a relative configuration path implicitly depended on the launch
+directory, and in [issue #4946](https://github.com/pyinstaller/pyinstaller/issues/4946),
+where the accepted fix anchors bundled data to the bundle/module directory.
+PyInstaller's
+[runtime documentation](https://pyinstaller.org/en/stable/runtime-information.html#using-file)
+also specifies that a bundled module's `__file__` points inside the bundle.
+
 ## 4. Import-time validations
 
 `TerraformCollectionImporter.import_collection()` runs FOUR checks. An empty
@@ -122,7 +150,9 @@ absent so CI without `terraform`/`opa` installed does not false-fail. Validation
 - Implementation: `src/general_ludd/collections/importer.py`
 - Core policies: `infra/terraform/policies/core.rego`
 - Trust anchor: `infra/terraform/policies/data.json`
-- Tests: `tests/unit/test_collection_terraform_layout.py`,
+- Tests: `tests/unit/test_collections_importer.py`,
+  `tests/integration/test_daemon_collection_paths.py`,
+  `tests/unit/test_collection_terraform_layout.py`,
   `tests/unit/test_opa_policies.py`
 - Example collection content:
   `collections/ansible_collections/general_ludd/agent/plugins/terraform/`
@@ -139,7 +169,7 @@ the project repository rather than with gludd releases.
 
 Project-specific content lives at:
 
-```
+```text
 <project_dir>/.gludd/collections/ansible_collections/<namespace>/<collection>/
 ├── galaxy.yml                         # ansible-galaxy metadata
 ├── roles/
@@ -176,7 +206,7 @@ multi-root resolution model.
 
 ### Scaffolding via `gludd project init`
 
-```
+```text
 gludd project init --namespace <ns> [--collection <name>] [--force] [PROJECT_DIR]
 ```
 

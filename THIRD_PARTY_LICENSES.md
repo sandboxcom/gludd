@@ -2,6 +2,24 @@
 
 General Ludd bundles and depends on the following third-party software.
 
+## Vendored Source
+
+### FreeLLMAPI scoring subset
+
+- License: MIT
+- Homepage: https://github.com/tashfeenahmed/freellmapi
+- Pinned commit: `780a7d8d6dcbc818eb10ec17da210635b569ae22`
+- The pure scoring functions in
+  `src/general_ludd/models/vendor/freellmapi/scoring_kernel.js` are an
+  allowlisted adaptation; Gludd does not embed the upstream service.
+
+### quickjs-ng
+
+- License: MIT
+- Homepage: https://github.com/genotrance/quickjs-ng
+- Used only as the optional bounded in-process JavaScript runtime for the
+  allowlisted FreeLLMAPI scoring subset.
+
 ## Redistributed Binaries
 
 ### OpenBao
@@ -47,6 +65,14 @@ Key runtime dependencies:
 - pqcrypto (Apache-2.0) — PQClean-backed post-quantum cryptography bindings
   ([upstream license and notice](https://github.com/backbone-hq/pqcrypto));
   the locked wheel provides the FIPS 203 ML-KEM-512/768/1024 boundary.
+- pygame 2.6.1 (LGPL-2.1) — optional game generation and fidelity runtime
+  ([upstream license](https://github.com/pygame/pygame/blob/2.6.1/docs/LGPL.txt),
+  [release](https://github.com/pygame/pygame/releases/tag/2.6.1)). Gludd imports
+  the unmodified wheel dynamically and does not modify or statically link pygame.
+- chardet (LGPL-2.1-or-later) — character-encoding detection.
+- psycopg and psycopg-binary (LGPL-3.0-only) — PostgreSQL driver and its binary
+  distribution. Gludd uses the unmodified packages through their public Python
+  interfaces.
 
 ## Collected Prompts
 

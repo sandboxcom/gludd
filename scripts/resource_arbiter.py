@@ -29,14 +29,16 @@ def _validate_component(value: str, label: str) -> str:
 def project_root(start: Path | str | None = None) -> Path:
     """Return the canonical root used to scope local resources.
 
-    ``GLUDD_PROJECT_ROOT`` is an explicit escape hatch for launchers started
-    outside the checkout.  Otherwise the nearest ancestor containing either a
-    Git metadata entry or ``pyproject.toml`` wins; when neither exists, the
-    supplied/current directory remains a valid isolated project root.
+    A caller-supplied ``start`` is authoritative. ``GLUDD_PROJECT_ROOT`` is the
+    fallback escape hatch for launchers started outside the checkout, and the
+    process cwd is the final fallback. The nearest ancestor containing either
+    a Git metadata entry or ``pyproject.toml`` wins; when neither exists, the
+    selected directory remains a valid isolated project root.
     """
 
     configured = os.environ.get("GLUDD_PROJECT_ROOT", "").strip()
-    candidate = Path(configured or start or Path.cwd()).expanduser().resolve()
+    selected = start if start is not None else configured or Path.cwd()
+    candidate = Path(selected).expanduser().resolve()
     if candidate.is_file():
         candidate = candidate.parent
     for parent in (candidate, *candidate.parents):
@@ -48,7 +50,7 @@ def project_root(start: Path | str | None = None) -> Path:
 def project_namespace(root: Path | str | None = None) -> str:
     """Return a path-safe, stable namespace for one project checkout."""
 
-    override = os.environ.get("GLUDD_PROJECT_NAMESPACE", "").strip()
+    override = (os.environ.get("GLUDD_PROJECT_NAMESPACE") or "").strip()
     if override:
         return _validate_component(override, "project namespace")
 

@@ -43,7 +43,7 @@ default model profile needs a key (Z.AI does), set the env var
 
 gludd layers configuration in five steps. Each step overrides the one above it:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ 5. Command-line flags        (highest priority)         │
 ├─────────────────────────────────────────────────────────┤
@@ -103,7 +103,7 @@ for the named use case," not "required for the daemon to start."
 Match your goal to the config area. Every arrow points at the minimal file or
 section you need to touch.
 
-```
+```bash
 "I want to..."
 │
 ├── ...use a different AI model

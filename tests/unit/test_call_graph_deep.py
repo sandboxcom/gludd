@@ -136,8 +136,30 @@ el_funcs = _function_defs(el_tree)
 el_classes = _class_defs(el_tree)
 el_imports = _all_imported_names(el_tree)
 
-elh_tree = _parse_source(SRC_PKG / "event_loop" / "loop_handlers.py")
-elh_classes = _class_defs(elh_tree)
+_EVENT_LOOP_COMPONENTS: tuple[tuple[str, str], ...] = (
+    ("loop.py", "EventLoop"),
+    ("tick_lifecycle.py", "TickLifecycleMixin"),
+    ("review_dispatch.py", "ReviewDispatchMixin"),
+    ("compute_lifecycle.py", "ComputeLifecycleMixin"),
+    ("execution_dispatch.py", "ExecutionDispatchMixin"),
+    ("self_improve_lifecycle.py", "SelfImproveLifecycleMixin"),
+    ("decision_completion.py", "DecisionCompletionMixin"),
+    ("review_orchestration.py", "EventLoopReviewMixin"),
+    ("loop_handlers.py", "EventLoopHandlers"),
+)
+event_loop_component_trees = {
+    class_name: _parse_source(SRC_PKG / "event_loop" / filename)
+    for filename, class_name in _EVENT_LOOP_COMPONENTS
+}
+event_loop_component_classes = {
+    class_name: _class_defs(tree)[class_name]
+    for class_name, tree in event_loop_component_trees.items()
+}
+event_loop_component_functions = {
+    name: function
+    for tree in event_loop_component_trees.values()
+    for name, function in _function_defs(tree).items()
+}
 
 gw_tree = _parse_source(SRC_PKG / "models" / "gateway.py")
 gw_funcs = _function_defs(gw_tree)
@@ -207,12 +229,16 @@ EXPECTED_EL_PARAMS: frozenset[str] = frozenset(
         "reviewer",
         "consensus_reviewer",
         "langgraph_reviewer",
+        "self_improve_promotion_factory",
+        "self_improve_runner_factory",
+        "self_improve_executor",
         "self_improve_interval",
         "model_performance_interval",
         "consolidation_interval_ticks",
         "prompt_variant_selector",
         "sandbox_attestation_store",
         "sandbox_profile",
+        "decision_codification",
     }
 )
 
@@ -265,11 +291,12 @@ EXPECTED_PHASE_PATTERNS: frozenset[str] = frozenset(
 
 
 def test_event_loop_has_all_phase_methods() -> None:
-    loop_methods = _class_method_names(el_tree)
-    handler_methods = _class_method_names(elh_tree)
-    assert "EventLoop" in loop_methods, "EventLoop class not found"
-    assert "EventLoopHandlers" in handler_methods, "EventLoopHandlers mixin not found"
-    resolved_methods = loop_methods["EventLoop"] | handler_methods["EventLoopHandlers"]
+    resolved_methods = {
+        method.name
+        for component in event_loop_component_classes.values()
+        for method in ast.walk(component)
+        if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
     missing = {p for p in EXPECTED_PHASE_PATTERNS if p not in resolved_methods}
     assert not missing, f"EventLoop MRO missing phase methods: {sorted(missing)}"
 
@@ -337,6 +364,7 @@ _EXPECTED_ROUTER_REGISTRATIONS: frozenset[str] = frozenset(
         "quantization",
         "reload",
         "replays",
+        "decision_codification_router",
         "worktree",
         "ansible",
         "azure_cost_router",
@@ -485,6 +513,8 @@ def test_daemon_wiring_no_orphaned_public_functions() -> None:
     public = _public_functions(dw_tree, Path())
     assert public, "daemon_wiring has no public functions"
     daemon_calls = _collect_calls_from_node(daemon_tree)
+    for component_path in sorted((SRC_PKG / "daemon_components").glob("*.py")):
+        daemon_calls.update(_collect_calls_from_node(_parse_source(component_path)))
     public_entrypoints = {"build_dispatch_handlers"}
     non_wired = [
         f for f in public if f not in daemon_calls and f not in dw_imports and f not in public_entrypoints
@@ -527,9 +557,9 @@ def test_event_loop_tick_calls_phase_methods() -> None:
     """Verify tick reaches every declared phase through the dynamic dispatcher."""
     if "EventLoop" not in el_classes:
         pytest.skip("EventLoop class not found")
-    tick_node = el_funcs.get("tick")
-    tick_once = el_funcs.get("_tick_once")
-    run_phase_range = el_funcs.get("_run_phase_range")
+    tick_node = event_loop_component_functions.get("tick")
+    tick_once = event_loop_component_functions.get("_tick_once")
+    run_phase_range = event_loop_component_functions.get("_run_phase_range")
     assert tick_node is not None, "EventLoop.tick not found"
     assert tick_once is not None, "EventLoop._tick_once not found"
     assert run_phase_range is not None, "EventLoop._run_phase_range not found"
@@ -541,14 +571,18 @@ def test_event_loop_tick_calls_phase_methods() -> None:
     assert "getattr" in _collect_calls_from_node(run_phase_range)
     assert "_phase_" in range_source and "phase_name" in range_source
 
-    loop_methods = _class_method_names(el_tree)["EventLoop"]
-    handler_methods = _class_method_names(elh_tree)["EventLoopHandlers"]
-    missing = EXPECTED_PHASE_PATTERNS - (loop_methods | handler_methods)
+    resolved_methods = {
+        method.name
+        for component in event_loop_component_classes.values()
+        for method in ast.walk(component)
+        if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    missing = EXPECTED_PHASE_PATTERNS - resolved_methods
     assert not missing, f"Dynamic phase dispatch has unresolved methods: {sorted(missing)}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Test 12 — daemon.py lifespan wires event_loop subsystems back to app.state
+# Test 12 — lifecycle component wires event_loop subsystems back to app.state
 # ═══════════════════════════════════════════════════════════════════════
 
 _EXPECTED_APP_STATE_ATTRS: frozenset[str] = frozenset(
@@ -570,7 +604,9 @@ _EXPECTED_APP_STATE_ATTRS: frozenset[str] = frozenset(
 
 
 def test_daemon_lifespan_wires_expected_app_state() -> None:
-    daemon_source = (SRC_PKG / "daemon.py").read_text()
+    daemon_source = (SRC_PKG / "daemon.py").read_text() + (
+        SRC_PKG / "daemon_components" / "lifecycle.py"
+    ).read_text()
     import re
 
     attrs: set[str] = set()
@@ -603,8 +639,8 @@ def test_callgraph_has_expected_api() -> None:
 
 
 def test_daemon_lifespan_constructs_event_loop() -> None:
-    daemon_source = (SRC_PKG / "daemon.py").read_text()
-    assert "EventLoop(" in daemon_source, "daemon.py never constructs EventLoop"
+    daemon_source = (SRC_PKG / "daemon_components" / "lifecycle.py").read_text()
+    assert "EventLoop(" in daemon_source, "lifecycle.py never constructs EventLoop"
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -56,6 +56,43 @@ def test_stop_hook_blocks_ratchet_entries_even_when_tasks_are_complete(tmp_path)
     assert "1 ratchet entry(ies)" in response["reason"]
 
 
+def test_stop_hook_counts_only_declared_milestone_work(tmp_path):
+    (tmp_path / "TASKS.md").write_text(
+        """# Tasks
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157\u2013S83.168.
+
+- [ ] S83.157 - active release work
+- [x] S83.158 - completed release work
+- [ ] S81.11 - future backlog work
+""",
+        encoding="utf-8",
+    )
+
+    response = handle({"cwd": str(tmp_path), "stop_hook_active": False})
+
+    assert response["decision"] == "block"
+    assert "1 active v0.1.1 TASKS.md item(s)" in response["reason"]
+    assert "1 backlog item(s) excluded from the stop gate" in response["reason"]
+
+
+def test_stop_hook_allows_stop_when_only_backlog_remains(tmp_path):
+    (tmp_path / "TASKS.md").write_text(
+        """# Tasks
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157-S83.168.
+
+- [x] S83.157 - completed release work
+- [ ] S81.11 - future backlog work
+""",
+        encoding="utf-8",
+    )
+
+    assert handle({"cwd": str(tmp_path), "stop_hook_active": True}) == {
+        "continue": True
+    }
+
+
 def test_stop_hook_entrypoint_returns_codex_json_for_invalid_input():
     entrypoint = Path(__file__).parents[2] / ".codex" / "hooks" / "stop_continue.py"
     result = subprocess.run(

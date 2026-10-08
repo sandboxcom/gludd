@@ -8,6 +8,8 @@ Written FIRST (TDD red), then implementation verified against them.
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 from tests.unit._plugin_contract import plugin_contract_source
 
 ROOT = Path(__file__).parent.parent.parent
@@ -22,7 +24,7 @@ TEST_COMMIT_GATE = ROOT / "tests" / "unit" / "test_commit_gate_freshness.py"
 
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
@@ -44,7 +46,13 @@ class TestBatchPushTarget:
 
     def test_batch_push_uses_sandboxcom_key(self):
         recipe = _recipe("batch-push")
-        assert "git-push-sandboxcom" in recipe, "batch-push must delegate to git-push-sandboxcom"
+        # AA023 rework: batch-push pushes DIRECTLY (no nested git-push-sandboxcom
+        # re-entry, which re-ran every guard) using the sandboxcom SSH key and
+        # records the push verdict after the push lands.
+        assert "GIT_SSH_COMMAND" in recipe and "sandboxcom" in recipe, (
+            "batch-push must push directly to sandboxcom via the sandboxcom SSH key"
+        )
+        assert "_record-push-verdict" in recipe, "batch-push must record the push verdict AFTER the push lands"
 
 
 class TestForegroundBlockGuardrail:
@@ -68,9 +76,7 @@ class TestForegroundBlockGuardrail:
 
     def test_blocks_make_qa(self):
         content = plugin_contract_source(ENFORCE_MAKE)
-        assert '"qa"' in content or "'qa'" in content or "isQa" in content, (
-            "Foreground block must target 'make qa'"
-        )
+        assert '"qa"' in content or "'qa'" in content or "isQa" in content, "Foreground block must target 'make qa'"
 
     def test_mentions_alternative(self):
         content = plugin_contract_source(ENFORCE_MAKE)
@@ -82,37 +88,29 @@ class TestStopPatternEnforcer:
 
     def test_blocking_default(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert 'permissionDecision: "deny"' in content, (
-            "enforce-stop.ts must have hard-deny permissionDecision blocks"
-        )
+        assert 'permissionDecision: "deny"' in content, "enforce-stop.ts must have hard-deny permissionDecision blocks"
 
     def test_has_ratchet_stop_audit(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert "ratchet" in content.lower(), (
-            "enforce-stop.ts must have ratchet-based stop audit"
-        )
+        assert "ratchet" in content.lower(), "enforce-stop.ts must have ratchet-based stop audit"
 
     def test_has_deferral_patterns(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert "SUBAGENT_TEXT_MARKERS" in content, (
-            "enforce-stop.ts must detect deferral/subagent-result patterns"
-        )
+        assert "SUBAGENT_TEXT_MARKERS" in content, "enforce-stop.ts must detect deferral/subagent-result patterns"
 
     def test_has_question_tool_block(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert '"question"' in content or "'question'" in content, (
-            "enforce-stop.ts must block the question tool"
-        )
+        assert '"question"' in content or "'question'" in content, "enforce-stop.ts must block the question tool"
 
 
 class TestAdaptiveDelegationEnforcement:
-    """Delegation stays adaptive while retaining a hard ten-agent ceiling."""
+    """Delegation stays adaptive while retaining a hard three-agent ceiling."""
 
-    def test_agents_md_has_10_minimum(self):
+    def test_agents_md_documents_active_floor(self):
         content = AGENTS_MD.read_text()
-        assert "Minimum 10 Subagents" in content, (
-            "AGENTS.md must document the 10-subagent minimum"
-        )
+        assert "Up to 3 Useful Subagents" in content
+        assert "active harness floor is configured to zero" in content
+        assert "hard ceiling of three" in content.lower()
 
     def test_agents_md_has_anti_stall_rule(self):
         content = AGENTS_MD.read_text()
@@ -126,25 +124,30 @@ class TestAdaptiveDelegationEnforcement:
             "AGENTS.md must list forbidden main-thread commands"
         )
 
-    def test_enforce_floor_defaults_to_ten(self):
+    def test_enforce_floor_uses_canonical_three_agent_cap(self):
         content = ENFORCE_FLOOR.read_text()
-        assert '"10"' in content, "enforce-floor.ts FLOOR must default to 10"
+        assert "../lib/multitask_config.ts" in content
+        assert "String(HARD_MAX_DISPATCHES)" in content
+        assert "String(MIN_DISPATCHES)" in content
+        assert "clampDispatchCount" in content
 
-    def test_enforce_delegate_defaults_to_ten(self):
+    def test_enforce_delegate_uses_canonical_three_agent_cap(self):
         content = ENFORCE_DELEGATE.read_text()
-        assert '"10"' in content, "enforce-delegate.ts FLOOR must default to 10"
+        assert "../lib/multitask_config.ts" in content
+        assert "String(MIN_DISPATCHES)" in content
+        assert "clampDispatchCount" in content
 
-    def test_enforce_stop_has_ten_agent_ceiling_and_opt_in_minimum(self):
+    def test_enforce_stop_has_three_agent_ceiling_and_opt_in_minimum(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert "HARD_MAX_DISPATCHES = 10" in content
+        assert "../../lib/multitask_config.ts" in content
+        assert "HARD_MAX_DISPATCHES" in content
+        assert "clampDispatchCount" in content
         assert "REQUIRED_AGENT_MIN" in content
         assert "CONFIGURED_AGENT_MIN !== undefined" in content
 
-    def test_settings_json_floor_is_five(self):
+    def test_settings_json_floor_is_opt_in(self):
         settings = (ROOT / ".claude" / "settings.json").read_text()
-        assert '"CLAUDE_AGENT_FLOOR": "5"' in settings, (
-            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 5"
-        )
+        assert '"CLAUDE_AGENT_FLOOR": "0"' in settings, ".claude/settings.json must keep the floor opt-in"
 
 
 class TestMainThreadRestriction:
@@ -152,9 +155,7 @@ class TestMainThreadRestriction:
 
     def test_has_dispatch_pattern(self):
         content = AGENTS_MD.read_text()
-        assert "batch-push" in content, (
-            "AGENTS.md must reference batch-push as the dispatch mechanism"
-        )
+        assert "batch-push" in content, "AGENTS.md must reference batch-push as the dispatch mechanism"
 
     def test_forbids_lint_on_main_thread(self):
         content = AGENTS_MD.read_text()
@@ -162,12 +163,10 @@ class TestMainThreadRestriction:
 
     def test_forbids_typecheck_on_main_thread(self):
         content = AGENTS_MD.read_text()
-        assert "make typecheck" in content, (
-            "AGENTS.md must mention make typecheck in the restriction"
-        )
+        assert "make typecheck" in content, "AGENTS.md must mention make typecheck in the restriction"
 
     def test_describes_wave_pattern(self):
         content = AGENTS_MD.read_text()
-        assert "ZERO analysis text" in content or "zero analysis" in content.lower(), (
-            "AGENTS.md must describe the wave pattern (zero analysis text between waves)"
+        assert "do not manufacture parallel ownership" in content.lower(), (
+            "AGENTS.md must describe adaptive ownership between waves"
         )

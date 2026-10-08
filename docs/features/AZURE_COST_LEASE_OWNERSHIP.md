@@ -27,6 +27,9 @@ documented opaque proof was not validated as one indivisible value.
   fencing token, and persisted expiry returned by `claim_due`.
 - Prediction ID, version, owner, token, and expiry must all match the locked
   database row. Copying a claim with an earlier or later expiry invalidates it.
+- The fencing token must be a positive, exact Python integer before SQL is
+  built. Boolean and floating-point lookalikes are rejected instead of relying
+  on a database driver's numeric coercion (for example, `True == 1`).
 - Both `now` and the claim expiry are timezone-aware. A naive deadline is
   rejected before SQL execution.
 - A lease is valid only while `now < expires_at`. The exact expiry instant is
@@ -76,8 +79,10 @@ changing `expires_at`, impersonate another owner, or guess a newer fencing
 token. The query locks and validates one exact prediction row before any state
 or outbox mutation. An ownership or persisted-expiry mismatch uses the existing
 generic stale-lease error, so it does not reveal which proof component differed.
-A malformed local expiry reports only the existing timezone-validation error
-before SQL and reveals no persisted row state.
+A non-canonical token also uses that generic error before SQL, preventing
+boolean or floating-point aliases from reaching a permissive database
+comparison. A malformed local expiry reports only the existing
+timezone-validation error before SQL and reveals no persisted row state.
 
 The timezone-aware transaction timestamp supplied by the reconciliation caller
 remains the decision boundary. This change grants no Azure permission,
@@ -88,9 +93,9 @@ observation identity or finality ordering.
 
 Validation adds no query, retry loop, heartbeat, thread, process, port, daemon,
 cache, or temporary artifact. The existing row-lock query gains one indexed-row
-predicate, and already-expired claim objects fail before database I/O. Claim
-batching remains capped at 1,000 and the caller still controls transaction
-lifetime.
+predicate, and already-expired or non-canonical claim objects fail before
+database I/O. Claim batching remains capped at 1,000 and the caller still
+controls transaction lifetime.
 
 A stale or superseded mutation raises `StaleAzureCostLeaseError` immediately;
 a malformed timestamp raises `ValueError` before SQL. Operations can count the
@@ -103,7 +108,10 @@ event.
 The stricter check uses existing columns and requires no migration, backfill, or
 wire-format change. Claims are process-local immutable values produced from the
 same persisted row, so valid old and new workers can overlap during promotion.
-New workers simply fail closed if application code has altered a proof.
+New workers simply fail closed if application code has altered a proof. Every
+database-issued token is already a positive integer, so the stricter runtime
+domain check changes only malformed callers and is safe for zero-downtime
+deployment.
 
 Development is promoted only after focused coverage, the full gate, and CI are
 green. Rollback reverts the repository predicate, regressions, task evidence,
@@ -117,8 +125,8 @@ The authoritative beta replay must first reproduce the stale transition after
 an in-memory-only extension. Failing-first regressions then prove that earlier
 and later forged expiries were previously ignored. The repaired suite must
 cover valid multi-step transitions inside one lease, timezone validation, exact
-expiry, wrong owner, wrong token, expired-owner takeover, monotonic finality,
-and deduplicated outbox behavior.
+expiry, wrong owner, wrong token, numeric token lookalikes, expired-owner
+takeover, monotonic finality, and deduplicated outbox behavior.
 
 The focused family runs with warnings treated as errors. Touched-source
 aggregate coverage must be at least 85 percent and every touched source file

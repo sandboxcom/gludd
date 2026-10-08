@@ -3,11 +3,13 @@
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
 
 
 def _target_body(name: str) -> str:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     start = content.index(f"{name}:")
     remaining = content[start:]
     return remaining.split("\n\n", 1)[0]
@@ -16,7 +18,7 @@ def _target_body(name: str) -> str:
 def test_e2e_runner_uses_unique_basetemp() -> None:
     body = _target_body("test-e2e")
     assert 'BT="/tmp/gludd-e2e-' in body
-    assert '--basetemp=$$FILE_BT' in body
+    assert '--basetemp=\\"$$FILE_BT\\"' in body
 
 
 def test_e2e_runner_marks_nested_execution() -> None:
@@ -27,6 +29,7 @@ def test_e2e_runner_marks_nested_execution() -> None:
 def test_e2e_runner_has_per_test_timeout_and_cleanup() -> None:
     body = _target_body("test-e2e")
     assert "--timeout=" in body
+    assert 'rm -rf "$$FILE_BT"' in body
     assert 'rm -rf "$$BT"' in body
     assert "exit $$RC" in body
 
@@ -64,7 +67,7 @@ def test_e2e_runner_releases_its_own_lock_without_killing_owner() -> None:
 
 
 def test_worktree_e2e_cleanup_is_scoped_to_the_requesting_worktree() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     assert "kill-worktree-e2e:" in content
     start = content.index("kill-worktree-e2e:")
     body = content[start:].split("\n\n", 1)[0]
@@ -117,8 +120,26 @@ def test_e2e_runner_isolates_artifacts_per_file() -> None:
     body = _target_body("test-e2e")
     assert "FILE_BT" in body
     assert "FILE_LOG" in body
-    assert "--basetemp=$$FILE_BT" in body
+    assert '--basetemp=\\"$$FILE_BT\\"' in body
     assert "LOG=\"$$FILE_LOG\"" in body
+
+
+def test_e2e_runner_namespaces_mutable_enforcement_state_per_file() -> None:
+    """Separate pytest processes must not race on plugin simulator state."""
+    body = _target_body("test-e2e")
+    assert "GLUDD_E2E_STATE_ROOT=$$FILE_BT/state" in body
+
+    helper = (MAKEFILE.parent / "tests/e2e/enforcement_state.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'os.environ.get("GLUDD_E2E_STATE_ROOT", "/tmp")' in helper
+
+    for relative_path in (
+        "tests/e2e/test_enforcement_e2e.py",
+        "tests/e2e/test_enforcement_plugin_e2e.py",
+    ):
+        source = (MAKEFILE.parent / relative_path).read_text(encoding="utf-8")
+        assert "from tests.e2e.enforcement_state import" in source
 
 
 def test_e2e_runner_keeps_file_pool_bounded() -> None:
@@ -134,7 +155,7 @@ def test_e2e_runner_treats_collection_skip_as_success() -> None:
 
 
 def test_azure_provision_sourced_target_uses_explicit_env_file_contract() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     assert "AZURE_E2E_ENV_FILE ?= /tmp/general-ludd.env" in content
     body = _target_body("test-e2e-azure-provision-sourced")
     assert 'test -r "$(AZURE_E2E_ENV_FILE)"' in body
@@ -145,7 +166,7 @@ def test_azure_provision_sourced_target_uses_explicit_env_file_contract() -> Non
 
 
 def test_game_provision_target_uses_env_file_and_hour_long_timeout_contract() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     body = _target_body("test-e2e-games-provision")
 
     assert "GAME_E2E_TIMEOUT_SECS ?= 3600" in content
@@ -158,13 +179,21 @@ def test_game_provision_target_uses_env_file_and_hour_long_timeout_contract() ->
     assert ". /tmp/general-ludd.env" not in body
 
 
-def test_game_targets_install_declared_media_extra_instead_of_silently_skipping() -> None:
-    content = (MAKEFILE.parent / "pyproject.toml").read_text(encoding="utf-8")
+def test_game_targets_sync_declared_media_profile_instead_of_silently_skipping() -> None:
+    profile = (
+        MAKEFILE.parent / "requirements/profiles/game-e2e/pyproject.toml"
+    ).read_text(encoding="utf-8")
+    profile_sets = (MAKEFILE.parent / "config/dependency_profiles.toml").read_text(
+        encoding="utf-8"
+    )
 
     for target in ("test-e2e-games", "test-e2e-games-provision", "test-e2e-games-local"):
-        assert "--extra game-e2e" in _target_body(target)
-    assert 'game-e2e = [' in content
-    assert '"yt-dlp>=' in content
+        body = _target_body(target)
+        assert "sync DEPENDENCY_PROFILE_SET=ci-game-e2e" in body
+        assert "--no-sync pytest" in body
+    assert "[sets.ci-game-e2e]" in profile_sets
+    assert '"game-e2e"' in profile_sets
+    assert '"yt-dlp>=' in profile
 
 
 def test_game_provision_target_behavioral_example_never_provisions() -> None:
@@ -209,7 +238,7 @@ def test_game_provision_target_rejects_short_timeout_before_provisioning() -> No
 
 
 def test_azure_cleanup_target_is_bounded_observable_and_env_parameterized() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     body = _target_body("azure-cleanup-e2e")
 
     assert "AZURE_CLEANUP_TIMEOUT_SECS ?= 1800" in content

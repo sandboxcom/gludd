@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK_PATH = ROOT / "scripts" / "hooks" / "pre-commit-workflow-yaml"
@@ -172,13 +173,13 @@ class TestMakefileInstallTarget:
     """The Makefile MUST expose install-workflow-hook."""
 
     def test_install_workflow_hook_target_exists(self):
-        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        makefile = compose_makefile(ROOT / "Makefile")
         assert "install-workflow-hook:" in makefile, (
             "Makefile missing 'install-workflow-hook:' target"
         )
 
     def test_install_workflow_hook_target_copies_hook(self):
-        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        makefile = compose_makefile(ROOT / "Makefile")
         # The target should reference the hook script path.
         assert "pre-commit-workflow-yaml" in makefile, (
             "install-workflow-hook target does not reference the hook script"

@@ -61,13 +61,18 @@ class HttpTransport(Protocol):
         timeout: float | None = ...,
     ) -> HttpResponse: ...
 
+    def close(self) -> None: ...
+
 
 _DEFAULT_TIMEOUT = 30.0
 
 
 def _default_transport() -> HttpTransport:
-    """Build the production transport lazily so importing this module never
-    requires :mod:`httpx` and so tests need not touch the network."""
+    """Build the production transport lazily.
+
+    Importing this module never requires :mod:`httpx`, and tests need not touch
+    the network.
+    """
     import httpx
 
     class _HttpxTransport:
@@ -90,6 +95,9 @@ def _default_transport() -> HttpTransport:
                 json=json,
                 timeout=timeout,
             )
+
+        def close(self) -> None:
+            self._client.close()
 
     return _HttpxTransport()
 
@@ -130,6 +138,7 @@ class JiraIssueSource:
     SYSTEM = "jira"
 
     def __init__(self, config: dict[str, Any], *, transport: HttpTransport | None = None) -> None:
+        """Create a Jira source with an owned or caller-supplied transport."""
         self.config: dict[str, Any] = dict(config)
         self.name: str = self.SYSTEM
 
@@ -151,7 +160,15 @@ class JiraIssueSource:
         self._jql = self.config.get("jql")
         self._max_results = int(self.config.get("max_results", 50))
         self._timeout = float(self.config.get("timeout", _DEFAULT_TIMEOUT))
+        self._owns_transport = transport is None
         self._transport: HttpTransport = transport if transport is not None else _default_transport()
+
+    def close(self) -> None:
+        """Release the default transport while preserving injected ownership."""
+        if not self._owns_transport:
+            return
+        self._transport.close()
+        self._owns_transport = False
 
     # ----------------------------------------------------------------- auth #
     def _auth_header(self) -> str:
@@ -188,8 +205,10 @@ class JiraIssueSource:
 
     # --------------------------------------------------------------- health #
     def health(self) -> dict[str, Any]:
-        """Probe ``/rest/api/3/myself``. Never raises — failures become
-        ``{'ok': False, 'detail': ...}``."""
+        """Probe ``/rest/api/3/myself`` without raising.
+
+        Failures become ``{'ok': False, 'detail': ...}``.
+        """
         try:
             resp = self._request("GET", "/rest/api/3/myself")
         except Exception as exc:  # health must never raise
@@ -255,8 +274,7 @@ class JiraIssueSource:
     def update_status(
         self, external_id: str, status: str, comment: str | None = None
     ) -> dict[str, Any]:
-        """Transition *external_id* to the workflow state whose target name
-        matches *status*.
+        """Transition an issue to the workflow state matching *status*.
 
         Looks up the available transitions, finds the one whose ``to.name``
         (falling back to the transition's own ``name``) equals *status*, then

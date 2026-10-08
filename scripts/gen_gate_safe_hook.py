@@ -14,10 +14,9 @@ import pathlib
 import sys
 
 CONTENT = r"""#!/usr/bin/env bash
-# Stop hook (#79/#78): BLOCK turn-end while fewer than FLOOR subagents are live.
-# GATE-SAFE FLOOR RULE: a running gate does NOT lower the read-only floor.
-# Only heavy worktree-writers are capped during a gate -- read-only agents
-# (research/audit/review/explore) MUST still be dispatched to reach FLOOR.
+# Stop hook (#79/#78): when explicitly configured, block turn-end below FLOOR.
+# The default FLOOR is zero: never create read-only filler merely to occupy slots.
+# A running gate does not rewrite an operator's explicit floor.
 #
 # ROBUST DESIGN: counts GROUND TRUTH -- the harness's own per-agent task .output
 # files that were appended to within the activity window -- instead of a
@@ -34,10 +33,19 @@ CONTENT = r"""#!/usr/bin/env bash
 # Transient/rate-limit dispatch errors are retryable (re-dispatch after backoff) --
 # a one-line note, not a coercion. FAIL-OPEN on any error (exit 0 = allow stop).
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
-TARGET="${CLAUDE_AGENT_TARGET:-10}"
-CEILING="${CLAUDE_AGENT_CEILING:-12}"
-REFILL=$((FLOOR + 2))   # refill just into the band (hysteresis), NOT up to TARGET
+HARD_CEILING=3
+FLOOR="${CLAUDE_AGENT_FLOOR:-0}"
+TARGET="${CLAUDE_AGENT_TARGET:-3}"
+CEILING="${CLAUDE_AGENT_CEILING:-3}"
+case "$FLOOR" in ''|*[!0-9]*) FLOOR="0" ;; esac
+case "$TARGET" in ''|*[!0-9]*) TARGET="$HARD_CEILING" ;; esac
+case "$CEILING" in ''|*[!0-9]*) CEILING="$HARD_CEILING" ;; esac
+[ "$FLOOR" -gt "$HARD_CEILING" ] && FLOOR="$HARD_CEILING"
+[ "$TARGET" -gt "$HARD_CEILING" ] && TARGET="$HARD_CEILING"
+[ "$CEILING" -gt "$HARD_CEILING" ] && CEILING="$HARD_CEILING"
+[ "$FLOOR" -gt "$CEILING" ] && FLOOR="$CEILING"
+[ "$TARGET" -gt "$CEILING" ] && TARGET="$CEILING"
+REFILL="$FLOOR"
 WINDOW=90  # seconds; a live background agent streams tool/output well within this
 
 # Never hard-wedge: if we're already inside a stop-hook continuation, allow stop.
@@ -61,7 +69,10 @@ esac
 
 if [ "$live" -lt "$FLOOR" ]; then
   deficit=$((REFILL - live)); [ "$deficit" -lt 1 ] && deficit=1
-  reason="AGENT-FLOOR (BLOCKING): ${live} live, below floor ${FLOOR} (band ${FLOOR}-${CEILING}). GATE-SAFE RULE: a running gate does NOT lower the read-only floor -- only heavy worktree-writers are capped during a gate. Use read-only agents (research/audit/review) to reach floor=${FLOOR}. Dispatch about ${deficit} disjoint read-only agent(s) to refill into the band, then you may end the turn. (Transient / 429 / 529 / rate-limit errors are retryable -- re-dispatch after brief backoff.)"
+  reason="AGENT-FLOOR (BLOCKING): ${live} live, below explicit floor ${FLOOR} "
+  reason="${reason}(band ${FLOOR}-${CEILING}). A running gate does not rewrite the operator's floor. "
+  reason="${reason}Dispatch about ${deficit} suitable disjoint task(s); never invent filler work. "
+  reason="${reason}If no independent task exists, remove or lower the explicit floor."
   printf '{"decision":"block","reason":"%s"}\n' "$reason" >&2
   printf '{"decision":"block","reason":"%s"}\n' "$reason"
   exit 1

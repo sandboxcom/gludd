@@ -1,0 +1,66 @@
+[tool.deptry]
+known_first_party = ["ansible_collections"]
+
+[tool.deptry.package_module_name_map]
+"annotated-types" = "annotated_types"
+"azure-identity" = "azure"
+"azure-mgmt-authorization" = "azure"
+"azure-mgmt-appcontainers" = "azure"
+"azure-mgmt-cognitiveservices" = "azure"
+"azure-mgmt-compute" = "azure"
+"azure-mgmt-costmanagement" = "azure"
+"azure-mgmt-monitor" = "azure"
+"azure-mgmt-resource" = "azure"
+"boto3" = "boto3"
+"google-api-python-client" = "googleapiclient"
+"google-auth" = "google"
+"google-cloud-core" = "google"
+"hindsight-client" = "hindsight_client"
+"landlock" = "landlock"
+"langchain-core" = "langchain_core"
+"langchain-openai" = "langchain_openai"
+"llama-cpp-python" = "llama_cpp"
+"lm-eval" = "lm_eval"
+"lxml" = "lxml"
+"mcp" = "mcp"
+"opencv-python-headless" = "cv2"
+"openai" = "openai"
+"opentelemetry-api" = "opentelemetry"
+"opentelemetry-exporter-otlp-proto-grpc" = "opentelemetry"
+"opentelemetry-proto" = "opentelemetry"
+"opentelemetry-sdk" = "opentelemetry"
+"pillow" = "PIL"
+"pygame" = "pygame"
+"pymysql" = "pymysql"
+"pyvmomi" = ["pyVim", "pyVmomi"]
+"pywavelets" = "pywt"
+"pywin32" = ["win32", "win32security"]
+"quickjs-ng" = "quickjs"
+"scapy" = "scapy"
+"scikit-image" = "skimage"
+"torch" = "torch"
+"vllm" = "vllm"
+"xmlsec" = "xmlsec"
+"yt-dlp" = "yt_dlp"
+
+[tool.deptry.per_rule_ignores]
+DEP002 = [
+    "aiosqlite",
+    "ansible-builder",
+    "boto3",
+    "greenlet",
+    "gunicorn",
+    "langchain-openai",
+    "llama-cpp-python",
+    "mcp",
+    "msgpack",
+    "opentelemetry-api",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "opentelemetry-proto",
+    "opentelemetry-sdk",
+    "pillow",
+    "scikit-learn",
+    "torch",
+    "uvicorn-worker",
+    "vllm",
+]

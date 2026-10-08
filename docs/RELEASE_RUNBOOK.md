@@ -1,241 +1,413 @@
 # Release runbook
 
-The one-page answer to "how do I cut a release, and how do I know it actually
-shipped?" Written after v0.1.0-beta.1 was published **incomplete** (1 of 12
-required assets, against a RED commit, mis-flagged as a stable release) because
-every safety net in this repo was either bypassed or not wired in.
+This is the fail-closed procedure for cutting Gludd `v0.1.1`.
 
 ## The rule
 
-**A tag is not a release. A release with assets is not a *complete* release.**
-The only machine-checkable definition of "shipped" is:
-
-```
-make verify-release-completeness TAG=v0.1.0-beta.2
-...
-COMPLETENESS CHECK: PASS — all 16 checks passed.
-```
-
-Anything short of that literal `PASS` line is not a release, no matter what the
-GitHub UI shows.
-
-## Beta.2 release — exact steps once CI is green
-
-A linear, copy-pasteable walk-through for `v0.1.0-beta.2`. Run each step in
-order; **stop and fix** on any non-zero exit. Do not skip ahead.
-
-### 0. Preconditions
-
-- Working tree clean: `make git-status` shows no uncommitted changes.
-- Version already bumped to `0.1.0-beta.2` in `pyproject.toml`,
-  `src/general_ludd/__init__.py`, `CHANGELOG.md`, and the README status table
-  (`**Status as of v0.1.0-beta.2 — <date>**`).
-- `make check-readme-status TAG=v0.1.0-beta.2` exits 0.
-
-### 1. Verify CI is GREEN on `development`
-
-```
-make ci-verdict-safe BRANCH=development
-```
-
-Requires `conclusion: success` **and** `headSha == development tip`. If PENDING
-→ wait and resume other work; re-check at the next natural break (the cooldown
-is 10 min — do NOT poll tighter). If RED → fix-forward on `development`, do not
-proceed. A cancelled run is **not** a verdict (see "A cancelled CI run is NOT a
-verdict" below); treat cancelled/no-run as red.
-
-### 2. Merge `development` → `master` (main checkout only)
-
-```
-make development-merge-to-master
-```
-
-This performs a `--no-ff` merge on the **main checkout** (`/Users/shawnwilson/gludd`),
-never inside a worktree. It requires CI green on `development`. After it
-completes, verify `master` tip matches the merged commit:
-
-```
-make verify-remote BRANCH=master SHA=$(make git-rev-parse REF=HEAD)
-```
-
-Expect `VERIFIED master@<sha>`. A `REMOTE MISMATCH` means the push did not land
-— re-run the push, do not proceed.
-
-### 3. Cut the release
-
-```
-make release-cut TAG=v0.1.0-beta.2 MSG='v0.1.0-beta.2: <one-line summary>'
-```
-
-This is the **only** sanctioned release path. It is fail-closed at every step:
-
-1. `require-ci-green` — aborts unless CI is GREEN for the exact SHA being tagged.
-2. `check-readme-status` — the README status table must be current for this tag.
-3. push, then annotated tag + push (this is what triggers the CI release job).
-4. `release-view` — confirm the GitHub Release exists.
-5. poll, then **`verify-release-completeness`** — its exit code is the verdict.
-
-`release-cut`'s local poll gives up after ~10 min. A cold, tag-triggered
-full-matrix build runs **30–60 min**, so a poll timeout means **"still
-building"**, not failure. Do not conclude the release is broken on a poll
-exhaustion — proceed to step 4.
-
-### 4. Verify the 12 assets
-
-```
-make verify-release-completeness TAG=v0.1.0-beta.2
-```
-
-This is the **real gate** (not `verify-release-artifact`). It requires all 12
-artifact categories (see "What 'complete' means" below), the prerelease flag
-matching the `-beta` tag, version-stamped asset names, and no zero-size assets.
-Expect:
-
-```
-COMPLETENESS CHECK: PASS — all 16 checks passed.
-```
-
-If CI is still building, the check will report missing assets — wait and re-run
-rather than declaring failure. If CI is **complete** and assets are still
-missing, the release is broken; see "If CI is red for the tag" below.
-
-### 5. Publish / confirm
-
-Once `verify-release-completeness` passes, the GitHub Release created by
-`release-cut` step 4 is already public and non-draft. Confirm:
-
-```
-make release-view TAG=v0.1.0-beta.2
-```
-
-Expect `isDraft: false`, `isPrerelease: true`, and ≥12 assets listed. Paste the
-release URL and the `COMPLETENESS CHECK: PASS` line as the completion evidence
-in `TASKS.md` — without both, the release task is **not** done.
-
-### Rollback / repair
-
-If the tagged SHA turned red after tagging, or assets are incomplete on a
-**completed** CI run: do **not** back-fill locally-built binaries. Either
-`make release-recut TAG=v0.1.0-beta.2` (requires CI-green on the tag) or cut
-`v0.1.0-beta.3` from a green SHA and mark beta.2 superseded in its notes.
-
-For an already-published release missing only CI-built artifacts:
-`make release-upload-assets TAG=v0.1.0-beta.2 FILES='...'` (CI-built, tagged-SHA
-artifacts only), then `make release-set-prerelease TAG=v0.1.0-beta.2`, then
-re-run `verify-release-completeness`.
-
-Preconditions: the working tree must be clean, and the version must already be
-bumped in `pyproject.toml`, `__init__.py`, `CHANGELOG.md`, and `README.md`.
+A tag is not a release. A release is complete only when the exact tagged commit
+has green CI, every required artifact has passed the pre-publish functional
+matrix, and the published release passes the remote completeness check.
 
 ## What "complete" means
 
-`scripts/verify_release_completeness.py` requires **12 artifact categories** and
-at least 12 assets:
+The only acceptable remote verdict is:
 
-| | |
+```text
+make verify-release-completeness TAG=v0.1.1
+...
+COMPLETENESS CHECK: PASS
+```
+
+The v0.1.1 verifier requires all 28 artifact categories to pass, at least 30
+assets to be present, the exact tag version in release assets, a non-draft
+release, and no zero-byte asset. Before publication, CI also verifies artifact
+contents, aggregate checksums, digest-pinned image references, canonical
+Ansible runtime metadata, and all smoke attestations.
+
+## Preconditions
+
+Run these commands from the main checkout. Stop on every non-zero exit.
+
+```text
+make check-version-consistency
+make check-readme-status TAG=v0.1.1
+make validate-ansible-runtime-boundary
+make check-collection-interop
+make gate-all
+make ci-verdict-safe BRANCH=development
+```
+
+Required evidence:
+
+- `pyproject.toml`, `src/general_ludd/__init__.py`, and the README carry the same
+  committed version bump;
+- the project version is `0.1.1` everywhere;
+- the core/controller/managed-host Python boundary is valid and locked;
+- every cross-collection role edge resolves and its dependency is declared;
+- aggregate coverage is at least 85%, every measured file is at least 75%, and
+  the full gate has no warnings, errors, collection errors, xfails, or
+  unexpected skips;
+- CI is successful for the exact `development` tip. Missing, stale, pending,
+  or cancelled CI is not green.
+
+## Verify CI
+
+Run `make ci-verdict-safe BRANCH=development` only after the full gate passes.
+The verdict must belong to the exact development SHA that will be merged. A
+missing, pending, stale, skipped, timed-out, or cancelled run is not a green
+verdict and cannot authorize a release.
+
+## Merge development
+
+Only the main checkout may merge development to master.
+
+```text
+make development-merge-to-master
+make verify-remote BRANCH=master SHA=<master-full-sha>
+```
+
+Do not create a release from a feature worktree. Do not rebase either shared
+branch.
+
+## Cut v0.1.1 with release-cut
+
+```text
+make release-cut TAG=v0.1.1 MSG='v0.1.1: S83.166 release documentation and version bump'
+```
+
+The tag-triggered workflow first proves that the identical development SHA has a
+terminal green canonical run. It then completes the tag gate plus every platform,
+container, execution-environment, provenance, and artifact job before its release
+job can publish. `release-cut` snapshots any older matching tag run, polls the new
+exact tag/SHA/workflow/event every 10 seconds for at most 90 minutes, and finally
+runs artifact and full-matrix verification. A local timeout remains non-success.
+
+## Functional artifact matrix
+
+The release workflow builds, validates, and stages these immutable outputs:
+
+| Lane | Required output | Pre-publish functional proof |
+|---|---|---|
+| Linux x86_64 | tar, deb, rpm | extract each package and execute `gludd version`; tar also runs `--help` |
+| Linux aarch64 | tar | extract and execute on the native arm64 runner |
+| macOS arm64 | tar, dmg | extract tar; mount the read-only DMG; execute both binaries |
+| Windows x86_64 | zip, NSIS | expand ZIP; silently install NSIS; execute; silently uninstall |
+| Python | wheel, sdist | install each into its own empty, namespaced virtual environment and execute |
+| Collections | agent, language, networking tarballs and index | build with `ansible-galaxy`; validate archive identities against locked EE requirements |
+| Ansible EE | seven canonical boundary inputs plus image metadata | build with `ansible-builder`, run offline import smoke, push beside active image, record digest |
+| Container | GHCR image metadata | run a namespaced container and wait a bounded 30 seconds for `/healthz` |
+| Metadata | CycloneDX SBOM, install script, licenses, provenance, rollback receipt, checksums | validate schemas, execute installer from the Linux archive, rehearse rollback, and verify exact SHA-256 coverage |
+
+The completeness verifier recognizes exactly 28 mandatory categories; none are
+optional. The minimum is 30 assets because the runtime-collection category
+requires three separately named collection tarballs:
+
+| Group | Exact required categories |
 |---|---|
-| Platform binaries | linux-x86_64, linux-aarch64, macos-arm64, windows-x86_64 |
-| Packages | `.deb` (amd64), `.rpm` (x86_64), `.dmg` (macOS), `.exe` installer |
-| Metadata | checksums, SBOM, `LICENSE`, `THIRD_PARTY_LICENSES` |
+| Platform binaries (4) | Linux x86_64, Linux aarch64, macOS arm64, Windows x86_64 |
+| Native packages/installers (4) | `.deb`, `.rpm`, `.dmg`, Windows `.exe` installer |
+| Base metadata (4) | checksums, SBOM, `LICENSE`, `THIRD_PARTY_LICENSES` |
+| Python and collections (4) | wheel, sdist, three runtime collection tarballs, collection manifest |
+| Ansible execution boundary (8) | EE definition, EE collection requirements, EE Python requirements, EE system requirements, EE runtime lock, managed-host Python lock, collection Python boundary inventory, EE image metadata |
+| Runtime delivery (4) | container image metadata, install script, smoke attestations, release manifest |
 
-Plus: the release must be **non-draft**; its **prerelease flag must match the tag
-shape** (any `-alpha`/`-beta`/`-rc` tag must be marked prerelease, and a stable
-tag must not be); asset names must carry the **tag's version**; and **no asset may
-be zero-size**.
+This list mirrors `EXPECTED_CATEGORIES` in
+`scripts/verify_release_completeness.py`. A category-count change must update
+the verifier, its structural tests, and this runbook together.
 
-CI runs this script as a **blocking step** in the release job — an incomplete
-release fails the workflow.
+Every platform job writes a versioned smoke attestation only after its checks
+pass. `scripts/verify_release_asset_matrix.py` unions those attestations and
+requires all 15 smoke checks before the publishing action runs. Every artifact
+upload sets `if-no-files-found: error`.
 
-## Local signature validation
+The release job also writes
+`gludd-rollback-receipt-<version>.json` before the release manifest,
+`SHA256SUMS`, provenance attestation, or publication. The rehearsal is
+hermetic: it uses only the staged Linux archive and a run-scoped route under
+`/tmp/gludd-rollback-rehearsal-<run>-<attempt>`. It executes the candidate's
+`version` and `--help` commands, activates that exact staged artifact in the
+ephemeral route, restores the byte-identical prior-version route, and hashes a
+fixed in-flight-work snapshot before and after the transition. It does not call
+a cloud, registry, release, or deployment mutation API.
 
-`make release-validate` signs `MANIFEST.json` with `GLUDD_SIGNING_KEY` (or the
-default SSH key) and verifies it with `ssh-keygen -Y verify`. The command creates
-an artifact-scoped `dist/release.allowed_signers` from the matching public key;
-it does not fall back to an unprovisioned user-home trust file. Set
-`GLUDD_ALLOWED_SIGNERS` when validation must use an externally managed trust
-store instead. Keep the public key paired with the release signing key.
+The receipt is accepted only when all of these bindings agree:
 
-## Container artifact is fail-closed
+- candidate activation, health, observed version, artifact name, and staged
+  artifact SHA-256;
+- the prior version, its route SHA-256 before activation and after restoration,
+  restored health/version, and an explicit immutable-restoration result;
+- identical before/after SHA-256 values for active work;
+- the exact 15-category smoke fan-in and the SHA-256 of every contributing
+  smoke attestation; and
+- the source commit plus a canonical evidence SHA-256 for the receipt body.
 
-When release validation is run with container building enabled, the validator
-requires `dist/container-image-tags.json` and checks that it references the
-release version. A failed container build or missing tag metadata therefore
-fails validation; it cannot be silently treated as a pip-only release. The
-pip-only path remains available when container building is intentionally
-disabled.
+The verifier replays the existing release state machine through stage, canary,
+and rollback. A missing category, false status, version drift, changed prior
+route, changed work snapshot, rebound attestation, or altered evidence digest
+refuses the receipt and blocks publication. `write-manifest` then inventories
+the receipt, `SHA256SUMS` binds its published bytes, and the existing
+`actions/attest` step signs the same aggregate checksum subject. This is a
+control-plane rollback proof, not permission to mutate a live deployment; the
+provider-specific live proof remains a separate release-readiness obligation.
+
+Publication is a second trust boundary. Immediately after the GitHub Release
+action returns, the release job downloads only the published rollback receipt,
+release manifest, `SHA256SUMS`, Linux candidate archive, and complete versioned
+smoke-attestation set into a run-scoped directory. The
+`verify-published-rollback` command then replays the receipt schema and ZDD state
+machine against those downloaded bytes, verifies every evidence file through
+the published aggregate checksum, and requires the manifest to inventory the
+receipt, candidate, and smoke inputs. It never substitutes the runner's
+`release-assets` staging directory for hosted evidence. The following
+post-deploy smoke executes the downloaded candidate's version and help commands.
+Missing, rebound, oversized, linked, malformed, or inconsistent evidence blocks
+the release with bounded diagnostics that do not echo hosted content; cleanup
+preserves the primary failure. This read-only verification cannot shift live
+traffic, so a failure leaves the previously active version and in-flight work
+unchanged.
+
+After the matrix writes and validates `SHA256SUMS`, the release job uses
+`actions/attest` v4.2.2 pinned to commit
+`1e69f48acb82d1966a394da916b4c1698aa569d6`. Its `subject-checksums` input binds
+the signed SLSA statement to the same complete asset set that is published. The
+job grants `id-token: write` and `attestations: write` explicitly, and
+`make check-provenance-attestation TAG=<tag>` uses `gh release verify`; a source
+manifest alone is not signed provenance.
+
+Long-lived practitioner reports shaped the guardrails. In
+[actions/attest-build-provenance #156](https://github.com/actions/attest-build-provenance/issues/156),
+self-hosted users reported OIDC-token failures despite apparently correct
+settings, so release attestation remains on a GitHub-hosted runner with explicit
+permissions and is blocking. In
+[actions/attest-build-provenance #454](https://github.com/actions/attest-build-provenance/issues/454),
+multi-subject input remained a recurring usability issue; Gludd avoids a
+hand-maintained subject list by feeding the already-verified aggregate checksum
+file to the consolidated action. GitHub's current
+[artifact-attestation guidance](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
+confirms the OIDC/attestations permissions and post-build placement.
+
+Historical exception: v0.1.1 was published before this signed-attestation step
+existed. Its immutable source manifest and SHA-256 coverage remain valid, but
+`gh release verify v0.1.1` correctly reports no attestation. Do not rewrite the
+public tag or assets; the exception and fix-forward are recorded in
+`docs/releases/audit-0.1.1.json`.
+
+The staged `install.sh` is treated as untrusted release input even after its
+execution smoke. Static verification accepts at most 1 MiB of UTF-8, requires
+the executable bit and the exact repository Bash shebang, and requires an
+active `set -euo pipefail` line; a comment containing those words is not
+evidence. Invalid encoding and oversize input produce bounded matrix failures
+instead of an unhandled traceback. This check reads one bounded file and starts
+no process, so parallel platform jobs retain their existing resource budgets.
+
+## Canonical Ansible runtime artifacts
+
+The release must contain byte-for-byte copies of:
+
+- `config/ansible/execution-environment.yml`;
+- `config/ansible/requirements.yml`;
+- `config/ansible/requirements.txt`;
+- `config/ansible/bindep.txt`;
+- `config/ansible/runtime-lock.json`;
+- `config/ansible/managed-host-python.lock.json`;
+- `config/ansible/collection-python-boundary-inventory.json`.
+
+The core Python distribution remains separate from the controller execution
+environment and managed-host interpreter locks. Missing or stale copies fail
+before publication.
+
+## Zero-downtime deployment
+
+Container and Ansible EE builds are additive:
+
+1. build a new versioned image beside the active digest;
+2. run its isolated smoke test with a namespaced process/container;
+3. push the immutable image and record its registry digest;
+4. publish metadata only after all other artifacts pass;
+5. route only new work to the new digest, then drain in-flight work.
+
+Rollback routes new work to the previously recorded digest and drains the bad
+revision. Never mutate or retag the prior digest. Platform release assets are
+also immutable: a repair must come from the same tagged CI SHA or from a new
+beta tag.
+
+Before publication, inspect the rollback receipt in the staged matrix. Its
+`candidate.sha256` must match the staged Linux archive, both prior-route
+digests and both active-work digests must be identical, and
+`platform_fan_in.categories` must contain the complete 15-check set. Do not
+hand-edit or regenerate the receipt after `SHA256SUMS`; a changed receipt is a
+new candidate and requires the complete release job again.
+
+Installer verification happens entirely in the additive staging directory.
+Failure blocks publication while the active digest and any previously
+published assets remain untouched; rollback is therefore deletion of the
+failed candidate staging set, not mutation of the live release. This preserves
+zero-downtime service for existing users while a corrected candidate is built.
+
+## Verify with verify-release-completeness
+
+```text
+make verify-release-completeness TAG=v0.1.1
+make release-view TAG=v0.1.1
+```
+
+Expected release state:
+
+- `isDraft: false`;
+- `isPrerelease: false`;
+- all 28 required artifact categories report `PASS`;
+- at least 30 assets are present;
+- no zero-sized asset;
+- signed release provenance verifies with `gh release verify` (the immutable
+  v0.1.1 historical exception is recorded above and in its audit receipt);
+- release URL identifies `v0.1.1`.
+
+Record the release URL, exact tag SHA, CI run URL, gate evidence, coverage
+evidence, and completeness PASS in the task ledger.
+
+## Rollback
+
+The v0.1.1 rollback target is `v0.1.0-beta.4`. Rollback is a routing change to
+that already-published version; it never moves, deletes, or overwrites the
+v0.1.1 tag or its release assets.
+
+- **Target:** route new work to `v0.1.0-beta.4`, then drain work already bound
+  to v0.1.1.
+- **Container:** resolve the immutable image digest recorded by the
+  `v0.1.0-beta.4` release metadata and pin that digest. Never roll back to a
+  mutable image tag.
+- **Binary:** obtain the platform artifact from
+  `https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.4` and verify it
+  with that release's checksum set before installation.
+- **Config compatibility:** restore a configuration snapshot validated by
+  v0.1.0-beta.4 and run its migration/health checks before shifting traffic.
+  Do not downgrade a database or configuration in place without that proof.
+
+After traffic is restored, independently verify the prior digest, binary
+version, health endpoint, and absence of v0.1.1-bound new work. Preserve the
+failed deployment and its content-free evidence until the incident record is
+complete.
+
+The published receipt proves that the release lane can activate the exact
+candidate and restore its immutable prior route without changing already-active
+work. It does not replace this live verification: if live health/version or
+work continuity differs from the receipt, refuse completion and keep the prior
+route active.
+
+Never upload a locally built replacement to a published release. Only artifacts
+built by CI from the exact tagged SHA have valid provenance.
+
+If publication was transiently interrupted, `release-recut` snapshots the prior
+run before re-pushing the tag, waits only for a newer exact-identity run, and then
+repeats both artifact checks:
+
+```text
+make release-recut TAG=v0.1.1
+make verify-release-completeness TAG=v0.1.1
+```
+
+If the tagged SHA is red or an artifact is functionally invalid, do not paper
+over it. Fix forward on development, repeat the full gate and exact-SHA CI
+check, then cut the next prerelease tag.
 
 ## Traps
 
-**`make verify-release-artifact` is not the gate.** It only proves "non-draft and
-at least one asset exists." A release with one binary and no SBOM, no checksums,
-and no Linux build passes it. Use `verify-release-completeness`.
+- **A cancelled CI run is NOT a verdict.** Cancellation, timeout, missing CI,
+  and a successful run for a different SHA all block promotion.
+- A successful build command does not prove a usable package. Execute each
+  packaged form and require its smoke attestation before publication.
+- Workflow-artifact retention is not release publication. Missing uploads fail
+  immediately, and only the checksummed GitHub Release set is the durable
+  release verdict.
+- Cleanup traps are part of the gate. They preserve an existing primary failure
+  and turn a detach, container-removal, or temporary-directory cleanup failure
+  into a red step when the smoke itself succeeded.
+- Never repair a release with locally rebuilt files. Re-run CI from the exact
+  tagged SHA when safe, or fix forward and cut a new prerelease.
+- If concurrent automation replaces uncommitted release work, stop writing to
+  the canonical checkout, create an isolated worktree, and follow
+  [Codex file-change recovery](features/CODEX_FILE_CHANGE_RECOVERY.md). Replay
+  only an audited thread/ordinal range; never use a broad restore or reset.
 
-**A poll timeout means "still building", not "failed."** A cold, tag-triggered
-full-matrix build runs **30–60 minutes**, while `release-cut`'s local poll gives
-up after ~10. If the poll exhausts, do **not** conclude the release is broken —
-re-check later with `make verify-release-completeness TAG=...`.
+## Long-lived practitioner failure history
 
-**`make release-create` cannot publish.** It is a CI-green-gated, **draft-only**
-single-binary fallback that prints an `INCOMPLETE RELEASE` banner. It exists for
-bootstrap situations only. (Before it was gated, it was exactly how beta.1
-escaped: no CI check, one binary, errors swallowed by `|| echo`, no prerelease
-flag.) Finish a draft by uploading the real CI artifacts, passing the
-completeness check, then un-drafting.
+Reviewed on 2026-08-30, two long-running practitioner reports explain why
+v0.1.1 and earlier beta releases fail closed instead of trusting a successful
+build command or a well-named transfer artifact:
 
-## Repairing a published release
+- GitHub Actions upload-artifact
+  [issue #290](https://github.com/actions/upload-artifact/issues/290), opened in
+  2022, records practitioner trouble with artifact retention/storage behavior.
+  Beta4 treats workflow artifacts as short-lived transfer objects, requires
+  every upload to fail when files are absent, and publishes a checksummed
+  release set rather than relying on retained workflow artifacts. The same
+  trust boundary is why malformed, oversized, or comment-only installer
+  content becomes an observable pre-publish failure.
+- PyInstaller
+  [issue #5360](https://github.com/pyinstaller/pyinstaller/issues/5360) records
+  the long-lived class of frozen applications that build successfully but omit
+  optional dependency data or templates. Beta4 therefore executes each native
+  binary before packaging and executes the packaged form again before publish;
+  `gludd.spec` remains the explicit data/submodule inventory.
 
-```
-make release-upload-assets TAG=v0.1.0-beta.2 FILES='dist/a.tar.gz dist/b.deb'
-make release-set-prerelease TAG=v0.1.0-beta.2
-make verify-release-completeness TAG=v0.1.0-beta.2
-```
+These reports are design evidence, not exceptions. A matching upstream symptom
+still fails the beta4 gate.
 
-`release-upload-assets` is idempotent (`--clobber`), so re-running is safe.
+### Rollback receipt practitioner evidence
 
-**Provenance rule — this is not negotiable.** Only ever upload **CI-built
-artifacts from the tagged SHA**. Never upload locally-built binaries from a
-development tree: they would carry a different build than the tag claims, which
-is a lie about what users are running. If the tagged SHA is red and cannot
-produce artifacts, the honest move is to **cut a new tag from a green SHA**, not
-to back-fill the old one.
+Reviewed on 2026-10-05, long-lived operator reports explain why a successful
+rollback command is not accepted without immutable identity and continuity
+evidence:
 
-## A cancelled CI run is NOT a verdict
+- Argo Rollouts
+  [issue #501](https://github.com/argoproj/argo-rollouts/issues/501), opened in
+  2020, records old blue replicas terminating almost immediately despite a
+  configured scale-down delay. The receipt therefore hashes active work before
+  and after the candidate/rollback transition; selecting the old route alone is
+  insufficient.
+- Kubernetes
+  [issue #50021](https://github.com/kubernetes/kubernetes/issues/50021), opened
+  in 2017, records `rollout undo` reporting success while a failed revision
+  remained and rollout status could not reach a healthy terminal state. The
+  receipt consequently requires restored prior version and health evidence in
+  addition to a restoration status string.
+- GitHub Community
+  [discussion #161656](https://github.com/orgs/community/discussions/161656)
+  demonstrates that deleting and re-uploading a release asset under the same
+  name changes its digest. Gludd binds the prior route, candidate artifact,
+  every smoke attestation, and the receipt itself by SHA-256; a matching name is
+  never treated as immutable identity. The post-publication replay therefore
+  downloads the hosted evidence and rechecks `SHA256SUMS` instead of trusting
+  the successful upload step or the runner's original staging bytes.
 
-`.github/workflows/build.yml` queues push-triggered runs in a concurrency group
-keyed on the **branch**, and GitHub keeps only **one pending run per group**. So
-**every new push to a branch silently cancels the queued run for the previous
-commit**. A cancelled run executes zero jobs — it is neither pass nor fail, it is
-the *absence* of a gate.
+These reports define refusal cases. A digest change, incomplete fan-in, missing
+health/version proof, or active-work drift cannot be waived by a successful
+command exit.
 
-Practical consequences:
+### Signed-tag automation evidence
 
-- **`make ci-await BRANCH=...` cannot give a stable verdict on a moving branch.**
-  If pushes keep landing, it will wait forever while each run is evicted.
-- **Always check a SHA, not a branch:** `make ci-verdict SHA=<full-sha>`.
-- Before tagging, confirm the tag's exact commit has a **completed, successful**
-  run. "No run" and "cancelled" both mean *not validated* — treat them as red.
+Reviewed on 2026-10-05, long-lived GitHub operator reports show why tag signing
+must be owned before publication instead of inferred from a successful release
+job:
 
-This is not hypothetical: the commit `0b6237c4` had its run cancelled after
-2m42s having run **zero jobs**, and that class of eviction is what let a
-never-validated SHA get tagged as v0.1.0-beta.1.
+- GitHub Community discussion
+  [#27016](https://github.com/orgs/community/discussions/27016) records that the
+  REST tag-creation API does not create a user-signed tag; the supported pattern
+  is to sign with Git locally and push the resulting tag object. Gludd therefore
+  creates release tags with `git tag -s -a`, verifies them locally, and only then
+  pushes the ref.
+- `actions/checkout` issue
+  [#649](https://github.com/actions/checkout/issues/649) documents signed tag
+  objects being checked out as direct commit refs in shallow workflows. Hosted
+  artifact jobs may prove the peeled commit, but they are not the owner of tag
+  signature admission; the pre-push local guard verifies the actual tag object.
+- `action-gh-release` issue
+  [#722](https://github.com/softprops/action-gh-release/issues/722) records an
+  orphaned draft release when tag creation is denied after release work starts.
+  Gludd performs signing and tag-policy checks before remote mutation so a
+  signing failure cannot create or replace hosted release state.
 
-## If CI is red for the tag
-
-You cannot honestly complete that release. Either make the exact tagged SHA green
-and `make release-recut TAG=...` (which now also requires CI-green), or cut the
-next patch/beta from a green SHA and note the superseded tag in the release
-notes. Do not paper over it.
-
-## Local artifact builds
-
-`make dist` builds the executable, bundles binaries, generates the SBOM, and
-assembles the tarball. Two things to know:
-
-- **`dist/` is half-tracked.** Build *inputs* (`install.sh`, `README.md`,
-  `general-ludd.service`, `debian/control`, `rpm/gludd.spec`, `windows/gludd.nsi`)
-  are committed; build *outputs* are gitignored. Deleting `dist/` breaks
-  `make dist`. Restore inputs with
-  `make git-restore-from REF=<sha> FILES='dist/install.sh ...'`.
-- The Linux and Windows artifacts come from the **CI matrix**, not a macOS
-  laptop. A local `make dist` cannot produce the full 12-asset set — that is
-  expected, and it is why the release must come from CI.
+The v0.1.1 tag predates this repaired wiring and is unsigned. Its published tag
+is immutable: do not delete or replace it to manufacture compliance after the
+fact. The audit trail must record that exception, and every later release is
+blocked unless the signed tag verifies before push.

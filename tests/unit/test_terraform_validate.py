@@ -20,6 +20,7 @@ common case and the suite must remain green in that state.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -30,6 +31,9 @@ import pytest
 
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
 from general_ludd.infra.terraform import TerraformGenerator
+from tests.terraform_test_support import skip_external_terraform_dependency
+
+_TF_PLUGIN_CACHE = Path(__file__).resolve().parents[2] / "infra" / "terraform" / ".plugin-cache"
 
 
 def _base_config(provider: ComputeProvider, **overrides: object) -> ComputeConfig:
@@ -121,15 +125,31 @@ def test_aws_hcl_passes_validate() -> None:
         )
         assert fmt.returncode == 0, f"fmt failed to parse: {fmt.stderr}\n{hcl}"
 
-        init = subprocess.run(
-            ["terraform", "init", "-backend=false", "-input=false"],
-            cwd=td,
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
+        _TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
+        terraform_env = os.environ.copy()
+        terraform_env["TF_PLUGIN_CACHE_DIR"] = str(_TF_PLUGIN_CACHE)
+        try:
+            init = subprocess.run(
+                [
+                    "terraform",
+                    "init",
+                    "-backend=false",
+                    "-input=false",
+                    "-no-color",
+                ],
+                cwd=td,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env=terraform_env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            skip_external_terraform_dependency(
+                "terraform init timed out while the provider registry or "
+                f"shared cache was unavailable ({exc.timeout}s)"
+            )
         if init.returncode != 0:
-            pytest.skip(
+            skip_external_terraform_dependency(
                 "terraform init failed (no network / registry unavailable): "
                 f"{init.stderr[:400]}"
             )
@@ -140,6 +160,7 @@ def test_aws_hcl_passes_validate() -> None:
             capture_output=True,
             text=True,
             timeout=60,
+            env=terraform_env,
         )
         assert validate.returncode == 0, (
             f"terraform validate failed for AWS:\n"

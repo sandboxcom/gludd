@@ -4,6 +4,8 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "smoke_daemon.py"
 
@@ -135,12 +137,12 @@ def test_start_daemon_launches_gunicorn_and_captures_child_logs(monkeypatch: Any
     assert "--access-logfile" in seen["cmd"]
     assert seen["stderr"] == mod.subprocess.STDOUT
     assert seen["env"]["GLUDD_CONFIG_DIR"] == str(config_dir)
-    assert seen["env"]["GLUDD_PSK"] == mod.SMOKE_AUTH_TOKEN
+    assert seen["env"]["GLUDD_AUTH_PSK"] == mod.SMOKE_AUTH_TOKEN
     assert seen["start_new_session"] is True
 
 
 def test_smoke_make_target_uses_python_runner_instead_of_json_tool_pipeline() -> None:
-    recipe = _target_recipe((ROOT / "Makefile").read_text(encoding="utf-8"), "smoke")
+    recipe = _target_recipe(compose_makefile(ROOT / "Makefile"), "smoke")
 
     assert "scripts/smoke_daemon.py" in recipe
     assert "json.tool" not in recipe

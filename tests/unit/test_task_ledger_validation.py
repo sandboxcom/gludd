@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from scripts.makefile_layout import compose_makefile
 from scripts.validate_task_ledger import ID_PATTERN, extract_tasks, main
 
 
@@ -190,6 +191,25 @@ class TestTemporaryTasMd:
 
 
 class TestMainExitCodes:
+    def test_checked_noncomplete_status_is_rejected(
+        self, capsys: object
+    ) -> None:
+        task = {
+            "line": "- [x] S83.157 — unfinished | status: in_progress",
+            "ids": ["S83.157"],
+            "all_ids": ["S83.157"],
+            "status": "in_progress",
+            "epoch": None,
+        }
+        with patch(
+            "scripts.validate_task_ledger.extract_tasks",
+            return_value=([task], []),
+        ):
+            rc = main()
+
+        assert rc == 1
+        assert "STATUS-MISMATCH" in capsys.readouterr().err  # type: ignore[attr-defined]
+
     def test_main_with_real_tas_md(self) -> None:
         rc = main()
         assert rc in (0, 1), f"main() returned unexpected {rc}"
@@ -203,8 +223,7 @@ class TestMainExitCodes:
 class TestMakeTargetExists:
     def test_validate_task_ledger_target_exists(self) -> None:
         repo_root = Path(__file__).resolve().parent.parent.parent
-        makefile = repo_root / "Makefile"
-        content = makefile.read_text(encoding="utf-8")
+        content = compose_makefile(repo_root / "Makefile")
         assert "validate-task-ledger:" in content
         assert "validate_task_ledger.py" in content
 

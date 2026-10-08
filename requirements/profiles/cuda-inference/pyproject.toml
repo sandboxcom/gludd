@@ -1,0 +1,21 @@
+[project]
+name = "gludd-profile-cuda-inference"
+version = "0"
+# vLLM is deployed only by the Linux CUDA image, whose interpreter is 3.12.
+# Keeping that execution boundary explicit avoids cross-Python resolutions in
+# this already large profile lock.
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "vllm==0.30.0",
+    "torch==2.13.0",
+]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+# vLLM's MCP server branch is locked independently and composed by the
+# cuda-inference set. This preserves the complete installed graph while each
+# uv project remains below the repository's 2,500-line lock ceiling.
+exclude-dependencies = [
+    "mcp",
+]

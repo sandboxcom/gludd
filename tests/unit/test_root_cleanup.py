@@ -5,6 +5,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -33,6 +35,25 @@ def test_platform_specific_node_dependencies_are_never_tracked() -> None:
 
     ignored = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "node_modules/" in ignored
+
+
+def test_ignored_runtime_state_is_never_tracked() -> None:
+    """Cleanup-owned lock and status files must not be committed as source."""
+    runtime_state = {".ansible/.lock", ".gate-status"}
+    tracked = set(
+        subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    )
+    ignored = set((ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
+
+    assert runtime_state <= ignored
+    assert tracked.isdisjoint(runtime_state), (
+        f"cleanup-owned runtime state is tracked: {sorted(tracked & runtime_state)}"
+    )
 
 
 def test_hot_reload_node_dependencies_are_locked_and_installed_in_ci() -> None:
@@ -71,7 +92,7 @@ def test_node_package_manager_is_exactly_pinned() -> None:
 
 def test_security_audit_covers_locked_node_dependencies() -> None:
     """The comprehensive audit must include the Node plugin/build supply chain."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert "node-deps-audit:" in makefile
     security_audit = makefile[makefile.index("security-audit:") : makefile.index("clean-artifacts:")]
     assert "node-deps-audit" in security_audit

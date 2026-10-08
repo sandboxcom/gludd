@@ -177,7 +177,7 @@ class TestTLVParsing:
 
     def test_multiple_tlvs(self) -> None:
         alpn = struct.pack("!BH5s", 0x01, 5, b"h2-14")
-        auth = struct.pack("!BH9s", 0x02, 9, b"example.com")
+        auth = struct.pack("!BH11s", 0x02, 11, b"example.com")
         hdr = _build_v2_header(
             ver_cmd=0x21,
             protocol=0x11,
@@ -204,22 +204,24 @@ class TestTLVParsing:
         assert h.tlvs[0].value == b""
 
     def test_ssl_tlv(self) -> None:
-        ssl_data = b"TLSv1.3\x00\x00"
-        tlv = struct.pack(f"!BBH{len(ssl_data)}s", 0x21, 0x00, len(ssl_data), ssl_data)
+        version = b"TLSv1.3"
+        version_tlv = struct.pack("!BH8s", 0x21, len(version), version)
+        ssl_data = struct.pack("!BI", 0x01, 0) + version_tlv
+        tlv = struct.pack(f"!BH{len(ssl_data)}s", 0x20, len(ssl_data), ssl_data)
         hdr = _build_v2_header(ver_cmd=0x21, protocol=0x11, addr_data=b"\x00" * 12 + tlv)
         h = parse_proxy_header(hdr)
-        assert h.tlvs[0].type_name == "SSL_VERSION"
+        assert h.tlvs[0].type_name == "SSL"
         assert b"TLSv1.3" in h.tlvs[0].value
 
     def test_tlv_utf8_accessor(self) -> None:
-        tlv = struct.pack("!BBH9s", 0x02, 0x00, 9, b"example.com")
+        tlv = struct.pack("!BH11s", 0x02, 11, b"example.com")
         hdr = _build_v2_header(ver_cmd=0x21, protocol=0x11, addr_data=b"\x00" * 12 + tlv)
         h = parse_proxy_header(hdr)
         assert h.tlvs[0].value_utf8 == "example.com"
 
     def test_tlv_lookup_by_type(self) -> None:
-        a = struct.pack("!BBH4s", 0x01, 0x00, 4, b"h2-17")
-        b = struct.pack("!BBH9s", 0x02, 0x00, 9, b"myhost.local")
+        a = struct.pack("!BH5s", 0x01, 5, b"h2-17")
+        b = struct.pack("!BH12s", 0x02, 12, b"myhost.local")
         hdr = _build_v2_header(ver_cmd=0x21, protocol=0x11, addr_data=b"\x00" * 12 + a + b)
         h = parse_proxy_header(hdr)
         assert h.tlv_by_type(0x01) is not None
@@ -227,7 +229,7 @@ class TestTLVParsing:
         assert h.tlv_by_type(0x99) is None
 
     def test_truncated_tlv_handled(self) -> None:
-        partial = struct.pack("!BBH", 0x01, 0x00, 100)
+        partial = struct.pack("!BH", 0x01, 100) + b"short"
         hdr = _build_v2_header(ver_cmd=0x21, protocol=0x11, addr_data=b"\x00" * 12 + partial)
         h = parse_proxy_header(hdr)
         assert h.tlvs == []

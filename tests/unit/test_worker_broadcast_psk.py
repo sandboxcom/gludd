@@ -1,6 +1,6 @@
 """Regression: WorkerBroadcaster must attach the daemon PSK to internal /admin POSTs.
 
-Without the Authorization: Bearer <GLUDD_PSK> header, broadcast_reload /
+Without the Authorization: Bearer <GLUDD_AUTH_PSK> header, broadcast_reload /
 broadcast_model_update 401 silently against a secured worker and the fleet never
 converges. When no PSK is configured (auth disabled) no header is sent.
 """
@@ -13,7 +13,7 @@ from general_ludd.reload.worker_broadcast import WorkerBroadcaster, WorkerInfo
 
 
 def test_broadcast_reload_attaches_psk_when_set(monkeypatch) -> None:
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="w1", address="https://worker-1.internal:8001"))
     with patch("httpx.post") as mock_post:
@@ -24,7 +24,7 @@ def test_broadcast_reload_attaches_psk_when_set(monkeypatch) -> None:
 
 
 def test_broadcast_reload_no_header_without_psk(monkeypatch) -> None:
-    monkeypatch.delenv("GLUDD_PSK", raising=False)
+    monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="w1", address="https://worker-1.internal:8001"))
     with patch("httpx.post") as mock_post:
@@ -34,7 +34,7 @@ def test_broadcast_reload_no_header_without_psk(monkeypatch) -> None:
 
 
 def test_broadcast_model_update_attaches_psk_when_set(monkeypatch) -> None:
-    monkeypatch.setenv("GLUDD_PSK", "modelpsk")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "modelpsk")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="w1", address="https://worker-1.internal:8001"))
     with patch("httpx.post") as mock_post:
@@ -56,7 +56,7 @@ _SAFE_HTTPS_ADDR = "https://worker-1.internal"  # legitimate https worker
 def test_register_refuses_metadata_address(monkeypatch) -> None:
     """A worker whose address is the cloud-metadata IP must never be registered
     (so the PSK can never be POSTed to it)."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="meta", address=_METADATA_ADDR))
     assert b.list_workers() == []
@@ -65,7 +65,7 @@ def test_register_refuses_metadata_address(monkeypatch) -> None:
 def test_register_refuses_plain_http_address(monkeypatch) -> None:
     """A plain-http (non-https) address must be refused — the PSK would travel
     in cleartext."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="evil", address=_EVIL_HTTP_ADDR))
     assert b.list_workers() == []
@@ -74,7 +74,7 @@ def test_register_refuses_plain_http_address(monkeypatch) -> None:
 def test_broadcast_reload_never_posts_psk_to_metadata_address(monkeypatch) -> None:
     """Registering a metadata address then broadcasting must issue NO POST at all
     — the Bearer PSK is never sent to 169.254.169.254."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="meta", address=_METADATA_ADDR))
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
@@ -85,7 +85,7 @@ def test_broadcast_reload_never_posts_psk_to_metadata_address(monkeypatch) -> No
 
 def test_broadcast_reload_never_posts_psk_to_plain_http(monkeypatch) -> None:
     """A plain-http attacker address must never receive the PSK Bearer header."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="evil", address=_EVIL_HTTP_ADDR))
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
@@ -97,7 +97,7 @@ def test_broadcast_reload_never_posts_psk_to_plain_http(monkeypatch) -> None:
 def test_broadcast_reload_defense_in_depth_skips_injected_unsafe_worker(monkeypatch) -> None:
     """Even if an unsafe worker slips directly into the registry (bypassing
     register), broadcast_reload must skip it and NOT send the Bearer PSK."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     # Bypass register() to simulate a registry that already holds a bad entry.
     b._workers["meta"] = WorkerInfo(worker_id="meta", address=_METADATA_ADDR)
@@ -113,7 +113,7 @@ def test_broadcast_reload_defense_in_depth_skips_injected_unsafe_worker(monkeypa
 def test_broadcast_reload_still_posts_to_https_worker_with_psk(monkeypatch) -> None:
     """Regression: a legitimate https worker STILL receives the broadcast WITH the
     Bearer PSK header — the fix must not weaken the happy path."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
@@ -127,7 +127,7 @@ def test_broadcast_reload_still_posts_to_https_worker_with_psk(monkeypatch) -> N
 
 def test_broadcast_model_update_never_posts_psk_to_metadata_address(monkeypatch) -> None:
     """broadcast_model_update gets the same SSRF treatment: no POST to metadata."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="meta", address=_METADATA_ADDR))
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
@@ -138,7 +138,7 @@ def test_broadcast_model_update_never_posts_psk_to_metadata_address(monkeypatch)
 
 def test_broadcast_model_update_defense_in_depth_skips_injected_unsafe_worker(monkeypatch) -> None:
     """broadcast_model_update skips an injected unsafe worker without sending PSK."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b._workers["evil"] = WorkerInfo(worker_id="evil", address=_EVIL_HTTP_ADDR)
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
@@ -152,7 +152,7 @@ def test_broadcast_model_update_defense_in_depth_skips_injected_unsafe_worker(mo
 def test_broadcast_model_update_still_posts_to_https_worker_with_psk(monkeypatch) -> None:
     """Regression: legitimate https worker still gets the model-update broadcast
     WITH the Bearer PSK."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
@@ -178,7 +178,7 @@ _LOGGER_NAME = "general_ludd.reload.worker_broadcast"
 
 def test_allowlist_configured_permits_listed_worker(monkeypatch) -> None:
     """A worker IN the configured allowlist is broadcast to, WITH the PSK."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster(allowlist={"ok"})
     b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
@@ -191,7 +191,7 @@ def test_allowlist_configured_permits_listed_worker(monkeypatch) -> None:
 
 def test_allowlist_configured_skips_unlisted_worker(monkeypatch) -> None:
     """A worker NOT in the configured allowlist is skipped: no POST, no PSK."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     # Allowlist a different worker; "ok" (a perfectly safe https target) is absent.
     b = WorkerBroadcaster(allowlist={"some-other-worker"})
     b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
@@ -207,7 +207,7 @@ def test_allowlist_configured_skips_unlisted_worker(monkeypatch) -> None:
 def test_allowlist_matches_by_address_from_env(monkeypatch) -> None:
     """The allowlist may be sourced from GLUDD_WORKER_ALLOWLIST and match on the
     worker ADDRESS (not just its id)."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     monkeypatch.setenv("GLUDD_WORKER_ALLOWLIST", f"other-id, {_SAFE_HTTPS_ADDR}")
     b = WorkerBroadcaster()  # no constructor allowlist -> defers to env
     b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
@@ -233,7 +233,7 @@ def test_no_allowlist_preserves_behavior_and_warns(monkeypatch, caplog) -> None:
     # checking level/propagate, so `propagate = True` alone can't fix it.
     logging.getLogger(_LOGGER_NAME).disabled = False
     logging.getLogger(_LOGGER_NAME).propagate = True
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     monkeypatch.delenv("GLUDD_WORKER_ALLOWLIST", raising=False)
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
@@ -250,7 +250,7 @@ def test_no_allowlist_preserves_behavior_and_warns(monkeypatch, caplog) -> None:
 def test_allowlist_does_not_bypass_ssrf_guard(monkeypatch) -> None:
     """The allowlist is IN ADDITION to the SSRF guard, not a replacement: an
     allowlisted-but-unsafe address is STILL refused and the PSK never sent."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     # Allowlist the id, then inject a worker with an UNSAFE (metadata) address.
     b = WorkerBroadcaster(allowlist={"meta"})
     b._workers["meta"] = WorkerInfo(worker_id="meta", address=_METADATA_ADDR)
@@ -265,7 +265,7 @@ def test_allowlist_does_not_bypass_ssrf_guard(monkeypatch) -> None:
 def test_allowlist_configured_skips_unlisted_worker_model_update(monkeypatch) -> None:
     """broadcast_model_update honors the same allowlist gate: an unlisted worker
     gets no POST and no PSK."""
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster(allowlist={"some-other-worker"})
     b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
@@ -330,7 +330,7 @@ def test_ping_all_still_pings_safe_https_worker(monkeypatch) -> None:
 
 
 def test_broadcast_reload_sets_no_redirect_and_tls_verify(monkeypatch) -> None:
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:
@@ -341,7 +341,7 @@ def test_broadcast_reload_sets_no_redirect_and_tls_verify(monkeypatch) -> None:
 
 
 def test_broadcast_model_update_sets_no_redirect_and_tls_verify(monkeypatch) -> None:
-    monkeypatch.setenv("GLUDD_PSK", "secret123")
+    monkeypatch.setenv("GLUDD_AUTH_PSK", "secret123")
     b = WorkerBroadcaster()
     b.register(WorkerInfo(worker_id="ok", address=_SAFE_HTTPS_ADDR))
     with patch("general_ludd.reload.worker_broadcast.httpx.post") as mock_post:

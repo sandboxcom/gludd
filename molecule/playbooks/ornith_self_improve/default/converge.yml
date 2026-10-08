@@ -6,10 +6,17 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
     mock_repo_path: "/tmp/gludd-ornith-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8897', true) }}"
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Reset mock-daemon request log (isolate this role's endpoint hits)
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ mock_port }}/__requests/reset"
+        url: "{{ daemon_url }}/__requests/reset"
         method: POST
         status_code: 200
 
@@ -18,7 +25,7 @@
         name: general_ludd.agent.ornith_self_improve
       vars:
         ornith_enabled: true
-        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        daemon_url: "{{ mock_daemon_url }}"
         psk: ""
         # The role auto-picks from the mock's rejected pairs (all 3 target
         # playbooks/agent_orchestrate.yml, so the rejection threshold is met).
@@ -29,3 +36,18 @@
         repo_path: "{{ mock_repo_path }}"
         parent_agent_todo_id: "TODO-MOCK-OSI-1"
         artifact_dir: "/tmp/gludd-ornith-self-improve-{{ mock_port }}"
+
+    - name: Snapshot request evidence before the session handler stops the daemon
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/__requests"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: _ornith_request_log
+      changed_when: false
+
+    - name: Persist bounded endpoint evidence for verify
+      ansible.builtin.copy:
+        content: "{{ _ornith_request_log.json | to_nice_json }}"
+        dest: "/tmp/gludd-ornith-self-improve-{{ mock_port }}/request-log.json"
+        mode: "0600"

@@ -20,9 +20,11 @@ def test_plugin_exists_and_is_registered() -> None:
     assert "./.opencode/plugin/enforce-floor-v2.ts" in registered
 
 
-def test_plugin_defaults_to_ten_inflight_dispatches() -> None:
+def test_plugin_uses_canonical_opt_in_floor_and_hard_cap() -> None:
     source = _source()
-    assert 'GLUDD_DISPATCH_FLOOR || "10"' in source
+    assert "process.env.GLUDD_DISPATCH_FLOOR ?? String(MIN_DISPATCHES)" in source
+    assert "Math.min(HARD_MAX_DISPATCHES, clampDispatchCount(parsedFloor))" in source
+    assert "if (!FLOOR_ENFORCE || FLOOR === 0) return" in source
     assert "Math.max(0, s.dispatched - s.completed)" in source
     assert "Math.max(0, FLOOR - inFlight)" in source
 

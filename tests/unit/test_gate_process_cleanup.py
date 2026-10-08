@@ -2,7 +2,7 @@
 
 Covers:
 - gate-cleanup kills stale process (SIGTERM → 10s wait → SIGKILL)
-- gate-background sets timeout (GATE_TIMEOUT env var, ABORTED marker)
+- gate-background delegates timeout cleanup to the session launcher
 - watchdog _check_gate_background detects stale gate
 """
 
@@ -13,13 +13,16 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
+GITIGNORE = ROOT / ".gitignore"
 
 
 def _makefile_content() -> str:
     assert MAKEFILE.exists(), "Makefile must exist"
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 # --- Makefile structural tests ---
@@ -53,20 +56,32 @@ def test_gate_cleanup_removes_old_logs():
     )
 
 
+def test_gate_cleanup_removes_atomic_publication_scratch() -> None:
+    content = _makefile_content()
+    idx = content.find("gate-cleanup:")
+    recipe_block = content[idx : idx + 800]
+
+    assert ".gate-status.next" in recipe_block
+    assert ".gate-status.running" in recipe_block
+
+
+def test_gate_atomic_publication_scratch_is_ignored() -> None:
+    ignored = set(GITIGNORE.read_text(encoding="utf-8").splitlines())
+
+    assert ".gate-status.next" in ignored
+    assert ".gate-status.running" in ignored
+
+
 def test_gate_kill_waits_10s_before_sigkill():
+    from scripts.kill_owned_gate import DEFAULT_GRACE_SECONDS
+
     content = _makefile_content()
     idx = content.find("gate-kill:")
     assert idx != -1
-    recipe_block = content[idx : idx + 800]
-    assert "-lt 10" in recipe_block, (
-        "gate-kill must wait 10 seconds before SIGKILL"
-    )
-    assert "kill -TERM" in recipe_block, (
-        "gate-kill must send SIGTERM first"
-    )
-    assert "kill -KILL" in recipe_block, (
-        "gate-kill must send SIGKILL after wait"
-    )
+    recipe_block = content[idx : content.find("\n\n", idx)]
+    assert DEFAULT_GRACE_SECONDS == 10.0
+    assert "kill_owned_gate.py" in recipe_block
+    assert "APPLY=1" in recipe_block
 
 
 def test_gate_background_has_timeout_watcher():
@@ -77,32 +92,32 @@ def test_gate_background_has_timeout_watcher():
     assert "GATE_TIMEOUT" in recipe_block, (
         "gate-background must reference GATE_TIMEOUT env var"
     )
-    assert "sleep $$GATE_TIMEOUT_VAL" in recipe_block, (
-        "gate-background must spawn timeout watcher with sleep"
-    )
-    assert "GATE: ABORTED" in recipe_block, (
-        "gate-background timeout must write ABORTED marker"
-    )
+    assert "scripts/start_gate_background.py" in recipe_block
+    launcher = (ROOT / "scripts/start_gate_background.py").read_text()
+    assert "start_new_session=True" in launcher
+    assert "=== GATE: ABORTED (timeout {timeout_text}s) ===" in launcher
 
 
-def test_gate_background_timeout_default_3600():
+def test_gate_background_timeout_covers_a_complete_cold_gate():
     content = _makefile_content()
     idx = content.find("gate-background:")
     recipe_block = content[idx : idx + 3000]
-    assert ":-3600" in recipe_block, (
-        "gate-background must default GATE_TIMEOUT to 3600s (1 hour)"
+    assert "GATE_TIMEOUT ?= 21600" in content
+    assert '--timeout-seconds "$(GATE_TIMEOUT)"' in recipe_block, (
+        "gate-background must preserve a six-hour outer deadline for a cold gate"
     )
 
 
 # --- Watchdog _check_gate_background tests ---
 
 
-def test_watchdog_gate_max_runtime_is_one_hour():
+def test_watchdog_gate_max_runtime_matches_the_cold_gate_deadline():
     import scripts.agent_watchdog as aw
     importlib = __import__("importlib")
     importlib.reload(aw)
-    assert aw.GATE_MAX_RUNTIME_SECS == 3600, (
-        f"GATE_MAX_RUNTIME_SECS must be 3600 (1 hour), got {aw.GATE_MAX_RUNTIME_SECS}"
+    assert aw.GATE_MAX_RUNTIME_SECS == 21600, (
+        "GATE_MAX_RUNTIME_SECS must be 21600 (six hours), got "
+        f"{aw.GATE_MAX_RUNTIME_SECS}"
     )
 
 

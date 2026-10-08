@@ -902,7 +902,7 @@ for _, v := range items {
 
 ### 3.1 Standard Go Project Layout
 
-```
+```text
 myproject/
 ├── cmd/                    # Main applications (one dir per binary)
 │   ├── server/

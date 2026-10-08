@@ -14,13 +14,15 @@ gate. Gate integrity must hold across ALL commit targets.
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
 
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target. Assert target exists."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
@@ -98,7 +100,7 @@ class TestCommitTargetsEnforceGate:
         recipe invokes `git commit` without also referencing `.gate-status`.
         Catches future regressions where someone adds a new bypass target.
         """
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         # Find every target that contains "git commit" in its recipe.
         # Split the Makefile into target blocks on blank-line boundaries.
         blocks = content.split("\n\n")
@@ -158,7 +160,7 @@ class TestCommitLintGuard:
 
     def test_lint_guard_exists_in_all_commit_targets(self):
         """Verify _commit-lint-guard appears in every commit target prerequisite."""
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         commit_targets = ["repo-commit", "ship-commit", "git-commit", "commit-no-verify"]
         missing = []
         for target in commit_targets:
@@ -174,7 +176,7 @@ class TestCommitLintGuard:
 
     def test_no_commit_target_skips_lint(self):
         """No commit target that invokes 'git commit' may escape the lint guard."""
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         blocks = content.split("\n\n")
         offenders = []
         for block in blocks:
@@ -191,7 +193,20 @@ class TestCommitLintGuard:
             target_name = first.split(":")[0].strip()
             if target_name.startswith("."):
                 continue
-            if target_name in ("help", "usage", "git-reset", "git-revert", "submodule-pin", "_auto-commit-specs"):
+            if target_name in (
+                "help",
+                "usage",
+                "git-reset",
+                "git-revert",
+                "submodule-pin",
+                "_auto-commit-specs",
+                # merge-forward targets run _commit-lint-guard INLINE in the
+                # recipe (see Makefile); their prereq line must stay empty
+                # because test_development_merge_forward*.py pin
+                # "^development-merge-forward...:" with no prerequisites.
+                "development-merge-forward",
+                "development-merge-forward-batch",
+            ):
                 continue
             # Check the prerequisite line (first line after the target name)
             prereq_line = first
@@ -207,6 +222,6 @@ class TestMakeGateStatusFile:
 
     def test_gate_status_path_constant(self):
         """The gate status filename must be the same everywhere it's referenced."""
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         # All references should use the literal ".gate-status" filename.
         assert content.count(".gate-status") >= 4, "Expected .gate-status referenced in multiple gate + commit targets"

@@ -12,9 +12,9 @@ It should NOT be registered in a ``SourceRegistry`` or loaded via
 
 Design constraints (intentional, do not "simplify" away):
 
-* No imports from ``general_ludd`` base classes, package ``__init__`` or other
-  connectors -- this module is deliberately standalone so it can be vendored or
-  tested in isolation.
+* Connector behavior stays independent of connector base classes and package
+  initialization; transport and URL-policy helpers live in the private sibling
+  module :mod:`general_ludd.connectors._slack_transport`.
 * The HTTP transport is *injected*. Production callers pass a real client; tests
   pass a fake. We never construct a global/default network client at import time.
 * SSRF protection: ``base_url`` and ``webhook_url`` are both validated against
@@ -31,168 +31,30 @@ Design constraints (intentional, do not "simplify" away):
 
 from __future__ import annotations
 
-import datetime as _dt
 import logging
 import os
-from typing import Protocol, cast, runtime_checkable
-from urllib.parse import urlsplit
+from typing import cast
 
-from general_ludd.connectors._errors import SSRFError
-from general_ludd.connectors._protocols import HttpResponse
-from general_ludd.security.ssrf import is_url_blocked
+from general_ludd.connectors._slack_transport import (
+    CallableHttpTransport,
+    CallableTransportAdapter,
+    HttpTransport,
+    assert_safe_url,
+    invoke_transport,
+    parse_slack_ts,
+)
+from general_ludd.connectors._slack_transport import (
+    _CallbackResponse as _CallbackResponse,
+)
 
 logger = logging.getLogger(__name__)
 
-
-def _invoke_transport(transport: object, method: str, url: str, **kwargs: object) -> HttpResponse:
-    """Support object-, request-, and callable-style injected transports."""
-    fn = getattr(transport, method.lower(), None)
-    if callable(fn):
-        result = fn(url, **kwargs)
-    else:
-        request = getattr(transport, "request", None)
-        if callable(request):
-            result = request(method, url, **kwargs)
-        else:
-            get = getattr(transport, "get", None)
-            if method.lower() != "get" and callable(get):
-                # Some lightweight injected transports expose only ``get``
-                # while recording all HTTP calls. Keep POST notification tests
-                # and adapters compatible without constructing a real client.
-                result = get(url, **kwargs)
-            elif callable(transport):
-                result = transport(method, url, **kwargs)
-            else:
-                raise TypeError("transport must expose get/post/request or be callable")
-    if isinstance(result, tuple) and len(result) == 2:
-        class _TupleResponse:
-            status_code = int(result[0]) if isinstance(result[0], int) else 0
-            def json(self) -> object:
-                return result[1]
-        return cast(HttpResponse, _TupleResponse())
-    return cast(HttpResponse, result)
+_invoke_transport = invoke_transport
+_CallableTransportAdapter = CallableTransportAdapter
+_assert_safe_url = assert_safe_url
+_parse_slack_ts = parse_slack_ts
 
 __all__ = ["HttpTransport", "SlackSource"]
-
-
-@runtime_checkable
-class HttpTransport(Protocol):
-    """Injectable HTTP transport.
-
-    Implementations must accept ``url``, ``headers``, optional ``params`` /
-    ``data`` / ``json`` and a ``timeout`` and return an :class:`HttpResponse`.
-    """
-
-    def get(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str],
-        params: dict[str, object] | None = ...,
-        timeout: float = ...,
-    ) -> HttpResponse:  # pragma: no cover - structural typing only
-        ...
-
-    def post(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str],
-        data: dict[str, object] | None = ...,
-        json: dict[str, object] | None = ...,
-        timeout: float = ...,
-    ) -> HttpResponse:  # pragma: no cover - structural typing only
-        ...
-
-
-class CallableHttpTransport(Protocol):
-    """Compact method-and-URL callback used by generated connector workflows."""
-
-    def __call__(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: dict[str, str],
-        params: dict[str, object] | None = ...,
-        data: dict[str, object] | None = ...,
-        json: dict[str, object] | None = ...,
-        timeout: float = ...,
-    ) -> tuple[int, object]: ...
-
-
-class _CallbackResponse:
-    def __init__(self, status_code: int, body: object) -> None:
-        self.status_code = int(status_code)
-        self._body = body
-
-    @property
-    def text(self) -> str:
-        return self._body if isinstance(self._body, str) else str(self._body)
-
-    def json(self) -> object:
-        return self._body
-
-
-class _CallableTransportAdapter:
-    """Expose a compact callback through Slack's response-object transport."""
-
-    def __init__(self, callback: CallableHttpTransport) -> None:
-        self._callback = callback
-
-    def get(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str],
-        params: dict[str, object] | None = None,
-        timeout: float = 30.0,
-    ) -> HttpResponse:
-        status, body = self._callback(
-            "GET",
-            url,
-            headers=headers,
-            params=params,
-            timeout=timeout,
-        )
-        return _CallbackResponse(status, body)
-
-    def post(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str],
-        data: dict[str, object] | None = None,
-        json: dict[str, object] | None = None,
-        timeout: float = 30.0,
-    ) -> HttpResponse:
-        status, body = self._callback(
-            "POST",
-            url,
-            headers=headers,
-            data=data,
-            json=json,
-            timeout=timeout,
-        )
-        return _CallbackResponse(status, body)
-
-
-def _assert_safe_url(url: str, label: str = "url") -> str:
-    """Validate ``url`` against SSRF and return a normalized (no trailing /) copy."""
-    if is_url_blocked(url, scheme_allowlist=("http", "https")):
-        parts = urlsplit(url)
-        host = parts.hostname or ""
-        raise SSRFError(f"forbidden {label} host or address: {host!r}")
-    return url.rstrip("/")
-
-
-def _parse_slack_ts(ts: str) -> str | None:
-    """Convert a Slack timestamp (``seconds.microseconds``) to ISO-8601 UTC."""
-    try:
-        seconds = float(ts)
-    except (ValueError, TypeError):
-        return None
-    return _dt.datetime.fromtimestamp(seconds, tz=_dt.UTC).isoformat()
 
 
 class SlackSource:
@@ -228,6 +90,7 @@ class SlackSource:
         timeout: float = 30.0,
         env: dict[str, str] | None = None,
     ) -> None:
+        """Validate configuration and initialize the injected transport."""
         base_url = config.get("base_url")
         if not isinstance(base_url, str) or not base_url:
             raise ValueError("config.base_url is required")
@@ -315,10 +178,8 @@ class SlackSource:
         ``chat.postMessage`` (API path). Fail-soft: never raises, returns a
         dict with ``ok`` and optionally ``error`` / ``status_code``.
 
-        Returns
-        -------
-        dict
-            ``{"ok": bool, ...}``.
+        Returns:
+            A dict containing ``{"ok": bool, ...}``.
         """
         if not self._webhook_url and not self._channel_id:
             raise ValueError(
@@ -385,9 +246,7 @@ class SlackSource:
             Maximum number of messages to retrieve (passed as ``limit`` to the
             Slack API). Defaults to the Slack default (typically 100).
 
-        Returns
-        -------
-        list[dict[str, object]]
+        Returns:
             Normalized records, one per message. Empty list on transport errors.
         """
         if not self._channel_id:

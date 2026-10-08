@@ -11,11 +11,17 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def _read(path: str) -> str:
     return (ROOT / path).read_text()
+
+
+def _makefile_text() -> str:
+    return compose_makefile(ROOT / "Makefile")
 
 
 def _current_version() -> str:
@@ -51,11 +57,11 @@ class TestMakefileReleaseTargets:
     """Essential release pipeline targets must exist in the Makefile."""
 
     def test_release_cut_target_exists(self):
-        makefile = _read("Makefile")
+        makefile = _makefile_text()
         assert re.search(r"^release-cut:\s*$", makefile, re.MULTILINE), "release-cut target must exist in Makefile"
 
     def test_verify_release_completeness_target_exists(self):
-        makefile = _read("Makefile")
+        makefile = _makefile_text()
         assert re.search(r"^verify-release-completeness:\s*$", makefile, re.MULTILINE), (
             "verify-release-completeness target must exist in Makefile"
         )
@@ -115,16 +121,21 @@ class TestGitTagSemver:
             f"{', '.join(violations)}. All tags: {all_tags_str}"
         )
 
-    def test_release_tags_have_beta_prerelease(self):
-        """All v0.1.0-* release tags must have a semver prerelease suffix."""
+    def test_release_tags_are_semver_prerelease_or_current_stable(self):
+        """Release tags must be semver; the current stable tag is allowed, otherwise a prerelease suffix is required."""
         tags = self._git_tag_list()
         release_tags = [t for t in tags if t.startswith("v")]
+        version = _current_version()
+        stable_tag = f"v{version}"
         stray: list[str] = []
         for tag in release_tags:
-            # Must be semver with a prerelease: v0.1.0-alpha.N, v0.1.0-beta.N, etc.
-            if not re.match(r"^v0\.1\.0-[a-zA-Z0-9]+.*$", tag):
+            # Allow the canonical stable tag for the current version.
+            if tag == stable_tag:
+                continue
+            # All other release tags must carry a prerelease suffix.
+            if not re.match(r"^v\d+\.\d+\.\d+-[a-zA-Z0-9.]+$", tag):
                 stray.append(tag)
         assert not stray, (
-            f"Release tags not matching v0.1.0-prerelease pattern: "
+            f"Release tags not matching vN.N.N-prerelease (or current stable {stable_tag}): "
             f"{', '.join(stray)}. All v-tags: {', '.join(release_tags)}"
         )

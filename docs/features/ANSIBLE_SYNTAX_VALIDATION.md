@@ -3,18 +3,20 @@
 ## Contract
 
 The tracked `make ansible-syntax` target checks every registered
-`playbooks/*.yml` file with the locked Ansible runtime and an explicit inline
-inventory:
+`playbooks/*.yml` file with the locked Ansible runtime and the explicit,
+read-only `config/ansible_syntax_inventory.yml` inventory. It resolves both
+host boundaries used by tracked playbooks:
 
 ```text
-localhost,
+localhost
+gludd_model_workers
 ```
 
-The trailing comma selects Ansible's host-list inventory plugin. It makes the
-single validation host part of `all`, so playbooks targeting either
-`localhost` or `all` have a concrete inventory during parsing. Syntax
-validation remains read-only: it does not execute tasks, contact an external
-host, or load a deployment inventory.
+The inventory makes `localhost` part of `all` and provides a non-routable
+validation alias in the `gludd_model_workers` group. Playbooks targeting
+`localhost`, `all`, or the universal remote-worker group therefore have a
+concrete host pattern during parsing. Syntax validation remains read-only: it
+does not execute tasks, contact a host, or load a deployment inventory.
 
 The guardrail test requires both a zero exit status and warning-free output.
 Warnings are treated as defects because repeating them for every playbook can
@@ -31,14 +33,16 @@ thread](https://forum.ansible.com/t/unable-to-parse-etc-ansible-hosts-as-an-inve
 shows the paired "No inventory was parsed" and implicit-localhost warnings that
 the Gludd target reproduced.
 
-The durable lesson is to declare the validation inventory at the command
-boundary. Suppressing warnings would conceal a missing input and would not
-exercise the same host-pattern resolution as an explicit inventory.
+The durable lesson is to declare a validation inventory at the command
+boundary and keep it aligned with every tracked playbook host boundary.
+Suppressing warnings would conceal a missing input and would not exercise the
+same host-pattern resolution as an explicit inventory.
 
 ## Zero-downtime adoption
 
-This target is a pre-deployment read-only check. Adding the explicit inventory
-does not modify playbooks, running services, persistent state, or production
-inventory selection. Old and new CI workers may overlap safely while the
-change rolls out; each invocation is self-contained and validates the same
-tracked playbook set. A failure blocks promotion before any deployment action.
+This target is a pre-deployment read-only check. Updating the explicit
+inventory does not modify playbooks, running services, persistent state, or
+production inventory selection. Old and new CI workers may overlap safely
+while the change rolls out; each invocation is self-contained and validates
+the same tracked playbook set. A failure blocks promotion before any
+deployment action.

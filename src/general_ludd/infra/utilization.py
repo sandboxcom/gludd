@@ -1,3 +1,5 @@
+"""Compute endpoint tracking, task routing, and utilization heuristics."""
+
 from __future__ import annotations
 
 import collections
@@ -20,6 +22,8 @@ _MAX_TASK_HISTORY = 10_000
 
 @dataclass
 class ComputeEndpoint:
+    """A single compute endpoint that can execute model tasks."""
+
     endpoint_id: str
     url: str
     model: str = ""
@@ -38,27 +42,33 @@ class ComputeEndpoint:
 
     @property
     def utilization(self) -> float:
+        """Return the fraction of concurrent slots currently in use."""
         if self.max_concurrent == 0:
             return 0.0
         return self.current_load / self.max_concurrent
 
     @property
     def cache_hit_rate(self) -> float:
+        """Return the fraction of requests that were cache hits."""
         if self.total_requests == 0:
             return 0.0
         return self.cache_hits / self.total_requests
 
     @property
     def is_available(self) -> bool:
+        """Return True when the endpoint can accept another task."""
         return self.active and self.current_load < self.max_concurrent
 
     @property
     def available_slots(self) -> int:
+        """Return the number of additional tasks the endpoint can accept."""
         return max(0, self.max_concurrent - self.current_load)
 
 
 @dataclass
 class TaskRouting:
+    """Result of routing a task to a chosen compute endpoint."""
+
     task_id: str
     endpoint_id: str
     model: str = ""
@@ -67,7 +77,15 @@ class TaskRouting:
 
 
 class UtilizationTracker:
+    """Track compute endpoints, route tasks, and evaluate utilization."""
+
     def __init__(self, max_history: int = 60) -> None:
+        """Initialize the tracker.
+
+        Args:
+            max_history: Maximum number of GPU SM utilization samples to retain
+                per endpoint.
+        """
         self._endpoints: dict[str, ComputeEndpoint] = {}
         # OrderedDict so we can FIFO-evict the oldest routing record when the
         # history exceeds _MAX_TASK_HISTORY (popitem(last=False)). Plain dict
@@ -78,23 +96,27 @@ class UtilizationTracker:
         self._max_gpu_history = max_history
 
     def register_endpoint(self, endpoint_id: str, url: str, model: str = "", **kwargs: Any) -> ComputeEndpoint:
+        """Register a new compute endpoint and return it."""
         ep = ComputeEndpoint(endpoint_id=endpoint_id, url=url, model=model, **kwargs)
         self._endpoints[endpoint_id] = ep
         logger.info("Registered compute endpoint %s (%s, model=%s)", endpoint_id, url, model)
         return ep
 
     def unregister_endpoint(self, endpoint_id: str) -> None:
+        """Mark an endpoint as inactive and remove it from future routing."""
         ep = self._endpoints.pop(endpoint_id, None)
         if ep:
             ep.active = False
 
     def list_endpoints(self, active_only: bool = True) -> list[ComputeEndpoint]:
+        """Return a list of tracked endpoints."""
         eps = list(self._endpoints.values())
         if active_only:
             eps = [e for e in eps if e.active]
         return eps
 
     def get_endpoint(self, endpoint_id: str) -> ComputeEndpoint | None:
+        """Return the endpoint with the given id, if any."""
         return self._endpoints.get(endpoint_id)
 
     def _record_routing(self, task_id: str, endpoint_id: str) -> None:
@@ -116,6 +138,7 @@ class UtilizationTracker:
         prefer_model: bool = True,
         scheduling_hint: Any | None = None,
     ) -> TaskRouting | None:
+        """Choose an endpoint for a task and record the assignment."""
         candidates = [e for e in self._endpoints.values() if e.is_available]
         if not candidates:
             return None
@@ -125,10 +148,7 @@ class UtilizationTracker:
         if scheduling_hint is not None:
             hint_gpu = getattr(scheduling_hint, "preferred_gpu_type", None)
             if hint_gpu:
-                gpu_matches = [
-                    e for e in candidates
-                    if e.gpu_type and e.gpu_type.lower() == hint_gpu.lower()
-                ]
+                gpu_matches = [e for e in candidates if e.gpu_type and e.gpu_type.lower() == hint_gpu.lower()]
                 if gpu_matches:
                     candidates = gpu_matches
                     gpu_affinity_applied = True
@@ -167,6 +187,7 @@ class UtilizationTracker:
         )
 
     def release_task(self, task_id: str) -> None:
+        """Release a previously routed task, decrementing endpoint load."""
         ep_id = self._task_history.pop(task_id, None)
         if ep_id:
             ep = self._endpoints.get(ep_id)
@@ -177,6 +198,7 @@ class UtilizationTracker:
         return False
 
     def get_utilization_report(self) -> dict[str, Any]:
+        """Return a snapshot of overall and per-endpoint utilization."""
         endpoints = self.list_endpoints(active_only=False)
         total_capacity = sum(e.max_concurrent for e in endpoints if e.active)
         total_load = sum(e.current_load for e in endpoints if e.active)
@@ -205,9 +227,11 @@ class UtilizationTracker:
         }
 
     def find_underutilized(self, threshold: float = 0.5) -> list[ComputeEndpoint]:
+        """Return active endpoints whose utilization is below the threshold."""
         return [e for e in self._endpoints.values() if e.active and e.utilization < threshold]
 
     def suggest_task_assignment(self, count: int = 1) -> list[TaskRouting]:
+        """Suggest up to ``count`` endpoints for new tasks."""
         suggestions: list[TaskRouting] = []
         for _ in range(count):
             best = None
@@ -230,11 +254,13 @@ class UtilizationTracker:
         return suggestions
 
     def record_tokens(self, endpoint_id: str, token_count: int) -> None:
+        """Record token generation on an endpoint."""
         ep = self._endpoints.get(endpoint_id)
         if ep:
             ep.total_tokens += token_count
 
     def update_gpu_metrics(self, endpoint_id: str, metrics: dict[str, float]) -> None:
+        """Update GPU metrics for an endpoint and append SM utilization to history."""
         ep = self._endpoints.get(endpoint_id)
         if ep is None:
             return
@@ -255,6 +281,20 @@ class UtilizationTracker:
                 hist.popleft()
 
     def find_idle_gpus(self, threshold: float = 5.0, window: float = 900.0) -> list[ComputeEndpoint]:
+        """Return GPU endpoints that appear idle over the given window.
+
+        When recent GPU SM utilization history is available, it takes priority
+        over the load/last-used fallback. The fallback is used only when no
+        recent history exists.
+
+        Args:
+            threshold: SM utilization percentage below which an endpoint is
+                considered idle.
+            window: Lookback window in seconds for recent history.
+
+        Returns:
+            List of endpoints classified as idle.
+        """
         now = time.time()
         idle: list[ComputeEndpoint] = []
         for ep in self._endpoints.values():
@@ -266,8 +306,11 @@ class UtilizationTracker:
             if hist is not None:
                 window_start = now - window
                 recent = [(ts, sm) for ts, sm in hist if ts >= window_start]
-                if len(recent) >= 1 and all(sm <= threshold for _ts, sm in recent):
-                    idle.append(ep)
+                if len(recent) >= 1:
+                    if all(sm <= threshold for _ts, sm in recent):
+                        idle.append(ep)
+                    # History exists and is recent: trust it, do not fall back
+                    # to the load/last-used heuristic.
                     continue
             if ep.current_load == 0 and ep.last_used > 0 and (now - ep.last_used) >= window:
                 idle.append(ep)

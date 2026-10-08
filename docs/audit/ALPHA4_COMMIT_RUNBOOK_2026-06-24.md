@@ -19,7 +19,7 @@ GREEN: `lint` PASS, `typecheck` PASS (404 files), `collect` PASS (no errors).
 - `tmp_alembic_drift_check.db` — scratch SQLite from the alembic-check run.
 
 ## GROUP A — multitasking (orchestration/harness)
-```
+```text
 .claude/hooks/agent_floor_posttool.sh .claude/hooks/agent_floor_pretool.sh
 .claude/hooks/agent_floor_stop.sh .claude/hooks/agent_floor_userprompt.sh
 .claude/hooks/force_delegate_pretool.sh .claude/hooks/mainthread_budget.sh
@@ -29,7 +29,7 @@ docs/MULTITASKING_POLICY.md scripts/agent_liveness.py scripts/liveness_debug.py 
 MSG: `fix-multitasking-floor-self-enforce-open-to-close-live-counter-de-workflow-advisories`
 
 ## GROUP B — alpha.4 release (green-the-gate wave)
-```
+```text
 pyproject.toml src/general_ludd/__init__.py CHANGELOG.md alembic.ini
 src/general_ludd/models/gateway.py src/general_ludd/skills/fetcher.py
 src/general_ludd/agents/dispatcher.py src/general_ludd/routers/todos.py

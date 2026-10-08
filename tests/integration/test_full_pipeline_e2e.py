@@ -5,16 +5,17 @@ import subprocess
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base, TaskDecisionModel, TaskReturnModel
+from general_ludd.db.models import Base, ProjectModel, TaskDecisionModel, TaskReturnModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.review.reviewer import ReturnReviewer
@@ -51,7 +52,12 @@ def _init_git_repo(path: str) -> None:
     subprocess.run(["git", "commit", "-m", "initial"], cwd=path, check=True, capture_output=True)
 
 
-async def _create_test_infra():
+async def _create_test_infra() -> tuple[
+    AsyncEngine,
+    async_sessionmaker[AsyncSession],
+    AsyncClient,
+    FastAPI,
+]:
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         echo=False,
@@ -61,6 +67,9 @@ async def _create_test_infra():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        session.add(ProjectModel(project_id=_PROJECT_ID, name="Full pipeline E2E"))
+        await session.commit()
 
     from general_ludd.routers.todos import register as reg_todos
 
@@ -85,7 +94,7 @@ async def _create_test_infra():
 
 class TestFullPipelineE2E:
     @pytest.mark.asyncio
-    async def test_todo_from_api_to_reconciled_status(self):
+    async def test_todo_from_api_to_reconciled_status(self, tmp_path: Path) -> None:
         engine, factory, client, _app = await _create_test_infra()
 
         resp = await client.post(
@@ -107,7 +116,18 @@ class TestFullPipelineE2E:
             db_todo = await repo.get_by_id(todo_id)
             assert db_todo is not None
 
-        with tempfile.TemporaryDirectory() as ws:
+        # The full gate may pass pytest's macOS ``/tmp`` alias as ``basetemp``.
+        # Resolve it before repository mutation so the confinement guard sees
+        # the exact canonical pytest-owned path rather than a symlink alias.
+        # Keep the repository visibly pytest-owned even when integration-health
+        # sets TMPDIR equal to its basetemp.  The worktree-confinement audit
+        # intentionally permits branch mutation only below a namespaced test
+        # directory; tempfile's default ``tmp*`` prefix does not carry that
+        # ownership signal once the outer TMPDIR component is stripped.
+        with tempfile.TemporaryDirectory(
+            prefix="gludd-test-full-pipeline-",
+            dir=tmp_path.resolve(strict=True),
+        ) as ws:
             _init_git_repo(ws)
 
             mock_gateway = MagicMock()
@@ -139,6 +159,7 @@ class TestFullPipelineE2E:
                 model_gateway=mock_gateway,
                 workspace_path=ws,
             )
+            execution_results: list[TaskReturn] = []
 
             # repo_root resolves to the workspace so the gate can verify the
             # artifact ref against the file the ExecutionEngine actually wrote.
@@ -149,7 +170,7 @@ class TestFullPipelineE2E:
                 project_manager=_project_manager_stub(),
             )
 
-            async def patched_dispatch(todo_item, **_kwargs):
+            async def patched_dispatch(todo_item: Any, **_kwargs: Any) -> None:
                 # Accept _variable_repo_override/_task_return_repo_override/_session_override
                 # injected by _dispatch_execute_job_isolated on the concurrent path.
                 task_return_repo = _kwargs.get("_task_return_repo_override") or loop._task_return_repo
@@ -163,6 +184,7 @@ class TestFullPipelineE2E:
                     project_id=todo_item.project_id,
                 )
                 result = await engine_exec.execute_async(job)
+                execution_results.append(result)
                 if task_return_repo is not None:
                     await task_return_repo.create(
                         data={
@@ -185,9 +207,17 @@ class TestFullPipelineE2E:
                             todo_item.version,
                         )
 
-            loop._dispatch_execute_job = patched_dispatch
+            cast(Any, loop)._dispatch_execute_job = patched_dispatch
 
             await loop.tick()
+            await engine_exec.shutdown()
+
+            assert len(execution_results) == 1
+            execution_result = execution_results[0]
+            assert execution_result.exit_code == 0, execution_result.result_summary
+            assert "src/hello.py" in execution_result.artifacts
+            hello_path = Path(engine_exec.workspace_path) / "src" / "hello.py"
+            assert hello_path.is_file()
 
             async with factory() as session:
                 claimed_todo = await TodoRepository(session).get_by_id(todo_id)
@@ -241,8 +271,7 @@ class TestFullPipelineE2E:
             gludd_branches = [b for b in branch_list if b.startswith("gludd/")]
             assert len(gludd_branches) >= 1
 
-            hello_path = Path(ws) / "src" / "hello.py"
-            assert hello_path.exists()
             assert "hello from gludd" in hello_path.read_text()
 
+        await client.aclose()
         await engine.dispose()

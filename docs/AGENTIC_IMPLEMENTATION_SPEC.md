@@ -529,7 +529,7 @@ The authoritative failure inventory is from run **29055665462** (master @ `a7ab5
 
 **Per-wave verification ritual (every implementing agent, every time):**
 
-```
+```text
 make test-iso TESTFILE=<your files> ID=<uniq>     # targeted proof
 make gate-lite                                     # local gate approximation, writes .gate-status
 make git-add FILES='<exact files>'                 # never git-add-all in parallel waves

@@ -1,0 +1,559 @@
+"""Unit tests for the beta4 Ansible runtime artifact tooling."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+import yaml
+from scripts import ansible_runtime_artifacts as artifacts
+from scripts.makefile_layout import compose_makefile
+
+PINNED_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "b" * 64
+
+
+class _RegistryResponse:
+    def __init__(self, digest: str | None) -> None:
+        self.headers = {} if digest is None else {"Docker-Content-Digest": digest}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args) -> None:
+        return None
+
+
+def test_resolve_base_image_digest_uses_official_manifest_api() -> None:
+    digest = "sha256:" + "c" * 64
+    calls: list[tuple[object, int]] = []
+
+    def opener(request, *, timeout):
+        calls.append((request, timeout))
+        return _RegistryResponse(digest)
+
+    assert artifacts.resolve_base_image_digest(opener=opener) == (
+        f"{artifacts.BASE_IMAGE_TAG}@{digest}"
+    )
+    request, timeout = calls[0]
+    assert request.full_url == artifacts.BASE_IMAGE_MANIFEST_URL
+    assert request.get_method() == "HEAD"
+    assert "manifest.list.v2+json" in request.get_header("Accept")
+    assert timeout == 30
+
+
+@pytest.mark.parametrize("digest", [None, "sha256:short", "sha256:" + "G" * 64])
+def test_resolve_base_image_digest_rejects_missing_or_invalid_header(digest) -> None:
+    with pytest.raises(RuntimeError, match="Docker-Content-Digest"):
+        artifacts.resolve_base_image_digest(
+            opener=lambda *_args, **_kwargs: _RegistryResponse(digest)
+        )
+
+
+def test_refresh_base_image_updates_definition_and_lock_together(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_image = f"{artifacts.BASE_IMAGE_TAG}@sha256:" + "a" * 64
+    new_image = f"{artifacts.BASE_IMAGE_TAG}@sha256:" + "b" * 64
+    definition = tmp_path / "execution-environment.yml"
+    lock = tmp_path / "runtime-lock.json"
+    definition.write_text(
+        f"version: 3\nimages:\n  base_image:\n    name: {old_image}\n",
+        encoding="utf-8",
+    )
+    lock.write_text(
+        json.dumps({"schema_version": 1, "base_image": old_image, "inputs": {}}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
+    monkeypatch.setattr(artifacts, "LOCK", lock)
+    monkeypatch.setattr(artifacts, "resolve_base_image_digest", lambda: new_image)
+    monkeypatch.setattr(
+        artifacts,
+        "expected_input_hashes",
+        lambda: {"definition": "sha256:" + "d" * 64},
+    )
+
+    assert artifacts.refresh_base_image() == new_image
+
+    assert new_image in definition.read_text(encoding="utf-8")
+    refreshed = json.loads(lock.read_text(encoding="utf-8"))
+    assert refreshed["base_image"] == new_image
+    assert refreshed["inputs"] == {"definition": "sha256:" + "d" * 64}
+
+
+def test_check_configured_base_image_verifies_the_exact_pinned_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    digest = "sha256:" + "e" * 64
+    image = f"{artifacts.BASE_IMAGE_TAG}@{digest}"
+    definition = tmp_path / "execution-environment.yml"
+    definition.write_text(
+        f"images:\n  base_image:\n    name: {image}\n",
+        encoding="utf-8",
+    )
+    requests: list[object] = []
+
+    def opener(request, *, timeout):
+        assert timeout == 30
+        requests.append(request)
+        return _RegistryResponse(digest)
+
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
+
+    assert artifacts.check_configured_base_image(opener=opener) == image
+    assert requests[0].full_url.endswith(f"/manifests/{digest}")
+
+
+def test_check_configured_base_image_rejects_a_registry_identity_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    digest = "sha256:" + "e" * 64
+    definition = tmp_path / "execution-environment.yml"
+    definition.write_text(
+        f"images:\n  base_image:\n    name: {artifacts.BASE_IMAGE_TAG}@{digest}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
+
+    with pytest.raises(RuntimeError, match="identity mismatch"):
+        artifacts.check_configured_base_image(
+            opener=lambda *_args, **_kwargs: _RegistryResponse("sha256:" + "f" * 64)
+        )
+
+
+def test_tracked_runtime_artifacts_validate() -> None:
+    assert artifacts.validate_files() == []
+
+
+def test_runtime_stages_azure_orchestration_and_pinned_opentofu() -> None:
+    requirements = yaml.safe_load(
+        (artifacts.CONFIG_ROOT / "requirements.yml").read_text(encoding="utf-8")
+    )["collections"]
+    collection_versions = {
+        item["name"]: item.get("version")
+        for item in requirements
+        if item.get("type") != "file"
+    }
+    local_artifacts = {
+        item["name"] for item in requirements if item.get("type") == "file"
+    }
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    build_steps = "\n".join(definition["additional_build_steps"]["append_final"])
+
+    assert collection_versions == {
+        "azure.azcollection": "3.21.0",
+        "cloud.terraform": "4.0.0",
+    }
+    assert "collections/general_ludd-azure-0.2.0.tar.gz" in local_artifacts
+    assert len(artifacts.COLLECTION_ARTIFACTS) == 4
+    assert any(source.name == "azure" for source, _artifact in artifacts.COLLECTION_ARTIFACTS)
+    assert "tofu_1.12.6_linux_amd64.zip" in build_steps
+    assert "tofu_1.12.6_linux_arm64.zip" in build_steps
+    assert "5dc43da4f750f33873dc25e94587128709e819e544b7be9016b255316153c3a8" in build_steps
+    assert "e573979ba68a17fe7b881752051a694a7efcd970e39521f6a25775197861ed4d" in build_steps
+    assert "sha256sum --check --strict" in build_steps
+    assert "github.com/opentofu/opentofu/releases/download/v1.12.6" in build_steps
+    assert "/usr/local/bin/tofu" in build_steps
+    assert "releases.hashicorp.com" not in build_steps
+    assert "/usr/local/bin/terraform" not in build_steps
+    workflow = (artifacts.ROOT / ".github" / "workflows" / "build.yml").read_text(
+        encoding="utf-8"
+    )
+    assert '"${EE_TAG}" /usr/local/bin/tofu version' in workflow
+
+
+def test_runtime_validation_rejects_hashicorp_terraform_binary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    definition["additional_build_steps"]["append_final"].append(
+        "RUN curl https://releases.hashicorp.com && "
+        "install terraform /usr/local/bin/terraform"
+    )
+    incompatible = tmp_path / "execution-environment.yml"
+    incompatible.write_text(yaml.safe_dump(definition), encoding="utf-8")
+    inputs = dict(artifacts.INPUTS)
+    inputs["definition"] = incompatible
+    monkeypatch.setattr(artifacts, "DEFINITION", incompatible)
+    monkeypatch.setattr(artifacts, "INPUTS", inputs)
+
+    assert (
+        "execution environment must not install HashiCorp Terraform"
+        in artifacts.validate_files()
+    )
+
+
+def test_validate_reports_missing_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    missing = tmp_path / "missing.yml"
+    monkeypatch.setattr(artifacts, "INPUTS", {"definition": missing})
+    assert artifacts.validate_files() == [f"missing runtime artifact: {missing}"]
+
+
+def test_validate_reports_dependency_leaks_and_missing_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root_project = {
+        "project": {
+            "dependencies": ["ansible-core==2", "ansible-runner==2", "ansible-builder==3"],
+        }
+    }
+    controller_project = {"project": {"dependencies": []}}
+    projects = iter((root_project, controller_project))
+    monkeypatch.setattr(tomllib, "loads", lambda _text: next(projects))
+    errors = artifacts.validate_files()
+    assert {error for error in errors if "dependency" in error} == {
+        "core dependency leak: ansible-core",
+        "core dependency leak: ansible-runner",
+        "core dependency leak: ansible-builder",
+        "missing optional controller dependency: ansible-core",
+        "missing optional controller dependency: ansible-runner",
+    }
+
+
+def test_validate_reports_definition_lock_and_managed_host_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = tmp_path / "runtime-lock.json"
+    managed = tmp_path / "managed.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "schema_version": 9,
+                "release": "old",
+                "base_image": "different",
+                "inputs": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    managed.write_text(
+        json.dumps(
+            {
+                "ambient_interpreters_allowed": True,
+                "interpreter_variable": "python",
+                "requirements": "ambient",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifacts, "LOCK", lock)
+    monkeypatch.setattr(artifacts, "MANAGED", managed)
+    monkeypatch.setattr(
+        yaml,
+        "safe_load",
+        lambda _text: {"version": 2, "images": {"base_image": {"name": "latest"}}, "dependencies": {}},
+    )
+    errors = artifacts.validate_files()
+    assert "execution environment base image is not digest-pinned" in errors
+    assert "execution environment definition must use schema version 3" in errors
+    assert "execution environment dependencies must name the locked inputs and controller interpreter" in errors
+    assert "runtime lock schema/release mismatch" in errors
+    assert "runtime lock base image differs from execution environment definition" in errors
+    assert "runtime lock input hashes are stale; run make update-ansible-runtime-lock" in errors
+    assert "managed-host manifest must reject ambient interpreters" in errors
+    assert "managed-host manifest must select ansible_python_interpreter" in errors
+    assert "managed-host requirements must be an explicit list" in errors
+
+
+def test_expected_hashes_are_named_and_content_addressed() -> None:
+    hashes = artifacts.expected_input_hashes()
+    assert set(hashes) == {"galaxy", "python", "system", "definition"}
+    assert all(value.startswith("sha256:") and len(value) == 71 for value in hashes.values())
+
+
+def test_write_lock_refreshes_input_hashes_and_base_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = tmp_path / "runtime-lock.json"
+    definition = tmp_path / "execution-environment.yml"
+    image = "registry.example/ee@sha256:" + "d" * 64
+    lock.write_text(
+        '{"schema_version": 1, "release": "0.1.0-beta.4", '
+        '"base_image": "registry.example/old@sha256:' + "a" * 64 + '", "inputs": {}}\n',
+        encoding="utf-8",
+    )
+    definition.write_text(
+        yaml.safe_dump({"images": {"base_image": {"name": image}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifacts, "LOCK", lock)
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
+    monkeypatch.setattr(artifacts, "expected_input_hashes", lambda: {"definition": "sha256:" + "c" * 64})
+    artifacts.write_lock()
+    data = json.loads(lock.read_text(encoding="utf-8"))
+    assert data["schema_version"] == 1
+    assert data["base_image"] == image
+    assert data["inputs"] == {"definition": "sha256:" + "c" * 64}
+
+
+def test_write_lock_rejects_mutable_or_missing_base_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = tmp_path / "runtime-lock.json"
+    definition = tmp_path / "execution-environment.yml"
+    lock.write_text('{"schema_version": 1, "inputs": {}}\n', encoding="utf-8")
+    definition.write_text("images:\n  base_image:\n    name: example/ee:latest\n", encoding="utf-8")
+    monkeypatch.setattr(artifacts, "LOCK", lock)
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
+
+    with pytest.raises(ValueError, match="digest-pinned"):
+        artifacts.write_lock()
+
+
+def test_dependency_name_parser_handles_markers_extras_and_bounds() -> None:
+    assert artifacts._dependency_names(
+        ["ansible-core>=2.19,<2.20; python_version < '3.12'", "package[extra]==1.0"]
+    ) == {"ansible-core", "package"}
+
+
+def test_build_validate_only_never_invokes_external_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(shutil, "which", lambda _name: pytest.fail("which must not run"))
+    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path / "context", True) == 0
+
+
+def test_build_fails_before_mutation_when_artifacts_are_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: ["stale lock"])
+    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path / "context", False) == 1
+    assert "stale lock" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("available", "expected", "message"),
+    [
+        ({"podman"}, 2, "ansible-builder is unavailable"),
+        ({"ansible-builder"}, 2, "container runtime is unavailable"),
+    ],
+)
+def test_build_reports_missing_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    available: set[str],
+    expected: int,
+    message: str,
+) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(
+        artifacts,
+        "find_spec",
+        lambda _name: object() if "ansible-builder" in available else None,
+    )
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}" if name in available else None)
+    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path / "context", False) == expected
+    assert message in capsys.readouterr().err
+
+
+def test_build_stops_before_collection_when_pinned_base_disappears(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(artifacts, "find_spec", lambda _name: object())
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(
+        artifacts,
+        "check_configured_base_image",
+        MagicMock(side_effect=RuntimeError("manifest unknown")),
+    )
+    monkeypatch.setattr(
+        artifacts,
+        "_build_collection_artifacts",
+        lambda: pytest.fail("collection builds must not start for a dead base image"),
+    )
+
+    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path, False) == 1
+    error = capsys.readouterr().err
+    assert "manifest unknown" in error
+    assert "make refresh-ansible-base-image" in error
+
+
+def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[list[str], Path | None]] = []
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(artifacts, "find_spec", lambda _name: object())
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(artifacts, "check_configured_base_image", lambda: PINNED_IMAGE)
+    collection_artifacts = tuple(
+        (tmp_path / f"source-{index}", tmp_path / "dist" / f"collection-{index}.tar.gz")
+        for index in range(3)
+    )
+    monkeypatch.setattr(artifacts, "COLLECTION_ARTIFACTS", collection_artifacts)
+
+    def fake_run(command: list[str], *, cwd: Path | None = None, check: bool = False) -> SimpleNamespace:
+        assert check is False
+        calls.append((command, cwd))
+        if command[:3] == ["ansible-galaxy", "collection", "build"]:
+            index = len(calls) - 1
+            collection_artifacts[index][1].write_bytes(b"collection")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    context = tmp_path / "gludd-ee"
+    assert artifacts.build_environment("podman", "gludd-ee:beta4", context, False) == 0
+    assert [call[0][:3] for call in calls[:3]] == [
+        ["ansible-galaxy", "collection", "build"],
+        ["ansible-galaxy", "collection", "build"],
+        ["ansible-galaxy", "collection", "build"],
+    ]
+    assert calls[3][0][:4] == [sys.executable, "-m", "ansible_builder", "build"]
+    assert calls[3][1] == artifacts.ROOT
+    assert context.is_dir()
+
+
+def test_build_fails_closed_when_collection_artifact_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "dist" / "collection.tar.gz"
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(artifacts, "check_configured_base_image", lambda: PINNED_IMAGE)
+    monkeypatch.setattr(artifacts, "COLLECTION_ARTIFACTS", ((source, output),))
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0))
+
+    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path / "context", False) == 1
+    assert f"collection artifact missing or empty: {output}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("image", ["latest", "repo@sha256:short", "repo@sha256:" + "G" * 64])
+def test_verify_rejects_non_digest_image(image: str, capsys: pytest.CaptureFixture[str]) -> None:
+    assert artifacts.verify_environment("podman", image, True) == 2
+    assert "digest-pinned" in capsys.readouterr().err
+
+
+def test_verify_validate_only_accepts_digest_without_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    assert artifacts.verify_environment("podman", PINNED_IMAGE, True) == 0
+
+
+def test_verify_fails_closed_on_invalid_files(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: ["bad managed manifest"])
+    assert artifacts.verify_environment("podman", PINNED_IMAGE, True) == 1
+
+
+def test_verify_reports_missing_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    assert artifacts.verify_environment("podman", PINNED_IMAGE, False) == 2
+
+
+def test_verify_stops_when_image_inspect_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=7))
+    assert artifacts.verify_environment("podman", PINNED_IMAGE, False) == 7
+
+
+def test_verify_inspects_and_smokes_without_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+
+    def fake_run(command: list[str], *, check: bool = False) -> SimpleNamespace:
+        assert check is False
+        calls.append(command)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert artifacts.verify_environment("podman", PINNED_IMAGE, False) == 0
+    assert calls[0] == ["podman", "image", "inspect", PINNED_IMAGE]
+    assert "--network=none" in calls[1]
+    assert calls[1][-2:] == ["/usr/local/bin/tofu", "version"]
+    assert "--network=none" in calls[2]
+    assert "ansible_runner" in calls[2][-1]
+
+
+def test_verify_stops_when_opentofu_smoke_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+    return_codes = iter((0, 23))
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+
+    def fake_run(command: list[str], *, check: bool = False) -> SimpleNamespace:
+        assert check is False
+        calls.append(command)
+        return SimpleNamespace(returncode=next(return_codes))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert artifacts.verify_environment("podman", PINNED_IMAGE, False) == 23
+    assert len(calls) == 2
+    assert calls[-1][-2:] == ["/usr/local/bin/tofu", "version"]
+
+
+def test_cli_validate_and_validate_only_modes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    assert artifacts.main(["validate"]) == 0
+    assert artifacts.main(["build", "--validate-only", "--context", "/tmp/gludd-ee-test"]) == 0
+    assert artifacts.main(["verify", "--validate-only", "--image", PINNED_IMAGE]) == 0
+
+
+def test_cli_write_lock_and_validation_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    write = MagicMock()
+    monkeypatch.setattr(artifacts, "write_lock", write)
+    assert artifacts.main(["write-lock"]) == 0
+    write.assert_called_once_with()
+    monkeypatch.setattr(artifacts, "validate_files", lambda: ["broken"])
+    assert artifacts.main(["validate"]) == 1
+
+
+def test_cli_refreshes_and_checks_the_base_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    refreshed = MagicMock(return_value=PINNED_IMAGE)
+    checked = MagicMock(return_value=PINNED_IMAGE)
+    monkeypatch.setattr(artifacts, "refresh_base_image", refreshed)
+    monkeypatch.setattr(artifacts, "check_configured_base_image", checked)
+
+    assert artifacts.main(["refresh-base-image"]) == 0
+    assert artifacts.main(["check-base-image"]) == 0
+    refreshed.assert_called_once_with()
+    checked.assert_called_once_with()
+
+
+def test_base_image_refresh_make_target_is_safe_and_contract_registered() -> None:
+    makefile = compose_makefile(artifacts.ROOT / "Makefile")
+    target = makefile.split("refresh-ansible-base-image:", 1)[1].split("\n\n", 1)[0]
+    assert "ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY" in target
+    assert "refresh-base-image" in target
+    assert "scripts/ansible_runtime_artifacts.py" in target
+
+    payload = json.loads(
+        (artifacts.ROOT / "config" / "make_target_contract.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    contracts = {item["name"]: item for item in payload["targets"]}
+    assert contracts["refresh-ansible-base-image"] == {
+        "name": "refresh-ansible-base-image",
+        "make_variables": ["ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY"],
+        "behavior": (
+            "make refresh-ansible-base-image "
+            "ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=1"
+        ),
+    }
+    check_target = makefile.split("check-ansible-base-image:", 1)[1].split(
+        "\n\n", 1
+    )[0]
+    assert "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY" in check_target
+    assert "check-base-image" in check_target
+    assert contracts["check-ansible-base-image"] == {
+        "name": "check-ansible-base-image",
+        "make_variables": ["ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY"],
+        "behavior": (
+            "make check-ansible-base-image "
+            "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1"
+        ),
+    }

@@ -12,13 +12,15 @@ These tests prove the gap is closed by checking the Makefile structurally:
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
 
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target. Assert target exists."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
@@ -39,9 +41,12 @@ class TestGitTagRm:
         assert "GIT_SSH_COMMAND" in recipe, (
             "git-tag-rm must use GIT_SSH_COMMAND for sandboxcom remote ops"
         )
-        assert "sandboxcom_github_rsa" in recipe, (
-            "git-tag-rm must use the sandboxcom_github_rsa key"
+        assert "$(SSH_KEY)" in recipe, (
+            "git-tag-rm must use the configurable sandboxcom SSH key"
         )
+
+    def test_default_key_is_the_project_specific_deploy_key(self) -> None:
+        assert "SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa" in compose_makefile(MAKEFILE)
 
     def test_deletes_remote_tag(self):
         recipe = _recipe("git-tag-rm")
@@ -80,8 +85,8 @@ class TestReleaseRecut:
         assert "GIT_SSH_COMMAND" in recipe, (
             "release-recut must use GIT_SSH_COMMAND for sandboxcom remote ops"
         )
-        assert "sandboxcom_github_rsa" in recipe, (
-            "release-recut must use the sandboxcom_github_rsa key"
+        assert "$(SSH_KEY)" in recipe, (
+            "release-recut must use the configurable sandboxcom SSH key"
         )
 
     def test_requires_TAG_argument(self):
@@ -96,10 +101,24 @@ class TestReleaseRecut:
             "release-recut must verify the local tag exists before re-pushing"
         )
 
-    def test_polls_with_verify_vars(self):
+    def test_awaits_exact_tag_workflow_before_verification(self):
         recipe = _recipe("release-recut")
-        assert "$(VERIFY_POLLS)" in recipe, (
-            "release-recut must use the VERIFY_POLLS variable for its poll loop"
+        assert "ci-await" in recipe, (
+            "release-recut must await the exact tag workflow before verification"
+        )
+        assert 'BRANCH="$(TAG)"' in recipe
+        assert "RELEASE_AWAIT_TIMEOUT" in recipe
+        assert "RELEASE_AWAIT_INTERVAL" in recipe
+        assert "$(VERIFY_POLLS)" not in recipe
+
+    def test_rejects_unsigned_tag_before_remote_mutation(self):
+        recipe = _recipe("release-recut")
+        signing_guard = recipe.find("check-tag-signing")
+        remote_delete = recipe.find(":refs/tags/")
+        assert signing_guard != -1, "release-recut must verify the existing tag signature"
+        assert remote_delete != -1, "release-recut must identify its remote deletion step"
+        assert signing_guard < remote_delete, (
+            "release-recut must reject an unsigned tag before deleting the remote ref"
         )
 
 
@@ -119,15 +138,31 @@ class TestGitTagPushCommitParam:
             "git-tag-push usage message must mention COMMIT=<sha>"
         )
 
+    def test_creates_signed_annotated_tag(self):
+        recipe = _recipe("git-tag-push")
+        assert "git tag -s -a" in recipe, (
+            "git-tag-push must create a signed annotated tag"
+        )
+
+    def test_verifies_signature_before_push(self):
+        recipe = _recipe("git-tag-push")
+        signing_guard = recipe.find("check-tag-signing")
+        remote_push = recipe.find("git push sandboxcom")
+        assert signing_guard != -1, "git-tag-push must run the signing guard"
+        assert remote_push != -1, "git-tag-push must contain its remote push"
+        assert signing_guard < remote_push, (
+            "git-tag-push must verify the local signature before remote publication"
+        )
+
 
 class TestPhonyList:
     """Both new targets must be declared in the .PHONY list."""
 
     def test_git_tag_rm_phony(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         # Grab the .PHONY block (it spans multiple lines).
         assert "git-tag-rm" in content, "git-tag-rm missing from Makefile entirely"
 
     def test_release_recut_phony(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "release-recut" in content, "release-recut missing from Makefile entirely"

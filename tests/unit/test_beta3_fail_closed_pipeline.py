@@ -12,6 +12,8 @@ WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build.yml"
 
 REQUIRED_RELEASE_JOBS = {
     "gate",
+    "claim-before-provision-acceptance",
+    "release_source_proof",
     "test-shard",
     "coverage",
     "molecule",
@@ -20,6 +22,7 @@ REQUIRED_RELEASE_JOBS = {
     "windows",
     "termux",
     "container",
+    "ansible-ee",
     "game-building",
 }
 REQUIRED_FAIL_CLOSED_JOBS = REQUIRED_RELEASE_JOBS - {"gate", "coverage"}
@@ -56,6 +59,15 @@ def _upload_steps(job: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _release_upload_steps(job: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return publishable uploads, excluding failure-diagnostic evidence."""
+    return [
+        step
+        for step in _upload_steps(job)
+        if str(step.get("with", {}).get("name", "")).startswith("gludd-")
+    ]
+
+
 def test_tag_pipeline_has_no_false_green_escape_hatches() -> None:
     source = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "continue-on-error: true" not in source
@@ -63,6 +75,14 @@ def test_tag_pipeline_has_no_false_green_escape_hatches() -> None:
     assert "|| true" not in source
     assert "(informational)" not in source
     assert "reporting-only, non-gating" not in source
+    assert "continue-on-error, non-blocking" not in source
+
+
+def test_cleanup_traps_preserve_primary_failures_and_fail_closed() -> None:
+    source = WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert source.count("primary_status=$?") >= 2
+    assert source.count("cleanup_failed=1") >= 2
+    assert source.count('return "$primary_status"') >= 2
 
 
 def test_all_release_prerequisites_are_blocking() -> None:
@@ -76,20 +96,43 @@ def test_release_waits_for_every_test_and_artifact_producer() -> None:
     if isinstance(needs, str):
         needs = [needs]
     assert set(needs) >= REQUIRED_RELEASE_JOBS
-    assert str(release.get("if", "")) == "startsWith(github.ref, 'refs/tags/v')"
+    condition = str(release.get("if", ""))
+    assert "startsWith(github.ref, 'refs/tags/v')" in condition
+    assert "needs.release_source_proof.result == 'success'" in condition
+    assert "needs.gate.result == 'success'" in condition
+    for reused_job in (
+        "freellmapi-upstream-build",
+        "test-shard",
+        "coverage",
+        "molecule",
+        "game-building",
+    ):
+        expression = (
+            f"needs.{reused_job}.result"
+            if "-" not in reused_job
+            else f"needs['{reused_job}'].result"
+        )
+        assert f"{expression} == 'skipped'" in condition
 
 
 def test_test_shards_reject_empty_selection_and_missing_coverage() -> None:
     shard = _job("test-shard")
     runs = _run_blocks(shard)
-    assert "selected no files after exclusions" in runs
-    assert "exit 1" in runs
-    assert "RC -eq 5" not in runs
-    assert (
-        "--cov=collections/ansible_collections/general_ludd/governance/plugins/module_utils"
-        in runs
+    assert "scripts/run_ci_shards_serial.py" in runs
+    runner = (ROOT / "scripts" / "run_ci_shards_serial.py").read_text(
+        encoding="utf-8"
     )
-    assert 'test -s "$COVERAGE_FILE"' in runs
+    assert "SHARD-EMPTY" in runner
+    assert "SHARD-COVERAGE-MISSING" in runner
+    assert "failures[shard] = 2" in runner
+    assert "RC -eq 5" not in runner
+    coverage_config = (ROOT / ".coveragerc-greenlet").read_text(encoding="utf-8")
+    assert "src/general_ludd" in coverage_config
+    assert (
+        "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
+        in coverage_config
+    )
+    assert "coverage_file.stat().st_size == 0" in runner
     uploads = _upload_steps(shard)
     assert uploads
     assert all(
@@ -104,10 +147,18 @@ def test_coverage_requires_all_shards_and_both_thresholds() -> None:
     matrix = _job("test-shard")["strategy"]["matrix"]
     expected_files = len(matrix["python-version"]) * len(matrix["shard"])
     assert f"EXPECTED_SHARD_COVERAGE_FILES={expected_files}" in runs
+    assert (
+        'if [ "$ACTUAL_SHARD_COVERAGE_FILES" -ne '
+        '"$EXPECTED_SHARD_COVERAGE_FILES" ]; then' in runs
+    )
+    assert "Expected exactly $EXPECTED_SHARD_COVERAGE_FILES shard coverage files" in runs
+    assert "Expected at least 6 shard coverage files" not in runs
+    assert "one shard's data lost after a green run" not in runs
     assert "coverage report --skip-covered --fail-under=85" in runs
     assert "coverage json -o coverage.json" in runs
     assert "audit_coverage.py" in runs
-    assert "--threshold=75" in runs
+    assert "--threshold=85" in runs
+    assert "--per-file-threshold=75" in runs
     assert "No shard coverage data found" not in runs
     uploads = _upload_steps(coverage)
     assert uploads
@@ -130,6 +181,7 @@ def test_molecule_and_platform_artifacts_fail_when_missing() -> None:
 def test_every_platform_smokes_binary_before_upload() -> None:
     for name in PLATFORM_JOBS:
         steps = _job(name).get("steps", [])
+        release_uploads = _release_upload_steps(_job(name))
         smoke_index = next(
             index
             for index, step in enumerate(steps)
@@ -138,7 +190,7 @@ def test_every_platform_smokes_binary_before_upload() -> None:
         upload_index = next(
             index
             for index, step in enumerate(steps)
-            if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+            if step in release_uploads
         )
         assert smoke_index < upload_index, name
         assert steps[smoke_index].get("continue-on-error", False) is False

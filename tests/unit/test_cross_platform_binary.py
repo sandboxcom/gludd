@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "gludd.spec"
@@ -61,15 +62,19 @@ def test_tracked_paths_are_windows_checkout_compatible() -> None:
 
 def test_gate_checks_tracked_paths_before_platform_fanout() -> None:
     """The Linux gate must reject Windows-invalid paths before build fanout."""
-    makefile = MAKEFILE_PATH.read_text(encoding="utf-8")
-    gate_line = next(line for line in makefile.splitlines() if line.startswith("gate:"))
+    makefile = compose_makefile(MAKEFILE_PATH)
+    gate = makefile.split("\ngate:", 1)[1].split("\n\n", 1)[0]
+    gate_preflights = makefile.split("GATE_PREFLIGHT_TARGETS :=", 1)[1].split(
+        "GATE_PREFLIGHT_STATUS", 1
+    )[0]
     check_match = re.search(
         r"^_check-windows-tracked-paths:\n(?P<body>(?:\t.*\n)+)",
         makefile,
         re.MULTILINE,
     )
 
-    assert "_check-windows-tracked-paths" in gate_line
+    assert "_check-windows-tracked-paths" in gate_preflights
+    assert "_gate-preflights" in gate
     assert check_match is not None
     assert "test_tracked_paths_are_windows_checkout_compatible" in check_match.group("body")
 
@@ -89,7 +94,7 @@ def build_yml_text() -> str:
 class TestSpecPlatformCompatibility:
     """Verify gludd.spec works on all target platforms."""
 
-    def test_no_windows_incompatible_paths(self, spec_text: str):
+    def test_no_windows_incompatible_paths(self, spec_text: str) -> None:
         """Spec doesn't use paths with colons or backslashes that break Windows.
 
         Windows paths use backslashes and disallow colons in file names. The
@@ -116,7 +121,7 @@ class TestSpecPlatformCompatibility:
             absolute_match = re.search(r"(?<![\w/'\"])/(?:usr|etc|opt|var|home|bin|tmp)(?:/|\b)", stripped)
             assert absolute_match is None, f"line {lineno}: absolute POSIX path in spec breaks Windows: {line!r}"
 
-    def test_no_macos_incompatible_flags(self, spec_text: str):
+    def test_no_macos_incompatible_flags(self, spec_text: str) -> None:
         """Spec doesn't use PyInstaller flags unavailable on macOS.
 
         ``win_no_prefer_redirects`` and ``win_private_assemblies`` are
@@ -143,13 +148,12 @@ class TestSpecPlatformCompatibility:
                 f"UPX path must not be absolute (breaks other OSes): {upx_path}"
             )
 
-    def test_ansible_cli_excluded(self, spec_text: str):
-        """ansible.cli is excluded (Windows locale issue) but ansible core is NOT excluded.
+    def test_ansible_controller_runtime_excluded(self, spec_text: str) -> None:
+        """The frozen core excludes the independently packaged controller runtime.
 
-        ansible.cli calls ``initialize_locale()`` which hard-fails on Windows'
-        cp1252 locale. The spec excludes ansible.cli to avoid pulling it in at
-        build time. But ansible core (executor API) MUST NOT be excluded —
-        gludd drives ansible.runner/core_runner/templating at runtime.
+        Beta4 runs Ansible in its digest-pinned execution environment. Bundling
+        ansible-core or ansible-runner into the platform executable would merge
+        the two Python dependency planes and make the EE lock unenforceable.
         """
         tree = ast.parse(spec_text, filename=str(SPEC_PATH))
         excludes: set[str] = set()
@@ -168,26 +172,13 @@ class TestSpecPlatformCompatibility:
 
         assert excludes, "Spec must have an excludes= list"
 
-        # ansible.cli must be in excludes.
-        assert "ansible.cli" in excludes, (
-            "ansible.cli MUST be in excludes= — it hard-fails on Windows cp1252 locale"
-        )
+        for package in ("ansible", "ansible_runner", "ansible.cli"):
+            assert package in excludes, (
+                f"{package} MUST be excluded so the frozen core cannot import "
+                "the separately locked Ansible controller runtime"
+            )
 
-        # ansible core MUST NOT be excluded.
-        assert "ansible" not in excludes, (
-            "ansible core must NOT be excluded (gludd uses the executor API)"
-        )
-
-        # And the spec must positively list the ansible executor modules as
-        # hidden imports — proving they are NOT being excluded.
-        assert re.search(r"general_ludd\.ansible\.runner", spec_text), (
-            "Spec must include general_ludd.ansible.runner as a hidden import"
-        )
-        assert re.search(r"general_ludd\.ansible\.core_runner", spec_text), (
-            "Spec must include general_ludd.ansible.core_runner as a hidden import"
-        )
-
-    def test_data_files_use_relative_paths(self, spec_text: str):
+    def test_data_files_use_relative_paths(self, spec_text: str) -> None:
         """All ``datas`` entries use relative paths, not absolute.
 
         Absolute paths in ``datas`` would only resolve on the build host that
@@ -211,7 +202,7 @@ class TestSpecPlatformCompatibility:
             assert not dest.startswith(("/", "~")), f"datas dest must be relative (not absolute): {dest!r}"
             assert not re.match(r"^[A-Za-z]:", dest), f"datas dest must not be a Windows drive path: {dest!r}"
 
-    def test_no_hardcoded_os_paths(self, spec_text: str):
+    def test_no_hardcoded_os_paths(self, spec_text: str) -> None:
         """No hardcoded /usr/, /etc/, or C:\\ paths in the spec.
 
         Hardcoded OS paths would only exist on the OS where they were written,
@@ -237,25 +228,30 @@ class TestBuildYmlPlatformCoverage:
     """Verify build.yml builds for all target platforms with smoke tests."""
 
     EXPECTED_BUILD_JOBS = ("linux", "macos", "windows", "termux")
-    # Windows job is intentionally fail-closed (no continue-on-error).
-    # Only these jobs are expected to be non-blocking.
-    NON_BLOCKING_BUILD_JOBS = ("linux", "macos", "termux")
+    # All four platform jobs are fail-closed: every platform produces a
+    # required release artifact, so none may set continue-on-error. The
+    # release job fans in on all of them via `needs`.
+    REQUIRED_BUILD_JOBS = ("linux", "macos", "windows", "termux")
 
-    def test_linux_job_exists(self, build_yml_text: str):
+    def test_linux_job_exists(self, build_yml_text: str) -> None:
         """Linux x86_64 build job exists."""
         assert re.search(r"^  linux\s*:", build_yml_text, re.MULTILINE), "build.yml must define a 'linux:' build job"
-        assert "runs-on: ubuntu-latest" in build_yml_text, "linux job must run on ubuntu-latest"
+        # The hosted-capacity contract pins Ubuntu 24.04 so a moving `latest`
+        # label cannot silently change the release toolchain beneath one SHA.
+        assert "runs-on: ubuntu-24.04" in build_yml_text, (
+            "linux job must run on the pinned ubuntu-24.04 image"
+        )
         # Linux x86_64 produces a tarball + .deb + .rpm.
         assert "linux-x86_64.tar.gz" in build_yml_text, "linux job must produce a linux-x86_64 tarball artifact"
 
-    def test_macos_job_exists(self, build_yml_text: str):
+    def test_macos_job_exists(self, build_yml_text: str) -> None:
         """macOS arm64 build job exists."""
         assert re.search(r"^  macos\s*:", build_yml_text, re.MULTILINE), "build.yml must define a 'macos:' build job"
         assert "runs-on: macos-latest" in build_yml_text, "macos job must run on macos-latest"
         # macOS arm64 produces a tarball + .dmg.
         assert "macos-arm64.tar.gz" in build_yml_text, "macos job must produce a macos-arm64 tarball artifact"
 
-    def test_windows_job_exists(self, build_yml_text: str):
+    def test_windows_job_exists(self, build_yml_text: str) -> None:
         """Windows x86_64 build job exists with UTF-8 locale fix."""
         assert re.search(r"^  windows\s*:", build_yml_text, re.MULTILINE), (
             "build.yml must define a 'windows:' build job"
@@ -268,7 +264,7 @@ class TestBuildYmlPlatformCoverage:
         )
         assert "windows-x86_64.zip" in build_yml_text, "windows job must produce a windows-x86_64 zip artifact"
 
-    def test_termux_job_exists(self, build_yml_text: str):
+    def test_termux_job_exists(self, build_yml_text: str) -> None:
         """Termux (Linux aarch64) build job exists."""
         assert re.search(r"^  termux\s*:", build_yml_text, re.MULTILINE), (
             "build.yml must define a 'termux:' build job (Linux aarch64)"
@@ -277,7 +273,7 @@ class TestBuildYmlPlatformCoverage:
         assert "ubuntu-24.04-arm" in build_yml_text, "termux job must run on ubuntu-24.04-arm for the aarch64 build"
         assert "linux-aarch64.tar.gz" in build_yml_text, "termux job must produce a linux-aarch64 tarball artifact"
 
-    def test_each_job_has_smoke_test(self, build_yml_text: str):
+    def test_each_job_has_smoke_test(self, build_yml_text: str) -> None:
         """Each build job has a post-build smoke test step.
 
         A "smoke test" here is any step that exercises the produced binary
@@ -303,7 +299,7 @@ class TestBuildYmlPlatformCoverage:
             f"(one per platform), found {pyinstaller_invocations}"
         )
 
-    def test_each_job_has_upload_artifact(self, build_yml_text: str):
+    def test_each_job_has_upload_artifact(self, build_yml_text: str) -> None:
         """Each build job uploads its artifact via actions/upload-artifact.
 
         Without an upload step, the built binary never reaches the release
@@ -325,23 +321,36 @@ class TestBuildYmlPlatformCoverage:
         ):
             assert platform_pattern in build_yml_text, f"build.yml must upload an artifact named {platform_pattern!r}"
 
-    def test_continue_on_error_is_true(self, build_yml_text: str):
-        """Build jobs have continue-on-error: true (non-blocking).
+    def test_build_jobs_are_blocking_no_continue_on_error(self, build_yml_text: str) -> None:
+        """Platform build jobs are fail-closed (no continue-on-error).
 
-        The platform build jobs are deliberately non-blocking so that a
-        regression on one platform does not sink the release for the others.
-        The release job has its own pre-publish gate that catches missing
-        artifacts.
+        Every platform produces required release artifacts, so each build job
+        must stay blocking: a regression on any platform must fail the job and
+        thereby the release fan-in (the release job `needs` every platform
+        job). Setting continue-on-error on a platform job would let a missing
+        artifact reach the release stage.
         """
-        # For each platform build job, assert that continue-on-error: true
-        # appears in the job body. We split the YAML into per-job chunks at
+        # For each platform build job, assert that continue-on-error does NOT
+        # appear in the job body. We split the YAML into per-job chunks at
         # top-level two-space-indented keys.
-        for job_name in self.NON_BLOCKING_BUILD_JOBS:
+        for job_name in self.REQUIRED_BUILD_JOBS:
             job_body = self._extract_job_body(build_yml_text, job_name)
             assert job_body is not None, f"could not extract job body for {job_name!r}"
-            assert re.search(r"continue-on-error\s*:\s*true", job_body), (
-                f"build job {job_name!r} must set continue-on-error: true "
-                f"so a single-platform regression does not sink the release"
+            assert re.search(r"continue-on-error\s*:\s*true", job_body) is None, (
+                f"build job {job_name!r} must NOT set continue-on-error: true — "
+                f"its artifacts are required release assets and failures must block the release"
+            )
+
+    def test_release_fans_in_on_all_platform_jobs(self, build_yml_text: str) -> None:
+        """The release job waits on every platform build job."""
+        release_body = self._extract_job_body(build_yml_text, "release")
+        assert release_body is not None, "could not extract job body for 'release'"
+        needs_match = re.search(r"needs:\s*\[([^\]]*)\]", release_body)
+        assert needs_match is not None, "release job must declare a needs: list"
+        needed = [token.strip() for token in needs_match.group(1).split(",")]
+        for job_name in self.REQUIRED_BUILD_JOBS:
+            assert job_name in needed, (
+                f"release job must `needs` the {job_name!r} platform build so a missing artifact blocks the release"
             )
 
     @staticmethod

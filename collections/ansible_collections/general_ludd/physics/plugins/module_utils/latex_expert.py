@@ -11,11 +11,13 @@ class LatexConfig:
         font_size: str = "11pt",
         title: str = "",
         author: str = "",
+        output_format: str = "tex",
     ) -> None:
         self.document_class = document_class
         self.font_size = font_size
         self.title = title
         self.author = author
+        self.output_format = output_format
 
 
 def generate_paper(config: LatexConfig) -> str:

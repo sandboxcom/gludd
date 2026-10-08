@@ -73,6 +73,8 @@ class TestHardwareRouterWired:
             with TestClient(app) as client:
                 asyncio.run(_seed_default_project(app))
                 assert app.state._hardware_inventory is not None
+                assert app.state._accelerator_discovery is not None
+                assert app.state._accelerator_inventory is None
 
                 resp = client.get("/admin/hardware/inventory")
                 assert resp.status_code == 200
@@ -120,7 +122,7 @@ class TestHardwareRouterWired:
                 assert "can_run" in data
 
     def test_missing_psk_returns_401(self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         config_dir, _db_path = _make_db_config(tmp_path)
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",

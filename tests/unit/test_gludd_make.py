@@ -5,16 +5,18 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
 
 
 def test_git_cherry_pick_target_exists() -> None:
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     assert "git-cherry-pick:" in content, "Makefile missing target: git-cherry-pick"
 
 
 def test_git_cherry_pick_accepts_sha_param() -> None:
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     lines = content.split("\n")
     in_target = False
     found_sha = False
@@ -45,7 +47,7 @@ def test_git_cherry_pick_rejects_missing_sha() -> None:
 
 
 def test_git_cherry_pick_target_help_mentions_target() -> None:
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     found = False
     for line in content.split("\n"):
         if line.startswith(".PHONY"):

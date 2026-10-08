@@ -21,8 +21,14 @@ The isolated-import probe snapshots only the `general_ludd` entries in Python's
 documented [`sys.modules`](https://docs.python.org/3/library/sys.html#sys.modules)
 cache. A `try`/`finally` boundary removes that family for the probe, deletes every
 new family descendant on exit, and restores every pre-existing family entry. This
-preserves the package-to-submodule attribute graph seen by later tests while
-leaving normally imported third-party dependencies cached.
+also snapshots each pre-existing parent-to-child package binding and restores it
+after the registry entries, including cached dynamic children that do not map to
+a Python source file. That second step protects the import invariant even when a
+custom importer or already-cached dependency retains and mutates a saved package
+object. It preserves the package-to-submodule attribute graph seen by later tests
+while leaving normally imported third-party dependencies cached. The prefix
+boundary is exact: a lookalike such as `general_ludd_plugin` is external and is
+not restored or evicted with the `general_ludd` family.
 
 The standard-library
 [`unittest.mock.patch.dict`](https://docs.python.org/3/library/unittest.mock.html#unittest.mock.patch.dict)
@@ -44,6 +50,10 @@ repair changes test isolation, not production discovery or command execution.
 - [CPython issue 24029](https://bugs.python.org/issue24029), open since 2015,
   records the import invariant that a cached child module must also be exposed as
   an attribute of its parent package.
+- A [2021 Python Help discussion](https://discuss.python.org/t/creating-aliases-in-sys-modules-for-deprecated-modules/7739)
+  reports that a `sys.modules` alias alone is insufficient for package users and
+  separately preserves the corresponding parent attribute when compatibility
+  requires attribute access.
 - A [Stack Overflow report from 2011](https://stackoverflow.com/questions/6048786/from-module-import-in-init-py-makes-module-name-visible)
   describes duplicate or unreachable module objects when code manipulates
   `sys.modules` without maintaining the corresponding package attributes.
@@ -59,9 +69,13 @@ untrusted binary executable. The snapshot is bounded by the current `general_lud
 module family, is released at function exit, and creates no workers, retries,
 files, or persistent services. Deterministic regressions assert that both QEMU
 descendants and the parent attribute are absent after a probe and that newly
-loaded external dependencies remain cached, so graph pollution is reported at
-its source instead of surfacing later as 25 misleading failures or third-party
-reload warnings.
+loaded external dependencies, including a lookalike package prefix, remain
+cached. Retained-reference regressions mutate saved package objects during the
+probe, including one dynamic child absent from the filesystem inventory, then
+deliberately run delayed monkeypatch cleanup before leaving the isolation scope.
+They prove the original parent and child identities remain coherent after both
+cleanup layers. Graph pollution is therefore reported at its source instead of
+surfacing later as 25 misleading failures or third-party reload warnings.
 
 ## Zero-downtime rollout and rollback
 

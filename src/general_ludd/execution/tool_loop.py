@@ -14,12 +14,12 @@ import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from general_ludd.compaction.aggressive import compact_dicts
+from general_ludd.dispatch.limits import MAX_CALLS_PER_REQUEST
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.mcp.transport import MCPTransportError
-from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
 from general_ludd.schemas.job import JobSpec
 from general_ludd.security.capability_lattice import check_dispatch, role_may_dispatch
 
@@ -97,7 +97,23 @@ class ToolLoopExhausted(RuntimeError):
     """
 
 
+def _raise_tool_loop_exhausted(job_id: str, max_iterations: int) -> NoReturn:
+    """Record and raise terminal tool-loop exhaustion."""
+    logger.warning(
+        "Tool call loop reached max iterations (%d) for job %s",
+        max_iterations,
+        job_id,
+    )
+    raise ToolLoopExhausted(
+        f"Tool call loop reached max iterations ({max_iterations}) "
+        f"for job {job_id} while the model was still requesting tools; "
+        f"no final assistant answer was produced"
+    )
+
+
 class ToolCallLoop:
+    """Run bounded model/tool conversations through an MCP client."""
+
     def __init__(
         self,
         model_gateway: Any,
@@ -116,6 +132,7 @@ class ToolCallLoop:
         per_iteration_timeout: float | None = None,
         work_type_max_iterations: dict[str, int] | None = None,
     ) -> None:
+        """Configure model, capability, compaction, and resource guards."""
         self._gateway = model_gateway
         self._mcp_client = mcp_client
         self._max_iterations = max_iterations
@@ -179,6 +196,7 @@ class ToolCallLoop:
         return tool.server_id
 
     def is_available(self) -> bool:
+        """Return whether an MCP client is available for tool execution."""
         return self._mcp_client is not None
 
     async def run_with_tools(
@@ -187,6 +205,7 @@ class ToolCallLoop:
         system_prompt: str,
         user_prompt: str,
     ) -> str:
+        """Run a bounded tool loop and return the final assistant response."""
         if self._mcp_client is None:
             return cast(str, await self._call_model(job, system_prompt, user_prompt))
 
@@ -471,16 +490,7 @@ class ToolCallLoop:
                 continue
             return content
 
-        logger.warning(
-            "Tool call loop reached max iterations (%d) for job %s",
-            effective_max_iterations,
-            job.job_id,
-        )
-        raise ToolLoopExhausted(
-            f"Tool call loop reached max iterations ({effective_max_iterations}) "
-            f"for job {job.job_id} while the model was still requesting tools; "
-            f"no final assistant answer was produced"
-        )
+        _raise_tool_loop_exhausted(job.job_id, effective_max_iterations)
 
     def reset_auditor(self) -> None:
         """Reset the auditor state for a fresh job."""

@@ -49,18 +49,16 @@ class AuthPosture:
     surface: str
 
 
-def load_auth_posture(
-    surface: str, env: Mapping[str, str] | None = None
-) -> AuthPosture:
+def load_auth_posture(surface: str, env: Mapping[str, str] | None = None) -> AuthPosture:
     """Resolve the shared PSK auth posture from the environment.
 
-    Reads ``GLUDD_PSK`` (the pre-shared key) and ``GLUDD_REQUIRE_AUTH`` (the
+    Reads ``GLUDD_AUTH_PSK`` (the pre-shared key) and ``GLUDD_REQUIRE_AUTH`` (the
     fail-closed opt-in) so the daemon and the worker derive an identical posture
     and cannot drift. Emits the LOUD no-PSK startup warning when auth is required
     but no key is configured. Performs no I/O beyond reading env + logging.
     """
     source = env if env is not None else os.environ
-    psk = (source.get("GLUDD_PSK", "") or "").strip()
+    psk = (source.get("GLUDD_AUTH_PSK", "") or "").strip()
     no_auth = not psk
     # Default-secure: when NO PSK is configured, REQUIRE auth (fail-closed) unless
     # the operator explicitly opts into no-auth via GLUDD_PSK_DISABLE=1.
@@ -84,26 +82,28 @@ def load_auth_posture(
         import logging
 
         logging.getLogger("general_ludd.security.auth").warning(
-            "No GLUDD_PSK configured for the %s surface: failing CLOSED on "
-            "all non-public paths. Set GLUDD_PSK to enable auth, or "
+            "No GLUDD_AUTH_PSK configured for the %s surface: failing CLOSED on "
+            "all non-public paths. Set GLUDD_AUTH_PSK to enable auth, or "
             "GLUDD_PSK_DISABLE=1 / GLUDD_ALLOW_NO_AUTH=1 to explicitly disable it.",
             surface,
         )
-    return AuthPosture(
-        psk=psk, require_auth=require_auth, no_auth=no_auth, surface=surface
-    )
+    return AuthPosture(psk=psk, require_auth=require_auth, no_auth=no_auth, surface=surface)
 
 
 def check_bearer_token(auth_header: str, expected: str) -> bool:
     """Constant-time check of a ``Authorization: Bearer <token>`` header.
 
-    Extracts the token after the ``Bearer `` prefix and compares it to
-    ``expected`` via :func:`verify_psk` (hmac.compare_digest). Returns ``False``
-    for a missing/malformed header or an empty expected key.
+    Extracts the token after the single required ``Bearer `` separator and
+    compares the remaining characters literally to ``expected`` via
+    :func:`verify_psk`. Additional leading whitespace makes the header
+    malformed; trailing whitespace is part of the configured secret. Returns
+    ``False`` for a missing/malformed header or an empty expected key.
     """
     if not auth_header or not auth_header.startswith("Bearer "):
         return False
-    token = auth_header[len("Bearer ") :].strip()
+    token = auth_header[len("Bearer ") :]
+    if not token or token[0].isspace():
+        return False
     return verify_psk(token, expected)
 
 
@@ -111,25 +111,32 @@ def verify_psk(presented: str, expected: str) -> bool:
     """Constant-time check that ``presented`` matches the configured ``expected``.
 
     Returns ``False`` for an empty presented token or an empty expected key.
-    Uses :func:`hmac.compare_digest` so the comparison does not leak the secret
-    via a timing side channel.
+    Raises ``TypeError`` for non-string inputs. Uses
+    :func:`hmac.compare_digest` (on UTF-8 encodings of both values) so the
+    comparison does not leak the secret via a timing side channel and supports
+    non-ASCII keys.
     """
+    if not isinstance(presented, str) or not isinstance(expected, str):
+        raise TypeError("verify_psk requires str inputs")
     if not presented or not expected:
         return False
-    return hmac.compare_digest(presented, expected)
+    return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
 
 
 def _load_admin_token(env: Mapping[str, str] | None = None) -> str:
     source = env if env is not None else os.environ
-    return (source.get("GLUDD_ADMIN_TOKEN", "") or "").strip()
+    return source.get("GLUDD_ADMIN_TOKEN", "") or ""
 
 
 def check_admin_token(header_value: str, expected: str | None = None) -> bool:
+    """Constant-time comparison of a presented admin token against the expected value."""
     if expected is None:
         expected = _load_admin_token()
     if not header_value or not expected:
         return False
-    return hmac.compare_digest(header_value.strip(), expected)
+    if not isinstance(header_value, str) or not isinstance(expected, str):
+        return False
+    return hmac.compare_digest(header_value.strip().encode("utf-8"), expected.encode("utf-8"))
 
 
 def require_auth_env(env: Mapping[str, str] | None = None) -> bool:

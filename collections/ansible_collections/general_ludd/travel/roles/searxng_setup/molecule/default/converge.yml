@@ -9,7 +9,7 @@
   tasks:
     - name: "Include searxng_setup"
       ansible.builtin.include_role:
-        name: "searxng_setup"
+        name: "general_ludd.travel.searxng_setup"
       vars:
         searxng_enabled: false
 

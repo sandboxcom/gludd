@@ -118,7 +118,7 @@ CI run `27895611609` also showed a 3.12-only flake: `test_worker_redacts_secret_
 
 ### Ship sequence (paste-ready, run after CI green)
 
-```
+```text
 make require-ci-green SHA=<full-SHA>
 make check-readme-status TAG=v0.1.0-alpha.3
 make ship-https SHA=<full-SHA> TAG=v0.1.0-alpha.3 MSG='v0.1.0-alpha.3 — third alpha'

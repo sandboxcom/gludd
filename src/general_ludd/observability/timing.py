@@ -58,6 +58,7 @@ class DurationVerdict:
     reason: str = ""
 
     def __str__(self) -> str:  # pragma: no cover - trivial
+        """Render a concise human-readable verdict."""
         base = f"{self.baseline:.3f}s" if self.baseline is not None else "n/a"
         flag = "SLOW" if self.anomalous else "ok"
         return f"[{flag}] {self.key}: {self.seconds:.3f}s (baseline {base}) {self.reason}".strip()
@@ -73,7 +74,9 @@ class DurationTracker:
         min_samples: int = _DEFAULT_MIN_SAMPLES,
         slow_factor: float = _DEFAULT_SLOW_FACTOR,
         abs_floor_s: float = _DEFAULT_ABS_FLOOR_S,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        """Initialize bounded baseline tracking and anomaly thresholds."""
         if window <= 0:
             raise ValueError("window must be positive")
         if min_samples <= 0:
@@ -84,6 +87,7 @@ class DurationTracker:
         self._min_samples = int(min_samples)
         self._slow_factor = float(slow_factor)
         self._abs_floor_s = float(abs_floor_s)
+        self._clock = clock
         # key -> rolling list of the most recent durations (bounded to _window).
         self._history: dict[str, list[float]] = {}
         self._lock = threading.Lock()
@@ -132,8 +136,10 @@ class DurationTracker:
         return DurationVerdict(key, seconds, base, False, "within baseline")
 
     def check_then_record(self, key: str, seconds: float) -> DurationVerdict:
-        """Judge ``seconds`` against the CURRENT baseline (which excludes this
-        sample), then record it. The natural one-call for a just-finished op."""
+        """Judge ``seconds`` against the current baseline.
+
+        Record the sample only after producing the verdict.
+        """
         verdict = self.is_anomalous(key, seconds)
         self.record(key, seconds)
         return verdict
@@ -146,11 +152,11 @@ class DurationTracker:
         warning and calls ``on_anomaly`` (if given). Never suppresses the block's
         own exception — the duration is still recorded on the error path.
         """
-        start = time.monotonic()
+        start = self._clock()
         try:
             yield
         finally:
-            elapsed = time.monotonic() - start
+            elapsed = self._clock() - start
             verdict = self.is_anomalous(key, elapsed)
             self.record(key, elapsed)
             if verdict.anomalous:
@@ -174,6 +180,7 @@ class StallReport:
     thread_stacks: dict[str, str] = field(default_factory=dict)
 
     def __str__(self) -> str:  # pragma: no cover - trivial
+        """Render a concise human-readable stall report."""
         return f"STALL {self.key} (op {self.op_id}): {self.elapsed_s:.1f}s elapsed, deadline {self.deadline_s:.1f}s"
 
 
@@ -208,6 +215,7 @@ class StallWatchdog:
         on_stall: Callable[[StallReport], None] | None = None,
         capture_stacks: bool = True,
     ) -> None:
+        """Initialize an in-flight operation watchdog."""
         self._tracker = tracker
         self._stall_factor = float(stall_factor)
         self._abs_deadline_s = float(abs_deadline_s)
@@ -233,8 +241,9 @@ class StallWatchdog:
         """Register an in-flight operation (idempotent per ``op_id``)."""
         deadline = self._deadline_for(key, deadline_s)
         with self._lock:
-            self._inflight[op_id] = (key, time.monotonic(), deadline)
-            self._reported.discard(op_id)
+            if op_id not in self._inflight:
+                self._inflight[op_id] = (key, time.monotonic(), deadline)
+                self._reported.discard(op_id)
 
     def finish(self, op_id: str) -> None:
         """Mark an operation complete so it is no longer watched."""

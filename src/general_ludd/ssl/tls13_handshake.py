@@ -1,6 +1,6 @@
 """TLS 1.3 handshake state machine using cryptography.
 
-Implements client-side TLS 1.3 handshake per RFC 8446:
+Implements client-side TLS 1.3 handshake per RFC 9846:
 - X25519 ECDHE key exchange
 - HKDF-SHA256 key schedule
 - AES-128-GCM record protection
@@ -14,7 +14,7 @@ from datetime import UTC
 from enum import Enum, auto
 from typing import cast
 
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, InvalidTag
 from cryptography.hazmat.primitives import hashes, hmac, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, x448, x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
@@ -89,7 +89,7 @@ class HandshakeStateError(HandshakeError):
     """Invalid state transition."""
 
 
-class HandshakeCryptoError(HandshakeError):
+class HandshakeCryptoError(HandshakeError, ValueError):
     """Crypto verification failed."""
 
 
@@ -103,7 +103,7 @@ class HandshakePeerError(HandshakeError):
 
 
 class NamedGroup(Enum):
-    """Identify a TLS 1.3 key-exchange group from RFC 8446."""
+    """Identify a TLS 1.3 key-exchange group from RFC 9846."""
 
     X25519 = 0x001D
     X448 = 0x001E
@@ -113,7 +113,7 @@ class NamedGroup(Enum):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Transcript hash — RFC 8446 §4.4.1
+# Transcript hash — RFC 9846 §4.5.1
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -166,7 +166,7 @@ class TranscriptHash:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# HKDF helpers — RFC 8446 §7.1
+# HKDF helpers — RFC 9846 §7.1
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -231,7 +231,7 @@ class HandshakeSecrets:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Key schedule — RFC 8446 §7.1
+# Key schedule — RFC 9846 §7.1
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -300,7 +300,7 @@ def compute_tls13_keys(
 
 
 def compute_finished_verify_data(base_key: bytes, transcript_hash: bytes, hash_name: str) -> bytes:
-    """Compute an RFC 8446 Finished-message verification value.
+    """Compute an RFC 9846 Finished-message verification value.
 
     Args:
         base_key: Handshake traffic secret for the sending peer.
@@ -325,7 +325,7 @@ def compute_finished_verify_data(base_key: bytes, transcript_hash: bytes, hash_n
 class RecordProtection:
     """Encrypt and decrypt TLS records with a monotonically increasing nonce."""
 
-    __slots__ = ("_aead", "_iv_base", "_seq")
+    __slots__ = ("_aead", "_failed", "_iv_base", "_seq")
 
     def __init__(self, aead_name: str, key: bytes, iv_base: bytes) -> None:
         """Initialize record protection for a negotiated AEAD.
@@ -348,6 +348,7 @@ class RecordProtection:
             raise HandshakeError(f"Unsupported AEAD: {aead_name}")
         self._iv_base = iv_base
         self._seq: int = 0
+        self._failed = False
 
     @property
     def sequence_number(self) -> int:
@@ -371,9 +372,14 @@ class RecordProtection:
         Returns:
             Authenticated ciphertext including the AEAD tag.
         """
+        if self._failed:
+            raise HandshakeCryptoError(
+                "record protection is unusable after authentication failure"
+            )
         nonce = self._build_nonce()
+        ciphertext = self._aead.encrypt(nonce, plaintext, associated_data)
         self._seq += 1
-        return self._aead.encrypt(nonce, plaintext, associated_data)
+        return ciphertext
 
     def decrypt(self, ciphertext: bytes, associated_data: bytes = b"") -> bytes:
         """Decrypt one record and advance the sequence number.
@@ -386,15 +392,29 @@ class RecordProtection:
             Decrypted record content.
 
         Raises:
-            InvalidTag: If authentication of the record fails.
+            HandshakeCryptoError: If authentication fails, or if this record
+                protector was already poisoned by an authentication failure.
         """
+        if self._failed:
+            raise HandshakeCryptoError(
+                "record protection is unusable after authentication failure"
+            )
         nonce = self._build_nonce()
+        try:
+            plaintext = self._aead.decrypt(nonce, ciphertext, associated_data)
+        except InvalidTag as err:
+            self._failed = True
+            raise HandshakeCryptoError("record authentication failed") from err
         self._seq += 1
-        return self._aead.decrypt(nonce, ciphertext, associated_data)
+        return plaintext
 
     def reset(self) -> None:
-        """Reset the record sequence number to zero."""
+        """Reset the sequence number without clearing a poisoned protector."""
         self._seq = 0
+
+    def invalidate(self) -> None:
+        """Permanently reject further records after peer-authentication failure."""
+        self._failed = True
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -593,6 +613,31 @@ def _encode_uint16_leb(data: bytes) -> bytes:
     return len(data).to_bytes(2, "big") + data
 
 
+def _parse_handshake_message(raw: bytes, expected_type: int) -> bytes:
+    """Return a validated TLS handshake payload.
+
+    Args:
+        raw: Plaintext handshake message.
+        expected_type: Required one-byte handshake type.
+
+    Returns:
+        The message payload after the four-byte handshake header.
+
+    Raises:
+        HandshakePeerError: If the type or declared length is invalid.
+    """
+    if len(raw) < 4:
+        raise HandshakePeerError("truncated handshake message")
+    if raw[0] != expected_type:
+        raise HandshakePeerError(
+            f"unexpected handshake type {raw[0]}, expected {expected_type}"
+        )
+    declared_length = int.from_bytes(raw[1:4], "big")
+    if len(raw) != declared_length + 4:
+        raise HandshakePeerError("handshake message length mismatch")
+    return raw[4:]
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # TLS 1.3 Handshake — client side
 # ═══════════════════════════════════════════════════════════════════════════
@@ -602,6 +647,8 @@ class Tls13Handshake:
     """Drive a client-side TLS 1.3 handshake and protect resulting traffic."""
 
     __slots__ = (
+        "_application_decrypt",
+        "_application_encrypt",
         "_cipher_suite",
         "_client_finished_verify_data",
         "_config",
@@ -614,6 +661,7 @@ class Tls13Handshake:
         "_peer_key_share",
         "_secrets",
         "_server_finished_verify_data",
+        "_simulated_server_encrypt",
         "_transcript",
     )
 
@@ -632,6 +680,9 @@ class Tls13Handshake:
         self._secrets: HandshakeSecrets | None = None
         self._encrypt: RecordProtection | None = None
         self._decrypt: RecordProtection | None = None
+        self._application_encrypt: RecordProtection | None = None
+        self._application_decrypt: RecordProtection | None = None
+        self._simulated_server_encrypt: RecordProtection | None = None
         self._peer_certificate: ServerCertificate | None = None
         self._server_finished_verify_data: bytes | None = None
         self._client_finished_verify_data: bytes | None = None
@@ -789,7 +840,9 @@ class Tls13Handshake:
         """
         if self.state != HandshakeState.SERVER_HELLO_RCVD:
             raise HandshakeStateError(f"Cannot process EncryptedExtensions from {self.state.name}")
-        self._transcript.update(raw)
+        plaintext = self.decrypt_handshake(raw)
+        _parse_handshake_message(plaintext, 8)
+        self._transcript.update(plaintext)
         self._fsm.send(Event("recv_encrypted_extensions"))
 
     # ── certificate ───────────────────────────────────────────────────────
@@ -807,12 +860,14 @@ class Tls13Handshake:
         """
         if self.state != HandshakeState.EE_RCVD:
             raise HandshakeStateError(f"Cannot process Certificate from {self.state.name}")
-        self._transcript.update(raw)
+        plaintext = self.decrypt_handshake(raw)
+        _parse_handshake_message(plaintext, 11)
 
         if pem_chain:
             chain = [load_pem_x509_certificate(c) for c in pem_chain]
             self._peer_certificate = ServerCertificate(certificate=chain[0], chain=chain)
 
+        self._transcript.update(plaintext)
         self._fsm.send(Event("recv_certificate"))
 
     # ── certificate_verify ────────────────────────────────────────────────
@@ -829,24 +884,73 @@ class Tls13Handshake:
         """
         if self.state != HandshakeState.CERT_RCVD:
             raise HandshakeStateError(f"Cannot process CertificateVerify from {self.state.name}")
-        self._transcript.update(raw)
+        plaintext = self.decrypt_handshake(raw)
+        payload = _parse_handshake_message(plaintext, 15)
+        if len(payload) < 4:
+            raise HandshakePeerError("truncated CertificateVerify message")
+        signature_scheme = int.from_bytes(payload[:2], "big")
+        signature_length = int.from_bytes(payload[2:4], "big")
+        signature = payload[4:]
+        if len(signature) != signature_length:
+            raise HandshakePeerError("CertificateVerify signature length mismatch")
+        if self._peer_certificate is None:
+            self._invalidate_handshake_authentication()
+            raise HandshakeCryptoError("CertificateVerify requires a peer certificate")
 
-        if self._peer_certificate is not None and raw[8:].strip(b"\x00"):
-            transcript_digest = self._transcript.digest()
-            try:
-                pub_key = self._peer_certificate.certificate.public_key()
-                if isinstance(pub_key, ec.EllipticCurvePublicKey):
-                    pub_key.verify(
-                        raw[8:],
-                        transcript_digest,
-                        ec.ECDSA(_hash_algorithm(self._hash_name)),
+        signed_content = self.build_server_certificate_verify_content()
+        pub_key = self._peer_certificate.certificate.public_key()
+        try:
+            if isinstance(pub_key, ec.EllipticCurvePublicKey):
+                algorithms: dict[int, tuple[type[ec.EllipticCurve], hashes.HashAlgorithm]] = {
+                    0x0403: (ec.SECP256R1, hashes.SHA256()),
+                    0x0503: (ec.SECP384R1, hashes.SHA384()),
+                    0x0603: (ec.SECP521R1, hashes.SHA512()),
+                }
+                algorithm = algorithms.get(signature_scheme)
+                if algorithm is None or not isinstance(pub_key.curve, algorithm[0]):
+                    self._invalidate_handshake_authentication()
+                    raise HandshakeCryptoError(
+                        "CertificateVerify signature scheme does not match the certificate"
                     )
-                elif isinstance(pub_key, ed25519.Ed25519PublicKey):
-                    pub_key.verify(raw[8:], transcript_digest)
-            except InvalidSignature as err:
-                raise HandshakeCryptoError("CertificateVerify signature validation failed") from err
+                pub_key.verify(signature, signed_content, ec.ECDSA(algorithm[1]))
+            elif isinstance(pub_key, ed25519.Ed25519PublicKey):
+                if signature_scheme != 0x0807:
+                    self._invalidate_handshake_authentication()
+                    raise HandshakeCryptoError(
+                        "CertificateVerify signature scheme does not match the certificate"
+                    )
+                pub_key.verify(signature, signed_content)
+            else:
+                self._invalidate_handshake_authentication()
+                raise HandshakeCryptoError(
+                    "CertificateVerify certificate key type is unsupported"
+                )
+        except InvalidSignature as err:
+            self._invalidate_handshake_authentication()
+            raise HandshakeCryptoError(
+                "CertificateVerify signature validation failed"
+            ) from err
 
+        self._transcript.update(plaintext)
         self._fsm.send(Event("recv_certificate_verify"))
+
+    def build_server_certificate_verify_content(self) -> bytes:
+        """Build the RFC 9846 server CertificateVerify signed content.
+
+        Returns:
+            Context-bound content covering the current transcript digest.
+        """
+        return (
+            b" " * 64
+            + b"TLS 1.3, server CertificateVerify"
+            + b"\x00"
+            + self._transcript.digest()
+        )
+
+    def _invalidate_handshake_authentication(self) -> None:
+        """Make inbound handshake record protection terminally unusable."""
+        if self._decrypt is not None:
+            self._decrypt.invalidate()
 
     # ── derive handshake keys ─────────────────────────────────────────────
 
@@ -885,6 +989,7 @@ class Tls13Handshake:
             self._secrets.server_handshake_key,
             self._secrets.server_handshake_iv,
         )
+        self._simulated_server_encrypt = None
 
     # ── finished ──────────────────────────────────────────────────────────
 
@@ -926,17 +1031,41 @@ class Tls13Handshake:
         return self._client_finished_verify_data
 
     def process_finished(self, raw: bytes) -> None:
-        """Record the server Finished message and advance the state.
+        """Authenticate the server Finished message and advance the state.
 
         Args:
             raw: Encoded server Finished handshake message.
 
         Raises:
             HandshakeStateError: If CertificateVerify has not been processed.
+            HandshakeCryptoError: If Finished verification fails.
         """
         if self.state != HandshakeState.CV_RCVD:
             raise HandshakeStateError(f"Cannot process Finished from {self.state.name}")
-        self._transcript.update(raw)
+        plaintext = self.decrypt_handshake(raw)
+        verify_data = _parse_handshake_message(plaintext, 20)
+        if self._secrets is None:
+            raise HandshakeStateError("Keys not derived")
+        key_len = _FINISHED_KEY_LEN[self._hash_name]
+        if len(verify_data) != key_len:
+            raise HandshakePeerError("Finished verification data length mismatch")
+        finished_key = _hkdf_expand_label(
+            self._secrets.server_handshake_traffic,
+            b"finished",
+            b"",
+            key_len,
+            self._hash_name,
+        )
+        verifier = hmac.HMAC(finished_key, _hash_algorithm(self._hash_name))
+        verifier.update(self._transcript.digest())
+        try:
+            verifier.verify(verify_data)
+        except InvalidSignature as err:
+            self._invalidate_handshake_authentication()
+            raise HandshakeCryptoError("server Finished verification failed") from err
+
+        self._server_finished_verify_data = verify_data
+        self._transcript.update(plaintext)
         self._fsm.send(Event("recv_finished"))
 
     def build_client_finished(self) -> bytes:
@@ -960,7 +1089,24 @@ class Tls13Handshake:
             msg = self._encrypt.encrypt(msg)
 
         self._fsm.send(Event("send_finished"))
+        self._initialize_application_protection()
         return msg
+
+    def _initialize_application_protection(self) -> None:
+        """Create persistent directional protectors after authentication."""
+        if self._secrets is None or self._cipher_suite is None:
+            raise HandshakeStateError("Application secrets are unavailable")
+        aead_name = CIPHER_SUITE_MAP[self._cipher_suite][0]
+        self._application_encrypt = RecordProtection(
+            aead_name,
+            self._secrets.client_application_key,
+            self._secrets.client_application_iv,
+        )
+        self._application_decrypt = RecordProtection(
+            aead_name,
+            self._secrets.server_application_key,
+            self._secrets.server_application_iv,
+        )
 
     # ── encrypt / decrypt helpers ─────────────────────────────────────────
 
@@ -991,7 +1137,7 @@ class Tls13Handshake:
 
         Raises:
             HandshakeStateError: If handshake keys are unavailable.
-            InvalidTag: If authentication of the ciphertext fails.
+            HandshakeCryptoError: If authentication of the ciphertext fails.
         """
         if self._decrypt is None:
             raise HandshakeStateError("Handshake decryption not available")
@@ -1009,16 +1155,9 @@ class Tls13Handshake:
         Raises:
             HandshakeStateError: If application secrets are unavailable.
         """
-        if self._secrets is None:
+        if not self.is_connected or self._application_encrypt is None:
             raise HandshakeStateError("Not connected")
-        assert self._cipher_suite is not None
-        aead_name = CIPHER_SUITE_MAP[self._cipher_suite][0]
-        prot = RecordProtection(
-            aead_name,
-            self._secrets.client_application_key,
-            self._secrets.client_application_iv,
-        )
-        return prot.encrypt(plaintext)
+        return self._application_encrypt.encrypt(plaintext)
 
     def decrypt_application_data(self, ciphertext: bytes) -> bytes:
         """Decrypt application data with the derived server key.
@@ -1031,42 +1170,40 @@ class Tls13Handshake:
 
         Raises:
             HandshakeStateError: If application secrets are unavailable.
-            InvalidTag: If authentication of the ciphertext fails.
+            HandshakeCryptoError: If authentication of the ciphertext fails.
         """
-        if self._secrets is None:
+        if not self.is_connected or self._application_decrypt is None:
             raise HandshakeStateError("Not connected")
-        assert self._cipher_suite is not None
-        aead_name = CIPHER_SUITE_MAP[self._cipher_suite][0]
-        prot = RecordProtection(
-            aead_name,
-            self._secrets.server_application_key,
-            self._secrets.server_application_iv,
-        )
-        return prot.decrypt(ciphertext)
+        return self._application_decrypt.decrypt(ciphertext)
 
     # ── full handshake convenience ────────────────────────────────────────
 
     def _enc_as_server(self, plaintext: bytes) -> bytes:
         assert self._secrets is not None
         assert self._cipher_suite is not None
-        aead_name = CIPHER_SUITE_MAP[self._cipher_suite][0]
-        rp = RecordProtection(
-            aead_name,
-            self._secrets.server_handshake_key,
-            self._secrets.server_handshake_iv,
-        )
-        return rp.encrypt(plaintext)
+        if self._simulated_server_encrypt is None:
+            aead_name = CIPHER_SUITE_MAP[self._cipher_suite][0]
+            self._simulated_server_encrypt = RecordProtection(
+                aead_name,
+                self._secrets.server_handshake_key,
+                self._secrets.server_handshake_iv,
+            )
+        return self._simulated_server_encrypt.encrypt(plaintext)
 
     def do_full_handshake(
         self,
         peer_key_share: bytes,
         server_cert_pems: list[bytes] | None = None,
+        server_signing_key: ec.EllipticCurvePrivateKey | None = None,
     ) -> tuple[bytes, HandshakeSecrets]:
         """Simulate the complete client handshake against a peer key share.
 
         Args:
             peer_key_share: Encoded peer public key for key agreement.
             server_cert_pems: Optional leaf-first PEM certificate chain.
+            server_signing_key: Private key for the supplied leaf certificate.
+                A local simulation certificate is generated when both inputs
+                are omitted.
 
         Returns:
             Client Finished message and the derived handshake secrets.
@@ -1080,15 +1217,34 @@ class Tls13Handshake:
         self.process_server_hello(_make_server_hello_bytes(peer_key_share, self._cipher_suite))
         self.derive_handshake_keys(peer_key_share)
 
+        if server_cert_pems is None:
+            generated_cert, generated_key = generate_self_signed_cert("localhost")
+            server_cert_pems = [generated_cert]
+            server_signing_key = generated_key
+        elif server_signing_key is None:
+            raise HandshakeCryptoError(
+                "a signing key is required with a simulated server certificate"
+            )
+
         self.process_encrypted_extensions(self._enc_as_server(_make_handle_bytes(8)))
         self.process_certificate(
             self._enc_as_server(_make_handle_bytes(11, payload=b"\x00\x00\x00")),
             pem_chain=server_cert_pems,
         )
-        self.process_certificate_verify(self._enc_as_server(_make_handle_bytes(15, payload=b"\x08\x04" + b"\x00" * 64)))
-        self.build_server_finished_verify_data()
+        assert server_signing_key is not None
+        signed_content = self.build_server_certificate_verify_content()
+        signature = server_signing_key.sign(
+            signed_content,
+            ec.ECDSA(hashes.SHA256()),
+        )
+        certificate_verify = _make_handle_bytes(
+            15,
+            payload=b"\x04\x03" + _encode_uint16_leb(signature),
+        )
+        self.process_certificate_verify(self._enc_as_server(certificate_verify))
+        server_verify_data = self.build_server_finished_verify_data()
         self.process_finished(
-            self._enc_as_server(_make_handle_bytes(20, payload=b"\x00" * _FINISHED_KEY_LEN[self._hash_name]))
+            self._enc_as_server(_make_handle_bytes(20, payload=server_verify_data))
         )
 
         client_finished = self.build_client_finished()

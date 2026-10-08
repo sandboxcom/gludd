@@ -18,10 +18,12 @@ Public API:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 
 @dataclass(frozen=True, slots=True)
 class ZDDNode:
+    """Represent ``ZDDNode`` values."""
     idx: int
     lo: ZDDNode
     hi: ZDDNode
@@ -29,8 +31,8 @@ class ZDDNode:
 
 _UNIQUE: dict[tuple[int, int, int], ZDDNode] = {}
 
-_TERMINAL_BOTTOM: ZDDNode = ZDDNode(-2, lo=None, hi=None)  # type: ignore[arg-type]
-_TERMINAL_TOP: ZDDNode = ZDDNode(-1, lo=None, hi=None)  # type: ignore[arg-type]
+_TERMINAL_BOTTOM: ZDDNode = ZDDNode(-2, lo=cast(ZDDNode, None), hi=cast(ZDDNode, None))
+_TERMINAL_TOP: ZDDNode = ZDDNode(-1, lo=cast(ZDDNode, None), hi=cast(ZDDNode, None))
 
 
 def _mk(var: int, lo: ZDDNode, hi: ZDDNode) -> ZDDNode:
@@ -46,18 +48,22 @@ def _mk(var: int, lo: ZDDNode, hi: ZDDNode) -> ZDDNode:
 
 
 def zdd_empty() -> ZDDNode:
+    """Execute ``zdd_empty``."""
     return _TERMINAL_BOTTOM
 
 
 def zdd_base() -> ZDDNode:
+    """Execute ``zdd_base``."""
     return _TERMINAL_TOP
 
 
 def zdd_unit(var: int) -> ZDDNode:
+    """Execute ``zdd_unit``."""
     return _mk(var, _TERMINAL_BOTTOM, _TERMINAL_TOP)
 
 
 def zdd_powerset(vars: list[int]) -> ZDDNode:
+    """Execute ``zdd_powerset``."""
     result = zdd_base()
     for v in reversed(sorted(vars)):
         result = _mk(v, result, result)
@@ -65,6 +71,7 @@ def zdd_powerset(vars: list[int]) -> ZDDNode:
 
 
 def zdd_union(a: ZDDNode, b: ZDDNode) -> ZDDNode:
+    """Execute ``zdd_union``."""
     return _op_union(a, b, {})
 
 
@@ -104,6 +111,7 @@ def _op_union(a: ZDDNode, b: ZDDNode, cache: dict[tuple[int, int], ZDDNode]) -> 
 
 
 def zdd_int(a: ZDDNode, b: ZDDNode) -> ZDDNode:
+    """Execute ``zdd_int``."""
     return _op_int(a, b, {})
 
 
@@ -135,6 +143,7 @@ def _op_int(a: ZDDNode, b: ZDDNode, cache: dict[tuple[int, int], ZDDNode]) -> ZD
 
 
 def zdd_diff(a: ZDDNode, b: ZDDNode) -> ZDDNode:
+    """Execute ``zdd_diff``."""
     return _op_diff(a, b, {})
 
 
@@ -172,6 +181,7 @@ def _op_diff(a: ZDDNode, b: ZDDNode, cache: dict[tuple[int, int], ZDDNode]) -> Z
 
 
 def zdd_count(node: ZDDNode) -> int:
+    """Execute ``zdd_count``."""
     cache: dict[int, int] = {}
 
     def _count(n: ZDDNode) -> int:
@@ -190,6 +200,7 @@ def zdd_count(node: ZDDNode) -> int:
 
 
 def zdd_enumerate(node: ZDDNode) -> list[frozenset[int]]:
+    """Execute ``zdd_enumerate``."""
     cache: dict[int, list[frozenset[int]]] = {}
 
     def _enum(n: ZDDNode) -> list[frozenset[int]]:

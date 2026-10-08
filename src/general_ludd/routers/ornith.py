@@ -53,6 +53,8 @@ def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | Non
 
 
 class RecordPairRequest(BaseModel):
+    """Request body for recording a fresh scaffold/outcome training pair."""
+
     task_description: str = Field(min_length=1)
     target_files: list[str] = Field(default_factory=list)
     scaffold_kind: str
@@ -66,11 +68,15 @@ class RecordPairRequest(BaseModel):
 
 
 class SetOutcomeRequest(BaseModel):
+    """Request body for setting the outcome status of a recorded pair."""
+
     status: str
     details: dict[str, object] = Field(default_factory=dict)
 
 
 class OrnithConfigUpdateRequest(BaseModel):
+    """Request body for updating the Ornith model_sha config value."""
+
     model_sha: str | None = None
 
 
@@ -96,24 +102,21 @@ def _pair_to_dict(row: OrnithTrainingPairModel) -> dict[str, object]:
         "model_sha": row.model_sha,
         "outcome_status": row.outcome_status,
         "outcome_details": details,
-        "outcome_set_at": row.outcome_set_at.isoformat()
-        if row.outcome_set_at
-        else None,
+        "outcome_set_at": row.outcome_set_at.isoformat() if row.outcome_set_at else None,
         "project_id": row.project_id,
         "agent_id": row.agent_id,
     }
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register the admin Ornith training-data collector endpoints."""
+
     @app.post("/admin/ornith/record", status_code=201)
     async def api_record_pair(req: RecordPairRequest) -> dict[str, object]:
         if req.scaffold_kind not in VALID_SCAFFOLD_KINDS:
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"invalid scaffold_kind; must be one of "
-                    f"{sorted(VALID_SCAFFOLD_KINDS)}"
-                ),
+                detail=(f"invalid scaffold_kind; must be one of {sorted(VALID_SCAFFOLD_KINDS)}"),
             )
         factory = _get_session_factory(app)
         if factory is None:
@@ -141,16 +144,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return _pair_to_dict(row)
 
     @app.patch("/admin/ornith/{pair_id}/outcome")
-    async def api_set_outcome(
-        pair_id: str, req: SetOutcomeRequest
-    ) -> dict[str, object]:
+    async def api_set_outcome(pair_id: str, req: SetOutcomeRequest) -> dict[str, object]:
         if req.status not in VALID_OUTCOME_STATUSES:
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"invalid status; must be one of "
-                    f"{sorted(VALID_OUTCOME_STATUSES)}"
-                ),
+                detail=(f"invalid status; must be one of {sorted(VALID_OUTCOME_STATUSES)}"),
             )
         factory = _get_session_factory(app)
         if factory is None:
@@ -167,17 +165,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return _pair_to_dict(row)
 
     @app.get("/admin/ornith/pending")
-    async def api_list_pending(
-        limit: int = 100, older_than_minutes: int = 0
-    ) -> dict[str, object]:
+    async def api_list_pending(limit: int = 100, older_than_minutes: int = 0) -> dict[str, object]:
         factory = _get_session_factory(app)
         if factory is None:
             return {"pending": [], "count": 0}
         async with factory() as session:
             repo = OrnithTrainingRepo(session)
-            rows = await repo.get_pending_outcomes(
-                limit=limit, older_than_minutes=older_than_minutes
-            )
+            rows = await repo.get_pending_outcomes(limit=limit, older_than_minutes=older_than_minutes)
             return {
                 "pending": [_pair_to_dict(r) for r in rows],
                 "count": len(rows),
@@ -195,9 +189,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         async with factory() as session:
             repo = OrnithTrainingRepo(session)
             try:
-                path = await repo.export_dataset(
-                    since=since, project_id=project_id, out_path=out_path
-                )
+                path = await repo.export_dataset(since=since, project_id=project_id, out_path=out_path)
             except ValueError as exc:
                 # The confinement error contains both the rejected path and the
                 # private allowlist. Keep those diagnostics server-side and
@@ -206,6 +198,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     status_code=422,
                     detail="out_path is outside the configured Ornith export root",
                 ) from exc
+
         # Count rows OFF the event loop — a large export file would otherwise
         # block the loop for the full read.
         def _count_rows() -> int:
@@ -287,8 +280,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def api_ornith_self_improve() -> dict[str, object]:
         import httpx
 
-        daemon_url = f"http://{app.state._host}:{app.state._port}" if hasattr(app.state, "_host") else "http://127.0.0.1:8000"
-        psk = os.environ.get("GLUDD_PSK", "")
+        daemon_url = (
+            f"http://{app.state._host}:{app.state._port}" if hasattr(app.state, "_host") else "http://127.0.0.1:8000"
+        )
+        psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
         headers = {"Authorization": f"Bearer {psk}"} if psk else {}
         try:
             async with httpx.AsyncClient() as client:
@@ -312,7 +307,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/admin/ornith/history")
     async def api_ornith_history(limit: int = 20) -> dict[str, object]:
         history = getattr(app.state, "_ornith_history", [])
-        return {"cycles": history[:max(1, min(limit, 100))], "count": len(history[:limit])}
+        return {"cycles": history[: max(1, min(limit, 100))], "count": len(history[:limit])}
 
     @app.get("/admin/ornith/config")
     async def api_ornith_config_get() -> dict[str, object]:

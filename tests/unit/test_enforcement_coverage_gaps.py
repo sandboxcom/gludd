@@ -591,8 +591,11 @@ class TestDiskDiscipline:
     def test_danger_default_2_5_gb(self):
         assert _extract_env_default(DELEGATE_PATH, "GLUDD_DISK_DANGER_GB") == "2.5"
 
-    def test_worktree_cap_default_6(self):
-        assert _extract_env_default(DELEGATE_PATH, "GLUDD_WORKTREE_CAP") == "6"
+    def test_worktree_cap_default_2(self):
+        assert _extract_env_default(DELEGATE_PATH, "GLUDD_WORKTREE_CAP") == "2"
+        src = _src(DELEGATE_PATH)
+        assert "const HARD_WORKTREE_CAP = 2" in src
+        assert "Math.min(HARD_WORKTREE_CAP" in src
 
     def test_disk_free_override_env_var(self):
         src = _src(DELEGATE_PATH)

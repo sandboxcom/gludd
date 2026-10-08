@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -11,7 +12,7 @@ from general_ludd.models.router import ModelRouter
 
 
 class TestModelGatewayE2E:
-    def test_openai_provider_installed_and_importable(self):
+    def test_openai_provider_installed_and_importable(self) -> None:
         registry = ProviderRegistry()
         registry.register_provider("openai", "langchain_openai", "ChatOpenAI")
         assert registry.is_installed("openai")
@@ -19,15 +20,18 @@ class TestModelGatewayE2E:
         assert cls is not None
         assert cls.__name__ == "ChatOpenAI"
 
-    def test_missing_provider_creates_dependency_todo(self):
+    def test_missing_provider_creates_dependency_todo(self) -> None:
         registry = ProviderRegistry()
-        registry.register_provider("hypothetical_provider", "langchain_hypothetical", "ChatHypothetical")
-        assert not registry.is_installed("hypothetical_provider")
-        todo = registry.install_provider("hypothetical_provider")
+        registry.register_provider(
+            "huggingface", "langchain-huggingface", "HuggingFaceEndpoint"
+        )
+        with patch("importlib.util.find_spec", return_value=None):
+            assert not registry.is_installed("huggingface")
+            todo = registry.install_provider("huggingface")
         assert todo is not None
-        assert "hypothetical" in todo.title.lower() or "install" in todo.title.lower()
+        assert "huggingface" in todo.title.lower() or "install" in todo.title.lower()
 
-    def test_gateway_budget_check_rejects_expensive_call(self):
+    def test_gateway_budget_check_rejects_expensive_call(self) -> None:
         profile = ModelProfile(
             model_profile_id="expensive_model",
             provider="openai",
@@ -49,7 +53,7 @@ class TestModelGatewayE2E:
                 budget_remaining=5.0,
             )
 
-    def test_model_router_role_mapping(self):
+    def test_model_router_role_mapping(self) -> None:
         router = ModelRouter()
         router.add_role("return_review", "strong_model")
         router.add_role("implementation", "code_model")
@@ -57,13 +61,13 @@ class TestModelGatewayE2E:
         assert router.resolve_role("implementation") == "code_model"
         assert router.resolve_role("unknown_role") is None
 
-    def test_model_router_init_with_mapping(self):
+    def test_model_router_init_with_mapping(self) -> None:
         router = ModelRouter(role_mapping={"review": "profile_a", "code": "profile_b"})
         assert router.resolve_role("review") == "profile_a"
         assert router.resolve_role("code") == "profile_b"
         assert router.list_roles() == ["review", "code"]
 
-    def test_example_model_configs_are_valid_yaml(self):
+    def test_example_model_configs_are_valid_yaml(self) -> None:
         config_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
             "config",
@@ -78,7 +82,7 @@ class TestModelGatewayE2E:
             assert "provider" in data
             assert "provider_package" in data
 
-    def test_local_model_profile_ignored_unless_enabled(self):
+    def test_local_model_profile_ignored_unless_enabled(self) -> None:
         disabled = ModelProfile(
             model_profile_id="local_llm",
             provider="openai_compatible",

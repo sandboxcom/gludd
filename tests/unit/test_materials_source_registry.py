@@ -14,6 +14,7 @@ Verifies:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 
@@ -104,7 +105,11 @@ def _estimated_source(source_id: str = "est-A") -> SourceEntry:
     )
 
 
-def _yield_record(value: float, source_id: str, conditions: dict | None = None) -> PropertyRecord:
+def _yield_record(
+    value: float,
+    source_id: str,
+    conditions: dict[str, str] | None = None,
+) -> PropertyRecord:
     return PropertyRecord(
         record_id=f"rec-{source_id}",
         material_id="aa6061_t6",
@@ -123,7 +128,7 @@ def _yield_record(value: float, source_id: str, conditions: dict | None = None) 
 
 
 class TestSourceEntry:
-    def test_entry_carries_required_spec_fields(self):
+    def test_entry_carries_required_spec_fields(self) -> None:
         """§11: each entry has authority, revision, digest, license, review_expiry."""
         s = _lot_source()
         assert s.authority == Authority.LOT
@@ -132,11 +137,11 @@ class TestSourceEntry:
         assert s.license == "proprietary-lot"
         assert s.review_expiry == _fresh_expiry()
 
-    def test_invalid_authority_rejected(self):
+    def test_invalid_authority_rejected(self) -> None:
         with pytest.raises(ValueError):
             SourceEntry(
                 source_id="bad",
-                authority="bogus",  # type: ignore[arg-type]
+                authority=cast(Authority, "bogus"),
                 uri="urn:x",
                 revision="1",
                 retrieval_time=_now(),
@@ -147,12 +152,86 @@ class TestSourceEntry:
                 review_expiry=_fresh_expiry(),
             )
 
+    def test_empty_source_id_rejected(self) -> None:
+        with pytest.raises(ValueError, match="source_id must be non-empty"):
+            SourceEntry(
+                source_id="",
+                authority=Authority.LOT,
+                uri="urn:x",
+                revision="1",
+                retrieval_time=_now(),
+                content_digest="sha256:x",
+                license="none",
+                applicability={},
+                uncertainty=0.0,
+                review_expiry=_fresh_expiry(),
+            )
+
+    def test_valid_string_authority_is_normalized(self) -> None:
+        entry = SourceEntry(
+            source_id="string-authority",
+            authority=cast(Authority, Authority.SUPPLIER.value),
+            uri="urn:x",
+            revision="1",
+            retrieval_time=_now(),
+            content_digest="sha256:x",
+            license="none",
+            applicability={},
+            uncertainty=0.0,
+            review_expiry=_fresh_expiry(),
+        )
+
+        assert entry.authority is Authority.SUPPLIER
+
+    def test_negative_uncertainty_rejected(self) -> None:
+        with pytest.raises(ValueError, match="uncertainty must be non-negative"):
+            SourceEntry(
+                source_id="negative-uncertainty",
+                authority=Authority.ESTIMATED,
+                uri="urn:x",
+                revision="1",
+                retrieval_time=_now(),
+                content_digest="sha256:x",
+                license="none",
+                applicability={},
+                uncertainty=-0.1,
+                review_expiry=_fresh_expiry(),
+            )
+
 
 # ─── SourceRegistry ──────────────────────────────────────────────────────────
 
 
 class TestSourceRegistry:
-    def test_check_freshness_flags_stale_source(self):
+    def test_duplicate_add_keeps_original_entry(self) -> None:
+        reg = SourceRegistry(now=_now)
+        original = _lot_source("stable-id")
+        reg.add(original)
+        reg.add(_supplier_source("stable-id"))
+
+        assert reg.get("stable-id") is original
+        assert reg.all_entries() == [original]
+
+    @pytest.mark.parametrize(
+        ("older_id", "newer_id", "missing_id"),
+        [
+            ("missing-old", "present", "missing-old"),
+            ("present", "missing-new", "missing-new"),
+        ],
+    )
+    def test_supersede_rejects_unknown_source(
+        self,
+        older_id: str,
+        newer_id: str,
+        missing_id: str,
+    ) -> None:
+        reg = SourceRegistry(now=_now)
+        reg.add(_lot_source("present"))
+
+        with pytest.raises(KeyError, match=missing_id):
+            reg.supersede(older_id=older_id, newer_id=newer_id, reason="missing")
+
+    def test_check_freshness_flags_stale_source(self) -> None:
         """§11: stale source (past review_expiry) is flagged."""
         reg = SourceRegistry(now=_now)
         stale = SourceEntry(
@@ -172,13 +251,34 @@ class TestSourceRegistry:
         assert fresh.is_stale is True
         assert fresh.days_past_expiry is not None and fresh.days_past_expiry > 0
 
-    def test_check_freshness_passes_recent_source(self):
+    def test_check_freshness_passes_recent_source(self) -> None:
         reg = SourceRegistry(now=_now)
         reg.add(_handbook_source("hb-fresh"))
         fresh = reg.check_freshness("hb-fresh")
         assert fresh.is_stale is False
 
-    def test_supersede_marks_prior_source_retracted(self):
+    def test_check_freshness_aligns_now_with_naive_expiry(self) -> None:
+        reg = SourceRegistry(now=_now)
+        entry = SourceEntry(
+            source_id="naive-expiry",
+            authority=Authority.HANDBOOK,
+            uri="urn:hb:naive",
+            revision="2025",
+            retrieval_time=_now(),
+            content_digest="sha256:naive",
+            license="reference",
+            applicability={},
+            uncertainty=1.0,
+            review_expiry=datetime(2025, 12, 31),
+        )
+        reg.add(entry)
+
+        report = reg.check_freshness(entry.source_id)
+
+        assert report.is_stale is True
+        assert report.days_past_expiry == 1
+
+    def test_supersede_marks_prior_source_retracted(self) -> None:
         """Superseded sources are flagged retracted and excluded from queries."""
         reg = SourceRegistry(now=_now)
         reg.add(_handbook_source("hb-old"))
@@ -192,7 +292,7 @@ class TestSourceRegistry:
         # The retraction reason is recorded.
         assert reg.get("hb-old").retraction_reason == "erratum"
 
-    def test_query_excludes_retracted_source_directly(self):
+    def test_query_excludes_retracted_source_directly(self) -> None:
         reg = SourceRegistry(now=_now)
         reg.add(_lot_source("lot-retracted"))
         reg.add(_supplier_source("sup-A"))
@@ -202,18 +302,37 @@ class TestSourceRegistry:
         retracted = {s.source_id: s for s in all_results}
         assert retracted["lot-retracted"].is_retracted is True
 
+    def test_query_filters_other_materials(self) -> None:
+        reg = SourceRegistry(now=_now)
+        reg.add(_lot_source("matching"))
+        other = SourceEntry(
+            source_id="other",
+            authority=Authority.SUPPLIER,
+            uri="urn:other",
+            revision="1",
+            retrieval_time=_now(),
+            content_digest="sha256:other",
+            license="none",
+            applicability={"material_id": "other-material"},
+            uncertainty=1.0,
+            review_expiry=_fresh_expiry(),
+        )
+        reg.add(other)
+
+        assert [entry.source_id for entry in reg.query(material_id="aa6061_t6")] == ["matching"]
+
 
 # ─── Data hierarchy (MATE-DEC-003) ────────────────────────────────────────────
 
 
 class TestDataHierarchy:
-    def test_authority_rank_lot_beats_all(self):
+    def test_authority_rank_lot_beats_all(self) -> None:
         """MATE-DEC-003: lot > supplier > handbook > estimated."""
         assert AUTHORITY_RANK[Authority.LOT] < AUTHORITY_RANK[Authority.SUPPLIER]
         assert AUTHORITY_RANK[Authority.SUPPLIER] < AUTHORITY_RANK[Authority.HANDBOOK]
         assert AUTHORITY_RANK[Authority.HANDBOOK] < AUTHORITY_RANK[Authority.ESTIMATED]
 
-    def test_conflicting_values_retained_as_distinct_observations(self):
+    def test_conflicting_values_retained_as_distinct_observations(self) -> None:
         """Conflicting values are NOT merged — they remain distinct records."""
         store = PropertyStore()
         store.add_source(_lot_source("lot-A"))
@@ -225,7 +344,7 @@ class TestDataHierarchy:
         values = sorted(r.value for r in records)
         assert values == [260.0, 290.0]
 
-    def test_resolve_property_picks_higher_authority(self):
+    def test_resolve_property_picks_higher_authority(self) -> None:
         """resolve_property returns the highest-authority observation."""
         store = PropertyStore()
         store.add_source(_lot_source("lot-A"))
@@ -242,7 +361,7 @@ class TestDataHierarchy:
         # Lower-tier alternatives are surfaced, not discarded.
         assert len(resolved.alternatives) == 2
 
-    def test_resolve_property_skips_retracted_source(self):
+    def test_resolve_property_skips_retracted_source(self) -> None:
         """A retracted source is not chosen even if it would otherwise win."""
         reg = SourceRegistry(now=_now)
         reg.add(_lot_source("lot-bad"))
@@ -261,7 +380,7 @@ class TestDataHierarchy:
 
 
 class TestPropertyStore:
-    def test_record_with_empty_conditions_flagged_insufficient_context(self):
+    def test_record_with_empty_conditions_flagged_insufficient_context(self) -> None:
         """MATE-SAFE-003: missing condition metadata is insufficient_context."""
         rec = PropertyRecord(
             record_id="rec-bare",
@@ -277,7 +396,7 @@ class TestPropertyStore:
         )
         assert rec.state == "insufficient_context"
 
-    def test_resolve_property_flagged_when_only_insufficient_context_available(self):
+    def test_resolve_property_flagged_when_only_insufficient_context_available(self) -> None:
         """resolve_property surfaces the insufficient_context state on the result."""
         store = PropertyStore()
         store.add_source(_supplier_source("sup-A"))
@@ -286,7 +405,7 @@ class TestPropertyStore:
         assert resolved is not None
         assert resolved.state == "insufficient_context"
 
-    def test_query_by_condition_filters_records(self):
+    def test_query_by_condition_filters_records(self) -> None:
         """Query filters records whose conditions do not match the requested set."""
         store = PropertyStore()
         store.add_source(_supplier_source("sup-A"))
@@ -306,7 +425,7 @@ class TestPropertyStore:
         assert len(results) == 1
         assert results[0].conditions["product_form"] == "sheet"
 
-    def test_resolve_unknown_material_returns_none(self):
+    def test_resolve_unknown_material_returns_none(self) -> None:
         store = PropertyStore()
         store.add_source(_supplier_source("sup-A"))
         store.add_property(_yield_record(value=276.0, source_id="sup-A"))

@@ -3,7 +3,9 @@ import { createRequire } from "node:module"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool, isInPressureRelease, isInInlineRecovery, recordDispatchAttempt, readDispatchOutcomes } from "../lib/shared.ts"
+import { finishDispatch, preflightDispatch, registerDispatch } from "../lib/dispatch_dedup.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { HARD_MAX_DISPATCHES, MIN_DISPATCHES, clampDispatchCount } from "../lib/multitask_config.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args)
@@ -27,8 +29,12 @@ function execSync(...args: any[]): Buffer {
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
-const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "6", 10)
+const FLOOR = clampDispatchCount(
+  parseInt(process.env.CLAUDE_AGENT_FLOOR || String(MIN_DISPATCHES), 10),
+)
+const TARGET = clampDispatchCount(
+  parseInt(process.env.CLAUDE_AGENT_TARGET || String(HARD_MAX_DISPATCHES), 10),
+)
 const MODEL_UTIL_STATE = process.env.GLUDD_MODEL_UTIL_STATE || "/tmp/gludd-model-util.json"
 const MODEL_UTIL_WINDOW = parseInt(process.env.GLUDD_MODEL_UTIL_WINDOW || "20", 10)
 const MODEL_UTIL_ENFORCE = (process.env.GLUDD_MODEL_UTIL_ENFORCE || "1") !== "0"
@@ -94,7 +100,11 @@ const READ_GRIND_DENY_MS = parseInt(process.env.GLUDD_READ_GRIND_DENY_MS || "600
 const READ_GRIND_STALE_MS = parseFloat(process.env.GLUDD_READ_GRIND_STALE_MS || "60000")
 const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
 const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1.0")
-const WORKTREE_CAP = parseInt(process.env.GLUDD_WORKTREE_CAP || "6", 10)
+const HARD_WORKTREE_CAP = 2
+const WORKTREE_CAP = Math.max(
+  1,
+  Math.min(HARD_WORKTREE_CAP, parseInt(process.env.GLUDD_WORKTREE_CAP || "2", 10)),
+)
 const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
 // GIT SHIPPING ALLOWLIST (RP.13 fix): git operations (commit, push, tag,
 // merge) are terminal shipping actions, not inline grinding. They must NOT
@@ -663,6 +673,7 @@ function isMainthreadTool(tool: string): boolean {
 function mainthreadBudgetBefore(tool: string, command: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
+    if (FLOOR === 0) return null
     if (isDisengaged()) return null
     // PRESSURE-RELEASE: skip mainthread streak when in pressure-release
     // or inline-recovery mode. The agent needs inline tool use to recover
@@ -673,14 +684,12 @@ function mainthreadBudgetBefore(tool: string, command: string): string | null {
     // injection. Keeping the file causes re-injection on every watchdog poll.
     consumeForceDispatchSignal()
     // Git shipping operations (commit, push, tag) are NEVER blocked.
-    // They are terminal actions that complete work, not grinding.
+    // They are terminal actions that complete work, not grinding
+    // (AGENTS.md DC.3 — the GIT_SHIPPING_TARGETS allowlist resets the
+    // streak instead of incrementing it; pinned by
+    // tests/e2e/test_delegate_e2e.py test_streak_at_threshold_allows_git_shipping).
     if (tool === "bash" && isGitShippingTarget(command)) {
-      // A commit is the one mutating operation that must still be gated when
-      // the streak is already at the hard threshold; otherwise a final
-      // ``make git-commit`` would bypass the delegate contract entirely.
-      // Other shipping targets remain terminal, streak-resetting operations.
-      const target = command.match(/(?:^|\s)make\s+(\S+)/)?.[1]
-      if (target !== "git-commit") return null
+      return null
     }
     // Quality-gate operations (lint, typecheck, collect-check, etc.) are
     // NEVER blocked — they are validation steps that complete units of work.
@@ -786,7 +795,7 @@ function _writeHeartbeat(): void {
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
-const defaultImpl = {
+const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
@@ -794,14 +803,17 @@ const defaultImpl = {
     _writeHeartbeat()
     const tool = input.tool
     const args = output?.args ?? input?.args
-    const command = String(args?.command ?? input?.command ?? "")
-    // task/agent/workflow dispatch — model utilization + disk discipline
     if (isDispatchTool(tool)) {
+      const duplicateMsg = preflightDispatch(tool, args)
+      if (duplicateMsg) throw new Error(duplicateMsg)
       const modelMsg = enforceModelUtilization(args)
       if (modelMsg) throw new Error(modelMsg)
       const diskMsg = enforceDiskDiscipline(args)
       if (diskMsg) throw new Error(diskMsg)
+      const registrationMsg = registerDispatch(tool, args)
+      if (registrationMsg) throw new Error(registrationMsg)
     }
+    const command = String(args?.command ?? input?.command ?? "")
     // all tools — force-delegate + mainthread budget
     // (Each of these is FAIL-OPEN internally; they return null on any error.)
     const forceMsg = enforceForceDelegate(tool, args)
@@ -813,6 +825,7 @@ const defaultImpl = {
     // mainthread budget streak counter — never throws
     const args = _output?.args ?? input?.args
     const command = String(args?.command ?? input?.command ?? "")
+    finishDispatch(input.tool, args, _output)
     mainthreadBudgetAfter(input.tool, command)
   },
 }

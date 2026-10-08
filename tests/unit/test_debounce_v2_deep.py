@@ -55,6 +55,19 @@ class TestDebounceV2Trailing:
         d.drive(3.0)
         assert calls == [4]
 
+    def test_rapid_call_postpones_trailing_deadline(self) -> None:
+        calls: list[int] = []
+        clock = SimulatedClock(0.0)
+        d = DebounceV2(lambda x: calls.append(x), wait=3.0, trailing=True, clock=clock)
+        d(1)
+        clock.advance(1.0)
+        d(2)
+
+        d.drive(3.0)
+        assert calls == []
+        d.drive(4.0)
+        assert calls == [2]
+
     def test_cancel_prevents_pending_call(self) -> None:
         calls: list[int] = []
         clock = SimulatedClock(0.0)
@@ -99,6 +112,11 @@ class TestDebounceV2Trailing:
     def test_rejects_negative_wait(self) -> None:
         with pytest.raises(ValueError, match="wait"):
             DebounceV2(lambda: None, wait=-0.1, trailing=True)
+
+    @pytest.mark.parametrize("wait", [float("nan"), float("inf")])
+    def test_rejects_non_finite_wait(self, wait: float) -> None:
+        with pytest.raises(ValueError, match="wait"):
+            DebounceV2(lambda: None, wait=wait, trailing=True)
 
     def test_rejects_no_edge(self) -> None:
         with pytest.raises(ValueError, match="at least one"):
@@ -185,7 +203,7 @@ class TestDebounceV2Both:
         clock.advance(1.0)
         d(3)
         assert calls == [1]
-        clock.advance(2.0)
+        clock.advance(3.0)  # trailing edge is due 3s after the latest call
         d._tick()
         assert calls == [1, 3]
         d(4)
@@ -211,6 +229,11 @@ class TestDebounceV2MaxWait:
     def test_max_wait_must_be_positive(self) -> None:
         with pytest.raises(ValueError, match="max_wait"):
             DebounceV2(lambda: None, wait=3.0, max_wait=0.0, trailing=True)
+
+    @pytest.mark.parametrize("max_wait", [float("nan"), float("inf")])
+    def test_max_wait_must_be_finite(self, max_wait: float) -> None:
+        with pytest.raises(ValueError, match="max_wait"):
+            DebounceV2(lambda: None, wait=3.0, max_wait=max_wait, trailing=True)
 
     def test_max_wait_single_call_still_waits(self) -> None:
         calls: list[int] = []
@@ -309,6 +332,23 @@ class TestAsyncDebounceV2:
             d(2)
             await asyncio.sleep(0.1)
             assert calls == [1, 2]
+
+        asyncio.run(run())
+
+    def test_aclose_cancels_and_awaits_leading_and_trailing_tasks(self) -> None:
+        async def fn(_value: int) -> None:
+            await asyncio.Event().wait()
+
+        async def run() -> None:
+            d = AsyncDebounceV2(fn, wait=60.0, leading=True, trailing=True)
+            d(1)
+            d(2)
+            await asyncio.sleep(0)
+
+            await d.aclose()
+
+            assert d._task is None
+            assert not d._leading_tasks
 
         asyncio.run(run())
 

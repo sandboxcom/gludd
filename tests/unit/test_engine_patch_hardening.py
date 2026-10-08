@@ -13,7 +13,10 @@ import os
 import tempfile
 from unittest.mock import MagicMock
 
+import pytest
+
 from general_ludd.execution.engine import ExecutionEngine
+from general_ludd.security.sandboxes.state import SandboxStateError
 
 
 def _engine(workspace: str) -> ExecutionEngine:
@@ -34,13 +37,7 @@ class TestInJailPatchApplies:
         _seed(workspace, "src/main.py", "print('hello')\n")
         engine = _engine(workspace)
 
-        diff = (
-            "--- a/src/main.py\n"
-            "+++ b/src/main.py\n"
-            "@@ -1 +1 @@\n"
-            "-print('hello')\n"
-            "+print('hello world')\n"
-        )
+        diff = "--- a/src/main.py\n+++ b/src/main.py\n@@ -1 +1 @@\n-print('hello')\n+print('hello world')\n"
         changed = engine._apply_unified_diff(diff)
 
         assert "src/main.py" in changed
@@ -64,13 +61,7 @@ class TestOutOfJailRejected:
         # +++ points at an absolute out-of-jail path. After -p1 strips the
         # leading component the path is still absolute-ish traversal; the jail
         # must refuse it and never invoke patch.
-        diff = (
-            f"--- a{victim}\n"
-            f"+++ b{victim}\n"
-            "@@ -1 +1 @@\n"
-            "-ORIGINAL\n"
-            "+PWNED\n"
-        )
+        diff = f"--- a{victim}\n+++ b{victim}\n@@ -1 +1 @@\n-ORIGINAL\n+PWNED\n"
         changed = engine._apply_unified_diff(diff)
 
         assert changed == []
@@ -86,13 +77,7 @@ class TestOutOfJailRejected:
         rel = os.path.relpath(victim, workspace)
         assert rel.startswith(".."), "victim must be outside workspace"
 
-        diff = (
-            f"--- a/{rel}\n"
-            f"+++ b/{rel}\n"
-            "@@ -1 +1 @@\n"
-            "-ORIGINAL\n"
-            "+PWNED\n"
-        )
+        diff = f"--- a/{rel}\n+++ b/{rel}\n@@ -1 +1 @@\n-ORIGINAL\n+PWNED\n"
         changed = engine._apply_unified_diff(diff)
 
         assert changed == []
@@ -112,13 +97,7 @@ class TestOutOfJailRejected:
         rel = os.path.relpath(victim, workspace)
         engine = _engine(workspace)
 
-        diff = (
-            f"--- a/{rel}\n"
-            "+++ b/safe.txt\n"
-            "@@ -1 +1 @@\n"
-            "-ORIGINAL\n"
-            "+PWNED\n"
-        )
+        diff = f"--- a/{rel}\n+++ b/safe.txt\n@@ -1 +1 @@\n-ORIGINAL\n+PWNED\n"
         changed = engine._apply_unified_diff(diff)
 
         assert changed == []
@@ -130,9 +109,15 @@ class TestOutOfJailRejected:
 class TestArgvIsListForm:
     def test_patch_invoked_with_list_argv_and_realpath_dir(self, monkeypatch):
         """argv must be list-form (never a shell string) and -d must be the
-        realpath jail base, so patch's working directory matches what the jail
-        validated."""
-        # Workspace reached via a symlink so realpath(workspace) != workspace.
+        realpath jail base.
+
+        Hardening moved upstream: ExecutionEngine.__init__ now runs
+        secure_directory() on the workspace, which rejects symlink components
+        outright (SandboxStateError). A symlinked workspace therefore can no
+        longer exist to diverge from what the jail validates.
+        """
+        # Workspace reached via a symlink: engine construction must refuse it
+        # before any patch invocation could occur.
         real_root = tempfile.mkdtemp()
         real_ws = os.path.join(real_root, "ws")
         os.makedirs(real_ws)
@@ -140,8 +125,10 @@ class TestArgvIsListForm:
         link_root = tempfile.mkdtemp()
         link_ws = os.path.join(link_root, "ws-link")
         os.symlink(real_ws, link_ws)
+        with pytest.raises(SandboxStateError):
+            _engine(link_ws)
 
-        engine = _engine(link_ws)
+        engine = _engine(real_ws)
         captured: dict[str, object] = {}
 
         real_run = __import__("subprocess").run
@@ -151,17 +138,9 @@ class TestArgvIsListForm:
             captured["kwargs"] = kwargs
             return real_run(argv, *args, **kwargs)
 
-        monkeypatch.setattr(
-            "general_ludd.execution.engine.subprocess.run", fake_run
-        )
+        monkeypatch.setattr("general_ludd.execution.engine.subprocess.run", fake_run)
 
-        diff = (
-            "--- a/src/main.py\n"
-            "+++ b/src/main.py\n"
-            "@@ -1 +1 @@\n"
-            "-print('hello')\n"
-            "+print('hello world')\n"
-        )
+        diff = "--- a/src/main.py\n+++ b/src/main.py\n@@ -1 +1 @@\n-print('hello')\n+print('hello world')\n"
         engine._apply_unified_diff(diff)
 
         argv = captured.get("argv")

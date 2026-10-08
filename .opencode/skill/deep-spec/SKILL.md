@@ -274,7 +274,7 @@ exponential backoff capped at 10 minutes, with jitter to prevent thundering herd
 When a dispatched subagent fails (API timeout, rate limit, worker crash), the
 dispatcher retries the job immediately with a fixed 1-second delay. This causes:
 
-1. **Thundering herd on rate-limited APIs** — 10 agents retry simultaneously,
+1. **Thundering herd on rate-limited APIs** — all three allowed agents retry simultaneously,
    all hitting the same rate-limit window.
 2. **Waste of retry budget** — 5 retries at 1s intervals exhaust in 5 seconds
    without giving the downstream service time to recover.
@@ -568,7 +568,7 @@ manageable for migrations.
 ### Q3 — Agent pool sharing across projects
 **Status:** open
 **Asked:** 2026-07-26
-**Context:** Currently 10 agents shared across all projects. Options:
+**Context:** The runtime has a three-agent hard ceiling shared across all projects. Options:
 1. Dedicated pool per project (guarantees capacity, more expensive)
 2. Shared pool with project quotas (efficient, harder to enforce)
 **Question:** Per-project pools or shared pool with quotas?
@@ -648,8 +648,9 @@ manageable for migrations.
   and silences mypy without narrowing. Use `cast(ConcreteType, x)` or fix the
   type mismatch.
 
-- `make gate` on the main thread blocks ALL subagent dispatch for 40 minutes.
-  Always use `make gate-background` + poll from a subagent.
+- Long-running gates need one observable, repository-owned supervisor with
+  streamed phase progress. Do not spend a model-agent slot polling a process;
+  inspect its owned status at natural work boundaries.
 
 - Enforcement plugins must check `OPENCODE_SUBAGENT === "1"` at the top of
   every hook function. A missing subagent guard breaks all delegated work.

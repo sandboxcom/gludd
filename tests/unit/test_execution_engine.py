@@ -139,6 +139,20 @@ class TestSpendLimiterDispatch:
 
         assert abs(limiter.window_spend() - 0.05) < 1e-9
 
+    def test_structured_actual_cost_keeps_conservative_reservation(self) -> None:
+        limiter = SpendLimiter(limit_usd=1.0, window_seconds=3_600)
+        gateway = self._gateway(cost_estimate={"amount": 0.03})
+        engine = ExecutionEngine(
+            model_gateway=gateway,
+            workspace_path=tempfile.mkdtemp(),
+            spend_limiter=limiter,
+        )
+
+        with patch.object(limiter, "token_cost_usd", return_value=0.05):
+            asyncio.run(engine.execute_async(self._job()))
+
+        assert abs(limiter.window_spend() - 0.05) < 1e-9
+
     def test_reservation_error_fails_closed(self) -> None:
         limiter = MagicMock()
         limiter.cap_configured = True
@@ -175,6 +189,9 @@ class TestSpendLimiterDispatch:
 
 
 class TestExecutionEngine:
+    def test_sync_migration_residue_is_not_exposed(self) -> None:
+        assert not hasattr(ExecutionEngine, "_fallback_extract_code_not_a_method")
+
     def _make_engine(self, mock_gateway=None, workspace=None):
         return ExecutionEngine(
             model_gateway=mock_gateway or MagicMock(),
@@ -185,6 +202,28 @@ class TestExecutionEngine:
         engine = self._make_engine()
         assert engine._model_gateway is not None
         assert engine.workspace_path is not None
+
+    def test_git_branch_creation_failure_aborts_before_model(self):
+        gateway = MagicMock()
+        engine = self._make_engine(gateway)
+        job = JobSpec(
+            job_id="JOB-BRANCH-FAIL",
+            todo_id="TODO-BRANCH-FAIL",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="Make an isolated change",
+        )
+
+        with (
+            patch("general_ludd.execution.engine._is_git_repo", return_value=True),
+            patch("general_ludd.execution.engine._git_create_branch", return_value=False),
+        ):
+            result = asyncio.run(engine.execute_async(job))
+
+        assert result.exit_code == 1
+        assert "branch" in result.result_summary.lower()
+        gateway.call_model.assert_not_called()
 
     def test_execute_parses_file_write_blocks(self):
         mock_gateway = MagicMock()

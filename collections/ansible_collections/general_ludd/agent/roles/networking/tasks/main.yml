@@ -1,6 +1,6 @@
 ---
 # Backward-compatible entry point. The implementation lives in the dedicated
 # general_ludd.networking collection so task files and defaults have one owner.
-- name: Delegate networking operations to the canonical collection
+- name: Delegate networking operations to the canonical collection role
   ansible.builtin.include_role:
     name: general_ludd.networking.networking

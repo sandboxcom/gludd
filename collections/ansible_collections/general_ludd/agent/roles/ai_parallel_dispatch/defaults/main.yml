@@ -71,4 +71,4 @@ enable_handler_variant: false
 
 # ---- Daemon connectivity ----------------------------------------------------
 daemon_url: "http://localhost:8000"
-psk: ""   # prefer GLUDD_PSK env var
+psk: ""   # prefer GLUDD_AUTH_PSK env var

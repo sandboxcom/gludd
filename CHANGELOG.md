@@ -2,6 +2,122 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## Next release (v0.1.2) — Unreleased
+
+This section is the canonical assignment for completed post-v0.1.1 backlog
+work. An item appears here only after its `TASKS.md` checkbox is formally
+closed with test, coverage, documentation, and exact commit evidence.
+
+### Completed backlog items
+
+- **S83.114 — Fail-closed chemistry entity resolution.** The typed
+  unknown-structure sentinel is now the only permitted empty structure state;
+  inconsistent structures fail closed, and stereo/isotope evidence remains
+  conservative. Implementation: `95b2887d`; closeout: `abf7346e`.
+- **S83.115 — Standards-consistent X.509 chain validation.** Certificate
+  issuance and chain building now enforce proof of possession, issuer/key use,
+  path length, validity, and caller-supplied trust across RSA, ECDSA, and
+  Ed25519. Implementation: `cbda2a47b`.
+- **S83.116 — Monotonic debounce, throttle, and watchdog state.** Production
+  timing APIs now preserve a valid zero clock epoch, independent edge/task
+  ownership, finite delays, moving quiet periods, and idempotent watchdog
+  registration. Implementations: `13b933128`, `dc5082aac`.
+- **S83.117 — Authenticated TLS 1.3 state and directional records.** Exact
+  handshake frames, context-bound CertificateVerify/Finished authentication,
+  poisoned failure state, and independent application record protectors are
+  enforced. Implementation: `06c4c9e25`; reveal sync: `96998fcc9`.
+- **S83.128 — Invoking-worktree-safe virtual-environment reclamation.** Cleanup
+  now preserves the invoking worktree, refuses active peers and stale or
+  unreadable registration evidence, and reclaims only inactive registered
+  peers. Implementation: `a596897e3`; formal closeout: `5ec87af01`.
+
+### Release status
+
+S83.157, S83.158, S83.163, S83.166, and S83.169 have substantial implemented
+evidence but are still open; their recorded exact-head, hosted, or release proof
+remains required. They are implemented but still open and are not counted among
+the five completed v0.1.2 backlog items.
+
+S83.180 is also in progress: its opt-in reconciliation plan now emits bounded
+disjoint merge groups, deterministic temporary-candidate recipes, and Git-native
+pairwise conflict predictions over immutable heads. Unsupported, ambiguous,
+timed-out, oversized, or freshness-stale evidence blocks admission; even a clean
+pairwise result never claims cumulative mergeability. Its digest-sealed snapshot
+basis also retains every originally observed branch, and the opt-in reconciliation
+snapshot deterministically labels exact fresh identities as pending, merged,
+stale, blocked, or explicitly retired without invoking Git. Retirement now
+requires either exact ancestry/patch-equivalence already sealed in the fresh
+inventory or a digest-bound operator approval tied to the plan, branch, head,
+fixed reason code, reviewer-identity digest, signer key, and bounded issue/expiry
+times. Operator approvals now use the existing locked Ed25519 verifier and an
+explicit active/revoked public-key trust store; unsigned legacy envelopes,
+unknown or revoked signers, tampering, expiry, replay, duplicates, oversized
+evidence, and free-form reasons fail closed. The planner remains ref/worktree
+read-only. An opt-in freshness-bound remote-tracking inventory now accounts for
+local-only, remote-only, equal, diverged, and deleted-upstream names and emits
+only retain/review/delete-candidate recommendations from local Git plumbing; it
+never fetches, pushes, prunes, or deletes. Collection, commit, and exact-head
+full-gate evidence are still required before release assignment.
+
+## [0.1.1] — 2026-10-05
+
+- Source range: `v0.1.0-beta.4..v0.1.1` (826 commits; release source `5dcd2f6931aa6cb13d4de526d6c739891c0240f1`).
+
+### Added
+
+- Provider-neutral accelerator discovery and facts for Apple Metal, Intel XPU,
+  NVIDIA, AMD, JAX TPU, FPGA, Slurm, and future accelerator kinds.
+- Model and runner right-sizing across single, fractional, multi-device, and
+  multi-host topologies for llama.cpp, vLLM, Ollama, and compatible runners.
+- Azure Container Apps and Azure VM/VMSS accelerator planning, owned lifecycle,
+  least-privilege credential handling, bounded spend, and teardown evidence.
+- Pinned FreeLLMAPI source admission, upstream Node 20/22 build verification,
+  provider catalog normalization, isolated scoring-kernel evaluation, frozen
+  corpus receipts, and fail-closed rollback/provenance records.
+- Universal polymer-design and Arduino-class firmware workloads using the same
+  scheduler, model gateway, accelerator placement, policy, and evidence boundary
+  as self-improvement work.
+- Reproducible cross-platform release artifacts, container and Ansible execution
+  environment images, SBOM, checksums, licenses, provenance manifest, and smoke
+  attestations.
+
+### Changed
+
+- Compute demand now originates in the durable todo scheduler, with project- and
+  provider-scoped ownership, bounded claims, observable use, and exact idle
+  teardown.
+- Accelerator discovery, placement, model scoring, and universal execution are
+  owned by general infrastructure/model packages; self-improvement is one
+  consumer rather than the architecture owner.
+- `greenlet` is a production dependency because SQLAlchemy asyncio requires it
+  in installed wheel environments.
+- Version-bearing metadata and release documentation now identify v0.1.1.
+
+### Fixed
+
+- Exact-SHA pipeline reporting now aggregates required hosted workflows and
+  rejects missing, stale, pending, cancelled, or contradictory evidence.
+- Release builds now preserve complete failure output, use pinned toolchains and
+  dependency locks, validate Ansible base-image liveness, and smoke every
+  packaged form before publication.
+- Resource ownership, cleanup, disk-pressure handling, process namespacing,
+  branch reconciliation, and guarded push reporting were hardened against the
+  failure modes found during the v0.1.1 release cycle.
+
+### Known limitations
+
+- The bounded Azure Container Apps T4 proof reached deployment but Azure placed
+  zero replicas; positive GPU-utilization and accepted mixed-provider evidence
+  remain separately tracked.
+- The FreeLLMAPI v0.11.1 candidate remains non-runtime-admitted: the live Z.AI
+  probe was rate-limited and the cross-engine/promotion prerequisites remain
+  fail-closed. The previously admitted, digest-pinned integration is unchanged.
+- The immutable published v0.1.1 tag is annotated but unsigned, and its release
+  assets have a deterministic source manifest and checksums but no signed SLSA
+  attestation. Neither public identity was rewritten after publication. The
+  release workflow now signs future tags before push and creates GitHub/Sigstore
+  provenance for the complete checksum-indexed asset set before publication.
+
 ## [0.1.0-beta.4] — 2026-08-09
 
 ### Added
@@ -10,8 +126,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - Quantization ladder: GGUF Q4/Q5/Q8 with per-level quality assessment (severe/moderate/slight impact) (`models/quantization.py`)
 - Local model health check: warm-start at daemon boot, `/api/health` endpoint includes local model status (`health/local_model_check.py`)
 - Ollama health check + URL reachability probing as part of source-chain resolution
+- Branch reconciliation tooling: `development-merge-forward` (dry-run-first transactional reconciliation with current-development content preference), `development-merge-forward-batch` (atomic ancestry-only batching for superseded refs), `git-patch-equivalence` (separate already-applied patches from unique branch work), `resolve-development-conflicts` (preserve development on conflicts), and `branch-reconciliation-summary` (bounded cursor-paginated head classification with current-only, semantic-summary, sequential-queue, and read-only disjoint-head planning modes, including per-group immutable-object rehearsal and exact-candidate admission recipes)
 
 ### Fixed
+- S83 reliability/security wave: fail-closed SkillCatalog download-path confinement, ripgrep root confinement, noncanonical GitHub issue-number validation, reviewed provider import policy, FIPS 203 ML-KEM provider boundary replacing custom Kyber, unsafe XMSS fallback removal, strict MessagePack DiskCache serialization, authenticated TLS 1.3 state, X.509 chain validation, and fail-closed dependency audit (100+ S83 items across algorithms, security, connectors, and tooling)
 - gate-lite: per-agent envelope key prefix normalization, YAML parse crash guards for large files and config cascade quotes, cost_pipeline assertion
 - gate-lite: `src.general_ludd` → `general_ludd` import path normalization with uv.lock refresh
 - event_log message assertion + ansible_lint_deep xdist serialization to prevent worker crashes
@@ -23,6 +141,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
 ### Changed
 - 5 CI-smoke-safe local models flagged (Qwen 0.5B, SmolLM2 135M/360M, TinyLlama 1.1B, Phi-2) for lightweight CI model download tests
 - `model_sources.py`: `ALTERNATIVE_SOURCES` dict maps every local model to its multi-source download config with env-var-overridable S3 mirror URLs
+- Test count growth: 105k+ tests collected (latest serialized collection 105,546/105,547 with one intentional deselection and zero collection errors)
+- beta.4 pending release: full gate, development integration, and release fan-in remain outstanding
 
 ## [0.1.0-beta.3] — 2026-07-26
 

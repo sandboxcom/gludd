@@ -27,6 +27,8 @@ def _make_loop(**overrides):
     session.add = MagicMock()
     http_client = AsyncMock()
     todo_repo = AsyncMock()
+    todo_repo.count_active.return_value = 0
+    todo_repo.recover_queued_legacy_self_improve.return_value = []
     task_return_repo = AsyncMock()
     defaults = dict(
         worker_base_url="http://worker:8000",
@@ -60,19 +62,22 @@ class TestEventLoop:
         call_order: list[str] = []
         expected = [
             "load_config_snapshot",
-            "claim_unreviewed_task_returns",
-            "dispatch_return_review_jobs",
             "evaluate_pid_controllers",
             "refill_task_buckets",
             "run_scheduler",
+            "self_improve",
+            "poll_issue_sources",
             "sdlc_gate",
+            "claim_unreviewed_task_returns",
+            "dispatch_return_review_jobs",
             "claim_runnable_todos",
             "evaluate_rules",
+            "reconcile_compute_demand",
             "dispatch_execute_jobs",
             "reconcile_completed_decisions",
+            "release_compute_demand",
             "refresh_model_performance",
             "check_compute_utilization",
-            "self_improve",
             "emit_tick_metrics",
         ]
         for name in expected:
@@ -381,9 +386,13 @@ class TestEventLoop:
         session = AsyncMock()
         expired = MagicMock()
         expired.expires_at = datetime.now(UTC) - timedelta(seconds=60)
-        result_mock = MagicMock()
-        result_mock.scalars().all.return_value = [expired]
-        session.execute.return_value = result_mock
+        expired.bucket_key = "core:missing"
+        expired.project_id = None
+        expired_result = MagicMock()
+        expired_result.scalars().all.return_value = [expired]
+        todo_result = MagicMock()
+        todo_result.scalars().all.return_value = []
+        session.execute.side_effect = [expired_result, todo_result]
         session.delete = AsyncMock()
         session.flush = AsyncMock()
         count = await reclaim_expired_leases(session, max_age_seconds=300)
@@ -790,7 +799,11 @@ class TestOneProjectPerTick:
 
         await loop._phase_claim_runnable_todos()
 
-        mocks["todo_repo"].claim_runnable.assert_awaited_once_with(limit=10, project_id=None)
+        mocks["todo_repo"].claim_runnable.assert_awaited_once_with(
+            limit=10,
+            max_active=10,
+            project_id=None,
+        )
         assert loop._tick_state["claimed_todos"] == []
 
 

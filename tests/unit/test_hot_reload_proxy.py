@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
@@ -128,7 +129,7 @@ class TestHotModuleBuild:
             )
 
     def test_make_target_exists(self):
-        assert "hot-reload-plugins:" in MAKEFILE.read_text(), (
+        assert "hot-reload-plugins:" in compose_makefile(MAKEFILE), (
             "Makefile missing hot-reload-plugins target"
         )
 

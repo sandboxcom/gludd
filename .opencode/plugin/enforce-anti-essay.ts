@@ -21,7 +21,7 @@ const ESSAY_PARAGRAPH_THRESHOLD = parseInt(
 function hasPendingWork(): boolean {
   const root = getProjectRoot()
   try {
-    const tasksPath = path.join(root, "TASKS.md")
+    const tasksPath = process.env.GLUDD_TASKS_MD || path.join(root, "TASKS.md")
     if (hasTasksMdPendingWork(tasksPath)) return true
     const ratchetPath = path.join(root, "config", "ratchet.yml")
     if (fs.existsSync(ratchetPath)) {
@@ -62,6 +62,7 @@ function hasStatusSummary(text: string): boolean {
     /status\s+report\s*(?::|$)/i,
     /session\s+\d+\s+summary/i,
     /what\s+we\s+did\s+so\s+far/i,
+    /let\s+me\s+explain/i,
     /completed\s+in\s+this\s+session/i,
     /everything\s+committed\s+and\s+merged/i,
   ]

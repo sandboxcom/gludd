@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import tempfile
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -258,11 +259,16 @@ def _check_ollama_installed() -> bool:
 
 def _check_url_reachable(url: str, timeout: float = 5.0) -> bool:
     try:
+        import urllib.error
         import urllib.request
 
         req = urllib.request.Request(url, method="HEAD")
-        urllib.request.urlopen(req, timeout=timeout)
+        with urllib.request.urlopen(req, timeout=timeout):
+            pass
         return True
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        return False
     except Exception:
         return False
 
@@ -325,16 +331,46 @@ def _download_from_direct_url(
     dest_dir: str | None = None,
     timeout: float | None = None,
 ) -> DownloadedFile:
+    import urllib.error
+    import urllib.parse
     import urllib.request
 
-    dest = os.path.join(dest_dir or _GGUF_MODEL_DIR, os.path.basename(url))
-    Path(dest).parent.mkdir(parents=True, exist_ok=True)
+    filename = os.path.basename(urllib.parse.urlsplit(url).path)
+    if not filename:
+        raise DownloadError(f"Download URL has no filename: {url}")
+
+    dest = Path(dest_dir or _GGUF_MODEL_DIR) / filename
+    dest.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info("Downloading from direct URL: %s → %s", url, dest)
-    urllib.request.urlretrieve(url, dest)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=dest.parent,
+            prefix=f".{dest.name}.",
+            suffix=".part",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            request = urllib.request.Request(url, method="GET")
+            effective_timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
+            with urllib.request.urlopen(request, timeout=effective_timeout) as response:
+                shutil.copyfileobj(response, temp_file)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, dest)
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
+    except BaseException:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
 
-    size = Path(dest).stat().st_size
-    return DownloadedFile(local_path=dest, source=ModelSource.DIRECT_URL, size_bytes=size)
+    size = dest.stat().st_size
+    return DownloadedFile(local_path=str(dest), source=ModelSource.DIRECT_URL, size_bytes=size)
 
 
 def download_with_fallback(

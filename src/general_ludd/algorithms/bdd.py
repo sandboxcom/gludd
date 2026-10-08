@@ -24,20 +24,24 @@ class BDDNode:
     __slots__ = ("_hash", "high", "low", "var")
 
     def __init__(self, var: int, low: object, high: object) -> None:
+        """Initialize a ``BDDNode`` instance."""
         self.var = var
         self.low = low
         self.high = high
         self._hash = hash((var, id_of(low), id_of(high)))
 
     def __hash__(self) -> int:
+        """Return the stable hash."""
         return self._hash
 
     def __eq__(self, other: object) -> bool:
+        """Compare this instance with another value."""
         if not isinstance(other, BDDNode):
             return NotImplemented
         return self.var == other.var and self.low is other.low and self.high is other.high
 
     def __repr__(self) -> str:
+        """Return a developer-readable representation."""
         return f"BDDNode(var={self.var}, low={_repr(self.low)}, high={_repr(self.high)})"
 
 
@@ -52,6 +56,7 @@ def _repr(x: object) -> str:
 
 
 def id_of(x: object) -> int:
+    """Execute ``id_of``."""
     if x == 0:
         return -1
     if x == 1:
@@ -70,6 +75,7 @@ class BDD:
     """
 
     def __init__(self, nvar: int) -> None:
+        """Initialize a ``BDD`` instance."""
         self.nvar = nvar
         self.unique: dict[tuple[int, object, object], BDDNode] = {}
         self._apply_cache: dict[tuple[str, object, object], object] = {}
@@ -79,9 +85,11 @@ class BDD:
     # ── builders ───────────────────────────────────────────────────────────
 
     def terminal(self, value: bool) -> object:
+        """Execute ``terminal``."""
         return _TERMINAL_TRUE if value else _TERMINAL_FALSE
 
     def var(self, i: int) -> object:
+        """Execute ``var``."""
         if not 0 <= i < self.nvar:
             raise IndexError(f"variable {i} out of range [0, {self.nvar})")
         return self._make(i, _TERMINAL_FALSE, _TERMINAL_TRUE)
@@ -97,28 +105,24 @@ class BDD:
         return node
 
     def from_expression(self, f: Callable[[tuple[int, ...]], bool]) -> object:
+        """Execute ``from_expression``."""
         expr_vars: list[int] = []
         return self._build_expr(f, expr_vars, 0)
 
     def _build_expr(self, f: Callable[[tuple[int, ...]], bool], expr_vars: list[int], depth: int) -> object:
         if depth >= self.nvar:
-            n = self.nvar
-            for bits in range(1 << n):
-                vals: list[int] = []
-                b = bits
-                for _ in range(n):
-                    vals.append(b & 1)
-                    b >>= 1
-                if f(tuple(vals)):
-                    return _TERMINAL_TRUE
-            return _TERMINAL_FALSE
+            return _TERMINAL_TRUE if f(tuple(expr_vars)) else _TERMINAL_FALSE
+        expr_vars.append(0)
         low = self._build_expr(f, expr_vars, depth + 1)
+        expr_vars[-1] = 1
         high = self._build_expr(f, expr_vars, depth + 1)
+        expr_vars.pop()
         return self._make(depth, low, high)
 
     # ── apply ──────────────────────────────────────────────────────────────
 
     def apply(self, op: str, u: object, v: object) -> object:
+        """Apply the value."""
         key = (op, u, v)
         cached = self._apply_cache.get(key)
         if cached is not None:
@@ -179,6 +183,7 @@ class BDD:
         raise NotImplementedError
 
     def ite(self, i: object, t: object, e: object) -> object:
+        """Execute ``ite``."""
         key = ("ite", i, t)
         key2 = ("ite", key, e)
         cached = self._apply_cache.get(key2)
@@ -217,15 +222,19 @@ class BDD:
         return self._make(top, low, high)
 
     def and_(self, u: object, v: object) -> object:
+        """Execute ``and_``."""
         return self.apply("and", u, v)
 
     def or_(self, u: object, v: object) -> object:
+        """Execute ``or_``."""
         return self.apply("or", u, v)
 
     def xor(self, u: object, v: object) -> object:
+        """Execute ``xor``."""
         return self.apply("xor", u, v)
 
     def not_(self, u: object) -> object:
+        """Execute ``not_``."""
         if u == 1:
             return _TERMINAL_FALSE
         if u == 0:
@@ -249,11 +258,13 @@ class BDD:
             return _TERMINAL_FALSE
         if x == 0:
             return _TERMINAL_TRUE
-        return self._not(x)  # type: ignore[arg-type]
+        assert isinstance(x, BDDNode)
+        return self._not(x)
 
     # ── restrict ───────────────────────────────────────────────────────────
 
     def restrict(self, u: object, var: int, value: int) -> object:
+        """Restrict the value."""
         assert value in (0, 1)
         key = (u, var, value)
         cached = self._restrict_cache.get(key)
@@ -278,6 +289,7 @@ class BDD:
     # ── compose ────────────────────────────────────────────────────────────
 
     def compose(self, u: object, var: int, v: object) -> object:
+        """Compose the value."""
         key = (u, var, v)
         cached = self._compose_cache.get(key)
         if cached is not None:
@@ -301,6 +313,7 @@ class BDD:
     # ── satcount ───────────────────────────────────────────────────────────
 
     def satcount(self, u: object) -> int:
+        """Execute ``satcount``."""
         result: int = self._satcount(u, {})
         return result
 
@@ -321,6 +334,7 @@ class BDD:
         return total
 
     def satcount_with_vars(self, u: object, active_vars: int) -> int:
+        """Execute ``satcount_with_vars``."""
         return self._satcount_vars(u, active_vars, {})
 
     def _satcount_vars(self, u: object, active_vars: int, memo: dict[object, int]) -> int:
@@ -342,6 +356,7 @@ class BDD:
         return total
 
     def any_sat(self, u: object) -> dict[int, int] | None:
+        """Execute ``any_sat``."""
         return self._any_sat(u, {})
 
     def _any_sat(self, u: object, assign: dict[int, int]) -> dict[int, int] | None:
@@ -358,17 +373,21 @@ class BDD:
         return self._any_sat(u.high, assign)
 
     def is_tautology(self, u: object) -> bool:
+        """Return whether is tautology."""
         return self.satcount(self.not_(u)) == 0
 
     def is_satisfiable(self, u: object) -> bool:
+        """Return whether is satisfiable."""
         return self.any_sat(u) is not None
 
     def equals(self, u: object, v: object) -> bool:
+        """Return whether equals."""
         return u is v
 
     # ── stats ──────────────────────────────────────────────────────────────
 
     def node_count(self, u: object) -> int:
+        """Execute ``node_count``."""
         visited: set[object] = set()
         self._collect_nodes(u, visited)
         return len(visited) - (1 if 0 in visited else 0) - (1 if 1 in visited else 0)
@@ -382,4 +401,5 @@ class BDD:
         self._collect_nodes(u.high, visited)
 
     def unique_count(self) -> int:
+        """Execute ``unique_count``."""
         return len(self.unique)

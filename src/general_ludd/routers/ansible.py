@@ -1,3 +1,5 @@
+"""Admin router exposing ansible-galaxy search/install and playbook rendering."""
+
 from __future__ import annotations
 
 import asyncio
@@ -5,6 +7,7 @@ from pathlib import Path
 from typing import cast
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, StrictStr
 
 from general_ludd.ansible.galaxy import get_builtin_modules, install_galaxy, search_galaxy
 from general_ludd.ansible.paths import (
@@ -13,7 +16,15 @@ from general_ludd.ansible.paths import (
 )
 
 
+class GalaxyInstallRequest(BaseModel):
+    """Strict request body for one bounded ``ansible-galaxy`` installation."""
+
+    name: StrictStr
+    type: StrictStr = "role"
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register the admin ansible endpoints on the FastAPI app."""
 
     @app.get("/admin/ansible/search")
     async def admin_ansible_search(query: str = "", type: str = "role") -> dict[str, object]:
@@ -24,13 +35,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         return {"query": query, "type": type, "results": results}
 
     @app.post("/admin/ansible/install")
-    async def admin_ansible_install(req: dict[str, object]) -> dict[str, object]:
+    async def admin_ansible_install(req: GalaxyInstallRequest) -> dict[str, object]:
         # install_galaxy shells out to ansible-galaxy via a blocking
         # subprocess.run (300s timeout); offload it so the async handler does
         # not freeze the event loop while the install runs.
-        result = await asyncio.to_thread(
-            install_galaxy, cast(str, req.get("name", "")), cast(str, req.get("type", "role"))
-        )
+        try:
+            result = await asyncio.to_thread(install_galaxy, req.name, req.type)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
         return result
 
     @app.get("/admin/ansible/builtins")
@@ -50,7 +62,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # undefined / syntax error becomes an HTTP 400 with no traceback.
         #
         # This route is intentionally NOT in the daemon's _PUBLIC_PATHS allow-
-        # list, so when GLUDD_PSK is configured it requires the daemon PSK.
+        # list, so when GLUDD_AUTH_PSK is configured it requires the daemon PSK.
         from general_ludd.ansible.templating import AnsibleTemplater, TemplateRenderError
 
         extra_vars = req.get("extra_vars", {})
@@ -100,7 +112,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 detail="Ansible runner not available",
             )
         activation_root = runner.activate_collection(
-            namespace, collection, version=version,
+            namespace,
+            collection,
+            version=version,
         )
         return {
             "namespace": namespace,

@@ -61,7 +61,7 @@ def _client_http(client: TestClient, method: str, url: str, **kwargs):
 
 @pytest.fixture()
 def fake_app(monkeypatch):
-    monkeypatch.setenv("GLUDD_PSK", PSK)
+    monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
     monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
     from general_ludd.daemon import create_daemon_app
 

@@ -29,33 +29,17 @@
 - name: Run DNA profile analysis
   when: dna_enabled | bool
   block:
-    - name: Compare DNA profiles via forensics module_utils
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.forensics.plugins.module_utils import match_dna_profile
-
-          sample = {{ dna_sample_profile | to_json }}
-          reference = {{ dna_reference_profile | to_json }}
-
-          result = match_dna_profile(
-              sample=sample,
-              reference=reference,
-              analysis_type="{{ dna_analysis_type }}",
-          )
-          print(json.dumps(result))
-        executable: python3
+    - name: Compare DNA profiles via packaged forensics module
+      general_ludd.forensics.forensic_analysis:
+        operation: dna
+        sample: "{{ dna_sample_profile }}"
+        reference: "{{ dna_reference_profile }}"
+        analysis_type: "{{ dna_analysis_type }}"
       register: dna_analysis_output
-      failed_when: false
-      changed_when: false
 
     - name: Parse DNA match result
       ansible.builtin.set_fact:
-        dna_result_raw: "{{ dna_analysis_output.stdout | from_json }}"
-      when:
-        - dna_analysis_output.rc == 0
-        - dna_analysis_output.stdout | length > 0
+        dna_result_raw: "{{ dna_analysis_output.result }}"
 
     - name: Register DNA verdict
       ansible.builtin.set_fact:
@@ -80,7 +64,7 @@
       ansible.builtin.copy:
         content: |
           {{ {'role': 'dna_analyst', 'status': 'failed',
-              'error': dna_analysis_output.stderr | default('unknown error'),
+              'error': dna_analysis_output.msg | default('unknown error'),
               'analysis_type': dna_analysis_type} | to_nice_json }}
         dest: "{{ dna_output_dir }}/dna_verdict.json"
         mode: "0644"

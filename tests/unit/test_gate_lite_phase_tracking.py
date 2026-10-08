@@ -8,13 +8,15 @@ Mirrors test_gate_background_targets.py.
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
 
 def _content() -> str:
     assert MAKEFILE.exists(), "Makefile must exist"
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _target_block(content: str, target: str) -> str:
@@ -29,12 +31,12 @@ def _target_block(content: str, target: str) -> str:
     return content[idx:end]
 
 
-def test_gate_lite_target_exists():
+def test_gate_lite_target_exists() -> None:
     content = _content()
     assert "gate-lite:" in content, "Makefile missing 'gate-lite:' target"
 
 
-def test_gate_lite_does_not_require_ignored_recovery_backup():
+def test_gate_lite_does_not_require_ignored_recovery_backup() -> None:
     """gate-lite must be reproducible from a clean checkout."""
     content = _content()
     dep_line = next(
@@ -47,12 +49,12 @@ def test_gate_lite_does_not_require_ignored_recovery_backup():
     )
 
 
-def test_gate_lite_kill_target_exists():
+def test_gate_lite_kill_target_exists() -> None:
     content = _content()
     assert "gate-lite-kill:" in content, "Makefile missing 'gate-lite-kill:' target"
 
 
-def test_gate_lite_writes_phase_markers_to_status():
+def test_gate_lite_writes_phase_markers_to_status() -> None:
     """gate-lite recipe emits per-phase markers into .gate-lite-status file."""
     content = _content()
     recipe_block = _target_block(content, "gate-lite")
@@ -73,7 +75,7 @@ def test_gate_lite_writes_phase_markers_to_status():
         assert marker in recipe_block, f"gate-lite recipe missing phase marker for {label!r}"
 
 
-def test_gate_lite_writes_terminal_marker():
+def test_gate_lite_writes_terminal_marker() -> None:
     """gate-lite recipe emits terminal PASSED/FAILED markers into .gate-lite-status."""
     content = _content()
     recipe_block = _target_block(content, "gate-lite")
@@ -85,14 +87,29 @@ def test_gate_lite_writes_terminal_marker():
     )
 
 
-def test_gate_lite_tracks_failed_file():
+def test_gate_lite_tracks_failed_file() -> None:
     """gate-lite recipe touches .gate-lite-failed on any phase failure."""
     content = _content()
     recipe_block = _target_block(content, "gate-lite")
     assert ".gate-lite-failed" in recipe_block, "gate-lite recipe missing .gate-lite-failed tracking file"
 
 
-def test_gate_lite_background_uses_nohup():
+def test_gate_lite_unit_log_is_run_namespaced_and_observable() -> None:
+    """Concurrent worktrees must never share or silently buffer unit evidence."""
+    recipe_block = _target_block(_content(), "gate-lite")
+
+    assert "/tmp/gludd-gate-lite-test.log" not in recipe_block
+    for marker in (
+        "scripts/stream_command.py",
+        '--root "$(OBSERVED_ROOT)"',
+        "--label gate-lite-unit",
+        '--retain-runs "$(OBSERVED_RETAIN_RUNS)"',
+        "--pytest-trace",
+    ):
+        assert marker in recipe_block, f"gate-lite unit evidence missing {marker}"
+
+
+def test_gate_lite_background_uses_nohup() -> None:
     """gate-lite-background must use nohup so the launched gate-lite survives shell exit."""
     content = _content()
     idx = content.find("gate-lite-background:")
@@ -101,7 +118,7 @@ def test_gate_lite_background_uses_nohup():
     assert "nohup" in recipe_block, "gate-lite-background recipe must use nohup"
 
 
-def test_gate_lite_background_writes_pid_file():
+def test_gate_lite_background_writes_pid_file() -> None:
     """gate-lite-background must write .gate-lite-background.pid for status-check."""
     content = _content()
     idx = content.find("gate-lite-background:")
@@ -111,17 +128,17 @@ def test_gate_lite_background_writes_pid_file():
     )
 
 
-def test_gate_lite_status_check_target_exists():
+def test_gate_lite_status_check_target_exists() -> None:
     content = _content()
     assert "gate-lite-status-check:" in content, "Makefile missing 'gate-lite-status-check:' target"
 
 
-def test_gate_lite_tail_target_exists():
+def test_gate_lite_tail_target_exists() -> None:
     content = _content()
     assert "gate-lite-tail:" in content, "Makefile missing 'gate-lite-tail:' target"
 
 
-def test_gate_lite_prerequisite_lint_specs():
+def test_gate_lite_prerequisite_lint_specs() -> None:
     """gate-lite includes lint-specs as a prerequisite."""
     content = _content()
     dep_line = next(
@@ -132,7 +149,7 @@ def test_gate_lite_prerequisite_lint_specs():
     assert "lint-specs" in dep_line, f"lint-specs not in gate-lite prerequisites: {dep_line}"
 
 
-def test_gate_lite_prerequisite_spec_enforcement_coverage():
+def test_gate_lite_prerequisite_spec_enforcement_coverage() -> None:
     """gate-lite includes check-spec-enforcement-coverage as a prerequisite."""
     content = _content()
     dep_line = next(
@@ -145,7 +162,7 @@ def test_gate_lite_prerequisite_spec_enforcement_coverage():
     )
 
 
-def test_gate_lite_prerequisite_plugin_hook_invoke():
+def test_gate_lite_prerequisite_plugin_hook_invoke() -> None:
     """gate-lite includes check-plugin-hook-invoke as a prerequisite."""
     content = _content()
     dep_line = next(

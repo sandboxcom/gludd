@@ -4,21 +4,47 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
 import pytest
+from scripts import audit_pyinstaller_warnings as warning_audit
+from scripts.makefile_layout import compose_makefile
 
 _ROOT = Path(__file__).resolve().parents[2]
 _MAKEFILE = _ROOT / "Makefile"
+_BUILD_WORKFLOW = _ROOT / ".github" / "workflows" / "build.yml"
+_MOLECULE_WORKFLOW = _ROOT / ".github" / "workflows" / "molecule.yml"
 _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
 _LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
+_DEV_BUILD_LOCK = _ROOT / "requirements" / "profiles" / "dev-build" / "uv.lock"
+_LINUX_BUILDER_DOCKERFILE = _ROOT / "config" / "containers" / "linux-binary.Dockerfile"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
-_PRICING_SOURCES = _ROOT / "src" / "general_ludd" / "pricing_intel" / "sources.py"
+_CLOUD_COMPUTE_SOURCE = (
+    _ROOT
+    / "src"
+    / "general_ludd"
+    / "pricing_intel"
+    / "source_components"
+    / "cloud_compute.py"
+)
 _PYINSTALLER_VERSION = "6.20.0"
 _EMPTY_TRANSITIVE_DIGEST = hashlib.sha256(b"").hexdigest()
+_CONTROLLER_RUNTIME_EDGES = {
+    ("ansible.executor", "general_ludd.ansible.core_runner", ("delayed",)),
+    ("ansible.inventory", "general_ludd.ansible.core_runner", ("delayed",)),
+    ("ansible.module_utils", "general_ludd.ansible.core_runner", ("delayed",)),
+    ("ansible.parsing", "general_ludd.ansible.core_runner", ("optional",)),
+    ("ansible.plugins", "general_ludd.ansible.core_runner", ("delayed", "optional")),
+    ("ansible.template", "general_ludd.ansible.core_runner", ("optional",)),
+    ("ansible.utils", "general_ludd.ansible.core_runner", ("delayed",)),
+    ("ansible.utils", "general_ludd.ansible.unsafe", ("optional",)),
+    ("ansible.vars", "general_ludd.ansible.core_runner", ("delayed",)),
+}
 
 _WARNING_HEADER = """\
 This file lists modules PyInstaller was not able to find. This does not
@@ -69,6 +95,7 @@ def _run_audit(
     architecture: str = "x86_64",
     manifest_architecture_digests: dict[str, str] | None = None,
     baseline_pinned_project_modules: list[dict[str, str]] | None = None,
+    manifest_alternate_digests: dict[str, list[str]] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     warning_path = tmp_path / "warn-gludd.txt"
     if warning_body is not None:
@@ -85,13 +112,11 @@ def _run_audit(
                 "platform": manifest_platform or platform,
                 "pyinstaller_version": manifest_version or version,
                 "allowed_missing_imports": allowed or [],
-                "baseline_pinned_project_modules": (
-                    baseline_pinned_project_modules or []
-                ),
+                "baseline_pinned_project_modules": (baseline_pinned_project_modules or []),
                 "transitive_warning_sha256_by_architecture": (
-                    manifest_architecture_digests
-                    or {architecture: transitive_warning_sha256}
+                    manifest_architecture_digests or {architecture: transitive_warning_sha256}
                 ),
+                "reviewed_transitive_warning_sha256_alternates_by_architecture": (manifest_alternate_digests or {}),
             }
         ),
         encoding="utf-8",
@@ -128,12 +153,114 @@ def test_script_exists() -> None:
 
 
 def test_makefile_exposes_replayable_linux_warning_audit() -> None:
-    makefile = _MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(_MAKEFILE)
 
     assert "PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt" in makefile
+    assert "PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=" in makefile
+    assert "PYINSTALLER_PYTHON_VERSION_LINUX ?= 3.12.14" in makefile
     assert "\naudit-linux-pyinstaller-warnings:" in makefile
     assert '--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)"' in makefile
+    assert 'architecture="$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)"' in makefile
     assert makefile.count('--architecture "$$architecture"') == 3
+    assert makefile.count(
+        'test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)"'
+    ) == 2
+
+
+def test_molecule_binary_smoke_uses_release_builder_python_minor() -> None:
+    """The hosted artifact smoke must analyze the same locked Python graph."""
+    dockerfile = _LINUX_BUILDER_DOCKERFILE.read_text(encoding="utf-8")
+    workflow = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
+
+    builder = re.search(r"python:(?P<minor>\d+\.\d+)\.\d+-", dockerfile)
+    hosted = re.search(
+        r'python-version: "(?P<minor>\d+\.\d+)(?:\.\d+)?"',
+        workflow,
+    )
+    assert builder is not None
+    assert hosted is not None
+    assert hosted.group("minor") == builder.group("minor")
+    assert "scripts/dependency_profiles.py sync --set ci" in workflow
+
+
+def test_linux_builder_combines_exact_python_and_uv_images() -> None:
+    """One cached builder must pin both interpreter and package-manager identity."""
+    dockerfile = _LINUX_BUILDER_DOCKERFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(_MAKEFILE)
+
+    assert (
+        "FROM docker.io/library/python:3.12.14-slim-bookworm@"
+        "sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e"
+    ) in dockerfile
+    assert (
+        "FROM ghcr.io/astral-sh/uv:0.12.19@"
+        "sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424"
+        " AS uv"
+    ) in dockerfile
+    assert "COPY --from=uv /uv /uvx /bin/" in dockerfile
+    assert "LINUX_BINARY_IMAGE ?= gludd-linux-binary-build:python3.12.14-uv0.12.19" in makefile
+    assert "build-linux-binary-image: lima-docker-ensure" in makefile
+    assert "build-linux-executable: worktree-guard" in makefile
+    assert "$(MAKE) --no-print-directory build-linux-binary-image" in makefile
+
+
+def test_molecule_binary_smoke_pins_hosted_python_patch() -> None:
+    """Hosted PyInstaller analysis must not float to a new patch graph."""
+    workflow = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'python-version: "3.12.14"' in workflow
+
+
+def test_every_hosted_linux_warning_graph_uses_one_python_and_locked_profile() -> None:
+    """Build, release, and dedicated Molecule lanes must analyze one graph."""
+    build = _BUILD_WORKFLOW.read_text(encoding="utf-8")
+    molecule = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
+    build_molecule = build.split("\n  molecule:", 1)[1].split("\n  linux:", 1)[0]
+    build_linux = build.split("\n  linux:", 1)[1].split("\n  macos:", 1)[0]
+
+    assert 'python-version: "3.12.14"' in build_molecule
+    assert 'python-version: "3.12.14"' in build_linux
+    assert "uv sync" not in build_molecule
+    assert "scripts/dependency_profiles.py sync --set ci" in build_molecule
+    assert "uv sync" not in build_linux
+    assert "scripts/dependency_profiles.py sync --set build-azure" in build_linux
+    assert 'python-version: "3.12.14"' in molecule
+    assert "uv sync" not in molecule
+    assert "scripts/dependency_profiles.py sync --set ci" in molecule
+    assert "Audit Linux PyInstaller warning graph" in build
+    assert "Upload Linux PyInstaller warning graph" in build
+    assert "Upload Linux PyInstaller warning graph" in molecule
+    assert "PYINSTALLER_VERSION_LINUX=6.20.0" not in build
+    assert (
+        "dependency_profiles.py locked-version --root . --profile dev-build "
+        "--package pyinstaller"
+    ) in build
+    assert 'PYINSTALLER_VERSION_LINUX="$pyinstaller_version"' in build
+
+
+def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
+    """The exact hosted Python 3.12.14 graph must remain fail-closed and pinned."""
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+    alternates = policy["reviewed_transitive_warning_sha256_alternates_by_architecture"]["x86_64"]
+
+    assert "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814" in alternates
+    assert "837c969e07af0acbc4812ec9e417ef42eb941a9184d9aa1731c402c3df1d11ad" in alternates
+
+
+def test_linux_policy_tracks_locked_pyinstaller_version() -> None:
+    """The reviewed graph must identify the exact locked analyzer version."""
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+    lock = tomllib.loads(_DEV_BUILD_LOCK.read_text(encoding="utf-8"))
+    locked_versions = [
+        package["version"]
+        for package in lock["package"]
+        if package["name"] == "pyinstaller"
+    ]
+
+    assert len(locked_versions) == 1
+    assert policy["pyinstaller_version"] == locked_versions[0]
+    makefile = compose_makefile(_MAKEFILE)
+    assert f"PYINSTALLER_VERSION_LINUX ?= {locked_versions[0]}" in makefile
 
 
 def test_linux_policy_pins_hosted_and_container_architectures() -> None:
@@ -141,15 +268,57 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
 
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
-        "aarch64": (
-            "fe46fb237e7274fe5f8db70da336b212f"
-            "ac65c3aa6fc65e1e453241f3e0a3d50"
-        ),
-        "x86_64": (
-            "b744f744d6117f6ce2b15e568831e1d4"
-            "0616bfdff55e1c174b9bbcc240abee93"
-        ),
+        "aarch64": ("70c6ec35a8d7e0b9095ca2dd7879ef28be05bff279d6d7aca9220e54efbd14ba"),
+        "x86_64": ("d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d"),
     }
+
+
+def test_linux_policy_pins_exact_controller_runtime_boundary_edges() -> None:
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+
+    actual = {
+        (entry["module"], entry["importer"], tuple(entry["flags"]))
+        for entry in policy["allowed_missing_imports"]
+        if entry["category"] == "controller-runtime-boundary"
+    }
+    assert actual == _CONTROLLER_RUNTIME_EDGES
+
+
+def test_linux_policy_does_not_allow_missing_bundled_azure_sdk() -> None:
+    """The frozen release installs Azure; missing Azure imports are defects."""
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+
+    azure_edges = [
+        entry
+        for entry in policy["allowed_missing_imports"]
+        if entry["module"] == "azure" or entry["module"].startswith("azure.")
+    ]
+
+    assert azure_edges == []
+
+
+def test_linux_policy_pins_current_optional_gcp_billing_edge() -> None:
+    """Only the lazy, optional Cloud Billing root import may be absent."""
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+    pricing_edges = [
+        entry
+        for entry in policy["allowed_missing_imports"]
+        if entry["importer"].startswith("general_ludd.pricing_intel")
+    ]
+
+    assert pricing_edges == [
+        {
+            "module": "google",
+            "importer": (
+                "general_ludd.pricing_intel.source_components.cloud_compute"
+            ),
+            "flags": ["delayed", "optional"],
+            "category": "optional-dependency",
+            "evidence": (
+                "https://cloud.google.com/python/docs/reference/cloudbilling/latest"
+            ),
+        }
+    ]
 
 
 def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> None:
@@ -166,10 +335,7 @@ def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> N
             "general_ludd.compat.copy",
             ["optional"],
             category="interpreter-specific",
-            evidence=(
-                "https://docs.python.org/3/library/platform.html"
-                "#cross-platform"
-            ),
+            evidence=("https://docs.python.org/3/library/platform.html#cross-platform"),
         ),
         _allow(
             "winreg",
@@ -192,8 +358,7 @@ def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> N
 def test_unreviewed_missing_import_fails(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "missing module named required_package - "
-        "imported by general_ludd.cli (top-level)\n",
+        "missing module named required_package - imported by general_ludd.cli (top-level)\n",
     )
 
     assert result.returncode == 1
@@ -219,8 +384,7 @@ def test_hook_provided_runtime_modules_are_audited_separately(
 def test_unknown_module_status_still_fails_closed(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "deferred module named six.moves - "
-        "imported by dateutil.rrule (top-level)\n",
+        "deferred module named six.moves - imported by dateutil.rrule (top-level)\n",
     )
 
     assert result.returncode == 1
@@ -244,10 +408,7 @@ def test_actionable_edge_cannot_be_allowlisted(
     reason: str,
 ) -> None:
     rendered_flags = ", ".join(flags)
-    warning = (
-        "missing module named required_package - "
-        f"imported by general_ludd.cli ({rendered_flags})\n"
-    )
+    warning = f"missing module named required_package - imported by general_ludd.cli ({rendered_flags})\n"
     result = _run_audit(
         tmp_path,
         warning,
@@ -263,6 +424,86 @@ def test_actionable_edge_cannot_be_allowlisted(
 
     assert result.returncode == 1, reason
     assert "actionable import edge" in result.stderr
+
+
+def test_exact_controller_runtime_boundary_edge_passes_when_root_is_excluded(
+    tmp_path: Path,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "missing module named ansible.executor - imported by "
+        "general_ludd.ansible.core_runner (delayed)\n",
+        allowed=[
+            _allow(
+                "ansible.executor",
+                "general_ludd.ansible.core_runner",
+                ["delayed"],
+                category="controller-runtime-boundary",
+                evidence="https://docs.ansible.com/projects/builder/en/stable/",
+            )
+        ],
+        spec_text='a = Analysis([], excludes=["ansible"])\n',
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "1 reviewed missing-import edges" in result.stdout
+
+
+def test_controller_runtime_boundary_requires_active_spec_exclude(
+    tmp_path: Path,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "missing module named ansible.executor - imported by "
+        "general_ludd.ansible.core_runner (delayed)\n",
+        allowed=[
+            _allow(
+                "ansible.executor",
+                "general_ludd.ansible.core_runner",
+                ["delayed"],
+                category="controller-runtime-boundary",
+                evidence="https://docs.ansible.com/projects/builder/en/stable/",
+            )
+        ],
+    )
+
+    assert result.returncode == 1
+    assert "controller runtime edge is not covered by active Analysis.excludes" in result.stderr
+
+
+def test_controller_runtime_boundary_does_not_cover_unrelated_warning(
+    tmp_path: Path,
+) -> None:
+    warnings = (
+        "missing module named ansible.executor - imported by "
+        "general_ludd.ansible.core_runner (delayed)\n"
+        "missing module named required_package - imported by "
+        "general_ludd.cli (top-level)\n"
+    )
+    result = _run_audit(
+        tmp_path,
+        warnings,
+        allowed=[
+            _allow(
+                "ansible.executor",
+                "general_ludd.ansible.core_runner",
+                ["delayed"],
+                category="controller-runtime-boundary",
+                evidence="https://docs.ansible.com/projects/builder/en/stable/",
+            )
+        ],
+        spec_text='a = Analysis([], excludes=["ansible"])\n',
+    )
+
+    assert result.returncode == 1
+    assert "actionable import edge: missing required_package" in result.stderr
+    assert "unreviewed missing-import edge: missing required_package" in result.stderr
+
+
+def test_active_exclude_boundary_matches_only_complete_module_segments() -> None:
+    assert warning_audit._is_covered_by_active_exclude("ansible.executor", {"ansible"})
+    assert warning_audit._is_covered_by_active_exclude("ansible", {"ansible"})
+    assert not warning_audit._is_covered_by_active_exclude("ansiblex.executor", {"ansible"})
 
 
 def test_missing_warning_file_fails(tmp_path: Path) -> None:
@@ -282,6 +523,51 @@ def test_unknown_warning_syntax_fails(tmp_path: Path) -> None:
     assert "unrecognized warning-file line" in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("warning", "message"),
+    [
+        (
+            "missing module named edge - imported by importer-without-flags\n",
+            "unrecognized importer syntax",
+        ),
+        (
+            "missing module named edge - imported by junk, general_ludd.cli (optional)\n",
+            "unrecognized importer syntax",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (optional, )\n",
+            "empty importer or flag",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (mystery)\n",
+            "unknown PyInstaller import flags",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (optional, optional)\n",
+            "duplicate import flags",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (optional), junk\n",
+            "unrecognized importer syntax",
+        ),
+        (
+            "missing module named edge - imported by general_ludd.cli (optional)\n"
+            "missing module named edge - imported by general_ludd.cli (optional)\n",
+            "duplicate missing-import edges",
+        ),
+    ],
+)
+def test_malformed_warning_edges_fail_closed(
+    tmp_path: Path,
+    warning: str,
+    message: str,
+) -> None:
+    result = _run_audit(tmp_path, warning)
+
+    assert result.returncode == 1
+    assert message in result.stderr
+
+
 def test_allowlist_requires_category_and_evidence(tmp_path: Path) -> None:
     allowed = [
         {
@@ -294,13 +580,60 @@ def test_allowlist_requires_category_and_evidence(tmp_path: Path) -> None:
     ]
     result = _run_audit(
         tmp_path,
-        "missing module named 'org.python' - "
-        "imported by general_ludd.compat.copy (optional)\n",
+        "missing module named 'org.python' - imported by general_ludd.compat.copy (optional)\n",
         allowed=allowed,
     )
 
     assert result.returncode == 1
     assert "non-empty category and evidence" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        (
+            _allow(
+                "edge",
+                "general_ludd.cli",
+                ["optional"],
+                evidence="http://example.invalid/evidence",
+            ),
+            "evidence must be an https URL",
+        ),
+        (
+            _allow("edge", "general_ludd.cli", ["optional", "optional"]),
+            "duplicate flags",
+        ),
+        (
+            _allow("edge", "general_ludd.cli", ["mystery"]),
+            "unknown flags",
+        ),
+    ],
+)
+def test_malformed_allowlist_edge_fails_closed(
+    tmp_path: Path,
+    entry: dict[str, Any],
+    message: str,
+) -> None:
+    result = _run_audit(tmp_path, "", allowed=[entry])
+
+    assert result.returncode == 1
+    assert message in result.stderr
+
+
+def test_duplicate_allowlist_edge_fails_closed(tmp_path: Path) -> None:
+    edge = _allow("edge", "general_ludd.cli", ["optional"])
+    result = _run_audit(tmp_path, "", allowed=[edge, edge])
+
+    assert result.returncode == 1
+    assert "duplicate allowlist edges" in result.stderr
+
+
+def test_empty_runtime_architecture_fails_closed(tmp_path: Path) -> None:
+    result = _run_audit(tmp_path, "", architecture="")
+
+    assert result.returncode == 1
+    assert "architecture must be non-empty" in result.stderr
 
 
 def test_stale_allowlist_entry_fails(tmp_path: Path) -> None:
@@ -341,8 +674,7 @@ def test_allowlist_is_pinned_to_target_platform(tmp_path: Path) -> None:
 def test_importer_and_flags_must_match_exactly(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "missing module named winreg - "
-        "imported by general_ludd.compat.platform (optional)\n",
+        "missing module named winreg - imported by general_ludd.compat.platform (optional)\n",
         allowed=[
             _allow(
                 "winreg",
@@ -381,8 +713,7 @@ a = Analysis([], excludes=["pytest"] + _platform_excludes)
 def test_excluded_warning_not_in_analysis_excludes_fails(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "excluded module named unreviewed - "
-        "imported by general_ludd.app (conditional)\n",
+        "excluded module named unreviewed - imported by general_ludd.app (conditional)\n",
     )
 
     assert result.returncode == 1
@@ -392,8 +723,7 @@ def test_excluded_warning_not_in_analysis_excludes_fails(tmp_path: Path) -> None
 def test_inactive_platform_exclude_is_not_accepted(tmp_path: Path) -> None:
     result = _run_audit(
         tmp_path,
-        "excluded module named fcntl - "
-        "imported by general_ludd.app (conditional)\n",
+        "excluded module named fcntl - imported by general_ludd.app (conditional)\n",
         spec_text="""\
 import sys
 
@@ -425,21 +755,36 @@ def test_missing_or_malformed_spec_fails_closed(tmp_path: Path) -> None:
 def test_transitive_warning_graph_requires_exact_normalized_digest(
     tmp_path: Path,
 ) -> None:
-    warning = (
-        "missing module named optional_backend - "
-        "imported by dependency.compat (optional)\n"
-    )
+    warning = "missing module named optional_backend - imported by dependency.compat (optional)\n"
     result = _run_audit(tmp_path, warning)
 
     assert result.returncode == 1
     assert "transitive warning digest mismatch" in result.stderr
+    assert "transitive warning graph: total=1 shown=1 limit=50" in result.stderr
+    assert (
+        "transitive warning edge: missing optional_backend <- "
+        "dependency.compat (optional)"
+    ) in result.stderr
+
+
+def test_transitive_warning_mismatch_diagnostics_are_bounded(tmp_path: Path) -> None:
+    warning = "".join(
+        f"missing module named optional_{index:02d} - "
+        f"imported by dependency_{index:02d}.compat (optional)\n"
+        for index in range(51)
+    )
+
+    result = _run_audit(tmp_path, warning)
+
+    assert result.returncode == 1
+    assert "transitive warning graph: total=51 shown=50 limit=50" in result.stderr
+    assert "transitive warning graph omitted=1" in result.stderr
+    assert "transitive warning edge: missing optional_49" in result.stderr
+    assert "transitive warning edge: missing optional_50" not in result.stderr
 
 
 def test_exact_transitive_warning_graph_digest_passes(tmp_path: Path) -> None:
-    warning = (
-        "missing module named optional_backend - "
-        "imported by dependency.compat (optional)\n"
-    )
+    warning = "missing module named optional_backend - imported by dependency.compat (optional)\n"
     normalized = "missing optional_backend <- dependency.compat (optional)"
     digest = hashlib.sha256(normalized.encode()).hexdigest()
     result = _run_audit(
@@ -455,10 +800,7 @@ def test_exact_transitive_warning_graph_digest_passes(tmp_path: Path) -> None:
 def test_transitive_warning_digest_is_selected_by_architecture(
     tmp_path: Path,
 ) -> None:
-    warning = (
-        "missing module named optional_backend - "
-        "imported by dependency.compat (optional)\n"
-    )
+    warning = "missing module named optional_backend - imported by dependency.compat (optional)\n"
     normalized = "missing optional_backend <- dependency.compat (optional)"
     x86_64_digest = hashlib.sha256(normalized.encode()).hexdigest()
     result = _run_audit(
@@ -487,6 +829,42 @@ def test_missing_architecture_digest_fails_closed(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "no transitive warning digest for architecture 'x86_64'" in result.stderr
+
+
+def test_reviewed_alternate_digest_passes(tmp_path: Path) -> None:
+    """A reviewed alternate digest passes: consecutive CI builds of identical
+    code can flip between two observed transitive graphs (rounds 18/19); any
+    OTHER digest still fails closed."""
+    warnings = "missing module named 'org.python' - imported by general_ludd.compat.copy (optional)\n"
+    allowed = [
+        _allow("org.python", "general_ludd.compat.copy", ["optional"]),
+    ]
+    result = _run_audit(
+        tmp_path,
+        warnings,
+        allowed=allowed,
+        # Primary digest does not match; the reviewed ALTERNATE does.
+        transitive_warning_sha256="f" * 64,
+        manifest_alternate_digests={"x86_64": ["e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"]},
+    )
+    assert "transitive warning digest mismatch" not in result.stderr, result.stderr
+    assert result.returncode == 0, result.stderr
+
+
+def test_unreviewed_digest_still_fails_closed(tmp_path: Path) -> None:
+    """An unknown digest fails closed even when alternates exist."""
+    warnings = "missing module named 'org.python' - imported by general_ludd.compat.copy (optional)\n"
+    allowed = [
+        _allow("org.python", "general_ludd.compat.copy", ["optional"]),
+    ]
+    result = _run_audit(
+        tmp_path,
+        warnings,
+        allowed=allowed,
+        transitive_warning_sha256="f" * 64,
+    )
+    assert "transitive warning digest mismatch" in result.stderr
+    assert result.returncode == 1
 
 
 def test_runtime_architecture_alias_uses_canonical_digest(tmp_path: Path) -> None:
@@ -527,14 +905,8 @@ def test_project_module_attribute_graph_can_be_digest_pinned(
     )
     normalized = "\n".join(
         [
-            (
-                "missing pydantic.BaseModel <- "
-                "general_ludd.schemas.job (top-level)"
-            ),
-            (
-                "missing pydantic.BaseModel <- "
-                "pydantic._internal._fields (conditional)"
-            ),
+            ("missing pydantic.BaseModel <- general_ludd.schemas.job (top-level)"),
+            ("missing pydantic.BaseModel <- pydantic._internal._fields (conditional)"),
         ]
     )
     digest = hashlib.sha256(normalized.encode()).hexdigest()
@@ -546,10 +918,7 @@ def test_project_module_attribute_graph_can_be_digest_pinned(
             {
                 "module": "pydantic.BaseModel",
                 "category": "module-attribute",
-                "evidence": (
-                    "https://pyinstaller.org/en/stable/"
-                    "when-things-go-wrong.html#build-time-messages"
-                ),
+                "evidence": ("https://pyinstaller.org/en/stable/when-things-go-wrong.html#build-time-messages"),
             }
         ],
     )
@@ -580,10 +949,6 @@ def test_connector_registry_avoids_pyinstaller_path_pseudo_module() -> None:
 
 
 def test_optional_gcp_sdk_import_is_locally_guarded() -> None:
-    source = _PRICING_SOURCES.read_text(encoding="utf-8")
+    source = _CLOUD_COMPUTE_SOURCE.read_text(encoding="utf-8")
 
-    assert (
-        "try:\n"
-        "            from google.cloud import billing\n"
-        "        except ImportError as exc:"
-    ) in source
+    assert ("try:\n            from google.cloud import billing\n        except ImportError as exc:") in source

@@ -1,0 +1,70 @@
+{
+  "indirect_test_mappings": {
+    "general_ludd.cli_commands.parser": {
+      "via": "general_ludd.cli",
+      "tests": [
+        "tests/unit/test_cli_module_split.py"
+      ]
+    },
+    "general_ludd.decision_codification.durable_generation": {
+      "via": "general_ludd.decision_codification.durable_feedback",
+      "tests": [
+        "tests/unit/test_decision_codification_durable.py"
+      ]
+    },
+    "general_ludd.decision_codification.durable_observability": {
+      "via": "general_ludd.decision_codification.durable",
+      "tests": [
+        "tests/unit/test_decision_codification_observability.py"
+      ]
+    },
+    "general_ludd.daemon_components.ports": {
+      "via": "general_ludd.daemon",
+      "tests": [
+        "tests/unit/test_daemon_module_split_compat.py"
+      ]
+    },
+    "general_ludd.event_loop.compute_lifecycle": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.decision_completion": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.execution_dispatch": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.review_dispatch": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.self_improve_lifecycle": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.tick_lifecycle": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.models.freellmapi_sync_plans": {
+      "via": "general_ludd.models.freellmapi_sync_verifier",
+      "tests": [
+        "tests/unit/test_freellmapi_sync_verifier.py"
+      ]
+    }
+  }
+}

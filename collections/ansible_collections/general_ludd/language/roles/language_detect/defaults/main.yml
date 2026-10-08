@@ -1,5 +1,4 @@
 ---
-name: language_detect
 input_text: ""
 artifact_dir: "/tmp/gludd-language-detect"
 daemon_url: "http://localhost:8000"

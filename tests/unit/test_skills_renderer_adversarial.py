@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+import general_ludd.skills.renderer as renderer
 from general_ludd.skills.renderer import SkillRenderError, render_skill
 
 # --------------------------------------------------------------------------
@@ -218,3 +219,10 @@ def test_variables_dict_is_not_mutated() -> None:
     v = {"a": "1"}
     render_skill("{{ a }}", v)
     assert v == {"a": "1"}
+def test_missing_jinja_dependency_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(renderer, "_HAS_JINJA2", False)
+
+    with pytest.raises(ImportError, match="jinja2 is required"):
+        renderer.render_skill("plain text")

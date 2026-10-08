@@ -26,9 +26,46 @@
     - not enable_help_capture | bool
     - cli_help_override | length > 0
 
+- name: Preflight managed-host runtime for CLI inspection
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+  when: enable_help_capture | bool
+
+- name: Validate explicit Gludd core executable for CLI inspection
+  ansible.builtin.assert:
+    that:
+      - gludd_cli_executable is defined
+      - gludd_cli_executable is match('^/')
+    fail_msg: >-
+      CLI inspection requires an explicit absolute gludd_cli_executable from
+      the Gludd core runtime; collection roles do not import the core package.
+  when: enable_help_capture | bool
+
+- name: Inspect Gludd core executable
+  ansible.builtin.stat:
+    path: "{{ gludd_cli_executable }}"
+  register: _uua_cli_stat
+  when: enable_help_capture | bool
+
+- name: Fail closed when Gludd core executable is unavailable
+  ansible.builtin.assert:
+    that:
+      - _uua_cli_stat.stat.exists | bool
+      - _uua_cli_stat.stat.executable | bool
+    fail_msg: >-
+      {{ gludd_cli_executable }} is not an executable Gludd core artifact.
+      Retain the prior verified artifact and update inventory before retrying.
+  when: enable_help_capture | bool
+
 - name: Capture real CLI help (when enabled)
   ansible.builtin.command:
-    cmd: "python3 -m general_ludd --help"
+    cmd: "{{ gludd_cli_executable }} --help"
   register: _uua_help_raw
   changed_when: false
   failed_when: false

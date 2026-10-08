@@ -211,11 +211,18 @@ class TestConnectionPoolDrain:
 
     def test_closed_engine_does_not_leak_set_entries(self) -> None:
         initial = len(_closed_engines)
+        engine_refs: list[weakref.ReferenceType[Any]] = []
         for _ in range(5):
             e: Any = MagicMock()
             e.sync_engine = MagicMock()
             close_engine(e)
-        assert len(_closed_engines) >= initial + 5
+            assert _engine_closed(e)
+            engine_refs.append(weakref.ref(e))
+            del e
+
+        gc.collect()
+        assert all(reference() is None for reference in engine_refs)
+        assert len(_closed_engines) == initial
 
 
 # ============================================================================
@@ -549,6 +556,44 @@ class TestWeakrefLeakDetection:
         gc.collect()
         assert ref() is obj
         del obj
+        gc.collect()
+        assert ref() is None
+
+    @pytest.mark.parametrize("_worker_probe", ("first", "second"))
+    def test_async_task_probe_releases_local_collection_and_loop_owners(
+        self, _worker_probe: str
+    ) -> None:
+        class _Tracked:
+            pass
+
+        async def _run() -> weakref.ReferenceType[_Tracked]:
+            started = asyncio.Event()
+            release = asyncio.Event()
+            owners: list[_Tracked] = []
+            refs: list[weakref.ReferenceType[_Tracked]] = []
+
+            async def _owner() -> None:
+                obj = _Tracked()
+                owners.append(obj)
+                refs.append(weakref.ref(obj))
+                started.set()
+                await release.wait()
+                owners.clear()
+                del obj
+
+            task = asyncio.create_task(_owner())
+            await started.wait()
+            ref = refs.pop()
+            try:
+                gc.collect()
+                assert ref() is not None
+            finally:
+                release.set()
+                await task
+            del task
+            return ref
+
+        ref = asyncio.run(_run())
         gc.collect()
         assert ref() is None
 

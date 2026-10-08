@@ -33,7 +33,7 @@ facility gludd connects to or deploys onto**. Copy-paste the blocks per facility
 The token is sent as `Authorization: Bearer <token>` (lines 164-168). It is an
 **OAuth2 access token**, not a raw service-account key. So the access model is:
 
-```
+```json
 [ IAM role on a principal ]  →  [ OAuth2 access token for that principal ]  →  GCP_TOKEN env  →  connector
 ```
 

@@ -7,13 +7,15 @@ import sys
 import threading
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 STREAM_RUNNER = ROOT / "scripts" / "stream_command.py"
 
 
 def _gate_refresh_body() -> str:
-    text = MAKEFILE.read_text(encoding="utf-8")
+    text = compose_makefile(MAKEFILE)
     return text.split("_gate-refresh-body:", 1)[1].split("\n\n", 1)[0]
 
 
@@ -24,8 +26,18 @@ def test_gate_refresh_streams_verbose_nodeids_to_a_durable_log() -> None:
     assert "--log .gate-logs/gate-refresh-test.log" in body
     assert "pytest tests/unit/ -vv --no-header" in body
     assert "> /tmp/gludd-gate-refresh-test.log" not in body
-    assert 'echo "PASS 0" >> .gate-status' in body
-    assert 'echo "FAIL non-zero-exit" >> .gate-status' in body
+    assert 'echo "test PASS 0" >> "$$STATUS_WORK"' in body
+    assert 'echo "test FAIL non-zero-exit" >> "$$STATUS_WORK"' in body
+    assert 'mv "$$STATUS_WORK" .gate-status' in body
+
+
+def test_gate_refresh_signs_the_current_repository_state_before_publish() -> None:
+    body = _gate_refresh_body()
+
+    sign = "scripts/gate_status_attestation.py sign \"$$STATUS_WORK\""
+    publish = 'mv "$$STATUS_WORK" .gate-status'
+    assert sign in body
+    assert body.index(sign) < body.rindex(publish)
 
 
 def test_stream_command_forwards_a_nodeid_before_the_child_exits(
@@ -40,7 +52,7 @@ def test_stream_command_forwards_a_nodeid_before_the_child_exits(
         "exec(\"while not marker.exists():\\n time.sleep(0.01)\"); "
         "print('session complete', flush=True)"
     )
-    process = subprocess.Popen(
+    with subprocess.Popen(
         [
             sys.executable,
             str(STREAM_RUNNER),
@@ -54,23 +66,24 @@ def test_stream_command_forwards_a_nodeid_before_the_child_exits(
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-    )
-    assert process.stdout is not None
-    observed = threading.Event()
-    first_line: list[bytes] = []
+    ) as process:
+        assert process.stdout is not None
+        stdout = process.stdout
+        observed = threading.Event()
+        first_line: list[bytes] = []
 
-    def read_first_line() -> None:
-        first_line.append(process.stdout.readline())
-        observed.set()
+        def read_first_line() -> None:
+            first_line.append(stdout.readline())
+            observed.set()
 
-    reader = threading.Thread(target=read_first_line, daemon=True)
-    reader.start()
-    streamed_while_running = observed.wait(timeout=2)
-    marker.touch()
-    returncode = process.wait(timeout=5)
-    reader.join(timeout=1)
-    remaining_stdout = process.stdout.read()
-    stderr = process.stderr.read() if process.stderr is not None else b""
+        reader = threading.Thread(target=read_first_line, daemon=True)
+        reader.start()
+        streamed_while_running = observed.wait(timeout=2)
+        marker.touch()
+        returncode = process.wait(timeout=5)
+        reader.join(timeout=1)
+        remaining_stdout = stdout.read()
+        stderr = process.stderr.read() if process.stderr is not None else b""
 
     assert streamed_while_running, "first node ID was buffered until pytest exited"
     assert first_line == [b"tests/unit/test_demo.py::test_live PASSED\n"]

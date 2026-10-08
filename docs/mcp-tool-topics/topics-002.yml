@@ -1,0 +1,1637 @@
+general_ludd.agent.gludd_observe:
+  DOCUMENTATION:
+    description:
+    - Provides the Ansible seam for the cross-source C(GluddObserve) facade.
+    - Discovers only operator-registered sources from C(GET /api/observe/sources)
+      and queries them by registered name through C(POST /api/observe/query). Callers
+      cannot supply connector URLs, preserving the daemon's SSRF boundary.
+    - Supports merged queries, timelines, incident correlation, and service/host topology
+      without duplicating the canonical normalization logic.
+    - Read-only and check-mode safe. A failing connector is isolated into the returned
+      C(errors) list instead of aborting successful sources.
+    module: gludd_observe
+    options:
+      by:
+        default: trace_id
+        description: Canonical join key for C(correlate_incident).
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the Gludd daemon.
+        type: str
+      end:
+        description: Optional inclusive end epoch for query and timeline operations.
+        type: float
+      kinds:
+        default:
+        - logs
+        - traces
+        - metrics
+        - events
+        description: Connector kinds admitted to the operation.
+        elements: str
+        type: list
+      op:
+        choices:
+        - query_sources
+        - timeline
+        - correlate_incident
+        - topology
+        description: Cross-source operation to run.
+        required: true
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon authentication.
+        no_log: true
+        type: str
+      role:
+        default: observe
+        description: Capability identity recorded with the result for operator attribution.
+        type: str
+      seed:
+        default: {}
+        description: Normalized incident record used by C(correlate_incident).
+        type: dict
+      spec:
+        default: {}
+        description: Backend query specification forwarded to each registered source.
+        type: dict
+      start:
+        description: Optional inclusive start epoch for query and timeline operations.
+        type: float
+      timeout:
+        default: 30
+        description: Per-request timeout in seconds.
+        type: int
+      window_s:
+        default: 300.0
+        description: Half-window around the incident seed timestamp, in seconds.
+        type: float
+    short_description: Correlate registered observability sources through the Gludd
+      daemon
+  EXAMPLES:
+  - general_ludd.agent.gludd_observe:
+      end: 1785581100
+      kinds:
+      - logs
+      - traces
+      - metrics
+      op: timeline
+      psk: '{{ vault_gludd_psk }}'
+      start: 1785580800
+    name: Build a time-ordered incident timeline
+    register: timeline
+  - general_ludd.agent.gludd_observe:
+      by: trace_id
+      op: correlate_incident
+      seed:
+        labels:
+          trace_id: trace-123
+        ts: 1785580950
+    name: Correlate an incident by trace ID
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_observe:
+          description:
+          - Result payload. It contains C(records), C(groups), or C(topology) depending
+            on C(op), plus isolated connector C(errors).
+          returned: always
+          type: dict
+      description: Facts containing the selected C(gludd_observe) operation result.
+      returned: always
+      type: dict
+  module: gludd_observe
+general_ludd.agent.gludd_open_code:
+  DOCUMENTATION:
+    description:
+    - Codifies the repeated back-and-forth tool-call patterns opencode agents perform
+      by bundling multiple tool calls into single Ansible tasks.
+    - Each action maps to a make target that composites the underlying checks.
+    - Check-mode safe — all actions report the change they WOULD make without executing
+      the underlying command.
+    - All actions run locally via C(ansible.builtin.command) executing make targets
+      in the repository root; no daemon round-trips are needed.
+    module: gludd_open_code
+    options:
+      action:
+        choices:
+        - gate_check
+        - push_and_verify
+        - commit_ship
+        - test_batch
+        - status_check
+        description:
+        - The bundled operation to perform.
+        - C(gate_check) — lint + typecheck + collect in one call (make gate-fast).
+        - C(push_and_verify) — push master + verify remote SHA + poll CI (make ci-push-and-verify).
+        - C(commit_ship) — add + commit + push + verify in one call (make ship).
+        - C(test_batch) — run multiple test files in one invocation (make test-batch).
+        - C(status_check) — regenerate status table + verify it is current (make status-update).
+        required: true
+        type: str
+      branch:
+        default: master
+        description: Branch name for push_and_verify or commit_ship (defaults to master).
+        type: str
+      ci_timeout:
+        default: 600
+        description: Maximum seconds to wait for CI when wait_for_ci=true.
+        type: int
+      commit_msg:
+        description: Commit message (required when action=commit_ship).
+        type: str
+      repo_path:
+        default: .
+        description: Path to the git repository root where make targets are defined.
+        type: str
+      test_files:
+        description:
+        - Space-separated list of test file paths (required when action=test_batch).
+        - Passed as the C(TESTFILES) variable to C(make test-batch).
+        elements: str
+        type: list
+      wait_for_ci:
+        default: true
+        description: When true, push_and_verify polls CI after push until completion
+          or timeout.
+        type: bool
+    short_description: Batched opencode agent tool patterns — gate, push, commit,
+      test, status
+  EXAMPLES:
+  - general_ludd.agent.gludd_open_code:
+      action: gate_check
+      repo_path: /workspace/gludd
+    name: Run fast gate check (lint + typecheck + collect)
+    register: gate_result
+  - general_ludd.agent.gludd_open_code:
+      action: commit_ship
+      commit_msg: 'feat: add batched opencode patterns'
+      repo_path: /workspace/gludd
+    name: Commit all changes and ship to remote
+    register: ship_result
+  - general_ludd.agent.gludd_open_code:
+      action: push_and_verify
+      branch: master
+      ci_timeout: 600
+      repo_path: /workspace/gludd
+      wait_for_ci: true
+    name: Push master and poll CI until green
+    register: push_result
+  - general_ludd.agent.gludd_open_code:
+      action: test_batch
+      repo_path: /workspace/gludd
+      test_files:
+      - tests/unit/test_module_a.py
+      - tests/unit/test_module_b.py
+    name: Run a batch of test files
+    register: test_result
+  - general_ludd.agent.gludd_open_code:
+      action: status_check
+      repo_path: /workspace/gludd
+    name: Regenerate and verify README status table
+    register: status_result
+  RETURN:
+    action:
+      description: The action that was performed.
+      returned: always
+      sample: gate_check
+      type: str
+    changed:
+      description: Whether the action changed system state.
+      returned: always
+      sample: true
+      type: bool
+    cmd:
+      description: The full command that was executed (or would be in check mode).
+      returned: always
+      sample: make gate-fast
+      type: str
+    elapsed_seconds:
+      description: Wall-clock duration of the command execution.
+      returned: when command ran
+      sample: 12.34
+      type: float
+    rc:
+      description: Return code of the command (None in check mode).
+      returned: always
+      sample: 0
+      type: int
+    skipped:
+      description: True when run in check mode (no command executed).
+      returned: always
+      sample: false
+      type: bool
+    stderr:
+      description: Standard error of the command.
+      returned: always
+      type: str
+    stdout:
+      description: Standard output of the command (truncated to last 2000 chars).
+      returned: always
+      type: str
+  module: gludd_open_code
+general_ludd.agent.gludd_ornith:
+  DOCUMENTATION:
+    description:
+    - Bidirectional seam for the gludd x Ornith symbiotic loop. Two states: null
+    - C(state=pairs) — fetch the most-recent training pairs whose outcome matches
+      a comma-separated status list (e.g. C(rejected_by_gate,rejected_by_review,reverted)).
+      These are the artifacts that NEED improvement. Hits the daemon's C(GET /admin/ornith/pairs)
+      endpoint.
+    - C(state=improve) — invoke the daemon's model gateway (C(POST /admin/models/call))
+      with a structured "improve this artifact" prompt and return the proposed diff.
+      The caller is responsible for writing the diff to disk, opening a PR, and filing
+      a human-todo for review. The PR is NEVER auto-merged — the human-todo is the
+      gate.
+    - Check mode skips both the network call and the model invocation.
+    module: gludd_ornith
+    options:
+      agent_id:
+        default: ornith_self_improve
+        description: Filing agent identifier (recorded in the daemon audit row).
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      limit:
+        default: 10
+        description: Maximum pairs to return (state=pairs).
+        type: int
+      lookback_days:
+        default: 14
+        description: Restrict to pairs invoked within the last N days (state=pairs).
+        type: int
+      max_iterations:
+        default: 5
+        description: Max tool-call iterations for the improvement rollout.
+        type: int
+      model_profile:
+        default: ''
+        description: Model profile to route the improvement call through.
+        type: str
+      project_id:
+        default: ''
+        description: Optional project filter (state=pairs).
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      state:
+        choices:
+        - pairs
+        - improve
+        default: improve
+        description: Desired state.
+        type: str
+      status:
+        default: rejected_by_gate,rejected_by_review,reverted
+        description: Comma-separated outcome statuses to filter on (state=pairs).
+        type: str
+      target_files:
+        default: []
+        description: List of artifact paths to improve (state=improve).
+        elements: str
+        type: list
+      task_description:
+        default: ''
+        description: 'The structured task prompt for the improvement rollout (state=improve).
+          The role passes a templated string that names the artifact and cites the
+          failure outcomes.
+
+          '
+        type: str
+      timeout:
+        default: 120
+        description: Request timeout in seconds.
+        type: int
+    short_description: Pull rejected Ornith training pairs and invoke improvement
+      rollouts
+  EXAMPLES:
+  - general_ludd.agent.gludd_ornith:
+      limit: 10
+      lookback_days: 14
+      state: pairs
+      status: rejected_by_gate,rejected_by_review,reverted
+    name: Pull the rejected training pairs
+    register: pairs
+  - general_ludd.agent.gludd_ornith:
+      max_iterations: 5
+      state: improve
+      target_files:
+      - playbooks/agent_orchestrate.yml
+      task_description: Improve this playbook based on the 3 gate failures attached.
+    name: Invoke Ornith to improve an artifact
+    register: rollout
+  RETURN:
+    count:
+      description: Number of pairs returned (state=pairs).
+      returned: when state=pairs
+      type: int
+    pairs:
+      description: List of matching training pairs (state=pairs).
+      returned: when state=pairs
+      type: list
+    patch:
+      description: The proposed improvement text (state=improve).
+      returned: when state=improve
+      type: str
+    usage:
+      description: Token usage from the model call (state=improve).
+      returned: when state=improve
+      type: dict
+  module: gludd_ornith
+general_ludd.agent.gludd_osquery:
+  DOCUMENTATION:
+    description:
+    - Runs a B(read-only) C(SELECT) query against C(osqueryi --json) and returns the
+      result rows under C(ansible_facts.gludd_osquery) so a playbook (or the model
+      running a job) can branch on real system state — processes, users, mounts, network
+      interfaces, installed packages, system_info, etc.
+    - SECURITY — only C(SELECT) queries are permitted. The query is validated to start
+      with C(SELECT) (after optional C(WITH ...) CTEs) and is rejected if it contains
+      any mutating / side-effecting keyword (C(INSERT)/C(UPDATE)/C(DELETE)/C(DROP)/C(CREATE)/C(ALTER)/C(ATTACH)/
+      C(DETACH)/C(PRAGMA)/C(REPLACE)/C(VACUUM)). osquery's virtual tables are mostly
+      read-only, but this module refuses to even hand a write-shaped query to the
+      binary.
+    - The osquery binary is resolved from the daemon's filestore (C(binaries/osquery),
+      downloaded on first use by the BinaryBootstrapper) when running in the same
+      venv as the daemon; otherwise it falls back to an C(osqueryi) on the system
+      C(PATH).
+    - Runs the binary via an explicit argument list (never C(shell=True)).
+    - Read-only and check-mode safe — it performs no writes. In check mode the query
+      is validated and the binary located, but osquery is not executed.
+    module: gludd_osquery
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description:
+        - Reserved for future controller-backed resolution.
+        - Non-default values emit a warning and are not used on the managed host.
+        type: str
+      osquery_path:
+        default: ''
+        description:
+        - Explicit path to the C(osqueryi) binary. When unset the module resolves
+          it from the daemon filestore, then from the system C(PATH).
+        type: str
+      psk:
+        default: ''
+        description:
+        - Reserved pre-shared key for future daemon auth.
+        - Non-empty values emit a warning and are not used on the managed host.
+        no_log: true
+        type: str
+      query:
+        description: A single read-only osquery SQL C(SELECT) statement.
+        required: true
+        type: str
+      timeout:
+        default: 10
+        description: Subprocess timeout in seconds for the osqueryi call.
+        type: int
+    short_description: Query live system state via osquery and inject rows as ansible_facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_osquery:
+      query: SELECT pid, name, state FROM processes LIMIT 20
+    name: List running processes
+    register: procs
+  - ansible.builtin.debug:
+      msg: nginx is running
+    name: Branch on a process being present
+    when: ansible_facts.gludd_osquery.rows | selectattr('name', 'equalto', 'nginx')
+      | list | length > 0
+  - general_ludd.agent.gludd_osquery:
+      query: SELECT hostname, cpu_brand, physical_memory FROM system_info
+    name: System info
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_osquery:
+          contains:
+            count:
+              description: Number of rows returned.
+              type: int
+            query:
+              description: The validated query that was executed.
+              type: str
+            rows:
+              description: List of result rows (each a dict of column->value).
+              type: list
+          description: The osquery result — C(rows), C(count), and the C(query) run.
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_osquery) result.
+      returned: always
+      type: dict
+  module: gludd_osquery
+general_ludd.agent.gludd_ping:
+  DOCUMENTATION:
+    description:
+    - Pings the general_ludd daemon by calling /healthz.
+    - Returns C(pong=true) and C(daemon_reachable) flag.
+    - Safe to use in check mode (read-only).
+    module: gludd_ping
+    notes:
+    - Always reports C(changed=false) — this is a read-only probe.
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 10
+        description: Request timeout in seconds.
+        type: int
+    short_description: Verify daemon reachability
+  EXAMPLES:
+  - general_ludd.agent.gludd_ping:
+      daemon_url: http://localhost:8000
+    name: Ping the daemon
+    register: ping_result
+  - ansible.builtin.assert:
+      that: ping_result.daemon_reachable
+    name: Assert daemon reachable
+  RETURN:
+    daemon_reachable:
+      description: Whether /healthz responded 200.
+      returned: always
+      type: bool
+    daemon_url:
+      description: URL that was probed.
+      returned: always
+      type: str
+    pong:
+      description: Always true when module succeeds.
+      returned: always
+      type: bool
+  module: gludd_ping
+general_ludd.agent.gludd_proc_monitor:
+  DOCUMENTATION:
+    description:
+    - Queries the daemon's managed-process stats API and returns per-process resource
+      utilization under C(ansible_facts.gludd_proc_monitor) so a playbook (or the
+      model running a job) can branch on real process health — CPU, memory (RSS/VMS),
+      I/O counters, open file descriptors, thread count, context switches, open files
+      and held locks.
+    - When C(pid) is C(0) (the default) the module enumerates every gludd-managed
+      process via C(GET /admin/processes) and then fetches stats for each B(alive)
+      process. A process that exits mid-scan (its per-pid stats call returns C(404))
+      is skipped rather than failing the whole task.
+    - When C(pid) is greater than C(0) only that single process's stats are returned.
+    - B(Read-only) and B(check-mode safe) — it performs no writes. In check mode no
+      daemon call is made and an empty fact set is returned (mirroring C(gludd_osquery)).
+    - Talks to the daemon over HTTP via the shared C(GluddClient) (stdlib C(urllib)
+      only — no third-party deps in the managed-node venv).
+    module: gludd_proc_monitor
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      pid:
+        default: 0
+        description:
+        - PID of a single gludd-managed process to monitor. When C(0) (the default)
+          B(all) managed processes are monitored.
+        type: int
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 10
+        description: Per-request timeout in seconds for daemon calls.
+        type: int
+    short_description: Report resource utilization, I/O and locks for gludd-managed
+      processes
+  EXAMPLES:
+  - general_ludd.agent.gludd_proc_monitor: null
+    name: Monitor all gludd-managed processes
+    register: procs
+  - ansible.builtin.debug:
+      msg: a managed process exceeds 1 GiB RSS
+    name: Branch on a process using too much memory
+    when: ansible_facts.gludd_proc_monitor.processes | selectattr('memory.rss', 'gt',
+      1073741824) | list | length > 0
+  - general_ludd.agent.gludd_proc_monitor:
+      pid: 4242
+    name: Monitor a single process by pid
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_proc_monitor:
+          contains:
+            count:
+              description: Number of process stats dicts returned.
+              type: int
+            processes:
+              description:
+              - List of per-process stats dicts. Each contains C(pid), C(cpu_percent),
+                C(memory) (C(rss)/C(vms)), C(io) (C(read_bytes)/C(write_bytes)/C(read_count)/C(write_count)
+                or C(null)), C(num_fds), C(num_threads), C(num_ctx_switches), C(status),
+                C(open_files) and C(locks).
+              type: list
+          description: The managed-process monitor result — C(processes) and C(count).
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_proc_monitor) result.
+      returned: always
+      type: dict
+  module: gludd_proc_monitor
+general_ludd.agent.gludd_process:
+  DOCUMENTATION:
+    description:
+    - Talks to the general_ludd daemon's managed-process API so a playbook (or the
+      model running a job) can enumerate the processes the daemon launched, inspect
+      a live process's resource usage, or deliver a signal to one — all without ever
+      calling C(kill)/C(ps) directly on the managed node.
+    - C(action=list) calls C(GET /admin/processes) and returns the registry of managed
+      processes under C(ansible_facts.gludd_process).
+    - C(action=status) calls C(GET /admin/processes/{pid}/stats) and returns a live
+      psutil snapshot for one process under C(ansible_facts.gludd_process.stats).
+    - C(action=signal) calls C(POST /admin/processes/{pid}/signal) to deliver a signal
+      (optionally to the whole process group). Signal delivery is a state change,
+      so it reports C(changed=True) on success.
+    - SECURITY — for C(action=signal) the signal name is validated client-side against
+      a small allow-list before any request is sent (defence in depth; the daemon
+      enforces the same set server-side). Disallowed signal names are rejected without
+      contacting the daemon.
+    - Read-only and check-mode safe for C(list)/C(status). In check mode a C(signal)
+      request is B(not) sent — the module reports the change it would make (C(changed=True))
+      instead.
+    module: gludd_process
+    options:
+      action:
+        choices:
+        - list
+        - signal
+        - status
+        description:
+        - The operation to perform. C(list) enumerates managed processes, C(status)
+          fetches a live stats snapshot for one C(pid), and C(signal) delivers a signal
+          to one C(pid).
+        required: true
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the general_ludd daemon.
+        type: str
+      group:
+        default: false
+        description:
+        - When C(true) and C(action=signal), deliver the signal to the target's whole
+          process group rather than the single process.
+        type: bool
+      pid:
+        default: 0
+        description:
+        - Target process id. Required (and must be C(> 0)) for C(action=signal) and
+          C(action=status). Ignored for C(action=list).
+        type: int
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth (Bearer / X-PSK).
+        no_log: true
+        type: str
+      signal:
+        default: SIGTERM
+        description:
+        - Signal name to deliver when C(action=signal). Must be one of the allow-listed
+          names (C(SIGTERM), C(SIGINT), C(SIGHUP), C(SIGQUIT), C(SIGUSR1), C(SIGUSR2),
+          C(SIGKILL), C(SIGSTOP), C(SIGCONT)).
+        type: str
+      timeout:
+        default: 10
+        description: Per-request HTTP timeout in seconds.
+        type: int
+    short_description: List, signal, and inspect daemon-managed processes
+  EXAMPLES:
+  - general_ludd.agent.gludd_process:
+      action: list
+    name: List all daemon-managed processes
+    register: managed
+  - ansible.builtin.debug:
+      msg: '{{ ansible_facts.gludd_process.count }} managed processes'
+    name: Show how many managed processes are alive
+  - general_ludd.agent.gludd_process:
+      action: status
+      pid: 4242
+    name: Inspect one managed process
+  - general_ludd.agent.gludd_process:
+      action: signal
+      group: true
+      pid: 4242
+      signal: SIGTERM
+    name: Gracefully terminate a managed process group
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_process:
+          contains:
+            count:
+              description: Number of managed processes (C(action=list)).
+              type: int
+            processes:
+              description: List of managed-process records (C(action=list)).
+              type: list
+            stats:
+              description: psutil snapshot for one process (C(action=status)).
+              type: dict
+          description: The process-API result for the requested action.
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_process) result.
+      returned: always
+      type: dict
+    note:
+      description: Human-readable note describing a check-mode no-op.
+      returned: when action is signal in check mode
+      type: str
+    pid:
+      description: The target pid for a C(signal)/C(status) action.
+      returned: when action is signal or status
+      type: int
+    signal:
+      description: The signal that was (or would be) delivered.
+      returned: when action is signal
+      type: str
+  module: gludd_process
+general_ludd.agent.gludd_push_guard:
+  DOCUMENTATION:
+    description:
+    - Wraps the ForcePushTracker (scripts/push_rate_guard.py) as an idempotent
+    - Ansible module.
+    - Tracks consecutive GLUDD_FORCE_PUSH bypasses in a JSON state file and
+    - rejects further bypasses when the configured C(max_bypasses) threshold
+    - is exceeded within C(window_hours).
+    - 'Supports three states: C(check) to query whether a bypass is allowed,'
+    - C(record) to persist a bypass event, and C(reset) to clear the counter
+    - (normal push).
+    - Check-mode safe — C(check) and C(record) report what would change
+    - without mutating the state file.
+    module: gludd_push_guard
+    options:
+      max_bypasses: {}
+      state: {}
+      state_file: {}
+      window_hours: {}
+    short_description: Enforce push-rate guard via force-push bypass tracking
+  EXAMPLES:
+  - general_ludd.agent.gludd_push_guard:
+      max_bypasses: 3
+      state: check
+    name: Check if a force-push bypass is currently allowed
+    register: guard
+  - ansible.builtin.fail:
+      msg: 'Force-push blocked: {{ guard.current_count }} bypasses already'
+    name: Block push playbook when bypass is denied
+    when: not guard.bypass_allowed
+  - general_ludd.agent.gludd_push_guard:
+      state: record
+    name: Record a successful force-push bypass
+  - general_ludd.agent.gludd_push_guard:
+      state: reset
+      state_file: /var/tmp/my-force-track.json
+    name: Reset the bypass counter after a normal push
+  RETURN:
+    bypass_allowed:
+      description:
+      - Whether a force-push bypass is currently permitted.
+      - Only returned when C(state=check).
+      returned: when state is 'check'
+      type: bool
+    current_count:
+      description:
+      - Number of bypass entries currently within the window.
+      returned: when state is 'check'
+      type: int
+    max_bypasses:
+      description:
+      - Configured maximum consecutive bypasses before blocking.
+      returned: when state is 'check'
+      type: int
+    recorded:
+      description:
+      - Whether a bypass was recorded in this invocation.
+      - Only returned when C(state=record).
+      returned: when state is 'record'
+      type: bool
+    reset:
+      description:
+      - Whether the counter was reset in this invocation.
+      - Only returned when C(state=reset).
+      returned: when state is 'reset'
+      type: bool
+    state_file:
+      description:
+      - Path to the JSON state file used for tracking.
+      returned: always
+      type: str
+    window_hours:
+      description:
+      - Configured rolling window in hours.
+      returned: when state is 'check'
+      type: float
+  module: gludd_push_guard
+general_ludd.agent.gludd_rag:
+  DOCUMENTATION:
+    description:
+    - With C(op=add_document) ingests text into an in-memory vector store backed by
+      the L(rag module_utils,ansible_collections.general_ludd.agent.plugins.module_utils.rag).
+    - With C(op=query) embeds a question, retrieves the top-k closest chunks, builds
+      a prompt with them as context, and asks the daemon model gateway for an answer.
+    - The pipeline uses the pluggable embedder from C(rag.py) (HashEmbedder by default,
+      or a daemon-backed embedder when the daemon is reachable).
+    - Check-mode safe for C(op=query) — returns a placeholder answer.
+    module: gludd_rag
+    options:
+      chunk_overlap:
+        default: 200
+        description: Overlap between chunks in characters.
+        type: int
+      chunk_size:
+        default: 1000
+        description: Target chunk size in characters.
+        type: int
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon (for model calls in C(op=query)).
+        type: str
+      metadata:
+        default: {}
+        description: Key-value metadata attached to the document (C(op=add_document)
+          only).
+        type: dict
+      op:
+        choices:
+        - add_document
+        - query
+        default: query
+        description: Which RAG operation to run.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      text:
+        description:
+        - Document text to ingest when C(op=add_document), or the question to answer
+          when C(op=query).
+        required: true
+        type: str
+      timeout:
+        default: 120
+        description: Request timeout in seconds.
+        type: int
+      top_k:
+        default: 5
+        description: Number of closest chunks to retrieve for context (C(op=query)
+          only).
+        type: int
+    short_description: Retrieval-Augmented Generation pipeline via module_utils.rag
+  EXAMPLES:
+  - general_ludd.agent.gludd_rag:
+      metadata:
+        destination: Paris
+        region: Europe
+        source: travel_brochure
+      op: add_document
+      text: 'Paris: The City of Light. Visit the Eiffel Tower, Louvre Museum,
+
+        and Notre-Dame Cathedral. Best visited April-June or September-October.
+
+        Famous for croissants, café culture, and the Seine river cruises.
+
+        '
+    name: Add travel brochures to the RAG store
+    register: paris_doc
+  - general_ludd.agent.gludd_rag:
+      op: query
+      text: What are the best cities in Europe for art museums?
+      top_k: 3
+    name: Query the RAG pipeline for travel recommendations
+    register: rag_answer
+  - ansible.builtin.debug:
+      msg: '{{ rag_answer.answer }}'
+    name: Display the answer
+  RETURN:
+    answer:
+      description: Model-generated answer using retrieved context (C(op=query)).
+      returned: when op=query
+      type: str
+    chunk_count:
+      description: Number of chunks created from the document (C(op=add_document)).
+      returned: when op=add_document
+      type: int
+    retrieved_chunks:
+      description: The context chunks that were retrieved and fed to the model.
+      returned: when op=query
+      type: list
+    stored_total:
+      description: Total vector entries in the store after the operation.
+      returned: always
+      type: int
+  module: gludd_rag
+general_ludd.agent.gludd_reload:
+  DOCUMENTATION:
+    description:
+    - Calls the authenticated Gludd daemon reload endpoint, which wraps
+    - 'C(general_ludd.reload.hot_reloader.HotReloader.reload_code_module):'
+    - snapshots the live module bytes, C(os.replace)s the candidate source over
+    - the live path, C(importlib.reload)s the module, then runs a health gate
+    - (a C(/readyz) poll). If the health gate fails or the reload raises, the
+    - original bytes are restored and the module is reloaded again — the live
+    - module ends up exactly as it started.
+    - 'Fail-closed: a missing/non-importable target, a missing candidate, or a'
+    - failed health gate all yield C(success=false).
+    - The collection validates and hashes the candidate but never imports the
+    - Gludd core runtime; daemon authentication is explicit.
+    module: gludd_reload
+    options:
+      candidate_source_path: {}
+      config_dir: {}
+      health_timeout: {}
+      health_url: {}
+      module_name: {}
+      result_path: {}
+    short_description: Hot-rotate a validated leaf code module with health-gated auto-rollback
+  EXAMPLES:
+  - general_ludd.agent.gludd_reload:
+      candidate_source_path: /tmp/candidate/src/general_ludd/example/leaf.py
+      health_url: http://127.0.0.1:8000/readyz
+      module_name: general_ludd.example.leaf
+      result_path: /tmp/promotion_result.json
+    name: Hot-rotate a validated leaf module
+    register: reload_result
+  RETURN:
+    rolled_back:
+      description: Whether the reload was rolled back after a failed health gate.
+      returned: always
+      type: bool
+    success:
+      description: Whether the hot-rotation succeeded and passed the health gate.
+      returned: always
+      type: bool
+  module: gludd_reload
+general_ludd.agent.gludd_schedule:
+  DOCUMENTATION:
+    description:
+    - Posts a list of work-item descriptors to C(POST /api/schedule) and returns the
+      ordered concurrency-safe batches as C(ansible_facts.gludd_schedule).
+    - Each work item specifies its exclusive resource requirements, upstream dependencies,
+      and whether it is greenfield (no shared-resource conflicts).
+    - The daemon scheduler topologically sorts items, then groups them into batches
+      where items within a batch may run concurrently and all dependencies are satisfied
+      by strictly earlier batches.
+    - PSK-authed; check-mode safe (skips the API call and returns empty batches).
+    module: gludd_schedule
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      items:
+        description: 'List of work-item descriptor dicts.  Each dict must contain
+          C(id) (str, required) and may contain C(resources) (list[str], default []),
+          C(depends_on) (list[str], default []), and C(is_greenfield) (bool, default
+          false).
+
+          '
+        elements: dict
+        required: true
+        type: list
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+    short_description: Compute concurrency-safe execution batches via the daemon scheduler
+  EXAMPLES:
+  - general_ludd.agent.gludd_schedule:
+      items:
+      - depends_on: []
+        id: TASK-001
+        is_greenfield: false
+        resources:
+        - db
+      - depends_on:
+        - TASK-001
+        id: TASK-002
+        is_greenfield: false
+        resources:
+        - db
+      - depends_on: []
+        id: TASK-003
+        is_greenfield: true
+        resources: []
+    name: Compute execution plan for work items
+    register: schedule_result
+  - ansible.builtin.debug:
+      msg: 'Batches: {{ schedule_result.batches }}'
+    name: Show the execution batches
+  RETURN:
+    ansible_facts:
+      description: Contains C(gludd_schedule) with the ordered batches.
+      returned: always
+      type: dict
+    batch_count:
+      description: Number of batches in the plan.
+      returned: always
+      type: int
+    batches:
+      description: 'Ordered list of batches.  Each batch is a list of work-item ids
+        that may run concurrently.  Batches are ordered so that all dependencies of
+        items in batch N appear in batches 0..N-1.
+
+        '
+      returned: always
+      type: list
+    item_count:
+      description: Number of work items submitted.
+      returned: always
+      type: int
+  module: gludd_schedule
+general_ludd.agent.gludd_skill:
+  DOCUMENTATION:
+    description:
+    - Looks up a skill by name or trigger pattern and renders its body with Jinja2
+      C(StrictUndefined) — an unknown variable is an error, not silent empty text.
+    - Uses the shared C(render_skill) renderer also wired into C(execution.engine)
+      so playbook and prompt paths render identically.
+    - Frontmatter C(required_vars) list is checked before rendering; missing vars
+      fail the task with the variable name in the error message.
+    module: gludd_skill
+    options:
+      name:
+        description: Skill name (exact match). Mutually exclusive with C(trigger).
+        type: str
+      skills_path:
+        default: ''
+        description: 'Directory to scan for skill markdown files. Defaults to C(.opencode/skills)
+          relative to the playbook directory, then C(~/.config/general_ludd/skills).
+
+          '
+        type: str
+      trigger:
+        description: Trigger text for fuzzy/pattern matching. Mutually exclusive with
+          C(name).
+        type: str
+      variables:
+        default: {}
+        description: Dict of template variables to inject.
+        type: dict
+    short_description: Select and render a skill with Jinja2 variables
+  EXAMPLES:
+  - general_ludd.agent.gludd_skill:
+      name: code-review
+      variables:
+        language: python
+        project_name: myproject
+    name: Render a skill
+    register: skill_result
+  - ansible.builtin.set_fact:
+      system_prompt: '{{ skill_result.rendered_body }}'
+    name: Use rendered body as model prompt prefix
+  RETURN:
+    rendered_body:
+      description: Skill body after Jinja2 rendering.
+      returned: success
+      type: str
+    required_vars:
+      description: Variables declared in skill frontmatter.
+      returned: success
+      type: list
+    skill_name:
+      description: Resolved skill name.
+      returned: success
+      type: str
+  module: gludd_skill
+general_ludd.agent.gludd_slurm_deploy:
+  DOCUMENTATION:
+    description:
+    - Submits a Slurm batch job that launches C(vllm serve) or C(llama_cpp.server)
+      on an allocated GPU node and polls until the server is servable (writes a servable.json
+      artifact with servable_url).
+    - Wraps C(general_ludd.infra.slurm_deployment.VllmSlurmDeployment) and C(LlamacppSlurmDeployment).
+    - Use this when the operator has a Slurm cluster and Slurm should arbitrate GPU
+      access (fairshare + accounting). For cloud GPU, use Terraform; for local dev,
+      use C(make local-model-vllm).
+    module: gludd_slurm_deploy
+    notes:
+    - Returns C(changed=true) when a job was submitted, C(false) in check mode.
+    - C(servable_url) is empty until the artifact file appears with a non-null URL;
+      on failure, C(error) carries the diagnostics.
+    options:
+      artifact_dir:
+        description: 'Shared-filesystem directory the batch script writes servable.json
+          to. Must be readable from the controller host.
+
+          '
+        required: true
+        type: str
+      engine:
+        choices:
+        - vllm
+        - llamacpp
+        description: Which model server to deploy.
+        required: true
+        type: str
+      extra_args:
+        default: []
+        description: Extra argv tokens to pass to vllm serve / llama_cpp.server.
+        elements: str
+        type: list
+      gpu_count:
+        default: 1
+        description: Number of GPUs to request per node.
+        type: int
+      gpu_type:
+        default: a100
+        description: GPU type Slurm should allocate (e.g. a100, h100).
+        type: str
+      max_ctx:
+        default: 32768
+        description: Maximum model context length.
+        type: int
+      max_hours:
+        default: 4
+        description: Job walltime in hours.
+        type: int
+      mem_gb:
+        default: 32
+        description: Host memory to request (GB).
+        type: int
+      model_id:
+        description: Model id (HuggingFace id or path to .gguf for llamacpp).
+        required: true
+        type: str
+      module_loads:
+        default: []
+        description: List of environment modules to load on the compute node.
+        elements: str
+        type: list
+      partition:
+        default: gpu
+        description: Slurm partition to submit to.
+        type: str
+      poll_interval:
+        default: 5.0
+        description: Seconds between polls of the artifact file.
+        type: float
+      poll_timeout:
+        default: 300
+        description: Seconds to wait for the server to become servable.
+        type: int
+      port:
+        default: 8000
+        description: Port the model server binds on the compute node.
+        type: int
+    short_description: Deploy a vLLM or llama.cpp model server on a Slurm cluster
+  EXAMPLES:
+  - general_ludd.agent.gludd_slurm_deploy:
+      artifact_dir: /scratch/gludd/job-{{ job_id }}
+      engine: vllm
+      gpu_count: 2
+      gpu_type: a100
+      max_hours: 4
+      model_id: meta-llama/Llama-3.1-8B-Instruct
+      port: 8000
+    name: Deploy vLLM on Slurm
+    register: deploy
+  - ansible.builtin.assert:
+      that: deploy.servable_url | length > 0
+    name: Wait for servable
+  RETURN:
+    engine:
+      description: Engine that was deployed.
+      returned: always
+      type: str
+    error:
+      description: Diagnostics on failure (empty on success).
+      returned: always
+      type: str
+    job_id:
+      description: Submitted Slurm job id (empty in check mode).
+      returned: always
+      type: str
+    model_id:
+      description: Model id that was deployed.
+      returned: always
+      type: str
+    servable_url:
+      description: URL the model server is reachable at (empty on timeout/failure).
+      returned: always
+      type: str
+  module: gludd_slurm_deploy
+general_ludd.agent.gludd_spend:
+  DOCUMENTATION:
+    description:
+    - C(state=get) calls C(GET /api/spend) and returns the current spend snapshot
+      as C(ansible_facts.gludd_spend).
+    - C(state=configure) calls C(POST /api/spend/configure) to update the spend-limiter
+      settings (limit_usd and/or window_seconds).
+    - PSK-authed; check-mode safe on C(state=get). C(state=configure) skips the API
+      call in check mode and returns an empty diff.
+    module: gludd_spend
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      limit_usd:
+        description: Spend limit in USD (configure only).
+        type: float
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      state:
+        choices:
+        - get
+        - configure
+        default: get
+        description: Operation to perform.
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+      window_seconds:
+        description: Rolling window size in seconds (configure only).
+        type: int
+    short_description: Fetch and configure the daemon spend-limiter
+  EXAMPLES:
+  - general_ludd.agent.gludd_spend: null
+    name: Fetch current spend snapshot as facts
+    register: spend_result
+  - ansible.builtin.debug:
+      msg: 'Remaining: ${{ ansible_facts.gludd_spend.remaining_usd }}'
+    name: Show remaining budget
+  - general_ludd.agent.gludd_spend:
+      limit_usd: 10.0
+      state: configure
+      window_seconds: 86400
+    name: Configure spend limit
+    register: configure_result
+  RETURN:
+    ansible_facts:
+      description: Contains C(gludd_spend) with the spend snapshot (state=get).
+      returned: when state=get
+      type: dict
+    configured:
+      description: Updated configuration dict (state=configure).
+      returned: when state=configure
+      type: dict
+    spend:
+      description: Spend snapshot dict (state=get).
+      returned: when state=get
+      type: dict
+  module: gludd_spend
+general_ludd.agent.gludd_stream:
+  DOCUMENTATION:
+    description:
+    - Opens a device (e.g. C(/dev/video0), C(hw:0,0), C(pulse), C(rtsp://...), a file
+      path) via the appropriate capture tool (ffmpeg / tail / cat) and streams bytes
+      into a rolling in-memory buffer.
+    - When the configured C(dispatch_trigger) fires (size threshold, interval, silence
+      detection, or external MQ message), the current buffer is written to C(artifact_dir/chunk-<n>.bin)
+      and POSTed to the daemon's C(/admin/stream/dispatch) endpoint.
+    - The dispatch clones the *calling role* (the role invoking this module), injects
+      the chunk as a named variable, and runs the clone on that chunk. An optional
+      C(external_processor) (whisper.cpp / ffmpeg / agent) is invoked on the chunk
+      before the cloned role's tasks run.
+    - The module stops when the C(stop_condition) fires (timeout, EOF, external MQ
+      message, or max dispatches), drains the remaining buffer with a final dispatch,
+      closes the device subprocess, and returns.
+    - Check mode skips device capture and HTTP dispatch; it returns a synthetic result
+      describing the would-have-run pipeline.
+    module: gludd_stream
+    options:
+      artifact_dir:
+        default: ''
+        description: Directory to write buffer chunks before dispatch. Defaults to
+          tempfile.gettempdir().
+        type: str
+      buffer_size:
+        default: 1048576
+        description: Maximum bytes/frames to retain in the rolling buffer before discarding
+          oldest.
+        type: int
+      daemon_url:
+        description: Base URL of the gludd daemon.
+        required: true
+        type: str
+      device:
+        description: Input device path or URL (e.g. C(/dev/video0), C(hw:0,0), C(rtsp://...)).
+        required: true
+        type: str
+      device_kind:
+        choices:
+        - video
+        - audio
+        - text
+        - binary
+        description: Hint for which capture tool / external processor to use.
+        required: true
+        type: str
+      dispatch_role_clone:
+        description: 'Dict controlling role cloning. When C(clone_current_role=true),
+          the daemon clones the calling role and injects the buffered chunk.
+
+          '
+        suboptions:
+          clone_current_role:
+            default: true
+            description: Whether to clone the current calling role.
+            type: bool
+          extra_vars:
+            default: {}
+            description: Additional vars passed to the cloned role.
+            type: dict
+          inject_as:
+            default: stream_chunk
+            description: Variable name the chunk path is injected as.
+            type: str
+        type: dict
+      dispatch_trigger:
+        description: 'Dict describing when to dispatch the current buffer. Exactly
+          one of C(size_threshold), C(interval), C(silence_detection), C(external),
+          C(input_key).
+
+          '
+        suboptions:
+          bytes:
+            description: Threshold in bytes (type=size_threshold).
+            type: int
+          include_key_in_after:
+            default: true
+            description: 'When true, the matched key bytes are prepended to the dispatched
+              after_key payload (type=input_key). The key is always consumed from
+              the working search buffer so repeated keys delimit successive chunks.
+
+              '
+            type: bool
+          key:
+            description: 'The input key to match in the byte stream (type=input_key).
+              Either a UTF-8 string (encoded to bytes for matching) or a list of byte
+              ints for binary streams.
+
+              '
+            type: raw
+          max_bytes_after:
+            default: 1048576
+            description: 'Cap on the post-key buffer; flushes the after-chunk when
+              reached (type=input_key, modes after/both).
+
+              '
+            type: int
+          max_bytes_before:
+            default: 1048576
+            description: Cap on the pre-key buffer (type=input_key).
+            type: int
+          min_silence_ms:
+            description: Minimum silence length in ms (type=silence_detection).
+            type: int
+          mode:
+            choices:
+            - before
+            - after
+            - both
+            default: before
+            description: 'How to dispatch around the key (type=input_key). C(before)
+              dispatches the buffer accumulated up to (excluding) the key. C(after)
+              dispatches the buffer accumulated past the key when the next key fires
+              or C(max_bytes_after) is reached. C(both) dispatches BOTH the pre-key
+              buffer and the post-key buffer as two separate dispatches sharing the
+              same C(stream_chunk_index).
+
+              '
+            type: str
+          seconds:
+            description: Interval or timeout in seconds (type=interval).
+            type: float
+          topic:
+            description: MQ topic whose first message triggers dispatch (type=external).
+            type: str
+          type:
+            choices:
+            - size_threshold
+            - interval
+            - silence_detection
+            - external
+            - input_key
+            description: Trigger kind.
+            type: str
+        type: dict
+      external_processor:
+        description: 'Optional tool the cloned role invokes on the chunk before its
+          own tasks.
+
+          '
+        suboptions:
+          args:
+            default: []
+            description: Extra args passed to the tool.
+            elements: str
+            type: list
+          timeout_seconds:
+            default: 60
+            description: Per-chunk processor timeout.
+            type: int
+          tool:
+            choices:
+            - whisper.cpp
+            - ffmpeg
+            - agent
+            description: Tool name.
+            type: str
+        type: dict
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      stop_condition:
+        description: Dict describing when to stop listening.
+        suboptions:
+          count:
+            description: Max dispatches before stopping (type=max_dispatches).
+            type: int
+          seconds:
+            description: Timeout in seconds (type=timeout).
+            type: float
+          topic:
+            description: MQ topic whose first message stops the stream (type=external).
+            type: str
+          type:
+            choices:
+            - timeout
+            - eof
+            - external
+            - max_dispatches
+            description: Stop kind.
+            type: str
+        type: dict
+    short_description: Stream input signals (video/audio/text/binary) and dispatch
+      buffered chunks to a cloned role
+  EXAMPLES:
+  - general_ludd.agent.gludd_stream:
+      buffer_size: 524288
+      daemon_url: http://localhost:8000
+      device: hw:0,0
+      device_kind: audio
+      dispatch_role_clone:
+        clone_current_role: true
+        inject_as: stream_chunk
+      dispatch_trigger:
+        min_silence_ms: 800
+        type: silence_detection
+      external_processor:
+        args:
+        - --language
+        - en
+        timeout_seconds: 60
+        tool: whisper.cpp
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        seconds: 300
+        type: timeout
+    name: Stream microphone and transcribe speech
+    register: stream_out
+  - ansible.builtin.debug:
+      msg: 'transcription task: {{ stream_out.last_task_id }}'
+    name: Use the last transcription task id
+  - general_ludd.agent.gludd_stream:
+      buffer_size: 2097152
+      daemon_url: http://localhost:8000
+      device: /dev/video0
+      device_kind: video
+      dispatch_role_clone:
+        clone_current_role: true
+        extra_vars:
+          detection_target: person
+        inject_as: stream_chunk
+      dispatch_trigger:
+        bytes: 2097152
+        type: size_threshold
+      external_processor:
+        timeout_seconds: 120
+        tool: agent
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        count: 5
+        type: max_dispatches
+    name: Stream webcam and detect features per chunk
+    register: stream_out
+  - general_ludd.agent.gludd_stream:
+      buffer_size: 1048576
+      daemon_url: http://localhost:8000
+      device: /var/log/app.log
+      device_kind: text
+      dispatch_role_clone:
+        clone_current_role: true
+        inject_as: stream_chunk
+      dispatch_trigger:
+        seconds: 10
+        type: interval
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        type: eof
+    name: Tail an app log and dispatch every 10s
+    register: stream_out
+  - general_ludd.agent.gludd_stream:
+      daemon_url: http://localhost:8000
+      device: /tmp/fixture.log
+      device_kind: binary
+      dispatch_role_clone:
+        clone_current_role: true
+        inject_as: stream_chunk
+      dispatch_trigger:
+        key: TRIGGER
+        mode: before
+        type: input_key
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        type: eof
+    name: Stream a log and dispatch the lead-up to each TRIGGER marker
+    register: stream_out
+  - general_ludd.agent.gludd_stream:
+      daemon_url: http://localhost:8000
+      device: hw:0,0
+      device_kind: audio
+      dispatch_role_clone:
+        clone_current_role: true
+        inject_as: stream_chunk
+      dispatch_trigger:
+        include_key_in_after: true
+        key: '{{ silence_marker_bytes }}'
+        max_bytes_after: 65536
+        mode: both
+        type: input_key
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        seconds: 600
+        type: timeout
+    name: Audio VAD — dispatch speech (before_key) + silence/continuation (after_key)
+    register: stream_out
+  RETURN:
+    bytes_processed:
+      description: Total bytes streamed through the buffer.
+      returned: success
+      type: int
+    chunks:
+      description: List of artifact chunk paths written to artifact_dir.
+      elements: str
+      returned: success
+      type: list
+    dispatches:
+      description: Number of dispatches performed.
+      returned: success
+      type: int
+    last_task_id:
+      description: task_id returned by the final dispatch.
+      returned: success
+      type: str
+    stopped_by:
+      description: Which stop_condition fired (timeout, eof, external, max_dispatches).
+      returned: success
+      type: str
+  module: gludd_stream
+general_ludd.agent.gludd_traces:
+  DOCUMENTATION:
+    description:
+    - Queries the daemon's read-only C(GET /api/traces) endpoint and returns the recent
+      execution-trace snapshot under C(ansible_facts.gludd_traces) so a playbook can
+      branch on live trace data in C(when:) / C(vars:).
+    - Read-only and check-mode safe — it performs no writes.
+    - Exposes a bounded list of recent traces (trace_id, todo_id, work_type, total_cost_usd,
+      total_tokens, success_rate, span_count, spans), a by-phase aggregate summary,
+      and the OpenTelemetry exporter status (C(available) / C(disabled)).
+    - Traces are sourced ONLY from the daemon's in-process recent-traces buffer (genuinely-captured
+      telemetry); no spans are fabricated. When no OTLP collector is configured the
+      otel exporter status is honestly C(disabled).
+    module: gludd_traces
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      limit:
+        default: 20
+        description: Maximum number of recent traces to return.
+        type: int
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+      todo_id:
+        description: Optional filter — only traces for this todo.
+        type: str
+    short_description: Inject recent execution traces (spans/cost/phase) as ansible_facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_traces: null
+    name: Load recent traces
+    register: traces
+  - ansible.builtin.debug:
+      msg: Captured {{ ansible_facts.gludd_traces.count }} traces
+    name: Show how many traces were captured
+  - general_ludd.agent.gludd_traces:
+      limit: 5
+      todo_id: TODO-abc123
+    name: Only traces for a specific todo
+    register: todo_traces
+  - ansible.builtin.debug:
+      msg: generate phase cost is high
+    name: Warn when the generate phase is expensive
+    when: "(ansible_facts.gludd_traces.by_phase['generate'].total_cost_usd\n  | default(0)\
+      \ | float) > 1.0"
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_traces:
+          description:
+          - Trace snapshot with C(count), C(total_recorded), C(recent) (bounded list
+            of traces with spans), C(by_phase) aggregate, and C(otel_exporter_status).
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_traces) snapshot.
+      returned: always
+      type: dict
+  module: gludd_traces
+general_ludd.agent.gludd_worktree:
+  DOCUMENTATION:
+    description:
+    - Creates or removes a git worktree via git_automation.repo.GitAutomation.
+    - Idempotent — C(changed=false) when the desired state already exists.
+    - In check mode reports what would change without modifying the filesystem.
+    module: gludd_worktree
+    options:
+      branch:
+        description: Branch name for the new worktree.
+        required: true
+        type: str
+      repo_path:
+        description: Path to the git repository root.
+        required: true
+        type: str
+      state:
+        choices:
+        - present
+        - absent
+        default: present
+        description: C(present) to create, C(absent) to remove.
+        type: str
+      worktree_path:
+        description: Filesystem path for the new worktree.
+        required: true
+        type: str
+    short_description: Manage git worktrees (idempotent)
+  EXAMPLES:
+  - general_ludd.agent.gludd_worktree:
+      branch: fix/auto-20260612
+      repo_path: /workspace/myrepo
+      worktree_path: /tmp/worktrees/fix-auto-20260612
+    name: Create a worktree
+    register: wt
+  - general_ludd.agent.gludd_worktree:
+      branch: fix/auto-20260612
+      repo_path: /workspace/myrepo
+      state: absent
+      worktree_path: /tmp/worktrees/fix-auto-20260612
+    name: Remove worktree on cleanup
+  RETURN:
+    branch:
+      description: Branch name.
+      returned: always
+      type: str
+    state:
+      description: Resulting state (present or absent).
+      returned: always
+      type: str
+    worktree_path:
+      description: Path of the worktree.
+      returned: always
+      type: str
+  module: gludd_worktree

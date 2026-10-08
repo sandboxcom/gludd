@@ -1,5 +1,4 @@
 ---
-name: transliterate
 input_text: ""
 target_script: "Latin"
 scheme: ""

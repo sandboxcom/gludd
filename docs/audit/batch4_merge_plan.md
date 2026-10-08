@@ -68,7 +68,7 @@ or hand-copy you LOSE the first one's class.
 
 **Plan:** Do NOT let wt-sync touch `db/models.py` for either. Apply both via
 3-way against the clean HEAD base:
-```
+```text
 make wt-apply SRC=.../agent-a819a1994d313cede FILES='src/general_ludd/db/models.py'
 make wt-apply SRC=.../agent-a24b0cb9a03d0b24d FILES='src/general_ludd/db/models.py'
 ```
@@ -119,7 +119,7 @@ or `coordination/__init__.py`; those are main-tree concerns from other work.)
 
 **Step 1 — SAFE new-file worktrees first (plain wt-sync, parallel-safe).** No
 main overlap, no cross-worktree overlap. Bulk them:
-```
+```text
 make wt-sync-all SRCS='\
   /Users/shawnwilson/gludd/.claude/worktrees/agent-a0f2cca1f2e058861 \
   /Users/shawnwilson/gludd/.claude/worktrees/agent-a3bcdaf779c9c2f54 \
@@ -137,13 +137,13 @@ retrieval/ sandbox/ eval/ (and check self_improve/ exports).
 Apply both worktrees' `db/models.py` (and a819's `db/repository.py`) by
 `wt-apply` BEFORE syncing the rest of those two worktrees, so the guard never
 clobbers models.py:
-```
+```text
 make wt-apply SRC=.../agent-a819a1994d313cede FILES='src/general_ludd/db/models.py src/general_ludd/db/repository.py'
 make wt-apply SRC=.../agent-a24b0cb9a03d0b24d FILES='src/general_ludd/db/models.py'
 ```
 Then wt-sync the REMAINDER of those two (accounting + memory new files) — those
 non-models files are clean additions:
-```
+```text
 make wt-sync SRC=.../agent-a819a1994d313cede   # syncs accounting/, routers/*, tests; models.py/repository.py now match -> not refused
 make wt-sync SRC=.../agent-a24b0cb9a03d0b24d   # syncs memory/* tests; models.py now matches
 ```

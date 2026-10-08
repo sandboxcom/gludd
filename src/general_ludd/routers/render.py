@@ -148,6 +148,7 @@ def render_error(
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register renderer discovery and execution routes on ``app``."""
 
     @app.get(
         "/api/renderers",

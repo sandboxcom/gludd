@@ -1,7 +1,7 @@
-"""Line segment intersection: orientation, collinear ordering, Shamos-Hoey
-(boolean check) and Bentley-Ottmann sweep-line (all intersections).
+"""Provide line-segment intersection algorithms.
 
-Pure-Python, stdlib only.
+The module implements orientation, collinear ordering, Shamos-Hoey boolean
+checks, and Bentley-Ottmann sweep-line intersection reporting.
 """
 
 from __future__ import annotations
@@ -11,11 +11,15 @@ from typing import NamedTuple
 
 
 class Point(NamedTuple):
+    """Represent a two-dimensional point."""
+
     x: float
     y: float
 
 
 class Segment(NamedTuple):
+    """Represent a closed line segment between two points."""
+
     p: Point
     q: Point
 
@@ -24,6 +28,7 @@ EPS = 1e-12
 
 
 def orientation(a: Point, b: Point, c: Point) -> int:
+    """Return zero for collinear, one for clockwise, and minus one otherwise."""
     val = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y)
     if abs(val) < EPS:
         return 0
@@ -31,10 +36,12 @@ def orientation(a: Point, b: Point, c: Point) -> int:
 
 
 def on_segment(a: Point, b: Point, c: Point) -> bool:
+    """Return whether point ``b`` lies inside the bounding box from ``a`` to ``c``."""
     return min(a.x, c.x) - EPS <= b.x <= max(a.x, c.x) + EPS and min(a.y, c.y) - EPS <= b.y <= max(a.y, c.y) + EPS
 
 
 def segments_intersect(s1: Segment, s2: Segment) -> bool:
+    """Return whether two closed line segments intersect."""
     p1, q1 = s1.p, s1.q
     p2, q2 = s2.p, s2.q
     o1 = orientation(p1, q1, p2)
@@ -53,7 +60,7 @@ def segments_intersect(s1: Segment, s2: Segment) -> bool:
 
 
 def shamos_hoey(segments: list[Segment]) -> bool:
-    len(segments)
+    """Return whether any segment pair intersects using a sweep-line check."""
     events: list[tuple[float, int, int, Segment]] = []
     for i, seg in enumerate(segments):
         x1, x2 = seg.p.x, seg.q.x
@@ -95,6 +102,7 @@ def _sweep_y(seg: Segment, x: float) -> float:
 
 
 def compute_intersection(s1: Segment, s2: Segment) -> Point | Segment | None:
+    """Return the point or overlap segment shared by two segments, if any."""
     p1, q1 = s1.p, s1.q
     p2, q2 = s2.p, s2.q
     x1, y1 = p1.x, p1.y
@@ -122,6 +130,7 @@ def compute_intersection(s1: Segment, s2: Segment) -> Point | Segment | None:
 def bentley_ottmann(
     segments: list[Segment],
 ) -> list[tuple[int, int, Point | Segment]]:
+    """Return indexed intersections discovered by a Bentley-Ottmann sweep."""
     n = len(segments)
     if n < 2:
         return []
@@ -189,6 +198,7 @@ def bentley_ottmann(
 
 
 def collinear_segments(segments: list[Segment]) -> list[Segment]:
+    """Merge overlapping collinear segments into maximal spans."""
     result: list[Segment] = []
     used: set[int] = set()
     for i, s in enumerate(segments):

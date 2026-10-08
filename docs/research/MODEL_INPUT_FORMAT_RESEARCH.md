@@ -304,7 +304,7 @@ thinking content from subsequent turns.
 special tokens. Llama 3+ uses standard OpenAI-compatible chat template.
 
 **Llama 2 format (legacy):**
-```
+```text
 <s>[INST] <<SYS>>
 {system_prompt}
 <</SYS>>
@@ -313,7 +313,7 @@ special tokens. Llama 3+ uses standard OpenAI-compatible chat template.
 ```
 
 **Llama 3/3.1 format (current):**
-```
+```text
 <|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
 {system_prompt}<|eot_id|>

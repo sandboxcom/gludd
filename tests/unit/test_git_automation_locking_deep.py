@@ -9,6 +9,7 @@ acquire/release ordering.
 
 from __future__ import annotations
 
+import concurrent.futures
 import contextlib
 import errno
 import multiprocessing
@@ -105,30 +106,25 @@ class TestGetInprocessLockConcurrency:
 
 
 class TestGitDirDeepEdgeCases:
-    def test_rev_parse_timeout_returns_none(self) -> None:
+    def test_git_pointer_read_error_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             git_file = os.path.join(tmpdir, ".git")
             with open(git_file, "w") as f:
                 f.write("gitdir: /nonexistent\n")
 
-            with patch.object(
-                locking.subprocess,
-                "run",
-                side_effect=subprocess.TimeoutExpired(cmd=["git"], timeout=1.0),
-            ):
+            with patch("builtins.open", side_effect=OSError("metadata unavailable")):
                 assert locking._git_dir(tmpdir) is None
 
-    def test_rev_parse_oserror_returns_none(self) -> None:
+    def test_non_utf8_git_pointer_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             git_file = os.path.join(tmpdir, ".git")
-            with open(git_file, "w") as f:
-                f.write("gitdir: /nonexistent\n")
+            with open(git_file, "wb") as f:
+                f.write(b"gitdir: \xff\n")
 
-            with patch.object(locking.subprocess, "run", side_effect=OSError("exec not found")):
-                assert locking._git_dir(tmpdir) is None
+            assert locking._git_dir(tmpdir) is None
 
-    def test_rev_parse_returns_relative_common_dir(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
+    def test_rev_parse_returns_relative_common_dir(self, tmp_path: Path) -> None:
+        with tempfile.TemporaryDirectory(dir=tmp_path) as tmpdir:
             main_repo = os.path.join(tmpdir, "main")
             os.mkdir(main_repo)
             subprocess.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)
@@ -181,22 +177,17 @@ class TestGitDirDeepEdgeCases:
 
     def test_git_dir_returns_none_when_common_dir_not_a_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
+            private_dir = os.path.join(tmpdir, "private")
+            os.mkdir(private_dir)
             git_file = os.path.join(tmpdir, ".git")
             with open(git_file, "w") as f:
-                f.write("gitdir: /nonexistent\n")
+                f.write(f"gitdir: {private_dir}\n")
+            common_file = os.path.join(tmpdir, "not-a-directory")
+            Path(common_file).write_text("content", encoding="utf-8")
+            Path(private_dir, "commondir").write_text("../not-a-directory\n", encoding="utf-8")
 
-            with patch.object(
-                locking.subprocess,
-                "run",
-                return_value=subprocess.CompletedProcess(
-                    args=["git"],
-                    returncode=0,
-                    stdout="/tmp/some-file\n",
-                    stderr="",
-                ),
-            ):
-                result = locking._git_dir(tmpdir)
-                assert result is None
+            result = locking._git_dir(tmpdir)
+            assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -422,11 +413,10 @@ class TestFileLockBoundary:
             git_dir = os.path.join(tmpdir, ".git")
             os.mkdir(git_dir)
 
-            eagain_errors = [
+            eagain_errors: list[OSError] = [
                 OSError(errno.EAGAIN, "try again"),
                 OSError(errno.EAGAIN, "try again"),
                 OSError(errno.EAGAIN, "try again"),
-                None,
             ]
             call_count: list[int] = []
 
@@ -436,7 +426,7 @@ class TestFileLockBoundary:
                 call_count.append(1)
                 if len(call_count) <= 3:
                     raise eagain_errors[len(call_count) - 1]
-                return real_flock(fd, op)
+                real_flock(fd, op)
 
             key = "eagain-test"
             locking._file_lock_depth.pop(key, None)
@@ -625,25 +615,36 @@ class TestCrossProcessMultiWaiter:
 class TestAsyncGitRepoLockEdge:
     @pytest.mark.asyncio
     async def test_exc_during_enter_shuts_down_executor(self) -> None:
+        class _BoomOnEnter:
+            def __enter__(self) -> None:
+                raise RuntimeError("boom")
+
+            def __exit__(self, *exc: object) -> None:
+                return None
+
         with (
             patch.object(
-                locking.git_repo_lock,
-                "__enter__",
-                side_effect=RuntimeError("boom"),
+                locking,
+                "git_repo_lock",
+                return_value=_BoomOnEnter(),
             ),
+            patch.object(
+                concurrent.futures.ThreadPoolExecutor,
+                "shutdown",
+                autospec=True,
+            ) as shutdown_spy,
             pytest.raises(RuntimeError, match="boom"),
         ):
             await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
+        assert shutdown_spy.called
 
     @pytest.mark.asyncio
     async def test_double_exit_is_idempotent(self) -> None:
-        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
-        try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cm = await locking.async_git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0)
             with cm:
                 pass
             cm.__exit__(None, None, None)
-        finally:
-            pass
 
 
 # ---------------------------------------------------------------------------

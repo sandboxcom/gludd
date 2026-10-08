@@ -1,8 +1,6 @@
-// AGENTS.md CRITICAL: Subagent Depth Policy:
-// Depth enforcement MUST fire inside subagents — this is the ONE plugin
-// that intentionally does NOT call isSubagent(). OPENCODE_DEPTH (set by
-// the framework per nesting level) is the mechanism; the plugin blocks
-// dispatch when depth >= MAX_DEPTH at any nesting level.
+// Depth is the scoped exception to generic subagent isolation: delegated
+// contexts must still be prevented from dispatching beyond the configured
+// recursion boundary. Non-dispatch tools remain unaffected at every depth.
 // HOT-RELOAD: implements the proxy pattern from hot_reload.ts.
 import type { Plugin } from "@opencode-ai/plugin"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
@@ -32,8 +30,8 @@ const defaultImpl: HotModule = {
           permissionDecision: "deny" as const,
           message: [
             `MAX DEPTH EXCEEDED: depth=${depth}, limit=${MAX_DEPTH}.`,
-            "AGENTS.md: Subagent delegation depth MUST NOT exceed 3 levels.",
-            "A depth-3 subagent CANNOT dispatch further. Complete assigned work directly.",
+            "AGENTS.md: Subagent delegation depth MUST NOT exceed 4 levels.",
+            "A depth-4 subagent CANNOT dispatch further. Complete assigned work directly.",
             "Set GLUDD_DEPTH_ENFORCE=0 to disable.",
           ].join("\n"),
         }

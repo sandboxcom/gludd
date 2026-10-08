@@ -205,6 +205,27 @@
         fail_msg: "Unicode analysis failed. Got: {{ result_uni }}"
         success_msg: "unicode_analyze: length={{ result_uni.input_length }}, codepoints={{ result_uni.codepoints | length }}"
 
+    # ---- language_detect ----
+    - name: Assert language-detect artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/language-detect/language_detection.json"
+      register: art_lang
+      failed_when: not art_lang.stat.exists
+
+    # ---- translate ----
+    - name: Assert translate artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/translate/translation.json"
+      register: art_translate
+      failed_when: not art_translate.stat.exists
+
+    # ---- transliterate ----
+    - name: Assert transliterate artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/transliterate/transliteration.json"
+      register: art_translit
+      failed_when: not art_translit.stat.exists
+
     # ---- Cleanup ----
     - name: Remove molecule language artifact tree
       ansible.builtin.file:

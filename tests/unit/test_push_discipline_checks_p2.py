@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 MAKEFILE_PATH = ROOT / "Makefile"
@@ -18,7 +19,7 @@ PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 
 
 def makefile_text() -> str:
-    return MAKEFILE_PATH.read_text()
+    return compose_makefile(MAKEFILE_PATH)
 
 
 def agents_text() -> str:
@@ -136,6 +137,29 @@ class TestP20CiRestartCap:
         assert "3" in block, "P20: _ci-restart-cap missing restart limit (3)"
         assert "exit 1" in block, "P20: _ci-restart-cap must exit non-zero when blocked"
         assert "/tmp/gludd-ci-restart-count" in block, "P20: _ci-restart-cap missing state file for restart count"
+
+    def test_guard_is_check_only_and_success_recorder_increments(self) -> None:
+        """Failed preflight must not spend a restart; only a landed push may."""
+        text = makefile_text()
+        guard_start = text.find("_ci-restart-cap:")
+        guard_end = text.find("\n\n", guard_start)
+        guard = text[guard_start:guard_end]
+        record_start = text.find("_record-push-verdict:")
+        record_end = text.find("\n\n", record_start)
+        recorder = text[record_start:record_end]
+
+        assert "CI_NEW" not in guard, "restart-cap guard must not charge rejected push attempts"
+        assert "ci_check_cooldown.py record-push" in recorder, (
+            "successful-push recorder must delegate atomic state accounting"
+        )
+
+    @pytest.mark.parametrize("target", ["git-push-sandboxcom", "git-push-sandboxcom-nv", "push-dev", "batch-push"])
+    def test_successful_push_targets_record_restart_after_push(self, target: str) -> None:
+        text = makefile_text()
+        start = text.find(f"{target}:")
+        end = text.find("\n\n", start)
+        recipe = text[start:end]
+        assert "_record-push-verdict" in recipe, f"{target} must record one landed push"
 
     def test_guard_wired_to_push_targets(self):
         assert target_uses_guard("batch-push", "_ci-restart-cap") or target_uses_guard("push-dev", "_ci-restart-cap"), (
@@ -369,7 +393,9 @@ class TestP29ReleasePromoteCiGreenArtifact:
             pytest.skip("P29: release-cut target not found in Makefile")
         end = text.find("\n\n", start)
         block = text[start:end] if start >= 0 else ""
-        assert "require-ci-green" in block, "P29: release-cut does not gate on require-ci-green"
+        assert "require-dual-track-green" in block, (
+            "P29: release-cut does not gate on exact-SHA local and hosted CI"
+        )
 
     def test_release_cut_verifies_artifact(self):
         text = makefile_text()

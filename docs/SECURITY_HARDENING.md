@@ -133,7 +133,7 @@ link** — each surface validates even though the next layer would also catch it
 - **No `shell=True` anywhere on these paths.** argv is always list-form.
 - **No host-secret leakage to children.** MCP subprocesses get a minimal env
   allowlist (`PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR`) plus only the server's
-  own declared/resolved secrets — never `ANTHROPIC_API_KEY`/`GLUDD_PSK`/cloud
+  own declared/resolved secrets — never `ANTHROPIC_API_KEY`/`GLUDD_AUTH_PSK`/cloud
   creds.
 - **No blocking I/O in security primitives.** `security/auth.py` performs no DNS,
   no socket binds, no sleeps; the SSRF host check is purely literal.

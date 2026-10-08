@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import re
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
+from scripts.makefile_layout import compose_makefile
 
 pytestmark = pytest.mark.xdist_group("ansible_lint_deep")
 
@@ -23,6 +25,15 @@ MAX_YAML_FILE_SIZE = 512 * 1024
 
 _discover_role_dirs_cache: list[Path] | None = None
 _discover_task_files_cache: list[Path] | None = None
+
+
+def test_yaml_lint_target_avoids_schema_network_and_fails_on_warnings() -> None:
+    """The release lint must be hermetic and warning-clean on Python 3.14."""
+    makefile = compose_makefile(ROOT / "Makefile")
+    block = makefile.split("yaml-lint:", 1)[1].split("\n\n", 1)[0]
+
+    assert "ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1" in block
+    assert "PYTHONWARNINGS=error" in block
 
 
 def _discover_role_dirs() -> list[Path]:
@@ -113,7 +124,7 @@ def _collect_task_module_names(task: dict[str, Any]) -> list[str]:
 
 def _walk_tasks(
     tasks: Any,
-    fn,
+    fn: Callable[..., None],
     *args: Any,
     **kwargs: Any,
 ) -> None:
@@ -271,7 +282,13 @@ def test_handler_notifications_match_existing_handlers() -> None:
             if tasks is None or not isinstance(tasks, list):
                 continue
 
-            def _check(task: dict[str, Any], _idx: int, _role=role_dir, _hf=handler_file, _names=handler_names) -> None:
+            def _check(
+                task: dict[str, Any],
+                _idx: int,
+                _role: Path = role_dir,
+                _hf: Path = handler_file,
+                _names: set[str] = handler_names,
+            ) -> None:
                 if "notify" in task:
                     notifies = task["notify"]
                     if isinstance(notifies, str):

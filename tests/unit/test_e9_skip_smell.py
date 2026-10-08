@@ -61,6 +61,29 @@ FORBIDDEN_SKIP_PATTERNS = [
     re.compile(r"pytest\.skip\s*\(\s*f['\"]Optional:", re.IGNORECASE),
 ]
 
+SNAPSHOT_MUTATION_METHODS = frozenset(
+    {
+        "chmod",
+        "rename",
+        "replace",
+        "touch",
+        "unlink",
+        "write_bytes",
+        "write_text",
+    }
+)
+
+SNAPSHOT_DESTINATION_FUNCTIONS = frozenset(
+    {
+        ("os", "rename"),
+        ("os", "replace"),
+        ("shutil", "copy"),
+        ("shutil", "copy2"),
+        ("shutil", "copyfile"),
+        ("shutil", "move"),
+    }
+)
+
 ALLOWLIST_SKIP_FILES = frozenset({
     str(TESTS_ROOT / "e2e" / "providers" / "conftest.py"),
 })
@@ -235,6 +258,83 @@ def _has_documented_reason(args: list[str]) -> bool:
     )
 
 
+def _expression_mentions_snapshot(node: ast.AST) -> bool:
+    """Return whether an expression identifies the reviewed skip snapshot."""
+    for part in ast.walk(node):
+        if isinstance(part, ast.Name) and part.id == "SKIP_COUNT_SNAPSHOT_FILE":
+            return True
+        if (
+            isinstance(part, ast.Constant)
+            and isinstance(part.value, str)
+            and part.value.endswith(".e9_skip_counts.json")
+        ):
+            return True
+    return False
+
+
+def _open_mode_is_writable(call: ast.Call, positional_index: int) -> bool:
+    """Return whether an ``open`` call requests or may request mutation."""
+    mode_node: ast.AST | None = None
+    if len(call.args) > positional_index:
+        mode_node = call.args[positional_index]
+    for keyword in call.keywords:
+        if keyword.arg == "mode":
+            mode_node = keyword.value
+    if mode_node is None:
+        return False
+    if not isinstance(mode_node, ast.Constant) or not isinstance(
+        mode_node.value,
+        str,
+    ):
+        return True
+    return any(flag in mode_node.value for flag in "wax+")
+
+
+def _snapshot_mutation_sites(file_path: pathlib.Path) -> list[tuple[int, str]]:
+    """Return AST-proven mutation attempts against the reviewed snapshot."""
+    tree = ast.parse(file_path.read_text(), filename=str(file_path))
+    sites: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+
+        if isinstance(node.func, ast.Name) and node.func.id == "open":
+            if (
+                node.args
+                and _expression_mentions_snapshot(node.args[0])
+                and _open_mode_is_writable(node, 1)
+            ):
+                sites.append((node.lineno, "open"))
+            continue
+
+        if not isinstance(node.func, ast.Attribute):
+            continue
+        method = node.func.attr
+        receiver = node.func.value
+        if (
+            method == "open"
+            and _expression_mentions_snapshot(receiver)
+            and _open_mode_is_writable(node, 0)
+        ):
+            sites.append((node.lineno, "open"))
+            continue
+        if (
+            method in SNAPSHOT_MUTATION_METHODS
+            and not isinstance(receiver, ast.Constant)
+            and _expression_mentions_snapshot(receiver)
+        ):
+            sites.append((node.lineno, method))
+            continue
+
+        owner = receiver.id if isinstance(receiver, ast.Name) else ""
+        if (
+            (owner, method) in SNAPSHOT_DESTINATION_FUNCTIONS
+            and any(_expression_mentions_snapshot(arg) for arg in node.args)
+        ):
+            sites.append((node.lineno, f"{owner}.{method}"))
+    return sorted(sites)
+
+
 class TestSkipSmellDetection:
     """Structural checks on the entire tests/ tree."""
 
@@ -292,6 +392,35 @@ class TestSkipSmellDetection:
         assert SKIP_COUNT_SNAPSHOT_FILE.exists(), (
             f"Skip-count snapshot file missing at {SKIP_COUNT_SNAPSHOT_FILE} "
             "(restore the reviewed baseline; tests never generate it)."
+        )
+
+    def test_skip_count_snapshot_is_read_only_during_pytest(self) -> None:
+        mutation_sites: list[tuple[str, int, str]] = []
+        for file_path in sorted(TESTS_ROOT.rglob("*.py")):
+            if "__pycache__" in file_path.parts:
+                continue
+            source = file_path.read_text()
+            if not (
+                "SKIP_COUNT_SNAPSHOT_FILE" in source
+                or ".e9_skip_counts.json" in source
+            ):
+                continue
+            mutation_sites.extend(
+                (
+                    str(file_path.relative_to(TESTS_ROOT)),
+                    line_no,
+                    operation,
+                )
+                for line_no, operation in _snapshot_mutation_sites(file_path)
+            )
+
+        assert not mutation_sites, (
+            "The reviewed skip-count snapshot is read-only during pytest; "
+            "remove lifecycle or test-time mutation paths:\n"
+            + "\n".join(
+                f"  {path}:{line_no} ({operation})"
+                for path, line_no, operation in mutation_sites
+            )
         )
 
     def test_skip_count_not_growing(self) -> None:
@@ -495,6 +624,86 @@ class TestSkipSmellSelf:
 
         assert skip["guarded"] is False
         assert _has_documented_reason(skip["args"])
+
+    def test_snapshot_mutation_audit_detects_direct_writer(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        source = tmp_path / "test_snapshot_writer.py"
+        source.write_text(
+            "\n".join(
+                (
+                    "from pathlib import Path",
+                    "SKIP_COUNT_SNAPSHOT_FILE = Path('.e9_skip_counts.json')",
+                    "def pytest_sessionfinish(session):",
+                    "    SKIP_COUNT_SNAPSHOT_FILE.write_text('{}')",
+                )
+            )
+        )
+
+        assert _snapshot_mutation_sites(source) == [(4, "write_text")]
+
+    def test_snapshot_mutation_audit_detects_atomic_replace(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        source = tmp_path / "test_snapshot_replace.py"
+        source.write_text(
+            "\n".join(
+                (
+                    "import os",
+                    "from pathlib import Path",
+                    "SKIP_COUNT_SNAPSHOT_FILE = Path('.e9_skip_counts.json')",
+                    "def replace_snapshot(staged):",
+                    "    os.replace(staged, SKIP_COUNT_SNAPSHOT_FILE)",
+                )
+            )
+        )
+
+        assert _snapshot_mutation_sites(source) == [(5, "os.replace")]
+
+    def test_snapshot_mutation_audit_covers_writable_open_and_copy(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        source = tmp_path / "test_snapshot_open.py"
+        source.write_text(
+            "\n".join(
+                (
+                    "import shutil",
+                    "from pathlib import Path",
+                    "SKIP_COUNT_SNAPSHOT_FILE = Path('.e9_skip_counts.json')",
+                    "def mutate_snapshot(staged, mode):",
+                    "    open(SKIP_COUNT_SNAPSHOT_FILE)",
+                    "    open(SKIP_COUNT_SNAPSHOT_FILE, 'r')",
+                    "    open(SKIP_COUNT_SNAPSHOT_FILE, mode='a')",
+                    "    open(SKIP_COUNT_SNAPSHOT_FILE, mode)",
+                    "    SKIP_COUNT_SNAPSHOT_FILE.open('wb')",
+                    "    Path('.e9_skip_counts.json').unlink()",
+                    "    shutil.copyfile(staged, Path('.e9_skip_counts.json'))",
+                    "    SKIP_COUNT_SNAPSHOT_FILE.read_text()",
+                )
+            )
+        )
+
+        assert _snapshot_mutation_sites(source) == [
+            (7, "open"),
+            (8, "open"),
+            (9, "open"),
+            (10, "unlink"),
+            (11, "shutil.copyfile"),
+        ]
+
+    def test_snapshot_mutation_audit_ignores_string_replacement(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        source = tmp_path / "test_snapshot_label.py"
+        source.write_text(
+            "label = '.e9_skip_counts.json'.replace('json', 'reviewed')"
+        )
+
+        assert _snapshot_mutation_sites(source) == []
 
     def test_skip_count_snapshot_is_valid_json(self) -> None:
         assert SKIP_COUNT_SNAPSHOT_FILE.exists()

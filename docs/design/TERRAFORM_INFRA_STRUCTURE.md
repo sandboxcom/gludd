@@ -2,7 +2,7 @@
 
 **Status:** Implemented static-module layout with legacy cleanup remaining
 **Author:** infra workstream
-**Last updated:** 2026-07-22
+**Last updated:** 2026-09-28
 
 ## Purpose
 
@@ -261,6 +261,46 @@ New provider or engine work should extend the checked-in module and stack layout
 All unit tests must be hermetic (no real cloud calls). `terraform validate` is
 the boundary: it exercises real HCL parsing without provisioning. E2E tests
 are env-gated and never run in default CI.
+
+### 9.1 Upstream RunPod provider schema boundary
+
+The pinned `runpod/runpod` 1.0.9 provider can fail before evaluating Gludd HCL
+because its generated `runpod_endpoint_jobs.jobs` and
+`runpod_endpoint_workers.workers` list attributes omit the Terraform Framework
+Required/Optional/Computed declaration. Upstream users supplied the exact
+`Computed: true` repair in
+[runpod/terraform-provider-runpod PR #62](https://github.com/runpod/terraform-provider-runpod/pull/62),
+which remains open as of 2026-09-28.
+
+Gludd therefore treats only those two complete provider/data-source/attribute
+diagnostic signatures as external skips. All other `terraform validate`
+failures remain hard failures. `tests/terraform_test_support.py` owns the
+central classifier so individual suites cannot grow broad, unaudited skip
+patterns. Remove the classification after an upstream release containing the
+repair is pinned and validated.
+
+### 9.2 Provider registry availability boundary
+
+The 2026-09-28 full gate reached the real Azure Container Apps validation path,
+but `registry.terraform.io` timed out after four attempts while Terraform was
+resolving `azure/azapi`. That is an external package-discovery outage, not
+evidence that Gludd's generated HCL is invalid. Operators have reported the
+same discovery-document timeout since at least 2020 in
+[Terraform issue #26086](https://github.com/hashicorp/terraform/issues/26086),
+and [issue #33044](https://github.com/hashicorp/terraform/issues/33044) records
+the failure recurring across Azure, Google, and other providers even when some
+packages are already cached. A release-pipeline operator also reports roughly
+30% intermittent provider-install failures across eight projects in
+[issue #30846](https://github.com/hashicorp/terraform/issues/30846).
+
+Gludd classifies this boundary only when the diagnostic contains the complete
+provider-specific signature: the expected provider namespace, package-query
+failure, registry discovery URL, connection failure, and an explicit timeout.
+The E2E suite then records a bounded external-dependency skip. Version
+selection errors, invalid HCL, wrong provider namespaces, missing credentials,
+and incomplete look-alike messages remain hard failures. The shared classifier
+in `tests/terraform_test_support.py` owns both this rule and the RunPod schema
+rule so no individual test can broaden the skip surface independently.
 
 ---
 

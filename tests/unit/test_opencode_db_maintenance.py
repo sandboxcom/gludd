@@ -13,6 +13,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "opencode_db_maintenance.py"
@@ -260,7 +261,7 @@ def test_missing_optional_tables_are_skipped_without_creating_them(tmp_path: Pat
 
 
 def test_make_targets_delegate_safety_to_one_process_and_never_unlink_sidecars() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     for target in ("opencode-clean", "opencode-clean-hard", "opencode-db-prune"):
         start = content.index(f"{target}:")
         end = content.find("\n\n", start)

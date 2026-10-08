@@ -37,9 +37,7 @@ import tempfile
 from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
 
-_BUNDLED_COLLECTIONS_ROOT_DEFAULT = (
-    Path(__file__).resolve().parent.parent.parent.parent / "collections"
-)
+_BUNDLED_COLLECTIONS_ROOT_DEFAULT = Path(__file__).resolve().parent.parent.parent.parent / "collections"
 
 
 def _bundled_collections_root() -> Path:
@@ -78,11 +76,13 @@ class CollectionsPathEntry:
     precedence: int
 
     def __setattr__(self, name: str, value: object) -> None:
+        """Block reassignment of an existing immutable field."""
         if hasattr(self, name):
             raise CollectionsPathMutationError(f"cannot assign to field {name!r}")
         object.__setattr__(self, name, value)
 
     def __delattr__(self, name: str) -> None:
+        """Block deletion of an immutable field."""
         raise CollectionsPathMutationError(f"cannot delete field {name!r}")
 
 
@@ -114,23 +114,32 @@ def resolve_collections_paths(
     entries: list[CollectionsPathEntry] = []
     prec = 0
 
-    proj = _project_collections_root(
-        Path(project_root) if project_root is not None else None
-    )
+    def _normalized(root: Path) -> Path:
+        # Ansible rejects collection-path entries that END in
+        # 'ansible_collections' ("path should not be specified for top-level
+        # packages"). Normalize any such root to its PARENT so a tier that
+        # was pointed at the ansible_collections directory itself can never
+        # poison the env (round-20 unit-1b: a patched bundled root leaked
+        # into os.environ and later ansible runs raised ValueError).
+        if root.name == "ansible_collections":
+            return root.parent
+        return root
+
+    proj = _project_collections_root(Path(project_root) if project_root is not None else None)
     if proj is not None and proj.is_dir():
-        entries.append(CollectionsPathEntry("project", proj, prec))
+        entries.append(CollectionsPathEntry("project", _normalized(proj), prec))
         prec += 1
 
     user = _user_collections_root()
     if user.is_dir():
-        entries.append(CollectionsPathEntry("user", user, prec))
+        entries.append(CollectionsPathEntry("user", _normalized(user), prec))
         prec += 1
 
     bundled = _bundled_collections_root()
     # Bundled tier is always present (install-time fallback). If the dir is
     # somehow missing we still surface it so operators can see the resolved
     # target — but the canonical case is "exists".
-    entries.append(CollectionsPathEntry("bundled", bundled, prec))
+    entries.append(CollectionsPathEntry("bundled", _normalized(bundled), prec))
 
     return entries
 
@@ -179,9 +188,7 @@ def _split_fqcn(fqcn: str) -> tuple[str, str, str] | None:
     return parts[0], parts[1], ".".join(parts[2:])
 
 
-def find_resource(
-    fqcn: str, entries: list[CollectionsPathEntry]
-) -> Path | None:
+def find_resource(fqcn: str, entries: list[CollectionsPathEntry]) -> Path | None:
     """Locate a resource by FQCN, walking tiers in precedence order.
 
     Looks for both modules (``plugins/modules/<resource>.py``) and roles
@@ -235,10 +242,9 @@ class CollectionVersionInfo:
     is_semver: bool = field(init=False, default=False)
 
     def __post_init__(self) -> None:
+        """Derive the latest/semver flags from the parsed version."""
         object.__setattr__(self, "is_latest", self.version == "latest")
-        object.__setattr__(
-            self, "is_semver", bool(re.fullmatch(r"\d+\.\d+\.\d+[a-zA-Z0-9.\-]*", self.version))
-        )
+        object.__setattr__(self, "is_semver", bool(re.fullmatch(r"\d+\.\d+\.\d+[a-zA-Z0-9.\-]*", self.version)))
 
 
 def scan_collection_versions(
@@ -332,9 +338,7 @@ def resolve_collection_version(
     ``roles/``, ``plugins/`` etc.) or *None* if no matching collection
     exists at *base*.
     """
-    infos = scan_collection_versions(
-        base, namespace=namespace, collection=collection
-    )
+    infos = scan_collection_versions(base, namespace=namespace, collection=collection)
 
     if requested_version is not None:
         for info in infos:
@@ -384,14 +388,14 @@ def activate_collection_version(
     (``@latest`` > bare > highest semver).
     """
     resolved = resolve_collection_version(
-        base, namespace=namespace, collection=collection,
+        base,
+        namespace=namespace,
+        collection=collection,
         requested_version=version,
     )
     if resolved is None:
         raise FileNotFoundError(
-            f"No collection found for {namespace}.{collection}"
-            + (f" @{version}" if version else "")
-            + f" under {base}"
+            f"No collection found for {namespace}.{collection}" + (f" @{version}" if version else "") + f" under {base}"
         )
 
     owned_by_caller = temp_dir is None
@@ -419,9 +423,7 @@ def list_all_collections(
     ns_dir = base / "ansible_collections" / namespace
     if not ns_dir.is_dir():
         return []
-    return sorted(
-        d.name for d in ns_dir.iterdir() if d.is_dir()
-    )
+    return sorted(d.name for d in ns_dir.iterdir() if d.is_dir())
 
 
 __all__ = [
