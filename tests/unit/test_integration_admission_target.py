@@ -22,6 +22,11 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     """The public target reuses existing checks in cheapest-first order."""
     makefile = compose_makefile(MAKEFILE)
     stanza = _target_stanza(makefile, "integration-admission")
+    project_dispatch = _target_stanza(makefile, "_project-dispatch-integration")
+    mcp_workspace_jail = _target_stanza(
+        makefile, "_mcp-workspace-jail-integration"
+    )
+    module_graph = _target_stanza(makefile, "_module-graph-classification")
 
     assert "integration-admission" in makefile.split("help:", 1)[0]
     assert (
@@ -31,6 +36,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
 
     phases = (
         "worktree-guard",
+        "check-gate-failure-promotions",
         "_dead-code-baseline-refresh",
         "validate-task-ledger",
         "check-task-registration",
@@ -40,6 +46,8 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
         "check-make-target-contract",
         "yaml-lint",
         "project-dispatch-integration",
+        "mcp-workspace-jail-integration",
+        "module-graph-classification",
         "presentation-browser-test",
         "pre-commit-check",
     )
@@ -50,30 +58,63 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     assert "MARKDOWN_FILES=\"$(MARKDOWN_FILES)\"" in stanza
     assert "MARKDOWNLINT_CONFIG=\"$(MARKDOWNLINT_CONFIG)\"" in stanza
     assert (
+        'GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"'
+        in stanza
+    )
+    for fragment in (
+        "scripts/stream_command.py",
+        '--root ".gate-logs/observed"',
+        '--label "integration-admission-$$phase"',
+        '--run-id "$$run_id"',
+        '--heartbeat-secs "10"',
+        '--quiet-secs "$$quiet_seconds"',
+        '--max-secs "$$max_seconds"',
+        '--retain-runs "20"',
+        '"kind":"integration_admission_phase"',
+        '"budget_class":"%s"',
+    ):
+        assert fragment in stanza
+    assert (
         "tests/integration/test_multi_project_integration.py::"
         "TestEventLoopProjectScopedIntegration::"
-        "test_event_loop_dispatch_includes_project_id" in stanza
+        "test_event_loop_dispatch_includes_project_id" in project_dispatch
     )
     assert (
         "tests/integration/test_worker_isolation.py::"
         "TestWorkerProjectIsolation::test_dispatch_job_contains_only_project_data"
-        in stanza
+        in project_dispatch
     )
     assert (
         "tests/unit/test_event_loop.py::TestEventLoop::"
-        "test_event_loop_serializes_concurrent_ticks" in stanza
+        "test_event_loop_serializes_concurrent_ticks" in project_dispatch
+    )
+    assert (
+        "tests/unit/test_mcp_builtins_structural.py::TestBuiltinToolHandler::"
+        "test_contain_workspace_escape_returns_none" in mcp_workspace_jail
+    )
+    assert (
+        "tests/unit/test_project_runner_tool.py::TestRunProjectCheckDispatch::"
+        "test_workspace_escaping_jail_is_refused" in mcp_workspace_jail
+    )
+    assert (
+        "tests/unit/test_module_graph_deep.py::test_all_subpackages_classified"
+        in module_graph
     )
     assert "gate-full" not in stanza
     assert "$(MAKE) --no-print-directory gate" not in stanza
 
     assert (
-        stanza.index('phase=worktree-guard')
-        < stanza.index('phase=_dead-code-baseline-refresh')
-        < stanza.index('phase=validate-task-ledger')
+        stanza.index('run_phase "worktree-guard"')
+        < stanza.index('run_phase "check-gate-failure-promotions"')
+        < stanza.index('run_phase "_dead-code-baseline-refresh"')
+        < stanza.index('run_phase "validate-task-ledger"')
     )
     assert (
         "$(MAKE) --no-print-directory _dead-code-baseline-refresh;" in stanza
     )
+    assert "$(MAKE) --no-print-directory _project-dispatch-integration;" in stanza
+    assert "$(MAKE) --no-print-directory _mcp-workspace-jail-integration;" in stanza
+    assert "$(MAKE) --no-print-directory _module-graph-classification;" in stanza
 
     pre_commit = _target_stanza(makefile, "pre-commit-check")
     assert "$(MAKE) --no-print-directory lint" in pre_commit
@@ -109,6 +150,7 @@ def test_integration_admission_contract_is_safe_and_explicit() -> None:
             "name": "integration-admission",
             "make_variables": [
                 "INTEGRATION_ADMISSION_VALIDATE_ONLY",
+                "GATE_FAILURE_PROMOTION_MANIFEST",
                 "FILE_LINE_LIMIT_POLICY",
                 "MARKDOWN_FILES",
                 "MARKDOWNLINT_CONFIG",
@@ -120,6 +162,7 @@ def test_integration_admission_contract_is_safe_and_explicit() -> None:
             "behavior": (
                 "make integration-admission "
                 "INTEGRATION_ADMISSION_VALIDATE_ONLY=1 "
+                "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json "
                 "FILE_LINE_LIMIT_POLICY=config/file_line_limits.json "
                 "MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md "
                 "MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc "
@@ -139,6 +182,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
             "make",
             "integration-admission",
             "INTEGRATION_ADMISSION_VALIDATE_ONLY=1",
+            "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json",
             "FILE_LINE_LIMIT_POLICY=config/file_line_limits.json",
             "MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md",
             "MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc",
@@ -159,6 +203,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
     assert "INTEGRATION-ADMISSION: VALIDATE-ONLY" in output
     for phase in (
         "worktree-guard",
+        "check-gate-failure-promotions",
         "_dead-code-baseline-refresh",
         "validate-task-ledger",
         "check-task-registration",
@@ -168,10 +213,46 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         "check-make-target-contract",
         "yaml-lint",
         "project-dispatch-integration",
+        "mcp-workspace-jail-integration",
+        "module-graph-classification",
         "presentation-browser-test",
         "pre-commit-check",
     ):
         assert f"phase={phase}" in output
+    evidence = [
+        json.loads(line)
+        for line in output.splitlines()
+        if line.startswith("{") and '"kind":"integration_admission_phase"' in line
+    ]
+    assert len(evidence) == 15
+    assert [item["phase"] for item in evidence] == [
+        "worktree-guard",
+        "check-gate-failure-promotions",
+        "_dead-code-baseline-refresh",
+        "validate-task-ledger",
+        "check-task-registration",
+        "check-task-integrity",
+        "check-generated-artifact-hygiene",
+        "lint-markdown",
+        "check-make-target-contract",
+        "yaml-lint",
+        "project-dispatch-integration",
+        "mcp-workspace-jail-integration",
+        "module-graph-classification",
+        "presentation-browser-test",
+        "pre-commit-check",
+    ]
+    assert {item["budget_class"] for item in evidence} == {
+        "fast",
+        "standard",
+        "slow",
+    }
+    assert all(item["max_seconds"] > 0 for item in evidence)
+    assert all(item["quiet_seconds"] > 0 for item in evidence)
+    assert all(
+        item["evidence_label"] == f"integration-admission-{item['phase']}"
+        for item in evidence
+    )
     assert "INTEGRATION-ADMISSION: PASSED" not in output
 
 
@@ -185,6 +266,7 @@ def test_integration_admission_document_records_queue_evidence_and_boundaries() 
         "https://github.com/orgs/community/discussions/103114",
         "https://github.com/ansible/ansible/issues/74917",
         "https://stackoverflow.com/questions/12101463/is-there-a-simple-way-to-use-vulture-with-django",
+        "https://github.com/orgs/community/discussions/25631",
     ):
         assert url in content
     for phrase in (
@@ -196,9 +278,18 @@ def test_integration_admission_document_records_queue_evidence_and_boundaries() 
         "test_event_loop_dispatch_includes_project_id",
         "test_dispatch_job_contains_only_project_data",
         "test_event_loop_serializes_concurrent_ticks",
+        "test_contain_workspace_escape_returns_none",
+        "test_workspace_escaping_jail_is_refused",
+        "test_all_subpackages_classified",
+        "machine-readable",
+        "max-runtime-timeout",
+        "quiet-output-timeout",
+        "2,220 seconds",
         "247.53 seconds",
         "43.73 seconds",
         "300-second outer bound",
         "600 seconds",
     ):
         assert phrase in content
+    assert "https://github.com/modelcontextprotocol/servers/issues/1838" in content
+    assert "https://github.com/seddonym/import-linter/issues/93" in content
