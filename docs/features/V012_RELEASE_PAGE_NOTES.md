@@ -19,11 +19,21 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-the train's dependency, ownership, structural, TUI, and coverage repairs. S29
-and S30 are listed from immutable implementation receipts without claiming
-train integration or an exact-head gate. The preview therefore records useful
-candidate contents without converting implementation evidence into task, gate,
-release, or publication completion.
+S31-S33, plus the train's dependency, ownership, structural, TUI, and coverage
+repairs. S29-S33 are listed from immutable implementation receipts without
+claiming train integration or an exact-head gate. The preview therefore records
+useful candidate contents without converting implementation evidence into task,
+gate, release, or publication completion.
+
+S31-S33 describe the user-visible outcome as safer model-performance,
+benchmark, and memory repository lifecycles. Their detailed feature documents
+retain the mature upstream basis for that wording: SQLAlchemy's
+[session-per-task guidance][sqlalchemy-async], the long-running shared-session
+failure reports in [discussion #8554][sqlalchemy-8554], the detached-result
+reports in [discussion #8731][sqlalchemy-8731], and the stateful-connection
+clarification in [discussion #10808][sqlalchemy-10808]. The release page links
+immutable Gludd commits, while those feature documents remain the fuller source
+for practitioner findings, resource bounds, and ZDD rollback procedures.
 
 ## Existing-tool decision
 
@@ -123,7 +133,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 21-item candidate inventory, and
+ordering, deterministic rendering, the exact 24-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -154,3 +164,7 @@ Research was reviewed on 2026-10-08:
 [community-template]: https://github.com/orgs/community/discussions/120836
 [community-size]: https://github.com/orgs/community/discussions/63414
 [community-tag-config]: https://github.com/orgs/community/discussions/50886
+[sqlalchemy-async]: https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html#using-asyncsession-with-concurrent-tasks
+[sqlalchemy-8554]: https://github.com/sqlalchemy/sqlalchemy/discussions/8554
+[sqlalchemy-8731]: https://github.com/sqlalchemy/sqlalchemy/discussions/8731
+[sqlalchemy-10808]: https://github.com/sqlalchemy/sqlalchemy/discussions/10808

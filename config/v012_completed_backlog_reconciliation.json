@@ -405,6 +405,51 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "80835b29e79174bc0a4643c4643a552383693e8a"
+        },
+        {
+          "role": "documentation",
+          "sha": "4daa46c3b59c6bd8afac4a7535f72bcd262750ed"
+        }
+      ],
+      "item_id": "S31",
+      "release_page_category": "Improvements",
+      "title": "Operation-scoped model-performance query lifecycle"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "6ac5f05f04d2fe117ff579719d60af0b6dec6305"
+        },
+        {
+          "role": "documentation",
+          "sha": "de6f637c28f6e55d40d3bd8fb83d80f5adbe7add"
+        }
+      ],
+      "item_id": "S32",
+      "release_page_category": "Improvements",
+      "title": "Operation-scoped benchmark-query lifecycle"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "0d03819879e56beecf3df665c46ebe70d76a4925"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "15064dfdd2db898e9cfb987c790d36543452c9f1"
+        }
+      ],
+      "item_id": "S33",
+      "release_page_category": "Improvements",
+      "title": "Factory-owned MemoryRepository result lifecycle"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },
