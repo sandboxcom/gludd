@@ -56,7 +56,10 @@ def test_feature_sync_slides_pin_scope_evidence_and_honest_pending_work() -> Non
             "10,000-ref ceiling",
             "terminal snapshot",
             "current-only",
-            "30/30",
+            "show-ref --verify",
+            "140/140",
+            "92% aggregate",
+            "120,330",
             "exact-head global-gate and promotion proof remain pending",
             "GitHub CLI #8536",
         ),
@@ -124,7 +127,7 @@ def test_feature_sync_citations_build_immutable_file_line_source_links() -> None
         ),
         "s83-118-122-branch-reconciliation": (
             "scripts/branch_reconciliation_inventory.py",
-            "590-749",
+            "513-549",
         ),
         "s91-3-enforcement-executable-modes": (
             "tests/unit/test_enforcement_executable_modes.py",

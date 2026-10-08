@@ -1111,12 +1111,13 @@ flowchart LR
 <!-- SLIDE 19f.3: S83.108 + S83.105 BOUNDARIES -->
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-108-105-boundary-evidence">
-  <p class="stage-kicker">S83.108 / S83.105 &middot; canonical identity and bounded dispatch</p>
-  <h2>Canonical input, bounded action <span class="badge-yellow">S83.105 CANDIDATE ONLY</span></h2>
+  <p class="stage-kicker">S83.108 / S83.106 / S83.105 &middot; canonical identity and bounded dispatch</p>
+  <h2>Canonical input, bounded action <span class="badge-yellow">S83.106 INTEGRATED &middot; S83.105 CANDIDATE ONLY</span></h2>
   <ul class="bullets-tight">
     <li><strong>S83.108:</strong> reject traversal, symlink escape, duplicate aliases, and Git inventory failure; emit <code>identity=rejected</code>, one canonical active marker, or <code>INCONCLUSIVE</code>.</li>
+    <li><strong>S83.106:</strong> parse Git's <strong>NUL worktree registry</strong>; exempt only exact active source + venv state, count orphan siblings, and fail closed at <strong>100 MB / 90%</strong>.</li>
     <li><strong>S83.105:</strong> retain one <code>ProjectType | str</code> runtime declaration and reject unsupported discriminators before registry mutation.</li>
-    <li><strong>Measured:</strong> inventory 33/33 at 90% aggregate; registration 60 passed / 1 conditional skip and 170/170 runtime, with <code>project_types.py</code> at 96.95%.</li>
+    <li><strong>Measured:</strong> inventory 33/33 at 90%; disk classification <strong>67/67</strong> at <strong>86%</strong>; registration 60 passed / 1 conditional skip and 170/170 runtime, with <code>project_types.py</code> at 96.95%.</li>
   </ul>
   <div class="diagram-wrap">
     <div class="mermaid">
@@ -1127,7 +1128,7 @@ flowchart LR
     </div>
   </div>
   <p class="honest-note"><strong>No v0.1.2 completion claim:</strong> exact-head gate, CI, merge, and promotion proof remain pending. ZDD adds no runtime artifact or schema; rollback is source-only after canonical inventory and import-adjacency checks.</p>
-  <p class="cite">Code: scripts/check_worktree_health.py:39-70 &middot; src/general_ludd/cloud/project_types.py:899-914 &middot; Practitioner evidence: canonical-path reports in the linked feature contracts.</p>
+  <p class="cite">Code: scripts/check_worktree_health.py:39-70 &middot; scripts/check_disk_usage.py:72-118 &middot; src/general_ludd/cloud/project_types.py:899-914 &middot; Contract: docs/features/DISK_WORKTREE_CLASSIFICATION.md:27-48</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1441,7 +1442,7 @@ flowchart LR
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-118-122-branch-reconciliation">
   <p class="stage-kicker">S83.118 / .119 / .121 / .122 &middot; release review</p>
-  <h2>Read every branch; change none <span class="badge-yellow">BOUNDED TOOLING READY &middot; COMMIT PENDING</span></h2>
+  <h2>Read every branch; change none <span class="badge-yellow">INTEGRATED &middot; EXACT GATE PENDING</span></h2>
   <div class="diagram-wrap diagram-compact">
     <div class="mermaid">
 flowchart LR
@@ -1453,11 +1454,11 @@ flowchart LR
   <ul class="bullets-tight feature-sync-grid">
     <li>Classify every tip <strong>ancestor</strong>, <strong>patch-equivalent</strong>, or <strong>unique/current</strong>; malformed evidence fails closed.</li>
     <li>Exclude the cursor boundary; cap comparisons; fall back to one sorted scan under a <strong>10,000-ref ceiling</strong>.</li>
-    <li>Re-resolve the target, verify the <strong>terminal snapshot</strong>, deduplicate shared heads, then emit a <strong>current-only</strong> view.</li>
-    <li><strong>30/30 warning-strict</strong>; the live 13-page proof read 1,212 refs and 559 distinct heads without mutation.</li>
+    <li>Re-read the target plus at most 100 page refs with <code>show-ref --verify</code>; moved, missing, duplicate, or malformed evidence fails closed before the <strong>terminal snapshot</strong> and <strong>current-only</strong> view.</li>
+    <li><strong>140/140 warning-strict</strong>; <strong>92% aggregate</strong> coverage; <strong>120,330</strong> tests collected without mutation.</li>
   </ul>
   <p class="honest-note">The read-only implementation is committed; exact-head global-gate and promotion proof remain pending.</p>
-  <p class="cite">Code: scripts/branch_reconciliation_inventory.py:590-749 &middot; Contract: docs/features/BRANCH_RECONCILIATION.md:30-115 &middot; Reports: <a href="https://www.spinics.net/lists/git/msg110170.html">Git patch identity</a>, <a href="https://github.com/cli/cli/issues/8536">GitHub CLI #8536</a></p>
+  <p class="cite">Code: scripts/branch_reconciliation_inventory.py:513-549 &middot; Contract: docs/features/BRANCH_RECONCILIATION.md:47-67 &middot; Reports: <a href="https://www.spinics.net/lists/git/msg110170.html">Git patch identity</a>, <a href="https://github.com/cli/cli/issues/8536">GitHub CLI #8536</a></p>
 </section>
 
 <!-- ============================================================ -->
