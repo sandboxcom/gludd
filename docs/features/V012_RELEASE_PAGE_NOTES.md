@@ -19,13 +19,13 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-S31-S36, plus the train's dependency, ownership, structural, TUI, and coverage
-repairs. S29-S36 are listed from immutable implementation receipts without
+S31-S37, plus the train's dependency, ownership, structural, TUI, and coverage
+repairs. S29-S37 are listed from immutable implementation receipts without
 claiming train integration or an exact-head gate. The preview therefore records
 useful candidate contents without converting implementation evidence into task,
 gate, release, or publication completion.
 
-S31-S36 describe the user-visible outcome as safer model-performance,
+S31-S37 describe the user-visible outcome as safer model-performance,
 benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
 messages before its deterministic 100-message inbox bound, so stale head rows
 cannot hide live work. S35 makes an omitted memory `project_id` select only the
@@ -47,6 +47,14 @@ retains RabbitMQ's long-running [head-of-line expiry report][rabbitmq-3852] and
 commits, while those feature documents remain the fuller source for practitioner
 findings and resource bounds.
 
+S37 makes variable, feature, and prompt-profile upserts work with the native
+conflict-capable statement for the caller's bound SQLite or PostgreSQL session,
+while unsupported dialects fail before database I/O. Its design follows the
+maintainer guidance in [SQLAlchemy discussion #7199][sqlalchemy-7199] to select
+the builder after discovering the live dialect and in
+[SQLAlchemy discussion #7007][sqlalchemy-7007] to use SQLite's dialect insert
+instead of attaching conflict methods to the generic statement.
+
 Both additions are zero-downtime, application-image-only changes: they add no
 schema, dependency, persistent process, or ownership transfer. Mixed-version
 processes retain compatible rows and payloads. Rollback routes new requests to
@@ -66,6 +74,17 @@ confidentiality risk. Its evidence includes 34 warning-fatal focused tests and
 a 583-test coverage run with one intentional skip, reaching 91.0% aggregate
 line and 85.1% branch coverage (`projects.py` 98.2%/90.0%, dispatch
 88.7%/84.2%), plus clean repository collection.
+
+S37 is a schema-free, application-image-only rolling change with no new
+dependency, worker, listener, or ownership transfer. Old and new workers retain
+the same tables, conflict keys, and row formats. Rollback stops new work, drains
+or rolls back active transactions, and returns traffic to the preceding image;
+no migration downgrade, row rewrite, cache flush, or data deletion is needed.
+Repair forward is preferred while PostgreSQL writes are active because the
+preceding implementation hard-codes SQLite's statement subclass. Its evidence
+includes 354 warning-fatal tests and 94% aggregate coverage (`shared.py` 87%,
+`projects.py` 98%, `metrics.py` 91%), with native SQL compilation, unsupported
+dialect rejection before I/O, and bounded two-session PostgreSQL convergence.
 
 ## Existing-tool decision
 
@@ -165,7 +184,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 27-item candidate inventory, and
+ordering, deterministic rendering, the exact 28-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -206,3 +225,5 @@ Research was reviewed on 2026-10-08:
 [fastapi-7564]: https://github.com/fastapi/fastapi/discussions/7564
 [fastapi-11625]: https://github.com/fastapi/fastapi/discussions/11625
 [mcp-1087]: https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1087
+[sqlalchemy-7199]: https://github.com/sqlalchemy/sqlalchemy/discussions/7199
+[sqlalchemy-7007]: https://github.com/sqlalchemy/sqlalchemy/discussions/7007
