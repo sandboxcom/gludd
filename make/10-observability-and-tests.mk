@@ -716,6 +716,10 @@ integration-admission:
 	@case "$(INTEGRATION_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "INTEGRATION_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@test -n "$(strip $(GATE_FAILURE_PROMOTION_MANIFEST))" || { echo "GATE_FAILURE_PROMOTION_MANIFEST is required"; exit 2; }
 	@test -n "$(strip $(FILE_LINE_LIMIT_POLICY))" || { echo "FILE_LINE_LIMIT_POLICY is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_CONFIG))" || { echo "DUPLICATE_CODE_CONFIG is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_ENGINE))" || { echo "DUPLICATE_CODE_ENGINE is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_BASE_REF))" || { echo "DUPLICATE_CODE_BASE_REF is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_CURRENT_REF))" || { echo "DUPLICATE_CODE_CURRENT_REF is required"; exit 2; }
 	@test -n "$(strip $(MARKDOWN_FILES))" || { echo "MARKDOWN_FILES is required"; exit 2; }
 	@test -n "$(strip $(MARKDOWNLINT_CONFIG))" || { echo "MARKDOWNLINT_CONFIG is required"; exit 2; }
 	@test -n "$(strip $(PRESENTATION_BROWSER_ENGINES))" || { echo "PRESENTATION_BROWSER_ENGINES is required"; exit 2; }
@@ -759,6 +763,13 @@ integration-admission:
 		MARKDOWN_FILES="$(MARKDOWN_FILES)" \
 		MARKDOWNLINT_CONFIG="$(MARKDOWNLINT_CONFIG)"; \
 	run_phase "check-make-target-contract" "check-make-target-contract" "fast" "90" "60" $(MAKE) --no-print-directory check-make-target-contract; \
+	run_phase "check-duplicate-code" "check-duplicate-code" "standard" "180" "120" $(MAKE) --no-print-directory check-duplicate-code \
+		DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" \
+		DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" \
+		DUPLICATE_CODE_SOURCE="committed" \
+		DUPLICATE_CODE_BASE_REF="$(DUPLICATE_CODE_BASE_REF)" \
+		DUPLICATE_CODE_CURRENT_REF="$(DUPLICATE_CODE_CURRENT_REF)" \
+		DUPLICATE_CODE_VALIDATE_ONLY=0; \
 	run_phase "yaml-lint" "yaml-lint" "standard" "180" "120" $(MAKE) --no-print-directory yaml-lint; \
 	run_phase "project-dispatch-integration" "_project-dispatch-integration" "standard" "180" "120" $(MAKE) --no-print-directory _project-dispatch-integration; \
 	run_phase "mcp-workspace-jail-integration" "_mcp-workspace-jail-integration" "standard" "180" "120" $(MAKE) --no-print-directory _mcp-workspace-jail-integration; \

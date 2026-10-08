@@ -34,31 +34,36 @@ the first nonzero result:
 6. `lint-markdown` checks the explicitly supplied feature documents.
 7. `check-make-target-contract` rejects missing help, variables, or safe
    behavioral examples for agent-facing targets.
-8. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
+8. `check-duplicate-code` compares the complete bounded production snapshot at
+   feature `HEAD` with the explicit development base through locked `jscpd`.
+   Existing findings remain visible while only newly introduced clone
+   fingerprints fail admission.
+9. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
    tracked YAML from the checkout, runs with a disposable namespaced Ansible
    home, and emits ten-second observer heartbeats. A stale user-installed
    collection therefore cannot shadow the candidate or turn a valid branch red.
-9. `project-dispatch-integration` runs the exact, fast regression nodes that
+10. `project-dispatch-integration` runs the exact, fast regression nodes that
    prove a committed caller-owned-session claim still dispatches its exact
    `project_id`, never reads another project's variable namespace, and preserves
    the serialized tick lifecycle:
    `test_event_loop_dispatch_includes_project_id` and
    `test_dispatch_job_contains_only_project_data`, plus
    `test_event_loop_serializes_concurrent_ticks`.
-10. `mcp-workspace-jail-integration` keeps both layers of the model-callable
+11. `mcp-workspace-jail-integration` keeps both layers of the model-callable
     project-check boundary in admission. The exact
     `test_contain_workspace_escape_returns_none` node proves canonical path
     containment, while `test_workspace_escaping_jail_is_refused` proves the
     synthetic MCP dispatch refuses an otherwise valid sibling project without
     executing it.
-11. `module-graph-classification` runs the exact
+12. `module-graph-classification` runs the exact
     `test_all_subpackages_classified` node so every discovered top-level package
     receives an explicit architectural layer before later graph rules run.
-12. `presentation-browser-test` runs with
+13. `presentation-browser-test` runs with
    `PRESENTATION_BROWSER_VALIDATE_ONLY=1`, checking the pinned browser plan and
    prerequisites without launching either engine.
-13. `pre-commit-check` runs the existing source lint, collection, and typecheck
-   boundary. Its `lint` prerequisite runs `check-file-line-limits` first.
+14. `pre-commit-check` runs the staged line and clone guards before the existing
+    source lint, collection, and typecheck boundary. Its `lint` prerequisite
+    retains the complete working-tree line-limit scan.
 
 Every documented variable is explicit at the outer invocation and forwarded to
 the target that owns it. The safe behavioral example uses
@@ -70,10 +75,10 @@ feature worktree.
 
 Every child phase runs through the existing `scripts/stream_command.py`
 observer. The manifest assigns ten cheap phases a 90-second `fast` ceiling,
-four focused integration phases a 180-second `standard` ceiling, and
+five focused integration phases a 180-second `standard` ceiling, and
 `pre-commit-check` a 600-second `slow` ceiling. Their quiet-output ceilings are
 60, 120, and 300 seconds respectively. The configured child-runtime ceiling
-therefore totals 2,220 seconds, with only bounded observer teardown and recipe
+therefore totals 2,400 seconds, with only bounded observer teardown and recipe
 bookkeeping outside it; no child phase can wait indefinitely.
 
 Before each child starts, admission emits one machine-readable

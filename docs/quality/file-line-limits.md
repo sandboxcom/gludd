@@ -7,6 +7,14 @@ Git index, counts blank and comment lines, and reports every violation in one
 deterministically sorted pass. `make lint` and the gate preflights invoke the
 same target.
 
+Commit admission adds an exact staged-content mode. The real pre-commit hook and
+guarded no-verify Make paths invoke `FILE_LINE_LIMIT_STAGED=1`, which inventories
+only staged changes and reads their stage-zero Git blobs. Working-tree edits can
+therefore neither conceal nor invent a violation in the content being committed.
+The shared snapshot implementation and the related mature duplicate-code guard
+are documented in
+`docs/features/PRE_COMMIT_QUALITY_GUARDS.md`.
+
 The policy is deliberately fail-closed. Missing or unreadable tracked paths,
 malformed Git output, unlisted binary data, stale exclusions, duplicate paths,
 and changes to the fixed threshold are configuration errors. Non-text entries

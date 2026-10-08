@@ -288,6 +288,13 @@ _commit-lock-acquire: _gate-mutation-guard
 	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
 	    echo "COMMIT-LOCK: another commit is in flight. Retry serially." >&2; exit 1; }
 
+# Commit recipes that intentionally pass --no-verify still enforce the same
+# staged-content quality boundary once. Normal commit paths use the real
+# pre-commit hooks and do not repeat these checks.
+_pre-commit-content-guard:
+	@$(MAKE) --no-print-directory check-file-line-limits FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)" FILE_LINE_LIMIT_STAGED=1
+	@$(MAKE) --no-print-directory check-duplicate-code DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=0
+
 git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard _pre-commit-spec-quality-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
@@ -300,7 +307,7 @@ git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-do
 	@$(MAKE) --no-print-directory check-gate-fresh
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
-commit-no-verify: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
+commit-no-verify: _pre-commit-content-guard _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
@@ -309,19 +316,19 @@ commit-no-verify: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _com
 # The --no-verify flag skips ONLY the pre-commit hook stash, NOT the gate.
 # There is no GLUDD_CI_IS_GATE bypass — the fresh+green .gate-status check is
 # unconditional. Run `make gate` and have it pass; that is the only path.
-git-commit-no-verify: _gate-fresh-check _commit-lock-acquire
+git-commit-no-verify: _pre-commit-content-guard _gate-fresh-check _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 # git-amend-msg: amend the last commit message (--amend --no-edit equivalent),
 # enforcing gate check. Cannot bypass the gate via --amend.
-git-amend-msg: _gate-fresh-check _commit-lock-acquire
+git-amend-msg: _pre-commit-content-guard _gate-fresh-check _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-amend-msg MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git commit --amend --no-verify -m "$(MSG)"
 
-repo-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard
+repo-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _commit-docstring-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
@@ -332,7 +339,7 @@ repo-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard
 # Allowlisted from the local _gate-fresh-check (CI is the gate for
 # subagent-dispatched pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
 PUSH ?= 0
-ship-commit: _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+ship-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@STAGED_FILES=$$(git diff --cached --name-only | LC_ALL=C sort); \
 		if [ -n "$(SHIP_COMMIT_EXPECTED_FILES)" ]; then \

@@ -8,7 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Any
 
 import pytest
 
@@ -123,50 +122,10 @@ def test_non_text_policy_requires_unique_paths_and_reasons(tmp_path: Path) -> No
         checker.load_policy(missing_reason)
 
 
-def test_inventory_uses_nul_delimited_git_tracked_paths(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    checker = _load_checker()
-    observed: dict[str, Any] = {}
-
-    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        observed["command"] = command
-        observed["kwargs"] = kwargs
-        return subprocess.CompletedProcess(
-            command,
-            0,
-            stdout=b"Makefile\x00src/app.py\x00",
-            stderr=b"",
-        )
-
-    monkeypatch.setattr(checker.subprocess, "run", fake_run)
-
-    assert checker.discover_tracked_paths(tmp_path) == ("Makefile", "src/app.py")
-    assert observed["command"] == ["git", "-C", str(tmp_path), "ls-files", "-z"]
-    assert observed["kwargs"]["timeout"] == checker.GIT_TIMEOUT_SECONDS
-    assert observed["kwargs"]["shell"] is False
-
-
-@pytest.mark.parametrize(
-    ("returncode", "stdout"),
-    [(3, b""), (0, b"unterminated"), (0, b"same\x00same\x00"), (0, b"../escape\x00")],
-)
-def test_invalid_inventory_fails_closed(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    returncode: int,
-    stdout: bytes,
-) -> None:
+def test_inventory_uses_shared_snapshot_boundary() -> None:
     checker = _load_checker()
 
-    def fake_run(command: list[str], **_: Any) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.CompletedProcess(command, returncode, stdout=stdout, stderr=b"bad")
-
-    monkeypatch.setattr(checker.subprocess, "run", fake_run)
-
-    with pytest.raises(checker.InventoryError):
-        checker.discover_tracked_paths(tmp_path)
+    assert checker.discover_tracked_paths.__module__ == "staged_snapshot"
 
 
 def test_unlisted_binary_and_unreadable_files_fail_closed(tmp_path: Path) -> None:
@@ -239,3 +198,60 @@ def test_cli_exit_codes_distinguish_findings_from_audit_errors(
         ["--root", str(tmp_path), "--config", str(config), "--path", "missing.txt"]
     ) == 2
     assert "missing or unreadable" in capsys.readouterr().err
+
+
+def _git(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
+    )
+
+
+def _tracked_repository(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "line-limit@example.invalid")
+    _git(tmp_path, "config", "user.name", "Line Limit Test")
+    (tmp_path / "tracked.txt").write_text("committed\n", encoding="utf-8")
+    _git(tmp_path, "add", "tracked.txt")
+    _git(tmp_path, "commit", "-qm", "seed")
+
+
+@pytest.mark.parametrize(
+    ("staged_lines", "worktree_lines", "expected"),
+    [(2500, 1, 1), (1, 2500, 0)],
+)
+def test_staged_mode_audits_index_not_worktree(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    staged_lines: int,
+    worktree_lines: int,
+    expected: int,
+) -> None:
+    checker = _load_checker()
+    _tracked_repository(tmp_path)
+    config = _policy_file(tmp_path)
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("staged\n" * staged_lines, encoding="utf-8")
+    _git(tmp_path, "add", "tracked.txt")
+    tracked.write_text("worktree\n" * worktree_lines, encoding="utf-8")
+
+    result = checker.main(
+        [
+            "--root",
+            str(tmp_path),
+            "--config",
+            str(config),
+            "--staged",
+            "--path",
+            "tracked.txt",
+        ]
+    )
+
+    assert result == expected
+    output = capsys.readouterr()
+    if expected:
+        assert "tracked.txt: 2500 lines" in output.out
+    else:
+        assert "source=index" in output.out

@@ -44,6 +44,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
         "check-generated-artifact-hygiene",
         "lint-markdown",
         "check-make-target-contract",
+        "check-duplicate-code",
         "yaml-lint",
         "project-dispatch-integration",
         "mcp-workspace-jail-integration",
@@ -55,6 +56,11 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     assert positions == sorted(positions)
     assert "PRESENTATION_BROWSER_VALIDATE_ONLY=1" in stanza
     assert "FILE_LINE_LIMIT_POLICY=\"$(FILE_LINE_LIMIT_POLICY)\"" in stanza
+    assert 'DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)"' in stanza
+    assert 'DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)"' in stanza
+    assert 'DUPLICATE_CODE_SOURCE="committed"' in stanza
+    assert 'DUPLICATE_CODE_BASE_REF="$(DUPLICATE_CODE_BASE_REF)"' in stanza
+    assert 'DUPLICATE_CODE_CURRENT_REF="$(DUPLICATE_CODE_CURRENT_REF)"' in stanza
     assert "MARKDOWN_FILES=\"$(MARKDOWN_FILES)\"" in stanza
     assert "MARKDOWNLINT_CONFIG=\"$(MARKDOWNLINT_CONFIG)\"" in stanza
     assert (
@@ -152,6 +158,10 @@ def test_integration_admission_contract_is_safe_and_explicit() -> None:
                 "INTEGRATION_ADMISSION_VALIDATE_ONLY",
                 "GATE_FAILURE_PROMOTION_MANIFEST",
                 "FILE_LINE_LIMIT_POLICY",
+                "DUPLICATE_CODE_CONFIG",
+                "DUPLICATE_CODE_ENGINE",
+                "DUPLICATE_CODE_BASE_REF",
+                "DUPLICATE_CODE_CURRENT_REF",
                 "MARKDOWN_FILES",
                 "MARKDOWNLINT_CONFIG",
                 "PRESENTATION_BROWSER_ENGINES",
@@ -164,6 +174,10 @@ def test_integration_admission_contract_is_safe_and_explicit() -> None:
                 "INTEGRATION_ADMISSION_VALIDATE_ONLY=1 "
                 "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json "
                 "FILE_LINE_LIMIT_POLICY=config/file_line_limits.json "
+                "DUPLICATE_CODE_CONFIG=config/duplicate_code.json "
+                "DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd "
+                "DUPLICATE_CODE_BASE_REF=development "
+                "DUPLICATE_CODE_CURRENT_REF=HEAD "
                 "MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md "
                 "MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc "
                 "PRESENTATION_BROWSER_ENGINES='chromium webkit' "
@@ -184,6 +198,10 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
             "INTEGRATION_ADMISSION_VALIDATE_ONLY=1",
             "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json",
             "FILE_LINE_LIMIT_POLICY=config/file_line_limits.json",
+            "DUPLICATE_CODE_CONFIG=config/duplicate_code.json",
+            "DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd",
+            "DUPLICATE_CODE_BASE_REF=development",
+            "DUPLICATE_CODE_CURRENT_REF=HEAD",
             "MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md",
             "MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc",
             "PRESENTATION_BROWSER_ENGINES=chromium webkit",
@@ -211,6 +229,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         "check-generated-artifact-hygiene",
         "lint-markdown",
         "check-make-target-contract",
+        "check-duplicate-code",
         "yaml-lint",
         "project-dispatch-integration",
         "mcp-workspace-jail-integration",
@@ -224,7 +243,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         for line in output.splitlines()
         if line.startswith("{") and '"kind":"integration_admission_phase"' in line
     ]
-    assert len(evidence) == 15
+    assert len(evidence) == 16
     assert [item["phase"] for item in evidence] == [
         "worktree-guard",
         "check-gate-failure-promotions",
@@ -235,6 +254,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         "check-generated-artifact-hygiene",
         "lint-markdown",
         "check-make-target-contract",
+        "check-duplicate-code",
         "yaml-lint",
         "project-dispatch-integration",
         "mcp-workspace-jail-integration",
@@ -284,7 +304,7 @@ def test_integration_admission_document_records_queue_evidence_and_boundaries() 
         "machine-readable",
         "max-runtime-timeout",
         "quiet-output-timeout",
-        "2,220 seconds",
+        "2,400 seconds",
         "247.53 seconds",
         "43.73 seconds",
         "300-second outer bound",
