@@ -14,7 +14,7 @@ import json
 import re
 import ssl
 import textwrap
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -39,6 +39,7 @@ _NGINX_LISTEN_RE = re.compile(r"listen\s+(\d+)\s*(ssl)?", re.IGNORECASE)
 
 
 def validate_nginx_config(config_text: str) -> list[str]:
+    """Return structural errors found in an nginx configuration."""
     errors: list[str] = []
     brace_depth = 0
     for lineno, line in enumerate(config_text.split("\n"), start=1):
@@ -60,6 +61,7 @@ def validate_nginx_config(config_text: str) -> list[str]:
 
 
 def parse_nginx_config(config_text: str) -> dict[str, Any]:
+    """Parse supported nginx blocks and directives into a mapping."""
     result: dict[str, Any] = {"servers": [], "upstreams": [], "maps": [], "http": {}}
     lines = config_text.split("\n")
     in_server = False
@@ -141,6 +143,7 @@ def generate_vhost(
     proxy_pass: str | None = None,
     ssl: bool = False,
 ) -> str:
+    """Generate a basic nginx virtual-host configuration."""
     listen_line = f"    listen {port}"
     if ssl:
         listen_line += " ssl"
@@ -167,6 +170,7 @@ def generate_vhost(
 
 
 def validate_apache_config(config_text: str) -> list[str]:
+    """Return unmatched or misordered Apache container tags."""
     errors: list[str] = []
     open_tags: list[str] = []
     tag_re = re.compile(r"<(/)?(\w+)", re.IGNORECASE)
@@ -236,6 +240,7 @@ _SSL_PROFILES: dict[str, dict[str, str]] = {
 
 
 def generate_ssl_config(profile: str = "intermediate") -> str:
+    """Generate nginx TLS directives for the selected compatibility profile."""
     p = _SSL_PROFILES.get(profile, _SSL_PROFILES["intermediate"])
     return textwrap.dedent(f"""\
     ssl_protocols {p["protocols"]};
@@ -250,46 +255,52 @@ def generate_ssl_config(profile: str = "intermediate") -> str:
     """)
 
 
+def _certificate_metadata_from_cryptography(cert_data: bytes) -> dict[str, Any] | None:
+    """Decode complete X.509 metadata when the optional parser is installed."""
+    try:
+        from cryptography import x509
+    except ImportError:
+        return None
+
+    cert = x509.load_pem_x509_certificate(cert_data)
+    sans = []
+    try:
+        san_ext = cert.extensions.get_extension_for_class(
+            x509.SubjectAlternativeName
+        )
+        sans = san_ext.value.get_values_for_type(x509.DNSName)
+    except x509.ExtensionNotFound:
+        pass
+
+    def render_name(attributes: Iterable[Any]) -> str:
+        return ", ".join(
+            f"{attr.oid._name}="
+            f"{attr.value if isinstance(attr.value, str) else attr.value.decode()}"
+            for attr in attributes
+        )
+
+    return {
+        "subject": render_name(cert.subject),
+        "issuer": render_name(cert.issuer),
+        "not_before": cert.not_valid_before_utc.isoformat(),
+        "not_after": cert.not_valid_after_utc.isoformat(),
+        "serial_number": hex(cert.serial_number),
+        "sans": sans,
+        "expires_days": (cert.not_valid_after_utc - datetime.now(UTC)).days,
+    }
+
+
 def validate_certificate(cert_path: str) -> dict[str, Any]:
+    """Read a certificate and return the available validation metadata."""
     try:
         with open(cert_path, "rb") as fh:
             cert_data = fh.read()
     except OSError:
         return {"error": f"Cannot read certificate: {cert_path}"}
 
-    try:
-        from cryptography import x509
-        cert = x509.load_pem_x509_certificate(cert_data)
-        sans = []
-        try:
-            san_ext = cert.extensions.get_extension_for_class(
-                x509.SubjectAlternativeName
-            )
-            sans = san_ext.value.get_values_for_type(x509.DNSName)
-        except x509.ExtensionNotFound:
-            pass
-
-        issuer = ", ".join(
-            f"{attr.oid._name}={attr.value if isinstance(attr.value, str) else attr.value.decode()}"
-            for attr in cert.issuer
-        )
-
-        return {
-            "subject": ", ".join(
-                f"{attr.oid._name}={attr.value if isinstance(attr.value, str) else attr.value.decode()}"
-                for attr in cert.subject
-            ),
-            "issuer": issuer,
-            "not_before": cert.not_valid_before_utc.isoformat(),
-            "not_after": cert.not_valid_after_utc.isoformat(),
-            "serial_number": hex(cert.serial_number),
-            "sans": sans,
-            "expires_days": (
-                cert.not_valid_after_utc - datetime.now(UTC)
-            ).days,
-        }
-    except ImportError:
-        pass
+    complete_metadata = _certificate_metadata_from_cryptography(cert_data)
+    if complete_metadata is not None:
+        return complete_metadata
 
     decode_cert = cast(
         "Callable[[str], dict[str, Any] | None] | None",
@@ -368,6 +379,7 @@ ssbzSibBsu/6iGtCOGEoXJf//////////wIBAg==
 
 
 def generate_dhparam(bits: int = 2048) -> None:
+    """Write PKCS#3 Diffie-Hellman parameters to ``dhparam.pem``."""
     if bits == 2048:
         pem = _RFC7919_FFDHE2048_PEM
     else:
@@ -391,6 +403,7 @@ def generate_dhparam(bits: int = 2048) -> None:
 def generate_wsgi_nginx_config(
     app_module: str, socket_path: str, processes: int = 4
 ) -> str:
+    """Generate nginx configuration for a uWSGI application socket."""
     return textwrap.dedent(f"""\
     upstream {app_module}_app {{
         server unix:{socket_path} fail_timeout=0;
@@ -417,6 +430,7 @@ def generate_uwsgi_ini(
     processes: int = 4,
     threads: int = 2,
 ) -> str:
+    """Generate a uWSGI INI configuration."""
     return textwrap.dedent(f"""\
     [uwsgi]
     module = {app_module}
@@ -462,6 +476,7 @@ _JSON_LOG_RE = re.compile(r'^\s*\{.*\}\s*$')
 def parse_access_log_line(
     line: str, format_str: str = LOG_FORMAT_COMBINED
 ) -> dict[str, Any]:
+    """Parse a combined or JSON access-log line."""
     m = _COMBINED_RE.match(line)
     if not m:
         if _JSON_LOG_RE.match(line):
@@ -476,6 +491,7 @@ def parse_access_log_line(
 def generate_logrotate_config(
     log_path: str, rotate: int = 7, compress: bool = True
 ) -> str:
+    """Generate a daily logrotate policy for a web-server log."""
     compress_line = "    compress" if compress else "    nocompress"
     return textwrap.dedent(f"""\
     {log_path} {{
@@ -508,6 +524,7 @@ _UPSTREAM_METHODS: dict[str, str] = {
 def generate_nginx_upstream(
     name: str, servers: list[str], method: str = "round_robin"
 ) -> str:
+    """Generate an nginx upstream block."""
     method_directive = _UPSTREAM_METHODS.get(method, "")
     lines = [f"upstream {name} {{"]
     if method_directive:
@@ -521,6 +538,7 @@ def generate_nginx_upstream(
 def generate_haproxy_config(
     frontends: list[dict[str, Any]], backends: list[dict[str, Any]]
 ) -> str:
+    """Generate an HAProxy configuration from frontend and backend mappings."""
     lines: list[str] = ["global", "    daemon", ""]
     lines.append("defaults")
     lines.append("    mode http")
@@ -559,12 +577,14 @@ SQUID_SSL_PORTS: list[int] = [443]
 
 
 def generate_squid_acl(name: str, acl_type: str, values: list[str]) -> str:
+    """Generate a Squid ACL directive."""
     return f"acl {name} {acl_type} {' '.join(values)}"
 
 
 def generate_squid_config(
     port: int = 3128, allowed_networks: list[str] | None = None
 ) -> str:
+    """Generate a Squid forward-proxy configuration."""
     networks = allowed_networks or ["192.168.0.0/16", "10.0.0.0/8"]
     acl_lines = [f"acl localnet src {n}" for n in networks]
     safe_ports = [f"acl Safe_ports port {p}" for p in SQUID_SAFE_PORTS]
@@ -614,6 +634,7 @@ def generate_pac_file(
     proxy_port: int,
     direct_domains: list[str] | None = None,
 ) -> str:
+    """Generate a proxy auto-configuration file."""
     domains = direct_domains or _DEFAULT_DIRECT_DOMAINS
     conditions: list[str] = []
     for domain in domains:
@@ -665,6 +686,7 @@ _LB_METHODS: dict[str, str] = {
 def generate_upstream_config(
     servers: list[dict[str, Any]], method: str = "least_conn"
 ) -> str:
+    """Generate a load-balancing upstream block."""
     method_directive = _LB_METHODS.get(method, "least_conn")
     lines = ["upstream backend {"]
     if method_directive:
@@ -716,6 +738,7 @@ CSP_DIRECTIVES: dict[str, str] = {
 
 
 def generate_security_headers(include_csp: bool = True) -> str:
+    """Generate nginx directives for the recommended security headers."""
     lines: list[str] = []
     for header, value in SECURITY_HEADERS.items():
         lines.append(f"add_header {header} \"{value}\" always;")
@@ -726,6 +749,7 @@ def generate_security_headers(include_csp: bool = True) -> str:
 
 
 def generate_csp(directives: dict[str, str] | None = None) -> str:
+    """Generate an nginx Content-Security-Policy header directive."""
     d = directives or CSP_DIRECTIVES
     parts: list[str] = []
     for directive, value in d.items():
@@ -738,6 +762,7 @@ def generate_csp(directives: dict[str, str] | None = None) -> str:
 
 
 def audit_nginx_config(config_text: str) -> list[dict[str, Any]]:
+    """Return security findings for an nginx configuration."""
     findings: list[dict[str, Any]] = []
     lowered = config_text.lower()
 
@@ -807,6 +832,7 @@ def audit_nginx_config(config_text: str) -> list[dict[str, Any]]:
 
 
 def audit_hardening(server_type: str, config: str) -> list[dict[str, Any]]:
+    """Return server-specific and generic hardening findings."""
     findings: list[dict[str, Any]] = []
     if server_type == "nginx":
         findings.extend(audit_nginx_config(config))
@@ -839,4 +865,5 @@ def audit_hardening(server_type: str, config: str) -> list[dict[str, Any]]:
 
 
 def remediate_finding(finding: dict[str, Any]) -> str:
+    """Return the remediation text from a hardening finding."""
     return str(finding.get("remediation", ""))

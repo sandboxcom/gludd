@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Final
 
 from pydantic import ConfigDict, TypeAdapter, ValidationError
 
+from general_ludd.decision_codification.capture_support import (
+    bounded_private_identifier,
+    correlation_digest,
+    receipt_for_existing_bundle,
+)
 from general_ludd.decision_codification.normalize import normalize_decision_context
 from general_ludd.decision_codification.schema import (
     DECISION_ACTIONS_V1,
@@ -30,7 +33,6 @@ from general_ludd.replay.store import ReplayStoreError, RunBundleStore, Verified
 MAX_CAPTURE_IDENTIFIER_BYTES: Final[int] = 1_024
 MAX_CAPTURE_BUNDLE_BYTES: Final[int] = 128 * 1_024
 _CAPTURE_LOCK_ID: Final[str] = "decision-capture-retention"
-_CORRELATION_DOMAIN: Final[bytes] = b"general_ludd.decision_capture.correlation.v1\x00"
 _EVENT_TYPES: Final[dict[DecisionKind, str]] = {
     DecisionKind.REVIEW: "review.decided",
     DecisionKind.POLICY: "policy.decided",
@@ -109,26 +111,20 @@ class DecisionOutcomeRecorder:
 
     @staticmethod
     def _bounded_private_identifier(value: object) -> str:
-        if not isinstance(value, str) or not value:
-            raise DecisionCaptureError("decision capture identity is invalid")
-        if len(value.encode("utf-8")) > MAX_CAPTURE_IDENTIFIER_BYTES:
-            raise DecisionCaptureError("decision capture identity exceeds its bound")
-        return value
+        return bounded_private_identifier(
+            value,
+            max_bytes=MAX_CAPTURE_IDENTIFIER_BYTES,
+            error_type=DecisionCaptureError,
+        )
 
     def _correlation_digest(self, label: str, *values: str) -> str:
-        message = b"\x00".join(
-            (
-                label.encode("ascii"),
-                self._project_id.encode("utf-8"),
-                self._policy_digest.encode("ascii"),
-                *(value.encode("utf-8") for value in values),
-            )
+        return correlation_digest(
+            correlation_key=self._correlation_key,
+            project_id=self._project_id,
+            policy_digest=self._policy_digest,
+            label=label,
+            values=values,
         )
-        return hmac.new(
-            self._correlation_key,
-            _CORRELATION_DOMAIN + message,
-            hashlib.sha256,
-        ).hexdigest()
 
     def coordination_key(
         self,
@@ -221,14 +217,17 @@ class DecisionOutcomeRecorder:
             with self._store.run_lock(_CAPTURE_LOCK_ID):
                 existing = self._existing_bundle(run_id)
                 if existing is not None:
-                    return self._existing_receipt(
+                    return receipt_for_existing_bundle(
                         existing,
+                        project_id=self._project_id,
                         event_type=_EVENT_TYPES[decision_kind],
                         correlation=correlation,
                         decision_payload=decision_payload,
                         outcome=outcome,
                         terminal_event_id=terminal_event_id,
                         status_digest=status_digest,
+                        error_type=DecisionCaptureError,
+                        receipt_factory=DecisionCaptureReceipt,
                     )
                 retention = self._store.enforce_retention(
                     now=event_time,
@@ -237,9 +236,7 @@ class DecisionOutcomeRecorder:
                     scan_limit=self._scan_limit,
                 )
                 if not retention.quota_satisfied:
-                    raise DecisionCaptureError(
-                        "decision capture storage quota is unavailable"
-                    )
+                    raise DecisionCaptureError("decision capture storage quota is unavailable")
                 return self._write_bundle(
                     run_id=run_id,
                     event_type=_EVENT_TYPES[decision_kind],
@@ -265,46 +262,6 @@ class DecisionOutcomeRecorder:
             raise DecisionCaptureError(
                 "decision capture identity belongs to incomplete evidence"
             ) from exc
-
-    def _existing_receipt(
-        self,
-        bundle: VerifiedBundle,
-        *,
-        event_type: str,
-        correlation: dict[str, object],
-        decision_payload: dict[str, object],
-        outcome: VerifiedOutcome,
-        terminal_event_id: str,
-        status_digest: str,
-    ) -> DecisionCaptureReceipt:
-        if len(bundle.events) != 2:
-            raise DecisionCaptureError("decision capture identity conflicts with evidence")
-        decision_event, outcome_event = bundle.events
-        expected_outcome = {
-            "decision_event_digest": decision_event.digest,
-            "verified_outcome": outcome.value,
-            "terminal_event_ids": [terminal_event_id],
-            "gate_digests": [],
-            "status_digests": [status_digest],
-        }
-        if (
-            bundle.manifest.project_id != self._project_id
-            or decision_event.type != event_type
-            or outcome_event.type != "decision.outcome"
-            or decision_event.project_id != self._project_id
-            or outcome_event.project_id != self._project_id
-            or decision_event.correlation.model_dump(mode="json") != correlation
-            or outcome_event.correlation.model_dump(mode="json") != correlation
-            or decision_event.payload != decision_payload
-            or outcome_event.payload != expected_outcome
-        ):
-            raise DecisionCaptureError("decision capture identity conflicts with evidence")
-        return DecisionCaptureReceipt(
-            run_id=bundle.manifest.run_id,
-            decision_event_digest=decision_event.digest,
-            outcome_event_digest=outcome_event.digest,
-            events_digest=bundle.manifest.events_sha256,
-        )
 
     def _write_bundle(
         self,
