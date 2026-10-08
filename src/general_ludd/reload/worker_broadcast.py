@@ -15,6 +15,11 @@ from general_ludd.security import is_safe_fetch_url
 
 logger = logging.getLogger(__name__)
 
+_MAX_WORKERS = 64
+_LIVENESS_PROBE_TIMEOUT_SECONDS = 1.0
+_LIVENESS_TOTAL_TIMEOUT_SECONDS = 10.0
+_NANOSECONDS_PER_SECOND = 1_000_000_000
+
 
 def _is_safe_worker_address(address: str) -> bool:
     """SSRF guard for a worker address BEFORE the daemon PSK is ever sent to it.
@@ -59,15 +64,24 @@ class WorkerBroadcaster:
         stale_threshold_seconds: float = 300.0,
         allowlist: set[str] | None = None,
         post: Callable[..., httpx.Response] | None = None,
+        get: Callable[..., httpx.Response] | None = None,
+        monotonic_ns: Callable[[], int] | None = None,
+        liveness_lease_seconds: float = 30.0,
     ) -> None:
         """Initialize the registry, policy, and instance-owned HTTP transport."""
+        if liveness_lease_seconds <= 0:
+            raise ValueError("liveness_lease_seconds must be positive")
         self._workers: dict[str, WorkerInfo] = {}
+        self._lease_renewed_ns: dict[str, int] = {}
         self._lock = threading.Lock()
         self._stale_threshold = stale_threshold_seconds
+        self._monotonic_ns = monotonic_ns or time.monotonic_ns
+        self._liveness_lease_ns = int(liveness_lease_seconds * _NANOSECONDS_PER_SECOND)
         # Bind once per broadcaster so concurrent callers cannot replace or
         # restore a mutable module-global HTTP function underneath one another.
         # Lazy binding preserves the existing patch-before-first-call seam.
         self._post: Callable[..., httpx.Response] | None = post
+        self._get: Callable[..., httpx.Response] | None = get
         # Defense-in-depth worker-identity allowlist (task #18). When configured,
         # the daemon only broadcasts a reload / model-sync — and, critically, the
         # PSK Bearer header — to workers whose ``worker_id`` OR ``address`` appears
@@ -98,8 +112,13 @@ class WorkerBroadcaster:
         """A worker is permitted when either its id or its address is listed."""
         return worker.worker_id in allowlist or worker.address in allowlist
 
-    def register(self, worker: WorkerInfo) -> None:
-        """Add a worker after verifying its address is a safe https target."""
+    def register(self, worker: WorkerInfo) -> bool:
+        """Add or renew a worker after verifying its safe https target.
+
+        New identities are bounded to 64 entries. Re-registering an existing
+        identity remains available at capacity so rolling worker replacement
+        can update its address and renew its liveness lease without a gap.
+        """
         # SSRF / PSK-leak guard: never register a worker whose address is not a
         # safe https target. Sending the daemon PSK (broadcast_reload /
         # broadcast_model_update attach `Authorization: Bearer <GLUDD_AUTH_PSK>`) to a
@@ -114,14 +133,25 @@ class WorkerBroadcaster:
                 worker.worker_id,
                 worker.address,
             )
-            return
+            return False
+        renewed_ns = self._monotonic_ns()
         with self._lock:
+            if worker.worker_id not in self._workers and len(self._workers) >= _MAX_WORKERS:
+                logger.warning(
+                    "Refusing to register worker %s: registry capacity of %d reached",
+                    worker.worker_id,
+                    _MAX_WORKERS,
+                )
+                return False
             self._workers[worker.worker_id] = worker
+            self._lease_renewed_ns[worker.worker_id] = renewed_ns
+        return True
 
     def unregister(self, worker_id: str) -> None:
         """Remove a worker from the registry by id."""
         with self._lock:
             self._workers.pop(worker_id, None)
+            self._lease_renewed_ns.pop(worker_id, None)
 
     def heartbeat(self, worker_id: str) -> None:
         """Refresh the last-seen timestamp for one worker."""
@@ -129,6 +159,7 @@ class WorkerBroadcaster:
             w = self._workers.get(worker_id)
             if w:
                 w.last_seen = time.time()
+                self._lease_renewed_ns[worker_id] = self._monotonic_ns()
 
     def _snapshot_workers(self) -> list[WorkerInfo]:
         with self._lock:
@@ -155,6 +186,110 @@ class WorkerBroadcaster:
             verify=True,
         )
 
+    def _get_request(self, url: str, *, timeout: float) -> httpx.Response:
+        """Send an unauthenticated health probe through the stable transport."""
+        with self._lock:
+            if self._get is None:
+                self._get = httpx.get
+            get = self._get
+        return get(
+            url,
+            timeout=timeout,
+            follow_redirects=False,
+            verify=True,
+        )
+
+    @staticmethod
+    def _liveness_enforced() -> bool:
+        """Return false only for the explicit emergency rollback value ``0``."""
+        return os.environ.get("GLUDD_WORKER_LIVENESS_ENFORCE", "1").strip() != "0"
+
+    def _lease_is_active(self, worker: WorkerInfo) -> bool:
+        """Check one process-local monotonic lease without wall-clock input."""
+        now_ns = self._monotonic_ns()
+        with self._lock:
+            if self._workers.get(worker.worker_id) is not worker:
+                return False
+            renewed_ns = self._lease_renewed_ns.get(worker.worker_id)
+        return renewed_ns is not None and now_ns < renewed_ns + self._liveness_lease_ns
+
+    def _renew_lease(self, worker: WorkerInfo) -> bool:
+        """Renew the lease only if the probed snapshot is still registered."""
+        renewed_ns = self._monotonic_ns()
+        with self._lock:
+            if self._workers.get(worker.worker_id) is not worker:
+                return False
+            worker.last_seen = time.time()
+            self._lease_renewed_ns[worker.worker_id] = renewed_ns
+        return True
+
+    def _probe_liveness(self, worker: WorkerInfo, *, deadline_ns: int) -> bool:
+        """Run one bounded, public health probe and renew on HTTP 200."""
+        if not _is_safe_worker_address(worker.address):
+            return False
+        remaining_ns = deadline_ns - self._monotonic_ns()
+        if remaining_ns <= 0:
+            return False
+        timeout = min(
+            _LIVENESS_PROBE_TIMEOUT_SECONDS,
+            remaining_ns / _NANOSECONDS_PER_SECOND,
+        )
+        try:
+            response = self._get_request(f"{worker.address}/healthz", timeout=timeout)
+        except Exception as exc:
+            logger.warning("Liveness probe to %s failed: %s", worker.worker_id, exc)
+            return False
+        if response.status_code != 200:
+            logger.warning(
+                "Liveness probe to %s returned HTTP %d",
+                worker.worker_id,
+                response.status_code,
+            )
+            return False
+        return self._renew_lease(worker)
+
+    def _broadcast_guard_error(
+        self,
+        worker: WorkerInfo,
+        *,
+        allowlist: set[str],
+        operation: str,
+        require_live_lease: bool,
+        probe_deadline_ns: int,
+    ) -> str | None:
+        """Fail closed before a credentialed transport is invoked."""
+        if allowlist and not self._is_allowlisted(worker, allowlist):
+            logger.warning(
+                "Skipping %s broadcast to %s: worker id/address %r is not in "
+                "the configured worker allowlist — not sending the daemon PSK",
+                operation,
+                worker.worker_id,
+                worker.address,
+            )
+            return "not allowlisted"
+        if not _is_safe_worker_address(worker.address):
+            logger.warning(
+                "Skipping %s broadcast to %s: address %r is not a safe https "
+                "target — not sending the daemon PSK to it",
+                operation,
+                worker.worker_id,
+                worker.address,
+            )
+            return "unsafe address"
+        if (
+            require_live_lease
+            and not self._lease_is_active(worker)
+            and not self._probe_liveness(worker, deadline_ns=probe_deadline_ns)
+        ):
+            logger.warning(
+                "Skipping %s broadcast to %s: liveness lease expired and the "
+                "bounded public health probe failed — not sending the daemon PSK",
+                operation,
+                worker.worker_id,
+            )
+            return "liveness check failed"
+        return None
+
     def list_workers(self) -> list[WorkerInfo]:
         """Return a snapshot of all registered workers."""
         with self._lock:
@@ -167,6 +302,7 @@ class WorkerBroadcaster:
             stale = [wid for wid, w in self._workers.items() if now - w.last_seen > self._stale_threshold]
             for wid in stale:
                 self._workers.pop(wid, None)
+                self._lease_renewed_ns.pop(wid, None)
 
     @staticmethod
     def _auth_headers() -> dict[str, str]:
@@ -179,47 +315,43 @@ class WorkerBroadcaster:
         psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
         return {"Authorization": f"Bearer {psk}"} if psk else {}
 
-    def broadcast_reload(self, scope: object) -> list[BroadcastResult]:
-        """POST a reload with the given scope to every eligible worker."""
-        results = []
-        scope_value = scope.value if hasattr(scope, "value") else str(scope)
+    def _broadcast(
+        self,
+        *,
+        operation: str,
+        endpoint: str,
+        payload: dict[str, object],
+    ) -> list[BroadcastResult]:
+        """Run the common guarded credentialed broadcast pipeline."""
+        results: list[BroadcastResult] = []
         headers = self._auth_headers()
         allowlist = self._resolve_allowlist()
+        require_live_lease = bool(headers) and self._liveness_enforced()
+        probe_deadline_ns = self._monotonic_ns() + int(
+            _LIVENESS_TOTAL_TIMEOUT_SECONDS * _NANOSECONDS_PER_SECOND
+        )
         if not allowlist:
             logger.warning(
                 "No worker allowlist configured (GLUDD_WORKER_ALLOWLIST unset/empty)"
-                ": reload broadcast is UNRESTRICTED — the daemon PSK will be sent to "
-                "every registered safe worker. Set GLUDD_WORKER_ALLOWLIST to restrict."
+                ": %s broadcast is UNRESTRICTED — the daemon PSK will be sent to "
+                "every registered safe worker. Set GLUDD_WORKER_ALLOWLIST to restrict.",
+                operation,
             )
         for w in self._snapshot_workers():
-            # Defense in depth (allowlist gate, task #18): only broadcast — and only
-            # send the PSK — to explicitly permitted workers. Checked BEFORE the SSRF
-            # guard so a non-allowlisted target is refused outright.
-            if allowlist and not self._is_allowlisted(w, allowlist):
-                logger.warning(
-                    "Skipping reload broadcast to %s: worker id/address %r is not in "
-                    "the configured worker allowlist — not sending the daemon PSK",
-                    w.worker_id,
-                    w.address,
-                )
-                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="not allowlisted"))
-                continue
-            # Defense in depth: re-validate the address at send time so the PSK
-            # Bearer header is NEVER POSTed to a plain-http / loopback / link-local
-            # / cloud-metadata target, even if one slipped into the registry.
-            if not _is_safe_worker_address(w.address):
-                logger.warning(
-                    "Skipping reload broadcast to %s: address %r is not a safe "
-                    "https target — not sending the daemon PSK to it",
-                    w.worker_id,
-                    w.address,
-                )
-                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address"))
+            guard_error = self._broadcast_guard_error(
+                w,
+                allowlist=allowlist,
+                operation=operation,
+                require_live_lease=require_live_lease,
+                probe_deadline_ns=probe_deadline_ns,
+            )
+            if guard_error is not None:
+                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error=guard_error))
                 continue
             try:
                 resp = self._post_request(
-                    f"{w.address}/admin/reload",
-                    payload={"scope": scope_value},
+                    f"{w.address}{endpoint}",
+                    payload=payload,
                     headers=headers,
                 )
                 if resp.status_code == 200:
@@ -239,68 +371,29 @@ class WorkerBroadcaster:
                 results.append(BroadcastResult(worker_id=w.worker_id, success=False, error=str(exc)))
         return results
 
+    def broadcast_reload(self, scope: object) -> list[BroadcastResult]:
+        """POST a reload with the given scope to every eligible worker."""
+        scope_value = scope.value if hasattr(scope, "value") else str(scope)
+        return self._broadcast(
+            operation="reload",
+            endpoint="/admin/reload",
+            payload={"scope": scope_value},
+        )
+
     def broadcast_model_update(self, action: str, model_id: str, profile: dict[str, object]) -> list[BroadcastResult]:
         """POST a model sync action for one model to every eligible worker."""
-        results = []
-        headers = self._auth_headers()
-        allowlist = self._resolve_allowlist()
-        if not allowlist:
-            logger.warning(
-                "No worker allowlist configured (GLUDD_WORKER_ALLOWLIST unset/empty)"
-                ": model-update broadcast is UNRESTRICTED — the daemon PSK will be "
-                "sent to every registered safe worker. Set GLUDD_WORKER_ALLOWLIST to "
-                "restrict."
-            )
-        for w in self._snapshot_workers():
-            # Defense in depth (allowlist gate, task #18): only broadcast — and only
-            # send the PSK — to explicitly permitted workers. Checked BEFORE the SSRF
-            # guard so a non-allowlisted target is refused outright.
-            if allowlist and not self._is_allowlisted(w, allowlist):
-                logger.warning(
-                    "Skipping model-update broadcast to %s: worker id/address %r is "
-                    "not in the configured worker allowlist — not sending the PSK",
-                    w.worker_id,
-                    w.address,
-                )
-                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="not allowlisted"))
-                continue
-            # Defense in depth: re-validate the address at send time so the PSK
-            # Bearer header is NEVER POSTed to a plain-http / loopback / link-local
-            # / cloud-metadata target, even if one slipped into the registry.
-            if not _is_safe_worker_address(w.address):
-                logger.warning(
-                    "Skipping model-update broadcast to %s: address %r is not a "
-                    "safe https target — not sending the daemon PSK to it",
-                    w.worker_id,
-                    w.address,
-                )
-                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="unsafe address"))
-                continue
-            try:
-                resp = self._post_request(
-                    f"{w.address}/admin/models/sync",
-                    payload={"action": action, "model_id": model_id, "profile": profile},
-                    headers=headers,
-                )
-                if resp.status_code == 200:
-                    results.append(BroadcastResult(worker_id=w.worker_id, success=True))
-                elif resp.status_code == 401:
-                    logger.error(
-                        "Broadcast to %s rejected (401): PSK mismatch or auth misconfiguration",
-                        w.worker_id,
-                    )
-                    results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="Unauthorized"))
-                else:
-                    results.append(
-                        BroadcastResult(worker_id=w.worker_id, success=False, error=f"HTTP {resp.status_code}")
-                    )
-            except Exception as exc:
-                results.append(BroadcastResult(worker_id=w.worker_id, success=False, error=str(exc)))
-        return results
+        return self._broadcast(
+            operation="model-update",
+            endpoint="/admin/models/sync",
+            payload={"action": action, "model_id": model_id, "profile": profile},
+        )
 
     def ping_all(self) -> dict[str, bool]:
         """Health-check every worker's /healthz endpoint; worker_id -> reachable."""
         results = {}
+        probe_deadline_ns = self._monotonic_ns() + int(
+            _LIVENESS_TOTAL_TIMEOUT_SECONDS * _NANOSECONDS_PER_SECOND
+        )
         for w in self._snapshot_workers():
             # Defense in depth (task #37): re-validate the address at send time,
             # identically to the PSK-bearing broadcast_* methods, so the health
@@ -318,14 +411,5 @@ class WorkerBroadcaster:
                 )
                 results[w.worker_id] = False
                 continue
-            try:
-                resp = httpx.get(
-                    f"{w.address}/healthz",
-                    timeout=5.0,
-                    follow_redirects=False,
-                    verify=True,
-                )
-                results[w.worker_id] = resp.status_code == 200
-            except Exception:
-                results[w.worker_id] = False
+            results[w.worker_id] = self._probe_liveness(w, deadline_ns=probe_deadline_ns)
         return results

@@ -359,6 +359,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_WATCHDOG_VERBOSE` | Auto-indexed (see source) | `0` | optional | `scripts/agent_watchdog.py:324` |
 | `GLUDD_WATCHDOG_VERSION` | Auto-indexed (see source) | `1.0` | optional | `scripts/agent_watchdog.py:479` |
 | `GLUDD_WORKER_LIMIT` | Auto-indexed (see source) | `8` | optional | `scripts/active_work_status.py:145` |
+| `GLUDD_WORKER_LIVENESS_ENFORCE` | Require an unexpired monotonic lease or a successful public `/healthz` recheck before a PSK-bearing worker broadcast. Set exactly `0` for emergency rollback; allowlist and SSRF/TLS guards remain enforced. | `1` | optional | `src/general_ludd/reload/worker_broadcast.py` |
 | `GLUDD_WORKFLOW_DIRS` | Auto-indexed (see source) | — | optional | `scripts/agent_liveness.py:345` |
 | `GLUDD_WORKTREE_CAP` | Auto-indexed (see source) | — | optional | `scripts/test_worktree_disk_guard.py:71` |
 | `GLUDD_WORKTREE_ENFORCE` | Auto-indexed (see source) | — | optional | `scripts/verify_enforcement.py:107` |

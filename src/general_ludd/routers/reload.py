@@ -405,9 +405,11 @@ def _register_admin_routes(app: FastAPI) -> None:
         subsys = _get_or_create_subsystems(app)
         from general_ludd.reload.worker_broadcast import WorkerInfo
 
-        subsys["broadcaster"].register(WorkerInfo(worker_id=req.worker_id, address=req.address))
-        registered = subsys["broadcaster"].list_workers()
-        was_registered = any(w.worker_id == req.worker_id for w in registered)
+        # Existing worker ids deliberately re-register in place: that supports
+        # rolling replacement while renewing the broadcaster's monotonic lease.
+        was_registered = subsys["broadcaster"].register(
+            WorkerInfo(worker_id=req.worker_id, address=req.address)
+        )
         return {
             "success": was_registered,
             "worker_id": req.worker_id,
