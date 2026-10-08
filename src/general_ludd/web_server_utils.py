@@ -379,20 +379,14 @@ ssbzSibBsu/6iGtCOGEoXJf//////////wIBAg==
 
 
 def generate_dhparam(bits: int = 2048) -> None:
-    """Write PKCS#3 Diffie-Hellman parameters to ``dhparam.pem``."""
-    if bits == 2048:
-        pem = _RFC7919_FFDHE2048_PEM
-    else:
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric import dh
-
-        parameters = dh.generate_parameters(generator=2, key_size=bits)
-        pem = parameters.parameter_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.ParameterFormat.PKCS3,
+    """Write the pinned RFC 7919 ffdhe2048 PKCS#3 parameter fixture."""
+    if bits != 2048:
+        raise ValueError(
+            "only RFC 7919 ffdhe2048 parameters are supported; "
+            f"requested {bits} bits"
         )
     with open("dhparam.pem", "wb") as fh:
-        fh.write(pem)
+        fh.write(_RFC7919_FFDHE2048_PEM)
 
 
 # ---------------------------------------------------------------------------
