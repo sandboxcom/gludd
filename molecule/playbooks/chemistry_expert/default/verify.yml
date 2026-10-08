@@ -1,13 +1,9 @@
 ---
-# Verify: the chemistry collection is discoverable AND property_lookup executed.
-- name: Verify - chemistry collection installed and property_lookup executed
+# Verify: the native module admits only the explicitly declared suitable lot.
+- name: Verify - chemistry lot admission is discoverable and read-only
   hosts: localhost
   connection: local
   gather_facts: false
-  vars:
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
-    out_dir: "/tmp/gludd-chemistry-expert-{{ mock_port }}"
-    marker: "{{ out_dir }}/property_lookup_ran.ok"
   tasks:
     - name: Assert collection galaxy.yml is discoverable
       ansible.builtin.stat:
@@ -15,25 +11,26 @@
       register: galaxy_stat
       failed_when: not galaxy_stat.stat.exists
 
-    - name: Assert property_lookup role tasks are discoverable
+    - name: Assert inventory_check role tasks are discoverable
       ansible.builtin.stat:
-        path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/chemistry/roles/property_lookup/tasks/main.yml"
+        path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/chemistry/roles/inventory_check/tasks/main.yml"
       register: role_stat
       failed_when: not role_stat.stat.exists
 
-    - name: Assert execution marker present
-      ansible.builtin.stat:
-        path: "{{ marker }}"
-      register: marker_stat
-      failed_when: not marker_stat.stat.exists
+    - name: Admit an unexpired unrestricted exact-purity lot
+      general_ludd.chemistry.chemical_lot_admission:
+        lot: LOT-MOLECULE-ADMIT
+        purity: 0.995
+        expiry: "2026-10-08"
+        restrictions: []
+        required_purity: 0.995
+        as_of: "2026-10-08"
+      register: admitted_lot
 
-    - name: Report
-      ansible.builtin.debug:
-        msg: "chemistry.property_lookup executed; collection discoverable."
-
-    # ---- cleanup ----
-    - name: Remove marker dir
-      ansible.builtin.file:
-        path: "{{ out_dir }}"
-        state: absent
-      failed_when: false
+    - name: Assert admitted verdict is bounded and unchanged
+      ansible.builtin.assert:
+        that:
+          - not admitted_lot.changed
+          - admitted_lot.result.admitted
+          - admitted_lot.result.reason_codes == []
+          - admitted_lot.result.lot == 'LOT-MOLECULE-ADMIT'

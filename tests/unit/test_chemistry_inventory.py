@@ -1,9 +1,9 @@
 """Unit tests for ``general_ludd.chemistry.inventory`` (CHEM-009 / CHEM-AT-010).
 
 Covers InventoryRecord construction/serialization and ``check_lot_suitability``
-verdicts for expiry, restrictions, purity, and their combinations.  Verifies the
-spec invariant: unsuitable lots are NEVER silently substituted — the verdict
-carries no ``substituted_lot`` / ``replacement`` field.
+verdicts for expiry, restrictions, purity, and their combinations. Verifies the
+spec invariant: unsuitable lots are NEVER silently substituted, malformed
+values fail closed, and reasons contain only bounded codes.
 """
 
 from __future__ import annotations
@@ -69,10 +69,9 @@ class TestInventoryRecordConstruction:
         rec = _make_record()
         assert rec.chain_of_custody == []
 
-    def test_purity_coerced_to_float(self):
-        rec = _make_record(purity="0.95")
-        assert rec.purity == 0.95
-        assert isinstance(rec.purity, float)
+    def test_string_purity_is_rejected_instead_of_coerced(self):
+        with pytest.raises(inventory.LotAdmissionError, match="finite number"):
+            _make_record(purity="0.95")
 
     def test_restrictions_supplied(self):
         rec = _make_record(restrictions=["controlled", "single-use"])
@@ -163,10 +162,9 @@ class TestCheckLotSuitabilitySuitable:
         verdict = inventory.check_lot_suitability(d, required_purity=0.99, as_of="2025-01-01")
         assert verdict["suitable"] is True
 
-    def test_empty_expiry_not_checked(self):
-        rec = _make_record(purity=0.99, expiry="")
-        verdict = inventory.check_lot_suitability(rec, required_purity=0.98, as_of="2025-01-01")
-        assert verdict["suitable"] is True
+    def test_empty_expiry_fails_closed(self):
+        with pytest.raises(inventory.LotAdmissionError, match="ISO date"):
+            _make_record(purity=0.99, expiry="")
 
 
 # ---------------------------------------------------------------------------
@@ -182,10 +180,11 @@ class TestCheckLotSuitabilityExpired:
         assert len(verdict["reasons"]) == 1
         assert verdict["reasons"][0]["code"] == "lot_expired"
 
-    def test_expired_reason_contains_lot_id(self):
+    def test_expired_reason_is_a_fixed_code_and_lot_is_echoed_separately(self):
         rec = _make_record(lot="OLD-LOT", expiry="2019-12-31")
         verdict = inventory.check_lot_suitability(rec, required_purity=0.95, as_of="2025-01-01")
-        assert "OLD-LOT" in verdict["reasons"][0]["message"]
+        assert verdict["lot"] == "OLD-LOT"
+        assert verdict["reasons"] == [{"code": "lot_expired"}]
 
     def test_expiry_equal_to_as_of_is_not_expired(self):
         rec = _make_record(purity=0.99, expiry="2025-06-15")
@@ -203,10 +202,9 @@ class TestCheckLotSuitabilityRestricted:
         rec = _make_record(purity=0.99, expiry="2030-01-01", restrictions=["controlled"])
         verdict = inventory.check_lot_suitability(rec, required_purity=0.95, as_of="2025-01-01")
         assert verdict["suitable"] is False
-        assert verdict["reasons"][0]["code"] == "lot_restricted"
-        assert "controlled" in verdict["reasons"][0]["message"]
+        assert verdict["reasons"] == [{"code": "lot_restricted"}]
 
-    def test_multiple_restrictions_joined_in_message(self):
+    def test_multiple_restrictions_still_emit_one_bounded_code(self):
         rec = _make_record(
             purity=0.99,
             expiry="2030-01-01",
@@ -214,10 +212,7 @@ class TestCheckLotSuitabilityRestricted:
         )
         verdict = inventory.check_lot_suitability(rec, required_purity=0.95, as_of="2025-01-01")
         assert verdict["suitable"] is False
-        msg = verdict["reasons"][0]["message"]
-        assert "controlled" in msg
-        assert "single-use" in msg
-        assert "gowning-required" in msg
+        assert verdict["reasons"] == [{"code": "lot_restricted"}]
 
 
 # ---------------------------------------------------------------------------
@@ -232,12 +227,10 @@ class TestCheckLotSuitabilityPurity:
         assert verdict["suitable"] is False
         assert verdict["reasons"][0]["code"] == "lot_purity_insufficient"
 
-    def test_purity_reason_contains_values(self):
+    def test_purity_reason_contains_only_the_fixed_code(self):
         rec = _make_record(purity=0.8500, expiry="2030-01-01")
         verdict = inventory.check_lot_suitability(rec, required_purity=0.9900, as_of="2025-01-01")
-        msg = verdict["reasons"][0]["message"]
-        assert "0.8500" in msg
-        assert "0.9900" in msg
+        assert verdict["reasons"] == [{"code": "lot_purity_insufficient"}]
 
     def test_purity_just_below(self):
         rec = _make_record(purity=0.9499, expiry="2030-01-01")
@@ -307,11 +300,10 @@ class TestCheckLotSuitabilityInvariants:
         verdict = inventory.check_lot_suitability(rec, required_purity=0.99, as_of="2025-01-01")
         assert verdict["lot"] == "UNIQUE-LOT-ID"
 
-    def test_dict_input_missing_purity_defaults_to_zero(self):
+    def test_dict_input_missing_purity_fails_closed(self):
         d = {"lot": "SIMPLE", "expiry": "2030-01-01"}
-        verdict = inventory.check_lot_suitability(d, required_purity=0.90, as_of="2025-01-01")
-        assert verdict["suitable"] is False
-        assert any(r["code"] == "lot_purity_insufficient" for r in verdict["reasons"])
+        with pytest.raises(inventory.LotAdmissionError, match="purity must be"):
+            inventory.check_lot_suitability(d, required_purity=0.90, as_of="2025-01-01")
 
     def test_suitable_verdict_has_no_reasons(self):
         rec = _make_record(purity=0.999, expiry="2030-12-31")
@@ -324,11 +316,10 @@ class TestCheckLotSuitabilityInvariants:
         verdict = inventory.check_lot_suitability(rec, required_purity=0.95, as_of="2025-01-01")
         assert verdict["schema_version"] == core.SCHEMA_VERSION
 
-    def test_empty_lot_id_in_dict(self):
+    def test_empty_lot_id_in_dict_fails_closed(self):
         d = {"purity": 0.95, "expiry": "2030-01-01", "restrictions": []}
-        verdict = inventory.check_lot_suitability(d, required_purity=0.90, as_of="2025-01-01")
-        assert verdict["lot"] == ""
-        assert verdict["suitable"] is True
+        with pytest.raises(inventory.LotAdmissionError, match="lot must be"):
+            inventory.check_lot_suitability(d, required_purity=0.90, as_of="2025-01-01")
 
 
 # ---------------------------------------------------------------------------
@@ -347,14 +338,11 @@ class TestCheckLotSuitabilityEdgeCases:
         verdict = inventory.check_lot_suitability(rec, required_purity=0.0, as_of="2025-01-01")
         assert verdict["suitable"] is True
 
-    def test_negative_purity(self):
-        rec = _make_record(purity=-0.5, expiry="2030-01-01")
-        verdict = inventory.check_lot_suitability(rec, required_purity=0.0, as_of="2025-01-01")
-        assert verdict["suitable"] is False
-        assert verdict["reasons"][0]["code"] == "lot_purity_insufficient"
+    def test_negative_purity_fails_closed(self):
+        with pytest.raises(inventory.LotAdmissionError, match="between 0 and 1"):
+            _make_record(purity=-0.5, expiry="2030-01-01")
 
-    def test_restrictions_not_a_list_in_dict(self):
+    def test_restrictions_not_a_list_in_dict_fails_closed(self):
         d = {"lot": "LOT-X", "purity": 0.99, "expiry": "2030-01-01", "restrictions": "controlled"}
-        verdict = inventory.check_lot_suitability(d, required_purity=0.95, as_of="2025-01-01")
-        assert verdict["suitable"] is False
-        assert verdict["reasons"][0]["code"] == "lot_restricted"
+        with pytest.raises(inventory.LotAdmissionError, match="restrictions must be a list"):
+            inventory.check_lot_suitability(d, required_purity=0.95, as_of="2025-01-01")

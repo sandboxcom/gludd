@@ -8,8 +8,10 @@ reasoning, stoichiometry, and hazard screening.
 
 ## Implemented roles (`roles/`)
 
-All 20 capabilities from the spec are implemented as orchestration roles; the
-chemical logic lives in `src/general_ludd/chemistry/`.
+All 20 capabilities from the spec are implemented as orchestration roles. Most
+chemical algorithms live in `src/general_ludd/chemistry/`; security-sensitive
+lot admission is collection-native so the Ansible module executes locally
+without a daemon or HTTP boundary.
 
 | Role | Capability | Purpose |
 |---|---|---|
@@ -25,7 +27,7 @@ chemical logic lives in `src/general_ludd/chemistry/`.
 | `thermo_kinetics` | CHEM-012 | Equilibrium, Arrhenius, energy/mass balance, phase stability, ideal gas. |
 | `spectra_analyze` | CHEM-013 | Spectroscopic peak/region analysis. |
 | `protocol_draft` | CHEM-014 | Draft a reviewable wet-lab protocol with approval token gating. |
-| `inventory_check` | CHEM-015 | Check lot suitability against a target specification. |
+| `inventory_check` | CHEM-015 | Locally admit one bounded lot or return fixed rejection codes. |
 | `process_scaleup` | CHEM-016 | Process scale-up heat/mass balance and risk review. |
 | `molecular_simulation` | CHEM-017 | MD / quantum job validation. |
 | `quantum_workflow` | CHEM-018 | Quantum chemistry workflow orchestration. |
@@ -54,7 +56,7 @@ chemical algorithms.
 | `spectroscopy.py` | `SpectraAnalyzer` |
 | `properties.py` | `lookup_property` |
 | `entities.py` | `EntityRegistry`, `resolve_entity`, `RelatedRecord` |
-| `inventory.py` | `InventoryRecord`, `check_lot_suitability` |
+| `inventory.py` | Compatibility re-export of collection-owned lot admission |
 | `process.py` | `ProcessScaleUp` |
 | `compute.py` | `QuantumJob/Result`, `MolecularDynamicsJob/Result`, `validate_quantum`, `validate_md` |
 | `protocols.py` | `create_protocol_draft`, `validate_protocol`, `issue_approval_token`, `recompute_digest` |
@@ -62,6 +64,32 @@ chemical algorithms.
 | `promotion.py` | `PromotionPipeline`, `ChemistrySnapshot`, `canary_hash` |
 | `validation.py` | `validate_result`, `supports_execution` |
 | `policy.py` | Safety policy enforcement |
+
+## Native chemical lot admission
+
+`general_ludd.chemistry.chemical_lot_admission` evaluates exactly one declared
+lot in-process. It accepts a lot identifier and each restriction up to 128
+characters, at most 32 restrictions, finite purity fractions in `[0, 1]`, and
+strict `YYYY-MM-DD` dates. Expired, restricted, or under-purity lots are
+rejected with only the fixed codes `lot_expired`, `lot_restricted`, and
+`lot_purity_insufficient`. It never selects a replacement lot.
+
+Normal and check mode run the identical read-only path and return
+`changed: false`; no daemon, URL, file, subprocess, listener, or worker is
+involved.
+
+```yaml
+- name: Evaluate the exact lot selected for a reviewed protocol
+  ansible.builtin.include_role:
+    name: general_ludd.chemistry.inventory_check
+  vars:
+    inventory_check_lot: LOT-2026-0042
+    inventory_check_purity: 0.999
+    inventory_check_expiry: "2027-06-30"
+    inventory_check_restrictions: []
+    inventory_check_required_purity: 0.995
+    inventory_check_as_of: "2026-10-08"
+```
 
 ## Tests
 
