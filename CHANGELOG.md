@@ -38,6 +38,12 @@ closed with test, coverage, documentation, and exact commit evidence.
 
 ### Release status
 
+S83.183 adds a deterministic, ledger-backed GitHub release-page preview at
+`docs/releases/v0.1.2.md`. It explicitly separates features from improvements,
+links immutable completion evidence, bounds input and output, and is validated
+without writes as part of the v0.1.2 release dry run. The page and release remain
+unreleased; the generator never creates a tag or contacts GitHub.
+
 S83.157, S83.158, S83.163, S83.166, and S83.169 have substantial implemented
 evidence but are still open; their recorded exact-head, hosted, or release proof
 remains required. They are implemented but still open and are not counted among

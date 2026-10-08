@@ -701,6 +701,7 @@ help:
 	@echo "  release-list          List all GitHub releases"
 	@echo "  reviewed-head-receipt ...  Build exact-topology integration evidence after the final gate"
 	@echo "  release-readiness TAG=..  Fail-closed blockers + exact reviewed-head receipt for v0.1.1"
+	@echo "  release-page-notes TAG=..  Build/validate bounded ledger-backed GitHub release-page notes"
 	@echo "  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings"
 	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
 	@echo "  require-dual-track-green Require exact-SHA local + hosted CI attestations (SHA, DUAL_TRACK_CI_VALIDATE_ONLY)"
