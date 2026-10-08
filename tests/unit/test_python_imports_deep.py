@@ -124,10 +124,18 @@ def _package_import_state() -> tuple[
         for name, module in sys.modules.items()
         if _subpackage_of(name, PKG_NAME)
     }
+    child_names = {
+        parent_name: names.copy()
+        for parent_name, names in _PACKAGE_CHILD_NAMES.items()
+    }
+    for module_name in modules:
+        parent_name, separator, child_name = module_name.rpartition(".")
+        if separator and parent_name in modules:
+            child_names.setdefault(parent_name, set()).add(child_name)
     bindings = {
         (parent_name, child_name): getattr(parent, child_name, _MISSING_BINDING)
         for parent_name, parent in modules.items()
-        for child_name in _PACKAGE_CHILD_NAMES.get(parent_name, ())
+        for child_name in child_names.get(parent_name, ())
     }
     return modules, bindings
 
@@ -269,11 +277,15 @@ def test_isolated_import_restores_new_qemu_descendants() -> None:
         assert not hasattr(package, "infra")
 
 
+@pytest.mark.parametrize(
+    "dependency_name",
+    ("_qemu_import_isolation_dependency", f"{PKG_NAME}_plugin"),
+)
 def test_isolated_import_preserves_new_external_dependencies(
+    dependency_name: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Dependencies loaded by an isolated import must remain normally cached."""
-    dependency_name = "_qemu_import_isolation_dependency"
     dependency = ModuleType(dependency_name)
 
     def import_with_dependency(module_name: str) -> ModuleType:
@@ -314,6 +326,30 @@ def test_isolated_import_restores_saved_parent_child_binding() -> None:
         assert qemu_name not in sys.modules
         assert package.__dict__["infra"] is infra
         assert not hasattr(infra, "qemu_detect")
+
+
+def test_isolated_import_restores_dynamic_package_child_binding() -> None:
+    """Cleanup must restore cached children that are not filesystem modules."""
+    package = importlib.import_module(PKG_NAME)
+    child_name = "_qemu_dynamic_child"
+    module_name = f"{PKG_NAME}.{child_name}"
+    original = ModuleType(module_name)
+    replacement = ModuleType(module_name)
+
+    def import_with_mutated_parent(import_name: str) -> ModuleType:
+        package.__dict__[child_name] = replacement
+        sys.modules[module_name] = replacement
+        return ModuleType(import_name)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setitem(sys.modules, module_name, original)
+        patch.setattr(package, child_name, original, raising=False)
+        patch.setattr(importlib, "import_module", import_with_mutated_parent)
+
+        test_no_circular_import_isolated(SRC_PKG / "infra" / "qemu_detect.py")
+
+        assert sys.modules[module_name] is original
+        assert package.__dict__[child_name] is original
 
 
 def test_isolated_import_regression_cleanup_keeps_qemu_cache_coherent() -> None:
