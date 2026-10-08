@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, MutableMapping
 from typing import Any, Protocol, cast
 
-from general_ludd.searx.native import (
+from ansible_collections.general_ludd.travel.plugins.module_utils.searxng_runtime import (
     NativeSearxRuntime,
     validate_namespace,
 )
@@ -30,6 +30,7 @@ class Runtime(Protocol):
 RuntimeFactory = Callable[..., Runtime]
 _RUNTIMES: dict[str, Runtime] = {}
 _FORBIDDEN_GLUE = ("searxng_url", "project_path", "terraform_project_path")
+_MAX_RUNTIMES = 16
 
 
 def _runtime_result(
@@ -99,6 +100,10 @@ def execute_action(
     changed = False
     if state == "started":
         if runtime is None:
+            if len(selected_registry) >= _MAX_RUNTIMES:
+                raise ValueError(
+                    f"native SearXNG registry is limited to {_MAX_RUNTIMES} namespaces"
+                )
             runtime = runtime_builder(settings_path=settings_path, namespace=namespace)
             changed = runtime.start()
             selected_registry[namespace] = runtime
@@ -112,6 +117,10 @@ def execute_action(
         running = False
     elif state == "restarted":
         if runtime is None:
+            if len(selected_registry) >= _MAX_RUNTIMES:
+                raise ValueError(
+                    f"native SearXNG registry is limited to {_MAX_RUNTIMES} namespaces"
+                )
             runtime = runtime_builder(settings_path=settings_path, namespace=namespace)
             runtime.start()
             selected_registry[namespace] = runtime

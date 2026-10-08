@@ -8,6 +8,7 @@
         name: "general_ludd.travel.searxng_setup"
       vars:
         searxng_enabled: false
+      register: setup_result
 
     - name: Test SearXNG search module (check mode)
       general_ludd.travel.searxng_search:
@@ -17,5 +18,13 @@
         max_results: 5
         timeout: 5
       register: flight_result
-      ignore_errors: true
       check_mode: true
+
+    - name: Assert controller-native check-mode contract
+      ansible.builtin.assert:
+        that:
+          - setup_result is succeeded
+          - flight_result is succeeded
+          - not flight_result.changed
+          - flight_result.transport == 'native'
+          - flight_result.results == []

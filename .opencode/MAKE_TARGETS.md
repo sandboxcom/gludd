@@ -467,9 +467,10 @@ Auto-generated from Makefile (3252 lines). Subagents: use ONLY these targets. An
 
 | Target | Params | Description |
 |--------|--------|-------------|
-| `searx-up` | | Start SearXNG via docker compose |
-| `searx-down` | | Stop SearXNG, remove volumes |
-| `searx-test` | | Health-check SearXNG JSON API |
+| `searx-up` | | Admit the controller-native SearXNG runtime |
+| `searx-down` | | Release controller-native SearXNG resources |
+| `searx-test` | | Run native runtime/action/index contracts |
+| `searx-molecule` | `SEARX_MOLECULE_VALIDATE_ONLY=0\|1` | Validate or run the delegated setup role |
 
 ## Help
 

@@ -10,7 +10,6 @@
 | `kubernetes/` | Raw Kubernetes manifests for GPU inference servers | `deployment-llamacpp.yaml`, `deployment-vllm.yaml` |
 | `local-models/` | Docker/Podman Compose templates for local dev GPU inference | Dockerfiles + Compose files for vLLM, llama.cpp, ollama |
 | `slurm/` | Slurm HPC batch scripts for GPU inference jobs | `llamacpp.sbatch`, `vllm.sbatch` |
-| `searxng/` | SearXNG meta-search engine config for agent web retrieval | `settings.yml`, `docker-compose.yml` |
 
 ## How the model-serving paths relate
 

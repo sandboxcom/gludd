@@ -1,0 +1,21 @@
+---
+- name: Verify controller-native SearXNG role
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Re-run native search in check mode
+      general_ludd.travel.searxng_search:
+        query: "rail BOS to PHL"
+        category: general
+        namespace: gludd-molecule-searxng
+      check_mode: true
+      register: native_check
+
+    - name: Assert native transport owns no external work in check mode
+      ansible.builtin.assert:
+        that:
+          - native_check is succeeded
+          - not native_check.changed
+          - native_check.transport == 'native'
+          - native_check.result_count == 0
+          - native_check.results == []
