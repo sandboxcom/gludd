@@ -5,9 +5,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import stat
 import subprocess
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from pathlib import Path
 from urllib.parse import quote
 
@@ -107,6 +111,63 @@ def _github_get(
     return _decode_mapping(completed.stdout, failure_code)
 
 
+def _publish_receipt(
+    receipt: EnvironmentProtectionReceipt,
+    output: Path,
+) -> None:
+    """Durably replace one regular output with a private canonical receipt."""
+    parent = output.parent
+    try:
+        if output.is_symlink() or parent.is_symlink():
+            raise EnvironmentProtectionError("receipt-output-symlink")
+        if output.exists() and not output.is_file():
+            raise EnvironmentProtectionError("receipt-output-not-regular")
+        if not parent.is_dir():
+            raise EnvironmentProtectionError("receipt-output-parent-invalid")
+    except EnvironmentProtectionError:
+        raise
+    except OSError as exc:
+        raise EnvironmentProtectionError("receipt-output-publication-failed") from exc
+
+    temporary: Path | None = None
+    published = False
+    try:
+        descriptor, raw_temporary = tempfile.mkstemp(
+            dir=parent,
+            prefix=f".{output.name}.",
+            suffix=".tmp",
+        )
+        temporary = Path(raw_temporary)
+        with os.fdopen(descriptor, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(receipt.canonical_json_bytes())
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, output)
+        published = True
+        metadata = output.lstat()
+        if not stat.S_ISREG(metadata.st_mode):
+            raise OSError("receipt output is not regular")
+        if stat.S_IMODE(metadata.st_mode) != 0o600:
+            raise OSError("receipt output is not private")
+        directory_descriptor = os.open(parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except EnvironmentProtectionError:
+        raise
+    except (OSError, ValueError) as exc:
+        if published:
+            with suppress(OSError):
+                output.unlink(missing_ok=True)
+        raise EnvironmentProtectionError("receipt-output-publication-failed") from exc
+    finally:
+        if temporary is not None:
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
+
+
 def run_guard(
     *,
     repository: str,
@@ -158,6 +219,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--environment", required=True)
     parser.add_argument("--environment-json", type=Path)
     parser.add_argument("--branch-policies-json", type=Path)
+    parser.add_argument("--receipt-output", type=Path)
     parser.add_argument("--validate-only", choices=("0", "1"), default="0")
     return parser
 
@@ -173,6 +235,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             branch_policies_json=args.branch_policies_json,
             validate_only=args.validate_only == "1",
         )
+        if args.receipt_output is not None:
+            _publish_receipt(receipt, args.receipt_output)
     except EnvironmentProtectionError as exc:
         print(
             "AZURE_CONTAINERAPP_ENVIRONMENT_GUARD_REJECTED "

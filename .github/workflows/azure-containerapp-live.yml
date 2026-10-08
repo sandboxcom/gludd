@@ -13,8 +13,13 @@ jobs:
   live-proof:
     if: vars.AZURE_CONTAINERAPP_LIVE_ENABLED == 'true'
     environment: azure-containerapp-live
+    env:
+      AZURE_CONTAINERAPP_ENVIRONMENT_RECEIPT_NAME: >-
+        gludd-azure-environment-protection-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}.json
     permissions:
       actions: read
+      artifact-metadata: write
+      attestations: write
       contents: read
       id-token: write
     runs-on: ubuntu-latest
@@ -34,7 +39,19 @@ jobs:
           AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT: azure-containerapp-live
           AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON: ""
           AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON: ""
+          AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_RECEIPT_OUTPUT: ${{ runner.temp }}/${{ env.AZURE_CONTAINERAPP_ENVIRONMENT_RECEIPT_NAME }}
           AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY: '0'
+      - name: Attest the protected-Environment admission receipt
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/${{ env.AZURE_CONTAINERAPP_ENVIRONMENT_RECEIPT_NAME }}
+      - name: Upload the protected-Environment admission receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/${{ env.AZURE_CONTAINERAPP_ENVIRONMENT_RECEIPT_NAME }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
       - name: Materialize the short-lived GitHub assertion
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:

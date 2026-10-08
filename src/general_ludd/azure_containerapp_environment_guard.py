@@ -9,6 +9,9 @@ from dataclasses import dataclass
 
 EXPECTED_ENVIRONMENT = "azure-containerapp-live"
 REQUIRED_BRANCH_POLICIES = ("development", "master", "v*")
+RECEIPT_KIND = "azure-containerapp-environment-protection-receipt"
+RECEIPT_SCHEMA_VERSION = 1
+MAX_RECEIPT_BYTES = 4096
 
 
 class EnvironmentProtectionError(ValueError):
@@ -28,6 +31,24 @@ class EnvironmentProtectionReceipt:
     reviewer_count: int
     branch_policies: tuple[str, ...]
     configuration_digest: str
+
+    def canonical_json_bytes(self) -> bytes:
+        """Serialize the identity-free v1 receipt as bounded canonical JSON."""
+        payload: dict[str, object] = {
+            "kind": RECEIPT_KIND,
+            "schema_version": RECEIPT_SCHEMA_VERSION,
+            "environment": self.environment,
+            "reviewer_count": self.reviewer_count,
+            "branch_policies": sorted(self.branch_policies),
+            "configuration_digest": self.configuration_digest,
+            "mutation": False,
+        }
+        encoded = (
+            json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        if len(encoded) > MAX_RECEIPT_BYTES:
+            raise EnvironmentProtectionError("receipt-too-large")
+        return encoded
 
     def render(self) -> str:
         """Render one bounded receipt without reviewer or API response content."""
