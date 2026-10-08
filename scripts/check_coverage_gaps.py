@@ -455,6 +455,26 @@ def _modules_imported_by_source(
     return imported
 
 
+def _modules_reachable_from_source(
+    module: str,
+    source_modules: dict[str, Path],
+) -> set[str]:
+    """Return project modules reachable through a facade's import graph."""
+    reachable: set[str] = set()
+    pending = [module]
+    while pending:
+        current = pending.pop()
+        source_file = source_modules[current]
+        for imported in _modules_imported_by_source(
+            current, source_file, source_modules
+        ):
+            if imported == module or imported in reachable:
+                continue
+            reachable.add(imported)
+            pending.append(imported)
+    return reachable
+
+
 def _apply_indirect_test_mappings(
     tests_by_module: defaultdict[str, set[Path]],
     counts: dict[Path, int],
@@ -471,7 +491,7 @@ def _apply_indirect_test_mappings(
             raise CoverageMappingError(f"mapped source module does not exist: {module}")
         if facade_file is None:
             raise CoverageMappingError(f"mapped facade module does not exist: {via}")
-        facade_imports = _modules_imported_by_source(via, facade_file, source_modules)
+        facade_imports = _modules_reachable_from_source(via, source_modules)
         if module not in facade_imports:
             raise CoverageMappingError(f"mapped facade {via} does not import {module}")
 

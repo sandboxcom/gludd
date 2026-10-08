@@ -6,6 +6,12 @@
         "tests/unit/test_cli_module_split.py"
       ]
     },
+    "general_ludd.decision_codification.artifact_auth": {
+      "via": "general_ludd.decision_codification.artifact_store",
+      "tests": [
+        "tests/unit/test_decision_codification_artifact_store.py"
+      ]
+    },
     "general_ludd.decision_codification.durable_generation": {
       "via": "general_ludd.decision_codification.durable_feedback",
       "tests": [
@@ -16,6 +22,66 @@
       "via": "general_ludd.decision_codification.durable",
       "tests": [
         "tests/unit/test_decision_codification_observability.py"
+      ]
+    },
+    "general_ludd.decision_codification.runtime_context": {
+      "via": "general_ludd.decision_codification.runtime",
+      "tests": [
+        "tests/unit/test_decision_codification_runtime.py"
+      ]
+    },
+    "general_ludd.decision_codification.shared_generation_candidates": {
+      "via": "general_ludd.decision_codification.shared_generation",
+      "tests": [
+        "tests/unit/test_decision_codification_shared_generation.py"
+      ]
+    },
+    "general_ludd.decision_codification.shared_generation_codec": {
+      "via": "general_ludd.decision_codification.shared_generation",
+      "tests": [
+        "tests/unit/test_decision_codification_shared_generation.py"
+      ]
+    },
+    "general_ludd.decision_codification.shared_generation_coordination": {
+      "via": "general_ludd.decision_codification.shared_generation",
+      "tests": [
+        "tests/unit/test_decision_codification_shared_generation.py"
+      ]
+    },
+    "general_ludd.decision_codification.shared_generation_history": {
+      "via": "general_ludd.decision_codification.shared_generation",
+      "tests": [
+        "tests/unit/test_decision_codification_shared_generation.py"
+      ]
+    },
+    "general_ludd.decision_codification.shared_generation_outcomes": {
+      "via": "general_ludd.decision_codification.shared_generation",
+      "tests": [
+        "tests/unit/test_decision_codification_shared_generation.py"
+      ]
+    },
+    "general_ludd.decision_codification.shared_generation_revocation": {
+      "via": "general_ludd.decision_codification.shared_generation",
+      "tests": [
+        "tests/unit/test_decision_codification_shared_generation.py"
+      ]
+    },
+    "general_ludd.decision_codification.shared_generation_rollback": {
+      "via": "general_ludd.decision_codification.shared_generation",
+      "tests": [
+        "tests/unit/test_decision_codification_shared_generation.py"
+      ]
+    },
+    "general_ludd.decision_codification.shared_generation_transactions": {
+      "via": "general_ludd.decision_codification.shared_generation",
+      "tests": [
+        "tests/unit/test_decision_codification_shared_generation.py"
+      ]
+    },
+    "general_ludd.decision_codification.shared_generation_usage": {
+      "via": "general_ludd.decision_codification.shared_generation",
+      "tests": [
+        "tests/unit/test_decision_codification_shared_generation.py"
       ]
     },
     "general_ludd.daemon_components.ports": {

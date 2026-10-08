@@ -14,6 +14,10 @@ EXPECTED_SPLIT_MAPPINGS = {
         "general_ludd.cli",
         "tests/unit/test_cli_module_split.py",
     ),
+    "general_ludd.decision_codification.artifact_auth": (
+        "general_ludd.decision_codification.artifact_store",
+        "tests/unit/test_decision_codification_artifact_store.py",
+    ),
     "general_ludd.decision_codification.durable_generation": (
         "general_ludd.decision_codification.durable_feedback",
         "tests/unit/test_decision_codification_durable.py",
@@ -21,6 +25,46 @@ EXPECTED_SPLIT_MAPPINGS = {
     "general_ludd.decision_codification.durable_observability": (
         "general_ludd.decision_codification.durable",
         "tests/unit/test_decision_codification_observability.py",
+    ),
+    "general_ludd.decision_codification.runtime_context": (
+        "general_ludd.decision_codification.runtime",
+        "tests/unit/test_decision_codification_runtime.py",
+    ),
+    "general_ludd.decision_codification.shared_generation_candidates": (
+        "general_ludd.decision_codification.shared_generation",
+        "tests/unit/test_decision_codification_shared_generation.py",
+    ),
+    "general_ludd.decision_codification.shared_generation_codec": (
+        "general_ludd.decision_codification.shared_generation",
+        "tests/unit/test_decision_codification_shared_generation.py",
+    ),
+    "general_ludd.decision_codification.shared_generation_coordination": (
+        "general_ludd.decision_codification.shared_generation",
+        "tests/unit/test_decision_codification_shared_generation.py",
+    ),
+    "general_ludd.decision_codification.shared_generation_history": (
+        "general_ludd.decision_codification.shared_generation",
+        "tests/unit/test_decision_codification_shared_generation.py",
+    ),
+    "general_ludd.decision_codification.shared_generation_outcomes": (
+        "general_ludd.decision_codification.shared_generation",
+        "tests/unit/test_decision_codification_shared_generation.py",
+    ),
+    "general_ludd.decision_codification.shared_generation_revocation": (
+        "general_ludd.decision_codification.shared_generation",
+        "tests/unit/test_decision_codification_shared_generation.py",
+    ),
+    "general_ludd.decision_codification.shared_generation_rollback": (
+        "general_ludd.decision_codification.shared_generation",
+        "tests/unit/test_decision_codification_shared_generation.py",
+    ),
+    "general_ludd.decision_codification.shared_generation_transactions": (
+        "general_ludd.decision_codification.shared_generation",
+        "tests/unit/test_decision_codification_shared_generation.py",
+    ),
+    "general_ludd.decision_codification.shared_generation_usage": (
+        "general_ludd.decision_codification.shared_generation",
+        "tests/unit/test_decision_codification_shared_generation.py",
     ),
     "general_ludd.daemon_components.ports": (
         "general_ludd.daemon",
@@ -212,6 +256,46 @@ def test_validated_indirect_mapping_follows_facade_dependency(
         "from general_ludd.widgets.engine import Engine as _Engine\n\n"
         "def build_engine():\n"
         "    return _Engine()\n"
+    )
+    test_file = project / "tests" / "unit" / "test_widget_facade.py"
+    test_file.write_text(
+        "import general_ludd.widgets.facade as facade\n\n"
+        "def test_engine_through_facade():\n"
+        "    assert facade.build_engine() is not None\n"
+    )
+    config = project / "config" / "coverage_gap_test_mappings.json"
+    config.parent.mkdir()
+    config.write_text(
+        json.dumps(
+            {
+                "indirect_test_mappings": {
+                    "general_ludd.widgets.engine": {
+                        "via": "general_ludd.widgets.facade",
+                        "tests": ["tests/unit/test_widget_facade.py"],
+                    }
+                }
+            }
+        )
+    )
+
+    result = _status(project)
+
+    assert result["status"] == "OK"
+    assert result["test_file"] == "tests/unit/test_widget_facade.py"
+
+
+def test_validated_indirect_mapping_follows_transitive_facade_dependency(
+    project: Path,
+) -> None:
+    """A facade test may own a component reached through a split-module chain."""
+    widgets = project / "src" / "general_ludd" / "widgets"
+    (widgets / "middle.py").write_text(
+        "from general_ludd.widgets.engine import Engine as _Engine\n\n"
+        "def build_engine():\n"
+        "    return _Engine()\n"
+    )
+    (widgets / "facade.py").write_text(
+        "from general_ludd.widgets.middle import build_engine\n"
     )
     test_file = project / "tests" / "unit" / "test_widget_facade.py"
     test_file.write_text(
