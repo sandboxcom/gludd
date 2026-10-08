@@ -1,10 +1,33 @@
 ---
-# prepare: no external fixtures needed; model_select is self-contained.
-- name: Prepare - noop for ai_ml_expert
+# Prepare one local CSV and schema without any service or network dependency.
+- name: Prepare - bounded dataset fixture
   hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8863', true) }}"
+    dataset_root: "/tmp/gludd-ai-ml-expert-{{ mock_port }}/dataset"
   tasks:
-    - name: Sentinel (no fixtures required)
-      ansible.builtin.debug:
-        msg: "ai_ml_expert prepare: model_select is self-contained."
+    - name: Create dataset fixture directory
+      ansible.builtin.file:
+        path: "{{ dataset_root }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write dataset schema
+      ansible.builtin.copy:
+        dest: "{{ dataset_root }}/schema.json"
+        mode: "0644"
+        content: >-
+          {"fields":[{"name":"id","type":"integer","constraints":{"required":true}},
+          {"name":"name","type":"string","constraints":{"required":true}}],
+          "primaryKey":"id"}
+
+    - name: Write dataset resource
+      ansible.builtin.copy:
+        dest: "{{ dataset_root }}/records.csv"
+        mode: "0644"
+        content: |
+          id,name
+          1,Ada
+          2,Grace

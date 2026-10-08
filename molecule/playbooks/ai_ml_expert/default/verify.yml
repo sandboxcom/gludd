@@ -1,13 +1,13 @@
 ---
-# Verify: the ai_ml collection is discoverable AND model_select executed.
-- name: Verify - ai_ml collection installed and model_select executed
+# Verify the collection and content-bound native dataset admission receipt.
+- name: Verify - native dataset engineer admission
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8863', true) }}"
     out_dir: "/tmp/gludd-ai-ml-expert-{{ mock_port }}"
-    marker: "{{ out_dir }}/model_select_ran.ok"
+    receipt_path: "{{ out_dir }}/dataset_admission.json"
   tasks:
     - name: Assert collection galaxy.yml is discoverable
       ansible.builtin.stat:
@@ -15,25 +15,32 @@
       register: galaxy_stat
       failed_when: not galaxy_stat.stat.exists
 
-    - name: Assert model_select role tasks are discoverable
+    - name: Assert dataset engineer role tasks are discoverable
       ansible.builtin.stat:
-        path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/ai_ml/roles/model_select/tasks/main.yml"
+        path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/ai_ml/roles/dataset_engineer/tasks/main.yml"
       register: role_stat
       failed_when: not role_stat.stat.exists
 
-    - name: Assert execution marker present
-      ansible.builtin.stat:
-        path: "{{ marker }}"
-      register: marker_stat
-      failed_when: not marker_stat.stat.exists
+    - name: Read native admission receipt
+      ansible.builtin.slurp:
+        path: "{{ receipt_path }}"
+      register: admission_receipt
 
-    - name: Report
-      ansible.builtin.debug:
-        msg: "ai_ml.model_select executed; collection discoverable."
+    - name: Decode native admission receipt
+      ansible.builtin.set_fact:
+        admission_result: "{{ admission_receipt.content | b64decode | from_json }}"
+
+    - name: Verify content-bound admission receipt
+      ansible.builtin.assert:
+        that:
+          - admission_result.admitted | bool
+          - admission_result.data_card_sha256 | length == 64
+          - admission_result.data_card.validator.version == '5.19.1'
+          - admission_result.data_card.resources | length == 1
+        quiet: true
 
     # ---- cleanup ----
-    - name: Remove marker dir
+    - name: Remove isolated dataset fixture
       ansible.builtin.file:
         path: "{{ out_dir }}"
         state: absent
-      failed_when: false

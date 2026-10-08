@@ -49,6 +49,7 @@ _COLLECTION_ROOT = ROOT / "collections" / "ansible_collections" / "general_ludd"
 _COLLECTION_DIST_ROOT = ROOT / "dist" / "collections"
 _COLLECTION_VERSIONS = (
     ("agent", "0.2.0"),
+    ("ai_ml", "0.2.0"),
     ("azure", "0.2.0"),
     ("language", "0.1.0"),
     ("networking", "0.2.0"),
@@ -66,7 +67,13 @@ SEARXNG_REQUIREMENT = (
     "searxng @ git+https://github.com/searxng/searxng.git@"
     f"{SEARXNG_SOURCE_REVISION}"
 )
-EXPECTED_CONTROLLER_IMPORTS = ("ansible", "ansible_runner", "searx.webapp")
+FRICTIONLESS_REQUIREMENT = "frictionless==5.19.1"
+EXPECTED_CONTROLLER_IMPORTS = (
+    "ansible",
+    "ansible_runner",
+    "frictionless",
+    "searx.webapp",
+)
 EXPECTED_DEPENDENCIES: dict[str, object] = {
     "galaxy": "requirements.yml",
     "python": "requirements.txt",
@@ -273,9 +280,9 @@ def validate_files() -> list[str]:
         for line in python_requirements
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    if pinned_requirements != [SEARXNG_REQUIREMENT]:
+    if pinned_requirements != [FRICTIONLESS_REQUIREMENT, SEARXNG_REQUIREMENT]:
         errors.append(
-            "controller Python requirements must contain only the pinned official SearXNG source"
+            "controller Python requirements must contain only pinned Frictionless and official SearXNG"
         )
 
     definition: dict[str, Any] = yaml.safe_load(DEFINITION.read_text(encoding="utf-8"))

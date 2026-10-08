@@ -10,4 +10,4 @@ dependencies = [
 
 [tool.uv]
 package = false
-constraint-dependencies = ["chardet<6"]
+constraint-dependencies = ["chardet>=7.6.0,<8"]

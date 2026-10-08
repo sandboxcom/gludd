@@ -69,7 +69,7 @@ Key runtime dependencies:
   ([upstream license](https://github.com/pygame/pygame/blob/2.6.1/docs/LGPL.txt),
   [release](https://github.com/pygame/pygame/releases/tag/2.6.1)). Gludd imports
   the unmodified wheel dynamically and does not modify or statically link pygame.
-- chardet (LGPL-2.1-or-later) — character-encoding detection.
+- chardet (0BSD) — character-encoding detection.
 - psycopg and psycopg-binary (LGPL-3.0-only) — PostgreSQL driver and its binary
   distribution. Gludd uses the unmodified packages through their public Python
   interfaces.
