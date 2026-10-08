@@ -5,47 +5,53 @@ pre-existing URL (``target_url``) or one started on-demand via
 ``start_command`` + ``port`` — and parses the resulting JSON findings
 through a severity threshold gate.
 
-The module mirrors the SAST parsers in :mod:`general_ludd.project_runner.findings`
-in its fail-soft philosophy: a non-zero scanner exit, a malformed JSON
-report, or a health-check timeout never raises — the driver returns a
-:class:`DastResult` with ``skipped=True`` or ``findings=[]``.
+The driver is fail-closed when used as a completion gate: scanner failures,
+missing/malformed/oversized reports, and threshold findings all produce a
+failed :class:`DastResult`. ZAP's documented warning exit (2) remains usable
+when its structured report has no finding at or above the configured threshold.
 """
 
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import ipaddress
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel, Field, model_validator
 
-from general_ludd.project_runner.profile import ProjectProfile
+from general_ludd.project_runner.profile import DastConfig, ProjectProfile
+from general_ludd.project_runner.runner import _build_env
 
 logger = logging.getLogger(__name__)
 
 _SEVERITY_ORDER: dict[str, int] = {"INFO": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3}
 
-_ALLOWED_FAIL_ON = frozenset({"HIGH", "MEDIUM", "LOW"})
-
 _ALLOW_ANY_EXEC_ENV = "GLUDD_PROJECT_ALLOW_ANY_EXEC"
+_MAX_REPORT_BYTES = 8 * 1024 * 1024
+_PROXY_ENV_NAMES = frozenset({"http_proxy", "https_proxy", "all_proxy"})
+_SCANNER_SLOT = threading.Lock()
 
 # ── dataclasses ───────────────────────────────────────────────────────────────
 
 
 @dataclass
 class DastFinding:
+    """One normalized finding parsed from a ZAP baseline JSON report."""
+
     severity: str
     rule_id: str
     url: str
@@ -58,48 +64,15 @@ class DastFinding:
 
 @dataclass
 class DastResult:
+    """Outcome and evidence from one bounded ZAP baseline invocation."""
+
     passed: bool
     skipped: bool = False
     reason: str | None = None
     findings: list[DastFinding] = field(default_factory=list)
-
-
-# ── config ────────────────────────────────────────────────────────────────────
-
-
-class DastConfig(BaseModel):
-    start_command: str | None = None
-    target_url: str | None = None
-    port: int | None = None
-    health_path: str = Field(default="/")
-    startup_timeout_s: int = Field(default=60, ge=1)
-    tool: str = Field(default="zap-baseline.py")
-    max_duration_s: int = Field(default=900, ge=1)
-    fail_on: str = Field(default="HIGH")
-
-    @model_validator(mode="after")
-    def _validate_dast_config(self) -> DastConfig:
-        if self.start_command is not None and self.target_url is not None:
-            raise ValueError(
-                "set exactly one of start_command or target_url, not both "
-                f"(got start_command={self.start_command!r}, target_url={self.target_url!r})"
-            )
-        if self.start_command is None and self.target_url is None:
-            raise ValueError(
-                "set exactly one of start_command or target_url (got neither)"
-            )
-        if self.start_command is not None and self.port is None:
-            raise ValueError(
-                "port is required when start_command is set "
-                f"(start_command={self.start_command!r})"
-            )
-        upper_fail = self.fail_on.strip().upper()
-        if upper_fail not in _ALLOWED_FAIL_ON:
-            raise ValueError(
-                f"fail_on must be one of {sorted(_ALLOWED_FAIL_ON)} (got {self.fail_on!r})"
-            )
-        self.fail_on = upper_fail
-        return self
+    exit_code: int | None = None
+    duration_s: float = 0.0
+    warnings: bool = False
 
 
 # ── SSRF / target-URL validation ──────────────────────────────────────────────
@@ -145,6 +118,10 @@ def _is_blocked_target(host: str) -> bool:
 
 def _validate_target_url(url: str) -> None:
     parsed = urlparse(url)
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise ValueError("DAST target URL scheme must be http or https")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("DAST target URL must not contain userinfo")
     host = (parsed.hostname or "").strip()
     if not host:
         raise ValueError(f"could not extract host from URL {url!r}")
@@ -160,6 +137,7 @@ _RISKCODE_MAP: dict[str, str] = {"0": "INFO", "1": "LOW", "2": "MEDIUM", "3": "H
 
 
 def parse_zap_baseline(json_text: str) -> list[DastFinding]:
+    """Parse valid ZAP baseline JSON into de-duplicated normalized findings."""
     try:
         doc = json.loads(json_text)
     except (json.JSONDecodeError, ValueError, TypeError):
@@ -244,6 +222,52 @@ is_blocked_target = _is_blocked_target
 severity_threshold_exceeded = _severity_exceeds
 
 
+def _scan_namespace(profile: ProjectProfile, workspace: Path) -> str:
+    """Return a stable, filesystem-safe namespace for one target project."""
+    project = re.sub(r"[^a-zA-Z0-9_.-]+", "-", profile.name).strip("-.")
+    project = project[:48] or "target"
+    workspace_id = hashlib.sha256(str(workspace).encode()).hexdigest()[:8]
+    return f"{project}-{workspace_id}"
+
+
+def _proxy_free_env(profile: ProjectProfile | None = None) -> dict[str, str]:
+    passthrough = () if profile is None else profile.env_passthrough
+    env = _build_env(passthrough)
+    for key in list(env):
+        if key.lower() in _PROXY_ENV_NAMES:
+            env.pop(key, None)
+    env["NO_PROXY"] = "*"
+    env["no_proxy"] = "*"
+    return env
+
+
+def _read_zap_report(path: Path) -> tuple[list[DastFinding] | None, str | None]:
+    """Read one bounded ZAP JSON report and distinguish malformed from clean."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        # ``read_text`` remains authoritative. This also keeps virtual/mock
+        # files usable while a real absent report fails on the read below.
+        size = 0
+    if size > _MAX_REPORT_BYTES:
+        return None, "DAST report exceeds the 8 MiB limit"
+    try:
+        json_output = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"DAST report is absent or unreadable: {type(exc).__name__}"
+    if len(json_output.encode("utf-8")) > _MAX_REPORT_BYTES:
+        return None, "DAST report exceeds the 8 MiB limit"
+    if not json_output.strip():
+        return None, "DAST report is absent or empty"
+    try:
+        document = json.loads(json_output)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None, "DAST report is malformed JSON"
+    if not isinstance(document, dict) or not isinstance(document.get("site"), list):
+        return None, "DAST report is malformed: expected a top-level site list"
+    return parse_zap_baseline(json_output), None
+
+
 # ── main lifecycle ────────────────────────────────────────────────────────────
 
 
@@ -252,7 +276,9 @@ def run_dast_scan(
     profile: ProjectProfile,
     workspace: str | Path,
 ) -> DastResult:
+    """Run one fail-closed, bounded ZAP baseline scan for a project profile."""
     workspace_path = Path(workspace).resolve()
+    namespace = _scan_namespace(profile, workspace_path)
 
     # —— 1. Validate target URL (if provided) —————————
     if config.target_url is not None:
@@ -291,6 +317,20 @@ def run_dast_scan(
                 f"{profile.allowed_exec}",
             )
 
+    if (
+        config.start_command is not None
+        and profile.dast is config
+        and not allow_any
+    ):
+        start_exe = os.path.basename(shlex.split(config.start_command)[0])
+        if start_exe not in profile.allowed_exec:
+            return DastResult(
+                passed=False,
+                skipped=True,
+                reason=f"DAST target executable {start_exe!r} not in allowed_exec "
+                f"{profile.allowed_exec}",
+            )
+
     # —— determine scanner target URL ——————————————————
     if config.target_url is not None:
         scanner_target_url = config.target_url
@@ -304,7 +344,15 @@ def run_dast_scan(
         )
 
     # —— 4. Start app (if start_command) ———————————————
+    if not _SCANNER_SLOT.acquire(blocking=False):
+        return DastResult(
+            passed=False,
+            skipped=True,
+            reason="another DAST scanner already owns the single scanner slot",
+        )
+
     app_proc: subprocess.Popen[str] | None = None
+    json_path: str | None = None
     try:
         if config.start_command is not None and config.port is not None:
             app_proc = _start_app(config.port, config.start_command)
@@ -322,11 +370,11 @@ def run_dast_scan(
                     ),
                 )
 
-        # —— 5. Resolve scanner argv ———————————————————
-        try:
-            raw_command = profile.resolve_argv(config.tool)
-        except Exception:
-            raw_command = [config.tool]
+        # —— 5. Build one structured scanner argv ———————————————
+        # The typed profile restricts ``tool`` to zap-baseline.py. Target and
+        # report arguments are appended exactly once by this driver, never
+        # accepted as a free-form project command.
+        raw_command = [config.tool]
 
         # —— 6. Run scanner —————————————————————————————
         with tempfile.NamedTemporaryFile(
@@ -344,12 +392,22 @@ def run_dast_scan(
                 text=True,
                 timeout=config.max_duration_s,
                 cwd=str(workspace_path),
+                env={
+                    **_proxy_free_env(profile),
+                    "GLUDD_PROCESS_NAMESPACE": f"gludd-dast-scanner-{namespace}",
+                },
+                start_new_session=True,
             )
         except subprocess.TimeoutExpired:
             return DastResult(
                 passed=False,
                 skipped=True,
                 reason=f"DAST scanner timed out after {config.max_duration_s}s",
+            )
+        except OSError as exc:
+            return DastResult(
+                passed=False,
+                reason=f"DAST scanner launch failed: {type(exc).__name__}",
             )
         scanner_duration = time.monotonic() - start_s
         logger.info(
@@ -360,25 +418,48 @@ def run_dast_scan(
         )
 
         # —— 7. Parse findings ——————————————————————————
-        json_output = ""
-        try:
-            json_output = Path(json_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            logger.warning("could not read ZAP JSON output from %s", json_path)
-
-        findings = parse_zap_baseline(json_output)
-
-        with contextlib.suppress(OSError):
-            os.unlink(json_path)
+        findings, report_error = _read_zap_report(Path(json_path))
+        if report_error is not None or findings is None:
+            return DastResult(
+                passed=False,
+                reason=report_error or "DAST report validation failed",
+                exit_code=proc.returncode,
+                duration_s=scanner_duration,
+                warnings=proc.returncode == 2,
+            )
 
         # —— 8. Severity gate ———————————————————————————
-        passed = not _severity_exceeds(findings, config.fail_on)
-        return DastResult(passed=passed, findings=findings)
+        warnings = proc.returncode == 2
+        if proc.returncode not in {0, 2}:
+            return DastResult(
+                passed=False,
+                reason=f"DAST scanner failed with exit code {proc.returncode}",
+                findings=findings,
+                exit_code=proc.returncode,
+                duration_s=scanner_duration,
+            )
+        threshold_exceeded = _severity_exceeds(findings, config.fail_on)
+        return DastResult(
+            passed=not threshold_exceeded,
+            reason=(
+                f"DAST findings met {config.fail_on} threshold"
+                if threshold_exceeded
+                else None
+            ),
+            findings=findings,
+            exit_code=proc.returncode,
+            duration_s=scanner_duration,
+            warnings=warnings,
+        )
 
     finally:
         # —— 9. Teardown ————————————————————————————————
+        if json_path is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(json_path)
         if app_proc is not None:
             _kill_app(app_proc)
+        _SCANNER_SLOT.release()
 
 
 # ── internal helpers ──────────────────────────────────────────────────────────
@@ -437,3 +518,5 @@ def _kill_app(proc: subprocess.Popen[str]) -> None:
         pass
     with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
         os.killpg(os.getpgid(pid), signal.SIGKILL)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.wait(timeout=5)
