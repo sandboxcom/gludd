@@ -19,8 +19,8 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-S31-S37, plus the train's dependency, ownership, structural, TUI, and coverage
-repairs. S29-S37 are listed from immutable implementation receipts without
+S31-S41, plus the train's dependency, ownership, structural, TUI, and coverage
+repairs. S29-S41 are listed from immutable implementation receipts without
 claiming train integration or an exact-head gate. The preview therefore records
 useful candidate contents without converting implementation evidence into task,
 gate, release, or publication completion.
@@ -85,6 +85,62 @@ preceding implementation hard-codes SQLite's statement subclass. Its evidence
 includes 354 warning-fatal tests and 94% aggregate coverage (`shared.py` 87%,
 `projects.py` 98%, `metrics.py` 91%), with native SQL compilation, unsupported
 dialect rejection before I/O, and bounded two-session PostgreSQL convergence.
+
+S38-S41 move four collection workflows onto native, owned library boundaries:
+
+- **S38 — Native SearXNG controller runtime.** Travel searches now call the
+  official pinned `searx.webapp` WSGI application inside the controller EE;
+  unavailable backends can no longer become invented `.example.com` results.
+  The digest-addressed EE rolls out beside the active digest, takes only new
+  jobs, and drains before retirement. Rollback returns new jobs to the prior EE
+  or uses the explicit bounded remote transport without restoring Compose,
+  Terraform, or an implicit listener. Its 212 warning-fatal tests pass at 91%
+  aggregate coverage with all nine measured files above 75%; all four Molecule
+  phases and the 121,242-test collection pass. SearXNG
+  [discussion #1789][searxng-1789] records disabled JSON output and bot-abuse
+  pressure, [discussion #3106][searxng-3106] records an untested ARM source
+  build, and issues [#3896][searxng-3896] and [#3474][searxng-3474] record
+  dependency and concurrency failures addressed by the pin and fail-closed
+  adapter.
+- **S39 — Native git-release artifact verification.** The managed host now
+  verifies the release artifact and dependency lock itself with root-confined,
+  streamed SHA-256 reads; the role no longer delegates the promotion decision
+  to a daemon. Verification is read-only, so a rejected candidate never alters
+  the active artifact, and rollback keeps or restores traffic to the previously
+  admitted digest without undoing verifier state. All 74 warning-fatal tests,
+  four `git_release_expert` Molecule phases, and the 121,217-test collection
+  pass; coverage is 89% aggregate and every measured file is at least 88%.
+  The policy is grounded in the [Ansible Release 1.2.3][ansible-123] symlink
+  advisory, an [AWX escaping-link report][awx-linkname], the long-lived Ansible
+  [FIPS/MD5 report #9429][ansible-9429], and
+  [privilege-boundary checksum report #69383][ansible-69383].
+- **S40 — Native Frictionless dataset admission.** Dataset-engineer jobs now
+  validate root-confined CSV resources and an explicit Table Schema with pinned
+  `frictionless==5.19.1`, returning a stable SHA-256-bound data card without a
+  service call, listener, subprocess, or state mutation. The controller EE uses
+  an immutable-digest canary and drain; rollback routes new jobs to the previous
+  digest and requires no data repair. Focused tests pass 26/26, adjacent tests
+  pass 112/112, coverage is 89% aggregate with every measured file at least
+  88%, all five Molecule phases pass, and collection selects 121,269 tests with
+  zero errors. [Frictionless discussion #675][frictionless-675] supports a
+  separately stored schema, [discussion #653][frictionless-653] records schema
+  synchronization ambiguity, and issues [#609][frictionless-609] and
+  [#1646][frictionless-1646] document schema-path and misleading-report failure
+  modes covered by explicit in-memory schema and task-shape admission.
+- **S41 — Collection-native chemical lot admission.** Inventory checks now use
+  one deterministic collection evaluator for expiry, restrictions, and purity;
+  unsuitable lots require human review and automation never proposes a
+  substitute. The additive module owns no durable state, so old and new
+  controllers coexist and rollback only repins the prior collection artifact.
+  The evidence includes 27 focused warning-fatal tests, 71 focused and adjacent
+  tests, and a 1,265-test chemistry slice with 10 explicit skips. Measured code
+  has 95% aggregate coverage, with every file above the 75% floor; all Molecule
+  phases and a 121,272-test zero-error collection also pass. Long-lived
+  [ansible/ansible#50579][ansible-50579] and
+  [ansible/ansible#77935][ansible-77935] motivate collection-qualified public
+  imports, while the archived [check-mode report][ansible-check-mode] and
+  [read-only module discussion][ansible-read-only-module] motivate explicit
+  check-mode parity without shell tasks.
 
 ## Existing-tool decision
 
@@ -184,7 +240,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 28-item candidate inventory, and
+ordering, deterministic rendering, the exact 32-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -227,3 +283,19 @@ Research was reviewed on 2026-10-08:
 [mcp-1087]: https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1087
 [sqlalchemy-7199]: https://github.com/sqlalchemy/sqlalchemy/discussions/7199
 [sqlalchemy-7007]: https://github.com/sqlalchemy/sqlalchemy/discussions/7007
+[searxng-1789]: https://github.com/searxng/searxng/discussions/1789
+[searxng-3106]: https://github.com/searxng/searxng/discussions/3106
+[searxng-3896]: https://github.com/searxng/searxng/issues/3896
+[searxng-3474]: https://github.com/searxng/searxng/issues/3474
+[ansible-123]: https://forum.ansible.com/t/ansible-release-1-2-3/13342
+[awx-linkname]: https://forum.ansible.com/t/awx-23-8-1-getting-error-invalid-linkname-for-tarfile-member/6242/2
+[ansible-9429]: https://github.com/ansible/ansible/issues/9429
+[ansible-69383]: https://github.com/ansible/ansible/issues/69383
+[frictionless-675]: https://github.com/frictionlessdata/frictionlessdata.io/discussions/675
+[frictionless-653]: https://github.com/frictionlessdata/frictionlessdata.io/discussions/653
+[frictionless-609]: https://github.com/frictionlessdata/frictionless-py/issues/609
+[frictionless-1646]: https://github.com/frictionlessdata/frictionless-py/issues/1646
+[ansible-50579]: https://github.com/ansible/ansible/issues/50579
+[ansible-77935]: https://github.com/ansible/ansible/issues/77935
+[ansible-check-mode]: https://forum.ansible.com/t/cannot-get-customized-facts-when-pushing-with-check/17103
+[ansible-read-only-module]: https://forum.ansible.com/t/add-condition-when-command-shell-modules-should-return-ok-not-changed/37686
