@@ -67,14 +67,64 @@ def test_linked_worktrees_share_one_repository_collection_lease(
 
     assert main_lock == linked_lock
     assert main_lock != clone_lock
-    assert main_lock.parent.parent == (tmp_path / "resources").resolve()
-    assert all(char.isalnum() or char in "_.-" for char in main_lock.parent.name)
+    assert main_lock == common.resolve() / "gludd" / "locks" / "collection.lock"
+    assert clone_lock == (
+        clone_common.resolve() / "gludd" / "locks" / "collection.lock"
+    )
     with (
         locks.collection_lock(main_lock, timeout=0),
         pytest.raises(TimeoutError, match="collection lock is busy"),
         locks.collection_lock(linked_lock, timeout=0),
     ):
         pass
+
+
+def test_cross_target_linked_worktrees_cannot_select_distinct_lease_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """test-count and collect-check must converge despite runner env drift."""
+
+    main = tmp_path / "main"
+    linked = tmp_path / "linked"
+    common = main / ".git"
+    for directory in (main, linked, common):
+        directory.mkdir(exist_ok=True)
+    monkeypatch.setattr(locks, "project_root", lambda start=None: Path(start).resolve())
+    monkeypatch.setattr(
+        locks.subprocess,
+        "run",
+        _git_common_dir_result(
+            {
+                main.resolve(): common.resolve(),
+                linked.resolve(): common.resolve(),
+            }
+        ),
+    )
+
+    monkeypatch.delenv("GLUDD_COLLECTION_LOCK", raising=False)
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "test-count-tmp"))
+    monkeypatch.setenv("GLUDD_RESOURCE_ROOT", str(tmp_path / "test-count-resources"))
+    test_count_lease = locks.default_collection_lock(main)
+
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "collect-check-tmp"))
+    monkeypatch.setenv("GLUDD_RESOURCE_ROOT", str(tmp_path / "collect-check-resources"))
+    collect_check_lease = locks.default_collection_lock(linked)
+
+    assert test_count_lease == collect_check_lease
+    assert common.resolve() in collect_check_lease.parents
+    with (
+        locks.collection_lock(test_count_lease, timeout=0),
+        pytest.raises(TimeoutError, match="collection lock is busy"),
+        locks.collection_lock(collect_check_lease, timeout=0),
+    ):
+        pass
+
+    monkeypatch.setenv(
+        "GLUDD_COLLECTION_LOCK", str(tmp_path / "noncanonical-override.lock")
+    )
+    with pytest.raises(locks.RepositoryIdentityError, match="cannot redirect"):
+        locks.default_collection_lock(linked)
 
 
 def test_repository_identity_failure_is_fail_closed(
@@ -99,17 +149,19 @@ def test_resource_paths_and_timeout_overrides(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    configured = tmp_path / "configured.lock"
-    monkeypatch.setenv("GLUDD_COLLECTION_LOCK", str(configured))
-    assert locks.default_resource_lock() == configured
-
-    monkeypatch.delenv("GLUDD_COLLECTION_LOCK")
     monkeypatch.setattr(
         locks,
         "repository_resource_lock",
         lambda resource, start=None: tmp_path / resource,
     )
+    configured = tmp_path / "configured.lock"
+    monkeypatch.setenv("GLUDD_COLLECTION_LOCK", str(configured))
+    with pytest.raises(locks.RepositoryIdentityError, match="cannot redirect"):
+        locks.default_resource_lock()
+
+    monkeypatch.setenv("GLUDD_COLLECTION_LOCK", str(tmp_path / "collection"))
     assert locks.default_collection_lock() == tmp_path / "collection"
+    monkeypatch.delenv("GLUDD_COLLECTION_LOCK")
     assert locks.default_resource_lock("gate-refresh") == tmp_path / "gate-refresh"
 
     monkeypatch.setenv("GLUDD_COLLECTION_LOCK_TIMEOUT", "7.5")
