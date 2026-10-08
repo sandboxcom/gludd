@@ -131,11 +131,20 @@ class _AnalysisUnavailable(_AnalysisCLIError):
     """The daemon request could not be completed safely."""
 
 
-class _OperatorCLIError(RuntimeError):
-    """A local operator request failed without exposing internal content."""
+class DecisionOperatorError(RuntimeError):
+    """A local operator request failed without exposing internal content.
+
+    Library callers may catch this public exception while the command handlers
+    continue to translate it into their existing fixed, content-free messages.
+    """
 
     def __init__(self) -> None:
         super().__init__("decision operator request failed closed")
+
+
+# Compatibility for callers that imported the original private name. New code
+# should catch ``DecisionOperatorError``.
+_OperatorCLIError = DecisionOperatorError
 
 
 def _terminal_capture_status(value: object) -> _TerminalCaptureStatus:

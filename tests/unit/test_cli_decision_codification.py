@@ -18,6 +18,7 @@ from general_ludd.cli_decision_codification import (
     MAX_ANALYSIS_RESPONSE_BYTES,
     DecisionCaptureSummary,
     DecisionLifecycleSummary,
+    DecisionOperatorError,
     _AnalysisUnavailable,
     _cmd_activate,
     _cmd_analyze,
@@ -782,6 +783,13 @@ def test_terminal_capture_status_admits_only_terminal_states() -> None:
     for status in ("running", "incomplete", "unknown", None):
         with pytest.raises(_OperatorCLIError):
             _terminal_capture_status(status)
+
+
+def test_operator_error_is_public_with_legacy_catch_compatibility() -> None:
+    """Callers can catch the fixed diagnostic through the public contract."""
+    assert _OperatorCLIError is DecisionOperatorError
+    assert issubclass(DecisionOperatorError, RuntimeError)
+    assert str(DecisionOperatorError()) == "decision operator request failed closed"
 
 
 @pytest.mark.parametrize("status", ["running", "incomplete"])
