@@ -48,6 +48,17 @@ def test_target_references_lint():
     )
 
 
+def test_target_runs_staged_line_and_duplicate_guards_before_lint() -> None:
+    block = _target_block(_content())
+
+    assert "check-file-line-limits" in block
+    assert "FILE_LINE_LIMIT_STAGED=1" in block
+    assert "check-duplicate-code" in block
+    assert "DUPLICATE_CODE_SOURCE=staged" in block
+    assert block.index("check-file-line-limits") < block.index("lint")
+    assert block.index("check-duplicate-code") < block.index("lint")
+
+
 def test_target_references_collect_check():
     block = _target_block(_content())
     assert "collect-check" in block, (

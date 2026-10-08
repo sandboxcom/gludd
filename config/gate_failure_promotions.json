@@ -74,6 +74,13 @@
         "quiet_seconds": 60
       },
       {
+        "name": "check-duplicate-code",
+        "target": "check-duplicate-code",
+        "budget_class": "standard",
+        "max_seconds": 180,
+        "quiet_seconds": 120
+      },
+      {
         "name": "yaml-lint",
         "target": "yaml-lint",
         "budget_class": "standard",

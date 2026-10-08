@@ -52,6 +52,7 @@ EXPECTED_RUNTIME_PHASES = [
         90,
         60,
     ),
+    ("check-duplicate-code", "check-duplicate-code", "standard", 180, 120),
     ("yaml-lint", "yaml-lint", "standard", 180, 120),
     (
         "project-dispatch-integration",
@@ -477,8 +478,8 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "gate-failure-promotions: PASS families=7" in result.stdout
-    assert "runtime_phases=15" in result.stdout
-    assert "runtime_ceiling_seconds=2220" in result.stdout
+    assert "runtime_phases=16" in result.stdout
+    assert "runtime_ceiling_seconds=2400" in result.stdout
     for phrase in (
         "dead-code-baseline-drift",
         "claim-fence",

@@ -101,6 +101,24 @@ repos:
         require_serial: true
         stages: [pre-commit]
 
+      - id: check-file-line-limits
+        name: staged file line limits
+        entry: make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json FILE_LINE_LIMIT_STAGED=1
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        stages: [pre-commit]
+
+      - id: check-duplicate-code
+        name: staged duplicate code
+        entry: make check-duplicate-code DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=0
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        stages: [pre-commit]
+
       - id: check-disk
         name: automatic inactive-worktree cache cleanup and disk check
         entry: make check-disk CHECK_DISK_VALIDATE_ONLY=0

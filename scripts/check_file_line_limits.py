@@ -6,17 +6,32 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING or __package__:
+    from scripts.staged_snapshot import (
+        GITLINK_MODE,
+        SnapshotError,
+        discover_staged_paths,
+        discover_tracked_paths,
+        read_index_blob,
+    )
+else:
+    from staged_snapshot import (
+        GITLINK_MODE,
+        SnapshotError,
+        discover_staged_paths,
+        discover_tracked_paths,
+        read_index_blob,
+    )
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_POLICY = ROOT / "config" / "file_line_limits.json"
 REQUIRED_MAX_LINES_EXCLUSIVE = 2500
-GIT_TIMEOUT_SECONDS = 10
 POLICY_KEYS = frozenset({"version", "max_lines_exclusive", "non_text_paths"})
 NON_TEXT_ENTRY_KEYS = frozenset({"path", "reason"})
 
@@ -122,43 +137,6 @@ def _validate_inventory_path(raw: str) -> str:
         raise InventoryError(str(exc)) from exc
 
 
-def discover_tracked_paths(root: Path) -> tuple[str, ...]:
-    """Return Git's complete, NUL-delimited tracked inventory or fail closed."""
-
-    command = ["git", "-C", str(root), "ls-files", "-z"]
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            check=False,
-            shell=False,
-            timeout=GIT_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise InventoryError(
-            f"Git inventory timed out after {GIT_TIMEOUT_SECONDS}s"
-        ) from exc
-    except OSError as exc:
-        raise InventoryError(f"Git inventory failed: {exc}") from exc
-    if result.returncode != 0:
-        detail = result.stderr.decode("utf-8", errors="replace").strip()[:500]
-        raise InventoryError(
-            f"Git inventory exited {result.returncode}: {detail or 'no stderr'}"
-        )
-    if result.stdout and not result.stdout.endswith(b"\x00"):
-        raise InventoryError("Git inventory returned unterminated NUL-delimited output")
-    try:
-        decoded = result.stdout.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise InventoryError("Git inventory returned a non-UTF-8 path") from exc
-    paths = tuple(_validate_inventory_path(item) for item in decoded.split("\x00") if item)
-    if len(paths) != len(set(paths)):
-        raise InventoryError("Git inventory returned duplicate tracked paths")
-    if paths != tuple(sorted(paths)):
-        raise InventoryError("Git inventory is not deterministically sorted")
-    return paths
-
-
 def _read_tracked_file(root: Path, relative_path: str) -> bytes:
     path = root / relative_path
     if path.is_symlink():
@@ -183,7 +161,13 @@ def _decode_text(data: bytes) -> str | None:
         return None
 
 
-def audit_paths(root: Path, paths: Sequence[str], policy: Policy) -> list[Finding]:
+def audit_paths(
+    root: Path,
+    paths: Sequence[str],
+    policy: Policy,
+    *,
+    staged: bool = False,
+) -> list[Finding]:
     """Audit an exact tracked inventory, rejecting implicit skips and stale policy."""
 
     normalized = tuple(_validate_inventory_path(path) for path in paths)
@@ -191,7 +175,7 @@ def audit_paths(root: Path, paths: Sequence[str], policy: Policy) -> list[Findin
         raise AuditError("tracked path inventory contains duplicates")
     tracked = set(normalized)
     stale = sorted(policy.non_text_paths - tracked)
-    if stale:
+    if stale and not staged:
         raise AuditError(
             "explicit non_text_paths entries are not tracked: " + ", ".join(stale)
         )
@@ -199,12 +183,19 @@ def audit_paths(root: Path, paths: Sequence[str], policy: Policy) -> list[Findin
     findings: list[Finding] = []
     for relative_path in normalized:
         repository_path = root / relative_path
-        if relative_path in policy.non_text_paths and repository_path.is_dir():
+        try:
+            index_blob = read_index_blob(root, relative_path) if staged else None
+        except SnapshotError as exc:
+            raise AuditError(str(exc)) from exc
+        is_gitlink = index_blob is not None and index_blob.mode == GITLINK_MODE
+        if relative_path in policy.non_text_paths and (
+            is_gitlink or (not staged and repository_path.is_dir())
+        ):
             # Git submodule entries are tracked gitlinks, not text files. They
             # remain exact-path policy entries so a new directory is never
             # silently omitted from the inventory.
             continue
-        data = _read_tracked_file(root, relative_path)
+        data = index_blob.data if index_blob is not None else _read_tracked_file(root, relative_path)
         text = _decode_text(data)
         if relative_path in policy.non_text_paths:
             if text is not None:
@@ -238,6 +229,11 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="explicit tracked path for focused tests; repeat as needed",
     )
+    parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="audit exact staged index blobs rather than working-tree files",
+    )
     return parser
 
 
@@ -245,9 +241,14 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         policy = load_policy(args.config)
-        paths = tuple(args.path) if args.path is not None else discover_tracked_paths(args.root)
-        findings = audit_paths(args.root, paths, policy)
-    except (PolicyError, InventoryError, AuditError) as exc:
+        if args.path is not None:
+            paths = tuple(args.path)
+        elif args.staged:
+            paths = discover_staged_paths(args.root)
+        else:
+            paths = discover_tracked_paths(args.root)
+        findings = audit_paths(args.root, paths, policy, staged=args.staged)
+    except (PolicyError, InventoryError, AuditError, SnapshotError) as exc:
         print(f"file-line-limits: ERROR: {exc}", file=sys.stderr)
         return 2
     for finding in findings:
@@ -261,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(
         f"file-line-limits: PASS tracked={len(paths)} "
+        f"source={'index' if args.staged else 'worktree'} "
         f"limit=<{policy.max_lines_exclusive}"
     )
     return 0
