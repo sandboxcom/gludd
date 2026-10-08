@@ -34,10 +34,13 @@ def test_admission_chain_is_ordered_and_does_not_claim_release_completion() -> N
         slide.index(marker) for marker in ordered_markers
     )
     for marker in (
-        "S83.178 CANDIDATE",
+        "S83.178 INTEGRATED",
         "clean committed feature branch",
         "gate_failure_promotions.json",
+        "maps nine families",
         "dead-code-baseline-drift",
+        "coverage-gap-drift",
+        "resource-ownership-drift",
         "claim-fence",
         "project-isolation",
         "concurrent-tick",
@@ -58,7 +61,7 @@ def test_admission_chain_is_ordered_and_does_not_claim_release_completion() -> N
         "before OIDC or paid compute",
         "RELEASE_ALLOW_INCOMPLETE_TASKS=0",
         "RELEASE_ALLOW_INVALID_RECEIPT=0",
-        "S83.178 is branch-local until merge",
+        "S83.178/.177/.158/.157/.166 are integrated into development",
         "exact-head full gate, hosted replay, and terminal publication remain pending",
         "No release-completion claim is made",
     ):
@@ -77,9 +80,9 @@ def test_admission_chain_builds_exact_repository_source_ranges() -> None:
     linked, citations = build_deck.link_source_citations(authored, sha)
     slide = _slide(linked)
     expected_sources = {
-        "config/gate_failure_promotions.json": "1-169",
+        "config/gate_failure_promotions.json": "1-206",
         "scripts/check_gate_failure_promotions.py": "213-313",
-        "docs/features/INTEGRATION_ADMISSION.md": "15-116",
+        "docs/features/INTEGRATION_ADMISSION.md": "17-124",
         "docs/features/DURABLE_CLAIM_COMPUTE_FENCE.md": "21-33",
         "docs/azure-gha-oidc-live-proof.md": "46-79",
         "docs/features/RELEASE_PREDECESSOR_ADMISSION.md": "11-28",

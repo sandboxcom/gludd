@@ -32,6 +32,20 @@
         "quiet_seconds": 60
       },
       {
+        "name": "check-coverage-gaps",
+        "target": "check-coverage-gaps",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "check-resource-ownership",
+        "target": "check-resource-ownership",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
         "name": "validate-task-ledger",
         "target": "validate-task-ledger",
         "budget_class": "fast",
@@ -130,6 +144,20 @@
       "owner_target": "_dead-code-baseline-refresh",
       "node_kind": "make_target",
       "node": "_dead-code-baseline-refresh",
+      "full_gate_phase": "preflights"
+    },
+    {
+      "id": "coverage-gap-drift",
+      "owner_target": "check-coverage-gaps",
+      "node_kind": "make_target",
+      "node": "check-coverage-gaps",
+      "full_gate_phase": "preflights"
+    },
+    {
+      "id": "resource-ownership-drift",
+      "owner_target": "check-resource-ownership",
+      "node_kind": "make_target",
+      "node": "check-resource-ownership",
       "full_gate_phase": "preflights"
     },
     {
