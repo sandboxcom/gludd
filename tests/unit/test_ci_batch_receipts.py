@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
@@ -18,8 +19,10 @@ from scripts.ci_batch_receipts import (
     MAX_RECEIPT_BYTES,
     MAX_RECEIPT_GENERATIONS,
     BatchReceiptRequest,
+    FailureReceiptRequest,
     ReceiptPublication,
     ShadowBatchReceiptWriter,
+    ShadowFailureReceiptWriter,
     build_batch_runtime_identity,
     canonical_json_sha256,
     normalize_junit_outcomes,
@@ -147,6 +150,19 @@ def _request(tmp_path: Path, **overrides: object) -> BatchReceiptRequest:
     }
     values.update(overrides)
     return BatchReceiptRequest(**values)  # type: ignore[arg-type]
+
+
+def _failure_request(tmp_path: Path, sha: str) -> FailureReceiptRequest:
+    identity = _identity(sha=sha)
+    return FailureReceiptRequest(
+        action_identity=identity,
+        observed_action_identity=identity,
+        failure_node_metadata=None,
+        originating_run_id="run-failure",
+        elapsed_seconds=1.0,
+        returncode=1,
+        cleanup_returncode=0,
+    )
 
 
 def test_shadow_writer_publishes_one_content_addressed_pass_receipt(
@@ -550,22 +566,412 @@ def test_shadow_writer_rejects_bounds_wider_than_phase_one(
         )
 
 
-def test_shadow_writer_enforces_two_generation_bound(tmp_path: Path) -> None:
-    cache = tmp_path / "batch-receipts"
-    for sha in ("b" * 40, "c" * 40):
-        generation = cache / "v1" / sha
-        generation.mkdir(parents=True)
-        os.chmod(cache, 0o700)
-        os.chmod(cache / "v1", 0o700)
-        os.chmod(generation, 0o700)
-    writer = ShadowBatchReceiptWriter(cache)
+def _publish_generation(cache: Path, tmp_path: Path, sha: str) -> Path:
+    identity = _identity(sha=sha)
+    result = ShadowBatchReceiptWriter(cache).publish(
+        _request(
+            tmp_path,
+            action_identity=identity,
+            observed_action_identity=identity,
+        )
+    )
+    assert result.published is True
+    assert result.path is not None
+    return result.path.parent
 
-    result = writer.publish(_request(tmp_path))
+
+def _set_generation_age(generation: Path, age: int) -> None:
+    os.utime(generation, ns=(age, age))
+
+
+def test_shadow_writer_retires_oldest_complete_inactive_generation(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
 
     assert MAX_RECEIPT_GENERATIONS == 2
+    assert result.published is True
+    assert result.path is not None
+    assert {entry.name for entry in (cache / "v1").iterdir()} == {
+        _SHA,
+        "c" * 40,
+    }
+    assert not oldest.exists()
+    assert current.exists()
+
+
+def test_shadow_writer_retires_oldest_complete_failure_only_generation(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    generations: list[Path] = []
+    for sha in ("b" * 40, "c" * 40):
+        publication = ShadowFailureReceiptWriter(cache).publish(
+            _failure_request(tmp_path, sha)
+        )
+        assert publication.published is True
+        assert publication.path is not None
+        generations.append(publication.path.parent.parent)
+    oldest, current = generations
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+
+    assert result.published is True
+    assert not oldest.exists()
+    assert current.exists()
+
+
+def test_shadow_writer_preserves_active_generation_during_rollover(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+    staging = oldest / f".{('e' * 64)}.active"
+    staging.mkdir(mode=0o700)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+
+    assert result.published is False
+    assert result.reason == "generation-active"
+    assert staging.exists()
+    assert {entry.name for entry in (cache / "v1").iterdir()} == {
+        "b" * 40,
+        "c" * 40,
+    }
+
+
+@pytest.mark.parametrize(
+    ("failure_layout", "reason"),
+    [
+        ("empty", "generation-ambiguous"),
+        ("staging", "generation-active"),
+        ("invalid", "generation-ambiguous"),
+    ],
+)
+def test_shadow_writer_preserves_incomplete_failure_lifecycle_evidence(
+    tmp_path: Path,
+    failure_layout: str,
+    reason: str,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    failures = oldest / "failures"
+    failures.mkdir(mode=0o700)
+    if failure_layout == "staging":
+        (failures / f".{('e' * 64)}.active").mkdir(mode=0o700)
+    elif failure_layout == "invalid":
+        (failures / "not-a-digest").mkdir(mode=0o700)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+
+    assert result.published is False
+    assert result.reason == reason
+    assert failures.exists()
+    assert current.exists()
+
+
+@pytest.mark.parametrize("child_name", ["unknown", "e" * 64])
+def test_shadow_writer_preserves_malformed_generation_during_rollover(
+    tmp_path: Path,
+    child_name: str,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    malformed = oldest / child_name
+    malformed.mkdir(mode=0o700)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+
+    assert result.published is False
+    assert result.reason == "generation-ambiguous"
+    assert malformed.exists()
+    assert {entry.name for entry in (cache / "v1").iterdir()} == {
+        "b" * 40,
+        "c" * 40,
+    }
+
+
+def test_shadow_writer_preserves_equal_age_generations(tmp_path: Path) -> None:
+    cache = tmp_path / "batch-receipts"
+    first = _publish_generation(cache, tmp_path, "b" * 40)
+    second = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(first, 1_000_000_000)
+    _set_generation_age(second, 1_000_000_000)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+
+    assert result.published is False
+    assert result.reason == "generation-order-ambiguous"
+    assert first.exists()
+    assert second.exists()
+
+
+def test_rollover_rechecks_generation_activity_immediately_before_quarantine(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+    retirement, reason = receipt_module._select_retirable_generation(
+        [oldest, current]
+    )
+    assert reason == "retirable"
+    assert retirement is not None
+    staging = oldest / f".{('e' * 64)}.late"
+    staging.mkdir(mode=0o700)
+
+    error = receipt_module._retire_generation_and_create_candidate(
+        retirement,
+        cache / "v1" / _SHA,
+        cache / "v1",
+    )
+
+    assert error == "generation-active"
+    assert staging.exists()
+    assert current.exists()
+    assert not (cache / "v1" / _SHA).exists()
+
+
+def test_rollover_restores_retirement_when_candidate_appears_before_handoff(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    retirement, reason = receipt_module._inspect_retirable_generation(oldest)
+    assert reason is None
+    assert retirement is not None
+    candidate = cache / "v1" / _SHA
+    candidate.mkdir(mode=0o700)
+
+    error = receipt_module._retire_generation_and_create_candidate(
+        retirement,
+        candidate,
+        cache / "v1",
+    )
+
+    assert error == "generation-retirement-conflict"
+    assert oldest.exists()
+    assert candidate.exists()
+    assert all(not entry.name.startswith(".retiring-") for entry in (cache / "v1").iterdir())
+
+
+def test_shadow_writer_preserves_only_current_generation_at_one_generation_bound(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+
+    result = ShadowBatchReceiptWriter(cache, max_generations=1).publish(
+        _request(tmp_path)
+    )
+
     assert result.published is False
     assert result.reason == "generation-limit"
-    assert len(tuple((cache / "v1").iterdir())) == 2
+    assert current.exists()
+
+
+def test_shadow_writer_preserves_incomplete_generation_during_rollover(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    version = cache / "v1"
+    for age, sha in enumerate(("b" * 40, "c" * 40), start=1):
+        generation = version / sha
+        generation.mkdir(parents=True, mode=0o700)
+        os.chmod(cache, 0o700)
+        os.chmod(version, 0o700)
+        os.chmod(generation, 0o700)
+        _set_generation_age(generation, age * 1_000_000_000)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+
+    assert result.published is False
+    assert result.reason == "generation-ambiguous"
+    assert {entry.name for entry in version.iterdir()} == {"b" * 40, "c" * 40}
+
+
+@pytest.mark.parametrize(
+    ("failure_mode", "reason"),
+    [
+        ("unsupported", "generation-retirement-unsupported"),
+        ("rename", "generation-retirement-failed"),
+        ("post-rename-change", "generation-active"),
+        ("delete", "generation-retirement-failed"),
+    ],
+)
+def test_shadow_writer_restores_quarantined_generation_on_rollover_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+    reason: str,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+    if failure_mode == "unsupported":
+        monkeypatch.setattr(
+            receipt_module.shutil.rmtree,
+            "avoids_symlink_attacks",
+            False,
+        )
+    elif failure_mode == "rename":
+        monkeypatch.setattr(
+            receipt_module.os,
+            "rename",
+            lambda *_args: (_ for _ in ()).throw(OSError("rename")),
+        )
+    elif failure_mode == "post-rename-change":
+        real_snapshot = receipt_module._safe_tree_snapshot
+
+        def changed_snapshot(path: Path) -> tuple[object, ...]:
+            size, snapshot, error = real_snapshot(path)
+            if path.name == "generation" and error is None:
+                size += 1
+            return size, snapshot, error
+
+        monkeypatch.setattr(receipt_module, "_safe_tree_snapshot", changed_snapshot)
+    elif failure_mode == "delete":
+        real_rmtree = receipt_module.shutil.rmtree
+
+        def fail_retired_tree(path: Path, *args: object, **kwargs: object) -> None:
+            if Path(path).name == "generation":
+                raise OSError("delete")
+            real_rmtree(path, *args, **kwargs)
+
+        fail_retired_tree.avoids_symlink_attacks = True  # type: ignore[attr-defined]
+        monkeypatch.setattr(receipt_module.shutil, "rmtree", fail_retired_tree)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+
+    assert result.published is False
+    assert result.reason == reason
+    assert oldest.exists()
+    assert current.exists()
+    assert all(not entry.name.startswith(".retiring-") for entry in (cache / "v1").iterdir())
+
+
+def test_shadow_writer_proves_byte_budget_before_retirement(tmp_path: Path) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+    request = _request(tmp_path)
+    current_bytes, size_error = receipt_module._safe_tree_size(cache)
+    retired_bytes, retired_error = receipt_module._safe_tree_size(oldest)
+    assert size_error is None
+    assert retired_error is None
+    outcome_bytes = receipt_module.canonical_json_bytes(request.outcome_manifest) + b"\n"
+    incoming_bytes = (
+        request.coverage_path.stat().st_size
+        + len(outcome_bytes)
+        + len(receipt_module.canonical_json_bytes(request.action_identity))
+        + 16 * 1024
+    )
+    insufficient = current_bytes - retired_bytes + incoming_bytes - 1
+
+    result = ShadowBatchReceiptWriter(cache, max_bytes=insufficient).publish(request)
+
+    assert result.published is False
+    assert result.reason == "byte-limit"
+    assert oldest.exists()
+    assert current.exists()
+
+
+def test_shadow_writer_rollover_stays_within_total_byte_bound(tmp_path: Path) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+    request = _request(tmp_path)
+    current_bytes, size_error = receipt_module._safe_tree_size(cache)
+    retired_bytes, retired_error = receipt_module._safe_tree_size(oldest)
+    assert size_error is None
+    assert retired_error is None
+    outcome_bytes = receipt_module.canonical_json_bytes(request.outcome_manifest) + b"\n"
+    incoming_bytes = (
+        request.coverage_path.stat().st_size
+        + len(outcome_bytes)
+        + len(receipt_module.canonical_json_bytes(request.action_identity))
+        + 16 * 1024
+    )
+    limit = current_bytes - retired_bytes + incoming_bytes
+
+    result = ShadowBatchReceiptWriter(cache, max_bytes=limit).publish(request)
+
+    final_bytes, final_error = receipt_module._safe_tree_size(cache)
+    assert result.published is True
+    assert final_error is None
+    assert final_bytes <= limit
+    assert not oldest.exists()
+    assert current.exists()
+
+
+def test_shadow_writer_preserves_generations_while_mutation_lock_is_leased(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+    descriptor = os.open(cache / "v1", os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+    assert result.published is False
+    assert result.reason == "generation-busy"
+    assert oldest.exists()
+    assert current.exists()
+
+
+def test_shadow_writer_rollover_never_follows_generation_symlink(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    oldest = _publish_generation(cache, tmp_path, "b" * 40)
+    current = _publish_generation(cache, tmp_path, "c" * 40)
+    _set_generation_age(oldest, 1_000_000_000)
+    _set_generation_age(current, 2_000_000_000)
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o755)
+    marker = outside / "keep"
+    marker.write_text("preserve", encoding="utf-8")
+    (oldest / "unknown-link").symlink_to(outside, target_is_directory=True)
+
+    result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
+
+    assert result.published is False
+    assert result.reason == "cache-size-unknown"
+    assert marker.read_text(encoding="utf-8") == "preserve"
+    assert oldest.exists()
+    assert current.exists()
 
 
 def test_shadow_writer_enforces_total_byte_bound(tmp_path: Path) -> None:
