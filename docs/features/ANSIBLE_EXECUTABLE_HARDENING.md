@@ -1,6 +1,6 @@
 # Ansible Executable Hardening
 
-Status: active hardening work  
+Status: active hardening work
 Scope: shipped `general_ludd` collection modules and roles, excluding every
 Searx-owned path
 
