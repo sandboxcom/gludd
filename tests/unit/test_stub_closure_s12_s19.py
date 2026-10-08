@@ -202,13 +202,13 @@ class TestS15ValidationJobHonest501:
 
 class TestS16WriterSubprocessStructuralGaps:
     def test_writer_child_expects_nested_database_config(self) -> None:
-        """_child.py main() expects config['database'] dict, not flat db dict."""
-        import general_ludd.writer._child as child
+        """A direct flat child config fails closed until the parent normalizes it."""
+        from general_ludd.writer._child import _require_database_config
 
-        source = inspect.getsource(child.main)
-        assert 'config.get("database")' in source, (
-            "S16 FIXED: _child.py no longer expects nested 'database' key — config shape matches daemon.py now"
-        )
+        with pytest.raises(ValueError, match="database config must be an object"):
+            _require_database_config(
+                {"url": "sqlite+aiosqlite:///writer.db"}
+            )
 
     def test_write_queue_is_in_process_deque(self) -> None:
         """WriteQueue uses asyncio.Queue/deque, not IPC — no cross-process transfer."""
