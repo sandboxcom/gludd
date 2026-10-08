@@ -165,7 +165,7 @@ enable HSTS, set cipher suites, OCSP stapling, and TLS version enforcement.
 **Python tool:** `roles/ssl_config/files/ssl_config.py`
 - Mozilla cipher profiles (`modern`, `intermediate`, `old`) with full cipher strings
 - Certificate expiry validation (`validate`) — checks not-before/not-after dates
-- DH parameter generation with configurable bit length
+- Exact RFC 7919 `ffdhe2048` parameter materialization; unsupported sizes fail closed
 - OCSP responder URL extraction from certificate
 
 **Example — Let's Encrypt + HSTS:**
@@ -442,7 +442,7 @@ testssl.sh). Supports an `audit_mode` for dry-run compliance scanning.
 | `max_body_size_mb` | int | `10` | Max request body size |
 | `tls_protocols` | list | `[TLSv1.2, TLSv1.3]` | Allowed TLS protocols |
 | `tls_ciphers` | str | `EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH` | Cipher suite string |
-| `dhparam_bits` | int | `2048` | DH parameter bit length |
+| `dhparam_bits` | int | `2048` | Pinned DH parameter size; only `2048` is supported |
 | `server_type` | str | `nginx` | Backend: `nginx` or `apache` |
 | `audit_tools` | list | `[nikto, testssl.sh]` | External audit tools to run |
 
@@ -550,10 +550,28 @@ The `ssl_config` role configures HSTS via nginx's `add_header` or Apache's
 
 `generate_dhparam()` uses the standardized 2048-bit `ffdhe2048` group from
 [RFC 7919 Appendix A.1](https://datatracker.ietf.org/doc/html/rfc7919#appendix-A.1)
-for its default size. This produces interoperable PEM parameters in bounded
-time instead of generating a fresh safe prime, an operation whose runtime can
-vary dramatically on contended CI runners and production hosts. Explicit
-non-default bit sizes continue to request freshly generated parameters.
+for its default and only supported size. It writes a byte-for-byte pinned
+PKCS#3 PEM fixture, so repeated runs have bounded runtime and identical output.
+Requests other than `2048` raise `ValueError` before `dhparam.pem` is created.
+The helper no longer imports PyCA FFDH serialization or parameter-generation
+objects.
+
+This boundary follows the
+[PyCA 50.0.0 deprecation notice](https://cryptography.io/en/50.0.2/changelog/#v50-0-0),
+which deprecates all finite-field Diffie-Hellman types and parameter loaders,
+and the [PyCA FFDH API notice](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/dh/),
+which says the support will be removed. It does not replace this TLS
+compatibility artifact with X25519: that would change the file format and the
+server configuration contract rather than migrate it.
+
+The compatibility boundary is intentionally narrow. RFC 7919 estimates
+`ffdhe2048` at 103-bit symmetric-equivalent strength and notes that
+forward-looking systems should use at least 3072-bit FFDHE; it also observes
+that ECDHE offers better strength per computational cost. This helper therefore
+preserves an existing nginx/OpenSSL parameter-file workflow, but it is not an
+API for choosing a new key-exchange protocol. Operators needing another group
+must use a maintained server/provider workflow and manage that artifact
+outside `generate_dhparam()`.
 
 Long-lived operator discussions show both the recurring need for correctly
 sized DH parameters and the operational confusion around generating and
@@ -564,6 +582,24 @@ deploying them:
 - [Stack Overflow: How to check my server Diffie-Hellman MODP size and increase it?](https://stackoverflow.com/questions/61326004/how-to-check-my-server-diffie-hellman-modp-size-bits-and-increase-it)
   documents users needing a reliable way to verify and raise deployed group
   strength.
+- [PyCA issue 15603](https://github.com/pyca/cryptography/issues/15603)
+  records a current legacy protocol whose wire format still requires FFDH,
+  demonstrating why compatibility artifacts need explicit bounds instead of
+  silent algorithm substitution.
+
+Compatibility for callers using the default or explicit `bits=2048` is exact:
+the function name, return value, output path, and PEM bytes are unchanged.
+Callers that requested ad-hoc sizes now receive an immediate typed failure
+instead of an unbounded provider operation and deprecation warning. Tests pin
+the complete PEM payload rather than reparsing it through the deprecated PyCA
+loader.
+
+For zero-downtime deployment, render and verify the pinned file before a
+rolling server reload; do not regenerate parameters independently on each
+node. Rollback means restoring the preceding application revision and its
+previous artifact as one release unit. Re-enabling the PyCA generation branch
+is only a temporary rollback because it restores warnings now and will fail
+when PyCA removes FFDH; warning filters are not a supported rollback strategy.
 
 ### 4.5 OCSP Stapling
 

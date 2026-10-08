@@ -1,10 +1,10 @@
-"""Diffie-Hellman key exchange backed by the `cryptography` library.
+"""Legacy finite-field Diffie-Hellman compatibility using integer math.
 
-Key generation, shared-secret computation, and parameter generation
-delegate to ``cryptography.hazmat.primitives.asymmetric.dh`` when the
-modulus is large enough (>=512 bits).  Small groups used in testing
-fall back to modular exponentiation.
+The pinned RFC 3526 group 14 remains available for compatibility. Runtime
+group generation is deliberately limited to small demonstration groups; it is
+not a secure replacement for a maintained key-exchange implementation.
 """
+
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ import secrets
 from dataclasses import dataclass
 from typing import Final
 
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric import dh as _dh
+_MAX_DEMO_GROUP_BITS: Final[int] = 64
+_SAFE_PRIME_MAX_ATTEMPTS: Final[int] = 65_536
 
 
 class DHError(Exception):
@@ -205,35 +205,31 @@ def _is_probable_prime(n: int, rounds: int = 40) -> bool:
 def generate_safe_prime(bits: int) -> int:
     """Generate a safe prime using the ``cryptography`` DH backend.
 
-    For bit sizes >= 512 the ``dh.generate_parameters`` call is used.
-    Smaller sizes (used by tests) fall back to Miller-Rabin search.
+    Historical description only: PyCA FFDH is no longer imported or called.
+    Runtime search is demonstration-only, bounded to 64 bits and finite tries.
     """
     if bits < 8:
         raise DHError(f"bits must be >= 8, got {bits}")
+    if bits > _MAX_DEMO_GROUP_BITS:
+        raise DHError(
+            "runtime safe-prime generation is limited to 64 bits for "
+            "demonstrations; use a maintained provider for secure protocols"
+        )
 
-    if bits >= 512:
-        params = _dh.generate_parameters(generator=2, key_size=bits, backend=default_backend())
-        p = params.parameter_numbers().p
-        if p.bit_length() == bits:
-            return p
-        # Retry — dh.generate_parameters may produce a prime with a
-        # different bit length.
-        while True:
-            params = _dh.generate_parameters(generator=2, key_size=bits, backend=default_backend())
-            p = params.parameter_numbers().p
-            if p.bit_length() == bits:
-                return p
-
-    while True:
+    for _ in range(_SAFE_PRIME_MAX_ATTEMPTS):
         q = secrets.randbits(bits - 1) | (1 << (bits - 2)) | 1
         if _is_probable_prime(q):
             p = 2 * q + 1
             if p.bit_length() == bits and _is_probable_prime(p):
                 return p
+    raise DHError(
+        f"failed to generate an {bits}-bit safe prime after "
+        f"{_SAFE_PRIME_MAX_ATTEMPTS} attempts"
+    )
 
 
 def generate_dh_group(bits: int, g: int = 2, name: str = "custom") -> DHGroup:
-    """Generate a safe-prime DH group with the given bit size and generator."""
+    """Generate a demonstration-only safe-prime group of at most 64 bits."""
     if bits < 16:
         raise DHError(f"bits must be >= 16, got {bits}")
     p = generate_safe_prime(bits)
@@ -259,21 +255,24 @@ class DHKeyPair:
     group: DHGroup
 
 
-def _to_parameters(group: DHGroup) -> _dh.DHParameters:
-    pn = _dh.DHParameterNumbers(p=group.p, g=group.g, q=group.q)
-    return pn.parameters(default_backend())
+def _is_pinned_group_2048(group: DHGroup) -> bool:
+    """Return whether ``group`` has the exact RFC 3526 group-14 numbers."""
+    return (
+        group.p == GROUP_2048.p
+        and group.g == GROUP_2048.g
+        and group.q == GROUP_2048.q
+    )
 
 
 def generate_keypair(group: DHGroup) -> DHKeyPair:
-    """Generate a DH key pair for the given group (provider-backed when large)."""
-    if group.p.bit_length() >= 512:
-        parameters = _to_parameters(group)
-        priv = parameters.generate_private_key()
-        nums = priv.private_numbers()
-        return DHKeyPair(
-            private=nums.x,
-            public=nums.public_numbers.y,
-            group=group,
+    """Generate an integer key pair for a demo group or pinned group 14."""
+    if (
+        group.p.bit_length() > _MAX_DEMO_GROUP_BITS
+        and not _is_pinned_group_2048(group)
+    ):
+        raise DHError(
+            "unknown large DH group; only the pinned RFC 3526 group 14 "
+            "is supported"
         )
 
     private = secrets.randbelow(group.q - 1) + 1
@@ -283,6 +282,11 @@ def generate_keypair(group: DHGroup) -> DHKeyPair:
 
 def compute_shared_secret(private_key: int, peer_public: int, p: int) -> int:
     """Compute the DH shared secret via modular exponentiation."""
+    if p.bit_length() > _MAX_DEMO_GROUP_BITS and p != GROUP_2048.p:
+        raise DHError(
+            "unknown large DH modulus; only the pinned RFC 3526 group-14 "
+            "modulus is supported"
+        )
     return pow(peer_public, private_key, p)
 
 
