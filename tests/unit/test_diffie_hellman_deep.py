@@ -6,11 +6,13 @@ import dataclasses
 
 import pytest
 
+from general_ludd.algorithms import diffie_hellman as dh_module
 from general_ludd.algorithms.diffie_hellman import (
     _TEST_GROUP,
     GROUP_2048,
     DHEExchange,
     DHError,
+    DHGroup,
     _is_valid_generator,
     compute_shared_secret,
     derive_key,
@@ -50,6 +52,20 @@ def test_safe_prime_small():
     assert p % 2 == 1
 
 
+@pytest.mark.parametrize("bits", [65, 512, 2048])
+def test_safe_prime_generation_is_bounded_to_demo_sizes(bits: int) -> None:
+    with pytest.raises(DHError, match="limited to 64 bits"):
+        generate_safe_prime(bits)
+
+
+def test_safe_prime_generation_has_a_finite_attempt_limit(monkeypatch) -> None:
+    monkeypatch.setattr(dh_module, "_SAFE_PRIME_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(dh_module.secrets, "randbits", lambda _bits: 0)
+
+    with pytest.raises(DHError, match="after 3 attempts"):
+        generate_safe_prime(8)
+
+
 # ── DHGroup generation ────────────────────────────────────────────────
 
 
@@ -65,6 +81,11 @@ def test_generate_dh_group_creates_valid_group():
     assert group.q == (group.p - 1) // 2
     assert group.name == "test-group"
     assert (group.p - 1) % 2 == 0
+
+
+def test_generate_dh_group_rejects_runtime_secure_size_generation() -> None:
+    with pytest.raises(DHError, match="limited to 64 bits"):
+        generate_dh_group(2048)
 
 
 # ── Generator validation ──────────────────────────────────────────────
@@ -108,6 +129,19 @@ def test_generate_keypair_group_reference():
     assert kp.group is _TEST_GROUP
 
 
+def test_generate_keypair_rejects_unknown_large_group() -> None:
+    unknown_p = (1 << 64) + 13
+    unknown = DHGroup(
+        p=unknown_p,
+        g=2,
+        q=(unknown_p - 1) // 2,
+        name="unknown-large-group",
+    )
+
+    with pytest.raises(DHError, match="unknown large DH group"):
+        generate_keypair(unknown)
+
+
 # ── Static DH: shared secret equality ─────────────────────────────────
 
 
@@ -131,6 +165,11 @@ def test_static_dh_different_keys_different_secrets():
     ac = compute_shared_secret(alice_private, charlie_public, _TEST_GROUP.p)
 
     assert ab != ac
+
+
+def test_compute_shared_secret_rejects_unknown_large_modulus() -> None:
+    with pytest.raises(DHError, match="unknown large DH modulus"):
+        compute_shared_secret(3, 5, (1 << 64) + 13)
 
 
 # ── DHE exchange ──────────────────────────────────────────────────────
@@ -179,6 +218,31 @@ def test_rfc3526_2048_p_is_safe_prime_structure():
 
 def test_rfc3526_2048_generator_is_valid():
     assert _is_valid_generator(GROUP_2048.g, GROUP_2048.p, GROUP_2048.q)
+
+
+def test_rfc3526_group_14_two_peer_integer_roundtrip() -> None:
+    alice = dhe_initiate(GROUP_2048)
+    bob = dhe_initiate(GROUP_2048)
+
+    assert alice.own_keypair.public == pow(
+        GROUP_2048.g,
+        alice.own_keypair.private,
+        GROUP_2048.p,
+    )
+    assert bob.own_keypair.public == pow(
+        GROUP_2048.g,
+        bob.own_keypair.private,
+        GROUP_2048.p,
+    )
+
+    expected = pow(
+        GROUP_2048.g,
+        alice.own_keypair.private * bob.own_keypair.private,
+        GROUP_2048.p,
+    )
+    assert alice.compute(bob.own_keypair.public) == expected
+    assert bob.compute(alice.own_keypair.public) == expected
+    assert expected not in {0, 1}
 
 
 # ── Test group (p=59) correctness ─────────────────────────────────────
