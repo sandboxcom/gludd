@@ -9,9 +9,7 @@ independent.
 from __future__ import annotations
 
 import fcntl
-import hashlib
 import os
-import re
 import subprocess
 import sys
 import time
@@ -33,7 +31,6 @@ DEFAULT_COLLECTION_LOCK_TIMEOUT = 900.0
 DEFAULT_GATE_REFRESH_LOCK_TIMEOUT = 120.0
 GIT_IDENTITY_TIMEOUT = 5.0
 MAX_LEASE_RECORD_BYTES = 512
-_UNSAFE_NAMESPACE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 class RepositoryIdentityError(RuntimeError):
@@ -168,16 +165,6 @@ def repository_common_dir(start: Path | str | None = None) -> Path:
     return common_dir
 
 
-def repository_namespace(common_dir: Path | str) -> str:
-    """Return a path-safe namespace derived only from shared repository state."""
-
-    resolved = Path(common_dir).expanduser().resolve(strict=True)
-    label_path = resolved.parent if resolved.name == ".git" else resolved
-    label = _UNSAFE_NAMESPACE.sub("-", label_path.name).strip("-._") or "repository"
-    digest = hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()[:12]
-    return f"{label}-git-{digest}"
-
-
 def repository_resource_lock(
     resource: str = "collection", start: Path | str | None = None
 ) -> Path:
@@ -185,7 +172,7 @@ def repository_resource_lock(
 
     common_dir = repository_common_dir(start)
     prototype = resource_path(resource, common_dir)
-    return prototype.parent.parent / repository_namespace(common_dir) / prototype.name
+    return common_dir / "gludd" / "locks" / prototype.name
 
 
 def default_resource_lock(
@@ -193,11 +180,18 @@ def default_resource_lock(
 ) -> Path:
     """Return a stable project-scoped lock path for one resource."""
 
-    if resource == "collection":
-        configured = os.environ.get("GLUDD_COLLECTION_LOCK", "").strip()
-        if configured:
-            return Path(configured).expanduser()
-    return repository_resource_lock(resource, start)
+    canonical = repository_resource_lock(resource, start)
+    if resource != "collection":
+        return canonical
+    configured = os.environ.get("GLUDD_COLLECTION_LOCK", "").strip()
+    if not configured:
+        return canonical
+    configured_path = Path(configured).expanduser().resolve(strict=False)
+    if configured_path != canonical.resolve(strict=False):
+        raise RepositoryIdentityError(
+            "GLUDD_COLLECTION_LOCK cannot redirect the canonical repository lease"
+        )
+    return canonical
 
 
 def default_collection_lock(start: Path | str | None = None) -> Path:

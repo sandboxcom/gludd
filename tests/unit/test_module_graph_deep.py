@@ -217,6 +217,7 @@ CORE_PACKAGES: frozenset[str] = frozenset(
 
 SECURITY_PACKAGES: frozenset[str] = frozenset(
     {
+        "general_ludd.azure_containerapp_environment_guard",
         "general_ludd.secrets",
         "general_ludd.security",
         "general_ludd.auth",

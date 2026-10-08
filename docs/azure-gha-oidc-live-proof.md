@@ -61,6 +61,17 @@ a SHA-256 digest over the verified configuration. Reviewer identities and raw
 API responses never reach logs. GitHub CLI launch failures, timeouts, and
 nonzero responses collapse to content-free lookup rejection codes.
 
+The module graph classifies this guard in the security layer: it decides
+whether a protected Environment may cross the credential-minting and paid
+compute admission boundary, while deliberately importing no Azure SDK or
+business-orchestration code. That ownership is reinforced by long-lived
+practitioner evidence. [GitHub Community discussion 12241](https://github.com/orgs/community/discussions/12241)
+opened in March 2022 and still recorded feature-availability confusion in May
+2025, while [discussion 39054](https://github.com/orgs/community/discussions/39054)
+opened in November 2022 and continued receiving branch/tag protection reports
+through January 2026. Protection-setting drift therefore outlives individual
+workflow revisions and remains a fail-closed security concern.
+
 The make-target contract has a network-free behavioral check:
 
 ```console
