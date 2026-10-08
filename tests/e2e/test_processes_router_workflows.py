@@ -26,9 +26,14 @@ class _FakeRegistry:
             to_dict=lambda: {"pid": 123, "command": ["worker"], "origin": "e2e"},
         )
         self.signal_calls: list[tuple[int, int, bool]] = []
+        self.active_snapshot_calls = 0
         self.resolve_error: Exception | None = None
         self.signal_error: Exception | None = None
         self.alive = True
+
+    def active_snapshot(self) -> list[SimpleNamespace]:
+        self.active_snapshot_calls += 1
+        return [self.record]
 
     def list(self):
         return [self.record]
@@ -73,6 +78,7 @@ async def test_list_and_signal_success(monkeypatch):
         )
     assert signalled.status_code == 200
     assert signalled.json()["signal"] == "SIGTERM"
+    assert registry.active_snapshot_calls == 1
     assert registry.signal_calls == [(123, 15, True)]
 
 
