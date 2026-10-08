@@ -29,6 +29,9 @@ from general_ludd.integrity.store import IntegrityError, IntegrityStore
 ArtifactKind = Literal["rule", "report", "receipt"]
 _MODEL = TypeVar("_MODEL", bound=BaseModel)
 _DIGEST_PATTERN: Final[re.Pattern[str]] = re.compile(r"^sha256:([0-9a-f]{64})$")
+_PROJECT_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+)
 _RECORD_SCHEMA: Final[str] = "gludd.decision-authenticated-artifact/v1"
 _DOMAIN: Final[bytes] = b"general_ludd.decision_codification.artifacts.v1\x00"
 _MAX_RECEIPT_CHAIN: Final[int] = 256
@@ -70,6 +73,50 @@ class DecisionArtifactStore:
             "identity": identity,
         })
         return f"hmac-sha256:{digest}"
+
+    def decision_observability_hmac(
+        self,
+        project_id: str,
+        policy_digest: str,
+        receipt_digest: str,
+    ) -> str:
+        """Authenticate one exact-scope observability receipt digest."""
+        payload = self._observability_hmac_payload(
+            project_id,
+            policy_digest,
+            receipt_digest,
+        )
+        return f"hmac-sha256:{self._integrity.sign(payload)}"
+
+    def verify_decision_observability_hmac(
+        self,
+        project_id: str,
+        policy_digest: str,
+        receipt_digest: str,
+        authentication_tag: str,
+    ) -> None:
+        """Verify one status-receipt HMAC without exposing key material."""
+        if (
+            not isinstance(authentication_tag, str)
+            or not authentication_tag.startswith("hmac-sha256:")
+        ):
+            raise ArtifactIntegrityError(
+                "observability receipt authentication tag is invalid"
+            )
+        payload = self._observability_hmac_payload(
+            project_id,
+            policy_digest,
+            receipt_digest,
+        )
+        try:
+            self._integrity.verify(
+                payload,
+                authentication_tag.removeprefix("hmac-sha256:"),
+            )
+        except IntegrityError:
+            raise ArtifactIntegrityError(
+                "observability receipt authentication tag mismatched"
+            ) from None
 
     def create_rule_bundle(self, bundle: DecisionRuleBundleV1) -> None:
         """Persist one immutable rule bundle under its canonical digest."""
@@ -269,6 +316,30 @@ class DecisionArtifactStore:
         if matched is None:
             raise ArtifactIntegrityError("artifact identifier is not a SHA-256 digest")
         return f"decision-{kind}-{matched.group(1)}"
+
+    @staticmethod
+    def _observability_hmac_payload(
+        project_id: str,
+        policy_digest: str,
+        receipt_digest: str,
+    ) -> dict[str, str]:
+        if (
+            not isinstance(project_id, str)
+            or _PROJECT_PATTERN.fullmatch(project_id) is None
+            or not isinstance(policy_digest, str)
+            or _DIGEST_PATTERN.fullmatch(policy_digest) is None
+            or not isinstance(receipt_digest, str)
+            or _DIGEST_PATTERN.fullmatch(receipt_digest) is None
+        ):
+            raise ArtifactIntegrityError(
+                "observability receipt authentication scope is invalid"
+            )
+        return {
+            "purpose": "decision-observability-status/v1",
+            "project_id": project_id,
+            "policy_digest": policy_digest,
+            "receipt_digest": receipt_digest,
+        }
 
 
 __all__ = [

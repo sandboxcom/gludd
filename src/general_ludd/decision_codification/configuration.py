@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from general_ludd.config.decision_codification import (
     DecisionCaptureIdentityConfig,
@@ -12,14 +13,28 @@ from general_ludd.config.decision_codification import (
 from general_ludd.decision_codification.artifact_store import DecisionArtifactStore
 from general_ludd.decision_codification.capture import DecisionOutcomeRecorder
 from general_ludd.decision_codification.durable import DurableGenerationStore
+from general_ludd.decision_codification.observability import DecisionReuseObservability
 from general_ludd.decision_codification.rollout import RolloutController
 from general_ludd.decision_codification.runtime import DecisionRuntime
 from general_ludd.decision_codification.service import DecisionCodificationAdapter
+from general_ludd.decision_codification.telemetry import DecisionCodificationTelemetry
 from general_ludd.replay.store import RunBundleStore
 
 
 class DecisionCodificationConfigurationError(RuntimeError):
     """Raised when enabled live codification cannot be built safely."""
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionCodificationComponents:
+    """Durable capabilities shared by the daemon and the operator CLI."""
+
+    adapter: DecisionCodificationAdapter
+    replay: RunBundleStore
+    artifacts: DecisionArtifactStore
+    pointers: DurableGenerationStore
+    rollout: RolloutController
+    observability: DecisionReuseObservability
 
 
 def _secret_key(environment_name: str, environ: Mapping[str, str]) -> bytes:
@@ -31,12 +46,12 @@ def _secret_key(environment_name: str, environ: Mapping[str, str]) -> bytes:
     return value.encode("utf-8")
 
 
-def build_configured_adapter(
+def build_configured_components(
     config: DecisionCodificationConfig,
     *,
     environ: Mapping[str, str] | None = None,
-) -> DecisionCodificationAdapter | None:
-    """Build one durable adapter or preserve the default-disabled path."""
+) -> DecisionCodificationComponents | None:
+    """Build one durable capability set or preserve the default-disabled path."""
     if not isinstance(config, DecisionCodificationConfig):
         raise DecisionCodificationConfigurationError(
             "decision codification configuration is invalid"
@@ -95,13 +110,31 @@ def build_configured_adapter(
             pointers,
             rollout_key=rollout_key,
         )
-        runtime = DecisionRuntime(artifacts, rollout)
-        return DecisionCodificationAdapter(
+        telemetry = DecisionCodificationTelemetry()
+        observability = DecisionReuseObservability(
+            pointers,
+            rollout,
+            artifacts,
+            project_id=config.project_id,
+            policy_digest=config.policy_digest,
+            telemetry=telemetry,
+        )
+        runtime = DecisionRuntime(artifacts, rollout, telemetry=telemetry)
+        adapter = DecisionCodificationAdapter(
             bundle_reader=replay,
             runtime=runtime,
             project_id=config.project_id,
             policy_digest=config.policy_digest,
             decision_recorder=decision_recorder,
+            observability=observability,
+        )
+        return DecisionCodificationComponents(
+            adapter=adapter,
+            replay=replay,
+            artifacts=artifacts,
+            pointers=pointers,
+            rollout=rollout,
+            observability=observability,
         )
     except DecisionCodificationConfigurationError:
         raise
@@ -111,9 +144,21 @@ def build_configured_adapter(
         ) from exc
 
 
+def build_configured_adapter(
+    config: DecisionCodificationConfig,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> DecisionCodificationAdapter | None:
+    """Build one durable adapter or preserve the default-disabled path."""
+    components = build_configured_components(config, environ=environ)
+    return None if components is None else components.adapter
+
+
 __all__ = [
     "DecisionCaptureIdentityConfig",
+    "DecisionCodificationComponents",
     "DecisionCodificationConfig",
     "DecisionCodificationConfigurationError",
     "build_configured_adapter",
+    "build_configured_components",
 ]

@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from general_ludd.decision_codification.coordination import (
+    run_with_decision_capture_lease,
+)
 from general_ludd.decision_codification.schema import (
     DecisionKind,
     FallbackReason,
@@ -532,16 +535,41 @@ async def _record_agent_decision_outcome(
     if not callable(recorder):
         return
     try:
-        await loop._bounded_to_thread(
-            recorder,
+        capture_id = f"return-review:{task_return.return_id}"
+        capture_arguments: dict[str, object] = {
+            "project_id": attribution.project_id,
+            "decision_kind": attribution.decision_kind,
+            "features": _review_context_features(record, task_return),
+            "decision": _review_action_for_fallback(decision),
+            "capture_id": capture_id,
+            "root_task_id": task_return.todo_id,
+            "outcome": outcome,
+            "occurred_at": datetime.now(UTC),
+        }
+
+        async def capture_operation() -> object:
+            return await loop._bounded_to_thread(recorder, **capture_arguments)
+
+        coordination_key = getattr(
+            adapter,
+            "agent_decision_coordination_key",
+            None,
+        )
+        if not callable(coordination_key):
+            await capture_operation()
+            return
+        lease_key = coordination_key(
             project_id=attribution.project_id,
             decision_kind=attribution.decision_kind,
-            features=_review_context_features(record, task_return),
-            decision=_review_action_for_fallback(decision),
-            capture_id=f"return-review:{task_return.return_id}",
+            capture_id=capture_id,
             root_task_id=task_return.todo_id,
-            outcome=outcome,
-            occurred_at=datetime.now(UTC),
+        )
+        if lease_key is None:
+            return
+        await run_with_decision_capture_lease(
+            loop._active_session,
+            lease_key=lease_key,
+            operation=capture_operation,
         )
     except Exception as exc:
         logger.warning(

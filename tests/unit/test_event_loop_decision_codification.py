@@ -161,6 +161,7 @@ class _RecordingFallbackAdapter(_AbstainingAdapter):
     def __init__(self) -> None:
         super().__init__(DecisionAbstentionV1(reason=FallbackReason.NO_ACTIVE_RULE))
         self.captures: list[dict[str, object]] = []
+        self.coordination_requests: list[dict[str, object]] = []
 
     def resolve(self, **kwargs: object) -> DecisionResolution:
         resolved = super().resolve(**kwargs)
@@ -176,6 +177,10 @@ class _RecordingFallbackAdapter(_AbstainingAdapter):
 
     def record_agent_decision_outcome(self, **kwargs: object) -> None:
         self.captures.append(kwargs)
+
+    def agent_decision_coordination_key(self, **kwargs: object) -> str:
+        self.coordination_requests.append(kwargs)
+        return "decision-capture:" + "9" * 64
 
 
 class _NormalizingAdapter:
@@ -398,6 +403,17 @@ async def test_agent_fallback_automatically_records_reusable_outcome_off_loop(
     apply_fails: bool,
     expected_outcome: VerifiedOutcome,
 ) -> None:
+    leases: list[tuple[object, str]] = []
+
+    async def _coordinated_capture(
+        session: object,
+        *,
+        lease_key: str,
+        operation: Any,
+    ) -> object:
+        leases.append((session, lease_key))
+        return await operation()
+
     async def _apply(*_args: object, **_kwargs: object) -> None:
         if apply_fails:
             raise RuntimeError("private application failure")
@@ -405,6 +421,10 @@ async def test_agent_fallback_automatically_records_reusable_outcome_off_loop(
     monkeypatch.setattr(
         "general_ludd.review.decision_applier.apply_decision",
         _apply,
+    )
+    monkeypatch.setattr(
+        "general_ludd.event_loop.review_orchestration.run_with_decision_capture_lease",
+        _coordinated_capture,
     )
     decision = TaskDecision(
         return_id="RET-LIVE-001",
@@ -432,6 +452,17 @@ async def test_agent_fallback_automatically_records_reusable_outcome_off_loop(
         "occurred_at": adapter.captures[0]["occurred_at"],
     }
     assert "audit_notes" not in adapter.captures[0]
+    assert adapter.coordination_requests == [
+        {
+            "project_id": "project-1",
+            "decision_kind": DecisionKind.REVIEW,
+            "capture_id": "return-review:RET-LIVE-001",
+            "root_task_id": "TODO-LIVE-001",
+        }
+    ]
+    assert leases == [
+        (loop._active_session, "decision-capture:" + "9" * 64)
+    ]
     assert len(loop.offloaded) == 2
 
 

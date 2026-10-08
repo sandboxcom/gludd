@@ -406,6 +406,15 @@ def test_configuration_is_default_off_secret_indirect_and_durable(
     assert second is not None
     assert first.project_id == second.project_id == "project-1"
     assert first.policy_digest == second.policy_digest
+    assert (
+        first.agent_decision_coordination_key(
+            project_id="project-1",
+            decision_kind=DecisionKind.REVIEW,
+            capture_id="return-review:RET-OFF",
+            root_task_id="TODO-OFF",
+        )
+        is None
+    )
     assert config.model_dump(mode="json").get("artifact_key") is None
     assert config.state_path is not None
     assert config.state_path.is_file()
@@ -469,6 +478,17 @@ def test_configured_adapter_automatically_signs_agent_outcome_capture(
     }
     adapter = build_configured_adapter(config, environ=environment)
     assert adapter is not None
+
+    coordination_key = adapter.agent_decision_coordination_key(
+        project_id="project-1",
+        decision_kind=DecisionKind.REVIEW,
+        capture_id="return-review:RET-CONFIG-001",
+        root_task_id="TODO-CONFIG-001",
+    )
+    assert coordination_key is not None
+    assert coordination_key.startswith("decision-capture:")
+    assert "RET-CONFIG-001" not in coordination_key
+    assert "TODO-CONFIG-001" not in coordination_key
 
     receipt = adapter.record_agent_decision_outcome(
         project_id="project-1",

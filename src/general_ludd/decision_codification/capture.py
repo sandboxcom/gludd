@@ -130,6 +130,26 @@ class DecisionOutcomeRecorder:
             hashlib.sha256,
         ).hexdigest()
 
+    def coordination_key(
+        self,
+        *,
+        capture_id: str,
+        root_task_id: str,
+        decision_kind: DecisionKind,
+    ) -> str:
+        """Return one opaque cross-host lease key for a private capture identity."""
+        private_capture_id = self._bounded_private_identifier(capture_id)
+        private_root_task_id = self._bounded_private_identifier(root_task_id)
+        if not isinstance(decision_kind, DecisionKind) or decision_kind not in _EVENT_TYPES:
+            raise DecisionCaptureError("decision capture kind is unsupported")
+        capture_digest = self._correlation_digest(
+            "capture",
+            decision_kind.value,
+            private_capture_id,
+            private_root_task_id,
+        )
+        return f"decision-capture:{capture_digest}"
+
     @staticmethod
     def _utc(value: object) -> datetime:
         if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
@@ -169,12 +189,11 @@ class DecisionOutcomeRecorder:
         if type(features) is not dict:
             raise DecisionCaptureError("decision capture context is invalid")
 
-        capture_digest = self._correlation_digest(
-            "capture",
-            decision_kind.value,
-            private_capture_id,
-            private_root_task_id,
-        )
+        capture_digest = self.coordination_key(
+            capture_id=private_capture_id,
+            root_task_id=private_root_task_id,
+            decision_kind=decision_kind,
+        ).removeprefix("decision-capture:")
         task_digest = self._correlation_digest("task", private_root_task_id)
         run_id = f"decision-{decision_kind.value}-{capture_digest}"
         correlation: dict[str, object] = {

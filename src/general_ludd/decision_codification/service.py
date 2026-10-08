@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from time import monotonic_ns as _monotonic_ns
 from typing import Protocol
 
 from pydantic import ConfigDict, TypeAdapter, ValidationError
@@ -32,6 +33,10 @@ from general_ludd.decision_codification.normalize import (
     normalize_verified_decision_event,
     normalize_verified_decision_outcome_event,
 )
+from general_ludd.decision_codification.observability import (
+    DecisionResolutionPath,
+    DecisionReuseObservability,
+)
 from general_ludd.decision_codification.rollout import OutcomeFeedback
 from general_ludd.decision_codification.runtime import CodifiedDecision, DecisionRuntime
 from general_ludd.decision_codification.schema import (
@@ -40,6 +45,7 @@ from general_ludd.decision_codification.schema import (
     DecisionKind,
     DecisionRuleBundleV1,
     EvaluationReportV1,
+    FallbackReason,
     NormalizationRefusalV1,
     OutcomeEvidenceV1,
     RolloutStage,
@@ -380,9 +386,17 @@ AgentFallback = Callable[[DecisionAbstentionV1], str]
 class DecisionResolver:
     """Use exact codified rules first and invoke an agent only after abstention."""
 
-    def __init__(self, runtime: DecisionRuntime) -> None:
+    def __init__(
+        self,
+        runtime: DecisionRuntime,
+        *,
+        observability: DecisionReuseObservability | None = None,
+        monotonic_ns: Callable[[], int] = _monotonic_ns,
+    ) -> None:
         """Bind the local deterministic runtime; no model adapter is retained."""
         self._runtime = runtime
+        self._observability = observability
+        self._monotonic_ns = monotonic_ns
 
     def resolve(
         self,
@@ -398,6 +412,7 @@ class DecisionResolver:
         fallback: AgentFallback,
     ) -> DecisionResolution:
         """Return a local hit, otherwise make exactly one explicit fallback call."""
+        started = self._tick() if self._observability is not None else None
         normalized = normalize_decision_context(
             project_id=project_id,
             expected_project_id=expected_project_id,
@@ -415,7 +430,7 @@ class DecisionResolver:
             side_effect_id=side_effect_id,
         )
         if isinstance(result, CodifiedDecision):
-            return DecisionResolution(
+            resolution = DecisionResolution(
                 decision=result.decision,
                 source=DecisionResolutionSource.CODIFIED,
                 candidate_digest=result.candidate_digest,
@@ -426,7 +441,30 @@ class DecisionResolver:
                 rollout_stage=result.rollout_stage,
                 application_id=result.application_id,
             )
-        decision = fallback(result)
+            self._observe(
+                started=started,
+                project_id=project_id,
+                policy_digest=policy_digest,
+                decision_kind=decision_kind,
+                path=DecisionResolutionPath.EXACT_RULE,
+                abstention_reason=None,
+                candidate_digest=result.candidate_digest,
+                rollout_stage=result.rollout_stage,
+            )
+            return resolution
+        try:
+            decision = fallback(result)
+        finally:
+            self._observe(
+                started=started,
+                project_id=project_id,
+                policy_digest=policy_digest,
+                decision_kind=decision_kind,
+                path=DecisionResolutionPath.AGENT_FALLBACK,
+                abstention_reason=result.reason,
+                candidate_digest=result.candidate_digest,
+                rollout_stage=None,
+            )
         if decision not in DECISION_ACTIONS_V1[decision_kind]:
             raise DecisionResolutionError(
                 "agent fallback returned a decision outside the action vocabulary"
@@ -440,6 +478,45 @@ class DecisionResolver:
             project_id=project_id,
             decision_kind=decision_kind,
         )
+
+    def _tick(self) -> int | None:
+        try:
+            value = self._monotonic_ns()
+        except Exception:
+            return None
+        return value if type(value) is int and value >= 0 else None
+
+    def _observe(
+        self,
+        *,
+        started: int | None,
+        project_id: str,
+        policy_digest: str,
+        decision_kind: DecisionKind,
+        path: DecisionResolutionPath,
+        abstention_reason: FallbackReason | None,
+        candidate_digest: str | None,
+        rollout_stage: RolloutStage | None,
+    ) -> None:
+        observer = self._observability
+        if observer is None or started is None:
+            return
+        finished = self._tick()
+        if finished is None or finished < started:
+            return
+        try:
+            observer.record_resolution(
+                project_id=project_id,
+                policy_digest=policy_digest,
+                decision_kind=decision_kind,
+                path=path,
+                abstention_reason=abstention_reason,
+                candidate_digest=candidate_digest,
+                rollout_stage=rollout_stage,
+                latency_ns=finished - started,
+            )
+        except Exception:
+            return
 
     def record_application_outcome(
         self,
@@ -490,6 +567,7 @@ class DecisionCodificationAdapter:
         policy_digest: str,
         floors: MiningFloors | None = None,
         decision_recorder: DecisionOutcomeRecorder | None = None,
+        observability: DecisionReuseObservability | None = None,
     ) -> None:
         """Validate and bind the existing replay and runtime capabilities."""
         try:
@@ -524,11 +602,17 @@ class DecisionCodificationAdapter:
             raise DecisionCodificationIntegrationError(
                 "decision codification recorder is invalid"
             )
+        if observability is not None and not isinstance(
+            observability, DecisionReuseObservability
+        ):
+            raise DecisionCodificationIntegrationError(
+                "decision codification observability is invalid"
+            )
 
         self._project_id = bound_project_id
         self._policy_digest = bound_policy_digest
         self._analyzer = DecisionLogAnalyzer(bundle_reader, floors=floors)
-        self._resolver = DecisionResolver(runtime)
+        self._resolver = DecisionResolver(runtime, observability=observability)
         self._decision_recorder = decision_recorder
 
     @property
@@ -646,6 +730,27 @@ class DecisionCodificationAdapter:
             decision=decision,
             outcome=outcome,
             occurred_at=occurred_at,
+        )
+
+    def agent_decision_coordination_key(
+        self,
+        *,
+        project_id: str,
+        decision_kind: DecisionKind,
+        capture_id: str,
+        root_task_id: str,
+    ) -> str | None:
+        """Return an opaque lease key only when signed capture is configured."""
+        if project_id != self._project_id:
+            raise DecisionCodificationIntegrationError(
+                "agent decision project scope does not match adapter binding"
+            )
+        if self._decision_recorder is None:
+            return None
+        return self._decision_recorder.coordination_key(
+            capture_id=capture_id,
+            root_task_id=root_task_id,
+            decision_kind=decision_kind,
         )
 
 

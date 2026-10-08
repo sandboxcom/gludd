@@ -167,6 +167,35 @@ def test_capture_is_idempotent_and_rejects_same_identity_with_new_content(
         _capture(recorder, decision="reject")
 
 
+def test_capture_coordination_key_is_stable_opaque_and_scope_bound(
+    tmp_path: Path,
+) -> None:
+    recorder = _recorder(tmp_path / "replays")
+
+    first = recorder.coordination_key(
+        capture_id="return-review:RET-PRIVATE-001",
+        root_task_id="TODO-PRIVATE-001",
+        decision_kind=DecisionKind.REVIEW,
+    )
+    duplicate = recorder.coordination_key(
+        capture_id="return-review:RET-PRIVATE-001",
+        root_task_id="TODO-PRIVATE-001",
+        decision_kind=DecisionKind.REVIEW,
+    )
+    different = recorder.coordination_key(
+        capture_id="return-review:RET-PRIVATE-002",
+        root_task_id="TODO-PRIVATE-001",
+        decision_kind=DecisionKind.REVIEW,
+    )
+
+    assert first == duplicate
+    assert first != different
+    assert first.startswith("decision-capture:")
+    assert len(first) == len("decision-capture:") + 64
+    assert "RET-PRIVATE" not in first
+    assert "TODO-PRIVATE" not in first
+
+
 @pytest.mark.parametrize(
     "changes",
     [

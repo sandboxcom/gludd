@@ -12,6 +12,8 @@ import general_ludd.decision_codification.service as service_module
 from general_ludd.approval.gate import ApprovalDecision
 from general_ludd.decision_codification.approval import DecisionApprovalService
 from general_ludd.decision_codification.artifact_store import DecisionArtifactStore
+from general_ludd.decision_codification.durable import DurableGenerationStore
+from general_ludd.decision_codification.observability import DecisionReuseObservability
 from general_ludd.decision_codification.rollout import (
     AtomicGenerationStore,
     RolloutController,
@@ -400,7 +402,22 @@ def test_verified_logs_become_an_exact_zero_agent_runtime_path(tmp_path: Path) -
     )
     rollout.promote(active, expected_candidate_digest=candidate.bundle.candidate_digest)
 
-    resolver = DecisionResolver(DecisionRuntime(artifacts, rollout))
+    timer = iter(
+        (0, 1_000_000, 2_000_000, 5_000_000, 10_000_000, 20_000_000)
+    )
+    observability = DecisionReuseObservability(
+        DurableGenerationStore(tmp_path / "observability.sqlite3"),
+        rollout,
+        artifacts,
+        project_id="project-1",
+        policy_digest=POLICY_DIGEST,
+        clock=lambda: NOW + timedelta(minutes=10),
+    )
+    resolver = DecisionResolver(
+        DecisionRuntime(artifacts, rollout),
+        observability=observability,
+        monotonic_ns=lambda: next(timer),
+    )
     fallback_calls: list[str] = []
 
     def fallback(reason: object) -> str:
@@ -468,6 +485,26 @@ def test_verified_logs_become_an_exact_zero_agent_runtime_path(tmp_path: Path) -
     )
     assert after_rollback.source is DecisionResolutionSource.AGENT_FALLBACK
     assert fallback_calls == ["DecisionAbstentionV1", "DecisionAbstentionV1"]
+    status = observability.status_receipt(
+        project_id="project-1",
+        policy_digest=POLICY_DIGEST,
+    )
+    review = next(
+        item
+        for item in status.summaries
+        if item.decision_kind is DecisionKind.REVIEW
+    )
+    assert review.exact_rule_hits == 1
+    assert review.avoided_agent_calls == 1
+    assert review.typed_abstentions == 2
+    assert review.fallback_calls == 2
+    assert review.latency_observations == 3
+    assert review.latency_total_us == 14_000
+    assert [(item.reason, item.count) for item in review.abstentions] == [
+        (FallbackReason.NO_ACTIVE_RULE, 1),
+        (FallbackReason.SCOPE_MISS, 1),
+    ]
+    assert review.current_candidate_digest is None
 
 
 def test_analyzer_excludes_untrusted_or_unusable_evidence_content_free() -> None:
@@ -591,4 +628,42 @@ def test_resolver_rejects_an_agent_decision_outside_the_closed_vocabulary() -> N
             side_effect_id="invalid-result",
             fallback=invalid_fallback,
         )
+    assert calls == [FallbackReason.NO_ACTIVE_RULE]
+
+
+def test_observability_failure_cannot_change_fallback_decision() -> None:
+    class _AbstainingRuntime:
+        def lookup(self, **kwargs: object) -> DecisionAbstentionV1:
+            return DecisionAbstentionV1(reason=FallbackReason.NO_ACTIVE_RULE)
+
+    class _RaisingObserver:
+        def record_resolution(self, **kwargs: object) -> bool:
+            raise RuntimeError("private observer failure")
+
+    timer = iter((0, 1_000_000))
+    resolver = DecisionResolver(
+        cast(DecisionRuntime, _AbstainingRuntime()),
+        observability=cast(DecisionReuseObservability, _RaisingObserver()),
+        monotonic_ns=lambda: next(timer),
+    )
+    calls: list[FallbackReason] = []
+
+    def fallback(abstention: DecisionAbstentionV1) -> str:
+        calls.append(abstention.reason)
+        return "reject"
+
+    resolved = resolver.resolve(
+        project_id="project-1",
+        expected_project_id="project-1",
+        decision_kind=DecisionKind.REVIEW,
+        policy_digest=POLICY_DIGEST,
+        features=_features(),
+        correlation_id="live-task-observer-failure",
+        now=NOW,
+        side_effect_id="observer-failure-result",
+        fallback=fallback,
+    )
+
+    assert resolved.source is DecisionResolutionSource.AGENT_FALLBACK
+    assert resolved.decision == "reject"
     assert calls == [FallbackReason.NO_ACTIVE_RULE]
