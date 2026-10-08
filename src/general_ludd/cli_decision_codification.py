@@ -76,6 +76,7 @@ _ANALYSIS_PATH = "/api/v1/decision-codification/analyze"
 _REQUEST_TIMEOUT_SECONDS = 30.0
 _APPROVER_IDENTITY_ENV = "GLUDD_DECISION_APPROVER_ID"
 _DIGEST_ADAPTER = TypeAdapter(Sha256Digest, config=ConfigDict(strict=True))
+_TerminalCaptureStatus = Literal["completed", "failed", "cancelled"]
 
 
 class _StrictOperatorOutput(BaseModel):
@@ -89,7 +90,7 @@ class DecisionCaptureSummary(_StrictOperatorOutput):
 
     run_id: SafeRunId
     project_id: BoundedIdentifier
-    status: Literal["completed", "failed", "cancelled"]
+    status: _TerminalCaptureStatus
     event_count: int = Field(ge=0, le=100_000)
     events_sha256: Sha256Digest
     integrity: Literal["signed"]
@@ -135,6 +136,19 @@ class _OperatorCLIError(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__("decision operator request failed closed")
+
+
+def _terminal_capture_status(value: object) -> _TerminalCaptureStatus:
+    """Narrow a replay status to the terminal capture vocabulary."""
+    if type(value) is not str:
+        raise _OperatorCLIError
+    if value == "completed":
+        return "completed"
+    if value == "failed":
+        return "failed"
+    if value == "cancelled":
+        return "cancelled"
+    raise _OperatorCLIError
 
 
 class _DecisionOperator:
@@ -185,18 +199,18 @@ class _DecisionOperator:
         try:
             verified = self._replay.read_verified(run_id)
             manifest = verified.manifest
+            status = _terminal_capture_status(manifest.status)
             if (
                 manifest.run_id != run_id
                 or manifest.project_id != self._project_id
                 or manifest.integrity != "signed"
                 or manifest.event_count != len(verified.events)
-                or manifest.status not in {"completed", "failed", "cancelled"}
             ):
                 raise _OperatorCLIError
             return DecisionCaptureSummary(
                 run_id=manifest.run_id,
                 project_id=manifest.project_id,
-                status=manifest.status,
+                status=status,
                 event_count=manifest.event_count,
                 events_sha256=manifest.events_sha256,
                 integrity=manifest.integrity,
