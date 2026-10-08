@@ -38,6 +38,27 @@ evidence but are still open; their recorded exact-head, hosted, or release proof
 remains required. They are implemented but still open and are not counted among
 the five completed v0.1.2 backlog items.
 
+S83.180 is also in progress: its opt-in reconciliation plan now emits bounded
+disjoint merge groups, deterministic temporary-candidate recipes, and Git-native
+pairwise conflict predictions over immutable heads. Unsupported, ambiguous,
+timed-out, oversized, or freshness-stale evidence blocks admission; even a clean
+pairwise result never claims cumulative mergeability. Its digest-sealed snapshot
+basis also retains every originally observed branch, and the opt-in reconciliation
+snapshot deterministically labels exact fresh identities as pending, merged,
+stale, blocked, or explicitly retired without invoking Git. Retirement now
+requires either exact ancestry/patch-equivalence already sealed in the fresh
+inventory or a digest-bound operator approval tied to the plan, branch, head,
+fixed reason code, reviewer-identity digest, signer key, and bounded issue/expiry
+times. Operator approvals now use the existing locked Ed25519 verifier and an
+explicit active/revoked public-key trust store; unsigned legacy envelopes,
+unknown or revoked signers, tampering, expiry, replay, duplicates, oversized
+evidence, and free-form reasons fail closed. The planner remains ref/worktree
+read-only. An opt-in freshness-bound remote-tracking inventory now accounts for
+local-only, remote-only, equal, diverged, and deleted-upstream names and emits
+only retain/review/delete-candidate recommendations from local Git plumbing; it
+never fetches, pushes, prunes, or deletes. Collection, commit, and exact-head
+full-gate evidence are still required before release assignment.
+
 ## [0.1.1] — 2026-10-05
 
 - Source range: `v0.1.0-beta.4..v0.1.1` (826 commits; release source `5dcd2f6931aa6cb13d4de526d6c739891c0240f1`).
@@ -105,7 +126,7 @@ the five completed v0.1.2 backlog items.
 - Quantization ladder: GGUF Q4/Q5/Q8 with per-level quality assessment (severe/moderate/slight impact) (`models/quantization.py`)
 - Local model health check: warm-start at daemon boot, `/api/health` endpoint includes local model status (`health/local_model_check.py`)
 - Ollama health check + URL reachability probing as part of source-chain resolution
-- Branch reconciliation tooling: `development-merge-forward` (dry-run-first transactional reconciliation with current-development content preference), `development-merge-forward-batch` (atomic ancestry-only batching for superseded refs), `git-patch-equivalence` (separate already-applied patches from unique branch work), `resolve-development-conflicts` (preserve development on conflicts), and `branch-reconciliation-summary` (bounded cursor-paginated head classification with current-only and opt-in semantic-summary modes)
+- Branch reconciliation tooling: `development-merge-forward` (dry-run-first transactional reconciliation with current-development content preference), `development-merge-forward-batch` (atomic ancestry-only batching for superseded refs), `git-patch-equivalence` (separate already-applied patches from unique branch work), `resolve-development-conflicts` (preserve development on conflicts), and `branch-reconciliation-summary` (bounded cursor-paginated head classification with current-only, semantic-summary, sequential-queue, and read-only disjoint-head planning modes, including per-group immutable-object rehearsal and exact-candidate admission recipes)
 
 ### Fixed
 - S83 reliability/security wave: fail-closed SkillCatalog download-path confinement, ripgrep root confinement, noncanonical GitHub issue-number validation, reviewed provider import policy, FIPS 203 ML-KEM provider boundary replacing custom Kyber, unsafe XMSS fallback removal, strict MessagePack DiskCache serialization, authenticated TLS 1.3 state, X.509 chain validation, and fail-closed dependency audit (100+ S83 items across algorithms, security, connectors, and tooling)

@@ -153,6 +153,128 @@ source is used. On interruption, conflict, or external ref movement, the consume
 stops without skipping ahead and regenerates the read-only queue from current
 refs. The inventory deliberately performs none of those merges itself.
 
+### Bounded current-head merge-queue planning
+
+The inventory CLI also accepts the separate opt-in combination `--all-pages
+--merge-queue-plan`. This mode consumes the same exhaustive reachability and
+patch-equivalence classification, then plans only deduplicated `unique` / `current`
+heads. Ancestor and patch-equivalent heads remain visible in the observed counts
+but cannot consume a planning slot. The existing page, exhaustive-summary,
+sequential-queue, and receipt schemas are unchanged when the flag is absent.
+
+For each exact candidate object ID, the planner asks Git for the NUL-delimited
+three-dot branch delta (`target...head`). Paths are therefore selected from the
+merge base to the candidate, not merely from its tip commit. Candidates are
+sorted by canonical ref and assigned by deterministic first fit to the earliest
+group in which every pair is disjoint. An exact changed-path overlap creates a
+`changed-path` collision. In addition, any two candidates that both touch the
+single-writer surface create a `shared-infrastructure` collision even when the
+individual files differ. That surface is intentionally narrow and reviewable:
+`Makefile`, `opencode.json`, `AGENTS.md`, `.claude/settings.json`, direct
+`config/*.yml` files, and direct `.github/workflows/*.yml` files.
+
+The JSON result exposes exact tips and alias refs in `candidates`, deterministic
+`groups`, typed pairwise `collisions`, complete pair counts, and explicit display
+truncation. Collision-free means path-disjoint under this policy; it is a safe
+review or validation scheduling hint, not proof of semantic compatibility and
+not permission to merge out of order. A consumer still creates and tests the
+actual cumulative merge result before integration.
+
+Planning is capped at 256 heads and 10,000 paths per head. It displays at most
+100 paths per candidate, 1,000 collision records, and 20 paths per collision;
+each Git stream is capped at 262,144 characters and the complete JSON document at
+1,048,576 characters. Candidate path or Git-output overflow fails closed because
+unknown overlap cannot be called safe. Collision display overflow is explicit:
+grouping still considers every bounded pair while `collision_pairs` retains the
+complete count and `collisions_truncated` becomes true. Immediately before
+emission, the target and complete local-ref snapshot are revalidated just as they
+are for the sequential queue.
+
+The planner never checks out or updates a ref, index, or worktree. Its inspection
+operations are fixed-argument `git diff --name-only --no-ext-diff --no-renames
+--no-textconv -z` and bounded `git merge-tree` probes over validated full object
+IDs. `merge-tree --write-tree` may create an unreachable result-tree object, but
+it installs no name under `refs/` and touches neither the index nor the worktree.
+Planning is therefore ref/worktree read-only and preserves zero-downtime behavior.
+
+#### Per-group merge rehearsal and admission
+
+Each collision-free group now carries an additive `rehearsal` member. A canonical
+SHA-256 digest of the exact target identity, group order, source tips, and alias
+refs names a `merge-rehearsal-sha256:*` candidate without creating a Git ref.
+The preflight repeats the exact `rev-parse --verify --quiet --end-of-options`
+argv and expected object ID for the target and every source alias. It also emits
+the fixed three-dot `git diff` argv, full path count, and SHA-256 of each sorted
+NUL-delimited path manifest. A consumer must reproduce those counts and digests;
+mutable branch names or a merely successful command are not equivalent evidence.
+Every group records the number of checked pairs and requires
+`shared_path_conflict_count: 0` under the same changed-path and
+shared-infrastructure policy used to form the group.
+
+The temporary-candidate recipe is an ordered chain of captured argv templates.
+For each source, `git merge-tree --write-tree --name-only --no-messages -z`
+computes a tree against the prior captured candidate, and
+[`git commit-tree`](https://git-scm.com/docs/git-commit-tree) gives that tree the
+prior candidate and exact source as parents. Fixed author/committer identity,
+the documented raw `@0 +0000` timestamps, and a digest-bound message make the
+object recipe repeatable. `${result_tree_N}` means the validated first NUL record
+from a clean merge-tree result; `${candidate_commit_N}` means the validated
+commit-tree object ID. These tokens are structured capture references, never
+shell text to evaluate. The inventory only emits this cumulative recipe: it does
+not execute those recipe steps, `commit-tree`, `merge`, `update-ref`, or
+`worktree`. Its separate pairwise `merge-tree` prediction is described below.
+
+Rehearsal expansion fails closed above 256 groups, 256 heads in a group, 10,000
+alias branches in a group, or 10,000 distinct changed paths in a group. At most
+100 shared-infrastructure paths are displayed, with truncation and redaction
+explicit, and the existing 1,048,576-character JSON ceiling still applies to the
+complete plan. These independent bounds prevent an otherwise valid inventory
+from expanding into an unbounded command document.
+
+`admission.commands` contains only checks, in order: resolve the isolated
+candidate's `HEAD`, prove the target and every source are ancestors of the
+captured final candidate, and run `make gate` on that exact candidate. The
+matching `evidence_requirements` prescribe the exact admission sequence: retain
+the terminal snapshot; reproduce every ref object and path-manifest digest;
+require a `predicted-clean` native result and zero shared-path conflicts; execute
+and record every clean tree/commit capture in recipe order; prove candidate
+identity and complete ancestry; retain the exact-candidate gate result; then let
+an authorized single writer recheck every ref immediately before integration.
+The list deliberately contains no merge, push, ref-update, or worktree-creation
+command. Any changed ref, manifest, prediction, tree status, or candidate identity
+invalidates the whole rehearsal; regenerate it instead of repairing or partially
+admitting it.
+
+##### Bounded Git-native group prediction
+
+Before emission, each group runs the mature
+[`git merge-tree`](https://git-scm.com/docs/git-merge-tree) plumbing command as
+`git merge-tree --write-tree --name-only --no-messages -z LEFT RIGHT`. Inputs are
+immutable object IDs. The deterministic matrix covers the target against every
+source and every source/source pair; an injected runner keeps unit tests hermetic.
+Compatibility is capability-based: a host must support that modern `--write-tree`
+form and its documented NUL protocol. Unsupported syntax or any return code other
+than clean `0` and conflicted `1` produces `status: blocked` with
+`blocked_reason: unsupported-git`.
+
+The predictor reports only `predicted-clean`, `conflicted`, or `blocked`; it never
+emits a `mergeable` claim. Pairwise cleanliness is not proof that the ordered,
+cumulative synthetic candidate will merge cleanly. Admission still requires the
+emitted recipe to succeed step by step and the exact candidate to pass the gate.
+Conflicted checks retain bounded path evidence, while any unsupported command,
+timeout, nonempty stderr, malformed or ambiguous NUL output, invalid tree object,
+unsafe or duplicate path, or bound overflow blocks the entire prediction and
+discards partial check details.
+
+At most 64 pair checks run serially. A group requiring more is blocked before the
+first probe. Each probe has a ten-second timeout; stdout and stderr are accepted
+only up to 262,144 characters each; at most 10,000 conflict paths are scanned and
+100 displayed. The payload records those ceilings and the derived 640-second
+worst-case command-runtime budget. Git stderr is never copied into JSON. If the
+terminal target/local-ref verification cannot reproduce the original snapshot,
+the top-level plan becomes nonterminal and unsuccessful, every group's partial
+checks are erased, and each prediction becomes `blocked: freshness-drift`.
+
 ### Native Git conflict preflight
 
 Every queued head includes a `preflight` generated from the exact recorded target
@@ -223,6 +345,230 @@ artifact and must not accept a digest recomputed by an untrusted party. On a
 movement or integrity failure, operators discard the stale handoff and generate
 a new exhaustive queue after repository activity settles.
 
+### Digest-bound no-branch-left-behind snapshots
+
+Every terminal merge-queue plan now includes a `snapshot_basis`. Unlike the
+candidate list, this basis retains every branch in the original exhaustive
+inventory, including ancestor and patch-equivalent branches that needed no new
+integration. Each ref is sorted and bound to its exact tip, initial
+classification/lifecycle, and one of `planned-ready`, `planned-blocked`, or
+`already-satisfied`. A canonical SHA-256 digest covers the complete basis and
+target identity. This additive manifest prevents a later status pass from
+silently forgetting an alias or an already-satisfied branch.
+
+`--reconciliation-snapshot` reads one bounded JSON object from standard input and
+does not invoke Git. The object must have exactly `plan`, `plan_digest`,
+`fresh_inventory`, `freshness_digest`, and `retired`. `plan` is the earlier
+terminal merge-queue plan; `plan_digest` must equal its sealed basis digest.
+`fresh_inventory` is a new terminal, untruncated `exhaustive-summary`, while
+`freshness_digest` is SHA-256 over its canonical JSON (`sort_keys`, compact
+separators, ASCII escaping, and no nonfinite numbers). The CLI retains its normal
+required target, bounded limit, and empty cursor; every other inventory mode is
+mutually exclusive. A plan emitted before `snapshot_basis` cannot prove complete
+accounting and is rejected; regenerate it with the read-only planner.
+
+The result contains separately sorted `branches` and deduplicated `heads` arrays.
+Head status uses the most conservative status among its aliases.
+
+| Status | Exact meaning |
+|---|---|
+| `pending` | The same ref/tip remains unique/current and its planned group had a clean native prediction. |
+| `merged` | The same tip is now ancestor or patch-equivalent to the fresh target. |
+| `stale` | The planned ref still exists but points at another object ID. |
+| `blocked` | The exact tip remains current without clean plan admission, or prior satisfied evidence unexpectedly regressed. |
+| `explicitly-retired` | The ref is absent and its exact planned ref/tip has fresh equivalence evidence or a verified operator approval. |
+
+An absent ref without retirement, an unknown fresh ref, an unknown or duplicate
+retirement or approval, a stale retirement head, a duplicate plan/fresh ref,
+inconsistent counts, target-identity drift, schema drift, or any digest mismatch
+returns only `invalid reconciliation snapshot`.
+
+Every retirement has exactly `approval`, `expected_tip`, and `ref`. An `approval`
+of `null` is accepted only when another ref already sealed in the plan remains in
+the digest-verified fresh inventory at the exact expected tip and is now
+`ancestor` or `patch-equivalent`. The output records `fresh-ancestor` or
+`fresh-patch-equivalent` as `retirement_basis`; path disjointness, a missing ref,
+or an unverified caller assertion is never equivalence evidence.
+
+Otherwise `approval` must be an exact Ed25519-signed envelope:
+
+```json
+{
+  "algorithm": "ed25519",
+  "body": {
+    "expires_at": "2026-10-08T23:00:00Z",
+    "expected_tip": "<full object ID>",
+    "issued_at": "2026-10-07T23:00:00Z",
+    "key_id": "release-reviewer-2026",
+    "plan_digest": "<lowercase SHA-256>",
+    "reason_code": "superseded",
+    "ref": "refs/heads/<planned branch>",
+    "reviewer_identity_digest": "<lowercase SHA-256>",
+    "version": 2
+  },
+  "signature": "<lowercase 64-byte Ed25519 signature as 128 hex characters>"
+}
+```
+
+Sign the domain-separated UTF-8 message
+`gludd.reconciliation-retirement-approval/v1\0` followed by the canonical body
+JSON. The implementation reuses
+`general_ludd.self_update.signing.verify_signature`, backed by the project's
+locked `cryptography` Ed25519 dependency; this feature does not implement a new
+signature scheme. Invoke the snapshot with both
+`--retirement-keyring <read-only-json>` and
+`--retirement-verification-time <canonical-rfc3339-utc>`. The keyring is exact,
+versioned, and sorted:
+
+```json
+{
+  "keys": [{
+    "key_id": "release-reviewer-2026",
+    "public_key": "<lowercase 32-byte Ed25519 public key as 64 hex characters>",
+    "reviewer_identity_digest": "<lowercase SHA-256>",
+    "status": "active"
+  }],
+  "schema_version": 1
+}
+```
+
+The selected key must be known, active, and bound to the same reviewer digest as
+the signed body. The plan digest, ref, and head must match the sealed plan and
+outer retirement exactly. Both times are real, second-precision canonical RFC
+3339 UTC values and must satisfy `issued_at <= verification_time < expires_at`;
+the issue time must precede expiry. Reason text and extra keys are rejected: only
+`abandoned`, `out-of-scope`, or `superseded` is accepted, avoiding conversion of
+an operator note into policy. Tampering, an unknown or revoked signer, expiry,
+cross-plan/head replay, duplicate signed envelopes, and verifier errors all fail
+closed. A ref that still exists—even at a different head—cannot be retired.
+
+Successful output uses `operator-approval` as its basis and exposes the approval
+digest, key ID, issue/expiry times, and fixed reason code. It never repeats the
+reviewer identity digest. The top-level result records the exact keyring digest
+and verification time, and `snapshot_digest` binds them with every branch and
+count. Signature-free ancestry/patch-equivalence retirement does not need a
+keyring; supplying unused trust/time evidence is rejected to keep the handoff
+unambiguous.
+
+The output repeats both input digests, reports complete per-status counts, and
+seals target, branch, head, retirement basis, approval evidence, trust root, and
+count evidence into `snapshot_digest`. `complete` is true only when every branch
+is merged or explicitly retired. SHA-256 still supplies document integrity;
+Ed25519 authenticates the bounded operator assertion. The reviewer digest is
+pseudonymous rather than anonymous and may be guessable from a small identity
+set. Keep identity mappings and private keys in the access-controlled approval
+workflow; this reader accepts only public keys and never logs or outputs the
+reviewer digest or key material.
+
+Input, output, plan entries, fresh entries, retirements, and approvals are capped:
+at most 10,000 refs/heads or retirement records and 16,777,216 canonical JSON
+characters are accepted. At most 256 signed approvals and 128 keyring entries are
+verified; the keyring read is capped at 65,536 characters, and signatures have an
+exact 128-hex encoding. Approval fields have fixed schemas and digest, object ID,
+ref, reason, signer, and timestamp validators. The operation is a deterministic
+in-memory comparison with no Git subprocess, ref, index, worktree, object, daemon,
+port, or service mutation. On any rejected or stale result, regenerate a fresh
+exhaustive inventory or whole plan and obtain a new exact approval if needed; do
+not edit or re-sign partial evidence. Rollback discards snapshots and approval
+handoffs and reverts the additive basis/flags, leaving pagination, summaries,
+queues, receipts, refs, worktrees, and deployments unchanged.
+
+Unsigned version-1 SHA-256 approval envelopes are intentionally rejected. To
+migrate, regenerate the plan/fresh inventory, issue a version-2 signature for the
+exact current plan/ref/head and bounded validity window, and provide the matching
+active public-key record. Existing fresh ancestry or patch-equivalence retirement
+remains signature-free and needs no migration. This makes rollout additive and
+ZDD-safe: deploy readers and trust configuration before emitting signed approvals;
+rollback stops emitting the optional snapshot without touching repository state.
+
+This design applies two long-lived practitioner lessons already recorded below.
+GitLab [#229156](https://gitlab.com/gitlab-org/gitlab/-/issues/229156) documents
+an interrupted merge train losing prior success state, while GitLab CLI
+[#1089](https://gitlab.com/gitlab-org/cli/-/issues/1089) documents collection
+changes producing pagination surprises. Exact retained identities plus explicit
+verified retirement distinguish deliberate removal from either lost state or an
+unstable inventory instead of treating absence as success. GitHub practitioners
+also report in [#120203](https://github.com/orgs/community/discussions/120203)
+that a queue-generated head can obscure the original source branch. Binding a
+signature to the original ref, exact tip, plan digest, signer, and expiry prevents
+disappearance, substitution, or stale approval replay from being accepted as
+operator intent; current keyring revocation provides an explicit fail-closed stop.
+
+## Fresh remote-tracking reconciliation
+
+`--remote-tracking` extends the local inventory to one explicitly selected,
+locally available `refs/remotes/<remote>/` namespace. It requires
+`--remote-name` and `--remote-verification-time`, consumes one bounded freshness
+envelope from standard input, and performs no network operation. The fetch
+coordinator must capture the exact sorted remote-tracking refs immediately after
+its successful fetch and retain this envelope as a trusted handoff:
+
+```json
+{
+  "algorithm": "sha256",
+  "body": {
+    "expires_at": "2026-10-08T01:00:00Z",
+    "fetched_at": "2026-10-08T00:00:00Z",
+    "refs": [{
+      "head": "<full object ID>",
+      "ref": "refs/remotes/origin/feature/example"
+    }],
+    "remote": "origin",
+    "version": 1
+  },
+  "digest": "<SHA-256 of the canonical body>"
+}
+```
+
+The body digest, selected remote, and complete ref/tip set must match the current
+local remote-tracking namespace exactly. Times are canonical second-precision UTC
+and must satisfy `fetched_at <= verification_time < expires_at`; mismatched,
+future, or expired evidence fails closed. SHA-256 makes handoff drift evident but
+does not authenticate who fetched it. Keep the envelope in the trusted fetch
+workflow, and use a validity window shorter than the repository's acceptable
+remote-staleness budget. A locally current remote-tracking ref still is not proof
+of current server state; this tool intentionally never claims otherwise.
+
+The implementation uses only two sorted, NUL-field-delimited
+`git for-each-ref` scans: one for `refs/heads/` and one for the exact remote
+namespace. It rejects unsafe remote names, malformed or duplicate rows, unsafe
+branch components, mismatched namespaces, configured-upstream ambiguity, and all
+symbolic refs (including `<remote>/HEAD`). Each branch-name identity receives one
+deterministic state and advisory recommendation:
+
+| State | Evidence | Recommendation |
+|---|---|---|
+| `local-only` | A local ref exists, no same-name remote ref exists, and the local ref is not configured to track that missing selected-remote ref. | `retain` |
+| `remote-only` | A remote-tracking ref exists with no same-name local ref. | `review` |
+| `equal` | Local and remote-tracking refs exist at the same exact object ID. | `retain` |
+| `diverged` | Both refs exist at different tips; this includes ahead/behind cases because the mode makes no graph-integration claim. | `review` |
+| `deleted-upstream` | The local ref's exact configured upstream is the selected same-name remote ref, and that ref is absent from fresh evidence. | `delete-candidate` |
+
+`delete-candidate` is evidence for human review, never deletion authority. The
+mode emits only `retain`, `review`, or `delete-candidate`; it never fetches,
+pushes, prunes, updates, or deletes a ref and never touches an index or worktree.
+Its Git runner retains the global ten-second timeout. Local and remote scans are
+independently capped at 10,000 refs and 2,097,152 characters; the canonical
+freshness/output document is capped at 4,194,304 characters and bounded stdin at
+16,777,216. The selected remote is at most 64 conservative ASCII characters.
+
+Branch names and object IDs can reveal private work, so output belongs in the
+same access-controlled release evidence store as the local inventory. Remote URLs,
+credentials, reflogs, commit messages, and file paths are never read or emitted.
+Rollout is opt-in and ZDD-safe: deploy the reader, then have the existing fetch
+workflow start producing freshness envelopes. Rollback stops passing the three
+remote flags and discards the advisory output; no repository or service state
+needs restoration.
+
+This boundary reflects a long-lived practitioner report on Stack Overflow
+[#7726949](https://stackoverflow.com/questions/7726949/remove-tracking-branches-no-longer-on-remote): remote-tracking refs can linger
+after upstream deletion until an explicit prune-capable fetch. It also retains
+the GitHub Community [#120203](https://github.com/orgs/community/discussions/120203)
+lesson that generated integration refs can obscure the original source branch.
+Fresh exact identities plus a non-mutating recommendation distinguish a genuinely
+remote-only branch from a stale local observation without turning absence into an
+automatic deletion.
+
 ## Opt-in semantic head summaries
 
 The authoritative S83.125 implementation landed in commit
@@ -286,10 +632,11 @@ refs remain valid lexicographic boundaries.
 
 ## Zero-downtime and observability
 
-The inventory never changes a running service or repository state, so it cannot
-cause deployment downtime. Its complete stdout is the observable handoff: a
-branch is either named as a reconciliation candidate or the target explicitly
-reports that every local branch is already reachable from development.
+The inventory never changes a running service, ref, index, or worktree, so it
+cannot cause deployment downtime. Native prediction may leave unreachable Git
+tree objects for normal object maintenance. Its complete stdout is the observable
+handoff: a branch is either named as a reconciliation candidate or the target
+explicitly reports that every local branch is already reachable from development.
 
 ## Practitioner evidence
 
@@ -363,6 +710,35 @@ and every source tip, rechecks them before emission, and gives a later sequentia
 consumer enough evidence to reject stale work rather than merging by a mutable
 branch name alone.
 
+The long-running GitHub merge-queue feedback thread
+[#46757](https://github.com/orgs/community/discussions/46757), opened in 2023,
+contains a practitioner report that nominally unrelated dependency updates still
+overlap shared `go.mod` and `go.sum` files, ejecting later work from the queue.
+That durable example motivates both exact path-overlap evidence and the stricter
+single-writer treatment for repository-wide configuration surfaces; a label such
+as "unrelated" is not sufficient evidence for co-scheduling.
+
+GitLab's long-lived parallel merge-train proposal
+[#11222](https://gitlab.com/gitlab-org/gitlab/-/issues/11222) describes optimistic
+parallel validation, but still requires ordered integration and invalidates later
+work when an earlier item fails or the target moves. The planner follows that
+operational boundary: groups reduce review and validation contention, while exact
+tip revalidation and the existing sequential queue remain authoritative for
+integration. The official [`git diff` manual](https://git-scm.com/docs/git-diff)
+defines the three-dot comparison used to measure each candidate from its merge
+base.
+
+A GitLab operator report opened in 2019,
+[#33925](https://gitlab.com/gitlab-org/gitlab/-/issues/33925), records merge-train
+admission regularly failing because the previous temporary ref no longer
+existed. GitHub practitioners later reported in
+[#120203](https://github.com/orgs/community/discussions/120203) that the
+queue-created `gh-readonly-*` head can appear current while obscuring the
+original source branch whose freshness actually matters. Together these durable
+failures motivate a candidate identified by immutable object IDs rather than a
+temporary ref, plus explicit freshness commands for the original target and
+source refs before either rehearsal or admission.
+
 The GitLab practitioner report
 [#229156](https://gitlab.com/gitlab-org/gitlab/-/issues/229156) documents a
 merge-train interruption that lost the prior successful state and forced a
@@ -380,8 +756,10 @@ large diff. A later GitLab report
 [#383730](https://gitlab.com/gitlab-org/gitlab/-/issues/383730) records conflict
 inspection for a roughly 2,000-commit merge request consuming enough memory to be
 OOM-killed. Those practitioner failures support per-head time and output limits,
-bounded displayed paths, serial preflights, and fail-closed behavior instead of
-an unbounded conflict service.
+bounded displayed paths, the 64-check group ceiling, serial preflights, and
+fail-closed behavior instead of an unbounded conflict service. They also explain
+why ambiguous or partial native evidence is discarded rather than promoted to a
+clean claim.
 
 The long-lived GitHub CLI issue
 [#6642](https://github.com/cli/cli/issues/6642), opened in 2022, records that
@@ -401,7 +779,7 @@ validated symbolic target and canonical local-ref cursor, validates every object
 ID and status record, applies command timeouts, and bounds branch, page, and
 commit work. Cursor pages use Git's default refname ordering because
 `--start-after` deliberately cannot be combined with a custom sort or ref
-pattern; parsing stops safely at the next ref namespace. It is strictly
+pattern; parsing stops safely at the next ref namespace. It is ref/worktree
 read-only: there is no checkout, merge, delete, ref update, or push path.
 
 Because it changes neither refs, the index, the worktree, nor runtime service
@@ -414,10 +792,13 @@ Git inspections run per bounded head, with progress on stderr and no files, lock
 daemons, services, ports, background workers, ref changes, or deploy interruption.
 Queue generation and receipt replay have the same foreground-only boundary: they
 verify identities and emit JSON but never merge, delete, rewrite, or push a ref.
-Native preflight does not read or write the index or worktree and never creates a
-commit or ref. Git may materialize the documented result tree as an unreachable
-object; no reference exposes it, and normal Git object maintenance owns its
-lifecycle. No custom cleanup runs during deployment or rollback.
+Planning adds bounded path reads, pair comparisons, and native pairwise probes; it
+does not execute the cumulative candidate recipe or treat either path disjointness
+or pairwise cleanliness as a tested cumulative merge. Native preflight and group
+prediction do not read or write the index or worktree and never create a commit
+or ref. Git may materialize documented result trees as unreachable objects; no
+reference exposes them, and normal Git object maintenance owns their lifecycle.
+No custom cleanup runs during deployment or rollback.
 An exhaustive run adds one terminal target resolution and one explicitly sorted
 local-head scan, emits `verify=terminal-ref-snapshot` progress by default, and
 shares the existing 10,000-ref, output, and timeout bounds. This preserves ZDD
@@ -426,9 +807,10 @@ old and new callers can run concurrently because the schema and Make interface d
 not change; only stale terminal evidence becomes a structured nonzero failure.
 
 Rollback is layered and requires no coordinated downtime. Stop requesting the
-opt-in semantic, queue, or replay flags first; default schema-v2 inventory callers
-remain unchanged. If code rollback is required, revert receipt and queue support
-before reverting the authoritative semantic source commit, so no surviving mode
+opt-in semantic, planning, queue, or replay flags first; default schema-v2
+inventory callers remain unchanged. If code rollback is required, revert
+planning, receipt, and queue support before reverting the authoritative semantic
+source commit, so no surviving mode
 depends on removed types or validation paths. A version-2 receipt can be discarded
 and regenerated after rollback; it is never applied to repository state. The older
 textual inventory and one-branch patch comparison targets remain independently
@@ -444,6 +826,16 @@ is opt-in. Rollback is a normal revert of the queue builder, its focused tests,
 and this documentation; previously emitted payloads can simply be discarded and
 regenerated with the older exhaustive summary. There is no repository repair,
 data migration, service restart, or destructive cleanup step.
+
+During inventory generation, the per-group predictor executes only bounded
+pairwise `merge-tree` probes; the cumulative recipe remains JSON-only. If an
+operator later executes that opt-in recipe, Git may write unreachable tree and
+commit objects, but no name is installed under `refs/` and no index or worktree
+is touched. Normal Git object maintenance owns those unreachable objects.
+Rollback discards the plan or reverts the additive `rehearsal` builder and schema;
+no ref, checkout, service, data migration, or cleanup coordination is required,
+and the existing paginated, exhaustive, sequential-queue, and receipt modes
+remain available throughout.
 
 Receipt replay has the same ZDD boundary. It reads bounded stdin, resolves refs,
 performs one bounded sorted scan and at most 256 ancestry probes, and writes one
