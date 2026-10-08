@@ -19,17 +19,19 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-S31-S35, plus the train's dependency, ownership, structural, TUI, and coverage
-repairs. S29-S35 are listed from immutable implementation receipts without
+S31-S36, plus the train's dependency, ownership, structural, TUI, and coverage
+repairs. S29-S36 are listed from immutable implementation receipts without
 claiming train integration or an exact-head gate. The preview therefore records
 useful candidate contents without converting implementation evidence into task,
 gate, release, or publication completion.
 
-S31-S35 describe the user-visible outcome as safer model-performance,
+S31-S36 describe the user-visible outcome as safer model-performance,
 benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
 messages before its deterministic 100-message inbox bound, so stale head rows
 cannot hide live work. S35 makes an omitted memory `project_id` select only the
-global partition instead of exposing project-scoped records. Their detailed
+global partition instead of exposing project-scoped records. S36 persists
+generated-tool results only in the validated originating project and
+quarantines legacy-global tool outputs from project reads. Their detailed
 feature documents retain the mature upstream basis for that wording:
 SQLAlchemy's
 [session-per-task guidance][sqlalchemy-async], the long-running shared-session
@@ -39,9 +41,11 @@ clarification in [discussion #10808][sqlalchemy-10808]. The S34 evidence also
 retains RabbitMQ's long-running [head-of-line expiry report][rabbitmq-3852] and
 [resource-retention report][rabbitmq-14524]; S35 retains the SQLAlchemy
 [tenant-criteria discussion][sqlalchemy-11389] and FastAPI
-[tenant-context discussion][fastapi-7564]. The release page links immutable
-Gludd commits, while those feature documents remain the fuller source for
-practitioner findings and resource bounds.
+[tenant-context discussion][fastapi-7564]. S36 retains FastAPI's
+[parallel-session report][fastapi-11625] and MCP's
+[cross-user-state report][mcp-1087]. The release page links immutable Gludd
+commits, while those feature documents remain the fuller source for practitioner
+findings and resource bounds.
 
 Both additions are zero-downtime, application-image-only changes: they add no
 schema, dependency, persistent process, or ownership transfer. Mixed-version
@@ -52,6 +56,16 @@ warning-fatal tests with 89% aggregate coverage (`messaging.py` 85%, message
 router 93%). S35 evidence includes 6 focused tests plus adjacent 170-test and
 247-test warning-fatal runs with 99% aggregate coverage (memory repository 99%,
 memory router 100%). Both recorded clean collection evidence.
+
+S36 is also a schema-free, application-image-only rolling change, but its
+rollback is deliberately fail-closed: reverting the reader would re-expose
+quarantined legacy-global `tool_results` to project reads. Operators should keep
+the isolated reader serving and repair forward; a compatibility rollback must
+first stop new tool dispatch, preserve evidence, and explicitly accept that
+confidentiality risk. Its evidence includes 34 warning-fatal focused tests and
+a 583-test coverage run with one intentional skip, reaching 91.0% aggregate
+line and 85.1% branch coverage (`projects.py` 98.2%/90.0%, dispatch
+88.7%/84.2%), plus clean repository collection.
 
 ## Existing-tool decision
 
@@ -151,7 +165,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 26-item candidate inventory, and
+ordering, deterministic rendering, the exact 27-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -190,3 +204,5 @@ Research was reviewed on 2026-10-08:
 [rabbitmq-14524]: https://github.com/rabbitmq/rabbitmq-server/discussions/14524
 [sqlalchemy-11389]: https://github.com/sqlalchemy/sqlalchemy/discussions/11389
 [fastapi-7564]: https://github.com/fastapi/fastapi/discussions/7564
+[fastapi-11625]: https://github.com/fastapi/fastapi/discussions/11625
+[mcp-1087]: https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1087

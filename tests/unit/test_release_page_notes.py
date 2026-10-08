@@ -469,6 +469,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S33",
         "S34",
         "S35",
+        "S36",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
@@ -525,6 +526,14 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
                 ("documentation", "a201bd55d6a38a0bb1c6629f626437832fa9762c"),
             ),
         ),
+        "S36": (
+            "Project-isolated persisted tool outputs",
+            "Improvements",
+            (
+                ("implementation", "cb0959465fc940467e826bde3a634c72f21805b6"),
+                ("documentation", "7af995fb69e622df5c5a3e17a9aa6b8a275a0c1e"),
+            ),
+        ),
     }
     for item_id, (title, category, evidence) in candidate_contracts.items():
         item = next(
@@ -540,7 +549,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 26."
+        "Implemented candidate items pending exact-head/release proof: 27."
         in expected
     )
 

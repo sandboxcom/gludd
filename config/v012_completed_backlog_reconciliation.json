@@ -480,6 +480,21 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "cb0959465fc940467e826bde3a634c72f21805b6"
+        },
+        {
+          "role": "documentation",
+          "sha": "7af995fb69e622df5c5a3e17a9aa6b8a275a0c1e"
+        }
+      ],
+      "item_id": "S36",
+      "release_page_category": "Improvements",
+      "title": "Project-isolated persisted tool outputs"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },
