@@ -590,6 +590,9 @@ Each admission publishes an atomic
 PID, OS process-start token, PGID, SID, checkout root, resource namespace,
 command, timeout, and exact log path. `.gate-background.pid` remains the
 compatibility pointer and contains the real Make gate PID, not a wrapper PID.
+The new session leader waits for its matching atomic receipt before it `exec`s
+the gate command, retaining that PID across `exec` while preventing a fast gate
+from disappearing before its ownership identity can be published.
 Duplicate admission is serialized by a worktree-local file lock and compares
 the receipt to live OS identity; a reused PID is never treated as the old gate.
 An old watcher may update state or remove the PID pointer only while both the
@@ -1095,3 +1098,32 @@ Evidence reviewed 2026-08-31:
   daemon before its PID file was written, the same ordering failure reproduced
   by this regression:
   <https://stackoverflow.com/questions/36489529/linux-daemonize-without-pid-file-race-condition>.
+
+## Serial and Parallel Coverage Artifact Ownership (2026-10-08)
+
+`coverage-files` accepts both artifact layouts that coverage.py intentionally
+supports. A serial run publishes the exact namespaced base file, while a
+parallel run publishes one or more suffixed fragments. The target invokes
+`coverage combine` only when a real fragment exists, then requires the exact
+base before either `coverage report` or `coverage json` may consume it.
+
+This keeps the ownership boundary fail closed: a missing base cannot borrow a
+foreign worktree's data, stale fragments remain namespaced, and cleanup owns
+the base, fragments, report, and temporary directory together. The behavior
+does not change production traffic or persisted application schemas, so it is
+zero-downtime. Rollback is one Make/test/documentation revert after the active
+coverage producer exits; reverting restores the serial-artifact failure.
+
+Failing-first evidence reproduced `No data to combine` after a successful
+serial run. The repaired serial path passes 57/57 tests at 88% coverage; the
+real parallel-fragment path passes 84/84 at 91%, with every measured file above
+75%. The commit guard exercises both layouts before accepting the change.
+
+Evidence reviewed 2026-10-08:
+
+- The coverage.py changelog records the established parallel-data and combine
+  semantics that this target now follows:
+  <https://github.com/coveragepy/coveragepy/blob/main/CHANGES.rst>.
+- A long-lived practitioner report reproduces the same `No data to combine`
+  failure when combine is asked to consume a serial base file:
+  <https://stackoverflow.com/questions/26214055/combine-python-coverage-files/26231950>.

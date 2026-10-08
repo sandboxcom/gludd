@@ -51,7 +51,9 @@ coverage-files:
 			echo "=== COVERAGE FILES: execute aggregate>=$(COVERAGE_AGGREGATE_MIN)% per-file>=$(COVERAGE_PER_FILE_MIN)% ==="; \
 			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage erase --rcfile="$$GLUDD_COVERAGE_RC"; \
 			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage run --rcfile="$$GLUDD_COVERAGE_RC" -m pytest $(COVERAGE_TESTFILES) -v -W error --basetemp="$$GLUDD_COVERAGE_BT" -p scripts.xdist_trace_plugin; \
-			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage combine --rcfile="$$GLUDD_COVERAGE_RC"; \
+			set -- "$$GLUDD_COVERAGE_DATA".*; \
+			if [ -e "$$1" ]; then COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage combine --rcfile="$$GLUDD_COVERAGE_RC"; fi; \
+			[ -f "$$GLUDD_COVERAGE_DATA" ] || { echo "coverage-files: no serial data or parallel fragments produced"; exit 1; }; \
 			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage report --rcfile="$$GLUDD_COVERAGE_RC" --fail-under="$(COVERAGE_AGGREGATE_MIN)"; \
 			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage json --rcfile="$$GLUDD_COVERAGE_RC" -o "$$GLUDD_COVERAGE_REPORT_WORK"; \
 			echo "=== COVERAGE FILES: verify every measured file >=$(COVERAGE_PER_FILE_MIN)% ==="; \
@@ -716,6 +718,10 @@ integration-admission:
 	@case "$(INTEGRATION_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "INTEGRATION_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@test -n "$(strip $(GATE_FAILURE_PROMOTION_MANIFEST))" || { echo "GATE_FAILURE_PROMOTION_MANIFEST is required"; exit 2; }
 	@test -n "$(strip $(FILE_LINE_LIMIT_POLICY))" || { echo "FILE_LINE_LIMIT_POLICY is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_CONFIG))" || { echo "DUPLICATE_CODE_CONFIG is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_ENGINE))" || { echo "DUPLICATE_CODE_ENGINE is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_BASE_REF))" || { echo "DUPLICATE_CODE_BASE_REF is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_CURRENT_REF))" || { echo "DUPLICATE_CODE_CURRENT_REF is required"; exit 2; }
 	@test -n "$(strip $(MARKDOWN_FILES))" || { echo "MARKDOWN_FILES is required"; exit 2; }
 	@test -n "$(strip $(MARKDOWNLINT_CONFIG))" || { echo "MARKDOWNLINT_CONFIG is required"; exit 2; }
 	@test -n "$(strip $(PRESENTATION_BROWSER_ENGINES))" || { echo "PRESENTATION_BROWSER_ENGINES is required"; exit 2; }
@@ -751,6 +757,12 @@ integration-admission:
 	run_phase "check-gate-failure-promotions" "check-gate-failure-promotions" "fast" "90" "60" $(MAKE) --no-print-directory check-gate-failure-promotions \
 		GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"; \
 	run_phase "_dead-code-baseline-refresh" "_dead-code-baseline-refresh" "fast" "90" "60" $(MAKE) --no-print-directory _dead-code-baseline-refresh; \
+	run_phase "check-coverage-gaps" "check-coverage-gaps" "fast" "90" "60" $(MAKE) --no-print-directory check-coverage-gaps; \
+	run_phase "check-resource-ownership" "check-resource-ownership" "fast" "90" "60" $(MAKE) --no-print-directory check-resource-ownership \
+		RESOURCE_OWNERSHIP_ROOT="$(CURDIR)" \
+		RESOURCE_OWNERSHIP_PATHS="src/general_ludd scripts" \
+		RESOURCE_OWNERSHIP_INVENTORY="config/resource_ownership_inventory.json" \
+		RESOURCE_OWNERSHIP_WRITE=0; \
 	run_phase "validate-task-ledger" "validate-task-ledger" "fast" "90" "60" $(MAKE) --no-print-directory validate-task-ledger; \
 	run_phase "check-task-registration" "check-task-registration" "fast" "90" "60" $(MAKE) --no-print-directory check-task-registration; \
 	run_phase "check-task-integrity" "check-task-integrity" "fast" "90" "60" $(MAKE) --no-print-directory check-task-integrity; \
@@ -759,6 +771,13 @@ integration-admission:
 		MARKDOWN_FILES="$(MARKDOWN_FILES)" \
 		MARKDOWNLINT_CONFIG="$(MARKDOWNLINT_CONFIG)"; \
 	run_phase "check-make-target-contract" "check-make-target-contract" "fast" "90" "60" $(MAKE) --no-print-directory check-make-target-contract; \
+	run_phase "check-duplicate-code" "check-duplicate-code" "standard" "180" "120" $(MAKE) --no-print-directory check-duplicate-code \
+		DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" \
+		DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" \
+		DUPLICATE_CODE_SOURCE="committed" \
+		DUPLICATE_CODE_BASE_REF="$(DUPLICATE_CODE_BASE_REF)" \
+		DUPLICATE_CODE_CURRENT_REF="$(DUPLICATE_CODE_CURRENT_REF)" \
+		DUPLICATE_CODE_VALIDATE_ONLY=0; \
 	run_phase "yaml-lint" "yaml-lint" "standard" "180" "120" $(MAKE) --no-print-directory yaml-lint; \
 	run_phase "project-dispatch-integration" "_project-dispatch-integration" "standard" "180" "120" $(MAKE) --no-print-directory _project-dispatch-integration; \
 	run_phase "mcp-workspace-jail-integration" "_mcp-workspace-jail-integration" "standard" "180" "120" $(MAKE) --no-print-directory _mcp-workspace-jail-integration; \

@@ -12,7 +12,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 from general_ludd.self_update.signing import verify_signature as _verify_signature
 
@@ -30,22 +30,36 @@ APPROVAL_KEYRING_JSON_CHAR_LIMIT = _plan_types.APPROVAL_KEYRING_JSON_CHAR_LIMIT
 REMOTE_GIT_OUTPUT_CHAR_LIMIT = _plan_types.REMOTE_GIT_OUTPUT_CHAR_LIMIT
 REMOTE_JSON_CHAR_LIMIT = _plan_types.REMOTE_JSON_CHAR_LIMIT
 REMOTE_REF_SCAN_LIMIT = _plan_types.REMOTE_REF_SCAN_LIMIT
-CollapsedMergeQueueGroup: TypeAlias = _plan_types.CollapsedMergeQueueGroup
-ConflictPreflight: TypeAlias = _plan_types.ConflictPreflight
-MergePlanCollision: TypeAlias = _plan_types.MergePlanCollision
-MergePlanCounts: TypeAlias = _plan_types.MergePlanCounts
-MergePlanGroup: TypeAlias = _plan_types.MergePlanGroup
-MergePlanHead: TypeAlias = _plan_types.MergePlanHead
-MergePlanPayload: TypeAlias = _plan_types.MergePlanPayload
-MergeQueueBounds: TypeAlias = _plan_types.MergeQueueBounds
-MergeQueueCounts: TypeAlias = _plan_types.MergeQueueCounts
-MergeQueueEntry: TypeAlias = _plan_types.MergeQueueEntry
-MergeRehearsalPlan: TypeAlias = _plan_types.MergeRehearsalPlan
-ReconciliationReceipt: TypeAlias = _plan_types.ReconciliationReceipt
-ReconciliationReceiptBody: TypeAlias = _plan_types.ReconciliationReceiptBody
-ReconciliationReceiptTarget: TypeAlias = _plan_types.ReconciliationReceiptTarget
-ReconciliationSnapshotPayload: TypeAlias = _plan_types.ReconciliationSnapshotPayload
-RemoteTrackingPayload: TypeAlias = _plan_types.RemoteTrackingPayload
+if TYPE_CHECKING:
+    from branch_reconciliation_plan_types import (
+        CollapsedMergeQueueGroup,
+        ConflictPreflight,
+        MergePlanCollision,
+        MergePlanCounts,
+        MergePlanGroup,
+        MergePlanHead,
+        MergePlanPayload,
+        MergeQueueBounds,
+        MergeQueueCounts,
+        MergeQueueEntry,
+        MergeRehearsalPlan,
+        ReconciliationReceipt,
+        ReconciliationReceiptBody,
+        ReconciliationReceiptTarget,
+        ReconciliationSnapshotPayload,
+        RemoteTrackingPayload,
+    )
+else:
+    for _exported_type in (
+        "CollapsedMergeQueueGroup", "ConflictPreflight", "MergePlanCollision",
+        "MergePlanCounts", "MergePlanGroup", "MergePlanHead", "MergePlanPayload",
+        "MergeQueueBounds", "MergeQueueCounts", "MergeQueueEntry",
+        "MergeRehearsalPlan", "ReconciliationReceipt", "ReconciliationReceiptBody",
+        "ReconciliationReceiptTarget", "ReconciliationSnapshotPayload",
+        "RemoteTrackingPayload",
+    ):
+        globals()[_exported_type] = getattr(_plan_types, _exported_type)
+    del _exported_type
 block_rehearsal_prediction = _plan_types.block_rehearsal_prediction
 build_merge_rehearsal = _plan_types.build_merge_rehearsal
 build_plan_snapshot_basis = _plan_types.build_plan_snapshot_basis
@@ -897,23 +911,13 @@ def _merge_tree_conflict_preflight(
 
     if len(raw_paths) > CONFLICT_PATH_SCAN_LIMIT:
         raise InventoryError("merge-tree conflict path bound exceeded")
-    if len(raw_paths) != len(set(raw_paths)) or any(
-        not path
-        or path.startswith("/")
-        or any(part in {"", ".", ".."} for part in path.split("/"))
-        for path in raw_paths
-    ):
-        raise InventoryError("invalid merge-tree conflict preflight evidence")
-
-    conflict_paths: list[str] = []
-    path_redactions = 0
-    for path in raw_paths[:CONFLICT_PATH_LIMIT]:
-        safe_path, _truncated, was_redacted = _redact_bounded(
-            path,
-            CONFLICT_PATH_CHAR_LIMIT,
-        )
-        conflict_paths.append(safe_path)
-        path_redactions += was_redacted
+    conflict_paths, path_redactions = _validated_bounded_paths(
+        raw_paths,
+        output_limit=CONFLICT_PATH_LIMIT,
+        char_limit=CONFLICT_PATH_CHAR_LIMIT,
+        error="invalid merge-tree conflict preflight evidence",
+        require_unique=True,
+    )
     return {
         "conflict_path_count": len(raw_paths),
         "conflict_paths": conflict_paths,
@@ -1920,15 +1924,14 @@ def collect_merge_queue_plan(
     progress: ProgressFn | None = None,
 ) -> MergePlanPayload:
     """Collect a bounded read-only grouping plan over unique/current heads."""
-    summary = collect_summary(
-        target,
-        page_size,
-        run=run,
-        cwd=cwd,
-        progress=progress,
-    )
     return _build_merge_queue_plan(
-        summary,
+        collect_summary(
+            target,
+            page_size,
+            run=run,
+            cwd=cwd,
+            progress=progress,
+        ),
         run=run,
         cwd=cwd,
         progress=progress,
@@ -2106,6 +2109,30 @@ def _redact_bounded(value: str, limit: int) -> tuple[str, bool, bool]:
     return redacted, truncated, redacted != value
 
 
+def _validated_bounded_paths(
+    raw_paths: list[str],
+    *,
+    output_limit: int,
+    char_limit: int,
+    error: str,
+    require_unique: bool = False,
+) -> tuple[list[str], int]:
+    if (require_unique and len(raw_paths) != len(set(raw_paths))) or any(
+        not path
+        or path.startswith("/")
+        or any(part in {"", ".", ".."} for part in path.split("/"))
+        for path in raw_paths
+    ):
+        raise InventoryError(error)
+    bounded: list[str] = []
+    redactions = 0
+    for path in raw_paths[:output_limit]:
+        safe_path, _truncated, was_redacted = _redact_bounded(path, char_limit)
+        bounded.append(safe_path)
+        redactions += was_redacted
+    return bounded, redactions
+
+
 def _semantic_paths(
     head: str,
     *,
@@ -2133,23 +2160,12 @@ def _semantic_paths(
     if output and not output.endswith("\0"):
         raise InventoryError("malformed semantic path evidence")
     raw_paths = output[:-1].split("\0") if output else []
-    if any(
-        not path
-        or path.startswith("/")
-        or any(part in {"", ".", ".."} for part in path.split("/"))
-        for path in raw_paths
-    ):
-        raise InventoryError("malformed semantic path evidence")
-
-    changed_paths: list[str] = []
-    path_redactions = 0
-    for path in raw_paths[:SEMANTIC_PATH_LIMIT]:
-        safe_path, _truncated, was_redacted = _redact_bounded(
-            path,
-            SEMANTIC_PATH_CHAR_LIMIT,
-        )
-        changed_paths.append(safe_path)
-        path_redactions += was_redacted
+    changed_paths, path_redactions = _validated_bounded_paths(
+        raw_paths,
+        output_limit=SEMANTIC_PATH_LIMIT,
+        char_limit=SEMANTIC_PATH_CHAR_LIMIT,
+        error="malformed semantic path evidence",
+    )
     return (
         changed_paths,
         len(raw_paths),
@@ -2255,26 +2271,20 @@ def main(
     parser.add_argument("--limit", required=True, help="maximum branch records")
     parser.add_argument("--after", required=True,
                         help="canonical local ref cursor, or empty for first page")
-    parser.add_argument("--all-pages", action="store_true",
-                        help="emit one terminal summary across every bounded page")
-    parser.add_argument("--counts-only", action="store_true",
-                        help="omit expanded groups from an all-pages summary")
-    parser.add_argument("--current-only", action="store_true",
-                        help="emit only unique current groups from a summary")
-    parser.add_argument("--quiet-progress", action="store_true",
-                        help="suppress stderr progress while retaining errors")
-    parser.add_argument("--head-semantics", action="store_true",
-                        help="add bounded commit subjects and changed paths")
-    parser.add_argument("--merge-queue", action="store_true",
-                        help="emit a verified sequential novel-head queue")
-    parser.add_argument("--merge-queue-plan", action="store_true",
-                        help="group current heads by changed-path independence")
-    parser.add_argument("--replay-receipt", action="store_true",
-                        help="verify a bounded receipt from stdin")
-    parser.add_argument("--reconciliation-snapshot", action="store_true",
-                        help="classify a plan against fresh inventory from stdin")
-    parser.add_argument("--remote-tracking", action="store_true",
-                        help="compare local and local remote-tracking refs")
+    boolean_modes = {
+        "--all-pages": "emit one terminal summary across every bounded page",
+        "--counts-only": "omit expanded groups from an all-pages summary",
+        "--current-only": "emit only unique current groups from a summary",
+        "--quiet-progress": "suppress stderr progress while retaining errors",
+        "--head-semantics": "add bounded commit subjects and changed paths",
+        "--merge-queue": "emit a verified sequential novel-head queue",
+        "--merge-queue-plan": "group current heads by changed-path independence",
+        "--replay-receipt": "verify a bounded receipt from stdin",
+        "--reconciliation-snapshot": "classify a plan against fresh inventory from stdin",
+        "--remote-tracking": "compare local and local remote-tracking refs",
+    }
+    for flag, help_text in boolean_modes.items():
+        parser.add_argument(flag, action="store_true", help=help_text)
     parser.add_argument("--remote-name", help="exact remote namespace to compare")
     parser.add_argument("--remote-verification-time",
                         help="canonical UTC time for fetch-freshness validation")

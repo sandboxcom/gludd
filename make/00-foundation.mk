@@ -226,6 +226,13 @@ MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
 DOCSTRING_FILES ?=
 FILE_LINE_LIMIT_POLICY ?= config/file_line_limits.json
+FILE_LINE_LIMIT_STAGED ?= 0
+DUPLICATE_CODE_CONFIG ?= config/duplicate_code.json
+DUPLICATE_CODE_ENGINE ?= .opencode/node_modules/.bin/jscpd
+DUPLICATE_CODE_SOURCE ?= staged
+DUPLICATE_CODE_BASE_REF ?= HEAD
+DUPLICATE_CODE_CURRENT_REF ?= HEAD
+DUPLICATE_CODE_VALIDATE_ONLY ?= 0
 MAKEFILE_SPLIT_APPLY ?= 0
 GATE_REFRESH_VALIDATE_ONLY ?= 0
 GATE_RUN_LOCK ?= .gate-logs/gate-run.lock
@@ -313,7 +320,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit check-ansible-base-image refresh-ansible-base-image install-pip lint lint-files lint-markdown lint-docstrings lint-fix check-file-line-limits split-makefile-layout test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
+        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit check-ansible-base-image refresh-ansible-base-image install-pip lint lint-files lint-markdown lint-docstrings lint-fix check-file-line-limits check-duplicate-code split-makefile-layout test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -437,7 +444,8 @@ help:
 	@echo "  lint-files            Run ruff linter on FILES only"
 	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
 	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
-	@echo "  check-file-line-limits  Require every tracked text file to stay below 2500 lines (FILE_LINE_LIMIT_POLICY)"
+	@echo "  check-file-line-limits  Enforce <2500 lines on tracked or staged content (FILE_LINE_LIMIT_POLICY, FILE_LINE_LIMIT_STAGED=0|1)"
+	@echo "  check-duplicate-code  Reject new staged/committed production clones with locked jscpd (DUPLICATE_CODE_*)"
 	@echo "  split-makefile-layout  Validate/apply the ordered make/*.mk layout (MAKEFILE_SPLIT_APPLY=0|1)"
 	@echo "  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)"
 	@echo "  presentation-browser-install Check/install pinned Chromium + WebKit (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)"
@@ -1141,7 +1149,24 @@ lint-python: lint
 lint-make: validate-makefile
 
 check-file-line-limits:
-	@$(UV) run python scripts/check_file_line_limits.py --root "$(CURDIR)" --config "$(FILE_LINE_LIMIT_POLICY)"
+	@case "$(FILE_LINE_LIMIT_STAGED)" in 0|1) ;; *) echo "FILE_LINE_LIMIT_STAGED must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/check_file_line_limits.py --root "$(CURDIR)" --config "$(FILE_LINE_LIMIT_POLICY)" $(if $(filter 1,$(FILE_LINE_LIMIT_STAGED)),--staged,)
+
+check-duplicate-code:
+	@case "$(DUPLICATE_CODE_SOURCE)" in staged|committed) ;; *) echo "DUPLICATE_CODE_SOURCE must be staged or committed"; exit 2;; esac
+	@case "$(DUPLICATE_CODE_VALIDATE_ONLY)" in 0|1) ;; *) echo "DUPLICATE_CODE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@test -n "$(strip $(DUPLICATE_CODE_CONFIG))" || { echo "DUPLICATE_CODE_CONFIG is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_ENGINE))" || { echo "DUPLICATE_CODE_ENGINE is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_BASE_REF))" || { echo "DUPLICATE_CODE_BASE_REF is required"; exit 2; }
+	@test -n "$(strip $(DUPLICATE_CODE_CURRENT_REF))" || { echo "DUPLICATE_CODE_CURRENT_REF is required"; exit 2; }
+	@$(UV) run python scripts/check_duplicate_code.py \
+		--root "$(CURDIR)" \
+		--config "$(DUPLICATE_CODE_CONFIG)" \
+		--engine "$(DUPLICATE_CODE_ENGINE)" \
+		--source "$(DUPLICATE_CODE_SOURCE)" \
+		--base-ref "$(DUPLICATE_CODE_BASE_REF)" \
+		--current-ref "$(DUPLICATE_CODE_CURRENT_REF)" \
+		$(if $(filter 1,$(DUPLICATE_CODE_VALIDATE_ONLY)),--validate-only,)
 
 split-makefile-layout:
 	@case "$(MAKEFILE_SPLIT_APPLY)" in 0|1) ;; *) echo "MAKEFILE_SPLIT_APPLY must be 0 or 1"; exit 2;; esac
@@ -1151,6 +1176,8 @@ split-makefile-layout:
 # the release/full-suite gate remains a separate workflow.
 pre-commit-check:
 	@# AGENTS.md OD.10 fast pre-commit contract.
+	@$(MAKE) --no-print-directory check-file-line-limits FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)" FILE_LINE_LIMIT_STAGED=1
+	@$(MAKE) --no-print-directory check-duplicate-code DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=0
 	@$(MAKE) --no-print-directory lint
 	@$(MAKE) --no-print-directory collect-check
 	@$(MAKE) --no-print-directory typecheck

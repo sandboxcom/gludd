@@ -27,38 +27,48 @@ the first nonzero result:
 3. `_dead-code-baseline-refresh` checks exact dead-code baseline parity without
    rewriting reviewed policy. It names added or stale entries and stops the
    admission plan before broader metadata, documentation, or quality work.
-4. `validate-task-ledger`, `check-task-registration`, and
+4. `check-coverage-gaps` rejects a production module without a mapped focused
+   coverage test. `check-resource-ownership` then verifies the exact tracked
+   acquisition-to-teardown inventory in read-only mode. These promoted checks
+   catch both missing mappings after a module split and new or stale lifecycle
+   sites before the expensive gate starts.
+5. `validate-task-ledger`, `check-task-registration`, and
    `check-task-integrity` reject malformed or unowned work.
-5. `check-generated-artifact-hygiene` catches documentation and generated-data
+6. `check-generated-artifact-hygiene` catches documentation and generated-data
    drift before broader quality work.
-6. `lint-markdown` checks the explicitly supplied feature documents.
-7. `check-make-target-contract` rejects missing help, variables, or safe
+7. `lint-markdown` checks the explicitly supplied feature documents.
+8. `check-make-target-contract` rejects missing help, variables, or safe
    behavioral examples for agent-facing targets.
-8. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
+9. `check-duplicate-code` compares the complete bounded production snapshot at
+   feature `HEAD` with the explicit development base through locked `jscpd`.
+   Existing findings remain visible while only newly introduced clone
+   fingerprints fail admission.
+10. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
    tracked YAML from the checkout, runs with a disposable namespaced Ansible
    home, and emits ten-second observer heartbeats. A stale user-installed
    collection therefore cannot shadow the candidate or turn a valid branch red.
-9. `project-dispatch-integration` runs the exact, fast regression nodes that
+11. `project-dispatch-integration` runs the exact, fast regression nodes that
    prove a committed caller-owned-session claim still dispatches its exact
    `project_id`, never reads another project's variable namespace, and preserves
    the serialized tick lifecycle:
    `test_event_loop_dispatch_includes_project_id` and
    `test_dispatch_job_contains_only_project_data`, plus
    `test_event_loop_serializes_concurrent_ticks`.
-10. `mcp-workspace-jail-integration` keeps both layers of the model-callable
+12. `mcp-workspace-jail-integration` keeps both layers of the model-callable
     project-check boundary in admission. The exact
     `test_contain_workspace_escape_returns_none` node proves canonical path
     containment, while `test_workspace_escaping_jail_is_refused` proves the
     synthetic MCP dispatch refuses an otherwise valid sibling project without
     executing it.
-11. `module-graph-classification` runs the exact
+13. `module-graph-classification` runs the exact
     `test_all_subpackages_classified` node so every discovered top-level package
     receives an explicit architectural layer before later graph rules run.
-12. `presentation-browser-test` runs with
+14. `presentation-browser-test` runs with
    `PRESENTATION_BROWSER_VALIDATE_ONLY=1`, checking the pinned browser plan and
    prerequisites without launching either engine.
-13. `pre-commit-check` runs the existing source lint, collection, and typecheck
-   boundary. Its `lint` prerequisite runs `check-file-line-limits` first.
+15. `pre-commit-check` runs the staged line and clone guards before the existing
+    source lint, collection, and typecheck boundary. Its `lint` prerequisite
+    retains the complete working-tree line-limit scan.
 
 Every documented variable is explicit at the outer invocation and forwarded to
 the target that owns it. The safe behavioral example uses
@@ -69,11 +79,11 @@ feature worktree.
 ## Runtime budget and evidence
 
 Every child phase runs through the existing `scripts/stream_command.py`
-observer. The manifest assigns ten cheap phases a 90-second `fast` ceiling,
-four focused integration phases a 180-second `standard` ceiling, and
+observer. The manifest assigns twelve cheap phases a 90-second `fast` ceiling,
+five focused integration phases a 180-second `standard` ceiling, and
 `pre-commit-check` a 600-second `slow` ceiling. Their quiet-output ceilings are
 60, 120, and 300 seconds respectively. The configured child-runtime ceiling
-therefore totals 2,220 seconds, with only bounded observer teardown and recipe
+therefore totals 2,580 seconds, with only bounded observer teardown and recipe
 bookkeeping outside it; no child phase can wait indefinitely.
 
 Before each child starts, admission emits one machine-readable
@@ -98,9 +108,13 @@ before the promoted checks begin.
 copied forward from the deterministic full-gate surface. Each entry binds one
 failure family to its admission owner, exact Make target or pytest node, and the
 full-gate phase that continues to own the authoritative replay. The initial
-families are `dead-code-baseline-drift`, `claim-fence`, `project-isolation`,
+families are `dead-code-baseline-drift`, `coverage-gap-drift`,
+`resource-ownership-drift`, `claim-fence`, `project-isolation`,
 `concurrent-tick`, `mcp-workspace-containment`, `mcp-workspace-dispatch-jail`,
-and `module-graph-classification-drift`.
+and `module-graph-classification-drift`. The coverage and ownership families
+were promoted after the full gate first discovered an unmapped durable
+observability split plus new and stale process-lifecycle sites. Both now fail
+closed during read-only admission instead of consuming another full-gate run.
 
 Promotion only moves early feedback forward. The exact full gate remains mandatory.
 The checker fails closed when a node is renamed, deleted, duplicated,

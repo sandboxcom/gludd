@@ -1333,8 +1333,13 @@
     },
     {
       "name": "check-file-line-limits",
-      "make_variables": ["FILE_LINE_LIMIT_POLICY"],
-      "behavior": "make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json"
+      "make_variables": ["FILE_LINE_LIMIT_POLICY", "FILE_LINE_LIMIT_STAGED"],
+      "behavior": "make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json FILE_LINE_LIMIT_STAGED=0"
+    },
+    {
+      "name": "check-duplicate-code",
+      "make_variables": ["DUPLICATE_CODE_CONFIG", "DUPLICATE_CODE_ENGINE", "DUPLICATE_CODE_SOURCE", "DUPLICATE_CODE_BASE_REF", "DUPLICATE_CODE_CURRENT_REF", "DUPLICATE_CODE_VALIDATE_ONLY"],
+      "behavior": "make check-duplicate-code DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=1"
     },
     {
       "name": "split-makefile-layout",
@@ -1348,8 +1353,8 @@
     },
     {
       "name": "pre-commit-check",
-      "make_variables": [],
-      "behavior": "make pre-commit-check"
+      "make_variables": ["FILE_LINE_LIMIT_POLICY", "DUPLICATE_CODE_CONFIG", "DUPLICATE_CODE_ENGINE"],
+      "behavior": "make pre-commit-check FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd"
     },
     {
       "name": "check-gate-failure-promotions",
@@ -1362,6 +1367,10 @@
         "INTEGRATION_ADMISSION_VALIDATE_ONLY",
         "GATE_FAILURE_PROMOTION_MANIFEST",
         "FILE_LINE_LIMIT_POLICY",
+        "DUPLICATE_CODE_CONFIG",
+        "DUPLICATE_CODE_ENGINE",
+        "DUPLICATE_CODE_BASE_REF",
+        "DUPLICATE_CODE_CURRENT_REF",
         "MARKDOWN_FILES",
         "MARKDOWNLINT_CONFIG",
         "PRESENTATION_BROWSER_ENGINES",
@@ -1369,7 +1378,7 @@
         "PRESENTATION_BROWSER_OUTPUT",
         "PRESENTATION_BROWSER_TIMEOUT"
       ],
-      "behavior": "make integration-admission INTEGRATION_ADMISSION_VALIDATE_ONLY=1 GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json FILE_LINE_LIMIT_POLICY=config/file_line_limits.json MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser PRESENTATION_BROWSER_TIMEOUT=600"
+      "behavior": "make integration-admission INTEGRATION_ADMISSION_VALIDATE_ONLY=1 GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd DUPLICATE_CODE_BASE_REF=development DUPLICATE_CODE_CURRENT_REF=HEAD MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser PRESENTATION_BROWSER_TIMEOUT=600"
     },
     {
       "name": "list-plugins",

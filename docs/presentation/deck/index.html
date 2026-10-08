@@ -350,6 +350,7 @@ flowchart LR
   <div class="diagram-wrap">
     <div class="mermaid">
 stateDiagram-v2
+  state "Review result" as REVIEWING_RETURN
   [*] --> BACKLOG
   BACKLOG --> SCHEDULED: has schedule
   BACKLOG --> QUEUED: ready now
@@ -1291,7 +1292,7 @@ flowchart LR
   <h2>Four boundaries keep failure contained</h2>
   <ol class="bullets-tight">
     <li><strong>Validate before I/O:</strong> labeled <code>(identifier, query)</code> defaults; plain strings stay compatible; malformed shapes fail closed, while empty results preserve the catalog. Opt-in <code>project_namespace</code> creates a project-scoped catalog, so reconciling one health-socket state cannot retire another.</li>
-    <li><strong>Isolate every test:</strong> <code>monkeypatch</code> owns environment teardown and PID + counter streak files prevent parallel workers sharing authorization state.</li>
+    <li><strong>Isolate every test:</strong> <code>monkeypatch</code> owns teardown and PID + counter state stays namespaced; <strong>S83.113</strong> uses a prefix-scoped import probe that restores Gludd parent/child identities while leaving external dependencies cached.</li>
     <li><strong>Choose lifecycle explicitly:</strong> pre-startup <code>/readyz</code> proves the 503 boundary; context-managed startup proves 200 readiness; model-health checks keep a per-app in-memory database.</li>
     <li><strong>Keep shutdown observable:</strong> a closed log stream falls back to stderr file descriptor 2, then restore handlers + propagation after cleanup.</li>
   </ol>
@@ -1307,17 +1308,17 @@ flowchart LR
   <div data-contract="gate-tree-termination">
     <p><strong>Identity-verified gate-tree termination</strong> <span class="badge-green">47/47 warning-strict</span></p>
     <ul class="bullets-tight" style="font-size:0.52em; columns:2; column-gap:22px;">
-      <li>Accept one marked <code>gludd-gate-run-v1</code> lock or one exact legacy <code>{pid, started_at}</code> lock; failed legacy cleanup migrates to the marked schema.</li>
+      <li><strong>S83.112:</strong> a new session leader must publish its matching receipt before exec; duplicate launch stays serialized by exact PID/start/session identity.</li>
       <li>Revalidate PID + start + command + root + namespace, then signal the deepest descendant first across process groups; unrelated PIDs remain untouched.</li>
-      <li><strong>Measured coverage:</strong> <code>kill_owned_gate.py</code> 91%; aggregate and every touched file remain above 85% / 75%.</li>
+      <li><strong>Measured evidence:</strong> <code>kill_owned_gate.py</code> 91%; coverage consumes a serial base or real parallel fragments, then requires an exact base before reporting.</li>
       <li><strong>Bounds:</strong> <code>SIGTERM</code> &rarr; 10 s at 100 ms polls; <code>SIGKILL</code> &rarr; 1 s.</li>
       <li>Publish ABORTED status + JSON evidence; a survivor retains <code>termination_failed</code> and blocks a replacement gate.</li>
       <li><strong>ZDD:</strong> keep the running gate's schema, replace only after exact terminal evidence, and roll back only after marked owners clear.</li>
     </ul>
-    <p class="cite">Contract: docs/features/GATE_RESOURCE_LIFECYCLE.md &middot; CPython #111873 &middot; Actions runner #3341 &middot; Bazel #11910 &middot; GitLab Runner #6189</p>
+    <p class="cite">Contract: docs/features/GATE_RESOURCE_LIFECYCLE.md:577-608 &middot; docs/features/GATE_RESOURCE_LIFECYCLE.md:1102-1129 &middot; CPython #111873 &middot; Actions runner #3341</p>
   </div>
   <p class="honest-note">No new runtime service or persisted schema: validation happens before network work, test state is namespaced, lifespan ownership is explicit, and late cleanup remains visible.</p>
-  <p class="cite">Sources: docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md &middot; docs/features/FLOOR_TEST_ENV_ISOLATION.md &middot; docs/features/READINESS_LIFESPAN_TESTING.md &middot; docs/features/RESOURCE_LIFECYCLE_SHUTDOWN_LOGGING.md</p>
+  <p class="cite">Sources: docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md &middot; docs/features/FLOOR_TEST_ENV_ISOLATION.md &middot; docs/features/READINESS_LIFESPAN_TESTING.md &middot; docs/features/RESOURCE_LIFECYCLE_SHUTDOWN_LOGGING.md &middot; docs/features/QEMU_IMPORT_ISOLATION.md:18-43</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1325,15 +1326,15 @@ flowchart LR
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-157-158-166-177-admission-chain">
   <p class="stage-kicker">S83.178 / .177 / .158 / .157 / .166 &middot; branch to terminal admission</p>
-  <h2>Promoted failures stop before the next side effect <span class="badge-yellow">S83.178 CANDIDATE &middot; RELEASE PROOF PENDING</span></h2>
+  <h2>Promoted failures stop before the next side effect <span class="badge-yellow">S83.178 INTEGRATED &middot; RELEASE PROOF PENDING</span></h2>
   <ol class="bullets-tight feature-sync-grid">
-    <li><strong>S83.178 + S83.177 &middot; branch:</strong> a clean committed feature branch enters one ordered, fail-fast admission path. <code>gate_failure_promotions.json</code> maps seven families&mdash;<code>dead-code-baseline-drift</code>, <code>claim-fence</code>, <code>project-isolation</code>, <code>concurrent-tick</code>, <code>mcp-workspace-containment</code>, <code>mcp-workspace-dispatch-jail</code>, and <code>module-graph-classification-drift</code>&mdash;to an exact Make or pytest owner; missing, duplicate, or stale nodes stop before browser work or the expensive full gate. Per-phase 90s / 180s / 600s runtime budgets reuse the bounded observer, emit <code>observed_command/v1</code> evidence, and timeout exits 124 before the next phase. Admission stops on the first failed deterministic check, its static presentation phase launches no browser, and the full gate remains mandatory.</li>
+    <li><strong>S83.178 + S83.177 &middot; branch:</strong> a clean committed feature branch enters one ordered, fail-fast admission path. <code>gate_failure_promotions.json</code> maps nine families&mdash;<code>dead-code-baseline-drift</code>, <code>coverage-gap-drift</code>, <code>resource-ownership-drift</code>, <code>claim-fence</code>, <code>project-isolation</code>, <code>concurrent-tick</code>, <code>mcp-workspace-containment</code>, <code>mcp-workspace-dispatch-jail</code>, and <code>module-graph-classification-drift</code>&mdash;to an exact Make or pytest owner; missing, duplicate, or stale nodes stop. The two newest checks catch unmapped modules and lifecycle-inventory drift before browser work or the expensive full gate. Per-phase 90s / 180s / 600s runtime budgets reuse the bounded observer, emit <code>observed_command/v1</code> evidence, and timeout exits 124 before the next phase. Admission stops on the first failed deterministic check, its static presentation phase launches no browser, and the full gate remains mandatory.</li>
     <li><strong>S83.158 &middot; compute:</strong> provision only after the claim transaction committed and active session released; <code>claim_transaction_open</code> yields zero provider or dispatch calls.</li>
     <li><strong>S83.157 &middot; hosted proof:</strong> verify the exact protected GitHub Environment, reviewer, self-review, admin-bypass, and branch-policy contract before OIDC or paid compute.</li>
     <li><strong>S83.166 &middot; terminal:</strong> both promotion-time readiness calls force <code>RELEASE_ALLOW_INCOMPLETE_TASKS=0</code> and <code>RELEASE_ALLOW_INVALID_RECEIPT=0</code>; diagnostic bypasses cannot become ambient release authority.</li>
   </ol>
-  <p class="honest-note">S83.177/.158/.157/.166 are integrated into development; S83.178 is branch-local until merge. The exact-head full gate, hosted replay, and terminal publication remain pending. No release-completion claim is made. ZDD keeps the serving application unchanged because each rejection precedes its owned mutation.</p>
-  <p class="cite">Sources: config/gate_failure_promotions.json:1-169 &middot; scripts/check_gate_failure_promotions.py:213-313 &middot; docs/features/INTEGRATION_ADMISSION.md:15-116 &middot; docs/features/DURABLE_CLAIM_COMPUTE_FENCE.md:21-33 &middot; docs/azure-gha-oidc-live-proof.md:46-79 &middot; docs/features/RELEASE_PREDECESSOR_ADMISSION.md:11-28</p>
+  <p class="honest-note">S83.178/.177/.158/.157/.166 are integrated into development. The exact-head full gate, hosted replay, and terminal publication remain pending. No release-completion claim is made. ZDD keeps the serving application unchanged because each rejection precedes its owned mutation.</p>
+  <p class="cite">Sources: config/gate_failure_promotions.json:1-206 &middot; scripts/check_gate_failure_promotions.py:213-313 &middot; docs/features/INTEGRATION_ADMISSION.md:17-124 &middot; docs/features/DURABLE_CLAIM_COMPUTE_FENCE.md:21-33 &middot; docs/azure-gha-oidc-live-proof.md:46-79 &middot; docs/features/RELEASE_PREDECESSOR_ADMISSION.md:11-28</p>
   <p class="cite">Long-lived practitioner findings: <a href="https://github.com/orgs/community/discussions/41726">optional merge-queue checks</a>, <a href="https://github.com/orgs/community/discussions/43988">duplicate merge-queue checks</a>, <a href="https://github.com/modelcontextprotocol/servers/issues/1838">MCP path-validation drift</a>, <a href="https://github.com/seddonym/import-linter/issues/93">graph-discovery blind spots</a>, and <a href="https://github.com/orgs/community/discussions/25631">hung-test runtime waste</a> justify bounded manifest-owned admission, not skipping integrated-head replay; <a href="https://github.com/sidekiq/sidekiq/issues/5239">pre-commit effects</a>, <a href="https://github.com/orgs/community/discussions/12241">self-approval</a>, and <a href="https://github.com/actions/runner/issues/789">stale environment state</a> motivate the three later fences.</p>
 </section>
 
@@ -1522,7 +1523,36 @@ flowchart LR
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19o: ENFORCEMENT EXECUTABLE METADATA -->
+<!-- SLIDE 19o: SHADOW GATE RECEIPTS + RECONCILIATION QUEUE -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-179-180-shadow-reconciliation">
+  <p class="stage-kicker">S83.179 + S83.180 &middot; signed shadow evidence &middot; reconciliation queue</p>
+  <h2>Evidence can inform&mdash;but never authorize <span class="badge-yellow">SHADOW / READ-ONLY &middot; RELEASE PROOF PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Signed shadow gate</h3>
+      <ul class="bullets-tight">
+        <li><strong>Authenticate:</strong> HMAC-SHA256 binds action, manifest, kind, signer, issue time, and expiry. <code>verified</code> means future-eligible only; <code>skip_authorized=false</code> and <code>skips=0</code>.</li>
+        <li><strong>Import legacy failures:</strong> one stable confined log yields <code>NON-REUSABLE</code> diagnostics (64 MiB / 250,000 lines / 64 failures / 32 KiB output) and never enters the pass-receipt store.</li>
+        <li><strong>Keep execution mandatory:</strong> one worker / 16-file execution and the terminal gate remains authoritative; unsigned, unknown, tampered, revoked, expired, or malformed evidence is refused.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Read-only reconciliation</h3>
+      <ul class="bullets-tight">
+        <li><strong>Inventory:</strong> a terminal ref/head snapshot queues unique heads; ancestor and patch-equivalent heads stay collapsed under a 256-head ceiling.</li>
+        <li><strong>Preflight + checkpoint:</strong> <code>git merge-tree</code> over exact object IDs reports <code>predicted-clean</code>, conflicted, or blocked&mdash;never mergeable; a version-2 receipt seals target + source tips + collapsed groups + cursor.</li>
+        <li><strong>Replay only:</strong> rechecks every ref, accepts only an ordered reachable prefix, exposes the next item, and never performs a merge.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">No test is skipped, and no ref, index, worktree, or push is mutated. Full gate, hosted provenance, merge, push, and release proof remain pending.</p>
+  <p class="cite">Auth: scripts/ci_receipt_auth.py:225-321 &middot; Import: scripts/ci_legacy_gate_log_import.py:102-338 &middot; Queue: scripts/branch_reconciliation_inventory.py:1406-1565 &middot; Replay: scripts/branch_reconciliation_inventory.py:1891-2034</p>
+  <p class="cite">Practitioner evidence: <a href="https://github.com/sigstore/cosign/issues/1273">cosign #1273</a> &middot; <a href="https://github.com/pytest-dev/pytest/issues/6399">Pytest #6399</a> &middot; <a href="https://github.com/orgs/community/discussions/46757">GitHub #46757</a> &middot; <a href="https://gitlab.com/gitlab-org/gitlab/-/issues/229156">GitLab #229156</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19p: ENFORCEMENT EXECUTABLE METADATA -->
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s91-3-enforcement-executable-modes">
   <p class="stage-kicker">S91.3 &middot; checkout-safe enforcement</p>

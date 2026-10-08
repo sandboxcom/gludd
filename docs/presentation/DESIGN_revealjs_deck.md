@@ -484,9 +484,27 @@ extra included through a dependency group being absent until explicitly
 selected. The Pages regression therefore pins the install set itself and its
 ordering ahead of the WebKit dependency probe.
 
+Pages run `37684089859` tested
+`caa43002adb087db388325c695538318f9521e45` and isolated a Chromium SVG
+viewport regression in the todo lifecycle chart. Mermaid wrapped the canonical
+`REVIEWING_RETURN` identifier into `REVIEWING_RETUR` plus `N`; the first row
+painted beyond the SVG view box even though the same bytes fit in the local
+Chromium build. The declaration now uses Mermaid's documented state-description
+form, `state "Review result" as REVIEWING_RETURN`. `Review result` is the compact
+human label, while every incoming and outgoing edge continues to reference the
+canonical `REVIEWING_RETURN` ID. A structural regression pins that alias and all
+four affected transitions, and the browser contract continues to measure the
+decoded SVG rather than trusting source length. This follows Mermaid's
+[state-description guidance](https://mermaid.js.org/syntax/stateDiagram.html#states)
+and the long-lived practitioner report
+[`mermaid-js/mermaid#4918`](https://github.com/mermaid-js/mermaid/issues/4918),
+opened in 2023, where exported SVGs truncate longer labels.
+
 ZDD rollback reverts the controller and manifest-bound vendor transform on
 development, validates the last browser-green bytes, then promotes that revert
 through the normal master-only release flow. The deploy job consumes only the
 artifact from its required validation job, and the revision probe provides the
 post-deploy identity check; no in-place Pages mutation or unverified fallback
-is used.
+is used. The compact-label change follows the same rule: its commit is reverted
+as one unit with its structural contract and documentation, and no unaliased
+replacement can deploy unless the exact Chromium viewport suite is green.

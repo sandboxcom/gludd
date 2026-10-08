@@ -34,6 +34,14 @@ EXPECTED_RUNTIME_PHASES = [
         90,
         60,
     ),
+    ("check-coverage-gaps", "check-coverage-gaps", "fast", 90, 60),
+    (
+        "check-resource-ownership",
+        "check-resource-ownership",
+        "fast",
+        90,
+        60,
+    ),
     ("validate-task-ledger", "validate-task-ledger", "fast", 90, 60),
     ("check-task-registration", "check-task-registration", "fast", 90, 60),
     ("check-task-integrity", "check-task-integrity", "fast", 90, 60),
@@ -52,6 +60,7 @@ EXPECTED_RUNTIME_PHASES = [
         90,
         60,
     ),
+    ("check-duplicate-code", "check-duplicate-code", "standard", 180, 120),
     ("yaml-lint", "yaml-lint", "standard", 180, 120),
     (
         "project-dispatch-integration",
@@ -355,6 +364,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     assert payload["full_gate_required"] is True
     assert [family["id"] for family in payload["families"]] == [
         "dead-code-baseline-drift",
+        "coverage-gap-drift",
+        "resource-ownership-drift",
         "claim-fence",
         "project-isolation",
         "concurrent-tick",
@@ -373,6 +384,10 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     )
     assert families["module-graph-classification-drift"]["node"] == (
         "tests/unit/test_module_graph_deep.py::test_all_subpackages_classified"
+    )
+    assert families["coverage-gap-drift"]["node"] == "check-coverage-gaps"
+    assert families["resource-ownership-drift"]["node"] == (
+        "check-resource-ownership"
     )
     runtime = payload["runtime_contract"]
     assert runtime["observer"] == "scripts/stream_command.py"
@@ -406,6 +421,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         admission.index('run_phase "worktree-guard"')
         < admission.index('run_phase "check-gate-failure-promotions"')
         < admission.index('run_phase "_dead-code-baseline-refresh"')
+        < admission.index('run_phase "check-coverage-gaps"')
+        < admission.index('run_phase "check-resource-ownership"')
     )
     assert "$(MAKE) --no-print-directory _project-dispatch-integration;" in admission
     assert "$(MAKE) --no-print-directory _mcp-workspace-jail-integration;" in admission
@@ -476,11 +493,13 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "gate-failure-promotions: PASS families=7" in result.stdout
-    assert "runtime_phases=15" in result.stdout
-    assert "runtime_ceiling_seconds=2220" in result.stdout
+    assert "gate-failure-promotions: PASS families=9" in result.stdout
+    assert "runtime_phases=18" in result.stdout
+    assert "runtime_ceiling_seconds=2580" in result.stdout
     for phrase in (
         "dead-code-baseline-drift",
+        "coverage-gap-drift",
+        "resource-ownership-drift",
         "claim-fence",
         "project-isolation",
         "concurrent-tick",
