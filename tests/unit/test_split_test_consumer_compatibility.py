@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import re
 from pathlib import Path
 
-from scripts import audit_observability, check_target_contract
+import pytest
 from scripts.makefile_layout import compose_makefile
+
+audit_observability = importlib.import_module("scripts.audit_observability")
+check_target_contract = importlib.import_module("scripts.check_target_contract")
 
 ROOT = Path(__file__).resolve().parents[2]
 AUTOMATIC_DISK_CLEANUP_TESTS = (
@@ -19,6 +23,7 @@ BEHAVIORAL_ENFORCEMENT_TESTS = (
     ROOT / "tests" / "unit" / "test_behavioral_enforcement.py",
     ROOT / "tests" / "unit" / "test_behavioral_enforcement_runtime.py",
 )
+FEATURE_RECORD = ROOT / "docs" / "features" / "COMPOSED_MAKEFILE_CONSUMER_CONTRACT.md"
 
 
 def _target_block(makefile: str, target: str) -> str:
@@ -42,7 +47,7 @@ def test_disk_validation_targets_select_both_cleanup_test_modules() -> None:
 
 def test_observability_audit_reads_both_behavioral_test_modules(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A plugin covered only in the runtime half must remain visible to AB066."""
     plugin_dir = tmp_path / "plugins"
@@ -72,8 +77,8 @@ def test_observability_audit_reads_both_behavioral_test_modules(
 
 def test_target_contract_reads_assertions_from_both_behavioral_modules(
     tmp_path: Path,
-    monkeypatch,
-    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Target assertions moved to the runtime half must still be contract-checked."""
     original = tmp_path / "test_behavioral_enforcement.py"
@@ -118,3 +123,18 @@ def test_acceptance_matrix_keeps_historical_runner_paths_and_digests() -> None:
         )
         fixture = ROOT / case["fixture_path"]
         assert hashlib.sha256(fixture.read_bytes()).hexdigest() == case["fixture_digest"]
+
+
+def test_composed_consumer_contract_documents_operational_invariants() -> None:
+    """The split-layout repair remains reviewable without replaying its incident."""
+    record = FEATURE_RECORD.read_text(encoding="utf-8")
+
+    for invariant in (
+        "compose_makefile",
+        "make -n -I",
+        "ExecutionDispatchMixin",
+        "coverage_gap_test_mappings.json",
+        "zero-downtime deployment",
+    ):
+        assert invariant in record
+    assert record.count("https://stackoverflow.com/questions/") >= 3
