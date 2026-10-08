@@ -1,5 +1,6 @@
 ---
-role_enabled: false
+network_design_enabled: false
+role_enabled: "{{ network_design_enabled }}"
 app_name: ""
 region: eastus
 cidr_range: 10.0.0.0/16

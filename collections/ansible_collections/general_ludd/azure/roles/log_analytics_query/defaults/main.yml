@@ -1,5 +1,6 @@
 ---
-role_enabled: false
+log_analytics_query_enabled: false
+role_enabled: "{{ log_analytics_query_enabled }}"
 workspace_id: ""
 kql_query: "Heartbeat | take 5"
 output_path: /tmp/gludd-azure-log-analytics

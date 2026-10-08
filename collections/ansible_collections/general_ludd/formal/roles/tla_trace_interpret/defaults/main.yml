@@ -8,7 +8,8 @@ tlc_output: ""
 trace_path: ""
 
 # Artifact output directory
-artifact_dir: "/tmp/gludd-tla-trace"
+tla_trace_interpret_artifact_dir: "/tmp/gludd-tla-trace"
+artifact_dir: "{{ tla_trace_interpret_artifact_dir }}"
 
 # Daemon connectivity (for gludd_message handoff)
 daemon_url: "http://localhost:8000"

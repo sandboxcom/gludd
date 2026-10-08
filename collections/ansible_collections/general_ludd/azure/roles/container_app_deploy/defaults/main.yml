@@ -1,5 +1,6 @@
 ---
-containerapp_role_enabled: false
+container_app_deploy_enabled: false
+containerapp_role_enabled: "{{ container_app_deploy_enabled }}"
 containerapp_state: observe
 containerapp_subscription_id: ""
 containerapp_resource_group: ""

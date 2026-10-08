@@ -1,5 +1,6 @@
 ---
-role_enabled: false
+cost_optimize_enabled: false
+role_enabled: "{{ cost_optimize_enabled }}"
 service_type: ""
 region: eastus
 gpu_type: T4

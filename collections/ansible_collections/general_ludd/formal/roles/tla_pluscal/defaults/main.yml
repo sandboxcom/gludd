@@ -9,7 +9,8 @@ tla_tools_jar: "/opt/tla/tla2tools.jar"
 
 # SAFE-BY-DEFAULT: do NOT run pcal.trans unless explicitly enabled.
 # Java/jar absent or enable_tla=false → translated=false, status=skipped (graceful, non-fatal).
-enable_tla: false
+tla_pluscal_enabled: false
+enable_tla: "{{ tla_pluscal_enabled }}"
 
 # Override pcal.trans stdout for testing (used when enable_tla=false)
 pcal_output_override: "Translation completed."

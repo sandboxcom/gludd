@@ -3,7 +3,8 @@ materials_daemon_url: "http://127.0.0.1:8000"
 materials_daemon_psk: ""
 materials_daemon_timeout: 30
 materials_idempotency_key: ""
-materials_service_enabled: false
+service_request_enabled: false
+materials_service_enabled: "{{ service_request_enabled }}"
 materials_service_operation: ""
 materials_service_request: {}
 materials_service_result_fact: materials_service_result

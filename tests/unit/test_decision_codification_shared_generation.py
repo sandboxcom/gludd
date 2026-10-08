@@ -626,6 +626,195 @@ def test_shared_validation_refuses_invalid_scope_counts_and_time(
         )
 
 
+def test_shared_codec_and_unmaterialized_state_fail_closed(
+    shared_backend: tuple[Engine, DecisionArtifactStore],
+) -> None:
+    engine, artifacts = shared_backend
+    store = _store(engine, artifacts)
+    pointer = _active_generation(artifacts, marker=19)
+
+    with Session(engine) as session:
+        with pytest.raises(SharedGenerationStoreError, match="epoch is missing"):
+            store._require_epoch(session, pointer)
+        with pytest.raises(SharedGenerationStoreError, match="scope is unavailable"):
+            store._candidate_flag_in_session(session, pointer, "hold")
+        with pytest.raises(SharedGenerationStoreError, match="coordination"):
+            store._release_lease(session, pointer.project_id, "missing-holder")
+
+    with pytest.raises(SharedGenerationStoreError, match="bounded size"):
+        store._encode_record(
+            key="scope",
+            project_id=pointer.project_id,
+            decision_kind=pointer.decision_kind,
+            payload={"oversized": "x" * (65 * 1024)},
+        )
+    for value in (cast(Any, []), "not-json", "{}"):
+        with pytest.raises(SharedGenerationStoreError, match="record is invalid"):
+            store._decode_record_unscoped(value, expected_key="scope")
+
+    encoded = store._encode_record(
+        key="scope",
+        project_id=pointer.project_id,
+        decision_kind=pointer.decision_kind,
+        payload={},
+    )
+    with pytest.raises(SharedGenerationStoreError, match="identity is invalid"):
+        store._decode_record_unscoped(encoded, expected_key="other")
+    with pytest.raises(SharedGenerationStoreError, match="pointer is invalid"):
+        store._validate_pointer(cast(Any, object()))
+    with pytest.raises(SharedGenerationStoreError, match="decision scope"):
+        store._validate_scope(pointer.project_id, cast(Any, "review"))
+    with pytest.raises(SharedGenerationStoreError, match="scope is unavailable"):
+        store._candidate_scope(pointer.candidate_digest, require_artifact=False)
+
+
+def test_authenticated_candidate_records_reject_semantic_corruption(
+    shared_backend: tuple[Engine, DecisionArtifactStore],
+) -> None:
+    engine, artifacts = shared_backend
+    store = _store(engine, artifacts)
+    pointer = _active_generation(artifacts, marker=20)
+    installed = store.compare_and_swap(pointer, expected_candidate_digest=None)
+    assert installed is not None
+    assert store.reserve_use(installed.candidate_digest, SHA_A, 2)
+
+    with Session(engine) as session, session.begin():
+        namespace = store._candidate_namespace(
+            session,
+            installed.candidate_digest,
+            project_id=installed.project_id,
+            create=False,
+            lock=True,
+        )
+        assert namespace is not None
+        application_key = store._application_key(SHA_A)
+        application = store._value_row(
+            session,
+            namespace.id,
+            application_key,
+            lock=True,
+        )
+        assert application is not None
+        with pytest.raises(SharedGenerationStoreError, match="application is invalid"):
+            store._require_application(
+                application.value,
+                key=application_key,
+                project_id=installed.project_id,
+                decision_kind=installed.decision_kind,
+                candidate_digest=installed.candidate_digest,
+                application_id=SHA_B,
+            )
+        store._set_record(
+            session,
+            namespace,
+            "hold",
+            installed.project_id,
+            installed.decision_kind,
+            {"candidate_digest": installed.candidate_digest, "reason": "bad reason"},
+        )
+        store._set_record(
+            session,
+            namespace,
+            "use-count",
+            installed.project_id,
+            installed.decision_kind,
+            {"count": -1},
+        )
+        store._set_record(
+            session,
+            namespace,
+            "outcome-index",
+            installed.project_id,
+            installed.decision_kind,
+            {"items": "invalid"},
+        )
+
+    with pytest.raises(SharedGenerationStoreError, match="flag is invalid"):
+        store.is_drift_held(installed.candidate_digest)
+    with pytest.raises(SharedGenerationStoreError, match="use count is invalid"):
+        store.use_count(installed.candidate_digest)
+    with pytest.raises(SharedGenerationStoreError, match="outcome index is invalid"):
+        store.recent_outcomes(installed.candidate_digest, now=NOW)
+
+
+def test_authenticated_scope_and_epoch_records_reject_wrong_identity(
+    shared_backend: tuple[Engine, DecisionArtifactStore],
+) -> None:
+    engine, artifacts = shared_backend
+    store = _store(engine, artifacts)
+    pointer = _active_generation(artifacts, marker=21)
+    installed = store.compare_and_swap(pointer, expected_candidate_digest=None)
+    assert installed is not None
+
+    with Session(engine) as session, session.begin():
+        head = store._head_namespace(
+            session,
+            installed.project_id,
+            create=False,
+            lock=True,
+        )
+        assert head is not None
+        epoch_key = store._epoch_key(installed.decision_kind)
+        epoch = store._value_row(session, head.id, epoch_key, lock=True)
+        assert epoch is not None
+        session.delete(epoch)
+    with Session(engine) as session, pytest.raises(
+        SharedGenerationStoreError,
+        match="epoch is missing",
+    ):
+        store._require_epoch(session, installed)
+
+    with Session(engine) as session, session.begin():
+        head = store._head_namespace(
+            session,
+            installed.project_id,
+            create=False,
+            lock=True,
+        )
+        assert head is not None
+        store._set_record(
+            session,
+            head,
+            store._epoch_key(installed.decision_kind),
+            installed.project_id,
+            installed.decision_kind,
+            {"epoch": -1},
+        )
+        with pytest.raises(SharedGenerationStoreError, match="epoch is invalid"):
+            store._next_epoch(
+                session,
+                head,
+                installed.project_id,
+                installed.decision_kind,
+            )
+
+    with Session(engine) as session, session.begin():
+        namespace = store._candidate_namespace(
+            session,
+            installed.candidate_digest,
+            project_id=installed.project_id,
+            create=False,
+            lock=True,
+        )
+        assert namespace is not None
+        store._set_record(
+            session,
+            namespace,
+            "scope",
+            installed.project_id,
+            installed.decision_kind,
+            {
+                "candidate_digest": SHA_B,
+                "project_id": installed.project_id,
+                "decision_kind": installed.decision_kind.value,
+            },
+        )
+        with pytest.raises(SharedGenerationStoreError, match="scope is invalid"):
+            store._ensure_candidate_scope(session, installed)
+    with pytest.raises(SharedGenerationStoreError, match="scope is invalid"):
+        store._candidate_scope(installed.candidate_digest, require_artifact=False)
+
+
 def test_full_identity_and_unmaterialized_scope_fail_closed(
     shared_backend: tuple[Engine, DecisionArtifactStore],
 ) -> None:
@@ -840,8 +1029,63 @@ def test_secret_indirect_configuration_selects_shared_generation_state(
     dumped = str(config.model_dump(mode="json"))
     assert environment["TEST_GENERATION_DATABASE_URL"] not in dumped
     assert "gludd:secret" not in dumped
+
+    local_config = config.model_copy(update={"generation_database_url_env": None})
+    local_components = build_configured_components(local_config, environ=environment)
+    assert local_components is not None
+    assert not isinstance(local_components.pointers, FakeSharedStore)
+
     with pytest.raises(
         DecisionCodificationConfigurationError,
         match="database URL is unavailable",
     ):
-        build_configured_components(config, environ={**environment, "TEST_GENERATION_DATABASE_URL": ""})
+        build_configured_components(
+            config,
+            environ={**environment, "TEST_GENERATION_DATABASE_URL": ""},
+        )
+    with pytest.raises(
+        DecisionCodificationConfigurationError,
+        match="must use PostgreSQL psycopg",
+    ):
+        build_configured_components(
+            config,
+            environ={
+                **environment,
+                "TEST_GENERATION_DATABASE_URL": "sqlite+pysqlite:///unsafe.sqlite3",
+            },
+        )
+    with pytest.raises(
+        DecisionCodificationConfigurationError,
+        match="key material is unavailable",
+    ):
+        build_configured_components(
+            config,
+            environ={**environment, "TEST_REPLAY_KEY": ""},
+        )
+
+    monkeypatch.setattr(
+        configuration_module,
+        "build_configured_components",
+        lambda *_args, **_kwargs: components,
+    )
+    assert configuration_module.build_configured_adapter(
+        config,
+        environ=environment,
+    ) is components.adapter
+    monkeypatch.setattr(
+        configuration_module,
+        "build_configured_components",
+        lambda *_args, **_kwargs: None,
+    )
+    assert configuration_module.build_configured_adapter(config, environ=environment) is None
+
+
+def test_configuration_rejects_invalid_input_and_preserves_disabled_default() -> None:
+    disabled = DecisionCodificationConfig(enabled=False)
+
+    assert build_configured_components(disabled, environ={}) is None
+    with pytest.raises(
+        DecisionCodificationConfigurationError,
+        match="configuration is invalid",
+    ):
+        build_configured_components(cast(Any, object()), environ={})
