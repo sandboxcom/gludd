@@ -1,11 +1,9 @@
 ---
-# welding_plan role tasks — materials service.
-
-- name: Load welding_plan defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _welding_plan_defaults
-
-- name: Reference welding_plan service API
-  ansible.builtin.debug:
-    msg: "welding_plan routes via the materials service API (/api/materials/welding_plan)."
+- name: Execute welding_plan through the materials service
+  ansible.builtin.include_role:
+    name: general_ludd.materials.service_request
+  vars:
+    materials_service_enabled: "{{ welding_plan_enabled }}"
+    materials_service_operation: welding_plan
+    materials_service_request: "{{ welding_plan_request }}"
+    materials_service_result_fact: welding_plan_result

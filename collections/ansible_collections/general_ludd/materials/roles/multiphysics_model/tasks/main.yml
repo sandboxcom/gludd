@@ -1,11 +1,9 @@
 ---
-# multiphysics_model role tasks — materials service.
-
-- name: Load multiphysics_model defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _multiphysics_model_defaults
-
-- name: Reference multiphysics_model service API
-  ansible.builtin.debug:
-    msg: "multiphysics_model routes via the materials service API (/api/materials/multiphysics_model)."
+- name: Execute multiphysics_model through the materials service
+  ansible.builtin.include_role:
+    name: general_ludd.materials.service_request
+  vars:
+    materials_service_enabled: "{{ multiphysics_model_enabled }}"
+    materials_service_operation: multiphysics_model
+    materials_service_request: "{{ multiphysics_model_request }}"
+    materials_service_result_fact: multiphysics_model_result

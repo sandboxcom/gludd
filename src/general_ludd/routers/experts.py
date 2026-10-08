@@ -5,6 +5,8 @@ via the daemon alongside the existing PSK-gated admin and public API routes:
 
   - ``POST /api/materials/select``   -- screen/rank material candidates
     (delegates to :func:`general_ludd.materials.select_materials`).
+  - ``POST /api/materials/resolve``  -- execute one typed, allowlisted,
+    non-mutating materials operation with bounded idempotent replay.
   - ``POST /api/chemistry/resolve``  -- dispatch one typed, allowlisted
     chemistry operation with bounded execution and idempotent replay.
   - ``POST /api/ai_ml/query``        -- route an AI/ML expert request to the
@@ -25,7 +27,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Literal
+from collections.abc import Callable
+from typing import Any, ClassVar, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field, StrictFloat, StrictStr, field_validator
@@ -37,6 +40,40 @@ logger = logging.getLogger(__name__)
 
 class ChemistryRequestError(ValueError):
     """Signal malformed typed chemistry input without exposing daemon faults."""
+
+
+def _bound_domain_request(
+    value: dict[str, Any],
+    *,
+    domain: str,
+) -> dict[str, Any]:
+    """Reject domain payloads that could monopolize the daemon worker pool."""
+    if len(value) > 128 or len(json.dumps(value, default=str)) > 262_144:
+        raise ValueError(f"{domain} request exceeds the bounded payload size")
+    return value
+
+
+async def _run_domain_operation(
+    producer: Callable[[], dict[str, Any]],
+    *,
+    timeout_seconds: float,
+    request_error: type[Exception],
+    timeout_detail: str,
+    failure_detail: str,
+) -> dict[str, Any]:
+    """Run one synchronous domain adapter with shared timeout/error semantics."""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(producer),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail=timeout_detail) from exc
+    except request_error as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as err:
+        logger.exception(failure_detail)
+        raise HTTPException(status_code=500, detail=failure_detail) from err
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +93,49 @@ class MaterialsSelectRequest(BaseModel):
     candidates: list[str] | None = None
 
 
-class ChemistryResolveRequest(StrictRuntimeRequest):
+class _BoundedDomainOperationRequest(StrictRuntimeRequest):
+    """Shared bounded request fields for authenticated domain adapters."""
+
+    _domain: ClassVar[str] = "domain"
+    request: dict[str, Any] = Field(default_factory=dict)
+    timeout_seconds: StrictFloat = Field(default=15.0, ge=0.1, le=30.0)
+    idempotency_key: StrictStr | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+    )
+
+    @field_validator("request")
+    @classmethod
+    def _bound_request(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _bound_domain_request(value, domain=cls._domain)
+
+
+class MaterialsResolveRequest(_BoundedDomainOperationRequest):
+    """Body for ``POST /api/materials/resolve``."""
+
+    _domain: ClassVar[str] = "materials"
+    operation: Literal[
+        "requirements_capture",
+        "material_select",
+        "polymer_process_plan",
+        "metal_forming_plan",
+        "strength_assess",
+        "joining_plan",
+        "welding_plan",
+        "machining_plan",
+        "additive_plan",
+        "textile_plan",
+        "molding_plan",
+        "multiphysics_model",
+        "tolerance_model",
+        "failure_analyze",
+        "manufacturing_plan",
+        "inspection_plan",
+    ]
+
+
+class ChemistryResolveRequest(_BoundedDomainOperationRequest):
     """Body for ``POST /api/chemistry/resolve``.
 
     ``operation`` selects a fixed daemon-owned chemistry function and
@@ -73,20 +152,7 @@ class ChemistryResolveRequest(StrictRuntimeRequest):
         "yield",
         "hazard",
     ] = "route"
-    request: dict[str, Any] = Field(default_factory=dict)
-    timeout_seconds: StrictFloat = Field(default=15.0, ge=0.1, le=30.0)
-    idempotency_key: StrictStr | None = Field(
-        default=None,
-        min_length=1,
-        max_length=256,
-    )
-
-    @field_validator("request")
-    @classmethod
-    def _bound_request(cls, value: dict[str, Any]) -> dict[str, Any]:
-        if len(value) > 128 or len(json.dumps(value, default=str)) > 262_144:
-            raise ValueError("chemistry request exceeds the bounded payload size")
-        return value
+    _domain: ClassVar[str] = "chemistry"
 
 
 def _dispatch_chemistry(
@@ -174,6 +240,7 @@ class LanguageOperationRequest(BaseModel):
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     """Register authenticated domain-expert and language routes on ``app``."""
+    materials_store = IdempotencyStore()
     chemistry_store = IdempotencyStore()
 
     @app.post("/api/materials/select")
@@ -187,31 +254,38 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             raise HTTPException(status_code=500, detail="materials select failed") from err
         return result
 
+    @app.post("/api/materials/resolve")
+    async def materials_resolve(body: MaterialsResolveRequest) -> dict[str, Any]:
+        async def _run() -> dict[str, Any]:
+            from general_ludd.materials import operations
+
+            return await _run_domain_operation(
+                lambda: operations.dispatch_materials_operation(
+                    body.operation,
+                    body.request,
+                ),
+                timeout_seconds=body.timeout_seconds,
+                request_error=operations.MaterialsRequestError,
+                timeout_detail="materials operation timed out",
+                failure_detail="materials operation failed",
+            )
+
+        return await materials_store.run(
+            key=body.idempotency_key,
+            payload=body.model_dump(mode="json", exclude_none=True),
+            producer=_run,
+        )
+
     @app.post("/api/chemistry/resolve")
     async def chemistry_resolve(body: ChemistryResolveRequest) -> dict[str, Any]:
         async def _run() -> dict[str, Any]:
-            try:
-                return await asyncio.wait_for(
-                    asyncio.to_thread(
-                        _dispatch_chemistry,
-                        body.operation,
-                        body.request,
-                    ),
-                    timeout=body.timeout_seconds,
-                )
-            except TimeoutError as exc:
-                raise HTTPException(
-                    status_code=504,
-                    detail="chemistry operation timed out",
-                ) from exc
-            except ChemistryRequestError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-            except Exception as err:
-                logger.exception("chemistry operation failed")
-                raise HTTPException(
-                    status_code=500,
-                    detail="chemistry resolve failed",
-                ) from err
+            return await _run_domain_operation(
+                lambda: _dispatch_chemistry(body.operation, body.request),
+                timeout_seconds=body.timeout_seconds,
+                request_error=ChemistryRequestError,
+                timeout_detail="chemistry operation timed out",
+                failure_detail="chemistry resolve failed",
+            )
 
         return await chemistry_store.run(
             key=body.idempotency_key,

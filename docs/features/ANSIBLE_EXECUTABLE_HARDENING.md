@@ -67,6 +67,16 @@ derives a stable request identity, and uses the module's idempotency key and
 check-mode contract. A normal run publishes only a validated service result;
 check mode publishes the complete non-mutating request plan.
 
+All 16 materials roles now execute their existing typed service logic through
+`general_ludd.materials.materials_operation` and the authenticated
+`/api/materials/resolve` endpoint. This also replaces five older paths that
+copied inputs into files labeled as verdicts. The allowlisted adapter delegates
+to the existing materials modules, rejects booleans and non-finite engineering
+numbers, bounds lists, payloads, quantities, and timeouts, validates full
+simulation-plan contracts, derives stable route IDs, and uses idempotent replay.
+Every role remains default-off and check mode returns the exact operation plan
+without contacting the daemon.
+
 ## Long-lived practitioner evidence
 
 This contract follows problems Ansible practitioners have reported for more
@@ -98,6 +108,12 @@ than a decade:
   commands. The repaired role therefore delegates reconciliation to the
   maintained `win_scheduled_task` module instead of adding another shell
   wrapper.
+- The long-lived Stack Overflow discussion
+  [“Why is bool a subclass of int?”](https://stackoverflow.com/questions/8169001/why-is-bool-a-subclass-of-int)
+  documents the Python compatibility behavior that lets `True` pass ordinary
+  integer checks. The materials boundary therefore rejects booleans before
+  accepting engineering numbers, preventing `True` from silently becoming a
+  load, tolerance, quantity, or process parameter.
 
 Together, these reports support a fail-closed rule: check mode should be
 predictive and non-mutating, while a normal run must never turn an unavailable

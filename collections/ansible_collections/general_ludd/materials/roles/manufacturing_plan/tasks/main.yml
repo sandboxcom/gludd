@@ -1,11 +1,9 @@
 ---
-# manufacturing_plan role tasks — materials service.
-
-- name: Load manufacturing_plan defaults
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/defaults/main.yml"
-    name: _manufacturing_plan_defaults
-
-- name: Reference manufacturing_plan service API
-  ansible.builtin.debug:
-    msg: "manufacturing_plan routes via the materials service API (/api/materials/manufacturing_plan)."
+- name: Execute manufacturing_plan through the materials service
+  ansible.builtin.include_role:
+    name: general_ludd.materials.service_request
+  vars:
+    materials_service_enabled: "{{ manufacturing_plan_enabled }}"
+    materials_service_operation: manufacturing_plan
+    materials_service_request: "{{ manufacturing_plan_request }}"
+    materials_service_result_fact: manufacturing_plan_result

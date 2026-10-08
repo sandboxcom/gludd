@@ -14,6 +14,13 @@ All 16 spec §3 roles are implemented. Each role carries orchestration only
 (parameter validation, output capture, JSON marshalling); chemical/mechanical
 logic lives in the Python service layer.
 
+Every role is default-off and delegates through the shared `service_request`
+role to `general_ludd.materials.materials_operation`. Normal execution uses
+the authenticated, bounded `/api/materials/resolve` control-plane endpoint;
+check mode returns the exact non-mutating request plan. Service failures and
+invalid engineering inputs fail the play instead of producing an empty or
+input-only verdict.
+
 | Role | Purpose |
 |---|---|
 | `requirements_capture` | Normalize loads, environment, life, geometry, manufacturing, inspection, cost, repair, and regulatory constraints. |

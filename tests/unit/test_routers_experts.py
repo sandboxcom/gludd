@@ -76,6 +76,46 @@ def test_materials_failure_is_redacted(client: TestClient, monkeypatch: pytest.M
     assert "supplier-secret" not in response.text
 
 
+def test_materials_resolve_is_bounded_and_idempotent(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import general_ludd.materials.operations as operations
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def dispatch(operation: str, request: dict[str, object]) -> dict[str, object]:
+        calls.append((operation, request))
+        return {"state": "candidate", "operation": operation}
+
+    monkeypatch.setattr(operations, "dispatch_materials_operation", dispatch)
+    body = {
+        "operation": "machining_plan",
+        "request": {"material_id": "abs", "process": "milling"},
+        "timeout_seconds": 2.0,
+        "idempotency_key": "materials-fixture",
+    }
+
+    first = client.post("/api/materials/resolve", json=body)
+    replay = client.post("/api/materials/resolve", json=body)
+
+    assert first.status_code == 200
+    assert first.json() == {"state": "candidate", "operation": "machining_plan"}
+    assert replay.status_code == 200
+    assert replay.json()["idempotent_replay"] is True
+    assert calls == [("machining_plan", {"material_id": "abs", "process": "milling"})]
+
+
+def test_materials_resolve_rejects_invalid_operation_input(client: TestClient) -> None:
+    response = client.post(
+        "/api/materials/resolve",
+        json={"operation": "machining_plan", "request": {}},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "material_id must be a non-empty string of at most 256 characters"}
+
+
 def test_chemistry_resolve_forwards_request(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     import general_ludd.chemistry as chemistry
 

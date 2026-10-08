@@ -1,2 +1,3 @@
 ---
-{}
+failure_analyze_enabled: false
+failure_analyze_request: {}
