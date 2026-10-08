@@ -1,5 +1,5 @@
 ---
-# prepare: no external fixtures needed; property_lookup is self-contained.
+# prepare: no external fixtures needed; lot admission is a pure local evaluator.
 - name: Prepare - noop for chemistry_expert
   hosts: localhost
   connection: local
@@ -7,4 +7,4 @@
   tasks:
     - name: Sentinel (no fixtures required)
       ansible.builtin.debug:
-        msg: "chemistry_expert prepare: property_lookup is self-contained."
+        msg: "chemistry_expert prepare: lot admission needs no service or fixture."

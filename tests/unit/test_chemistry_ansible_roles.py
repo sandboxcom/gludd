@@ -16,7 +16,6 @@ ROLE_TASKS = {
     "chemistry_refresh": "research",
     "chemistry_research": "research",
     "electrochemistry": "electrochemistry",
-    "inventory_check": "inventory",
     "molecular_simulation": "compute",
     "process_scaleup": "process",
     "property_lookup": "property",
@@ -34,7 +33,7 @@ def _load(path: Path) -> list[dict[str, Any]]:
     return loaded
 
 
-def test_every_service_role_invokes_the_shared_typed_operation_role() -> None:
+def test_daemon_service_roles_invoke_the_shared_typed_operation_role() -> None:
     for role, task_name in ROLE_TASKS.items():
         source = (ROLES / role / "tasks/main.yml").read_text(encoding="utf-8")
         tasks = _load(ROLES / role / "tasks/main.yml")
@@ -47,6 +46,21 @@ def test_every_service_role_invokes_the_shared_typed_operation_role() -> None:
             "chemistry_service_role": role,
             "chemistry_service_task": task_name,
         }
+
+
+def test_inventory_role_invokes_collection_native_lot_admission() -> None:
+    source = (ROLES / "inventory_check/tasks/main.yml").read_text(encoding="utf-8")
+    tasks = _load(ROLES / "inventory_check/tasks/main.yml")
+
+    assert len(tasks) == 2
+    assert "general_ludd.chemistry.service_request" not in source
+    assert "daemon_url" not in source
+    assert "general_ludd.chemistry.chemical_lot_admission" in tasks[0]
+    assert tasks[0].get("ignore_errors") is None
+    assert tasks[1]["ansible.builtin.set_fact"] == {
+        "inventory_check_result": "{{ _inventory_check_admission.result }}"
+    }
+    assert tasks[1]["changed_when"] is False
 
 
 def test_shared_role_uses_existing_typed_module_and_publishes_check_plan() -> None:

@@ -1,6 +1,6 @@
 ---
 name: chemistry-expert
-description: "Use for chemical identity resolution, formula parsing, molar mass, stoichiometry (moles/dilution/yield), reaction balancing & classification, hazard screening & compatibility, cheminformatics (SMILES validation, descriptors, Tanimoto similarity, tautomers, substructure search), thermo-kinetics (equilibrium, Arrhenius, phase stability, mass/energy balance), quantum/MD validation, electrochemistry (Nernst, cell potential, corrosion, electrolysis), spectroscopy, analytical method validation, and process scale-up. Trigger keywords: chemistry, chemical, molecule, SMILES, InChI, molar mass, stoichiometry, reaction, balance, yield, limiting reactant, hazard, compatibility, GHS, tautomer, substructure, Tanimoto, descriptor, Arrhenius, equilibrium, Nernst, cell potential, electrolysis, mass spec, HPLC, calibration, protocol, provenance, scale-up."
+description: "Use for chemical identity resolution, formula parsing, molar mass, stoichiometry (moles/dilution/yield), reaction balancing & classification, hazard screening & compatibility, chemical lot admission, cheminformatics (SMILES validation, descriptors, Tanimoto similarity, tautomers, substructure search), thermo-kinetics (equilibrium, Arrhenius, phase stability, mass/energy balance), quantum/MD validation, electrochemistry (Nernst, cell potential, corrosion, electrolysis), spectroscopy, analytical method validation, and process scale-up. Trigger keywords: chemistry, chemical, molecule, lot, inventory, purity, expiry, restriction, SMILES, InChI, molar mass, stoichiometry, reaction, balance, yield, limiting reactant, hazard, compatibility, GHS, tautomer, substructure, Tanimoto, descriptor, Arrhenius, equilibrium, Nernst, cell potential, electrolysis, mass spec, HPLC, calibration, protocol, provenance, scale-up."
 ---
 
 # Chemistry Expert
@@ -8,9 +8,9 @@ description: "Use for chemical identity resolution, formula parsing, molar mass,
 A full-stack chemistry service: identity resolution → property lookup → reaction
 analysis → hazard gating → protocol drafting. Implements spec CHEM-001 through
 CHEM-008 from `docs/specs/FEATURE_CHEMISTRY_EXPERT.md`. The typed entry point is
-`general_ludd.chemistry.api.ChemistryExpertAPI`; the ansible collection under
-`collections/ansible_collections/general_ludd/chemistry/` wraps it and carries
-no independent chemical logic.
+`general_ludd.chemistry.api.ChemistryExpertAPI`; the Ansible collection under
+`collections/ansible_collections/general_ludd/chemistry/` wraps it and owns the
+pure, fail-closed lot-admission boundary used by inventory automation.
 
 ## When to Use
 
@@ -37,7 +37,7 @@ before any actionable artifact is produced.
 | `analytical` | analytical_validate | `analytical.{dixon_q,detect_outliers_grubbs,subtract_blank}` |
 | `electrochemistry` | electrochemistry | `electrochemistry.{nernst_equation,cell_potential,corrosion_rate,electrolysis_energy}` |
 | `process` | process_scaleup | `process.ProcessScaleUp` |
-| `inventory` | inventory_check | `inventory.check_lot_suitability` |
+| `inventory` | inventory_check | collection `lot_admission.evaluate_lot_admission` |
 
 Cheminformatics (`cheminformatics.{validate_structure,standardize_structure,enumerate_tautomers,substructure_search,compute_descriptors,tanimoto_similarity}`),
 thermo-kinetics (`thermo_kinetics.{equilibrium_constant,arrhenius_rate,check_phase_stability,mass_balance_check,energy_balance_check,limiting_reactant,ideal_gas_law}`),
@@ -68,6 +68,8 @@ Request/response shapes: `ChemistryRequest`, `ChemistryResult`, `TaskKind`,
   unavailable the result is `refused` (fail-closed, spec §9).
 - Outputs are advisory for screening and computation — never a replacement for
   certified SDS, regulatory review, or lab measurement.
+- Inventory admission evaluates only the explicitly declared lot. Expired,
+  restricted, or under-purity lots require review and are never substituted.
 
 ## Usage Examples
 
