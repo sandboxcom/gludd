@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +62,7 @@ def test_flat_config_applies_existing_envelope_before_readiness(
 
     try:
         assert writer.start(timeout=20.0) is True
-        with sqlite3.connect(database_path) as connection:
+        with closing(sqlite3.connect(database_path)) as connection:
             row = connection.execute(
                 "SELECT id, value FROM writer_boot_probe"
             ).fetchone()
