@@ -450,6 +450,51 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "e0d1025e779a16a4e9703c4412ab7a7b197d26b5"
+        },
+        {
+          "role": "documentation",
+          "sha": "7b3cc726e29d903cafb3ddbfc9a293968bc6c00b"
+        }
+      ],
+      "item_id": "S34",
+      "release_page_category": "Improvements",
+      "title": "Bounded agent-message expiry admission"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "32a9ec3fa745c4119633e8e597eb40c941b62f37"
+        },
+        {
+          "role": "documentation",
+          "sha": "a201bd55d6a38a0bb1c6629f626437832fa9762c"
+        }
+      ],
+      "item_id": "S35",
+      "release_page_category": "Improvements",
+      "title": "Fail-closed SQL memory tenant isolation"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "cb0959465fc940467e826bde3a634c72f21805b6"
+        },
+        {
+          "role": "documentation",
+          "sha": "7af995fb69e622df5c5a3e17a9aa6b8a275a0c1e"
+        }
+      ],
+      "item_id": "S36",
+      "release_page_category": "Improvements",
+      "title": "Project-isolated persisted tool outputs"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },
