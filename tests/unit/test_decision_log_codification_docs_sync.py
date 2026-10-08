@@ -336,8 +336,12 @@ def test_reveal_deck_preserves_release_panel_slides_and_tokens() -> None:
     assert deck.count("<section") == 63
     assert deck.count('data-contract="decision-log-codification-v1"') == 1
     assert "v0.1.2 completed backlog" in deck
-    assert "5 formally closed" in deck
+    assert "6 formally closed" in deck
     assert "S83.128 &mdash; invoking-worktree-safe virtual-environment reclamation" in deck
+    assert (
+        "S83.178 &mdash; Fast integration admission for deterministic gate failures"
+        in deck
+    )
     assert "<li><strong>S83.169" not in deck
     for token in (
         "{{VERSION}}",

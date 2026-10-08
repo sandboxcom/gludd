@@ -108,8 +108,9 @@ def test_deck_preserves_prior_contract_and_slide_inventory() -> None:
     completed_panel = deck.split(
         '<div data-contract="v0.1.2-completed-backlog">', 1
     )[1].split("</div>", 1)[0]
-    assert "5 formally closed" in completed_panel
+    assert "6 formally closed" in completed_panel
     assert "S83.128" in completed_panel
+    assert "S83.178" in completed_panel
     assert "<li><strong>S83.158" not in completed_panel
     assert "<li><strong>S83.166" not in completed_panel
     for token in (
