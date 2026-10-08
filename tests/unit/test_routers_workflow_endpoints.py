@@ -63,7 +63,9 @@ def _make_async_session_factory(session: MagicMock) -> MagicMock:
 
 def _make_db_session() -> MagicMock:
     session = MagicMock()
-    session.execute = AsyncMock()
+    empty_result = MagicMock()
+    empty_result.scalars.return_value.all.return_value = []
+    session.execute = AsyncMock(return_value=empty_result)
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
     session.flush = AsyncMock()
