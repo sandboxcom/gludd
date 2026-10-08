@@ -674,14 +674,18 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
         # silent pass.
         return_reviewer = None
         adversarial_detector = AdversarialCodeDetector()
-        estimation_tracker = EstimationTracker()
+        estimation_feedback_enabled = (
+            os.environ.get("GLUDD_ESTIMATION_FEEDBACK", "1").strip() != "0"
+        )
+        estimation_tracker = EstimationTracker() if estimation_feedback_enabled else None
         app.state._adversarial_detector = adversarial_detector
         app.state._estimation_tracker = estimation_tracker
         daemon_state["_adversarial_detector"] = adversarial_detector
         daemon_state["_estimation_tracker"] = estimation_tracker
         logger.info(
-            "Wired adversarial detector (%d patterns) and estimation tracker",
+            "Wired adversarial detector (%d patterns); estimation feedback=%s",
             len(adversarial_detector.get_all_categories()),
+            "shadow" if estimation_tracker is not None else "disabled",
         )
         if model_gateway is not None and uc is not None and uc.service_discovery_enabled:
             from general_ludd.review.reviewer import ReturnReviewer
@@ -938,6 +942,7 @@ async def lifespan(app: FastAPI, ports: LifecyclePorts) -> AsyncIterator[None]:
                 budget_guard=budget_guard,
                 searcher=semantic_searcher,
                 spend_limiter=spend_limiter,
+                estimation_tracker=estimation_tracker,
             )
             app.state._execution_engine = execution_engine
 
