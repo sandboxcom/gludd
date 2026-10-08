@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "admission_target": "integration-admission",
+  "full_gate_target": "gate",
+  "full_gate_required": true,
+  "runtime_contract": {
+    "observer": "scripts/stream_command.py",
+    "evidence_root": ".gate-logs/observed",
+    "label_prefix": "integration-admission-",
+    "heartbeat_seconds": 10,
+    "max_retained_runs": 20,
+    "phases": [
+      {
+        "name": "worktree-guard",
+        "target": "worktree-guard",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "check-gate-failure-promotions",
+        "target": "check-gate-failure-promotions",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "_dead-code-baseline-refresh",
+        "target": "_dead-code-baseline-refresh",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "validate-task-ledger",
+        "target": "validate-task-ledger",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "check-task-registration",
+        "target": "check-task-registration",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "check-task-integrity",
+        "target": "check-task-integrity",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "check-generated-artifact-hygiene",
+        "target": "check-generated-artifact-hygiene",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "lint-markdown",
+        "target": "lint-markdown",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "check-make-target-contract",
+        "target": "check-make-target-contract",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "yaml-lint",
+        "target": "yaml-lint",
+        "budget_class": "standard",
+        "max_seconds": 180,
+        "quiet_seconds": 120
+      },
+      {
+        "name": "project-dispatch-integration",
+        "target": "_project-dispatch-integration",
+        "budget_class": "standard",
+        "max_seconds": 180,
+        "quiet_seconds": 120
+      },
+      {
+        "name": "mcp-workspace-jail-integration",
+        "target": "_mcp-workspace-jail-integration",
+        "budget_class": "standard",
+        "max_seconds": 180,
+        "quiet_seconds": 120
+      },
+      {
+        "name": "module-graph-classification",
+        "target": "_module-graph-classification",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
+        "name": "presentation-browser-test",
+        "target": "presentation-browser-test",
+        "budget_class": "standard",
+        "max_seconds": 180,
+        "quiet_seconds": 120
+      },
+      {
+        "name": "pre-commit-check",
+        "target": "pre-commit-check",
+        "budget_class": "slow",
+        "max_seconds": 600,
+        "quiet_seconds": 300
+      }
+    ]
+  },
+  "families": [
+    {
+      "id": "dead-code-baseline-drift",
+      "owner_target": "_dead-code-baseline-refresh",
+      "node_kind": "make_target",
+      "node": "_dead-code-baseline-refresh",
+      "full_gate_phase": "preflights"
+    },
+    {
+      "id": "claim-fence",
+      "owner_target": "_project-dispatch-integration",
+      "node_kind": "pytest_node",
+      "node": "tests/integration/test_multi_project_integration.py::TestEventLoopProjectScopedIntegration::test_event_loop_dispatch_includes_project_id",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "project-isolation",
+      "owner_target": "_project-dispatch-integration",
+      "node_kind": "pytest_node",
+      "node": "tests/integration/test_worker_isolation.py::TestWorkerProjectIsolation::test_dispatch_job_contains_only_project_data",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "concurrent-tick",
+      "owner_target": "_project-dispatch-integration",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_event_loop.py::TestEventLoop::test_event_loop_serializes_concurrent_ticks",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "mcp-workspace-containment",
+      "owner_target": "_mcp-workspace-jail-integration",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_mcp_builtins_structural.py::TestBuiltinToolHandler::test_contain_workspace_escape_returns_none",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "mcp-workspace-dispatch-jail",
+      "owner_target": "_mcp-workspace-jail-integration",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_project_runner_tool.py::TestRunProjectCheckDispatch::test_workspace_escaping_jail_is_refused",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "module-graph-classification-drift",
+      "owner_target": "_module-graph-classification",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_module_graph_deep.py::test_all_subpackages_classified",
+      "full_gate_phase": "test"
+    }
+  ]
+}
