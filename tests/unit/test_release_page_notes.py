@@ -471,6 +471,10 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S35",
         "S36",
         "S37",
+        "S38",
+        "S39",
+        "S40",
+        "S41",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
@@ -542,6 +546,38 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
                 ("implementation", "9bf7437dd18a43b5103e09b7b83dc3983b715cbc"),
             ),
         ),
+        "S38": (
+            "Native SearXNG controller runtime",
+            "Features",
+            (
+                ("implementation", "1b9d79457bd7be583ef5b5ae60a3383be0c4db71"),
+                ("task_evidence", "5bea57b1ed220ff28cacd05fa3a005d11db993b3"),
+            ),
+        ),
+        "S39": (
+            "Native git-release artifact verification",
+            "Improvements",
+            (
+                ("implementation", "5cc1bb2556f2f9b0ea45c4fd64a335adc7a40fe7"),
+            ),
+        ),
+        "S40": (
+            "Native Frictionless dataset admission",
+            "Features",
+            (
+                ("implementation", "24fd14135d1bdaf3813650736dce8c58f6efd51e"),
+                ("task_evidence", "90d79105b265df060472279e46466f64ca554cd2"),
+            ),
+        ),
+        "S41": (
+            "Collection-native chemical lot admission",
+            "Features",
+            (
+                ("implementation", "1cf229c408110e5389f317472da1560c7b852a3f"),
+                ("resource_ownership", "7ad01a472f617260e422feddd4d5cf1f9242ad28"),
+                ("inventory_refresh", "14643699ec9a740b36b6b44e7687bb8082754bf9"),
+            ),
+        ),
     }
     for item_id, (title, category, evidence) in candidate_contracts.items():
         item = next(
@@ -557,7 +593,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 28."
+        "Implemented candidate items pending exact-head/release proof: 32."
         in expected
     )
     release_source = (
@@ -570,11 +606,28 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "schema-free, application-image-only rolling change",
         "354 warning-fatal tests",
         "94% aggregate coverage",
+        "S38-S41",
+        "Native SearXNG controller runtime",
+        "Native git-release artifact verification",
+        "Native Frictionless dataset admission",
+        "Collection-native chemical lot admission",
+        "Ansible Release 1.2.3",
+        "Frictionless discussion #675",
+        "ansible/ansible#50579",
+        "95% aggregate coverage",
+        "exact 32-item candidate inventory",
     ):
         assert required in release_source
     task_ledger = (ROOT / "TASKS.md").read_text(encoding="utf-8")
-    assert "- [ ] S37" in task_ledger
-    assert "9bf7437dd18a43b5103e09b7b83dc3983b715cbc" in task_ledger
+    for task_id, evidence_sha in (
+        ("S37", "9bf7437dd18a43b5103e09b7b83dc3983b715cbc"),
+        ("S38", "1b9d79457bd7be583ef5b5ae60a3383be0c4db71"),
+        ("S39", "5cc1bb2556f2f9b0ea45c4fd64a335adc7a40fe7"),
+        ("S40", "24fd14135d1bdaf3813650736dce8c58f6efd51e"),
+        ("S41", "1cf229c408110e5389f317472da1560c7b852a3f"),
+    ):
+        assert f"- [ ] {task_id}" in task_ledger
+        assert evidence_sha in task_ledger
 
 
 def test_release_dry_run_validates_v012_page_without_publishing() -> None:

@@ -506,6 +506,66 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "1b9d79457bd7be583ef5b5ae60a3383be0c4db71"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "5bea57b1ed220ff28cacd05fa3a005d11db993b3"
+        }
+      ],
+      "item_id": "S38",
+      "release_page_category": "Features",
+      "title": "Native SearXNG controller runtime"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "5cc1bb2556f2f9b0ea45c4fd64a335adc7a40fe7"
+        }
+      ],
+      "item_id": "S39",
+      "release_page_category": "Improvements",
+      "title": "Native git-release artifact verification"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "24fd14135d1bdaf3813650736dce8c58f6efd51e"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "90d79105b265df060472279e46466f64ca554cd2"
+        }
+      ],
+      "item_id": "S40",
+      "release_page_category": "Features",
+      "title": "Native Frictionless dataset admission"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "1cf229c408110e5389f317472da1560c7b852a3f"
+        },
+        {
+          "role": "resource_ownership",
+          "sha": "7ad01a472f617260e422feddd4d5cf1f9242ad28"
+        },
+        {
+          "role": "inventory_refresh",
+          "sha": "14643699ec9a740b36b6b44e7687bb8082754bf9"
+        }
+      ],
+      "item_id": "S41",
+      "release_page_category": "Features",
+      "title": "Collection-native chemical lot admission"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },
