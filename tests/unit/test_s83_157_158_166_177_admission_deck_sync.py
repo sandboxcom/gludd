@@ -67,7 +67,7 @@ def test_admission_chain_is_ordered_and_does_not_claim_release_completion() -> N
     assert "badge-green" not in slide
     assert slide.count("<li>") == 4
     assert len(slide) < 5_000
-    assert deck.count("<section") == 61
+    assert deck.count("<section") == 62
 
 
 def test_admission_chain_builds_exact_repository_source_ranges() -> None:

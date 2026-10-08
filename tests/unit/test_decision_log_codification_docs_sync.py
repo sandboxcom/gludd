@@ -333,7 +333,7 @@ def test_reveal_deck_preserves_release_panel_slides_and_tokens() -> None:
     """This slide edit must not disturb the established release deck structure."""
     deck = DECK.read_text(encoding="utf-8")
 
-    assert deck.count("<section") == 61
+    assert deck.count("<section") == 62
     assert deck.count('data-contract="decision-log-codification-v1"') == 1
     assert "v0.1.2 completed backlog" in deck
     assert "5 formally closed" in deck

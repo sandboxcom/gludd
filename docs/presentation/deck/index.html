@@ -1488,12 +1488,41 @@ flowchart LR
       </ul>
     </div>
   </div>
-  <p class="honest-note">Opt-in/default-off. Automatic signed replay capture pending; deployed live-traffic proof pending. No deployed avoided-call claim.</p>
+  <p class="honest-note">Opt-in/default-off. Automatic signed replay capture and same-host observability are implemented; multi-host generation state and deployed live-traffic proof remain pending. No deployed avoided-call claim.</p>
   <p class="cite">Code: src/general_ludd/event_loop/review_orchestration.py:222-285 &middot; src/general_ludd/decision_codification/durable.py:13-47 &middot; src/general_ludd/decision_codification/durable_storage.py:144-183 &middot; Contract: docs/features/DECISION_LOG_CODIFICATION.md:161-243</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19n: ENFORCEMENT EXECUTABLE METADATA -->
+<!-- SLIDE 19n: DECISION-LOG CAPTURE, REUSE, AND OBSERVABILITY -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-169-capture-reuse-observability">
+  <p class="stage-kicker">S83.169 &middot; signed capture &middot; exact reuse &middot; durable observability</p>
+  <h2>Signed fallbacks become bounded reuse evidence <span class="badge-yellow">IMPLEMENTED &middot; DEPLOYED PROOF PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Capture + prove</h3>
+      <ul class="bullets-tight">
+        <li><strong>Capture:</strong> <code>capture_identity</code> installs <code>DecisionOutcomeRecorder</code>; no raw prompts, responses, rationale, or model parameters enter evidence.</li>
+        <li><strong>Coordinate:</strong> domain-separated HMAC identifiers bind a signed decision + digest-linked outcome under a 128 KiB budget and 60-second exact-owner lease.</li>
+        <li><strong>Prove reuse:</strong> 32 signed bundles across four UTC days reach human approval; exact REVIEW reuse makes zero reviewer calls, while mismatch and expiry each fall back once.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Observe + roll back</h3>
+      <ul class="bullets-tight">
+        <li><strong>Observe:</strong> exact-rule hits, typed abstentions, fallbacks, avoided agent/LLM calls, capped latency, rule-version changes, and drift.</li>
+        <li><strong>Bound cardinality:</strong> fixed-cardinality rows update with <code>BEGIN IMMEDIATE</code>; no per-request rows or sensitive payload fields survive.</li>
+        <li><strong>Attest:</strong> a 64 KiB sorted status receipt carries a SHA-256 digest + HMAC and fails closed when exact project/policy scope is unavailable.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">Opt-in and default-off. A capture/telemetry failure cannot change the selected decision; deployed live-traffic proof remains pending, and agent/LLM fallback remains the rollback path.</p>
+  <p class="cite">Contract: docs/features/DECISION_LOG_CODIFICATION.md:95-158 &middot; Capture: src/general_ludd/decision_codification/capture.py:118-210 &middot; Metrics: src/general_ludd/decision_codification/observability.py:69-213 &middot; Proof: tests/integration/test_decision_codification_producer_reuse.py:220-356</p>
+  <p class="cite">Practitioner evidence: <a href="https://github.com/prometheus/client_python/issues/568">Prometheus #568</a> &middot; <a href="https://github.com/prometheus/client_python/issues/431">Prometheus #431</a> &middot; <a href="https://github.com/kubernetes/kubernetes/issues/23731">Kubernetes #23731</a> &middot; <a href="https://github.com/sqlalchemy/sqlalchemy/discussions/8554">SQLAlchemy #8554</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19o: ENFORCEMENT EXECUTABLE METADATA -->
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s91-3-enforcement-executable-modes">
   <p class="stage-kicker">S91.3 &middot; checkout-safe enforcement</p>
