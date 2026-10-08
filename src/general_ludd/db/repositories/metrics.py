@@ -208,15 +208,15 @@ class ModelPerformanceRepository:
     ) -> ModelCallLogModel:
         """Persist a single model call log entry.
 
-        When *session* is provided it is used directly; otherwise a new
-        session is opened from the factory (if available) or an error is
-        raised.  Returns the newly created :class:`ModelCallLogModel`.
+        Caller-owned sessions are flushed without committing. Factory-owned
+        writes receive an independent transaction that is committed and
+        closed before this method returns. Returns the newly created
+        :class:`ModelCallLogModel`.
 
         This method does NOT update the aggregated ``model_performance``
         table — call :meth:`refresh_recent_stats` to recompute aggregates
         in batch.
         """
-        eff_session = session or self._resolve_session()
         row = ModelCallLogModel(
             todo_id=todo_id,
             job_id=job_id,
@@ -233,8 +233,21 @@ class ModelPerformanceRepository:
             error_code=error_code,
             error_message=error_message,
         )
-        eff_session.add(row)
-        await eff_session.flush()
+        caller_session = session or self._session
+        if caller_session is not None:
+            caller_session.add(row)
+            await caller_session.flush()
+            return row
+        if self._session_factory is None:
+            raise RuntimeError(
+                "ModelPerformanceRepository.record_call: no session configured "
+                "and no session_factory available."
+            )
+
+        async with self._session_factory.begin() as owned_session:
+            owned_session.add(row)
+            await owned_session.flush()
+            owned_session.expunge(row)
         return row
 
     def record_call_sync(
@@ -632,12 +645,11 @@ class ModelPerformanceRepository:
     # ── helpers ─────────────────────────────────────────────────────────
 
     def _resolve_session(self) -> AsyncSession:
-        """Return a usable async session, creating one from the factory if needed.
+        """Return a shared session for compatibility query paths.
 
-        S28: previously raised RuntimeError when session_factory was present but
-        no concrete session was provided — making every production record_call_sync()
-        silently fail (bare except swallowed RuntimeError). Now lazily creates a
-        session from the factory when one is available.
+        Factory-owned recording bypasses this helper so each write has an
+        independently committed and closed transaction. Query callers without
+        an explicit session retain the existing lazy-session behavior.
         """
         if self._session is not None:
             return self._session

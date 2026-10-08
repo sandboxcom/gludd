@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -305,7 +305,7 @@ class TestModelPerformanceRecording:
         mock_gateway.get_profile.return_value = mock_profile
 
         app.state.gateway = mock_gateway
-        app.state.model_perf_repo = MagicMock()
+        app.state.model_perf_repo = AsyncMock()
 
         mock_invoke.return_value = ("response text", None)
 
@@ -324,7 +324,7 @@ class TestModelPerformanceRecording:
                 },
             )
             assert resp.status_code == 200
-            app.state.model_perf_repo.record_call_sync.assert_called_once_with(
+            app.state.model_perf_repo.record_call.assert_awaited_once_with(
                 service="test",
                 model_name="test-model",
                 model_profile_id="test-model",
@@ -357,7 +357,7 @@ class TestModelPerformanceRecording:
         mock_gateway.get_profile.return_value = mock_profile
 
         app.state.gateway = mock_gateway
-        app.state.model_perf_repo = MagicMock()
+        app.state.model_perf_repo = AsyncMock()
 
         mock_invoke.side_effect = ValueError("API error")
 
@@ -376,8 +376,8 @@ class TestModelPerformanceRecording:
                 },
             )
             assert resp.status_code == 200
-            app.state.model_perf_repo.record_call_sync.assert_called_once()
-            _args, kwargs = app.state.model_perf_repo.record_call_sync.call_args
+            app.state.model_perf_repo.record_call.assert_awaited_once()
+            _args, kwargs = app.state.model_perf_repo.record_call.await_args
             assert kwargs["success"] is False
             assert kwargs["error_message"] == "API error"
             assert kwargs["service"] == "test"
@@ -391,3 +391,42 @@ class TestModelPerformanceRecording:
             assert kwargs["duration_ms"] > 0
             assert kwargs["todo_id"] == "TODO-PERF-FAIL"
             assert kwargs["job_id"] == "JOB-PERF-FAIL"
+
+    @pytest.mark.asyncio
+    @patch("general_ludd.worker.app._invoke_gateway_for_job")
+    async def test_model_recording_failure_does_not_fail_job(
+        self,
+        mock_invoke: MagicMock,
+        app: Any,
+    ) -> None:
+        """Telemetry remains fail-soft when its durable write is unavailable."""
+        mock_profile = MagicMock()
+        mock_profile.provider = "test"
+        mock_profile.model_name = "test-model"
+        mock_profile.cost_per_input_token = 0.0
+        mock_profile.cost_per_output_token = 0.0
+        mock_gateway = MagicMock()
+        mock_gateway.get_profile.return_value = mock_profile
+        app.state.gateway = mock_gateway
+        app.state.model_perf_repo = AsyncMock()
+        app.state.model_perf_repo.record_call.side_effect = RuntimeError("database unavailable")
+        mock_invoke.return_value = ("response text", None)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/jobs/execute",
+                json={
+                    "job_id": "JOB-PERF-SOFT-FAIL",
+                    "todo_id": "TODO-PERF-SOFT-FAIL",
+                    "playbook": "noop.yml",
+                    "queue": "model",
+                    "work_type": "code",
+                    "model_profile": "test-model",
+                    "prompt_text": "write a function",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["model_response"] == "response text"
+        app.state.model_perf_repo.record_call.assert_awaited_once()

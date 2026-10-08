@@ -686,7 +686,7 @@ def create_app(
                     )
                 _provider = getattr(_profile_obj, "provider", "") if _profile_obj else ""
                 _model_name = getattr(_profile_obj, "model_name", "") if _profile_obj else ""
-                _model_perf_repo.record_call_sync(
+                await _model_perf_repo.record_call(
                     service=_provider or "unknown",
                     model_name=_model_name or _profile_id,
                     model_profile_id=_profile_id,
