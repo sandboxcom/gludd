@@ -1,16 +1,65 @@
 ---
-# Converge: run general_ludd.git_release.release_plan and prove it executes.
-- name: Converge - run git_release.release_plan role
+- name: Converge native git-release artifact verification
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8864', true) }}"
-    out_dir: "/tmp/gludd-git-release-expert-{{ mock_port }}"
+    out_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-git-release-{{ mock_port }}"
   tasks:
-    - name: Invoke release_plan
+    - name: Read artifact SHA-256
+      ansible.builtin.stat:
+        path: "{{ out_dir }}/dist/gludd.whl"
+        checksum_algorithm: sha256
+        follow: false
+      register: _artifact
+
+    - name: Read dependency-lock SHA-256
+      ansible.builtin.stat:
+        path: "{{ out_dir }}/uv.lock"
+        checksum_algorithm: sha256
+        follow: false
+      register: _lock
+
+    - name: Invoke native artifact verification role
       ansible.builtin.include_role:
-        name: general_ludd.git_release.release_plan
+        name: general_ludd.git_release.artifact_verify
+      vars:
+        git_release_artifact_verify_enabled: true
+        git_release_artifact_verify_root: "{{ out_dir }}"
+        git_release_artifact_verify_path: dist/gludd.whl
+        git_release_artifact_verify_sha256: "{{ _artifact.stat.checksum }}"
+        git_release_artifact_verify_lock_path: uv.lock
+        git_release_artifact_verify_lock_sha256: "{{ _lock.stat.checksum }}"
+
+    - name: Repeat identical verification in check mode
+      general_ludd.git_release.git_release:
+        root: "{{ out_dir }}"
+        artifact_path: dist/gludd.whl
+        artifact_sha256: "{{ _artifact.stat.checksum }}"
+        lock_path: uv.lock
+        lock_sha256: "{{ _lock.stat.checksum }}"
+      check_mode: true
+      register: _check_verification
+
+    - name: Exercise fail-closed digest mismatch
+      general_ludd.git_release.git_release:
+        root: "{{ out_dir }}"
+        artifact_path: dist/gludd.whl
+        artifact_sha256: "{{ '0' * 64 }}"
+        lock_path: uv.lock
+        lock_sha256: "{{ _lock.stat.checksum }}"
+      register: _tampered
+      failed_when: false
+
+    - name: Assert normal, check, and adversarial results
+      ansible.builtin.assert:
+        that:
+          - git_release_artifact_verify_result.verified | bool
+          - not _check_verification.changed | bool
+          - _check_verification.result == git_release_artifact_verify_result
+          - _tampered.result is not defined
+          - _tampered.msg is search('SHA-256 mismatch')
 
     - name: Ensure marker directory exists
       ansible.builtin.file:
@@ -20,6 +69,6 @@
 
     - name: Write execution marker
       ansible.builtin.copy:
-        content: "git_release.release_plan ran\n"
-        dest: "{{ out_dir }}/release_plan_ran.ok"
+        content: "native artifact verification passed\n"
+        dest: "{{ out_dir }}/artifact_verify_ran.ok"
         mode: "0644"

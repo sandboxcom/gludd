@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[2]
 ROLES = ROOT / "collections/ansible_collections/general_ludd/git_release/roles"
 ROLE_NAMES = (
     "artifact_build",
-    "artifact_verify",
     "conflict_resolve",
     "deploy_orchestrate",
     "helper_build",
@@ -49,3 +48,15 @@ def test_shared_role_executes_module_and_never_swallows_failure() -> None:
     assert "general_ludd.git_release.git_release_operation" in request
     assert request.get("ignore_errors") is None
     assert request.get("failed_when") is None
+
+
+def test_artifact_verify_role_uses_native_fail_closed_module() -> None:
+    source = (ROLES / "artifact_verify/tasks/main.yml").read_text(encoding="utf-8")
+    tasks = _load(ROLES / "artifact_verify/tasks/main.yml")
+    verify = next(task for task in tasks if task["name"] == "Verify the bounded release artifact locally")
+
+    assert "general_ludd.git_release.git_release" in verify
+    assert verify.get("ignore_errors") is None
+    assert verify.get("failed_when") is None
+    assert "service_request" not in source
+    assert "daemon_url" not in source
