@@ -13,6 +13,9 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
+from general_ludd.config.issue_sources import (
+    GithubIssueSourceConfig as ConfigGithubIssueSourceConfig,
+)
 from general_ludd.config.user_config import IssuesConfig, UserConfig
 from general_ludd.issue_sources.config import (
     MAX_ISSUE_SOURCES,
@@ -53,6 +56,14 @@ def _jira(**overrides: object) -> dict[str, object]:
 
 def _user_config(sources: list[dict[str, object]]) -> UserConfig:
     return UserConfig.model_validate({"issue_sources": sources})
+
+
+def test_public_issue_source_models_reexport_config_owned_types() -> None:
+    """Keep the public business import compatible with the core-owned schema."""
+    config = _user_config([_github()])
+
+    assert GithubIssueSourceConfig is ConfigGithubIssueSourceConfig
+    assert isinstance(config.issue_sources[0], ConfigGithubIssueSourceConfig)
 
 
 def test_issue_sources_are_optional_and_legacy_issues_defaults_are_unchanged() -> None:
