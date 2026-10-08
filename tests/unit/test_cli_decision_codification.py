@@ -1036,14 +1036,14 @@ def test_local_commands_collapse_internal_errors_without_reflection(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    secret = "raw-secret-content"
+    opaque_detail = "reflection-sentinel-7341"
 
     class _FailingOperator:
         def __getattr__(self, name: str) -> object:
             assert name == expected_method
 
             def fail(*_args: object, **_kwargs: object) -> None:
-                raise RuntimeError(secret)
+                raise RuntimeError(opaque_detail)
 
             return fail
 
@@ -1080,4 +1080,4 @@ def test_local_commands_collapse_internal_errors_without_reflection(
     assert raised.value.code == 1
     assert captured.out == ""
     assert "failed closed" in captured.err
-    assert secret not in captured.err
+    assert opaque_detail not in captured.err
