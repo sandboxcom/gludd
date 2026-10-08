@@ -102,6 +102,22 @@ class TestSearXConnectorInit:
         conn = SearXConnector.from_local_server(FakeServer())
         assert conn.base_url == "http://localhost:9999"
 
+    def test_native_local_server_uses_non_network_identity(self) -> None:
+        class NativeServer:
+            def get_instance_url(self) -> str:
+                return "searx+python://connector-tests"
+
+            def is_running(self) -> bool:
+                return True
+
+            def search(self, query: str, **kwargs: object) -> dict[str, object]:
+                del kwargs
+                return {"query": query, "results": []}
+
+        conn = SearXConnector.from_local_server(NativeServer())
+        assert conn.base_url == "searx+python://connector-tests"
+        assert conn.health() == {"ok": True, "transport": "native"}
+
     def test_valid_public_host_succeeds(self) -> None:
         conn = SearXConnector({"base_url": "https://searx.example.com"})
         assert conn.base_url == "https://searx.example.com"
@@ -115,8 +131,43 @@ class TestSearXConnectorInit:
         assert conn.timeout == 5.0
         assert conn.verify_ssl is False
 
+    def test_invalid_timeout_type_uses_bounded_default(self) -> None:
+        conn = SearXConnector(
+            {"base_url": "https://search.example", "timeout": object()}
+        )
+
+        assert conn.timeout == 10.0
+
 
 class TestSearXSearch:
+    def test_native_search_never_constructs_http_client(self) -> None:
+        class NativeServer:
+            def get_instance_url(self) -> str:
+                return "searx+python://connector-tests"
+
+            def is_running(self) -> bool:
+                return True
+
+            def search(self, query: str, **kwargs: object) -> dict[str, object]:
+                assert kwargs["categories"] == ["news"]
+                return {
+                    "query": query,
+                    "results": [
+                        {
+                            "title": "Native",
+                            "url": "https://example.test/native",
+                            "content": "direct WSGI",
+                            "engine": "example",
+                        }
+                    ],
+                }
+
+        conn = SearXConnector.from_local_server(NativeServer())
+        with mock.patch("httpx.Client") as http_client:
+            results = conn.search("native query", categories="news")
+        http_client.assert_not_called()
+        assert [item.title for item in results] == ["Native"]
+
     def test_parses_valid_json_results(self) -> None:
         conn = SearXConnector({"base_url": "https://searx.example.com"})
         resp = _fake_response(200, _SEARX_RESULTS)
