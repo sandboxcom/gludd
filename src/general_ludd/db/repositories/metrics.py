@@ -159,9 +159,42 @@ class RoleRunRepository:
         return list(result.scalars().all())
 
 
+def _model_performance_summary_row(row: Any) -> dict[str, Any]:
+    """Normalize one aggregate result row for the dashboard contract."""
+    total = int(row.total_calls or 0)
+    successful = int(row.successful_calls or 0)
+    return {
+        "service": str(row.service or ""),
+        "task_type": str(row.task_type or ""),
+        "model_name": str(row.model_name or ""),
+        "model_profile_id": str(row.model_profile_id or ""),
+        "total_calls": total,
+        "successful_calls": successful,
+        "failed_calls": total - successful,
+        "success_rate": round(successful / total, 4) if total else 0.0,
+        "total_cost_usd": float(row.total_cost_usd or 0.0),
+        "avg_duration_ms": float(row.avg_duration_ms or 0.0),
+    }
 
 
-class ModelPerformanceRepository:
+class _ModelPerformanceSessionCompatibility:
+    """Compatibility surface for callers that require an explicit session."""
+
+    _session: AsyncSession | None
+
+    def _resolve_session(self) -> AsyncSession:
+        """Return an explicitly caller-owned session for compatibility."""
+        if self._session is not None:
+            return self._session
+        raise RuntimeError(
+            "ModelPerformanceRepository._resolve_session: no session configured; "
+            "factory-owned operations require an operation-scoped context."
+        )
+
+
+
+
+class ModelPerformanceRepository(_ModelPerformanceSessionCompatibility):
     """Persistence for model call logs and aggregated performance stats.
 
     Two-table design:
@@ -648,35 +681,7 @@ class ModelPerformanceRepository:
         )
         async with self._session_scope(session) as eff_session:
             rows = (await eff_session.execute(stmt)).all()
-        return [self._summary_row(row) for row in rows]
-
-    @staticmethod
-    def _summary_row(row: Any) -> dict[str, Any]:
-        """Normalize one aggregate result row for the dashboard contract."""
-        total = int(row.total_calls or 0)
-        successful = int(row.successful_calls or 0)
-        return {
-            "service": str(row.service or ""),
-            "task_type": str(row.task_type or ""),
-            "model_name": str(row.model_name or ""),
-            "model_profile_id": str(row.model_profile_id or ""),
-            "total_calls": total,
-            "successful_calls": successful,
-            "failed_calls": total - successful,
-            "success_rate": round(successful / total, 4) if total else 0.0,
-            "total_cost_usd": float(row.total_cost_usd or 0.0),
-            "avg_duration_ms": float(row.avg_duration_ms or 0.0),
-        }
-
-
-    def _resolve_session(self) -> AsyncSession:
-        """Return an explicitly caller-owned session for compatibility."""
-        if self._session is not None:
-            return self._session
-        raise RuntimeError(
-            "ModelPerformanceRepository._resolve_session: no session configured; "
-            "factory-owned operations require an operation-scoped context."
-        )
+        return [_model_performance_summary_row(row) for row in rows]
 
 
 class BenchmarkRepository:
