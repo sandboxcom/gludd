@@ -14,6 +14,7 @@ STOP_PLAYBOOK = ROOT / "playbooks/local_model_stop.yml"
 GAME_PROFILE = ROOT / "requirements/profiles/game-e2e/pyproject.toml"
 GAME_LOCK = ROOT / "requirements/profiles/game-e2e/uv.lock"
 DEPENDENCY_PROFILES = ROOT / "config/dependency_profiles.toml"
+FEATURE_DOC = ROOT / "docs/features/LOCAL_GAME_PIPELINE_CLEANUP.md"
 GENERATION_TASKS = (
     ROOT
     / "collections/ansible_collections/general_ludd/agent/roles/local_game_gen"
@@ -155,3 +156,12 @@ def test_cleanup_does_not_weaken_generation_failures() -> None:
 
     assert len(commands) >= 3
     assert all(task.get("failed_when") is not False for task in commands)
+
+
+def test_feature_doc_names_authoritative_cleanup_artifacts() -> None:
+    documentation = FEATURE_DOC.read_text(encoding="utf-8")
+
+    assert "playbooks/local_model_stop.yml" in documentation
+    assert "requirements/profiles/game-e2e/pyproject.toml" in documentation
+    assert "requirements/profiles/game-e2e/uv.lock" in documentation
+    assert "tests/unit/test_local_game_cleanup_contract.py" in documentation

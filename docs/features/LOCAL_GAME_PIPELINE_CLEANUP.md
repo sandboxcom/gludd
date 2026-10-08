@@ -15,6 +15,14 @@ The isolated `game-e2e` dependency profile explicitly requires
 processing does not rely on a weaker transitive dependency floor. Both the
 `game-e2e` and `e2e-all` installation sets include that one locked profile.
 
+The authoritative artifacts are deliberately narrow:
+
+- `playbooks/local_model_stop.yml` owns terminal process and PID-file cleanup.
+- `requirements/profiles/game-e2e/pyproject.toml` declares the direct Pillow
+  floor, while `requirements/profiles/game-e2e/uv.lock` pins its artifacts.
+- `tests/unit/test_local_game_cleanup_contract.py` binds the missing-PID,
+  terminal-cleanup, fail-closed generation, profile, and lock contracts.
+
 ## Mature behavior and compatibility
 
 Ansible documents that an [`always` section runs regardless of block or rescue
