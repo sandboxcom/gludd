@@ -333,7 +333,18 @@ def test_project_type_registration_has_one_executable_source_declaration() -> No
         "register_project_type must have one executable source declaration; "
         f"found {len(declarations)}"
     )
-    assert not declarations[0].decorator_list
+    declaration = declarations[0]
+    assert not declaration.decorator_list
+    assert [argument.arg for argument in declaration.args.args] == ["project_type", "definition"]
+    project_type_annotation = declaration.args.args[0].annotation
+    definition_annotation = declaration.args.args[1].annotation
+    assert project_type_annotation is not None
+    assert definition_annotation is not None
+    assert ast.unparse(project_type_annotation) == "ProjectType | str"
+    assert ast.unparse(definition_annotation) == "Mapping[str, Any] | None"
+    assert len(declaration.args.defaults) == 1
+    assert isinstance(declaration.args.defaults[0], ast.Constant)
+    assert declaration.args.defaults[0].value is None
 
 
 def test_no_overload_stubs_needed():

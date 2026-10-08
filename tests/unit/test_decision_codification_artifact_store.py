@@ -86,6 +86,19 @@ def _bundle() -> DecisionRuleBundleV1:
     )
 
 
+def test_observability_receipt_hmac_is_scope_bound_and_verifiable(
+    tmp_path: Path,
+) -> None:
+    store = DecisionArtifactStore(str(tmp_path), key=b"artifact-integrity-key")
+
+    tag = store.decision_observability_hmac("project-1", SHA_E, SHA_A)
+
+    assert tag.startswith("hmac-sha256:")
+    store.verify_decision_observability_hmac("project-1", SHA_E, SHA_A, tag)
+    with pytest.raises(ArtifactIntegrityError):
+        store.verify_decision_observability_hmac("project-1", SHA_E, SHA_B, tag)
+
+
 def _receipt(
     bundle: DecisionRuleBundleV1,
     *,

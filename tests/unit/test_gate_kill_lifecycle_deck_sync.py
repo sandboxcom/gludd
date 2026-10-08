@@ -50,7 +50,7 @@ def test_reveal_deck_mirrors_measured_gate_tree_boundaries() -> None:
     content = DECK.read_text(encoding="utf-8")
     contract = _deck_contract()
 
-    assert content.count("<section") == 57
+    assert content.count("<section") == 62
     for marker in (
         "marked <code>gludd-gate-run-v1</code> lock",
         "legacy <code>{pid, started_at}</code> lock",

@@ -28,7 +28,7 @@ def test_deck_composes_release_recovery_and_worktree_boundaries_in_order() -> No
     )
     positions = [slide.index(marker) for marker in ordered_markers]
     assert positions == sorted(positions)
-    assert deck.count("<section") == 57
+    assert deck.count("<section") == 62
 
     for marker in (
         "exact tagged SHA",

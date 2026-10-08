@@ -18,6 +18,8 @@ from general_ludd.decision_codification.schema import (
     DecisionKind,
     FallbackReason,
     NormalizationRefusalV1,
+    RolloutStage,
+    VerifiedOutcome,
 )
 from general_ludd.decision_codification.service import (
     DecisionResolution,
@@ -29,6 +31,7 @@ from general_ludd.schemas.task_decision import TaskDecision
 POLICY_DIGEST = "sha256:" + "e" * 64
 CANDIDATE_DIGEST = "sha256:" + "a" * 64
 RECEIPT_DIGEST = "sha256:" + "b" * 64
+APPLICATION_DIGEST = "sha256:" + "c" * 64
 
 
 class _Session:
@@ -129,6 +132,55 @@ class _AbstainingAdapter:
             decision_receipt_digest=None,
             abstention=self.abstention,
         )
+
+
+class _RecordingHitAdapter(_HitAdapter):
+    def __init__(self) -> None:
+        super().__init__("approve")
+        self.outcomes: list[dict[str, object]] = []
+
+    def resolve(self, **kwargs: object) -> DecisionResolution:
+        resolved = super().resolve(**kwargs)
+        return DecisionResolution(
+            decision=resolved.decision,
+            source=resolved.source,
+            candidate_digest=resolved.candidate_digest,
+            decision_receipt_digest=resolved.decision_receipt_digest,
+            abstention=None,
+            project_id="project-1",
+            decision_kind=DecisionKind.REVIEW,
+            rollout_stage=RolloutStage.ACTIVE,
+            application_id=APPLICATION_DIGEST,
+        )
+
+    def record_application_outcome(self, **kwargs: object) -> None:
+        self.outcomes.append(kwargs)
+
+
+class _RecordingFallbackAdapter(_AbstainingAdapter):
+    def __init__(self) -> None:
+        super().__init__(DecisionAbstentionV1(reason=FallbackReason.NO_ACTIVE_RULE))
+        self.captures: list[dict[str, object]] = []
+        self.coordination_requests: list[dict[str, object]] = []
+
+    def resolve(self, **kwargs: object) -> DecisionResolution:
+        resolved = super().resolve(**kwargs)
+        return DecisionResolution(
+            decision=resolved.decision,
+            source=resolved.source,
+            candidate_digest=resolved.candidate_digest,
+            decision_receipt_digest=None,
+            abstention=resolved.abstention,
+            project_id="project-1",
+            decision_kind=DecisionKind.REVIEW,
+        )
+
+    def record_agent_decision_outcome(self, **kwargs: object) -> None:
+        self.captures.append(kwargs)
+
+    def agent_decision_coordination_key(self, **kwargs: object) -> str:
+        self.coordination_requests.append(kwargs)
+        return "decision-capture:" + "9" * 64
 
 
 class _NormalizingAdapter:
@@ -293,6 +345,125 @@ async def test_codified_lookup_uses_repeatable_idempotency_inputs(
     assert adapter.calls[0]["correlation_id"] == adapter.calls[1]["correlation_id"]
     assert adapter.calls[0]["side_effect_id"] == adapter.calls[1]["side_effect_id"]
     assert adapter.calls[0]["features"] == adapter.calls[1]["features"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("apply_fails", "expected_outcome"),
+    [
+        (False, VerifiedOutcome.SUCCESS),
+        (True, VerifiedOutcome.FAILURE),
+    ],
+)
+async def test_codified_application_records_terminal_feedback_off_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    apply_fails: bool,
+    expected_outcome: VerifiedOutcome,
+) -> None:
+    async def _apply(*_args: object, **_kwargs: object) -> None:
+        if apply_fails:
+            raise RuntimeError("content must not reach outcome diagnostics")
+
+    monkeypatch.setattr(
+        "general_ludd.review.decision_applier.apply_decision",
+        _apply,
+    )
+    adapter = _RecordingHitAdapter()
+    reviewer = _Reviewer(RuntimeError("reviewer must not run"))
+    loop = _Loop(reviewer, adapter)
+
+    await loop._review_in_process(_record())
+
+    assert reviewer.calls == 0
+    assert len(adapter.outcomes) == 1
+    assert adapter.outcomes[0] == {
+        "project_id": "project-1",
+        "decision_kind": DecisionKind.REVIEW,
+        "candidate_digest": CANDIDATE_DIGEST,
+        "application_id": APPLICATION_DIGEST,
+        "rollout_stage": RolloutStage.ACTIVE,
+        "outcome": expected_outcome,
+        "occurred_at": adapter.outcomes[0]["occurred_at"],
+        "terminal_event_id": APPLICATION_DIGEST,
+        "evidence_digest": RECEIPT_DIGEST,
+    }
+    assert len(loop.offloaded) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("apply_fails", "expected_outcome"),
+    [
+        (False, VerifiedOutcome.SUCCESS),
+        (True, VerifiedOutcome.FAILURE),
+    ],
+)
+async def test_agent_fallback_automatically_records_reusable_outcome_off_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    apply_fails: bool,
+    expected_outcome: VerifiedOutcome,
+) -> None:
+    leases: list[tuple[object, str]] = []
+
+    async def _coordinated_capture(
+        session: object,
+        *,
+        lease_key: str,
+        operation: Any,
+    ) -> object:
+        leases.append((session, lease_key))
+        return await operation()
+
+    async def _apply(*_args: object, **_kwargs: object) -> None:
+        if apply_fails:
+            raise RuntimeError("private application failure")
+
+    monkeypatch.setattr(
+        "general_ludd.review.decision_applier.apply_decision",
+        _apply,
+    )
+    monkeypatch.setattr(
+        "general_ludd.event_loop.review_orchestration.run_with_decision_capture_lease",
+        _coordinated_capture,
+    )
+    decision = TaskDecision(
+        return_id="RET-LIVE-001",
+        matched_todo_id="TODO-LIVE-001",
+        decision="complete",
+        confidence=0.9,
+        audit_notes=["must not be captured"],
+    )
+    reviewer = _Reviewer(decision)
+    adapter = _RecordingFallbackAdapter()
+    loop = _Loop(reviewer, adapter)
+
+    await loop._review_in_process(_record())
+
+    assert reviewer.calls == 1
+    assert len(adapter.captures) == 1
+    assert adapter.captures[0] == {
+        "project_id": "project-1",
+        "decision_kind": DecisionKind.REVIEW,
+        "features": adapter.calls[0]["features"],
+        "decision": "approve",
+        "capture_id": "return-review:RET-LIVE-001",
+        "root_task_id": "TODO-LIVE-001",
+        "outcome": expected_outcome,
+        "occurred_at": adapter.captures[0]["occurred_at"],
+    }
+    assert "audit_notes" not in adapter.captures[0]
+    assert adapter.coordination_requests == [
+        {
+            "project_id": "project-1",
+            "decision_kind": DecisionKind.REVIEW,
+            "capture_id": "return-review:RET-LIVE-001",
+            "root_task_id": "TODO-LIVE-001",
+        }
+    ]
+    assert leases == [
+        (loop._active_session, "decision-capture:" + "9" * 64)
+    ]
+    assert len(loop.offloaded) == 2
 
 
 @pytest.mark.asyncio

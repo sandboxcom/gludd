@@ -13,6 +13,11 @@ from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+try:
+    from scripts.makefile_layout import MakefileLayoutError, compose_makefile
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from makefile_layout import MakefileLayoutError, compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LEDGER = ROOT / "docs" / "releases" / "beta-release-failures.json"
 MAX_LEDGER_BYTES = 2_000_000
@@ -46,8 +51,8 @@ def _required_string(
 def _make_targets(repository_root: Path) -> set[str]:
     makefile = repository_root / "Makefile"
     try:
-        lines = makefile.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
+        lines = compose_makefile(makefile).splitlines()
+    except MakefileLayoutError:
         return set()
     return {
         match.group(1)

@@ -713,16 +713,14 @@ def _average_pool_for_ssim(frame: NDArray[np.float64], factor: int) -> NDArray[n
     height = (frame.shape[0] // factor) * factor
     width = (frame.shape[1] // factor) * factor
     cropped = frame[:height, :width]
-    return cast(
-        NDArray[np.float64],
-        cropped.reshape(
-            height // factor,
-            factor,
-            width // factor,
-            factor,
-            frame.shape[2],
-        ).mean(axis=(1, 3)),
-    )
+    pooled = cropped.reshape(
+        height // factor,
+        factor,
+        width // factor,
+        factor,
+        frame.shape[2],
+    ).mean(axis=(1, 3))
+    return np.asarray(pooled, dtype=np.float64)
 
 
 def _global_ssim(frame_a: NDArray[np.float64], frame_b: NDArray[np.float64]) -> float:
@@ -801,7 +799,7 @@ def compute_ssim(frame_a: Frame, frame_b: Frame) -> float:
     mse = np.mean(diff**2)
     if mse == 0:
         return 1.0
-    max_val = max(frame_a.max(), frame_b.max(), 1.0)
+    max_val = max(float(np.max(frame_a)), float(np.max(frame_b)), 1.0)
     return float(1.0 / (1.0 + mse / max_val))
 
 

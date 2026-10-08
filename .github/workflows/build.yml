@@ -227,7 +227,7 @@ jobs:
         env:
           GLUDD_AUTH_PSK: ""
       - name: Azure Container App coverage (hermetic)
-        if: ${{ !cancelled() && matrix.python-version == '3.11' }}
+        if: "${{ !cancelled() && matrix.python-version == '3.11' }}"
         run: |
           echo "=== CI PHASE: azure-containerapp-coverage ==="
           make test-azure-containerapp-coverage
@@ -898,10 +898,11 @@ jobs:
           }
       - name: Audit Linux PyInstaller warning graph
         run: |
+          pyinstaller_version="$(python scripts/dependency_profiles.py locked-version --root . --profile dev-build --package pyinstaller)"
           make audit-linux-pyinstaller-warnings \
             PYINSTALLER_WARNING_FILE_LINUX=build/gludd/warn-gludd.txt \
             PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 \
-            PYINSTALLER_VERSION_LINUX=6.20.0 \
+            PYINSTALLER_VERSION_LINUX="$pyinstaller_version" \
             PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=0
       - name: Upload Linux PyInstaller warning graph
         if: always() && hashFiles('build/gludd/warn-gludd.txt') != ''

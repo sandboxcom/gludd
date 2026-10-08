@@ -421,7 +421,9 @@ lifecycle. No custom cleanup runs during deployment or rollback.
 An exhaustive run adds one terminal target resolution and one explicitly sorted
 local-head scan, emits `verify=terminal-ref-snapshot` progress by default, and
 shares the existing 10,000-ref, output, and timeout bounds. This preserves ZDD
-while keeping CPU, memory, subprocess, and JSON growth bounded.
+while keeping CPU, memory, subprocess, and JSON growth bounded. During rollout,
+old and new callers can run concurrently because the schema and Make interface do
+not change; only stale terminal evidence becomes a structured nonzero failure.
 
 Rollback is layered and requires no coordinated downtime. Stop requesting the
 opt-in semantic, queue, or replay flags first; default schema-v2 inventory callers

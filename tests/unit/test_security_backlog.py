@@ -413,6 +413,20 @@ class TestD18ProbeRegressionDetection:
         assert passed is False
         assert "event_loop.loop" in detail
 
+    def test_fails_if_delegated_phase_stops_calling_reconciliation(self, monkeypatch) -> None:
+        import general_ludd.event_loop.decision_completion as completion_mod
+
+        original_read = sb._read_module_source
+        monkeypatch.setattr(
+            sb,
+            "_read_module_source",
+            lambda mod: "" if mod is completion_mod else original_read(mod),
+        )
+        passed, detail = sb._check_d18_audit_log()
+        assert passed is False
+        assert "decision_completion" in detail
+        assert "reconcile_completed_decisions" in detail
+
     def test_fails_if_reconciliation_stops_recording_it(self, monkeypatch) -> None:
         import general_ludd.event_loop.decision_reconciliation as reconciliation_mod
 

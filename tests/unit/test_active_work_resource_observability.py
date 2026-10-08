@@ -38,6 +38,10 @@ def test_active_status_reports_project_and_lease_identity() -> None:
     assert evidence["resource_root"].endswith("/gludd-resources/e2e-project-alpha")
     assert isinstance(evidence["lease_owner"], str)
     assert evidence["lease_owner"].startswith("pid:")
+    collection_lease = evidence["collection_lease"]
+    assert isinstance(collection_lease, dict)
+    assert collection_lease["state"] in {"available", "held", "unavailable"}
+    assert isinstance(collection_lease["waiter_count"], int)
 
 
 def test_active_status_leases_are_namespaced_to_the_project() -> None:

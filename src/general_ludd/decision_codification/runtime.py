@@ -5,39 +5,37 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
 
 from general_ludd.decision_codification.artifact_store import (
     ArtifactStoreError,
     DecisionArtifactStore,
 )
-from general_ludd.decision_codification.rollout import RolloutController, RolloutError
+from general_ludd.decision_codification.rollout import (
+    OutcomeFeedback,
+    RolloutController,
+    RolloutError,
+)
+from general_ludd.decision_codification.runtime_rules import (
+    RuleBundleAdapter,
+    RulesEngineAdapter,
+)
 from general_ludd.decision_codification.schema import (
+    DECISION_APPLICATION_OUTCOME_SCHEMA_V1,
     DecisionAbstentionV1,
+    DecisionApplicationOutcomeV1,
     DecisionContextV1,
     DecisionKind,
-    DecisionRuleBundleV1,
     FallbackReason,
     NormalizationRefusalReason,
     NormalizationRefusalV1,
     RolloutStage,
+    VerifiedOutcome,
     canonical_sha256,
 )
 from general_ludd.decision_codification.telemetry import DecisionCodificationTelemetry
-from general_ludd.rules.engine import Rule, RuleEngine
 
 SafetyCheck = Callable[[str, DecisionContextV1], bool]
 _RESERVED_RUNTIME_FEATURES: dict[str, object] = {"codification_known": True}
-
-
-class RuleBundleAdapter(Protocol):
-    """Adapter boundary for the existing deterministic rules engine."""
-
-    def matching_leaf_ids(
-        self, bundle: DecisionRuleBundleV1, context: dict[str, object]
-    ) -> tuple[str, ...]:
-        """Return unique matching exported leaf IDs."""
-        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,60 +43,15 @@ class CodifiedDecision:
     """Content-safe receipt for one deterministic runtime decision."""
 
     decision: str
+    project_id: str
+    decision_kind: DecisionKind
     leaf_id: str
     context_id: str
     candidate_digest: str
     rollout_stage: RolloutStage
     side_effect_id: str
+    application_id: str
     decision_receipt_digest: str
-
-
-class RulesEngineAdapter:
-    """Flatten exported tree paths into the existing exact Rule vocabulary."""
-
-    def matching_leaf_ids(
-        self, bundle: DecisionRuleBundleV1, context: dict[str, object]
-    ) -> tuple[str, ...]:
-        """Compile tree paths and return the uniquely matching leaf IDs."""
-        nodes = {node.node_id: node for node in bundle.nodes}
-        leaves = {leaf.leaf_id: leaf for leaf in bundle.leaves}
-        compiled: list[Rule] = []
-        rule_to_leaf: dict[str, str] = {}
-
-        def walk(identifier: str, conditions: tuple[dict[str, object], ...]) -> None:
-            leaf = leaves.get(identifier)
-            if leaf is not None:
-                rule_id = f"decision-path-{len(compiled)}"
-                compiled.append(
-                    Rule(
-                        rule_id=rule_id,
-                        priority=len(compiled),
-                        scope=bundle.project_id,
-                        condition={"all": list(conditions)},
-                        actions=[{"type": "decision_leaf", "leaf_id": leaf.leaf_id}],
-                    )
-                )
-                rule_to_leaf[rule_id] = leaf.leaf_id
-                return
-            node = nodes[identifier]
-            match_op = "eq" if node.operator == "eq" else "neq"
-            miss_op = "neq" if node.operator == "eq" else "eq"
-            match: dict[str, object] = {
-                "field": node.feature_id,
-                "op": match_op,
-                "value": node.value,
-            }
-            miss: dict[str, object] = {
-                "field": node.feature_id,
-                "op": miss_op,
-                "value": node.value,
-            }
-            walk(node.match_id, (*conditions, match))
-            walk(node.miss_id, (*conditions, miss))
-
-        walk(bundle.root_id, ())
-        matches = RuleEngine(compiled).evaluate(context)
-        return tuple(sorted({rule_to_leaf[item["rule_id"]] for item in matches}))
 
 
 class DecisionRuntime:
@@ -318,11 +271,14 @@ class DecisionRuntime:
             )
             return CodifiedDecision(
                 decision=leaf.decision,
+                project_id=project_id,
+                decision_kind=decision_kind,
                 leaf_id=leaf.leaf_id,
                 context_id=context_input.context_id,
                 candidate_digest=bundle.candidate_digest,
                 rollout_stage=pointer.stage,
                 side_effect_id=side_effect_id,
+                application_id=application_id,
                 decision_receipt_digest=decision_receipt_digest,
             )
         except Exception:
@@ -332,6 +288,46 @@ class DecisionRuntime:
                 context=context_input,
                 candidate_digest=bundle.candidate_digest,
             )
+
+    def record_application_outcome(
+        self,
+        *,
+        project_id: str,
+        decision_kind: DecisionKind,
+        candidate_digest: str,
+        application_id: str,
+        rollout_stage: RolloutStage,
+        outcome: VerifiedOutcome,
+        occurred_at: datetime,
+        terminal_event_id: str | None,
+        evidence_digest: str | None,
+    ) -> OutcomeFeedback:
+        """Persist terminal feedback and immediately propagate a drift hold."""
+        bundle = self._rollout.artifacts.read_rule_bundle(candidate_digest)
+        if bundle.project_id != project_id or bundle.decision_kind is not decision_kind:
+            raise RolloutError("application outcome scope does not match candidate")
+        record = DecisionApplicationOutcomeV1(
+            schema=DECISION_APPLICATION_OUTCOME_SCHEMA_V1,
+            project_id=project_id,
+            decision_kind=decision_kind,
+            candidate_digest=candidate_digest,
+            application_id=application_id,
+            rollout_stage=rollout_stage,
+            outcome=outcome,
+            occurred_at=occurred_at,
+            terminal_event_id=terminal_event_id,
+            evidence_digest=evidence_digest,
+        )
+        feedback = self._rollout.record_application_outcome(record)
+        if feedback.recorded:
+            self._telemetry.application(
+                decision_kind.value,
+                outcome.value,
+                rollout_stage.value,
+            )
+        if feedback.drift_reason is not None:
+            self._telemetry.drift(decision_kind.value, feedback.drift_reason)
+        return feedback
 
     def _abstain(
         self,

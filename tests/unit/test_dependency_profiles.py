@@ -578,6 +578,98 @@ profiles = ["example"]
     return dependency_profiles.load_catalog(tmp_path, manifest)
 
 
+def test_locked_package_version_reads_the_exact_profile_lock(tmp_path: Path) -> None:
+    catalog = _temporary_catalog(tmp_path)
+    profile_lock = tmp_path / "requirements/profiles/example/uv.lock"
+    profile_lock.write_text(
+        '''version = 1
+requires-python = ">=3.11"
+
+[[package]]
+name = "example"
+version = "6.22.3"
+''',
+        encoding="utf-8",
+    )
+
+    assert dependency_profiles.locked_package_version(
+        catalog,
+        profile="example",
+        package="example",
+    ) == "6.22.3"
+
+
+def test_locked_package_version_cli_prints_only_the_locked_value(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    catalog = _temporary_catalog(tmp_path)
+    profile_lock = tmp_path / "requirements/profiles/example/uv.lock"
+    profile_lock.write_text(
+        '''version = 1
+requires-python = ">=3.11"
+[[package]]
+name = "example"
+version = "6.22.3"
+''',
+        encoding="utf-8",
+    )
+
+    assert dependency_profiles.main(
+        [
+            "locked-version",
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(catalog.manifest),
+            "--profile",
+            "example",
+            "--package",
+            "example",
+        ]
+    ) == 0
+    assert capsys.readouterr().out == "6.22.3\n"
+
+
+@pytest.mark.parametrize(
+    ("lock_body", "message"),
+    [
+        (
+            'version = 1\nrequires-python = ">=3.11"\n',
+            "does not lock package 'example'",
+        ),
+        (
+            '''version = 1
+requires-python = ">=3.11"
+[[package]]
+name = "example"
+version = "1.0"
+[[package]]
+name = "example"
+version = "2.0"
+''',
+            "must lock package 'example' exactly once",
+        ),
+        ("not valid toml = [", "cannot load lock"),
+    ],
+)
+def test_locked_package_version_fails_closed_on_ambiguous_or_invalid_locks(
+    tmp_path: Path,
+    lock_body: str,
+    message: str,
+) -> None:
+    catalog = _temporary_catalog(tmp_path)
+    profile_lock = tmp_path / "requirements/profiles/example/uv.lock"
+    profile_lock.write_text(lock_body, encoding="utf-8")
+
+    with pytest.raises(dependency_profiles.ProfileError, match=message):
+        dependency_profiles.locked_package_version(
+            catalog,
+            profile="example",
+            package="example",
+        )
+
+
 def test_atomic_sync_failure_preserves_predecessor_environment(tmp_path: Path) -> None:
     catalog = _temporary_catalog(tmp_path)
     environment = tmp_path / ".venv"

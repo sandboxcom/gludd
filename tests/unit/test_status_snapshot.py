@@ -5,8 +5,15 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.quality.preflight import check_session_drift
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _makefile_text() -> str:
+    return compose_makefile(ROOT / "Makefile")
 
 
 def _load_status_snapshot() -> ModuleType:
@@ -30,13 +37,11 @@ class TestStatusSnapshot:
         assert "<!-- gate:end -->" in content, "SESSION.md missing gate:end marker"
 
     def test_makefile_status_snapshot_uses_script(self):
-        makefile = Path(__file__).parent.parent.parent / "Makefile"
-        content = makefile.read_text()
+        content = _makefile_text()
         assert "status_snapshot.py" in content, "Makefile status-snapshot must use status_snapshot.py"
 
     def test_makefile_status_snapshot_uses_project_interpreter_and_validation_mode(self):
-        makefile = Path(__file__).parent.parent.parent / "Makefile"
-        content = makefile.read_text()
+        content = _makefile_text()
         start = content.index("status-snapshot:")
         end = content.index("\n\n", start)
         section = content[start:end]
@@ -46,8 +51,7 @@ class TestStatusSnapshot:
         assert "@python3 scripts/status_snapshot.py" not in section
 
     def test_makefile_status_snapshot_writes_in_place(self):
-        makefile = Path(__file__).parent.parent.parent / "Makefile"
-        content = makefile.read_text()
+        content = _makefile_text()
         start = content.index("status-snapshot:")
         end = content.index("\n\n", start) if "\n\n" in content[start:] else len(content)
         section = content[start:end]

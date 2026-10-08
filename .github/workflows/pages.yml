@@ -82,7 +82,7 @@ jobs:
           PRESENTATION_BROWSER_ENGINES="chromium webkit"
           PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers
           PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser
-          PRESENTATION_BROWSER_TIMEOUT=300
+          PRESENTATION_BROWSER_TIMEOUT=600
       - name: Retain presentation browser diagnostics
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)

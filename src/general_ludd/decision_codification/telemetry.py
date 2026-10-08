@@ -76,6 +76,9 @@ _DRIFT_REASONS: Final[frozenset[str]] = frozenset(
 _MINING_OUTCOMES: Final[frozenset[str]] = frozenset(
     {"success", "failure", "refused", "cancelled"}
 )
+_RESOLUTION_PATHS: Final[frozenset[str]] = frozenset(
+    {"exact_rule", "agent_fallback"}
+)
 MetricKind = Literal["counter", "gauge", "histogram"]
 
 
@@ -213,6 +216,23 @@ class DecisionCodificationTelemetry:
             {"kind": _closed(kind, _KINDS)},
             count,
         )
+
+    def resolution_seconds(self, path: object, seconds: int | float) -> bool:
+        """Observe bounded resolution latency under one closed path label."""
+        if (
+            isinstance(seconds, bool)
+            or not isinstance(seconds, (int, float))
+            or not math.isfinite(float(seconds))
+            or float(seconds) < 0
+            or _closed(path, _RESOLUTION_PATHS) == _UNKNOWN
+        ):
+            return False
+        return self._emit(_Emission(
+            "histogram",
+            "gludd_decision_codification_resolution_seconds",
+            float(seconds),
+            {"path": str(path)},
+        ))
 
     def flush(self) -> int:
         """Retry buffered emissions in FIFO order, stopping at first outage."""

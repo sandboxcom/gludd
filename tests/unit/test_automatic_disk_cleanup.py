@@ -77,7 +77,11 @@ def test_cleanup_removes_only_allowlisted_caches_from_inactive_gludd_worktree(
     disposable_names = set(automatic_disk_cleanup.GENERATED_CACHE_DIR_NAMES) - set(
         automatic_disk_cleanup.TOOL_ENVIRONMENT_DIR_NAMES
     )
-    assert set(removed) == {inactive.path / name for name in disposable_names}
+    assert set(removed) == {
+        record.path / name
+        for record in (inactive, active)
+        for name in disposable_names
+    }
     assert result.removed == tuple(str(path) for path in sorted(removed))
     assert any("active logical workstream" in item for item in result.skipped)
     assert any("outside approved namespace" in item for item in result.skipped)
@@ -90,8 +94,57 @@ def test_cleanup_removes_only_allowlisted_caches_from_inactive_gludd_worktree(
         assert record.path.exists()
         assert (record.path / ".git").exists()
         assert (record.path / "src" / "keep.py").read_text(encoding="utf-8") == "keep\n"
-    assert all((active.path / name).exists() for name in automatic_disk_cleanup.GENERATED_CACHE_DIR_NAMES)
+    assert (active.path / ".venv").exists()
+    assert all(not (active.path / name).exists() for name in disposable_names)
     assert all((outside.path / name).exists() for name in automatic_disk_cleanup.GENERATED_CACHE_DIR_NAMES)
+
+
+def test_idle_active_workstream_reclaims_only_disposable_caches(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / "active", "feature/active")
+    source = record.path / "src" / "keep.py"
+    source.parent.mkdir()
+    source.write_text("keep\n", encoding="utf-8")
+    for cache_name in automatic_disk_cleanup.GENERATED_CACHE_DIR_NAMES:
+        cache = record.path / cache_name
+        cache.mkdir()
+        (cache / "generated.bin").write_bytes(b"generated")
+    lease = automatic_disk_cleanup.WorkstreamLease(
+        branch=record.branch or "",
+        worktree=record.path,
+        updated_epoch=100,
+    )
+    process_scans: list[Path] = []
+
+    def idle_processes(path: Path) -> list[int]:
+        process_scans.append(path)
+        return []
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: frozenset({record.branch or ""}),
+        active_workstream_leases=lambda: {record.branch or "": lease},
+        lifecycle_proof=lambda _record, _lease: automatic_disk_cleanup.LifecycleDecision(
+            False, "dirty worktree"
+        ),
+        refresh_records=lambda: [record],
+        active_process_pids=idle_processes,
+    )
+
+    disposable = {
+        str(record.path / cache_name)
+        for cache_name in automatic_disk_cleanup.DISPOSABLE_CACHE_DIR_NAMES
+    }
+    assert set(result.removed) == disposable
+    assert result.errors == ()
+    assert any("dirty worktree; disposable caches only" in item for item in result.skipped)
+    assert process_scans == [record.path, record.path]
+    assert (record.path / ".venv").is_dir()
+    assert source.read_text(encoding="utf-8") == "keep\n"
 
 
 @pytest.mark.parametrize("protected_reason", ["locked", "current"])
@@ -883,7 +936,7 @@ def test_stale_or_mismatched_commit_receipt_keeps_fresh_worktree_protected(
     )
 
 
-def test_dirty_worktree_is_never_cache_reclaimed(tmp_path: Path) -> None:
+def test_dirty_worktree_never_gains_completion_proof(tmp_path: Path) -> None:
     root = tmp_path / "gludd-worktrees"
     record = _record(root / "dirty", "feature/dirty")
     lease = automatic_disk_cleanup.WorkstreamLease(

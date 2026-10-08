@@ -6,7 +6,7 @@ fail-closed lookup, sorted listing, valid roles, and both registration forms.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -206,6 +206,19 @@ class TestDynamicRegistration:
             },
         )
         assert _pt.get_project_type("dynamic_test_type").display_name == "Updated Dynamic Test Type"
+
+    def test_non_union_discriminator_is_rejected_without_mutation(self) -> None:
+        unsupported_type_id = cast(str, 7)
+        definition = _dynamic_definition()
+        definition["type_id"] = unsupported_type_id
+        before = dict(_pt.PROJECT_TYPE_REGISTRY)
+
+        try:
+            with pytest.raises(TypeError, match="project_type must be a ProjectType or string type id"):
+                _pt.register_project_type(unsupported_type_id, definition)
+            assert before == _pt.PROJECT_TYPE_REGISTRY
+        finally:
+            _pt.PROJECT_TYPE_REGISTRY.pop(unsupported_type_id, None)
 
 
 class TestLegacyRegistrationValidation:

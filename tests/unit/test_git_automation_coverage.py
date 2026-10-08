@@ -568,3 +568,64 @@ class TestGenerateBranchName:
         a = GitAutomation.generate_branch_name("99", "fix-bug")
         b = GitAutomation.generate_branch_name("99", "fix-bug")
         assert a != b
+
+
+class TestFailClosedRepositoryReads:
+    def test_changed_files_parses_mixed_porcelain_entries(self):
+        auto = GitAutomation(".")
+        status = (
+            " M normal.py\n"
+            "R  old.py -> renamed.py\n"
+            '?? "quoted name.py"\n'
+            "x\n"
+            "??  \n"
+        )
+
+        with patch.object(auto, "_run_git", return_value=_ok(stdout=status)):
+            assert auto.changed_files() == [
+                "normal.py",
+                "renamed.py",
+                "quoted name.py",
+            ]
+
+    def test_changed_files_fails_closed_on_git_errors(self):
+        auto = GitAutomation(".")
+
+        with patch.object(auto, "_run_git", return_value=_fail()):
+            assert auto.changed_files() == []
+        with patch.object(auto, "_run_git", side_effect=OSError("git unavailable")):
+            assert auto.changed_files() == []
+
+    def test_lines_changed_skips_binary_malformed_and_invalid_rows(self):
+        auto = GitAutomation(".")
+        numstat = "3\t2\tnormal.py\n-\t-\tbinary.dat\nshort\nx\ty\tinvalid.py\n"
+
+        with patch.object(auto, "_run_git", return_value=_ok(stdout=numstat)):
+            assert auto.lines_changed_in_commit() == 5
+
+    def test_lines_changed_fails_closed_on_git_errors(self):
+        auto = GitAutomation(".")
+
+        with patch.object(auto, "_run_git", return_value=_fail()):
+            assert auto.lines_changed_in_commit() == 0
+        with patch.object(auto, "_run_git", side_effect=OSError("git unavailable")):
+            assert auto.lines_changed_in_commit() == 0
+
+
+class TestAnsibleGitSemantics:
+    def test_successful_delegation_preserves_public_results(self):
+        auto = GitAutomation(".")
+
+        with (
+            patch.object(auto, "_invoke_role", return_value={"status": "successful"}),
+            patch.object(auto, "_run_git", return_value=_ok(stdout="abc123\n")),
+        ):
+            assert auto.create_branch("feature/delegated", use_ansible=True) == (
+                "feature/delegated"
+            )
+            assert auto.commit("delegated commit", use_ansible=True) == "abc123"
+            assert auto.push(
+                remote="origin",
+                branch="feature/delegated",
+                use_ansible=True,
+            )

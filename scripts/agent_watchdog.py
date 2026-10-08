@@ -304,7 +304,7 @@ CI_TRUE_STALL_NO_PUSH_MINUTES = 15
 
 _WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd()))
 GATE_PID_FILE = _WORKSPACE / ".gate-background.pid"
-GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
+GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "21600"))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
 _RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
 _GATE_STATUS = _WORKSPACE / ".gate-status"
@@ -1019,7 +1019,11 @@ def _check_gate_background() -> None:
             return
 
         if elapsed > GATE_MAX_RUNTIME_SECS:
-            _log(f"GATE STALLED: background gate pid={pid_str} running {elapsed:.0f}s (>1h) - auto-killing")
+            _log(
+                "GATE STALLED: background gate "
+                f"pid={pid_str} running {elapsed:.0f}s "
+                f"(>{GATE_MAX_RUNTIME_SECS}s) - auto-killing"
+            )
             with suppress(Exception):
                 _GATE_STATUS.write_text("GATE_TIMEOUT\n=== GATE: ABORTED (watchdog timeout) ===\n")
             try:

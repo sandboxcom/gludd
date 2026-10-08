@@ -341,6 +341,83 @@ def test_stale_owned_node_cache_cleanup_is_exact_and_visible(
     assert "action=node-download-cache status=complete inspected=2 removed=1" in output
 
 
+def test_stale_playwright_browser_cache_is_owned_and_process_safe(
+    tmp_path: Path,
+) -> None:
+    approved = tmp_path.resolve()
+    cache = approved / "gludd-playwright-browsers"
+    cache.mkdir()
+    browser = cache / "webkit" / "browser"
+    browser.parent.mkdir()
+    browser.write_bytes(b"regenerable")
+    for path in (browser, browser.parent, cache):
+        os.utime(path, (100.0, 100.0))
+
+    active = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [7331],
+    )
+
+    assert active.skipped == (f"{cache}:active-pids=7331",)
+    assert cache.is_dir()
+
+    idle = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert idle.removed == (str(cache),)
+    assert idle.errors == ()
+    assert not cache.exists()
+
+
+def test_pressure_reclaim_removes_only_fresh_owned_playwright_cache(
+    tmp_path: Path,
+) -> None:
+    approved = tmp_path.resolve()
+    playwright_cache = approved / "gludd-playwright-browsers"
+    npm_cache = approved / "gludd-npm-cache-public-v1"
+    for cache in (playwright_cache, npm_cache):
+        cache.mkdir()
+        (cache / "fresh.bin").write_bytes(b"regenerable")
+    external = approved / "external-browser-data"
+    external.mkdir()
+    sentinel = external / "preserve.txt"
+    sentinel.write_text("preserve\n", encoding="utf-8")
+    (playwright_cache / "framework-current").symlink_to(
+        external, target_is_directory=True
+    )
+
+    process_checks: list[Path] = []
+
+    def idle_process_census(path: Path) -> list[int]:
+        process_checks.append(path)
+        return []
+
+    result = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(playwright_cache, npm_cache),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=idle_process_census,
+        pressure_reclaim=True,
+    )
+
+    assert result.removed == (str(playwright_cache),)
+    assert result.skipped == (f"{npm_cache}:recent",)
+    assert result.errors == ()
+    assert process_checks == [playwright_cache, playwright_cache]
+    assert not playwright_cache.exists()
+    assert npm_cache.is_dir()
+    assert sentinel.read_text(encoding="utf-8") == "preserve\n"
+
+
 def test_node_cache_cleanup_refuses_unsafe_fresh_and_unbounded_candidates(
     tmp_path: Path,
 ) -> None:
@@ -584,6 +661,8 @@ def test_default_node_package_manager_census_is_fail_closed(
         "123 /usr/local/bin/npm ci\n"
         "456 /usr/bin/node /usr/local/lib/node_modules/npm/bin/npm-cli.js ci\n"
         "789 /usr/bin/node application.js\n"
+        "790 /Users/example/.venv/bin/python -m playwright install webkit\n"
+        "791 /tmp/gludd-playwright-browsers/webkit/Playwright.sh\n"
     )
     monkeypatch.setattr(
         automatic_disk_cleanup.subprocess,
@@ -597,6 +676,9 @@ def test_default_node_package_manager_census_is_fail_closed(
     assert automatic_disk_cleanup._active_node_package_manager_pids(
         Path("/tmp/gludd-npm-cache-public-v1")
     ) == [123, 456]
+    assert automatic_disk_cleanup._active_node_package_manager_pids(
+        Path("/tmp/gludd-playwright-browsers")
+    ) == [123, 456, 790, 791]
 
     monkeypatch.setattr(
         automatic_disk_cleanup.subprocess,
@@ -653,6 +735,36 @@ def test_preflight_cleans_then_rechecks_both_thresholds(capsys: pytest.CaptureFi
     output = capsys.readouterr().out
     assert "phase=cleanup status=starting" in output
     assert "phase=recheck status=healthy" in output
+
+
+def test_preflight_allows_active_scratch_over_soft_cap_when_disk_is_healthy(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    soft_pressure = DiskSnapshot(scratch_mb=178.8, disk_pct=67.0)
+    cleanup_calls = 0
+
+    def cleanup() -> automatic_disk_cleanup.CleanupResult:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        return automatic_disk_cleanup.CleanupResult(
+            removed=(),
+            skipped=("/tmp/gludd-molecule-active:active-pids=1234",),
+            errors=(),
+        )
+
+    result = automatic_disk_cleanup.run_preflight(
+        inspect_usage=lambda: soft_pressure,
+        cleanup=cleanup,
+    )
+
+    assert result == 0
+    assert cleanup_calls == 1
+    captured = capsys.readouterr()
+    assert "phase=cleanup action=skip pass=1" in captured.out
+    assert "phase=recheck status=soft-cap pass=1" in captured.out
+    assert "reason=protected-or-recent-scratch" in captured.out
+    assert "scratch_limit_kind=soft" in captured.out
+    assert "disk_limit_kind=hard" in captured.out
 
 
 def test_preflight_repeats_cleanup_while_usage_improves_until_healthy(
@@ -767,16 +879,10 @@ def test_preflight_stops_at_bounded_cleanup_pass_limit(
     assert "phase=recheck status=failed pass=2 reason=pass-limit" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize(
-    "after",
-    [
-        DiskSnapshot(scratch_mb=101.0, disk_pct=20.0),
-        DiskSnapshot(scratch_mb=20.0, disk_pct=91.0),
-    ],
-)
-def test_preflight_fails_closed_when_either_threshold_remains_high(
-    after: DiskSnapshot, capsys: pytest.CaptureFixture[str]
+def test_preflight_fails_closed_when_hard_disk_threshold_remains_high(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    after = DiskSnapshot(scratch_mb=20.0, disk_pct=91.0)
     snapshots = iter((after, after))
 
     result = automatic_disk_cleanup.run_preflight(
@@ -1157,7 +1263,7 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
         lambda **kwargs: {"removed": [str(stale_file)], "skipped": []},
     )
     uv_cleanup_calls: list[tuple[bool, bool]] = []
-    node_cleanup_calls: list[bool] = []
+    node_cleanup_calls: list[tuple[bool, bool]] = []
     terraform_cleanup_calls: list[bool] = []
     invoking_cleanup_calls: list[dict[str, object]] = []
     invoking_cache = tmp_path / "invoking" / ".pytest_cache"
@@ -1183,9 +1289,9 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
     monkeypatch.setattr(automatic_disk_cleanup, "prune_shared_uv_cache", uv_cleanup)
 
     def node_cleanup(
-        *, dry_run: bool = False
+        *, dry_run: bool = False, pressure_reclaim: bool = False
     ) -> automatic_disk_cleanup.CleanupResult:
-        node_cleanup_calls.append(dry_run)
+        node_cleanup_calls.append((dry_run, pressure_reclaim))
         return automatic_disk_cleanup.CleanupResult((), (), ())
 
     monkeypatch.setattr(
@@ -1212,7 +1318,7 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
     assert finished.path.exists()
     assert main.path.exists()
     assert uv_cleanup_calls == [(False, True)]
-    assert node_cleanup_calls == [False]
+    assert node_cleanup_calls == [(False, True)]
     assert terraform_cleanup_calls == [False]
     assert len(invoking_cleanup_calls) == 2
     assert invoking_cleanup_calls[0]["records"] == records
@@ -1409,6 +1515,7 @@ def test_feature_document_records_zdd_rollback_and_long_lived_reports() -> None:
     assert "github.com/stablyai/orca/issues/10562" in document
     assert "github.com/python/cpython/issues/111246" in document
     assert "github.com/pytest-dev/pytest/discussions/10325" in document
+    assert "github.com/pytest-dev/pytest/discussions/12283" in document
     assert "Eight passes" in document
     assert "lsof" in document
 
@@ -1423,3 +1530,15 @@ def test_gate_lifecycle_documents_owned_node_cache_reclamation() -> None:
     assert "zero-byte regular-file lookalikes" in document
     assert "github.com/npm/cli/issues/3176" in document
     assert "github.com/npm/npm/issues/2500" in document
+    assert "/tmp/gludd-playwright-browsers" in document
+    assert "pressure after repeat idle and identity proofs" in document
+    assert "github.com/microsoft/playwright/issues/37354" in document
+    assert "github.com/microsoft/playwright/issues/36682" in document
+    assert "github.com/microsoft/playwright/issues/5797" in document
+    assert "ZDD shape" in document
+    assert "1,090,775,078" in document
+    assert "94 proven-idle resources" in document
+    assert "healthy at 74.7 MiB" in document
+    assert "github.com/python/mypy/issues/15731" in document
+    assert "github.com/python/mypy/issues/19489" in document
+    assert "github.com/astral-sh/ruff/issues/12284" in document

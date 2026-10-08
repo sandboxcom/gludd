@@ -3,9 +3,10 @@
 
 Generated caches are removed from an idle invoking worktree or from inactive
 worktrees. This includes the invoking checkout's exact regenerable Terraform
-provider cache while preserving state. A complete, clean checkout may also be
-dematerialized after its exact branch and commit are proven durable. The shared
-uv cache is pruned through uv only after ownership is idle.
+provider cache while preserving state and the exact shared Playwright browser
+download root. A complete, clean checkout may also be dematerialized after its
+exact branch and commit are proven durable. The shared uv cache is pruned through
+uv only after ownership is idle.
 """
 
 from __future__ import annotations
@@ -63,8 +64,10 @@ SHARED_UV_CACHE_ROOT = Path("/tmp/gludd-uv-cache-public-v2")
 OWNED_NODE_CACHE_ROOTS = (
     Path("/tmp/gludd-npm-cache"),
     Path("/tmp/gludd-npm-cache-public-v1"),
+    Path("/tmp/gludd-playwright-browsers"),
 )
 OWNED_NODE_CACHE_NAMES = frozenset(path.name for path in OWNED_NODE_CACHE_ROOTS)
+PRESSURE_RECLAIM_NODE_CACHE_NAMES = frozenset({"gludd-playwright-browsers"})
 OWNED_TERRAFORM_CACHE_ROOTS = (
     Path("/tmp/gludd-azure-containerapp-live-proof"),
     Path("/tmp/gludd-azure-containerapp-environments"),
@@ -102,11 +105,16 @@ class DiskSnapshot:
 
     @property
     def is_high(self) -> bool:
-        """Return whether either established project limit is exceeded."""
+        """Return whether cleanup should run for either project limit."""
         return (
             self.scratch_mb > check_disk_usage.GLUDD_TMP_LIMIT_MB
-            or self.disk_pct > check_disk_usage.DISK_USAGE_PCT_LIMIT
+            or self.has_hard_pressure
         )
+
+    @property
+    def has_hard_pressure(self) -> bool:
+        """Return whether repository-volume use exceeds the hard gate limit."""
+        return self.disk_pct > check_disk_usage.DISK_USAGE_PCT_LIMIT
 
 
 @dataclass(frozen=True)
@@ -1298,6 +1306,7 @@ def clean_inactive_worktree_caches(
     for record in sorted(records, key=lambda item: str(item.path)):
         path = record.path
         completion_lease: WorkstreamLease | None = None
+        cache_only_lease: WorkstreamLease | None = None
         if not _inside_approved_root(path, approved_roots):
             skipped.append(f"{path}:outside approved namespace")
             continue
@@ -1320,10 +1329,9 @@ def clean_inactive_worktree_caches(
             if lifecycle.error:
                 errors.append(f"{path}:{lifecycle.reason}")
                 continue
-            if not lifecycle.reclaimable:
-                skipped.append(f"{path}:{lifecycle.reason}")
-                continue
-            if not lifecycle.cache_only:
+            if not lifecycle.reclaimable or lifecycle.cache_only:
+                cache_only_lease = initial_leases.get(record.branch)
+            else:
                 completion_lease = initial_leases.get(record.branch)
 
         try:
@@ -1355,17 +1363,24 @@ def clean_inactive_worktree_caches(
             if lifecycle.error:
                 errors.append(f"{path}:{lifecycle.reason}")
                 continue
+            refreshed_lease = refreshed_leases.get(record.branch)
+            if cache_only_lease is not None and refreshed_lease != cache_only_lease:
+                skipped.append(f"{path}:{lifecycle.reason}")
+                continue
             if not lifecycle.reclaimable:
                 reason = (
                     "became active logical workstream"
                     if active_workstream_leases is None
                     else lifecycle.reason
                 )
-                skipped.append(f"{path}:{reason}")
-                continue
-            if (
+                if completion_lease is not None:
+                    skipped.append(f"{path}:{reason}")
+                    continue
+                skipped.append(f"{path}:{reason}; disposable caches only")
+                completion_lease = None
+            elif (
                 completion_lease is not None
-                and refreshed_leases.get(record.branch) != completion_lease
+                and refreshed_lease != completion_lease
             ):
                 skipped.append(f"{path}:completion lease changed")
                 continue
@@ -1735,7 +1750,10 @@ def _node_cache_metadata_identity(
 
 
 def _node_cache_tree_snapshot(
-    cache_root: Path, *, max_entries: int
+    cache_root: Path,
+    *,
+    max_entries: int,
+    allow_nested_symlinks: bool = False,
 ) -> CacheTreeSnapshot:
     """Hash a cache tree without following links and within a strict entry cap."""
     pending = [cache_root]
@@ -1753,14 +1771,20 @@ def _node_cache_tree_snapshot(
             entry_count += 1
             if entry_count > max_entries:
                 raise OverflowError("node cache entry limit exceeded")
-        if stat.S_ISLNK(metadata.st_mode):
+        is_symlink = stat.S_ISLNK(metadata.st_mode)
+        if is_symlink and (path == cache_root or not allow_nested_symlinks):
             raise ValueError("node cache contains a symlink")
-        if not (stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)):
+        if not is_symlink and not (
+            stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)
+        ):
             raise ValueError("node cache contains an unsupported entry")
         latest_mtime_ns = max(latest_mtime_ns, metadata.st_mtime_ns)
         relative = path.relative_to(cache_root)
         digest.update(os.fsencode(str(relative)))
         digest.update(repr(identity).encode("ascii"))
+        if is_symlink:
+            digest.update(os.fsencode(os.readlink(path)))
+            continue
         if stat.S_ISDIR(metadata.st_mode):
             children = sorted(path.iterdir(), key=lambda item: os.fsencode(item.name))
             pending.extend(reversed(children))
@@ -1801,7 +1825,13 @@ def _active_node_package_manager_pids(cache_root: Path) -> list[int]:
         command = fields[1]
         executable = Path(command.split(maxsplit=1)[0]).name.casefold()
         npm_process = executable in {"npm", "npx"} or "npm-cli.js" in command
-        if pid != os.getpid() and (npm_process or cache_pattern.search(command)):
+        playwright_process = (
+            cache_root.name in PRESSURE_RECLAIM_NODE_CACHE_NAMES
+            and "playwright" in command.casefold()
+        )
+        if pid != os.getpid() and (
+            npm_process or playwright_process or cache_pattern.search(command)
+        ):
             active_pids.add(pid)
     return sorted(active_pids)
 
@@ -1816,8 +1846,9 @@ def clean_stale_node_download_caches(
     active_process_pids: ActiveProcessPids = _active_node_package_manager_pids,
     remove_tree: RemoveTree = _remove_tree,
     dry_run: bool = False,
+    pressure_reclaim: bool = False,
 ) -> CleanupResult:
-    """Remove only exact, stale Gludd npm caches after two idle proofs."""
+    """Remove exact Gludd node caches after age or pressure plus two idle proofs."""
     candidates = tuple(dict.fromkeys(cache_roots))
     print(
         "phase=cleanup action=node-download-cache status=starting "
@@ -1832,6 +1863,7 @@ def clean_stale_node_download_caches(
         min_age_seconds < 0
         or max_entries < 1
         or len(candidates) > MAX_NODE_CACHE_CANDIDATES
+        or not isinstance(pressure_reclaim, bool)
     ):
         errors.append("node-download-cache:invalid-bound")
         print(
@@ -1883,9 +1915,19 @@ def clean_stale_node_download_caches(
         ):
             skipped.append(f"{cache_root}:outside-canonical-temp-root")
             continue
+        pressure_owned = (
+            pressure_reclaim
+            and cache_root.name in PRESSURE_RECLAIM_NODE_CACHE_NAMES
+        )
+        allow_nested_symlinks = (
+            cache_root.name in PRESSURE_RECLAIM_NODE_CACHE_NAMES
+            and bool(getattr(shutil.rmtree, "avoids_symlink_attacks", False))
+        )
         try:
             initial = _node_cache_tree_snapshot(
-                cache_root, max_entries=max_entries
+                cache_root,
+                max_entries=max_entries,
+                allow_nested_symlinks=allow_nested_symlinks,
             )
         except OverflowError:
             skipped.append(f"{cache_root}:entry-limit")
@@ -1897,7 +1939,11 @@ def clean_stale_node_download_caches(
             errors.append(f"{cache_root}:tree-inspection-failed")
             continue
         inspected_entries += initial.entry_count
-        if current_time_ns - initial.latest_mtime_ns < min_age_seconds * 1_000_000_000:
+        cache_is_recent = (
+            current_time_ns - initial.latest_mtime_ns
+            < min_age_seconds * 1_000_000_000
+        )
+        if cache_is_recent and not pressure_owned:
             skipped.append(f"{cache_root}:recent")
             continue
         try:
@@ -1924,7 +1970,9 @@ def clean_stale_node_download_caches(
             continue
         try:
             refreshed = _node_cache_tree_snapshot(
-                cache_root, max_entries=max_entries
+                cache_root,
+                max_entries=max_entries,
+                allow_nested_symlinks=allow_nested_symlinks,
             )
         except OverflowError:
             skipped.append(f"{cache_root}:entry-limit")
@@ -2137,7 +2185,10 @@ def _automatic_cleanup(
         )
 
     scratch_result = clean_stale_generated_scratch(dry_run=dry_run)
-    node_cache_result = clean_stale_node_download_caches(dry_run=dry_run)
+    node_cache_result = clean_stale_node_download_caches(
+        dry_run=dry_run,
+        pressure_reclaim=True,
+    )
     uv_result = prune_shared_uv_cache(
         dry_run=dry_run,
         missing_is_clean=True,
@@ -2161,8 +2212,10 @@ def _snapshot_text(snapshot: DiskSnapshot) -> str:
     return (
         f"scratch_mb={snapshot.scratch_mb:.1f} "
         f"scratch_limit_mb={check_disk_usage.GLUDD_TMP_LIMIT_MB} "
+        "scratch_limit_kind=soft "
         f"disk_pct={snapshot.disk_pct:.1f} "
-        f"disk_limit_pct={check_disk_usage.DISK_USAGE_PCT_LIMIT}"
+        f"disk_limit_pct={check_disk_usage.DISK_USAGE_PCT_LIMIT} "
+        "disk_limit_kind=hard"
     )
 
 
@@ -2283,6 +2336,14 @@ def run_preflight(
         if not after.is_high:
             print(
                 f"phase=recheck status=healthy pass={pass_number} "
+                f"{_snapshot_text(after)}",
+                flush=True,
+            )
+            return 0
+        if not after.has_hard_pressure:
+            print(
+                "phase=recheck status=soft-cap "
+                f"pass={pass_number} reason=protected-or-recent-scratch "
                 f"{_snapshot_text(after)}",
                 flush=True,
             )

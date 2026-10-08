@@ -54,6 +54,75 @@
 .stage-kicker { color: #8b949e; font-size: 0.55em; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 4px; }
 .bullets-tight li { margin-bottom: 6px; font-size: 0.85em; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.feature-sync-slide h2 { font-size: 1.35em; line-height: 1.1; margin-bottom: 0.25em; }
+.feature-sync-slide h2 .badge-yellow { font-size: 0.58em; }
+.feature-sync-slide h3 { font-size: 1em; margin: 0.2em 0; }
+.feature-sync-slide .stage-kicker { font-size: 0.6em; margin: 0; }
+.feature-sync-slide .two-col { gap: 18px; }
+.feature-sync-slide .bullets-tight { margin: 0.25em 0; }
+.feature-sync-slide .bullets-tight li { margin-bottom: 3px; font-size: 0.66em; line-height: 1.24; }
+.feature-sync-slide .diagram-wrap { margin: 6px auto; padding: 8px; }
+.feature-sync-slide .diagram-wrap .mermaid { font-size: 14px; }
+.feature-sync-slide code { font-size: 1.05em; }
+.feature-sync-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; }
+.feature-sync-slide .honest-note { font-size: 0.6em; line-height: 1.18; margin-top: 5px; }
+.feature-sync-slide .cite { font-size: 0.6em; line-height: 1.18; }
+section[data-contract^="decision-log-codification"] .decision-bullets { font-size: 0.74em; }
+section[data-contract^="decision-log-codification"] .stage-kicker,
+section[data-contract^="decision-log-codification"] .honest-note,
+section[data-contract^="decision-log-codification"] .cite { font-size: 0.6em; line-height: 1.2; }
+@media (max-height: 640px) {
+  .feature-sync-slide { padding: 0.5rem 0.75rem 1rem !important; }
+  .feature-sync-slide h2 { font-size: 1.15em; margin: 0 0 0.12em; }
+  .feature-sync-slide h3 { font-size: 0.86em; }
+  .feature-sync-slide .stage-kicker { font-size: 0.5em; }
+  .feature-sync-slide .bullets-tight { margin: 0.1em 0; }
+  .feature-sync-slide .bullets-tight li { font-size: 0.6em; line-height: 1.14; margin-bottom: 2px; }
+  .feature-sync-slide .diagram-wrap { margin: 3px auto; padding: 3px; }
+  .feature-sync-slide .diagram-wrap .mermaid-image { max-height: 82px !important; max-width: 100% !important; }
+  section[data-contract="s83-101-104-concurrency-authority"] .diagram-wrap .mermaid-image {
+    max-height: 140px !important;
+  }
+  section[data-contract="s83-108-105-boundary-evidence"] .diagram-wrap .mermaid-image {
+    max-height: 120px !important;
+  }
+  .feature-sync-slide .honest-note,
+  .feature-sync-slide .cite { font-size: 0.5em; line-height: 1.08; margin: 3px 0; }
+  section[data-contract^="decision-log-codification"] {
+    padding: 0.4rem 0.7rem 0.7rem !important;
+  }
+  section[data-contract^="decision-log-codification"] h2 {
+    font-size: 1.05em;
+    margin: 0 0 0.12em;
+  }
+  section[data-contract^="decision-log-codification"] h3 {
+    font-size: 0.8em;
+    margin: 0.1em 0;
+  }
+  section[data-contract^="decision-log-codification"] .stage-kicker {
+    font-size: 0.46em;
+    margin: 0;
+  }
+  section[data-contract^="decision-log-codification"] .two-col { gap: 10px; }
+  section[data-contract^="decision-log-codification"] .bullets-tight { margin: 0.08em 0; }
+  section[data-contract^="decision-log-codification"] .decision-bullets {
+    font-size: 0.54em;
+  }
+  section[data-contract^="decision-log-codification"] .bullets-tight li {
+    line-height: 1.1;
+    margin-bottom: 1px;
+  }
+  section[data-contract^="decision-log-codification"] .honest-note {
+    font-size: 0.48em;
+    line-height: 1.08;
+    margin: 3px 0;
+  }
+  section[data-contract^="decision-log-codification"] .cite {
+    font-size: 0.46em;
+    line-height: 1.08;
+    margin: 3px 0;
+  }
+}
 /* --- Mobile / narrow-screen: keep every slide on-screen, never scroll the body sideways --- */
 @media (max-width: 640px) {
   :root {
@@ -134,33 +203,7 @@
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 4: ARCHITECTURE AT A GLANCE -->
-<!-- ============================================================ -->
-<section>
-  <h2>Architecture at a glance</h2>
-  <p><span class="path">daemon.py</span> boots a FastAPI process and wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>) that ticks forever.</p>
-  <ul class="bullets-tight">
-    <li class="fragment">Every tick runs <strong>25 named phases</strong> in a fixed order across short database sessions and sessionless provider-effect boundaries</li>
-    <li class="fragment">A todo moves through a state machine: BACKLOG &rarr; SCHEDULED/QUEUED &rarr; ACTIVE &rarr; done/reconciled</li>
-    <li class="fragment">Every state change, dispatch, review verdict, and commit is a database row &mdash; nothing lives only in memory</li>
-  </ul>
-  <div class="diagram-wrap">
-    <div class="mermaid">
-graph TD
-  User["You"] -->|POST /api/todos| Daemon["daemon.py + EventLoop - event_loop/loop.py"]
-  Daemon -->|dispatch| Model["Model gateway - models/gateway.py"]
-  Daemon -->|execute| Runner["Ansible / worker - ansible/runner.py, worker/app.py"]
-  Model --> Review["Reviewer - review/reviewer.py"]
-  Runner --> Review
-  Review -->|approve| Git["git_automation/repo.py - commit + push"]
-  Timer["~1s timer"] -.->|next tick| Daemon
-    </div>
-  </div>
-  <p class="cite">Source: src/general_ludd/daemon.py, src/general_ludd/event_loop/loop.py</p>
-</section>
-
-<!-- ============================================================ -->
-<!-- SLIDE 4b: DAEMON OVERVIEW -->
+<!-- SLIDE 4: DAEMON OVERVIEW -->
 <!-- ============================================================ -->
 <section>
   <h2>Daemon overview &mdash; the central orchestrator</h2>
@@ -196,7 +239,7 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 4c: PRESENTATION RENDERING RELIABILITY -->
+<!-- SLIDE 4b: PRESENTATION RENDERING RELIABILITY -->
 <!-- ============================================================ -->
 <section data-contract="presentation-browser-resilience">
   <p class="stage-kicker">Documentation reliability &middot; v0.1.2</p>
@@ -1004,63 +1047,102 @@ flowchart LR
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19f.1: S83.103 CANONICAL WORKTREE CREATION PATHS -->
+<!-- SLIDE 19f.1: S83.101 + S83.104 CONCURRENCY AUTHORITY -->
 <!-- ============================================================ -->
-<section data-contract="s83-103-canonical-worktree-paths">
-  <p class="stage-kicker">Git safety contract &middot; canonical identity to reversible rollout</p>
-  <h2>S83.103 &mdash; Worktree creation paths <span class="badge-green">Project confined</span></h2>
+<section class="feature-sync-slide" data-contract="s83-101-104-concurrency-authority">
+  <p class="stage-kicker">S83.101 / S83.104 &middot; database and process authority</p>
+  <h2>Concurrency authority fails closed <span class="badge-yellow">INTEGRATED CANDIDATES &middot; EXACT GATE PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Exact database lease</h3>
+      <ul class="bullets-tight">
+        <li><strong>S83.101:</strong> require owner + fencing token + persisted expiry as one exact lease authority; forged extension and the expiry boundary reject before mutation.</li>
+        <li><strong>Measured:</strong> 110/110 warning-strict at 95.7% line, 88.9% branch, and 94.04% combined coverage.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Bounded repository mutex</h3>
+      <ul class="bullets-tight">
+        <li><strong>S83.104:</strong> bind re-entry to PID + thread ownership, discard fork inheritance, retain one inode, and spend one timeout budget across the in-process and file locks.</li>
+        <li><strong>Measured:</strong> 169/169 warning-strict at 89.0% line, 85.3% branch, and 86.36% combined coverage.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  A[Acquire exact authority] --> V{Owner, fence, expiry valid?}
+  V -->|yes| M[Permit bounded mutation]
+  V -->|no| R[Reject without partial state]
+    </div>
+  </div>
+  <p class="honest-note">Invalid authority leaves no partial state; rolling replacement and source-only rollback require no schema or service migration. The exact-head gate, CI, and promotion evidence remain pending; neither task is formally closed here.</p>
+  <p class="cite">Code: src/general_ludd/db/azure_cost_repository.py:412-438 &middot; src/general_ludd/git_automation/locking.py:98-113 &middot; Practitioner evidence: fencing-token, flock/fork, and FIFO reports in the linked feature contracts.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.2: S83.103 CANONICAL WORKTREE PATHS -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-103-canonical-worktree-paths">
+  <p class="stage-kicker">S83.103 &middot; canonical identity before any Git mutation</p>
+  <h2>Worktree paths stay inside the repository <span class="badge-yellow">INTEGRATED CANDIDATE &middot; EXACT GATE PENDING</span></h2>
   <div class="two-col">
     <div>
       <h3>Authorize before mutation</h3>
       <ul class="bullets-tight">
-        <li>Reject a leading dash or <strong>raw .. traversal</strong> before any Git mutation or storage acquisition.</li>
-        <li>Compare resolved filesystem identities so a directory <strong>symlink escape</strong> cannot redirect Git outside the repository boundary.</li>
-        <li>Accept only this repository's state root; a <strong>foreign project namespace</strong> grants no authority.</li>
-        <li>Compatibility stays exact: <code>gludd-worktree-</code> plus <strong>32 lowercase hexadecimal</strong> UUID characters below the canonical platform temp root.</li>
+        <li>Reject a leading dash, raw .. traversal, dangling or looping ancestors, symlink escape, and foreign project namespace before Git or storage mutation.</li>
+        <li>Allow only <code>gludd-worktree-</code> plus 32 lowercase hexadecimal UUID characters below the canonical platform temp root.</li>
       </ul>
     </div>
     <div>
-      <h3>Measured and bounded</h3>
+      <h3>Measured and reversible</h3>
       <ul class="bullets-tight">
-        <li><strong>Tests:</strong> 35/35 warning-strict path + adjacent checks; 421/421 Git repository family</li>
-        <li><strong>Coverage:</strong> <code>repo.py</code> = 86.00% line + branch aggregate</li>
-        <li><strong>Resources:</strong> bounded in-process checks, one existing bounded Git subprocess, zero network or background workers</li>
+        <li><strong>Evidence:</strong> 35/35 warning-strict path + adjacency checks, 421/421 Git repository family checks, and <code>repo.py</code> at 86.00% line + branch coverage.</li>
+        <li><strong>Resources:</strong> bounded checks, one existing bounded Git subprocess, and zero network or background workers.</li>
       </ul>
     </div>
   </div>
-  <p class="honest-note">
-    ZDD uses rolling replacement: old and new workers may overlap because each validates its own request.
-    Invalid paths leave no partial worktree; a source-only rollback needs no schema, data, or service migration.
-  </p>
-  <p class="cite">Sources: docs/features/GIT_WORKTREE_CREATION_PATHS.md &middot; long-lived Stack Overflow worktree and symlink reports</p>
+  <p class="honest-note">A rolling replacement lets old and new workers validate independently; an invalid path creates no partial worktree, and source-only rollback remains available. This candidate is not formally complete: exact-head gate, CI, and promotion evidence remain pending.</p>
+  <p class="cite">Code: src/general_ludd/git_automation/repo.py:1119-1189 &middot; Contract: docs/features/GIT_WORKTREE_CREATION_PATHS.md &middot; Practitioner evidence: long-lived Stack Overflow worktree and symlink reports.</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19f.2: S83.113 QEMU IMPORT ISOLATION -->
+<!-- SLIDE 19f.3: S83.108 + S83.105 BOUNDARIES -->
 <!-- ============================================================ -->
-<section data-contract="s83-113-qemu-import-isolation">
-  <p class="stage-kicker">Test-isolation contract &middot; reversible module-graph probes</p>
-  <h2>S83.113 &mdash; QEMU import probes <span class="badge-green">Isolated</span></h2>
-  <div class="two-col">
-    <div>
-      <h3>Restore only what the probe owns</h3>
-      <ul class="bullets-tight">
-        <li>A <strong>prefix-scoped</strong> <code>sys.modules</code> snapshot removes and restores only the <code>general_ludd</code> family.</li>
-        <li>Saved <strong>parent-to-child bindings</strong> are restored; normally loaded <strong>third-party dependencies stay cached</strong>.</li>
-        <li><strong>QEMU detection semantics remain unchanged</strong>: unsupported hosts and missing binaries still fail closed.</li>
-      </ul>
-    </div>
-    <div>
-      <h3>Measured and bounded</h3>
-      <ul class="bullets-tight">
-        <li><strong>Tests:</strong> 75/75 warning-strict QEMU + Terraform adjacency</li>
-        <li><strong>Coverage:</strong> QEMU source = 100% line and branch</li>
-        <li><strong>Resources:</strong> process-local snapshot, constant worker count, zero network, files, or services</li>
-      </ul>
+<section class="feature-sync-slide" data-contract="s83-108-105-boundary-evidence">
+  <p class="stage-kicker">S83.108 / S83.105 &middot; canonical identity and bounded dispatch</p>
+  <h2>Canonical input, bounded action <span class="badge-yellow">S83.105 CANDIDATE ONLY</span></h2>
+  <ul class="bullets-tight">
+    <li><strong>S83.108:</strong> reject traversal, symlink escape, duplicate aliases, and Git inventory failure; emit <code>identity=rejected</code>, one canonical active marker, or <code>INCONCLUSIVE</code>.</li>
+    <li><strong>S83.105:</strong> retain one <code>ProjectType | str</code> runtime declaration and reject unsupported discriminators before registry mutation.</li>
+    <li><strong>Measured:</strong> inventory 33/33 at 90% aggregate; registration 60 passed / 1 conditional skip and 170/170 runtime, with <code>project_types.py</code> at 96.95%.</li>
+  </ul>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  I[Untrusted identity] --> C{Canonical and supported?}
+  C -->|yes| D[Bounded dispatch]
+  C -->|no| X[Reject before mutation]
     </div>
   </div>
-  <p class="honest-note">ZDD has no runtime artifact, API, schema, process, or deployment change; promote with ordered import adjacency and use a source-only test-harness rollback.</p>
-  <p class="cite">Sources: docs/features/QEMU_IMPORT_ISOLATION.md &middot; CPython #27515 and #24029 &middot; Python Help package-alias discussion</p>
+  <p class="honest-note"><strong>No v0.1.2 completion claim:</strong> exact-head gate, CI, merge, and promotion proof remain pending. ZDD adds no runtime artifact or schema; rollback is source-only after canonical inventory and import-adjacency checks.</p>
+  <p class="cite">Code: scripts/check_worktree_health.py:39-70 &middot; src/general_ludd/cloud/project_types.py:899-914 &middot; Practitioner evidence: canonical-path reports in the linked feature contracts.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.4: S83.113 QEMU IMPORT ISOLATION -->
+<!-- ============================================================ -->
+<section data-contract="s83-113-qemu-import-isolation">
+  <p class="stage-kicker">S83.113 &middot; process-local import isolation</p>
+  <h2>QEMU probes restore only what they own <span class="badge-yellow">INTEGRATED CANDIDATE</span></h2>
+  <ul class="bullets-tight">
+    <li>A prefix-scoped <code>sys.modules</code> snapshot restores only <code>general_ludd</code> modules and saved parent-to-child bindings; third-party dependencies stay cached.</li>
+    <li>QEMU detection semantics remain unchanged, including fail-closed unsupported-host and missing-binary outcomes.</li>
+    <li><strong>Measured:</strong> 75/75 warning-strict QEMU + Terraform adjacency; QEMU source is 100% line and branch covered.</li>
+    <li><strong>Resource boundary:</strong> process-local state only, zero network, and no runtime artifact, API, schema, process, or deployment change.</li>
+  </ul>
+  <p class="honest-note">A source-only test-harness rollback restores the prior probe without migration or downtime.</p>
+  <p class="cite">Contract: docs/features/QEMU_IMPORT_ISOLATION.md &middot; Practitioner evidence: CPython #27515 and Python Help module-alias reports.</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1218,9 +1300,9 @@ flowchart LR
     <ul class="bullets-tight" style="font-size:0.58em;">
       <li>Reclaim only exact stale, inactive, owned npm caches.</li>
       <li>Refuse regular <code>.sock</code> lookalikes and ambiguous or active caches.</li>
-      <li>Recompute the complete tree identity and perform immediate <code>lstat</code> revalidation before deletion.</li>
+      <li>Recheck tree identity with immediate <code>lstat</code>; gate logs allow one non-symlink child, validation-first, without relaxing 90%.</li>
     </ul>
-    <p class="cite">Source: docs/features/GATE_RESOURCE_LIFECYCLE.md</p>
+    <p class="cite">Source: docs/features/GATE_RESOURCE_LIFECYCLE.md &middot; GitHub Community #205363 / #179725</p>
   </div>
   <div data-contract="gate-tree-termination">
     <p><strong>Identity-verified gate-tree termination</strong> <span class="badge-green">47/47 warning-strict</span></p>
@@ -1236,6 +1318,23 @@ flowchart LR
   </div>
   <p class="honest-note">No new runtime service or persisted schema: validation happens before network work, test state is namespaced, lifespan ownership is explicit, and late cleanup remains visible.</p>
   <p class="cite">Sources: docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md &middot; docs/features/FLOOR_TEST_ENV_ISOLATION.md &middot; docs/features/READINESS_LIFESPAN_TESTING.md &middot; docs/features/RESOURCE_LIFECYCLE_SHUTDOWN_LOGGING.md</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19j.1: INTEGRATED ADMISSION CHAIN -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-157-158-166-177-admission-chain">
+  <p class="stage-kicker">S83.178 / .177 / .158 / .157 / .166 &middot; branch to terminal admission</p>
+  <h2>Promoted failures stop before the next side effect <span class="badge-yellow">S83.178 CANDIDATE &middot; RELEASE PROOF PENDING</span></h2>
+  <ol class="bullets-tight feature-sync-grid">
+    <li><strong>S83.178 + S83.177 &middot; branch:</strong> a clean committed feature branch enters one ordered, fail-fast admission path. <code>gate_failure_promotions.json</code> maps seven families&mdash;<code>dead-code-baseline-drift</code>, <code>claim-fence</code>, <code>project-isolation</code>, <code>concurrent-tick</code>, <code>mcp-workspace-containment</code>, <code>mcp-workspace-dispatch-jail</code>, and <code>module-graph-classification-drift</code>&mdash;to an exact Make or pytest owner; missing, duplicate, or stale nodes stop before browser work or the expensive full gate. Per-phase 90s / 180s / 600s runtime budgets reuse the bounded observer, emit <code>observed_command/v1</code> evidence, and timeout exits 124 before the next phase. Admission stops on the first failed deterministic check, its static presentation phase launches no browser, and the full gate remains mandatory.</li>
+    <li><strong>S83.158 &middot; compute:</strong> provision only after the claim transaction committed and active session released; <code>claim_transaction_open</code> yields zero provider or dispatch calls.</li>
+    <li><strong>S83.157 &middot; hosted proof:</strong> verify the exact protected GitHub Environment, reviewer, self-review, admin-bypass, and branch-policy contract before OIDC or paid compute.</li>
+    <li><strong>S83.166 &middot; terminal:</strong> both promotion-time readiness calls force <code>RELEASE_ALLOW_INCOMPLETE_TASKS=0</code> and <code>RELEASE_ALLOW_INVALID_RECEIPT=0</code>; diagnostic bypasses cannot become ambient release authority.</li>
+  </ol>
+  <p class="honest-note">S83.177/.158/.157/.166 are integrated into development; S83.178 is branch-local until merge. The exact-head full gate, hosted replay, and terminal publication remain pending. No release-completion claim is made. ZDD keeps the serving application unchanged because each rejection precedes its owned mutation.</p>
+  <p class="cite">Sources: config/gate_failure_promotions.json:1-169 &middot; scripts/check_gate_failure_promotions.py:213-313 &middot; docs/features/INTEGRATION_ADMISSION.md:15-116 &middot; docs/features/DURABLE_CLAIM_COMPUTE_FENCE.md:21-33 &middot; docs/azure-gha-oidc-live-proof.md:46-79 &middot; docs/features/RELEASE_PREDECESSOR_ADMISSION.md:11-28</p>
+  <p class="cite">Long-lived practitioner findings: <a href="https://github.com/orgs/community/discussions/41726">optional merge-queue checks</a>, <a href="https://github.com/orgs/community/discussions/43988">duplicate merge-queue checks</a>, <a href="https://github.com/modelcontextprotocol/servers/issues/1838">MCP path-validation drift</a>, <a href="https://github.com/seddonym/import-linter/issues/93">graph-discovery blind spots</a>, and <a href="https://github.com/orgs/community/discussions/25631">hung-test runtime waste</a> justify bounded manifest-owned admission, not skipping integrated-head replay; <a href="https://github.com/sidekiq/sidekiq/issues/5239">pre-commit effects</a>, <a href="https://github.com/orgs/community/discussions/12241">self-approval</a>, and <a href="https://github.com/actions/runner/issues/789">stale environment state</a> motivate the three later fences.</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1309,37 +1408,145 @@ flowchart LR
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19k: DECISION-LOG CODIFICATION -->
+<!-- SLIDE 19k: LOCAL GAME PIPELINE BOUNDARY -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-109-local-game-boundary">
+  <p class="stage-kicker">S83.109 &middot; local game generation</p>
+  <h2>Cleanup never hides generation failure <span class="badge-yellow">IMPLEMENTED &middot; PROOF PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>One owned lifecycle</h3>
+      <ul class="bullets-tight">
+        <li>An absent or raced-away <strong>missing PID file</strong> is an observable no-op, not a cleanup failure.</li>
+        <li>Only a positive numeric PID reaches list-form <code>kill</code>; <code>SIGTERM</code>, bounded probes, optional <code>SIGKILL</code>, and PID removal stay in <strong>terminal cleanup</strong>.</li>
+        <li>Verification commands retain normal failure semantics: cleanup never converts a bad game artifact into success.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Dependency and replay evidence</h3>
+      <ul class="bullets-tight">
+        <li>The isolated profile and hash-locked graph require <code>pillow&gt;=12.3.0</code> directly.</li>
+        <li><strong>94/94 warning-strict</strong> focused checks; production ansible-lint processed <strong>500 files</strong> with zero failures or warnings.</li>
+        <li>ZDD promotes the locked environment first, then the playbook; rollback restores both only after namespaced process ownership clears.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">The local feature commit is present; exact-head full-gate and promotion proof remain pending. No release-completion claim is made.</p>
+  <p class="cite">Code: playbooks/local_model_stop.yml:17-101 &middot; requirements/profiles/game-e2e/pyproject.toml:1-10 &middot; Contract: docs/features/LOCAL_GAME_PIPELINE_CLEANUP.md:18-39 &middot; Reports: <a href="https://github.com/ansible/ansible/issues/44318">Ansible #44318</a>, <a href="https://github.com/python-pillow/Pillow/issues/515">Pillow #515</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19l: BOUNDED BRANCH RECONCILIATION -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-118-122-branch-reconciliation">
+  <p class="stage-kicker">S83.118 / .119 / .121 / .122 &middot; release review</p>
+  <h2>Read every branch; change none <span class="badge-yellow">BOUNDED TOOLING READY &middot; COMMIT PENDING</span></h2>
+  <div class="diagram-wrap diagram-compact">
+    <div class="mermaid">
+flowchart LR
+  Page["page up to 100 refs"] --> Cursor["strict-greater cursor"]
+  Cursor --> Verify["terminal snapshot"]
+  Verify --> View["deduplicated current-only view"]
+    </div>
+  </div>
+  <ul class="bullets-tight feature-sync-grid">
+    <li>Classify every tip <strong>ancestor</strong>, <strong>patch-equivalent</strong>, or <strong>unique/current</strong>; malformed evidence fails closed.</li>
+    <li>Exclude the cursor boundary; cap comparisons; fall back to one sorted scan under a <strong>10,000-ref ceiling</strong>.</li>
+    <li>Re-resolve the target, verify the <strong>terminal snapshot</strong>, deduplicate shared heads, then emit a <strong>current-only</strong> view.</li>
+    <li><strong>30/30 warning-strict</strong>; the live 13-page proof read 1,212 refs and 559 distinct heads without mutation.</li>
+  </ul>
+  <p class="honest-note">The read-only implementation is committed; exact-head global-gate and promotion proof remain pending.</p>
+  <p class="cite">Code: scripts/branch_reconciliation_inventory.py:590-749 &middot; Contract: docs/features/BRANCH_RECONCILIATION.md:30-115 &middot; Reports: <a href="https://www.spinics.net/lists/git/msg110170.html">Git patch identity</a>, <a href="https://github.com/cli/cli/issues/8536">GitHub CLI #8536</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19m: DECISION-LOG CODIFICATION -->
 <!-- ============================================================ -->
 <section data-contract="decision-log-codification-v1">
-  <p class="stage-kicker">Repeated decisions &middot; verified evidence to reversible automation</p>
-  <h2>Decision-log codification <span class="badge-yellow">CLI + opt-in REVIEW ready; durable proof pending</span></h2>
+  <p class="stage-kicker">S83.169 &middot; repeated decisions &middot; reversible automation</p>
+  <h2>Decision-log codification <span class="badge-yellow">AUTOMATIC REVIEW &middot; PROOF PENDING</span></h2>
   <div class="two-col">
     <div>
       <h3>Trust only exact evidence</h3>
-      <ul class="bullets-tight" style="font-size:0.58em;">
+      <ul class="bullets-tight decision-bullets">
         <li><strong>Verified signed bundles:</strong> <code>DecisionLogAnalyzer</code> mints source markers only after complete <code>RunBundleStore.read_verified()</code> output.</li>
         <li><strong>Exact context or abstain:</strong> project, policy, guards, schema, and an observed context signature must match; uncertainty returns <code>DecisionAbstentionV1</code>.</li>
         <li><strong>zero-LLM hit / Live REVIEW:</strong> <code>DecisionResolver</code> exact hit: zero reviewer calls; abstention/error: one off-loop reviewer call.</li>
-        <li><strong>Conservative mapping:</strong> approve -> complete; request_changes -> needs_more_work; reject -> failed.</li>
-        <li><strong>Stable idempotency:</strong> stable correlation + side-effect IDs; managed self-improvement refuses codified resolution.</li>
+        <li><strong>Conservative mapping:</strong> approve -> complete; request_changes -> needs_more_work; reject -> failed. <strong>Stable idempotency:</strong> stable correlation + side-effect IDs; managed self-improvement refuses codified resolution.</li>
         <li><strong>Safe opt-in:</strong> <code>DecisionCodificationAdapter</code> is opt-in; disabled by default. Codification keeps content-free attribution to source, digests, and closed reasons.</li>
       </ul>
     </div>
     <div>
-      <h3>Bounded API, CLI, and lifecycle</h3>
-      <ul class="bullets-tight" style="font-size:0.58em;">
-        <li><strong>Auth before analysis:</strong> <code>/api/v1/decision-codification/analyze</code> requires matching authenticated, request, and adapter project scope.</li>
-        <li><strong>Bounded request:</strong> 1-256 unique safe run IDs, a 64 KiB body, strict digests and time/use bounds.</li>
-        <li><strong>CLI:</strong> <code>gludd decision-codification analyze</code> has explicit project/run/digest/time/use bounds and existing auth.</li>
-        <li><strong>Safe output:</strong> 128 KiB response cap; safe summaries only (at most 128 digest/count summaries); no lifecycle/key/artifact/evidence surface.</li>
+      <h3>Bounded interface and durable state</h3>
+      <ul class="bullets-tight decision-bullets">
+        <li><strong>Auth before analysis:</strong> <code>/api/v1/decision-codification/analyze</code> binds authenticated/request/adapter scope; request caps are 1-256 unique safe run IDs and 64 KiB.</li>
+        <li><strong>CLI:</strong> <code>gludd decision-codification analyze</code> has explicit project/run/digest/time/use bounds and existing auth; its 128 KiB response cap returns safe summaries only (at most 128 digest/count summaries), with no lifecycle/key/artifact/evidence surface.</li>
         <li><strong>Analysis only:</strong> no approval or activation; Human approval remains bound to one exact candidate/report digest.</li>
+        <li><strong>Durable same-host state:</strong> automatic durable live REVIEW uses same-host SQLite WAL with <code>BEGIN IMMEDIATE</code>; multi-host state is not claimed.</li>
+        <li><strong>terminal application feedback:</strong> digest-only success/failure closes the loop and drift-holds unsafe or over-1% failure candidates.</li>
         <li><strong>ZDD:</strong> shadow 0% &rarr; canary 1% &rarr; 10% &rarr; 50% &rarr; active 100%. <strong>Atomic rollback:</strong> restore a verified generation or make all traffic abstain.</li>
       </ul>
     </div>
   </div>
-  <p class="honest-note">Core tests prove the proposal and lifecycle; live REVIEW and CLI tests prove the bounded integration above. The adapter remains opt-in/default-disabled; durable multiworker configuration, recorder/outcome feedback, and deployed live-traffic proof remain pending. No live avoided-call claim is made.</p>
-  <p class="cite">Sources: docs/features/DECISION_LOG_CODIFICATION.md &middot; RapidFuzz #432 &middot; scikit-learn #15629 / discussion #25411 &middot; OPA #2379 / #1514</p>
+  <p class="honest-note">Opt-in/default-off. Automatic signed replay capture and same-host observability are implemented; multi-host generation state and deployed live-traffic proof remain pending. No deployed avoided-call claim.</p>
+  <p class="cite">Code: src/general_ludd/event_loop/review_orchestration.py:222-285 &middot; src/general_ludd/decision_codification/durable.py:13-47 &middot; src/general_ludd/decision_codification/durable_storage.py:144-183 &middot; Contract: docs/features/DECISION_LOG_CODIFICATION.md:161-243</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19n: DECISION-LOG CAPTURE, REUSE, AND OBSERVABILITY -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-169-capture-reuse-observability">
+  <p class="stage-kicker">S83.169 &middot; signed capture &middot; exact reuse &middot; durable observability</p>
+  <h2>Signed fallbacks become bounded reuse evidence <span class="badge-yellow">IMPLEMENTED &middot; DEPLOYED PROOF PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Capture + prove</h3>
+      <ul class="bullets-tight">
+        <li><strong>Capture:</strong> <code>capture_identity</code> installs <code>DecisionOutcomeRecorder</code>; no raw prompts, responses, rationale, or model parameters enter evidence.</li>
+        <li><strong>Coordinate:</strong> domain-separated HMAC identifiers bind a signed decision + digest-linked outcome under a 128 KiB budget and 60-second exact-owner lease.</li>
+        <li><strong>Prove reuse:</strong> 32 signed bundles across four UTC days reach human approval; exact REVIEW reuse makes zero reviewer calls, while mismatch and expiry each fall back once.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Observe + roll back</h3>
+      <ul class="bullets-tight">
+        <li><strong>Observe:</strong> exact-rule hits, typed abstentions, fallbacks, avoided agent/LLM calls, capped latency, rule-version changes, and drift.</li>
+        <li><strong>Bound cardinality:</strong> fixed-cardinality rows update with <code>BEGIN IMMEDIATE</code>; no per-request rows or sensitive payload fields survive.</li>
+        <li><strong>Attest:</strong> a 64 KiB sorted status receipt carries a SHA-256 digest + HMAC and fails closed when exact project/policy scope is unavailable.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">Opt-in and default-off. A capture/telemetry failure cannot change the selected decision; deployed live-traffic proof remains pending, and agent/LLM fallback remains the rollback path.</p>
+  <p class="cite">Contract: docs/features/DECISION_LOG_CODIFICATION.md:95-158 &middot; Capture: src/general_ludd/decision_codification/capture.py:118-210 &middot; Metrics: src/general_ludd/decision_codification/observability.py:69-213 &middot; Proof: tests/integration/test_decision_codification_producer_reuse.py:220-356</p>
+  <p class="cite">Practitioner evidence: <a href="https://github.com/prometheus/client_python/issues/568">Prometheus #568</a> &middot; <a href="https://github.com/prometheus/client_python/issues/431">Prometheus #431</a> &middot; <a href="https://github.com/kubernetes/kubernetes/issues/23731">Kubernetes #23731</a> &middot; <a href="https://github.com/sqlalchemy/sqlalchemy/discussions/8554">SQLAlchemy #8554</a></p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19o: ENFORCEMENT EXECUTABLE METADATA -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s91-3-enforcement-executable-modes">
+  <p class="stage-kicker">S91.3 &middot; checkout-safe enforcement</p>
+  <h2>Guardrails must survive the checkout <span class="badge-yellow">INDEX CONTRACT READY &middot; EXACT-HEAD GATE PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Commit the runtime, not host luck</h3>
+      <ul class="bullets-tight">
+        <li>Derive <strong>47 runtime surfaces</strong> from <code>opencode.json</code>, shared libraries, implementation modules, and direct Node tests.</li>
+        <li>Read the candidate <strong>Git index</strong> and require mode <code>100755</code>; filesystem permission reporting and <code>core.fileMode</code> cannot hide drift.</li>
+        <li>Keep metadata and behavior separate: an executable bit cannot prove a hook actually fires.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Independent behavior proof</h3>
+      <ul class="bullets-tight">
+        <li><strong>151 hook-runtime checks</strong> with 18 intentional skips exercise registered hook paths.</li>
+        <li>The plugin manifest is <strong>108/108 manifest</strong>; Node v26 parse/factory compatibility is 5/5.</li>
+        <li>The candidate changes metadata only, with <strong>source bytes unchanged</strong>; rollout needs no OpenCode restart.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">The local feature commit is present; exact-head full-gate and promotion proof remain pending. No release-completion claim is made.</p>
+  <p class="cite">Sources: tests/unit/test_enforcement_executable_modes.py:12-56 &middot; opencode.json:63-97 &middot; docs/features/OPENCODE_ENFORCEMENT_EXECUTABLE_MODES.md:22-48 &middot; practitioner evidence: <a href="https://github.com/anomalyco/opencode/issues/7006">OpenCode #7006</a></p>
 </section>
 
 <!-- ============================================================ -->
@@ -1347,7 +1554,7 @@ flowchart LR
 <!-- ============================================================ -->
 <section>
   <h2>Security &mdash; built in, not bolted on</h2>
-  <p>gludd has <strong>three layers of protection</strong> on every action:</p>
+  <p>Every action crosses <strong>three enforceable layers</strong>; no single layer is trusted alone:</p>
   <ul>
     <li><span class="badge-blue">Layer 1</span> <strong>Permissions</strong> &mdash; hard rules on what gludd is allowed to do</li>
     <li><span class="badge-blue">Layer 2</span> <strong>Runtime guards</strong> &mdash; registered blocking plugins watch every action in real time</li>
@@ -1356,30 +1563,12 @@ flowchart LR
   <div class="diagram-wrap">
     <div class="mermaid">
 graph TD
-  L1["Layer 1 - Permissions: hard config rules"] --> L2["Layer 2 - Runtime Guards: manifest-verified hooks"]
-  L2 --> L3["Layer 3 - Prompt Rules: explicit safety practices"]
+  C["Layer 1 — Config: permission + Make-only gate"] --> R["Layer 2 — Runtime: blocking hooks"]
+  R --> P["Layer 3 — Prompt: TDD + evidence policy"]
     </div>
   </div>
   <p><strong>Security findings: 14 of 15 fixed</strong> &mdash; one remains open and tracked.</p>
-  <p class="cite">Registered enforcement plugins <span class="badge-green">VERIFIED</span> &middot; hook-runtime suite &middot; 14/15 findings fixed &middot; Source: <code>.opencode/plugin/</code>, <code>docs/audit/</code></p>
-</section>
-
-<!-- ============================================================ -->
-<!-- SLIDE 20b: GUARDRAILS ARCHITECTURE -->
-<!-- ============================================================ -->
-<section>
-  <h2>Guardrails architecture &mdash; 3 enforceable layers</h2>
-  <p>Every agent action passes through <strong>three enforceable layers</strong>. No single layer is trusted alone.</p>
-  <div class="diagram-wrap">
-    <div class="mermaid">
-flowchart LR
-  C["Layer 1 — Config: permission + Make-only gate"]
-  R["Layer 2 — Runtime: blocking hooks"]
-  P["Layer 3 — Prompt: TDD + evidence policy"]
-  C --> R --> P
-    </div>
-  </div>
-  <p class="cite">Source: .opencode/plugin/, opencode.json, tests/unit/test_*_plugin*.py</p>
+  <p class="cite">Registered enforcement plugins <span class="badge-green">VERIFIED</span> &middot; hook-runtime suite &middot; 14/15 findings fixed &middot; Sources: <code>.opencode/plugin/</code>, <code>opencode.json</code>, <code>tests/unit/test_*_plugin*.py</code>, <code>docs/audit/</code></p>
 </section>
 
 <!-- ============================================================ -->

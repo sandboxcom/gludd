@@ -44,11 +44,14 @@ def test_presentation_browser_target_has_explicit_owned_bounds() -> None:
     presentation_fragment = (
         ROOT / "make" / "90-infrastructure-and-services.mk"
     ).read_text(encoding="utf-8")
+    pages_workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "PRESENTATION_BROWSER_VALIDATE_ONLY ?= 1" in presentation_fragment
     assert "PRESENTATION_BROWSER_ROOT ?= /tmp/gludd-playwright-browsers" in presentation_fragment
     assert "PRESENTATION_BROWSER_OUTPUT ?= /tmp/gludd-presentation-browser" in presentation_fragment
-    assert "PRESENTATION_BROWSER_TIMEOUT ?= 300" in presentation_fragment
+    assert "PRESENTATION_BROWSER_TIMEOUT ?= 600" in presentation_fragment
     assert "PRESENTATION_BROWSER_ENGINES ?= chromium webkit" in presentation_fragment
     assert "presentation-browser-test:" in presentation_fragment
     assert (
@@ -79,9 +82,11 @@ def test_presentation_browser_target_has_explicit_owned_bounds() -> None:
             "PRESENTATION_BROWSER_ENGINES='chromium webkit' "
             "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers "
             "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser "
-            "PRESENTATION_BROWSER_TIMEOUT=300"
+            "PRESENTATION_BROWSER_TIMEOUT=600"
         ),
     }
+    assert "PRESENTATION_BROWSER_TIMEOUT=600" in pages_workflow
+    assert "PRESENTATION_BROWSER_TIMEOUT=300" not in pages_workflow
 
 
 def test_presentation_browser_install_is_read_only_by_default() -> None:

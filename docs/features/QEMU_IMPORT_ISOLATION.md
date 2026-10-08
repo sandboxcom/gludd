@@ -67,10 +67,11 @@ module family, is released at function exit, and creates no workers, retries,
 files, or persistent services. Deterministic regressions assert that both QEMU
 descendants and the parent attribute are absent after a probe and that newly
 loaded external dependencies remain cached. A retained-reference regression
-also mutates a saved package object during the probe and proves its original
-child identity is restored. Graph pollution is therefore reported at its source
-instead of surfacing later as 25 misleading failures or third-party reload
-warnings.
+mutates a saved package object during the probe, then deliberately runs delayed
+monkeypatch cleanup before leaving the isolation scope. It proves the original
+parent and child identities remain coherent after both cleanup layers. Graph
+pollution is therefore reported at its source instead of surfacing later as 25
+misleading failures or third-party reload warnings.
 
 ## Zero-downtime rollout and rollback
 
