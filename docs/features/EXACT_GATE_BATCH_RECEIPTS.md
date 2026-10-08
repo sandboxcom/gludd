@@ -147,6 +147,44 @@ generations so bounded shadow writes can continue. The other S83.179 follow-ups
 add only a bounded post-execution eligibility report, estimate-only progress
 summary, and sanitized non-reusable failure diagnostics, all with `skips=0`.
 
+### Dependency/public-API admission guard
+
+The read-only preview uses `filelock.lock_descriptor()` and
+`filelock.unlock_descriptor()`. The upstream
+[public API reference](https://py-filelock.readthedocs.io/en/stable/api.html#filelock.lock_descriptor)
+defines these as caller-owned-descriptor primitives that do not open, close,
+truncate, unlink, or fall back, and marks both as added in 3.30.0. The upstream
+[3.30.0 changelog](https://py-filelock.readthedocs.io/en/stable/changelog.html)
+records the same public API addition. Gludd therefore declares
+`filelock>=3.30.0`; the current exact lock resolves 4.0.12.
+
+`config/dependency_api_contracts.json` records that versioned API cohort and its
+exact consumer. `scripts/check_dependency_api_contract.py` fails closed unless
+the direct requirement guarantees at least 3.30.0, every filelock candidate in
+`uv.lock` is at least 3.30.0 and satisfies a direct declaration, the consumer
+imports both configured names from the configured public module, and the
+installed module exposes both names. Missing files, invalid TOML or JSON,
+duplicate or unknown JSON keys, unsupported schema, invalid requirements or
+versions, unsafe consumer paths, syntax errors, absent imports, and import
+failures are violations rather than skipped evidence. Future public APIs can be
+added as further inventory entries instead of adding one-off assertions.
+
+The checker has fixed resource ceilings: 64 KiB of contract metadata, 64
+contracts, 64 APIs and 64 consumers per contract, 256 characters per metadata
+name, 1 MiB of project metadata, 16 MiB of lock metadata, and 2 MiB per exact
+consumer. It parses only those bounded local files and imports configured
+installed modules; it performs no network access, dependency resolution,
+background work, filesystem mutation, or unbounded repository walk. This keeps
+the admission check deterministic and safe to run in the existing serial gate.
+
+Rollout is ZDD because this is a pre-merge validation boundary only: it does not
+change the receipt schema, lock protocol, cache contents, worker count, serving
+traffic, or database state. Rollback is a normal revert of the checker,
+inventory, test, and this documentation; the runtime remains on a compatible
+filelock version and the already-running receipt writer is untouched. A guard
+failure blocks the candidate change while the last green revision continues to
+serve and execute its canonical batches.
+
 ## Long-lived practitioner reports that shaped the boundary
 
 The research decision evaluated mature tools before this application-specific
@@ -171,6 +209,14 @@ report describes a failure mode that a release cache must not hide:
   explicit IDs as the longstanding workaround. Receipt normalization therefore
   accommodates bounded long pytest names instead of treating every name above
   4,096 characters as hostile, while still refusing names above 65,536.
+- [filelock issue 608](https://github.com/tox-dev/filelock/issues/608) records a
+  practitioner request against 3.29.7 for a native adapter over a caller-owned
+  descriptor. The report explains that the prior public surface required
+  adopting filelock's path/object lifecycle or copying private backend code;
+  neither was an acceptable boundary for Gludd's hardened open and identity
+  policy. Upstream closed the request through PR 620 and released the two
+  public descriptor functions in 3.30.0, which is why the guard binds the
+  imported names to that minimum rather than trusting a package name alone.
 - [Pants issue 10379](https://github.com/pantsbuild/pants/issues/10379) describes
   the operational need to force a cold rerun, and
   [issue 11622](https://github.com/pantsbuild/pants/issues/11622) shows how an
