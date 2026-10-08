@@ -9,14 +9,13 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 ROLES = ROOT / "collections/ansible_collections/general_ludd/git_release/roles"
-ROLE_NAMES = (
+GENERIC_ROLE_NAMES = (
     "artifact_build",
     "conflict_resolve",
     "deploy_orchestrate",
     "helper_build",
     "helper_discover",
     "helper_select",
-    "pipeline_triage",
     "release_plan",
     "release_recover",
     "work_recover",
@@ -30,7 +29,7 @@ def _load(path: Path) -> list[dict[str, Any]]:
 
 
 def test_every_service_role_invokes_shared_typed_operation_role() -> None:
-    for role in ROLE_NAMES:
+    for role in GENERIC_ROLE_NAMES:
         source = (ROLES / role / "tasks/main.yml").read_text(encoding="utf-8")
         tasks = _load(ROLES / role / "tasks/main.yml")
         include = next(task for task in tasks if "ansible.builtin.include_role" in task)
@@ -58,5 +57,19 @@ def test_artifact_verify_role_uses_native_fail_closed_module() -> None:
     assert "general_ludd.git_release.git_release" in verify
     assert verify.get("ignore_errors") is None
     assert verify.get("failed_when") is None
+    assert "service_request" not in source
+    assert "daemon_url" not in source
+
+
+def test_pipeline_triage_role_uses_native_fail_closed_action() -> None:
+    source = (ROLES / "pipeline_triage/tasks/main.yml").read_text(encoding="utf-8")
+    tasks = _load(ROLES / "pipeline_triage/tasks/main.yml")
+    triage = next(
+        task for task in tasks if task["name"] == "Triage the bounded JUnit report on the controller"
+    )
+
+    assert "general_ludd.git_release.pipeline_triage" in triage
+    assert triage.get("ignore_errors") is None
+    assert triage.get("failed_when") is None
     assert "service_request" not in source
     assert "daemon_url" not in source
