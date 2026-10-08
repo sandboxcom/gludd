@@ -23,11 +23,10 @@ from general_ludd.decision_codification.service import (
     DecisionCodificationAdapter,
 )
 from general_ludd.replay.schema import (
-    BoundedIdentifier,
     SafeRunId,
-    Sha256Digest,
     decode_replay_json_object,
 )
+from general_ludd.schemas.execution_identity import BoundedIdentifier, Sha256Digest
 
 MAX_API_ANALYSIS_BODY_BYTES = 64 * 1024
 MAX_API_ANALYSIS_RUN_IDS = 256

@@ -24,11 +24,8 @@ from general_ludd.decision_codification.schema import (
     canonical_decision_json,
     canonical_sha256,
 )
-from general_ludd.replay.schema import (
-    BoundedIdentifier,
-    EventEnvelopeV1,
-    Sha256Digest,
-)
+from general_ludd.replay.schema import EventEnvelopeV1
+from general_ludd.schemas.execution_identity import BoundedIdentifier, Sha256Digest
 from general_ludd.security.redaction import RedactionLimits, redact_for_persistence
 
 FEATURE_REGISTRY_SCHEMA_V1 = "gludd.decision-feature-registry/v1"

@@ -30,11 +30,12 @@ executable artifacts or lifecycle controls. Local operator commands now compose
 the same signed store, immutable approval service, and atomic rollout controller
 for bounded capture inspection, mining, approval, activation, and rollback.
 Enabled daemon configuration constructs the adapter automatically, shares
-generation state safely between same-host workers, records idempotent terminal
-application outcomes, and can automatically finalize eligible agent fallback
-outcomes as signed replay evidence. No deployment claim follows from that
-wiring: deployed live-traffic proof remains pending. Avoided-call metrics
-therefore remain an integration outcome rather than a deployed claim.
+generation state safely between local workers or configured PostgreSQL hosts,
+records idempotent terminal application outcomes, and can automatically finalize
+eligible agent fallback outcomes as signed replay evidence. Multi-host
+generation state is implemented; deployed live-traffic proof remains pending.
+Avoided-call metrics therefore remain an integration outcome rather than a
+deployed claim.
 
 ```text
 verified replay bundle -> safe envelope -> offline candidate + replay report
@@ -348,13 +349,13 @@ content-free attribution: decision source, candidate and receipt digests, and
 closed fallback/normalization reasons only, never result summaries or feature
 values.
 
-### Durable same-host worker configuration
+### Durable local and multi-host configuration
 
 `DecisionCodificationConfig` is default-off and rejects incomplete enabled
 configuration. A configured project and policy digest are immutable runtime
 scope. Replay, artifact, and generation-state paths are explicit. YAML stores
-only environment-variable names for replay, artifact-HMAC, and rollout-HMAC
-keys; it never stores key material:
+only environment-variable names for replay, artifact-HMAC, rollout-HMAC, and an
+optional shared-database URL; it never stores key material or a database URL:
 
 ```yaml
 decision_codification:
@@ -369,24 +370,45 @@ decision_codification:
     primary: GLUDD_DECISION_REPLAY_KEY
   artifact_key_env: GLUDD_DECISION_ARTIFACT_KEY
   rollout_key_env: GLUDD_DECISION_ROLLOUT_KEY
+  generation_database_url_env: GLUDD_DECISION_GENERATION_DATABASE_URL
   busy_timeout_seconds: 10
 ```
 
 When enabled, `create_daemon_app()` constructs the verified replay reader,
 authenticated artifact store, durable generation store, rollout controller,
 runtime, and adapter. An explicitly injected adapter still takes precedence.
-Missing or short keys, an incomplete scope, an invalid digest, or unusable
-storage fails daemon construction with a fixed diagnostic. Disabled
-configuration preserves the established reviewer path.
+Missing or short keys, an incomplete scope, an invalid digest, an unavailable
+project, an unsafe database scheme, or unusable storage fails daemon
+construction with a fixed diagnostic. Disabled configuration preserves the
+established reviewer path.
 
 `DurableGenerationStore` uses a versioned SQLite schema in WAL mode. Each
 operation opens its own connection; mutations acquire `BEGIN IMMEDIATE`, honor a
 bounded busy timeout, and atomically publish compare-and-swap pointers,
 revocations, drift holds, use reservations, rollback history, and outcomes.
 Independent workers therefore see one committed generation and one idempotent
-use count. This contract is for same-host workers sharing a local filesystem;
-network filesystems or a multi-host cluster require a future PostgreSQL adapter
-and are not claimed here.
+use count. Omitting `generation_database_url_env` preserves this local,
+single-host-compatible behavior.
+
+When that optional environment pointer is present, `PostgresGenerationStore`
+requires a `postgresql+psycopg://` URL and verifies the migrated project and
+tables at startup. It reuses SQLAlchemy, the existing `bucket_leases` unique row,
+and project-scoped `variable_values`; it introduces neither a lock table nor a
+consensus service. Every mutation takes an opaque project lease, locks the state
+with `SELECT FOR UPDATE`, verifies the current full generation identity, writes
+the transition, and performs an exact-owner release in one transaction. A live
+foreign owner refuses the operation, while an expired owner can be reclaimed;
+transaction rollback makes a crashed attempt leave no partial generation.
+
+The full identity is project, decision kind, candidate digest, receipt digest,
+stage, and epoch. That fence prevents a stale host from accepting an ABA return
+to the same candidate. Head, epoch, history, revocation, drift hold, use
+reservation, and outcome rows are canonical JSON authenticated by the existing
+`DecisionArtifactStore`; every read also verifies the immutable bundle and
+receipt chain. A missing, orphaned, malformed, or HMAC-tampered record fails
+closed to typed abstention and invokes fallback exactly once. The local
+`state_path` remains available for bounded per-host observability and for
+deployments that do not opt into the shared adapter.
 
 ### Terminal application feedback
 
@@ -434,8 +456,9 @@ Every promotion advances exactly one stage in the approved plan. Cohorts are
 stable project-scoped HMAC buckets, so restarts and concurrent workers make the
 same selection. A compare-and-swap `GenerationPointer` publishes a complete
 candidate/receipt pair atomically; workers never observe a partially written
-generation. Shadow performs no codified execution, while excluded canary
-traffic abstains and preserves fallback.
+generation. Cross-host CAS additionally matches the project, decision kind,
+candidate digest, receipt digest, stage, and epoch. Shadow performs no codified
+execution, while excluded canary traffic abstains and preserves fallback.
 
 ### Atomic rollback
 
@@ -462,6 +485,14 @@ rewritten.
 Runtime decision lookup, active generation pointers, and agent fallback are not
 coupled to capture availability, so capture rollback cannot interrupt serving
 traffic or disable deterministic rollback.
+
+Shared generation enablement follows the same ZDD ordering. Deploy readers first
+with `generation_database_url_env` absent, migrate the existing application
+tables and project scope once, then set the same secret-indirected PostgreSQL URL
+on a bounded host cohort. Verify startup readiness and read-only parity before
+allowing a promotion. During rollback, stop promotions first, preserve the
+agent/LLM fallback, drain hosts using shared state, and only then remove the
+environment binding. SQLite-only hosts retain the prior behavior throughout.
 
 ## Long-lived upstream and user findings
 
@@ -532,11 +563,22 @@ versions:
   uncommitted conflicting key, then rechecks visibility. Gludd reuses the unique
   `bucket_leases.bucket_key` constraint and keeps the claim transaction open
   through capture instead of inventing a process-local lock.
+- [PostgreSQL explicit locking](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS)
+  defines row-level `FOR UPDATE` exclusion, while its
+  [application-level consistency guidance](https://www.postgresql.org/docs/current/applevel-consistency.html)
+  requires applications using weaker isolation to lock rows that establish a
+  consistency rule. Gludd locks the lease, namespace, and exact state rows and
+  performs the full-generation CAS in the same bounded transaction.
+- [SQLAlchemy transaction documentation](https://docs.sqlalchemy.org/en/20/orm/session_transaction.html)
+  defines the `Session.begin()` context as commit-on-success and rollback on an
+  exception. Gludd scopes one session to one mutation and never shares it across
+  hosts, threads, or transactions.
 - [Kubernetes #23731](https://github.com/kubernetes/kubernetes/issues/23731)
   has documented a practitioner-observed leader-election split brain since 2016
   when a former leader continued acting after losing its lease. Gludd grants a
-  fresh holder per attempt, performs the write only inside that claim, and
-  requires exact-owner release; a busy or uncertain claim produces no write.
+  fresh holder per attempt, admits an expired owner only under the database lock,
+  fences the full generation identity, and requires exact-owner release; a busy
+  or uncertain claim produces no write.
 - [SQLAlchemy discussion #8554](https://github.com/sqlalchemy/sqlalchemy/discussions/8554)
   records user failures since 2022 from concurrent work sharing one
   `AsyncSession`. Gludd awaits acquire, capture, and release in order: the worker
@@ -555,8 +597,9 @@ versions:
 - [Kubernetes #61897](https://github.com/kubernetes/kubernetes/issues/61897)
   has recorded since 2018 that concurrent stale-resource updates are normal and
   need machine-recognizable optimistic-lock handling rather than blind writes.
-  Activation and rollback therefore require both expected candidate and receipt
-  digests; a stale head cannot append a usable transition or replace the pointer.
+  Activation, revocation, and rollback therefore require the expected project,
+  decision kind, candidate digest, receipt digest, stage, and epoch; a stale head
+  cannot append a usable transition or replace the pointer.
 - [Helm #5377](https://github.com/helm/helm/issues/5377) records operator-facing
   atomic rollback failures and timeout confusion dating to 2019. Gludd does not
   wait for unrelated resources inside lifecycle commands: each promotion or
@@ -590,11 +633,11 @@ authentication, bounded config loading, safe capture/mining projections, exact
 approval scope, one-stage activation, immutable stale-head rejection, ZDD
 rollback-to-disabled behavior, and fixed content-free diagnostics.
 
-The remaining production integration owns permissions, multi-host generation
-state, and deployed live-traffic proof. Durable same-host generation state,
-application-outcome feedback, automatic signed agent-outcome capture, and its
-shared-PostgreSQL producer lease are now implemented and tested. Shared schema
-and infrastructure changes must still land once and merge forward.
+The remaining production integration owns permissions and deployed live-traffic
+proof. Durable local and multi-host generation state, application-outcome
+feedback, automatic signed agent-outcome capture, and its shared-PostgreSQL
+producer lease are now implemented and tested. Shared schema and infrastructure
+changes must still land once and merge forward.
 
 Focused tests live under `tests/unit/test_decision_codification_*.py`. The
 documentation drift test is

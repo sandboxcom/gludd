@@ -95,7 +95,14 @@ class DecisionRuntime:
                 normalization_reason=normalized.reason,
             )
         context_input = normalized
-        pointer = self._rollout.current(project_id, decision_kind)
+        try:
+            pointer = self._rollout.current(project_id, decision_kind)
+        except Exception:
+            return self._abstain(
+                decision_kind,
+                FallbackReason.RUNTIME_ERROR,
+                context=context_input,
+            )
         if pointer is None:
             reason = (
                 FallbackReason.REVOKED
@@ -103,14 +110,24 @@ class DecisionRuntime:
                 else FallbackReason.NO_ACTIVE_RULE
             )
             return self._abstain(decision_kind, reason)
-        if self._rollout.is_revoked(pointer.candidate_digest):
+        try:
+            revoked = self._rollout.is_revoked(pointer.candidate_digest)
+            drift_held = self._rollout.is_drift_held(pointer.candidate_digest)
+        except Exception:
+            return self._abstain(
+                decision_kind,
+                FallbackReason.RUNTIME_ERROR,
+                context=context_input,
+                candidate_digest=pointer.candidate_digest,
+            )
+        if revoked:
             return self._abstain(
                 decision_kind,
                 FallbackReason.REVOKED,
                 context=context_input,
                 candidate_digest=pointer.candidate_digest,
             )
-        if self._rollout.is_drift_held(pointer.candidate_digest):
+        if drift_held:
             return self._abstain(
                 decision_kind,
                 FallbackReason.DRIFT_HOLD,
@@ -120,7 +137,19 @@ class DecisionRuntime:
         try:
             bundle, receipt = self._rollout.verified_generation(pointer)
         except (ArtifactStoreError, RolloutError):
-            self._rollout.mark_drift_hold(project_id, decision_kind, "integrity_error")
+            try:
+                self._rollout.mark_drift_hold(
+                    project_id,
+                    decision_kind,
+                    "integrity_error",
+                )
+            except Exception:
+                return self._abstain(
+                    decision_kind,
+                    FallbackReason.INTEGRITY_FAILURE,
+                    context=context_input,
+                    candidate_digest=pointer.candidate_digest,
+                )
             return self._abstain(
                 decision_kind,
                 FallbackReason.INTEGRITY_FAILURE,

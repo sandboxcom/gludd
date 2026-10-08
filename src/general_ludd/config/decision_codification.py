@@ -50,6 +50,7 @@ class DecisionCodificationConfig(BaseModel):
     replay_key_envs: dict[str, str] = Field(default_factory=dict, max_length=16)
     artifact_key_env: str | None = None
     rollout_key_env: str | None = None
+    generation_database_url_env: str | None = None
     busy_timeout_seconds: float = Field(default=10.0, gt=0.0, le=60.0)
     capture_identity: DecisionCaptureIdentityConfig | None = None
     capture_retention_days: int = Field(default=30, ge=1, le=366)
@@ -101,6 +102,8 @@ class DecisionCodificationConfig(BaseModel):
             self._validate_environment_name(environment_name)
         self._validate_environment_name(self.artifact_key_env)
         self._validate_environment_name(self.rollout_key_env)
+        if self.generation_database_url_env is not None:
+            self._validate_environment_name(self.generation_database_url_env)
         assert self.state_path is not None
         if self.state_path.name in {"", ".", ".."}:
             raise ValueError("state_path must identify a database file")

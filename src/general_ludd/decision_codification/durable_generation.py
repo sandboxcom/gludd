@@ -32,6 +32,7 @@ class _DurableGenerationState(_DurableStorage):
         pointer: GenerationPointer,
         *,
         expected_candidate_digest: str | None,
+        expected_generation: GenerationPointer | None = None,
     ) -> GenerationPointer | None:
         """Atomically publish one pointer only when the exact expectation holds."""
         self._validate_pointer(pointer)
@@ -52,6 +53,8 @@ class _DurableGenerationState(_DurableStorage):
             )
             current_digest = current.candidate_digest if current is not None else None
             if current_digest != expected_candidate_digest:
+                return None
+            if expected_generation is not None and current != expected_generation:
                 return None
             if current is not None and current.candidate_digest != pointer.candidate_digest:
                 connection.execute(
@@ -121,6 +124,7 @@ class _DurableGenerationState(_DurableStorage):
         expected_candidate_digest: str,
         *,
         remove_pointer: bool,
+        expected_generation: GenerationPointer | None = None,
     ) -> bool:
         """Atomically revoke the exact current generation and optional pointer."""
         self._validate_scope(project_id, decision_kind)
@@ -128,12 +132,17 @@ class _DurableGenerationState(_DurableStorage):
         with self._write_connection() as connection:
             row = connection.execute(
                 """
-                SELECT candidate_digest FROM generation_pointers
+                SELECT project_id, decision_kind, candidate_digest,
+                       receipt_digest, stage, epoch
+                FROM generation_pointers
                 WHERE project_id = ? AND decision_kind = ?
                 """,
                 (project_id, decision_kind.value),
             ).fetchone()
             if row is None or row["candidate_digest"] != expected_candidate_digest:
+                return False
+            current = self._pointer_from_row(row)
+            if expected_generation is not None and current != expected_generation:
                 return False
             connection.execute(
                 "INSERT OR IGNORE INTO revoked_candidates(candidate_digest) VALUES (?)",

@@ -55,10 +55,8 @@ from general_ludd.decision_codification.service import (
     DecisionCodificationAdapter,
 )
 from general_ludd.replay.schema import (
-    BoundedIdentifier,
     ReplaySchemaError,
     SafeRunId,
-    Sha256Digest,
     decode_replay_json_object,
 )
 from general_ludd.replay.store import RunBundleStore
@@ -69,6 +67,7 @@ from general_ludd.routers.decision_codification import (
     DecisionCandidateSummary,
     DecisionRejectionSummary,
 )
+from general_ludd.schemas.execution_identity import BoundedIdentifier, Sha256Digest
 
 MAX_ANALYSIS_RESPONSE_BYTES = 128 * 1024
 MAX_OPERATOR_CONFIG_BYTES = 128 * 1024

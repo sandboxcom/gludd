@@ -23,12 +23,11 @@ from pydantic import (
 )
 
 from general_ludd.replay.schema import (
-    BoundedIdentifier,
     SafeRunId,
-    Sha256Digest,
     canonical_replay_json,
     decode_replay_json_object,
 )
+from general_ludd.schemas.execution_identity import BoundedIdentifier, Sha256Digest
 
 DECISION_ENVELOPE_SCHEMA_V1 = "gludd.decision-envelope/v1"
 DECISION_CONTEXT_SCHEMA_V1 = "gludd.decision-context/v1"

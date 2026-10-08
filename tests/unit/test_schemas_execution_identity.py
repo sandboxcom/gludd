@@ -40,6 +40,20 @@ def test_replay_schema_reexports_shared_identity_classes() -> None:
     assert ReplayModelIdentityV1 is ModelIdentityV1
 
 
+def test_identity_aliases_have_one_static_owner_with_runtime_compatibility() -> None:
+    """Type aliases are imported canonically without breaking runtime callers."""
+    from general_ludd.replay import schema as replay_schema
+    from general_ludd.schemas.execution_identity import (
+        BoundedIdentifier,
+        Sha256Digest,
+    )
+
+    assert "BoundedIdentifier" not in replay_schema.__all__
+    assert "Sha256Digest" not in replay_schema.__all__
+    assert vars(replay_schema)["BoundedIdentifier"] is BoundedIdentifier
+    assert vars(replay_schema)["Sha256Digest"] is Sha256Digest
+
+
 def test_shared_identity_models_preserve_strict_frozen_validation() -> None:
     """The extracted contract remains strict, immutable, and extra-forbidding."""
     from general_ludd.schemas.execution_identity import (

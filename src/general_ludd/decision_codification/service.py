@@ -53,8 +53,9 @@ from general_ludd.decision_codification.schema import (
     VerifiedOutcome,
     canonical_sha256,
 )
-from general_ludd.replay.schema import BoundedIdentifier, EventEnvelopeV1, Sha256Digest
+from general_ludd.replay.schema import EventEnvelopeV1
 from general_ludd.replay.store import ReplayStoreError, VerifiedBundle
+from general_ludd.schemas.execution_identity import BoundedIdentifier, Sha256Digest
 
 MAX_ANALYSIS_BUNDLES = 10_000
 MAX_ANALYSIS_EVENTS = 100_000
