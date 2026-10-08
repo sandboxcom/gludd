@@ -356,6 +356,65 @@ uncertain remote outcome keeps the lease rather than risking duplicate effects.
 `execution_lease_heartbeat_interval_seconds` defaults to 30; invalid or
 non-renewable timing fails the complete claim closed before dispatch.
 
+## Hosted PostgreSQL winner-only lifecycle acceptance (S83.158)
+
+The `Build and Release` workflow now has a blocking
+`postgres-winner-compute-lifecycle-acceptance` job. It reuses
+`postgres_e2e_runner.py` through `make test-e2e-postgres-multiworker`: one
+project-namespaced PostgreSQL 16 container is bound to a runtime-selected
+loopback port, readiness and the hosted step are bounded, and the runner removes
+the exact container in `finally`. No provider credential is present and the
+execution-environment runner is a recording fake, so the acceptance proves
+ownership without creating paid compute.
+
+The live case starts two spawned Python processes and releases them onto the same
+durable PostgreSQL todo. Both execute the production `EventLoop.tick()` session
+boundaries. The database winner commits its claim before its first `present`
+provider call; the loser records no provider call. Both processes remain alive
+while the parent advances the active todo to `complete`, commits, and verifies
+that terminal version through a fresh database session. Only then may the second
+tick run. The original winner issues the sole `absent` call from the same OS PID,
+while the loser still records zero calls. The release job names this hosted proof
+as an explicit successful prerequisite, so a skipped, failed, or missing proof
+cannot publish a tag.
+
+This shape follows the official PostgreSQL guidance that `SKIP LOCKED` is useful
+for multiple consumers of a queue-like table while not being a general-purpose
+consistent view: ownership still comes from the committed guarded transition,
+not from an observation of queue depth
+([PostgreSQL `SELECT` locking clause](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE)).
+GitHub documents PostgreSQL service containers and host-port communication on
+Linux runners, but Gludd deliberately keeps the existing owned runner and random
+loopback mapping instead of adding a second orchestration path
+([GitHub containerized services](https://docs.github.com/en/actions/tutorials/use-containerized-services)).
+The job uses the pinned `ubuntu-24.04` hosted image, whose fresh VM is discarded
+after the job, and applies both step and job `timeout-minutes` bounds
+([GitHub-hosted runners](https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/use-github-hosted-runners),
+[GitHub workflow timeout syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes)).
+
+Long-lived operator reports sharpen the hosted boundary:
+
+- Sidekiq maintainers describe publishing a job before its database transaction
+  commits as a persistent problem and propose an `after_commit` push. Gludd's
+  analogous external effect is compute provisioning, so the acceptance requires
+  the claim transaction to close successfully before `present`
+  ([Sidekiq issue #5239](https://github.com/sidekiq/sidekiq/issues/5239)).
+- GitHub Actions runner issue
+  [#496](https://github.com/actions/runner/issues/496) reports that a configured
+  container health timeout did not bound the runner's incremental startup
+  polling as operators expected. Gludd therefore retains its own monotonic
+  readiness deadline and also bounds the workflow step and job.
+- Runner issue [#2783](https://github.com/actions/runner/issues/2783) reports a
+  missing PostgreSQL service network alias under container hooks. The acceptance
+  avoids hostname or service-network dependence: it resolves the owned
+  container's random host port and connects through `127.0.0.1`.
+
+The rollout is additive and zero-downtime: it changes no schema, deployed
+runtime, provider, or orchestration contract. Existing workers keep serving
+while hosted CI gains a required proof. Rollback removes the acceptance job and
+test; the disposable database is already removed on both success and failure,
+and no durable production resource requires migration or cleanup.
+
 ## v0.1.1 durable scheduler proof receipt (2026-09-27)
 
 The proof was run from the isolated `feature/v011-scheduler-live-proof`
