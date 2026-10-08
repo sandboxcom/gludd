@@ -32,16 +32,16 @@ provides an `InProcessBroker` default with a transport seam for Redis/POSIX MQ.
 
 ### SQLite-specific patterns in source
 
-Several code paths are SQLite-only and need Postgres branches:
+The remaining SQLite-specific runtime boundaries and completed dialect seams are:
 
 | Pattern | Locations | Postgres equivalent |
 |---------|-----------|---------------------|
-| `sqlite_insert().on_conflict_do_nothing()` | `repository.py` (4 remaining sites); initial queue seeding is dialect-safe | `postgresql_insert().on_conflict_do_nothing()` or native `INSERT ... ON CONFLICT DO NOTHING` |
+| Dialect-specific `INSERT ... ON CONFLICT` | Variable, feature, and prompt-profile repositories use the shared fail-closed `dialect_insert()` selector; other atomic repositories and initial queue seeding retain their existing local selectors | Native SQLite or PostgreSQL insert selected from the bound session |
 | `PRAGMA journal_mode=WAL` etc. | `session.py:47-56` | N/A (skip for Postgres; set `statement_timeout` etc. on connect) |
 | `PRAGMA query_only=ON` | `session.py:107-108` | Use read-only connection role / `SET SESSION default_transaction_read_only=on` |
 | `Base.metadata.create_all` | `session.py:151` | Replace with Alembic upgrade head for Postgres; `create_all` is dev-only |
 | SQLite connection string construction | `session.py:32-34` | `_compose_db_url` at `session.py:60-76` already handles Postgres URL construction |
-| Dialect-specific `insert()` imports | `repository.py` (4 sites), `session.py:161` | Switch on `engine.url.get_dialect().name` at each site |
+| Dialect-specific `insert()` imports | Centralized for the three shared repository upserts; specialized atomic repositories keep operation-local selectors | Select from the bound session and fail closed before I/O |
 
 ## Migration Plan (5 Steps)
 
@@ -100,8 +100,8 @@ accepts a `url` parameter but defaults to `DATABASE_URL` env var or `sqlite:///.
 
 - Use `alembic upgrade head` instead — `create_all` is a dev convenience that skips
   migration history and can produce tables that differ from the migration chain.
-- `QueueModel` + `INITIAL_QUEUES` seeding (`session.py:155-197`) uses
-  `sqlite_insert().on_conflict_do_nothing()` — needs a dialect branch.
+- `QueueModel` + `INITIAL_QUEUES` seeding uses its existing fail-closed
+  SQLite/PostgreSQL dialect selector.
 - Column-type mismatches: SQLite accepts any type affinity; Postgres is strict.
   Known risks: `JSON` columns (SQLite stores as TEXT; Postgres has native `JSONB`),
   `Boolean` (SQLite uses INTEGER 0/1; Postgres has native `BOOLEAN`),
@@ -572,7 +572,9 @@ def assert_schema_parity(sqlite_url: str, pg_url: str) -> None:
 | `src/general_ludd/db/migrations.py` | `get_alembic_config()` — needs `ALEMBIC_DB_URL` env var |
 | `alembic.ini` | Hardcoded SQLite URL — needs env var override |
 | `alembic/versions/` | 34 migrations (001–033); 007+008 have `_is_postgres()` branches |
-| `src/general_ludd/db/repository.py` | 4 `sqlite_insert()` sites need dialect branches |
+| `src/general_ludd/db/repositories/shared.py` | Shared fail-closed SQLite/PostgreSQL insert selection |
+| `src/general_ludd/db/repositories/projects.py` | Dialect-native variable and feature upserts |
+| `src/general_ludd/db/repositories/metrics.py` | Dialect-native prompt-profile upsert |
 | `src/general_ludd/ipc/broker.py` | Transport seam for cross-worker pub/sub |
 | `src/general_ludd/ipc/queue.py` | Bounded WriteQueue (Phase 1) |
 | `src/general_ludd/writer/bridge.py` | HTTP worker → writer bridge |

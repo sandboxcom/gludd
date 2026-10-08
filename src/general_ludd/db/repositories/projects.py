@@ -20,7 +20,7 @@ from general_ludd.db.models import (
     VariableNamespaceModel,
     VariableValueModel,
 )
-from general_ludd.db.repositories.shared import current_list_limit
+from general_ludd.db.repositories.shared import current_list_limit, dialect_insert
 
 
 class VariableNamespaceRepository:
@@ -63,7 +63,10 @@ class VariableNamespaceRepository:
 
     async def set_var(self, namespace: str, key: str, value: str, project_id: str | None = None) -> VariableValueModel:
         """Atomically upsert and return a namespaced variable value."""
-        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+        insert = dialect_insert(
+            VariableNamespaceModel,
+            self._session.get_bind().dialect.name,
+        )
 
         # Resolve (or atomically create) the namespace. get-then-insert here is a
         # TOCTOU race on the (namespace, project_id) unique key: two concurrent
@@ -77,7 +80,7 @@ class VariableNamespaceRepository:
         ns = (await self._session.execute(stmt)).scalar_one_or_none()
         if ns is None:
             ns_insert = (
-                sqlite_insert(VariableNamespaceModel)
+                insert
                 .values(namespace=namespace, project_id=project_id)
                 .on_conflict_do_nothing(index_elements=["namespace", "project_id"])
             )
@@ -90,7 +93,10 @@ class VariableNamespaceRepository:
         # raises IntegrityError (and is no longer silently lost) — last writer wins.
         now = datetime.now(UTC)
         val_insert = (
-            sqlite_insert(VariableValueModel)
+            dialect_insert(
+                VariableValueModel,
+                self._session.get_bind().dialect.name,
+            )
             .values(namespace_id=ns.id, key=key, value=value, updated_at=now)
             .on_conflict_do_update(
                 index_elements=["namespace_id", "key"],
@@ -377,8 +383,6 @@ class FeatureRepository:
         Fields that are lists/dicts in ``data`` are serialized to JSON before
         being written to the DB.  The returned model has JSON-string columns.
         """
-        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
         json_fields = {"acceptance_criteria", "evidence"}
         serialized: dict[str, Any] = {}
         for key, val in data.items():
@@ -392,7 +396,10 @@ class FeatureRepository:
         # on_conflict_do_update turns the conflicting write into an UPDATE so
         # concurrent first-writes converge instead of raising.
         update_cols = {k: v for k, v in serialized.items() if k not in ("id", "name")}
-        stmt = sqlite_insert(FeatureModel).values(**serialized)
+        stmt = dialect_insert(
+            FeatureModel,
+            self._session.get_bind().dialect.name,
+        ).values(**serialized)
         if update_cols:
             stmt = stmt.on_conflict_do_update(index_elements=["name"], set_=update_cols)
         else:
