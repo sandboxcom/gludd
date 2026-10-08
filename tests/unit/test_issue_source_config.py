@@ -170,7 +170,7 @@ def test_active_mode_is_rejected_because_admission_is_shadow_only() -> None:
 
 
 @pytest.mark.parametrize(
-    "base_url",
+    "jira_origin",
     [
         "http://acme.atlassian.net",
         "https://user:password@acme.atlassian.net",
@@ -179,9 +179,9 @@ def test_active_mode_is_rejected_because_admission_is_shadow_only() -> None:
         "https://acme.atlassian.net#fragment",
     ],
 )
-def test_jira_origin_rejects_unsafe_request_components(base_url: str) -> None:
+def test_jira_origin_rejects_unsafe_request_components(jira_origin: str) -> None:
     with pytest.raises(ValidationError):
-        _user_config([_jira(base_url=base_url)])
+        _user_config([_jira(base_url=jira_origin)])
 
 
 def test_json_environment_value_uses_the_same_discriminated_validation(
