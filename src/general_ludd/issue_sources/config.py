@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Annotated, Literal, TypeAlias
 
 from pydantic import (
+    AfterValidator,
     AnyHttpUrl,
     BaseModel,
     ConfigDict,
@@ -154,6 +155,21 @@ def ensure_unique_issue_source_names(sources: Sequence[_IssueSourceConfigBase]) 
         if normalized in seen:
             raise ValueError(f"duplicate issue-source name: {source.name!r}")
         seen.add(normalized)
+
+
+def _validated_issue_sources(
+    sources: list[IssueSourceConfig],
+) -> list[IssueSourceConfig]:
+    """Return a source list only after enforcing normalized-name uniqueness."""
+    ensure_unique_issue_source_names(sources)
+    return sources
+
+
+IssueSourceConfigs: TypeAlias = Annotated[
+    list[IssueSourceConfig],
+    Field(max_length=MAX_ISSUE_SOURCES),
+    AfterValidator(_validated_issue_sources),
+]
 
 
 def admit_issue_sources(
