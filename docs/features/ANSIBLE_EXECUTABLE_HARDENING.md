@@ -45,6 +45,14 @@ Wireshark's registered dissector APIs, template failures propagate normally,
 and the receipt omits wall-clock-only content so a repeated identical render
 stays idempotent.
 
+The Windows automation role now reconciles scheduled tasks with
+`community.windows.win_scheduled_task` and unattended answer files with
+`ansible.windows.win_template`. Inputs are bounded and validated before
+mutation, native module failures propagate, and sensitive answer-file render
+details are hidden. Its PSRemoting and DSC mutation scripts now declare
+PowerShell `SupportsShouldProcess`, predict changes before mutation, and no
+longer suppress operational failures.
+
 ## Long-lived practitioner evidence
 
 This contract follows problems Ansible practitioners have reported for more
@@ -64,6 +72,12 @@ than a decade:
   [“Custom Module Output parsing”](https://forum.ansible.com/t/custom-module-output-parsing/25196)
   reinforces the standard distinction used here: `exit_json` is for an actual
   successful result, while operational failures must use `fail_json`.
+- A 2018 Ansible forum thread about
+  [running a scheduled task every minute](https://forum.ansible.com/t/win-scheduled-task-run-the-scheduled-task-every-minute/26741)
+  records the fragility of building idempotence around `schtasks` or COM
+  commands. The repaired role therefore delegates reconciliation to the
+  maintained `win_scheduled_task` module instead of adding another shell
+  wrapper.
 
 Together, these reports support a fail-closed rule: check mode should be
 predictive and non-mutating, while a normal run must never turn an unavailable

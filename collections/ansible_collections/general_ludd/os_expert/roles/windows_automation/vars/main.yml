@@ -6,6 +6,8 @@
 # Manage (mutable, gated behind booleans):
 #   manage_psremoting:           enable/configure PSRemoting via Enable-PSRemoting -Force (default: false)
 #   manage_dsc:                  apply DSC configuration via Start-DscConfiguration -UseExisting (default: false)
-#   manage_schtasks:             scheduled task mutation (placeholder; default: false)
-#   manage_unattended_install:   unattended install mutation (placeholder; default: false)
+#   manage_schtasks:             reconcile one declared Windows scheduled task (default: false)
+#   manage_unattended_install:   render an unattended-install answer file (default: false)
+# scheduled_task_*:              bounded task definition passed to win_scheduled_task
+# unattended_install_*:          controller template, destination, and backup policy
 # artifact_dir:                  directory for collected automation artifacts (default: C:\Temp\gludd-windows-automation)

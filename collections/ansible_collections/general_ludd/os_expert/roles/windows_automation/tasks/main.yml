@@ -103,9 +103,16 @@
     - manage_psremoting | bool
   ansible.windows.win_powershell:
     script: |
-      Enable-PSRemoting -Force
+      [CmdletBinding(SupportsShouldProcess)]
+      param()
+      $service = Get-Service -Name WinRM -ErrorAction Stop
+      $listeners = @(Get-ChildItem WSMan:\localhost\Listener -ErrorAction SilentlyContinue)
+      $needsChange = $service.Status -ne 'Running' -or $listeners.Count -eq 0
+      $Ansible.Changed = $needsChange
+      if ($needsChange -and $PSCmdlet.ShouldProcess('WinRM', 'Enable PSRemoting')) {
+        Enable-PSRemoting -Force -ErrorAction Stop
+      }
   register: _psremoting_enable
-  ignore_errors: true
 
 # ============================================================================
 # DSC audit (always safe — read-only configuration checks)
@@ -175,9 +182,14 @@
     - manage_dsc | bool
   ansible.windows.win_powershell:
     script: |
-      Start-DscConfiguration -UseExisting -Wait -Force -ErrorAction Stop
+      [CmdletBinding(SupportsShouldProcess)]
+      param()
+      $inDesiredState = Test-DscConfiguration -ErrorAction Stop
+      $Ansible.Changed = -not $inDesiredState
+      if (-not $inDesiredState -and $PSCmdlet.ShouldProcess('DSC', 'Apply existing configuration')) {
+        Start-DscConfiguration -UseExisting -Wait -Force -ErrorAction Stop
+      }
   register: _dsc_apply
-  ignore_errors: true
 
 # ============================================================================
 # Scheduled Tasks audit (always safe — read-only enumeration)
@@ -219,12 +231,42 @@
     content: "{{ _schtasks_raw.stdout | default('') }}"
     dest: "{{ artifact_dir }}/scheduled_tasks/schtasks_raw.txt"
 
-- name: Manage Scheduled Tasks — placeholder
+- name: Validate scheduled task mutation inputs
   when:
     - ansible_os_family == 'Windows'
     - manage_schtasks | bool
-  ansible.builtin.debug:
-    msg: "Scheduled task mutation not yet implemented; use manage_schtasks=true to enable future automation"
+  ansible.builtin.assert:
+    that:
+      - scheduled_task_name | string | trim | length > 0
+      - scheduled_task_name | string | length <= 238
+      - scheduled_task_path | string | length > 0
+      - scheduled_task_state in ['present', 'absent']
+      - scheduled_task_actions is sequence
+      - scheduled_task_actions | length <= 32
+      - scheduled_task_state == 'absent' or scheduled_task_actions | length > 0
+      - scheduled_task_triggers is sequence
+      - scheduled_task_triggers | length <= 64
+      - scheduled_task_logon_type in ['none', 'password', 's4u', 'interactive_token', 'group', 'service_account', 'token_or_password']
+      - scheduled_task_run_level in ['limited', 'highest']
+    quiet: true
+    fail_msg: >-
+      Scheduled task management requires a bounded valid task definition;
+      present tasks require at least one action.
+
+- name: Manage configured Windows scheduled task
+  when:
+    - ansible_os_family == 'Windows'
+    - manage_schtasks | bool
+  community.windows.win_scheduled_task:
+    name: "{{ scheduled_task_name }}"
+    path: "{{ scheduled_task_path }}"
+    actions: "{{ scheduled_task_actions }}"
+    triggers: "{{ scheduled_task_triggers }}"
+    username: "{{ scheduled_task_username }}"
+    logon_type: "{{ scheduled_task_logon_type }}"
+    run_level: "{{ scheduled_task_run_level }}"
+    enabled: "{{ scheduled_task_enabled }}"
+    state: "{{ scheduled_task_state }}"
 
 # ============================================================================
 # Unattended Install audit (always safe — file existence checks only)
@@ -287,12 +329,29 @@
     content: "{{ _unattended_autounattend.output | default([]) | join('\n') }}"
     dest: "{{ artifact_dir }}/unattended/autounattend_detection.json"
 
-- name: Manage Unattended Install — placeholder
+- name: Validate unattended install mutation inputs
   when:
     - ansible_os_family == 'Windows'
     - manage_unattended_install | bool
-  ansible.builtin.debug:
-    msg: "Unattended install mutation not yet implemented; use manage_unattended_install=true to enable future automation"
+  ansible.builtin.assert:
+    that:
+      - unattended_install_template_src | string | trim | length > 0
+      - unattended_install_dest | string | regex_search('^[A-Za-z]:\\\\')
+      - unattended_install_backup is boolean
+    quiet: true
+    fail_msg: >-
+      Unattended install management requires a controller-side template and
+      an absolute Windows destination path.
+
+- name: Render configured Windows unattended install answer file
+  when:
+    - ansible_os_family == 'Windows'
+    - manage_unattended_install | bool
+  ansible.windows.win_template:
+    src: "{{ unattended_install_template_src }}"
+    dest: "{{ unattended_install_dest }}"
+    backup: "{{ unattended_install_backup }}"
+  no_log: true
 
 # ============================================================================
 # Installed Software audit (always safe — registry read only)
