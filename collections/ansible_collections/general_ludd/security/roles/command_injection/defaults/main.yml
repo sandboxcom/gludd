@@ -12,7 +12,8 @@ artifact_dir: "/tmp/gludd-command-injection"
 target_path: "."
 
 # SAFE-BY-DEFAULT: do NOT run shell scans unless explicitly enabled
-enable_scan: false
+command_injection_enabled: false
+enable_scan: "{{ command_injection_enabled }}"
 
 # Destructive ops guard — report-only
 enable_git_push: false

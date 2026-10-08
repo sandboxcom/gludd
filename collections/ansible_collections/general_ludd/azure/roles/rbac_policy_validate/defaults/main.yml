@@ -1,4 +1,5 @@
 ---
-role_enabled: false
+rbac_policy_validate_enabled: false
+role_enabled: "{{ rbac_policy_validate_enabled }}"
 role_definition_file: ""
 output_path: /tmp/gludd-azure-rbac-validate

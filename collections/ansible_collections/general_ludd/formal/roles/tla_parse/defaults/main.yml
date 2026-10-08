@@ -9,7 +9,8 @@ tla_tools_jar: "/opt/tla/tla2tools.jar"
 
 # SAFE-BY-DEFAULT: do NOT run SANY unless explicitly enabled.
 # Java/jar absent or enable_tla=false → status=skipped (graceful, non-fatal).
-enable_tla: false
+tla_parse_enabled: false
+enable_tla: "{{ tla_parse_enabled }}"
 
 # Override SANY stdout for testing (used when enable_tla=false)
 # Provide a string containing SANY output to exercise real parsing logic.

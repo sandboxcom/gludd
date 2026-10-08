@@ -32,7 +32,8 @@ fail_on_critical: true
 fail_on_high: true
 
 # Report-only: never mutates, never auto-patches
-enable_auto_patch: false
+sql_injection_auto_patch_enabled: false
+enable_auto_patch: "{{ sql_injection_auto_patch_enabled }}"
 
 # Message handoff recipient
 handoff_recipient: ""

@@ -1,7 +1,8 @@
 ---
 artifact_dir: "/tmp/gludd-prompt-injection"
 target_path: "."
-enable_scan: false
+prompt_injection_enabled: false
+enable_scan: "{{ prompt_injection_enabled }}"
 enable_git_push: false
 defensive_tools:
   - name: "Meta PromptGuard"
