@@ -23,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator, Mapping
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -36,6 +36,7 @@ else:
 from coverage import CoverageData
 from coverage.exceptions import CoverageException
 from defusedxml import ElementTree
+from filelock import FileLock, Timeout, lock_descriptor, unlock_descriptor
 
 RECEIPT_SCHEMA_VERSION = 1
 MAX_RECEIPT_GENERATIONS = 2
@@ -47,6 +48,7 @@ MAX_SEMANTIC_COVERAGE_ITEMS = 2_000_000
 MAX_FAILURE_NODES = 32
 MAX_FAILURE_RECEIPTS_PER_GENERATION = 256
 MAX_FAILURE_ELAPSED_SECONDS = 24 * 60 * 60
+MAX_RETIREMENT_TREE_ENTRIES = 16_384
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _RUN_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -118,12 +120,40 @@ class ReceiptPublication:
 
 
 @dataclass(frozen=True)
+class RetirementPreview:
+    """Content-free read-only decision for one prospective pass publication."""
+
+    decision: str
+    reason: str
+    retire_count: int
+
+
+@dataclass(frozen=True)
 class ReceiptValidation:
     """Content-free result of validating one receipt directory."""
 
     valid: bool
     reason: str
     action_digest: str | None = None
+
+
+@dataclass(frozen=True)
+class _RetirableGeneration:
+    """One fully validated inactive generation eligible for retirement."""
+
+    path: Path
+    modified_ns: int
+    size_bytes: int
+    snapshot: tuple[tuple[str, int, int, int, int, int, int, int], ...]
+
+
+@dataclass(frozen=True)
+class _GenerationRolloverPlan:
+    """Internal path-bound plan shared by preview and publication."""
+
+    preview: RetirementPreview
+    generation: Path
+    retirement: _RetirableGeneration | None
 
 
 def canonical_json_bytes(payload: object) -> bytes:
@@ -593,20 +623,125 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _safe_tree_size(path: Path) -> tuple[int, str | None]:
+def _safe_tree_snapshot(
+    path: Path,
+) -> tuple[
+    int,
+    tuple[tuple[str, int, int, int, int, int, int, int], ...],
+    str | None,
+]:
+    """Return a no-symlink byte count and mutation-sensitive tree identity."""
     total = 0
+    entries: list[tuple[str, int, int, int, int, int, int, int]] = []
     try:
         for candidate in path.rglob("*"):
-            if candidate.is_symlink():
-                return 0, "symlink"
-            metadata = candidate.stat()
+            if len(entries) >= MAX_RETIREMENT_TREE_ENTRIES:
+                return 0, (), "entry-limit"
+            metadata = candidate.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                return 0, (), "symlink"
             if stat.S_ISREG(metadata.st_mode):
                 total += metadata.st_size
             elif not stat.S_ISDIR(metadata.st_mode):
-                return 0, "special-file"
+                return 0, (), "special-file"
+            entries.append(
+                (
+                    candidate.relative_to(path).as_posix(),
+                    metadata.st_dev,
+                    metadata.st_ino,
+                    metadata.st_mode,
+                    metadata.st_nlink,
+                    metadata.st_size,
+                    metadata.st_mtime_ns,
+                    metadata.st_ctime_ns,
+                )
+            )
     except OSError as exc:
-        return 0, type(exc).__name__
-    return total, None
+        return 0, (), type(exc).__name__
+    entries.sort(key=lambda item: item[0])
+    return total, tuple(entries), None
+
+
+def _safe_tree_size(path: Path) -> tuple[int, str | None]:
+    total, _snapshot, error = _safe_tree_snapshot(path)
+    return total, error
+
+
+def _cache_tree_observation(
+    path: Path,
+) -> tuple[
+    bool,
+    int,
+    tuple[tuple[str, int, int, int, int, int, int, int], ...],
+    str | None,
+]:
+    if not path.exists():
+        return False, 0, (), None
+    size, snapshot, error = _safe_tree_snapshot(path)
+    return True, size, snapshot, error
+
+
+def _mutation_lock_path(path: Path) -> Path:
+    return path.with_name(f".{path.name}.lock")
+
+
+@contextmanager
+def _exclusive_directory_lock(path: Path) -> Iterator[None]:
+    """Serialize receipt-tree mutations through the maintained platform lock."""
+    lock_path = _mutation_lock_path(path)
+    if lock_path.is_symlink():
+        raise OSError("receipt mutation lock must not be a symbolic link")
+    lock = FileLock(str(lock_path), timeout=0, mode=0o600)
+    try:
+        with lock.acquire(timeout=0):
+            lock_error = private_path_error(lock_path, directory=False)
+            if lock_error is not None:
+                raise OSError(f"receipt mutation lock is unsafe: {lock_error}")
+            yield
+    except Timeout as exc:
+        raise BlockingIOError("receipt mutation lock is already held") from exc
+
+
+@contextmanager
+def _readonly_directory_lock(path: Path) -> Iterator[bool]:
+    """Lock an existing mutation file without creating or changing it."""
+    lock_path = _mutation_lock_path(path)
+    try:
+        before = lock_path.lstat()
+    except FileNotFoundError:
+        yield False
+        return
+    if stat.S_ISLNK(before.st_mode) or private_path_error(
+        lock_path,
+        directory=False,
+    ) is not None:
+        raise OSError("receipt mutation lock is unsafe")
+
+    descriptor = os.open(
+        lock_path,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+    )
+    locked = False
+    try:
+        opened = os.fstat(descriptor)
+        current = lock_path.lstat()
+        before_identity = (before.st_dev, before.st_ino, before.st_mode)
+        opened_identity = (opened.st_dev, opened.st_ino, opened.st_mode)
+        current_identity = (current.st_dev, current.st_ino, current.st_mode)
+        if (
+            before_identity != opened_identity
+            or opened_identity != current_identity
+            or stat.S_ISLNK(current.st_mode)
+        ):
+            raise OSError("receipt mutation lock identity changed")
+        if not lock_descriptor(descriptor, blocking=False):
+            raise BlockingIOError("receipt mutation lock is already held")
+        locked = True
+        yield True
+    finally:
+        if locked:
+            unlock_descriptor(descriptor)
+        os.close(descriptor)
 
 
 def _distribution_version(name: str) -> str:
@@ -1165,6 +1300,376 @@ def action_identity_error(identity: Mapping[str, object]) -> str | None:
     return None
 
 
+def _prepare_version_root(cache_root: Path) -> tuple[Path | None, str | None]:
+    """Create and validate the private cache/version roots without following links."""
+    if cache_root.is_symlink():
+        return None, "cache-root-symlink"
+    if cache_root.parent.is_symlink():
+        return None, "cache-parent-symlink"
+    cache_root_existed = cache_root.exists()
+    try:
+        cache_root.mkdir(parents=True, mode=0o700, exist_ok=True)
+        if not cache_root_existed:
+            os.chmod(cache_root, 0o700)
+    except OSError:
+        return None, "cache-root-unavailable"
+    root_error = private_path_error(cache_root, directory=True)
+    if root_error is not None:
+        return None, f"cache-root-{root_error}"
+
+    version_root = cache_root / f"v{RECEIPT_SCHEMA_VERSION}"
+    if version_root.is_symlink():
+        return None, "cache-layout-invalid"
+    version_root_existed = version_root.exists()
+    try:
+        version_root.mkdir(mode=0o700, exist_ok=True)
+        if not version_root_existed:
+            os.chmod(version_root, 0o700)
+    except OSError:
+        return None, "cache-layout-unavailable"
+    if private_path_error(version_root, directory=True) is not None:
+        return None, "cache-layout-invalid"
+    return version_root, None
+
+
+def _existing_version_root(cache_root: Path) -> tuple[Path | None, str | None]:
+    """Validate an existing cache/version root without creating either path."""
+    if cache_root.is_symlink():
+        return None, "cache-root-symlink"
+    if cache_root.parent.is_symlink():
+        return None, "cache-parent-symlink"
+    if not cache_root.exists():
+        return None, None
+    root_error = private_path_error(cache_root, directory=True)
+    if root_error is not None:
+        return None, f"cache-root-{root_error}"
+
+    version_root = cache_root / f"v{RECEIPT_SCHEMA_VERSION}"
+    if version_root.is_symlink():
+        return None, "cache-layout-invalid"
+    if not version_root.exists():
+        return None, None
+    if private_path_error(version_root, directory=True) is not None:
+        return None, "cache-layout-invalid"
+    return version_root, None
+
+
+def _validated_generation_entries(version_root: Path) -> list[Path] | None:
+    """Return only private exact-SHA generation directories."""
+    generations: list[Path] = []
+    for entry in version_root.iterdir():
+        if (
+            entry.is_symlink()
+            or not entry.is_dir()
+            or not _GIT_SHA.fullmatch(entry.name)
+            or private_path_error(entry, directory=True) is not None
+        ):
+            return None
+        generations.append(entry)
+    return generations
+
+
+def _generation_root_identity(path: Path) -> tuple[int, int, int, int, int] | None:
+    try:
+        metadata = path.stat()
+    except OSError:
+        return None
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _pass_receipt_identity(path: Path) -> Mapping[str, object] | None:
+    try:
+        manifest = read_strict_json(path / "manifest.json")
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    identity = manifest.get("action_identity")
+    return identity if isinstance(identity, Mapping) else None
+
+
+def _inspect_retirable_generation(
+    generation: Path,
+) -> tuple[_RetirableGeneration | None, str | None]:
+    """Classify one generation without mutating or admitting its evidence."""
+    if private_path_error(generation, directory=True) is not None:
+        return None, "generation-ambiguous"
+    before_root = _generation_root_identity(generation)
+    before_size, before_snapshot, before_error = _safe_tree_snapshot(generation)
+    if before_root is None or before_error is not None:
+        return None, "generation-ambiguous"
+    try:
+        children = tuple(generation.iterdir())
+    except OSError:
+        return None, "generation-ambiguous"
+    if not children:
+        return None, "generation-ambiguous"
+
+    completed_receipts = 0
+    for entry in sorted(children, key=lambda item: item.name):
+        if entry.name.startswith("."):
+            return None, "generation-active"
+        if entry.name == "failures":
+            if private_path_error(entry, directory=True) is not None:
+                return None, "generation-ambiguous"
+            try:
+                failures = tuple(entry.iterdir())
+            except OSError:
+                return None, "generation-ambiguous"
+            if not failures:
+                return None, "generation-ambiguous"
+            for failure in sorted(failures, key=lambda item: item.name):
+                if failure.name.startswith("."):
+                    return None, "generation-active"
+                if (
+                    not _SHA256.fullmatch(failure.name)
+                    or not validate_failure_receipt(failure).valid
+                ):
+                    return None, "generation-ambiguous"
+                completed_receipts += 1
+            continue
+        if not _SHA256.fullmatch(entry.name):
+            return None, "generation-ambiguous"
+        identity = _pass_receipt_identity(entry)
+        source = identity.get("source") if identity is not None else None
+        if (
+            identity is None
+            or action_identity_error(identity) is not None
+            or not isinstance(source, Mapping)
+            or source.get("candidate_sha") != generation.name
+            or not validate_batch_receipt(
+                entry,
+                expected_action_identity=identity,
+            ).valid
+        ):
+            return None, "generation-ambiguous"
+        completed_receipts += 1
+
+    after_root = _generation_root_identity(generation)
+    after_size, after_snapshot, after_error = _safe_tree_snapshot(generation)
+    if (
+        completed_receipts == 0
+        or after_root is None
+        or after_error is not None
+        or before_root != after_root
+        or before_size != after_size
+        or before_snapshot != after_snapshot
+    ):
+        return None, "generation-active"
+    return (
+        _RetirableGeneration(
+            path=generation,
+            modified_ns=after_root[3],
+            size_bytes=after_size,
+            snapshot=after_snapshot,
+        ),
+        None,
+    )
+
+
+def _select_retirable_generation(
+    generations: list[Path],
+) -> tuple[_RetirableGeneration | None, str]:
+    inspected: list[_RetirableGeneration] = []
+    for generation in generations:
+        candidate, reason = _inspect_retirable_generation(generation)
+        if candidate is None:
+            return None, reason or "generation-ambiguous"
+        inspected.append(candidate)
+    if len(inspected) < 2:
+        return None, "generation-limit"
+    ordered = sorted(inspected, key=lambda item: item.modified_ns)
+    if ordered[0].modified_ns == ordered[1].modified_ns:
+        return None, "generation-order-ambiguous"
+    return ordered[0], "retirable"
+
+
+def _plan_generation_rollover(
+    *,
+    cache_root: Path,
+    version_root: Path,
+    candidate_sha: str,
+    incoming_bytes: int,
+    max_generations: int,
+    max_bytes: int,
+) -> _GenerationRolloverPlan:
+    """Build the single bounded generation plan used by preview and publish."""
+    generation = version_root / candidate_sha
+    generations = _validated_generation_entries(version_root)
+    if generations is None:
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "cache-layout-invalid", 0),
+            generation,
+            None,
+        )
+    if len(generations) > max_generations:
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "generation-limit", 0),
+            generation,
+            None,
+        )
+
+    current_bytes, size_error = _safe_tree_size(cache_root)
+    if size_error is not None:
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "cache-size-unknown", 0),
+            generation,
+            None,
+        )
+    retirement: _RetirableGeneration | None = None
+    if not generation.exists() and len(generations) >= max_generations:
+        retirement, retirement_reason = _select_retirable_generation(generations)
+        if retirement is None:
+            return _GenerationRolloverPlan(
+                RetirementPreview("fail-closed", retirement_reason, 0),
+                generation,
+                None,
+            )
+    retired_bytes = retirement.size_bytes if retirement is not None else 0
+    if current_bytes - retired_bytes + incoming_bytes > max_bytes:
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "byte-limit", 0),
+            generation,
+            None,
+        )
+    if generation.is_symlink():
+        return _GenerationRolloverPlan(
+            RetirementPreview("fail-closed", "generation-invalid", 0),
+            generation,
+            None,
+        )
+    if retirement is None:
+        preview = RetirementPreview("retain", "within-bounds", 0)
+    else:
+        preview = RetirementPreview("retire", "oldest-inactive", 1)
+    return _GenerationRolloverPlan(preview, generation, retirement)
+
+
+def _restore_quarantined_generation(
+    quarantined: Path,
+    original: Path,
+    quarantine: Path,
+    version_root: Path,
+) -> bool:
+    if original.exists() or original.is_symlink() or not quarantined.exists():
+        return False
+    try:
+        os.rename(quarantined, original)
+        quarantine.rmdir()
+        _fsync_directory(version_root)
+    except OSError:
+        return False
+    return True
+
+
+def _retire_generation_and_create_candidate(
+    retirement: _RetirableGeneration,
+    generation: Path,
+    version_root: Path,
+) -> str | None:
+    """Atomically quarantine one stable generation before creating its successor."""
+    if not getattr(shutil.rmtree, "avoids_symlink_attacks", False):
+        return "generation-retirement-unsupported"
+    current_size, current_snapshot, current_error = _safe_tree_snapshot(
+        retirement.path
+    )
+    if (
+        current_error is not None
+        or current_size != retirement.size_bytes
+        or current_snapshot != retirement.snapshot
+    ):
+        return "generation-active"
+    quarantine = version_root / (
+        f".retiring-{retirement.path.name}-{generation.name}"
+    )
+    if quarantine.exists() or quarantine.is_symlink():
+        return "generation-retirement-conflict"
+    try:
+        quarantine.mkdir(mode=0o700)
+        os.chmod(quarantine, 0o700)
+    except OSError:
+        return "generation-retirement-failed"
+    quarantined = quarantine / "generation"
+    try:
+        os.rename(retirement.path, quarantined)
+        _fsync_directory(quarantine)
+        _fsync_directory(version_root)
+    except OSError:
+        with suppress(OSError):
+            quarantine.rmdir()
+        return "generation-retirement-failed"
+
+    quarantined_size, quarantined_snapshot, quarantine_error = _safe_tree_snapshot(
+        quarantined
+    )
+    if (
+        quarantine_error is not None
+        or quarantined_size != retirement.size_bytes
+        or quarantined_snapshot != retirement.snapshot
+    ):
+        _restore_quarantined_generation(
+            quarantined,
+            retirement.path,
+            quarantine,
+            version_root,
+        )
+        return "generation-active"
+    if generation.exists() or generation.is_symlink():
+        _restore_quarantined_generation(
+            quarantined,
+            retirement.path,
+            quarantine,
+            version_root,
+        )
+        return "generation-retirement-conflict"
+    try:
+        generation.mkdir(mode=0o700)
+        os.chmod(generation, 0o700)
+        shutil.rmtree(quarantined)
+        quarantine.rmdir()
+        _fsync_directory(version_root)
+    except OSError:
+        with suppress(OSError):
+            generation.rmdir()
+        remaining_size, remaining_snapshot, remaining_error = _safe_tree_snapshot(
+            quarantined
+        )
+        if (
+            remaining_error is None
+            and remaining_size == retirement.size_bytes
+            and remaining_snapshot == retirement.snapshot
+        ):
+            _restore_quarantined_generation(
+                quarantined,
+                retirement.path,
+                quarantine,
+                version_root,
+            )
+        return "generation-retirement-failed"
+    return None
+
+
+def _incoming_pass_receipt_bytes(
+    request: BatchReceiptRequest,
+    action_identity: Mapping[str, object],
+) -> tuple[int | None, str | None]:
+    outcome_bytes = canonical_json_bytes(request.outcome_manifest) + b"\n"
+    try:
+        incoming_bytes = request.coverage_path.stat().st_size + len(outcome_bytes)
+    except OSError:
+        return None, "coverage-invalid"
+    # Manifests are small relative to coverage, but count a conservative
+    # canonical preview so the cap is a hard upper bound rather than a hint.
+    incoming_bytes += len(canonical_json_bytes(action_identity)) + 16 * 1024
+    return incoming_bytes, None
+
+
 class ShadowBatchReceiptWriter:
     """Atomically publish bounded candidate receipts without ever reading hits."""
 
@@ -1213,6 +1718,71 @@ class ShadowBatchReceiptWriter:
             return ReceiptPublication(False, "coverage-invalid")
         return None
 
+    def preview_retirement(self, request: BatchReceiptRequest) -> RetirementPreview:
+        """Return a bounded rollover decision without changing cache state."""
+        refused = self._preflight(request)
+        if refused is not None:
+            return RetirementPreview("fail-closed", refused.reason, 0)
+        action_identity = dict(request.action_identity)
+        source = action_identity["source"]
+        assert isinstance(source, Mapping)
+        candidate_sha = str(source["candidate_sha"])
+        incoming_bytes, incoming_error = _incoming_pass_receipt_bytes(
+            request,
+            action_identity,
+        )
+        if incoming_bytes is None:
+            return RetirementPreview(
+                "fail-closed",
+                incoming_error or "coverage-invalid",
+                0,
+            )
+
+        version_root, layout_error = _existing_version_root(self._cache_root)
+        if layout_error is not None:
+            return RetirementPreview("fail-closed", layout_error, 0)
+        if version_root is None:
+            before = _cache_tree_observation(self._cache_root)
+            if before[3] is not None:
+                return RetirementPreview("fail-closed", "cache-size-unknown", 0)
+            decision = (
+                RetirementPreview("fail-closed", "byte-limit", 0)
+                if before[1] + incoming_bytes > self._max_bytes
+                else RetirementPreview("retain", "within-bounds", 0)
+            )
+            after = _cache_tree_observation(self._cache_root)
+            if before != after:
+                return RetirementPreview("fail-closed", "generation-active", 0)
+            return decision
+
+        try:
+            with _readonly_directory_lock(version_root) as lock_existed:
+                before = _cache_tree_observation(self._cache_root)
+                if before[3] is not None:
+                    return RetirementPreview("fail-closed", "cache-size-unknown", 0)
+                plan = _plan_generation_rollover(
+                    cache_root=self._cache_root,
+                    version_root=version_root,
+                    candidate_sha=candidate_sha,
+                    incoming_bytes=incoming_bytes,
+                    max_generations=self._max_generations,
+                    max_bytes=self._max_bytes,
+                )
+                after = _cache_tree_observation(self._cache_root)
+                if (
+                    before != after
+                    or (
+                        not lock_existed
+                        and _mutation_lock_path(version_root).exists()
+                    )
+                ):
+                    return RetirementPreview("fail-closed", "generation-active", 0)
+                return plan.preview
+        except BlockingIOError:
+            return RetirementPreview("fail-closed", "generation-busy", 0)
+        except OSError:
+            return RetirementPreview("fail-closed", "generation-unavailable", 0)
+
     def publish(self, request: BatchReceiptRequest) -> ReceiptPublication:
         """Publish one pass receipt after coverage and cleanup have succeeded."""
         refused = self._preflight(request)
@@ -1224,93 +1794,86 @@ class ShadowBatchReceiptWriter:
         assert isinstance(source, Mapping)
         candidate_sha = str(source["candidate_sha"])
 
-        if self._cache_root.is_symlink():
+        version_root, layout_error = _prepare_version_root(self._cache_root)
+        if layout_error is not None or version_root is None:
             return ReceiptPublication(
                 False,
-                "cache-root-symlink",
+                layout_error or "cache-layout-invalid",
                 action_digest=action_digest,
             )
-        if self._cache_root.parent.is_symlink():
-            return ReceiptPublication(
-                False,
-                "cache-parent-symlink",
-                action_digest=action_digest,
-            )
-        cache_root_existed = self._cache_root.exists()
-        try:
-            self._cache_root.mkdir(parents=True, mode=0o700, exist_ok=True)
-            if not cache_root_existed:
-                os.chmod(self._cache_root, 0o700)
-        except OSError:
-            return ReceiptPublication(False, "cache-root-unavailable", action_digest=action_digest)
-        root_error = private_path_error(self._cache_root, directory=True)
-        if root_error is not None:
-            return ReceiptPublication(False, f"cache-root-{root_error}", action_digest=action_digest)
-        version_root = self._cache_root / f"v{RECEIPT_SCHEMA_VERSION}"
-        if version_root.is_symlink():
-            return ReceiptPublication(False, "cache-layout-invalid", action_digest=action_digest)
-        version_root_existed = version_root.exists()
-        try:
-            version_root.mkdir(mode=0o700, exist_ok=True)
-            if not version_root_existed:
-                os.chmod(version_root, 0o700)
-            generation_entries = tuple(version_root.iterdir())
-        except OSError:
-            return ReceiptPublication(False, "cache-layout-unavailable", action_digest=action_digest)
-        if private_path_error(version_root, directory=True) is not None:
-            return ReceiptPublication(False, "cache-layout-invalid", action_digest=action_digest)
-        generations: list[Path] = []
-        for entry in generation_entries:
-            if (
-                entry.is_symlink()
-                or not entry.is_dir()
-                or not _GIT_SHA.fullmatch(entry.name)
-                or private_path_error(entry, directory=True) is not None
-            ):
-                return ReceiptPublication(False, "cache-layout-invalid", action_digest=action_digest)
-            generations.append(entry)
-        generation = version_root / candidate_sha
-        if not generation.exists() and len(generations) >= self._max_generations:
-            return ReceiptPublication(False, "generation-limit", action_digest=action_digest)
-
-        current_bytes, size_error = _safe_tree_size(self._cache_root)
-        if size_error is not None:
-            return ReceiptPublication(False, "cache-size-unknown", action_digest=action_digest)
-        outcome_bytes = canonical_json_bytes(request.outcome_manifest) + b"\n"
-        try:
-            incoming_bytes = request.coverage_path.stat().st_size + len(outcome_bytes)
-        except OSError:
-            return ReceiptPublication(False, "coverage-invalid", action_digest=action_digest)
-        # Manifests are small relative to coverage, but count a conservative
-        # canonical preview so the cap is a hard upper bound rather than a hint.
-        incoming_bytes += len(canonical_json_bytes(action_identity)) + 16 * 1024
-        if current_bytes + incoming_bytes > self._max_bytes:
-            return ReceiptPublication(False, "byte-limit", action_digest=action_digest)
-
-        if generation.is_symlink():
-            return ReceiptPublication(False, "generation-invalid", action_digest=action_digest)
-        generation_existed = generation.exists()
-        try:
-            generation.mkdir(mode=0o700, exist_ok=True)
-            if not generation_existed:
-                os.chmod(generation, 0o700)
-        except OSError:
-            return ReceiptPublication(False, "generation-unavailable", action_digest=action_digest)
-        if private_path_error(generation, directory=True) is not None:
-            return ReceiptPublication(False, "generation-invalid", action_digest=action_digest)
-        destination = generation / action_digest
-        if destination.exists() or destination.is_symlink():
-            return ReceiptPublication(
-                False,
-                "already-present",
-                path=destination,
-                action_digest=action_digest,
-            )
-
-        temporary = Path(
-            tempfile.mkdtemp(prefix=f".{action_digest}.", dir=generation)
+        incoming_bytes, incoming_error = _incoming_pass_receipt_bytes(
+            request,
+            action_identity,
         )
-        os.chmod(temporary, 0o700)
+        if incoming_bytes is None:
+            return ReceiptPublication(
+                False,
+                incoming_error or "coverage-invalid",
+                action_digest=action_digest,
+            )
+        generation = version_root / candidate_sha
+        generation_existed = True
+        try:
+            with _exclusive_directory_lock(version_root):
+                plan = _plan_generation_rollover(
+                    cache_root=self._cache_root,
+                    version_root=version_root,
+                    candidate_sha=candidate_sha,
+                    incoming_bytes=incoming_bytes,
+                    max_generations=self._max_generations,
+                    max_bytes=self._max_bytes,
+                )
+                if plan.preview.decision == "fail-closed":
+                    return ReceiptPublication(
+                        False,
+                        plan.preview.reason,
+                        action_digest=action_digest,
+                    )
+                generation = plan.generation
+                retirement = plan.retirement
+                generation_existed = generation.exists()
+                if retirement is not None:
+                    retirement_error = _retire_generation_and_create_candidate(
+                        retirement,
+                        generation,
+                        version_root,
+                    )
+                    if retirement_error is not None:
+                        return ReceiptPublication(
+                            False,
+                            retirement_error,
+                            action_digest=action_digest,
+                        )
+                else:
+                    generation.mkdir(mode=0o700, exist_ok=True)
+                    if not generation_existed:
+                        os.chmod(generation, 0o700)
+                if private_path_error(generation, directory=True) is not None:
+                    return ReceiptPublication(
+                        False,
+                        "generation-invalid",
+                        action_digest=action_digest,
+                    )
+                destination = generation / action_digest
+                if destination.exists() or destination.is_symlink():
+                    return ReceiptPublication(
+                        False,
+                        "already-present",
+                        path=destination,
+                        action_digest=action_digest,
+                    )
+
+                temporary = Path(
+                    tempfile.mkdtemp(prefix=f".{action_digest}.", dir=generation)
+                )
+                os.chmod(temporary, 0o700)
+        except BlockingIOError:
+            return ReceiptPublication(False, "generation-busy", action_digest=action_digest)
+        except OSError:
+            if not generation_existed:
+                with suppress(OSError):
+                    generation.rmdir()
+            return ReceiptPublication(False, "generation-unavailable", action_digest=action_digest)
         try:
             outcomes_path = temporary / "outcomes.json"
             coverage_path = temporary / "coverage.data"
@@ -1517,104 +2080,127 @@ class ShadowFailureReceiptWriter:
             },
         }
 
-        if self._cache_root.is_symlink():
-            return ReceiptPublication(False, "cache-root-symlink", action_digest=action_digest)
-        if self._cache_root.parent.is_symlink():
-            return ReceiptPublication(False, "cache-parent-symlink", action_digest=action_digest)
-        cache_root_existed = self._cache_root.exists()
-        try:
-            self._cache_root.mkdir(parents=True, mode=0o700, exist_ok=True)
-            if not cache_root_existed:
-                os.chmod(self._cache_root, 0o700)
-        except OSError:
-            return ReceiptPublication(False, "cache-root-unavailable", action_digest=action_digest)
-        root_error = private_path_error(self._cache_root, directory=True)
-        if root_error is not None:
-            return ReceiptPublication(False, f"cache-root-{root_error}", action_digest=action_digest)
-        version_root = self._cache_root / f"v{RECEIPT_SCHEMA_VERSION}"
-        if version_root.is_symlink():
-            return ReceiptPublication(False, "cache-layout-invalid", action_digest=action_digest)
-        version_root_existed = version_root.exists()
-        try:
-            version_root.mkdir(mode=0o700, exist_ok=True)
-            if not version_root_existed:
-                os.chmod(version_root, 0o700)
-            generation_entries = tuple(version_root.iterdir())
-        except OSError:
-            return ReceiptPublication(False, "cache-layout-unavailable", action_digest=action_digest)
-        if private_path_error(version_root, directory=True) is not None:
-            return ReceiptPublication(False, "cache-layout-invalid", action_digest=action_digest)
-        generations: list[Path] = []
-        for entry in generation_entries:
-            if (
-                entry.is_symlink()
-                or not entry.is_dir()
-                or not _GIT_SHA.fullmatch(entry.name)
-                or private_path_error(entry, directory=True) is not None
-            ):
-                return ReceiptPublication(False, "cache-layout-invalid", action_digest=action_digest)
-            generations.append(entry)
+        version_root, layout_error = _prepare_version_root(self._cache_root)
+        if layout_error is not None or version_root is None:
+            return ReceiptPublication(
+                False,
+                layout_error or "cache-layout-invalid",
+                action_digest=action_digest,
+            )
         generation = version_root / candidate_sha
-        if not generation.exists() and len(generations) >= self._max_generations:
-            return ReceiptPublication(False, "generation-limit", action_digest=action_digest)
-        current_bytes, size_error = _safe_tree_size(self._cache_root)
-        if size_error is not None:
-            return ReceiptPublication(False, "cache-size-unknown", action_digest=action_digest)
         incoming_bytes = (
             len(failure_bytes)
             + len(canonical_json_bytes(manifest))
             + 16 * 1024
         )
-        if current_bytes + incoming_bytes > self._max_bytes:
-            return ReceiptPublication(False, "byte-limit", action_digest=action_digest)
-        if generation.is_symlink():
-            return ReceiptPublication(False, "generation-invalid", action_digest=action_digest)
-        generation_existed = generation.exists()
+        generation_existed = True
         failures_root = generation / "failures"
-        failures_root_existed = failures_root.exists()
+        failures_root_existed = True
         temporary: Path | None = None
         try:
-            generation.mkdir(mode=0o700, exist_ok=True)
-            if not generation_existed:
-                os.chmod(generation, 0o700)
-            if private_path_error(generation, directory=True) is not None:
-                return ReceiptPublication(False, "generation-invalid", action_digest=action_digest)
-            if failures_root.is_symlink():
-                return ReceiptPublication(False, "failure-layout-invalid", action_digest=action_digest)
-            failures_root.mkdir(mode=0o700, exist_ok=True)
-            if not failures_root_existed:
-                os.chmod(failures_root, 0o700)
-            if private_path_error(failures_root, directory=True) is not None:
-                return ReceiptPublication(False, "failure-layout-invalid", action_digest=action_digest)
-            entries = tuple(failures_root.iterdir())
-            for entry in entries:
-                if (
-                    entry.is_symlink()
-                    or not entry.is_dir()
-                    or not _SHA256.fullmatch(entry.name)
-                    or private_path_error(entry, directory=True) is not None
+            with _exclusive_directory_lock(version_root):
+                generations = _validated_generation_entries(version_root)
+                if generations is None:
+                    return ReceiptPublication(
+                        False,
+                        "cache-layout-invalid",
+                        action_digest=action_digest,
+                    )
+                if len(generations) > self._max_generations or (
+                    not generation.exists()
+                    and len(generations) >= self._max_generations
                 ):
-                    return ReceiptPublication(False, "failure-layout-invalid", action_digest=action_digest)
-            destination = failures_root / failure_digest
-            if destination.exists() or destination.is_symlink():
-                validation = validate_failure_receipt(
-                    destination,
-                    expected_action_digest=action_digest,
+                    return ReceiptPublication(
+                        False,
+                        "generation-limit",
+                        action_digest=action_digest,
+                    )
+                current_bytes, size_error = _safe_tree_size(self._cache_root)
+                if size_error is not None:
+                    return ReceiptPublication(
+                        False,
+                        "cache-size-unknown",
+                        action_digest=action_digest,
+                    )
+                if current_bytes + incoming_bytes > self._max_bytes:
+                    return ReceiptPublication(
+                        False,
+                        "byte-limit",
+                        action_digest=action_digest,
+                    )
+                if generation.is_symlink():
+                    return ReceiptPublication(
+                        False,
+                        "generation-invalid",
+                        action_digest=action_digest,
+                    )
+                generation_existed = generation.exists()
+                failures_root_existed = failures_root.exists()
+                generation.mkdir(mode=0o700, exist_ok=True)
+                if not generation_existed:
+                    os.chmod(generation, 0o700)
+                if private_path_error(generation, directory=True) is not None:
+                    return ReceiptPublication(
+                        False,
+                        "generation-invalid",
+                        action_digest=action_digest,
+                    )
+                if failures_root.is_symlink():
+                    return ReceiptPublication(
+                        False,
+                        "failure-layout-invalid",
+                        action_digest=action_digest,
+                    )
+                failures_root.mkdir(mode=0o700, exist_ok=True)
+                if not failures_root_existed:
+                    os.chmod(failures_root, 0o700)
+                if private_path_error(failures_root, directory=True) is not None:
+                    return ReceiptPublication(
+                        False,
+                        "failure-layout-invalid",
+                        action_digest=action_digest,
+                    )
+                entries = tuple(failures_root.iterdir())
+                for entry in entries:
+                    if (
+                        entry.is_symlink()
+                        or not entry.is_dir()
+                        or not _SHA256.fullmatch(entry.name)
+                        or private_path_error(entry, directory=True) is not None
+                    ):
+                        return ReceiptPublication(
+                            False,
+                            "failure-layout-invalid",
+                            action_digest=action_digest,
+                        )
+                destination = failures_root / failure_digest
+                if destination.exists() or destination.is_symlink():
+                    validation = validate_failure_receipt(
+                        destination,
+                        expected_action_digest=action_digest,
+                    )
+                    if not validation.valid:
+                        return ReceiptPublication(
+                            False,
+                            "existing-failure-corrupt",
+                            action_digest=action_digest,
+                        )
+                    return ReceiptPublication(
+                        False,
+                        "already-present",
+                        path=destination,
+                        action_digest=action_digest,
+                    )
+                if len(entries) >= self._max_failure_receipts:
+                    return ReceiptPublication(
+                        False,
+                        "failure-receipt-limit",
+                        action_digest=action_digest,
+                    )
+                temporary = Path(
+                    tempfile.mkdtemp(prefix=f".{failure_digest}.", dir=failures_root)
                 )
-                if not validation.valid:
-                    return ReceiptPublication(False, "existing-failure-corrupt", action_digest=action_digest)
-                return ReceiptPublication(
-                    False,
-                    "already-present",
-                    path=destination,
-                    action_digest=action_digest,
-                )
-            if len(entries) >= self._max_failure_receipts:
-                return ReceiptPublication(False, "failure-receipt-limit", action_digest=action_digest)
-            temporary = Path(
-                tempfile.mkdtemp(prefix=f".{failure_digest}.", dir=failures_root)
-            )
-            os.chmod(temporary, 0o700)
+                os.chmod(temporary, 0o700)
             _write_json(temporary / "failure.json", failure)
             manifest_path = temporary / "manifest.json"
             _write_json(manifest_path, manifest)
@@ -1668,6 +2254,8 @@ class ShadowFailureReceiptWriter:
                 path=destination,
                 action_digest=action_digest,
             )
+        except BlockingIOError:
+            return ReceiptPublication(False, "generation-busy", action_digest=action_digest)
         except (OSError, TypeError, ValueError):
             return ReceiptPublication(False, "publication-failed", action_digest=action_digest)
         finally:
@@ -1691,6 +2279,7 @@ __all__ = [
     "FailureReceiptRequest",
     "ReceiptPublication",
     "ReceiptValidation",
+    "RetirementPreview",
     "ShadowBatchReceiptWriter",
     "ShadowFailureReceiptWriter",
     "action_identity_error",
