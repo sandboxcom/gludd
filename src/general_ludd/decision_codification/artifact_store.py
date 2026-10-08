@@ -9,7 +9,6 @@ concurrent writers can never replace an accepted artifact.
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Mapping
 from itertools import pairwise
 from pathlib import Path
@@ -17,6 +16,12 @@ from typing import Final, Literal, TypeVar, cast
 
 from pydantic import BaseModel, ValidationError
 
+from general_ludd.decision_codification.artifact_auth import (
+    _DIGEST_PATTERN,
+    ArtifactPayloadError,
+    generation_state_hmac_payload,
+    observability_hmac_payload,
+)
 from general_ludd.decision_codification.schema import (
     ApprovalReceiptV1,
     DecisionRuleBundleV1,
@@ -28,13 +33,8 @@ from general_ludd.integrity.store import IntegrityError, IntegrityStore
 
 ArtifactKind = Literal["rule", "report", "receipt"]
 _MODEL = TypeVar("_MODEL", bound=BaseModel)
-_DIGEST_PATTERN: Final[re.Pattern[str]] = re.compile(r"^sha256:([0-9a-f]{64})$")
-_PROJECT_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
-)
 _RECORD_SCHEMA: Final[str] = "gludd.decision-authenticated-artifact/v1"
 _DOMAIN: Final[bytes] = b"general_ludd.decision_codification.artifacts.v1\x00"
-_GENERATION_STATE_PURPOSE: Final[str] = "shared-generation-state/v1"
 _MAX_RECEIPT_CHAIN: Final[int] = 256
 
 
@@ -82,11 +82,16 @@ class DecisionArtifactStore:
         receipt_digest: str,
     ) -> str:
         """Authenticate one exact-scope observability receipt digest."""
-        payload = self._observability_hmac_payload(
-            project_id,
-            policy_digest,
-            receipt_digest,
-        )
+        try:
+            payload = observability_hmac_payload(
+                project_id,
+                policy_digest,
+                receipt_digest,
+            )
+        except ArtifactPayloadError:
+            raise ArtifactIntegrityError(
+                "observability receipt authentication scope is invalid"
+            ) from None
         return f"hmac-sha256:{self._integrity.sign(payload)}"
 
     def verify_decision_observability_hmac(
@@ -104,16 +109,20 @@ class DecisionArtifactStore:
             raise ArtifactIntegrityError(
                 "observability receipt authentication tag is invalid"
             )
-        payload = self._observability_hmac_payload(
-            project_id,
-            policy_digest,
-            receipt_digest,
-        )
         try:
+            payload = observability_hmac_payload(
+                project_id,
+                policy_digest,
+                receipt_digest,
+            )
             self._integrity.verify(
                 payload,
                 authentication_tag.removeprefix("hmac-sha256:"),
             )
+        except ArtifactPayloadError:
+            raise ArtifactIntegrityError(
+                "observability receipt authentication scope is invalid"
+            ) from None
         except IntegrityError:
             raise ArtifactIntegrityError(
                 "observability receipt authentication tag mismatched"
@@ -124,7 +133,10 @@ class DecisionArtifactStore:
         state: Mapping[str, object],
     ) -> str:
         """Authenticate one bounded shared-generation state record."""
-        payload = self._generation_state_hmac_payload(state)
+        try:
+            payload = generation_state_hmac_payload(state)
+        except ArtifactPayloadError:
+            raise ArtifactIntegrityError("generation state must be an object") from None
         return f"hmac-sha256:{self._integrity.sign(payload)}"
 
     def verify_decision_generation_state_hmac(
@@ -142,9 +154,11 @@ class DecisionArtifactStore:
             )
         try:
             self._integrity.verify(
-                self._generation_state_hmac_payload(state),
+                generation_state_hmac_payload(state),
                 authentication_tag.removeprefix("hmac-sha256:"),
             )
+        except ArtifactPayloadError:
+            raise ArtifactIntegrityError("generation state must be an object") from None
         except (IntegrityError, TypeError, ValueError):
             raise ArtifactIntegrityError(
                 "generation state authentication tag mismatched"
@@ -348,42 +362,6 @@ class DecisionArtifactStore:
         if matched is None:
             raise ArtifactIntegrityError("artifact identifier is not a SHA-256 digest")
         return f"decision-{kind}-{matched.group(1)}"
-
-    @staticmethod
-    def _observability_hmac_payload(
-        project_id: str,
-        policy_digest: str,
-        receipt_digest: str,
-    ) -> dict[str, str]:
-        if (
-            not isinstance(project_id, str)
-            or _PROJECT_PATTERN.fullmatch(project_id) is None
-            or not isinstance(policy_digest, str)
-            or _DIGEST_PATTERN.fullmatch(policy_digest) is None
-            or not isinstance(receipt_digest, str)
-            or _DIGEST_PATTERN.fullmatch(receipt_digest) is None
-        ):
-            raise ArtifactIntegrityError(
-                "observability receipt authentication scope is invalid"
-            )
-        return {
-            "purpose": "decision-observability-status/v1",
-            "project_id": project_id,
-            "policy_digest": policy_digest,
-            "receipt_digest": receipt_digest,
-        }
-
-    @staticmethod
-    def _generation_state_hmac_payload(
-        state: Mapping[str, object],
-    ) -> dict[str, object]:
-        if not isinstance(state, dict):
-            raise ArtifactIntegrityError("generation state must be an object")
-        return {
-            "purpose": _GENERATION_STATE_PURPOSE,
-            "state": state,
-        }
-
 
 __all__ = [
     "ArtifactAlreadyExists",

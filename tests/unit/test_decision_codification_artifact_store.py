@@ -99,6 +99,15 @@ def test_observability_receipt_hmac_is_scope_bound_and_verifiable(
         store.verify_decision_observability_hmac("project-1", SHA_E, SHA_B, tag)
 
 
+def test_authentication_payloads_reject_invalid_shapes(tmp_path: Path) -> None:
+    store = DecisionArtifactStore(str(tmp_path), key=b"artifact-integrity-key")
+
+    with pytest.raises(ArtifactIntegrityError, match="scope is invalid"):
+        store.decision_observability_hmac("bad project", SHA_E, SHA_A)
+    with pytest.raises(ArtifactIntegrityError, match="must be an object"):
+        store.decision_generation_state_hmac(cast(dict[str, object], []))
+
+
 def _receipt(
     bundle: DecisionRuleBundleV1,
     *,
