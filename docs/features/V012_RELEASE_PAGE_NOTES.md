@@ -9,9 +9,21 @@ clock time, live GitHub state, or an inferred commit range. The preview remains
 explicitly **Unreleased**. No tag, draft release, published release, asset, or
 remote reference is created by this feature.
 
-The page lists every completed item exactly once under the fixed headings
-`Features` and `Improvements`, links the ledger's full evidence commits, records
-the v0.1.1 baseline, and names open items excluded from the release scope.
+The page lists every formally completed item exactly once under the fixed
+headings `Features` and `Improvements`, links the ledger's full evidence
+commits, records the v0.1.1 baseline, and names open items excluded from
+completion claims. It separately projects implementation evidence that is in
+the v0.1.2 candidate scope while labeling every such entry as pending
+exact-head and release proof.
+
+That implemented-candidate projection covers native SearXNG, executable Ansible
+role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
+remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, and the
+train's dependency, ownership, structural, TUI, and coverage repairs. S29 is
+listed from its implementation receipt without claiming train integration or
+an exact-head gate. The preview therefore records useful candidate contents
+without converting implementation evidence into task, gate, release, or
+publication completion.
 
 ## Existing-tool decision
 
@@ -39,24 +51,31 @@ generic draft text in manual `release-create`.
 
 ## Ledger contract
 
-The existing schema-v1 receipt gains only release-page metadata:
+The schema-v1 receipt retains its formally completed reconciliation and adds a
+separate implemented-candidate projection:
 
 - `release_page.status` must equal `unreleased`;
 - `release_page.repository` must be an `owner/name` pair;
 - every `completed_items` entry has one `release_page_category`, restricted to
   `Features` or `Improvements`;
+- every optional `implemented_items` entry has a bounded `item_id`, title,
+  category, and immutable evidence list, and is rendered with an explicit
+  exact-head/release-proof-pending notice;
 - both categories must be present, task IDs and evidence commits must be unique,
-  and each evidence SHA must contain 40 lowercase hexadecimal characters;
+  implemented-item IDs must be unique, and each evidence SHA must contain 40
+  lowercase hexadecimal characters;
 - completed task IDs cannot also appear in `excluded_open_tasks`.
 
-The generator preserves ledger order within each fixed category. It emits no
-timestamp or host-dependent path, so identical ledger bytes and code yield the
-same Markdown on every host.
+The generator preserves ledger order within each fixed category, with formally
+completed entries before implemented candidates. It emits no timestamp or
+host-dependent path, so identical ledger bytes and code yield the same
+Markdown on every host.
 
 ## Bounded and fail-closed behavior
 
-- Ledger input is capped at 256 KiB, completed items at 64, excluded items at
-  64, evidence commits at eight per item, and rendered Markdown at 64 KiB.
+- Ledger input is capped at 256 KiB, completed and implemented items at 64 each,
+  excluded items at 64, evidence commits at eight per item, and rendered
+  Markdown at 64 KiB.
 - The input and output must be regular non-symlink files. Invalid UTF-8, JSON,
   schema, semantic version, repository identity, category, task identity,
   baseline, or evidence stops generation.
@@ -97,11 +116,16 @@ Prove it is current without modifying it:
 make release-page-notes TAG=v0.1.2 RELEASE_PAGE_NOTES_LEDGER=config/v012_completed_backlog_reconciliation.json RELEASE_PAGE_NOTES_OUTPUT=docs/releases/v0.1.2.md RELEASE_PAGE_NOTES_VALIDATE_ONLY=1
 ```
 
-Rollback is discard-only: revert the feature commit to remove the additive
-schema metadata, builder, target, test, and preview. Because this implementation
+Rollback is discard-only: revert the release-note update to remove the additive
+candidate projection and restore the prior preview. Because this implementation
 never contacts GitHub, rollback has no remote release or tag to delete and no
 traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
+
+Focused regressions pin candidate-ID validation, duplicate rejection, canonical
+ordering, deterministic rendering, the exact 20-item candidate inventory, and
+the distinction between six formally completed backlog entries and
+implementation-only entries pending exact-head/release proof.
 
 ## Practitioner evidence
 
