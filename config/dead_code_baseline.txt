@@ -9,7 +9,6 @@ src/general_ludd/ag16_orchestration/conversation.py:CompositeTermination
 src/general_ludd/ag16_orchestration/conversation.py:KeywordTermination
 src/general_ludd/ag16_orchestration/conversation.py:MaxTurnsTermination
 src/general_ludd/ag16_orchestration/conversation.py:PrioritySelector
-src/general_ludd/agents/hibernation.py:messages_from_dicts
 src/general_ludd/agents/task_decomposer.py:ManagerAgent
 src/general_ludd/agents/task_decomposer.py:TaskDecomposer
 src/general_ludd/agents/test_generation/contracts.py:GeneratorConfig
@@ -421,6 +420,7 @@ src/general_ludd/issue_sources/base.py:IssueSyncEngine
 src/general_ludd/issue_sources/base.py:NormalizedIssue
 src/general_ludd/issue_sources/bitbucket_issues.py:BitbucketIssueSource
 src/general_ludd/issue_sources/clickup.py:ClickUpIssueSource
+src/general_ludd/issue_sources/config.py:admit_issue_sources
 src/general_ludd/issue_sources/csv_excel.py:CsvExcelSource
 src/general_ludd/issue_sources/github_issues.py:GitHubIssuesSource
 src/general_ludd/issue_sources/gitlab_issues.py:GitLabIssueSource
@@ -504,7 +504,6 @@ src/general_ludd/peak_pricing.py:load_compute_instances
 src/general_ludd/peak_pricing.py:load_provider_rates
 src/general_ludd/peak_pricing.py:provider_rate_dict
 src/general_ludd/probabilistic/minhash.py:LSH
-src/general_ludd/project_runner/dast.py:run_dast_scan
 src/general_ludd/projects/manager.py:persist_relationships_from_config
 src/general_ludd/prompts/registry.py:get_template_name_for_work_type
 src/general_ludd/quantization/quantize.py:select_quant_for_hardware
@@ -604,7 +603,6 @@ src/general_ludd/util/priority_queue.py:PriorityQueue
 src/general_ludd/util/semver_v2.py:coerce
 src/general_ludd/util/semver_v2.py:max_satisfying
 src/general_ludd/util/semver_v2.py:sort_versions
-src/general_ludd/validation/backlog_auditor.py:BacklogAuditor
 src/general_ludd/web_server_utils.py:audit_hardening
 src/general_ludd/web_server_utils.py:generate_dhparam
 src/general_ludd/web_server_utils.py:generate_haproxy_config
