@@ -357,7 +357,12 @@ def test_backlog_verdict_renderer_prints_results_and_reasons(
         false_claim=0,
         incomplete=0,
     )
-    monkeypatch.setattr(mod, "audit_task_ledger", lambda _root: report)
+    def audit_task_ledger(root: Path, *, pytest_main):
+        assert root == tmp_path
+        assert pytest_main is pytest.main
+        return report
+
+    monkeypatch.setattr(mod, "audit_task_ledger", audit_task_ledger)
 
     assert mod._print_backlog_verdicts(tmp_path, enabled=True) is True
     output = capsys.readouterr().out
