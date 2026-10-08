@@ -384,6 +384,16 @@
       "behavior": "make release-readiness TAG=v0.1.1 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=tests/fixtures/reviewed_head_integration_receipt.json RELEASE_CANDIDATE_SHA=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     },
     {
+      "name": "release-page-notes",
+      "make_variables": [
+        "TAG",
+        "RELEASE_PAGE_NOTES_LEDGER",
+        "RELEASE_PAGE_NOTES_OUTPUT",
+        "RELEASE_PAGE_NOTES_VALIDATE_ONLY"
+      ],
+      "behavior": "make release-page-notes TAG=v0.1.2 RELEASE_PAGE_NOTES_LEDGER=config/v012_completed_backlog_reconciliation.json RELEASE_PAGE_NOTES_OUTPUT=docs/releases/v0.1.2.md RELEASE_PAGE_NOTES_VALIDATE_ONLY=1"
+    },
+    {
       "name": "check-release-failure-ledger",
       "make_variables": ["RELEASE_FAILURE_LEDGER"],
       "behavior": "make check-release-failure-ledger RELEASE_FAILURE_LEDGER=docs/releases/beta-release-failures.json"
