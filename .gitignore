@@ -8,6 +8,7 @@ _run_test_local_memory.py
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+/.pants.d/
 # ansible-lint runtime coordination state
 .ansible/.lock
 .coverage

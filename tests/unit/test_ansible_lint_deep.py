@@ -34,6 +34,8 @@ def test_yaml_lint_target_avoids_schema_network_and_fails_on_warnings() -> None:
 
     assert "ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1" in block
     assert "PYTHONWARNINGS=error" in block
+    assert 'ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections"' in block
+    assert "ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false" in block
 
 
 def _discover_role_dirs() -> list[Path]:

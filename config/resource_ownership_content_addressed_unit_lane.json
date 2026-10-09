@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "policy": "counted-path-kind-owner-and-acquisition-teardown-sha256",
+  "resources": [
+    {"acquisition":"tempfile.mkstemp(prefix=f'.{destination.name}.', suffix='.tmp', dir=destination.parent)","column":33,"kind":"temp-artifact","line":173,"owned":true,"owner":"acquire_launcher","path":"scripts/bootstrap_pants_launcher.py","source_hash":"a32cbddbeeac2bbd54af68e3f6398f4bcb1aba7e5f3392729ca4ade83528e07c","teardown":"temporary.unlink(missing_ok=True)"},
+    {"acquisition":"tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)","column":33,"kind":"temp-artifact","line":473,"owned":true,"owner":"_atomic_write_json","path":"scripts/content_addressed_unit_lane.py","source_hash":"cc5be22b867d31161b9847cc7f94ccfb767dbd35397cc9f029e90def59bad7f9","teardown":"temporary.unlink(missing_ok=True)"}
+  ]
+}

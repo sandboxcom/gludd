@@ -1457,6 +1457,21 @@
       "behavior": "make lint-make"
     },
     {
+      "name": "pants-launcher-bootstrap",
+      "make_variables": ["PANTS_LAUNCHER_CONFIG", "PANTS_LAUNCHER_DESTINATION", "PANTS_LAUNCHER_ASSET", "PANTS_LAUNCHER_VALIDATE_ONLY", "PANTS_LAUNCHER_METADATA_ONLY"],
+      "behavior": "make pants-launcher-bootstrap PANTS_LAUNCHER_CONFIG=config/pants_launcher_assets.json PANTS_LAUNCHER_DESTINATION=.pants.d/bin/pants PANTS_LAUNCHER_ASSET=auto PANTS_LAUNCHER_VALIDATE_ONLY=1 PANTS_LAUNCHER_METADATA_ONLY=0"
+    },
+    {
+      "name": "pants-unit-cache-lane",
+      "make_variables": ["PANTS_UNIT_CACHE_MANIFEST", "PANTS_UNIT_CACHE_BIN", "PANTS_UNIT_CACHE_MODE", "PANTS_UNIT_CACHE_HOSTED_CI", "PANTS_UNIT_CACHE_VALIDATE_ONLY", "PANTS_UNIT_CACHE_POLICY_ENVIRONMENT"],
+      "behavior": "make pants-unit-cache-lane PANTS_UNIT_CACHE_MANIFEST=config/pants_unit_cache_lane.json PANTS_UNIT_CACHE_BIN=pants PANTS_UNIT_CACHE_MODE=cached PANTS_UNIT_CACHE_HOSTED_CI=0 PANTS_UNIT_CACHE_VALIDATE_ONLY=1 PANTS_UNIT_CACHE_POLICY_ENVIRONMENT=v1"
+    },
+    {
+      "name": "pants-unit-cache-nightly",
+      "make_variables": ["PANTS_UNIT_CACHE_MANIFEST", "PANTS_UNIT_CACHE_BIN", "PANTS_UNIT_CACHE_HOSTED_CI", "PANTS_UNIT_CACHE_VALIDATE_ONLY", "PANTS_UNIT_CACHE_POLICY_ENVIRONMENT"],
+      "behavior": "make pants-unit-cache-nightly PANTS_UNIT_CACHE_MANIFEST=config/pants_unit_cache_lane.json PANTS_UNIT_CACHE_BIN=pants PANTS_UNIT_CACHE_HOSTED_CI=0 PANTS_UNIT_CACHE_VALIDATE_ONLY=1 PANTS_UNIT_CACHE_POLICY_ENVIRONMENT=v1"
+    },
+    {
       "name": "gate-admission-config",
       "make_variables": ["GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS"],
       "behavior": "make gate-admission-config GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"

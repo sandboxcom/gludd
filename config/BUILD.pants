@@ -1,0 +1,7 @@
+resources(
+    name="pants_unit_cache_controls",
+    sources=[
+        "pants_unit_cache_lane.json",
+        "pants_unit_cache_toolchain.lock",
+    ],
+)

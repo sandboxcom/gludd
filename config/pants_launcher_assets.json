@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "launcher_version": "0.13.2",
+  "assets": {
+    "linux-aarch64": {
+      "filename": "scie-pants-linux-aarch64",
+      "sha256": "b40b60e50e9cb69e13029e100be995fbfdb3b3799ef1ccff60a81177f78e6b82"
+    },
+    "linux-x86_64": {
+      "filename": "scie-pants-linux-x86_64",
+      "sha256": "74a1e53bc50d6ef6ce1bc67bd9f7b48e549505e0a2453ad4d5ccbc72b0bea874"
+    },
+    "macos-aarch64": {
+      "filename": "scie-pants-macos-aarch64",
+      "sha256": "a6f3231413ca1f793caffa621171a4b1a0158e7488cd0b5bb3e742cb99cc72a8"
+    }
+  }
+}

@@ -971,6 +971,7 @@ yaml-lint:
 		ANSIBLE_LOCAL_TEMP="$$ANSIBLE_STATE_DIR/tmp" \
 		ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1 \
 		PYTHONWARNINGS=error \
+		ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false \
 		ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections" \
 		$(UV) run python scripts/stream_command.py \
 			--root ".gate-logs/observed" \
@@ -979,7 +980,7 @@ yaml-lint:
 			--quiet-secs "180" \
 			--max-secs "900" \
 			--retain-runs "20" \
-			-- $(UV) run ansible-lint $$YAML_FILES
+			-- $(UV) run ansible-lint -q $$YAML_FILES
 
 ci-log:
 	@if [ -n "$(RUN)" ]; then \
