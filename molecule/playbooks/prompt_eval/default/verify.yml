@@ -4,7 +4,8 @@
   connection: local
   gather_facts: false
   vars:
-    templates_dir: "{{ lookup('env', 'PWD') }}/templates/prompts"
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(lookup('env', 'PWD'), true) }}"
+    templates_dir: "{{ project_dir }}/templates/prompts"
     venv_python: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3"
     files_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
   tasks:
