@@ -1,0 +1,10 @@
+python_test_utils(name="fixtures", sources=["conftest.py"])
+
+python_tests(
+    name="tests",
+    sources=["test_algorithms.py"],
+    dependencies=[":fixtures", "//src/general_ludd/algorithms:cached_unit_sources", "//config:pants_unit_cache_controls"],
+    extra_env_vars=["GLUDD_PANTS_UNIT_POLICY"],
+    interpreter_constraints=["==3.11.*"],
+    timeout=60,
+)

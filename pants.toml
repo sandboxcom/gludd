@@ -1,0 +1,59 @@
+[GLOBAL]
+pants_version = "2.33.0"
+backend_packages = ["pants.backend.python"]
+pants_ignore = [
+  "/*",
+  "!/config/",
+  "/config/*",
+  "!/config/BUILD.pants",
+  "!/config/pants_unit_cache_coverage.ini",
+  "!/config/pants_unit_cache_lane.json",
+  "!/config/pants_unit_cache_toolchain.lock",
+  "!/src/",
+  "/src/*",
+  "!/src/general_ludd/",
+  "/src/general_ludd/*",
+  "!/src/general_ludd/algorithms/",
+  "!/tests/",
+  "/tests/*",
+  "!/tests/pants_cached_unit/",
+]
+process_execution_local_parallelism = 2
+remote_cache_read = false
+remote_cache_write = false
+local_store_directories_max_size_bytes = 1073741824
+local_store_files_max_size_bytes = 1073741824
+local_store_processes_max_size_bytes = 1073741824
+
+[anonymous-telemetry]
+enabled = false
+
+[source]
+root_patterns = ["/config", "/src/general_ludd/algorithms", "/tests/pants_cached_unit"]
+
+[python]
+interpreter_constraints = ["==3.11.*"]
+
+[python-infer]
+ambiguity_resolution = "none"
+conftests = false
+imports = true
+string_imports = false
+unowned_dependency_behavior = "error"
+
+[pytest]
+args = ["-W", "error"]
+
+[test]
+batch_size = 1
+output = "all"
+report = true
+use_coverage = true
+
+[coverage-py]
+config = "config/pants_unit_cache_coverage.ini"
+fail_under = 85
+filter = ["hash_set", "radix_sort"]
+global_report = false
+output_dir = "{distdir}/coverage/python"
+report = ["json"]

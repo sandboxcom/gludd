@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "pants_version": "2.33.0",
+  "targets": [
+    "tests/pants_cached_unit:tests"
+  ],
+  "control_files": [
+    "pants.toml",
+    "config/pants_unit_cache_lane.json",
+    "config/pants_unit_cache_toolchain.lock",
+    "config/pants_unit_cache_coverage.ini",
+    "src/general_ludd/algorithms/BUILD.pants",
+    "tests/pants_cached_unit/BUILD.pants"
+  ],
+  "relevant_environment": [
+    "GLUDD_PANTS_UNIT_POLICY"
+  ],
+  "dynamic_inputs": [],
+  "external_inputs": [],
+  "max_local_workers": 2,
+  "hosted_workers": 1,
+  "minimum_aggregate_coverage": 85,
+  "minimum_file_coverage": 75
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "pants": "2.33.0",
+  "python": "CPython==3.11.*",
+  "pytest_tool_requirements": [
+    "pytest>=7,<9,!=7.1.0,!=7.1.1",
+    "pytest-cov>=5,<7",
+    "pytest-xdist>=3.6.1,<4"
+  ],
+  "cache_authority": "pants-bundled-pytest-lock-and-hermetic-process-cas"
+}

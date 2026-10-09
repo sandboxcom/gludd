@@ -800,6 +800,47 @@ _check-windows-tracked-paths:
 _gate-run-lock-acquire:
 	@$(UV) run python scripts/gate_run_lock.py acquire "$(GATE_RUN_LOCK)" "$$PPID"
 
+PANTS_LAUNCHER_CONFIG ?= config/pants_launcher_assets.json
+PANTS_LAUNCHER_DESTINATION ?= .pants.d/bin/pants
+PANTS_LAUNCHER_ASSET ?= auto
+PANTS_LAUNCHER_VALIDATE_ONLY ?= 1
+PANTS_LAUNCHER_METADATA_ONLY ?= 0
+
+.PHONY: pants-launcher-bootstrap
+pants-launcher-bootstrap:
+	@$(UV) run python scripts/bootstrap_pants_launcher.py \
+		--config "$(PANTS_LAUNCHER_CONFIG)" \
+		--destination "$(PANTS_LAUNCHER_DESTINATION)" \
+		--asset "$(PANTS_LAUNCHER_ASSET)" \
+		--validate-only "$(PANTS_LAUNCHER_VALIDATE_ONLY)" \
+		--metadata-only "$(PANTS_LAUNCHER_METADATA_ONLY)"
+
+PANTS_UNIT_CACHE_MANIFEST ?= config/pants_unit_cache_lane.json
+PANTS_UNIT_CACHE_BIN ?= .pants.d/bin/pants
+PANTS_UNIT_CACHE_MODE ?= cached
+PANTS_UNIT_CACHE_HOSTED_CI ?= 0
+PANTS_UNIT_CACHE_VALIDATE_ONLY ?= 1
+PANTS_UNIT_CACHE_POLICY_ENVIRONMENT ?= v1
+
+.PHONY: pants-unit-cache-lane pants-unit-cache-nightly
+pants-unit-cache-lane:
+	@$(UV) run python scripts/content_addressed_unit_lane.py \
+		--manifest "$(PANTS_UNIT_CACHE_MANIFEST)" \
+		--pants-bin "$(PANTS_UNIT_CACHE_BIN)" \
+		--mode "$(PANTS_UNIT_CACHE_MODE)" \
+		--hosted-ci "$(PANTS_UNIT_CACHE_HOSTED_CI)" \
+		--validate-only "$(PANTS_UNIT_CACHE_VALIDATE_ONLY)" \
+		--policy-environment "$(PANTS_UNIT_CACHE_POLICY_ENVIRONMENT)"
+
+pants-unit-cache-nightly:
+	@$(UV) run python scripts/content_addressed_unit_lane.py \
+		--manifest "$(PANTS_UNIT_CACHE_MANIFEST)" \
+		--pants-bin "$(PANTS_UNIT_CACHE_BIN)" \
+		--mode nightly \
+		--hosted-ci "$(PANTS_UNIT_CACHE_HOSTED_CI)" \
+		--validate-only "$(PANTS_UNIT_CACHE_VALIDATE_ONLY)" \
+		--policy-environment "$(PANTS_UNIT_CACHE_POLICY_ENVIRONMENT)"
+
 .NOTPARALLEL: gate gate-refresh
 
 GATE_EXACT_SHA_RESUME ?= 1
