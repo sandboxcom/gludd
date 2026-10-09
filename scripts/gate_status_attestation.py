@@ -14,6 +14,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 _VERSION = "1"
 _PREFIX = "attestation-"
@@ -178,6 +179,20 @@ def _passed_body_error(body: str) -> str | None:
     return None
 
 
+def _terminal_body_error(body: str) -> str | None:
+    """Require exactly one terminal marker without treating failure as green."""
+    lines = body.splitlines()
+    passed = lines.count("=== GATE: PASSED ===")
+    failed = lines.count("=== GATE: FAILED ===")
+    if passed + failed != 1:
+        return "gate status is not uniquely terminal"
+    if failed and not any(
+        " FAIL" in line for line in lines if line != "=== GATE: FAILED ==="
+    ):
+        return "failed gate status has no failed phase"
+    return None
+
+
 def _signature_message(
     *,
     state_id: str,
@@ -187,20 +202,21 @@ def _signature_message(
     return "\0".join((_VERSION, state_id, str(epoch), status_digest)).encode()
 
 
-def sign_status(
+def _sign_status(
     status_path: Path,
     *,
     state_id: str,
     key: bytes,
     now: int | None = None,
+    require_pass: bool,
 ) -> None:
-    """Atomically append a replaceable attestation to a completed passing gate."""
+    """Atomically append a replaceable attestation to validated terminal evidence."""
     body, _old_fields, parse_error = _split_status(status_path.read_text(encoding="utf-8"))
     if parse_error:
         raise ValueError(parse_error)
-    passed_error = _passed_body_error(body)
-    if passed_error:
-        raise ValueError(passed_error)
+    body_error = _passed_body_error(body) if require_pass else _terminal_body_error(body)
+    if body_error:
+        raise ValueError(body_error)
     epoch = int(time.time()) if now is None else now
     status_digest = hashlib.sha256(body.encode()).hexdigest()
     signature = hmac.new(
@@ -224,15 +240,52 @@ def sign_status(
     os.replace(temporary, status_path)
 
 
-def verify_status(
+class _StatusSigner(Protocol):
+    def __call__(
+        self,
+        status_path: Path,
+        *,
+        state_id: str,
+        key: bytes,
+        now: int | None = None,
+    ) -> None: ...
+
+
+def _status_signer(*, require_pass: bool) -> _StatusSigner:
+    """Bind one admission policy without duplicating the public call contract."""
+
+    def signer(
+        status_path: Path,
+        *,
+        state_id: str,
+        key: bytes,
+        now: int | None = None,
+    ) -> None:
+        _sign_status(
+            status_path,
+            state_id=state_id,
+            key=key,
+            now=now,
+            require_pass=require_pass,
+        )
+
+    return signer
+
+
+sign_status = _status_signer(require_pass=True)
+sign_terminal_status = _status_signer(require_pass=False)
+
+
+def _verify_status(
     status_path: Path,
     *,
     state_id: str,
     key: bytes,
     now: int | None = None,
     freshness_seconds: int = _DEFAULT_FRESHNESS_SECONDS,
+    require_pass: bool,
 ) -> VerificationResult:
-    """Fail closed on missing, stale, replayed, or modified gate evidence."""
+    """Authenticate one terminal status under the requested admission policy."""
     if not status_path.exists():
         return VerificationResult(False, f"gate status is missing: {status_path}")
     body, fields, parse_error = _split_status(status_path.read_text(encoding="utf-8"))
@@ -267,9 +320,9 @@ def verify_status(
         fields["attestation-signature"], expected_signature
     ):
         return VerificationResult(False, "gate attestation signature mismatch")
-    passed_error = _passed_body_error(body)
-    if passed_error:
-        return VerificationResult(False, passed_error)
+    body_error = _passed_body_error(body) if require_pass else _terminal_body_error(body)
+    if body_error:
+        return VerificationResult(False, body_error)
     current_time = int(time.time()) if now is None else now
     age = current_time - epoch
     if age < -60:
@@ -277,6 +330,44 @@ def verify_status(
     if age > freshness_seconds:
         return VerificationResult(False, "gate attestation is stale", age)
     return VerificationResult(True, "gate attestation is valid", age)
+
+
+def verify_status(
+    status_path: Path,
+    *,
+    state_id: str,
+    key: bytes,
+    now: int | None = None,
+    freshness_seconds: int = _DEFAULT_FRESHNESS_SECONDS,
+) -> VerificationResult:
+    """Fail closed on missing, stale, replayed, modified, or failed evidence."""
+    return _verify_status(
+        status_path,
+        state_id=state_id,
+        key=key,
+        now=now,
+        freshness_seconds=freshness_seconds,
+        require_pass=True,
+    )
+
+
+def verify_terminal_status(
+    status_path: Path,
+    *,
+    state_id: str,
+    key: bytes,
+    now: int | None = None,
+    freshness_seconds: int = _DEFAULT_FRESHNESS_SECONDS,
+) -> VerificationResult:
+    """Authenticate a unique final pass/fail status without admitting failure."""
+    return _verify_status(
+        status_path,
+        state_id=state_id,
+        key=key,
+        now=now,
+        freshness_seconds=freshness_seconds,
+        require_pass=False,
+    )
 
 
 def _read_key(path: Path, *, create: bool) -> bytes:
@@ -301,7 +392,7 @@ def _read_key(path: Path, *, create: bool) -> bytes:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("sign", "verify"))
+    parser.add_argument("action", choices=("sign", "sign-terminal", "verify"))
     parser.add_argument("status", nargs="?", default=".gate-status")
     parser.add_argument("--repo-root", default=".")
     parser.add_argument(
@@ -322,11 +413,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = Path(args.repo_root).resolve()
         status = Path(args.status)
-        key = _read_key(Path(args.key_path), create=args.action == "sign")
+        key = _read_key(
+            Path(args.key_path),
+            create=args.action in {"sign", "sign-terminal"},
+        )
         worktree_state = repository_state_id(root, source="worktree")
         if args.action == "sign":
             sign_status(status, state_id=worktree_state, key=key)
             print(f"gate attestation signed state={worktree_state[:12]}")
+            return 0
+        if args.action == "sign-terminal":
+            sign_terminal_status(status, state_id=worktree_state, key=key)
+            print(f"terminal gate attestation signed state={worktree_state[:12]}")
             return 0
         result = verify_status(
             status,

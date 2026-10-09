@@ -25,6 +25,13 @@
         "quiet_seconds": 60
       },
       {
+        "name": "ansible-role-variable-prefix",
+        "target": "_ansible-role-variable-prefix",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
         "name": "_dead-code-baseline-refresh",
         "target": "_dead-code-baseline-refresh",
         "budget_class": "fast",
@@ -200,6 +207,13 @@
       "owner_target": "_module-graph-classification",
       "node_kind": "pytest_node",
       "node": "tests/unit/test_module_graph_deep.py::test_all_subpackages_classified",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "ansible-role-variable-prefix-drift",
+      "owner_target": "_ansible-role-variable-prefix",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_lint_deep.py::test_role_variables_use_namespaced_prefix",
       "full_gate_phase": "test"
     }
   ]

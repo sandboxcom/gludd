@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 import os
@@ -28,7 +29,12 @@ if TYPE_CHECKING:
         ShadowBatchReceiptWriter,
         ShadowFailureReceiptWriter,
     )
-    from scripts.ci_batch_replay_audit import ReplayAuditRequest, ShadowReplayAuditor
+    from scripts.ci_batch_replay_audit import (
+        ReplayAdmissionRequest,
+        ReplayAdmissionResult,
+        ReplayAuditRequest,
+        ShadowReplayAuditor,
+    )
     from scripts.ci_gate_progress import (
         MAX_PROGRESS_BATCHES,
         MAX_PROGRESS_OUTPUT_BYTES,
@@ -47,7 +53,12 @@ else:
         ShadowBatchReceiptWriter,
         ShadowFailureReceiptWriter,
     )
-    from ci_batch_replay_audit import ReplayAuditRequest, ShadowReplayAuditor
+    from ci_batch_replay_audit import (
+        ReplayAdmissionRequest,
+        ReplayAdmissionResult,
+        ReplayAuditRequest,
+        ShadowReplayAuditor,
+    )
     from ci_gate_progress import (
         MAX_PROGRESS_BATCHES,
         MAX_PROGRESS_OUTPUT_BYTES,
@@ -113,7 +124,7 @@ class ShadowReceiptBindings:
 
 @dataclass(frozen=True)
 class BatchReceiptSession:
-    """Shadow-only receipt dependencies for one serial runner invocation."""
+    """Receipt dependencies for one bounded serial runner invocation."""
 
     writer: ShadowBatchReceiptWriter
     run_id: str
@@ -122,6 +133,240 @@ class BatchReceiptSession:
     failure_writer: ShadowFailureReceiptWriter | None = None
     auditor: ShadowReplayAuditor | None = None
     progress: ShadowGateProgress | None = None
+    admission_enabled: bool = False
+
+
+def admit_exact_batch(
+    session: BatchReceiptSession,
+    *,
+    shard: str,
+    batch_index: int,
+    files: list[str],
+    coverage_destination: Path,
+) -> tuple[ReplayAdmissionResult | None, str]:
+    """Attempt one fail-closed exact-action admission through the session auditor."""
+    try:
+        action_identity = session.expected_identity(shard, batch_index, files)
+        observed_action_identity = session.observed_identity(shard, batch_index, files)
+        admission = (
+            session.auditor.admit(
+                ReplayAdmissionRequest(
+                    action_identity=action_identity,
+                    observed_action_identity=observed_action_identity,
+                    coverage_destination=coverage_destination,
+                )
+            )
+            if session.auditor is not None
+            else None
+        )
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        return None, f"identity-{type(exc).__name__}"
+    return admission, "auditor-unavailable" if admission is None else admission.reason
+
+
+def print_batch_execution_summary(
+    *,
+    planned: int,
+    executed: int,
+    resumed: int,
+    time_saved_seconds: float,
+    max_files_per_batch: int,
+    batch_workers: int,
+) -> dict[str, object]:
+    """Emit and return bounded executed-versus-resumed reconciliation evidence."""
+    not_started = max(0, planned - executed - resumed)
+    reconciled = executed >= 0 and resumed >= 0 and executed + resumed <= planned
+    summary: dict[str, object] = {
+        "planned": planned,
+        "executed": executed,
+        "resumed": resumed,
+        "not_started": not_started,
+        "time_saved_seconds": round(time_saved_seconds, 3),
+        "max_files_per_batch": max_files_per_batch,
+        "workers": batch_workers,
+        "reconciled": reconciled,
+    }
+    print(
+        "GATE-BATCH-EXECUTION "
+        f"planned={planned} executed={executed} resumed={resumed} "
+        f"not_started={not_started} "
+        f"time_saved_seconds={time_saved_seconds:.3f} "
+        f"max_files_per_batch={max_files_per_batch} workers={batch_workers} "
+        f"reconciliation={'pass' if reconciled else 'fail'}",
+        flush=True,
+    )
+    return summary
+
+
+def gate_owner_is_alive(environment: Mapping[str, str] | None = None) -> bool:
+    """Fail closed when the full-gate make owner has disappeared."""
+    owner = (os.environ if environment is None else environment).get(
+        "GLUDD_GATE_OWNER_PID"
+    )
+    if owner is None:
+        return True
+    try:
+        owner_pid = int(owner)
+    except ValueError:
+        return False
+    if owner_pid <= 1:
+        return False
+    try:
+        os.kill(owner_pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def record_phase_result(
+    phase_results: dict[str, int | str],
+    phase: str,
+    result: int | str,
+) -> None:
+    """Publish one durable, machine-readable phase result."""
+    phase_results[phase] = result
+    print(f"SERIAL-SHARD-PHASE phase={phase} result={result}", flush=True)
+
+
+def build_serial_runner_parser(
+    *,
+    description: str | None,
+    default_shards: tuple[str, ...] | list[str],
+    max_files_per_batch: int,
+    heartbeat_seconds: float,
+    no_progress_seconds: float,
+) -> argparse.ArgumentParser:
+    """Build the bounded serial runner CLI without owning execution behavior."""
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "--shards",
+        default=" ".join(default_shards),
+        help="space or comma separated shard names",
+    )
+    parser.add_argument("--pytest-args", default="", help="extra pytest arguments")
+    parser.add_argument(
+        "--max-files-per-batch",
+        type=int,
+        default=max_files_per_batch,
+        help="maximum collected test files in one owned pytest process",
+    )
+    parser.add_argument(
+        "--batch-workers",
+        type=int,
+        choices=(1, 2),
+        default=1,
+        help="bounded pytest-xdist loadfile workers per batch (maximum: 2)",
+    )
+    parser.add_argument(
+        "--heartbeat-seconds",
+        type=float,
+        default=heartbeat_seconds,
+        help="visible owned-process heartbeat interval",
+    )
+    parser.add_argument(
+        "--no-progress-seconds",
+        type=float,
+        default=no_progress_seconds,
+        help="quiet-output deadline before owned TERM-to-KILL cleanup",
+    )
+    parser.add_argument(
+        "--skip-isolated",
+        action="store_true",
+        help="skip the separately scheduled process-heavy test",
+    )
+    parser.add_argument(
+        "--skip-aggregate",
+        action="store_true",
+        help="defer the 85/75 aggregate coverage gate to a downstream job",
+    )
+    parser.add_argument(
+        "--coverage-output",
+        type=Path,
+        help="combine this invocation's batch coverage into one data file",
+    )
+    parser.add_argument(
+        "--attestation-output",
+        type=Path,
+        help="also publish the terminal exact-SHA attestation at this path",
+    )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="print the bounded canonical plan without executing tests or writing evidence",
+    )
+    parser.add_argument(
+        "--require-release-policy",
+        action="store_true",
+        help="reject noncanonical pytest policy before release-attestation work",
+    )
+    parser.add_argument(
+        "--allow-dirty-worktree",
+        action="store_true",
+        help=(
+            "permit a stable dirty worktree for commit-preflight testing; "
+            "the resulting attestation remains ineligible for release"
+        ),
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "skip batches that already passed in a previous run for the same "
+            "candidate SHA and reuse their coverage fragments"
+        ),
+    )
+    parser.add_argument(
+        "--resume-file",
+        type=Path,
+        default=None,
+        help="path to the resume state file (default: <resource-root>/ci-shards/resume.json)",
+    )
+    receipt_admission = parser.add_mutually_exclusive_group()
+    receipt_admission.add_argument(
+        "--exact-sha-resume",
+        dest="exact_sha_resume",
+        action="store_true",
+        default=False,
+        help="admit authenticated pass receipts for the same clean exact SHA",
+    )
+    receipt_admission.add_argument(
+        "--no-exact-sha-resume",
+        dest="exact_sha_resume",
+        action="store_false",
+        help="force a cold run while continuing bounded shadow receipt writes",
+    )
+    shadow_toggles = (
+        (
+            "--no-shadow-batch-receipts",
+            "execute every batch without publishing any shadow receipt",
+        ),
+        (
+            "--no-shadow-failure-receipts",
+            "keep pass receipts but disable sanitized non-reusable failure receipts",
+        ),
+        (
+            "--no-shadow-receipt-authentication",
+            "write legacy unsigned shadow receipts and disable future eligibility",
+        ),
+        (
+            "--no-shadow-replay-audit",
+            "keep shadow writes but disable prior-receipt eligibility reports",
+        ),
+        (
+            "--no-shadow-gate-progress",
+            "keep shadow writes and replay auditing but disable progress/ETA reports",
+        ),
+    )
+    for flag, help_text in shadow_toggles:
+        parser.add_argument(flag, action="store_true", help=help_text)
+    parser.add_argument(
+        "--watchdog-owned-gate",
+        action="store_true",
+        help="mark the gate runner and pytest children for legacy watchdog exclusion",
+    )
+    return parser
 
 
 def receipt_base_identity(
@@ -134,6 +379,7 @@ def receipt_base_identity(
     heartbeat_seconds: float,
     no_progress_seconds: float,
     include_uv_probe: bool,
+    batch_workers: int = 1,
 ) -> dict[str, object]:
     """Build exact run-scoped identity shared by all batch actions."""
     policy = bindings.execution_policy(pytest_args)
@@ -154,8 +400,8 @@ def receipt_base_identity(
             "pytest_args": list(pytest_args),
             "heartbeat_seconds": heartbeat_seconds,
             "no_progress_seconds": no_progress_seconds,
-            "worker_count": 1,
-            "distribution": "none",
+            "worker_count": batch_workers,
+            "distribution": "loadfile" if batch_workers == 2 else "none",
             "cleanup_policy_version": 1,
         }
     )
@@ -231,8 +477,10 @@ def create_shadow_receipt_session(
     progress_enabled: bool = True,
     failure_receipts_enabled: bool = True,
     receipt_authentication_enabled: bool = True,
+    receipt_admission_enabled: bool = False,
+    batch_workers: int = 1,
 ) -> BatchReceiptSession:
-    """Create shadow writers and optional report-only replay auditing."""
+    """Create writers, auditing, and optional exact-receipt admission."""
     plans = bindings.plan_shards(
         shards,
         max_files_per_batch=max_files_per_batch,
@@ -257,6 +505,7 @@ def create_shadow_receipt_session(
         heartbeat_seconds=heartbeat_seconds,
         no_progress_seconds=no_progress_seconds,
         include_uv_probe=True,
+        batch_workers=batch_workers,
     )
     candidate_sha = str(repository_identity["expected_sha"])
 
@@ -282,6 +531,7 @@ def create_shadow_receipt_session(
             heartbeat_seconds=heartbeat_seconds,
             no_progress_seconds=no_progress_seconds,
             include_uv_probe=True,
+            batch_workers=batch_workers,
         )
         return batch_receipt_action_identity(
             bindings,
@@ -325,7 +575,7 @@ def create_shadow_receipt_session(
             candidate_sha=candidate_sha,
             trust_policy=trust_policy,
         )
-        if replay_audit_enabled
+        if replay_audit_enabled or receipt_admission_enabled
         else None
     )
     progress_batches = [
@@ -361,6 +611,7 @@ def create_shadow_receipt_session(
             if progress_enabled
             else None
         ),
+        admission_enabled=receipt_admission_enabled,
     )
 
 
@@ -554,8 +805,10 @@ def configure_shadow_receipts(
     progress_enabled: bool,
     failure_receipts_enabled: bool,
     receipt_authentication_enabled: bool,
+    receipt_admission_enabled: bool = False,
+    batch_workers: int = 1,
 ) -> SessionT | None:
-    """Configure shadow-only diagnostics while keeping every test executable."""
+    """Configure receipt diagnostics and optional exact-SHA admission."""
     if not writer_enabled:
         print("BATCH-RECEIPT-SHADOW status=disabled reason=operator-off", flush=True)
         print(
@@ -574,6 +827,10 @@ def configure_shadow_receipts(
         )
         print(
             "GATE-PROGRESS-SHADOW status=disabled reason=writer-off skips=0",
+            flush=True,
+        )
+        print(
+            "BATCH-RECEIPT-ADMISSION status=disabled reason=writer-off",
             flush=True,
         )
         return None
@@ -600,6 +857,10 @@ def configure_shadow_receipts(
             "GATE-PROGRESS-SHADOW status=disabled reason=source-ineligible skips=0",
             flush=True,
         )
+        print(
+            "BATCH-RECEIPT-ADMISSION status=disabled reason=source-ineligible",
+            flush=True,
+        )
         return None
     try:
         session = create_session(
@@ -613,12 +874,25 @@ def configure_shadow_receipts(
             progress_enabled=progress_enabled,
             failure_receipts_enabled=failure_receipts_enabled,
             receipt_authentication_enabled=receipt_authentication_enabled,
+            receipt_admission_enabled=receipt_admission_enabled,
+            batch_workers=batch_workers,
         )
         print(
-            "BATCH-RECEIPT-SHADOW status=enabled admission_reads=0 skips=0 "
-            "workers=1 max_generations=2 max_bytes=2147483648",
+            "BATCH-RECEIPT-SHADOW status=enabled "
+            f"workers={batch_workers} max_generations=2 max_bytes=2147483648",
             flush=True,
         )
+        if receipt_admission_enabled:
+            print(
+                "BATCH-RECEIPT-ADMISSION status=enabled "
+                f"mode=authenticated-exact-sha workers={batch_workers}",
+                flush=True,
+            )
+        else:
+            print(
+                "BATCH-RECEIPT-ADMISSION status=disabled reason=operator-off",
+                flush=True,
+            )
         if receipt_authentication_enabled:
             print(
                 "BATCH-RECEIPT-AUTH-SHADOW status=enabled "
@@ -694,6 +968,10 @@ def configure_shadow_receipts(
         )
         print(
             f"GATE-PROGRESS-SHADOW status=disabled reason={reason} skips=0",
+            flush=True,
+        )
+        print(
+            f"BATCH-RECEIPT-ADMISSION status=disabled reason={reason}",
             flush=True,
         )
         return None

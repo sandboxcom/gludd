@@ -20,25 +20,23 @@ from tests.unit.test_ci_named_shard_files import (
 
 
 @pytest.mark.parametrize(
-    ("scenario", "expected_rc", "expected_batches", "expected_phase"),
+    ("scenario", "later_rc", "later_phase"),
     [
-        ("disk", 73, 1, "unit-1a1:batch-002"),
-        ("interpreter", 78, 1, "unit-1a1:batch-002"),
-        ("worker", 70, 2, "unit-1a1:batch-002"),
-        ("worker-cleanup", 70, 2, "unit-1a1:batch-002"),
-        ("no-progress", 124, 2, "unit-1a1:batch-002"),
-        ("cancellation", 130, 2, "unit-1a1:batch-002"),
-        ("cleanup", 9, 2, "unit-1a1:cleanup"),
+        ("disk", 73, "unit-1a1:batch-002"),
+        ("interpreter", 78, "unit-1a1:batch-002"),
+        ("worker", 70, "unit-1a1:batch-002"),
+        ("worker-cleanup", 70, "unit-1a1:batch-002"),
+        ("no-progress", 124, "unit-1a1:batch-002"),
+        ("cancellation", 130, "unit-1a1:batch-002"),
     ],
 )
-def test_collected_failure_never_masks_later_terminal_safety_stop(
+def test_first_batch_failure_prevents_every_later_safety_event(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     scenario: str,
-    expected_rc: int,
-    expected_batches: int,
-    expected_phase: str,
+    later_rc: int,
+    later_phase: str,
 ) -> None:
     module = _load_script("run_ci_shards_serial")
     resources = module.ResourcePaths(
@@ -122,12 +120,11 @@ def test_collected_failure_never_masks_later_terminal_safety_stop(
     )
 
     output = capsys.readouterr().out
-    assert result == expected_rc
-    assert launched == [f"unit-1a1:batch-{index:03d}" for index in range(1, expected_batches + 1)]
+    assert result == 6
+    assert launched == ["unit-1a1:batch-001"]
     assert "'unit-1a1:batch-001': 6" in output
-    assert f"'{expected_phase}': {expected_rc}" in output
-    if scenario in {"cancellation", "worker-cleanup"}:
-        assert "'unit-1a1:cleanup': 9" in output
+    assert f"'{later_phase}': {later_rc}" not in output
+    assert "later-batches=not-started" in output
 
 
 def test_failed_batch_without_coverage_fragment_stops_before_later_evidence(
@@ -675,7 +672,7 @@ def test_serial_runner_fails_closed_when_coverage_erase_fails(
     result = module.run(["unit-1a1"], [])
 
     assert result == 2
-    assert expanded is False
+    assert expanded is True
 
 
 def test_owned_pytest_runner_times_out_silent_worker_and_emits_heartbeat(
@@ -1283,6 +1280,8 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
         "coverage_output": None,
         "resume_path": None,
         "watchdog_owned_gate": False,
+        "execution_summary": {},
+        "batch_workers": 1,
     }
 
 

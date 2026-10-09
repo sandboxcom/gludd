@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import hashlib
 import json
@@ -29,6 +28,7 @@ from coverage import CoverageData
 from coverage.exceptions import CoverageException
 
 if TYPE_CHECKING:
+    from scripts import ci_shadow_receipt_runtime as _receipt_runtime
     from scripts.ci_batch_receipts import (
         BatchReceiptRequest,
         ShadowBatchReceiptWriter,
@@ -45,37 +45,11 @@ if TYPE_CHECKING:
     )
     from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
     from scripts.ci_receipt_auth import load_gate_receipt_auth_context, parse_revoked_signers
-    from scripts.ci_shadow_receipt_runtime import (
-        BatchReceiptSession as _BatchReceiptSession,
-    )
-    from scripts.ci_shadow_receipt_runtime import (
-        ShadowReceiptBindings as _ShadowReceiptBindings,
-    )
-    from scripts.ci_shadow_receipt_runtime import (
-        batch_receipt_action_identity as _runtime_batch_receipt_action_identity,
-    )
-    from scripts.ci_shadow_receipt_runtime import (
-        configure_shadow_receipts as _configure_shadow_receipts,
-    )
-    from scripts.ci_shadow_receipt_runtime import (
-        create_shadow_receipt_session as _runtime_create_shadow_receipt_session,
-    )
-    from scripts.ci_shadow_receipt_runtime import (
-        publish_shadow_failure_receipt as _runtime_publish_shadow_failure_receipt,
-    )
-    from scripts.ci_shadow_receipt_runtime import (
-        receipt_base_identity as _runtime_receipt_base_identity,
-    )
-    from scripts.ci_shadow_receipt_runtime import (
-        report_shadow_gate_progress as _runtime_report_shadow_gate_progress,
-    )
-    from scripts.ci_shadow_receipt_runtime import (
-        report_shadow_replay_eligibility as _runtime_report_shadow_replay_eligibility,
-    )
     from scripts.gate_status_attestation import repository_state_id
     from scripts.resource_arbiter import resource_root as project_resource_root
     from scripts.run_ci_shards_parallel import _env_for_shard, _parse_shards
 else:
+    import ci_shadow_receipt_runtime as _receipt_runtime
     from ci_batch_receipts import (
         BatchReceiptRequest,
         ShadowBatchReceiptWriter,
@@ -92,47 +66,31 @@ else:
     )
     from ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
     from ci_receipt_auth import load_gate_receipt_auth_context, parse_revoked_signers
-    from ci_shadow_receipt_runtime import (
-        BatchReceiptSession as _BatchReceiptSession,
-    )
-    from ci_shadow_receipt_runtime import (
-        ShadowReceiptBindings as _ShadowReceiptBindings,
-    )
-    from ci_shadow_receipt_runtime import (
-        batch_receipt_action_identity as _runtime_batch_receipt_action_identity,
-    )
-    from ci_shadow_receipt_runtime import (
-        configure_shadow_receipts as _configure_shadow_receipts,
-    )
-    from ci_shadow_receipt_runtime import (
-        create_shadow_receipt_session as _runtime_create_shadow_receipt_session,
-    )
-    from ci_shadow_receipt_runtime import (
-        publish_shadow_failure_receipt as _runtime_publish_shadow_failure_receipt,
-    )
-    from ci_shadow_receipt_runtime import (
-        receipt_base_identity as _runtime_receipt_base_identity,
-    )
-    from ci_shadow_receipt_runtime import (
-        report_shadow_gate_progress as _runtime_report_shadow_gate_progress,
-    )
-    from ci_shadow_receipt_runtime import (
-        report_shadow_replay_eligibility as _runtime_report_shadow_replay_eligibility,
-    )
     from gate_status_attestation import repository_state_id
     from resource_arbiter import resource_root as project_resource_root
     from run_ci_shards_parallel import _env_for_shard, _parse_shards
 
-BatchReceiptSession: TypeAlias = _BatchReceiptSession
-ShadowReceiptBindings: TypeAlias = _ShadowReceiptBindings
-_report_shadow_gate_progress = _runtime_report_shadow_gate_progress
-_report_shadow_replay_eligibility = _runtime_report_shadow_replay_eligibility
+BatchReceiptSession: TypeAlias = _receipt_runtime.BatchReceiptSession
+ShadowReceiptBindings: TypeAlias = _receipt_runtime.ShadowReceiptBindings
+_build_serial_runner_parser = _receipt_runtime.build_serial_runner_parser
+_configure_shadow_receipts = _receipt_runtime.configure_shadow_receipts
+_gate_owner_is_alive = _receipt_runtime.gate_owner_is_alive
+_print_batch_execution_summary = _receipt_runtime.print_batch_execution_summary
+_record_phase_result = _receipt_runtime.record_phase_result
+_report_shadow_gate_progress = _receipt_runtime.report_shadow_gate_progress
+_report_shadow_replay_eligibility = _receipt_runtime.report_shadow_replay_eligibility
+_runtime_admit_exact_batch = _receipt_runtime.admit_exact_batch
+_runtime_batch_receipt_action_identity = _receipt_runtime.batch_receipt_action_identity
+_runtime_create_shadow_receipt_session = _receipt_runtime.create_shadow_receipt_session
+_runtime_publish_shadow_failure_receipt = _receipt_runtime.publish_shadow_failure_receipt
+_runtime_receipt_base_identity = _receipt_runtime.receipt_base_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 DEFAULT_SHARDS = tuple(SHARDS)
 _CANCELLATION_RETURN_CODES = frozenset({128 + int(signal.SIGINT), 128 + int(signal.SIGTERM)})
 _COLLECT_ALL_PYTEST_RETURN_CODES = frozenset({1, 2, 5, 6})
+GATE_OWNER_DEATH_EXIT_CODE = 128 + int(signal.SIGTERM)
 ATTESTATION_SCHEMA_VERSION = 3
 RELEASE_PYTEST_ARGS = ("-W", "error")
 RELEASE_PYTHON_VERSION = "3.11"
@@ -396,6 +354,7 @@ def _write_terminal_attestation(
     coverage: dict[str, object] | None = None,
     pytest_args: list[str] | None = None,
     pairing: dict[str, object] | None = None,
+    batch_execution: Mapping[str, object] | None = None,
 ) -> None:
     """Atomically publish terminal exact-SHA shard evidence."""
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -424,6 +383,8 @@ def _write_terminal_attestation(
         payload["error"] = error
     if coverage is not None:
         payload["coverage"] = coverage
+    if batch_execution is not None:
+        payload["batch_execution"] = dict(batch_execution)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
     temporary = Path(temporary_name)
     try:
@@ -541,6 +502,7 @@ def _receipt_base_identity(
     heartbeat_seconds: float,
     no_progress_seconds: float,
     include_uv_probe: bool,
+    batch_workers: int = 1,
 ) -> dict[str, object]:
     """Compatibility wrapper retaining runner-level monkeypatch seams."""
     return _runtime_receipt_base_identity(
@@ -552,6 +514,7 @@ def _receipt_base_identity(
         heartbeat_seconds=heartbeat_seconds,
         no_progress_seconds=no_progress_seconds,
         include_uv_probe=include_uv_probe,
+        batch_workers=batch_workers,
     )
 
 
@@ -600,32 +563,11 @@ def _shadow_receipt_bindings() -> ShadowReceiptBindings:
     )
 
 
-def _create_shadow_receipt_session(
-    *,
-    repository_identity: Mapping[str, object],
-    shards: list[str],
-    pytest_args: list[str],
-    max_files_per_batch: int,
-    heartbeat_seconds: float,
-    no_progress_seconds: float,
-    replay_audit_enabled: bool = True,
-    progress_enabled: bool = True,
-    failure_receipts_enabled: bool = True,
-    receipt_authentication_enabled: bool = True,
-) -> BatchReceiptSession:
+def _create_shadow_receipt_session(**session_options: Any) -> BatchReceiptSession:
     """Create a session through the extracted runtime with live runner seams."""
     return _runtime_create_shadow_receipt_session(
         _shadow_receipt_bindings(),
-        repository_identity=repository_identity,
-        shards=shards,
-        pytest_args=pytest_args,
-        max_files_per_batch=max_files_per_batch,
-        heartbeat_seconds=heartbeat_seconds,
-        no_progress_seconds=no_progress_seconds,
-        replay_audit_enabled=replay_audit_enabled,
-        progress_enabled=progress_enabled,
-        failure_receipts_enabled=failure_receipts_enabled,
-        receipt_authentication_enabled=receipt_authentication_enabled,
+        **session_options,
     )
 
 
@@ -651,6 +593,7 @@ def _pytest_command(
     *,
     watchdog_owned_gate: bool = False,
     junit_xml: Path | None = None,
+    batch_workers: int = 1,
 ) -> list[str]:
     # Coverage.py refuses to combine statement-only and branch-aware data.
     # Every batch therefore uses the same branch-aware concurrency config,
@@ -669,6 +612,8 @@ def _pytest_command(
         *pytest_args,
         f"--basetemp={basetemp / 'pytest'}",
     ]
+    if batch_workers == 2:
+        command.extend(["-n", "2", "--dist=loadfile", "--max-worker-restart=0"])
     if junit_xml is not None:
         command.extend(
             [
@@ -1045,6 +990,14 @@ def _run_owned_pytest(
                     _terminate_owned_process(process)
 
             now = time.monotonic()
+            if forced_returncode is None and not _gate_owner_is_alive(env):
+                forced_returncode = GATE_OWNER_DEATH_EXIT_CODE
+                print(
+                    f"GATE-OWNER-DEATH label={label} "
+                    f"rc={GATE_OWNER_DEATH_EXIT_CODE} cleanup=TERM->KILL",
+                    flush=True,
+                )
+                _terminate_owned_process(process)
             if now >= next_heartbeat:
                 print(
                     f"SHARD-HEARTBEAT label={label} elapsed={now - started:.0f}s "
@@ -1421,16 +1374,6 @@ def _coverage_output_evidence(destination: Path) -> dict[str, object]:
     }
 
 
-def _record_phase_result(
-    phase_results: dict[str, int | str],
-    phase: str,
-    result: int | str,
-) -> None:
-    """Publish one durable, machine-readable phase result."""
-    phase_results[phase] = result
-    print(f"SERIAL-SHARD-PHASE phase={phase} result={result}", flush=True)
-
-
 def _publish_shadow_failure_receipt(
     session: BatchReceiptSession,
     *,
@@ -1483,16 +1426,52 @@ def run(
     resume_path: Path | None = None,
     watchdog_owned_gate: bool = False,
     receipt_session: BatchReceiptSession | None = None,
+    execution_summary: dict[str, object] | None = None,
+    batch_workers: int = 1,
 ) -> int:
     """Run bounded batches serially and aggregate their coverage fragments."""
     if max_files_per_batch < 1:
         raise ValueError("max_files_per_batch must be positive")
+    if batch_workers not in {1, 2}:
+        raise ValueError("batch_workers must be in 1..2")
     phase_results: dict[str, int | str] = {}
     if not shards:
         print("SERIAL-SHARD-PLAN-EMPTY rc=2", flush=True)
         _record_phase_result(phase_results, "plan", 2)
         _print_serial_summary(shards, {"plan": 2}, phase_results)
         return 2
+    planned_shards = _plan_shards(
+        shards,
+        max_files_per_batch=max_files_per_batch,
+    )
+    planned_batch_count = sum(len(batches) for _shard, batches in planned_shards)
+    executed_batch_count = 0
+    resumed_batch_count = 0
+    time_saved_seconds = 0.0
+    if watchdog_owned_gate and not _gate_owner_is_alive():
+        owner_failures = {"gate-owner": GATE_OWNER_DEATH_EXIT_CODE}
+        _record_phase_result(
+            phase_results,
+            "gate-owner",
+            GATE_OWNER_DEATH_EXIT_CODE,
+        )
+        print(
+            f"GATE-OWNER-DEATH phase=admission rc={GATE_OWNER_DEATH_EXIT_CODE}; "
+            "all-batches=not-started",
+            flush=True,
+        )
+        batch_summary = _print_batch_execution_summary(
+            planned=planned_batch_count,
+            executed=0,
+            resumed=0,
+            time_saved_seconds=0.0,
+            max_files_per_batch=max_files_per_batch,
+            batch_workers=batch_workers,
+        )
+        if execution_summary is not None:
+            execution_summary.update(batch_summary)
+        _print_serial_summary(shards, owner_failures, phase_results)
+        return GATE_OWNER_DEATH_EXIT_CODE
     expected_interpreter = _interpreter_identity()
     resume_state: dict[str, object] = {}
     resume_valid = False
@@ -1626,13 +1605,9 @@ def run(
             return cleanup_rc
         return failures["isolated"]
 
-    for index, shard in enumerate(shards, start=1):
+    for index, (shard, batches) in enumerate(planned_shards, start=1):
         safety_stop_rc = 0
         shard_failure_rc = 0
-        batches = _partition_test_paths(
-            expand_shard(shard),
-            max_files=max_files_per_batch,
-        )
         if not batches:
             print(f"SHARD-EMPTY shard={shard}", flush=True)
             failures[shard] = 2
@@ -1677,19 +1652,94 @@ def run(
             )
             shard_failed = False
             for batch_index, files in enumerate(batches, start=1):
+                if watchdog_owned_gate and not _gate_owner_is_alive():
+                    failure_phase = f"{shard}:batch-{batch_index:03d}"
+                    failures[failure_phase] = GATE_OWNER_DEATH_EXIT_CODE
+                    shard_failure_rc = GATE_OWNER_DEATH_EXIT_CODE
+                    cancellation_rc = GATE_OWNER_DEATH_EXIT_CODE
+                    safety_stop_rc = GATE_OWNER_DEATH_EXIT_CODE
+                    shard_failed = True
+                    _record_phase_result(
+                        phase_results,
+                        failure_phase,
+                        GATE_OWNER_DEATH_EXIT_CODE,
+                    )
+                    print(
+                        f"GATE-OWNER-DEATH phase={failure_phase} "
+                        f"rc={GATE_OWNER_DEATH_EXIT_CODE}; later-batches=not-started",
+                        flush=True,
+                    )
+                    break
                 batch_started_at = _utc_now()
                 batch_started_monotonic = time.monotonic()
                 batch_name = f"{shard}-batch-{batch_index:03d}"
                 failure_phase = f"{shard}:batch-{batch_index:03d}"
                 batch_setup_phase = f"{failure_phase}:setup"
-                if resume_path is not None and _resume_skip_batch(
+                if (
+                    receipt_session is not None
+                    and receipt_session.admission_enabled
+                ):
+                    admission_destination = (
+                        COVERAGE_SHARDS
+                        / f".coverage.{shard}.batch-{batch_index:03d}"
+                    )
+                    admission, admission_reason = _runtime_admit_exact_batch(
+                        receipt_session,
+                        shard=shard,
+                        batch_index=batch_index,
+                        files=files,
+                        coverage_destination=admission_destination,
+                    )
+                    if admission is not None and admission.admitted:
+                        resumed_batch_count += 1
+                        time_saved_seconds += admission.duration_seconds or 0.0
+                        _record_phase_result(phase_results, batch_setup_phase, 0)
+                        _record_phase_result(
+                            phase_results,
+                            f"{failure_phase}:tmpdir-setup",
+                            "resumed",
+                        )
+                        _record_phase_result(phase_results, failure_phase, "resumed")
+                        _record_phase_result(
+                            phase_results,
+                            f"{failure_phase}:coverage",
+                            0,
+                        )
+                        _record_phase_result(
+                            phase_results,
+                            f"{failure_phase}:cleanup",
+                            "not-required",
+                        )
+                        print(
+                            "BATCH-RECEIPT-ADMISSION status=admitted "
+                            f"shard={shard} batch={batch_index} files={len(files)} "
+                            f"action={admission.action_digest or 'none'} "
+                            f"authentication={admission.authentication} "
+                            f"time_saved_seconds={(admission.duration_seconds or 0.0):.3f}",
+                            flush=True,
+                        )
+                        continue
+                    print(
+                        "BATCH-RECEIPT-ADMISSION status=miss "
+                        f"shard={shard} batch={batch_index} reason={admission_reason}",
+                        flush=True,
+                    )
+                if (
+                    not (
+                        receipt_session is not None
+                        and receipt_session.admission_enabled
+                    )
+                    and resume_path is not None
+                    and _resume_skip_batch(
                     resume_state,
                     shard,
                     batch_index,
                     files,
                     COVERAGE_SHARDS,
                     _RESOURCE_PATHS.root,
+                    )
                 ):
+                    resumed_batch_count += 1
                     _record_phase_result(phase_results, batch_setup_phase, 0)
                     _record_phase_result(phase_results, f"{failure_phase}:tmpdir-setup", 0)
                     _record_phase_result(phase_results, failure_phase, 0)
@@ -1700,6 +1750,7 @@ def run(
                         flush=True,
                     )
                     continue
+                executed_batch_count += 1
                 batchtemp = workspace / f"batch-{batch_index:03d}"
                 try:
                     batchtemp.mkdir(parents=True)
@@ -1842,6 +1893,7 @@ def run(
                         pytest_args,
                         watchdog_owned_gate=watchdog_owned_gate,
                         junit_xml=junit_xml,
+                        batch_workers=batch_workers,
                     ),
                     env=_owned_test_environment(env),
                     label=f"{shard}:batch-{batch_index:03d}",
@@ -2094,19 +2146,12 @@ def run(
                     shard_failed = True
                     break
                 if rc != 0:
-                    if _is_collect_all_pytest_returncode(rc) and batch_cleanup_rc == 0:
-                        print(
-                            f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; later-batches=continuing",
-                            flush=True,
-                        )
-                        shard_failed = True
-                        continue
                     print(
                         f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; later-batches=not-started",
                         flush=True,
                     )
                     shard_failed = True
-                    safety_stop_rc = batch_cleanup_rc if _is_collect_all_pytest_returncode(rc) else rc
+                    safety_stop_rc = rc
                     break
                 print(
                     f"SHARD-BATCH-PASS shard={shard} batch={batch_index} rc=0",
@@ -2202,104 +2247,45 @@ def run(
         failures["coverage:fragments-cleanup"] = fragments_cleanup_rc
         if _is_cancellation_returncode(fragments_cleanup_rc) or not terminal_rc:
             terminal_rc = fragments_cleanup_rc
+    batch_summary = _print_batch_execution_summary(
+        planned=planned_batch_count,
+        executed=executed_batch_count,
+        resumed=resumed_batch_count,
+        time_saved_seconds=time_saved_seconds,
+        max_files_per_batch=max_files_per_batch,
+        batch_workers=batch_workers,
+    )
+    if execution_summary is not None:
+        execution_summary.update(batch_summary)
+    if not batch_summary["reconciled"] and not terminal_rc:
+        failures["batch:reconciliation"] = RUNNER_EXCEPTION_EXIT_CODE
+        terminal_rc = RUNNER_EXCEPTION_EXIT_CODE
     _print_serial_summary(shards, failures, phase_results)
     return terminal_rc or max(failures.values(), default=0)
 
 
 def main() -> int:
     """Parse command-line options and execute the bounded shard plan."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--shards",
-        default=" ".join(DEFAULT_SHARDS),
-        help="space or comma separated shard names",
-    )
-    parser.add_argument("--pytest-args", default="", help="extra pytest arguments")
-    parser.add_argument(
-        "--max-files-per-batch",
-        type=int,
-        default=MAX_FILES_PER_BATCH,
-        help="maximum collected test files in one owned pytest process",
-    )
-    parser.add_argument(
-        "--heartbeat-seconds",
-        type=float,
-        default=DEFAULT_HEARTBEAT_SECONDS,
-        help="visible owned-process heartbeat interval",
-    )
-    parser.add_argument(
-        "--no-progress-seconds",
-        type=float,
-        default=DEFAULT_NO_PROGRESS_SECONDS,
-        help="quiet-output deadline before owned TERM-to-KILL cleanup",
-    )
-    parser.add_argument(
-        "--skip-isolated",
-        action="store_true",
-        help="skip the separately scheduled process-heavy test",
-    )
-    parser.add_argument(
-        "--skip-aggregate",
-        action="store_true",
-        help="defer the 85/75 aggregate coverage gate to a downstream job",
-    )
-    parser.add_argument(
-        "--coverage-output",
-        type=Path,
-        help="combine this invocation's batch coverage into one data file",
-    )
-    parser.add_argument(
-        "--attestation-output",
-        type=Path,
-        help="also publish the terminal exact-SHA attestation at this path",
-    )
-    parser.add_argument(
-        "--validate-only",
-        action="store_true",
-        help="print the bounded canonical plan without executing tests or writing evidence",
-    )
-    parser.add_argument(
-        "--require-release-policy",
-        action="store_true",
-        help="reject noncanonical pytest policy before release-attestation work",
-    )
-    parser.add_argument(
-        "--allow-dirty-worktree",
-        action="store_true",
-        help=(
-            "permit a stable dirty worktree for commit-preflight testing; "
-            "the resulting attestation remains ineligible for release"
-        ),
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help=(
-            "skip batches that already passed in a previous run for the same "
-            "candidate SHA and reuse their coverage fragments"
-        ),
-    )
-    parser.add_argument(
-        "--resume-file",
-        type=Path,
-        default=None,
-        help="path to the resume state file (default: <resource-root>/ci-shards/resume.json)",
-    )
-    shadow_toggles = (
-        ("--no-shadow-batch-receipts", "execute every batch without publishing any shadow receipt"),
-        ("--no-shadow-failure-receipts", "keep pass receipts but disable sanitized non-reusable failure receipts"),
-        ("--no-shadow-receipt-authentication", "write legacy unsigned shadow receipts and disable future eligibility"),
-        ("--no-shadow-replay-audit", "keep shadow writes but disable prior-receipt eligibility reports"),
-        ("--no-shadow-gate-progress", "keep shadow writes and replay auditing but disable progress/ETA reports"),
-    )
-    for flag, help_text in shadow_toggles:
-        parser.add_argument(flag, action="store_true", help=help_text)
-    parser.add_argument(
-        "--watchdog-owned-gate",
-        action="store_true",
-        help="mark the gate runner and pytest children for legacy watchdog exclusion",
+    parser = _build_serial_runner_parser(
+        description=__doc__,
+        default_shards=DEFAULT_SHARDS,
+        max_files_per_batch=MAX_FILES_PER_BATCH,
+        heartbeat_seconds=DEFAULT_HEARTBEAT_SECONDS,
+        no_progress_seconds=DEFAULT_NO_PROGRESS_SECONDS,
     )
     args = parser.parse_args()
+    if args.exact_sha_resume and args.no_shadow_receipt_authentication:
+        print(
+            "SERIAL-SHARD-POLICY-REJECTED exact-SHA resume requires receipt authentication",
+            flush=True,
+        )
+        return 2
+    if args.exact_sha_resume and args.resume:
+        print(
+            "SERIAL-SHARD-POLICY-REJECTED exact-SHA receipt resume and legacy resume are mutually exclusive",
+            flush=True,
+        )
+        return 2
     if args.allow_dirty_worktree and args.require_release_policy:
         print(
             "SERIAL-SHARD-POLICY-REJECTED dirty worktrees cannot produce release evidence",
@@ -2331,6 +2317,7 @@ def main() -> int:
     if args.resume:
         resume_path = args.resume_file or _resource_paths().resume
     pairing = _attestation_pairing(shards, pytest_args=pytest_args)
+    batch_execution: dict[str, object] = {}
     started_at = _utc_now()
     identity = _repository_identity(expected_sha=os.environ.get("GLUDD_CANDIDATE_SHA") or os.environ.get("GITHUB_SHA"))
     if _identity_is_execution_eligible(
@@ -2354,6 +2341,8 @@ def main() -> int:
                 receipt_authentication_enabled=(
                     not args.no_shadow_receipt_authentication
                 ),
+                receipt_admission_enabled=args.exact_sha_resume,
+                batch_workers=args.batch_workers,
             )
             initial_worktree_state = None
             if args.allow_dirty_worktree:
@@ -2371,6 +2360,8 @@ def main() -> int:
                     coverage_output=args.coverage_output,
                     resume_path=resume_path,
                     watchdog_owned_gate=args.watchdog_owned_gate,
+                    execution_summary=batch_execution,
+                    batch_workers=args.batch_workers,
                 )
             else:
                 returncode = run(
@@ -2385,6 +2376,8 @@ def main() -> int:
                     resume_path=resume_path,
                     watchdog_owned_gate=args.watchdog_owned_gate,
                     receipt_session=receipt_session,
+                    execution_summary=batch_execution,
+                    batch_workers=args.batch_workers,
                 )
             error = None
             if (
@@ -2428,6 +2421,7 @@ def main() -> int:
                 coverage=coverage_evidence,
                 pytest_args=pytest_args,
                 pairing=pairing,
+                batch_execution=batch_execution or None,
             )
 
     with _defer_termination_signals() as deferred_signals:

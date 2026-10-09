@@ -711,6 +711,11 @@ _module-graph-classification:
 	@$(MAKE) --no-print-directory test-specific \
 		TESTFILE="tests/unit/test_module_graph_deep.py::test_all_subpackages_classified"
 
+_ansible-role-variable-prefix:
+	@$(MAKE) --no-print-directory test-specific \
+		TESTFILE="tests/unit/test_ansible_lint_deep.py::test_role_variables_use_namespaced_prefix" \
+		PYTEST_ARGS="-W error -q"
+
 # S83.177: reject cheap, deterministic feature-branch failures before a branch
 # occupies the full-gate integration lane. Every phase delegates to the
 # repository's existing checker; this target owns only fail-fast sequencing.
@@ -756,6 +761,7 @@ integration-admission:
 	run_phase "worktree-guard" "worktree-guard" "fast" "90" "60" $(MAKE) --no-print-directory worktree-guard; \
 	run_phase "check-gate-failure-promotions" "check-gate-failure-promotions" "fast" "90" "60" $(MAKE) --no-print-directory check-gate-failure-promotions \
 		GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"; \
+	run_phase "ansible-role-variable-prefix" "_ansible-role-variable-prefix" "fast" "90" "60" $(MAKE) --no-print-directory _ansible-role-variable-prefix; \
 	run_phase "_dead-code-baseline-refresh" "_dead-code-baseline-refresh" "fast" "90" "60" $(MAKE) --no-print-directory _dead-code-baseline-refresh; \
 	run_phase "check-coverage-gaps" "check-coverage-gaps" "fast" "90" "60" $(MAKE) --no-print-directory check-coverage-gaps; \
 	run_phase "check-resource-ownership" "check-resource-ownership" "fast" "90" "60" $(MAKE) --no-print-directory check-resource-ownership \
@@ -800,7 +806,25 @@ _gate-run-lock-acquire:
 
 .NOTPARALLEL: gate gate-refresh
 
+GATE_EXACT_SHA_RESUME ?= 1
+GATE_MAX_FILES_PER_BATCH ?= 32
+GATE_BATCH_WORKERS ?= 2
+
+.PHONY: gate-admission-config
+gate-admission-config:
+	@case "$(GATE_EXACT_SHA_RESUME)" in 0|1) ;; *) echo "ERROR: GATE_EXACT_SHA_RESUME must be 0 or 1"; exit 2;; esac
+	@case "$(GATE_MAX_FILES_PER_BATCH)" in ''|*[!0-9]*) echo "ERROR: GATE_MAX_FILES_PER_BATCH must be an integer in 1..32"; exit 2;; esac; \
+	if [ "$(GATE_MAX_FILES_PER_BATCH)" -lt 1 ] || [ "$(GATE_MAX_FILES_PER_BATCH)" -gt 32 ]; then \
+		echo "ERROR: GATE_MAX_FILES_PER_BATCH must be in 1..32"; exit 2; \
+	fi
+	@case "$(GATE_BATCH_WORKERS)" in ''|*[!0-9]*) echo "ERROR: GATE_BATCH_WORKERS must be an integer in 1..2"; exit 2;; esac; \
+	if [ "$(GATE_BATCH_WORKERS)" -lt 1 ] || [ "$(GATE_BATCH_WORKERS)" -gt 2 ]; then \
+		echo "ERROR: GATE_BATCH_WORKERS must be in 1..2"; exit 2; \
+	fi
+	@echo "GATE-ADMISSION-CONFIG exact_sha_resume=$(GATE_EXACT_SHA_RESUME) max_files_per_batch=$(GATE_MAX_FILES_PER_BATCH) workers=$(GATE_BATCH_WORKERS) coverage=85/75"
+
 GATE_PREFLIGHT_TARGETS := \
+	gate-admission-config \
 	disk-cleanup-preflight \
 	check-generated-artifact-hygiene \
 	check-file-line-limits \
@@ -839,7 +863,7 @@ GATE_PREFLIGHT_STATUS ?= .gate-logs/gate-preflights.status
 GATE_PREFLIGHT_GATE_STATUS ?= .gate-status.next
 GATE_PREFLIGHT_FAILED_FILE ?= .gate-failed
 
-.PHONY: _gate-preflights _gate-preflight-fixture-pass-one _gate-preflight-fixture-fail _gate-preflight-fixture-pass-two
+.PHONY: _gate-preflights _gate-validation-admission _gate-preflight-fixture-pass-one _gate-preflight-fixture-fail _gate-preflight-fixture-pass-two
 
 _gate-preflight-fixture-pass-one _gate-preflight-fixture-pass-two:
 	@:
@@ -850,7 +874,7 @@ _gate-preflight-fixture-fail:
 _gate-preflights:
 	@mkdir -p "$(dir $(GATE_PREFLIGHT_STATUS))" "$(dir $(GATE_PREFLIGHT_GATE_STATUS))" "$(dir $(GATE_PREFLIGHT_FAILED_FILE))"
 	@: > "$(GATE_PREFLIGHT_STATUS)"
-	@PREFLIGHT_FAILURES=0; PREFLIGHT_TOTAL=0; \
+	@PREFLIGHT_TOTAL=0; \
 	for target in $(GATE_PREFLIGHT_TARGETS); do \
 		PREFLIGHT_TOTAL=$$((PREFLIGHT_TOTAL + 1)); \
 		echo "=== GATE PREFLIGHT: $$target ==="; \
@@ -859,27 +883,66 @@ _gate-preflights:
 		else \
 			RC=$$?; \
 			RESULT="$$target FAIL $$RC"; \
-			PREFLIGHT_FAILURES=$$((PREFLIGHT_FAILURES + 1)); \
 			touch "$(GATE_PREFLIGHT_FAILED_FILE)"; \
+			echo "$$RESULT"; \
+			echo "$$RESULT" >> "$(GATE_PREFLIGHT_STATUS)"; \
+			echo "FAIL 1 first=$$target log=$(GATE_PREFLIGHT_STATUS)" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
+			echo "[gate] preflight $$target failed; terminating admission immediately"; \
+			exit "$$RC"; \
 		fi; \
 		echo "$$RESULT"; \
 		echo "$$RESULT" >> "$(GATE_PREFLIGHT_STATUS)"; \
 	done; \
-	if [ "$$PREFLIGHT_FAILURES" -eq 0 ]; then \
-		echo "PASS $$PREFLIGHT_TOTAL" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
-	else \
-		echo "FAIL $$PREFLIGHT_FAILURES log=$(GATE_PREFLIGHT_STATUS)" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
-		echo "[gate] $$PREFLIGHT_FAILURES preflight failures retained; continuing remaining phases"; \
-	fi
+	echo "PASS $$PREFLIGHT_TOTAL" >> "$(GATE_PREFLIGHT_GATE_STATUS)"
+
+GATE_ADMISSION_STATUS ?= .gate-status.next
+GATE_ADMISSION_FINAL_STATUS ?= .gate-status
+GATE_ADMISSION_FAILED_FILE ?= .gate-failed
+GATE_RUN_LOCK_OWNER_PID ?= 0
+
+_gate-validation-admission:
+	@if [ ! -f "$(GATE_ADMISSION_FAILED_FILE)" ]; then \
+		echo "GATE-VALIDATION-ADMISSION status=pass"; \
+		exit 0; \
+	fi; \
+	echo "test NOT-STARTED validation-failed" >> "$(GATE_ADMISSION_STATUS)"; \
+	echo "smoke NOT-STARTED validation-failed" >> "$(GATE_ADMISSION_STATUS)"; \
+	echo "---" >> "$(GATE_ADMISSION_STATUS)"; \
+	echo "epoch $$(date +%s)" >> "$(GATE_ADMISSION_STATUS)"; \
+	if [ -n "$(GATE_RUN_LOCK)" ]; then \
+		$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$(GATE_RUN_LOCK_OWNER_PID)" \
+			|| echo "gate-lock FAIL release" >> "$(GATE_ADMISSION_STATUS)"; \
+	fi; \
+	echo "=== GATE: FAILED ===" >> "$(GATE_ADMISSION_STATUS)"; \
+	if ! $(UV) run python scripts/gate_status_attestation.py sign-terminal "$(GATE_ADMISSION_STATUS)"; then \
+		echo "GATE-VALIDATION-ADMISSION status=attestation-failed" >&2; exit 2; \
+	fi; \
+	mv "$(GATE_ADMISSION_STATUS)" "$(GATE_ADMISSION_FINAL_STATUS)"; \
+	rm -f "$(GATE_ADMISSION_FAILED_FILE)"; \
+	echo "GATE-VALIDATION-ADMISSION status=failed test=not-started"; \
+	cat "$(GATE_ADMISSION_FINAL_STATUS)"; \
+	exit 1
 
 gate: _gate-run-lock-acquire
-	@rm -f .gate-failed .gate-status.next .gate-status.running
+	@rm -f .gate-failed .gate-status.next .gate-status.running .gate-terminalized
 	@mkdir -p .gate-logs
 	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next
 	@echo "=== GATE PHASE: preflights ==="
 	@printf "preflights " >> .gate-status.next
-	@$(MAKE) --no-print-directory _gate-preflights
+	@if ! $(MAKE) --no-print-directory _gate-preflights; then \
+		echo "---" >> .gate-status.next; \
+		echo "epoch $$(date +%s)" >> .gate-status.next; \
+		$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID" || echo "gate-lock FAIL release" >> .gate-status.next; \
+		echo "=== GATE: FAILED ===" >> .gate-status.next; \
+		if ! $(UV) run python scripts/gate_status_attestation.py sign-terminal .gate-status.next; then \
+			echo "[gate] terminal failure attestation could not be authenticated" >&2; exit 2; \
+		fi; \
+		mv .gate-status.next .gate-status; \
+		rm -f .gate-failed; \
+		cat .gate-status; \
+		exit 1; \
+	fi
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
 	@# emits a timestamped stdout marker as it STARTS, so a running gate (even
 	@# backgrounded) is visibly advancing through phases — never a silent black box.
@@ -922,6 +985,7 @@ gate: _gate-run-lock-acquire
 	@echo "=== GATE PHASE: collect ==="
 	@printf "collect " >> .gate-status.next
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status.next || (echo "FAIL collection-errors" >> .gate-status.next && touch .gate-failed)
+	@$(MAKE) --no-print-directory _gate-validation-admission GATE_ADMISSION_STATUS=.gate-status.next GATE_ADMISSION_FINAL_STATUS=.gate-status GATE_ADMISSION_FAILED_FILE=.gate-failed GATE_RUN_LOCK="$(GATE_RUN_LOCK)" GATE_RUN_LOCK_OWNER_PID="$$PPID"
 	@echo "=== GATE PHASE: test ==="
 	@# Delegate to scripts/run_gate.sh which provides:
 	@#   (1) exclusive non-blocking flock on /tmp/gludd-gate.lock — a concurrent
@@ -932,7 +996,8 @@ gate: _gate-run-lock-acquire
 	@#       on any exit, preventing orphan-holds-lock / tmp-leak after a kill.
 	@# run_gate.sh writes a complete test result to the private status snapshot
 	@# and touches .gate-failed on failure, so we only need to propagate its exit.
-	@GATE_STATUS_FILE=.gate-status.next GATE_FAILED_FILE=.gate-failed bash scripts/run_gate.sh || { EXIT=$$?; \
+	@GLUDD_GATE_EXACT_SHA_RESUME="$(GATE_EXACT_SHA_RESUME)" GLUDD_GATE_MAX_FILES_PER_BATCH="$(GATE_MAX_FILES_PER_BATCH)" GLUDD_GATE_BATCH_WORKERS="$(GATE_BATCH_WORKERS)" GLUDD_GATE_OWNER_PID="$$PPID" GATE_RUN_LOCK_PATH="$(GATE_RUN_LOCK)" GATE_RUN_LOCK_OWNER_PID="$$PPID" GATE_FINAL_STATUS_FILE=.gate-status GATE_TERMINALIZED_FILE=.gate-terminalized GATE_STATUS_FILE=.gate-status.next GATE_FAILED_FILE=.gate-failed bash scripts/run_gate.sh || { EXIT=$$?; \
+		if [ -f .gate-terminalized ]; then echo "[gate] cancellation finalized and authenticated"; exit "$$EXIT"; fi; \
 		grep -q '^test .*FAIL' .gate-status.next 2>/dev/null || echo "test FAIL non-zero-exit $$EXIT" >> .gate-status.next; \
 		touch .gate-failed; \
 		echo "[gate] test phase exited $$EXIT; completing failure attestation"; \
@@ -947,6 +1012,9 @@ gate: _gate-run-lock-acquire
 		rm -f .gate-failed; \
 		echo "=== GATE: FAILED ==="; \
 		echo "=== GATE: FAILED ===" >> .gate-status.next; \
+		if ! $(UV) run python scripts/gate_status_attestation.py sign-terminal .gate-status.next; then \
+			echo "[gate] terminal failure attestation could not be authenticated" >&2; exit 2; \
+		fi; \
 		mv .gate-status.next .gate-status; \
 		cat .gate-status; \
 		exit 1; \

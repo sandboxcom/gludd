@@ -39,10 +39,48 @@ if [ -n "${CLAUDE_AGENT_ID:-}" ] || [ -n "${GLUDD_SUBAGENT:-}" ]; then
     fi
 fi
 
+# LOCAL ADMISSION POLICY: local gates default to authenticated exact-SHA receipt
+# reuse and a bounded 32-file process boundary. Hosted CI invokes the serial
+# runner directly and remains cold. Operators can force a cold local gate with
+# GLUDD_GATE_EXACT_SHA_RESUME=0; no value may increase worker concurrency.
+GATE_EXACT_SHA_RESUME="${GLUDD_GATE_EXACT_SHA_RESUME:-1}"
+GATE_MAX_FILES_PER_BATCH="${GLUDD_GATE_MAX_FILES_PER_BATCH:-32}"
+GATE_BATCH_WORKERS="${GLUDD_GATE_BATCH_WORKERS:-2}"
+case "${GATE_EXACT_SHA_RESUME}" in
+    0) GATE_RESUME_ARGUMENT="--no-exact-sha-resume" ;;
+    1) GATE_RESUME_ARGUMENT="--exact-sha-resume" ;;
+    *)
+        echo "run_gate.sh: GLUDD_GATE_EXACT_SHA_RESUME must be 0 or 1" >&2
+        exit 2
+        ;;
+esac
+case "${GATE_MAX_FILES_PER_BATCH}" in
+    ''|*[!0-9]*)
+        echo "run_gate.sh: GLUDD_GATE_MAX_FILES_PER_BATCH must be an integer in 1..32" >&2
+        exit 2
+        ;;
+esac
+if [ "${GATE_MAX_FILES_PER_BATCH}" -lt 1 ] || [ "${GATE_MAX_FILES_PER_BATCH}" -gt 32 ]; then
+    echo "run_gate.sh: GLUDD_GATE_MAX_FILES_PER_BATCH must be in 1..32" >&2
+    exit 2
+fi
+case "${GATE_BATCH_WORKERS}" in
+    ''|*[!0-9]*)
+        echo "run_gate.sh: GLUDD_GATE_BATCH_WORKERS must be an integer in 1..2" >&2
+        exit 2
+        ;;
+esac
+if [ "${GATE_BATCH_WORKERS}" -lt 1 ] || [ "${GATE_BATCH_WORKERS}" -gt 2 ]; then
+    echo "run_gate.sh: GLUDD_GATE_BATCH_WORKERS must be in 1..2" >&2
+    exit 2
+fi
+
 # GATE_LOCK_FILE/BASETEMP_PREFIX can be overridden in tests.  In normal use,
 # derive both paths from the checkout namespace so gates from unrelated
 # projects do not reject one another or share pytest scratch directories.
-ARBITER_SCRIPT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resource_arbiter.py"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
+ARBITER_SCRIPT="${SCRIPT_DIR}/resource_arbiter.py"
 PROJECT_NAMESPACE="${GLUDD_PROJECT_NAMESPACE:-}"
 if [ -z "${PROJECT_NAMESPACE}" ]; then
     PROJECT_NAMESPACE="$(python3 "${ARBITER_SCRIPT}" namespace)"
@@ -57,43 +95,94 @@ BASETEMP_PREFIX="${GATE_BASETEMP_PREFIX:-${RESOURCE_DIR}/gate}"
 mkdir -p "$(dirname -- "${LOCK_FILE}")" "$(dirname -- "${BASETEMP_PREFIX}")"
 STATUS_FILE="${GATE_STATUS_FILE:-.gate-status}"
 FAILED_FILE="${GATE_FAILED_FILE:-.gate-failed}"
+FINAL_STATUS_FILE="${GATE_FINAL_STATUS_FILE:-}"
+TERMINALIZED_FILE="${GATE_TERMINALIZED_FILE:-}"
+RUN_LOCK_PATH="${GATE_RUN_LOCK_PATH:-}"
+RUN_LOCK_OWNER_PID="${GATE_RUN_LOCK_OWNER_PID:-}"
 
 # Unique per-run basetemp — created AFTER the lock is held (see below) so a
 # rejected second invocation never creates (nor has to clean up) a basetemp dir.
 # Empty until then; the trap guards on emptiness.
 BASETEMP=""
+GATE_LOCK_ACQUIRED=0
+CANCELLATION_RC=0
+CANCELLATION_REASON=""
+
+_finalize_cancellation() {
+    local rc="$1" reason="$2"
+    touch "${FAILED_FILE}"
+    if ! grep -q '^test .*FAIL' "${STATUS_FILE}" 2>/dev/null; then
+        echo "test FAIL cancelled rc=${rc} reason=${reason}" >> "${STATUS_FILE}"
+    fi
+    if ! grep -q '^=== GATE: \(PASSED\|FAILED\) ===$' "${STATUS_FILE}" 2>/dev/null; then
+        echo "---" >> "${STATUS_FILE}"
+        echo "epoch $(date +%s)" >> "${STATUS_FILE}"
+        if [ -n "${RUN_LOCK_PATH}" ] && [ -n "${RUN_LOCK_OWNER_PID}" ]; then
+            python3 "${SCRIPT_DIR}/gate_run_lock.py" release \
+                "${RUN_LOCK_PATH}" "${RUN_LOCK_OWNER_PID}" \
+                || echo "gate-lock FAIL release" >> "${STATUS_FILE}"
+        fi
+        echo "=== GATE: FAILED ===" >> "${STATUS_FILE}"
+    fi
+    if python3 "${SCRIPT_DIR}/gate_status_attestation.py" \
+        sign-terminal "${STATUS_FILE}" --repo-root "${REPO_ROOT}"; then
+        if [ -n "${FINAL_STATUS_FILE}" ] && [ "${FINAL_STATUS_FILE}" != "${STATUS_FILE}" ]; then
+            mv "${STATUS_FILE}" "${FINAL_STATUS_FILE}"
+        fi
+        if [ -n "${TERMINALIZED_FILE}" ]; then
+            touch "${TERMINALIZED_FILE}"
+        fi
+    else
+        echo "[run_gate.sh] cancellation attestation failed; private evidence retained" >&2
+    fi
+}
+
+_cancel() {
+    CANCELLATION_REASON="signal-$1"
+    CANCELLATION_RC="$2"
+    exit "$2"
+}
 
 # --- Cleanup trap: remove unique basetemp + release lock on any exit ---
 _cleanup() {
     local rc=$?
+    trap - EXIT INT TERM
+    if [ "${CANCELLATION_RC}" -ne 0 ]; then
+        _finalize_cancellation "${CANCELLATION_RC}" "${CANCELLATION_REASON}"
+        rc="${CANCELLATION_RC}"
+    fi
     [ -n "${BASETEMP}" ] && rm -rf "${BASETEMP}" 2>/dev/null
     true
+    if [ "${GATE_LOCK_ACQUIRED}" -eq 1 ] \
+        && [ "$(cat "${LOCK_FILE}" 2>/dev/null || true)" = "$$" ]; then
+        rm -f "${LOCK_FILE}"
+    fi
     # Releasing fd 200 (flock path) is a no-op when the PID-file path was used.
     exec 200>&- 2>/dev/null || true
     exit "${rc}"
 }
-trap _cleanup EXIT INT TERM
+trap _cleanup EXIT
+trap '_cancel INT 130' INT
+trap '_cancel TERM 143' TERM
 
 # ---------------------------------------------------------------------------
 # Lock acquisition: two paths depending on whether GNU flock is present.
 # ---------------------------------------------------------------------------
-_acquire_flock() {
-    # fd 200 must already be open on LOCK_FILE before this is called.
-    if flock --nonblock 200; then
-        # We hold the lock; stamp our PID for diagnostics.
-        printf '%s\n' "$$" > "${LOCK_FILE}" 2>/dev/null || true
-        return 0
-    fi
-    local holder
-    holder=$(cat "${LOCK_FILE}" 2>/dev/null || echo "unknown")
+_reject_gate_lock() {
+    local holder="${1:-unknown}"
     echo "[run_gate.sh] another gate is already running (PID ${holder}); refusing to start a second" >&2
     exec 200>&- 2>/dev/null || true
     exit 1
 }
 
-_acquire_pidfile() {
-    # Atomic create-or-fail: write our PID to a tmp file, then try to rename it
-    # into place. On POSIX local filesystems rename(2) is atomic.
+_acquire_flock() {
+    # fd 200 must already be open on LOCK_FILE before this is called.
+    flock --nonblock 200 || _reject_gate_lock "$(cat "${LOCK_FILE}" 2>/dev/null || echo "unknown")"
+    printf '%s\n' "$$" > "${LOCK_FILE}" 2>/dev/null || true
+}
+
+_claim_pidfile_once() {
+    # Atomic create-or-fail: write our PID to a temporary claim, then rename it.
     # NOTE: BSD mv -n (macOS) returns 0 even when it refuses to overwrite, unlike
     # GNU mv -n which returns 1. We detect the no-op by checking whether tmp
     # still exists after the mv (if it does, the rename was skipped).
@@ -101,11 +190,14 @@ _acquire_pidfile() {
     printf '%s\n' "$$" > "${tmp}"
     mv -n "${tmp}" "${LOCK_FILE}" 2>/dev/null || true
     if [ ! -f "${tmp}" ]; then
-        # tmp was renamed into LOCK_FILE — we won the race.
         return 0
     fi
     rm -f "${tmp}"
+    return 1
+}
 
+_acquire_pidfile() {
+    _claim_pidfile_once && return 0
     # Something else owns the lockfile.
     local holder
     holder=$(cat "${LOCK_FILE}" 2>/dev/null || echo "")
@@ -116,23 +208,16 @@ _acquire_pidfile() {
     if _pid_is_gate "${holder}" || {
         [ "${holder}" = "${PPID}" ] && kill -0 "${holder}" 2>/dev/null;
     }; then
-        echo "[run_gate.sh] another gate is already running (PID ${holder}); refusing to start a second" >&2
-        exit 1
+        _reject_gate_lock "${holder}"
     fi
 
     # Stale lock (process is dead) — remove and retry once.
     rm -f "${LOCK_FILE}"
-    printf '%s\n' "$$" > "${tmp}"
-    mv -n "${tmp}" "${LOCK_FILE}" 2>/dev/null || true
-    if [ ! -f "${tmp}" ]; then
-        return 0
-    fi
-    rm -f "${tmp}"
+    _claim_pidfile_once && return 0
 
     # Still lost — another live gate took it between our retries.
     holder=$(cat "${LOCK_FILE}" 2>/dev/null || echo "unknown")
-    echo "[run_gate.sh] another gate is already running (PID ${holder}); refusing to start a second" >&2
-    exit 1
+    _reject_gate_lock "${holder}"
 }
 
 # ``kill -0`` alone is unsafe: after a gate exits, the PID may be reused by a
@@ -169,6 +254,7 @@ else
     exec 200>/dev/null
     _acquire_pidfile
 fi
+GATE_LOCK_ACQUIRED=1
 
 # Lock is now held — safe to create the unique per-run basetemp. Doing this
 # AFTER lock acquisition guarantees a rejected second invocation leaves no
@@ -208,14 +294,19 @@ else
     # coverage databases are combined before the aggregate 85% and per-file 75%
     # release floors are enforced.
     ( set +e; python3 scripts/heavy_sem.py "${HEAVY_MAX_PAR:-3}" gludd-heavy -- \
-        uv run python scripts/run_ci_shards_serial.py --watchdog-owned-gate --pytest-args=-q --allow-dirty-worktree; \
+        uv run python scripts/run_ci_shards_serial.py --watchdog-owned-gate --pytest-args=-q --allow-dirty-worktree \
+        "${GATE_RESUME_ARGUMENT}" --max-files-per-batch "${GATE_MAX_FILES_PER_BATCH}" \
+        --batch-workers "${GATE_BATCH_WORKERS}"; \
       echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
 fi
 
 # The pipe above exits with tee's code (always 0); read pytest's real exit.
 EXIT=$(cat "${RC_FILE}" 2>/dev/null || echo 1)
 
-if [ "${EXIT}" -eq 0 ]; then
+if [ "${EXIT}" -eq 130 ] || [ "${EXIT}" -eq 143 ]; then
+    CANCELLATION_RC="${EXIT}"
+    CANCELLATION_REASON="child-cancellation"
+elif [ "${EXIT}" -eq 0 ]; then
     echo "test PASS 0" >> "${STATUS_FILE}"
 else
     echo "test FAIL non-zero-exit" >> "${STATUS_FILE}"

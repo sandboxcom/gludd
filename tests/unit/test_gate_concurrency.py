@@ -24,6 +24,10 @@ from typing import Protocol, cast
 from uuid import uuid4
 
 import pytest
+from scripts.gate_status_attestation import (
+    repository_state_id,
+    verify_terminal_status,
+)
 
 # The script's basetemp is `mktemp -d /tmp/gludd-gate-XXXXXX` → basename is
 # "gludd-gate-" followed by ONLY alphanumerics. Test artifacts (workdirs, lock
@@ -156,6 +160,49 @@ class TestRunGateScript:
         assert (workdir / ".gate-failed").exists(), (
             ".gate-failed must be created when pytest exits non-zero"
         )
+
+    def test_owner_death_result_authenticates_failure_and_releases_locks(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A watchdog cancellation must never leave stale RUNNING evidence."""
+        workdir = tmp_path / "cancelled-gate"
+        workdir.mkdir()
+        internal_lock = tmp_path / "gate.lock"
+        outer_lock = tmp_path / "gate-run.lock"
+        outer_lock.write_text(f'{{"pid": {os.getpid()}}}\n', encoding="utf-8")
+        private_status = workdir / ".gate-status.next"
+        final_status = workdir / ".gate-status"
+        key_path = tmp_path / "gate-attestation.key"
+
+        result = _run_gate(
+            env_overrides={
+                "PYTEST_CMD": 'python3 -c "import sys; sys.exit(143)"',
+                "GATE_STATUS_FILE": str(private_status),
+                "GATE_FINAL_STATUS_FILE": str(final_status),
+                "GATE_RUN_LOCK_PATH": str(outer_lock),
+                "GATE_RUN_LOCK_OWNER_PID": str(os.getpid()),
+                "GLUDD_GATE_KEY_PATH": str(key_path),
+            },
+            cwd=workdir,
+            lock_file=str(internal_lock),
+        )
+
+        assert result.returncode == 143
+        assert not private_status.exists()
+        assert not internal_lock.exists()
+        assert not outer_lock.exists()
+        assert (workdir / ".gate-failed").exists()
+        content = final_status.read_text(encoding="utf-8")
+        assert content.count("=== GATE: FAILED ===") == 1
+        assert "test FAIL cancelled rc=143" in content
+        key = bytes.fromhex(key_path.read_text(encoding="ascii").strip())
+        authenticated = verify_terminal_status(
+            final_status,
+            state_id=repository_state_id(ROOT),
+            key=key,
+        )
+        assert authenticated.ok, authenticated.reason
 
     def test_stub_gate_does_not_inherit_parent_status_paths(
         self,
