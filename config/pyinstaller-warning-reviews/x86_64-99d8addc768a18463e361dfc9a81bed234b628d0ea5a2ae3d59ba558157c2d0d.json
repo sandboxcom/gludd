@@ -1,0 +1,22 @@
+{
+  "after": {
+    "transitive_count": 866,
+    "transitive_sha256": "99d8addc768a18463e361dfc9a81bed234b628d0ea5a2ae3d59ba558157c2d0d",
+    "warning_sha256": "1d4142af35b4361338eec641d41a1f8400f7c13cbba297e6f4ce9167c8164479"
+  },
+  "architecture": "x86_64",
+  "before": {
+    "transitive_count": 866,
+    "transitive_sha256": "590682fc772301ed8b47fe57feb9a7bd5ff43ed15c301aa104a20fdc4df8f4e2",
+    "warning_sha256": "9baef21ccf55734550dae8c948d24bdc0b42ccd58cdd85cad8e2d689d866bce0"
+  },
+  "delta": {
+    "added": [],
+    "added_count": 0,
+    "removed": [],
+    "removed_count": 0
+  },
+  "platform": "linux",
+  "pyinstaller_version": "6.22.3",
+  "schema_version": 1
+}

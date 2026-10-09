@@ -24,14 +24,7 @@ _LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
 _DEV_BUILD_LOCK = _ROOT / "requirements" / "profiles" / "dev-build" / "uv.lock"
 _LINUX_BUILDER_DOCKERFILE = _ROOT / "config" / "containers" / "linux-binary.Dockerfile"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
-_CLOUD_COMPUTE_SOURCE = (
-    _ROOT
-    / "src"
-    / "general_ludd"
-    / "pricing_intel"
-    / "source_components"
-    / "cloud_compute.py"
-)
+_CLOUD_COMPUTE_SOURCE = _ROOT / "src" / "general_ludd" / "pricing_intel" / "source_components" / "cloud_compute.py"
 _PYINSTALLER_VERSION = "6.20.0"
 _EMPTY_TRANSITIVE_DIGEST = hashlib.sha256(b"").hexdigest()
 _CONTROLLER_RUNTIME_EDGES = {
@@ -44,6 +37,11 @@ _CONTROLLER_RUNTIME_EDGES = {
     ("ansible.utils", "general_ludd.ansible.core_runner", ("delayed",)),
     ("ansible.utils", "general_ludd.ansible.unsafe", ("optional",)),
     ("ansible.vars", "general_ludd.ansible.core_runner", ("delayed",)),
+    ("ansible_collections.general_ludd", "general_ludd.chemistry.inventory", ("top-level",)),
+    ("ansible_collections.general_ludd", "general_ludd.git_release.provenance", ("top-level",)),
+    ("ansible_collections.general_ludd", "general_ludd.materials.operations", ("top-level",)),
+    ("ansible_collections.general_ludd", "general_ludd.materials.tolerance", ("top-level",)),
+    ("ansible_collections.general_ludd", "general_ludd.searx.native", ("top-level",)),
 }
 
 _WARNING_HEADER = """\
@@ -162,9 +160,7 @@ def test_makefile_exposes_replayable_linux_warning_audit() -> None:
     assert '--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)"' in makefile
     assert 'architecture="$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)"' in makefile
     assert makefile.count('--architecture "$$architecture"') == 3
-    assert makefile.count(
-        'test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)"'
-    ) == 2
+    assert makefile.count('test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)"') == 2
 
 
 def test_molecule_binary_smoke_uses_release_builder_python_minor() -> None:
@@ -231,10 +227,7 @@ def test_every_hosted_linux_warning_graph_uses_one_python_and_locked_profile() -
     assert "Upload Linux PyInstaller warning graph" in build
     assert "Upload Linux PyInstaller warning graph" in molecule
     assert "PYINSTALLER_VERSION_LINUX=6.20.0" not in build
-    assert (
-        "dependency_profiles.py locked-version --root . --profile dev-build "
-        "--package pyinstaller"
-    ) in build
+    assert ("dependency_profiles.py locked-version --root . --profile dev-build --package pyinstaller") in build
     assert 'PYINSTALLER_VERSION_LINUX="$pyinstaller_version"' in build
 
 
@@ -251,11 +244,7 @@ def test_linux_policy_tracks_locked_pyinstaller_version() -> None:
     """The reviewed graph must identify the exact locked analyzer version."""
     policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
     lock = tomllib.loads(_DEV_BUILD_LOCK.read_text(encoding="utf-8"))
-    locked_versions = [
-        package["version"]
-        for package in lock["package"]
-        if package["name"] == "pyinstaller"
-    ]
+    locked_versions = [package["version"] for package in lock["package"] if package["name"] == "pyinstaller"]
 
     assert len(locked_versions) == 1
     assert policy["pyinstaller_version"] == locked_versions[0]
@@ -269,7 +258,7 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
         "aarch64": ("70c6ec35a8d7e0b9095ca2dd7879ef28be05bff279d6d7aca9220e54efbd14ba"),
-        "x86_64": ("d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d"),
+        "x86_64": ("99d8addc768a18463e361dfc9a81bed234b628d0ea5a2ae3d59ba558157c2d0d"),
     }
 
 
@@ -309,14 +298,10 @@ def test_linux_policy_pins_current_optional_gcp_billing_edge() -> None:
     assert pricing_edges == [
         {
             "module": "google",
-            "importer": (
-                "general_ludd.pricing_intel.source_components.cloud_compute"
-            ),
+            "importer": ("general_ludd.pricing_intel.source_components.cloud_compute"),
             "flags": ["delayed", "optional"],
             "category": "optional-dependency",
-            "evidence": (
-                "https://cloud.google.com/python/docs/reference/cloudbilling/latest"
-            ),
+            "evidence": ("https://cloud.google.com/python/docs/reference/cloudbilling/latest"),
         }
     ]
 
@@ -431,8 +416,7 @@ def test_exact_controller_runtime_boundary_edge_passes_when_root_is_excluded(
 ) -> None:
     result = _run_audit(
         tmp_path,
-        "missing module named ansible.executor - imported by "
-        "general_ludd.ansible.core_runner (delayed)\n",
+        "missing module named ansible.executor - imported by general_ludd.ansible.core_runner (delayed)\n",
         allowed=[
             _allow(
                 "ansible.executor",
@@ -454,8 +438,7 @@ def test_controller_runtime_boundary_requires_active_spec_exclude(
 ) -> None:
     result = _run_audit(
         tmp_path,
-        "missing module named ansible.executor - imported by "
-        "general_ludd.ansible.core_runner (delayed)\n",
+        "missing module named ansible.executor - imported by general_ludd.ansible.core_runner (delayed)\n",
         allowed=[
             _allow(
                 "ansible.executor",
@@ -761,16 +744,12 @@ def test_transitive_warning_graph_requires_exact_normalized_digest(
     assert result.returncode == 1
     assert "transitive warning digest mismatch" in result.stderr
     assert "transitive warning graph: total=1 shown=1 limit=50" in result.stderr
-    assert (
-        "transitive warning edge: missing optional_backend <- "
-        "dependency.compat (optional)"
-    ) in result.stderr
+    assert ("transitive warning edge: missing optional_backend <- dependency.compat (optional)") in result.stderr
 
 
 def test_transitive_warning_mismatch_diagnostics_are_bounded(tmp_path: Path) -> None:
     warning = "".join(
-        f"missing module named optional_{index:02d} - "
-        f"imported by dependency_{index:02d}.compat (optional)\n"
+        f"missing module named optional_{index:02d} - imported by dependency_{index:02d}.compat (optional)\n"
         for index in range(51)
     )
 
