@@ -63,13 +63,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     assert 'DUPLICATE_CODE_SOURCE="committed"' in stanza
     assert 'DUPLICATE_CODE_BASE_REF="$(DUPLICATE_CODE_BASE_REF)"' in stanza
     assert 'DUPLICATE_CODE_CURRENT_REF="$(DUPLICATE_CODE_CURRENT_REF)"' in stanza
-    assert 'RESOURCE_OWNERSHIP_ROOT="$(CURDIR)"' in stanza
-    assert 'RESOURCE_OWNERSHIP_PATHS="src/general_ludd scripts"' in stanza
-    assert (
-        'RESOURCE_OWNERSHIP_INVENTORY="config/resource_ownership_inventory.json"'
-        in stanza
-    )
-    assert "RESOURCE_OWNERSHIP_WRITE=0" in stanza
+    assert "RESOURCE_OWNERSHIP_" not in stanza
     assert "MARKDOWN_FILES=\"$(MARKDOWN_FILES)\"" in stanza
     assert "MARKDOWNLINT_CONFIG=\"$(MARKDOWNLINT_CONFIG)\"" in stanza
     assert (
@@ -134,6 +128,24 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     pre_commit = _target_stanza(makefile, "pre-commit-check")
     assert "$(MAKE) --no-print-directory lint" in pre_commit
     assert "lint: check-file-line-limits" in makefile
+
+
+def test_integration_admission_reuses_canonical_resource_ownership_scope() -> None:
+    """Admission, direct checks, and the gate must share checker-owned roots."""
+    makefile = compose_makefile(MAKEFILE)
+    admission = _target_stanza(makefile, "integration-admission")
+    direct = _target_stanza(makefile, "check-resource-ownership")
+
+    assert "RESOURCE_OWNERSHIP_PATHS ?=\n" in makefile
+    assert "$(RESOURCE_OWNERSHIP_PATHS)" in direct
+    assert (
+        'run_phase "check-resource-ownership" "check-resource-ownership" '
+        '"fast" "90" "60" $(MAKE) --no-print-directory '
+        "check-resource-ownership;"
+        in admission
+    )
+    assert "RESOURCE_OWNERSHIP_" not in admission
+    assert "\tcheck-resource-ownership \\\n" in makefile
 
 
 def test_yaml_lint_isolates_checkout_collection_from_user_state() -> None:
