@@ -664,6 +664,32 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "e3141ebefda83b39ab8a34ea9736a7eb5067b027"
+        }
+      ],
+      "item_id": "S48",
+      "release_page_category": "Improvements",
+      "title": "Hermetic content-addressed pure-unit admission cache"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "b19f00daf3da9de6b56c19fc1b92c8b6bbdae6ae"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "b5d33e9e8bc9a387d85ade808585bc340ce6ceb5"
+        }
+      ],
+      "item_id": "S49",
+      "release_page_category": "Features",
+      "title": "Native fail-closed Azure Log Analytics query admission"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },

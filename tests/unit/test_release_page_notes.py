@@ -481,6 +481,8 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S44",
         "S45",
         "S46",
+        "S48",
+        "S49",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
@@ -638,6 +640,21 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
                 ("task_evidence", "12add7a2d8530981d2b197e460feba9aef0c19e7"),
             ),
         ),
+        "S48": (
+            "Hermetic content-addressed pure-unit admission cache",
+            "Improvements",
+            (
+                ("implementation", "e3141ebefda83b39ab8a34ea9736a7eb5067b027"),
+            ),
+        ),
+        "S49": (
+            "Native fail-closed Azure Log Analytics query admission",
+            "Features",
+            (
+                ("implementation", "b19f00daf3da9de6b56c19fc1b92c8b6bbdae6ae"),
+                ("task_evidence", "b5d33e9e8bc9a387d85ade808585bc340ce6ceb5"),
+            ),
+        ),
     }
     for item_id, (title, category, evidence) in candidate_contracts.items():
         item = next(
@@ -653,7 +670,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 38."
+        "Implemented candidate items pending exact-head/release proof: 40."
         in expected
     )
     release_source = (
@@ -698,13 +715,20 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "SignXML verified subtree",
         "signature-validation issue #282",
         "duplicate-attribute issue #39",
+        "38 focused warning-fatal tests",
+        "350-test compatibility slice",
+        "92% aggregate coverage",
+        "Azure SDK partial-result issue #25137",
+        "InsufficientAccessError operator report",
+        "prior verified controller EE digest",
         "digest-addressed canary",
         "Ansible Release 1.2.3",
         "Frictionless discussion #675",
         "ansible/ansible#50579",
         "95% aggregate coverage",
         "Exact-SHA resumable, fail-fast local gate admission",
-        "exact 38-item candidate inventory",
+        "Hermetic content-addressed pure-unit admission cache",
+        "exact 40-item candidate inventory",
     ):
         assert required in release_source
     task_ledger = (ROOT / "TASKS.md").read_text(encoding="utf-8")
@@ -720,6 +744,8 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         ("S44", "085a76bca"),
         ("S45", "a2cde4421"),
         ("S46", "bef8df7ed"),
+        ("S48", "e3141ebef"),
+        ("S49", "b19f00daf"),
     ):
         assert f"- [ ] {task_id}" in task_ledger
         assert evidence_sha in task_ledger

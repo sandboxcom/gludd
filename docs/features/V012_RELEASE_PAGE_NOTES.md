@@ -19,11 +19,12 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-S31-S47, along with the train's dependency, ownership, structural, TUI, and
-coverage repairs. S29-S47 are listed from immutable implementation receipts without
-claiming train integration or an exact-head gate. The preview therefore records
-useful candidate contents without converting implementation evidence into task,
-gate, release, or publication completion.
+S31-S49, along with the train's dependency, ownership, structural, TUI, and
+coverage repairs. S29-S49 are listed from immutable
+implementation receipts without claiming train integration or an exact-head
+gate. The preview therefore records useful candidate contents without
+converting implementation evidence into task, gate, release, or publication
+completion.
 
 S31-S37 describe the user-visible outcome as safer model-performance,
 benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
@@ -86,8 +87,9 @@ includes 354 warning-fatal tests and 94% aggregate coverage (`shared.py` 87%,
 `projects.py` 98%, `metrics.py` 91%), with native SQL compilation, unsupported
 dialect rejection before I/O, and bounded two-session PostgreSQL convergence.
 
-S38-S46 move nine collection workflows onto native, owned library
-boundaries; S47 hardens and accelerates their final local gate admission:
+S38-S46 and S49 move ten collection workflows onto native, owned library
+boundaries; S47 hardens their final local gate admission, while S48 adds a
+hermetic cache accelerator that cannot replace that exact-head gate:
 
 - **S38 — Native SearXNG controller runtime.** Travel searches now call the
   official pinned `searx.webapp` WSGI application inside the controller EE;
@@ -242,6 +244,50 @@ boundaries; S47 hardens and accelerates their final local gate admission:
   [action-plugin/module-utils thread][ansible-action-module-utils] plus
   [collection-qualified follow-up][ansible-action-collections] motivate the
   verified-only, ambiguity-free collection boundary.
+- **S48 — Hermetic content-addressed pure-unit admission cache.** One explicitly
+  allowlisted, stdlib-only test slice can now reuse Pants 2.33.0's own
+  dependency graph, sandbox, transitive-input digest, and local content-addressed
+  process cache. Gludd does not maintain a competing dependency walker, and a
+  signed receipt can describe a hit but cannot authorize one. Missing or
+  ambiguous ownership, dynamic or external inputs, hosted CI, and explicit
+  fresh mode all force execution; the nightly lane compares cached and
+  `--test-force` JUnit outcomes plus branch coverage byte-for-byte. The real
+  two-run acceptance passed six warning-fatal tests at 95.87% aggregate branch
+  coverage with every measured file above 75%, observed a local result-cache
+  hit, and then proved cached/fresh equivalence. The lane is additive and owns
+  no serving process, traffic, database, or remote cache. Rollback immediately
+  selects fresh mode or removes the target from the allowlist; the unchanged
+  cold hosted lane and exact-head release gate remain mandatory. Long-lived
+  reports about ancestor-fixture over-invalidation in Pants
+  [discussion #17762][pants-17762], forced execution in
+  [issue #10379][pants-10379], and practitioner cache-eviction failures in the
+  [Pants community thread][pants-cache-eviction] motivate explicit fixture
+  ownership, `--test-force`, namespacing, and bounded local stores.
+- **S49 — Native fail-closed Azure Log Analytics query admission.** Monitoring
+  workflows can now run one SHA-256-bound query for one canonical workspace
+  through the official pinned `azure-monitor-query==2.0.0`
+  `LogsQueryClient`, instead of raw REST, `uri`, a custom client, or a fabricated
+  success response. Explicit public, government, and China endpoints and exact
+  managed, workload, or environment credentials prevent ambient developer-chain
+  fallback. Server and local bounds reject partial, truncated, ambiguous, or
+  oversized results atomically before any rows are returned. A digest-addressed
+  controller-EE canary takes only new jobs while
+  the prior verified controller EE digest drains; promotion follows the same
+  bounded route. Rollback disables
+  S49 on the candidate, drains it, and routes new jobs to the prior verified
+  controller EE digest. The action owns no artifact, listener, subprocess,
+  worker, cache, or durable state, so rollback requires no data repair. Evidence
+  includes 38 focused warning-fatal tests, a 350-test compatibility slice,
+  92% aggregate coverage with all three production files at 92-100%, all four
+  Molecule phases, and a 121,697-test zero-error collection with 18 intentional
+  deselections from 121,715 tests. The official
+  [Azure Monitor Query SDK guidance][azure-monitor-query-sdk],
+  [query-limit guidance][azure-query-limits], and
+  [granular Log Analytics RBAC guidance][azure-log-rbac] define the supported
+  boundary. The long-lived Azure SDK partial-result issue #25137
+  ([upstream report][azure-sdk-25137]) and an
+  [InsufficientAccessError operator report][azure-insufficient-access] motivate
+  atomic partial-result rejection and explicit permission diagnostics.
 - **S47 — Exact-SHA resumable, fail-fast local gate admission.** Local retries
   admit only authenticated passing receipts from the same clean SHA, restore
   branch-aware coverage before enforcing the unchanged 85% aggregate and 75%
@@ -355,7 +401,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 38-item candidate inventory, and
+ordering, deterministic rendering, the exact 40-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -435,3 +481,11 @@ Research was reviewed on 2026-10-08:
 [signxml-verification]: https://github.com/XML-Security/signxml#see-what-is-signed
 [python3-saml-282]: https://github.com/SAML-Toolkits/python3-saml/issues/282
 [python3-saml-39]: https://github.com/SAML-Toolkits/python3-saml/issues/39
+[pants-17762]: https://github.com/pantsbuild/pants/discussions/17762
+[pants-10379]: https://github.com/pantsbuild/pants/issues/10379
+[pants-cache-eviction]: https://chat.pantsbuild.org/t/27553563/we-re-running-into-issues-with-premature-cache-eviction-on-g
+[azure-monitor-query-sdk]: https://learn.microsoft.com/python/api/overview/azure/monitor-query-readme
+[azure-query-limits]: https://learn.microsoft.com/en-us/kusto/concepts/query-limits?view=microsoft-fabric
+[azure-log-rbac]: https://learn.microsoft.com/en-us/azure/azure-monitor/logs/granular-rbac-log-analytics
+[azure-sdk-25137]: https://github.com/Azure/azure-sdk-for-python/issues/25137
+[azure-insufficient-access]: https://stackoverflow.com/questions/78567796/query-logs-from-application-insights-in-python-insufficientaccesserror
