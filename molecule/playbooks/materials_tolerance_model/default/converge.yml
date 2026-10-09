@@ -1,0 +1,43 @@
+---
+- name: Converge native materials tolerance model
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8873', true) }}"
+    out_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-materials-tolerance-{{ mock_port }}"
+    tolerance_request:
+      dims:
+        - [10.0, 0.1]
+        - [5.0, 0.2]
+      unit: mm
+  tasks:
+    - name: Invoke native tolerance model role
+      ansible.builtin.include_role:
+        name: general_ludd.materials.tolerance_model
+      vars:
+        tolerance_model_enabled: true
+        tolerance_model_operation: rss
+        tolerance_model_request: "{{ tolerance_request }}"
+
+    - name: Repeat identical analysis in check mode
+      general_ludd.materials.tolerance_model:
+        operation: rss
+        request: "{{ tolerance_request }}"
+      check_mode: true
+      register: _check_tolerance
+
+    - name: Assert normal and check-mode evidence is identical
+      ansible.builtin.assert:
+        that:
+          - not _check_tolerance.changed | bool
+          - _check_tolerance.result == tolerance_model_result
+          - tolerance_model_result.state == 'ok'
+          - tolerance_model_result.sigma_band > 0
+          - "'independent contributors (no correlation)' in tolerance_model_result.assumptions"
+
+    - name: Persist deterministic scenario receipt
+      ansible.builtin.copy:
+        content: "{{ tolerance_model_result | to_json }}\n"
+        dest: "{{ out_dir }}/tolerance_model_ran.json"
+        mode: "0600"

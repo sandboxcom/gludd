@@ -13,6 +13,10 @@ import math
 from dataclasses import asdict
 from typing import Any
 
+from ansible_collections.general_ludd.materials.plugins.module_utils.tolerance_model import (
+    ToleranceModelError,
+    evaluate_tolerance_model,
+)
 from pydantic import ValidationError
 
 from .additive import AdditiveManufacturingAdvisor
@@ -29,7 +33,6 @@ from .joining import JoiningAdvisor
 from .machining import MachiningAdvisor
 from .process_planning import plan_inspection, plan_manufacturing
 from .textiles import TextileAdvisor
-from .tolerance import ToleranceChain, assess_assembly, process_capability
 
 MATERIALS_OPERATIONS = frozenset(
     {
@@ -124,42 +127,15 @@ def _route_card(operation: str, request: dict[str, Any]) -> Any:
 
 
 def _dispatch_tolerance(request: dict[str, Any]) -> dict[str, Any]:
-    analysis = _string(request, "analysis")
-    if analysis in {"worst_case", "rss", "thermal", "thermal_compensation"}:
-        raw_dims = _list(request, "dims", maximum=256)
-        dims: list[tuple[float, float]] = []
-        for index, raw in enumerate(raw_dims):
-            if not isinstance(raw, list) or len(raw) != 2:
-                raise MaterialsRequestError(f"dims[{index}] must contain nominal and tolerance")
-            dims.append((_number(raw[0], f"dims[{index}].nominal"), _number(raw[1], f"dims[{index}].tolerance")))
-        chain = ToleranceChain(dims, _string(request, "unit", maximum=32))
-        if analysis == "worst_case":
-            return chain.worst_case_stackup()
-        if analysis == "rss":
-            return chain.rss_stackup()
-        alpha = _number(request.get("alpha_per_K"), "alpha_per_K")
-        delta_t = _number(request.get("delta_T_K"), "delta_T_K")
-        if analysis == "thermal":
-            return chain.thermal_expansion_delta(alpha, delta_t)
-        return chain.thermal_compensation(alpha, delta_t)
-    if analysis == "process_capability":
-        mean = request.get("mean")
-        parsed_mean = None if mean is None else _number(mean, "mean")
-        return process_capability(
-            _number(request.get("spec_lower"), "spec_lower"),
-            _number(request.get("spec_upper"), "spec_upper"),
-            _number(request.get("sigma"), "sigma"),
-            parsed_mean,
-        )
-    if analysis == "assembly":
-        return assess_assembly(
-            _number(request.get("hole_nominal"), "hole_nominal"),
-            _number(request.get("hole_tol"), "hole_tol"),
-            _number(request.get("shaft_nominal"), "shaft_nominal"),
-            _number(request.get("shaft_tol"), "shaft_tol"),
-            _string(request, "unit", maximum=32),
-        )
-    raise MaterialsRequestError(f"unsupported tolerance analysis: {analysis}")
+    analysis = request.get("analysis")
+    native_request = {
+        key: value for key, value in request.items() if key != "analysis"
+    }
+    try:
+        result: dict[str, Any] = evaluate_tolerance_model(analysis, native_request)
+    except ToleranceModelError as exc:
+        raise MaterialsRequestError(str(exc)) from exc
+    return result
 
 
 def _dispatch_textile(request: dict[str, Any]) -> dict[str, Any]:
