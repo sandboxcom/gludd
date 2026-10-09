@@ -86,7 +86,8 @@ includes 354 warning-fatal tests and 94% aggregate coverage (`shared.py` 87%,
 `projects.py` 98%, `metrics.py` 91%), with native SQL compilation, unsupported
 dialect rejection before I/O, and bounded two-session PostgreSQL convergence.
 
-S38-S43 move six collection workflows onto native, owned library boundaries:
+S38-S43 move six collection workflows onto native, owned library boundaries;
+S47 hardens and accelerates their final local gate admission:
 
 - **S38 — Native SearXNG controller runtime.** Travel searches now call the
   official pinned `searx.webapp` WSGI application inside the controller EE;
@@ -179,6 +180,17 @@ S38-S43 move six collection workflows onto native, owned library boundaries:
   [collection-qualified follow-up][ansible-action-collections], and practitioner
   [RSS uncertainty discussion][materials-rss-practice] motivate the shared
   collection boundary and explicit independent-contributor assumption.
+- **S47 — Exact-SHA resumable, fail-fast local gate admission.** Local retries
+  admit only authenticated passing receipts from the same clean SHA, restore
+  branch-aware coverage before enforcing the unchanged 85% aggregate and 75%
+  per-file floors, and fail closed on stale or mismatched evidence. Preflight
+  and batch failures terminalize immediately, release owned leases, and leave
+  later work not started. Cold execution uses at most two isolated xdist
+  `loadfile` workers; summaries distinguish executed, resumed, and unstarted
+  batches and report receipt-derived time saved. The evidence includes 506
+  warning-fatal focused and compatibility tests, 471 coverage tests at 88%
+  aggregate with every measured implementation file at least 84%, and a
+  121,496-test zero-error collection with 18 intentional deselections.
 
 ## Existing-tool decision
 
@@ -278,7 +290,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 34-item candidate inventory, and
+ordering, deterministic rendering, the exact 35-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 

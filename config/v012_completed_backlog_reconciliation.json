@@ -533,6 +533,21 @@
       "evidence_commits": [
         {
           "role": "implementation",
+          "sha": "cba037e37fb1f66a28d76bded20dc708556d9901"
+        },
+        {
+          "role": "promoted_namespace_repair",
+          "sha": "ee1a73e691c7c7ace9e137c2c572c5bffdbedf3a"
+        }
+      ],
+      "item_id": "S47",
+      "release_page_category": "Improvements",
+      "title": "Exact-SHA resumable, fail-fast local gate admission"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
           "sha": "24fd14135d1bdaf3813650736dce8c58f6efd51e"
         },
         {
