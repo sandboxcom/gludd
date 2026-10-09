@@ -1,7 +1,7 @@
 ---
-ai_ml_dataset_root: ""
-ai_ml_dataset_resources: []
-ai_ml_dataset_schema: ""
-ai_ml_dataset_name: ""
-ai_ml_dataset_description: ""
-ai_ml_dataset_license: ""
+dataset_engineer_root: "{{ ai_ml_dataset_root | default('') }}"
+dataset_engineer_resources: "{{ ai_ml_dataset_resources | default([]) }}"
+dataset_engineer_schema: "{{ ai_ml_dataset_schema | default('') }}"
+dataset_engineer_name: "{{ ai_ml_dataset_name | default('') }}"
+dataset_engineer_description: "{{ ai_ml_dataset_description | default('') }}"
+dataset_engineer_license: "{{ ai_ml_dataset_license | default('') }}"

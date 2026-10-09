@@ -88,12 +88,14 @@ requirements.
 ## Native dataset admission
 
 `dataset_engineer` is controller-only and read-only. Set
-`ai_ml_dataset_root`, `ai_ml_dataset_resources`, and `ai_ml_dataset_schema` to
-local files inside one absolute root; optional name, description, and license
-values are copied into the card. The role validates with the pinned Frictionless
-Python API, rejects remote or ambiguous paths, and registers
-`ai_ml_dataset_result`. Its stable `data_card_sha256` binds the schema and every
-CSV resource without uploading dataset bytes or calling an external service.
+`dataset_engineer_root`, `dataset_engineer_resources`, and
+`dataset_engineer_schema` to local files inside one absolute root; optional
+name, description, and license values are copied into the card. The older
+`ai_ml_dataset_*` inputs remain accepted as fallback aliases. The role validates
+with the pinned Frictionless Python API, rejects remote or ambiguous paths, and
+registers `ai_ml_dataset_result`. Its stable `data_card_sha256` binds the schema
+and every CSV resource without uploading dataset bytes or calling an external
+service.
 
 The full bounds, upstream issue evidence, and digest-addressed EE rollout are
 documented in
