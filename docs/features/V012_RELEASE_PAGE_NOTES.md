@@ -227,12 +227,15 @@ S47 hardens and accelerates their final local gate admission:
   branch-aware coverage before enforcing the unchanged 85% aggregate and 75%
   per-file floors, and fail closed on stale or mismatched evidence. Preflight
   and batch failures terminalize immediately, release owned leases, and leave
-  later work not started. Cold execution uses at most two isolated xdist
-  `loadfile` workers; summaries distinguish executed, resumed, and unstarted
-  batches and report receipt-derived time saved. The evidence includes 506
-  warning-fatal focused and compatibility tests, 471 coverage tests at 88%
-  aggregate with every measured implementation file at least 84%, and a
-  121,496-test zero-error collection with 18 intentional deselections.
+  later work not started. An explicit `--collect-all-failures` diagnostic can
+  surface multiple ordinary Pytest failures, but safety failures remain
+  terminal and release-policy mode rejects the option. Cold execution uses at
+  most two isolated xdist `loadfile` workers; summaries distinguish executed,
+  resumed, and unstarted batches and report receipt-derived time saved. The
+  evidence includes 506 warning-fatal focused and compatibility tests, 471
+  coverage tests at 88% aggregate with every measured implementation file at
+  least 84%, and a 121,496-test zero-error collection with 18 intentional
+  deselections.
 
 ## Existing-tool decision
 

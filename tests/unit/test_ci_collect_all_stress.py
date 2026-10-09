@@ -114,6 +114,115 @@ def _terminal_summary(output: str) -> tuple[str, dict[str, int], dict[str, int |
     return lines[0], failures, phases
 
 
+def test_collect_all_diagnostics_are_explicit_cli_opt_in() -> None:
+    module = _load_runner()
+    parser = module._build_serial_runner_parser(
+        description=None,
+        default_shards=module.DEFAULT_SHARDS,
+        max_files_per_batch=module.MAX_FILES_PER_BATCH,
+        heartbeat_seconds=module.DEFAULT_HEARTBEAT_SECONDS,
+        no_progress_seconds=module.DEFAULT_NO_PROGRESS_SECONDS,
+    )
+
+    assert parser.parse_args([]).collect_all_failures is False
+    assert parser.parse_args(["--collect-all-failures"]).collect_all_failures is True
+
+
+def test_cli_forwards_collect_all_diagnostic_opt_in(
+    runner: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module, _resources = runner
+    observed: dict[str, object] = {}
+
+    def capture_run(*_args: object, **kwargs: object) -> int:
+        observed.update(kwargs)
+        return 1
+
+    monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "branch": "feature",
+            "clean": True,
+            "exact_sha": True,
+            "queries_ok": True,
+        },
+    )
+    monkeypatch.setattr(module, "_attestation_pairing", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(module, "_configure_shadow_receipts", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "_write_terminal_attestation", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(module, "run", capture_run)
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-1b",
+            "--skip-isolated",
+            "--skip-aggregate",
+            "--collect-all-failures",
+        ],
+    )
+
+    assert module.main() == 1
+    assert observed["collect_all_failures"] is True
+
+
+def test_release_policy_rejects_collect_all_diagnostics(
+    runner: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module, _resources = runner
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--collect-all-failures",
+            "--require-release-policy",
+        ],
+    )
+
+    assert module.main() == 2
+    assert (
+        "diagnostic collect-all cannot produce release evidence"
+        in capsys.readouterr().out
+    )
+
+
+def test_default_runner_policy_stops_after_first_ordinary_failure(
+    runner: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module, _resources = runner
+    plans = {
+        "unit-1b": ["tests/synthetic/first.py", "tests/synthetic/unreached.py"],
+        "unit-1d": ["tests/synthetic/also-unreached.py"],
+    }
+    launched = _install_scripted_batches(
+        module,
+        monkeypatch,
+        plans=plans,
+        outcomes=[1],
+    )
+
+    assert module.run(
+        list(plans),
+        [],
+        max_files_per_batch=1,
+        run_isolated=False,
+        aggregate_coverage=False,
+    ) == 1
+
+    assert launched == ["unit-1b:batch-001"]
+    assert "later-batches=not-started" in capsys.readouterr().out
+
+
 def test_collect_all_retains_every_ordinary_failure_in_plan_order(
     runner: tuple[Any, Any],
     monkeypatch: pytest.MonkeyPatch,
@@ -143,6 +252,7 @@ def test_collect_all_retains_every_ordinary_failure_in_plan_order(
         max_files_per_batch=1,
         run_isolated=False,
         aggregate_coverage=False,
+        collect_all_failures=True,
     ) == 6
 
     first_summary, failures, phases = _terminal_summary(capsys.readouterr().out)
@@ -171,6 +281,7 @@ def test_collect_all_retains_every_ordinary_failure_in_plan_order(
         max_files_per_batch=1,
         run_isolated=False,
         aggregate_coverage=False,
+        collect_all_failures=True,
     ) == 6
     second_summary, _, _ = _terminal_summary(capsys.readouterr().out)
     assert second_summary == first_summary
@@ -202,6 +313,7 @@ def test_ordinary_failure_is_preserved_before_terminal_safety_stop(
         run_isolated=False,
         aggregate_coverage=False,
         coverage_output=coverage_output,
+        collect_all_failures=True,
     ) == module.WORKER_DEATH_EXIT_CODE
 
     _summary, failures, phases = _terminal_summary(capsys.readouterr().out)
@@ -254,6 +366,7 @@ def test_cleanup_failure_precedence_is_semantic_not_numeric(
         [],
         run_isolated=False,
         aggregate_coverage=False,
+        collect_all_failures=True,
     ) == expected_rc
 
     _summary, failures, phases = _terminal_summary(capsys.readouterr().out)
@@ -345,6 +458,7 @@ def test_missing_or_corrupt_batch_coverage_suppresses_release_merge(
         run_isolated=False,
         aggregate_coverage=False,
         coverage_output=destination,
+        collect_all_failures=True,
     ) == 1
 
     _summary, failures, phases = _terminal_summary(capsys.readouterr().out)
@@ -404,6 +518,7 @@ def test_real_failed_children_leave_no_workers_threads_or_owned_roots(
         no_progress_seconds=30.0,
         run_isolated=False,
         aggregate_coverage=False,
+        collect_all_failures=True,
     ) == 1
 
     pytest_processes = [

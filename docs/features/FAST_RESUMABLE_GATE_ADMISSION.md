@@ -23,6 +23,12 @@ selector, cross-commit reuse, or unbounded process fan-out.
 - A failed batch stops later batches and shards immediately. Aggregate coverage
   is not run over a partial plan, but earlier independently passing receipts
   remain eligible for an exact-SHA retry.
+- `--collect-all-failures` is an explicit diagnostic-only escape hatch. It
+  continues only after classified ordinary Pytest outcomes whose coverage and
+  cleanup evidence remain valid; worker death, cancellation, resource,
+  coverage-integrity, and cleanup failures still stop immediately. The CLI
+  rejects this mode together with `--require-release-policy`, so default local,
+  hosted, and release-evidence execution remains fail-fast.
 - SIGINT, SIGTERM, and gate-owner death produce one authenticated terminal failed
   status, mark the test phase failed, and release both gate locks. Failed status
   authentication never makes that status eligible for positive gate admission.

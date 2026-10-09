@@ -282,6 +282,14 @@ def build_serial_runner_parser(
         help="defer the 85/75 aggregate coverage gate to a downstream job",
     )
     parser.add_argument(
+        "--collect-all-failures",
+        action="store_true",
+        help=(
+            "diagnostic only: continue after ordinary pytest failures; "
+            "safety, cleanup, cancellation, and coverage failures remain terminal"
+        ),
+    )
+    parser.add_argument(
         "--coverage-output",
         type=Path,
         help="combine this invocation's batch coverage into one data file",

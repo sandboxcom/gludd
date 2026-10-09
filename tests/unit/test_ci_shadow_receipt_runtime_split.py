@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
 import pytest
 from scripts import ci_shadow_receipt_runtime as receipt_runtime
 from scripts import run_ci_shards_serial as serial_runner
-from scripts.ci_batch_receipts import ShadowBatchReceiptWriter
+from scripts.ci_batch_receipts import (
+    ShadowBatchReceiptWriter,
+    ShadowFailureReceiptWriter,
+)
 from scripts.ci_batch_replay_audit import (
     ReplayAuditRequest,
     ReplayAuditResult,
     ShadowReplayAuditor,
 )
-from scripts.ci_gate_progress import ProgressBatch
+from scripts.ci_gate_progress import ProgressBatch, ShadowGateProgress
 
 _SHA = "a" * 40
 
@@ -25,6 +29,21 @@ class _StaticAuditor:
 
     def audit(self, _request: ReplayAuditRequest) -> ReplayAuditResult:
         return self._result
+
+
+class _RaisingAuditor:
+    def audit(self, _request: ReplayAuditRequest) -> ReplayAuditResult:
+        raise ValueError("invalid replay evidence")
+
+
+class _RaisingFailureWriter:
+    def publish(self, _request: object) -> object:
+        raise RuntimeError("publication failed")
+
+
+class _RaisingProgress:
+    def record(self, *_args: object, **_kwargs: object) -> object:
+        raise OSError("progress unavailable")
 
 
 def _receipt_session(*, auditor: object | None = None) -> receipt_runtime.BatchReceiptSession:
@@ -187,6 +206,160 @@ def test_shadow_progress_without_tracker_is_a_quiet_noop(
     )
 
     assert capsys.readouterr().out == ""
+
+
+def test_gate_owner_probe_fails_closed_without_masking_permission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert not receipt_runtime.gate_owner_is_alive({"GLUDD_GATE_OWNER_PID": "bad"})
+    assert not receipt_runtime.gate_owner_is_alive({"GLUDD_GATE_OWNER_PID": "1"})
+
+    monkeypatch.setattr(receipt_runtime.os, "kill", lambda *_args: (_ for _ in ()).throw(ProcessLookupError()))
+    assert not receipt_runtime.gate_owner_is_alive({"GLUDD_GATE_OWNER_PID": "42"})
+
+    monkeypatch.setattr(receipt_runtime.os, "kill", lambda *_args: (_ for _ in ()).throw(PermissionError()))
+    assert receipt_runtime.gate_owner_is_alive({"GLUDD_GATE_OWNER_PID": "42"})
+
+
+def test_identity_helpers_reject_non_object_runtime_sections() -> None:
+    bindings = replace(
+        serial_runner._shadow_receipt_bindings(),
+        interpreter_identity=lambda: {},
+        build_runtime_identity=lambda **_kwargs: {"runner": []},
+    )
+    with pytest.raises(TypeError, match="runtime runner identity"):
+        receipt_runtime.receipt_base_identity(
+            bindings,
+            repository_identity={},
+            repository_state_identifier="state",
+            pytest_args=[],
+            max_files_per_batch=1,
+            heartbeat_seconds=1.0,
+            no_progress_seconds=2.0,
+            include_uv_probe=False,
+        )
+
+    with pytest.raises(TypeError, match="source and plan"):
+        receipt_runtime.batch_receipt_action_identity(
+            bindings,
+            {"source": [], "plan": {}},
+            {"unit-1a1": "digest"},
+            "complete",
+            "unit-1a1",
+            1,
+            ["tests/unit/test_example.py"],
+        )
+
+
+def test_extracted_reporters_contain_dependency_exceptions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    replay_status = receipt_runtime.report_shadow_replay_eligibility(
+        _receipt_session(auditor=_RaisingAuditor()),
+        shard="unit-1a1",
+        batch_index=1,
+        action_identity={},
+        observed_action_identity={},
+        coverage_path=Path("unused-coverage"),
+        outcome_manifest=None,
+        returncode=0,
+        cleanup_returncode=0,
+    )
+    progress_session = replace(
+        _receipt_session(),
+        progress=cast(ShadowGateProgress, _RaisingProgress()),
+    )
+    receipt_runtime.report_shadow_gate_progress(
+        progress_session,
+        batch=ProgressBatch(
+            shard="unit-1a1",
+            batch_index=1,
+            test_files_sha256="b" * 64,
+            collection_manifest_sha256="c" * 64,
+        ),
+        passed=False,
+        receipt_status="ineligible",
+        completed_receipt=None,
+    )
+
+    assert replay_status == "ineligible"
+    output = capsys.readouterr().out
+    assert "reason=auditor-ValueError" in output
+    assert '"error":"progress-OSError"' in output
+
+
+def test_failure_receipt_preconditions_and_exceptions_fail_closed(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base_bindings = replace(
+        serial_runner._shadow_receipt_bindings(),
+        resource_root=lambda: Path("unused-resource-root"),
+        disk_headroom=lambda *_args, **_kwargs: True,
+    )
+    writer = cast(ShadowFailureReceiptWriter, object())
+    session = replace(_receipt_session(), failure_writer=writer)
+    arguments = {
+        "shard": "unit-1a1",
+        "batch_index": 1,
+        "files": ["tests/unit/test_example.py"],
+        "failure_node_metadata": None,
+        "elapsed_seconds": 1.0,
+        "returncode": 1,
+    }
+
+    assert not receipt_runtime.publish_shadow_failure_receipt(
+        base_bindings,
+        _receipt_session(),
+        cleanup_returncode=0,
+        **arguments,
+    )
+    assert not receipt_runtime.publish_shadow_failure_receipt(
+        base_bindings,
+        session,
+        cleanup_returncode=1,
+        **arguments,
+    )
+
+    def invalid_identity(
+        _shard: str,
+        _batch_index: int,
+        _files: list[str],
+    ) -> dict[str, object]:
+        raise ValueError("invalid identity")
+
+    invalid_session = replace(session, expected_identity=invalid_identity)
+    assert not receipt_runtime.publish_shadow_failure_receipt(
+        base_bindings,
+        invalid_session,
+        cleanup_returncode=0,
+        **arguments,
+    )
+    no_disk_bindings = replace(
+        base_bindings,
+        disk_headroom=lambda *_args, **_kwargs: False,
+    )
+    assert not receipt_runtime.publish_shadow_failure_receipt(
+        no_disk_bindings,
+        session,
+        cleanup_returncode=0,
+        **arguments,
+    )
+    raising_session = replace(
+        session,
+        failure_writer=cast(ShadowFailureReceiptWriter, _RaisingFailureWriter()),
+    )
+    assert not receipt_runtime.publish_shadow_failure_receipt(
+        base_bindings,
+        raising_session,
+        cleanup_returncode=0,
+        **arguments,
+    )
+
+    output = capsys.readouterr().out
+    assert "reason=cleanup-incomplete" in output
+    assert "reason=identity-ValueError" in output
+    assert "reason=disk-headroom" in output
+    assert "reason=publisher-RuntimeError" in output
 
 
 @pytest.mark.parametrize(
