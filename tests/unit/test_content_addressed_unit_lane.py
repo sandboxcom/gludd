@@ -895,4 +895,3 @@ def test_parser_main_and_receipt_validation_fail_closed(
     signer = ReceiptSigner(key=b"k" * 32, issued_at=100, validity_seconds=300)
     with pytest.raises(ValueError, match="incomplete"):
         lane.authenticate_payload({"execution_identity": {}}, signer=signer)
-

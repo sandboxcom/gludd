@@ -79,4 +79,3 @@ def test_degraded_inbox_filters_expiry_before_stable_hard_bound(
     payload = response.json()
     assert payload["count"] == 100
     assert [message["id"] for message in payload["messages"]] == sorted(live_ids)[:100]
-

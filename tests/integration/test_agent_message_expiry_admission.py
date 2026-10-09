@@ -146,4 +146,3 @@ async def test_inbox_has_stable_tie_breaker_and_hard_result_ceiling(
     rows = await AgentMessageRepository(async_session).inbox("coder", limit=10_000)
 
     assert [row.id for row in rows] == sorted(ids)[:100]
-

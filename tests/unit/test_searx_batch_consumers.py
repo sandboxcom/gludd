@@ -599,4 +599,3 @@ def test_batch_module_main_guard_fails_closed(
 
     with pytest.raises(RuntimeError, match="controller-side action plugin"):
         runpy.run_path(str(Path(searxng_batch.__file__)), run_name="__main__")
-

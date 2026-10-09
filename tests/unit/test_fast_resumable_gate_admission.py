@@ -191,4 +191,3 @@ def test_gate_make_policy_has_safe_behavioral_example_and_unchanged_floors() -> 
     assert "--fail-under=85" in runner
     assert '"--per-file-threshold=75"' in runner
     assert "--exact-sha-resume" not in workflow
-

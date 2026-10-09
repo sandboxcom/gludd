@@ -119,4 +119,3 @@ other, and the existing 5,000-entry degraded-store ceiling is unchanged.
 - scoped `make lint-files`, `make typecheck-scope`, and `make lint-markdown`
 - `make check-task-integrity`, `make validate-task-ledger`,
   `make check-resource-ownership`, and `make test-count`
-

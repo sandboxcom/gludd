@@ -961,4 +961,3 @@ def test_remaining_openapi_guard_branches(
             {**_args(tmp_path, digest), "secret_env": {}},
             fetcher=transport_failure,
         )
-

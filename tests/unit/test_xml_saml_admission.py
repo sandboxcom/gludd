@@ -711,4 +711,3 @@ def test_verifier_allowlist_and_result_guard_edges(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(saml_admission, "MAX_RESULT_BYTES", 1)
     with pytest.raises(saml_admission.SAMLAdmissionError, match="result exceeds"):
         _admit(raw, without_claims, allowed_claims=[])
-
