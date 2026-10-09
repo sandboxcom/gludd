@@ -385,8 +385,12 @@ def test_role_and_unique_molecule_scenario_use_the_native_action() -> None:
     verify = (scenario / "default/verify.yml").read_text(encoding="utf-8")
 
     assert defaults["git_release_pipeline_triage_enabled"] is False
+    assert defaults["pipeline_triage_enabled"] == (
+        "{{ git_release_pipeline_triage_enabled }}"
+    )
     assert defaults["git_release_pipeline_triage_report_path"] == ""
     assert len(tasks) == 3
+    assert "- pipeline_triage_enabled | bool" in tasks_text
     assert "general_ludd.git_release.pipeline_triage" in tasks_text
     assert "service_request" not in tasks_text
     assert "ansible.builtin.uri" not in tasks_text
