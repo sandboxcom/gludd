@@ -1,0 +1,9 @@
+---
+- name: Prepare (no-op)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: No preparation needed
+      ansible.builtin.debug:
+        msg: "No preparation needed for azure_log_analytics_admission molecule scenario"
