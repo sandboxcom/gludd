@@ -729,6 +729,21 @@
       "behavior": "make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"
     },
     {
+      "name": "clean-stale-resource-namespaces",
+      "make_variables": [
+        "STALE_RESOURCE_NAMESPACE_ROOT",
+        "STALE_RESOURCE_NAMESPACE_PROJECT_ROOT",
+        "STALE_RESOURCE_NAMESPACE_REGISTRY",
+        "STALE_RESOURCE_NAMESPACE_RECEIPT",
+        "STALE_RESOURCE_NAMESPACE_GRACE_SECONDS",
+        "STALE_RESOURCE_NAMESPACE_MAX_CANDIDATES",
+        "STALE_RESOURCE_NAMESPACE_MAX_ENTRIES",
+        "STALE_RESOURCE_NAMESPACE_HEARTBEAT_SECONDS",
+        "STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY"
+      ],
+      "behavior": "make clean-stale-resource-namespaces STALE_RESOURCE_NAMESPACE_ROOT=/tmp/gludd-resource-cleaner-contract/gludd-resources STALE_RESOURCE_NAMESPACE_PROJECT_ROOT=. STALE_RESOURCE_NAMESPACE_REGISTRY=/tmp/gludd-resource-cleaner-contract/registry.json STALE_RESOURCE_NAMESPACE_RECEIPT=/tmp/gludd-resource-cleaner-contract/receipts.jsonl STALE_RESOURCE_NAMESPACE_GRACE_SECONDS=86400 STALE_RESOURCE_NAMESPACE_MAX_CANDIDATES=20 STALE_RESOURCE_NAMESPACE_MAX_ENTRIES=1000 STALE_RESOURCE_NAMESPACE_HEARTBEAT_SECONDS=1 STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "check-disk-classification",
       "make_variables": [],
       "behavior": "make check-disk-classification"

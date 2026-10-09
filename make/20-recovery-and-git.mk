@@ -91,6 +91,32 @@ disk-cleanup-preflight:
 		exit 2; \
 	fi
 
+# Reclaim only age-qualified, provably inactive direct children of one exact
+# Gludd resource root. Inventory is the default; mutation requires an explicit
+# 0 value and writes an append-only receipt outside the cleanup root.
+STALE_RESOURCE_NAMESPACE_ROOT ?= $(HOME)/tmp/gludd-resources
+STALE_RESOURCE_NAMESPACE_PROJECT_ROOT ?= $(CURDIR)
+STALE_RESOURCE_NAMESPACE_REGISTRY ?=
+STALE_RESOURCE_NAMESPACE_RECEIPT ?= $(STALE_RESOURCE_NAMESPACE_ROOT).cleanup-receipts.jsonl
+STALE_RESOURCE_NAMESPACE_GRACE_SECONDS ?= 86400
+STALE_RESOURCE_NAMESPACE_MAX_CANDIDATES ?= 1000
+STALE_RESOURCE_NAMESPACE_MAX_ENTRIES ?= 100000
+STALE_RESOURCE_NAMESPACE_HEARTBEAT_SECONDS ?= 5
+STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY ?= 1
+
+clean-stale-resource-namespaces:
+	@case "$(STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY)" in 0|1) ;; *) echo "STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(SYSTEM_PYTHON) -m scripts.clean_stale_resource_namespaces \
+		--root "$(STALE_RESOURCE_NAMESPACE_ROOT)" \
+		--project-root "$(STALE_RESOURCE_NAMESPACE_PROJECT_ROOT)" \
+		$(if $(strip $(STALE_RESOURCE_NAMESPACE_REGISTRY)),--registry "$(STALE_RESOURCE_NAMESPACE_REGISTRY)",) \
+		--receipt "$(STALE_RESOURCE_NAMESPACE_RECEIPT)" \
+		--grace-seconds "$(STALE_RESOURCE_NAMESPACE_GRACE_SECONDS)" \
+		--max-candidates "$(STALE_RESOURCE_NAMESPACE_MAX_CANDIDATES)" \
+		--max-entries "$(STALE_RESOURCE_NAMESPACE_MAX_ENTRIES)" \
+		--heartbeat-seconds "$(STALE_RESOURCE_NAMESPACE_HEARTBEAT_SECONDS)" \
+		$(if $(filter 1,$(STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY)),--validate-only,--apply)
+
 # Compatibility entry point used by the pre-commit hook.
 check-disk:
 	@if [ "$(CHECK_DISK_VALIDATE_ONLY)" = "1" ]; then \
