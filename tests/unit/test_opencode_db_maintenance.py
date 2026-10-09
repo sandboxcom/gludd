@@ -167,6 +167,230 @@ def test_prune_fixture_removes_only_expired_rows_in_bounded_batches(tmp_path: Pa
     assert any("phase=complete" in line and "sessions_removed=2" in line for line in progress)
 
 
+def test_prune_preview_reports_exact_cascade_counts_without_mutation(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    now_ms = 2_000_000_000_000
+    old_ms = now_ms - (31 * 86_400_000)
+    recent_ms = now_ms - (2 * 86_400_000)
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=old_ms, recent_ms=recent_ms)
+    before = database.read_bytes()
+    progress: list[str] = []
+
+    result = module.preview_prune_database(
+        database,
+        _config(module),
+        now_ms=now_ms,
+        emit=progress.append,
+    )
+
+    assert result.candidate_sessions == 2
+    assert dict(result.table_rows) == {
+        "session": 2,
+        "message": 1,
+        "part": 1,
+        "todo": 1,
+        "session_message": 1,
+        "event": 2,
+        "event_sequence": 2,
+    }
+    assert result.cascade_rows == 8
+    assert result.candidate_rows == 10
+    assert 0 < result.conservative_reclaimable_bytes < len(before)
+    assert result.batches == 1
+    assert result.limit_reached is False
+    assert database.read_bytes() == before
+    table_lines = [line for line in progress if line.startswith("phase=preview-table")]
+    assert [line.split()[1] for line in table_lines] == [
+        "table=session",
+        "table=message",
+        "table=part",
+        "table=todo",
+        "table=session_message",
+        "table=event",
+        "table=event_sequence",
+    ]
+    assert all("old-session" not in line for line in progress)
+    assert any(
+        "phase=preview-complete" in line
+        and "candidate_sessions=2" in line
+        and "cascade_rows=8" in line
+        and "limit_reached=false" in line
+        for line in progress
+    )
+
+
+def test_prune_preview_uses_one_consistent_read_snapshot(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    now_ms = 2_000_000_000_000
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=now_ms)
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+    inserted = False
+
+    def insert_after_session_count(message: str) -> None:
+        nonlocal inserted
+        if inserted or not message.startswith("phase=preview-table table=session "):
+            return
+        with closing(sqlite3.connect(database)) as writer:
+            writer.execute(
+                "INSERT INTO message VALUES (?, ?, ?)",
+                ("concurrent-message", "old-session", 1),
+            )
+            writer.commit()
+        inserted = True
+
+    result = module.preview_prune_database(
+        database,
+        _config(module),
+        now_ms=now_ms,
+        emit=insert_after_session_count,
+    )
+
+    assert inserted is True
+    assert dict(result.table_rows)["message"] == 1
+    assert _row_count(database, "message") == 3
+
+
+def test_prune_preview_obeys_session_cap_and_reports_remaining_work(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute(
+            "CREATE TABLE session (id TEXT PRIMARY KEY, time_created INTEGER NOT NULL)"
+        )
+        connection.executemany(
+            "INSERT INTO session VALUES (?, ?)",
+            (("old-a", 1), ("old-b", 2)),
+        )
+        connection.commit()
+
+    result = module.preview_prune_database(
+        database,
+        _config(module, max_sessions=1),
+        now_ms=2_000_000_000_000,
+        emit=lambda _message: None,
+    )
+
+    assert result.candidate_sessions == 1
+    assert result.table_rows == (("session", 1),)
+    assert result.batches == 1
+    assert result.limit_reached is True
+    assert _row_count(database, "session") == 2
+
+
+def test_prune_preview_never_splits_an_oversized_session_tree(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=2_000_000_000_000)
+
+    result = module.preview_prune_database(
+        database,
+        _config(module, max_sessions=1),
+        now_ms=2_000_000_000_000,
+        emit=lambda _message: None,
+    )
+
+    assert result.candidate_sessions == 0
+    assert result.candidate_rows == 0
+    assert result.batches == 0
+    assert result.limit_reached is True
+    assert _row_count(database, "session") == 3
+
+
+def test_prune_preview_excludes_prior_virtual_batches_before_tree_cap(
+    tmp_path: Path,
+) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute(
+            "CREATE TABLE session ("
+            "id TEXT PRIMARY KEY, parent_id TEXT, time_created INTEGER NOT NULL)"
+        )
+        connection.executemany(
+            "INSERT INTO session VALUES (?, ?, ?)",
+            (
+                ("a-child", "z-parent", 1),
+                ("c-grandchild", "a-child", 2),
+                ("z-parent", None, 3),
+                ("zz-new-child", "z-parent", 4),
+            ),
+        )
+        connection.commit()
+
+    result = module.preview_prune_database(
+        database,
+        _config(module, batch_size=1, max_sessions=3),
+        now_ms=2_000_000_000_000,
+        emit=lambda _message: None,
+    )
+
+    assert result.candidate_sessions == 2
+    assert result.batches == 1
+    assert result.limit_reached is True
+
+
+def test_preview_root_cursor_skips_already_selected_rows(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute(
+            "CREATE TABLE session (id TEXT PRIMARY KEY, time_created INTEGER NOT NULL)"
+        )
+        connection.executemany(
+            "INSERT INTO session VALUES (?, ?)",
+            (("old-a", 1), ("old-b", 2)),
+        )
+        connection.commit()
+        roots, cursor, exhausted = module._next_preview_roots(
+            connection,
+            3,
+            1,
+            {"old-a"},
+            None,
+        )
+
+    assert roots == ["old-b"]
+    assert cursor == (2, "old-b")
+    assert exhausted is False
+
+    with closing(sqlite3.connect(database)) as connection:
+        all_roots, _cursor, exhausted = module._next_preview_roots(
+            connection,
+            3,
+            3,
+            set(),
+            None,
+        )
+    assert all_roots == ["old-a", "old-b"]
+    assert exhausted is True
+
+
+def test_prune_preview_timeout_is_translated_without_mutation(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=2_000_000_000_000)
+    before = database.read_bytes()
+
+    def interrupted(*_args: Any, **_kwargs: Any) -> Any:
+        raise sqlite3.OperationalError("interrupted")
+
+    monkeypatch.setattr(module, "_table_names", interrupted)
+    with pytest.raises(module.MaintenanceTimeoutError, match="time budget"):
+        module.preview_prune_database(
+            database,
+            _config(module),
+            now_ms=2_000_000_000_000,
+            emit=lambda _message: None,
+        )
+    assert database.read_bytes() == before
+
+
 def test_running_guard_short_circuits_every_mutation_and_preserves_sidecars(
     tmp_path: Path,
 ) -> None:
@@ -305,7 +529,7 @@ def test_config_rejects_unsafe_resource_bounds(
     message: str,
 ) -> None:
     module = _load_maintenance()
-    values = {
+    values: dict[str, int | float] = {
         "retention_days": 30,
         "batch_size": 10,
         "max_sessions": 100,
@@ -440,6 +664,28 @@ def test_prune_reports_partial_when_global_session_cap_is_reached(tmp_path: Path
     assert result.limit_reached is True
     assert _row_count(database, "session") == 1
     assert any("reason=max-sessions-reached" in line for line in progress)
+
+
+def test_prune_exact_cap_reports_complete_when_no_expired_rows_remain(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute(
+            "CREATE TABLE session (id TEXT PRIMARY KEY, time_created INTEGER NOT NULL)"
+        )
+        connection.execute("INSERT INTO session VALUES ('old', 1)")
+        connection.commit()
+
+    result = module.prune_database(
+        database,
+        _config(module, max_sessions=1),
+        now_ms=2_000_000_000_000,
+        process_check=lambda: False,
+        emit=lambda _message: None,
+    )
+
+    assert result.sessions_removed == 1
+    assert result.limit_reached is False
 
 
 def test_schema_drift_fails_closed_before_delete(tmp_path: Path) -> None:
@@ -622,6 +868,226 @@ def test_existing_incremental_auto_vacuum_gets_a_bounded_step(tmp_path: Path) ->
     assert any("reason=page-budget-zero" in line for line in zero_budget_progress)
 
 
+def test_checkpoint_and_disk_inspection_edge_states_are_explicit(tmp_path: Path) -> None:
+    module = _load_maintenance()
+
+    class FakeConnection:
+        def __init__(self, result: tuple[int, int, int] | None) -> None:
+            self.result = result
+
+        def execute(self, _statement: str) -> Any:
+            return self
+
+        def fetchone(self) -> tuple[int, int, int] | None:
+            return self.result
+
+    with pytest.raises(module.MaintenanceError, match="returned no status"):
+        module._checkpoint_passive(FakeConnection(None), lambda _message: None)
+    progress: list[str] = []
+    with pytest.raises(module.DatabaseBusyError, match="busy database"):
+        module._checkpoint_passive(FakeConnection((1, 2, 1)), progress.append)
+    assert progress == [
+        "phase=checkpoint mode=PASSIVE busy=1 log_pages=2 checkpointed_pages=1"
+    ]
+
+    deadline = time.monotonic() + 2
+    inspection: list[str] = []
+    assert module._directory_usage(
+        tmp_path / "absent",
+        _config(module),
+        deadline,
+        inspection.append,
+        "absent",
+    ) == (0, 0)
+    real_directory = tmp_path / "real"
+    real_directory.mkdir()
+    symlink = tmp_path / "linked"
+    symlink.symlink_to(real_directory, target_is_directory=True)
+    assert module._directory_usage(
+        symlink,
+        _config(module),
+        deadline,
+        inspection.append,
+        "linked",
+    ) == (0, 1)
+    assert "status=absent" in inspection[0]
+    assert "status=symlink-not-followed" in inspection[1]
+
+
+def test_file_cleanup_helpers_reject_symlinks_and_allow_absent_roots(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    config = _config(module)
+    deadline = time.monotonic() + 2
+
+    def emit(_message: str) -> None:
+        return None
+
+    def process_check() -> bool:
+        return False
+
+    def guard_must_not_run() -> bool:
+        raise AssertionError("guard called")
+
+    absent = tmp_path / "absent"
+
+    assert module._clear_directory(
+        absent,
+        config,
+        deadline,
+        process_check,
+        emit,
+    ) == (0, 0)
+    assert module._clean_logs(
+        absent,
+        7,
+        time.time(),
+        config,
+        deadline,
+        process_check,
+        emit,
+        already_scanned=0,
+    ) == (0, 0)
+    real_directory = tmp_path / "real"
+    real_directory.mkdir()
+    symlink = tmp_path / "linked"
+    symlink.symlink_to(real_directory, target_is_directory=True)
+    with pytest.raises(module.MaintenanceError, match="symlinked cleanup root"):
+        module._clear_directory(
+            symlink,
+            config,
+            deadline,
+            process_check,
+            emit,
+        )
+    with pytest.raises(module.MaintenanceError, match="symlinked cleanup root"):
+        module._clean_logs(
+            symlink,
+            7,
+            time.time(),
+            config,
+            deadline,
+            process_check,
+            emit,
+            already_scanned=0,
+        )
+    with pytest.raises(module.MaintenanceError, match="symlinked cleanup root"):
+        module._validate_data_directory(symlink)
+
+    module._file_budget_checkpoint(
+        scanned=0,
+        config=config,
+        deadline=deadline,
+        process_check=guard_must_not_run,
+        emit=emit,
+        force=True,
+    )
+
+
+def test_incremental_vacuum_reports_space_and_rejects_unsupported_modes(
+    tmp_path: Path,
+) -> None:
+    module = _load_maintenance()
+    incremental = tmp_path / "incremental.db"
+    with closing(sqlite3.connect(incremental)) as connection:
+        connection.execute("PRAGMA auto_vacuum=INCREMENTAL")
+        connection.execute("VACUUM")
+        connection.execute("CREATE TABLE sample (payload TEXT)")
+        connection.execute("INSERT INTO sample VALUES (?)", ("x" * 100_000,))
+        connection.commit()
+        connection.execute("DELETE FROM sample")
+        connection.commit()
+    progress: list[str] = []
+
+    module.vacuum_incremental(
+        incremental,
+        _config(module, incremental_pages=2),
+        emit=progress.append,
+    )
+
+    assert progress[0].startswith("phase=vacuum-incremental status=starting")
+    assert progress[-1].startswith("phase=vacuum-incremental status=complete")
+
+    unsupported = tmp_path / "unsupported.db"
+    with closing(sqlite3.connect(unsupported)) as connection:
+        connection.execute("CREATE TABLE sample (payload TEXT)")
+    with pytest.raises(module.MaintenanceError, match="not INCREMENTAL"):
+        module.vacuum_incremental(
+            unsupported,
+            _config(module, incremental_pages=2),
+            emit=lambda _message: None,
+        )
+    with pytest.raises(module.MaintenanceError, match="must be positive"):
+        module.vacuum_incremental(
+            incremental,
+            _config(module, incremental_pages=0),
+            emit=lambda _message: None,
+        )
+
+
+def test_full_vacuum_is_guarded_and_supports_in_place_or_into(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute("CREATE TABLE sample (payload TEXT)")
+        connection.execute("INSERT INTO sample VALUES (?)", ("x" * 100_000,))
+        connection.commit()
+        connection.execute("DELETE FROM sample")
+        connection.commit()
+    progress: list[str] = []
+
+    module.vacuum_full(
+        database,
+        _config(module),
+        process_check=lambda: False,
+        emit=progress.append,
+    )
+
+    assert any("phase=vacuum-full status=complete" in line for line in progress)
+    output = tmp_path / "vacuumed.db"
+    module.vacuum_full(
+        database,
+        _config(module),
+        process_check=lambda: False,
+        emit=progress.append,
+        into=str(output),
+    )
+    assert output.is_file()
+    assert any(f"status=complete into={output}" in line for line in progress)
+    with pytest.raises(module.OpenCodeRunningError, match="still running"):
+        module.vacuum_full(
+            database,
+            _config(module),
+            process_check=lambda: True,
+            emit=lambda _message: None,
+        )
+
+
+def test_backup_compaction_prunes_fixture_and_writes_separate_database(
+    tmp_path: Path,
+) -> None:
+    module = _load_maintenance()
+    now_ms = time.time_ns() // 1_000_000
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=now_ms)
+    output = tmp_path / "opencode.compact.db"
+    progress: list[str] = []
+
+    reclaimed = module.compact_via_backup(
+        database,
+        _config(module),
+        process_check=lambda: False,
+        emit=progress.append,
+        output=output,
+    )
+
+    assert output.is_file()
+    assert isinstance(reclaimed, int)
+    assert _row_count(database, "session") == 1
+    assert _row_count(output, "session") == 1
+    assert any("phase=compact status=pruned" in line for line in progress)
+    assert any("phase=compact status=complete" in line for line in progress)
+
+
 @pytest.mark.parametrize("report", ("disk", "stats", "schema", "sample"))
 def test_read_only_reports_use_fixture_database(
     tmp_path: Path,
@@ -688,6 +1154,47 @@ def test_cli_validate_only_and_error_exit_codes(tmp_path: Path, monkeypatch: Any
 
         monkeypatch.setattr(module, "prune_database", raise_error)
         assert module.main(["prune", "--db", str(database)]) == expected
+
+
+def test_cli_prune_validate_only_runs_bounded_preview(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=2_000_000_000_000)
+    calls: list[tuple[Path, Any]] = []
+
+    def record_preview(path: Path, config: Any, **_kwargs: Any) -> None:
+        calls.append((path, config))
+
+    monkeypatch.setattr(module, "preview_prune_database", record_preview)
+
+    assert (
+        module.main(
+            [
+                "prune",
+                "--db",
+                str(database),
+                "--retention-days",
+                "31",
+                "--batch-size",
+                "7",
+                "--max-sessions",
+                "23",
+                "--timeout-seconds",
+                "2",
+                "--busy-timeout-ms",
+                "20",
+                "--validate-only",
+            ]
+        )
+        == 0
+    )
+    assert calls == [(database, calls[0][1])]
+    assert calls[0][1].retention_days == 31
+    assert calls[0][1].batch_size == 7
+    assert calls[0][1].max_sessions == 23
 
 
 def test_cli_delegates_clean_action(tmp_path: Path, monkeypatch: Any) -> None:

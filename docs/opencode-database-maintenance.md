@@ -1,6 +1,6 @@
 # OpenCode database maintenance runbook
 
-**Last evidence review:** 2026-08-08
+**Last evidence review:** 2026-10-09
 **Scope:** Gludd's `opencode-disk`, `opencode-db-*`, and `opencode-clean*`
 Make targets.
 
@@ -56,6 +56,7 @@ Run the narrowest target that solves the problem.
 | `make opencode-db-stats` | No | Yes | Show table row counts and resolved database size. Counts are only a point-in-time observation. |
 | `make opencode-db-schema` | No | Yes | Diagnose schema/version differences; it is not a cleanup step. |
 | `make opencode-db-sample` | No | Yes | Diagnose timestamp representation before changing retention logic; it is not a cleanup step. |
+| `make opencode-db-prune OPENCODE_MAINTENANCE_VALIDATE_ONLY=1` | No | Yes | Preview the exact bounded session trees, table-level cascade counts, and a conservative payload-byte estimate from one read snapshot. |
 | `make opencode-db-prune` | Yes | **No** | Remove expired session records and dependent event/projection rows in small committed batches with row, time, and lock-wait bounds. This frees reusable pages but need not shrink the file. |
 | `make opencode-clean` | Maintenance only | **No** | Run a nonblocking passive checkpoint and optimize; use incremental vacuum only if the database was already configured for it, then perform bounded cache/log cleanup. It never runs a full vacuum. |
 | `make opencode-clean-hard` | No session-row deletion | **No** | Remove more disposable tool-output/log data. This is not database repair and does not replace pruning. |
@@ -66,10 +67,53 @@ The OpenCode CLI also provides logical
 upstream operations when preserving or removing a specific known session;
 Gludd's database targets are for measured bulk maintenance, not ad-hoc SQL.
 
+## Prune decision preview
+
+Use the existing prune target in validate-only mode before deciding whether an
+offline cleanup is worthwhile:
+
+```console
+make opencode-db-prune OPENCODE_DB=/absolute/path/to/opencode.db OPENCODE_RETENTION_DAYS=30 OPENCODE_DB_BATCH_SIZE=500 OPENCODE_DB_MAX_SESSIONS=50000 OPENCODE_DB_TIMEOUT_SECONDS=60 OPENCODE_DB_BUSY_TIMEOUT_MS=1000 OPENCODE_MAINTENANCE_VALIDATE_ONLY=1 OPENCODE_MAINTENANCE_FORCE=0
+```
+
+The preview opens the database read-only and holds one SQLite read transaction,
+so every count comes from the same point-in-time snapshot even if OpenCode is
+active. It applies the same retention cutoff, deterministic ordering, recursive
+child-session selection, batch size, session ceiling, schema validation, busy
+timeout, and total timeout as the mutating prune. Output contains counts and
+byte totals only; it never prints session identifiers or stored content. A
+`limit_reached=true` result means another bounded pass would still have work.
+
+`conservative_reclaimable_bytes` is the sum of TEXT and BLOB payload bytes in
+the selected rows. It deliberately excludes numeric values, SQLite record and
+B-tree overhead, indexes, and unrelated already-free pages. It is therefore a
+lower-bound decision estimate, not a promise that the main database file will
+shrink by that amount. A prune normally makes space reusable inside SQLite;
+physical file reclamation remains a separate, higher-headroom operation.
+
+This preview preserves zero-downtime operation because it performs no writes
+and does not require stopping OpenCode. The later mutating invocation still
+fails closed if an OpenCode process is active and rechecks that guard before
+every transaction. Each committed prune batch remains independently durable,
+so a timeout does not create a half-written batch. Rollback of this tooling is
+only a source-code revert—there is no schema or data migration. Rollback of an
+operator-approved prune requires the independently managed SQLite-consistent
+backup or an application-level export; the preview itself creates nothing that
+needs recovery.
+
+The bounded report directly addresses the growth described in OpenCode
+[#16101](https://github.com/anomalyco/opencode/issues/16101) and the long-lived
+[r/opencodeCLI session-recovery discussion](https://www.reddit.com/r/opencodeCLI/comments/1sgx0ld/i_built_a_plugin_to_fix_opencodes_most_annoying/):
+both practitioners reported large session/message/part populations, while the
+forum discussion also emphasizes that retained context has recovery value.
+Those reports motivate a content-safe decision preview; they do not justify an
+automatic deletion policy.
+
 ## Routine cleanup
 
-1. Run `make opencode-disk` and `make opencode-db-stats`. Record the resolved
-   path, free-space situation, and row counts before changing anything.
+1. Run `make opencode-disk`, `make opencode-db-stats`, and the validate-only
+   prune preview. Record the resolved path, free-space situation, row counts,
+   and bounded candidate estimate before changing anything.
 2. If only disposable tool output or logs are large, use the corresponding
    cache cleanup target; do not touch session rows.
 3. If session data must be pruned, finish or export anything that must be kept,

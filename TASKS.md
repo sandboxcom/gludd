@@ -1136,6 +1136,31 @@ registered surface. Atomic commit, safe live quiescence, any resulting
 reclamation, replacement exact gate, hosted proof, predecessor live proofs,
 publication, deployment, and rollback remain open.
 
+S83.166 OpenCode prune-decision continuation: validate-only pruning previously
+checked arguments without inspecting the database, so an operator could not
+quantify the bounded deletion before stopping OpenCode. The existing SQLite
+maintenance implementation now simulates the exact retention, batch, recursive
+session-tree, and global-session limits inside one read-only snapshot; reports
+deterministically ordered per-table cascade counts plus a content-safe lower
+bound of TEXT/BLOB payload bytes; and preserves schema, busy-wait, and total
+timeout refusal without printing identifiers or content. Failing-first tests
+pin non-mutation, WAL snapshot consistency, oversized-tree refusal, cap
+continuation, timeout translation, and CLI delegation. The expanded maintenance
+suite passes 58/58; branch-aware coverage passes the 85% aggregate and 75%
+per-file floors with 91% combined coverage; scoped Ruff, strict mypy, and
+Markdown lint are green. A real 30-day preview of the live database selected
+78 sessions and 8,190 dependent rows across one batch, estimated 8,114,150
+lower-bound payload bytes, reported `limit_reached=false mutation=false`, and
+performed no deletion. OpenCode #16101 and a long-lived r/opencodeCLI recovery
+discussion are recorded with the ZDD and rollback boundaries in the runbook.
+`scripts/opencode_db_maintenance.py`,
+`tests/unit/test_opencode_db_maintenance.py`,
+`config/coverage_opencode_db_maintenance.ini`,
+`docs/opencode-database-maintenance.md`, and `TASKS.md` are the registered
+surface. Atomic commit, any explicitly authorized offline cleanup, additional
+safe headroom, replacement exact gate, hosted proof, predecessor live proofs,
+publication, deployment, and rollback remain open.
+
 ---
 
 ## Session 86 — v0.1.0-beta4 completion (2026-08-20)

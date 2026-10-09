@@ -107,6 +107,19 @@ class PruneResult:
     limit_reached: bool
 
 
+@dataclass(frozen=True)
+class PrunePreview:
+    """Bounded, read-only inventory of rows selected by one prune invocation."""
+
+    candidate_sessions: int
+    table_rows: tuple[tuple[str, int], ...]
+    cascade_rows: int
+    candidate_rows: int
+    conservative_reclaimable_bytes: int
+    batches: int
+    limit_reached: bool
+
+
 def _print_progress(message: str) -> None:
     print(message, flush=True)
 
@@ -488,6 +501,139 @@ def _select_session_tree(
     return [str(row[0]) for row in rows]
 
 
+def _next_preview_roots(
+    connection: sqlite3.Connection,
+    cutoff_ms: int,
+    limit: int,
+    selected: set[str],
+    cursor: tuple[int, str] | None,
+) -> tuple[list[str], tuple[int, str] | None, bool]:
+    """Read the next virtual batch of expired roots without exposing identifiers."""
+
+    roots: list[str] = []
+    exhausted = False
+    while len(roots) < limit:
+        page_limit = max(limit - len(roots), 1)
+        if cursor is None:
+            rows = connection.execute(
+                "SELECT id, time_created FROM session "
+                "WHERE time_created < ? ORDER BY time_created, id LIMIT ?",
+                (cutoff_ms, page_limit),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT id, time_created FROM session "
+                "WHERE time_created < ? "
+                "AND (time_created > ? OR (time_created = ? AND id > ?)) "
+                "ORDER BY time_created, id LIMIT ?",
+                (cutoff_ms, cursor[0], cursor[0], cursor[1], page_limit),
+            ).fetchall()
+        if not rows:
+            exhausted = True
+            break
+        for identifier, created in rows:
+            identifier_text = str(identifier)
+            cursor = (int(created), identifier_text)
+            if identifier_text not in selected:
+                roots.append(identifier_text)
+        if len(rows) < page_limit:
+            exhausted = True
+            break
+    return roots, cursor, exhausted
+
+
+def _expand_preview_session_trees(
+    connection: sqlite3.Connection,
+    roots: Sequence[str],
+    *,
+    has_parent_id: bool,
+    maximum: int,
+    excluded: set[str],
+) -> set[str]:
+    """Expand root identifiers while retaining at most one over-limit sentinel."""
+
+    if not has_parent_id:
+        return set(roots[: maximum + 1]) - excluded
+    expanded: set[str] = set()
+    for root_chunk in _chunks(roots, 400):
+        root_values = ",".join("(?)" for _identifier in root_chunk)
+        query_limit = maximum + len(expanded) + len(excluded) + 1
+        rows = connection.execute(
+            f"""
+            WITH RECURSIVE
+            roots(id) AS (VALUES {root_values}),
+            doomed(id) AS (
+                SELECT id FROM roots
+                UNION
+                SELECT child.id
+                FROM session AS child
+                JOIN doomed AS parent ON child.parent_id = parent.id
+            )
+            SELECT id FROM doomed ORDER BY id LIMIT ?
+            """,
+            (*root_chunk, query_limit),
+        )
+        for row in rows:
+            identifier = str(row[0])
+            if identifier not in excluded:
+                expanded.add(identifier)
+            if len(expanded) > maximum:
+                break
+        if len(expanded) > maximum:
+            break
+    return expanded
+
+
+def _preview_session_ids(
+    connection: sqlite3.Connection,
+    cutoff_ms: int,
+    config: MaintenanceConfig,
+    *,
+    has_parent_id: bool,
+) -> tuple[set[str], int, bool]:
+    """Simulate the prune batches with a bounded in-memory identifier set."""
+
+    selected: set[str] = set()
+    cursor: tuple[int, str] | None = None
+    batches = 0
+    exhausted = False
+    limit_reached = False
+    while len(selected) < config.max_sessions and not exhausted:
+        remaining = config.max_sessions - len(selected)
+        roots, cursor, exhausted = _next_preview_roots(
+            connection,
+            cutoff_ms,
+            min(config.batch_size, remaining),
+            selected,
+            cursor,
+        )
+        if not roots:
+            break
+        identifiers = _expand_preview_session_trees(
+            connection,
+            roots,
+            has_parent_id=has_parent_id,
+            maximum=remaining,
+            excluded=selected,
+        )
+        new_identifiers = identifiers - selected
+        if len(new_identifiers) > remaining:
+            limit_reached = True
+            break
+        selected.update(new_identifiers)
+        batches += 1
+    if len(selected) >= config.max_sessions and not limit_reached:
+        more_roots, _cursor, _exhausted = _next_preview_roots(
+            connection,
+            cutoff_ms,
+            1,
+            selected,
+            cursor,
+        )
+        limit_reached = bool(more_roots)
+    return selected, batches, limit_reached
+
+
 def _chunks(values: Sequence[str], size: int) -> Iterable[Sequence[str]]:
     for start in range(0, len(values), size):
         yield values[start : start + size]
@@ -509,6 +655,134 @@ def _delete_ids(
         )
         removed += max(cursor.rowcount, 0)
     return removed
+
+
+def _text_blob_payload_expression(connection: sqlite3.Connection, table: str) -> str:
+    """Return a lower-bound SQLite payload expression without reading row content."""
+
+    terms: list[str] = []
+    for column in sorted(_columns(connection, table)):
+        value = f"candidate.{_quoted(column)}"
+        terms.append(
+            f"CASE typeof({value}) "
+            f"WHEN 'text' THEN length(CAST({value} AS BLOB)) "
+            f"WHEN 'blob' THEN length({value}) ELSE 0 END"
+        )
+    return " + ".join(terms) if terms else "0"
+
+
+def _preview_table_count(
+    connection: sqlite3.Connection,
+    table: str,
+    identifiers: Sequence[str],
+) -> tuple[int, int]:
+    """Count selected rows and text/blob bytes for one known cascade table."""
+
+    count = 0
+    payload_bytes = 0
+    payload_expression = _text_blob_payload_expression(connection, table)
+    for identifier_chunk in _chunks(identifiers, 400):
+        placeholders = ",".join("?" for _identifier in identifier_chunk)
+        if table == "session":
+            relation = '"session" AS candidate'
+            predicate = f'candidate."id" IN ({placeholders})'
+        elif table == "part":
+            relation = (
+                '"part" AS candidate JOIN "message" AS owner '
+                'ON candidate."message_id" = owner."id"'
+            )
+            predicate = f'owner."session_id" IN ({placeholders})'
+        elif table in {"event", "event_sequence"}:
+            relation = f'{_quoted(table)} AS candidate'
+            predicate = f'candidate."aggregate_id" IN ({placeholders})'
+        else:
+            relation = f'{_quoted(table)} AS candidate'
+            predicate = f'candidate."session_id" IN ({placeholders})'
+        row = connection.execute(
+            f"SELECT COUNT(*), COALESCE(SUM({payload_expression}), 0) "
+            f"FROM {relation} WHERE {predicate}",
+            tuple(identifier_chunk),
+        ).fetchone()
+        if row is not None:
+            count += int(row[0])
+            payload_bytes += int(row[1])
+    return count, payload_bytes
+
+
+def preview_prune_database(
+    database: Path,
+    config: MaintenanceConfig,
+    *,
+    now_ms: int | None = None,
+    emit: Emit = _print_progress,
+) -> PrunePreview:
+    """Report a bounded prune candidate inventory through a read-only connection."""
+
+    config.validate()
+    deadline = time.monotonic() + config.timeout_seconds
+    cutoff_ms = (now_ms if now_ms is not None else time.time_ns() // 1_000_000) - (
+        config.retention_days * 86_400_000
+    )
+    emit(
+        f"phase=preview-plan cutoff_ms={cutoff_ms} batch_size={config.batch_size} "
+        f"max_sessions={config.max_sessions} timeout_seconds={config.timeout_seconds:g}"
+    )
+    connection = _connect_read_only(
+        database,
+        config,
+        deadline,
+        emit=emit,
+        phase="prune-preview",
+    )
+    try:
+        connection.execute("BEGIN")
+        tables = _table_names(connection)
+        session_columns = _validate_prune_schema(connection, tables, emit)
+        identifiers, batches, limit_reached = _preview_session_ids(
+            connection,
+            cutoff_ms,
+            config,
+            has_parent_id="parent_id" in session_columns,
+        )
+        ordered_identifiers = sorted(identifiers)
+        table_rows: list[tuple[str, int]] = []
+        conservative_bytes = 0
+        for table in PRUNE_TABLES:
+            if table not in tables:
+                continue
+            rows, payload_bytes = _preview_table_count(
+                connection,
+                table,
+                ordered_identifiers,
+            )
+            table_rows.append((table, rows))
+            conservative_bytes += payload_bytes
+            emit(
+                f"phase=preview-table table={table} rows={rows} "
+                f"payload_bytes_lower_bound={payload_bytes}"
+            )
+        candidate_sessions = len(identifiers)
+        candidate_rows = sum(rows for _table, rows in table_rows)
+        cascade_rows = candidate_rows - candidate_sessions
+        emit(
+            f"phase=preview-complete candidate_sessions={candidate_sessions} "
+            f"cascade_rows={cascade_rows} candidate_rows={candidate_rows} "
+            f"conservative_reclaimable_bytes={conservative_bytes} batches={batches} "
+            f"limit_reached={str(limit_reached).lower()} mutation=false"
+        )
+        return PrunePreview(
+            candidate_sessions=candidate_sessions,
+            table_rows=tuple(table_rows),
+            cascade_rows=cascade_rows,
+            candidate_rows=candidate_rows,
+            conservative_reclaimable_bytes=conservative_bytes,
+            batches=batches,
+            limit_reached=limit_reached,
+        )
+    except sqlite3.Error as exc:
+        raise _translate_sqlite_error(exc) from exc
+    finally:
+        connection.close()
 
 
 def _checkpoint_passive(connection: sqlite3.Connection, emit: Emit) -> None:
@@ -968,7 +1242,8 @@ def vacuum_full(
             connection.execute("VACUUM")
             size_after = database.stat().st_size if database.is_file() else 0
             emit(
-                f"phase=vacuum-full status=complete size_before={size_before} size_after={size_after} freed={size_before - size_after}"
+                f"phase=vacuum-full status=complete size_before={size_before} "
+                f"size_after={size_after} freed={size_before - size_after}"
             )
     except sqlite3.Error as exc:
         raise _translate_sqlite_error(exc) from exc
@@ -1096,6 +1371,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         config.validate()
         database = resolve_database_path(args.db)
         data_directory = Path(args.data_dir).expanduser() if args.data_dir else database.parent
+        if args.validate_only and args.action == "prune":
+            preview_prune_database(database, config)
+            return 0
         if args.validate_only:
             _validate_data_directory(data_directory)
             _print_progress(f"phase=validate status=ok action={args.action} db={database} data_dir={data_directory}")
