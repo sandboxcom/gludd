@@ -476,6 +476,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S40",
         "S41",
         "S42",
+        "S43",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
@@ -587,6 +588,14 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
                 ("task_evidence", "3a539a9640a9283ca655ab1b46b4cb25e609fdcb"),
             ),
         ),
+        "S43": (
+            "Native fail-closed materials tolerance analysis",
+            "Features",
+            (
+                ("implementation", "3d86e4854ab4229986d9c9f78dd01e2ed36aa8a9"),
+                ("task_evidence", "6eb9893550df86dff1c09cdaf11780e74dd21b29"),
+            ),
+        ),
     }
     for item_id, (title, category, evidence) in candidate_contracts.items():
         item = next(
@@ -602,7 +611,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 33."
+        "Implemented candidate items pending exact-head/release proof: 34."
         in expected
     )
     release_source = (
@@ -615,24 +624,31 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "schema-free, application-image-only rolling change",
         "354 warning-fatal tests",
         "94% aggregate coverage",
-        "S38-S42",
+        "S38-S43",
         "Native SearXNG controller runtime",
         "Native git-release artifact verification",
         "Native Frictionless dataset admission",
         "Collection-native chemical lot admission",
         "Native fail-closed JUnit pipeline triage",
+        "Native fail-closed materials tolerance analysis",
         "16 MiB",
         "100,000 testcases",
         "64 failures or errors",
         "26 focused tests",
         "97% aggregate coverage",
         "121,418-test zero-error collection",
+        "exactly six pure operations",
+        "256 dimension pairs",
+        "64 KiB",
+        "32 characters",
+        "94% aggregate coverage",
+        "121,469-test zero-error collection",
         "digest-addressed canary",
         "Ansible Release 1.2.3",
         "Frictionless discussion #675",
         "ansible/ansible#50579",
         "95% aggregate coverage",
-        "exact 33-item candidate inventory",
+        "exact 34-item candidate inventory",
     ):
         assert required in release_source
     task_ledger = (ROOT / "TASKS.md").read_text(encoding="utf-8")
@@ -643,6 +659,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         ("S40", "24fd14135d1bdaf3813650736dce8c58f6efd51e"),
         ("S41", "1cf229c408110e5389f317472da1560c7b852a3f"),
         ("S42", "fd5faf302"),
+        ("S43", "3d86e4854"),
     ):
         assert f"- [ ] {task_id}" in task_ledger
         assert evidence_sha in task_ledger
