@@ -12,6 +12,9 @@ audit_framework__enable_model_call: false
 audit_framework__model_profile: ""
 
 audit_framework__searx_url: "http://localhost:8888"
+audit_framework__searx_transport: "native"
+audit_framework__searx_namespace: "gludd-audit-framework"
+audit_framework__searx_settings_path: ""
 audit_framework__search_query: ""
 audit_framework__auto_update: false
 

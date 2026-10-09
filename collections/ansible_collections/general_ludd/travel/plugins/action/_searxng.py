@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, cast
 
 from ansible_collections.general_ludd.travel.plugins.module_utils.searxng_runtime import (
     SearxError,
+    validate_namespace,
 )
 
 if TYPE_CHECKING:
@@ -51,4 +53,39 @@ class ControllerSearxAction(_ActionBase):
         return result
 
 
-__all__ = ["ControllerSearxAction"]
+def validate_controller_transport(
+    args: dict[str, Any],
+    *,
+    default_namespace: str,
+    default_timeout: float,
+    forbidden_args: Mapping[str, str] | None = None,
+) -> tuple[str, str, str | None, float]:
+    """Validate the transport fields shared by every controller action."""
+    for name, message in (forbidden_args or {}).items():
+        if args.get(name) not in (None, ""):
+            raise ValueError(message)
+    transport = args.get("transport", "native")
+    if transport not in {"native", "remote"}:
+        raise ValueError("transport must be native or remote")
+    namespace = args.get("namespace", default_namespace)
+    if not isinstance(namespace, str):
+        raise TypeError("namespace must be a string")
+    namespace = validate_namespace(namespace)
+    remote_url = args.get("remote_url")
+    if transport == "native" and remote_url not in (None, ""):
+        raise ValueError("remote_url is only valid with transport=remote")
+    if transport == "remote" and (
+        not isinstance(remote_url, str) or not remote_url.strip()
+    ):
+        raise ValueError("remote_url is required with transport=remote")
+    timeout = args.get("timeout", default_timeout)
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not 0 < timeout <= 120
+    ):
+        raise ValueError("timeout must be between 0 and 120 seconds")
+    return transport, namespace, cast(str | None, remote_url), float(timeout)
+
+
+__all__ = ["ControllerSearxAction", "validate_controller_transport"]

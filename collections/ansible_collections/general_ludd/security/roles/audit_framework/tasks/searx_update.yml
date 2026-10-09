@@ -9,6 +9,7 @@
 - name: Set SearX URL default
   ansible.builtin.set_fact:
     _sx_searx_url: "{{ audit_framework__searx_url | default('http://localhost:8888') }}"
+    _sx_searx_transport: "{{ audit_framework__searx_transport | default('native') }}"
 
 - name: Set search query default
   ansible.builtin.set_fact:
@@ -20,23 +21,22 @@
       - audit_framework__framework | default('') | length > 0
     fail_msg: "audit_framework__framework is required for searx_update"
 
-# ── Query SearX ────────────────────────────────────────────────────────────────
-
-- name: Build SearX search URL
-  ansible.builtin.set_fact:
-    _sx_search_url: "{{ _sx_searx_url }}/search?q={{ _sx_search_query | urlencode }}&format=json&categories=general"
-
 - name: Fetch search results from SearX
-  ansible.builtin.uri:
-    url: "{{ _sx_search_url }}"
-    method: GET
-    return_content: true
-    headers:
-      Accept: "application/json"
+  general_ludd.travel.searxng_batch:
+    namespace: "{{ audit_framework__searx_namespace | default('gludd-audit-framework') }}"
+    settings_path: "{{ audit_framework__searx_settings_path | default(omit) }}"
+    transport: "{{ _sx_searx_transport }}"
+    remote_url: "{{ _sx_searx_url if _sx_searx_transport == 'remote' else omit }}"
     timeout: 30
-  register: _sx_search_response
-  failed_when: false
-  no_log: false
+    requests:
+      - id: search_response
+        query: "{{ _sx_search_query }}"
+        categories: [general]
+  register: _sx_search_batch
+
+- name: Preserve audit search result schema
+  ansible.builtin.set_fact:
+    _sx_search_response: "{{ _sx_search_batch.responses.search_response }}"
 
 - name: Parse search results
   ansible.builtin.set_fact:

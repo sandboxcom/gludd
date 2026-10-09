@@ -22,20 +22,9 @@
 
 # ── SearX initial discovery ──
 - name: SearX search for entity
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} company headquarters industry founded"
-    categories: "general"
-    page: 1
-  register: searx_discovery_result
+  ansible.builtin.include_tasks: searx_batch.yml
+  vars: {entity_research_searx_batch_requests: [{id: searx_discovery_result, query: "{{ entity_name }} company headquarters industry founded", categories: [general]}]}
   when: entity_research_use_searx | bool
-  ignore_errors: true
 
 - name: Cache SearX results
   ansible.builtin.set_fact:

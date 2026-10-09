@@ -31,6 +31,9 @@ entity_research_use_wikipedia: true
 entity_research_use_shodan: false
 entity_research_use_censys: false
 entity_research_use_searx: true
+entity_research_searx_transport: native
+entity_research_searx_namespace: gludd-entity-research
+entity_research_searx_settings_path: ""
 
 # ── API keys (loaded from env/secrets, never hardcoded) ──
 opencorporates_api_token: ""
