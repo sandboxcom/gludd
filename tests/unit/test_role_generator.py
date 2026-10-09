@@ -129,12 +129,26 @@ class TestGenerateRoleFromTemplateSuccess:
         assert result["status"] == "ok"
         assert result["role_definition"]["role_name"] == "monitor"
 
-    def test_generated_role_is_top_level_copy(self):
-        """Top-level dict is a copy; nested lists share the template reference."""
+    def test_generated_role_is_independent_copy(self):
+        """Each generated role owns its nested mutable policy data."""
         r1 = generate_role_from_template("azure", "monitor")
         r2 = generate_role_from_template("azure", "monitor")
         assert r1 is not r2
         assert r1["role_definition"] is not r2["role_definition"]
+        assert r1["role_definition"]["Actions"] is not r2["role_definition"]["Actions"]
+
+    def test_resource_pruning_does_not_mutate_aws_template_or_prior_result(self):
+        """A filtered role must not alter canonical or already generated policy."""
+        original = generate_role_from_template("aws", "terraform_deploy")
+        original_actions = original["role_definition"]["policy"][1]["Action"]
+        assert "iam:PassRole" in original_actions
+
+        generate_role_from_template("aws", "terraform_deploy", ["ec2"])
+
+        assert "iam:PassRole" in original_actions
+        assert "iam:PassRole" in ROLE_TEMPLATES["aws"]["terraform_deploy"]["policy"][1]["Action"]
+        regenerated = generate_role_from_template("aws", "terraform_deploy")
+        assert "iam:PassRole" in regenerated["role_definition"]["policy"][1]["Action"]
 
 
 class TestGenerateRoleFromTemplateErrors:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from general_ludd.cloud.role_pruning import (
@@ -382,7 +383,7 @@ def generate_role_from_template(provider: str, persona: str, resource_types: lis
             "warnings": [f"Unknown persona {persona!r} for {provider}. Known: {known}"],
         }
 
-    role_def = dict(template)
+    role_def = deepcopy(template)
 
     if resource_types:
         role_def, pruned_warnings = _prune_by_resource_types(provider, role_def, resource_types)
