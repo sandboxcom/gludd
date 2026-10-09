@@ -716,6 +716,11 @@ _ansible-role-variable-prefix:
 		TESTFILE="tests/unit/test_ansible_lint_deep.py::test_role_variables_use_namespaced_prefix" \
 		PYTEST_ARGS="-W error -q"
 
+_cloud-iam-generation-parity:
+	@$(MAKE) --no-print-directory test-files \
+		TESTFILES="tests/unit/test_cloud_role_generator.py::TestGenerateRoleFromTemplateWithResourceTypes::test_aws_prune_produces_warning_when_actions_removed tests/unit/test_cloud_iam_expert.py::TestGenerateCloudRole::test_generate_aws_terraform_deploy" \
+		PYTEST_ARGS="-W error -q -n 0"
+
 # S83.177: reject cheap, deterministic feature-branch failures before a branch
 # occupies the full-gate integration lane. Every phase delegates to the
 # repository's existing checker; this target owns only fail-fast sequencing.
@@ -762,6 +767,7 @@ integration-admission:
 	run_phase "check-gate-failure-promotions" "check-gate-failure-promotions" "fast" "90" "60" $(MAKE) --no-print-directory check-gate-failure-promotions \
 		GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"; \
 	run_phase "ansible-role-variable-prefix" "_ansible-role-variable-prefix" "fast" "90" "60" $(MAKE) --no-print-directory _ansible-role-variable-prefix; \
+	run_phase "cloud-iam-generation-parity" "_cloud-iam-generation-parity" "fast" "90" "60" $(MAKE) --no-print-directory _cloud-iam-generation-parity; \
 	run_phase "_dead-code-baseline-refresh" "_dead-code-baseline-refresh" "fast" "90" "60" $(MAKE) --no-print-directory _dead-code-baseline-refresh; \
 	run_phase "check-coverage-gaps" "check-coverage-gaps" "fast" "90" "60" $(MAKE) --no-print-directory check-coverage-gaps; \
 	run_phase "check-resource-ownership" "check-resource-ownership" "fast" "90" "60" $(MAKE) --no-print-directory check-resource-ownership; \

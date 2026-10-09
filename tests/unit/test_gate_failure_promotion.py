@@ -35,6 +35,13 @@ EXPECTED_RUNTIME_PHASES = [
         60,
     ),
     (
+        "cloud-iam-generation-parity",
+        "_cloud-iam-generation-parity",
+        "fast",
+        90,
+        60,
+    ),
+    (
         "_dead-code-baseline-refresh",
         "_dead-code-baseline-refresh",
         "fast",
@@ -380,6 +387,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "mcp-workspace-dispatch-jail",
         "module-graph-classification-drift",
         "ansible-role-variable-prefix-drift",
+        "cloud-iam-resource-pruning-trigger",
+        "cloud-iam-generation-parity",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -395,6 +404,15 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     )
     assert families["ansible-role-variable-prefix-drift"]["node"] == (
         "tests/unit/test_ansible_lint_deep.py::test_role_variables_use_namespaced_prefix"
+    )
+    assert families["cloud-iam-resource-pruning-trigger"]["node"] == (
+        "tests/unit/test_cloud_role_generator.py::"
+        "TestGenerateRoleFromTemplateWithResourceTypes::"
+        "test_aws_prune_produces_warning_when_actions_removed"
+    )
+    assert families["cloud-iam-generation-parity"]["node"] == (
+        "tests/unit/test_cloud_iam_expert.py::TestGenerateCloudRole::"
+        "test_generate_aws_terraform_deploy"
     )
     assert families["coverage-gap-drift"]["node"] == "check-coverage-gaps"
     assert families["resource-ownership-drift"]["node"] == (
@@ -423,6 +441,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     mcp_owner = _target_stanza(makefile, "_mcp-workspace-jail-integration")
     module_graph_owner = _target_stanza(makefile, "_module-graph-classification")
     variable_prefix_owner = _target_stanza(makefile, "_ansible-role-variable-prefix")
+    cloud_iam_owner = _target_stanza(makefile, "_cloud-iam-generation-parity")
 
     assert "check-gate-failure-promotions" in makefile.split("help:", 1)[0]
     assert (
@@ -433,6 +452,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         admission.index('run_phase "worktree-guard"')
         < admission.index('run_phase "check-gate-failure-promotions"')
         < admission.index('run_phase "ansible-role-variable-prefix"')
+        < admission.index('run_phase "cloud-iam-generation-parity"')
         < admission.index('run_phase "_dead-code-baseline-refresh"')
         < admission.index('run_phase "check-coverage-gaps"')
         < admission.index('run_phase "check-resource-ownership"')
@@ -441,6 +461,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert "$(MAKE) --no-print-directory _mcp-workspace-jail-integration;" in admission
     assert "$(MAKE) --no-print-directory _module-graph-classification;" in admission
     assert "$(MAKE) --no-print-directory _ansible-role-variable-prefix;" in admission
+    assert "$(MAKE) --no-print-directory _cloud-iam-generation-parity;" in admission
     assert (
         'GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"'
         in admission
@@ -469,6 +490,12 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         assert node in mcp_owner
     assert "test_all_subpackages_classified" in module_graph_owner
     assert "test_role_variables_use_namespaced_prefix" in variable_prefix_owner
+    prune_node = "test_aws_prune_produces_warning_when_actions_removed"
+    full_role_node = "test_generate_aws_terraform_deploy"
+    assert prune_node in cloud_iam_owner
+    assert full_role_node in cloud_iam_owner
+    assert cloud_iam_owner.index(prune_node) < cloud_iam_owner.index(full_role_node)
+    assert 'PYTEST_ARGS="-W error -q -n 0"' in cloud_iam_owner
 
     contracts = json.loads(CONTRACT.read_text(encoding="utf-8"))["targets"]
     check_contract = next(
@@ -508,9 +535,9 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "gate-failure-promotions: PASS families=10" in result.stdout
-    assert "runtime_phases=19" in result.stdout
-    assert "runtime_ceiling_seconds=2670" in result.stdout
+    assert "gate-failure-promotions: PASS families=12" in result.stdout
+    assert "runtime_phases=20" in result.stdout
+    assert "runtime_ceiling_seconds=2760" in result.stdout
     for phrase in (
         "dead-code-baseline-drift",
         "coverage-gap-drift",
@@ -522,6 +549,8 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
         "mcp-workspace-dispatch-jail",
         "module-graph-classification-drift",
         "ansible-role-variable-prefix-drift",
+        "cloud-iam-resource-pruning-trigger",
+        "cloud-iam-generation-parity",
         "exact full gate remains mandatory",
         "https://github.com/orgs/community/discussions/41726",
         "https://github.com/modelcontextprotocol/servers/issues/1838",

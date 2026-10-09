@@ -29,49 +29,55 @@ the first nonzero result:
    found this deterministic failure in batch 10 after minutes of work; admission
    now reports it in seconds before integration health checks can consume their
    eight-minute bound.
-4. `_dead-code-baseline-refresh` checks exact dead-code baseline parity without
+4. `cloud-iam-generation-parity` serially runs
+   `test_aws_prune_produces_warning_when_actions_removed` followed by
+   `test_generate_aws_terraform_deploy`. This order reproduces cross-call
+   mutation of nested role templates in one process, while `-W error` keeps
+   warning drift fatal and `-n 0` prevents worker isolation from hiding the
+   shared-state invariant.
+5. `_dead-code-baseline-refresh` checks exact dead-code baseline parity without
    rewriting reviewed policy. It names added or stale entries and stops the
    admission plan before broader metadata, documentation, or quality work.
-5. `check-coverage-gaps` rejects a production module without a mapped focused
+6. `check-coverage-gaps` rejects a production module without a mapped focused
    coverage test. `check-resource-ownership` then verifies the exact tracked
    acquisition-to-teardown inventory in read-only mode. These promoted checks
    catch both missing mappings after a module split and new or stale lifecycle
    sites before the expensive gate starts.
-6. `validate-task-ledger`, `check-task-registration`, and
+7. `validate-task-ledger`, `check-task-registration`, and
    `check-task-integrity` reject malformed or unowned work.
-7. `check-generated-artifact-hygiene` catches documentation and generated-data
+8. `check-generated-artifact-hygiene` catches documentation and generated-data
    drift before broader quality work.
-8. `lint-markdown` checks the explicitly supplied feature documents.
-9. `check-make-target-contract` rejects missing help, variables, or safe
+9. `lint-markdown` checks the explicitly supplied feature documents.
+10. `check-make-target-contract` rejects missing help, variables, or safe
    behavioral examples for agent-facing targets.
-10. `check-duplicate-code` compares the complete bounded production snapshot at
+11. `check-duplicate-code` compares the complete bounded production snapshot at
    feature `HEAD` with the explicit development base through locked `jscpd`.
    Existing findings remain visible while only newly introduced clone
    fingerprints fail admission.
-11. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
+12. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
    tracked YAML from the checkout, runs with a disposable namespaced Ansible
    home, and emits ten-second observer heartbeats. A stale user-installed
    collection therefore cannot shadow the candidate or turn a valid branch red.
-12. `project-dispatch-integration` runs the exact, fast regression nodes that
+13. `project-dispatch-integration` runs the exact, fast regression nodes that
    prove a committed caller-owned-session claim still dispatches its exact
    `project_id`, never reads another project's variable namespace, and preserves
    the serialized tick lifecycle:
    `test_event_loop_dispatch_includes_project_id` and
    `test_dispatch_job_contains_only_project_data`, plus
    `test_event_loop_serializes_concurrent_ticks`.
-13. `mcp-workspace-jail-integration` keeps both layers of the model-callable
+14. `mcp-workspace-jail-integration` keeps both layers of the model-callable
     project-check boundary in admission. The exact
     `test_contain_workspace_escape_returns_none` node proves canonical path
     containment, while `test_workspace_escaping_jail_is_refused` proves the
     synthetic MCP dispatch refuses an otherwise valid sibling project without
     executing it.
-14. `module-graph-classification` runs the exact
+15. `module-graph-classification` runs the exact
     `test_all_subpackages_classified` node so every discovered top-level package
     receives an explicit architectural layer before later graph rules run.
-15. `presentation-browser-test` runs with
+16. `presentation-browser-test` runs with
    `PRESENTATION_BROWSER_VALIDATE_ONLY=1`, checking the pinned browser plan and
    prerequisites without launching either engine.
-16. `pre-commit-check` runs the staged line and clone guards before the existing
+17. `pre-commit-check` runs the staged line and clone guards before the existing
     source lint, collection, and typecheck boundary. Its `lint` prerequisite
     retains the complete working-tree line-limit scan.
 
@@ -84,11 +90,11 @@ feature worktree.
 ## Runtime budget and evidence
 
 Every child phase runs through the existing `scripts/stream_command.py`
-observer. The manifest assigns thirteen cheap phases a 90-second `fast` ceiling,
+observer. The manifest assigns fourteen cheap phases a 90-second `fast` ceiling,
 five focused integration phases a 180-second `standard` ceiling, and
 `pre-commit-check` a 600-second `slow` ceiling. Their quiet-output ceilings are
 60, 120, and 300 seconds respectively. The configured child-runtime ceiling
-therefore totals 2,670 seconds, with only bounded observer teardown and recipe
+therefore totals 2,760 seconds, with only bounded observer teardown and recipe
 bookkeeping outside it; no child phase can wait indefinitely.
 
 Before each child starts, admission emits one machine-readable
@@ -117,7 +123,8 @@ families are `dead-code-baseline-drift`, `coverage-gap-drift`,
 `resource-ownership-drift`, `claim-fence`, `project-isolation`,
 `concurrent-tick`, `mcp-workspace-containment`, `mcp-workspace-dispatch-jail`,
 `module-graph-classification-drift`, and
-`ansible-role-variable-prefix-drift`. The coverage and ownership families
+`ansible-role-variable-prefix-drift`, `cloud-iam-resource-pruning-trigger`, and
+`cloud-iam-generation-parity`. The coverage and ownership families
 were promoted after the full gate first discovered an unmapped durable
 observability split plus new and stale process-lifecycle sites. Both now fail
 closed during read-only admission instead of consuming another full-gate run.
@@ -175,6 +182,11 @@ run again after a branch has already waited for earlier feedback:
   the organization-wide cost of one mistake exhausting available minutes.
   Per-phase local ceilings make the slow owner attributable and stop that class
   of runaway before the exact full gate consumes the scarce queue slot.
+- The long-lived Stack Overflow [nested dictionaries copy discussion][nested-copy]
+  records the same shallow-copy trap behind order-dependent template failures:
+  nested mutable values remain shared until copied recursively. The promoted
+  two-node sequence therefore proves pruning cannot alter a later full-role
+  generation, instead of trusting either node in process isolation.
 
 Those reports support an early local admission layer, but not skipping the final
 integrated-head proof. Gludd therefore rejects syntax, metadata, documentation,
@@ -192,6 +204,7 @@ authoritative integration result.
 [mcp-path-validation]: https://github.com/modelcontextprotocol/servers/issues/1838
 [import-graph-completeness]: https://github.com/seddonym/import-linter/issues/93
 [bounded-ci-runtime]: https://github.com/orgs/community/discussions/25631
+[nested-copy]: https://stackoverflow.com/questions/39474959/nested-dictionaries-copy-or-deepcopy
 
 ## Zero-downtime and rollback
 
