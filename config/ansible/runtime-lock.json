@@ -4,7 +4,7 @@
   "base_image": "quay.io/centos/centos:stream9@sha256:63e8d0c2a4a4b67c8bd7456283d12106bedf815d8c27d1a72498ebcf173baf09",
   "inputs": {
     "galaxy": "sha256:c361f006d85cd243875c460f484180b134cf8bb0dac7bd7adbbb77d3007a1ff6",
-    "python": "sha256:f70b7cd8b5ba87bce9b9db3cb1e42e495196a9424b79f84eb324ee67ad0c9eff",
+    "python": "sha256:b2f8abbc609ffc2504f27234789f8e751b74eab7ccf02eff28ca7936d3fbb070",
     "system": "sha256:64c87891f336f9c13148b3cf13db2d46d503813b5d5b1d890c06fb221e691d39",
     "definition": "sha256:99d7fec2663789a16f7803f35f08aa5df659b7d330175de5f08ff15de43e6e02"
   },

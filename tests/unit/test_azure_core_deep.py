@@ -8,6 +8,7 @@ invariants not covered by the main test suite.
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import itertools as it
 from typing import ClassVar
@@ -429,32 +430,38 @@ class TestOptimizeCostFloatPrecision:
 
 class TestQueryLogAnalyticsShapeDeep:
     def test_result_always_has_standard_keys(self):
-        for ws in ("ws-1", "", "a" * 256):
-            for q in ("Heartbeat", ""):
-                result = query_log_analytics(ws, q)
-                for key in ("workspace_id", "query", "timespan", "note"):
-                    assert key in result["result"]
+        ws = "00000000-0000-4000-8000-000000000001"
+        for q in ("Heartbeat", "print gludd_canary=1"):
+            result = query_log_analytics(ws, q)
+            for key in (
+                "workspace_id",
+                "query_sha256",
+                "timespan",
+                "executed",
+            ):
+                assert key in result["result"]
 
-    def test_timespan_is_always_p1d(self):
-        result = query_log_analytics("ws", "any query")
-        assert result["result"]["timespan"] == "P1D"
-
-    def test_note_is_nonempty_string(self):
-        result = query_log_analytics("ws", "Heartbeat")
-        assert isinstance(result["result"]["note"], str)
-        assert len(result["result"]["note"]) > 0
-
-    def test_workspace_id_roundtrips_exactly(self):
-        ws_ids = (
-            "00000000-0000-0000-0000-000000000000",
-            "",
-            "ws-" + "x" * 250,
+    def test_timespan_is_always_bounded(self):
+        result = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001", "any query"
         )
-        for ws in ws_ids:
-            result = query_log_analytics(ws, "Heartbeat")
-            assert result["result"]["workspace_id"] == ws
+        assert result["result"]["timespan"] == "PT5M"
 
-    def test_query_roundtrips_with_special_chars(self):
+    def test_warning_names_native_action(self):
+        result = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001", "Heartbeat"
+        )
+        assert "general_ludd.azure.log_analytics_query" in result["warnings"][0]
+
+    def test_workspace_id_is_canonical(self):
+        ws = "00000000-0000-4000-8000-000000000001"
+        result = query_log_analytics(ws, "Heartbeat")
+        assert result["result"]["workspace_id"] == ws
+        for invalid in ("", "ws-" + "x" * 250):
+            with pytest.raises(ValueError, match="canonical UUID"):
+                query_log_analytics(invalid, "Heartbeat")
+
+    def test_query_special_chars_are_digest_bound(self):
         queries = (
             'Heartbeat | where Computer contains "prod"',
             "Perf | where CounterName == @'% Processor Time'",
@@ -462,8 +469,13 @@ class TestQueryLogAnalyticsShapeDeep:
             "union * | where * contains 'error'",
         )
         for q in queries:
-            result = query_log_analytics("ws", q)
-            assert result["result"]["query"] == q
+            result = query_log_analytics(
+                "00000000-0000-4000-8000-000000000001", q
+            )
+            assert result["result"]["query_sha256"] == hashlib.sha256(
+                q.encode()
+            ).hexdigest()
+            assert "query" not in result["result"]
 
 
 # ── Role catalogue: deep invariant checks ──────────────────────────────
@@ -536,10 +548,12 @@ class TestCrossFunctionShapeConsistency:
         assert "memory" in r["result"]
 
     def test_query_log_analytics_shape(self):
-        r = query_log_analytics("ws", "Heartbeat")
-        assert r["status"] == "ok"
+        r = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001", "Heartbeat"
+        )
+        assert r["status"] == "validated"
         assert isinstance(r["result"], dict)
-        assert r["warnings"] == []
+        assert r["warnings"]
 
     def test_inventory_resources_shape(self):
         r = inventory_resources(["sub-1"])

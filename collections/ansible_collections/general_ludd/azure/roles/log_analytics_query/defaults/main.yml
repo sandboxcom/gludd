@@ -1,6 +1,15 @@
 ---
-log_analytics_query_enabled: false
-role_enabled: "{{ log_analytics_query_enabled }}"
-workspace_id: ""
-kql_query: "Heartbeat | take 5"
-output_path: /tmp/gludd-azure-log-analytics
+azure_log_analytics_query_enabled: false
+azure_log_analytics_query_workspace_id: ""
+azure_log_analytics_query_query: ""
+azure_log_analytics_query_query_sha256: ""
+azure_log_analytics_query_timespan_minutes: 5
+azure_log_analytics_query_endpoint: public
+azure_log_analytics_query_credential_mode: managed
+azure_log_analytics_query_server_timeout_seconds: 15
+azure_log_analytics_query_managed_identity_client_id: ""
+azure_log_analytics_query_workload_tenant_id: ""
+azure_log_analytics_query_workload_client_id: ""
+azure_log_analytics_query_workload_token_file: ""
+azure_log_analytics_query_validate_only: false
+azure_log_analytics_query_no_log: true

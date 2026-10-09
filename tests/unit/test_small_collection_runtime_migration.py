@@ -114,7 +114,9 @@ def test_azure_collection_helpers_cover_deployment_plans() -> None:
     invalid = azure.acr_registry_config("registry", "Unknown", "eastus")
     large = azure.container_app_config("H100", "org/Model", "eastus")
     unknown = azure.container_app_config("Mystery", "org/Model", "eastus")
-    query = azure.query_log_analytics("workspace", "Heartbeat | take 1")
+    query = azure.query_log_analytics(
+        "00000000-0000-4000-8000-000000000001", "Heartbeat | take 1"
+    )
     inventory = azure.inventory_resources(["sub-a", "sub-b"])
     cost = azure.optimize_cost("container_apps", "eastus", "T4")
     missing_cost = azure.optimize_cost("vm", "eastus", "T4")
@@ -125,7 +127,8 @@ def test_azure_collection_helpers_cover_deployment_plans() -> None:
     assert invalid["status"] == "error"
     assert large["result"]["memory"] == "32Gi"
     assert unknown["warnings"]
-    assert query["result"]["timespan"] == "P1D"
+    assert query["result"]["timespan"] == "PT5M"
+    assert query["result"]["executed"] is False
     assert inventory["result"]["subscription_count"] == 2
     assert cost["result"]["monthly_estimate"] == pytest.approx(452.6)
     assert missing_cost["warnings"]

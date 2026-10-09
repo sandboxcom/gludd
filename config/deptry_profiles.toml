@@ -4,6 +4,7 @@ known_first_party = ["ansible_collections"]
 [tool.deptry.package_module_name_map]
 "annotated-types" = "annotated_types"
 "azure-identity" = "azure"
+"azure-monitor-query" = "azure"
 "azure-mgmt-authorization" = "azure"
 "azure-mgmt-appcontainers" = "azure"
 "azure-mgmt-cognitiveservices" = "azure"
@@ -48,6 +49,8 @@ DEP002 = [
     "aiosqlite",
     "ansible-builder",
     "boto3",
+    "azure-identity",
+    "azure-monitor-query",
     "frictionless",
     "jsonpointer",
     "greenlet",

@@ -4,6 +4,8 @@ coverage for all exported functions.
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from general_ludd.azure.core import (
@@ -389,30 +391,45 @@ class TestContainerAppConfig:
 
 class TestQueryLogAnalytics:
     def test_workspace_id_preserved(self):
-        result = query_log_analytics("ws-abc-123", "Heartbeat")
-        assert result["result"]["workspace_id"] == "ws-abc-123"
+        workspace = "00000000-0000-4000-8000-000000000001"
+        result = query_log_analytics(workspace, "Heartbeat")
+        assert result["result"]["workspace_id"] == workspace
 
-    def test_query_preserved(self):
-        result = query_log_analytics("ws", "Heartbeat | take 10")
-        assert result["result"]["query"] == "Heartbeat | take 10"
+    def test_query_is_replaced_by_digest(self):
+        query = "Heartbeat | take 10"
+        result = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001", query
+        )
+        assert result["result"]["query_sha256"] == hashlib.sha256(
+            query.encode()
+        ).hexdigest()
+        assert "query" not in result["result"]
 
-    def test_timespan_is_always_p1d(self):
-        result = query_log_analytics("ws", "Heartbeat")
-        assert result["result"]["timespan"] == "P1D"
+    def test_timespan_is_bounded_five_minute_plan(self):
+        result = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001", "Heartbeat"
+        )
+        assert result["result"]["timespan"] == "PT5M"
 
-    def test_note_mentions_rest_api(self):
-        result = query_log_analytics("ws", "Heartbeat")
-        assert "REST API" in result["result"]["note"] or "Azure Monitor" in result["result"]["note"]
+    def test_plan_names_native_action_and_not_execution(self):
+        result = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001", "Heartbeat"
+        )
+        assert result["result"]["executed"] is False
+        assert "general_ludd.azure.log_analytics_query" in result["warnings"][0]
 
-    def test_empty_query_is_accepted(self):
-        result = query_log_analytics("ws", "")
-        assert result["status"] == "ok"
-        assert result["result"]["query"] == ""
+    def test_empty_query_is_rejected(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            query_log_analytics(
+                "00000000-0000-4000-8000-000000000001", ""
+            )
 
-    def test_status_always_ok(self):
-        result = query_log_analytics("any", "any")
-        assert result["status"] == "ok"
-        assert result["warnings"] == []
+    def test_status_is_validation_only(self):
+        result = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001", "Heartbeat"
+        )
+        assert result["status"] == "validated"
+        assert result["warnings"]
 
 
 # ---------------------------------------------------------------------------
@@ -740,24 +757,29 @@ class TestContainerAppConfigDeepEdgeCases:
 
 
 class TestQueryLogAnalyticsDeepEdgeCases:
-    def test_long_workspace_id_accepted(self):
+    def test_long_workspace_id_rejected(self):
         ws_id = "a" * 256
-        result = query_log_analytics(ws_id, "Heartbeat")
-        assert result["result"]["workspace_id"] == ws_id
+        with pytest.raises(ValueError, match="canonical UUID"):
+            query_log_analytics(ws_id, "Heartbeat")
 
     def test_kql_with_special_characters(self):
-        result = query_log_analytics("ws", 'Perf | where CounterName == @"% Processor Time"')
-        assert result["status"] == "ok"
-        assert result["result"]["query"]
+        result = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001",
+            'Perf | where CounterName == @"% Processor Time"',
+        )
+        assert result["status"] == "validated"
+        assert result["result"]["query_sha256"]
 
     def test_kql_multiline_accepted(self):
         q = "Perf\n| where TimeGenerated > ago(1h)\n| summarize avg(CounterValue) by Computer"
-        result = query_log_analytics("ws", q)
-        assert result["status"] == "ok"
+        result = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001", q
+        )
+        assert result["status"] == "validated"
 
-    def test_workspace_id_with_special_characters(self):
-        result = query_log_analytics("ws-abc/123+def", "Heartbeat")
-        assert result["result"]["workspace_id"] == "ws-abc/123+def"
+    def test_workspace_id_with_special_characters_is_rejected(self):
+        with pytest.raises(ValueError, match="canonical UUID"):
+            query_log_analytics("ws-abc/123+def", "Heartbeat")
 
 
 # ---------------------------------------------------------------------------

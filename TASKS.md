@@ -199,6 +199,42 @@ ancestry from drifting independently.
 
 - [ ] S48 — **Pilot Pants hermetic transitive-input CAS for an allowlisted pure-unit gate slice** across a future reviewed inventory: use pinned Pants test caching and declared transitive source, fixture, toolchain, environment, and coverage inputs; compare exact node sets, outcomes, branch coverage, invalidation, and resources against the canonical cold runner; preserve exact-SHA final attestation and the hosted cold lane; start with concurrency one and no remote cache; fail closed on undeclared or live inputs; and do not build a custom cross-commit dependency walker. | evidence: the S47 decision record and long-lived Pants input/cache practitioner reports define the follow-up boundary; design, failing-first tests, implementation, and exact-head proof remain pending | priority: high | effort: M | status: pending
 
+- [ ] S49 — **Replace the Azure Log Analytics role stub with one fail-closed collection-native SDK query action** across `collections/ansible_collections/general_ludd/azure/plugins/`, `collections/ansible_collections/general_ludd/azure/roles/log_analytics_query/`, the compatibility core, controller execution environment, focused adversarial tests, scoped coverage, a real FQCN Molecule scenario, and `docs/features/NATIVE_AZURE_LOG_ANALYTICS_ADMISSION.md`: use official `azure-monitor-query==2.0.0` with one canonical workspace UUID and one SHA-256-bound query of at most 32 KiB; allow only public/government/China endpoints and exact managed/workload/environment credentials without developer-chain fallback; bound timespan to 1 minute through 24 hours and server timeout to 30 seconds; disable retries, additional workspaces, statistics, and visualization; prepend exact 1,001-row/4 MiB server truncation properties; atomically reject partial, truncated, ambiguous, or oversized responses above 1,000 rows, eight tables, 64 columns, 16 KiB cells, or 2 MiB canonical output; close client and credential in `finally`; default to `no_log`; allocate no artifact, subprocess, listener, worker, cache, or persistent state; and document practitioner evidence plus digest-addressed canary, drain, and rollback. | evidence: the exact failing-first acceptance node reproduced the absent native action before implementation; repaired warning-fatal focused tests pass 38/38 and the compatibility slice passes 350/350; branch-aware coverage passes at 92% aggregate with the three measured production files at 92-100%; the official SDK/identity dependencies are exactly pinned and locked; the FQCN Molecule syntax, converge, idempotence, and verify phases pass; Ruff, strict mypy, Markdown, dependency, runtime-boundary, resource-ownership, executable-stub, and controller-EE build/verify checks pass; Azure SDK partial-result issue #25137, the InsufficientAccessError operator report, official query-limit guidance, and granular RBAC guidance define the fail-closed boundary; implementation commit, repository collection, and exact-head full-gate proof remain pending | priority: high | effort: S | status: in_progress
+
+  S49 owns this exact implementation and evidence inventory:
+
+  ```text
+  TASKS.md
+  collections/ansible_collections/general_ludd/azure/README.md
+  collections/ansible_collections/general_ludd/azure/plugins/action/log_analytics_query.py
+  collections/ansible_collections/general_ludd/azure/plugins/module_utils/azure.py
+  collections/ansible_collections/general_ludd/azure/plugins/module_utils/log_analytics_admission.py
+  collections/ansible_collections/general_ludd/azure/plugins/modules/log_analytics_query.py
+  collections/ansible_collections/general_ludd/azure/roles/log_analytics_query/README.md
+  collections/ansible_collections/general_ludd/azure/roles/log_analytics_query/defaults/main.yml
+  collections/ansible_collections/general_ludd/azure/roles/log_analytics_query/meta/main.yml
+  collections/ansible_collections/general_ludd/azure/roles/log_analytics_query/tasks/main.yml
+  config/ansible/requirements.txt
+  config/ansible/runtime-lock.json
+  config/coverage_native_azure_log_analytics_admission.ini
+  config/deptry_profiles.toml
+  config/resource_ownership_native_azure_log_analytics_admission.json
+  docs/features/NATIVE_AZURE_LOG_ANALYTICS_ADMISSION.md
+  molecule/playbooks/azure_log_analytics_admission/default/converge.yml
+  molecule/playbooks/azure_log_analytics_admission/default/verify.yml
+  molecule/playbooks/azure_log_analytics_admission/molecule.yml
+  requirements/profiles/ansible-controller/pyproject.toml
+  requirements/profiles/ansible-controller/uv.lock
+  scripts/ansible_runtime_artifacts.py
+  src/general_ludd/azure/core.py
+  tests/unit/test_ansible_runtime_artifacts.py
+  tests/unit/test_azure_core.py
+  tests/unit/test_azure_core_deep.py
+  tests/unit/test_azure_deep_coverage.py
+  tests/unit/test_azure_log_analytics_admission.py
+  tests/unit/test_small_collection_runtime_migration.py
+  ```
+
 - [ ] S11.1 — **Record bounded cost-only shadow estimation feedback** across `src/general_ludd/execution/engine.py`, `src/general_ludd/review/estimation_tracker.py`, `src/general_ludd/review/reviewer.py`, `src/general_ludd/daemon_components/lifecycle.py`, `tests/unit/test_estimation_runtime_wiring.py`, `config/coverage_estimation_runtime.ini`, and `docs/features/TASK_ESTIMATION_CALIBRATION.md`: observe only admitted provider calls, reject missing/non-finite costs, cap pending and completed state at 1,000, preserve routing and calibration behavior, and provide `GLUDD_ESTIMATION_FEEDBACK=0` rolling rollback. | evidence: failing-first runtime acceptance reproduced 9 missing-injection/bounds failures; repaired focused regressions pass 143/143 with warnings fatal, coverage passes 388/388 at 91.3% aggregate lines and 85.8% branches with every scoped file at least 75%, Ruff/strict mypy/Markdown checks pass, and repository collection passes 120761/120779 with 18 deselected; exact-head full-gate evidence remains pending | priority: high | effort: XS | status: in_progress
 
 - [ ] S18 — **Persist one bounded operator escalation for each detected agent stall** across `src/general_ludd/observability/stall_escalation.py`, daemon lifecycle wiring, focused unit/integration tests, scoped coverage, and `docs/features/STALL_ESCALATION.md`: use the existing EventBus, asyncio loop, and HumanTodoRepository; deduplicate each stall event; retain only bounded operation identity and monotonic timing; omit thread stacks; and never cancel, retry, or let persistence failure stop the watchdog. | evidence: failing-first collection reproduced the absent subscriber module; focused unit and adjacent regressions pass 10/10 and 38/38 under warnings-as-errors; the daemon integration persists exactly one stack-free blocker; branch-aware coverage is 100% line and branch for the new module; scoped Ruff, strict mypy, Markdown, task ledger/integrity, and collection of 121064/121082 tests with 18 intentional deselections are green; component commit `f0111590a`; lifecycle commit and exact-head full-gate evidence remain pending | priority: high | effort: XS | status: in_progress

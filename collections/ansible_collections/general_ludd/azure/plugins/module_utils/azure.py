@@ -19,7 +19,11 @@ Public surface::
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, cast
+
+from ansible_collections.general_ludd.azure.plugins.module_utils.log_analytics_admission import (
+    validation_plan,
+)
 
 AZURE_EXPERT_ROLES: dict[str, str] = {
     "rbac_validator": "Validate Azure RBAC custom role definitions",
@@ -213,19 +217,8 @@ def container_app_config(
 
 
 def query_log_analytics(workspace_id: str, kql_query: str) -> dict[str, Any]:
-    """Describe a one-day Azure Log Analytics query request."""
-    return {
-        "status": "ok",
-        "result": {
-            "workspace_id": workspace_id,
-            "query": kql_query,
-            "timespan": "P1D",
-            "note": (
-                "KQL query structure validated; execute via Azure Monitor REST API"
-            ),
-        },
-        "warnings": [],
-    }
+    """Return a validation-only native action plan for legacy callers."""
+    return cast(dict[str, Any], validation_plan(workspace_id, kql_query))
 
 
 def inventory_resources(subscription_ids: list[str]) -> dict[str, Any]:

@@ -1,18 +1,32 @@
 ---
-- name: Validate log_analytics_query parameters
+- name: Require explicit Azure Log Analytics query admission
   ansible.builtin.assert:
     that:
-      - role_enabled | bool
-    fail_msg: "log_analytics_query requires role_enabled=true."
+      - azure_log_analytics_query_enabled | bool
+    fail_msg: >-
+      log_analytics_query is disabled; set
+      azure_log_analytics_query_enabled=true explicitly
+  no_log: "{{ azure_log_analytics_query_no_log | bool }}"
 
-- name: Write log analytics query verdict
-  ansible.builtin.copy:
-    content: "{{ {'role': 'log_analytics_query', 'workspace_id': workspace_id, 'kql_query': kql_query, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
-    dest: "{{ output_path }}/log_analytics_query.json"
-    mode: "0644"
-
-- name: Register log_analytics_query verdict
-  ansible.builtin.set_fact:
-    azure_log_analytics_query:
-      role: log_analytics_query
-      output: "{{ output_path }}/log_analytics_query.json"
+- name: Execute the digest-bound Azure Log Analytics query
+  general_ludd.azure.log_analytics_query:
+    workspace_id: "{{ azure_log_analytics_query_workspace_id }}"
+    query: "{{ azure_log_analytics_query_query }}"
+    query_sha256: "{{ azure_log_analytics_query_query_sha256 }}"
+    timespan_minutes: "{{ azure_log_analytics_query_timespan_minutes }}"
+    endpoint: "{{ azure_log_analytics_query_endpoint }}"
+    credential_mode: "{{ azure_log_analytics_query_credential_mode }}"
+    server_timeout_seconds: >-
+      {{ azure_log_analytics_query_server_timeout_seconds }}
+    managed_identity_client_id: >-
+      {{ azure_log_analytics_query_managed_identity_client_id or omit }}
+    workload_tenant_id: >-
+      {{ azure_log_analytics_query_workload_tenant_id or omit }}
+    workload_client_id: >-
+      {{ azure_log_analytics_query_workload_client_id or omit }}
+    workload_token_file: >-
+      {{ azure_log_analytics_query_workload_token_file or omit }}
+    validate_only: "{{ azure_log_analytics_query_validate_only }}"
+  register: azure_log_analytics_query_result
+  changed_when: false
+  no_log: "{{ azure_log_analytics_query_no_log | bool }}"
