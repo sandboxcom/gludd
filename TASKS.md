@@ -1086,6 +1086,30 @@ and all 237 resource-ownership entries are green. Collection reports
 complete exact-candidate gate, hosted proof, predecessor live proofs,
 publication, deployment, and rollback remain open.
 
+S83.166 namespaced Lima reclamation continuation: the exact development checkout
+reached 100% canonical volume use while 3.9 GiB belonged to stopped,
+reproducible `gludd-*` Lima build VMs. Failing-first lifecycle regressions now
+pin exact-name confirmation, validate-only non-mutation, running-instance
+refusal, bounded observable deletion, owned-child reaping, omission of
+`--force`, and independent absence proof. The new `lima-docker-delete` target
+delegates storage removal to mature `limactl delete` only after the instance is
+stopped; rollback recreates the engine through the existing pinned
+`lima-docker-ensure` path. The 63-test lifecycle/build slice, scoped Ruff,
+Markdown lint, Make validation, duplicate-target check, documented behavioral
+example, and 208-target contract are green. The real target removed only
+`gludd-v011-container-lock` and `gludd-docker`, totaling 4,129,384 logical KiB,
+and independently proved both absent; available disk rose from 1.9 GiB to 5.7
+GiB, while the unchanged 90% admission ceiling still correctly blocks the
+exact gate at 98% use. `make/00-foundation.mk`,
+`make/60-quality-packaging-and-sandbox.mk`,
+`config/make_target_contract.json`,
+`tests/unit/test_lima_docker_lifecycle_target.py`,
+`tests/unit/test_molecule_binary_smoke_linux.py`,
+`docs/features/LIMA_DOCKER_LIFECYCLE.md`, and `TASKS.md` are the registered
+surface. Atomic commit, additional safe headroom, replacement exact gate,
+hosted proof, predecessor live proofs, publication, deployment, and rollback
+remain open.
+
 ---
 
 ## Session 86 — v0.1.0-beta4 completion (2026-08-20)

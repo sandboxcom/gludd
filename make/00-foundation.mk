@@ -730,6 +730,7 @@ help:
 	@echo "  lima-docker-ensure    Provision/reuse a namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_TEMPLATE, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-start     Start an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-stop      Gracefully stop an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_STOP_TIMEOUT_SECS, LIMA_DOCKER_STOP_KILL_AFTER_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
+	@echo "  lima-docker-delete    Delete one stopped, exactly confirmed namespaced Lima VM (LIMA_INSTANCE, LIMA_DOCKER_DELETE_CONFIRM, LIMA_DOCKER_DELETE_KILL_AFTER_SECS, LIMA_DOCKER_DELETE_TIMEOUT_SECS, LIMA_DOCKER_DELETE_VALIDATE_ONLY)"
 	@echo "  lima-docker-status    Inspect the namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-pull      Pull one image into namespaced Lima Docker (LIMA_INSTANCE, LIMA_IMAGE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  podman-legacy-default-delete  Remove only a stopped legacy default VM (PODMAN_LEGACY_MACHINE, PODMAN_LEGACY_DELETE_TIMEOUT_SECS, PODMAN_LEGACY_DELETE_VALIDATE_ONLY)"

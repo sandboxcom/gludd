@@ -253,12 +253,15 @@ class TestScenarioShape:
 
         assert "LIMA_DOCKER_START_TIMEOUT_SECS ?= 180" in makefile
         assert "lima-docker-start:" in makefile
-        assert 'instance=$$(limactl list "$(LIMA_INSTANCE)"' in makefile
-        assert 'if [ "$$instance" != "$(LIMA_INSTANCE)" ]; then' in makefile
-        assert 'limactl start --timeout "$(LIMA_DOCKER_START_TIMEOUT_SECS)s" "$(LIMA_INSTANCE)"' in makefile
-        assert 'DOCKER_HOST="unix://$$socket" docker info' in makefile
-        assert "LIMA_DOCKER_START_READY" in makefile
-        assert "limactl delete" not in makefile
+        start_recipe = makefile.split("lima-docker-start:", 1)[1].split(
+            "\nlima-docker-stop:", 1
+        )[0]
+        assert 'instance=$$(limactl list "$(LIMA_INSTANCE)"' in start_recipe
+        assert 'if [ "$$instance" != "$(LIMA_INSTANCE)" ]; then' in start_recipe
+        assert 'limactl start --timeout "$(LIMA_DOCKER_START_TIMEOUT_SECS)s" "$(LIMA_INSTANCE)"' in start_recipe
+        assert 'DOCKER_HOST="unix://$$socket" docker info' in start_recipe
+        assert "LIMA_DOCKER_START_READY" in start_recipe
+        assert "limactl delete" not in start_recipe
 
         with open(_MAKE_TARGET_CONTRACT) as fh:
             contract = json.load(fh)
@@ -280,7 +283,7 @@ class TestScenarioShape:
         assert "LIMA_DOCKER_STOP_KILL_AFTER_SECS ?= 10" in makefile
         assert "lima-docker-stop:" in makefile
         stop_recipe = makefile.split("lima-docker-stop:", 1)[1].split(
-            "\nlima-docker-status:", 1
+            "\n.PHONY: lima-docker-delete", 1
         )[0]
         assert '*[!A-Za-z0-9._-]*|.|..)' in stop_recipe
         assert "gludd-*)" in stop_recipe
@@ -321,6 +324,45 @@ class TestScenarioShape:
         assert "https://github.com/lima-vm/lima/discussions/1666" in lifecycle_doc
         assert "ZDD" in lifecycle_doc
         assert "rollback" in lifecycle_doc.lower()
+
+    def test_lima_docker_delete_is_bounded_confirmed_and_contracted(self) -> None:
+        makefile = _makefile_source()
+
+        assert "LIMA_DOCKER_DELETE_TIMEOUT_SECS ?= 240" in makefile
+        assert "LIMA_DOCKER_DELETE_KILL_AFTER_SECS ?= 10" in makefile
+        assert "LIMA_DOCKER_DELETE_VALIDATE_ONLY ?= 1" in makefile
+        assert "lima-docker-delete:" in makefile
+        delete_recipe = makefile.split("lima-docker-delete:", 1)[1].split(
+            "\nlima-docker-status:", 1
+        )[0]
+        assert "gludd-*)" in delete_recipe
+        assert "LIMA_DOCKER_DELETE_CONFIRM" in delete_recipe
+        assert "must exactly match LIMA_INSTANCE" in delete_recipe
+        assert "Refusing to delete running Lima instance" in delete_recipe
+        assert 'limactl delete "$(LIMA_INSTANCE)"' in delete_recipe
+        assert "--force" not in delete_recipe
+        assert "LIMA_DOCKER_DELETE_HEARTBEAT" in delete_recipe
+        assert "LIMA_DOCKER_DELETE_TIMEOUT" in delete_recipe
+        assert "LIMA_DOCKER_DELETE_READY" in delete_recipe
+
+        with open(_MAKE_TARGET_CONTRACT) as fh:
+            contract = json.load(fh)
+        target = next(
+            entry for entry in contract["targets"] if entry["name"] == "lima-docker-delete"
+        )
+        assert target["make_variables"] == [
+            "LIMA_INSTANCE",
+            "LIMA_DOCKER_DELETE_CONFIRM",
+            "LIMA_DOCKER_DELETE_KILL_AFTER_SECS",
+            "LIMA_DOCKER_DELETE_TIMEOUT_SECS",
+            "LIMA_DOCKER_DELETE_VALIDATE_ONLY",
+        ]
+        assert target["behavior"].endswith("LIMA_DOCKER_DELETE_VALIDATE_ONLY=1")
+
+        with open(_LIMA_LIFECYCLE_DOC) as fh:
+            lifecycle_doc = fh.read()
+        assert "lima-docker-delete" in lifecycle_doc
+        assert "exact confirmation" in lifecycle_doc.lower()
 
     def test_legacy_default_machine_cleanup_is_bounded_and_opt_in(self) -> None:
         makefile = _makefile_source()

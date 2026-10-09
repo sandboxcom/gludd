@@ -394,6 +394,10 @@ LIMA_DOCKER_VALIDATE_ONLY ?= 0
 LIMA_DOCKER_START_TIMEOUT_SECS ?= 180
 LIMA_DOCKER_STOP_TIMEOUT_SECS ?= 200
 LIMA_DOCKER_STOP_KILL_AFTER_SECS ?= 10
+LIMA_DOCKER_DELETE_TIMEOUT_SECS ?= 240
+LIMA_DOCKER_DELETE_KILL_AFTER_SECS ?= 10
+LIMA_DOCKER_DELETE_VALIDATE_ONLY ?= 1
+LIMA_DOCKER_DELETE_CONFIRM ?=
 PODMAN_MACHINE ?= gludd
 VDISK ?= 20
 PODMAN_LEGACY_MACHINE ?= podman-machine-default
@@ -530,6 +534,79 @@ lima-docker-stop: ## Gracefully stop only an existing Gludd-namespaced Lima VM
 		exit 1; \
 	fi; \
 	echo "LIMA_DOCKER_STOP_READY instance=$(LIMA_INSTANCE) status=Stopped"
+
+.PHONY: lima-docker-delete
+lima-docker-delete: ## Delete only one stopped, exactly confirmed Gludd-namespaced Lima VM
+	@case "$(LIMA_DOCKER_DELETE_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_DELETE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(LIMA_DOCKER_DELETE_TIMEOUT_SECS)" -ge 1 ] 2>/dev/null || { echo "LIMA_DOCKER_DELETE_TIMEOUT_SECS must be a positive integer"; exit 2; }
+	@[ "$(LIMA_DOCKER_DELETE_KILL_AFTER_SECS)" -ge 1 ] 2>/dev/null || { echo "LIMA_DOCKER_DELETE_KILL_AFTER_SECS must be a positive integer"; exit 2; }
+	@case "$(LIMA_INSTANCE)" in \
+		""|*[!A-Za-z0-9._-]*|.|..) echo "Refusing invalid Lima instance name: $(LIMA_INSTANCE)"; exit 2;; \
+		gludd-*) ;; \
+		*) echo "Refusing non-Gludd Lima instance: $(LIMA_INSTANCE)"; exit 2;; \
+	esac; \
+	if [ "$(LIMA_DOCKER_DELETE_VALIDATE_ONLY)" = "1" ]; then \
+		echo "LIMA_DOCKER_DELETE_VALID instance=$(LIMA_INSTANCE) timeout_secs=$(LIMA_DOCKER_DELETE_TIMEOUT_SECS) kill_after_secs=$(LIMA_DOCKER_DELETE_KILL_AFTER_SECS)"; \
+		exit 0; \
+	fi; \
+	if [ "$(LIMA_DOCKER_DELETE_CONFIRM)" != "$(LIMA_INSTANCE)" ]; then \
+		echo "LIMA_DOCKER_DELETE_CONFIRM must exactly match LIMA_INSTANCE"; \
+		exit 2; \
+	fi; \
+	record=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Name}}|{{.Status}}|{{.Dir}}' 2>/dev/null || true); \
+	if [ -z "$$record" ]; then \
+		echo "LIMA_DOCKER_DELETE_ALREADY_ABSENT instance=$(LIMA_INSTANCE)"; \
+		exit 0; \
+	fi; \
+	name=$${record%%|*}; rest=$${record#*|}; status=$${rest%%|*}; instance_dir=$${rest#*|}; \
+	if [ "$$name" != "$(LIMA_INSTANCE)" ] || [ "$$record" = "$$rest" ] || [ "$$rest" = "$$instance_dir" ] || [ -z "$$instance_dir" ]; then \
+		echo "Refusing ambiguous Lima instance record: $$record"; \
+		exit 2; \
+	fi; \
+	case "$$status" in \
+		Stopped) ;; \
+		Running) echo "Refusing to delete running Lima instance: $(LIMA_INSTANCE)"; exit 1;; \
+		*) echo "Refusing to delete Lima instance $(LIMA_INSTANCE) in status $$status"; exit 1;; \
+	esac; \
+	before_kib=$$(du -sk "$$instance_dir" 2>/dev/null | awk '{print $$1}' || true); \
+	before_kib=$${before_kib:-0}; \
+	echo "LIMA_DOCKER_DELETE_BEGIN instance=$(LIMA_INSTANCE) timeout_secs=$(LIMA_DOCKER_DELETE_TIMEOUT_SECS) size_kib=$$before_kib"; \
+	limactl delete "$(LIMA_INSTANCE)" & \
+	delete_pid=$$!; \
+	terminate_owned_delete() { \
+		kill -TERM "$$delete_pid" 2>/dev/null || true; \
+		grace_elapsed=0; \
+		while kill -0 "$$delete_pid" 2>/dev/null && [ "$$grace_elapsed" -lt "$(LIMA_DOCKER_DELETE_KILL_AFTER_SECS)" ]; do \
+			sleep 1; grace_elapsed=$$((grace_elapsed + 1)); \
+		done; \
+		if kill -0 "$$delete_pid" 2>/dev/null; then \
+			echo "LIMA_DOCKER_DELETE_KILL instance=$(LIMA_INSTANCE) kill_after_secs=$(LIMA_DOCKER_DELETE_KILL_AFTER_SECS) signal=KILL"; \
+			kill -KILL "$$delete_pid" 2>/dev/null || true; \
+		fi; \
+		wait "$$delete_pid" 2>/dev/null || true; \
+	}; \
+	trap 'terminate_owned_delete; exit 130' HUP INT TERM; \
+	delete_rc=0; elapsed=0; timed_out=0; \
+	while kill -0 "$$delete_pid" 2>/dev/null; do \
+		if [ "$$elapsed" -ge "$(LIMA_DOCKER_DELETE_TIMEOUT_SECS)" ]; then \
+			echo "LIMA_DOCKER_DELETE_TIMEOUT instance=$(LIMA_INSTANCE) timeout_secs=$(LIMA_DOCKER_DELETE_TIMEOUT_SECS) signal=TERM"; \
+			terminate_owned_delete; delete_rc=124; timed_out=1; break; \
+		fi; \
+		sleep 1; elapsed=$$((elapsed + 1)); \
+		if [ $$((elapsed % 5)) -eq 0 ]; then echo "LIMA_DOCKER_DELETE_HEARTBEAT instance=$(LIMA_INSTANCE) elapsed_secs=$$elapsed"; fi; \
+	done; \
+	if [ "$$timed_out" -eq 0 ]; then wait "$$delete_pid" || delete_rc=$$?; fi; \
+	trap - HUP INT TERM; \
+	if [ "$$delete_rc" -ne 0 ]; then \
+		echo "Lima Docker deletion failed or exceeded its bound: rc=$$delete_rc instance=$(LIMA_INSTANCE)"; \
+		exit "$$delete_rc"; \
+	fi; \
+	after=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Name}}|{{.Status}}' 2>/dev/null || true); \
+	if [ -n "$$after" ]; then \
+		echo "Lima Docker deletion was not proven: instance=$(LIMA_INSTANCE) observed=$$after"; \
+		exit 1; \
+	fi; \
+	echo "LIMA_DOCKER_DELETE_READY instance=$(LIMA_INSTANCE) status=Absent reclaimed_kib=$$before_kib"
 
 lima-docker-status: ## Show bounded Docker engine, container, and image state for the namespaced Lima VM
 	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac

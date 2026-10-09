@@ -87,6 +87,74 @@ fi
     return result, state_file, calls_file
 
 
+def _run_delete(
+    tmp_path: Path,
+    state: str,
+    *,
+    confirm: str = "gludd-test",
+    validate_only: int = 0,
+) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    state_file = tmp_path / "state"
+    state_file.write_text(state)
+    calls_file = tmp_path / "calls"
+    instance_dir = tmp_path / "gludd-test"
+    instance_dir.mkdir()
+    (instance_dir / "disk.raw").write_bytes(b"reproducible")
+
+    _write_executable(
+        fake_bin / "limactl",
+        """#!/bin/sh
+set -eu
+if [ "$1" = "list" ]; then
+    if [ "$(cat "$LIMA_FAKE_STATE")" = "Absent" ]; then
+        exit 0
+    fi
+    printf '%s|%s|%s\n' "$2" "$(cat "$LIMA_FAKE_STATE")" "$LIMA_FAKE_DIR"
+elif [ "$1" = "delete" ]; then
+    printf '%s\n' "$*" >> "$LIMA_FAKE_CALLS"
+    printf 'Absent' > "$LIMA_FAKE_STATE"
+else
+    exit 64
+fi
+""",
+    )
+
+    env = os.environ.copy()
+    uv = shutil.which("uv")
+    assert uv is not None
+    env.update(
+        {
+            "LIMA_FAKE_CALLS": str(calls_file),
+            "LIMA_FAKE_DIR": str(instance_dir),
+            "LIMA_FAKE_STATE": str(state_file),
+            "PATH": os.pathsep.join(
+                (str(fake_bin), str(Path(uv).parent), "/usr/bin", "/bin")
+            ),
+        }
+    )
+    result = subprocess.run(
+        [
+            "make",
+            "--no-print-directory",
+            "lima-docker-delete",
+            "LIMA_INSTANCE=gludd-test",
+            f"LIMA_DOCKER_DELETE_CONFIRM={confirm}",
+            "LIMA_DOCKER_DELETE_KILL_AFTER_SECS=3",
+            "LIMA_DOCKER_DELETE_TIMEOUT_SECS=9",
+            f"LIMA_DOCKER_DELETE_VALIDATE_ONLY={validate_only}",
+        ],
+        cwd=_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    return result, state_file, calls_file
+
+
 def test_stop_is_idempotent_without_invoking_shutdown(tmp_path: Path) -> None:
     result, state_file, calls_file = _run_stop(tmp_path, "Stopped")
 
@@ -133,4 +201,49 @@ def test_missing_instance_fails_without_invoking_shutdown(tmp_path: Path) -> Non
 
     assert result.returncode != 0
     assert "Refusing to stop missing Lima instance: gludd-test" in result.stdout
+    assert not calls_file.exists()
+
+
+def test_delete_requires_exact_confirmation_for_stopped_instance(tmp_path: Path) -> None:
+    result, state_file, calls_file = _run_delete(
+        tmp_path,
+        "Stopped",
+        confirm="wrong-instance",
+    )
+
+    assert result.returncode != 0
+    assert "LIMA_DOCKER_DELETE_CONFIRM must exactly match LIMA_INSTANCE" in result.stdout
+    assert state_file.read_text() == "Stopped"
+    assert not calls_file.exists()
+
+
+def test_delete_refuses_running_instance_without_mutation(tmp_path: Path) -> None:
+    result, state_file, calls_file = _run_delete(tmp_path, "Running")
+
+    assert result.returncode != 0
+    assert "Refusing to delete running Lima instance: gludd-test" in result.stdout
+    assert state_file.read_text() == "Running"
+    assert not calls_file.exists()
+
+
+def test_delete_removes_only_confirmed_stopped_instance(tmp_path: Path) -> None:
+    result, state_file, calls_file = _run_delete(tmp_path, "Stopped")
+
+    assert result.returncode == 0, result.stderr
+    assert "LIMA_DOCKER_DELETE_BEGIN instance=gludd-test" in result.stdout
+    assert "LIMA_DOCKER_DELETE_READY instance=gludd-test status=Absent" in result.stdout
+    assert state_file.read_text() == "Absent"
+    assert calls_file.read_text().strip() == "delete gludd-test"
+
+
+def test_delete_validate_only_never_invokes_limactl(tmp_path: Path) -> None:
+    result, state_file, calls_file = _run_delete(
+        tmp_path,
+        "Stopped",
+        validate_only=1,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "LIMA_DOCKER_DELETE_VALID instance=gludd-test" in result.stdout
+    assert state_file.read_text() == "Stopped"
     assert not calls_file.exists()
