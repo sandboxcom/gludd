@@ -1,10 +1,10 @@
 ---
 - name: Admit a controller-local dataset with Frictionless
   general_ludd.ai_ml.dataset_admit:
-    root: "{{ ai_ml_dataset_root }}"
-    resources: "{{ ai_ml_dataset_resources }}"
-    schema: "{{ ai_ml_dataset_schema }}"
-    name: "{{ ai_ml_dataset_name }}"
-    description: "{{ ai_ml_dataset_description }}"
-    license: "{{ ai_ml_dataset_license }}"
+    root: "{{ dataset_engineer_root }}"
+    resources: "{{ dataset_engineer_resources }}"
+    schema: "{{ dataset_engineer_schema }}"
+    name: "{{ dataset_engineer_name }}"
+    description: "{{ dataset_engineer_description }}"
+    license: "{{ dataset_engineer_license }}"
   register: ai_ml_dataset_result

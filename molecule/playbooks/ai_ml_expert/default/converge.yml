@@ -13,13 +13,13 @@
       ansible.builtin.include_role:
         name: general_ludd.ai_ml.dataset_engineer
       vars:
-        ai_ml_dataset_root: "{{ dataset_root }}"
-        ai_ml_dataset_resources:
+        dataset_engineer_root: "{{ dataset_root }}"
+        dataset_engineer_resources:
           - records.csv
-        ai_ml_dataset_schema: schema.json
-        ai_ml_dataset_name: molecule-records
-        ai_ml_dataset_description: Molecule validation fixture
-        ai_ml_dataset_license: CC0-1.0
+        dataset_engineer_schema: schema.json
+        dataset_engineer_name: molecule-records
+        dataset_engineer_description: Molecule validation fixture
+        dataset_engineer_license: CC0-1.0
 
     - name: Assert native admission result
       ansible.builtin.assert:

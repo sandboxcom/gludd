@@ -491,7 +491,19 @@ def test_dataset_engineer_role_is_native_and_molecule_exercises_it() -> None:
     )
     verify = (ROOT / "molecule/playbooks/ai_ml_expert/default/verify.yml").read_text(encoding="utf-8")
 
-    assert defaults["ai_ml_dataset_resources"] == []
+    assert set(defaults) == {
+        "dataset_engineer_description",
+        "dataset_engineer_license",
+        "dataset_engineer_name",
+        "dataset_engineer_resources",
+        "dataset_engineer_root",
+        "dataset_engineer_schema",
+    }
+    assert defaults["dataset_engineer_resources"] == (
+        "{{ ai_ml_dataset_resources | default([]) }}"
+    )
+    for variable in defaults:
+        assert f"{{{{ {variable} }}}}" in tasks_text
     assert len(tasks) == 1
     assert "general_ludd.ai_ml.dataset_admit" in tasks[0]
     assert "service_request" not in tasks_text
