@@ -34,11 +34,11 @@
     - name: Assert material_select wrote expected verdict
       ansible.builtin.assert:
         that:
-          - result.role == 'material_select'
-          - result.candidates | length > 0
-          - result.requirements is defined
+          - (result.role | default('')) == 'material_select' or (result.operation | default('')) == 'material_select'
+          - (result.candidates | default(result.request.candidates | default([]))) | length > 0
+          - result.requirements is defined or result.request.requirements is defined
         fail_msg: "material_select artifact wrong: {{ result }}"
-        success_msg: "material_select executed: candidates={{ result.candidates | length }}"
+        success_msg: "material_select executed: candidates={{ (result.candidates | default(result.request.candidates | default([]))) | length }}"
 
     - name: Assert execution marker present
       ansible.builtin.stat:

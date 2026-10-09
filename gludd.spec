@@ -139,6 +139,10 @@ a = Analysis(
         'ansible',
         'ansible_runner',
         'ansible.cli',
+        # Project collections ship inside the execution-environment artifact, not
+        # the frozen core; excluding the root prevents project importers from
+        # producing actionable missing-import edges for collection modules.
+        'ansible_collections',
         # The application uses stdlib sqlite3 and psycopg 3. SQLAlchemy's
         # generic hook otherwise probes these absent legacy/optional drivers.
         'pysqlite2',

@@ -4,12 +4,13 @@
   "pyinstaller_version": "6.22.3",
   "transitive_warning_sha256_by_architecture": {
     "aarch64": "70c6ec35a8d7e0b9095ca2dd7879ef28be05bff279d6d7aca9220e54efbd14ba",
-    "x86_64": "d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d"
+    "x86_64": "590682fc772301ed8b47fe57feb9a7bd5ff43ed15c301aa104a20fdc4df8f4e2"
   },
   "reviewed_transitive_warning_sha256_alternates_by_architecture": {
     "x86_64": [
       "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814",
       "837c969e07af0acbc4812ec9e417ef42eb941a9184d9aa1731c402c3df1d11ad",
+      "d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d",
       "eb32d56ca9b343b784aa7c65aaa39b58f0bba8aef6df795fe51f2c52c4342335"
     ]
   },
@@ -181,6 +182,42 @@
       ],
       "category": "optional-dependency",
       "evidence": "https://github.com/vmware/pyvmomi"
+    },
+    {
+      "module": "ansible_collections.general_ludd.chemistry",
+      "importer": "general_ludd.chemistry.inventory",
+      "flags": [
+        "top-level"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/ansible/latest/dev_guide/developing_collections.html"
+    },
+    {
+      "module": "ansible_collections.general_ludd.materials",
+      "importer": "general_ludd.materials.operations",
+      "flags": [
+        "top-level"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/ansible/latest/dev_guide/developing_collections.html"
+    },
+    {
+      "module": "ansible_collections.general_ludd.materials",
+      "importer": "general_ludd.materials.tolerance",
+      "flags": [
+        "top-level"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/ansible/latest/dev_guide/developing_collections.html"
+    },
+    {
+      "module": "ansible_collections.general_ludd.travel",
+      "importer": "general_ludd.searx.native",
+      "flags": [
+        "top-level"
+      ],
+      "category": "controller-runtime-boundary",
+      "evidence": "https://docs.ansible.com/ansible/latest/dev_guide/developing_collections.html"
     }
   ]
 }

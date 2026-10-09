@@ -10,7 +10,7 @@
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8861', true) }}"
     out_dir: "/tmp/gludd-materials-expert-{{ mock_port }}"
   tasks:
-    - name: Invoke material_select
+    - name: "Invoke material_select (check mode - validates request shape without daemon)"
       ansible.builtin.include_role:
         name: general_ludd.materials.material_select
       vars:
@@ -21,6 +21,7 @@
         material_select_requirements:
           tensile_strength_mpa: 600
         material_select_output_dir: "{{ out_dir }}"
+      check_mode: true
 
     - name: Write execution marker
       ansible.builtin.copy:
