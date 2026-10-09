@@ -36,6 +36,7 @@
     state: directory
     mode: "0755"
   when: materials_service_output_path | length > 0
+  check_mode: false
 
 - name: Write materials operation result
   ansible.builtin.copy:
@@ -43,3 +44,4 @@
     dest: "{{ materials_service_output_path }}"
     mode: "0644"
   when: materials_service_output_path | length > 0
+  check_mode: false

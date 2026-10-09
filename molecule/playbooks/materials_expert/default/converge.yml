@@ -13,6 +13,8 @@
     - name: "Invoke material_select (check mode - validates request shape without daemon)"
       ansible.builtin.include_role:
         name: general_ludd.materials.material_select
+        apply:
+          check_mode: true
       vars:
         material_select_enabled: true
         material_select_candidates:
@@ -21,7 +23,6 @@
         material_select_requirements:
           tensile_strength_mpa: 600
         material_select_output_dir: "{{ out_dir }}"
-      check_mode: true
 
     - name: Write execution marker
       ansible.builtin.copy:
