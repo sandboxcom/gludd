@@ -65,19 +65,18 @@
 
 ### Next Steps (mandatory)
 
-1. Push the second PyInstaller warning digest fix to `sandboxcom/development`.
-2. Monitor hosted CI on the new HEAD with `make ci-verdict-safe BRANCH=development` at natural breaks.
-3. If CI is green, run `make release-cut TAG='v0.1.2' MSG='release: v0.1.2'`.
-4. `make verify-release-completeness TAG=v0.1.2` after the release job publishes.
+1. Monitor hosted CI on the new HEAD `bfdfe404a...` with `make ci-verdict-safe BRANCH=development` at natural breaks.
+2. If CI is green, run `make release-cut TAG='v0.1.2' MSG='release: v0.1.2'`.
+3. `make verify-release-completeness TAG=v0.1.2` after the release job publishes.
 
 ### Current Gate Status
 <!-- gate:begin -->
-- HEAD `958dae9ea4ddb52938f8a093125d3df0dc6c7711` on `development`. Working tree dirty (PyInstaller warning digest fix). Remote at `958dae9ea...` will advance after push.
-- CI: Build and Release run `37963738804` on `958dae9ea...` **queued/pending**; Molecule Tests run `37963738773` on `958dae9ea...` **failure** (second PyInstaller digest mismatch, now fixed locally); prior run `37958150325` on `7162fcf0a...` **cancelled**.
+- HEAD `bfdfe404a3401609b7a3179ddc4ea506582bf5c4` on `development`. Working tree clean. Remote verified at `bfdfe404a...`.
+- CI: Build and Release run `37967736744` on `bfdfe404a...` **queued/pending**; prior run `37963738804` on `958dae9ea...` was **force-pushed past** after it had already accumulated 9 failed jobs (the second PyInstaller digest mismatch plus other failures); prior Molecule Tests run `37963738773` on `958dae9ea...` **failure** (second PyInstaller digest mismatch, now fixed); prior run `37958150325` on `7162fcf0a...` **cancelled**.
 - Local gate: BLOCKED by `disk-cleanup-preflight` (disk 94% full).
-- Local dual-track: RUNNING in background (PID 78882, log `.gate-logs/ci-dual-track-local-20261009130515.log`).
+- Local dual-track: background process not running; attestation file present from prior SHA (`958dae9ea...`) and must be replaced once a new run starts.
 - CI failure ledger: family `1fcc5a60...` **REPAIRED**; `ci-failure-push-guard` PASS.
-- v0.1.2 release: pending green CI + release-cut + artifact verification.
+- v0.1.2 release: pushed fix commits `ea80569d7` and `bfdfe404a`; pending green CI on `bfdfe404a...` + release-cut + artifact verification.
 <!-- gate:end -->
 
 ---
