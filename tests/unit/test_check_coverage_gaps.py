@@ -78,6 +78,10 @@ EXPECTED_SPLIT_MAPPINGS = {
         "general_ludd.event_loop.loop",
         "tests/unit/test_event_loop_module_split.py",
     ),
+    "general_ludd.event_loop.decision_validation": (
+        "general_ludd.event_loop.decision_reconciliation",
+        "tests/unit/test_validation_request_orchestration.py",
+    ),
     "general_ludd.event_loop.execution_dispatch": (
         "general_ludd.event_loop.loop",
         "tests/unit/test_event_loop_module_split.py",
@@ -97,6 +101,30 @@ EXPECTED_SPLIT_MAPPINGS = {
     "general_ludd.models.freellmapi_sync_plans": (
         "general_ludd.models.freellmapi_sync_verifier",
         "tests/unit/test_freellmapi_sync_verifier.py",
+    ),
+    "general_ludd.pipeline.merge_io": (
+        "general_ludd.pipeline.daemon_adapters",
+        "tests/unit/test_pipeline_daemon_adapters.py",
+    ),
+    "general_ludd.pipeline.merge_runtime": (
+        "general_ludd.pipeline.daemon_adapters",
+        "tests/unit/test_pipeline_daemon_adapters.py",
+    ),
+    "general_ludd.process.registry_identity": (
+        "general_ludd.process.registry",
+        "tests/unit/test_process_registry.py",
+    ),
+    "general_ludd.process.signal_policy": (
+        "general_ludd.process.registry",
+        "tests/unit/test_process_registry.py",
+    ),
+    "general_ludd.reload.worker_liveness": (
+        "general_ludd.reload.worker_broadcast",
+        "tests/unit/test_worker_liveness_lease.py",
+    ),
+    "general_ludd.review.estimation_reporting": (
+        "general_ludd.review.estimation_tracker",
+        "tests/unit/test_estimation_tracker.py",
     ),
 }
 
