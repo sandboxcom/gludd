@@ -1,13 +1,13 @@
-## PRIMARY OBJECTIVE: v0.1.2 RELEASE PREPARATION — merge completed worktrees into `development`, repair Molecule failures, push a green branch, and cut the release. HEAD `f48e95943` on `development` (2026-10-09).
+## PRIMARY OBJECTIVE: v0.1.2 RELEASE PREPARATION — merge completed worktrees into `development`, repair Molecule failures, push a green branch, and cut the release. HEAD `a4178d5ef` on `development` (2026-10-09).
 
-## SESSION 96 — 2026-10-09 — HEAD `f48e95943...`: CSS lint worktree merged, Molecule failures repaired, CI failure ledger cleared, `development` pushed, version bumped to v0.1.2
+## SESSION 96 — 2026-10-09 — HEAD `a4178d5ef...`: CSS lint worktree merged, Molecule failures repaired, CI failure ledger cleared, node deps restored, version bumped to v0.1.2
 
 ### Current State
 
-- HEAD: `f48e95943ec53d275b40db0c10291470ef791830` on `development`.
+- HEAD: `a4178d5ef11482140ccbb17539dcf96e1f4ae02d` on `development`.
 - Working tree: clean.
-- Remote: `development` pushed to `sandboxcom/development` and verified at `2a974994d5fbe6f05fa4cec8ea19df87659c97f5` (local is now 1 commit ahead: version bump).
-- CI: Build and Release run `37951565553` on SHA `2a974994d...` is **in_progress** with `gate (3.11)` already concluded `failure`; `gate (3.12)` still running. Molecule Tests status pending. Prior run on `ba761c7c8ad681d2119170614a406d3fa49dea37` concluded `failure`.
+- Remote: `development` pushed to `sandboxcom/development` and verified at `2a974994d5fbe6f05fa4cec8ea19df87659c97f5` (local is now 4 commits ahead: version bump, docs, node deps fix).
+- CI: Build and Release run `37951565553` on SHA `2a974994d...` concluded `failure`. Root cause: `.opencode/package-lock.json` was missing, so `make node-deps-sync` ran `npm ci --prefix .opencode` without a lockfile and failed on both `gate (3.11)` and `gate (3.12)`. Molecule Tests were skipped because the gate jobs failed.
 - Local gate: cannot run — `make check-disk` fails with `disk_pct=94.0` (hard limit 90%). `make clean-tmp` freed only negligible space; bulk pressure is `/Users/shawnwilson/tmp/podman` VM image outside the approved cleanup namespace.
 - Active worktrees: none (`make agent-worktree-list` shows only the main checkout).
 
@@ -23,37 +23,38 @@
 8. **Pushed `development`** to `sandboxcom/development` (8 commits) and verified remote tip.
 9. **Refreshed README status table** with `make gen-status-table` and updated `Status as of` line to v0.1.2 (2026-10-09).
 10. **Bumped version** to `0.1.2` in `pyproject.toml`, `src/general_ludd/__init__.py`, and `CHANGELOG.md`; `tests/unit/test_version_consistency_deep.py` passes (24/24).
-11. **Verified targeted tests pass**:
+12. **Diagnosed and fixed hosted CI `node-deps-sync` failure**: `.opencode/package-lock.json` was missing from the working tree, causing `npm ci --prefix .opencode` to fail in the `Install locked Node build dependencies` step. Regenerated the lockfile with `make node-deps-relock`, added a `large_text_paths` exemption to `config/file_line_limits.json` for generated lockfiles, refactored `scripts/check_file_line_limits.py` to share path/reason parsing, and added tests. `tests/unit/test_file_line_limits.py` passes (22/22); `make check-file-line-limits` PASS.
+13. **Verified targeted tests pass**:
     - `tests/unit/test_molecule_playbooks_deep.py`: 3214 passed, 30 skipped.
     - `tests/unit/test_molecule_warning_contract.py`: 6 passed.
     - `tests/unit/test_version_consistency_deep.py`: 24 passed.
+    - `tests/unit/test_file_line_limits.py`: 22 passed.
     - `make molecule-test SCENARIO=materials_expert`: pass.
     - `make lint`: pass.
     - `make typecheck`: pass.
     - `make check-pyinstaller-warning-reviews`: pass.
+    - `make check-file-line-limits`: pass.
 
 ### Known Blockers / Gaps
 
 - **Disk >90% full** — `make gate` cannot start until disk drops below 90%. The cleanup target only prunes recognized scratch; the bulk of the usage is `/Users/shawnwilson/tmp/podman` VM image, outside the approved cleanup namespace.
-- **Hosted CI red on `gate (3.11)`** for pushed SHA `2a974994d...` (run 37951565553); need logs to diagnose and fix.
-- `SESSION.md` and `TASKS.md` partially stale — `TASKS.md` still lists the CI failure ledger as open and needs v0.1.2 state refresh.
+- **Push threshold not yet met** — only 4 unpushed commits; `make batch-push` threshold is 5. One more commit (e.g., this SESSION.md update) is needed before pushing.
 
 ### Next Steps (mandatory)
 
-1. Wait for Build and Release run `37951565553` to finish, fetch `gate (3.11)` failure log, and fix the root cause.
-2. Push the fix and the pending version-bump commit to `development`.
+1. Commit this SESSION.md/TASKS.md refresh as the 5th local commit.
+2. Push `development` to `sandboxcom/development` with `make batch-push`.
 3. Verify hosted CI green on the new HEAD with `make ci-verdict-safe BRANCH=development`.
-4. Update `TASKS.md` to mark v0.1.2 prep fixes complete and remove the resolved CI failure ledger blocker.
-5. `make release-cut TAG='v0.1.2' MSG='release: v0.1.2'` once CI is green.
-6. `make verify-release-completeness TAG=v0.1.2` after the release job publishes.
+4. `make release-cut TAG='v0.1.2' MSG='release: v0.1.2'` once CI is green.
+5. `make verify-release-completeness TAG=v0.1.2` after the release job publishes.
 
 ### Current Gate Status
 <!-- gate:begin -->
-- HEAD `f48e95943ec53d275b40db0c10291470ef791830` on `development`. Working tree clean. Local is 1 commit ahead of remote (`2a974994d...`).
-- CI: Build and Release run `37951565553` on `2a974994d...` is **in_progress** with `gate (3.11)` concluded `failure`; `gate (3.12)` running.
+- HEAD `a4178d5ef11482140ccbb17539dcf96e1f4ae02d` on `development`. Working tree clean. Local is 4 commits ahead of remote (`2a974994d...`).
+- CI: Build and Release run `37951565553` on `2a974994d...` concluded `failure` (missing `.opencode/package-lock.json`); fix committed locally at `a4178d5ef`.
 - Local gate: BLOCKED by `disk-cleanup-preflight` (disk 94% full).
 - CI failure ledger: family `1fcc5a60...` **REPAIRED**; `ci-failure-push-guard` PASS.
-- v0.1.2 release: pending CI failure diagnosis/fix + push + green CI + release-cut + artifact verification.
+- v0.1.2 release: pending push + green CI + release-cut + artifact verification.
 <!-- gate:end -->
 
 ---
