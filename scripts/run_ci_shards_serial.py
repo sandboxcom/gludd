@@ -1428,8 +1428,9 @@ def run(
     receipt_session: BatchReceiptSession | None = None,
     execution_summary: dict[str, object] | None = None,
     batch_workers: int = 1,
+    collect_all_failures: bool = False,
 ) -> int:
-    """Run bounded batches serially and aggregate their coverage fragments."""
+    """Run bounded batches, optionally collecting ordinary pytest failures."""
     if max_files_per_batch < 1:
         raise ValueError("max_files_per_batch must be positive")
     if batch_workers not in {1, 2}:
@@ -1573,7 +1574,8 @@ def run(
             failures["isolated"] = isolated_rc
             continuation = (
                 "later-shards=continuing"
-                if _is_collect_all_pytest_returncode(isolated_rc)
+                if collect_all_failures
+                and _is_collect_all_pytest_returncode(isolated_rc)
                 else "later-shards=not-started"
             )
             print(
@@ -1583,7 +1585,10 @@ def run(
         else:
             print("ISOLATED-TESTS-PASS rc=0", flush=True)
 
-    if failures and not _is_collect_all_pytest_returncode(failures["isolated"]):
+    if failures and (
+        not collect_all_failures
+        or not _is_collect_all_pytest_returncode(failures["isolated"])
+    ):
         print(
             f"SERIAL-ISOLATED-FAILED rc={failures['isolated']}; later-shards=not-started",
             flush=True,
@@ -2146,18 +2151,27 @@ def run(
                     shard_failed = True
                     break
                 if rc != 0:
+                    if collect_all_failures and _is_collect_all_pytest_returncode(rc):
+                        print(
+                            f"SHARD-COLLECTED shard={shard} batch={batch_index} "
+                            f"rc={rc}; later-batches=continuing",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"SHARD-FAIL shard={shard} batch={batch_index} "
+                            f"rc={rc}; later-batches=not-started",
+                            flush=True,
+                        )
+                        shard_failed = True
+                        safety_stop_rc = rc
+                        break
+                else:
                     print(
-                        f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; later-batches=not-started",
+                        f"SHARD-BATCH-PASS shard={shard} batch={batch_index} rc=0",
                         flush=True,
                     )
-                    shard_failed = True
-                    safety_stop_rc = rc
-                    break
-                print(
-                    f"SHARD-BATCH-PASS shard={shard} batch={batch_index} rc=0",
-                    flush=True,
-                )
-            if not shard_failed:
+            if not shard_failure_rc and not shard_failed:
                 print(f"SHARD-PASS shard={shard} rc=0", flush=True)
         finally:
             for owned_tmpdir, cleanup_phase in owned_tmpdirs:
@@ -2292,6 +2306,12 @@ def main() -> int:
             flush=True,
         )
         return 2
+    if args.collect_all_failures and args.require_release_policy:
+        print(
+            "SERIAL-SHARD-POLICY-REJECTED diagnostic collect-all cannot produce release evidence",
+            flush=True,
+        )
+        return 2
     shards = _parse_shards(args.shards)
     pytest_args = shlex.split(args.pytest_args)
     observed_policy = execution_policy(pytest_args)
@@ -2362,6 +2382,7 @@ def main() -> int:
                     watchdog_owned_gate=args.watchdog_owned_gate,
                     execution_summary=batch_execution,
                     batch_workers=args.batch_workers,
+                    collect_all_failures=args.collect_all_failures,
                 )
             else:
                 returncode = run(
@@ -2378,6 +2399,7 @@ def main() -> int:
                     receipt_session=receipt_session,
                     execution_summary=batch_execution,
                     batch_workers=args.batch_workers,
+                    collect_all_failures=args.collect_all_failures,
                 )
             error = None
             if (

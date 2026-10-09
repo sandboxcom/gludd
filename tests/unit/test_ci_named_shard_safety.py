@@ -208,7 +208,11 @@ def test_serial_runner_collects_shards_after_isolated_test_failure(
     monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: None)
     monkeypatch.setattr(module, "_aggregate_coverage", lambda: 0)
 
-    result = module.run(["unit-1a1", "unit-1a2"], [])
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        collect_all_failures=True,
+    )
 
     assert result == 1
     assert launched == ["isolated", "unit-1a1:batch-001", "unit-1a2:batch-001"]
@@ -1282,6 +1286,7 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
         "watchdog_owned_gate": False,
         "execution_summary": {},
         "batch_workers": 1,
+        "collect_all_failures": False,
     }
 
 
