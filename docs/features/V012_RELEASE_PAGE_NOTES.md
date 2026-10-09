@@ -19,8 +19,9 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-S31-S43, plus the train's dependency, ownership, structural, TUI, and coverage
-repairs. S29-S43 are listed from immutable implementation receipts without
+S31-S45 plus S47, along with the train's dependency, ownership, structural,
+TUI, and coverage repairs. S29-S45 and S47 are listed from immutable
+implementation receipts without
 claiming train integration or an exact-head gate. The preview therefore records
 useful candidate contents without converting implementation evidence into task,
 gate, release, or publication completion.
@@ -86,7 +87,7 @@ includes 354 warning-fatal tests and 94% aggregate coverage (`shared.py` 87%,
 `projects.py` 98%, `metrics.py` 91%), with native SQL compilation, unsupported
 dialect rejection before I/O, and bounded two-session PostgreSQL convergence.
 
-S38-S43 move six collection workflows onto native, owned library boundaries;
+S38-S45 move eight collection workflows onto native, owned library boundaries;
 S47 hardens and accelerates their final local gate admission:
 
 - **S38 — Native SearXNG controller runtime.** Travel searches now call the
@@ -180,6 +181,47 @@ S47 hardens and accelerates their final local gate admission:
   [collection-qualified follow-up][ansible-action-collections], and practitioner
   [RSS uncertainty discussion][materials-rss-practice] motivate the shared
   collection boundary and explicit independent-contributor assumption.
+- **S44 — Collection-native SearXNG batch consumers.** Business research,
+  security updates, and infrastructure discovery now route
+  all 31 raw SearXNG HTTP calls through one bounded controller batch action
+  while retaining
+  their legacy `status` and `json` result shapes. Native execution reuses one
+  S38 runtime per batch; malformed, excessive, or failed results abort the batch
+  atomically, and check mode allocates no listener, subprocess, or runtime.
+  Delivery canaries the immutable controller image across all three consumer
+  roles while prior jobs drain. Rollback routes new jobs to the prior digest or,
+  for a native-only incident, to an explicitly configured verified remote
+  endpoint; it never restores implicit localhost HTTP, Compose, Terraform, or
+  role-level URI calls. All 155 focused and compatibility tests pass with
+  warnings fatal, coverage is 99% aggregate with every measured production file
+  at 98-100%, all four Molecule phases pass, and collection selects
+  121,513/121,531 tests with 18 intentional deselections and zero errors. The
+  official [SearXNG Search API][searxng-api], long-running JSON-format reports in
+  discussions [#1789][searxng-1789] and [#3542][searxng-3542], direct-launch
+  breakage in issue [#126][searxng-126], and category failure in issue
+  [#2505][searxng-2505] motivate typed native inputs and fail-closed output
+  validation.
+- **S45 — Fail-closed native OpenAPI service registration.** Infrastructure
+  jobs now admit one SHA-256-bound, root-confined OpenAPI 3.1 contract and invoke
+  one unique GET/HEAD `operationId` through pinned `openapi-core` and
+  `jsonpointer`. Named environment references keep secrets outside task data;
+  internal-only references, DNS-pinned HTTPS, zero redirects, and bounded
+  request/response validation replace generated connector files, source
+  mutation, ignored health checks, and synthetic success. A digest-addressed
+  controller image first runs every contract in validation-only mode, then takes
+  a small live cohort while old requests drain within their 30-second ceiling.
+  Rollback routes new work to the preceding image and needs no listener, schema,
+  generated file, or database repair. The focused suite passes 31 tests at 95%
+  aggregate coverage with every measured production file at 94-100%; the full
+  Molecule sequence, dependency and ownership checks, controller boundaries,
+  and 121,567/121,585-test zero-error collection are green. Upstream reference
+  failures in openapi-core issues [#154][openapi-core-154],
+  [#297][openapi-core-297], and [#893][openapi-core-893], practitioner reports
+  on [validation errors][openapi-core-768],
+  [runtime response validation][openapi-response-drift], and
+  [large-schema cost][openapi-schema-cost], plus the OpenAPI `$ref`
+  [SSRF advisory][openapi-ref-ssrf] and DNS check/use report
+  [#14312][semantic-kernel-14312], define that trust boundary.
 - **S47 — Exact-SHA resumable, fail-fast local gate admission.** Local retries
   admit only authenticated passing receipts from the same clean SHA, restore
   branch-aware coverage before enforcing the unchanged 85% aggregate and 75%
@@ -290,7 +332,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 35-item candidate inventory, and
+ordering, deterministic rendering, the exact 37-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -334,7 +376,11 @@ Research was reviewed on 2026-10-08:
 [sqlalchemy-7199]: https://github.com/sqlalchemy/sqlalchemy/discussions/7199
 [sqlalchemy-7007]: https://github.com/sqlalchemy/sqlalchemy/discussions/7007
 [searxng-1789]: https://github.com/searxng/searxng/discussions/1789
+[searxng-api]: https://github.com/searxng/searxng/blob/master/docs/dev/search_api.rst
 [searxng-3106]: https://github.com/searxng/searxng/discussions/3106
+[searxng-3542]: https://github.com/searxng/searxng/discussions/3542
+[searxng-126]: https://github.com/searxng/searxng/issues/126
+[searxng-2505]: https://github.com/searxng/searxng/issues/2505
 [searxng-3896]: https://github.com/searxng/searxng/issues/3896
 [searxng-3474]: https://github.com/searxng/searxng/issues/3474
 [ansible-123]: https://forum.ansible.com/t/ansible-release-1-2-3/13342
@@ -355,3 +401,11 @@ Research was reviewed on 2026-10-08:
 [ansible-action-module-utils]: https://forum.ansible.com/t/two-questions-related-to-action-plugins/28059
 [ansible-action-collections]: https://forum.ansible.com/t/what-is-a-proper-way-to-use-module-utils-in-action-plugins/11011
 [materials-rss-practice]: https://www.reddit.com/r/AskEngineers/comments/usqr00/how_do_everyone_do_tolerance_stack_up_analysis_at/
+[openapi-core-154]: https://github.com/python-openapi/openapi-core/issues/154
+[openapi-core-297]: https://github.com/python-openapi/openapi-core/issues/297
+[openapi-core-893]: https://github.com/python-openapi/openapi-core/issues/893
+[openapi-core-768]: https://github.com/python-openapi/openapi-core/discussions/768
+[openapi-response-drift]: https://www.reddit.com/r/webdev/comments/1fxqkl6/how_do_you_enforce_that_your_api_actually_fulfills/
+[openapi-schema-cost]: https://www.reddit.com/r/PHP/comments/s5ko42/do_you_use_open_api_specs/
+[openapi-ref-ssrf]: https://github.com/advisories/ghsa-v6ph-xcq9-qxxj
+[semantic-kernel-14312]: https://github.com/microsoft/semantic-kernel/issues/14312

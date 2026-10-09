@@ -611,6 +611,44 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "085a76bcac47bc11c00a961d11070cfb49a99d27"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "c54b128d04d1c6caee20e32c099a3d0b29f62999"
+        },
+        {
+          "role": "development_merge",
+          "sha": "134566ad2d3186101cc719676210bb13fe1e86a6"
+        }
+      ],
+      "item_id": "S44",
+      "release_page_category": "Features",
+      "title": "Collection-native SearXNG batch consumers"
+    },
+    {
+      "evidence_commits": [
+        {
+          "role": "implementation",
+          "sha": "a2cde4421c3f9cd221f35b2b82bfda7b57a7bac0"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "e560ed21dd6fc7a4bf88c90b451c579396b2672e"
+        },
+        {
+          "role": "development_merge",
+          "sha": "523e2c0632427b68cbb0a6855d5dc04415c31ce3"
+        }
+      ],
+      "item_id": "S45",
+      "release_page_category": "Features",
+      "title": "Fail-closed native OpenAPI service registration"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },

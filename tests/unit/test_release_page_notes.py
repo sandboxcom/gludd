@@ -478,6 +478,8 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S41",
         "S42",
         "S43",
+        "S44",
+        "S45",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
@@ -608,6 +610,24 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
                 ("task_evidence", "6eb9893550df86dff1c09cdaf11780e74dd21b29"),
             ),
         ),
+        "S44": (
+            "Collection-native SearXNG batch consumers",
+            "Features",
+            (
+                ("implementation", "085a76bcac47bc11c00a961d11070cfb49a99d27"),
+                ("task_evidence", "c54b128d04d1c6caee20e32c099a3d0b29f62999"),
+                ("development_merge", "134566ad2d3186101cc719676210bb13fe1e86a6"),
+            ),
+        ),
+        "S45": (
+            "Fail-closed native OpenAPI service registration",
+            "Features",
+            (
+                ("implementation", "a2cde4421c3f9cd221f35b2b82bfda7b57a7bac0"),
+                ("task_evidence", "e560ed21dd6fc7a4bf88c90b451c579396b2672e"),
+                ("development_merge", "523e2c0632427b68cbb0a6855d5dc04415c31ce3"),
+            ),
+        ),
     }
     for item_id, (title, category, evidence) in candidate_contracts.items():
         item = next(
@@ -623,7 +643,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 35."
+        "Implemented candidate items pending exact-head/release proof: 37."
         in expected
     )
     release_source = (
@@ -636,13 +656,21 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "schema-free, application-image-only rolling change",
         "354 warning-fatal tests",
         "94% aggregate coverage",
-        "S38-S43",
+        "S38-S45",
         "Native SearXNG controller runtime",
         "Native git-release artifact verification",
         "Native Frictionless dataset admission",
         "Collection-native chemical lot admission",
         "Native fail-closed JUnit pipeline triage",
         "Native fail-closed materials tolerance analysis",
+        "Collection-native SearXNG batch consumers",
+        "Fail-closed native OpenAPI service registration",
+        "31 raw SearXNG HTTP calls",
+        "155 focused",
+        "99% aggregate coverage",
+        "31 tests",
+        "95% aggregate coverage",
+        "runtime response validation",
         "16 MiB",
         "100,000 testcases",
         "64 failures or errors",
@@ -661,7 +689,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "ansible/ansible#50579",
         "95% aggregate coverage",
         "Exact-SHA resumable, fail-fast local gate admission",
-        "exact 35-item candidate inventory",
+        "exact 37-item candidate inventory",
     ):
         assert required in release_source
     task_ledger = (ROOT / "TASKS.md").read_text(encoding="utf-8")
@@ -674,6 +702,8 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         ("S41", "1cf229c408110e5389f317472da1560c7b852a3f"),
         ("S42", "fd5faf302"),
         ("S43", "3d86e4854"),
+        ("S44", "085a76bca"),
+        ("S45", "a2cde4421"),
     ):
         assert f"- [ ] {task_id}" in task_ledger
         assert evidence_sha in task_ledger
