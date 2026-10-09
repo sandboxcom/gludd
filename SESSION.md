@@ -1,14 +1,14 @@
-## PRIMARY OBJECTIVE: v0.1.2 RELEASE PREPARATION — merge completed worktrees into `development`, repair Molecule failures, push a green branch, and cut the release. HEAD `2a974994d` on `development` (2026-10-09).
+## PRIMARY OBJECTIVE: v0.1.2 RELEASE PREPARATION — merge completed worktrees into `development`, repair Molecule failures, push a green branch, and cut the release. HEAD `f48e95943` on `development` (2026-10-09).
 
-## SESSION 96 — 2026-10-09 — HEAD `2a974994d...`: CSS lint worktree merged, Molecule failures repaired, CI failure ledger cleared, `development` pushed
+## SESSION 96 — 2026-10-09 — HEAD `f48e95943...`: CSS lint worktree merged, Molecule failures repaired, CI failure ledger cleared, `development` pushed, version bumped to v0.1.2
 
 ### Current State
 
-- HEAD: `2a974994d5fbe6f05fa4cec8ea19df87659c97f5` on `development`.
+- HEAD: `f48e95943ec53d275b40db0c10291470ef791830` on `development`.
 - Working tree: clean.
-- Remote: `development` pushed to `sandboxcom/development` and verified at `2a974994d5fbe6f05fa4cec8ea19df87659c97f5`.
-- CI: **PENDING** for current HEAD `2a974994d...` (Build and Release + Molecule Tests). Prior run on `ba761c7c8ad681d2119170614a406d3fa49dea37` concluded `failure` (CSS lint + Molecule Tests/molecule (1)).
-- Local gate: cannot run — `make check-disk` fails with `disk_pct>=92` (hard limit 90%). `make clean-tmp` freed only negligible space; bulk pressure is `/Users/shawnwilson/tmp/podman` VM image outside the approved cleanup namespace.
+- Remote: `development` pushed to `sandboxcom/development` and verified at `2a974994d5fbe6f05fa4cec8ea19df87659c97f5` (local is now 1 commit ahead: version bump).
+- CI: Build and Release run `37951565553` on SHA `2a974994d...` is **in_progress** with `gate (3.11)` already concluded `failure`; `gate (3.12)` still running. Molecule Tests status pending. Prior run on `ba761c7c8ad681d2119170614a406d3fa49dea37` concluded `failure`.
+- Local gate: cannot run — `make check-disk` fails with `disk_pct=94.0` (hard limit 90%). `make clean-tmp` freed only negligible space; bulk pressure is `/Users/shawnwilson/tmp/podman` VM image outside the approved cleanup namespace.
 - Active worktrees: none (`make agent-worktree-list` shows only the main checkout).
 
 ### Session 96 Work Completed
@@ -21,33 +21,39 @@
 6. **Recorded CI failure ledger repair** for family `1fcc5a60dc0a277615402ec37b26f4f6b530926761ad3d2d4fb5035490f180a9` (`Molecule Tests/molecule (1)`) with evidence target `test-specific TESTFILE=tests/unit/test_molecule_playbooks_deep.py` on SHA `9cb388939bc29eb907601d941999f9fcf9816a92`.
 7. **Refreshed `.secrets.baseline`** to account for new PyInstaller warning digest hex strings (false positives). Committed at `2a974994d`.
 8. **Pushed `development`** to `sandboxcom/development` (8 commits) and verified remote tip.
-9. **Verified targeted tests pass**:
-   - `tests/unit/test_molecule_playbooks_deep.py`: 3214 passed, 30 skipped.
-   - `tests/unit/test_molecule_warning_contract.py`: 6 passed.
-   - `make molecule-test SCENARIO=materials_expert`: pass.
-   - `make lint`: pass.
-   - `make check-pyinstaller-warning-reviews`: pass.
+9. **Refreshed README status table** with `make gen-status-table` and updated `Status as of` line to v0.1.2 (2026-10-09).
+10. **Bumped version** to `0.1.2` in `pyproject.toml`, `src/general_ludd/__init__.py`, and `CHANGELOG.md`; `tests/unit/test_version_consistency_deep.py` passes (24/24).
+11. **Verified targeted tests pass**:
+    - `tests/unit/test_molecule_playbooks_deep.py`: 3214 passed, 30 skipped.
+    - `tests/unit/test_molecule_warning_contract.py`: 6 passed.
+    - `tests/unit/test_version_consistency_deep.py`: 24 passed.
+    - `make molecule-test SCENARIO=materials_expert`: pass.
+    - `make lint`: pass.
+    - `make typecheck`: pass.
+    - `make check-pyinstaller-warning-reviews`: pass.
 
 ### Known Blockers / Gaps
 
 - **Disk >90% full** — `make gate` cannot start until disk drops below 90%. The cleanup target only prunes recognized scratch; the bulk of the usage is `/Users/shawnwilson/tmp/podman` VM image, outside the approved cleanup namespace.
+- **Hosted CI red on `gate (3.11)`** for pushed SHA `2a974994d...` (run 37951565553); need logs to diagnose and fix.
 - `SESSION.md` and `TASKS.md` partially stale — `TASKS.md` still lists the CI failure ledger as open and needs v0.1.2 state refresh.
 
 ### Next Steps (mandatory)
 
-1. Update `TASKS.md` to mark v0.1.2 prep fixes complete and remove the resolved CI failure ledger blocker.
-2. Check hosted CI at natural breaks with `make ci-verdict-safe BRANCH=development` (currently on 3m+ cooldown).
-3. Free enough disk to bring `disk_pct` below 90% so `make gate` can run locally, or rely on targeted tests + CI for validation.
-4. `make release-cut TAG='v0.1.2' MSG='release: v0.1.2'` once CI is green.
-5. `make verify-release-completeness TAG=v0.1.2` after the release job publishes.
+1. Wait for Build and Release run `37951565553` to finish, fetch `gate (3.11)` failure log, and fix the root cause.
+2. Push the fix and the pending version-bump commit to `development`.
+3. Verify hosted CI green on the new HEAD with `make ci-verdict-safe BRANCH=development`.
+4. Update `TASKS.md` to mark v0.1.2 prep fixes complete and remove the resolved CI failure ledger blocker.
+5. `make release-cut TAG='v0.1.2' MSG='release: v0.1.2'` once CI is green.
+6. `make verify-release-completeness TAG=v0.1.2` after the release job publishes.
 
 ### Current Gate Status
 <!-- gate:begin -->
-- HEAD `2a974994d5fbe6f05fa4cec8ea19df87659c97f5` on `development`. Working tree clean. Remote verified.
-- CI: **PENDING** for current HEAD; prior run on `ba761c7c8...` conclusion=failure.
-- Local gate: BLOCKED by `disk-cleanup-preflight` (disk >90% full).
+- HEAD `f48e95943ec53d275b40db0c10291470ef791830` on `development`. Working tree clean. Local is 1 commit ahead of remote (`2a974994d...`).
+- CI: Build and Release run `37951565553` on `2a974994d...` is **in_progress** with `gate (3.11)` concluded `failure`; `gate (3.12)` running.
+- Local gate: BLOCKED by `disk-cleanup-preflight` (disk 94% full).
 - CI failure ledger: family `1fcc5a60...` **REPAIRED**; `ci-failure-push-guard` PASS.
-- v0.1.2 release: pending green CI + release-cut + artifact verification.
+- v0.1.2 release: pending CI failure diagnosis/fix + push + green CI + release-cut + artifact verification.
 <!-- gate:end -->
 
 ---
