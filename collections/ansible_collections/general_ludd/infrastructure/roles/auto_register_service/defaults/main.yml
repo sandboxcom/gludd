@@ -1,23 +1,14 @@
 ---
-# auto_register_service role defaults
-
-# Service dict: {name, url, api_docs_url, pricing_url, description, kind}
-service: {}
-
-# Template directory for Jinja2 connector module
-connector_template_dir: "{{ role_path }}/templates"
-
-# Whether to register in the ConnectorRegistry config
-register_in_registry: true
-
-# Whether to run make healthcheck after generating the connector
-run_healthcheck: true
-
-# Directory for generated connector artifacts
-connector_output_dir: "{{ lookup('env', 'PWD') }}/src/general_ludd/connectors"
-
-# Path to the connectors __init__.py (for dynamic discovery)
-connector_init_path: "{{ connector_output_dir }}/__init__.py"
-
-# Provider registry config — extend _BUILTIN_PROVIDERS or dynamic list
-provider_registry_path: "{{ lookup('env', 'PWD') }}/src/general_ludd/infra/providers.py"
+auto_register_service_root: ""
+auto_register_service_spec_path: ""
+auto_register_service_spec_sha256: ""
+auto_register_service_base_url: ""
+auto_register_service_allowed_host: ""
+auto_register_service_operation_id: ""
+auto_register_service_parameters: {}
+auto_register_service_secret_env: {}
+auto_register_service_records_pointer: ""
+auto_register_service_timeout_seconds: 15.0
+auto_register_service_max_response_bytes: 1048576
+auto_register_service_max_records: 100
+auto_register_service_validate_only: false

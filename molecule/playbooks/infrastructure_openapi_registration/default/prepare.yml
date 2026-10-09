@@ -1,0 +1,21 @@
+---
+- name: Prepare native OpenAPI fixture
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8873', true) }}"
+    fixture_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-openapi-registration-{{ mock_port }}"
+  tasks:
+    - name: Create isolated fixture directory
+      ansible.builtin.file:
+        path: "{{ fixture_root }}"
+        state: directory
+        mode: "0700"
+
+    - name: Write deterministic OpenAPI fixture
+      ansible.builtin.copy:
+        dest: "{{ fixture_root }}/service.json"
+        mode: "0600"
+        content: >-
+          {"openapi":"3.1.0","info":{"title":"fixture","version":"1"},"paths":{"/services":{"get":{"operationId":"listServices","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"array","items":{"type":"object"}}}}}}}}}}

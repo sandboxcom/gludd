@@ -1,0 +1,40 @@
+---
+- name: Converge native OpenAPI registration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8873', true) }}"
+    fixture_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-openapi-registration-{{ mock_port }}"
+  tasks:
+    - name: Digest OpenAPI fixture
+      ansible.builtin.stat:
+        path: "{{ fixture_root }}/service.json"
+        checksum_algorithm: sha256
+      register: _openapi_stat
+
+    - name: Exercise validation-only canary role
+      ansible.builtin.include_role:
+        name: general_ludd.infrastructure.auto_register_service
+      vars:
+        auto_register_service_root: "{{ fixture_root }}"
+        auto_register_service_spec_path: service.json
+        auto_register_service_spec_sha256: "{{ _openapi_stat.stat.checksum }}"
+        auto_register_service_base_url: https://api.example.test
+        auto_register_service_allowed_host: api.example.test
+        auto_register_service_operation_id: listServices
+        auto_register_service_validate_only: true
+
+    - name: Assert no transport execution or mutation
+      ansible.builtin.assert:
+        that:
+          - auto_register_service_result.validated | bool
+          - not auto_register_service_result.executed | bool
+          - not auto_register_service_result.changed | bool
+          - auto_register_service_result.spec_sha256 == _openapi_stat.stat.checksum
+
+    - name: Persist deterministic validation receipt
+      ansible.builtin.copy:
+        content: "{{ auto_register_service_result | to_json }}\n"
+        dest: "{{ fixture_root }}/validation.json"
+        mode: "0600"

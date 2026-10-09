@@ -3,9 +3,8 @@ galaxy_info:
   role_name: auto_register_service
   author: Agentic Harness Agent
   description: >
-    Register a newly discovered cloud/AI service by generating a minimal
-    Python connector module from a Jinja2 template, registering it in the
-    provider registry, and verifying the import via healthcheck.
+    Admit one digest-pinned OpenAPI 3.1 contract and run one bounded,
+    schema-validated read-only operation on the Ansible controller.
   license: MIT
   min_ansible_version: "2.14"
   platforms:

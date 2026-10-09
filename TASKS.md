@@ -60,6 +60,7 @@ ancestry from drifting independently.
   config/ansible/execution-environment.yml
   config/ansible/requirements.txt
   config/ansible/requirements.yml
+  config/ansible/execution-environment.yml
   config/ansible/runtime-lock.json
   config/coverage_native_searxng_controller_runtime.ini
   config/make_target_contract.json
@@ -124,6 +125,39 @@ ancestry from drifting independently.
   config/resource_ownership_native_searxng_batch_consumers.json
   docs/features/NATIVE_SEARXNG_BATCH_CONSUMERS.md
   tests/unit/test_searx_batch_consumers.py
+  ```
+
+- [ ] S45 — **Replace infrastructure service-registration stubs with one fail-closed collection-native OpenAPI query action** across `collections/ansible_collections/general_ludd/infrastructure/plugins/`, `collections/ansible_collections/general_ludd/infrastructure/roles/auto_register_service/`, the controller execution environment, focused adversarial tests, scoped coverage, and `docs/features/NATIVE_OPENAPI_SERVICE_REGISTRATION.md`: admit one SHA-256-pinned root-confined OpenAPI 3.1 contract; select one unique GET/HEAD `operationId`; accept secrets only as named controller environment references; use DNS-pinned HTTPS with zero redirects; validate the request and bounded response through pinned `openapi-core` plus `jsonpointer`; cap files, schema nodes/depth, operations, parameters, time, response bytes, and records; remove generated connector/pricing files, shell grep, source mutation, ignored healthchecks, listeners, background work, and synthetic healthy/query output; and document digest-addressed canary, drain, and rollback. | evidence: failing-first acceptance reproduced the absent controller action and the later non-finite/header-ambiguity, missing-response-contract, descriptor-race, and raw-transport-error gaps; the repaired focused suite passes 31 tests and branch-aware coverage passes at 95% aggregate with every measured production file at 94-100%; the canonical Molecule syntax/prepare/converge/idempotence/verify sequence passes without network execution; scoped Ruff, strict mypy, dependency ownership, resource ownership, collection boundary, and controller runtime-boundary checks are green; long-lived upstream reference-resolution/error reports, practitioner response-drift/validation-cost discussions, and reviewed OpenAPI SSRF evidence define the trust boundary; implementation commit and exact-head full-gate evidence remain pending | priority: high | effort: S | status: in_progress
+
+  S45 owns this exact implementation and evidence inventory:
+
+  ```text
+  collections/ansible_collections/general_ludd/infrastructure/README.md
+  collections/ansible_collections/general_ludd/infrastructure/plugins/action/openapi_query.py
+  collections/ansible_collections/general_ludd/infrastructure/plugins/module_utils/openapi_registration.py
+  collections/ansible_collections/general_ludd/infrastructure/plugins/module_utils/secure_fetch.py
+  collections/ansible_collections/general_ludd/infrastructure/plugins/modules/openapi_query.py
+  collections/ansible_collections/general_ludd/infrastructure/roles/auto_register_service/README.md
+  collections/ansible_collections/general_ludd/infrastructure/roles/auto_register_service/defaults/main.yml
+  collections/ansible_collections/general_ludd/infrastructure/roles/auto_register_service/meta/main.yml
+  collections/ansible_collections/general_ludd/infrastructure/roles/auto_register_service/tasks/main.yml
+  collections/ansible_collections/general_ludd/infrastructure/roles/auto_register_service/templates/connector.py.j2
+  config/ansible/execution-environment.yml
+  config/ansible/requirements.txt
+  config/ansible/requirements.yml
+  config/ansible/runtime-lock.json
+  config/coverage_native_openapi_registration.ini
+  config/deptry_profiles.toml
+  docs/features/NATIVE_OPENAPI_SERVICE_REGISTRATION.md
+  molecule/playbooks/infrastructure_openapi_registration/default/converge.yml
+  molecule/playbooks/infrastructure_openapi_registration/default/prepare.yml
+  molecule/playbooks/infrastructure_openapi_registration/default/verify.yml
+  molecule/playbooks/infrastructure_openapi_registration/molecule.yml
+  requirements/profiles/ansible-controller/pyproject.toml
+  requirements/profiles/ansible-controller/uv.lock
+  scripts/ansible_runtime_artifacts.py
+  tests/unit/test_infrastructure_openapi_registration.py
+  typings/jsonpointer/__init__.pyi
   ```
 
 - [ ] S11.1 — **Record bounded cost-only shadow estimation feedback** across `src/general_ludd/execution/engine.py`, `src/general_ludd/review/estimation_tracker.py`, `src/general_ludd/review/reviewer.py`, `src/general_ludd/daemon_components/lifecycle.py`, `tests/unit/test_estimation_runtime_wiring.py`, `config/coverage_estimation_runtime.ini`, and `docs/features/TASK_ESTIMATION_CALIBRATION.md`: observe only admitted provider calls, reject missing/non-finite costs, cap pending and completed state at 1,000, preserve routing and calibration behavior, and provide `GLUDD_ESTIMATION_FEEDBACK=0` rolling rollback. | evidence: failing-first runtime acceptance reproduced 9 missing-injection/bounds failures; repaired focused regressions pass 143/143 with warnings fatal, coverage passes 388/388 at 91.3% aggregate lines and 85.8% branches with every scoped file at least 75%, Ruff/strict mypy/Markdown checks pass, and repository collection passes 120761/120779 with 18 deselected; exact-head full-gate evidence remains pending | priority: high | effort: XS | status: in_progress

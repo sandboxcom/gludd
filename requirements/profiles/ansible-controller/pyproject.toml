@@ -8,6 +8,8 @@ dependencies = [
     "ansible-runner>=2.4.0",
     "ansible-builder>=3.1.1,<3.2",
     "frictionless==5.19.1",
+    "jsonpointer==3.2.0",
+    "openapi-core==0.23.1",
 ]
 
 [tool.uv]
