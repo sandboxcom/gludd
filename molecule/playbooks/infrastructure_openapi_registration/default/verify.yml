@@ -1,0 +1,43 @@
+---
+- name: Verify native OpenAPI registration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8873', true) }}"
+    fixture_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-openapi-registration-{{ mock_port }}"
+  tasks:
+    - name: Read validation receipt
+      ansible.builtin.slurp:
+        src: "{{ fixture_root }}/validation.json"
+      register: _openapi_receipt
+
+    - name: Recompute fixture digest
+      ansible.builtin.stat:
+        path: "{{ fixture_root }}/service.json"
+        checksum_algorithm: sha256
+      register: _openapi_stat
+
+    - name: Validate the same spec_sha256 in check mode
+      general_ludd.infrastructure.openapi_query:
+        root: "{{ fixture_root }}"
+        spec_path: service.json
+        spec_sha256: "{{ _openapi_stat.stat.checksum }}"
+        base_url: https://api.example.test
+        allowed_host: api.example.test
+        operation_id: listServices
+      check_mode: true
+      register: _openapi_check
+
+    - name: Assert stable read-only evidence
+      ansible.builtin.assert:
+        that:
+          - (_openapi_receipt.content | b64decode | from_json).spec_sha256 == _openapi_stat.stat.checksum
+          - _openapi_check.spec_sha256 == _openapi_stat.stat.checksum
+          - _openapi_check.check_mode | bool
+          - not _openapi_check.executed | bool
+
+    - name: Remove isolated fixture root
+      ansible.builtin.file:
+        path: "{{ fixture_root }}"
+        state: absent

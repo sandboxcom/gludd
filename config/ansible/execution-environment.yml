@@ -24,6 +24,8 @@ additional_build_files:
     dest: collections
   - src: ../../dist/collections/general_ludd-azure-0.2.0.tar.gz
     dest: collections
+  - src: ../../dist/collections/general_ludd-infrastructure-0.2.0.tar.gz
+    dest: collections
   - src: ../../dist/collections/general_ludd-language-0.1.0.tar.gz
     dest: collections
   - src: ../../dist/collections/general_ludd-networking-0.2.0.tar.gz

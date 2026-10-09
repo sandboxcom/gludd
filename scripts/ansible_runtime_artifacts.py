@@ -51,6 +51,7 @@ _COLLECTION_VERSIONS = (
     ("agent", "0.2.0"),
     ("ai_ml", "0.2.0"),
     ("azure", "0.2.0"),
+    ("infrastructure", "0.2.0"),
     ("language", "0.1.0"),
     ("networking", "0.2.0"),
     ("travel", "0.1.0"),
@@ -68,10 +69,14 @@ SEARXNG_REQUIREMENT = (
     f"{SEARXNG_SOURCE_REVISION}"
 )
 FRICTIONLESS_REQUIREMENT = "frictionless==5.19.1"
+JSONPOINTER_REQUIREMENT = "jsonpointer==3.2.0"
+OPENAPI_CORE_REQUIREMENT = "openapi-core==0.23.1"
 EXPECTED_CONTROLLER_IMPORTS = (
     "ansible",
     "ansible_runner",
     "frictionless",
+    "jsonpointer",
+    "openapi_core",
     "searx.webapp",
 )
 EXPECTED_DEPENDENCIES: dict[str, object] = {
@@ -271,7 +276,7 @@ def validate_files() -> list[str]:
     )
     controller = controller_project["project"]["dependencies"]
     controller_names = _dependency_names(controller)
-    for required in ("ansible-core", "ansible-runner"):
+    for required in ("ansible-core", "ansible-runner", "jsonpointer", "openapi-core"):
         if required not in controller_names:
             errors.append(f"missing optional controller dependency: {required}")
     python_requirements = INPUTS["python"].read_text(encoding="utf-8").splitlines()
@@ -280,9 +285,15 @@ def validate_files() -> list[str]:
         for line in python_requirements
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    if pinned_requirements != [FRICTIONLESS_REQUIREMENT, SEARXNG_REQUIREMENT]:
+    if pinned_requirements != [
+        FRICTIONLESS_REQUIREMENT,
+        JSONPOINTER_REQUIREMENT,
+        OPENAPI_CORE_REQUIREMENT,
+        SEARXNG_REQUIREMENT,
+    ]:
         errors.append(
-            "controller Python requirements must contain only pinned Frictionless and official SearXNG"
+            "controller Python requirements must contain only pinned Frictionless, "
+            "jsonpointer, openapi-core, and official SearXNG"
         )
 
     definition: dict[str, Any] = yaml.safe_load(DEFINITION.read_text(encoding="utf-8"))
