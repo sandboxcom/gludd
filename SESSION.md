@@ -71,12 +71,12 @@
 
 ### Current Gate Status
 <!-- gate:begin -->
-- HEAD `bfdfe404a3401609b7a3179ddc4ea506582bf5c4` on `development`. Working tree clean. Remote verified at `bfdfe404a...`.
-- CI: Build and Release run `37967736744` on `bfdfe404a...` **queued/pending**; prior run `37963738804` on `958dae9ea...` was **force-pushed past** after it had already accumulated 9 failed jobs (the second PyInstaller digest mismatch plus other failures); prior Molecule Tests run `37963738773` on `958dae9ea...` **failure** (second PyInstaller digest mismatch, now fixed); prior run `37958150325` on `7162fcf0a...` **cancelled**.
+- HEAD `33176a6f8408c25a9682a578df114f60ffe2440e` on `development` (doc-update commit `33176a6f8` is committed locally but not yet pushed; last pushed SHA is `bfdfe404a3401609b7a3179ddc4ea506582bf5c4`). Working tree clean.
+- CI: Build and Release run `37967736593` on `bfdfe404a...` **queued/pending**; prior run `37963738804` on `958dae9ea...` was **force-pushed past** after it had already accumulated 9 failed jobs (the second PyInstaller digest mismatch plus other failures); prior Molecule Tests run `37963738773` on `958dae9ea...` **failure** (second PyInstaller digest mismatch, now fixed); prior run `37958150325` on `7162fcf0a...` **cancelled**.
 - Local gate: BLOCKED by `disk-cleanup-preflight` (disk 94% full).
-- Local dual-track: background process not running; attestation file present from prior SHA (`958dae9ea...`) and must be replaced once a new run starts.
+- Local dual-track: RUNNING in background (PID 88876, log `.gate-logs/ci-dual-track-local-20261009134137.log`) on `33176a6f8...`; prior attestation from `958dae9ea...` superseded.
 - CI failure ledger: family `1fcc5a60...` **REPAIRED**; `ci-failure-push-guard` PASS.
-- v0.1.2 release: pushed fix commits `ea80569d7` and `bfdfe404a`; pending green CI on `bfdfe404a...` + release-cut + artifact verification.
+- v0.1.2 release: pushed fix commits `ea80569d7` and `bfdfe404a`; doc update `33176a6f8` committed locally pending push; pending green CI on `bfdfe404a...` + release-cut + artifact verification.
 <!-- gate:end -->
 
 ---
