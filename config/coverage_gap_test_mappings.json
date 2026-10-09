@@ -102,6 +102,12 @@
         "tests/unit/test_event_loop_module_split.py"
       ]
     },
+    "general_ludd.event_loop.decision_validation": {
+      "via": "general_ludd.event_loop.decision_reconciliation",
+      "tests": [
+        "tests/unit/test_validation_request_orchestration.py"
+      ]
+    },
     "general_ludd.event_loop.execution_dispatch": {
       "via": "general_ludd.event_loop.loop",
       "tests": [
@@ -130,6 +136,42 @@
       "via": "general_ludd.models.freellmapi_sync_verifier",
       "tests": [
         "tests/unit/test_freellmapi_sync_verifier.py"
+      ]
+    },
+    "general_ludd.pipeline.merge_io": {
+      "via": "general_ludd.pipeline.daemon_adapters",
+      "tests": [
+        "tests/unit/test_pipeline_daemon_adapters.py"
+      ]
+    },
+    "general_ludd.pipeline.merge_runtime": {
+      "via": "general_ludd.pipeline.daemon_adapters",
+      "tests": [
+        "tests/unit/test_pipeline_daemon_adapters.py"
+      ]
+    },
+    "general_ludd.process.registry_identity": {
+      "via": "general_ludd.process.registry",
+      "tests": [
+        "tests/unit/test_process_registry.py"
+      ]
+    },
+    "general_ludd.process.signal_policy": {
+      "via": "general_ludd.process.registry",
+      "tests": [
+        "tests/unit/test_process_registry.py"
+      ]
+    },
+    "general_ludd.reload.worker_liveness": {
+      "via": "general_ludd.reload.worker_broadcast",
+      "tests": [
+        "tests/unit/test_worker_liveness_lease.py"
+      ]
+    },
+    "general_ludd.review.estimation_reporting": {
+      "via": "general_ludd.review.estimation_tracker",
+      "tests": [
+        "tests/unit/test_estimation_tracker.py"
       ]
     }
   }

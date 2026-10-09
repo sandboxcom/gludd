@@ -420,7 +420,6 @@ src/general_ludd/issue_sources/base.py:IssueSyncEngine
 src/general_ludd/issue_sources/base.py:NormalizedIssue
 src/general_ludd/issue_sources/bitbucket_issues.py:BitbucketIssueSource
 src/general_ludd/issue_sources/clickup.py:ClickUpIssueSource
-src/general_ludd/issue_sources/config.py:admit_issue_sources
 src/general_ludd/issue_sources/csv_excel.py:CsvExcelSource
 src/general_ludd/issue_sources/github_issues.py:GitHubIssuesSource
 src/general_ludd/issue_sources/gitlab_issues.py:GitLabIssueSource
