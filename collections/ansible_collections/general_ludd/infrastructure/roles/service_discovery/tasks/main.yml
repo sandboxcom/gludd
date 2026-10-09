@@ -2,8 +2,8 @@
 # service_discovery — discover services via SearXNG search queries.
 #
 # Flow:
-#   1. Validate required vars (searx_url, search_terms)
-#   2. For each search term, query the SearXNG JSON API
+#   1. Validate native/explicit-remote transport and search terms
+#   2. For each search term, query through the controller batch action
 #   3. Parse results into DiscoveredService records
 #   4. Normalize: deduplicate by URL, fill in missing fields
 #   5. Save to results_path YAML file
@@ -12,19 +12,24 @@
 - name: "Validate required vars"
   ansible.builtin.assert:
     that:
-      - searx_url is defined
-      - searx_url | trim | length > 0
+      - searx_transport in ['native', 'remote']
+      - searx_transport != 'remote' or searx_url is defined
+      - searx_transport != 'remote' or searx_url | trim | length > 0
       - search_terms is defined
       - search_terms | length > 0
     fail_msg: >-
-      service_discovery requires non-empty 'searx_url' and 'search_terms'.
-      Got searx_url={{ searx_url | default('<undefined>') }},
+      service_discovery requires native or remote transport, non-empty search
+      terms, and a URL only for explicit remote transport. Got transport={{
+      searx_transport | default('<undefined>') }},
+      searx_url={{ searx_url | default('<undefined>') }},
       search_terms={{ search_terms | default('<undefined>') }}.
 
 - name: "Report discovery scope"
   ansible.builtin.debug:
     msg: >-
-      service_discovery: querying SearXNG at {{ searx_url }}
+      service_discovery: querying SearXNG through {{
+      ('controller namespace ' ~ searx_namespace)
+      if searx_transport == 'native' else searx_url }}
       with {{ search_terms | length }} search terms
       (timeout={{ discovery_timeout }}s).
 

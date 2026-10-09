@@ -35,136 +35,16 @@
     entity_monitoring: "{{ entity_monitoring | combine({'registered': true}) }}"
 
 # ── Initial SearX news scan ──
-- name: SearX news search for monitoring
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }}"
-    categories: "news"
-    page: 1
-  register: searx_monitor_scan
-  when:
-    - entity_research_use_searx | bool
-    - entity_research_searx_monitor | bool
-  ignore_errors: true
+- name: Search SearX for initial monitoring news on the controller
+  ansible.builtin.include_tasks: searx_batch.yml
+  vars: {entity_research_searx_batch_requests: [{id: searx_monitor_scan, query: "{{ entity_name }}", categories: [news]}]}
+  when: entity_research_use_searx | bool and entity_research_searx_monitor | bool
 
 # ── Topic-specific alert scans ──
-- name: SearX alert scan for acquisitions
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} acquisition merger"
-    categories: "news"
-    page: 1
-  register: searx_acquisition_scan
+- name: Search SearX for monitoring alerts on the controller
+  ansible.builtin.include_tasks: searx_batch.yml
+  vars: {entity_research_searx_batch_requests: [{id: searx_acquisition_scan, query: "{{ entity_name }} acquisition merger", categories: [news]}, {id: searx_breach_scan, query: "{{ entity_name }} data breach hack cyberattack", categories: [news]}, {id: searx_funding_scan, query: "{{ entity_name }} funding round investment", categories: [news]}, {id: searx_layoff_scan, query: "{{ entity_name }} layoffs restructuring", categories: [news]}, {id: searx_leadership_scan, query: "{{ entity_name }} CEO CFO leadership change", categories: [news]}, {id: searx_lawsuit_scan, query: "{{ entity_name }} lawsuit litigation regulatory", categories: [news]}, {id: searx_bankruptcy_scan, query: "{{ entity_name }} bankruptcy chapter 11 insolvency", categories: [news]}]}
   when: entity_research_use_searx | bool
-  ignore_errors: true
-
-- name: SearX alert scan for breaches
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} data breach hack cyberattack"
-    categories: "news"
-    page: 1
-  register: searx_breach_scan
-  when: entity_research_use_searx | bool
-  ignore_errors: true
-
-- name: SearX alert scan for funding
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} funding round investment"
-    categories: "news"
-    page: 1
-  register: searx_funding_scan
-  when: entity_research_use_searx | bool
-  ignore_errors: true
-
-- name: SearX alert scan for layoffs
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} layoffs restructuring"
-    categories: "news"
-    page: 1
-  register: searx_layoff_scan
-  when: entity_research_use_searx | bool
-  ignore_errors: true
-
-- name: SearX alert scan for leadership changes
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} CEO CFO leadership change"
-    categories: "news"
-    page: 1
-  register: searx_leadership_scan
-  when: entity_research_use_searx | bool
-  ignore_errors: true
-
-- name: SearX alert scan for lawsuits
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} lawsuit litigation regulatory"
-    categories: "news"
-    page: 1
-  register: searx_lawsuit_scan
-  when: entity_research_use_searx | bool
-  ignore_errors: true
-
-- name: SearX alert scan for bankruptcy
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} bankruptcy chapter 11 insolvency"
-    categories: "news"
-    page: 1
-  register: searx_bankruptcy_scan
-  when: entity_research_use_searx | bool
-  ignore_errors: true
 
 # ── Compile alerts ──
 - name: Compile monitoring alerts

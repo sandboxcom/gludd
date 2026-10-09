@@ -15,8 +15,8 @@ Supports five capability areas:
 2. **Audit Execution** — run audit commands against targets (AWS, Azure, GCP,
    on-prem, containers, code repositories), collect evidence, and parse results
    into structured findings
-3. **SearX Integration** — query SearX metasearch to check for framework updates,
-   new advisories, and regulatory changes without direct internet access
+3. **SearX Integration** — query controller-native SearXNG to check for framework
+   updates, new advisories, and regulatory changes without target-host access
 4. **Compliance Mapping** — gap analysis between framework requirements and
    audit results; cross-framework control mapping for multi-standard environments
 5. **Tool Recommendations** — suggest the appropriate audit tool per target
@@ -39,7 +39,10 @@ planning. All sensitive operations are `no_log` enforced.
 | `audit_framework__filter_severity` | `""` | Filter findings by severity |
 | `audit_framework__enable_model_call` | `false` | Enable AI-assisted gap analysis |
 | `audit_framework__model_profile` | `""` | Model profile for AI calls |
-| `audit_framework__searx_url` | `http://localhost:8888` | SearX instance URL for framework updates |
+| `audit_framework__searx_url` | `http://localhost:8888` | Compatibility endpoint, used only with explicit remote transport |
+| `audit_framework__searx_transport` | `native` | Native primary path or explicit `remote` rollback |
+| `audit_framework__searx_namespace` | `gludd-audit-framework` | Native runtime namespace |
+| `audit_framework__searx_settings_path` | `""` | Optional controller-local settings file |
 | `audit_framework__search_query` | `""` | Custom SearX search query |
 | `audit_framework__auto_update` | `false` | Auto-update framework data from SearX |
 | `audit_framework__target` | `""` | Audit target (hostname, account ID, repo path) |
@@ -56,7 +59,7 @@ planning. All sensitive operations are `no_log` enforced.
 | Mode | Description | Required vars |
 |---|---|---|
 | `lookup` | Look up framework requirements and control details | `framework` |
-| `searx_update` | Query SearX for framework updates and advisories | `searx_url`, `search_query` |
+| `searx_update` | Query SearXNG for framework updates and advisories | `framework`; optional `search_query` |
 | `audit_execute` | Run audit check commands against a target | `target`, `target_type`, `check_commands` or `spec_path` |
 | `audit_parse` | Parse raw audit output into structured findings | `audit_results` |
 | `remediate` | Generate remediation guidance from audit findings | `framework`, `audit_results`, `enable_model_call` (recommended) |
@@ -140,5 +143,5 @@ planning. All sensitive operations are `no_log` enforced.
 - `audit_framework__psk` is `no_log: true` on every task accessing the daemon
 - Audit evidence written to `audit_framework__artifact_dir` with restricted
   permissions; sensitive finding fields are redacted in log output
-- SearX queries are proxied through the configured instance — no direct
-  internet access from target hosts
+- SearX queries run through the pinned controller-native application by
+  default — no listener, subprocess, or target-host HTTP request is used

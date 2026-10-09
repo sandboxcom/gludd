@@ -49,73 +49,11 @@
     - crtsh_result is success
   ignore_errors: true
 
-# ── IP/ASN discovery via SearX ──
-- name: SearX search for IP ranges and ASNs
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} ASN peeringdb IP ranges data center"
-    categories: "general"
-    page: 1
-  register: searx_network_result
+# ── Native controller SearX batch ──
+- name: Search SearX for asset signals on the controller
+  ansible.builtin.include_tasks: searx_batch.yml
+  vars: {entity_research_searx_batch_requests: [{id: searx_network_result, query: "{{ entity_name }} ASN peeringdb IP ranges data center", categories: [general]}, {id: searx_patent_result, query: "{{ entity_name }} patents USPTO intellectual property", categories: [general]}, {id: searx_tech_result, query: "{{ entity_name }} technology stack software engineering blog", categories: [general]}, {id: searx_funding_result, query: "{{ entity_name }} funding round investment", categories: [general]}]}
   when: entity_research_use_searx | bool
-  ignore_errors: true
-
-# ── Patent search via SearX ──
-- name: SearX search for patents
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} patents USPTO intellectual property"
-    categories: "general"
-    page: 1
-  register: searx_patent_result
-  when: entity_research_use_searx | bool
-  ignore_errors: true
-
-# ── Technology stack via SearX ──
-- name: SearX search for technology stack
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} technology stack software engineering blog"
-    categories: "general"
-    page: 1
-  register: searx_tech_result
-  when: entity_research_use_searx | bool
-  ignore_errors: true
-
-# ── Funding search ──
-- name: SearX search for funding rounds
-  ansible.builtin.uri:
-    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
-    method: GET
-    body_format: json
-    headers:
-      Accept: "application/json"
-    timeout: 30
-  vars:
-    query: "{{ entity_name }} funding round investment"
-    categories: "general"
-    page: 1
-  register: searx_funding_result
-  when: entity_research_use_searx | bool
-  ignore_errors: true
 
 # ── SEC filings (if US entity) ──
 - name: SEC EDGAR filings lookup

@@ -8,12 +8,11 @@ from typing import Any, Protocol, cast
 from ansible_collections.general_ludd.travel.plugins.module_utils.searxng_runtime import (
     NativeSearxRuntime,
     RemoteSearxAdapter,
-    validate_namespace,
     validate_query,
     validate_search_inputs,
 )
 
-from ._searxng import ControllerSearxAction
+from ._searxng import ControllerSearxAction, validate_controller_transport
 from .searxng_instance import _RUNTIMES
 
 _TRAVEL_ENGINES: dict[str, tuple[str, ...]] = {
@@ -65,31 +64,18 @@ def execute_action(
 ) -> dict[str, Any]:
     """Execute one read-only search through the selected controller transport."""
     query = args.get("query")
-    transport = args.get("transport", "native")
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must be a non-empty string")
-    if transport not in {"native", "remote"}:
-        raise ValueError("transport must be native or remote")
-    remote_url = args.get("remote_url")
-    legacy_url = args.get("searxng_url")
-    if transport == "native" and remote_url not in (None, ""):
-        raise ValueError("remote_url is only valid with transport=remote")
-    if legacy_url not in (None, ""):
-        raise ValueError("searxng_url is retired; use transport=remote with remote_url")
-    if transport == "remote" and (not isinstance(remote_url, str) or not remote_url.strip()):
-        raise ValueError("remote_url is required with transport=remote")
-
-    timeout = args.get("timeout", 10)
-    if (
-        isinstance(timeout, bool)
-        or not isinstance(timeout, (int, float))
-        or not 0 < timeout <= 120
-    ):
-        raise ValueError("timeout must be between 0 and 120 seconds")
-    namespace = args.get("namespace", "gludd-travel")
-    if not isinstance(namespace, str) or not namespace:
-        raise ValueError("namespace must be a non-empty string")
-    namespace = validate_namespace(namespace)
+    transport, namespace, remote_url, timeout = validate_controller_transport(
+        args,
+        default_namespace="gludd-travel",
+        default_timeout=10,
+        forbidden_args={
+            "searxng_url": (
+                "searxng_url is retired; use transport=remote with remote_url"
+            )
+        },
+    )
 
     category = args.get("category", "general")
     if not isinstance(category, str) or not category:

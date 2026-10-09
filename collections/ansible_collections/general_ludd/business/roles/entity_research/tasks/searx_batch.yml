@@ -1,0 +1,24 @@
+---
+# Shared controller-native SearXNG boundary for entity research task slices.
+
+- name: Execute bounded entity research SearXNG batch
+  general_ludd.travel.searxng_batch:
+    namespace: "{{ entity_research_searx_namespace | default('gludd-entity-research') }}"
+    settings_path: "{{ entity_research_searx_settings_path | default(omit) }}"
+    transport: "{{ entity_research_searx_transport | default('native') }}"
+    remote_url: >-
+      {{ entity_data_sources.searx.base_url
+         if entity_research_searx_transport | default('native') == 'remote'
+         else omit }}
+    timeout: 30
+    requests: "{{ entity_research_searx_batch_requests }}"
+  register: _entity_research_searx_batch
+
+- name: Preserve entity research search result schemas
+  ansible.builtin.set_fact:
+    "{{ entity_research_batch_request.id }}": >-
+      {{ _entity_research_searx_batch.responses[entity_research_batch_request.id] }}
+  loop: "{{ entity_research_searx_batch_requests }}"
+  loop_control:
+    loop_var: entity_research_batch_request
+    label: "{{ entity_research_batch_request.id }}"

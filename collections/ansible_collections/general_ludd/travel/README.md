@@ -9,6 +9,7 @@ planning, and SearXNG metasearch integration.
 |---|---|
 | `flight_search` | Search flights between origin/destination with date, cabin, stops, and price filters. |
 | `hotel_search` | Search hotels at a destination with dates, budget, stars, and amenities filters. |
+| `searxng_batch` | Run up to 32 bounded searches through one controller-native runtime. |
 | `searxng_instance` | Manage a controller-local native SearXNG runtime idempotently. |
 | `searxng_search` | Search natively on the controller, or use an explicit remote compatibility transport. |
 | `trip_planner` | Generate a multi-day trip itinerary with daily activities and cost estimates. |
@@ -67,8 +68,20 @@ start Docker, or require a Terraform project.
         category: activities
         namespace: travel-demo
       register: attractions
+
+    - name: Research related travel questions through one runtime
+      general_ludd.travel.searxng_batch:
+        namespace: travel-demo
+        requests:
+          - id: transit
+            query: accessible public transit near Central Park
+          - id: dining
+            query: accessible restaurants near Central Park
+      register: travel_research
 ```
 
 See [Native SearXNG Controller Runtime](../../../../docs/features/NATIVE_SEARXNG_CONTROLLER_RUNTIME.md)
 for lifecycle, check-mode, security, remote compatibility, upstream evidence,
-and zero-downtime image rollout details.
+and zero-downtime image rollout details. The
+[batch consumer contract](../../../../docs/features/NATIVE_SEARXNG_BATCH_CONSUMERS.md)
+records role migration, result compatibility, and batch-specific bounds.

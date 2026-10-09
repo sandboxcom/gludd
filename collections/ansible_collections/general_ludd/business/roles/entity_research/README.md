@@ -79,7 +79,9 @@ Each category is enabled by variables and tagged for selective execution:
 
 ## Data sources
 
-The role queries 15+ data sources via API and SearX meta-search:
+The role queries 15+ data sources via API and controller-native SearXNG
+meta-search. Its 29 SearX requests use bounded batches and keep their legacy
+`status`/`json` result variables for downstream tasks:
 
 | Source | Category | Purpose |
 |---|---|---|
@@ -153,5 +155,8 @@ graph.to_dot("entity_graph.dot")
 | `entity_research_association_max_depth` | `3` | BFS depth for relationship graph |
 | `entity_research_api_delay_seconds` | `1` | Rate limit delay between API calls |
 | `entity_research_api_max_retries` | `3` | Max retries per API call |
+| `entity_research_searx_transport` | `native` | Controller-native primary path; `remote` must be explicit |
+| `entity_research_searx_namespace` | `gludd-entity-research` | Bounded native runtime namespace |
+| `entity_research_searx_settings_path` | `""` | Optional controller-local settings file |
 | `entity_research_searx_alert_topics` | 7 topics | Monitored risk signal topics |
 | `entity_research_output_dir` | `/tmp/gludd-entity-research` | Final report output directory |

@@ -1,5 +1,8 @@
 ---
 searx_url: "http://localhost:8888"
+searx_transport: "native"
+searx_namespace: "gludd-service-discovery"
+searx_settings_path: ""
 search_terms:
   - "AI inference API provider"
   - "GPU cloud provider"

@@ -20,6 +20,20 @@
       register: flight_result
       check_mode: true
 
+    - name: Test bounded SearXNG batch module (check mode)
+      general_ludd.travel.searxng_batch:
+        namespace: "gludd-molecule-searxng"
+        requests:
+          - id: company_news
+            query: "Example Corp acquisition news"
+            categories: [news]
+          - id: company_risk
+            query: "Example Corp security incident"
+            categories: [general, news]
+            max_results: 25
+      register: batch_result
+      check_mode: true
+
     - name: Assert controller-native check-mode contract
       ansible.builtin.assert:
         that:
@@ -28,3 +42,11 @@
           - not flight_result.changed
           - flight_result.transport == 'native'
           - flight_result.results == []
+          - batch_result is succeeded
+          - not batch_result.changed
+          - batch_result.transport == 'native'
+          - batch_result.query_count == 2
+          - batch_result.result_count == 0
+          - batch_result.responses.company_news.status == 0
+          - batch_result.responses.company_news.json.results == []
+          - batch_result.responses.company_risk.json.number_of_results == 0

@@ -11,6 +11,19 @@
       check_mode: true
       register: native_check
 
+    - name: Re-run native batch in check mode
+      general_ludd.travel.searxng_batch:
+        namespace: gludd-molecule-searxng
+        requests:
+          - id: rail
+            query: "rail BOS to PHL"
+            categories: [general]
+          - id: lodging
+            query: "accessible lodging in PHL"
+            engines: [duckduckgo]
+      check_mode: true
+      register: batch_check
+
     - name: Assert native transport owns no external work in check mode
       ansible.builtin.assert:
         that:
@@ -19,3 +32,10 @@
           - native_check.transport == 'native'
           - native_check.result_count == 0
           - native_check.results == []
+          - batch_check is succeeded
+          - not batch_check.changed
+          - batch_check.transport == 'native'
+          - batch_check.query_count == 2
+          - batch_check.result_count == 0
+          - batch_check.responses.rail.json.number_of_results == 0
+          - batch_check.responses.lodging.skipped

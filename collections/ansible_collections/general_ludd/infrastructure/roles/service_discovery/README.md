@@ -1,7 +1,8 @@
 # service_discovery
 
-Query a SearXNG instance with multiple search terms to discover API services.
-Parses results into `DiscoveredService` records and saves the catalog to YAML.
+Query controller-native SearXNG with multiple search terms to discover API
+services. Parses results into `DiscoveredService` records and saves the catalog
+to YAML without a listener or subprocess.
 
 ## FQCN
 
@@ -22,7 +23,8 @@ With custom vars:
   roles:
     - role: general_ludd.infrastructure.service_discovery
       vars:
-        searx_url: "http://searx.example.com:8080"
+        searx_transport: remote
+        searx_url: "https://searx.example.com"
         search_terms:
           - "AI inference API"
           - "vector database API"
@@ -34,7 +36,10 @@ With custom vars:
 
 | Variable            | Default                      | Description |
 |---------------------|------------------------------|-------------|
-| `searx_url`         | `http://localhost:8888`      | SearXNG instance base URL |
+| `searx_transport`   | `native`                     | Native primary path or explicit `remote` rollback |
+| `searx_url`         | `http://localhost:8888`      | Compatibility URL, used only for remote transport |
+| `searx_namespace`   | `gludd-service-discovery`    | Native runtime namespace |
+| `searx_settings_path` | `""`                       | Optional controller-local settings file |
 | `search_terms`      | 7 built-in terms (see below) | List of search queries |
 | `discovery_timeout` | `30`                         | HTTP timeout per query (seconds) |
 | `results_path`      | `.gludd/discovered_services.yml` | Output YAML path |
@@ -56,7 +61,7 @@ With custom vars:
 ## Edge cases
 
 - Zero results from all terms: WARN, no failure
-- Partial failures (some terms error, some succeed): errors recorded, playbook continues
+- A failed or malformed search fails closed; no partial batch is published
 - Duplicate URLs across terms: deduplicated, first occurrence kept
 - Missing `url` in result: entry skipped
-- SearXNG unreachable: error recorded per term
+- Explicit remote endpoint unreachable: the task fails closed

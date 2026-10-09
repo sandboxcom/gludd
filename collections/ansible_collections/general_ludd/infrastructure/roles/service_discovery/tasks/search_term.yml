@@ -5,22 +5,22 @@
 # Accumulates into: _sd_services, _sd_errors (set_fact lists on caller)
 
 - name: "Query SearXNG for term"
-  ansible.builtin.uri:
-    url: "{{ searx_url }}/search"
-    method: GET
-    body_format: form-urlencoded
-    body:
-      q: "{{ _sd_term }}"
-      format: json
-      categories: "science,it,general"
-      language: en
+  general_ludd.travel.searxng_batch:
+    namespace: "{{ searx_namespace | default('gludd-service-discovery') }}"
+    settings_path: "{{ searx_settings_path | default(omit) }}"
+    transport: "{{ searx_transport | default('native') }}"
+    remote_url: "{{ searx_url if searx_transport | default('native') == 'remote' else omit }}"
     timeout: "{{ discovery_timeout }}"
-    headers:
-      Accept: "application/json"
-    status_code: [200]
-    return_content: true
-  register: _sd_response
-  ignore_errors: true
+    requests:
+      - id: search_response
+        query: "{{ _sd_term }}"
+        categories: [science, it, general]
+        language: en
+  register: _sd_search_batch
+
+- name: "Preserve service discovery result schema"
+  ansible.builtin.set_fact:
+    _sd_response: "{{ _sd_search_batch.responses.search_response }}"
 
 - name: "Record error on failed query"
   ansible.builtin.set_fact:

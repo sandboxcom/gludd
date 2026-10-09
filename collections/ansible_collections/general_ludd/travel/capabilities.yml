@@ -35,6 +35,7 @@ model_capabilities:
     description: Web search via SearXNG metasearch engine
     roles:
       - searxng_search
+      - searxng_batch
     model_needs:
       - search
       - web_access
