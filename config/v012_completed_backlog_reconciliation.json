@@ -649,6 +649,21 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "bef8df7edd297ec5cd51e18c118e4bf2056bdf95"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "12add7a2d8530981d2b197e460feba9aef0c19e7"
+        }
+      ],
+      "item_id": "S46",
+      "release_page_category": "Features",
+      "title": "Native fail-closed SAML assertion admission"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },

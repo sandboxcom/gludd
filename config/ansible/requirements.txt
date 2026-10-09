@@ -4,4 +4,5 @@
 frictionless==5.19.1
 jsonpointer==3.2.0
 openapi-core==0.23.1
+signxml==5.1.0
 searxng @ git+https://github.com/searxng/searxng.git@7b4612e86250389dc9d5ee67e4cc2cd64d06602a

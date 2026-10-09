@@ -480,9 +480,11 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S43",
         "S44",
         "S45",
+        "S46",
         "GATE",
     )
     assert len(ledger.completed_items) == 6
+    assert all(item.task_id != "S46" for item in ledger.completed_items)
     s30 = next(item for item in ledger.implemented_items if item.item_id == "S30")
     assert s30.title == "Transactionally durable, session-safe model-performance telemetry"
     assert s30.category == "Improvements"
@@ -628,6 +630,14 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
                 ("development_merge", "523e2c0632427b68cbb0a6855d5dc04415c31ce3"),
             ),
         ),
+        "S46": (
+            "Native fail-closed SAML assertion admission",
+            "Features",
+            (
+                ("implementation", "bef8df7edd297ec5cd51e18c118e4bf2056bdf95"),
+                ("task_evidence", "12add7a2d8530981d2b197e460feba9aef0c19e7"),
+            ),
+        ),
     }
     for item_id, (title, category, evidence) in candidate_contracts.items():
         item = next(
@@ -643,7 +653,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 37."
+        "Implemented candidate items pending exact-head/release proof: 38."
         in expected
     )
     release_source = (
@@ -656,7 +666,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "schema-free, application-image-only rolling change",
         "354 warning-fatal tests",
         "94% aggregate coverage",
-        "S38-S45",
+        "S38-S46",
         "Native SearXNG controller runtime",
         "Native git-release artifact verification",
         "Native Frictionless dataset admission",
@@ -671,6 +681,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "31 tests",
         "95% aggregate coverage",
         "runtime response validation",
+        "Native fail-closed SAML assertion admission",
         "16 MiB",
         "100,000 testcases",
         "64 failures or errors",
@@ -683,13 +694,17 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "32 characters",
         "94% aggregate coverage",
         "121,469-test zero-error collection",
+        "62 warning-fatal tests",
+        "SignXML verified subtree",
+        "signature-validation issue #282",
+        "duplicate-attribute issue #39",
         "digest-addressed canary",
         "Ansible Release 1.2.3",
         "Frictionless discussion #675",
         "ansible/ansible#50579",
         "95% aggregate coverage",
         "Exact-SHA resumable, fail-fast local gate admission",
-        "exact 37-item candidate inventory",
+        "exact 38-item candidate inventory",
     ):
         assert required in release_source
     task_ledger = (ROOT / "TASKS.md").read_text(encoding="utf-8")
@@ -704,6 +719,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         ("S43", "3d86e4854"),
         ("S44", "085a76bca"),
         ("S45", "a2cde4421"),
+        ("S46", "bef8df7ed"),
     ):
         assert f"- [ ] {task_id}" in task_ledger
         assert evidence_sha in task_ledger
