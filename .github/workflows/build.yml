@@ -221,10 +221,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # pinned Node 26 runtime for plugin checks
         with:
           node-version: "26"
-      - name: Install pinned esbuild
+      - name: Install pinned Node CI tools
         run: |
-          echo "=== CI PHASE: esbuild ==="
-          npm install --no-save --no-package-lock esbuild@0.28.1
+          echo "=== CI PHASE: node-ci-tools ==="
+          npm install --no-save --no-package-lock esbuild@0.28.1 stylelint@17.16.0
         env:
           GLUDD_AUTH_PSK: ""
       - name: Install deps
@@ -436,7 +436,7 @@ jobs:
         if: steps.css_changes.outputs.css == 'true'
         run: |
           echo "=== CI PHASE: css-lint ==="
-          npx stylelint "**/*.css" "**/*.scss" "**/*.less" --allow-empty-input --config '{"rules":{"block-no-empty":true,"color-no-invalid-hex":true,"declaration-block-no-duplicate-properties":true}}' || {
+          npx --no-install stylelint "**/*.css" "**/*.scss" "**/*.less" --allow-empty-input --config stylelint.config.mjs || {
             echo "::error::CSS LINT FAILED — stylelint found violations. Fix the CSS above."
             exit 1
           }
