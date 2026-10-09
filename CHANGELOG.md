@@ -2,13 +2,18 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## Next release (v0.1.2) — Unreleased
+## Next release — Unreleased
 
-This section is the canonical assignment for completed post-v0.1.1 backlog
-work. An item appears here only after its `TASKS.md` checkbox is formally
-closed with test, coverage, documentation, and exact commit evidence.
+This section collects completed backlog work awaiting the next version bump.
+An item appears here only after its `TASKS.md` checkbox is formally closed with
+test, coverage, documentation, and exact commit evidence.
 
-### Completed backlog items
+## [0.1.2] — 2026-10-09
+
+This release is the canonical assignment for completed post-v0.1.1 backlog
+work.
+
+### Added
 
 - **S83.114 — Fail-closed chemistry entity resolution.** The typed
   unknown-structure sentinel is now the only permitted empty structure state;
@@ -35,6 +40,19 @@ closed with test, coverage, documentation, and exact commit evidence.
   families to bounded fast-admission owners while preserving the full gate as
   mandatory release proof. Implementation: `0a1ca6f7f`; promotion continuation:
   `dd144d5f1`.
+
+### Fixed
+
+- Hosted Molecule failures on `development`: `prompt_eval` template path now uses
+  `MOLECULE_PROJECT_DIRECTORY` (`b0c021244`); `materials_expert` runs
+  `material_select` in check_mode via the `apply` directive and writes result
+  files regardless of check_mode (`9cb388939`); missing `prepare.yml` files
+  added for `azure_log_analytics_admission` and `xml_saml_admission`
+  (`dd9ae4a4c`).
+- PyInstaller warning allowlist updated for the new x86_64 frozen-binary digest
+  and `ansible_collections` is excluded from the frozen core (`ea59a6a05`).
+- CI failure ledger family `1fcc5a60...` (`Molecule Tests/molecule (1)`) repaired
+  with evidence from `tests/unit/test_molecule_playbooks_deep.py`.
 
 ### Release status
 

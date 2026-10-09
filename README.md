@@ -61,12 +61,19 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.1 — 2026-09-25**
+**Status as of v0.1.2 — 2026-10-09**
 
-Version: `v0.1.1` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
+Version: `v0.1.2` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
 when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is gated on
 `startsWith(github.ref, 'refs/tags/v')`).
+
+### v0.1.2
+
+v0.1.2 release preparation: merges completed worktrees into `development`, repairs
+hosted Molecule failures (`prompt_eval` template path, `materials_expert` check_mode,
+PyInstaller warning allowlist digest, `ansible_collections` frozen-core exclusion),
+refreshes the CI failure ledger and `.secrets.baseline`, and pushes a green branch.
 
 ### v0.1.1
 
