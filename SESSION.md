@@ -1,14 +1,14 @@
-## PRIMARY OBJECTIVE: v0.1.2 RELEASE PREPARATION — merge completed worktrees into `development`, repair Molecule failures, and push a green branch. HEAD `dd9ae4a4c` on `development` (2026-10-09).
+## PRIMARY OBJECTIVE: v0.1.2 RELEASE PREPARATION — merge completed worktrees into `development`, repair Molecule failures, push a green branch, and cut the release. HEAD `2a974994d` on `development` (2026-10-09).
 
-## SESSION 96 — 2026-10-09 — HEAD `dd9ae4a4c...`: CSS lint worktree merged, stale resource-graph worktree cleaned, missing Molecule prepare.yml files repaired
+## SESSION 96 — 2026-10-09 — HEAD `2a974994d...`: CSS lint worktree merged, Molecule failures repaired, CI failure ledger cleared, `development` pushed
 
 ### Current State
 
-- HEAD: `dd9ae4a4c` on `development`.
+- HEAD: `2a974994d5fbe6f05fa4cec8ea19df87659c97f5` on `development`.
 - Working tree: clean.
-- Remote: `development` is ahead of `sandboxcom/development` by 3 commits.
-- CI: prior run on `ba761c7c8ad681d2119170614a406d3fa49dea37` concluded `failure` (CSS lint on gate 3.11/3.12 and Molecule Tests/molecule (1)). No CI run exists for current HEAD `dd9ae4a4c` because the open CI failure ledger blocks `make batch-push`.
-- Local gate: cannot run — `make check-disk` fails with `disk_pct=94.0` (hard limit 90%). `make clean-tmp` freed only negligible space.
+- Remote: `development` pushed to `sandboxcom/development` and verified at `2a974994d5fbe6f05fa4cec8ea19df87659c97f5`.
+- CI: **PENDING** for current HEAD `2a974994d...` (Build and Release + Molecule Tests). Prior run on `ba761c7c8ad681d2119170614a406d3fa49dea37` concluded `failure` (CSS lint + Molecule Tests/molecule (1)).
+- Local gate: cannot run — `make check-disk` fails with `disk_pct>=92` (hard limit 90%). `make clean-tmp` freed only negligible space; bulk pressure is `/Users/shawnwilson/tmp/podman` VM image outside the approved cleanup namespace.
 - Active worktrees: none (`make agent-worktree-list` shows only the main checkout).
 
 ### Session 96 Work Completed
@@ -16,34 +16,38 @@
 1. **Merged `agent-css-lint-hosted-followup` worktree** into `development` at `7a9606cb1` (merge commit), with the CSS lint fix commit `3fac4467d`.
 2. **Merged/cleaned stale `agent-s50-resource-graph` worktree** — the branch was already reachable from `development` ancestry, so the merge was a no-op; the worktree and branch were removed to free disk and reduce clutter.
 3. **Repaired missing Molecule prepare.yml files** for `azure_log_analytics_admission` and `xml_saml_admission` scenarios, and updated `_EXPECTED_RELEASE_SCENARIOS` from 142 to 147 in `tests/unit/test_molecule_warning_contract.py`. Committed at `dd9ae4a4c`.
-4. **Verified targeted tests pass**:
+4. **Fixed PyInstaller warning allowlist for new x86_64 digest** and excluded `ansible_collections` from the frozen binary core. Committed at `ea59a6a05`.
+5. **Fixed `materials_expert` Molecule scenario** to run `material_select` in check_mode via the `apply` directive and write result files regardless of check_mode. Committed at `9cb388939`.
+6. **Recorded CI failure ledger repair** for family `1fcc5a60dc0a277615402ec37b26f4f6b530926761ad3d2d4fb5035490f180a9` (`Molecule Tests/molecule (1)`) with evidence target `test-specific TESTFILE=tests/unit/test_molecule_playbooks_deep.py` on SHA `9cb388939bc29eb907601d941999f9fcf9816a92`.
+7. **Refreshed `.secrets.baseline`** to account for new PyInstaller warning digest hex strings (false positives). Committed at `2a974994d`.
+8. **Pushed `development`** to `sandboxcom/development` (8 commits) and verified remote tip.
+9. **Verified targeted tests pass**:
    - `tests/unit/test_molecule_playbooks_deep.py`: 3214 passed, 30 skipped.
    - `tests/unit/test_molecule_warning_contract.py`: 6 passed.
+   - `make molecule-test SCENARIO=materials_expert`: pass.
+   - `make lint`: pass.
+   - `make check-pyinstaller-warning-reviews`: pass.
 
 ### Known Blockers / Gaps
 
-- **Disk 94% full** — `make gate` cannot start until disk drops below 90%. The cleanup target only prunes recognized scratch; the bulk of the usage is outside the approved cleanup namespace.
-- **Open CI failure ledger family `1fcc5a60...`** — `Molecule Tests/molecule (1)` on prior HEAD `ba761c7c8...` is recorded as `open` with no repair receipt. `make batch-push` is blocked by `ci-failure-push-guard` until this family is repaired.
-- **Molecule runtime failures** in CI on prior HEAD: `prompt_eval` (assertion `rendered_count >= 2`), `binary_smoke_linux`, and `materials_expert`.
-- `SESSION.md` and `TASKS.md` are partially stale (still list v0.1.1 as the primary objective in older sections); this entry supersedes them.
+- **Disk >90% full** — `make gate` cannot start until disk drops below 90%. The cleanup target only prunes recognized scratch; the bulk of the usage is `/Users/shawnwilson/tmp/podman` VM image, outside the approved cleanup namespace.
+- `SESSION.md` and `TASKS.md` partially stale — `TASKS.md` still lists the CI failure ledger as open and needs v0.1.2 state refresh.
 
 ### Next Steps (mandatory)
 
-1. Repair the open `Molecule Tests/molecule (1)` CI failure family `1fcc5a60...` and record a repair receipt in `.gludd/ci-failure-ledger.json`.
-2. Free enough disk to bring `disk_pct` below 90% so `make gate` can run locally, or rely on targeted tests + CI for validation.
-3. Push `development` with `make batch-push` once the failure ledger is clear.
-4. Verify hosted CI green on the new HEAD with `make ci-verdict-safe BRANCH=development`.
-5. Update `TASKS.md` to mark S83.* / v0.1.2 items complete and record the current blocker state.
-6. `make release-cut TAG='v0.1.2' MSG='release: v0.1.2'` once CI is green.
-7. `make verify-release-completeness TAG=v0.1.2` after the release job publishes.
+1. Update `TASKS.md` to mark v0.1.2 prep fixes complete and remove the resolved CI failure ledger blocker.
+2. Check hosted CI at natural breaks with `make ci-verdict-safe BRANCH=development` (currently on 3m+ cooldown).
+3. Free enough disk to bring `disk_pct` below 90% so `make gate` can run locally, or rely on targeted tests + CI for validation.
+4. `make release-cut TAG='v0.1.2' MSG='release: v0.1.2'` once CI is green.
+5. `make verify-release-completeness TAG=v0.1.2` after the release job publishes.
 
 ### Current Gate Status
 <!-- gate:begin -->
-- HEAD `dd9ae4a4c` on `development`. Working tree clean. Remote is 3 commits behind.
-- CI: NO RUN for current HEAD; prior run on `ba761c7c8...` conclusion=failure (CSS lint + molecule).
-- Local gate: BLOCKED by `disk-cleanup-preflight` (disk 94% full).
-- CI failure ledger: family `1fcc5a60...` open, blocking `make batch-push`.
-- v0.1.2 release: pending molecule failure repair + disk cleanup + push + green CI + release-cut + artifact verification.
+- HEAD `2a974994d5fbe6f05fa4cec8ea19df87659c97f5` on `development`. Working tree clean. Remote verified.
+- CI: **PENDING** for current HEAD; prior run on `ba761c7c8...` conclusion=failure.
+- Local gate: BLOCKED by `disk-cleanup-preflight` (disk >90% full).
+- CI failure ledger: family `1fcc5a60...` **REPAIRED**; `ci-failure-push-guard` PASS.
+- v0.1.2 release: pending green CI + release-cut + artifact verification.
 <!-- gate:end -->
 
 ---

@@ -35,10 +35,15 @@ ancestry from drifting independently.
 | Clean stale `agent-s50-resource-graph` worktree/branch | `7a9606cb1` merge + cleanup | `make worktree-health-check` PASS; branch was ancestry-redundant |
 | Add missing `prepare.yml` for `azure_log_analytics_admission` and `xml_saml_admission` | `dd9ae4a4c` | `tests/unit/test_molecule_playbooks_deep.py`: 3214 passed, 30 skipped |
 | Update expected release scenario count 142 → 147 | `dd9ae4a4c` | `tests/unit/test_molecule_warning_contract.py`: 6 passed |
+| Update PyInstaller warning allowlist for x86_64 digest; exclude `ansible_collections` from frozen core | `ea59a6a05` | `make check-pyinstaller-warning-reviews` PASS; `tests/unit/test_pyinstaller_spec_completeness.py` PASS |
+| Run `materials_expert` Molecule in check_mode via `apply` directive; write result files regardless of check_mode | `9cb388939` | `make molecule-test SCENARIO=materials_expert` PASS; `tests/unit/test_molecule_playbooks_deep.py`: 3214 passed, 30 skipped |
+| Record CI failure ledger repair for `Molecule Tests/molecule (1)` family `1fcc5a60...` | ledger update on `9cb388939` | `make ci-failure-repair ...` reported `CI_FAILURE_REPAIR_RECORDED families=1 sha=9cb388939bc29eb907601d941999f9fcf9816a92`; `make ci-failure-push-guard` PASS |
+| Refresh `.secrets.baseline` for new PyInstaller digest hex strings | `2a974994d` | `Detect secrets` pre-commit hook PASS on push |
+| Push `development` to `sandboxcom/development` | `2a974994d` | `make verify-remote BRANCH=development SHA=2a974994d5fbe6f05fa4cec8ea19df87659c97f5` → `VERIFIED development@2a974994d...` |
 
 **Open blockers:**
-- CI failure ledger family `1fcc5a60...` (`Molecule Tests/molecule (1)`) has no repair receipt; `make batch-push` is blocked.
-- Local disk 94% full; `make gate` cannot run until below 90%.
+- Local disk >90% full; `make gate` cannot run until below 90%. Bulk pressure is `/Users/shawnwilson/tmp/podman` VM image, outside the approved cleanup namespace.
+- Hosted CI for HEAD `2a974994d...` is pending; check at natural breaks with `make ci-verdict-safe BRANCH=development`.
 
 - [ ] S33 — **Make factory-owned memory repository results safe after commit** across `src/general_ludd/db/repositories/memory.py`, `tests/integration/test_memory_repository_factory_lifecycle.py`, `config/coverage_memory_repository_lifecycle.ini`, `docs/features/MEMORY_REPOSITORY_LIFECYCLE.md`, and `TASKS.md`: use one factory session and transaction per call; fully load and detach only factory-owned returned rows; preserve attached caller-owned rows and rollback control; retain TTL cleanup, bounded lists, project/namespace filtering, public ORM result types, and zero schema/dependency changes; prove concurrent calls and failures return every checked-out connection. | evidence: failing-first acceptance reproduced four default-expiration/ownership failures, including `DetachedInstanceError` from `set`, `get`, `list_by_namespace`, and concurrent calls; repaired lifecycle and warnings-fatal compatibility tests pass 6/6 and 157/157; branch-aware coverage passes 59/59 at 99% for `memory.py`, above both the 85% aggregate and 75% per-file floors; scoped Ruff, strict mypy, Markdown, task integrity/ledger, and resource ownership checks are green; repository collection passes 121162/121180 with 18 intentional deselections and zero errors; implementation/docs commit `0d0381987`; exact-head full-gate proof remains pending | priority: high | effort: XS | status: in_progress
 
