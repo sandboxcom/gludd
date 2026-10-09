@@ -3,6 +3,15 @@ notify-test:
 	@echo "=== Testing notification dispatcher ==="
 	$(UV) run python -c "from general_ludd.notifications import NotificationDispatcher; d = NotificationDispatcher({'enabled': True, 'backends': {'stdout': {}}, 'min_priority': 'high'}); print(d.test())"
 
+# Keep local and hosted CSS validation on the same locked binary, config, and
+# input set. node-deps-sync materializes the exact package-lock dependency.
+lint-css:
+	@test -x .opencode/node_modules/.bin/stylelint || { \
+		echo "lint-css: locked Stylelint is absent; run make node-deps-sync with the documented variables"; \
+		exit 2; \
+	}
+	@.opencode/node_modules/.bin/stylelint "**/*.css" "**/*.scss" "**/*.less" --allow-empty-input --config stylelint.config.mjs
+
 # Unique per-invocation basetemp (like test-iso) so a nested run of this target
 # — spawned by runner.background_test_runner / MakeRunner.run_specific and by
 # tests/e2e/test_make_e2e.py DURING an outer pytest run — never shares pytest's
