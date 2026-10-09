@@ -37,6 +37,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     phases = (
         "worktree-guard",
         "check-gate-failure-promotions",
+        "ansible-role-variable-prefix",
         "_dead-code-baseline-refresh",
         "check-coverage-gaps",
         "check-resource-ownership",
@@ -243,6 +244,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
     for phase in (
         "worktree-guard",
         "check-gate-failure-promotions",
+        "ansible-role-variable-prefix",
         "_dead-code-baseline-refresh",
         "check-coverage-gaps",
         "check-resource-ownership",
@@ -266,10 +268,11 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         for line in output.splitlines()
         if line.startswith("{") and '"kind":"integration_admission_phase"' in line
     ]
-    assert len(evidence) == 18
+    assert len(evidence) == 19
     assert [item["phase"] for item in evidence] == [
         "worktree-guard",
         "check-gate-failure-promotions",
+        "ansible-role-variable-prefix",
         "_dead-code-baseline-refresh",
         "check-coverage-gaps",
         "check-resource-ownership",
@@ -329,7 +332,7 @@ def test_integration_admission_document_records_queue_evidence_and_boundaries() 
         "machine-readable",
         "max-runtime-timeout",
         "quiet-output-timeout",
-        "2,580 seconds",
+        "2,670 seconds",
         "coverage-gap-drift",
         "resource-ownership-drift",
         "247.53 seconds",
