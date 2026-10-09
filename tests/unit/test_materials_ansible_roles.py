@@ -35,10 +35,20 @@ def _load(path: Path) -> list[dict[str, Any]]:
     return loaded
 
 
-def test_every_materials_role_invokes_the_shared_typed_operation_role() -> None:
+def test_materials_roles_use_their_owned_execution_boundary() -> None:
     for role in ROLE_NAMES:
         source = (ROLES / role / "tasks/main.yml").read_text(encoding="utf-8")
         tasks = _load(ROLES / role / "tasks/main.yml")
+        if role == "tolerance_model":
+            native = next(
+                task
+                for task in tasks
+                if "general_ludd.materials.tolerance_model" in task
+            )
+            assert native.get("ignore_errors") is None
+            assert "service_request" not in source
+            assert "ansible.builtin.uri" not in source
+            continue
         include = next(task for task in tasks if "ansible.builtin.include_role" in task)
         assert include["ansible.builtin.include_role"]["name"] == (
             "general_ludd.materials.service_request"

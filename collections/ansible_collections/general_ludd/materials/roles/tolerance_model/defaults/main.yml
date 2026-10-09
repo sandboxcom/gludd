@@ -1,3 +1,5 @@
 ---
 tolerance_model_enabled: false
+tolerance_model_operation: ""
 tolerance_model_request: {}
+tolerance_model_result_fact: tolerance_model_result

@@ -11,13 +11,14 @@ additive, and strength assessment).
 ## Implemented roles (`roles/`)
 
 All 16 spec §3 roles are implemented. Each role carries orchestration only
-(parameter validation, output capture, JSON marshalling); chemical/mechanical
-logic lives in the Python service layer.
+(parameter validation, output capture, JSON marshalling). Most engineering
+logic lives in the Python service layer; tolerance analysis is collection-owned
+so Ansible can execute its pure calculation locally on the controller.
 
-Every role is default-off and delegates through the shared `service_request`
-role to `general_ludd.materials.materials_operation`. Normal execution uses
-the authenticated, bounded `/api/materials/resolve` control-plane endpoint;
-check mode returns the exact non-mutating request plan. Service failures and
+Every role is default-off. Roles other than `tolerance_model` delegate through
+the shared `service_request` role to `general_ludd.materials.materials_operation`.
+The tolerance role calls its collection-native controller action directly;
+normal and check mode return the same read-only result. Service failures and
 invalid engineering inputs fail the play instead of producing an empty or
 input-only verdict.
 
@@ -35,7 +36,7 @@ input-only verdict.
 | `molding_plan` | Analyze flow, shrinkage, draft, gates, vents, cure/cooling, residual stress, and defects. |
 | `strength_assess` | Check static, fatigue, fracture, creep, buckling, impact, wear, thermal, and environmental limits. |
 | `multiphysics_model` | Build traceable structural, thermal, fluid, electromagnetic, cure, forming, or coupled simulation plans. |
-| `tolerance_model` | Perform dimensional-chain, distortion, thermal-expansion, process-capability, and assembly analysis. |
+| `tolerance_model` | Perform six bounded dimensional-chain, thermal-expansion, process-capability, and assembly analyses natively. |
 | `failure_analyze` | Develop competing failure hypotheses and a nondestructive/destructive test plan without overstating causality. |
 | `manufacturing_plan` | Combine processes, quality gates, cost, energy, waste, repair, recycling, and scale-up into a route card. |
 | `inspection_plan` | Define incoming, in-process, final, and lifecycle measurements with acceptance and traceability. |
@@ -54,10 +55,25 @@ the logic below.
 | `polymers.py` / `metals.py` / `additive.py` / `joining.py` / `machining.py` / `textiles.py` | `PolymerProcessAdvisor`, `MetalFormingAdvisor`, `AdditiveManufacturingAdvisor`, `JoiningAdvisor`, `MachiningAdvisor`, `TextileAdvisor` |
 | `failure.py` | `FailureAnalyzer` |
 | `process_planning.py` | `plan_manufacturing`, `plan_inspection`, `estimate_cost`, `estimate_energy`, `RouteCard` |
-| `tolerance.py` | `ToleranceChain`, `assess_assembly`, `process_capability` |
+| `tolerance.py` | Compatibility re-export of the collection-owned `ToleranceChain`, `assess_assembly`, and `process_capability` implementation. |
 | `property_store.py` | `PropertyStore`, `PropertyRecord`, `ResolvedProperty`, `StoreQuery` |
 | `source_registry.py` | `SourceRegistry`, `SourceEntry`, `Authority`, `FreshnessReport` |
 | `units.py` | `convert`, `dim_of`, `known_units`, `DimensionMismatch`, `UnknownUnit` |
+
+## Native tolerance analysis
+
+`general_ludd.materials.tolerance_model` accepts exactly six operations:
+`worst_case`, `rss`, `thermal`, `thermal_compensation`,
+`process_capability`, and `assembly`. Requests and results are each capped at
+64 KiB, dimension chains at 256 pairs, and unit labels at 32 characters. Every
+numeric input and output must be finite.
+
+RSS explicitly assumes independent contributors. The action rejects covariance
+or correlation input rather than accepting data it cannot model. It has no
+network, filesystem, subprocess, listener, cache, or durable-state path, and
+normal/check-mode results are identical. See
+[`NATIVE_MATERIALS_TOLERANCE_ANALYSIS.md`](../../../docs/features/NATIVE_MATERIALS_TOLERANCE_ANALYSIS.md)
+for the evidence and digest-addressed rollout contract.
 
 ## Tests
 

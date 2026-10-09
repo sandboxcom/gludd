@@ -1,9 +1,21 @@
 ---
-- name: Execute tolerance_model through the materials service
-  ansible.builtin.include_role:
-    name: general_ludd.materials.service_request
-  vars:
-    materials_service_enabled: "{{ tolerance_model_enabled }}"
-    materials_service_operation: tolerance_model
-    materials_service_request: "{{ tolerance_model_request }}"
-    materials_service_result_fact: tolerance_model_result
+- name: Validate fail-closed tolerance model inputs
+  ansible.builtin.assert:
+    that:
+      - tolerance_model_enabled | bool
+      - tolerance_model_operation in ['worst_case', 'rss', 'thermal', 'thermal_compensation', 'process_capability', 'assembly']
+      - tolerance_model_request is mapping
+      - tolerance_model_result_fact is match('^[A-Za-z_][A-Za-z0-9_]*$')
+    quiet: true
+    fail_msg: Tolerance modeling requires one explicit allowlisted operation
+
+- name: Evaluate the bounded tolerance model on the controller
+  general_ludd.materials.tolerance_model:
+    operation: "{{ tolerance_model_operation }}"
+    request: "{{ tolerance_model_request }}"
+  register: _materials_tolerance_model
+
+- name: Publish traceable tolerance evidence
+  ansible.builtin.set_fact:
+    tolerance_model_result: "{{ _materials_tolerance_model.result }}"
+    "{{ tolerance_model_result_fact }}": "{{ _materials_tolerance_model.result }}"

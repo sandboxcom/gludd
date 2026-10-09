@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "policy": "counted-path-kind-owner-and-acquisition-teardown-sha256",
+  "resources": [
+  ]
+}

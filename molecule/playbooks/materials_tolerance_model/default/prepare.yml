@@ -1,0 +1,14 @@
+---
+- name: Prepare isolated native tolerance fixture
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8873', true) }}"
+    out_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/.molecule-materials-tolerance-{{ mock_port }}"
+  tasks:
+    - name: Create isolated evidence root
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: directory
+        mode: "0700"
