@@ -473,6 +473,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "S37",
         "S38",
         "S39",
+        "S47",
         "S40",
         "S41",
         "S42",
@@ -563,6 +564,17 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
                 ("implementation", "5cc1bb2556f2f9b0ea45c4fd64a335adc7a40fe7"),
             ),
         ),
+        "S47": (
+            "Exact-SHA resumable, fail-fast local gate admission",
+            "Improvements",
+            (
+                ("implementation", "cba037e37fb1f66a28d76bded20dc708556d9901"),
+                (
+                    "promoted_namespace_repair",
+                    "ee1a73e691c7c7ace9e137c2c572c5bffdbedf3a",
+                ),
+            ),
+        ),
         "S40": (
             "Native Frictionless dataset admission",
             "Features",
@@ -611,7 +623,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         assert expected.count(f"{item_id} — {title}") == 1
     assert "Formally completed backlog items: 6." in expected
     assert (
-        "Implemented candidate items pending exact-head/release proof: 34."
+        "Implemented candidate items pending exact-head/release proof: 35."
         in expected
     )
     release_source = (
@@ -648,7 +660,8 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         "Frictionless discussion #675",
         "ansible/ansible#50579",
         "95% aggregate coverage",
-        "exact 34-item candidate inventory",
+        "Exact-SHA resumable, fail-fast local gate admission",
+        "exact 35-item candidate inventory",
     ):
         assert required in release_source
     task_ledger = (ROOT / "TASKS.md").read_text(encoding="utf-8")
@@ -656,6 +669,7 @@ def test_repository_v012_preview_matches_completed_backlog_ledger() -> None:
         ("S37", "9bf7437dd18a43b5103e09b7b83dc3983b715cbc"),
         ("S38", "1b9d79457bd7be583ef5b5ae60a3383be0c4db71"),
         ("S39", "5cc1bb2556f2f9b0ea45c4fd64a335adc7a40fe7"),
+        ("S47", "cba037e37fb1f66a28d76bded20dc708556d9901"),
         ("S40", "24fd14135d1bdaf3813650736dce8c58f6efd51e"),
         ("S41", "1cf229c408110e5389f317472da1560c7b852a3f"),
         ("S42", "fd5faf302"),

@@ -2,7 +2,7 @@
 - name: Validate fail-closed pipeline triage inputs
   ansible.builtin.assert:
     that:
-      - git_release_pipeline_triage_enabled | bool
+      - pipeline_triage_enabled | bool
       - git_release_pipeline_triage_root is string
       - git_release_pipeline_triage_root is match('^/')
       - git_release_pipeline_triage_report_path is string

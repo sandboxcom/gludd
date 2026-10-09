@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +28,7 @@ if TYPE_CHECKING:
         validate_batch_receipt,
         validate_failure_receipt,
     )
+    from scripts.ci_gate_progress import receipt_duration_seconds
     from scripts.ci_receipt_auth import (
         ReceiptAuthStatus,
         ReceiptTrustPolicy,
@@ -45,6 +49,7 @@ else:
         validate_batch_receipt,
         validate_failure_receipt,
     )
+    from ci_gate_progress import receipt_duration_seconds
     from ci_receipt_auth import (
         ReceiptAuthStatus,
         ReceiptTrustPolicy,
@@ -80,6 +85,27 @@ class ReplayAuditResult:
     receipt_path: Path | None = None
     skip_authorized: bool = False
     authentication: ReceiptAuthStatus | Literal["not-observed"] = "not-observed"
+
+
+@dataclass(frozen=True)
+class ReplayAdmissionRequest:
+    """Exact current action identity and owned coverage destination."""
+
+    action_identity: Mapping[str, object]
+    observed_action_identity: Mapping[str, object]
+    coverage_destination: Path
+
+
+@dataclass(frozen=True)
+class ReplayAdmissionResult:
+    """Fail-closed decision for one authenticated exact-SHA pass receipt."""
+
+    admitted: bool
+    reason: str
+    action_digest: str | None = None
+    receipt_path: Path | None = None
+    authentication: ReceiptAuthStatus | Literal["not-observed"] = "not-observed"
+    duration_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +210,58 @@ def _dirty_source(identity: Mapping[str, object]) -> bool:
     return not isinstance(source, Mapping) or any(
         source.get(name) is not True for name in ("clean", "exact_sha", "queries_ok")
     )
+
+
+def _restore_coverage_fragment(source: Path, destination: Path) -> str | None:
+    """Atomically restore one validated receipt fragment into an owned directory."""
+    parent = destination.parent
+    if (
+        parent.is_symlink()
+        or not parent.is_dir()
+        or destination.exists()
+        or destination.is_symlink()
+    ):
+        return "destination-unsafe"
+    descriptor = -1
+    temporary: Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            dir=parent,
+        )
+        temporary = Path(temporary_name)
+        os.close(descriptor)
+        descriptor = -1
+        source_digest_before = file_sha256(source)
+        shutil.copyfile(source, temporary)
+        os.chmod(temporary, 0o600)
+        with temporary.open("rb") as handle:
+            os.fsync(handle.fileno())
+        restored_digest = file_sha256(temporary)
+        source_digest_after = file_sha256(source)
+        semantic_digest, semantic_error = coverage_semantic_sha256(temporary)
+        if (
+            source_digest_before != restored_digest
+            or source_digest_after != restored_digest
+            or semantic_error is not None
+            or semantic_digest is None
+        ):
+            return "coverage-drift"
+        os.replace(temporary, destination)
+        directory_descriptor = os.open(parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+        return None
+    except (OSError, ValueError):
+        return "coverage-restore-failed"
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 class ShadowReplayAuditor:
@@ -400,42 +478,33 @@ class ShadowReplayAuditor:
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
             self._refuse("cache-corrupt")
 
-    def audit(self, request: ReplayAuditRequest) -> ReplayAuditResult:
-        """Compare current executed evidence; never return skip authorization."""
+    def _lookup_exact_receipt(
+        self,
+        action_identity: Mapping[str, object],
+        observed_action_identity: Mapping[str, object],
+    ) -> ReplayAuditResult:
+        """Return one revalidated authenticated receipt for an exact action."""
         if self._index_error is not None:
             return ReplayAuditResult(False, self._index_error)
-        if request.returncode != 0:
-            return ReplayAuditResult(False, "current-not-passing")
-        if request.cleanup_returncode != 0:
-            return ReplayAuditResult(False, "cleanup-incomplete")
-        if _dirty_source(request.observed_action_identity):
+        if _dirty_source(observed_action_identity):
             return ReplayAuditResult(False, "dirty-inputs")
 
-        expected_error = action_identity_error(request.action_identity)
-        observed_error = action_identity_error(request.observed_action_identity)
+        expected_error = action_identity_error(action_identity)
+        observed_error = action_identity_error(observed_action_identity)
         if expected_error is not None or observed_error is not None:
             if "restricted-environment" in {expected_error, observed_error}:
                 return ReplayAuditResult(False, "dirty-inputs")
             return ReplayAuditResult(False, "current-identity-invalid")
-        source = request.action_identity.get("source")
+        source = action_identity.get("source")
         assert isinstance(source, Mapping)
         if source.get("candidate_sha") != self._candidate_sha:
             return ReplayAuditResult(False, "candidate-drift")
 
-        observation_drift = _drift_reason(
-            request.action_identity, request.observed_action_identity
-        )
+        observation_drift = _drift_reason(action_identity, observed_action_identity)
         if observation_drift is not None:
             return ReplayAuditResult(False, observation_drift)
-        if outcome_manifest_error(request.outcome_manifest) is not None:
-            return ReplayAuditResult(False, "outcomes-invalid")
-        current_coverage_digest, coverage_error = coverage_semantic_sha256(
-            request.coverage_path
-        )
-        if coverage_error is not None or current_coverage_digest is None:
-            return ReplayAuditResult(False, "coverage-invalid")
 
-        action_digest = canonical_json_sha256(request.action_identity)
+        action_digest = canonical_json_sha256(action_identity)
         exact_failures = self._failures.get(action_digest)
         if exact_failures:
             return ReplayAuditResult(
@@ -446,7 +515,7 @@ class ShadowReplayAuditor:
             )
         receipt = self._receipts.get(action_digest)
         if receipt is None:
-            coordinate = _batch_coordinate(request.action_identity)
+            coordinate = _batch_coordinate(action_identity)
             related_failures = [
                 failure
                 for failures in self._failures.values()
@@ -475,14 +544,15 @@ class ShadowReplayAuditor:
                 )
             return ReplayAuditResult(
                 False,
-                _drift_reason(related[0].identity, request.action_identity)
+                _drift_reason(related[0].identity, action_identity)
                 or "identity-drift-ambiguous",
                 action_digest=action_digest,
                 receipt_path=related[0].path,
             )
 
         validation = validate_batch_receipt(
-            receipt.path, expected_action_identity=receipt.identity
+            receipt.path,
+            expected_action_identity=action_identity,
         )
         if not validation.valid:
             return ReplayAuditResult(
@@ -515,21 +585,54 @@ class ShadowReplayAuditor:
                 receipt_path=receipt.path,
                 authentication=authentication.status,
             )
+        return ReplayAuditResult(
+            True,
+            "exact-safe-candidate",
+            action_digest=action_digest,
+            receipt_path=receipt.path,
+            authentication=authentication.status,
+        )
+
+    def audit(self, request: ReplayAuditRequest) -> ReplayAuditResult:
+        """Compare current executed evidence; never return skip authorization."""
+        if self._index_error is not None:
+            return ReplayAuditResult(False, self._index_error)
+        if request.returncode != 0:
+            return ReplayAuditResult(False, "current-not-passing")
+        if request.cleanup_returncode != 0:
+            return ReplayAuditResult(False, "cleanup-incomplete")
+        if outcome_manifest_error(request.outcome_manifest) is not None:
+            return ReplayAuditResult(False, "outcomes-invalid")
+        current_coverage_digest, coverage_error = coverage_semantic_sha256(
+            request.coverage_path
+        )
+        if coverage_error is not None or current_coverage_digest is None:
+            return ReplayAuditResult(False, "coverage-invalid")
+        lookup = self._lookup_exact_receipt(
+            request.action_identity,
+            request.observed_action_identity,
+        )
+        if not lookup.eligible:
+            return lookup
+        action_digest = lookup.action_digest
+        receipt_path = lookup.receipt_path
+        assert action_digest is not None
+        assert receipt_path is not None
         try:
-            prior_outcomes = read_strict_json(receipt.path / "outcomes.json")
+            prior_outcomes = read_strict_json(receipt_path / "outcomes.json")
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
             return ReplayAuditResult(
                 False,
                 "candidate-corrupt",
                 action_digest=action_digest,
-                receipt_path=receipt.path,
+                receipt_path=receipt_path,
             )
         if not isinstance(prior_outcomes, Mapping):
             return ReplayAuditResult(
                 False,
                 "candidate-corrupt",
                 action_digest=action_digest,
-                receipt_path=receipt.path,
+                receipt_path=receipt_path,
             )
         assert request.outcome_manifest is not None
         if prior_outcomes.get("node_id_sha256") != request.outcome_manifest.get(
@@ -539,7 +642,7 @@ class ShadowReplayAuditor:
                 False,
                 "node-id-drift",
                 action_digest=action_digest,
-                receipt_path=receipt.path,
+                receipt_path=receipt_path,
             )
         if (
             prior_outcomes.get("terminal_outcome_sha256")
@@ -550,31 +653,106 @@ class ShadowReplayAuditor:
                 False,
                 "outcome-drift",
                 action_digest=action_digest,
-                receipt_path=receipt.path,
+                receipt_path=receipt_path,
             )
         prior_coverage_digest, prior_coverage_error = coverage_semantic_sha256(
-            receipt.path / "coverage.data"
+            receipt_path / "coverage.data"
         )
         if prior_coverage_error is not None or prior_coverage_digest is None:
             return ReplayAuditResult(
                 False,
                 "candidate-corrupt",
                 action_digest=action_digest,
-                receipt_path=receipt.path,
+                receipt_path=receipt_path,
             )
         if prior_coverage_digest != current_coverage_digest:
             return ReplayAuditResult(
                 False,
                 "coverage-drift",
                 action_digest=action_digest,
-                receipt_path=receipt.path,
+                receipt_path=receipt_path,
             )
         return ReplayAuditResult(
             True,
             "exact-safe-candidate",
             action_digest=action_digest,
-            receipt_path=receipt.path,
-            authentication=authentication.status,
+            receipt_path=receipt_path,
+            authentication=lookup.authentication,
+        )
+
+    def admit(self, request: ReplayAdmissionRequest) -> ReplayAdmissionResult:
+        """Restore one authenticated exact-action pass receipt, otherwise miss."""
+        lookup = self._lookup_exact_receipt(
+            request.action_identity,
+            request.observed_action_identity,
+        )
+        if not lookup.eligible:
+            return ReplayAdmissionResult(
+                False,
+                lookup.reason,
+                action_digest=lookup.action_digest,
+                receipt_path=lookup.receipt_path,
+                authentication=lookup.authentication,
+            )
+        action_digest = lookup.action_digest
+        receipt_path = lookup.receipt_path
+        assert action_digest is not None
+        assert receipt_path is not None
+        try:
+            outcomes = read_strict_json(receipt_path / "outcomes.json")
+            manifest = read_strict_json(receipt_path / "manifest.json")
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+            return ReplayAdmissionResult(
+                False,
+                "candidate-corrupt",
+                action_digest=action_digest,
+                receipt_path=receipt_path,
+                authentication=lookup.authentication,
+            )
+        if (
+            not isinstance(outcomes, Mapping)
+            or outcome_manifest_error(outcomes) is not None
+            or not isinstance(manifest, Mapping)
+        ):
+            return ReplayAdmissionResult(
+                False,
+                "candidate-corrupt",
+                action_digest=action_digest,
+                receipt_path=receipt_path,
+                authentication=lookup.authentication,
+            )
+        duration = receipt_duration_seconds(
+            manifest.get("started_at"),
+            manifest.get("completed_at"),
+        )
+        if duration is None:
+            return ReplayAdmissionResult(
+                False,
+                "receipt-duration-invalid",
+                action_digest=action_digest,
+                receipt_path=receipt_path,
+                authentication=lookup.authentication,
+            )
+        restore_error = _restore_coverage_fragment(
+            receipt_path / "coverage.data",
+            request.coverage_destination,
+        )
+        if restore_error is not None:
+            request.coverage_destination.unlink(missing_ok=True)
+            return ReplayAdmissionResult(
+                False,
+                restore_error,
+                action_digest=action_digest,
+                receipt_path=receipt_path,
+                authentication=lookup.authentication,
+            )
+        return ReplayAdmissionResult(
+            True,
+            "exact-safe-receipt",
+            action_digest=action_digest,
+            receipt_path=receipt_path,
+            authentication=lookup.authentication,
+            duration_seconds=duration,
         )
 
     def snapshot_receipts(self) -> tuple[Path, ...]:
@@ -593,6 +771,8 @@ class ShadowReplayAuditor:
 __all__ = [
     "MAX_AUDIT_CANDIDATES",
     "MAX_AUDIT_INDEX_BYTES",
+    "ReplayAdmissionRequest",
+    "ReplayAdmissionResult",
     "ReplayAuditRequest",
     "ReplayAuditResult",
     "ShadowReplayAuditor",

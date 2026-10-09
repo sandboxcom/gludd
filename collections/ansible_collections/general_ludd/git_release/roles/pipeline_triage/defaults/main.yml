@@ -1,5 +1,6 @@
 ---
 git_release_pipeline_triage_enabled: false
+pipeline_triage_enabled: "{{ git_release_pipeline_triage_enabled }}"
 git_release_pipeline_triage_root: "{{ playbook_dir }}"
 git_release_pipeline_triage_report_path: ""
 git_release_pipeline_triage_result_fact: git_release_pipeline_triage_result

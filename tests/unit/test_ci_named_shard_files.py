@@ -867,6 +867,16 @@ def test_serial_runner_rejects_nonpositive_batch_size() -> None:
         module.run(["unit-2"], [], max_files_per_batch=0)
 
 
+@pytest.mark.parametrize("batch_workers", (0, 3))
+def test_serial_runner_rejects_workers_outside_two_slot_bound(
+    batch_workers: int,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    with pytest.raises(ValueError, match=r"batch_workers must be in 1\.\.2"):
+        module.run(["unit-2"], [], batch_workers=batch_workers)
+
+
 def test_run_gate_delegates_to_serial_named_shards() -> None:
     source = (SCRIPTS / "run_gate.sh").read_text(encoding="utf-8")
 
@@ -900,6 +910,26 @@ def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp
         "collections/ansible_collections/general_ludd/governance/plugins/module_utils",
     ]
     assert f"--basetemp={tmp_path / 'pytest'}" in command
+
+
+def test_serial_pytest_command_uses_bounded_two_slot_loadfile_queue(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    command = module._pytest_command(
+        "unit-2",
+        ["tests/unit/test_alpha.py", "tests/unit/test_beta.py"],
+        tmp_path,
+        ["-q"],
+        batch_workers=2,
+    )
+
+    worker_flag = command.index("-n")
+    assert command[worker_flag + 1] == "2"
+    assert "--dist=loadfile" in command
+    assert "--max-worker-restart=0" in command
+    assert "--maxprocesses" not in command
 
 
 def test_serial_runner_strips_make_recursion_environment_from_owned_children() -> None:
@@ -1117,6 +1147,46 @@ def test_serial_runner_stops_the_whole_plan_after_one_interrupted_batch(
     assert started == ["unit-1b:batch-001"]
 
 
+def test_serial_runner_stops_before_batches_when_gate_owner_is_dead(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    started: list[str] = []
+
+    monkeypatch.setenv("GLUDD_GATE_OWNER_PID", "999999999")
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/unit/test_{shard}.py"],
+    )
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        module,
+        "_run_owned_pytest",
+        lambda *_args, label, **_kwargs: started.append(label) or 0,
+    )
+
+    assert (
+        module.run(
+            ["unit-1b", "unit-1d"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+            watchdog_owned_gate=True,
+        )
+        == 128 + signal.SIGTERM
+    )
+    assert started == []
+    output = capsys.readouterr().out
+    assert "GATE-OWNER-DEATH" in output
+    assert "planned=2 executed=0 resumed=0 not_started=2" in output
+
+
 def test_serial_runner_stops_after_failed_batch_without_coverage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1166,7 +1236,7 @@ def test_serial_runner_stops_after_failed_batch_without_coverage(
     )
 
 
-def test_serial_runner_collects_independent_failures_with_coverage(
+def test_serial_runner_stops_the_whole_plan_after_first_failed_batch_with_coverage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1209,12 +1279,16 @@ def test_serial_runner_collects_independent_failures_with_coverage(
         )
         == 1
     )
-    assert started == ["unit-1b:batch-001", "unit-1d:batch-001"]
+    assert started == ["unit-1b:batch-001"]
     output = capsys.readouterr().out
-    assert output.count("later-shards=continuing") == 2
+    assert (
+        "SHARD-FAIL shard=unit-1b batch=1 rc=1; later-batches=not-started"
+        in output
+    )
+    assert "SERIAL-SHARD-FAILED shard=unit-1b rc=1; later-shards=not-started" in output
 
 
-def test_serial_runner_runs_coverage_after_collecting_ordinary_failures(
+def test_serial_runner_skips_coverage_after_first_ordinary_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1223,7 +1297,6 @@ def test_serial_runner_runs_coverage_after_collecting_ordinary_failures(
     module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
     module.COVERAGE_JSON = tmp_path / "coverage.json"
     module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
-    outcomes = iter((1, 5))
     launched: list[str] = []
     aggregate_calls = 0
     temp_index = 0
@@ -1238,7 +1311,7 @@ def test_serial_runner_runs_coverage_after_collecting_ordinary_failures(
 
     def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
         launched.append(label)
-        return next(outcomes)
+        return 1
 
     def aggregate() -> int:
         nonlocal aggregate_calls
@@ -1259,17 +1332,15 @@ def test_serial_runner_runs_coverage_after_collecting_ordinary_failures(
         run_isolated=False,
     )
 
-    assert result == 5
-    assert launched == ["unit-1a1:batch-001", "unit-1a2:batch-001"]
-    assert aggregate_calls == 1
+    assert result == 1
+    assert launched == ["unit-1a1:batch-001"]
+    assert aggregate_calls == 0
     output = capsys.readouterr().out
-    assert '"coverage:aggregate": 0' in output
+    assert '"coverage:aggregate": "not-started"' in output
     assert '"unit-1a1:batch-001": 1' in output
     assert '"unit-1a1:batch-001:cleanup": 0' in output
     assert '"unit-1a1:batch-001:coverage": 0' in output
-    assert '"unit-1a2:batch-001": 5' in output
-    assert '"unit-1a2:batch-001:cleanup": 0' in output
-    assert '"unit-1a2:batch-001:coverage": 0' in output
+    assert "unit-1a2:batch-001" not in output
 
 
 def test_serial_runner_stops_the_whole_plan_after_internal_runner_failure(
@@ -1722,7 +1793,7 @@ def test_serial_runner_uses_a_fresh_non_coverage_process_for_isolated_tests() ->
     assert all(not argument.startswith("--cov") for argument in command)
 
 
-def test_serial_runner_collects_later_shards_after_test_failure(
+def test_serial_runner_does_not_start_later_shards_after_test_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1767,10 +1838,10 @@ def test_serial_runner_collects_later_shards_after_test_failure(
     result = module.run(["unit-1a1", "unit-1a2"], [])
 
     assert result == 1
-    assert launched == ["unit-1a1", "unit-1a2"]
+    assert launched == ["unit-1a1"]
 
 
-def test_serial_runner_collects_later_batches_after_collection_failure(
+def test_serial_runner_does_not_start_later_batches_after_collection_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1813,15 +1884,10 @@ def test_serial_runner_collects_later_batches_after_collection_failure(
     )
 
     assert result == 2
-    assert launched == [
-        "unit-1a1:batch-001",
-        "unit-1a1:batch-002",
-        "unit-1a2:batch-001",
-        "unit-1a2:batch-002",
-    ]
+    assert launched == ["unit-1a1:batch-001"]
 
 
-def test_serial_runner_retains_every_failing_batch_and_shard(
+def test_serial_runner_retains_first_failure_and_marks_rest_not_started(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1871,14 +1937,14 @@ def test_serial_runner_retains_every_failing_batch_and_shard(
     )
 
     output = capsys.readouterr().out
-    assert result == 6
-    assert launched == list(outcomes)
-    assert "failed=4" in output
-    for phase, returncode in outcomes.items():
-        assert f"'{phase}': {returncode}" in output
+    assert result == 1
+    assert launched == ["unit-1a1:batch-001"]
+    assert "failed=1" in output
+    assert "'unit-1a1:batch-001': 1" in output
+    assert "planned=4 executed=1 resumed=0 not_started=3" in output
 
 
-def test_terminal_safety_rc_overrides_higher_collected_failure_rc(
+def test_first_failure_rc_is_terminal_for_the_bounded_plan(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1887,7 +1953,6 @@ def test_terminal_safety_rc_overrides_higher_collected_failure_rc(
     module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
     module.COVERAGE_JSON = tmp_path / "coverage.json"
     module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
-    outcomes = iter((6, 3, 0))
     launched: list[str] = []
     temp_index = 0
 
@@ -1901,7 +1966,7 @@ def test_terminal_safety_rc_overrides_higher_collected_failure_rc(
 
     def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
         launched.append(label)
-        return next(outcomes)
+        return 6
 
     monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
     monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
@@ -1923,7 +1988,7 @@ def test_terminal_safety_rc_overrides_higher_collected_failure_rc(
     )
 
     output = capsys.readouterr().out
-    assert result == 3
-    assert launched == ["unit-1a1:batch-001", "unit-1a1:batch-002"]
+    assert result == 6
+    assert launched == ["unit-1a1:batch-001"]
     assert "'unit-1a1:batch-001': 6" in output
-    assert "'unit-1a1:batch-002': 3" in output
+    assert "unit-1a1:batch-002" not in output

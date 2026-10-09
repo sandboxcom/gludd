@@ -22,6 +22,8 @@ from scripts.ci_batch_receipts import (
     file_sha256,
 )
 from scripts.ci_batch_replay_audit import (
+    ReplayAdmissionRequest,
+    ReplayAdmissionResult,
     ReplayAuditRequest,
     ReplayAuditResult,
     ShadowReplayAuditor,
@@ -225,6 +227,81 @@ def test_shadow_auditor_reports_exact_safe_candidate_without_authorizing_skip(
     assert result.receipt_path == receipt
     assert result.action_digest == canonical_json_sha256(identity)
     assert result.skip_authorized is False
+
+
+def test_exact_authenticated_receipt_admission_restores_coverage(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    identity = _identity()
+    receipt = _publish(cache, tmp_path, identity)
+    destination = tmp_path / "coverage-fragments" / ".coverage.unit-1a1.batch-001"
+    destination.parent.mkdir()
+
+    result = _auditor(cache).admit(
+        ReplayAdmissionRequest(
+            action_identity=identity,
+            observed_action_identity=identity,
+            coverage_destination=destination,
+        )
+    )
+
+    assert result.admitted is True
+    assert result.reason == "exact-safe-receipt"
+    assert result.authentication == "verified"
+    assert result.duration_seconds == 60.0
+    assert result.receipt_path == receipt
+    assert destination.read_bytes() == (receipt / "coverage.data").read_bytes()
+
+
+def test_receipt_admission_executes_cold_on_exact_identity_drift(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    prior = _identity()
+    _publish(cache, tmp_path, prior)
+    current = copy.deepcopy(prior)
+    toolchain = current["toolchain"]
+    assert isinstance(toolchain, dict)
+    toolchain["uv_version"] = "uv 0.9.0"
+    destination = tmp_path / "coverage-fragments" / ".coverage.unit-1a1.batch-001"
+    destination.parent.mkdir()
+
+    result = _auditor(cache).admit(
+        ReplayAdmissionRequest(
+            action_identity=current,
+            observed_action_identity=current,
+            coverage_destination=destination,
+        )
+    )
+
+    assert result.admitted is False
+    assert result.reason == "dependency-drift"
+    assert not destination.exists()
+
+
+def test_receipt_admission_revalidates_snapshotted_content_before_copy(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "batch-receipts"
+    identity = _identity()
+    receipt = _publish(cache, tmp_path, identity)
+    auditor = _auditor(cache)
+    (receipt / "coverage.data").write_bytes(b"tampered")
+    destination = tmp_path / "coverage-fragments" / ".coverage.unit-1a1.batch-001"
+    destination.parent.mkdir()
+
+    result = auditor.admit(
+        ReplayAdmissionRequest(
+            action_identity=identity,
+            observed_action_identity=identity,
+            coverage_destination=destination,
+        )
+    )
+
+    assert result.admitted is False
+    assert result.reason == "candidate-corrupt"
+    assert not destination.exists()
 
 
 @pytest.mark.parametrize(
@@ -762,6 +839,86 @@ def test_serial_runner_audits_after_execution_coverage_and_owned_cleanup(
     assert "authentication=verified" in output
     assert "skips=0" in output
     assert "GATE-PROGRESS-SHADOW" in output
+
+
+def test_serial_runner_admits_exact_receipt_without_starting_pytest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    coverage_shards = tmp_path / "coverage-fragments"
+    resource_root = tmp_path / "resources"
+    serial_runner.COVERAGE_SHARDS = coverage_shards
+    serial_runner.COVERAGE_JSON = tmp_path / "coverage.json"
+    serial_runner.COVERAGE_AUDIT = tmp_path / "coverage-audit.json"
+    monkeypatch.setattr(
+        serial_runner,
+        "_resource_paths",
+        lambda: serial_runner.ResourcePaths(
+            root=resource_root,
+            coverage_shards=coverage_shards,
+            coverage_json=tmp_path / "coverage.json",
+            coverage_audit=tmp_path / "coverage-audit.json",
+            attestation=tmp_path / "attestation.json",
+            resume=tmp_path / "resume.json",
+        ),
+    )
+    monkeypatch.setattr(
+        serial_runner,
+        "expand_shard",
+        lambda _shard: ["tests/unit/test_example.py"],
+    )
+    monkeypatch.setattr(serial_runner, "_git_output", lambda *_args: (0, _SHA))
+    monkeypatch.setattr(serial_runner, "_interpreter_identity", lambda: {"python": "same"})
+    monkeypatch.setattr(
+        serial_runner,
+        "_disk_headroom_available",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        serial_runner,
+        "_run_owned_pytest",
+        lambda *_args, **_kwargs: pytest.fail("admitted receipt must not start pytest"),
+    )
+
+    class AdmissionAuditor:
+        def admit(self, request: ReplayAdmissionRequest) -> ReplayAdmissionResult:
+            _write_coverage(request.coverage_destination)
+            return ReplayAdmissionResult(
+                True,
+                "exact-safe-receipt",
+                action_digest="d" * 64,
+                receipt_path=tmp_path / "prior-receipt",
+                authentication="verified",
+                duration_seconds=60.0,
+            )
+
+    class NeverWriter:
+        def publish(self, _request: BatchReceiptRequest) -> ReceiptPublication:
+            pytest.fail("admitted receipt must not be republished")
+
+    session = serial_runner.BatchReceiptSession(
+        writer=NeverWriter(),  # type: ignore[arg-type]
+        run_id="run-1",
+        expected_identity=lambda *_args: _identity(),
+        observed_identity=lambda *_args: _identity(),
+        auditor=AdmissionAuditor(),  # type: ignore[arg-type]
+        admission_enabled=True,
+    )
+
+    result = serial_runner.run(
+        ["unit-1a1"],
+        [],
+        run_isolated=False,
+        aggregate_coverage=False,
+        receipt_session=session,
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "BATCH-RECEIPT-ADMISSION status=admitted" in output
+    assert "GATE-BATCH-EXECUTION planned=1 executed=0 resumed=1" in output
+    assert "time_saved_seconds=60.000" in output
 
 
 def test_cli_can_disable_replay_audit_without_disabling_shadow_writes(

@@ -182,7 +182,11 @@ def _receipt_coordinate(identity: Mapping[str, object]) -> tuple[str, int, str, 
     return batch.coordinate
 
 
-def _parse_duration(started_at: object, completed_at: object) -> float | None:
+def receipt_duration_seconds(
+    started_at: object,
+    completed_at: object,
+) -> float | None:
+    """Return one bounded receipt duration, or ``None`` for unsafe evidence."""
     if (
         not isinstance(started_at, str)
         or not isinstance(completed_at, str)
@@ -304,7 +308,7 @@ class ShadowGateProgress:
                 f"rejected-auth-{authentication.status}",
                 authentication.status,
             )
-        duration = _parse_duration(
+        duration = receipt_duration_seconds(
             manifest.get("started_at"),
             manifest.get("completed_at"),
         )
@@ -469,4 +473,5 @@ __all__ = [
     "ProgressExecution",
     "ReceiptStatus",
     "ShadowGateProgress",
+    "receipt_duration_seconds",
 ]

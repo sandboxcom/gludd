@@ -1,6 +1,6 @@
 # Exact-Gate Rerun Acceleration Decision
 
-**Status:** Accepted; authenticated shadow evidence implemented; receipt admission deferred
+**Status:** Accepted; exact-SHA local admission and bounded two-slot cold queue implemented
 **Decision date:** 2026-10-07
 **Scope:** Same-head reruns of the canonical local Pytest/Coverage.py gate
 
@@ -16,15 +16,16 @@ The bounded historical migration boundary is recorded in
 [`docs/features/EXACT_GATE_LEGACY_FAILURE_IMPORT.md`](../features/EXACT_GATE_LEGACY_FAILURE_IMPORT.md).
 The offline local trust boundary and unsigned migration are recorded in
 [`docs/features/EXACT_GATE_RECEIPT_AUTHENTICATION.md`](../features/EXACT_GATE_RECEIPT_AUTHENTICATION.md).
-Every batch still executes. Prior receipts are read only after fresh execution
-to report hypothetical eligibility with `skips=0`. Progress and ETA remain
-estimate-only, and terminal gate status remains unknown; admission,
-reconciliation, and performance gates remain unimplemented.
+Local gates now admit authenticated exact-SHA pass receipts before execution,
+restore their coverage fragments atomically, and reconcile executed, resumed,
+and not-started batches with measured time saved. Hosted CI remains cold.
+Progress/ETA remains estimate-labeled, and the 85% aggregate/75% per-file
+coverage floors are always recomputed from actual fragments.
 
 ## Decision
 
-Do not put `pytest-testmon`, `pytest-split`, or additional `pytest-xdist`
-workers in the release-evidence path. Extend the existing serial runner's
+Do not put `pytest-testmon`, `pytest-split`, or an unbounded `pytest-xdist`
+pool in the release-evidence path. Extend the existing serial runner's
 resume boundary into a pass-only, content-addressed batch receipt layer. A
 cached batch may replace execution only when its complete action identity is
 identical to the current clean exact head. Coverage.py remains the owner of
@@ -49,14 +50,18 @@ release by itself.
 
 ## Current boundary and latency source
 
-The live release work reported 244 fresh-process batches. The implementation
-explains that shape:
+The control run reported 250 fresh-process batches at 16 files. After five
+batches its ETA was 5,468 seconds (about 91 minutes); batch 10 failed, yet the
+old collect-all behavior launched batches 11 through 18 before manual
+cancellation. The implementation explains and closes that shape:
 
-- `scripts/run_gate.sh` invokes `scripts/run_ci_shards_serial.py` without
-  `--resume`.
-- `scripts/run_ci_shards_serial.py` defaults to 16 files per batch and runs the
-  named shards serially so import state, native allocations, temporary roots,
-  child processes, and coverage files have bounded owners.
+- `scripts/run_gate.sh` invokes `scripts/run_ci_shards_serial.py` with
+  authenticated exact-SHA admission by default; `GATE_EXACT_SHA_RESUME=0`
+  forces a cold run.
+- The local gate defaults to 32 files per batch and two xdist `loadfile`
+  workers, both hard capped. The runner still runs bounded batches and named
+  shards serially so import state, native allocations, temporary roots, child
+  processes, and coverage files have bounded owners.
 - The existing resume schema checks only `schema_version`, `candidate_sha`, and
   the runner name. Its batch key contains shard, ordinal, and a digest of file
   names. It does not bind the interpreter, locked environment, plugins,
@@ -73,12 +78,10 @@ explains that shape:
   committed content. Dirty runs remain useful diagnostics but are not release
   evidence and must never consume exact-head receipts.
 
-Increasing batch size could reduce process startup cost, but it also weakens the
-collection-memory and retained-state bound that the 16-file process boundary
-was introduced to provide. Parallel workers could shorten a cold run but do not
-address repeated execution and would increase peak CPU, memory, collection, and
-cleanup pressure. Same-head receipt reuse attacks the stated rerun cost without
-changing worker count or batch ownership.
+The first-run slice therefore widens only to a tested 32-file ceiling and a
+two-worker `loadfile` queue with restarts disabled. Same-head receipt reuse
+addresses retry cost; those finite bounds address cold startup/runtime cost
+without creating a custom scheduler or an unbounded resource envelope.
 
 ## Non-negotiable evidence invariants
 
@@ -104,8 +107,8 @@ changing worker count or batch ownership.
    cached summary or percentage.
 7. The paired hosted lane executes cold at the same full SHA until a separate
    reviewed decision explicitly changes that rule.
-8. The worker and heavy-operation limits do not increase. Acceleration may
-   reduce executed work; it may not buy speed by widening the resource envelope.
+8. The local worker limit is exactly two and the heavy-operation semaphore
+   remains authoritative. No option may widen the pool above two.
 
 ## Candidate comparison
 
@@ -113,7 +116,7 @@ changing worker count or batch ownership.
 | --- | --- | --- |
 | `pytest-testmon` | Selects tests affected by executed Python code and prioritizes likely failures. | **Reject for release evidence.** Gludd requires branch coverage, while Testmon's implementation rejects simultaneous pytest-cov branch coverage. Its own documentation excludes static files and external services from tracked dependencies. The database is useful for a non-authoritative developer loop, not for proving the complete exact head. |
 | `pytest-split` | Uses stored durations to balance complete groups across independent executors. | **Defer.** It does not cache results, so a serial 244-batch rerun still executes all work. A future hosted-tail pilot must first prove that the union of collected node IDs equals the canonical plan with no duplicates. |
-| `pytest-xdist` | Schedules tests across worker processes and pytest-cov can combine their coverage. | **Do not widen the release lane now.** Every worker performs full collection, peak resource use grows, and controller/worker failure ownership remains material. Keep the existing bounded worker policy; a two-worker pure-unit pilot is separate from rerun caching. |
+| `pytest-xdist` | Schedules tests across worker processes and pytest-cov can combine their coverage. | **Use only the bounded local two-slot policy.** The mature runner caps xdist at two `loadfile` workers, disables worker restarts, preserves batch isolation, watches controller ownership, and retains a one-worker rollback. The hosted paired lane stays cold and single-worker. |
 | Pytest `--lf` / `--stepwise` | Reruns known failures or resumes after the last failure. | **Reject as terminal evidence.** Pytest's cache records selection state, not passing coverage fragments or a complete exact-input receipt. It is a diagnosis tool only. |
 | Pants test cache | Hermetic Pytest processes, fine-grained local/remote result caching, explicit environment inputs, batching, force-rerun, and combined coverage. | **Preferred mature pilot, not immediate gate replacement.** It has the right cache model, but Gludd must first declare every asset, dynamic import, environment input, service, fixture compatibility group, and non-cacheable test. Start with an allowlisted pure-unit slice in shadow mode. |
 | Bazel test/action cache | Content-addressed declared inputs, hermetic execution, sharding, resource classes, and local/remote result reuse. | **Use as the semantic reference.** A second build-system migration is less Python-native than Pants and would not remove the same input-declaration work. |
@@ -206,7 +209,7 @@ shared-input drift.
 The cache lives below the existing project-namespaced resource root, never in
 the checkout and never in a user-global Pytest directory. One gate lock remains
 the writer boundary. No daemon, remote service, database server, background
-pruner, or additional worker is introduced.
+pruner, or custom parallel scheduler is introduced.
 
 Initial bounds are deliberately conservative:
 
@@ -220,10 +223,12 @@ Initial bounds are deliberately conservative:
 - treat lookup/validation time above 60 seconds for the whole plan as a cache
   failure and execute cold rather than waiting indefinitely.
 
-The default worker count remains one, the 16-file bound remains unchanged, and
-the heavy-operation semaphore remains authoritative. Cache reads must emit
-periodic progress and a terminal hit/miss/corrupt/non-cacheable summary. A cache
-error cannot suppress a test, coverage audit, warning, or cleanup failure.
+The local gate defaults to exactly two `loadfile` workers and at most 32 files
+per batch. The direct and hosted runner remains one worker with the 16-file
+bound, and the explicit rollback restores those settings locally. The
+heavy-operation semaphore remains authoritative. Cache reads must emit periodic
+progress and a terminal hit/miss/corrupt/non-cacheable summary. A cache error
+cannot suppress a test, coverage audit, warning, or cleanup failure.
 
 The cache stores only JSON, bounded text, JUnit XML, and Coverage.py's existing
 SQLite data format. It must not deserialize pickle or execute cache content.
@@ -248,22 +253,24 @@ not permission to enter stage two:
    estimate-labeled progress. Never skip work or infer terminal green. Compare
    normalized cold coverage and outcome manifests for at least three exact
    clean gates.
-2. **Local opt-in admission:** permit receipts to replace execution only for an
-   explicit local mode and the same clean SHA. Keep the hosted paired gate cold.
-   Dirty gates execute fully.
-3. **Local default:** enable read/write for exact clean reruns only after every
-   acceptance gate below is green. Preserve an explicit force-cold mode and a
-   receipt-free release verifier fixture.
-4. **Pants shadow pilot:** run an allowlisted pure-unit slice through pinned
-   Pants with local caching, concurrency one, explicit assets/environment, and
-   global branch coverage. Compare node sets, outcomes, coverage, resources, and
-   cache invalidation against the canonical runner. Promotion requires a new
-   decision; remote cache and broader concurrency are out of scope.
+2. **Local opt-in admission (complete):** permit receipts to replace execution
+   only for an explicit local mode and the same clean SHA. Keep the hosted paired
+   gate cold. Dirty gates execute fully.
+3. **Local default (this slice):** enable read/write for exact clean reruns,
+   retain a bounded force-cold mode, and keep the hosted release verifier cold.
+4. **Pants hermetic CAS follow-up:** run an allowlisted pure-unit slice through
+   pinned Pants with local caching, concurrency one, declared transitive inputs,
+   explicit assets/environment, and global branch coverage. Compare node sets,
+   outcomes, coverage, resources, and cache invalidation against the canonical
+   runner. Do not build a custom cross-commit dependency walker. Promotion
+   requires a new decision; remote cache and broader concurrency are out of
+   scope.
 
-Rollback sets receipt mode to `off`, after which the existing runner executes
-all batches and ignores the versioned cache namespace. Cache removal is a
-separate owned validate/apply operation performed only when no gate lease is
-active. Rollback never edits a Git ref, release attestation, serving process, or
+Rollback runs `make gate GATE_EXACT_SHA_RESUME=0
+GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1`, after which the existing
+runner executes every batch and ignores admission. Cache removal is a separate
+owned validate/apply operation performed only when no gate lease is active.
+Rollback never edits a Git ref, release attestation, serving process, or
 published artifact. The current cold hosted lane remains available throughout.
 
 ## Measurable acceptance
@@ -271,15 +278,15 @@ published artifact. The current cold hosted lane remains available throughout.
 | Gate | Required evidence |
 | --- | --- |
 | Failing-first behavior | Tests first prove that SHA, dirty state, interpreter, lock, plugin, arguments, coverage config, platform, environment, input, fragment, schema, node-set, and cleanup drift each prevent a hit. |
-| Cold parity | With an empty cache, all 244 planned batches execute and the normalized node outcomes and branch-coverage report equal the current runner's result. |
+| Cold parity | With an empty cache, every canonical planned batch executes and the normalized node outcomes and branch-coverage report equal the current runner's result. |
 | Shadow parity | Three clean exact-head shadow runs report zero receipt-validation, node-set, outcome, coverage, cleanup, or attestation mismatches. |
-| Warm rerun | After one controlled terminal-red batch, a same-head rerun executes every failed/non-cacheable batch, admits only independently passing batches, and reconciles exactly 244 unique batch receipts. |
+| Warm rerun | After one controlled terminal-red batch, a same-head rerun executes every failed/non-cacheable batch, admits only independently passing batches, and reconciles exactly the canonical unique batch count. |
 | Cross-head refusal | A one-commit source, test, configuration, runner, or lock change produces zero cross-SHA hits even when the changed file is unrelated to a batch. |
 | Corruption refusal | Truncated JSON/XML/coverage, changed bytes, symlinks, wrong modes, duplicate keys, missing completion markers, and unsupported schemas all execute cold or fail safely; none can produce a pass. |
 | Coverage | The warm run recomputes at least 85% aggregate and at least 75% per production file from admitted fragments; normalized executed lines and branches equal the cold control. |
 | Attestation | The release verifier rejects a missing/duplicate/foreign receipt, a cached summary without fragments, or a composed local result without the cold hosted exact-SHA pair. |
-| Performance | With at least 90% valid same-head hits, test-phase wall time falls by at least 70% versus the cold control; plan validation stays below 60 seconds. Report both medians over three runs, not the best sample. |
-| Resources | Peak worker count does not rise, the cache stays at or below 2 GiB/two generations, disk reserve remains green, and no child, lease, temporary root, or background pruner survives completion. |
+| Performance | Cold exact-head admission completes within 90 minutes and a same-head warm retry within 30 minutes. With at least 90% valid hits, test-phase wall time falls by at least 70% versus the cold control; plan validation stays below 60 seconds. Report medians over three runs, not the best sample. |
+| Resources | Peak test-worker count is structurally and behaviorally capped at two, the cache stays at or below 2 GiB/two generations, disk reserve remains green, and no child, lease, temporary root, or background pruner survives completion. |
 | Quality | New production code has at least 85% branch-aware coverage with no touched file below 75%; warnings, package notices, lint, types, collection, target contracts, and the full exact-head gate are green before promotion. |
 
 ## Upstream and practitioner evidence

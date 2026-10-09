@@ -98,6 +98,8 @@ def test_shadow_configuration_preserves_session_factory_monkeypatch_seam(
             "progress_enabled": True,
             "failure_receipts_enabled": True,
             "receipt_authentication_enabled": True,
+            "receipt_admission_enabled": False,
+            "batch_workers": 1,
         }
     ]
     output = capsys.readouterr().out

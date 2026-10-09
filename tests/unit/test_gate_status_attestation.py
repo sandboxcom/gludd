@@ -5,12 +5,16 @@ from __future__ import annotations
 import subprocess
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from scripts import gate_status_attestation as attestation
 from scripts.gate_status_attestation import (
     repository_state_id,
     sign_status,
+    sign_terminal_status,
     verify_status,
+    verify_terminal_status,
 )
 from scripts.makefile_layout import compose_makefile
 
@@ -143,12 +147,45 @@ def test_failed_or_incomplete_gate_cannot_be_signed(tmp_path: Path) -> None:
         status.read_text(encoding="utf-8").replace(
             "=== GATE: PASSED ===",
             "=== GATE: FAILED ===",
-        ),
+        ).replace("lint PASS 0", "preflights FAIL 1"),
         encoding="utf-8",
     )
 
     with pytest.raises(ValueError, match="passed"):
         sign_status(status, state_id=_STATE, key=_KEY)
+
+
+def test_failed_gate_can_be_authenticated_without_becoming_green(tmp_path: Path) -> None:
+    status = tmp_path / ".gate-status"
+    _passed_status(status)
+    status.write_text(
+        status.read_text(encoding="utf-8").replace(
+            "=== GATE: PASSED ===",
+            "=== GATE: FAILED ===",
+        ).replace("lint PASS 0", "preflights FAIL 1"),
+        encoding="utf-8",
+    )
+
+    sign_terminal_status(status, state_id=_STATE, key=_KEY, now=1_000)
+    terminal = verify_terminal_status(
+        status,
+        state_id=_STATE,
+        key=_KEY,
+        now=1_001,
+        freshness_seconds=60,
+    )
+    result = verify_status(
+        status,
+        state_id=_STATE,
+        key=_KEY,
+        now=1_001,
+        freshness_seconds=60,
+    )
+
+    assert terminal.ok
+    assert not result.ok
+    assert "uniquely completed passed gate" in result.reason
+    assert "attestation-signature" in status.read_text(encoding="utf-8")
 
 
 def test_duplicate_attestation_field_is_rejected(tmp_path: Path) -> None:
@@ -255,3 +292,138 @@ def test_makefile_signs_final_gate_and_checks_before_commit() -> None:
     assert "@echo run python scripts/gate_fresh_check.py check" not in makefile
     commit_recipe = makefile.split("\ngit-commit:", 1)[1].split("\n\n", 1)[0]
     assert "check-gate-fresh" in commit_recipe
+
+
+def test_cli_sign_and_verify_use_one_private_key_and_exact_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    status = tmp_path / ".gate-status"
+    key_path = tmp_path / "keys" / "gate.key"
+    _passed_status(status)
+    monkeypatch.setattr(attestation, "repository_state_id", lambda *_args, **_kwargs: _STATE)
+
+    common = [str(status), "--repo-root", str(tmp_path), "--key-path", str(key_path)]
+    assert attestation.main(["sign", *common]) == 0
+    assert key_path.stat().st_mode & 0o777 == 0o600
+    assert attestation.main(["verify", *common, "--freshness-seconds", "60"]) == 0
+
+    output = capsys.readouterr().out
+    assert "gate attestation signed" in output
+    assert "gate attestation valid" in output
+
+
+def test_cli_authenticates_terminal_failure_without_admitting_green(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    status = tmp_path / ".gate-status"
+    key_path = tmp_path / "gate.key"
+    _passed_status(status)
+    status.write_text(
+        status.read_text(encoding="utf-8")
+        .replace("lint PASS 0", "preflights FAIL 1")
+        .replace("=== GATE: PASSED ===", "=== GATE: FAILED ==="),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(attestation, "repository_state_id", lambda *_args, **_kwargs: _STATE)
+    common = [str(status), "--repo-root", str(tmp_path), "--key-path", str(key_path)]
+
+    assert attestation.main(["sign-terminal", *common]) == 0
+    assert attestation.main(["verify", *common]) == 1
+    captured = capsys.readouterr()
+    assert "terminal gate attestation signed" in captured.out
+    assert "uniquely completed passed gate" in captured.err
+
+
+def test_cli_fails_closed_on_index_drift_and_invalid_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    status = tmp_path / ".gate-status"
+    key_path = tmp_path / "gate.key"
+    _passed_status(status)
+    key_path.write_text(_KEY.hex(), encoding="ascii")
+    sign_status(status, state_id=_STATE, key=_KEY)
+    monkeypatch.setattr(
+        attestation,
+        "repository_state_id",
+        lambda *_args, source="worktree": _STATE if source == "worktree" else "other",
+    )
+    common = [str(status), "--repo-root", str(tmp_path), "--key-path", str(key_path)]
+
+    assert attestation.main(["verify", *common]) == 1
+    assert "staged index does not match" in capsys.readouterr().err
+    key_path.write_text("00", encoding="ascii")
+    assert attestation.main(["verify", *common]) == 2
+    assert "must contain 32 bytes" in capsys.readouterr().err
+
+
+def test_verifier_rejects_missing_version_and_epoch_evidence(tmp_path: Path) -> None:
+    missing = verify_status(tmp_path / "missing", state_id=_STATE, key=_KEY)
+    assert not missing.ok and "missing" in missing.reason
+
+    status = tmp_path / ".gate-status"
+    _passed_status(status)
+    sign_status(status, state_id=_STATE, key=_KEY, now=1_000)
+    signed = status.read_text(encoding="utf-8")
+    status.write_text(
+        signed.replace("attestation-version 1", "attestation-version 2"),
+        encoding="utf-8",
+    )
+    version = verify_status(status, state_id=_STATE, key=_KEY, now=1_001)
+    assert not version.ok and "version" in version.reason
+
+    status.write_text(
+        signed.replace("attestation-epoch 1000", "attestation-epoch invalid"),
+        encoding="utf-8",
+    )
+    epoch = verify_status(status, state_id=_STATE, key=_KEY, now=1_001)
+    assert not epoch.ok and "integer" in epoch.reason
+
+
+def test_signers_reject_malformed_or_incomplete_terminal_bodies(tmp_path: Path) -> None:
+    status = tmp_path / ".gate-status"
+    status.write_text("attestation-unknown value\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="malformed"):
+        sign_status(status, state_id=_STATE, key=_KEY)
+
+    _passed_status(status)
+    status.write_text(
+        status.read_text(encoding="utf-8").replace("smoke PASS", "smoke PENDING"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="required gate phase"):
+        sign_status(status, state_id=_STATE, key=_KEY)
+
+    status.write_text("=== GATE: FAILED ===\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="no failed phase"):
+        sign_terminal_status(status, state_id=_STATE, key=_KEY)
+
+
+def test_git_helpers_reject_command_and_merge_stage_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        attestation.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1,
+            stdout=b"",
+            stderr=b"fatal",
+        ),
+    )
+    with pytest.raises(RuntimeError, match="fatal"):
+        attestation._run_git(tmp_path, "status")
+
+    monkeypatch.setattr(
+        attestation,
+        "_run_git",
+        lambda *_args: b"100644 " + b"a" * 40 + b" 2\tconflict.py\0",
+    )
+    with pytest.raises(RuntimeError, match="unresolved merge"):
+        attestation._index_entries(tmp_path)

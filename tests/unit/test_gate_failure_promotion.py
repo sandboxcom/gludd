@@ -28,6 +28,13 @@ EXPECTED_RUNTIME_PHASES = [
         60,
     ),
     (
+        "ansible-role-variable-prefix",
+        "_ansible-role-variable-prefix",
+        "fast",
+        90,
+        60,
+    ),
+    (
         "_dead-code-baseline-refresh",
         "_dead-code-baseline-refresh",
         "fast",
@@ -372,6 +379,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "mcp-workspace-containment",
         "mcp-workspace-dispatch-jail",
         "module-graph-classification-drift",
+        "ansible-role-variable-prefix-drift",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -384,6 +392,9 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     )
     assert families["module-graph-classification-drift"]["node"] == (
         "tests/unit/test_module_graph_deep.py::test_all_subpackages_classified"
+    )
+    assert families["ansible-role-variable-prefix-drift"]["node"] == (
+        "tests/unit/test_ansible_lint_deep.py::test_role_variables_use_namespaced_prefix"
     )
     assert families["coverage-gap-drift"]["node"] == "check-coverage-gaps"
     assert families["resource-ownership-drift"]["node"] == (
@@ -411,6 +422,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     owner = _target_stanza(makefile, "_project-dispatch-integration")
     mcp_owner = _target_stanza(makefile, "_mcp-workspace-jail-integration")
     module_graph_owner = _target_stanza(makefile, "_module-graph-classification")
+    variable_prefix_owner = _target_stanza(makefile, "_ansible-role-variable-prefix")
 
     assert "check-gate-failure-promotions" in makefile.split("help:", 1)[0]
     assert (
@@ -420,6 +432,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert (
         admission.index('run_phase "worktree-guard"')
         < admission.index('run_phase "check-gate-failure-promotions"')
+        < admission.index('run_phase "ansible-role-variable-prefix"')
         < admission.index('run_phase "_dead-code-baseline-refresh"')
         < admission.index('run_phase "check-coverage-gaps"')
         < admission.index('run_phase "check-resource-ownership"')
@@ -427,6 +440,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert "$(MAKE) --no-print-directory _project-dispatch-integration;" in admission
     assert "$(MAKE) --no-print-directory _mcp-workspace-jail-integration;" in admission
     assert "$(MAKE) --no-print-directory _module-graph-classification;" in admission
+    assert "$(MAKE) --no-print-directory _ansible-role-variable-prefix;" in admission
     assert (
         'GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"'
         in admission
@@ -454,6 +468,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     ):
         assert node in mcp_owner
     assert "test_all_subpackages_classified" in module_graph_owner
+    assert "test_role_variables_use_namespaced_prefix" in variable_prefix_owner
 
     contracts = json.loads(CONTRACT.read_text(encoding="utf-8"))["targets"]
     check_contract = next(
@@ -493,9 +508,9 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "gate-failure-promotions: PASS families=9" in result.stdout
-    assert "runtime_phases=18" in result.stdout
-    assert "runtime_ceiling_seconds=2580" in result.stdout
+    assert "gate-failure-promotions: PASS families=10" in result.stdout
+    assert "runtime_phases=19" in result.stdout
+    assert "runtime_ceiling_seconds=2670" in result.stdout
     for phrase in (
         "dead-code-baseline-drift",
         "coverage-gap-drift",
@@ -506,6 +521,7 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
         "mcp-workspace-containment",
         "mcp-workspace-dispatch-jail",
         "module-graph-classification-drift",
+        "ansible-role-variable-prefix-drift",
         "exact full gate remains mandatory",
         "https://github.com/orgs/community/discussions/41726",
         "https://github.com/modelcontextprotocol/servers/issues/1838",
