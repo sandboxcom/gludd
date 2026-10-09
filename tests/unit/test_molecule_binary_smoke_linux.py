@@ -912,3 +912,16 @@ class TestPrepare:
         assert workflow.count("--set build-azure") >= 3
         assert workflow.count("uv run --no-sync") >= 3
         assert "--extra azure" not in workflow
+
+    def test_native_linux_build_preserves_the_active_test_environment(self) -> None:
+        """The binary scenario must not remove Molecule before later scenarios."""
+        makefile = _makefile_source()
+        build_target = makefile.split("build-executable:", 1)[1].split("\n\n", 1)[0]
+        linux_target = makefile.split("build-linux-executable:", 1)[1].split("\n\n", 1)[0]
+
+        assert "BUILD_EXECUTABLE_ENVIRONMENT ?=" in makefile
+        assert 'DEPENDENCY_PROFILE_ENVIRONMENT="$(BUILD_EXECUTABLE_ENVIRONMENT)"' in build_target
+        assert 'UV_PROJECT_ENVIRONMENT="$(BUILD_EXECUTABLE_ENVIRONMENT)"' in build_target
+        assert "native_build_environment=$$(mktemp -d" in linux_target
+        assert 'BUILD_EXECUTABLE_ENVIRONMENT="$$native_build_environment"' in linux_target
+        assert 'rm -rf "$$native_build_environment"' in linux_target

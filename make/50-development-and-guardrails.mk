@@ -223,17 +223,18 @@ VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run --no-sync pytho
 PLATFORM = $(shell uname -s)-$(shell uname -m)
 TARBALL_NAME = general-ludd-agent-$(VERSION)-$(PLATFORM)
 TARBALL_DIR = dist/$(TARBALL_NAME)
+BUILD_EXECUTABLE_ENVIRONMENT ?= .venv
 
 build-executable:
 	@$(MAKE) --no-print-directory sync \
 		DEPENDENCY_PROFILE_SET=build-azure \
-		DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
+		DEPENDENCY_PROFILE_ENVIRONMENT="$(BUILD_EXECUTABLE_ENVIRONMENT)" \
 		DEPENDENCY_PROFILE_PYTHON=3.12.14 \
 		DEPENDENCY_PROFILE_VALIDATE_ONLY=0
-	@locked_pyinstaller_version=$$($(UV) run --no-sync python scripts/dependency_profiles.py locked-version --root "$(CURDIR)" --profile dev-build --package pyinstaller); \
-		pyinstaller_version=$$($(UV) run --no-sync pyinstaller --version); \
+	@locked_pyinstaller_version=$$(UV_PROJECT_ENVIRONMENT="$(BUILD_EXECUTABLE_ENVIRONMENT)" $(UV) run --no-sync python scripts/dependency_profiles.py locked-version --root "$(CURDIR)" --profile dev-build --package pyinstaller); \
+		pyinstaller_version=$$(UV_PROJECT_ENVIRONMENT="$(BUILD_EXECUTABLE_ENVIRONMENT)" $(UV) run --no-sync pyinstaller --version); \
 		test "$$pyinstaller_version" = "$$locked_pyinstaller_version" || { echo "Expected locked PyInstaller $$locked_pyinstaller_version, found $$pyinstaller_version"; exit 1; }
-	@$(UV) run --no-sync pyinstaller gludd.spec --clean --noconfirm
+	@UV_PROJECT_ENVIRONMENT="$(BUILD_EXECUTABLE_ENVIRONMENT)" $(UV) run --no-sync pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
 LINUX_BINARY_IMAGE ?= gludd-linux-binary-build:python3.12.14-uv0.12.19
@@ -367,13 +368,16 @@ build-linux-executable: worktree-guard ## Build and verify a real Linux PyInstal
 	@rm -f "$(LINUX_BINARY_OUTPUT)" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"
 	@set -e; source_sha=$$(git rev-parse HEAD); echo "LINUX_BINARY_SOURCE sha=$$source_sha"; if [ "$$(uname -s)" = "Linux" ]; then \
 		echo "Building Linux executable natively"; \
-		$(MAKE) --no-print-directory build-executable; \
-		python_version=$$($(UV) run --no-sync python -c 'import platform; print(platform.python_version())'); \
+		native_build_environment=$$(mktemp -d "/tmp/gludd-linux-native-build.XXXXXX"); \
+		cleanup_native_build() { rm -rf "$$native_build_environment"; }; \
+		trap cleanup_native_build EXIT INT TERM; \
+		$(MAKE) --no-print-directory build-executable BUILD_EXECUTABLE_ENVIRONMENT="$$native_build_environment"; \
+		python_version=$$(UV_PROJECT_ENVIRONMENT="$$native_build_environment" $(UV) run --no-sync python -c 'import platform; print(platform.python_version())'); \
 		test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
-		pyinstaller_version=$$($(UV) run pyinstaller --version); \
+		pyinstaller_version=$$(UV_PROJECT_ENVIRONMENT="$$native_build_environment" $(UV) run --no-sync pyinstaller --version); \
 		architecture=$$(uname -m); \
 		cp build/gludd/warn-gludd.txt "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"; \
-		$(UV) run python scripts/audit_pyinstaller_warnings.py \
+		UV_PROJECT_ENVIRONMENT="$$native_build_environment" $(UV) run --no-sync python scripts/audit_pyinstaller_warnings.py \
 			--warnings build/gludd/warn-gludd.txt \
 			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
 			--platform linux \
