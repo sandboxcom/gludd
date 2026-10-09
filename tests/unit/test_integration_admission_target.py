@@ -160,7 +160,7 @@ def test_yaml_lint_isolates_checkout_collection_from_user_state() -> None:
     assert 'ANSIBLE_COLLECTIONS_PATH="$(CURDIR)/collections"' in stanza
     assert "trap 'rm -rf -- \"$$ANSIBLE_STATE_DIR\"' EXIT INT TERM" in stanza
     assert "git ls-files --" in stanza
-    assert "ansible-lint $$YAML_FILES" in stanza
+    assert "ansible-lint -q $$YAML_FILES" in stanza
     assert "ansible-lint playbooks " not in stanza
     assert "scripts/stream_command.py" in stanza
     assert '--heartbeat-secs "10"' in stanza
