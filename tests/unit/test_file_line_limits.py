@@ -25,7 +25,11 @@ def _load_checker() -> ModuleType:
     return module
 
 
-def _policy_file(tmp_path: Path, non_text: list[dict[str, str]] | None = None) -> Path:
+def _policy_file(
+    tmp_path: Path,
+    non_text: list[dict[str, str]] | None = None,
+    large_text: list[dict[str, str]] | None = None,
+) -> Path:
     path = tmp_path / "file_line_limits.json"
     path.write_text(
         json.dumps(
@@ -33,6 +37,7 @@ def _policy_file(tmp_path: Path, non_text: list[dict[str, str]] | None = None) -
                 "version": 1,
                 "max_lines_exclusive": 2500,
                 "non_text_paths": non_text or [],
+                "large_text_paths": large_text or [],
             }
         ),
         encoding="utf-8",
@@ -52,9 +57,7 @@ def test_limit_is_strictly_less_than_2500_lines(tmp_path: Path) -> None:
         policy,
     )
 
-    assert [(item.path, item.line_count) for item in findings] == [
-        ("rejected.txt", 2500)
-    ]
+    assert [(item.path, item.line_count) for item in findings] == [("rejected.txt", 2500)]
 
 
 def test_non_terminated_last_line_is_counted(tmp_path: Path) -> None:
@@ -74,12 +77,13 @@ def test_non_terminated_last_line_is_counted(tmp_path: Path) -> None:
     "payload",
     [
         {},
-        {"version": 2, "max_lines_exclusive": 2500, "non_text_paths": []},
-        {"version": 1, "max_lines_exclusive": 2499, "non_text_paths": []},
+        {"version": 2, "max_lines_exclusive": 2500, "non_text_paths": [], "large_text_paths": []},
+        {"version": 1, "max_lines_exclusive": 2499, "non_text_paths": [], "large_text_paths": []},
         {
             "version": 1,
             "max_lines_exclusive": 2500,
             "non_text_paths": [],
+            "large_text_paths": [],
             "silent_exclusions": ["generated/**"],
         },
     ],
@@ -94,6 +98,7 @@ def test_policy_schema_and_limit_drift_fail_closed(
 
     with pytest.raises(checker.PolicyError):
         checker.load_policy(path)
+    assert True
 
 
 @pytest.mark.parametrize("path", ["", "/absolute.bin", "../escape.bin", "a/../b.bin"])
@@ -159,6 +164,73 @@ def test_explicit_binary_policy_is_exact_and_drift_checked(tmp_path: Path) -> No
         checker.audit_paths(tmp_path, (), policy)
 
 
+def test_large_text_paths_exempt_generated_lockfiles_from_line_limit(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    policy = checker.load_policy(
+        _policy_file(
+            tmp_path,
+            large_text=[
+                {
+                    "path": ".opencode/package-lock.json",
+                    "reason": "Generated npm lockfile; size is deterministic",
+                }
+            ],
+        )
+    )
+    lock_path = tmp_path / ".opencode" / "package-lock.json"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text("x\n" * 3000, encoding="utf-8")
+
+    assert checker.audit_paths(tmp_path, (".opencode/package-lock.json",), policy) == []
+
+
+def test_large_text_paths_require_safe_exact_paths_and_reasons(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    for bad_path in ["", "/absolute.json", "../escape.json", "a/../b.json"]:
+        config = _policy_file(
+            tmp_path,
+            large_text=[{"path": bad_path, "reason": "generated lockfile"}],
+        )
+        with pytest.raises(checker.PolicyError):
+            checker.load_policy(config)
+
+    duplicate = _policy_file(
+        tmp_path,
+        large_text=[
+            {"path": "lock.json", "reason": "generated"},
+            {"path": "lock.json", "reason": "duplicate"},
+        ],
+    )
+    with pytest.raises(checker.PolicyError):
+        checker.load_policy(duplicate)
+
+    missing_reason = _policy_file(
+        tmp_path,
+        large_text=[{"path": "lock.json", "reason": ""}],
+    )
+    with pytest.raises(checker.PolicyError):
+        checker.load_policy(missing_reason)
+
+
+def test_large_text_paths_drift_checked_against_inventory(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    policy = checker.load_policy(
+        _policy_file(
+            tmp_path,
+            large_text=[{"path": "lock.json", "reason": "generated lockfile"}],
+        )
+    )
+
+    with pytest.raises(checker.AuditError, match="not tracked"):
+        checker.audit_paths(tmp_path, (), policy)
+
+
 def test_explicit_gitlink_directory_is_not_treated_as_a_file(tmp_path: Path) -> None:
     checker = _load_checker()
     policy = checker.load_policy(
@@ -189,14 +261,10 @@ def test_cli_exit_codes_distinguish_findings_from_audit_errors(
     config = _policy_file(tmp_path)
     (tmp_path / "large.txt").write_text("x\n" * 2500, encoding="utf-8")
 
-    assert checker.main(
-        ["--root", str(tmp_path), "--config", str(config), "--path", "large.txt"]
-    ) == 1
+    assert checker.main(["--root", str(tmp_path), "--config", str(config), "--path", "large.txt"]) == 1
     assert "large.txt: 2500 lines" in capsys.readouterr().out
 
-    assert checker.main(
-        ["--root", str(tmp_path), "--config", str(config), "--path", "missing.txt"]
-    ) == 2
+    assert checker.main(["--root", str(tmp_path), "--config", str(config), "--path", "missing.txt"]) == 2
     assert "missing or unreadable" in capsys.readouterr().err
 
 

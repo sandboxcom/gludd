@@ -6,5 +6,11 @@
       "path": "external/llamacpp",
       "reason": "Git submodule gitlink; repository metadata rather than a text file"
     }
+  ],
+  "large_text_paths": [
+    {
+      "path": ".opencode/package-lock.json",
+      "reason": "Generated npm lockfile; deterministic dependency graph naturally exceeds the manual-edit line ceiling"
+    }
   ]
 }

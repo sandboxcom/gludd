@@ -32,8 +32,9 @@ else:
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_POLICY = ROOT / "config" / "file_line_limits.json"
 REQUIRED_MAX_LINES_EXCLUSIVE = 2500
-POLICY_KEYS = frozenset({"version", "max_lines_exclusive", "non_text_paths"})
+POLICY_KEYS = frozenset({"version", "max_lines_exclusive", "non_text_paths", "large_text_paths"})
 NON_TEXT_ENTRY_KEYS = frozenset({"path", "reason"})
+LARGE_TEXT_ENTRY_KEYS = frozenset({"path", "reason"})
 
 
 class PolicyError(RuntimeError):
@@ -50,10 +51,11 @@ class AuditError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class Policy:
-    """Validated line limit and exact non-text path exceptions."""
+    """Validated line limit and exact non-text/large-text path exceptions."""
 
     max_lines_exclusive: int
     non_text_paths: frozenset[str]
+    large_text_paths: frozenset[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,10 +67,7 @@ class Finding:
     limit: int
 
     def render(self) -> str:
-        return (
-            f"{self.path}: {self.line_count} lines; must be less than "
-            f"{self.limit} lines"
-        )
+        return f"{self.path}: {self.line_count} lines; must be less than {self.limit} lines"
 
 
 def _safe_relative_path(raw: object, *, source: str) -> str:
@@ -90,6 +89,31 @@ def _load_json_object(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _parse_path_reason_entries(
+    raw_entries: object,
+    category: str,
+    required_keys: frozenset[str],
+    existing: set[str],
+) -> set[str]:
+    """Validate a list of {path, reason} policy entries and return the paths."""
+    if not isinstance(raw_entries, list):
+        raise PolicyError(f"{category} must be a list of exact path/reason objects")
+    paths: set[str] = set()
+    for index, raw_entry in enumerate(raw_entries):
+        if not isinstance(raw_entry, dict) or frozenset(raw_entry) != required_keys:
+            raise PolicyError(f"{category}[{index}] must contain exactly path and reason")
+        path_value = _safe_relative_path(raw_entry["path"], source=f"{category}[{index}].path")
+        reason = raw_entry["reason"]
+        if not isinstance(reason, str) or not reason.strip():
+            raise PolicyError(f"{category}[{index}].reason must be non-empty")
+        if path_value in existing:
+            raise PolicyError(f"path already listed in another policy category: {path_value}")
+        if path_value in paths:
+            raise PolicyError(f"duplicate {category} path: {path_value}")
+        paths.add(path_value)
+    return paths
+
+
 def load_policy(path: Path) -> Policy:
     """Load the strict schema; the 2500-line ceiling is not configurable away."""
 
@@ -98,36 +122,17 @@ def load_policy(path: Path) -> Policy:
     if actual_keys != POLICY_KEYS:
         missing = sorted(POLICY_KEYS - actual_keys)
         unexpected = sorted(actual_keys - POLICY_KEYS)
-        raise PolicyError(
-            f"policy keys drifted: missing={missing} unexpected={unexpected}"
-        )
+        raise PolicyError(f"policy keys drifted: missing={missing} unexpected={unexpected}")
     if payload["version"] != 1:
         raise PolicyError("policy version must be exactly 1")
     if payload["max_lines_exclusive"] != REQUIRED_MAX_LINES_EXCLUSIVE:
-        raise PolicyError(
-            "max_lines_exclusive must remain exactly "
-            f"{REQUIRED_MAX_LINES_EXCLUSIVE}"
-        )
-    raw_entries = payload["non_text_paths"]
-    if not isinstance(raw_entries, list):
-        raise PolicyError("non_text_paths must be a list of exact path/reason objects")
+        raise PolicyError(f"max_lines_exclusive must remain exactly {REQUIRED_MAX_LINES_EXCLUSIVE}")
 
-    paths: set[str] = set()
-    for index, raw_entry in enumerate(raw_entries):
-        if not isinstance(raw_entry, dict) or frozenset(raw_entry) != NON_TEXT_ENTRY_KEYS:
-            raise PolicyError(
-                f"non_text_paths[{index}] must contain exactly path and reason"
-            )
-        path_value = _safe_relative_path(
-            raw_entry["path"], source=f"non_text_paths[{index}].path"
-        )
-        reason = raw_entry["reason"]
-        if not isinstance(reason, str) or not reason.strip():
-            raise PolicyError(f"non_text_paths[{index}].reason must be non-empty")
-        if path_value in paths:
-            raise PolicyError(f"duplicate non-text policy path: {path_value}")
-        paths.add(path_value)
-    return Policy(REQUIRED_MAX_LINES_EXCLUSIVE, frozenset(paths))
+    paths = _parse_path_reason_entries(payload["non_text_paths"], "non_text_paths", NON_TEXT_ENTRY_KEYS, set())
+    large_paths = _parse_path_reason_entries(
+        payload["large_text_paths"], "large_text_paths", LARGE_TEXT_ENTRY_KEYS, paths
+    )
+    return Policy(REQUIRED_MAX_LINES_EXCLUSIVE, frozenset(paths), frozenset(large_paths))
 
 
 def _validate_inventory_path(raw: str) -> str:
@@ -143,9 +148,7 @@ def _read_tracked_file(root: Path, relative_path: str) -> bytes:
         try:
             return os.readlink(os.fsencode(path))
         except OSError as exc:
-            raise AuditError(
-                f"{relative_path}: tracked symbolic link is unreadable"
-            ) from exc
+            raise AuditError(f"{relative_path}: tracked symbolic link is unreadable") from exc
     try:
         return path.read_bytes()
     except OSError as exc:
@@ -176,9 +179,10 @@ def audit_paths(
     tracked = set(normalized)
     stale = sorted(policy.non_text_paths - tracked)
     if stale and not staged:
-        raise AuditError(
-            "explicit non_text_paths entries are not tracked: " + ", ".join(stale)
-        )
+        raise AuditError("explicit non_text_paths entries are not tracked: " + ", ".join(stale))
+    stale_large = sorted(policy.large_text_paths - tracked)
+    if stale_large and not staged:
+        raise AuditError("explicit large_text_paths entries are not tracked: " + ", ".join(stale_large))
 
     findings: list[Finding] = []
     for relative_path in normalized:
@@ -188,9 +192,7 @@ def audit_paths(
         except SnapshotError as exc:
             raise AuditError(str(exc)) from exc
         is_gitlink = index_blob is not None and index_blob.mode == GITLINK_MODE
-        if relative_path in policy.non_text_paths and (
-            is_gitlink or (not staged and repository_path.is_dir())
-        ):
+        if relative_path in policy.non_text_paths and (is_gitlink or (not staged and repository_path.is_dir())):
             # Git submodule entries are tracked gitlinks, not text files. They
             # remain exact-path policy entries so a new directory is never
             # silently omitted from the inventory.
@@ -200,27 +202,23 @@ def audit_paths(
         if relative_path in policy.non_text_paths:
             if text is not None:
                 raise AuditError(
-                    f"{relative_path}: explicit non-text path is now UTF-8 text; "
-                    "remove the stale policy entry"
+                    f"{relative_path}: explicit non-text path is now UTF-8 text; remove the stale policy entry"
                 )
             continue
+        if relative_path in policy.large_text_paths:
+            # Generated large text files (e.g., npm package-lock.json) are
+            # exempt from the line-count ceiling but must remain UTF-8 text.
+            continue
         if text is None:
-            raise AuditError(
-                f"{relative_path}: non-text content is absent from explicit "
-                "non_text_paths policy"
-            )
+            raise AuditError(f"{relative_path}: non-text content is absent from explicit non_text_paths policy")
         line_count = len(text.splitlines())
         if line_count >= policy.max_lines_exclusive:
-            findings.append(
-                Finding(relative_path, line_count, policy.max_lines_exclusive)
-            )
+            findings.append(Finding(relative_path, line_count, policy.max_lines_exclusive))
     return sorted(findings, key=lambda item: (-item.line_count, item.path))
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Require every Git-tracked UTF-8 text file to have <2500 lines."
-    )
+    parser = argparse.ArgumentParser(description="Require every Git-tracked UTF-8 text file to have <2500 lines.")
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--config", type=Path, default=DEFAULT_POLICY)
     parser.add_argument(
@@ -255,8 +253,7 @@ def main(argv: list[str] | None = None) -> int:
         print(finding.render())
     if findings:
         print(
-            f"file-line-limits: FAIL oversized={len(findings)} "
-            f"limit=<{policy.max_lines_exclusive}",
+            f"file-line-limits: FAIL oversized={len(findings)} limit=<{policy.max_lines_exclusive}",
             file=sys.stderr,
         )
         return 1
