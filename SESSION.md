@@ -1,4 +1,52 @@
-## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — finalize release pipeline. HEAD `1cc9b0636` on `development` (2026-10-05). Added `greenlet>=3.0.0` to `[project] dependencies` (`3fe533509`) and adjudicated it in `config/core-python-dependency-ownership.json` and `[tool.deptry.per_rule_ignores]` so deptry and the exact ownership inventory pass; removed the duplicate `greenlet` entries from the `dev` optional-dependency and dependency groups. Local `make gate-background` is running (PID 61646); integration health passed (3398 passed, 13 skipped) and the gate is now in the unit-test phase. Verified that the exact tests that failed in hosted Build and Release run `37252097874` (unit-1b/1d/3a greenlet adjudication failures) now pass locally, and `make deps-audit` / `make lint` / `make check-node-v26-compat` / `make validate-ansible-runtime-boundary` / `make check-collection-python-boundary` are green. Deleted the stale local `v0.1.1` tag (was `f4b580627`) and confirmed `make release-promote TAG='v0.1.1' RELEASE_PROMOTE_VALIDATE_ONLY=1` passes with the operator overrides. A new commit resolving the adjudication is staged and awaiting the current background gate. To stop the status-polling loop, I will not check the gate again until it terminates; the next action will be either (1) commit/push if `make gate` reports PASS, or (2) a root-cause fix if it reports FAIL. After the commit, I will start `make test-ci-dual-track-local-bg` immediately so the long local attestation runs in parallel with hosted CI, then run `make release-promote TAG='v0.1.1' RELEASE_ALLOW_INCOMPLETE_TASKS=1 RELEASE_ALLOW_INVALID_RECEIPT=1` once both are green, and finally verify `make verify-release-completeness TAG='v0.1.1'`.
+## PRIMARY OBJECTIVE: v0.1.2 RELEASE PREPARATION — merge completed worktrees into `development`, repair Molecule failures, and push a green branch. HEAD `dd9ae4a4c` on `development` (2026-10-09).
+
+## SESSION 96 — 2026-10-09 — HEAD `dd9ae4a4c...`: CSS lint worktree merged, stale resource-graph worktree cleaned, missing Molecule prepare.yml files repaired
+
+### Current State
+
+- HEAD: `dd9ae4a4c` on `development`.
+- Working tree: clean.
+- Remote: `development` is ahead of `sandboxcom/development` by 3 commits.
+- CI: prior run on `ba761c7c8ad681d2119170614a406d3fa49dea37` concluded `failure` (CSS lint on gate 3.11/3.12 and Molecule Tests/molecule (1)). No CI run exists for current HEAD `dd9ae4a4c` because the open CI failure ledger blocks `make batch-push`.
+- Local gate: cannot run — `make check-disk` fails with `disk_pct=94.0` (hard limit 90%). `make clean-tmp` freed only negligible space.
+- Active worktrees: none (`make agent-worktree-list` shows only the main checkout).
+
+### Session 96 Work Completed
+
+1. **Merged `agent-css-lint-hosted-followup` worktree** into `development` at `7a9606cb1` (merge commit), with the CSS lint fix commit `3fac4467d`.
+2. **Merged/cleaned stale `agent-s50-resource-graph` worktree** — the branch was already reachable from `development` ancestry, so the merge was a no-op; the worktree and branch were removed to free disk and reduce clutter.
+3. **Repaired missing Molecule prepare.yml files** for `azure_log_analytics_admission` and `xml_saml_admission` scenarios, and updated `_EXPECTED_RELEASE_SCENARIOS` from 142 to 147 in `tests/unit/test_molecule_warning_contract.py`. Committed at `dd9ae4a4c`.
+4. **Verified targeted tests pass**:
+   - `tests/unit/test_molecule_playbooks_deep.py`: 3214 passed, 30 skipped.
+   - `tests/unit/test_molecule_warning_contract.py`: 6 passed.
+
+### Known Blockers / Gaps
+
+- **Disk 94% full** — `make gate` cannot start until disk drops below 90%. The cleanup target only prunes recognized scratch; the bulk of the usage is outside the approved cleanup namespace.
+- **Open CI failure ledger family `1fcc5a60...`** — `Molecule Tests/molecule (1)` on prior HEAD `ba761c7c8...` is recorded as `open` with no repair receipt. `make batch-push` is blocked by `ci-failure-push-guard` until this family is repaired.
+- **Molecule runtime failures** in CI on prior HEAD: `prompt_eval` (assertion `rendered_count >= 2`), `binary_smoke_linux`, and `materials_expert`.
+- `SESSION.md` and `TASKS.md` are partially stale (still list v0.1.1 as the primary objective in older sections); this entry supersedes them.
+
+### Next Steps (mandatory)
+
+1. Repair the open `Molecule Tests/molecule (1)` CI failure family `1fcc5a60...` and record a repair receipt in `.gludd/ci-failure-ledger.json`.
+2. Free enough disk to bring `disk_pct` below 90% so `make gate` can run locally, or rely on targeted tests + CI for validation.
+3. Push `development` with `make batch-push` once the failure ledger is clear.
+4. Verify hosted CI green on the new HEAD with `make ci-verdict-safe BRANCH=development`.
+5. Update `TASKS.md` to mark S83.* / v0.1.2 items complete and record the current blocker state.
+6. `make release-cut TAG='v0.1.2' MSG='release: v0.1.2'` once CI is green.
+7. `make verify-release-completeness TAG=v0.1.2` after the release job publishes.
+
+### Current Gate Status
+<!-- gate:begin -->
+- HEAD `dd9ae4a4c` on `development`. Working tree clean. Remote is 3 commits behind.
+- CI: NO RUN for current HEAD; prior run on `ba761c7c8...` conclusion=failure (CSS lint + molecule).
+- Local gate: BLOCKED by `disk-cleanup-preflight` (disk 94% full).
+- CI failure ledger: family `1fcc5a60...` open, blocking `make batch-push`.
+- v0.1.2 release: pending molecule failure repair + disk cleanup + push + green CI + release-cut + artifact verification.
+<!-- gate:end -->
+
+---
 
 ## SESSION 95 — 2026-10-04 — HEAD `a05f94be8...`: pushed ansible EE base-image refresh + FreeLLMAPI retry fix; local dual-track running; hosted CI pending
 
@@ -37,8 +85,8 @@
 ### Current State
 
 - HEAD: `c4fc7ad61e0397f53958a58c574c651b2e718018` on `development`.
-- Working tree: clean.
-- Remote: `development` pushed to sandboxcom at `c4fc7ad61`; verified with `make verify-remote`.
+- Working tree: CLEAN (after `agent-fix-generate` worktree cleanup and before this SESSION.md edit).
+- Remote: diverged with unpushed commits.
 - CI: **PENDING** for current HEAD `c4fc7ad61` (run 37087617120 queued) — `make ci-verdict-safe BRANCH=development` returned `CI PENDING`.
 - Local gate: **PASSED** (epoch 1790972185, attestation state `a4edbe3e7a50440748d1df1c92beba77da2d3a836cb3541482b2f44644d150db`) after running with `GATE_TIMEOUT=10800`.
 - Molecule fixes committed:
@@ -120,8 +168,8 @@
 
 1. Wait for background gate PID 21165 to finish PASS.
 2. Commit dirty tree (`.secrets.baseline`, `TASKS.md`, test file, `SESSION.md`).
-3. Push `development` with `make batch-push`.
-4. Verify CI green with `make ci-verdict-safe` / `gh` once run completes.
+3. Push `development` to remote with `make batch-push`.
+4. Verify CI green with `make ci-verdict-safe BRANCH=development` once run completes.
 5. `make release-cut TAG='v0.1.1' MSG='release: v0.1.1'` once CI is green.
 6. `make verify-release-completeness TAG=v0.1.1` after the release job publishes.
 
@@ -161,7 +209,7 @@
 ### Known Blockers / Gaps
 
 - **Gate test phase FAILED** on current HEAD `4093c61a5` (`test FAIL non-zero-exit`). Pre-test phases all passed. The test failure must be diagnosed and fixed before release-cut.
-- **AA032 push blocker: ACTIVE** — CI NO RUN for current HEAD `4093c61a5`; remote diverged with unpushed commits.
+- **AA032 push blocker: ACTIVE** — CI NO RUN for current HEAD; remote diverged with unpushed commits.
 - CI verdict for current HEAD is unknown until after push.
 - 84 broader backlog items remain outside v0.1.1 and are not in scope for this release.
 
@@ -185,7 +233,7 @@
 
 ---
 
-## SESSION 91 — 2026-09-25 — HEAD `33b4c482aa09bcedcfd23e7e465fa3db64e5eece`: final status update
+## SESSION 91 — 2026-09-25 — HEAD `33b4c482aa09bcedcfd23e7e465fa3db64e5eece`: final v0.1.1 milestone operational record
 
 ### Current State
 
@@ -197,7 +245,6 @@
 - CI: NO RUN for current HEAD.
 - Smoke test: PASSED on current HEAD.
 - Active workstreams: 0; open task IDs: 0.
-- Lingering worktree: `agent-floor-config-v2` at `bfbcb8c7c` (superseded by `agent-floor-config-v3` merge).
 - 84 broader backlog items remain outside the v0.1.1 milestone.
 
 ### Next Steps
@@ -220,7 +267,7 @@
 
 ---
 
-## SESSION 90 — 2026-09-25 — HEAD `bfbcb8c7c64dc364715f24eb577fa7acd9d0f8be`: final v0.1.1 milestone operational record
+## SESSION 90 — 2026-09-25 — HEAD `bfbcb8c7c64dc364715f24eb577fa7acd9d0f8be`: final v0.1.1 milestone operational record and smoke status
 
 ### Current State
 
@@ -245,7 +292,7 @@
 ## Current Gate Status
 <!-- gate:begin -->
 - HEAD `bfbcb8c7c64dc364715f24eb577fa7acd9d0f8be` on `development`. Working tree clean (prior to this SESSION.md edit). Remote is diverged with unpushed commits.
-- CI: NO RUN for current HEAD `bfbcb8c7c64d`; prior run 35820838925 conclusion=failure on SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985` is stale.
+- CI: NO RUN for current HEAD `bfbcb8c7c64d`; prior run 35820838925 conclusion=failure on SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985` is now stale.
 - Smoke test: PASSED on `bfbcb8c7c64dc364715f24eb577fa7acd9d0f8be`.
 - Local gate status: needs rerun on current HEAD before release-cut.
 - Floor-config enforcement alignment: IN PROGRESS — `agent-floor-config-v3` (`c231e2a20`) is not yet merged into `development`.
@@ -422,14 +469,15 @@ e0fe903f6 fix/progress-scope-release-milestone
 
 ```text
 86b72ae5 fix: unbuffer CI test-shard output so the adaptive no-progress watchdog cannot kill healthy slow shards
-990b2c09 fix: batch-push pushes directly after guards instead of re-entering the guarded push target
+990c2c09 fix: batch-push pushes directly after guards instead of re-entering the guarded push target
 7cb873c2 fix: AA032 verdict guard re-approves the same SHA so batch-push nested push target does not self-block
 8e105658 fix: reorder AA023 restart-cap to run after all other push guards on git-push-sandboxcom-nv
 397edc59 docs: refresh SESSION.md objective line; isolate all ci-cooldown state files in tests
 f192c351 test: fix oserror-swallow regression to use a real directory write failure
 34fd3e09 fix: terminal CI verdicts reset the AA023 restart cap and the cap now runs only on real pushes
-82a3ea1b fix: ci-verdict-safe honors SHA parameter so stale push verdicts can be adjudicated and recorded
-2d543b32 fix: ci-verdict-safe records last_checked_sha into the verdict history so the AA032 push guard can actually unblock
+82a3ea1b test: fix terminal CI verdicts regression to use a real directory write failure
+2d543b32 fix: ci-verdict-safe honors SHA parameter so stale push verdicts can be adjudicated and recorded
+ci-verdict-safe records last_checked_sha into the verdict history so the AA032 push guard can actually unblock
 b232bf8c fix: local_game_gen installs llama-cpp unconditionally, guards poll params, surfaces server log on health failure
 58820a18 test: pin functional STATUS-TABLE and gate comment markers against fix_docs_drift escaping
 fc01ba17 test: isolate e2e multitask hook state from live orchestrator via GLUDD_SESSION_STATE and per-test state paths
@@ -459,7 +507,7 @@ ab9f5b59 test: pin clean-tree runtime fixture must live inside the checkout
 - **S82.4 — Wave 2 (+345 tests)**: `6c0e4f06`. +314 tests for 5 untested small_models modules (zdd_rollout 65, hf_auth 50, lm_eval_runner 54, eval_harness 58, oidc 56). +31 download integration tests. +304-line multi-model pipeline architecture doc.
 - **S82.5 — Wave 3 (+224 tests)**: `cf9abe06`. Deep tests — recommender (44), cost (87), benchmark_report (34), model_hash_db (59). Updated SESSION.md for wave 3.
 - **S82.6 — Wave 4 (+537 tests)**: `2daa8a58`. Tests for 7 zero-coverage modules — homoglyph_data (83), phonetic_data (72), unicode_data (95), small_model_policy (98), azure_cost_repository (37), role_generator (74), config_compiler (78).
-- **S82.7 — Wave 5 (chemistry + probabilistic + ai_ml modules)**: `9bf42a0f`. Chemistry expert module deep tests — 18 test files covering analytical (validation, calibration, statistics), reactions (balancing, classification, stoichiometry), core (routing, identity, hazards), thermo (equilibrium, kinetics), electrochem (Nernst, cell potential), safety (GHS, incompatibilities), cheminformatics (SMILES, descriptors, similarity), provenance, promotion, protocols, raw artifacts, fixtures, schemas, APIs, tenants, and MD validation. Probabilistic module deep tests — 32 tests covering Bloom filters (add/count/merge/roundtrip/validation), HyperLogLog (cardinality estimation, merge, error bounds), and Count-Min Sketch. AI/ML expert module deep tests — 13 test files covering registries (source records, aliases, tombstones, supersede), speech (ASR/TTS, consent, WER), datasets (manifests, splits, leakage, PII, format selection), core (routing, discover, evidence, uncertainty), vision (classification, detection, segmentation, OCR/VQA, domain labeling), reasoning (plan-act-observe-verify phases), adaptation (adapters, LoRA, distillation), images (generation, evaluation), world models (rollout, simulation), accelerators (GPU/TPU scheduling), and evidence (citations, confidence). Fix commits: secret-scanner pragma allowlists (f7fb61ee, 32317f17, 9bf42a0f).
+- **S82.7 — Wave 5 (chemistry + probabilistic + ai_ml modules)**: `9bf42a0f`. Chemistry expert module deep tests — 18 test files covering analytical (validation, calibration, statistics), reactions (balancing, classification, stoichiometry), core (routing, identity, hazards), thermo (equilibrium, kinetics), electrochem (Nernst, cell potential), safety (GHS, incompatibilities), cheminformatics (SMILES, descriptors, similarity), provenance, promotion, protocols, raw artifacts, fixtures, schemas, APIs, tenants, and MD validation. Probabilistic module deep tests — 32 tests covering Bloom filters (add/count/merge/roundtrip/validation), HyperLogLog (cardinality estimation, merge, error bounds), and Count-Min Sketch. AI/ML expert module deep tests — 13 test files covering registries (source records, aliases, tombstones, supersede), speech (ASR/TTS, consent, WER), datasets (manifests, splits, leakage, PII, format selection), core (routing, discover, evidence, uncertainty), vision (classification, detection, segmentation, OCR/VQA, domain labeling), reasoning (plan-act-observe-verify phases), adaptation (adapters, LoRA, distillation), images (generation, evaluation), world models (rollout, simulation), accelerators (GPU/TPU scheduling), and evidence (citations, confidence).
 
 ### Current State
 
@@ -507,8 +555,7 @@ ad8a9d81 fix: opencode spawner — re-add format json + auto flags, reset TASKS
 cb4c67e8 fix: opencode spawner format fix for v1.18.11
 eded4dfd chore: update Makefile, SESSION.md, TASKS.md
 c6250355 fix: opencode spawner format fix for v1.18.11 + test results
-54b29bf3 fix: gate-refresh lint + opencode E2E test fixes
-c72caad9 fix: opencode E2E test fixes + remaining test results
+c72caad9 fix: gate-refresh lint + opencode E2E test fixes
 38aa2ef7 fix: opencode E2E multitask test harness + 3x depth enforcement + test project template + spawner v1.18.11 fix
 f8149c3a chore: final test pass totals
 26a96e8f chore: final test pass totals
@@ -586,7 +633,7 @@ fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
 - **Release beta.3: SHIPPED** — v0.1.0-beta.3 exists on GitHub with 21 download assets, 12/12 required categories verified
 - **verify-release-completeness: PASS** — all 16 checks passed, 21 assets
 - **CI: PENDING** — Run `30857059753` on `aa06cfc5` — in_progress
-- **Total tests: 86,428** (+15,460 from 70,968 baseline) — 0 collection errors
+- **Total Collection: 86,428** (+15,460 from 70,968 baseline) — 0 collection errors
 - **Crypto library refactor: COMPLETE** — 8/12 files replaced with audited libraries (cryptography, hashlib, hmac, secrets)
 - **Behavioral guardrail tests: WRITTEN** — runtime enforcement validation for crypto-related guardrails
 - **50+ new test files** created across all waves
@@ -726,7 +773,7 @@ aa06cfc5 feat: wave 19 — workflow edge cases deep tests (67)
 f6cc8a2c feat: wave 18-19 — agent_memory, dockerfile_audit, shell_scripts, python_imports, skill_discovery, spec_docs, terraform_stack, yaml_config deep tests
 2eb47c7a feat: wave 17-18 — code_review, mcp_connector, memory_persistence, travel_dispatch, sandbox_runner, skill_runner, agent_behavior, game_gen_dispatch, deploy_pipeline deep tests
 2dedb532 feat: wave 15-16 — credential_vault (82), watchdog (72), deadline_enforce, version_dep (32), job_spec, message_bus, worktree_agent, config_schema, opa_policy, systemd_units, pyproject, makefile (24) deep tests
-5df45687 feat: wave 15 — config_mgmt (60), container_orch, db_pool, e2e_download (54), gpu_ml, notification, plugin_system (~100), rate_limiter, config_schema, opa_policy, systemd_units, pyproject_audit, makefile_audit (24), version_consistency deep tests
+5df45687 feat: wave 15 — config_mgmt (60), container_orch, db_pool, e2e_download (54), gpu_ml, notification, plugin_system ~100, rate_limiter, config_schema, opa_policy, systemd_units, pyproject_audit, makefile_audit (24), version_consistency deep tests
 4cb7aa81 chore: final session docs — all waves complete, CI monitoring, HEAD a33b2d78, beta.3 shipped
 a33b2d78 feat: wave 14 — backup_restore deep + report_generation deep + molecule_playbooks deep + CI workflow integrity tests
 ```

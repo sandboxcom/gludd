@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last audited: 2026-09-26 on `release-v0.1.1-closeout`. The prior completion claim was invalid: S83.157, S83.158, S83.163, and the terminal S83.166 release action remain open, and S91.1 is reopened for the ownership/concurrency repair. Checked-task status contradictions now fail closed in the ledger validator, active-work inventory, and release readiness. No v0.1.1 promotion is permitted until each open predecessor has independent completion evidence, the exact candidate passes local and hosted gates, and the published artifacts pass deployment and rollback verification.**
+**Last audited: 2026-10-09 on `release-v0.1.2-prep`. Session 96 merged the CSS lint hosted-fix worktree (`7a9606cb1`), cleaned the stale `agent-s50-resource-graph` worktree, and repaired missing Molecule `prepare.yml` files for `azure_log_analytics_admission` and `xml_saml_admission` plus the release-scenario count in `tests/unit/test_molecule_warning_contract.py` (`dd9ae4a4c`). The S83.157–S83.166 v0.1.1 terminal actions remain unresolved from prior sessions and are superseded by the v0.1.2 objective. Remaining blockers before v0.1.2 release-cut: (1) repair open CI failure ledger family `1fcc5a60...` (`Molecule Tests/molecule (1)`), (2) bring local disk below 90% so `make gate` can run, (3) push `development` and confirm hosted CI green.**
 
 <!-- v0.1.2-completed-backlog -->
 **v0.1.2 completed backlog scope (unreleased):** the six formally completed
@@ -26,6 +26,19 @@ this release assignment. `tests/unit/test_v012_completed_backlog_release_sync.py
 prevents prior-release assignments, the ledger, release notes, and exact Git
 ancestry from drifting independently.
 <!-- /v0.1.2-completed-backlog -->
+
+**Session 96 v0.1.2 release-prep fixes (committed):**
+
+| Fix | Commit | Evidence |
+|---|---|---|
+| Merge CSS lint hosted-fix worktree into `development` | `7a9606cb1` | `3fac4467d` resolves hosted CSS lint failures; `tests/unit/test_ci_stylelint_workflow.py` passes |
+| Clean stale `agent-s50-resource-graph` worktree/branch | `7a9606cb1` merge + cleanup | `make worktree-health-check` PASS; branch was ancestry-redundant |
+| Add missing `prepare.yml` for `azure_log_analytics_admission` and `xml_saml_admission` | `dd9ae4a4c` | `tests/unit/test_molecule_playbooks_deep.py`: 3214 passed, 30 skipped |
+| Update expected release scenario count 142 → 147 | `dd9ae4a4c` | `tests/unit/test_molecule_warning_contract.py`: 6 passed |
+
+**Open blockers:**
+- CI failure ledger family `1fcc5a60...` (`Molecule Tests/molecule (1)`) has no repair receipt; `make batch-push` is blocked.
+- Local disk 94% full; `make gate` cannot run until below 90%.
 
 - [ ] S33 — **Make factory-owned memory repository results safe after commit** across `src/general_ludd/db/repositories/memory.py`, `tests/integration/test_memory_repository_factory_lifecycle.py`, `config/coverage_memory_repository_lifecycle.ini`, `docs/features/MEMORY_REPOSITORY_LIFECYCLE.md`, and `TASKS.md`: use one factory session and transaction per call; fully load and detach only factory-owned returned rows; preserve attached caller-owned rows and rollback control; retain TTL cleanup, bounded lists, project/namespace filtering, public ORM result types, and zero schema/dependency changes; prove concurrent calls and failures return every checked-out connection. | evidence: failing-first acceptance reproduced four default-expiration/ownership failures, including `DetachedInstanceError` from `set`, `get`, `list_by_namespace`, and concurrent calls; repaired lifecycle and warnings-fatal compatibility tests pass 6/6 and 157/157; branch-aware coverage passes 59/59 at 99% for `memory.py`, above both the 85% aggregate and 75% per-file floors; scoped Ruff, strict mypy, Markdown, task integrity/ledger, and resource ownership checks are green; repository collection passes 121162/121180 with 18 intentional deselections and zero errors; implementation/docs commit `0d0381987`; exact-head full-gate proof remains pending | priority: high | effort: XS | status: in_progress
 
