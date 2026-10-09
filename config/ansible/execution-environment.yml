@@ -32,6 +32,8 @@ additional_build_files:
     dest: collections
   - src: ../../dist/collections/general_ludd-travel-0.1.0.tar.gz
     dest: collections
+  - src: ../../dist/collections/general_ludd-xml-0.1.0.tar.gz
+    dest: collections
 additional_build_steps:
   append_final:
     - >-

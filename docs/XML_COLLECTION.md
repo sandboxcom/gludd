@@ -260,37 +260,40 @@ container with optional headers. The collection handles:
 | **Schema** | OASIS Security Assertion Markup Language 2.0 |
 | **Namespace** | `urn:oasis:names:tc:SAML:2.0:assertion` (`saml:` or `saml2:` prefix) |
 | **Primary use** | SSO authentication, identity federation, attribute exchange |
-| **Role** | `general_ludd.xml.xml_core` (extract assertions, attributes) |
-| **Backend** | `xml.etree.ElementTree` (stdlib), `lxml` |
+| **Role** | `general_ludd.xml.saml_processor` (verify and admit one assertion) |
+| **Backend** | `signxml==5.1.0`, `lxml`, `cryptography` |
 
 SAML assertions carry signed identity claims between an Identity Provider
 (IdP) and a Service Provider (SP). The collection handles:
 
-- Assertion extraction: pull `saml:Assertion` elements from responses
-- Attribute extraction: read `saml:Attribute` name/value pairs
-- Subject confirmation: check `saml:Subject/saml:NameID` values
-- Condition checking: verify `NotBefore` / `NotOnOrAfter` timestamps
-- Metadata parsing: read IdP/SP metadata for endpoint discovery
+- Cryptographic verification against one explicit trusted certificate
+- Verified-subtree consumption to reject XML signature wrapping
+- Exact issuer, audience, destination, recipient, and request correlation
+- Bearer subject confirmation and bounded clock-skew condition validation
+- Duplicate-free, scalar, explicitly allowlisted attribute extraction
+- Root-confined digest-bound file input or no-log inline input
 
-> **Note**: Signature verification requires `xmlsec` / `signxml` (Python
-> libraries for XML Digital Signature). The collection does not bundle
-> cryptographic validation; it focuses on structural extraction and
-> namespace-aware querying.
+The controller execution environment pins SignXML. The role rejects metadata
+downloads, encrypted assertions, DTDs/entities, XSLT, external signature
+references, temporary files, subprocesses, and structural-only signature
+claims.
 
-**Example**: Extract user attributes from a SAML assertion:
+**Example**: Admit bounded claims from a signed SAML response:
 
 ```yaml
-- name: Read SAML attributes
+- name: Admit one SAML response
   include_role:
-    name: general_ludd.xml.xml_core
+    name: general_ludd.xml.saml_processor
   vars:
-    input_file: /data/saml_response.xml
-    xpath_query: "//saml2:AttributeStatement/saml2:Attribute"
-    namespaces:
-      saml2: "urn:oasis:names:tc:SAML:2.0:assertion"
-      saml2p: "urn:oasis:names:tc:SAML:2.0:protocol"
-    operation: extract
-    output_file: /tmp/saml_attributes.xml
+    saml_processor_root: /data/saml
+    saml_processor_path: response.xml
+    saml_processor_sha256: "{{ response_sha256 }}"
+    saml_processor_trusted_certificate: "{{ idp_certificate_pem }}"
+    saml_processor_expected_issuer: https://idp.example.test
+    saml_processor_expected_audience: https://sp.example.test
+    saml_processor_expected_destination: https://sp.example.test/acs
+    saml_processor_expected_in_response_to: request-1
+    saml_processor_allowed_claims: [role, groups]
 ```
 
 ### 2.7 DocBook — OASIS DocBook 5.x
@@ -815,8 +818,8 @@ For read-only extraction, use XPath via `xml_core`:
 
 Which Python libraries are used by which role or operation.
 
-| Role / Operation | `xml.etree.ElementTree` | `lxml` | `plistlib` | `xmlsec` / `signxml` |
-|------------------|:-----------------------:|:------:|:----------:|:---------------------:|
+| Role / Operation | `xml.etree.ElementTree` | `lxml` | `plistlib` | `signxml` |
+|------------------|:-----------------------:|:------:|:----------:|:---------:|
 | `xml_core` — extract (basic XPath) | Required | — | — | — |
 | `xml_core` — extract (rich XPath) | Fallback | Required | — | — |
 | `xml_core` — modify | Required | Required | — | — |
@@ -824,7 +827,7 @@ Which Python libraries are used by which role or operation.
 | `xml_core` — validate (XSD) | — | Required | — | — |
 | `xsd_generator` — infer schema | — | Required | — | — |
 | `xslt_transformer` — XSLT 1.0 | — | Required | — | — |
-| `xslt_transformer` — XSLT 2.0/3.0 | — | — | — | — (uses Saxon CLI) |
+| `xslt_transformer` — XSLT 2.0/3.0 | — | — | — | — |
 | plist read (XML) | — | — | Required | — |
 | plist read (binary) | — | — | Required | — |
 | SAML signature verification | — | Required | — | Required |
@@ -837,8 +840,7 @@ Which Python libraries are used by which role or operation.
 | `xml.etree.ElementTree` | Fast, stdlib-only XML parsing and basic XPath. Used for simple extract/validate operations | Built into Python (no install needed) |
 | `lxml` | Full XPath 1.0, XSD validation, XSLT 1.0, HTML parser. Required for all advanced operations | `pip install lxml` or `apt install python3-lxml` |
 | `plistlib` | Apple Property List read/write (XML and binary formats) | Built into Python (no install needed) |
-| `xmlsec` | XML Digital Signature verification (SAML, WS-Security) | `pip install xmlsec` (requires libxmlsec1 system library) |
-| `signxml` | Higher-level XML signature API on top of `xmlsec` | `pip install signxml` |
+| `signxml` | XMLDSig verification with verified-subtree results | Pinned as `signxml==5.1.0` in the controller image |
 
 ### Dependencies
 
@@ -854,6 +856,7 @@ Python packages at runtime:
 xml.etree.ElementTree  # stdlib — always available
 lxml                   # optional — enables XSD, XSLT, rich XPath
 plistlib               # stdlib — macOS plist support
+signxml==5.1.0         # controller image — native SAML assertion admission
 ```
 
 ## Section 7: Error Handling and Observability
@@ -907,16 +910,15 @@ surface as `lxml.etree.XSLTApplyError` and include the context node.
 4. **Gradle build files are not native XML.** The collection works with
    Gradle's XML export format; it cannot parse `.gradle` or `.gradle.kts`
    files directly.
-5. **No XML Digital Signature verification.** SAML assertion signatures
-   need external `xmlsec`/`signxml` — the collection does not bundle or
-   invoke signature verification.
+5. **SAML admission is deliberately narrow.** It accepts one signed plaintext
+   assertion with pinned issuer/audience/request bindings. It does not download
+   metadata, decrypt assertions, build assertions, or negotiate trust.
 
 ### Future roles (planned)
 
 | Role | Purpose |
 |------|---------|
 | `soap_client` | Construct and send SOAP requests, parse responses |
-| `saml_toolkit` | Verify signatures, validate conditions, build assertions |
 | `html_parser` | Tag-soup tolerant HTML extraction via `lxml.html` |
 | `docbook_publisher` | End-to-end DocBook → HTML/PDF pipeline with DI |
 | `dita_processor` | DITA-OT integration for topic-based publishing |

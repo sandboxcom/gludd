@@ -61,6 +61,7 @@ DEP002 = [
     "opentelemetry-proto",
     "opentelemetry-sdk",
     "openapi-core",
+    "signxml",
     "pillow",
     "scikit-learn",
     "torch",

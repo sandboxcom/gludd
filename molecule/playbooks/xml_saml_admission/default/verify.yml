@@ -1,0 +1,29 @@
+---
+- name: Verify the real collection FQCN fails closed
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Invoke the native action in check mode with an invalid assertion
+      general_ludd.xml.saml_processor:
+        saml_xml: "<Assertion/>"
+        trusted_certificate: |
+          -----BEGIN CERTIFICATE-----
+          invalid-canary
+          -----END CERTIFICATE-----
+        expected_issuer: https://idp.example.test
+        expected_audience: https://sp.example.test
+        expected_destination: https://sp.example.test/acs
+        expected_in_response_to: request-1
+        allowed_claims: [role]
+      check_mode: true
+      failed_when: false
+      register: _saml_check
+
+    - name: Assert the collection action is present, pure, and fail-closed
+      ansible.builtin.assert:
+        that:
+          - not (_saml_check.admitted | default(false))
+          - not (_saml_check.changed | default(false))
+          - _saml_check.msg | length > 0
+          - _saml_check.msg | length <= 512

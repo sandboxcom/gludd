@@ -19,9 +19,8 @@ exact-head and release proof.
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
 remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-S31-S45 plus S47, along with the train's dependency, ownership, structural,
-TUI, and coverage repairs. S29-S45 and S47 are listed from immutable
-implementation receipts without
+S31-S47, along with the train's dependency, ownership, structural, TUI, and
+coverage repairs. S29-S47 are listed from immutable implementation receipts without
 claiming train integration or an exact-head gate. The preview therefore records
 useful candidate contents without converting implementation evidence into task,
 gate, release, or publication completion.
@@ -87,8 +86,8 @@ includes 354 warning-fatal tests and 94% aggregate coverage (`shared.py` 87%,
 `projects.py` 98%, `metrics.py` 91%), with native SQL compilation, unsupported
 dialect rejection before I/O, and bounded two-session PostgreSQL convergence.
 
-S38-S45 move eight collection workflows onto native, owned library boundaries;
-S47 hardens and accelerates their final local gate admission:
+S38-S46 move nine collection workflows onto native, owned library
+boundaries; S47 hardens and accelerates their final local gate admission:
 
 - **S38 — Native SearXNG controller runtime.** Travel searches now call the
   official pinned `searx.webapp` WSGI application inside the controller EE;
@@ -222,6 +221,27 @@ S47 hardens and accelerates their final local gate admission:
   [large-schema cost][openapi-schema-cost], plus the OpenAPI `$ref`
   [SSRF advisory][openapi-ref-ssrf] and DNS check/use report
   [#14312][semantic-kernel-14312], define that trust boundary.
+- **S46 — Native fail-closed SAML assertion admission.** Identity workflows now
+  admit exactly one signed SAML Response or Assertion through pinned
+  `signxml==5.1.0`, consume only the SignXML-verified assertion subtree, and
+  return bounded allowlisted claims. This replaces the role's inline Python,
+  temporary files, and structural signature claim while rejecting wrapping,
+  duplicate IDs or claims, weak or external references, encrypted assertions,
+  DTDs, entities, XSLT, symlinks, hard links, and unbound issuer, audience,
+  destination, recipient, request, status, or time context. A digest-addressed
+  controller-EE canary takes only new jobs while existing jobs drain; rollback
+  drains the candidate and repins the prior verified digest. The admission path
+  owns no listener, subprocess, temporary state, cache, or durable data, so no
+  data repair is required. Evidence includes 62 warning-fatal tests, 97%
+  aggregate coverage with all three production files at 96-100%, all four
+  Molecule phases, and a 121,637-test zero-error collection with 18 intentional
+  deselections from 121,655 tests. The
+  [SignXML verified subtree guidance][signxml-verification], python3-saml's
+  long-lived [signature-validation issue #282][python3-saml-282] and
+  [duplicate-attribute issue #39][python3-saml-39], and the Ansible
+  [action-plugin/module-utils thread][ansible-action-module-utils] plus
+  [collection-qualified follow-up][ansible-action-collections] motivate the
+  verified-only, ambiguity-free collection boundary.
 - **S47 — Exact-SHA resumable, fail-fast local gate admission.** Local retries
   admit only authenticated passing receipts from the same clean SHA, restore
   branch-aware coverage before enforcing the unchanged 85% aggregate and 75%
@@ -335,7 +355,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 37-item candidate inventory, and
+ordering, deterministic rendering, the exact 38-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -412,3 +432,6 @@ Research was reviewed on 2026-10-08:
 [openapi-schema-cost]: https://www.reddit.com/r/PHP/comments/s5ko42/do_you_use_open_api_specs/
 [openapi-ref-ssrf]: https://github.com/advisories/ghsa-v6ph-xcq9-qxxj
 [semantic-kernel-14312]: https://github.com/microsoft/semantic-kernel/issues/14312
+[signxml-verification]: https://github.com/XML-Security/signxml#see-what-is-signed
+[python3-saml-282]: https://github.com/SAML-Toolkits/python3-saml/issues/282
+[python3-saml-39]: https://github.com/SAML-Toolkits/python3-saml/issues/39

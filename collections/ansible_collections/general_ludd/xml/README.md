@@ -13,11 +13,13 @@ XML is still the backbone of enterprise data interchange. This collection treats
 | `xml_core` | Parse XML files, execute XPath queries, manage namespaces, extract/modify elements, validate well-formedness |
 | `xsd_generator` | Infer XSD schemas from XML instance documents; generate .xsd output with namespace support |
 | `xslt_transformer` | Apply XSLT to XML, chain transformations, generate output formats (HTML/XML/text) |
+| `saml_processor` | Admit one signature-verified SAML assertion with exact protocol bindings and bounded allowlisted claims |
 
 ## Dependencies
 
 - Python `xml.etree.ElementTree` (stdlib) — used for basic parsing and XPath in xml_core
 - Python `lxml` (optional) — used for XSD generation and XSLT transformation (full XPath 1.0, XSLT 1.0 support)
+- Python `signxml==5.1.0` (controller image) — verifies the exact SAML assertion subtree against an explicit certificate
 - `general_ludd.agent` >= 0.1.0 (provides `gludd_model_call`, `gludd_message`, `gludd_facts`)
 
 ## Namespace Handling
