@@ -12,8 +12,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from scripts import build_deck
+
+pytest.importorskip("pytest_playwright", reason="presentation browser extra is not installed")
+playwright_sync_api = pytest.importorskip(
+    "playwright.sync_api",
+    reason="presentation browser extra is not installed",
+)
+PlaywrightTimeoutError = playwright_sync_api.TimeoutError
 
 pytestmark = pytest.mark.presentation_browser
 
