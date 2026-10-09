@@ -32,6 +32,13 @@
         "quiet_seconds": 60
       },
       {
+        "name": "cloud-iam-generation-parity",
+        "target": "_cloud-iam-generation-parity",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
         "name": "_dead-code-baseline-refresh",
         "target": "_dead-code-baseline-refresh",
         "budget_class": "fast",
@@ -214,6 +221,20 @@
       "owner_target": "_ansible-role-variable-prefix",
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ansible_lint_deep.py::test_role_variables_use_namespaced_prefix",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "cloud-iam-resource-pruning-trigger",
+      "owner_target": "_cloud-iam-generation-parity",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_cloud_role_generator.py::TestGenerateRoleFromTemplateWithResourceTypes::test_aws_prune_produces_warning_when_actions_removed",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "cloud-iam-generation-parity",
+      "owner_target": "_cloud-iam-generation-parity",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_cloud_iam_expert.py::TestGenerateCloudRole::test_generate_aws_terraform_deploy",
       "full_gate_phase": "test"
     }
   ]

@@ -27,6 +27,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
         makefile, "_mcp-workspace-jail-integration"
     )
     module_graph = _target_stanza(makefile, "_module-graph-classification")
+    cloud_iam_parity = _target_stanza(makefile, "_cloud-iam-generation-parity")
 
     assert "integration-admission" in makefile.split("help:", 1)[0]
     assert (
@@ -38,6 +39,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
         "worktree-guard",
         "check-gate-failure-promotions",
         "ansible-role-variable-prefix",
+        "cloud-iam-generation-parity",
         "_dead-code-baseline-refresh",
         "check-coverage-gaps",
         "check-resource-ownership",
@@ -110,6 +112,12 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
         "tests/unit/test_module_graph_deep.py::test_all_subpackages_classified"
         in module_graph
     )
+    prune_node = "test_aws_prune_produces_warning_when_actions_removed"
+    full_role_node = "test_generate_aws_terraform_deploy"
+    assert prune_node in cloud_iam_parity
+    assert full_role_node in cloud_iam_parity
+    assert cloud_iam_parity.index(prune_node) < cloud_iam_parity.index(full_role_node)
+    assert 'PYTEST_ARGS="-W error -q -n 0"' in cloud_iam_parity
     assert "gate-full" not in stanza
     assert "$(MAKE) --no-print-directory gate" not in stanza
 
@@ -245,6 +253,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         "worktree-guard",
         "check-gate-failure-promotions",
         "ansible-role-variable-prefix",
+        "cloud-iam-generation-parity",
         "_dead-code-baseline-refresh",
         "check-coverage-gaps",
         "check-resource-ownership",
@@ -268,11 +277,12 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         for line in output.splitlines()
         if line.startswith("{") and '"kind":"integration_admission_phase"' in line
     ]
-    assert len(evidence) == 19
+    assert len(evidence) == 20
     assert [item["phase"] for item in evidence] == [
         "worktree-guard",
         "check-gate-failure-promotions",
         "ansible-role-variable-prefix",
+        "cloud-iam-generation-parity",
         "_dead-code-baseline-refresh",
         "check-coverage-gaps",
         "check-resource-ownership",
@@ -329,10 +339,12 @@ def test_integration_admission_document_records_queue_evidence_and_boundaries() 
         "test_contain_workspace_escape_returns_none",
         "test_workspace_escaping_jail_is_refused",
         "test_all_subpackages_classified",
+        "test_aws_prune_produces_warning_when_actions_removed",
+        "test_generate_aws_terraform_deploy",
         "machine-readable",
         "max-runtime-timeout",
         "quiet-output-timeout",
-        "2,670 seconds",
+        "2,760 seconds",
         "coverage-gap-drift",
         "resource-ownership-drift",
         "247.53 seconds",
