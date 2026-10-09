@@ -238,6 +238,7 @@ def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
 
     assert "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814" in alternates
     assert "837c969e07af0acbc4812ec9e417ef42eb941a9184d9aa1731c402c3df1d11ad" in alternates
+    assert "99d8addc768a18463e361dfc9a81bed234b628d0ea5a2ae3d59ba558157c2d0d" in alternates
 
 
 def test_linux_policy_tracks_locked_pyinstaller_version() -> None:
@@ -258,7 +259,7 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
         "aarch64": ("70c6ec35a8d7e0b9095ca2dd7879ef28be05bff279d6d7aca9220e54efbd14ba"),
-        "x86_64": ("99d8addc768a18463e361dfc9a81bed234b628d0ea5a2ae3d59ba558157c2d0d"),
+        "x86_64": ("207542a4500ad8d13bb0e0e369ba3b7291e5c603b9c61c6c7174c5997462d5af"),
     }
 
 
