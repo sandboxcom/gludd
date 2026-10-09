@@ -28,4 +28,3 @@
           - "'POST /api/dispatch' in res.mock_requests"
         fail_msg: "gludd_mcp_tool did not complete one MCP dispatch: {{ res }}"
         success_msg: "gludd_mcp_tool: live daemon dispatch contract verified"
-
