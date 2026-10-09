@@ -69,6 +69,8 @@ SEARXNG_REQUIREMENT = (
     "searxng @ git+https://github.com/searxng/searxng.git@"
     f"{SEARXNG_SOURCE_REVISION}"
 )
+AZURE_IDENTITY_REQUIREMENT = "azure-identity==1.26.0"
+AZURE_MONITOR_QUERY_REQUIREMENT = "azure-monitor-query==2.0.0"
 FRICTIONLESS_REQUIREMENT = "frictionless==5.19.1"
 JSONPOINTER_REQUIREMENT = "jsonpointer==3.2.0"
 OPENAPI_CORE_REQUIREMENT = "openapi-core==0.23.1"
@@ -76,6 +78,8 @@ SIGNXML_REQUIREMENT = "signxml==5.1.0"
 EXPECTED_CONTROLLER_IMPORTS = (
     "ansible",
     "ansible_runner",
+    "azure.identity",
+    "azure.monitor.query",
     "frictionless",
     "jsonpointer",
     "openapi_core",
@@ -282,6 +286,8 @@ def validate_files() -> list[str]:
     for required in (
         "ansible-core",
         "ansible-runner",
+        "azure-identity",
+        "azure-monitor-query",
         "jsonpointer",
         "openapi-core",
         "signxml",
@@ -295,6 +301,8 @@ def validate_files() -> list[str]:
         if line.strip() and not line.lstrip().startswith("#")
     ]
     if pinned_requirements != [
+        AZURE_IDENTITY_REQUIREMENT,
+        AZURE_MONITOR_QUERY_REQUIREMENT,
         FRICTIONLESS_REQUIREMENT,
         JSONPOINTER_REQUIREMENT,
         OPENAPI_CORE_REQUIREMENT,
@@ -302,8 +310,8 @@ def validate_files() -> list[str]:
         SEARXNG_REQUIREMENT,
     ]:
         errors.append(
-            "controller Python requirements must contain only pinned Frictionless, "
-            "jsonpointer, openapi-core, SignXML, and official SearXNG"
+            "controller Python requirements must contain only pinned Azure Monitor, "
+            "Frictionless, jsonpointer, openapi-core, SignXML, and official SearXNG"
         )
 
     definition: dict[str, Any] = yaml.safe_load(DEFINITION.read_text(encoding="utf-8"))

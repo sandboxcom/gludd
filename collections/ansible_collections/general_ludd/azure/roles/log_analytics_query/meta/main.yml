@@ -1,8 +1,9 @@
 ---
 galaxy_info:
   role_name: log_analytics_query
+  namespace: general_ludd
   author: Agentic Harness Agent
-  description: Query a Log Analytics workspace.
+  description: Execute one bounded digest-bound Azure Log Analytics query.
   license: MIT
   min_ansible_version: "2.14"
   platforms:

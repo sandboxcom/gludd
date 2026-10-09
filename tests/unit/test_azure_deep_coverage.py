@@ -369,16 +369,17 @@ class TestOptimizeCostEdge:
 # ═══════════════════════════════════════════════════════════════════════════
 class TestQueryLogAnalyticsOutputShape:
     def test_result_dict_always_has_four_keys(self):
-        for ws in ("ws-1", "", "a" * 100):
-            for query in ("Heartbeat", "", "Perf | take 10"):
-                result = query_log_analytics(ws, query)
-                assert len(result["result"]) == 4
+        workspace = "00000000-0000-4000-8000-000000000001"
+        for query in ("Heartbeat", "Perf | take 10"):
+            result = query_log_analytics(workspace, query)
+            assert len(result["result"]) == 4
+            assert result["result"]["executed"] is False
 
-    def test_note_always_contains_help_text(self):
-        result = query_log_analytics("ws", "Heartbeat")
-        note = result["result"]["note"]
-        assert len(note) > 0
-        assert "KQL" in note or "Azure" in note or "REST" in note or "validate" in note
+    def test_warning_always_routes_to_native_action(self):
+        result = query_log_analytics(
+            "00000000-0000-4000-8000-000000000001", "Heartbeat"
+        )
+        assert "general_ludd.azure.log_analytics_query" in result["warnings"][0]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

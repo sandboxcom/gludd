@@ -21,7 +21,7 @@ OpenTofu instead of the HashiCorp Terraform CLI.
 | `network_design` | Design an Azure virtual network with subnets. |
 | `container_app_deploy` | Observe and reconcile an audited Container Apps GPU stack through OpenTofu. |
 | `acr_registry_config` | Configure an Azure Container Registry. |
-| `log_analytics_query` | Query a Log Analytics workspace. |
+| `log_analytics_query` | Execute one bounded digest-bound Log Analytics query through the official SDK. |
 | `resource_inventory` | Inventory Azure resources via Resource Graph. |
 | `cost_optimize` | Optimize Azure costs for a service type. |
 
@@ -62,3 +62,5 @@ make test TESTFILE='tests/unit/test_azure_core.py'
 - `gludd_azure_containerapp` contains only bounded, content-free lifecycle facts.
 - Azure mutation modules are forbidden; MPL-2.0 OpenTofu is the sole writer.
 - Saved apply plans are independently SHA-256 verified before execution.
+- Log Analytics queries use `azure-monitor-query==2.0.0`; raw REST and
+  `ansible.builtin.uri` are forbidden for this role.

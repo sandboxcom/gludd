@@ -176,6 +176,10 @@ def test_runtime_stages_native_collections_dependencies_and_pinned_opentofu() ->
     assert "jsonpointer==3.2.0" in python_requirements
     assert "openapi-core==0.23.1" in python_requirements
     assert "signxml==5.1.0" in python_requirements
+    assert "azure-identity==1.26.0" in python_requirements
+    assert "azure-monitor-query==2.0.0" in python_requirements
+    assert "azure.identity" in artifacts.EXPECTED_CONTROLLER_IMPORTS
+    assert "azure.monitor.query" in artifacts.EXPECTED_CONTROLLER_IMPORTS
     assert "frictionless" in artifacts.EXPECTED_CONTROLLER_IMPORTS
     assert "jsonpointer" in artifacts.EXPECTED_CONTROLLER_IMPORTS
     assert "openapi_core" in artifacts.EXPECTED_CONTROLLER_IMPORTS
@@ -242,6 +246,8 @@ def test_validate_reports_dependency_leaks_and_missing_controller(
         "core dependency leak: ansible-builder",
         "missing optional controller dependency: ansible-core",
         "missing optional controller dependency: ansible-runner",
+        "missing optional controller dependency: azure-identity",
+        "missing optional controller dependency: azure-monitor-query",
         "missing optional controller dependency: jsonpointer",
         "missing optional controller dependency: openapi-core",
         "missing optional controller dependency: signxml",

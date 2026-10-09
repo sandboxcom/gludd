@@ -1,0 +1,29 @@
+---
+- name: Converge native Azure Log Analytics admission role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    _azure_log_canary: "print gludd_canary=1"
+  tasks:
+    - name: Validate the deterministic query through the real role FQCN
+      ansible.builtin.include_role:
+        name: general_ludd.azure.log_analytics_query
+      vars:
+        azure_log_analytics_query_enabled: true
+        azure_log_analytics_query_workspace_id: >-
+          00000000-0000-4000-8000-000000000001
+        azure_log_analytics_query_query: "{{ _azure_log_canary }}"
+        azure_log_analytics_query_query_sha256: >-
+          {{ _azure_log_canary | hash('sha256') }}
+        azure_log_analytics_query_validate_only: true
+
+    - name: Assert validation allocated no provider transport
+      ansible.builtin.assert:
+        that:
+          - azure_log_analytics_query_result.validated | bool
+          - not (azure_log_analytics_query_result.executed | bool)
+          - not (azure_log_analytics_query_result.changed | bool)
+          - >-
+            azure_log_analytics_query_result.query_sha256 ==
+            (_azure_log_canary | hash('sha256'))

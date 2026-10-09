@@ -1,0 +1,27 @@
+---
+- name: Verify native Azure Log Analytics action purity
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    _azure_log_canary: "print gludd_canary=1"
+  tasks:
+    - name: Invoke the collection action in check mode
+      general_ludd.azure.log_analytics_query:
+        workspace_id: 00000000-0000-4000-8000-000000000001
+        query: "{{ _azure_log_canary }}"
+        query_sha256: "{{ _azure_log_canary | hash('sha256') }}"
+        timespan_minutes: 1
+        endpoint: public
+        credential_mode: managed
+        server_timeout_seconds: 1
+      check_mode: true
+      register: _azure_log_check
+
+    - name: Assert check mode is validated, unchanged, and unexecuted
+      ansible.builtin.assert:
+        that:
+          - _azure_log_check.validated | bool
+          - not (_azure_log_check.executed | bool)
+          - not (_azure_log_check.changed | bool)
+          - _azure_log_check.tables | length == 0

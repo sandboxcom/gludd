@@ -8,6 +8,9 @@ optimization.
 
 from __future__ import annotations
 
+import hashlib
+import re
+import uuid
 from typing import Any
 
 from general_ludd.azure.rbac_validator import validate_action_string
@@ -150,16 +153,37 @@ def query_log_analytics(
     workspace_id: str,
     kql_query: str,
 ) -> dict[str, Any]:
-    """Describe a one-day Azure Log Analytics query request."""
+    """Return a validation-only native-action plan for legacy callers."""
+    if not isinstance(workspace_id, str):
+        raise TypeError("workspace_id must be a string")
+    try:
+        parsed_workspace = uuid.UUID(workspace_id)
+    except ValueError as exc:
+        raise ValueError("workspace_id must be a canonical UUID") from exc
+    if str(parsed_workspace) != workspace_id:
+        raise ValueError("workspace_id must be a canonical UUID")
+    if not isinstance(kql_query, str) or not kql_query:
+        raise ValueError("query must be a non-empty bounded string")
+    encoded = kql_query.encode("utf-8")
+    if len(encoded) > 32 * 1024 or "\x00" in kql_query:
+        raise ValueError("query must be a non-empty bounded string")
+    if re.search(
+        r"(?im)(?:^|;)\s*set\s+"
+        r"(?:notruncation|truncationmaxrecords|truncationmaxsize)\b",
+        kql_query,
+    ):
+        raise ValueError("query must not override the enforced truncation policy")
     return {
-        "status": "ok",
+        "status": "validated",
         "result": {
             "workspace_id": workspace_id,
-            "query": kql_query,
-            "timespan": "P1D",
-            "note": "KQL query structure validated; execute via Azure Monitor REST API",
+            "query_sha256": hashlib.sha256(encoded).hexdigest(),
+            "timespan": "PT5M",
+            "executed": False,
         },
-        "warnings": [],
+        "warnings": [
+            "validation only; execute with general_ludd.azure.log_analytics_query"
+        ],
     }
 
 
