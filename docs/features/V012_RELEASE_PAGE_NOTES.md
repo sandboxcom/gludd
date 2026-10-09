@@ -18,12 +18,12 @@ exact-head and release proof.
 
 That implemented-candidate projection covers native SearXNG, executable Ansible
 role hardening, FreeLLMAPI rollback and environment-admission work, FFDH warning
-remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30, and
-S31-S43, plus the train's dependency, ownership, structural, TUI, and coverage
-repairs. S29-S43 are listed from immutable implementation receipts without
-claiming train integration or an exact-head gate. The preview therefore records
-useful candidate contents without converting implementation evidence into task,
-gate, release, or publication completion.
+remediation, issues #65, #75, and #77, S11, S14-S18, S23, S24, S29, S30,
+S31-S43, and S46, plus the train's dependency, ownership, structural, TUI, and
+coverage repairs. S29-S43 and S46 are listed from immutable implementation
+receipts without claiming train integration or an exact-head gate. The preview
+therefore records useful candidate contents without converting implementation
+evidence into task, gate, release, or publication completion.
 
 S31-S37 describe the user-visible outcome as safer model-performance,
 benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
@@ -86,8 +86,8 @@ includes 354 warning-fatal tests and 94% aggregate coverage (`shared.py` 87%,
 `projects.py` 98%, `metrics.py` 91%), with native SQL compilation, unsupported
 dialect rejection before I/O, and bounded two-session PostgreSQL convergence.
 
-S38-S43 move six collection workflows onto native, owned library boundaries;
-S47 hardens and accelerates their final local gate admission:
+S38-S43 and S46 move seven collection workflows onto native, owned library
+boundaries; S47 hardens and accelerates their final local gate admission:
 
 - **S38 — Native SearXNG controller runtime.** Travel searches now call the
   official pinned `searx.webapp` WSGI application inside the controller EE;
@@ -180,6 +180,27 @@ S47 hardens and accelerates their final local gate admission:
   [collection-qualified follow-up][ansible-action-collections], and practitioner
   [RSS uncertainty discussion][materials-rss-practice] motivate the shared
   collection boundary and explicit independent-contributor assumption.
+- **S46 — Native fail-closed SAML assertion admission.** Identity workflows now
+  admit exactly one signed SAML Response or Assertion through pinned
+  `signxml==5.1.0`, consume only the SignXML-verified assertion subtree, and
+  return bounded allowlisted claims. This replaces the role's inline Python,
+  temporary files, and structural signature claim while rejecting wrapping,
+  duplicate IDs or claims, weak or external references, encrypted assertions,
+  DTDs, entities, XSLT, symlinks, hard links, and unbound issuer, audience,
+  destination, recipient, request, status, or time context. A digest-addressed
+  controller-EE canary takes only new jobs while existing jobs drain; rollback
+  drains the candidate and repins the prior verified digest. The admission path
+  owns no listener, subprocess, temporary state, cache, or durable data, so no
+  data repair is required. Evidence includes 62 warning-fatal tests, 97%
+  aggregate coverage with all three production files at 96-100%, all four
+  Molecule phases, and a 121,637-test zero-error collection with 18 intentional
+  deselections from 121,655 tests. The
+  [SignXML verified subtree guidance][signxml-verification], python3-saml's
+  long-lived [signature-validation issue #282][python3-saml-282] and
+  [duplicate-attribute issue #39][python3-saml-39], and the Ansible
+  [action-plugin/module-utils thread][ansible-action-module-utils] plus
+  [collection-qualified follow-up][ansible-action-collections] motivate the
+  verified-only, ambiguity-free collection boundary.
 - **S47 — Exact-SHA resumable, fail-fast local gate admission.** Local retries
   admit only authenticated passing receipts from the same clean SHA, restore
   branch-aware coverage before enforcing the unchanged 85% aggregate and 75%
@@ -290,7 +311,7 @@ traffic shift to reverse. If apply mode is interrupted before replacement, the
 previous preview remains intact; its sibling temporary file is removed.
 
 Focused regressions pin candidate-ID validation, duplicate rejection, canonical
-ordering, deterministic rendering, the exact 35-item candidate inventory, and
+ordering, deterministic rendering, the exact 36-item candidate inventory, and
 the distinction between six formally completed backlog entries and
 implementation-only entries pending exact-head/release proof.
 
@@ -355,3 +376,6 @@ Research was reviewed on 2026-10-08:
 [ansible-action-module-utils]: https://forum.ansible.com/t/two-questions-related-to-action-plugins/28059
 [ansible-action-collections]: https://forum.ansible.com/t/what-is-a-proper-way-to-use-module-utils-in-action-plugins/11011
 [materials-rss-practice]: https://www.reddit.com/r/AskEngineers/comments/usqr00/how_do_everyone_do_tolerance_stack_up_analysis_at/
+[signxml-verification]: https://github.com/XML-Security/signxml#see-what-is-signed
+[python3-saml-282]: https://github.com/SAML-Toolkits/python3-saml/issues/282
+[python3-saml-39]: https://github.com/SAML-Toolkits/python3-saml/issues/39

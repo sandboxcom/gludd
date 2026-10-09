@@ -179,7 +179,10 @@ ancestry from drifting independently.
   config/coverage_native_saml_admission.ini
   config/deptry_profiles.toml
   config/resource_ownership_native_saml_admission.json
+  config/v012_completed_backlog_reconciliation.json
   docs/features/NATIVE_SAML_ASSERTION_ADMISSION.md
+  docs/features/V012_RELEASE_PAGE_NOTES.md
+  docs/releases/v0.1.2.md
   docs/XML_COLLECTION.md
   molecule/playbooks/xml_saml_admission/default/converge.yml
   molecule/playbooks/xml_saml_admission/default/verify.yml
@@ -188,6 +191,7 @@ ancestry from drifting independently.
   requirements/profiles/ansible-controller/uv.lock
   scripts/ansible_runtime_artifacts.py
   tests/unit/test_ansible_runtime_artifacts.py
+  tests/unit/test_release_page_notes.py
   tests/unit/test_xml_saml_admission.py
   ```
 
