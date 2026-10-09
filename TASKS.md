@@ -1110,6 +1110,32 @@ surface. Atomic commit, additional safe headroom, replacement exact gate,
 hosted proof, predecessor live proofs, publication, deployment, and rollback
 remain open.
 
+S83.166 Git object-store reclamation continuation: the shared development
+checkout retained 216,436 KiB in `.git/objects` while disk admission remained
+above its unchanged ceiling. Six failing-first regressions pinned the missing
+operator boundary; the expanded eight-test replay now covers validate-only
+inventory, exact apply confirmation, the 30-day minimum grace, aged-orphan
+reclamation, dirty tracked and untracked content, linked-worktree branch
+neutrality, invariant and connectivity post-checks, and bounded termination of
+a deliberately hung Git child. `git-object-store-reclaim` delegates inventory,
+packing, pruning, and verification to mature Git built-ins, disables reflog,
+ref, rerere, and worktree-metadata expiry, and rejects `--force`,
+`--aggressive`, and immediate pruning. Its real non-mutating inventory reports
+854 loose objects (14.66 MiB), four packs (193.30 MiB), and zero garbage; live
+apply is intentionally deferred while shared Git writers are active. The
+combined target-contract replay passes 22/22; scoped Ruff, Markdown lint, Make
+validation, help completeness, the documented behavioral example, and the
+209-target contract are green. Practitioner reports of 100+ GiB checkpoint
+stores and temporary GC disk amplification are recorded with official Git
+guidance, ZDD sequencing, and rollback limits in the feature document.
+`make/00-foundation.mk`, `make/20-recovery-and-git.mk`,
+`config/make_target_contract.json`,
+`tests/unit/test_git_object_store_reclaim_target.py`,
+`docs/features/GIT_OBJECT_STORE_RECLAMATION.md`, and `TASKS.md` are the
+registered surface. Atomic commit, safe live quiescence, any resulting
+reclamation, replacement exact gate, hosted proof, predecessor live proofs,
+publication, deployment, and rollback remain open.
+
 ---
 
 ## Session 86 — v0.1.0-beta4 completion (2026-08-20)

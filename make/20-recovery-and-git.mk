@@ -152,6 +152,111 @@ disk:
 	@echo "--- gludd scratch + worktree footprint ---"
 	@du -sh /tmp/gludd-* 2>/dev/null | tail -5 || true
 
+# Read-only inventory is the default. Apply mode delegates all object parsing
+# and rewriting to Git, retains reflogs/worktree metadata, and requires an
+# explicit confirmation token plus a conservative unreachable-object grace.
+GIT_OBJECT_STORE_REPOSITORY ?= $(CURDIR)
+GIT_OBJECT_STORE_CONFIRM ?=
+GIT_OBJECT_STORE_PRUNE_DAYS ?= 30
+GIT_OBJECT_STORE_TIMEOUT_SECS ?= 900
+GIT_OBJECT_STORE_KILL_AFTER_SECS ?= 10
+GIT_OBJECT_STORE_HEARTBEAT_SECS ?= 5
+GIT_OBJECT_STORE_VALIDATE_ONLY ?= 1
+
+.PHONY: git-object-store-reclaim
+git-object-store-reclaim: ## Inventory or conservatively reclaim one Git object store
+	@case "$(GIT_OBJECT_STORE_VALIDATE_ONLY)" in 0|1) ;; *) echo "GIT_OBJECT_STORE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@case "$(GIT_OBJECT_STORE_PRUNE_DAYS)" in ""|*[!0-9]*) echo "GIT_OBJECT_STORE_PRUNE_DAYS must be an integer of at least 30"; exit 2;; esac; \
+	[ "$(GIT_OBJECT_STORE_PRUNE_DAYS)" -ge 30 ] || { echo "GIT_OBJECT_STORE_PRUNE_DAYS must be an integer of at least 30"; exit 2; }
+	@case "$(GIT_OBJECT_STORE_TIMEOUT_SECS)" in ""|*[!0-9]*|0) echo "GIT_OBJECT_STORE_TIMEOUT_SECS must be a positive integer"; exit 2;; esac
+	@case "$(GIT_OBJECT_STORE_KILL_AFTER_SECS)" in ""|*[!0-9]*|0) echo "GIT_OBJECT_STORE_KILL_AFTER_SECS must be a positive integer"; exit 2;; esac
+	@case "$(GIT_OBJECT_STORE_HEARTBEAT_SECS)" in ""|*[!0-9]*|0) echo "GIT_OBJECT_STORE_HEARTBEAT_SECS must be a positive integer"; exit 2;; esac
+	@[ "$(GIT_OBJECT_STORE_HEARTBEAT_SECS)" -le "$(GIT_OBJECT_STORE_TIMEOUT_SECS)" ] || { echo "GIT_OBJECT_STORE_HEARTBEAT_SECS must not exceed GIT_OBJECT_STORE_TIMEOUT_SECS"; exit 2; }
+	@set -eu; \
+	repository="$(GIT_OBJECT_STORE_REPOSITORY)"; \
+	[ -n "$$repository" ] || { echo "GIT_OBJECT_STORE_REPOSITORY is required"; exit 2; }; \
+	inside=$$(git -C "$$repository" rev-parse --is-inside-work-tree 2>/dev/null || true); \
+	[ "$$inside" = "true" ] || { echo "Refusing non-worktree Git repository: $$repository"; exit 2; }; \
+	repository=$$(git -C "$$repository" rev-parse --show-toplevel); \
+	git -C "$$repository" rev-parse --verify HEAD >/dev/null 2>&1 || { echo "Refusing repository without a committed HEAD: $$repository"; exit 2; }; \
+	common_dir=$$(git -C "$$repository" rev-parse --path-format=absolute --git-common-dir); \
+	objects_dir=$$(git -C "$$repository" rev-parse --path-format=absolute --git-path objects); \
+	[ -d "$$objects_dir" ] || { echo "Refusing missing Git object store: $$objects_dir"; exit 2; }; \
+	before_kib=$$(du -sk "$$objects_dir" 2>/dev/null | awk '{print $$1}'); \
+	before_kib=$${before_kib:-0}; \
+	echo "GIT_OBJECT_STORE_INVENTORY repository=$$repository common_dir=$$common_dir objects_dir=$$objects_dir size_kib=$$before_kib"; \
+	(cd "$$repository" && git count-objects -vH); \
+	if [ "$(GIT_OBJECT_STORE_VALIDATE_ONLY)" = "1" ]; then \
+		echo "GIT_OBJECT_STORE_VALID repository=$$repository prune_days=$(GIT_OBJECT_STORE_PRUNE_DAYS) mutation=false"; \
+		exit 0; \
+	fi; \
+	[ "$(GIT_OBJECT_STORE_CONFIRM)" = "RECLAIM-GIT-OBJECTS" ] || { echo "GIT_OBJECT_STORE_CONFIRM must equal RECLAIM-GIT-OBJECTS"; exit 2; }; \
+	head_before=$$(git -C "$$repository" rev-parse HEAD); \
+	head_ref_before=$$(git -C "$$repository" symbolic-ref -q HEAD || printf '%s' DETACHED); \
+	refs_before=$$(git -C "$$repository" show-ref --head | git -C "$$repository" hash-object --stdin); \
+	status_before=$$(git -C "$$repository" status --porcelain=v2 --branch --untracked-files=all | git -C "$$repository" hash-object --stdin); \
+	index_before=$$(git -C "$$repository" diff --cached --binary HEAD | git -C "$$repository" hash-object --stdin); \
+	worktree_diff_before=$$(git -C "$$repository" diff --binary | git -C "$$repository" hash-object --stdin); \
+	worktrees_before=$$(git -C "$$repository" worktree list --porcelain | git -C "$$repository" hash-object --stdin); \
+	echo "GIT_OBJECT_STORE_BEGIN repository=$$repository prune_days=$(GIT_OBJECT_STORE_PRUNE_DAYS) timeout_secs=$(GIT_OBJECT_STORE_TIMEOUT_SECS)"; \
+	git -C "$$repository" \
+		-c gc.packRefs=false \
+		-c gc.reflogExpire=never \
+		-c gc.reflogExpireUnreachable=never \
+		-c gc.worktreePruneExpire=never \
+		-c gc.rerereResolved=never \
+		-c gc.rerereUnresolved=never \
+		gc --no-detach --prune="$(GIT_OBJECT_STORE_PRUNE_DAYS).days.ago" & \
+	gc_pid=$$!; \
+	terminate_owned_gc() { \
+		if kill -0 "$$gc_pid" 2>/dev/null; then \
+			kill -TERM "$$gc_pid" 2>/dev/null || true; \
+			grace_elapsed=0; \
+			while kill -0 "$$gc_pid" 2>/dev/null && [ "$$grace_elapsed" -lt "$(GIT_OBJECT_STORE_KILL_AFTER_SECS)" ]; do \
+				sleep 1; grace_elapsed=$$((grace_elapsed + 1)); \
+			done; \
+			if kill -0 "$$gc_pid" 2>/dev/null; then \
+				echo "GIT_OBJECT_STORE_KILL pid=$$gc_pid kill_after_secs=$(GIT_OBJECT_STORE_KILL_AFTER_SECS) signal=KILL"; \
+				kill -KILL "$$gc_pid" 2>/dev/null || true; \
+			fi; \
+		fi; \
+		wait "$$gc_pid" 2>/dev/null || true; \
+	}; \
+	trap 'terminate_owned_gc; exit 130' HUP INT TERM; \
+	gc_rc=0; elapsed=0; timed_out=0; \
+	while kill -0 "$$gc_pid" 2>/dev/null; do \
+		sleep "$(GIT_OBJECT_STORE_HEARTBEAT_SECS)"; \
+		elapsed=$$((elapsed + $(GIT_OBJECT_STORE_HEARTBEAT_SECS))); \
+		echo "GIT_OBJECT_STORE_HEARTBEAT pid=$$gc_pid elapsed_secs=$$elapsed size_kib=$$(du -sk "$$objects_dir" 2>/dev/null | awk '{print $$1}')"; \
+		if [ "$$elapsed" -ge "$(GIT_OBJECT_STORE_TIMEOUT_SECS)" ] && kill -0 "$$gc_pid" 2>/dev/null; then \
+			echo "GIT_OBJECT_STORE_TIMEOUT pid=$$gc_pid timeout_secs=$(GIT_OBJECT_STORE_TIMEOUT_SECS) signal=TERM"; \
+			terminate_owned_gc; gc_rc=124; timed_out=1; break; \
+		fi; \
+	done; \
+	if [ "$$timed_out" -eq 0 ]; then wait "$$gc_pid" || gc_rc=$$?; fi; \
+	trap - HUP INT TERM; \
+	echo "GIT_OBJECT_STORE_POSTCHECK phase=invariants"; \
+	head_after=$$(git -C "$$repository" rev-parse HEAD); \
+	head_ref_after=$$(git -C "$$repository" symbolic-ref -q HEAD || printf '%s' DETACHED); \
+	refs_after=$$(git -C "$$repository" show-ref --head | git -C "$$repository" hash-object --stdin); \
+	status_after=$$(git -C "$$repository" status --porcelain=v2 --branch --untracked-files=all | git -C "$$repository" hash-object --stdin); \
+	index_after=$$(git -C "$$repository" diff --cached --binary HEAD | git -C "$$repository" hash-object --stdin); \
+	worktree_diff_after=$$(git -C "$$repository" diff --binary | git -C "$$repository" hash-object --stdin); \
+	worktrees_after=$$(git -C "$$repository" worktree list --porcelain | git -C "$$repository" hash-object --stdin); \
+	[ "$$head_before" = "$$head_after" ] && [ "$$head_ref_before" = "$$head_ref_after" ] && \
+	[ "$$refs_before" = "$$refs_after" ] && [ "$$status_before" = "$$status_after" ] && \
+	[ "$$index_before" = "$$index_after" ] && [ "$$worktree_diff_before" = "$$worktree_diff_after" ] && \
+	[ "$$worktrees_before" = "$$worktrees_after" ] || { echo "Git reclamation changed refs, HEAD, index, worktree, or worktree registration"; exit 1; }; \
+	echo "GIT_OBJECT_STORE_POSTCHECK phase=connectivity"; \
+	(cd "$$repository" && git fsck --connectivity-only --no-dangling); \
+	[ "$$gc_rc" -eq 0 ] || { echo "Git object-store reclamation failed or exceeded its bound: rc=$$gc_rc"; exit "$$gc_rc"; }; \
+	after_kib=$$(du -sk "$$objects_dir" 2>/dev/null | awk '{print $$1}'); \
+	after_kib=$${after_kib:-0}; \
+	reclaimed_kib=$$((before_kib - after_kib)); \
+	echo "GIT_OBJECT_STORE_INVENTORY_AFTER repository=$$repository size_kib=$$after_kib"; \
+	(cd "$$repository" && git count-objects -vH); \
+	echo "GIT_OBJECT_STORE_READY repository=$$repository before_kib=$$before_kib after_kib=$$after_kib reclaimed_kib=$$reclaimed_kib refs_unchanged=true worktree_unchanged=true"
+
 CACHE_RESOURCE_ROOT ?= $(HOME)/Library/Caches
 CACHE_RESOURCE_LIMIT ?= 20
 CACHE_RESOURCE_CANDIDATE ?=

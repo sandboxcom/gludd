@@ -357,7 +357,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
          secrets-scrub secrets-scan secrets-baseline secrets-baseline-check security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development branch-reconciliation-inventory branch-reconciliation-summary check-git-hygiene cache-disk cache-clean disk-user-caches cache-resource-inventory cache-resource-remove rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
+         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development branch-reconciliation-inventory branch-reconciliation-summary check-git-hygiene git-object-store-reclaim cache-disk cache-clean disk-user-caches cache-resource-inventory cache-resource-remove rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
         molecule-clean plan ps ps-gludd kill-stale terminate-project-process-tree reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
@@ -818,6 +818,7 @@ help:
 	@echo "  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)"
 	@echo "  disk                  Print disk usage + gludd footprint"
 	@echo "  disk-reclaim          Run bounded, heartbeat-emitting cache cleanup"
+	@echo "  git-object-store-reclaim  Inventory or conservatively reclaim Git objects (GIT_OBJECT_STORE_*)"
 	@echo "  cache-disk            Show bounded user-cache directory sizes"
 	@echo "  cache-clean           Remove the explicitly enumerated tool caches"
 	@echo "  disk-user-caches      Show accessible user-cache and data-root sizes"
