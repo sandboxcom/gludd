@@ -41,6 +41,22 @@ def _mypy_excludes() -> list[str]:
 
 
 class TestMypyConfigGaps:
+    def test_mypy_has_no_stale_crypto_override(self) -> None:
+        """Unused third-party overrides must not make strict mypy noisy."""
+        mypy_config = cast(dict[str, Any], _load_pyproject()["tool"]["mypy"])
+        assert mypy_config["warn_unused_configs"] is True
+
+        configured_modules = {
+            module
+            for override in mypy_config.get("overrides", [])
+            for module in (
+                [override["module"]]
+                if isinstance(override.get("module"), str)
+                else override.get("module", [])
+            )
+        }
+        assert "Crypto" not in configured_modules
+
     def test_no_src_package_excluded(self) -> None:
         excludes = _mypy_excludes()
         packages = _all_src_packages()
