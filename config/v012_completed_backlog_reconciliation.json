@@ -581,6 +581,21 @@
     {
       "evidence_commits": [
         {
+          "role": "implementation",
+          "sha": "3d86e4854ab4229986d9c9f78dd01e2ed36aa8a9"
+        },
+        {
+          "role": "task_evidence",
+          "sha": "6eb9893550df86dff1c09cdaf11780e74dd21b29"
+        }
+      ],
+      "item_id": "S43",
+      "release_page_category": "Features",
+      "title": "Native fail-closed materials tolerance analysis"
+    },
+    {
+      "evidence_commits": [
+        {
           "role": "exact_head_integration",
           "sha": "ad1df073784bdef19f1091d10baaa54232349510"
         },
