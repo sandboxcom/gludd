@@ -1,0 +1,32 @@
+---
+- name: Converge native SAML admission role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Exercise the role's fail-closed controller boundary
+      block:
+        - name: Submit an invalid canary through the role
+          ansible.builtin.include_role:
+            name: general_ludd.xml.saml_processor
+          vars:
+            saml_processor_xml: "<Assertion/>"
+            saml_processor_trusted_certificate: |
+              -----BEGIN CERTIFICATE-----
+              invalid-canary
+              -----END CERTIFICATE-----
+            saml_processor_expected_issuer: https://idp.example.test
+            saml_processor_expected_audience: https://sp.example.test
+            saml_processor_expected_destination: https://sp.example.test/acs
+            saml_processor_expected_in_response_to: request-1
+            saml_processor_allowed_claims: [role]
+      rescue:
+        - name: Record the expected closed admission
+          ansible.builtin.set_fact:
+            _saml_rejected: true
+
+    - name: Assert the invalid canary failed without reporting a change
+      ansible.builtin.assert:
+        that:
+          - _saml_rejected | default(false) | bool
+          - not (saml_processor_result.changed | default(false))

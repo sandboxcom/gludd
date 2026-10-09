@@ -1,8 +1,12 @@
 ---
-saml_processor_file: ""
+saml_processor_root: ""
+saml_processor_path: ""
+saml_processor_sha256: ""
 saml_processor_xml: ""
-saml_processor_validate_signature: false
-saml_processor_extract_attributes: true
-saml_processor_issuer: ""
-saml_processor_output_file: "/tmp/gludd-xml/saml_processor/output.json"
-saml_processor_python: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"
+saml_processor_trusted_certificate: ""
+saml_processor_expected_issuer: ""
+saml_processor_expected_audience: ""
+saml_processor_expected_destination: ""
+saml_processor_expected_in_response_to: ""
+saml_processor_allowed_claims: []
+saml_processor_clock_skew_seconds: 30

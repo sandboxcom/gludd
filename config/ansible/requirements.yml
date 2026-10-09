@@ -18,3 +18,5 @@ collections:
     type: file
   - name: collections/general_ludd-travel-0.1.0.tar.gz
     type: file
+  - name: collections/general_ludd-xml-0.1.0.tar.gz
+    type: file
