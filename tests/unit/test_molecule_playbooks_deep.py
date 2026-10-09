@@ -507,6 +507,16 @@ class TestMoleculeRoleDependencies:
 
 
 class TestMoleculeStructuralCoherence:
+    def test_runtime_validate_uses_repository_root_and_explicit_auth(self) -> None:
+        for filename in ("converge.yml", "verify.yml"):
+            playbook = (
+                PLAYBOOKS_DIR / "runtime_validate" / "default" / filename
+            ).read_text(encoding="utf-8")
+
+            assert "lookup('env', 'MOLECULE_PROJECT_DIRECTORY')" in playbook
+            assert "lookup('env', 'PWD')" not in playbook
+            assert "GLUDD_AUTH_PSK:" in playbook
+
     def test_every_scenario_has_molecule_yml(self) -> None:
         missing = []
         for scenario in MOLECULE_SCENARIOS:
