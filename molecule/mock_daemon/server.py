@@ -32,7 +32,7 @@ shape matches what each module parses:
   GET  /api/accounting                -> 200 {"accounting":[...],"total":N}  (gludd_accounting all)
   GET  /api/accounting/<project_id>   -> 200 {ProjectAccounting snapshot}    (gludd_accounting project)
   POST /api/schedule                  -> 200 {"batches":[[id,...],...]]}      (gludd_schedule)
-  POST /api/dispatch                  -> 200 {"result":{...}}                (gludd_dispatch dispatch)
+  POST /api/dispatch                  -> 200 result + results fan-out         (dispatch + MCP modules)
   GET  /api/dispatch/available        -> 200 {"handlers":[...]}              (gludd_dispatch available)
   GET  /api/dispatch/recent           -> 200 {"records":[...]}               (gludd_dispatch recent)
   POST /admin/stream/dispatch         -> 200 {task_id, clone_path, accepted} (gludd_stream chunk dispatch)
@@ -638,15 +638,29 @@ DISPATCH_RECENT = [
 
 
 def _dispatch_response(payload: dict[str, Any]) -> dict[str, Any]:
+    output = "[mock-daemon] dispatch executed successfully."
+    result = {
+        "id": "dispatch-mock-new",
+        "kind": payload.get("kind", "tool"),
+        "name": payload.get("name", "unknown"),
+        "args": payload.get("args", {}),
+        "status": "success",
+        "output": output,
+    }
     return {
-        "result": {
-            "id": "dispatch-mock-new",
-            "kind": payload.get("kind", "tool"),
-            "name": payload.get("name", "unknown"),
-            "args": payload.get("args", {}),
-            "status": "success",
-            "output": "[mock-daemon] dispatch executed successfully.",
-        },
+        "result": result,
+        "results": [
+            {
+                "ok": True,
+                "kind": result["kind"],
+                "name": result["name"],
+                "output": output,
+                "error": None,
+            }
+        ],
+        "count": 1,
+        "ok_count": 1,
+        "error_count": 0,
     }
 
 

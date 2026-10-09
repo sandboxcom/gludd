@@ -1,37 +1,31 @@
 ---
-- name: Verify - gludd_mcp_tool returns honest not_implemented (W3.9 fence)
+- name: Verify - gludd_mcp_tool crossed the daemon dispatch boundary
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8778', true) }}"
-    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8778', true) }}.pid"
+    result_path: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/mcp-tool-result.json
   tasks:
     - name: Load persisted mcp_tool result
       ansible.builtin.slurp:
-        src: "/tmp/gludd-mock-{{ mock_port }}-mcp_tool.json"
+        src: "{{ result_path }}"
       register: raw
 
     - name: Parse result
       ansible.builtin.set_fact:
         res: "{{ raw.content | b64decode | from_json }}"
 
-    - name: Assert not_implemented=true (W3.9 honest fence — no fake success)
+    - name: Assert the MCP call returned the dispatcher output
       ansible.builtin.assert:
         that:
           - not res.failed
           - not res.changed
-          - res.not_implemented | bool
-          - res.reason is defined
-          - "'W3.9' in res.reason"
           - res.result is defined
+          - res.result == '[mock-daemon] dispatch executed successfully.'
           - res.server == "filesystem"
           - res.tool == "read_file"
-        fail_msg: "gludd_mcp_tool should return not_implemented=true: {{ res }}"
-        success_msg: "gludd_mcp_tool: honest not_implemented fence verified (W3.9)"
+          - "'POST /api/dispatch' in res.mock_requests"
+        fail_msg: "gludd_mcp_tool did not complete one MCP dispatch: {{ res }}"
+        success_msg: "gludd_mcp_tool: live daemon dispatch contract verified"
 
-    - name: Stop mock daemon
-      ansible.builtin.shell:
-        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
-      changed_when: false
-      failed_when: false

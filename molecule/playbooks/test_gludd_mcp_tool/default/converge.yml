@@ -1,29 +1,53 @@
 ---
-# Exercise the REAL gludd_mcp_tool module. Per W3.9 decision the module is
-# honestly fenced: it always returns not_implemented=true without calling any
-# endpoint. The scenario verifies HONEST not_implemented behavior — no fake success.
-- name: Converge - call gludd_mcp_tool and assert honest not_implemented response
+# Exercise the REAL gludd_mcp_tool module through POST /api/dispatch.
+- name: Converge - call gludd_mcp_tool through the daemon dispatcher
   hosts: localhost
   connection: local
   gather_facts: false
+  force_handlers: true
   vars:
-    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8778', true) }}"
-    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+    daemon_psk: molecule-mcp-dispatch-psk
+    result_path: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/mcp-tool-result.json
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: >-
+        {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml
 
   tasks:
-    - name: Invoke gludd_mcp_tool (expects not_implemented=true, never fails)
+    - name: Acquire one private mock daemon session
+      ansible.builtin.include_tasks: >-
+        {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml
+
+    - name: Reset the mock request log
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: Invoke gludd_mcp_tool
       general_ludd.agent.gludd_mcp_tool:
         server: "filesystem"
         tool: "read_file"
         arguments:
           path: "/workspace/myfile.py"
         daemon_url: "{{ daemon_url }}"
+        psk: "{{ daemon_psk }}"
       register: mcp_result
+
+    - name: Read the mock request log
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/__requests"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: mcp_requests
 
     - name: Persist result for verify
       ansible.builtin.copy:
-        content: "{{ mcp_result | to_nice_json }}"
-        dest: "/tmp/gludd-mock-{{ mock_port }}-mcp_tool.json"
+        content: >-
+          {{ mcp_result | combine({'mock_requests': mcp_requests.json.requests}) | to_nice_json }}
+        dest: "{{ result_path }}"
         mode: "0644"
 
     - name: Show mcp_tool result

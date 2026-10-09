@@ -13,8 +13,11 @@ provisioner:
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
-    GLUDD_MOCK_PORT: "8778"
+    NO_PROXY: "127.0.0.1,localhost"
+    no_proxy: "127.0.0.1,localhost"
   playbooks:
+    cleanup: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_cleanup.yml"
+    destroy: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_destroy.yml"
     prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
@@ -23,8 +26,11 @@ verifier:
 
 scenario:
   test_sequence:
+    - cleanup
+    - destroy
     - syntax
     - prepare
     - converge
-    - idempotence
     - verify
+    - cleanup
+    - destroy

@@ -107,7 +107,8 @@ class TestCollectionControlPlaneEndpoints:
     """Daemon seams used by the migrated collection modules."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -492,7 +493,8 @@ class TestHealthEndpoints:
     """GET /healthz, /readyz, /readyz-degraded, /ci-status."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -534,7 +536,8 @@ class TestFactsMetricsTraces:
     """GET /api/facts, /api/metrics, /api/traces."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -576,7 +579,8 @@ class TestObserveEndpoints:
     """GET /api/observe/sources, POST /api/observe/query."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -617,7 +621,8 @@ class TestMessagesEndpoints:
     """GET /api/messages, POST /api/messages, POST /api/messages/<id>/ack."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -662,7 +667,8 @@ class TestTodosEndpoints:
     """GET /api/todos/<id>, PATCH /api/todos/<id>."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -693,7 +699,8 @@ class TestFeaturesSpendAccounting:
     """Feature, spend, and accounting read endpoints."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -763,7 +770,8 @@ class TestScheduleDispatch:
     """POST /api/schedule, POST /api/dispatch, GET /api/dispatch/available, GET /api/dispatch/recent."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -813,6 +821,17 @@ class TestScheduleDispatch:
         assert body["result"]["id"] == "dispatch-mock-new"
         assert body["result"]["status"] == "success"
         assert "output" in body["result"]
+        assert body["results"] == [
+            {
+                "ok": True,
+                "kind": "tool",
+                "name": "shell",
+                "output": "[mock-daemon] dispatch executed successfully.",
+                "error": None,
+            }
+        ]
+        assert body["count"] == body["ok_count"] == 1
+        assert body["error_count"] == 0
 
     def test_dispatch_available_lists_handlers(self, url: str):
         status, body = _get(url, "/api/dispatch/available")
@@ -832,7 +851,8 @@ class TestEnvironmentEndpoints:
     """GET /api/environment, GET /api/environment/advise."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -874,7 +894,8 @@ class TestModelEndpoints:
     """Model endpoints: call, workflow, performance, ranking."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -931,7 +952,8 @@ class TestSTSTokenLifecycle:
     """STS token mint, validate, get, list, revoke."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -1003,7 +1025,8 @@ class TestProcessManagement:
     """GET /admin/processes, GET /admin/processes/<pid>/stats, POST /admin/processes/<pid>/signal."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -1053,7 +1076,8 @@ class TestOrnithAndHumanTodos:
     """GET /admin/ornith/pairs, POST /api/human-todos."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -1104,7 +1128,8 @@ class TestStreamDispatch:
     """POST /admin/stream/dispatch."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -1152,7 +1177,8 @@ class TestProcessAuditAndResourcePreferences:
     """GET /process-audit, GET /api/resource-preferences."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -1182,7 +1208,8 @@ class TestGitHubApiMocks:
     """Mock GitHub API routes."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -1221,7 +1248,8 @@ class TestOpenBaoBreakGlass:
     """OpenBao snapshot and restore mock endpoints."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -1272,7 +1300,8 @@ class TestRequestLogIntrospection:
     """GET /__requests, POST /__requests/reset."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -1314,7 +1343,8 @@ class TestErrorHandling:
     """Error responses for unknown routes and bad paths."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
@@ -1360,7 +1390,8 @@ class TestConcurrentRequests:
     """Concurrent request handling with multiple threads."""
 
     @pytest.fixture(scope="class")
-    def url(self) -> Generator[str]:
+    @classmethod
+    def url(cls) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
             [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
