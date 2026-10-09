@@ -22,6 +22,15 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+APPLICATION_RESOURCE_PATHS = (
+    Path("src/general_ludd"),
+    Path("scripts"),
+    Path(
+        "collections/ansible_collections/general_ludd/travel/plugins/"
+        "module_utils/searxng_runtime.py"
+    ),
+)
+
 _PROCESS_CALLS = frozenset({"subprocess.Popen", "Popen"})
 _TASK_CALLS = frozenset({"asyncio.create_task", "create_task"})
 _CLIENT_NAMES = frozenset(
@@ -777,7 +786,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--inventory", type=Path, default=Path("config/resource_ownership_inventory.json"))
     parser.add_argument("--write-inventory", action="store_true")
-    parser.add_argument("paths", nargs="*", type=Path, default=[Path("src/general_ludd"), Path("scripts")])
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        type=Path,
+        default=APPLICATION_RESOURCE_PATHS,
+    )
     args = parser.parse_args(argv)
     try:
         findings = scan_paths(args.paths, root=args.root)

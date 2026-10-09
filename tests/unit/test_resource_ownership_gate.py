@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from scripts.check_resource_ownership import (
+    APPLICATION_RESOURCE_PATHS,
     ResourceEvidence,
     load_inventory,
     main,
@@ -335,11 +336,26 @@ def run() -> None:
     assert any(error.startswith("stale inventory:") for error in errors)
 
 
+def test_application_resource_scope_is_canonical_and_single_source() -> None:
+    """Keep every release-gated resource root in the checker-owned scope."""
+    assert (
+        Path("src/general_ludd"),
+        Path("scripts"),
+        Path(
+            "collections/ansible_collections/general_ludd/travel/plugins/"
+            "module_utils/searxng_runtime.py"
+        ),
+    ) == APPLICATION_RESOURCE_PATHS
+
+    makefile = compose_makefile(Path("Makefile"))
+    assert "RESOURCE_OWNERSHIP_PATHS ?=\n" in makefile
+
+
 def test_checked_in_inventory_matches_current_application_resources() -> None:
     """Keep split modules and newly owned resources in the checked-in inventory."""
     root = Path(__file__).resolve().parents[2]
     findings = scan_paths(
-        [root / "src" / "general_ludd", root / "scripts"],
+        [root / path for path in APPLICATION_RESOURCE_PATHS],
         root=root,
     )
     inventory = load_inventory(root / "config" / "resource_ownership_inventory.json")

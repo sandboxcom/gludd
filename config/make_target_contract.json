@@ -1335,7 +1335,7 @@
     {
       "name": "check-resource-ownership",
       "make_variables": ["RESOURCE_OWNERSHIP_ROOT", "RESOURCE_OWNERSHIP_PATHS", "RESOURCE_OWNERSHIP_INVENTORY", "RESOURCE_OWNERSHIP_WRITE"],
-      "behavior": "make check-resource-ownership RESOURCE_OWNERSHIP_ROOT=. RESOURCE_OWNERSHIP_PATHS='src/general_ludd scripts' RESOURCE_OWNERSHIP_INVENTORY=config/resource_ownership_inventory.json RESOURCE_OWNERSHIP_WRITE=0"
+      "behavior": "make check-resource-ownership RESOURCE_OWNERSHIP_ROOT=. RESOURCE_OWNERSHIP_PATHS='' RESOURCE_OWNERSHIP_INVENTORY=config/resource_ownership_inventory.json RESOURCE_OWNERSHIP_WRITE=0"
     },
     {
       "name": "check-generated-artifact-hygiene",
