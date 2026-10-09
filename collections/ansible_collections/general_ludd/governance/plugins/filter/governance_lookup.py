@@ -36,6 +36,7 @@ class _Profile:
     values: tuple[_ValueArgument, ...]
     flags: tuple[_FlagArgument, ...] = ()
     require_any: tuple[str, ...] = ()
+    support_filenames: tuple[str, ...] = ()
 
 
 _PROFILES = {
@@ -108,7 +109,7 @@ _PROFILES = {
         require_any=("country", "list_countries"),
     ),
     "tax_currency_info": _Profile(
-        "tax_currency.py",
+        "tax_currency_cli.py",
         values=(
             _ValueArgument(
                 "--country",
@@ -119,6 +120,7 @@ _PROFILES = {
         ),
         flags=(_FlagArgument("--list-countries", "list_countries"),),
         require_any=("country", "list_countries"),
+        support_filenames=("tax_currency.py",),
     ),
 }
 
@@ -224,6 +226,7 @@ def build_governance_lookup_plan(
         "output_dir": output_dir,
         "output_filename": f"{profile}.json",
         "result_fact": f"{profile}_result",
+        "support_filenames": list(spec.support_filenames),
     }
 
 

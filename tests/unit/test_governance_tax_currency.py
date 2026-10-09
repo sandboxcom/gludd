@@ -9,6 +9,8 @@ the data tables and accessor functions. Follows the same pattern as
 from __future__ import annotations
 
 import importlib.util
+import json
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -25,6 +27,7 @@ MODULE_PATH = (
     / "module_utils"
     / "tax_currency.py"
 )
+CLI_PATH = MODULE_PATH.with_name("tax_currency_cli.py")
 
 
 def _load_module() -> ModuleType:
@@ -35,9 +38,26 @@ def _load_module() -> ModuleType:
     return mod
 
 
+def _load_cli_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("_tax_currency_cli_under_test", CLI_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(CLI_PATH.parent))
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path.remove(str(CLI_PATH.parent))
+    return mod
+
+
 @pytest.fixture(scope="module")
 def tc() -> ModuleType:
     return _load_module()
+
+
+@pytest.fixture(scope="module")
+def cli() -> ModuleType:
+    return _load_cli_module()
 
 
 # ── Module exports / data table presence ───────────────────────────────────
@@ -332,6 +352,30 @@ class TestListAccessors:
         assert isinstance(currencies, list)
         assert "USD" in currencies
         assert len(currencies) >= 50
+
+
+class TestCommandLine:
+    def test_country_lookup_emits_role_contract(
+        self, cli: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setattr(sys, "argv", [str(CLI_PATH), "--country", "US"])
+
+        assert cli.main() == 0
+        result = json.loads(capsys.readouterr().out)
+        assert result["found"] is True
+        assert result["country"] == "US"
+        assert result["currency_code"] == "USD"
+        assert result["tax_authority"] == "Internal Revenue Service (IRS)"
+
+    def test_list_mode_emits_bounded_country_inventory(
+        self, cli: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setattr(sys, "argv", [str(CLI_PATH), "--list-countries"])
+
+        assert cli.main() == 0
+        result = json.loads(capsys.readouterr().out)
+        assert result["found"] is True
+        assert "US" in result["countries"]
 
 
 # ── Expanded coverage tests for new jurisdictions ────────────────────────

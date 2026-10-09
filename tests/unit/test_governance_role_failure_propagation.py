@@ -54,6 +54,18 @@ def test_shared_module_utility_role_is_bounded_and_check_mode_safe() -> None:
     assert task.get("ignore_errors") is not True
     assert task.get("when") == "not ansible_check_mode"
 
+    install_task = next(
+        item
+        for item in tasks
+        if item.get("name") == "Install governance module utility"
+    )
+    assert install_task["loop"] == (
+        "{{ [_governance_module_util_request.filename] "
+        "+ _governance_module_util_request.support_filenames }}"
+    )
+    assert "{{ item }}" in install_task["ansible.builtin.copy"]["src"]
+    assert "{{ item }}" in install_task["ansible.builtin.copy"]["dest"]
+
     validation_task = next(
         item
         for item in tasks
@@ -78,4 +90,19 @@ def test_shared_module_utility_role_is_bounded_and_check_mode_safe() -> None:
     expression = build_task["ansible.builtin.set_fact"][
         "_governance_module_util_request"
     ]
-    assert "general_ludd.governance.governance_lookup_plan(vars)" in expression
+    assert "general_ludd.governance.governance_lookup_plan(" in expression
+    assert "_governance_module_util_variables" in expression
+    serialized = yaml.safe_dump(tasks)
+    assert "governance_lookup_plan(vars)" not in serialized
+    assert "vars[_governance_module_util_request.result_fact]" not in serialized
+    assert "ansible.builtin.varnames" in serialized
+    assert "ansible.builtin.vars" in serialized
+    write_task = next(
+        item
+        for item in tasks
+        if item.get("name") == "Write governance module utility result"
+    )
+    assert (
+        "_governance_module_util_payload"
+        in write_task["ansible.builtin.copy"]["content"]
+    )

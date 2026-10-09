@@ -1,16 +1,51 @@
 ---
+- name: Discover governance module utility input variables
+  ansible.builtin.set_fact:
+    _governance_module_util_variable_names: >-
+      {{
+        query(
+          'ansible.builtin.varnames',
+          '^' ~ governance_module_util_profile
+          ~ '_(enabled|output_dir|country|category|list_countries|list_categories|scope|branch|scheme|level|list_schemes|type)$'
+        )
+      }}
+    _governance_module_util_variables:
+      ansible_python_interpreter: >-
+        {{ ansible_python_interpreter | default('python3') }}
+
+- name: Capture governance module utility input variables
+  ansible.builtin.set_fact:
+    _governance_module_util_variables: >-
+      {{
+        _governance_module_util_variables
+        | combine({item: lookup('ansible.builtin.vars', item)})
+      }}
+  loop: "{{ _governance_module_util_variable_names }}"
+  loop_control:
+    label: "{{ item }}"
+
 - name: Build governance module utility request
   ansible.builtin.set_fact:
     _governance_module_util_request: >-
       {{
         governance_module_util_profile
-        | general_ludd.governance.governance_lookup_plan(vars)
+        | general_ludd.governance.governance_lookup_plan(
+            _governance_module_util_variables
+          )
       }}
 
 - name: Validate governance module utility request
   ansible.builtin.assert:
     that:
       - _governance_module_util_request.filename is match('^[A-Za-z0-9_]+[.]py$')
+      - _governance_module_util_request.support_filenames is sequence
+      - _governance_module_util_request.support_filenames | length <= 4
+      - >-
+        _governance_module_util_request.support_filenames
+        | select('match', '^[A-Za-z0-9_]+[.]py$')
+        | list
+        | length
+        == _governance_module_util_request.support_filenames | length
       - _governance_module_util_request.output_dir | length > 0
       - _governance_module_util_request.output_dir | length <= 4096
       - _governance_module_util_request.output_filename is match('^[A-Za-z0-9_.-]+[.]json$')
@@ -29,10 +64,13 @@
 - name: Install governance module utility
   ansible.builtin.copy:
     src: >-
-      {{ role_path }}/../../plugins/module_utils/{{ _governance_module_util_request.filename }}
+      {{ role_path }}/../../plugins/module_utils/{{ item }}
     dest: >-
-      {{ _governance_module_util_request.output_dir }}/{{ _governance_module_util_request.filename }}
+      {{ _governance_module_util_request.output_dir }}/{{ item }}
     mode: "0755"
+  loop: "{{ [_governance_module_util_request.filename] + _governance_module_util_request.support_filenames }}"
+  loop_control:
+    label: "{{ item }}"
 
 - name: Run governance module utility
   ansible.builtin.command:
@@ -43,6 +81,8 @@
 
 - name: Publish governance module utility result
   ansible.builtin.set_fact:
+    _governance_module_util_payload: >-
+      {{ _governance_module_util_result.stdout | from_json }}
     "{{ _governance_module_util_request.result_fact }}": >-
       {{ _governance_module_util_result.stdout | from_json }}
   when: not ansible_check_mode
@@ -57,7 +97,7 @@
 - name: Write governance module utility result
   ansible.builtin.copy:
     content: >-
-      {{ vars[_governance_module_util_request.result_fact] | to_nice_json }}
+      {{ _governance_module_util_payload | to_nice_json }}
     dest: >-
       {{ _governance_module_util_request.output_dir }}/{{ _governance_module_util_request.output_filename }}
     mode: "0644"

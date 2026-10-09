@@ -59,7 +59,7 @@ from ansible_collections.general_ludd.governance.plugins.filter.governance_looku
         (
             "tax_currency_info",
             {"country": "JP", "list_countries": False},
-            "tax_currency.py",
+            "tax_currency_cli.py",
             ["--country", "JP"],
         ),
     ),
@@ -87,6 +87,8 @@ def test_build_plan_for_every_allowlisted_profile(
         f"/tmp/{profile}/{expected_filename}",
     ]
     assert plan["argv"][2:] == expected_tail
+    expected_support = ["tax_currency.py"] if profile == "tax_currency_info" else []
+    assert plan["support_filenames"] == expected_support
 
 
 @pytest.mark.parametrize(
