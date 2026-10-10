@@ -309,7 +309,8 @@ class TestCloudMultiModelStructural:
 @pytest.mark.skipif(_SKIP_REASON is not None, reason=_SKIP_REASON or "")
 class TestCloudMultiModelPipelineLive:
     @pytest.fixture(scope="class")
-    def gateway(self):
+    @staticmethod
+    def gateway():
         return _build_multi_role_gateway()
 
     @pytest.mark.parametrize("meta", _PYTHON_PROJECT_TYPES, ids=lambda m: m["id"])
