@@ -35,23 +35,14 @@ def test_admission_chain_is_ordered_and_does_not_claim_release_completion() -> N
     )
     for marker in (
         "S83.178 INTEGRATED",
-        "clean committed feature branch",
-        "gate_failure_promotions.json",
-        "maps nine families",
-        "dead-code-baseline-drift",
-        "coverage-gap-drift",
-        "resource-ownership-drift",
-        "claim-fence",
-        "project-isolation",
-        "concurrent-tick",
-        "mcp-workspace-containment",
-        "mcp-workspace-dispatch-jail",
-        "module-graph-classification-drift",
-        "exact Make or pytest owner",
-        "missing, duplicate, or stale nodes",
+        "RELEASE PROOF PENDING",
+        "Promoted failures stop before the next side effect",
+        "branch to terminal admission",
+        "one ordered admission maps nine deterministic failure families",
+        "exact Make or pytest owners",
+        "Missing, duplicate, stale, unmapped-module, and lifecycle-inventory evidence",
         "full gate remains mandatory",
-        "stops on the first failed deterministic check",
-        "Per-phase 90s / 180s / 600s runtime budgets",
+        "Bounded 90s / 180s / 600s phases",
         "observed_command/v1",
         "timeout exits 124",
         "claim transaction committed and active session released",
@@ -61,6 +52,7 @@ def test_admission_chain_is_ordered_and_does_not_claim_release_completion() -> N
         "before OIDC or paid compute",
         "RELEASE_ALLOW_INCOMPLETE_TASKS=0",
         "RELEASE_ALLOW_INVALID_RECEIPT=0",
+        "diagnostic bypasses cannot become ambient release authority",
         "S83.178/.177/.158/.157/.166 are integrated into development",
         "exact-head full gate, hosted replay, and terminal publication remain pending",
         "No release-completion claim is made",
@@ -93,10 +85,7 @@ def test_admission_chain_builds_exact_repository_source_ranges() -> None:
         assert path in citations
         assert f'data-source-path="{path}"' in slide
         assert f'data-source-lines="{lines}"' in slide
-        assert (
-            f"https://github.com/sandboxcom/gludd/blob/{sha}/{path}"
-            f"#L{start}-L{end}"
-        ) in slide
+        assert (f"https://github.com/sandboxcom/gludd/blob/{sha}/{path}#L{start}-L{end}") in slide
 
     assert slide.count('class="source-link"') == 6
 

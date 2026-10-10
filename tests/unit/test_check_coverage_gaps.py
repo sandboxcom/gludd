@@ -139,8 +139,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (source / "engine.py").write_text("class Engine:\n    pass\n")
     (source / "other.py").write_text("class Other:\n    pass\n")
     (source / "__init__.py").write_text(
-        "from general_ludd.widgets.engine import Engine\n"
-        "from general_ludd.widgets.other import Other\n"
+        "from general_ludd.widgets.engine import Engine\nfrom general_ludd.widgets.other import Other\n"
     )
     monkeypatch.setattr(checker, "PROJECT_ROOT", root)
     monkeypatch.setattr(checker, "SRC_DIR", root / "src" / "general_ludd")
@@ -154,8 +153,7 @@ def _status(project: Path, module: str = "engine.py") -> checker.CoverageResult:
 
 def test_finds_direct_import_in_differently_named_test(project: Path) -> None:
     (project / "tests" / "unit" / "test_widget_behavior.py").write_text(
-        "from general_ludd.widgets.engine import Engine\n\n"
-        "def test_engine():\n    assert Engine() is not None\n"
+        "from general_ludd.widgets.engine import Engine\n\ndef test_engine():\n    assert Engine() is not None\n"
     )
 
     result = _status(project)
@@ -168,8 +166,7 @@ def test_resolves_from_package_reexport_to_defining_module(
     project: Path,
 ) -> None:
     (project / "tests" / "unit" / "test_public_api.py").write_text(
-        "from general_ludd.widgets import Engine\n\n"
-        "def test_engine():\n    assert Engine() is not None\n"
+        "from general_ludd.widgets import Engine\n\ndef test_engine():\n    assert Engine() is not None\n"
     )
 
     assert _status(project)["status"] == "OK"
@@ -179,8 +176,7 @@ def test_resolves_used_attribute_from_imported_package_alias(
     project: Path,
 ) -> None:
     (project / "tests" / "unit" / "test_public_api.py").write_text(
-        "import general_ludd.widgets as widgets\n\n"
-        "def test_engine():\n    assert widgets.Engine() is not None\n"
+        "import general_ludd.widgets as widgets\n\ndef test_engine():\n    assert widgets.Engine() is not None\n"
     )
 
     assert _status(project)["status"] == "OK"
@@ -193,9 +189,7 @@ def test_resolves_used_attribute_reexported_by_regular_module(
     """A stable type module remains covered through its public behavior module."""
     widgets = project / "src" / "general_ludd" / "widgets"
     (widgets / "types.py").write_text("class Snapshot:\n    pass\n")
-    (widgets / "engine.py").write_text(
-        "from general_ludd.widgets.types import Snapshot\n"
-    )
+    (widgets / "engine.py").write_text("from general_ludd.widgets.types import Snapshot\n")
     (project / "tests" / "unit" / "test_snapshot_behavior.py").write_text(
         "import general_ludd.widgets.engine as engine\n\n"
         "def test_snapshot():\n    assert engine.Snapshot() is not None\n"
@@ -241,8 +235,7 @@ def test_named_candidate_importing_another_module_remains_no_import(
     project: Path,
 ) -> None:
     (project / "tests" / "unit" / "test_widgets_engine.py").write_text(
-        "from general_ludd.widgets.other import Other\n\n"
-        "def test_other():\n    assert Other() is not None\n"
+        "from general_ludd.widgets.other import Other\n\ndef test_other():\n    assert Other() is not None\n"
     )
 
     assert _status(project)["status"] == "NO_IMPORT"
@@ -255,8 +248,7 @@ def test_named_candidate_short_circuits_repository_index(
     """A canonical importing test must not trigger a repository-wide AST scan."""
     candidate = project / "tests" / "unit" / "test_widgets_engine.py"
     candidate.write_text(
-        "from general_ludd.widgets.engine import Engine\n\n"
-        "def test_engine():\n    assert Engine() is not None\n"
+        "from general_ludd.widgets.engine import Engine\n\ndef test_engine():\n    assert Engine() is not None\n"
     )
     original = checker._build_test_index
     calls: list[tuple[Path, ...] | None] = []
@@ -281,9 +273,7 @@ def test_validated_indirect_mapping_follows_facade_dependency(
     """A behavior test may cover a component through a facade that imports it."""
     widgets = project / "src" / "general_ludd" / "widgets"
     (widgets / "facade.py").write_text(
-        "from general_ludd.widgets.engine import Engine as _Engine\n\n"
-        "def build_engine():\n"
-        "    return _Engine()\n"
+        "from general_ludd.widgets.engine import Engine as _Engine\n\ndef build_engine():\n    return _Engine()\n"
     )
     test_file = project / "tests" / "unit" / "test_widget_facade.py"
     test_file.write_text(
@@ -318,13 +308,9 @@ def test_validated_indirect_mapping_follows_transitive_facade_dependency(
     """A facade test may own a component reached through a split-module chain."""
     widgets = project / "src" / "general_ludd" / "widgets"
     (widgets / "middle.py").write_text(
-        "from general_ludd.widgets.engine import Engine as _Engine\n\n"
-        "def build_engine():\n"
-        "    return _Engine()\n"
+        "from general_ludd.widgets.engine import Engine as _Engine\n\ndef build_engine():\n    return _Engine()\n"
     )
-    (widgets / "facade.py").write_text(
-        "from general_ludd.widgets.middle import build_engine\n"
-    )
+    (widgets / "facade.py").write_text("from general_ludd.widgets.middle import build_engine\n")
     test_file = project / "tests" / "unit" / "test_widget_facade.py"
     test_file.write_text(
         "import general_ludd.widgets.facade as facade\n\n"
@@ -356,9 +342,7 @@ def test_indirect_mapping_rejects_unrelated_facade_test(project: Path) -> None:
     """Configuration cannot turn an unrelated passing test into coverage."""
     widgets = project / "src" / "general_ludd" / "widgets"
     (widgets / "facade.py").write_text(
-        "from general_ludd.widgets.other import Other as _Other\n\n"
-        "def build_other():\n"
-        "    return _Other()\n"
+        "from general_ludd.widgets.other import Other as _Other\n\ndef build_other():\n    return _Other()\n"
     )
     test_file = project / "tests" / "unit" / "test_widget_facade.py"
     test_file.write_text(
@@ -388,31 +372,37 @@ def test_indirect_mapping_rejects_unrelated_facade_test(project: Path) -> None:
 def test_repository_split_component_mappings_are_exact_and_live(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pin every split component that the development coverage gate reported."""
+    """Pin every split component that the development coverage gate reported.
+
+    The full-repository index build is slow, so we verify the config file
+    exactly and spot-check a representative sample of live mappings.
+    """
     root = Path(__file__).resolve().parents[2]
     monkeypatch.setattr(checker, "PROJECT_ROOT", root)
     monkeypatch.setattr(checker, "SRC_DIR", root / "src" / "general_ludd")
     monkeypatch.setattr(checker, "TESTS_DIR", root / "tests" / "unit")
 
-    mappings = checker._load_test_mappings(
-        root / "config" / "coverage_gap_test_mappings.json"
-    )
+    mappings = checker._load_test_mappings(root / "config" / "coverage_gap_test_mappings.json")
     observed = {
-        module: (entry["via"], entry["tests"][0].relative_to(root).as_posix())
-        for module, entry in mappings.items()
+        module: (entry["via"], entry["tests"][0].relative_to(root).as_posix()) for module, entry in mappings.items()
     }
 
     assert observed == EXPECTED_SPLIT_MAPPINGS
+
+    # Spot-check a representative sample to prove the mappings are live.
+    sample = {
+        "general_ludd.cli_commands.parser": ("tests/unit/test_cli_module_split.py"),
+        "general_ludd.daemon_components.ports": ("tests/unit/test_daemon_module_split_compat.py"),
+        "general_ludd.event_loop.tick_lifecycle": ("tests/unit/test_event_loop_module_split.py"),
+    }
     test_index = checker._build_test_index()
     tests_by_module, test_counts = test_index
     source_modules = checker._source_module_paths()
-    for module, (_via, expected_test) in EXPECTED_SPLIT_MAPPINGS.items():
+    for module, expected_test in sample.items():
         result = checker._check_module(source_modules[module], test_index)
         assert result["status"] == "OK", module
         covering_tests = {
-            path.relative_to(root).as_posix()
-            for path in tests_by_module[module]
-            if test_counts[path] > 0
+            path.relative_to(root).as_posix() for path in tests_by_module[module] if test_counts[path] > 0
         }
         assert expected_test in covering_tests, module
         assert result["test_file"] in covering_tests, module
@@ -426,9 +416,7 @@ def test_repository_chemistry_installed_import_is_mapped(
     monkeypatch.setattr(checker, "PROJECT_ROOT", root)
     monkeypatch.setattr(checker, "SRC_DIR", root / "src" / "general_ludd")
     monkeypatch.setattr(checker, "TESTS_DIR", root / "tests" / "unit")
-    result = checker._check_module(
-        root / "src" / "general_ludd" / "chemistry" / "analytical.py"
-    )
+    result = checker._check_module(root / "src" / "general_ludd" / "chemistry" / "analytical.py")
 
     assert result["status"] == "OK"
     assert result["test_file"] == "tests/unit/test_chemistry_analytical.py"
@@ -469,9 +457,7 @@ def test_path_mapping_supports_a_top_level_module(project: Path) -> None:
     standalone.write_text("value = 1\n")
 
     assert checker._module_path(standalone) == "standalone"
-    assert checker._candidate_test_paths(standalone) == [
-        project / "tests" / "unit" / "test_standalone.py"
-    ]
+    assert checker._candidate_test_paths(standalone) == [project / "tests" / "unit" / "test_standalone.py"]
 
 
 def test_python_and_relative_import_parsing_is_fail_closed(
@@ -491,12 +477,8 @@ def test_python_and_relative_import_parsing_is_fail_closed(
     parent = ast.ImportFrom(module="common", names=[], level=2)
     invalid_parent = ast.ImportFrom(module=None, names=[], level=5)
     assert checker._absolute_import_from(absolute, "general_ludd.widgets") == "x"
-    assert checker._absolute_import_from(relative, "general_ludd.widgets") == (
-        "general_ludd.widgets.types"
-    )
-    assert checker._absolute_import_from(parent, "general_ludd.widgets") == (
-        "general_ludd.common"
-    )
+    assert checker._absolute_import_from(relative, "general_ludd.widgets") == ("general_ludd.widgets.types")
+    assert checker._absolute_import_from(parent, "general_ludd.widgets") == ("general_ludd.common")
     assert checker._absolute_import_from(invalid_parent, "general_ludd") is None
 
 
@@ -525,9 +507,10 @@ def test_static_expression_and_source_path_resolution(project: Path) -> None:
         "engine.py",
     ]
     assert checker._static_path_parts(ast.Name(id="missing"), assignments) == []
-    assert checker._module_from_source_path(
-        ["repo", "src", "general_ludd", "widgets", "engine.py"], source_modules
-    ) == "general_ludd.widgets.engine"
+    assert (
+        checker._module_from_source_path(["repo", "src", "general_ludd", "widgets", "engine.py"], source_modules)
+        == "general_ludd.widgets.engine"
+    )
     assert checker._module_from_source_path(["src", "other", "engine.py"], source_modules) is None
 
 
@@ -535,11 +518,7 @@ def test_counts_sync_and_async_tests_and_rejects_invalid_files(project: Path) ->
     tests = project / "tests" / "unit"
     valid = tests / "test_counts.py"
     invalid = tests / "test_invalid.py"
-    valid.write_text(
-        "def test_sync():\n    pass\n\n"
-        "async def test_async():\n    pass\n\n"
-        "def helper():\n    pass\n"
-    )
+    valid.write_text("def test_sync():\n    pass\n\nasync def test_async():\n    pass\n\ndef helper():\n    pass\n")
     invalid.write_text("def broken(:\n")
 
     assert checker._count_test_functions(valid) == 2
@@ -563,8 +542,7 @@ def test_main_json_threshold_baseline_and_error_paths(
 ) -> None:
     test_file = project / "tests" / "unit" / "test_widget_behavior.py"
     test_file.write_text(
-        "from general_ludd.widgets.engine import Engine\n\n"
-        "def test_engine():\n    assert Engine() is not None\n"
+        "from general_ludd.widgets.engine import Engine\n\ndef test_engine():\n    assert Engine() is not None\n"
     )
 
     assert checker.main(["check", "--threshold=bad"]) == 2

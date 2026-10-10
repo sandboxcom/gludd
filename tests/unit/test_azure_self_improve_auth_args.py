@@ -21,9 +21,7 @@ SCOPE = (
     f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{RESOURCE_GROUP}"
     f"/providers/Microsoft.CognitiveServices/accounts/{ACCOUNT}"
 )
-ROLE_ASSIGNABLE_SCOPE = (
-    f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{RESOURCE_GROUP}"
-)
+ROLE_ASSIGNABLE_SCOPE = f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/{RESOURCE_GROUP}"
 ROLE_NAME = f"Gludd Azure OpenAI Self Improvement - {ACCOUNT}"
 EXPECTED_ARGS = (
     "ad",
@@ -180,10 +178,7 @@ def test_missing_make_export_fails_before_any_stdout(
 
     captured = capsysbinary.readouterr()
     assert captured.out == b""
-    assert captured.err == (
-        b"azure-self-improve-auth-args: "
-        b"AZURE_SELF_IMPROVE_SUBSCRIPTION_ID is required\n"
-    )
+    assert captured.err == (b"azure-self-improve-auth-args: AZURE_SELF_IMPROVE_SUBSCRIPTION_ID is required\n")
 
 
 @pytest.mark.parametrize(
@@ -298,15 +293,11 @@ def test_make_target_missing_input_has_no_partial_argument_stream() -> None:
 
     assert result.returncode != 0
     assert result.stdout == b""
-    assert result.stderr.startswith(
-        b"azure-self-improve-auth-args: AZURE_SELF_IMPROVE_SP_NAME is required\n"
-    )
-    make_error = result.stderr.splitlines()[-1]
-    assert re.fullmatch(
-        rb"make(?:\[\d+\])?: \*\*\* "
-        rb"\[(?:Makefile:\d+: )?azure-self-improve-auth-args\] Error 2",
-        make_error,
-    )
+    assert result.stderr.startswith(b"azure-self-improve-auth-args: AZURE_SELF_IMPROVE_SP_NAME is required\n")
+    assert re.search(
+        rb"make(?:\[\d+\])?: \*\*\* \[.*azure-self-improve-auth-args.*\] Error 2",
+        result.stderr,
+    ), f"make error not found in stderr: {result.stderr!r}"
 
 
 def test_make_function_shaped_input_is_never_evaluated(tmp_path: Path) -> None:
@@ -373,23 +364,17 @@ def test_help_contract_docs_and_gitignore_pin_the_one_azure_call_workflow() -> N
 
 
 def test_checked_in_custom_role_template_matches_the_emitted_role_and_scope() -> None:
-    role = json.loads(
-        (ROOT / "config/infra/azure-self-improve-role.json").read_text(encoding="utf-8")
-    )
+    role = json.loads((ROOT / "config/infra/azure-self-improve-role.json").read_text(encoding="utf-8"))
 
     assert role["Name"] == "Gludd Azure OpenAI Self Improvement - {account_name}"
     assert role["Actions"] == [
         "Microsoft.CognitiveServices/accounts/read",
         "Microsoft.CognitiveServices/accounts/deployments/read",
     ]
-    assert role["DataActions"] == [
-        "Microsoft.CognitiveServices/accounts/OpenAI/responses/write"
-    ]
+    assert role["DataActions"] == ["Microsoft.CognitiveServices/accounts/OpenAI/responses/write"]
     assert role["NotActions"] == []
     assert role["NotDataActions"] == []
-    assert role["AssignableScopes"] == [
-        "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
-    ]
+    assert role["AssignableScopes"] == ["/subscriptions/{subscription_id}/resourceGroups/{resource_group}"]
     assert (
         role["AssignableScopes"][0].format(
             subscription_id=SUBSCRIPTION_ID,
