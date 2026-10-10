@@ -461,8 +461,8 @@ class TestCIModelPipeline:
     """
 
     @pytest.fixture(scope="class")
-    @classmethod
-    def gateways(cls) -> dict[str, Any]:
+    @staticmethod
+    def gateways() -> dict[str, Any]:
         gws: dict[str, Any] = {}
         if not _DS_SKIP:
             gws["deepseek"] = {"type": "ds", "gateway": _build_ds_gateway(), "pid": "ci-ds"}
