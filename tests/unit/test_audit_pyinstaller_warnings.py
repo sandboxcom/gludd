@@ -236,6 +236,7 @@ def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
     policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
     alternates = policy["reviewed_transitive_warning_sha256_alternates_by_architecture"]["x86_64"]
 
+    assert "2f743c4bf6b9422bc280bacb3efa1235dcec871950099c5673743667e059322f" in alternates
     assert "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814" in alternates
     assert "837c969e07af0acbc4812ec9e417ef42eb941a9184d9aa1731c402c3df1d11ad" in alternates
     assert "99d8addc768a18463e361dfc9a81bed234b628d0ea5a2ae3d59ba558157c2d0d" in alternates
