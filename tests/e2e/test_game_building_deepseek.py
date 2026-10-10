@@ -46,7 +46,8 @@ class TestDeepSeekGameBuilding:
     """Build each game via DeepSeek API and verify it works headlessly."""
 
     @pytest.fixture(scope="class")
-    def gateway(self):
+    @staticmethod
+    def gateway():
         return _build_deepseek_gateway()
 
     @staticmethod
@@ -750,7 +751,8 @@ class TestGamePersistence:
         cls._persistence_gaps.append({"game": game_id, "category": category, "detail": detail})
 
     @pytest.fixture(scope="class")
-    def gateway(self):
+    @staticmethod
+    def gateway():
         return _build_deepseek_gateway()
 
     # ---- Shared builder ----
