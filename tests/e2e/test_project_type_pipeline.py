@@ -394,7 +394,8 @@ class TestProjectTypePipeline:
     """Build + verify projects via DeepSeek API using the planner→coder→reviewer flow."""
 
     @pytest.fixture(scope="class")
-    def gateway(self):
+    @staticmethod
+    def gateway():
         return _build_deepseek_gateway()
 
     @staticmethod
