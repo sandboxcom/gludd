@@ -55,10 +55,9 @@ def _load_deepseek_key() -> str | None:
         return v if v else None
     return None
 
+
 _DEEPSEEK_KEY = _load_deepseek_key()
-_DS_SKIP_REASON = (
-    "DEEPSEEK_API_KEY not set and .deepseek.key not found"
-)
+_DS_SKIP_REASON = "DEEPSEEK_API_KEY not set and .deepseek.key not found"
 
 # ---------------------------------------------------------------------------
 # SearX fixture
@@ -118,10 +117,7 @@ def _research_game(game_id: str, connector: SearXConnector) -> dict[str, Any]:
         "game_id": game_id,
         "queries": queries,
         "results": {
-            label: [
-                {"title": r.title, "url": r.url, "snippet": r.snippet, "engine": r.engine}
-                for r in results
-            ]
+            label: [{"title": r.title, "url": r.url, "snippet": r.snippet, "engine": r.engine} for r in results]
             for label, results in all_results.items()
         },
         "summary": _summarize_research(game_id, all_results),
@@ -129,7 +125,8 @@ def _research_game(game_id: str, connector: SearXConnector) -> dict[str, Any]:
 
 
 def _summarize_research(
-    game_id: str, all_results: dict[str, list[SearXResult]],
+    game_id: str,
+    all_results: dict[str, list[SearXResult]],
 ) -> str:
     """Distill search results into a concise structured summary for the prompt."""
     parts: list[str] = []
@@ -162,8 +159,11 @@ def _augment_prompt(base_prompt: str, research: dict[str, Any]) -> str:
 # Research verification
 # ---------------------------------------------------------------------------
 
+
 def _verify_research_usage(
-    game_id: str, source: str, research: dict[str, Any],
+    game_id: str,
+    source: str,
+    research: dict[str, Any],
 ) -> dict[str, Any]:
     """After a game is built, check that research findings are reflected.
 
@@ -175,8 +175,13 @@ def _verify_research_usage(
     """
     summary = research.get("summary", "")
     if not summary.strip():
-        return {"match_rate": 1.0, "keywords_matched": [], "keywords_total": 0,
-                "ignored_findings": [], "note": "no research to verify"}
+        return {
+            "match_rate": 1.0,
+            "keywords_matched": [],
+            "keywords_total": 0,
+            "ignored_findings": [],
+            "note": "no research to verify",
+        }
 
     keywords: set[str] = set()
     findings_map: dict[str, str] = {}
@@ -187,9 +192,25 @@ def _verify_research_usage(
             for word in re.findall(r"[a-zA-Z]{4,}", snippet):
                 wl = word.lower()
                 if wl not in {
-                    "that", "this", "from", "with", "when", "been", "have",
-                    "they", "which", "their", "will", "what", "about", "into",
-                    "over", "than", "then", "also", "only",
+                    "that",
+                    "this",
+                    "from",
+                    "with",
+                    "when",
+                    "been",
+                    "have",
+                    "they",
+                    "which",
+                    "their",
+                    "will",
+                    "what",
+                    "about",
+                    "into",
+                    "over",
+                    "than",
+                    "then",
+                    "also",
+                    "only",
                 }:
                     keywords.add(wl)
                     if wl not in findings_map and snippet:
@@ -228,17 +249,13 @@ def _export_research_effectiveness(out_dir: Path) -> Path:
         "games": _OBS_DATA,
         "summary": {
             "total_games": len(_OBS_DATA),
-            "games_with_research_available": sum(
-                1 for g in _OBS_DATA.values() if g.get("research_available")
-            ),
+            "games_with_research_available": sum(1 for g in _OBS_DATA.values() if g.get("research_available")),
             "avg_match_rate": round(
-                sum(g.get("match_rate", 0) for g in _OBS_DATA.values())
-                / max(len(_OBS_DATA), 1),
+                sum(g.get("match_rate", 0) for g in _OBS_DATA.values()) / max(len(_OBS_DATA), 1),
                 3,
             ),
             "avg_keywords_total": round(
-                sum(g.get("keywords_total", 0) for g in _OBS_DATA.values())
-                / max(len(_OBS_DATA), 1),
+                sum(g.get("keywords_total", 0) for g in _OBS_DATA.values()) / max(len(_OBS_DATA), 1),
                 1,
             ),
             "improved_feature_completeness": {
@@ -276,11 +293,13 @@ class TestGameBuildingWithResearch:
     _gaps: ClassVar[list[dict[str, Any]]] = []
 
     @pytest.fixture(scope="class")
-    def gateway(self):
+    @staticmethod
+    def gateway():
         return _build_deepseek_gateway()
 
     @pytest.fixture(scope="class")
-    def searx(self):
+    @staticmethod
+    def searx():
         connector = _init_searx()
         if connector is None:
             pytest.skip("SearX instance not available — skipping research tests")
@@ -305,7 +324,11 @@ class TestGameBuildingWithResearch:
 
     # ---- Shared build + verify logic ----
     def _build_with_research(
-        self, gateway: Any, searx: SearXConnector, tmp_path: Path, game_id: str,
+        self,
+        gateway: Any,
+        searx: SearXConnector,
+        tmp_path: Path,
+        game_id: str,
     ) -> None:
         game_def = GAME_DEFINITIONS[game_id]
         class_name = game_def["class_name"]
@@ -327,9 +350,9 @@ class TestGameBuildingWithResearch:
         }
         _OBS_DATA[game_id] = obs
 
-        print(f"\n\n{'='*70}")
+        print(f"\n\n{'=' * 70}")
         print(f"BUILDING WITH RESEARCH: {game_id} ({class_name})")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         # Phase 1: SearX research
         print(f"\n--- Phase 1: SearX Research for {game_id} ---")
@@ -428,8 +451,9 @@ class TestGameBuildingWithResearch:
         obs["keywords_total"] = usage["keywords_total"]
         obs["ignored_findings"] = usage.get("ignored_findings", [])
 
-        print(f"  keyword match rate: {usage['match_rate']:.1%} "
-              f"({usage['keywords_matched']}/{usage['keywords_total']})")
+        print(
+            f"  keyword match rate: {usage['match_rate']:.1%} ({usage['keywords_matched']}/{usage['keywords_total']})"
+        )
 
         if usage.get("ignored_findings"):
             ignored = usage["ignored_findings"]
@@ -450,19 +474,20 @@ class TestGameBuildingWithResearch:
                     print(f"  feature failures ({len(feature_failures)}):")
                     for f in feature_failures:
                         print(f"    - {f}")
-                    self._record_gap(game_id, "features",
-                                     f"{len(feature_failures)} feature failures")
+                    self._record_gap(game_id, "features", f"{len(feature_failures)} feature failures")
                 else:
                     print("  all required features verified")
             except Exception as exc:
                 obs["feature_failures"] = [f"feature verifier crashed: {exc}"]
                 print(f"  feature verifier crashed: {exc}")
 
-        print(f"\n{'='*70}")
-        print(f"RESULT: {game_id} — {passed}/{len(checks)} checks, "
-              f"{usage['match_rate']:.1%} research used, "
-              f"{len(obs.get('feature_failures', []))} feature failures, "
-              f"{len(obs.get('lifecycle_failures', []))} lifecycle failures")
+        print(f"\n{'=' * 70}")
+        print(
+            f"RESULT: {game_id} — {passed}/{len(checks)} checks, "
+            f"{usage['match_rate']:.1%} research used, "
+            f"{len(obs.get('feature_failures', []))} feature failures, "
+            f"{len(obs.get('lifecycle_failures', []))} lifecycle failures"
+        )
 
     # ---- Research effectiveness report ----
     def test_research_effectiveness_report(self, tmp_path):
@@ -490,10 +515,12 @@ class TestGameBuildingWithResearch:
             print(f"\n  {game_id}:")
             print(f"    SearX queries:    {obs.get('research_queries', 0)}")
             print(f"    Results returned: {obs.get('research_results_total', 0)}")
-            print(f"    Keyword match:    {obs.get('match_rate', 0):.1%} "
-                  f"({obs.get('keywords_matched', 0)}/{obs.get('keywords_total', 0)})")
+            print(
+                f"    Keyword match:    {obs.get('match_rate', 0):.1%} "
+                f"({obs.get('keywords_matched', 0)}/{obs.get('keywords_total', 0)})"
+            )
             print(f"    Checks passed:    {obs.get('checks_passed', 0)}/{obs.get('checks_total', 0)}")
-            lc = obs.get('lifecycle_failures', [])
+            lc = obs.get("lifecycle_failures", [])
             print(f"    Lifecycle:        {'PASS' if not lc else f'{len(lc)} failures'}")
 
         avg = sum(o.get("match_rate", 0) for o in _OBS_DATA.values()) / max(len(_OBS_DATA), 1)
