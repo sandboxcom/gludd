@@ -68,7 +68,8 @@ class TestPluginStructure:
 
 class TestWaitPatternMatcher:
     @pytest.fixture(scope="class")
-    def patterns(self) -> list[re.Pattern[str]]:
+    @staticmethod
+    def patterns() -> list[re.Pattern[str]]:
         return _extract_wait_patterns(_plugin_source())
 
     @pytest.mark.parametrize(
@@ -107,11 +108,13 @@ class TestCiPollDispatchPatterns:
     """
 
     @pytest.fixture(scope="class")
-    def patterns(self) -> list[re.Pattern[str]]:
+    @staticmethod
+    def patterns() -> list[re.Pattern[str]]:
         return _extract_ci_poll_patterns(_plugin_source())
 
     @pytest.fixture(scope="class")
-    def src(self) -> str:
+    @staticmethod
+    def src() -> str:
         return _plugin_source()
 
     def test_exports_ci_poll_dispatch_patterns(self, src):

@@ -31,15 +31,17 @@ AZURE_MODULE = MODULES / "onboard-iam-azure"
 GCP_MODULE = MODULES / "onboard-iam-gcp"
 OPA_POLICY = REPO_ROOT / "config" / "opa" / "iam_policy.rego"
 
-AWS_ACTIONS_REQUIRING_WILDCARD_RESOURCE = frozenset({
-    "ec2:DescribeInstances",
-    "ec2:DescribeInstanceStatus",
-    "ec2:DescribeImages",
-    "ec2:DescribeSecurityGroups",
-    "ec2:DescribeSubnets",
-    "ec2:DescribeVpcs",
-    "ec2:DescribeVolumes",
-})
+AWS_ACTIONS_REQUIRING_WILDCARD_RESOURCE = frozenset(
+    {
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus",
+        "ec2:DescribeImages",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeVolumes",
+    }
+)
 
 
 def _infra_binary() -> str | None:
@@ -58,7 +60,8 @@ class TestAwsPolicyDocument:
     """Structural checks on the AWS IAM policy JSON."""
 
     @pytest.fixture(scope="class")
-    def policy(self) -> dict[str, Any]:
+    @staticmethod
+    def policy() -> dict[str, Any]:
         return cast(
             dict[str, Any],
             json.loads((AWS_MODULE / "policy.json").read_text()),
@@ -70,13 +73,9 @@ class TestAwsPolicyDocument:
             if isinstance(acts, str):
                 acts = [acts]
             for a in acts:
-                assert "*" not in a, (
-                    f"Wildcard action '{a}' in statement {stmt.get('Sid')}"
-                )
+                assert "*" not in a, f"Wildcard action '{a}' in statement {stmt.get('Sid')}"
 
-    def test_wildcard_resources_only_for_unscopable_actions(
-        self, policy: dict[str, Any]
-    ) -> None:
+    def test_wildcard_resources_only_for_unscopable_actions(self, policy: dict[str, Any]) -> None:
         """Bare '*' is limited to actions for which AWS requires it."""
         for stmt in policy["Statement"]:
             if stmt.get("Effect") != "Allow":
@@ -90,12 +89,9 @@ class TestAwsPolicyDocument:
             for r in res:
                 if r != "*":
                     continue
-                scopable = sorted(
-                    set(acts) - AWS_ACTIONS_REQUIRING_WILDCARD_RESOURCE
-                )
+                scopable = sorted(set(acts) - AWS_ACTIONS_REQUIRING_WILDCARD_RESOURCE)
                 assert not scopable, (
-                    f"Wildcard resource '*' in statement {stmt.get('Sid')} "
-                    f"for resource-scopable actions {scopable}"
+                    f"Wildcard resource '*' in statement {stmt.get('Sid')} for resource-scopable actions {scopable}"
                 )
 
     def test_passrole_is_self_only(self, policy: dict[str, Any]) -> None:
@@ -109,9 +105,7 @@ class TestAwsPolicyDocument:
                 if isinstance(res, str):
                     res = [res]
                 for r in res:
-                    assert r != "*", (
-                        f"PassRole resource is '{r}' — must be role-ARN-scoped"
-                    )
+                    assert r != "*", f"PassRole resource is '{r}' — must be role-ARN-scoped"
                     assert "operator_role_arn" in r.lower() or "role" in r.lower(), (
                         f"PassRole resource '{r}' does not scope to operator role"
                     )
@@ -137,33 +131,19 @@ class TestAwsPolicyDocument:
             if isinstance(acts, str):
                 acts = [acts]
             for a in acts:
-                assert a not in ("iam:*", "sts:*"), (
-                    f"Wildcard '{a}' is forbidden — use scoped actions"
-                )
+                assert a not in ("iam:*", "sts:*"), f"Wildcard '{a}' is forbidden — use scoped actions"
 
-    def test_ec2_instance_type_condition_present(
-        self, policy: dict[str, Any]
-    ) -> None:
+    def test_ec2_instance_type_condition_present(self, policy: dict[str, Any]) -> None:
         """Compute mutation is region-scoped and GPU-instance-type-scoped."""
-        stmt = next(
-            item for item in policy["Statement"]
-            if item.get("Sid") == "Ec2MutateCompute"
-        )
+        stmt = next(item for item in policy["Statement"] if item.get("Sid") == "Ec2MutateCompute")
         string_equals = stmt["Condition"]["StringEquals"]
         assert string_equals["aws:RequestedRegion"] == "${operator_region}"
         allowed_types = set(string_equals["ec2:InstanceType"])
         assert {"p4d.24xlarge", "p4de.24xlarge", "p5.48xlarge"} <= allowed_types
 
-    def test_passrole_is_restricted_to_ec2_service(
-        self, policy: dict[str, Any]
-    ) -> None:
-        stmt = next(
-            item for item in policy["Statement"]
-            if item.get("Sid") == "IamPassRoleSelfOnly"
-        )
-        assert stmt["Condition"]["StringEquals"]["iam:PassedToService"] == (
-            "ec2.amazonaws.com"
-        )
+    def test_passrole_is_restricted_to_ec2_service(self, policy: dict[str, Any]) -> None:
+        stmt = next(item for item in policy["Statement"] if item.get("Sid") == "IamPassRoleSelfOnly")
+        assert stmt["Condition"]["StringEquals"]["iam:PassedToService"] == ("ec2.amazonaws.com")
 
 
 # ============================================================================
@@ -175,7 +155,8 @@ class TestAzureRoleAssignments:
     """Least-privilege checks on the Azure IAM module."""
 
     @pytest.fixture(scope="class")
-    def main_tf(self) -> str:
+    @staticmethod
+    def main_tf() -> str:
         return (AZURE_MODULE / "main.tf").read_text()
 
     def test_no_contributor_or_owner(self, main_tf: str) -> None:
@@ -184,7 +165,7 @@ class TestAzureRoleAssignments:
 
     def test_scope_is_set_to_exact_resource_group(self, main_tf: str) -> None:
         """Role definition and assignment stay inside Gludd's owned group."""
-        assert 'scope' in main_tf, "Missing 'scope' on role assignments"
+        assert "scope" in main_tf, "Missing 'scope' on role assignments"
         assert "resource_group_scope = azurerm_resource_group.gludd_rg.id" in main_tf
         assert "scope       = local.resource_group_scope" in main_tf
         assert "assignable_scopes = [local.resource_group_scope]" in main_tf
@@ -211,15 +192,18 @@ class TestGcpCustomRole:
     """Least-privilege checks on the GCP IAM module."""
 
     @pytest.fixture(scope="class")
-    def main_tf(self) -> str:
+    @staticmethod
+    def main_tf() -> str:
         return (GCP_MODULE / "main.tf").read_text()
 
     def test_no_owner_or_editor(self, main_tf: str) -> None:
-        bound_roles = set(re.findall(
-            r'^\s*role\s*=\s*"([^"]+)"',
-            main_tf,
-            flags=re.MULTILINE,
-        ))
+        bound_roles = set(
+            re.findall(
+                r'^\s*role\s*=\s*"([^"]+)"',
+                main_tf,
+                flags=re.MULTILINE,
+            )
+        )
         forbidden = {
             "roles/owner",
             "roles/editor",
@@ -227,9 +211,7 @@ class TestGcpCustomRole:
             "roles/compute.admin",
             "roles/compute.instanceAdmin.v1",
         }
-        assert not (bound_roles & forbidden), (
-            f"Forbidden/broad GCP role bindings: {sorted(bound_roles & forbidden)}"
-        )
+        assert not (bound_roles & forbidden), f"Forbidden/broad GCP role bindings: {sorted(bound_roles & forbidden)}"
 
     def test_no_setmetadata_permission(self, main_tf: str) -> None:
         """compute.instances.setMetadata must NOT be granted (SSH key injection risk)."""
@@ -246,9 +228,7 @@ class TestGcpCustomRole:
 
     def test_custom_role_declared(self, main_tf: str) -> None:
         """Custom role replaces compute.instanceAdmin.v1."""
-        assert "gluddComputeOperator" in main_tf, (
-            "Missing gluddComputeOperator custom role"
-        )
+        assert "gluddComputeOperator" in main_tf, "Missing gluddComputeOperator custom role"
         assert "google_project_iam_custom_role" in main_tf
 
     def test_custom_role_has_compute_permissions(self, main_tf: str) -> None:
@@ -282,8 +262,12 @@ class TestCrossCloudLeastPrivilege:
     def test_opa_policy_covers_all_clouds(self) -> None:
         """OPA rego policy must have rules for all three clouds."""
         rego = OPA_POLICY.read_text()
-        for cloud in ("aws_least_privilege_valid", "azure_least_privilege_valid",
-                       "gcp_least_privilege_valid", "all_clouds_least_privilege_valid"):
+        for cloud in (
+            "aws_least_privilege_valid",
+            "azure_least_privilege_valid",
+            "gcp_least_privilege_valid",
+            "all_clouds_least_privilege_valid",
+        ):
             assert cloud in rego, f"OPA policy missing rule: {cloud}"
 
     def test_opa_policy_has_azure_scope_check(self) -> None:
@@ -307,6 +291,7 @@ class TestTerraformValidate:
     @staticmethod
     def _validate_module(module_dir: Path, binary: str) -> None:
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             for f in module_dir.iterdir():
@@ -319,8 +304,7 @@ class TestTerraformValidate:
                 text=True,
             )
             assert fmt.returncode == 0, (
-                f"terraform fmt -check failed for {module_dir.name}:\n"
-                f"stdout:\n{fmt.stdout}\nstderr:\n{fmt.stderr}"
+                f"terraform fmt -check failed for {module_dir.name}:\nstdout:\n{fmt.stdout}\nstderr:\n{fmt.stderr}"
             )
 
             TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
@@ -348,8 +332,7 @@ class TestTerraformValidate:
                 )
             if init.returncode != 0:
                 skip_external_terraform_dependency(
-                    f"terraform init could not populate providers for "
-                    f"{module_dir.name}: {init.stderr[:400]}"
+                    f"terraform init could not populate providers for {module_dir.name}: {init.stderr[:400]}"
                 )
             validate = subprocess.run(
                 [binary, "validate", "-no-color"],
@@ -359,9 +342,7 @@ class TestTerraformValidate:
                 timeout=60,
                 env=terraform_env,
             )
-            assert validate.returncode == 0, (
-                f"terraform validate failed for {module_dir.name}:\n{validate.stderr}"
-            )
+            assert validate.returncode == 0, f"terraform validate failed for {module_dir.name}:\n{validate.stderr}"
 
     def test_aws_module_validates(self) -> None:
         binary = _infra_binary()
