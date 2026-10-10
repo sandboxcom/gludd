@@ -261,7 +261,8 @@ class TestMultiModelGameGeneration:
     """Generate all 4 games against each of 4 models. Score and compare."""
 
     @pytest.fixture(scope="class")
-    def gateways(self) -> dict[str, Any]:
+    @staticmethod
+    def gateways() -> dict[str, Any]:
         gw: dict[str, Any] = {}
         for mk, md in _MODELS.items():
             pid = f"mm-{mk}"
@@ -375,7 +376,8 @@ class TestMultiModelScoreReport:
     """Aggregate scores across all models and games into a comparison report."""
 
     @pytest.fixture(scope="class")
-    def gateways(self) -> dict[str, Any]:
+    @staticmethod
+    def gateways() -> dict[str, Any]:
         gw: dict[str, Any] = {}
         for mk, md in _MODELS.items():
             pid = f"mm-{mk}"
