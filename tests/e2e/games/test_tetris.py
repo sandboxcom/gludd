@@ -1,4 +1,5 @@
 """End-to-end Tetris test via DeepSeek."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -22,23 +23,27 @@ from tests.e2e.test_game_building_deepseek import (
 )
 
 _HAS_LANGCHAIN_OPENAI = importlib.util.find_spec("langchain_openai") is not None
-_LIVE_SKIP_REASON = _SKIP_REASON if not _get_deepseek_key() else (
-    "langchain-openai is not installed — run make sync with provider dependencies"
+_LIVE_SKIP_REASON = (
+    _SKIP_REASON
+    if not _get_deepseek_key()
+    else ("langchain-openai is not installed — run make sync with provider dependencies")
 )
+
 
 @pytest.mark.skipif(not _get_deepseek_key() or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestTetris:
     @pytest.fixture(scope="class")
-    def gateway(self):
+    @staticmethod
+    def gateway():
         return _build_deepseek_gateway()
 
     def test_build_tetris(self, gateway, tmp_path):
         game_id = "tetris"
         game_def = GAME_DEFINITIONS[game_id]
         obs = _init_game_obs(game_id)
-        print(f"\n\n{'='*70}")
+        print(f"\n\n{'=' * 70}")
         print(f"BUILDING: {game_id} ({game_def['class_name']})")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         response = _call_model(gateway, game_def["prompt"])
         obs["tokens_in"] = response["tokens_in"]
@@ -75,16 +80,16 @@ class TestTetris:
             feature_failures = verify_features(game_id, feature_mod)
 
         obs["feature_failures"] = feature_failures
-        assert not feature_failures, (
-            f"{game_id}: required features not satisfied:\n  - " + "\n  - ".join(feature_failures)
+        assert not feature_failures, f"{game_id}: required features not satisfied:\n  - " + "\n  - ".join(
+            feature_failures
         )
 
     def test_persistence_tetris(self, gateway, tmp_path):
         game_id = "tetris"
         game_def = GAME_DEFINITIONS[game_id]
-        print(f"\n\n{'='*70}")
+        print(f"\n\n{'=' * 70}")
         print(f"PERSISTENCE TEST: {game_id} — 500 interactions")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         response = _call_model(gateway, game_def["prompt"])
         source = _extract_python_module(response["content"])
@@ -105,6 +110,7 @@ class TestTetris:
         assert out_path.exists()
         assert out_path.parent == tmp_path
         from tests.e2e.test_game_building_deepseek import _REPO_ROOT
+
         assert not (_REPO_ROOT / ".game-audit-report.json").exists()
         print("\nTetris test complete.")
 
