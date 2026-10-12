@@ -589,3 +589,66 @@ start no service, environment, runner, listener, or additional proof owner, and
 modify no application, database, deployment, or published release. Rollback is
 the isolated script/test/documentation change; retained immutable CI observations
 remain available and all release, coverage, and promotion gates still apply.
+
+### Quoted repair-evidence variables (2026-10-12)
+
+The normal repair path exposed a transport failure while assembling native
+evidence for hosted unit-2. A quoted two-file `TESTFILES` value passed through
+GNU Make's `foreach` as separate words. The recipe inserted `--evidence-var`
+inside that value; pytest rejected the resulting command and no receipt was
+recorded. This was a failed proof producer, not successful validation.
+
+`ci-failure-repair` now exports its existing `CI_REPAIR_EVIDENCE_VARS` input and
+selects the CLI's explicit `--evidence-vars-from-env` mode. The existing Python
+`shlex.split` parses only that fixed environment key; evidence execution remains
+an argument list passed to `subprocess.run` without a shell. Quoted multi-file
+values and nested pytest option quotes therefore survive as complete Make
+assignments, without recipe-shell interpolation or a custom parser. Subsequent
+Make commands retain their normal variable semantics; this is not a change to
+Make's filename grammar.
+
+Full lowercase repair-SHA and plain-target validation still precede evidence.
+Malformed quoting or a non-`UPPER_CASE=value` assignment returns an error before
+subprocess execution or ledger writes. Direct callers retain repeated
+`--evidence-var` arguments, and ambient environment input is ignored unless
+explicitly selected. Only successful native execution can write a repaired
+receipt; hosted resolution still requires an executed successful replacement
+job. Neither path claims the complete release gate is green.
+
+Eight new cases preserve quote/metacharacter values as data, exact multi-file
+and pytest arguments, legacy opt-in isolation, SHA priority, and failed-input
+atomicity. A harmless real-Make probe exercises an explicitly exported value
+defined in a second Makefile and cannot run evidence or create a ledger. Six
+cases fail first while 61 pass; after repair all 67 ledger cases pass at 92.48%
+combined coverage (93.89% line, 89.10% branch), above unchanged 85/75 floors.
+Three additional mapping/roster/wiring cases fail first. The new
+`ci-repair-evidence-variable-forwarding` family routes that probe and the complete
+ledger cohort through the existing warning-fatal one-worker early owner, with
+unchanged 90/60-second bounds, 21 phases, a 2850-second ceiling and mandatory
+canonical full-gate replay.
+
+The complete related acceptance slice passes 100 cases. The actual early owner
+executes 431 cases in 30.84 seconds (31.6 observed), with all 32 promoted families
+validated. The public safe behavioral example, all 215 contracts, strict
+source/test typing, Ruff, Make lint and the same 250 ownership entries pass.
+Actual collection selects 122322 of 122323 tests with one intentional deselection
+and zero errors.
+
+Evidence reviewed 2026-10-12:
+
+- GNU Make's [foreach documentation](https://www.gnu.org/software/make/manual/make.html#Foreach-Function)
+  defines iteration over whitespace-separated words, not shell-quoted arguments.
+- Python's [shlex documentation](https://docs.python.org/3/library/shlex.html#shlex.split)
+  supplies the maintained quoted-string parser and recommends argument-list
+  subprocess calls when avoiding shell interpretation.
+- The February 2017 [practitioner report](https://stackoverflow.com/questions/42407052/foreach-python-file-in-subdirectory)
+  reproduces repeated `foreach` expansions for a quoted path containing spaces.
+  The same word-versus-argument distinction explains the repair transport fault;
+  the fix reuses standard facilities rather than adding another tokenizer.
+
+This is a control-plane repair. It starts no serving process, environment,
+container, package installation or deployment and preserves ZDD. Rollback is the
+isolated Make/CLI/test/documentation change; immutable observations and the
+existing atomic ledger remain intact. Current source review, exact-SHA hosted
+success and canonical gate/coverage remain required, and disk admission is not
+bypassed.

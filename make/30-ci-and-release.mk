@@ -235,7 +235,7 @@ CI_FAILURE_FAMILIES ?=
 CI_REPAIR_ALL_OPEN ?= 0
 CI_REPAIR_SHA ?=
 CI_REPAIR_EVIDENCE_TARGET ?=
-CI_REPAIR_EVIDENCE_VARS ?=
+export CI_REPAIR_EVIDENCE_VARS ?=
 CI_RERUN_ALLOW_UNCHANGED ?= 0
 CI_RERUN_REASON ?=
 
@@ -244,9 +244,10 @@ ci-failure-status:
 	@$(PYTHON) scripts/ci_failure_ledger.py status --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
 
 ci-failure-repair:
+	@# CI_REPAIR_EVIDENCE_VARS is exported whole and parsed only by the opt-in CLI.
 	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
 	@case "$(CI_REPAIR_ALL_OPEN)" in 0|1) ;; *) echo "CI_REPAIR_ALL_OPEN must be 0 or 1"; exit 2 ;; esac
-	@$(PYTHON) scripts/ci_failure_ledger.py repair --ledger "$(CI_FAILURE_LEDGER)" --sha "$(CI_REPAIR_SHA)" --evidence-target "$(CI_REPAIR_EVIDENCE_TARGET)" $(foreach FAMILY,$(CI_FAILURE_FAMILIES),--family "$(FAMILY)") $(if $(filter 1,$(CI_REPAIR_ALL_OPEN)),--all-open,) $(foreach EVIDENCE_VAR,$(CI_REPAIR_EVIDENCE_VARS),--evidence-var "$(EVIDENCE_VAR)") $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+	@$(PYTHON) scripts/ci_failure_ledger.py repair --ledger "$(CI_FAILURE_LEDGER)" --sha "$(CI_REPAIR_SHA)" --evidence-target "$(CI_REPAIR_EVIDENCE_TARGET)" $(foreach FAMILY,$(CI_FAILURE_FAMILIES),--family "$(FAMILY)") $(if $(filter 1,$(CI_REPAIR_ALL_OPEN)),--all-open,) --evidence-vars-from-env $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
 
 ci-failure-push-guard:
 	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac

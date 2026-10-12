@@ -874,6 +874,7 @@ def _parser() -> argparse.ArgumentParser:
     repair.add_argument("--sha", required=True)
     repair.add_argument("--evidence-target", required=True)
     repair.add_argument("--evidence-var", action="append", default=[])
+    repair.add_argument("--evidence-vars-from-env", action="store_true")
     repair.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER)
     repair.add_argument("--validate-only", action="store_true")
 
@@ -984,7 +985,13 @@ def _command_repair(args: argparse.Namespace) -> int:
         raise LedgerError("repair SHA must be a full lowercase 40-character hash")
     if MAKE_TARGET.fullmatch(args.evidence_target) is None:
         raise LedgerError("evidence target must be one plain make target")
-    if any(MAKE_VARIABLE.fullmatch(value) is None for value in args.evidence_var):
+    evidence_vars = list(args.evidence_var)
+    if args.evidence_vars_from_env:
+        try:
+            evidence_vars.extend(shlex.split(os.environ.get("CI_REPAIR_EVIDENCE_VARS", "")))
+        except ValueError as exc:
+            raise LedgerError("CI_REPAIR_EVIDENCE_VARS must use valid shell quoting") from exc
+    if any(MAKE_VARIABLE.fullmatch(value) is None for value in evidence_vars):
         raise LedgerError("each evidence variable must use UPPER_CASE=value")
     if args.validate_only:
         print("CI_FAILURE_REPAIR_VALIDATE_ONLY_PASS")
@@ -999,7 +1006,7 @@ def _command_repair(args: argparse.Namespace) -> int:
             if family["status"] == "open"
         )
     selected = sorted(set(selected))
-    command = ["make", args.evidence_target, *args.evidence_var]
+    command = ["make", args.evidence_target, *evidence_vars]
     print(f"CI_FAILURE_REPAIR_EVIDENCE command={shlex.join(command)}", flush=True)
     result = subprocess.run(command, cwd=ROOT, check=False)
     if result.returncode != 0:

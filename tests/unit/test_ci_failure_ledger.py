@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import shlex
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -738,6 +741,201 @@ def test_cli_repair_rejects_invalid_sha_before_running_evidence(
     assert "repair SHA must be a full lowercase 40-character hash" in capsys.readouterr().err
     assert calls == []
     assert path.read_bytes() == original
+
+
+def _repair_cli_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[ModuleType, Path, list[list[str]], list[str]]:
+    module = _load()
+    path = tmp_path / "ledger.json"
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, _failed_payload(), observed_at="first")
+    module.write_ledger(path, ledger)
+    original = path.read_bytes()
+    calls: list[list[str]] = []
+
+    def successful(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert path.read_bytes() == original, "receipt must follow successful evidence"
+        assert kwargs["cwd"] == ROOT
+        assert kwargs["check"] is False
+        assert kwargs.get("shell", False) is False
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(module.subprocess, "run", successful)
+    monkeypatch.setattr(module, "_git_is_ancestor", lambda _old, _new: True)
+    command = [
+        "repair", "--ledger", str(path), "--all-open", "--sha", SHA_REPAIR,
+        "--evidence-target", "test-files",
+    ]
+    return module, path, calls, command
+
+
+def test_cli_repair_env_preserves_multifile_and_quoted_pytest_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, path, calls, command = _repair_cli_probe(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        "CI_REPAIR_EVIDENCE_VARS",
+        'TESTFILES="tests/unit/a.py tests/unit/b.py" PYTEST_ARGS=\'-q -k "repair or quoted"\'',
+    )
+    expected = [
+        "make", "test-files", "TESTFILES=tests/unit/a.py tests/unit/b.py",
+        'PYTEST_ARGS=-q -k "repair or quoted"',
+    ]
+
+    assert module.main([*command, "--evidence-vars-from-env"]) == 0
+
+    assert calls == [expected]
+    families = module.read_ledger(path)["families"].values()
+    assert all(family["status"] == "repaired" for family in families)
+    assert all(shlex.split(family["repair"]["evidence"]) == expected for family in families)
+
+
+def test_cli_repair_env_keeps_literal_quotes_and_shell_metacharacters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, path, calls, command = _repair_cli_probe(tmp_path, monkeypatch)
+    assignment = (
+        'PYTEST_ARGS=  "double" \'single\' $UNSET ${UNSET} '
+        "$(printf expanded) `printf expanded` * ;"
+    )
+    monkeypatch.setenv("CI_REPAIR_EVIDENCE_VARS", shlex.join([assignment]))
+    expected = ["make", "test-files", assignment]
+
+    assert module.main([*command, "--evidence-vars-from-env"]) == 0
+
+    assert calls == [expected]
+    assert all(
+        shlex.split(family["repair"]["evidence"]) == expected
+        for family in module.read_ledger(path)["families"].values()
+    )
+
+
+def test_cli_repair_ignores_ambient_evidence_vars_without_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _path, calls, command = _repair_cli_probe(tmp_path, monkeypatch)
+    monkeypatch.setenv("CI_REPAIR_EVIDENCE_VARS", 'TESTFILES="unterminated')
+
+    assert module.main(command) == 0
+
+    assert calls == [["make", "test-files"]]
+
+
+def test_cli_repair_env_rejects_malformed_quoting_before_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    module, path, calls, command = _repair_cli_probe(tmp_path, monkeypatch)
+    original = path.read_bytes()
+    monkeypatch.setenv("CI_REPAIR_EVIDENCE_VARS", 'TESTFILES="unterminated')
+
+    assert module.main([*command, "--evidence-vars-from-env"]) == 2
+
+    error = capsys.readouterr().err
+    assert "CI_REPAIR_EVIDENCE_VARS" in error
+    assert "quot" in error.lower()
+    assert calls == []
+    assert path.read_bytes() == original
+
+
+def test_cli_repair_env_rejects_invalid_assignment_before_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    module, path, calls, command = _repair_cli_probe(tmp_path, monkeypatch)
+    original = path.read_bytes()
+    monkeypatch.setenv("CI_REPAIR_EVIDENCE_VARS", 'TESTFILES="a.py b.py" not-an-assignment')
+
+    assert module.main([*command, "--evidence-vars-from-env"]) == 2
+
+    assert "UPPER_CASE=value" in capsys.readouterr().err
+    assert calls == []
+    assert path.read_bytes() == original
+
+
+def test_cli_repair_legacy_repeated_evidence_vars_preserve_complete_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, path, calls, command = _repair_cli_probe(tmp_path, monkeypatch)
+    monkeypatch.setenv("CI_REPAIR_EVIDENCE_VARS", 'TESTFILES="unterminated')
+    assignments = ["TESTFILES=a.py b.py", 'PYTEST_ARGS=-q -k "repair or quoted"']
+
+    assert module.main([
+        *command, "--evidence-var", assignments[0], "--evidence-var", assignments[1],
+    ]) == 0
+
+    expected = ["make", "test-files", *assignments]
+    assert calls == [expected]
+    assert all(
+        family["repair"]["evidence"] == shlex.join(expected)
+        for family in module.read_ledger(path)["families"].values()
+    )
+
+
+def test_cli_repair_invalid_sha_precedes_environment_parsing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    module, path, calls, command = _repair_cli_probe(tmp_path, monkeypatch)
+    original = path.read_bytes()
+    command[command.index("--sha") + 1] = "short-sha"
+    monkeypatch.setenv("CI_REPAIR_EVIDENCE_VARS", 'TESTFILES="unterminated')
+
+    assert module.main([*command, "--evidence-vars-from-env"]) == 2
+
+    error = capsys.readouterr().err
+    assert "repair SHA must be a full lowercase 40-character hash" in error
+    assert "CI_REPAIR_EVIDENCE_VARS" not in error
+    assert calls == []
+    assert path.read_bytes() == original
+
+
+def test_make_ci_failure_repair_exports_quoted_values_to_cli_probe(tmp_path: Path) -> None:
+    """Exercise the real recipe with a Python probe that cannot perform repairs."""
+    probe = tmp_path / "argv_probe.py"
+    probe.write_text(
+        "import json, os, sys\n"
+        "print(json.dumps({'argv': sys.argv[1:], "
+        "'evidence_vars': os.environ.get('CI_REPAIR_EVIDENCE_VARS')}))\n",
+        encoding="utf-8",
+    )
+    evidence_vars = (
+        'TESTFILES="tests/unit/a.py tests/unit/b.py" PYTEST_ARGS=\'-q -k "repair or quoted"\''
+    )
+    wrapper = tmp_path / "probe.mk"
+    wrapper.write_text(
+        f"CI_REPAIR_EVIDENCE_VARS := {evidence_vars}\n",
+        encoding="utf-8",
+    )
+    ledger = tmp_path / "untouched-ledger.json"
+    environment = dict(os.environ)
+    for name in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL", "CI_REPAIR_EVIDENCE_VARS"):
+        environment.pop(name, None)
+
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "-f", "Makefile", "-f", str(wrapper),
+            "ci-failure-repair", f"PYTHON={shlex.join([sys.executable, str(probe)])}",
+            f"CI_FAILURE_LEDGER={ledger}", "CI_FAILURE_FAMILIES=", "CI_REPAIR_ALL_OPEN=1",
+            f"CI_REPAIR_SHA={SHA_REPAIR}", "CI_REPAIR_EVIDENCE_TARGET=test-files",
+            "CI_FAILURE_VALIDATE_ONLY=1",
+        ],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    observed = json.loads(result.stdout)
+    assert observed["argv"] == [
+        "scripts/ci_failure_ledger.py", "repair", "--ledger", str(ledger),
+        "--sha", SHA_REPAIR, "--evidence-target", "test-files", "--all-open",
+        "--evidence-vars-from-env", "--validate-only",
+    ]
+    assert observed["evidence_vars"] == evidence_vars
+    assert not ledger.exists()
 
 
 def test_fetch_run_is_id_bound_and_fail_closed() -> None:

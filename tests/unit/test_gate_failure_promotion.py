@@ -426,6 +426,37 @@ def test_admission_plan_contracts_execute_before_hosted_shards(
     assert payload["full_gate_required"] is True
 
 
+def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> None:
+    """The real Make argument transport must be proved before hosted fan-out."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(
+        family for family in payload["families"]
+        if family["id"] == "ci-repair-evidence-variable-forwarding"
+    )
+    node = (
+        "tests/unit/test_ci_failure_ledger.py::"
+        "test_make_ci_failure_repair_exports_quoted_values_to_cli_probe"
+    )
+    assert family == {
+        "id": "ci-repair-evidence-variable-forwarding",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in owner
+    assert "tests/unit/test_ci_failure_ledger.py" in executable
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    phase = next(
+        phase for phase in payload["runtime_contract"]["phases"]
+        if phase["target"] == family["owner_target"]
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def _synthetic_repository(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
@@ -718,6 +749,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ee-owned-azure-sdk-pin-parity",
         "integration-admission-plan-contract",
         "integration-admission-document-contract",
+        "ci-repair-evidence-variable-forwarding",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -871,7 +903,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ansible_runtime_artifacts.py '
         'tests/unit/test_beta4_python_runtime_boundary.py '
         'tests/unit/test_ansible_searxng_source_inspection.py '
-        'tests/unit/test_integration_admission_target.py"'
+        'tests/unit/test_integration_admission_target.py '
+        'tests/unit/test_ci_failure_ledger.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
