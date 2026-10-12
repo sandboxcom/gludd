@@ -180,7 +180,8 @@ def test_release_cut_revalidates_explicit_source_bound_evidence() -> None:
     readiness = block.index('release-readiness TAG="$(TAG)"')
     dual_track = block.index("require-dual-track-green")
     assert readiness < dual_track
-    assert 'RELEASE_READINESS_VALIDATE_ONLY=1' in block
+    assert 'RELEASE_READINESS_VALIDATE_ONLY=0' in block
+    assert 'RELEASE_READINESS_CI_BRANCH="$(RELEASE_CI_BRANCH)"' in block
     assert (
         'REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)"'
         in block
@@ -227,11 +228,21 @@ if tool == "make":
             sys.exit(41)
         if json.loads(receipt.read_text())["sha"] != variables["RELEASE_CANDIDATE_SHA"]:
             sys.exit(42)
+        if variables.get("RELEASE_READINESS_VALIDATE_ONLY") != "1":
+            if state["milestone"] != "complete":
+                sys.exit(43)
+            source = variables.get("RELEASE_READINESS_CI_BRANCH") or state["branch"]
+            if source != state["ci_source"]:
+                sys.exit(44)
+            if variables["RELEASE_CANDIDATE_SHA"] != state["ci_sha"]:
+                sys.exit(45)
     if target == "release-readiness" and state.get("advance_master"):
         state["master"] = "c" * 40
         state_path.write_text(json.dumps(state))
     if target == "ci-await":
         print("123")
+    sys.exit(0)
+if tool == "uv":
     sys.exit(0)
 if tool == "python":
     if state.get("fail") == "namespace":
@@ -303,13 +314,16 @@ def _run_isolated_recipe(
     canonical.mkdir()
     binary = tmp_path / "bin"
     binary.mkdir()
-    for tool in ("git", "make", "python"):
+    for tool in ("git", "make", "python", "uv"):
         path = binary / tool
         path.write_text(f"#!{sys.executable}\n" + dedent(FAKE_OWNER), encoding="utf-8")
         path.chmod(0o700)
     state: dict[str, object] = {
-        "canonical": str(canonical), "branch": "development",
-        "head": "b" * 40, "development": "b" * 40, "master": "a" * 40,
+        "canonical": str(canonical),
+        "branch": "master" if target == "release-cut" else "development",
+        "head": "b" * 40, "development": "b" * 40,
+        "master": ("b" if target == "release-cut" else "a") * 40,
+        "milestone": "complete", "ci_source": "development", "ci_sha": "b" * 40,
         **state_overrides,
     }
     state_file = tmp_path / "state.json"
@@ -330,7 +344,8 @@ def _run_isolated_recipe(
     )
     fixture_makefile = tmp_path / "Makefile"
     fixture_makefile.write_text(
-        f"MAKE := {binary / 'make'}\nPYTHON := {binary / 'python'}\n" + block + "\n",
+        f"MAKE := {binary / 'make'}\nPYTHON := {binary / 'python'}\n"
+        f"UV := {binary / 'uv'}\n" + block + "\n",
         encoding="utf-8",
     )
     env = {
@@ -346,6 +361,7 @@ def _run_isolated_recipe(
             "RELEASE_CANDIDATE_SHA=" + "b" * 40, "RELEASE_CI_BRANCH=development",
             f"RELEASE_LOCAL_ATTESTATION={attestation}",
             "RELEASE_AWAIT_TIMEOUT=1", "RELEASE_AWAIT_INTERVAL=1",
+            "RELEASE_READINESS_CI_BRANCH=" + str(state.get("readiness_ci_source", "")),
     ]
     if contract_example:
         entry = next(
@@ -520,6 +536,9 @@ def test_stable_release_cut_validates_receipt_and_sha_before_publication(
     assert "RELEASE_CANDIDATE_SHA=" + "b" * 40 in readiness["args"]
     assert "RELEASE_ALLOW_INCOMPLETE_TASKS=0" in readiness["args"]
     assert "RELEASE_ALLOW_INVALID_RECEIPT=0" in readiness["args"]
+    assert "RELEASE_READINESS_VALIDATE_ONLY=0" in readiness["args"]
+    assert "RELEASE_READINESS_CI_BRANCH=development" in readiness["args"]
+    assert readiness["branch"] == "master"
 
 
 @pytest.mark.parametrize("failure", [
@@ -535,3 +554,49 @@ def test_release_cut_lookup_and_publication_errors_propagate(
         assert _make_targets(events) == []
     else:
         assert _make_targets(events)[-1] == failure
+
+
+@pytest.mark.parametrize("tag", ["v0.1.1", "v0.1.2"])
+@pytest.mark.parametrize("milestone", ["open", "absent"])
+def test_stable_cut_valid_receipt_cannot_bypass_required_milestone(
+    tmp_path: Path, tag: str, milestone: str,
+) -> None:
+    """Receipt validation alone cannot grant admission to an unfinished release."""
+    result, events = _run_isolated_recipe(
+        tmp_path, "release-cut", tag=tag, milestone=milestone,
+    )
+    assert result.returncode != 0
+    assert _make_targets(events) == ["release-readiness"]
+    assert _git_mutations(events) == []
+
+
+@pytest.mark.parametrize("tag", ["v0.1.1", "v0.1.2"])
+@pytest.mark.parametrize("identity", [{"ci_source": "other"}, {"ci_sha": "c" * 40}])
+def test_stable_cut_rejects_wrong_ci_source_or_sha_before_publication(
+    tmp_path: Path, tag: str, identity: dict[str, object],
+) -> None:
+    result, events = _run_isolated_recipe(tmp_path, "release-cut", tag=tag, **identity)
+    assert result.returncode != 0
+    assert _make_targets(events) == ["release-readiness"]
+    assert _git_mutations(events) == []
+
+
+@pytest.mark.parametrize("source", ["", "development"])
+def test_readiness_routes_ci_source_without_relabeling_master_checkout(
+    tmp_path: Path, source: str,
+) -> None:
+    """The actual CLI receives CI namespace and checkout identity independently."""
+    result, events = _run_isolated_recipe(
+        tmp_path, "release-readiness", branch="master", readiness_ci_source=source,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(events) == 1
+    owner = events[0]
+    assert owner["tool"] == "uv"
+    assert owner["branch"] == "master"
+    args = owner["args"]
+    assert isinstance(args, list)
+    assert args[args.index("--ci-branch") + 1] == source
+    assert args[args.index("--expected-head-sha") + 1] == "b" * 40
+    assert "--validate-only" not in args
+    assert _git_mutations(events) == []

@@ -29,11 +29,27 @@ branch's namespace.
 
 ## Stable release publication
 
-`release-cut` applies reviewed-receipt readiness to both `v0.1.1` and `v0.1.2`.
-Its first continued shell also enables `set -eu`: a rejected receipt stops before
-the dual-track child or any push, tag, release lookup, or artifact verification.
-Both readiness bypass switches are explicitly zero. Exact candidate, branch,
-attestation, and dual-track controls retain their existing ownership.
+`release-cut` applies full readiness admission (`RELEASE_READINESS_VALIDATE_ONLY=0`)
+to both `v0.1.1` and `v0.1.2`. A valid reviewed receipt cannot bypass an open or
+absent required release milestone. Its first continued shell also enables
+`set -eu`: any rejected readiness evidence stops before the dual-track child or
+any push, tag, release lookup, or artifact verification. Both readiness bypass
+switches are explicitly zero. Exact candidate, branch, attestation, and
+dual-track controls retain their existing ownership.
+
+`RELEASE_READINESS_CI_BRANCH` defaults to empty and is forwarded independently
+as `--ci-branch`; empty lets readiness use the actual checkout's CI namespace.
+Promotion supplies `development`, and the cut carries its captured
+`RELEASE_CI_BRANCH` into that field. The actual checkout remains truthfully
+identified as master after promotion. CI results must still prove the exact
+candidate SHA in the explicit source namespace; changing a branch label cannot
+make evidence for another source or SHA admissible.
+
+For an explicit source, use the normal readiness target with every argument:
+
+```text
+make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=path/to/receipt.json RELEASE_CANDIDATE_SHA=full-sha RELEASE_READINESS_CI_BRANCH=development
+```
 
 A failed publication step propagates a nonzero result. If failure occurs after
 the local fast-forward, local master may remain at the verified candidate; the
@@ -50,7 +66,9 @@ The receipt owner is a test double for existing readiness validation, not a
 replacement receipt format. Tests cover each evidence failure in both modes,
 namespace and Git errors, wrong master identities, exact fast-forward ordering,
 captured evidence routing, publication errors, and absent or mismatched receipts
-for both stable tags.
+for both stable tags. The fake readiness owner distinguishes receipt-only
+validation from full admission: valid receipts with open or absent milestones,
+wrong source namespaces, and mismatched CI SHAs must all stop publication.
 
 The literal `release-promote` behavioral example from
 `config/make_target_contract.json` is replayed through those isolated owners and
