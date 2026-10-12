@@ -720,6 +720,14 @@ _module-graph-classification:
 	@$(MAKE) --no-print-directory test-specific \
 		TESTFILE="tests/unit/test_module_graph_deep.py::test_all_subpackages_classified"
 
+_pytest-runtime-compatibility-admission:
+# tests/unit/test_session_start_crash_recovery.py::TestCrashRecoveryStatic::test_session_state_has_pid_field
+# tests/unit/test_hook_runtime_split_compat.py::test_case_inventory_order_signatures_and_marks_match_pre_split_snapshot
+# tests/unit/test_hook_runtime_split_compat.py::test_helper_signatures_match_pre_split_snapshot
+	@$(MAKE) --no-print-directory test-files \
+		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py" \
+		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"
+
 _ansible-role-variable-prefix:
 	@$(MAKE) --no-print-directory test-specific \
 		TESTFILE="tests/unit/test_ansible_lint_deep.py::test_role_variables_use_namespaced_prefix" \
@@ -775,6 +783,7 @@ integration-admission:
 	run_phase "worktree-guard" "worktree-guard" "fast" "90" "60" $(MAKE) --no-print-directory worktree-guard; \
 	run_phase "check-gate-failure-promotions" "check-gate-failure-promotions" "fast" "90" "60" $(MAKE) --no-print-directory check-gate-failure-promotions \
 		GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"; \
+	run_phase "pytest-runtime-compatibility" "_pytest-runtime-compatibility-admission" "fast" "90" "60" $(MAKE) --no-print-directory _pytest-runtime-compatibility-admission; \
 	run_phase "ansible-role-variable-prefix" "_ansible-role-variable-prefix" "fast" "90" "60" $(MAKE) --no-print-directory _ansible-role-variable-prefix; \
 	run_phase "cloud-iam-generation-parity" "_cloud-iam-generation-parity" "fast" "90" "60" $(MAKE) --no-print-directory _cloud-iam-generation-parity; \
 	run_phase "_dead-code-baseline-refresh" "_dead-code-baseline-refresh" "fast" "90" "60" $(MAKE) --no-print-directory _dead-code-baseline-refresh; \

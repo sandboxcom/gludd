@@ -24,60 +24,66 @@ the first nonzero result:
    before any promoted node runs. It rejects duplicate families or nodes,
    missing Make owners, stale pytest node IDs, admission wiring drift, and a
    missing mandatory full-gate phase.
-3. `ansible-role-variable-prefix` runs the exact warning-fatal
+3. `pytest-runtime-compatibility` runs the complete crash-recovery and
+   hook-runtime split compatibility files with `-W error` and one worker in the
+   invoking Python environment. It rejects deprecated class-scoped instance
+   fixtures and runtime API snapshot drift before broader integration checks.
+   Hosted Python 3.11/3.12 jobs retain their own interpreter coverage; admission
+   reuses their environment without creating another dependency matrix.
+4. `ansible-role-variable-prefix` runs the exact warning-fatal
    `test_role_variables_use_namespaced_prefix` node. The control gate first
    found this deterministic failure in batch 10 after minutes of work; admission
    now reports it in seconds before integration health checks can consume their
    eight-minute bound.
-4. `cloud-iam-generation-parity` serially runs
+5. `cloud-iam-generation-parity` serially runs
    `test_aws_prune_produces_warning_when_actions_removed` followed by
    `test_generate_aws_terraform_deploy`. This order reproduces cross-call
    mutation of nested role templates in one process, while `-W error` keeps
    warning drift fatal and `-n 0` prevents worker isolation from hiding the
    shared-state invariant.
-5. `_dead-code-baseline-refresh` checks exact dead-code baseline parity without
+6. `_dead-code-baseline-refresh` checks exact dead-code baseline parity without
    rewriting reviewed policy. It names added or stale entries and stops the
    admission plan before broader metadata, documentation, or quality work.
-6. `check-coverage-gaps` rejects a production module without a mapped focused
+7. `check-coverage-gaps` rejects a production module without a mapped focused
    coverage test. `check-resource-ownership` then verifies the exact tracked
    acquisition-to-teardown inventory in read-only mode. These promoted checks
    catch both missing mappings after a module split and new or stale lifecycle
    sites before the expensive gate starts.
-7. `validate-task-ledger`, `check-task-registration`, and
+8. `validate-task-ledger`, `check-task-registration`, and
    `check-task-integrity` reject malformed or unowned work.
-8. `check-generated-artifact-hygiene` catches documentation and generated-data
+9. `check-generated-artifact-hygiene` catches documentation and generated-data
    drift before broader quality work.
-9. `lint-markdown` checks the explicitly supplied feature documents.
-10. `check-make-target-contract` rejects missing help, variables, or safe
+10. `lint-markdown` checks the explicitly supplied feature documents.
+11. `check-make-target-contract` rejects missing help, variables, or safe
    behavioral examples for agent-facing targets.
-11. `check-duplicate-code` compares the complete bounded production snapshot at
+12. `check-duplicate-code` compares the complete bounded production snapshot at
    feature `HEAD` with the explicit development base through locked `jscpd`.
    Existing findings remain visible while only newly introduced clone
    fingerprints fail admission.
-12. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
+13. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
    tracked YAML from the checkout, runs with a disposable namespaced Ansible
    home, and emits ten-second observer heartbeats. A stale user-installed
    collection therefore cannot shadow the candidate or turn a valid branch red.
-13. `project-dispatch-integration` runs the exact, fast regression nodes that
+14. `project-dispatch-integration` runs the exact, fast regression nodes that
    prove a committed caller-owned-session claim still dispatches its exact
    `project_id`, never reads another project's variable namespace, and preserves
    the serialized tick lifecycle:
    `test_event_loop_dispatch_includes_project_id` and
    `test_dispatch_job_contains_only_project_data`, plus
    `test_event_loop_serializes_concurrent_ticks`.
-14. `mcp-workspace-jail-integration` keeps both layers of the model-callable
+15. `mcp-workspace-jail-integration` keeps both layers of the model-callable
     project-check boundary in admission. The exact
     `test_contain_workspace_escape_returns_none` node proves canonical path
     containment, while `test_workspace_escaping_jail_is_refused` proves the
     synthetic MCP dispatch refuses an otherwise valid sibling project without
     executing it.
-15. `module-graph-classification` runs the exact
+16. `module-graph-classification` runs the exact
     `test_all_subpackages_classified` node so every discovered top-level package
     receives an explicit architectural layer before later graph rules run.
-16. `presentation-browser-test` runs with
+17. `presentation-browser-test` runs with
    `PRESENTATION_BROWSER_VALIDATE_ONLY=1`, checking the pinned browser plan and
    prerequisites without launching either engine.
-17. `pre-commit-check` runs the staged line and clone guards before the existing
+18. `pre-commit-check` runs the staged line and clone guards before the existing
     source lint, collection, and typecheck boundary. Its `lint` prerequisite
     retains the complete working-tree line-limit scan.
 
@@ -90,11 +96,11 @@ feature worktree.
 ## Runtime budget and evidence
 
 Every child phase runs through the existing `scripts/stream_command.py`
-observer. The manifest assigns fourteen cheap phases a 90-second `fast` ceiling,
+observer. The manifest assigns fifteen cheap phases a 90-second `fast` ceiling,
 five focused integration phases a 180-second `standard` ceiling, and
 `pre-commit-check` a 600-second `slow` ceiling. Their quiet-output ceilings are
 60, 120, and 300 seconds respectively. The configured child-runtime ceiling
-therefore totals 2,760 seconds, with only bounded observer teardown and recipe
+therefore totals 2,850 seconds, with only bounded observer teardown and recipe
 bookkeeping outside it; no child phase can wait indefinitely.
 
 Before each child starts, admission emits one machine-readable
@@ -124,10 +130,22 @@ families are `dead-code-baseline-drift`, `coverage-gap-drift`,
 `concurrent-tick`, `mcp-workspace-containment`, `mcp-workspace-dispatch-jail`,
 `module-graph-classification-drift`, and
 `ansible-role-variable-prefix-drift`, `cloud-iam-resource-pruning-trigger`, and
-`cloud-iam-generation-parity`. The coverage and ownership families
+`cloud-iam-generation-parity`, `pytest-class-fixture-scope`,
+`hook-runtime-case-ast-portability`, and `hook-runtime-helper-ast-portability`.
+The coverage and ownership families
 were promoted after the full gate first discovered an unmapped durable
 observability split plus new and stale process-lifecycle sites. Both now fail
 closed during read-only admission instead of consuming another full-gate run.
+
+Hosted Build run 38189779986 exposed the fixture and AST portability families
+under Python 3.11. The class-scoped fixture now uses pytest's supported
+`@classmethod` form. The original runtime snapshot remains unchanged: the
+compatibility check parses its inert AST constructor notation with the standard
+library and omits only empty list-valued fields, whose display differs across
+Python versions. It never evaluates snapshot text. Names, argument order and
+kinds, annotations, defaults, return annotations, and decorators still compare
+structurally; focused regressions prove ten forms of API or mark drift are
+rejected, including an actual empty-list default or mark value.
 
 Promotion only moves early feedback forward. The exact full gate remains mandatory.
 The checker fails closed when a node is renamed, deleted, duplicated,
@@ -187,6 +205,14 @@ run again after a branch has already waited for earlier feedback:
   nested mutable values remain shared until copied recursively. The promoted
   two-node sequence therefore proves pruning cannot alter a later full-role
   generation, instead of trusting either node in process isolation.
+- The 2020 practitioner [class-scoped fixture discussion][class-fixture-scope]
+  explains that pytest creates distinct fixture and test instances and recommends
+  a class method for class-owned setup. Current [pytest deprecation guidance][pytest-class-fixture]
+  makes that declaration mandatory before pytest 10; `-W error` retains early
+  rejection of the deprecated form. Python's [AST dump documentation][ast-dump]
+  records the `show_empty` display option added in Python 3.13. Comparing parsed
+  constructor structure keeps the historical snapshot portable while preserving
+  semantic signature and decorator changes.
 
 Those reports support an early local admission layer, but not skipping the final
 integrated-head proof. Gludd therefore rejects syntax, metadata, documentation,
@@ -205,6 +231,9 @@ authoritative integration result.
 [import-graph-completeness]: https://github.com/seddonym/import-linter/issues/93
 [bounded-ci-runtime]: https://github.com/orgs/community/discussions/25631
 [nested-copy]: https://stackoverflow.com/questions/39474959/nested-dictionaries-copy-or-deepcopy
+[class-fixture-scope]: https://stackoverflow.com/questions/62289556/pytest-fixture-with-scope-class-doesnt-works-with-setup-class-method
+[pytest-class-fixture]: https://docs.pytest.org/en/stable/deprecations.html#class-scoped-fixture-as-instance-method
+[ast-dump]: https://docs.python.org/3/library/ast.html#ast.dump
 
 ## Zero-downtime and rollback
 
