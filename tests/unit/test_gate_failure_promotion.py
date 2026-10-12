@@ -28,6 +28,13 @@ EXPECTED_RUNTIME_PHASES = [
         60,
     ),
     (
+        "pytest-runtime-compatibility",
+        "_pytest-runtime-compatibility-admission",
+        "fast",
+        90,
+        60,
+    ),
+    (
         "ansible-role-variable-prefix",
         "_ansible-role-variable-prefix",
         "fast",
@@ -389,6 +396,9 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ansible-role-variable-prefix-drift",
         "cloud-iam-resource-pruning-trigger",
         "cloud-iam-generation-parity",
+        "pytest-class-fixture-scope",
+        "hook-runtime-case-ast-portability",
+        "hook-runtime-helper-ast-portability",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -418,6 +428,30 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     assert families["resource-ownership-drift"]["node"] == (
         "check-resource-ownership"
     )
+    for family_id, node in (
+        (
+            "pytest-class-fixture-scope",
+            "tests/unit/test_session_start_crash_recovery.py::"
+            "TestCrashRecoveryStatic::test_session_state_has_pid_field",
+        ),
+        (
+            "hook-runtime-case-ast-portability",
+            "tests/unit/test_hook_runtime_split_compat.py::"
+            "test_case_inventory_order_signatures_and_marks_match_pre_split_snapshot",
+        ),
+        (
+            "hook-runtime-helper-ast-portability",
+            "tests/unit/test_hook_runtime_split_compat.py::"
+            "test_helper_signatures_match_pre_split_snapshot",
+        ),
+    ):
+        assert families[family_id] == {
+            "id": family_id,
+            "owner_target": "_pytest-runtime-compatibility-admission",
+            "node_kind": "pytest_node",
+            "node": node,
+            "full_gate_phase": "test",
+        }
     runtime = payload["runtime_contract"]
     assert runtime["observer"] == "scripts/stream_command.py"
     assert runtime["max_retained_runs"] == 20
@@ -442,6 +476,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     module_graph_owner = _target_stanza(makefile, "_module-graph-classification")
     variable_prefix_owner = _target_stanza(makefile, "_ansible-role-variable-prefix")
     cloud_iam_owner = _target_stanza(makefile, "_cloud-iam-generation-parity")
+    runtime_compatibility_owner = _target_stanza(
+        makefile, "_pytest-runtime-compatibility-admission"
+    )
 
     assert "check-gate-failure-promotions" in makefile.split("help:", 1)[0]
     assert (
@@ -451,6 +488,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert (
         admission.index('run_phase "worktree-guard"')
         < admission.index('run_phase "check-gate-failure-promotions"')
+        < admission.index('run_phase "pytest-runtime-compatibility"')
         < admission.index('run_phase "ansible-role-variable-prefix"')
         < admission.index('run_phase "cloud-iam-generation-parity"')
         < admission.index('run_phase "_dead-code-baseline-refresh"')
@@ -462,6 +500,10 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert "$(MAKE) --no-print-directory _module-graph-classification;" in admission
     assert "$(MAKE) --no-print-directory _ansible-role-variable-prefix;" in admission
     assert "$(MAKE) --no-print-directory _cloud-iam-generation-parity;" in admission
+    assert (
+        "$(MAKE) --no-print-directory _pytest-runtime-compatibility-admission;"
+        in admission
+    )
     assert (
         'GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"'
         in admission
@@ -496,6 +538,14 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert full_role_node in cloud_iam_owner
     assert cloud_iam_owner.index(prune_node) < cloud_iam_owner.index(full_role_node)
     assert 'PYTEST_ARGS="-W error -q -n 0"' in cloud_iam_owner
+    assert "$(MAKE) --no-print-directory test-files" in runtime_compatibility_owner
+    assert (
+        'TESTFILES="tests/unit/test_session_start_crash_recovery.py '
+        'tests/unit/test_hook_runtime_split_compat.py"'
+        in runtime_compatibility_owner
+    )
+    assert "-W error" in runtime_compatibility_owner
+    assert "-n 1" in runtime_compatibility_owner
 
     contracts = json.loads(CONTRACT.read_text(encoding="utf-8"))["targets"]
     check_contract = next(
@@ -535,9 +585,9 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "gate-failure-promotions: PASS families=12" in result.stdout
-    assert "runtime_phases=20" in result.stdout
-    assert "runtime_ceiling_seconds=2760" in result.stdout
+    assert "gate-failure-promotions: PASS families=15" in result.stdout
+    assert "runtime_phases=21" in result.stdout
+    assert "runtime_ceiling_seconds=2850" in result.stdout
     for phrase in (
         "dead-code-baseline-drift",
         "coverage-gap-drift",
@@ -551,6 +601,9 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
         "ansible-role-variable-prefix-drift",
         "cloud-iam-resource-pruning-trigger",
         "cloud-iam-generation-parity",
+        "pytest-class-fixture-scope",
+        "hook-runtime-case-ast-portability",
+        "hook-runtime-helper-ast-portability",
         "exact full gate remains mandatory",
         "https://github.com/orgs/community/discussions/41726",
         "https://github.com/modelcontextprotocol/servers/issues/1838",

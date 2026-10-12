@@ -29,6 +29,7 @@ import ast
 import json
 import sys
 from collections import defaultdict
+from functools import cache
 from pathlib import Path
 from typing import TypeAlias, TypedDict
 
@@ -40,6 +41,7 @@ DEFAULT_TEST_MAPPINGS = "config/coverage_gap_test_mappings.json"
 
 ModuleTests: TypeAlias = dict[str, tuple[Path, ...]]
 TestIndex: TypeAlias = tuple[ModuleTests, dict[Path, int]]
+SourceImports: TypeAlias = dict[str, set[str]]
 
 
 class IndirectTestMapping(TypedDict):
@@ -209,10 +211,14 @@ def _absolute_import_from(node: ast.ImportFrom, current_package: str) -> str | N
 
 def _module_reexports(
     source_modules: dict[str, Path],
+    source_imports: SourceImports | None = None,
 ) -> dict[tuple[str, str], str]:
-    """Map public module attributes to the module that defines them."""
+    """Summarize exports and optional import edges in one pass per source AST."""
     exports: dict[tuple[str, str], str] = {}
     for module, source_file in source_modules.items():
+        imported: set[str] = set()
+        if source_imports is not None:
+            source_imports[module] = imported
         tree = _parse_python(source_file)
         if tree is None:
             continue
@@ -220,16 +226,24 @@ def _module_reexports(
             module if source_file.name == "__init__.py" else module.rpartition(".")[0]
         )
         for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(
+                    alias.name for alias in node.names if alias.name in source_modules
+                )
             if not isinstance(node, ast.ImportFrom):
                 continue
             imported_from = _absolute_import_from(node, current_package)
             if imported_from is None:
                 continue
+            if imported_from in source_modules:
+                imported.add(imported_from)
             for alias in node.names:
+                child_module = f"{imported_from}.{alias.name}"
+                if child_module in source_modules:
+                    imported.add(child_module)
                 if alias.name == "*":
                     continue
                 public_name = alias.asname or alias.name
-                child_module = f"{imported_from}.{alias.name}"
                 defining_module = (
                     child_module if child_module in source_modules else imported_from
                 )
@@ -254,9 +268,12 @@ def _call_name(node: ast.Call) -> str:
     return _dotted_name(node.func) or ""
 
 
-def _assigned_expressions(tree: ast.Module) -> dict[str, ast.expr]:
+def _assigned_expressions(
+    tree: ast.Module,
+    nodes: tuple[ast.AST, ...] | None = None,
+) -> dict[str, ast.expr]:
     assignments: dict[str, ast.expr] = {}
-    for node in ast.walk(tree):
+    for node in nodes if nodes is not None else ast.walk(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name):
@@ -320,18 +337,28 @@ def _module_from_source_path(parts: list[str], source_modules: dict[str, Path]) 
 def _file_loaded_modules(
     tree: ast.Module,
     source_modules: dict[str, Path],
+    nodes: tuple[ast.AST, ...] | None = None,
 ) -> set[str]:
-    assignments = _assigned_expressions(tree)
-    modules: set[str] = set()
+    if nodes is None:
+        nodes = tuple(ast.walk(tree))
     path_argument_by_loader = {
         "spec_from_file_location": 1,
         "SourceFileLoader": 1,
         "run_path": 0,
     }
+    calls = {
+        node: _call_name(node).rsplit(".", 1)[-1]
+        for node in nodes
+        if isinstance(node, ast.Call)
+    }
+    if not any(loader in path_argument_by_loader for loader in calls.values()):
+        return set()
+    assignments = _assigned_expressions(tree, nodes)
+    modules: set[str] = set()
     wrapper_arguments: dict[str, int] = {}
     for function in (
         node
-        for node in ast.walk(tree)
+        for node in nodes
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     ):
         parameter_positions = {
@@ -340,7 +367,7 @@ def _file_loaded_modules(
         for child in ast.walk(function):
             if not isinstance(child, ast.Call):
                 continue
-            loader = _call_name(child).rsplit(".", 1)[-1]
+            loader = calls[child]
             argument_index = path_argument_by_loader.get(loader)
             if argument_index is None or len(child.args) <= argument_index:
                 continue
@@ -350,10 +377,7 @@ def _file_loaded_modules(
                 if wrapper_index is not None:
                     wrapper_arguments[function.name] = wrapper_index
 
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        loader = _call_name(node).rsplit(".", 1)[-1]
+    for node, loader in calls.items():
         argument_index = path_argument_by_loader.get(loader)
         if argument_index is None:
             argument_index = wrapper_arguments.get(loader)
@@ -370,7 +394,10 @@ def _modules_imported_by_test(
     tree: ast.Module,
     source_modules: dict[str, Path],
     reexports: dict[tuple[str, str], str],
+    nodes: tuple[ast.AST, ...] | None = None,
 ) -> set[str]:
+    if nodes is None:
+        nodes = tuple(ast.walk(tree))
     imported: set[str] = set()
     local_imports: dict[str, str] = {}
 
@@ -381,7 +408,7 @@ def _modules_imported_by_test(
         if source is not None and source.name != "__init__.py":
             imported.add(module)
 
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 add_concrete(alias.name)
@@ -405,7 +432,7 @@ def _modules_imported_by_test(
             if isinstance(value, str):
                 add_concrete(value)
 
-    for node in ast.walk(tree):
+    for node in nodes:
         if not isinstance(node, ast.Attribute):
             continue
         dotted = _dotted_name(node)
@@ -419,7 +446,7 @@ def _modules_imported_by_test(
         parent, _, public_name = expanded.rpartition(".")
         add_concrete(reexports.get((parent, public_name)))
 
-    imported.update(_file_loaded_modules(tree, source_modules))
+    imported.update(_file_loaded_modules(tree, source_modules, nodes))
     return imported
 
 
@@ -458,16 +485,20 @@ def _modules_imported_by_source(
 def _modules_reachable_from_source(
     module: str,
     source_modules: dict[str, Path],
+    source_imports: SourceImports | None = None,
 ) -> set[str]:
-    """Return project modules reachable through a facade's import graph."""
+    """Traverse compact import summaries, parsing unseen sources only once."""
+    if source_imports is None:
+        source_imports = {}
     reachable: set[str] = set()
     pending = [module]
     while pending:
         current = pending.pop()
-        source_file = source_modules[current]
-        for imported in _modules_imported_by_source(
-            current, source_file, source_modules
-        ):
+        if current not in source_imports:
+            source_imports[current] = _modules_imported_by_source(
+                current, source_modules[current], source_modules
+            )
+        for imported in source_imports[current]:
             if imported == module or imported in reachable:
                 continue
             reachable.add(imported)
@@ -480,8 +511,13 @@ def _apply_indirect_test_mappings(
     counts: dict[Path, int],
     source_modules: dict[str, Path],
     selected_tests: set[Path] | None,
+    source_imports: SourceImports | None = None,
 ) -> None:
     """Credit declared facade tests only after verifying both import edges."""
+    @cache
+    def facade_imports(via: str) -> set[str]:
+        return _modules_reachable_from_source(via, source_modules, source_imports)
+
     mapping_path = PROJECT_ROOT / DEFAULT_TEST_MAPPINGS
     for module, entry in _load_test_mappings(mapping_path).items():
         target_file = source_modules.get(module)
@@ -491,8 +527,7 @@ def _apply_indirect_test_mappings(
             raise CoverageMappingError(f"mapped source module does not exist: {module}")
         if facade_file is None:
             raise CoverageMappingError(f"mapped facade module does not exist: {via}")
-        facade_imports = _modules_reachable_from_source(via, source_modules)
-        if module not in facade_imports:
+        if module not in facade_imports(via):
             raise CoverageMappingError(f"mapped facade {via} does not import {module}")
 
         for test_file in entry["tests"]:
@@ -513,7 +548,8 @@ def _apply_indirect_test_mappings(
 def _build_test_index(test_files: tuple[Path, ...] | None = None) -> TestIndex:
     """Parse the selected tests once and index modules by real static imports."""
     source_modules = _source_module_paths()
-    reexports = _module_reexports(source_modules)
+    source_imports: SourceImports = {}
+    reexports = _module_reexports(source_modules, source_imports)
     tests_by_module: defaultdict[str, set[Path]] = defaultdict(set)
     counts: dict[Path, int] = {}
     selected = (
@@ -525,14 +561,15 @@ def _build_test_index(test_files: tuple[Path, ...] | None = None) -> TestIndex:
         tree = _parse_python(test_file)
         if tree is None:
             continue
+        nodes = tuple(ast.walk(tree))
         count = sum(
             1
-            for node in ast.walk(tree)
+            for node in nodes
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name.startswith("test_")
         )
         counts[test_file] = count
-        for module in _modules_imported_by_test(tree, source_modules, reexports):
+        for module in _modules_imported_by_test(tree, source_modules, reexports, nodes):
             tests_by_module[module].add(test_file)
     selected_tests = set(selected) if test_files is not None else None
     _apply_indirect_test_mappings(
@@ -540,6 +577,7 @@ def _build_test_index(test_files: tuple[Path, ...] | None = None) -> TestIndex:
         counts,
         source_modules,
         selected_tests,
+        source_imports,
     )
     return (
         {module: tuple(sorted(paths)) for module, paths in tests_by_module.items()},

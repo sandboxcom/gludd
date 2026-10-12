@@ -21,8 +21,34 @@ MANIFEST = ROOT / "config" / "hook_runtime_case_inventory.json"
 MAX_COMPONENT_LINES = 2_000
 
 
+def _portable_ast_snapshot(snapshot: str) -> str:
+    """Compare dump structure without Python's version-dependent empty fields.
+
+    Parse the inert constructor notation rather than evaluating it. Only empty
+    list-valued fields are omitted; nodes, None constants, and nonempty fields
+    retain their complete structure, including literal empty-list defaults.
+    """
+    tree = ast.parse(snapshot, mode="eval")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            node.keywords = [
+                item for item in node.keywords
+                if not (isinstance(item.value, ast.List) and not item.value.elts)
+            ]
+    return ast.dump(tree, include_attributes=False)
+
+
 def _manifest() -> dict[str, Any]:
-    return json.loads(MANIFEST.read_text(encoding="utf-8"))
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    for group in ("cases", "helpers"):
+        for record in payload[group]:
+            record["arguments_ast"] = _portable_ast_snapshot(record["arguments_ast"])
+            if record["returns_ast"] is not None:
+                record["returns_ast"] = _portable_ast_snapshot(record["returns_ast"])
+            record["decorators_ast"] = [
+                _portable_ast_snapshot(item) for item in record["decorators_ast"]
+            ]
+    return payload
 
 
 def _function_records(path: Path) -> list[dict[str, object]]:
@@ -34,10 +60,14 @@ def _function_records(path: Path) -> list[dict[str, object]]:
         records.append(
             {
                 "name": node.name,
-                "arguments_ast": ast.dump(node.args, include_attributes=False),
-                "returns_ast": ast.dump(node.returns, include_attributes=False) if node.returns else None,
+                "arguments_ast": _portable_ast_snapshot(
+                    ast.dump(node.args, include_attributes=False)
+                ),
+                "returns_ast": _portable_ast_snapshot(
+                    ast.dump(node.returns, include_attributes=False)
+                ) if node.returns else None,
                 "decorators_ast": [
-                    ast.dump(item, include_attributes=False)
+                    _portable_ast_snapshot(ast.dump(item, include_attributes=False))
                     for item in node.decorator_list
                 ],
             }
@@ -50,6 +80,61 @@ def _case_modules() -> list[tuple[str, Path]]:
         (name, PACKAGE / f"{name}.py")
         for name in _manifest()["case_modules"]
     ]
+
+
+@pytest.mark.parametrize(
+    ("expanded", "compact"),
+    [
+        (
+            "arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[])",
+            "arguments()",
+        ),
+        (
+            "Call(func=Name(id='mark', ctx=Load()), args=[], keywords=[])",
+            "Call(func=Name(id='mark', ctx=Load()))",
+        ),
+        (
+            "arguments(defaults=[List(elts=[], ctx=Load())])",
+            "arguments(defaults=[List(ctx=Load())])",
+        ),
+    ],
+)
+def test_portable_ast_snapshots_ignore_only_empty_field_spelling(
+    expanded: str, compact: str,
+) -> None:
+    """Python's empty-field display change cannot alter the compatibility API."""
+    assert _portable_ast_snapshot(expanded) == _portable_ast_snapshot(compact)
+
+
+@pytest.mark.parametrize(
+    ("original", "replacement"),
+    [
+        ("test_case", "test_changed_case"),
+        ("value: int", "renamed: int"),
+        ("value: int", "value: str"),
+        ("value: int = None, /", "value: int = None"),
+        ("option: bool = False", "option: bool = True"),
+        ("option: bool = False", "option: bool = []"),
+        ("option: bool = False", "option: bool = False, extra: int = 0"),
+        ("-> bool", "-> None"),
+        ("[None]", "[[]]"),
+        ("parametrize", "skipif"),
+    ],
+)
+def test_function_records_preserve_signature_and_mark_drift(
+    tmp_path: Path, original: str, replacement: str,
+) -> None:
+    """Normalization must retain names, kinds, annotations, defaults, and marks."""
+    source = (
+        '@pytest.mark.parametrize("value", [None])\n'
+        "def test_case(value: int = None, /, *, option: bool = False) -> bool:\n"
+        "    pass\n"
+    )
+    path = tmp_path / "case.py"
+    path.write_text(source, encoding="utf-8")
+    before = _function_records(path)
+    path.write_text(source.replace(original, replacement), encoding="utf-8")
+    assert _function_records(path) != before
 
 
 def test_split_modules_exist_and_leave_maintenance_headroom() -> None:

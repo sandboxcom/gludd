@@ -21,7 +21,7 @@ import hashlib
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +36,10 @@ _ARCHITECTURE_ALIASES = {
     "x86_64": "x86_64",
 }
 _TRANSITIVE_DIAGNOSTIC_LIMIT = 50
+_NATIVE_BUILD_IMPORTER = re.compile(
+    r"(?P<root>/tmp/gludd-linux-native-build)\.[A-Za-z0-9]{6}"
+    r"(?P<hook>/lib/python3\.[0-9]+/site-packages/PyInstaller/hooks/rthooks/pyi_rth_pkgutil\.py)\Z"
+)
 _CATEGORIES = frozenset(
     {
         "controller-runtime-boundary",
@@ -530,7 +534,14 @@ def _transitive_edges(
 
 
 def _warning_digest(edges: set[MissingImportEdge]) -> str:
-    normalized = "\n".join(edge.render() for edge in sorted(edges))
+    """Hash import semantics while retaining raw build coordinates for review."""
+    canonical_edges: set[MissingImportEdge] = set()
+    for edge in edges:
+        match = _NATIVE_BUILD_IMPORTER.fullmatch(edge.importer)
+        if match is not None:
+            edge = replace(edge, importer=f"{match['root']}.<unique>{match['hook']}")
+        canonical_edges.add(edge)
+    normalized = "\n".join(edge.render() for edge in sorted(canonical_edges))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 

@@ -23,7 +23,13 @@ def test_gate_preflights_are_recipe_work_not_fail_fast_prerequisites() -> None:
     makefile = _makefile()
     gate_header = makefile.split("\ngate:", 1)[1].splitlines()[0]
 
-    assert gate_header.strip() == "_gate-run-lock-acquire"
+    # Pure profile/identity admission rejects invalid release inputs before any
+    # heavy work; the complete preflight list still executes inside the recipe.
+    assert gate_header.strip() == (
+        "gate-admission-config "
+        "$(if $(filter release,$(GATE_TEST_PROFILE)),_gate-release-state-check,) "
+        "_gate-run-lock-acquire"
+    )
     assert "GATE_PREFLIGHT_TARGETS :=" in makefile
     assert "for target in $(GATE_PREFLIGHT_TARGETS)" in makefile
 

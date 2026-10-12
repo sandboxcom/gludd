@@ -336,12 +336,14 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
     assert "getconf _NPROCESSORS_ONLN" in makefile
     assert "GLUDD_XDIST_WORKERS=\"$(GLUDD_XDIST_WORKERS)\" $(SYSTEM_PYTHON) -c" not in makefile
     assert "GLUDD_XDIST_WORKERS=\"$(GLUDD_XDIST_WORKERS)\" python3 -c" not in makefile
-    assert "VERSION := $(shell $(UV) run python" not in makefile
+    version_line = next(line for line in makefile.splitlines() if line.startswith("VERSION "))
     assert (
-        'VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" '
-        "$(UV) run --no-sync python"
-        in makefile
+        'VERSION = $(or $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" '
+        'uv version --short --offline --project "$(CURDIR)"'
+        in version_line
     )
+    assert "$(UV) run" not in version_line
+    assert "$(error Cannot read [project].version from pyproject.toml)" in version_line
     no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]
     for goal in [
         *guard_targets,

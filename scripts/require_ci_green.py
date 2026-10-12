@@ -11,14 +11,17 @@ from __future__ import annotations
 import subprocess
 import sys
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-try:
-    import pipeline_status
-except ModuleNotFoundError as exc:
-    if exc.name != "pipeline_status":
-        raise
+if TYPE_CHECKING:
     from scripts import pipeline_status
+else:
+    try:
+        import pipeline_status
+    except ModuleNotFoundError as exc:
+        if exc.name != "pipeline_status":
+            raise
+        from scripts import pipeline_status
 
 
 def _detect_branch() -> str:

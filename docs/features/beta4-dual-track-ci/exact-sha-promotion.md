@@ -105,6 +105,45 @@ CI, or write a success verdict. Rollback is the isolated Makefile, regression,
 ledger, and documentation commit; it does not rewrite history or touch a tag,
 artifact, deployment, or running service.
 
+#### Current remote evidence before a v0.1.2 push (2026-10-12)
+
+A real guarded development push exposed an unset `PUSH_REMOTE`. The old guard
+ignored fetch errors, treated a non-resolving ref as zero divergence, and printed
+PASS. `PUSH_REMOTE` now defaults to `sandboxcom`; the guard uses the same configured
+SSH key as the normal push and rejects detached HEAD or an unconfigured remote.
+
+The existing Git CLI provides the admission evidence. A successful exact-branch
+lookup precedes an explicit branch-to-tracking-ref fetch. Lookup or fetch errors
+cannot reuse cached refs. A confirmed absent remote branch may be created through
+a normal push; every existing remote branch must have zero commits missing from
+the local candidate. `FORCE=1` cannot bypass divergence. Reconciliation remains
+merge-forward, never a shared-branch rebase. The actual push still provides the
+final non-fast-forward race guard; this check neither merges nor publishes.
+
+Local bare-remote regressions exercise default and explicit remotes, local-only
+work, remote advance, divergence, unavailable remotes, fetch failure after a
+successful lookup, new branches, detached HEAD, and a non-mutating Make dry run.
+No validation-only variable is added to the live push path. Preview the recipe:
+
+```text
+make _pull-before-push-guard -n PUSH_REMOTE=sandboxcom SSH_KEY=/tmp/gludd-contract-absent-key
+```
+
+The preview is not live remote admission. The live guard refreshes only the
+selected tracking ref; it changes no serving process, release tag, artifact,
+remote ref, or local HEAD, so the path remains ZDD. Rollback is an isolated
+Make/contract/test/documentation commit without rewriting shared history.
+
+[Git's fetch reference](https://git-scm.com/docs/git-fetch.html) documents explicit
+source-to-destination refspecs, and its
+[remote lookup reference](https://git-scm.com/docs/git-ls-remote) distinguishes
+confirmed absence (exit 2) from transport failure. A
+[2015 practitioner report](https://stackoverflow.com/questions/29527630/why-doesnt-git-update-my-remote-tracking-branch),
+reviewed 2026-10-12, records remote-tracking state remaining stale after a fetch.
+That configuration-dependent case is not this unset-variable defect; it supports
+checking the actual remote and explicit ref mapping instead of trusting cached
+ahead/behind output.
+
 ### Cleanup validation and apply parity (2026-08-31)
 
 Stopping an invalidated local dual-track producer exposed a second operational
