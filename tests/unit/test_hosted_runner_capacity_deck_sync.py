@@ -11,9 +11,7 @@ DECK = ROOT / "docs/presentation/deck/index.html"
 def _capacity_slide() -> str:
     """Return the deck section that mirrors hosted-runner capacity."""
     content = DECK.read_text(encoding="utf-8")
-    return content.split('<div data-contract="hosted-runner-capacity">', 1)[
-        1
-    ].split("</div>", 1)[0]
+    return content.split('<div data-contract="hosted-runner-capacity">', 1)[1].split("</div>", 1)[0]
 
 
 def test_deck_pins_bounded_hosted_runner_capacity_in_order() -> None:
@@ -66,7 +64,7 @@ def test_deck_retains_prior_contracts_and_live_tokens() -> None:
         "service-reliability-boundaries",
         "release-resilience-boundaries",
     ):
-        assert deck.count(f'data-contract="{contract}"') == 1
+        assert deck.count(f'<section data-contract="{contract}"') == 1
     for token in (
         "{{VERSION}}",
         "{{TEST_COUNT}}",

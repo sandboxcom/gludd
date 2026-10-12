@@ -170,8 +170,8 @@ def _real_signed_response() -> tuple[bytes, str]:
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(NOW - timedelta(days=1))
-        .not_valid_after(NOW + timedelta(days=1))
+        .not_valid_before(datetime.now(UTC) - timedelta(days=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=1))
         .sign(key, hashes.SHA256())
     )
     key_pem = key.private_bytes(
@@ -255,9 +255,7 @@ def test_wrapping_encryption_and_weak_or_external_signatures_fail_closed(
     if mutation == "duplicate_assertion":
         extra = _assertion(subject="attacker@example.test")
         extra.set("ID", "assertion-2")
-        extra.xpath("./ds:Signature/ds:SignedInfo/ds:Reference", namespaces={"ds": DS})[0].set(
-            "URI", "#assertion-2"
-        )
+        extra.xpath("./ds:Signature/ds:SignedInfo/ds:Reference", namespaces={"ds": DS})[0].set("URI", "#assertion-2")
         response.append(extra)
     elif mutation == "duplicate_id":
         response.set("ID", "assertion-1")
@@ -323,9 +321,7 @@ def test_verified_subtree_must_match_issuer_audience_recipient_request_and_time(
     mutations.append((audience, "audience"))
 
     recipient = _assertion()
-    recipient.find(f".//{{{SAML}}}SubjectConfirmationData").set(
-        "Recipient", "https://evil.example.test/acs"
-    )
+    recipient.find(f".//{{{SAML}}}SubjectConfirmationData").set("Recipient", "https://evil.example.test/acs")
     mutations.append((recipient, "recipient"))
 
     request = _assertion()
@@ -496,9 +492,7 @@ def test_role_molecule_dependency_and_no_escape_hatch_contracts() -> None:
     molecule = yaml.safe_load((scenario / "molecule.yml").read_text(encoding="utf-8"))
     verify = (scenario / "default/verify.yml").read_text(encoding="utf-8")
     requirements = (ROOT / "config/ansible/requirements.txt").read_text(encoding="utf-8")
-    controller = (ROOT / "requirements/profiles/ansible-controller/pyproject.toml").read_text(
-        encoding="utf-8"
-    )
+    controller = (ROOT / "requirements/profiles/ansible-controller/pyproject.toml").read_text(encoding="utf-8")
     source = Path(saml_admission.__file__).read_text(encoding="utf-8")
 
     assert defaults and all(name.startswith("saml_processor_") for name in defaults)
@@ -674,9 +668,7 @@ def test_verifier_allowlist_and_result_guard_edges(monkeypatch: pytest.MonkeyPat
             raise ValueError("sensitive verifier detail")
 
     with pytest.raises(saml_admission.SAMLAdmissionError, match="verification failed") as failure:
-        saml_admission.admit_saml_assertion(
-            **_arguments(raw), verifier_factory=Raises, now=lambda: NOW
-        )
+        saml_admission.admit_saml_assertion(**_arguments(raw), verifier_factory=Raises, now=lambda: NOW)
     assert "sensitive" not in str(failure.value)
 
     for verified, message in (

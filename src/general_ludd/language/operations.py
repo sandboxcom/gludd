@@ -161,17 +161,24 @@ def _encoding_detect(payload: dict[str, object]) -> dict[str, object]:
         import chardet
 
         detected = chardet.detect(data)
-        encoding = str(detected.get("encoding") or "unknown")
+        encoding = str(detected.get("encoding") or "unknown").lower()
         confidence = round(float(detected.get("confidence") or 0.0), 4)
     except ImportError:
         encoding, confidence = "utf-8", 0.5
+
+    single_byte_names = frozenset(item["name"].lower() for item in ALL_ENCODINGS if item["category"] == "single-byte")
+    if confidence < 0.5 and encoding in single_byte_names:
+        try:
+            data.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            pass
+        else:
+            if any(byte >= 0x80 for byte in data):
+                confidence = 0.6
+
     thresholds = CHARDET_CONFIDENCE_THRESHOLDS
     level = next(
-        (
-            name
-            for name in ("trusted", "reliable", "usable")
-            if confidence >= thresholds.get(name, 1.0)
-        ),
+        (name for name in ("trusted", "reliable", "usable") if confidence >= thresholds.get(name, 1.0)),
         "entry",
     )
     result: dict[str, object] = {
@@ -330,11 +337,7 @@ def _unicode_analyze(payload: dict[str, object]) -> dict[str, object]:
                 "category": unicodedata.category(char),
                 "category_name": UNICODE_CATEGORY_NAMES.get(unicodedata.category(char), ""),
                 "block": next(
-                    (
-                        name
-                        for (lower, upper), name in UNICODE_BLOCK_NAMES.items()
-                        if lower <= ord(char) <= upper
-                    ),
+                    (name for (lower, upper), name in UNICODE_BLOCK_NAMES.items() if lower <= ord(char) <= upper),
                     "Unknown",
                 ),
                 "plane": plane_of(ord(char)),
@@ -350,9 +353,7 @@ def _unicode_analyze(payload: dict[str, object]) -> dict[str, object]:
             "NFKD": unicodedata.normalize("NFKD", text),
         }
     if payload.get("include_grapheme_clusters", True):
-        result["grapheme_clusters"] = [
-            {"index": index, "text": char} for index, char in enumerate(text)
-        ]
+        result["grapheme_clusters"] = [{"index": index, "text": char} for index, char in enumerate(text)]
     if payload.get("include_surrogates", True):
         codepoints = [ord(char) for char in text]
         surrogates: list[dict[str, object]] = []

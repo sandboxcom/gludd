@@ -296,7 +296,8 @@
     },
     "httpx": {
       "collection_import_paths": [
-        "collections/ansible_collections/general_ludd/chat/plugins/modules/chat_send.py"
+        "collections/ansible_collections/general_ludd/chat/plugins/modules/chat_send.py",
+        "collections/ansible_collections/general_ludd/infrastructure/plugins/module_utils/secure_fetch.py"
       ],
       "collection_requirement_paths": [],
       "core_import_paths": [
@@ -734,7 +735,8 @@
     },
     "pyyaml": {
       "collection_import_paths": [
-        "collections/ansible_collections/general_ludd/agent/plugins/module_utils/ansible_tools.py"
+        "collections/ansible_collections/general_ludd/agent/plugins/module_utils/ansible_tools.py",
+        "collections/ansible_collections/general_ludd/infrastructure/plugins/module_utils/openapi_registration.py"
       ],
       "collection_requirement_paths": [],
       "core_import_paths": [
@@ -840,7 +842,9 @@
       "runtime_evidence": []
     },
     "safehttpx": {
-      "collection_import_paths": [],
+      "collection_import_paths": [
+        "collections/ansible_collections/general_ludd/infrastructure/plugins/module_utils/secure_fetch.py"
+      ],
       "collection_requirement_paths": [],
       "core_import_paths": [
         "src/general_ludd/security/url_fetch.py"

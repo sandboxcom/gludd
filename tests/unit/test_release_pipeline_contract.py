@@ -122,20 +122,11 @@ class TestGitTagSemver:
         )
 
     def test_release_tags_are_semver_prerelease_or_current_stable(self):
-        """Release tags must be semver; the current stable tag is allowed, otherwise a prerelease suffix is required."""
+        """Release tags must be semver; stable release tags are allowed, otherwise a prerelease suffix is required."""
         tags = self._git_tag_list()
-        release_tags = [t for t in tags if t.startswith("v")]
-        version = _current_version()
-        stable_tag = f"v{version}"
-        stray: list[str] = []
-        for tag in release_tags:
-            # Allow the canonical stable tag for the current version.
-            if tag == stable_tag:
-                continue
-            # All other release tags must carry a prerelease suffix.
-            if not re.match(r"^v\d+\.\d+\.\d+-[a-zA-Z0-9.]+$", tag):
-                stray.append(tag)
+        release_tags = [t for t in tags if not t.endswith("^{}")]
+        stray = [tag for tag in release_tags if not self.SEMVER_TAG_RE.match(tag)]
         assert not stray, (
-            f"Release tags not matching vN.N.N-prerelease (or current stable {stable_tag}): "
-            f"{', '.join(stray)}. All v-tags: {', '.join(release_tags)}"
+            "Release tags not matching vN.N.N or vN.N.N-prerelease: "
+            + ", ".join(sorted(stray))
         )

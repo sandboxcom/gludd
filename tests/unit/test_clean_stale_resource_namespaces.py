@@ -106,7 +106,9 @@ def test_validate_only_never_mutates_or_writes_receipts(tmp_path: Path) -> None:
 
 def test_current_registered_and_git_worktree_namespaces_are_protected(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("GLUDD_PROJECT_NAMESPACE", raising=False)
     checkout = tmp_path / "checkout"
     registered = tmp_path / "registered"
     linked = tmp_path / "linked"
@@ -178,15 +180,11 @@ def test_live_pid_requires_matching_start_identity_and_ambiguous_pid_fails_close
     root = tmp_path / "gludd-resources"
     root.mkdir()
     exact = _namespace(root, "exact")
-    (exact / "worker.pid").write_text(
-        json.dumps({"pid": 321, "pid_started_at": "Mon Oct 5 12:00:00 2026"})
-    )
+    (exact / "worker.pid").write_text(json.dumps({"pid": 321, "pid_started_at": "Mon Oct 5 12:00:00 2026"}))
     ambiguous = _namespace(root, "ambiguous")
     (ambiguous / "worker.pid").write_text("321\n")
     reused = _namespace(root, "reused")
-    (reused / "worker.pid").write_text(
-        json.dumps({"pid": 321, "pid_started_at": "Sun Oct 4 12:00:00 2026"})
-    )
+    (reused / "worker.pid").write_text(json.dumps({"pid": 321, "pid_started_at": "Sun Oct 4 12:00:00 2026"}))
     for marker in root.glob("*/worker.pid"):
         os.utime(marker, (OLD, OLD))
     processes = {321: ProcessIdentity(321, "Mon Oct 5 12:00:00 2026")}
@@ -275,9 +273,7 @@ def test_inventory_bound_and_invalid_grace_are_rejected(tmp_path: Path) -> None:
         ({"heartbeat_seconds": 0.0}, "heartbeat"),
     ],
 )
-def test_all_numeric_bounds_fail_closed(
-    tmp_path: Path, changes: dict[str, object], message: str
-) -> None:
+def test_all_numeric_bounds_fail_closed(tmp_path: Path, changes: dict[str, object], message: str) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
     config = _config(root, tmp_path / "receipts")
@@ -331,9 +327,7 @@ def test_available_kernel_lock_uses_record_and_empty_lock_is_inactive(
         "inspect_lease",
         lambda _path: LeaseInspection("available", None),
     )
-    assert plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[
-        0
-    ].action == "reclaim"
+    assert plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0].action == "reclaim"
 
 
 def test_directory_scan_refuses_file_hardlink_and_entry_overflow(tmp_path: Path) -> None:
@@ -350,9 +344,7 @@ def test_directory_scan_refuses_file_hardlink_and_entry_overflow(tmp_path: Path)
     (overflow / "second.bin").write_bytes(b"second")
     for item in overflow.iterdir():
         os.utime(item, (OLD, OLD))
-    config = CleanupConfig(
-        **{**_config(root, tmp_path / "receipts").__dict__, "max_entries_per_namespace": 1}
-    )
+    config = CleanupConfig(**{**_config(root, tmp_path / "receipts").__dict__, "max_entries_per_namespace": 1})
 
     decisions = {item.base_name: item for item in plan_cleanup(config, set(), {}).decisions}
 
@@ -367,16 +359,9 @@ def test_process_census_parses_stable_starts_and_fails_closed(
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            stdout=(
-                "1 Thu Oct  8 00:00:00 2026\n"
-                "42 Thu Oct  8 01:02:03 2026\n"
-            )
-        ),
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=("1 Thu Oct  8 00:00:00 2026\n42 Thu Oct  8 01:02:03 2026\n")),
     )
-    assert cleanup._process_identities() == {
-        42: ProcessIdentity(42, "Thu Oct 8 01:02:03 2026")
-    }
+    assert cleanup._process_identities() == {42: ProcessIdentity(42, "Thu Oct 8 01:02:03 2026")}
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -391,9 +376,7 @@ def test_process_census_parses_stable_starts_and_fails_closed(
     assert cleanup._process_identities() is None
 
 
-def test_git_and_registry_worktree_inventories_are_strict(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_git_and_registry_worktree_inventories_are_strict(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = tmp_path / "project"
     linked = tmp_path / "linked"
     missing = tmp_path / "registered-but-missing"
@@ -403,17 +386,12 @@ def test_git_and_registry_worktree_inventories_are_strict(
         subprocess,
         "run",
         lambda *_args, **_kwargs: SimpleNamespace(
-            stdout=(
-                f"worktree {project}\nHEAD abc\n\nworktree {linked}\n\n"
-                f"worktree {missing}\n"
-            )
+            stdout=(f"worktree {project}\nHEAD abc\n\nworktree {linked}\n\nworktree {missing}\n")
         ),
     )
     assert cleanup._git_worktrees(project) == (project, linked, missing)
     assert project_namespace(missing) in protected_namespace_names(project, (missing,))
-    monkeypatch.setattr(
-        subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(stdout="")
-    )
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(stdout=""))
     with pytest.raises(ValueError, match="inventory is empty"):
         cleanup._git_worktrees(project)
 
@@ -457,9 +435,7 @@ def test_registered_worktree_rejects_symlink_and_ambiguous_entries(
         json.dumps(
             {
                 "version": 1,
-                "workstreams": {
-                    "agent/demo": {"branch": "wrong", "status": "active"}
-                },
+                "workstreams": {"agent/demo": {"branch": "wrong", "status": "active"}},
             }
         )
     )
@@ -501,9 +477,7 @@ def test_main_validate_only_inventory_and_refusal_paths(
     assert "RESOURCE_CLEANUP_REFUSED" in capsys.readouterr().out
 
 
-def test_main_apply_deletes_stale_namespace_with_receipt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_apply_deletes_stale_namespace_with_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = tmp_path / "project"
     project.mkdir()
     root = tmp_path / "gludd-resources"

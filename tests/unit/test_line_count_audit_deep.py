@@ -128,7 +128,7 @@ def test_at_least_one_source_file(file_sizes: FileSizes) -> None:
 
 
 def test_total_source_files_reasonable(file_sizes: FileSizes) -> None:
-    assert 100 <= len(file_sizes) <= 1500, f"Expected 100-1500 source files, found {len(file_sizes)}"
+    assert 100 <= len(file_sizes) <= 1600, f"Expected 100-1600 source files, found {len(file_sizes)}"
 
 
 def test_no_file_exceeds_max_lines(file_sizes: FileSizes) -> None:

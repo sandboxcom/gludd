@@ -2,11 +2,24 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## Next release — Unreleased
+## Next release (v0.1.2) — Unreleased
 
 This section collects completed backlog work awaiting the next version bump.
 An item appears here only after its `TASKS.md` checkbox is formally closed with
 test, coverage, documentation, and exact commit evidence.
+
+### Completed backlog items
+
+- **S83.114 — Fail-closed chemistry entity resolution**
+- **S83.115 — Standards-consistent X.509 chain validation**
+- **S83.116 — Monotonic debounce, throttle, and watchdog state**
+- **S83.117 — Authenticated TLS 1.3 state and directional records**
+- **S83.128 — Invoking-worktree-safe virtual-environment reclamation**
+- **S83.178 — Fast integration admission for deterministic gate failures**
+
+S83.157, S83.158, S83.163, S83.166, and S83.169 have substantial implemented
+evidence but are implemented but still open; they are not counted among the
+completed v0.1.2 backlog items.
 
 ## [0.1.2] — 2026-10-09
 

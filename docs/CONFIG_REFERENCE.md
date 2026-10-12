@@ -172,6 +172,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_GATE_BASETEMP` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:179` |
 | `GLUDD_GATE_FRESHNESS_SECS` | Auto-indexed (see source) | — | optional | `scripts/gate_status_attestation.py:313` |
 | `GLUDD_GATE_KEY_PATH` | Auto-indexed (see source) | — | optional | `scripts/gate_status_attestation.py:306` |
+| `GLUDD_GATE_OWNER_PID` | Auto-indexed (see source) | — | optional | `scripts/ci_shadow_receipt_runtime.py:204` |
 | `GLUDD_GATE_REFRESH_LOCK_TIMEOUT` | Auto-indexed (see source) | — | optional | `scripts/collection_lock.py:56` |
 | `GLUDD_GGUF_MODEL_DIR` | Auto-indexed (see source) | — | optional | `src/general_ludd/cloud/model_sources.py:27` |
 | `GLUDD_GHA_SIGNAL_STATE_DIR` | Auto-indexed (see source) | — | optional | `scripts/ci_signal_exact_sha.py:468` |
@@ -242,6 +243,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_ORPHAN_PYTEST_GRACE_SECONDS` | Auto-indexed (see source) | `1` | optional | `scripts/reap_orphan_pytest.py:297` |
 | `GLUDD_ORPHAN_PYTEST_MIN_SECONDS` | Auto-indexed (see source) | `1800` | optional | `scripts/reap_orphan_pytest.py:317` |
 | `GLUDD_OUTPUT_TEMPLATES_DIR` | Auto-indexed (see source) | — | optional | `src/general_ludd/output_templates.py:20` |
+| `GLUDD_PANTS_UNIT_POLICY` | Auto-indexed (see source) | — | optional | `scripts/content_addressed_unit_lane.py:620`, `tests/pants_cached_unit/conftest.py:11` |
 | `GLUDD_PERSIST_STOP_BLOCK_FILE` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:43` |
 | `GLUDD_PER_WORKER_GB` | Auto-indexed (see source) | `1.5` | optional | `scripts/adaptive_test.py:98` |
 | `GLUDD_PG_WAKE_RECONNECT_MAX_SECONDS` | Auto-indexed (see source) | `5.0` | optional | `src/general_ludd/daemon.py:2286` |

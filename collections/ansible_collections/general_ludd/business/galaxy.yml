@@ -14,4 +14,5 @@ tags:
   - entity-research
   - corporate
   - intelligence
-dependencies: {}
+dependencies:
+  general_ludd.travel: ">=0.1.0"

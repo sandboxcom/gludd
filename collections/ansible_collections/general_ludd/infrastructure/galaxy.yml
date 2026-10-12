@@ -15,4 +15,5 @@ tags:
   - service-discovery
   - auto-registration
   - auto-retirement
-dependencies: {}
+dependencies:
+  general_ludd.travel: ">=0.1.0"

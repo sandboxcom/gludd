@@ -86,6 +86,26 @@ def test_unicode_analysis_rejects_non_utf8_managed_host_input() -> None:
         _execute("unicode_analyze", {"input_b64": encoded})
 
 
+def test_encoding_detect_latin1_bytes_gets_usable_confidence() -> None:
+    """Short Latin-1 input must be detected with a usable confidence level.
+
+    Regression for the S97.10 gate failure: chardet can return a low-confidence
+    single-byte encoding (e.g. windows-1252 with confidence ~0.03). The service
+    normalizes the encoding name and boosts confidence when the encoding
+    decodes cleanly and high-bit bytes are present.
+    """
+    encoded = base64.b64encode(b"H\xe9llo, w\xf6rld!\n").decode("ascii")
+    result = _execute("encoding_detect", {"input_b64": encoded})
+    assert result["detected_encoding"] in (
+        "iso-8859-1",
+        "latin1",
+        "latin-1",
+        "windows-1252",
+    )
+    assert result["confidence"] >= 0.5
+    assert result["confidence_level"] in ("usable", "reliable", "trusted")
+
+
 def test_operation_service_rejects_unknown_or_unbounded_inputs() -> None:
     with pytest.raises(ValueError, match="unsupported language operation"):
         _execute("shell", {})

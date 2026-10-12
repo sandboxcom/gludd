@@ -355,8 +355,9 @@ class TestMultiModelPipelineStructural:
 class TestMultiModelGamePipeline:
     """Run planner→coder→reviewer against each game. Score per phase."""
 
+    @staticmethod
     @pytest.fixture(scope="class")
-    def gateway(self) -> Any:
+    def gateway() -> Any:
         if _SKIP_REASON:
             pytest.skip(_SKIP_REASON)
         return _build_multi_role_gateway()

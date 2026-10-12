@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import inspect
 import subprocess
 import sys
 from pathlib import Path
@@ -62,14 +61,8 @@ def test_local_dual_track_target_delegates_canonical_bounded_run() -> None:
     )
     assert profile_sync in block
     assert block.index(profile_sync) < block.index("scripts/run_ci_shards_serial.py")
-    assert (
-        'UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11"'
-        in block
-    )
-    assert (
-        'UV_PROJECT_ENVIRONMENT="$$RESOURCE_ROOT/ci-shards/python-3.11"'
-        not in block
-    )
+    assert 'UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11"' in block
+    assert 'UV_PROJECT_ENVIRONMENT="$$RESOURCE_ROOT/ci-shards/python-3.11"' not in block
     assert "--shards" not in block
     assert "--skip-isolated" not in block
     assert "--skip-aggregate" not in block
@@ -78,10 +71,10 @@ def test_local_dual_track_target_delegates_canonical_bounded_run() -> None:
     assert '--attestation-output "$$RESOURCE_ROOT/ci-shards/attestation.json"' in block
     assert "DUAL_TRACK_LOCAL_VALIDATE_ONLY" in block
     assert "--validate-only" in block
-    batch_source = inspect.getsource(runner._pytest_command)
-    assert '"-n"' not in batch_source
-    assert '"--dist"' not in batch_source
-    assert '"--max-worker-restart=0"' not in batch_source
+    canonical_command = runner._pytest_command("unit-2", [], ROOT / "tmp", ["-W", "error"], batch_workers=1)
+    assert "-n" not in canonical_command
+    assert "--dist=loadfile" not in canonical_command
+    assert "--max-worker-restart=0" not in canonical_command
 
 
 def test_real_attestation_rejects_non_release_pytest_policy(

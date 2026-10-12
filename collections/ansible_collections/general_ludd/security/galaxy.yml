@@ -19,4 +19,5 @@ tags:
   - injection
   - adversarial
 dependencies:
+  general_ludd.travel: ">=0.1.0"
   general_ludd.agent: ">=0.2.0"

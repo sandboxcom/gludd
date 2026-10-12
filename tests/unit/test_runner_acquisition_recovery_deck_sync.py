@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -11,9 +12,7 @@ DECK = ROOT / "docs/presentation/deck/index.html"
 def _recovery_section() -> str:
     """Return the section mirroring runner-acquisition recovery."""
     content = DECK.read_text(encoding="utf-8")
-    return content.split('<div data-contract="runner-acquisition-recovery">', 1)[
-        1
-    ].split("</div>", 1)[0]
+    return content.split('<div data-contract="runner-acquisition-recovery">', 1)[1].split("</div>", 1)[0]
 
 
 def test_deck_pins_ledger_first_runner_recovery_in_order() -> None:
@@ -66,7 +65,7 @@ def test_deck_retains_every_prior_contract_and_live_token() -> None:
         "release-resilience-boundaries",
         "hosted-runner-capacity",
     ):
-        assert deck.count(f'data-contract="{contract}"') == 1
+        assert len(re.findall(rf'<[^>]*\bdata-contract="{re.escape(contract)}"', deck)) == 1
     for token in (
         "{{VERSION}}",
         "{{TEST_COUNT}}",

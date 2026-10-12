@@ -120,7 +120,7 @@ class TestSearXConfigBaseDir:
     def test_rejects_unsafe_default_namespace(self, monkeypatch) -> None:
         monkeypatch.setenv("GLUDD_RESOURCE_NAMESPACE", "../escape")
 
-        with pytest.raises(ValueError, match="unsafe path"):
+        with pytest.raises(ValueError, match="namespace must be 1-64 characters"):
             SearXConfig()
 
 

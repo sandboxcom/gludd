@@ -36,6 +36,11 @@ version = "0"
 dependencies = [
     "ansible-core>=2.19,<2.20",
     "ansible-runner>=2.4",
+    "azure-identity==1.26.0",
+    "azure-monitor-query==2.0.0",
+    "jsonpointer==3.2.0",
+    "openapi-core==0.23.1",
+    "signxml==5.1.0",
 ]
 """,
         encoding="utf-8",
