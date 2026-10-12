@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — native gate proof required a redundant exhaustive release replay
+
+- **Observed and cause**: The native gate uses the current interpreter and quiet pytest arguments, while release admission requires the locked Python 3.11 policy, warnings fatal, and exactly one test worker. Native evidence cannot truthfully be relabeled as canonical release proof.
+- **Repair and proof**: Opt-in `GATE_TEST_PROFILE=release` retains every full-gate phase and delegates only its tests to the existing canonical producer. The integrated cohort passes 131 warning-fatal tests covering strict admission, exact identity, background forwarding, receipt freshness, failure, cancellation, and unchanged native behavior. The 210-target contract, Make lint, strict typing, and safe policy validation pass. No full candidate gate is claimed by these fixtures.
+- **Evidence and rollback**: `docs/features/CANONICAL_RELEASE_GATE.md` records the Make and long-lived pytest practitioner evidence. The profile adds no daemon, deployment, or serving-state mutation; existing native gates remain the default, and local/hosted release evidence remains independently mandatory.
+
 ### 2026-10-12 — direct stable cut used hermetic validation as release admission
 
 - **Observed and cause**: Independent review of the first promotion repair found that direct stable `release-cut` still passed `RELEASE_READINESS_VALIDATE_ONLY=1`. That mode validates receipt arguments but intentionally does not assess task completion. Changing it blindly to full mode would select master CI after promotion even though the proven source workflow ran on development.
