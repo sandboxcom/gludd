@@ -38,7 +38,8 @@ Do not call a normal commit a cherry-pick or invent merge parents for a receipt.
 
 `development-fast-forward` then advances only canonical main-checkout development
 from exact `S` to exact `I`, without adding another merge. It retains the inactive
-gate and main-checkout guards, requires a clean development checkout, checks both
+gate and main-checkout guards, explicitly verifies the caller's Git top-level,
+requires a clean development checkout, checks both
 expected full SHAs and ancestry before any ref write, merges only the captured
 SHA with Git's `--ff-only`, and verifies branch, HEAD, development, source ref,
 and cleanliness afterward. Divergence or identity drift fails closed. It creates
@@ -64,7 +65,8 @@ review. Its `passed` fields must describe executed checks, never anticipated wor
 
 Temporary real-Git recipe tests prove successful exact fast-forward without an
 extra commit, nonmutating validation, rejected malformed or mismatched pins,
-dirty/untracked/staged trees, wrong branch, divergence, failed ownership guards,
+dirty/untracked/staged trees, wrong branch, separate clones, actual linked
+development worktrees with main on master, divergence, failed ownership guards,
 and post-merge hook identity drift. Only existing external guards are replaced;
 the target recipe and Git operations run unchanged against test-owned repositories.
 
@@ -141,7 +143,7 @@ must report validation success with zero ref or publication mutations.
 Run the focused contract with:
 
 ```text
-make test-files TESTFILES=tests/unit/test_release_promote_target.py PYTEST_ARGS='-q -n 1 -W error --tb=short'
+make test-files TESTFILES='tests/unit/test_release_promote_target.py tests/unit/test_development_fast_forward_target.py' NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS='-W error -q --tb=short'
 ```
 
 ## Zero-downtime and resource bounds

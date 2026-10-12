@@ -46,12 +46,15 @@ def repository(tmp_path: Path) -> tuple[Path, str, str]:
 def _run(
     repository: tuple[Path, str, str], *, apply: str | None = "1", before: str | None = None,
     after: str | None = None, source: str = "reviewed-source", guard: str = "",
+    canonical: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Replace only existing external guards, not the real recipe or Git."""
     repo, before_sha, after_sha = repository
     stanzas = _stanzas(compose_makefile(ROOT / "Makefile"))
     block = stanzas.get("development-fast-forward")
     assert block is not None, "the reviewed-candidate fast-forward target is missing"
+    block = block.replace("MAIN_PATH='/Users/shawnwilson/gludd'",
+                          f"MAIN_PATH='{(canonical or repo).resolve()}'")
     fixture = repo.parent / "fixture.mk"
     fixture.write_text(
         "APPLY ?= 0\n.PHONY: _gate-mutation-guard main-worktree-guard\n"
@@ -182,6 +185,36 @@ def test_wrong_checkout_branch_writes_no_refs(repository: tuple[Path, str, str])
     result = _run(repository, before=after)
     assert result.returncode != 0
     assert _refs(repo) == refs
+
+
+@pytest.mark.parametrize("apply", ["0", "1"])
+def test_noncanonical_caller_cannot_advance_a_separate_development_branch(
+    repository: tuple[Path, str, str], apply: str,
+) -> None:
+    repo = repository[0]
+    canonical = repo.parent / "canonical-main"
+    canonical.mkdir()
+    refs = _refs(repo)
+    result = _run(repository, apply=apply, canonical=canonical)
+    assert result.returncode != 0
+    assert "canonical main checkout" in result.stdout + result.stderr
+    assert _refs(repo) == refs
+
+
+@pytest.mark.parametrize("apply", ["0", "1"])
+def test_linked_development_worktree_cannot_mutate_its_shared_ref(
+    repository: tuple[Path, str, str], apply: str,
+) -> None:
+    main, before, after = repository
+    _git(main, "checkout", "-q", "-b", "master")
+    linked = main.parent / "linked-development"
+    _git(main, "worktree", "add", "--quiet", str(linked), "development")
+    refs = _refs(main)
+    result = _run((linked, before, after), apply=apply, canonical=main)
+    assert result.returncode != 0
+    assert "canonical main checkout" in result.stdout + result.stderr
+    assert _refs(main) == refs
+    assert _git(linked, "rev-parse", "HEAD") == before
 
 
 def test_divergence_cannot_create_a_merge(repository: tuple[Path, str, str]) -> None:

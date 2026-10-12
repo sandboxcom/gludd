@@ -112,7 +112,7 @@ def test_public_help_and_make_contract_include_safe_behavior() -> None:
     assert makefile.count('@echo "  release-promote') == 1
     assert "release-promote" in entries
     variables = entries["release-promote"]["make_variables"]
-    assert variables.count("RELEASE_PROMOTE_PUBLISH") <= 1
+    assert variables.count("RELEASE_PROMOTE_PUBLISH") == 1
     assert [variable for variable in variables if variable != "RELEASE_PROMOTE_PUBLISH"] == [
         "TAG",
         "MSG",
@@ -125,7 +125,7 @@ def test_public_help_and_make_contract_include_safe_behavior() -> None:
             item.split("=", 1) for item in shlex.split(entries["release-promote"]["behavior"])
             if "=" in item
         )
-        assert arguments["RELEASE_PROMOTE_PUBLISH"] in {"0", "1"}
+        assert arguments["RELEASE_PROMOTE_PUBLISH"] == "0"
 
 
 def test_release_deploy_is_only_a_compatibility_alias() -> None:

@@ -45,9 +45,10 @@ development-force-push:
 # Dry-run expectations may be refs; real writes require two explicit full SHAs.
 APPLY ?= 0
 development-fast-forward: _gate-mutation-guard main-worktree-guard
-	@set -eu; \
+	@set -eu; MAIN_PATH='/Users/shawnwilson/gludd'; \
 	case "$(APPLY)" in 0|1) ;; *) echo "ERROR: APPLY must be 0 or 1"; exit 2;; esac; \
 	[ -n "$(SOURCE)" ] && [ -n "$(EXPECTED_BEFORE_SHA)" ] && [ -n "$(EXPECTED_AFTER_SHA)" ] || { echo "Usage: make development-fast-forward SOURCE=ref EXPECTED_BEFORE_SHA=sha EXPECTED_AFTER_SHA=sha APPLY=0|1"; exit 2; }; \
+	[ "$$(git rev-parse --show-toplevel)" = "$$MAIN_PATH" ] || { echo "ERROR: fast-forward must run from the canonical main checkout"; exit 2; }; \
 	[ "$$(git symbolic-ref --short HEAD)" = development ] || { echo "ERROR: current branch must be development"; exit 2; }; \
 	[ -z "$$(git status --porcelain --untracked-files=all)" ] || { echo "ERROR: development must be clean"; exit 2; }; \
 	if [ "$(APPLY)" = 1 ]; then \

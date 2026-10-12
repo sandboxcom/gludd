@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — canonical cleanliness did not identify the integration caller
+
+- **Observed and cause**: Two independent reviews found that the existing `main-worktree-guard` checks the registered main checkout's cleanliness, not the invoking checkout's location. The first development fast-forward recipe could therefore advance a separate clone or linked development worktree despite documenting canonical-main-only execution.
+- **Repair and proof**: Both noncanonical modes fail first against the old recipe. The real recipe now checks its Git top-level against the fixed canonical main before topology or ref mutation. All 34 real-Git cases pass, including actual linked development worktrees with main on master, and the combined promotion/integration cohort passes 107 warning-fatal tests. Default validation remains read-only; full-SHA expectations, inactive-gate ownership, cleanliness, ancestry, and post-merge identity remain mandatory.
+- **Release boundary**: This is local control-plane admission, not a deployment or release. Source, refs, gate attestation, hosted CI, and the final reviewed-head receipt still require the same clean immutable candidate.
+
 ### 2026-10-12 — native gate proof required a redundant exhaustive release replay
 
 - **Observed and cause**: The native gate uses the current interpreter and quiet pytest arguments, while release admission requires the locked Python 3.11 policy, warnings fatal, and exactly one test worker. Native evidence cannot truthfully be relabeled as canonical release proof.
