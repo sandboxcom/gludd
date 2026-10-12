@@ -116,6 +116,27 @@ identity rather than broadly suppressing a heuristic. This baseline-only
 reconciliation allocates no environment and changes no deployment or release
 admission policy.
 
+### Unambiguous task-path registration
+
+The full normal source07 push repaired the public fixture finding, then exposed
+a separate KeywordDetector match in the new task metadata. The unchanged managed
+scanner found exactly one new identity at `TASKS.md` line 47 and no removals.
+Its upstream quoted-value rule matched nearly four thousand characters of
+public registered filenames and evidence after the baseline filename at the
+start of the ownership list; there was no authentication value in that span.
+
+The same baseline path now appears at the end of that list, immediately before
+the description. All file registrations and task status are retained. This
+documentation-structure correction changes no test, scanner, hook, exclusion,
+threshold, or baseline finding; the reviewed fixture identity remains required.
+The temporary discovery artifact is diagnostic, not a replacement baseline.
+
+[The pinned upstream keyword implementation][secrets-keyword] defines that
+quoted-value heuristic. The practitioner report above concerns a different
+source token, so it supplies context, not proof of this particular collision.
+Actual full-source and whole-push admission must still verify the corrected
+candidate before hosted or release success is claimed.
+
 ## Verification and practitioner evidence
 
 Behavioral regressions execute the real shell driver, the extracted real Make
@@ -170,3 +191,4 @@ commit; ordinary native development gates retain their prior test policy.
 [secrets-audit]: https://github.com/Yelp/detect-secrets/blob/v1.5.0/docs/audit.md
 [secrets-design]: https://github.com/Yelp/detect-secrets/blob/v1.5.0/docs/design.md
 [secrets-forum]: https://github.com/Yelp/detect-secrets/issues/629
+[secrets-keyword]: https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/plugins/keyword.py
