@@ -38,6 +38,15 @@ worker, changes no schema, and publishes no tag or artifact. Rollback restores
 the former policy while the preceding release continues serving. The unchanged
 coverage contract requires 85% aggregate and 75% in every measured file.
 
+Container builds preserve the committed `pyproject.toml` and lockfiles until
+the Dockerfile finishes frozen core installation. Only then does its existing
+version argument stamp the application wheel. This removes the hosted branch
+build's stale-lock failure without a second dependency resolution. The build
+context excludes local virtual environments, validation logs, Terraform
+provider caches, credentials, and live state, while retaining all source and
+locked dependency inputs. These changes affect candidate builds only; active
+images continue serving and normal canary, drain, and rollback rules apply.
+
 The long-lived [GitHub Community discussion #26603][release-tag-filter], opened
 in 2021 and revisited in 2024, records release-event tag filters that did not
 constrain workflow execution. [SemVer issue #583][semver-numeric], opened in

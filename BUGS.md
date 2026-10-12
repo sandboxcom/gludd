@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — hosted image failures and build-coordinate warning churn
+
+- **Observed causes**: Run `38189779986` changed `pyproject.toml` before the container's frozen lock check and used a Quay EE base digest returning 404. Molecule run `38189779992` rejected a warning graph differing from its accepted predecessor only in `/tmp/gludd-linux-native-build`'s six-character random suffix.
+- **Repairs and proof**: Container version stamping remains in the Dockerfile after frozen dependency installation; a native `.dockerignore` excludes local caches and live credentials/state. The existing atomic resolver refreshes the supported EE index, and a blocking manifest check runs before hosted validation fan-out. All 58 image/runtime tests pass. The warning auditor retains raw edges but canonicalizes only that proven runtime-hook coordinate for digest admission; all 104 audit/review tests and the unchanged 85/75 coverage audit pass at 91% aggregate. Both original 866-edge raw artifacts now pass, while module, Python-version, hook, flag, foreign-root, and project-import changes remain blocked.
+- **Evidence and rollback**: The canonical graph's exact-delta receipt is tracked separately from the preserved raw reports. Practitioner findings and source-preserving ZDD/rollback are documented in the image-liveness, v0.1.2, and Python/artifact feature guides. Candidate commits, a fresh full gate, and hosted results for that same SHA remain required.
+
 ### 2026-10-12 — v0.1.2 candidate rejected by obsolete release policy
 
 - **Observed**: `make release-readiness TAG=v0.1.2` rejected the project's current version as unsupported before collecting readiness evidence. The previous session's notes still named an older local SHA and pending hosted run.
