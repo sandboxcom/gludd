@@ -10,6 +10,7 @@ import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from urllib.request import Request
 
 import pytest
 import yaml
@@ -23,18 +24,18 @@ class _RegistryResponse:
     def __init__(self, digest: str | None) -> None:
         self.headers = {} if digest is None else {"Docker-Content-Digest": digest}
 
-    def __enter__(self):
+    def __enter__(self) -> _RegistryResponse:
         return self
 
-    def __exit__(self, *_args) -> None:
+    def __exit__(self, *_args: object) -> None:
         return None
 
 
 def test_resolve_base_image_digest_uses_official_manifest_api() -> None:
     digest = "sha256:" + "c" * 64
-    calls: list[tuple[object, int]] = []
+    calls: list[tuple[Request, int]] = []
 
-    def opener(request, *, timeout):
+    def opener(request: Request, *, timeout: int) -> _RegistryResponse:
         calls.append((request, timeout))
         return _RegistryResponse(digest)
 
@@ -44,12 +45,16 @@ def test_resolve_base_image_digest_uses_official_manifest_api() -> None:
     request, timeout = calls[0]
     assert request.full_url == artifacts.BASE_IMAGE_MANIFEST_URL
     assert request.get_method() == "HEAD"
-    assert "manifest.list.v2+json" in request.get_header("Accept")
+    accept = request.get_header("Accept")
+    assert accept is not None
+    assert "manifest.list.v2+json" in accept
     assert timeout == 30
 
 
 @pytest.mark.parametrize("digest", [None, "sha256:short", "sha256:" + "G" * 64])
-def test_resolve_base_image_digest_rejects_missing_or_invalid_header(digest) -> None:
+def test_resolve_base_image_digest_rejects_missing_or_invalid_header(
+    digest: str | None,
+) -> None:
     with pytest.raises(RuntimeError, match="Docker-Content-Digest"):
         artifacts.resolve_base_image_digest(
             opener=lambda *_args, **_kwargs: _RegistryResponse(digest)
@@ -98,9 +103,9 @@ def test_check_configured_base_image_verifies_the_exact_pinned_digest(
         f"images:\n  base_image:\n    name: {image}\n",
         encoding="utf-8",
     )
-    requests: list[object] = []
+    requests: list[Request] = []
 
-    def opener(request, *, timeout):
+    def opener(request: Request, *, timeout: int) -> _RegistryResponse:
         assert timeout == 30
         requests.append(request)
         return _RegistryResponse(digest)
@@ -253,7 +258,7 @@ def test_validate_reports_dependency_leaks_and_missing_controller(
             "dependencies": ["ansible-core==2", "ansible-runner==2", "ansible-builder==3"],
         }
     }
-    controller_project = {"project": {"dependencies": []}}
+    controller_project: dict[str, dict[str, list[str]]] = {"project": {"dependencies": []}}
     projects = iter((root_project, controller_project))
     monkeypatch.setattr(tomllib, "loads", lambda _text: next(projects))
     errors = artifacts.validate_files()
