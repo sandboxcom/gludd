@@ -6,8 +6,13 @@ No real gh calls are made. All tests exercise the decision logic only.
 
 from __future__ import annotations
 
+import builtins
 import importlib.util
 import os
+import runpy
+import sys
+from pathlib import Path
+from subprocess import CompletedProcess
 from typing import Any, cast
 
 import pytest
@@ -31,6 +36,75 @@ require_ci_green = _load_module()
 verdict_for = require_ci_green.verdict_for
 verdict_from_runs = require_ci_green.verdict_from_runs
 all_workflow_verdict_from_runs = require_ci_green.all_workflow_verdict_from_runs
+
+
+def test_direct_script_import_falls_back_only_for_missing_top_level_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actual_import = builtins.__import__
+
+    def import_without_script_alias(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "pipeline_status":
+            raise ModuleNotFoundError(name="pipeline_status")
+        return actual_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_script_alias)
+    module = _load_module()
+    assert module.pipeline_status.__name__ == "scripts.pipeline_status"
+
+
+def test_direct_script_import_does_not_hide_a_missing_transitive_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actual_import = builtins.__import__
+
+    def import_with_missing_dependency(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "pipeline_status":
+            raise ModuleNotFoundError(name="pipeline_dependency")
+        return actual_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_with_missing_dependency)
+    with pytest.raises(ModuleNotFoundError) as raised:
+        _load_module()
+    assert raised.value.name == "pipeline_dependency"
+
+
+@pytest.mark.parametrize("cli_arguments", [[], ["d" * 40], ["d" * 40, "development"]])
+def test_cli_resolves_only_omitted_commit_and_branch_without_real_io(
+    monkeypatch: pytest.MonkeyPatch, cli_arguments: list[str]
+) -> None:
+    commands: list[list[str]] = []
+    queried: list[str] = []
+
+    def fake_git(command: list[str], **_kwargs: Any) -> CompletedProcess[str]:
+        commands.append(command)
+        if command == ["git", "rev-parse", "HEAD"]:
+            output = "d" * 40
+        else:
+            assert command == ["git", "rev-parse", "--abbrev-ref", "HEAD"]
+            output = "development"
+        return CompletedProcess(command, 0, stdout=output + "\n", stderr="")
+
+    def fake_fetch(sha: str, **_kwargs: Any) -> list[dict[str, Any]]:
+        queried.append(sha)
+        return [
+            _run(1, sha, "completed", "success"),
+            _run(2, sha, "completed", "success", workflow="Molecule Tests"),
+        ]
+
+    monkeypatch.setattr(require_ci_green.subprocess, "run", fake_git)
+    monkeypatch.setattr(require_ci_green.pipeline_status, "fetch_runs", fake_fetch)
+    script = Path(__file__).resolve().parents[2] / "scripts" / "require_ci_green.py"
+    monkeypatch.setattr(sys, "argv", [str(script), *cli_arguments])
+
+    with pytest.raises(SystemExit) as raised:
+        runpy.run_path(str(script), run_name="__main__")
+    assert raised.value.code == 0
+    assert queried == ["d" * 40]
+    assert (["git", "rev-parse", "HEAD"] in commands) is (not cli_arguments)
+    assert (["git", "rev-parse", "--abbrev-ref", "HEAD"] in commands) is (
+        len(cli_arguments) < 2
+    )
 
 
 # ---------------------------------------------------------------------------

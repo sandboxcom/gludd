@@ -36,10 +36,10 @@ def test_make_overrides_ambient_uv_cache_with_writable_shared_cache() -> None:
     assert "override UV_CACHE_DIR := $(GLUDD_UV_CACHE_DIR)" in makefile
     assert "export UV_CACHE_DIR" in makefile
     assert "@printf '%s\\n' \"$$UV_CACHE_DIR\"" in makefile
-    assert (
-        'VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" '
-        "$(UV) run --no-sync python"
-    ) in makefile
+    version_line = next(line for line in makefile.splitlines() if line.startswith("VERSION "))
+    assert 'UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" uv version' in version_line
+    assert 'uv version --short --offline --project "$(CURDIR)"' in version_line
+    assert "$(UV) run" not in version_line
 
 
 def test_uv_cache_path_ignores_prompt_prone_ambient_value() -> None:

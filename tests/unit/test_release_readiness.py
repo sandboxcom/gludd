@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -44,6 +45,24 @@ def test_exit_codes_are_stable_and_prioritized() -> None:
     assert rr._exit_code(rr.Readiness(errors=["reviewed-head integration receipt is invalid"])) == rr.EXIT_RECEIPT
 
 
+def test_release_readiness_has_one_typechecked_ci_dependency_identity() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "--no-print-directory",
+            "typecheck-scope",
+            "FILES=scripts/release_readiness.py",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_unmanaged_local_inference_detection_requires_daemon_ancestor() -> None:
     process_table = (
         "  101     1 /project/.venv/bin/python -m general_ludd.cli daemon\n"
@@ -81,6 +100,7 @@ def test_main_emits_machine_readable_diagnostics(
         "make",
         "release-readiness",
         f"TAG={rr.DEFAULT_RELEASE_TAG}",
+        "RELEASE_READINESS_CI_BRANCH=",
         "RELEASE_READINESS_VALIDATE_ONLY=0",
         "RELEASE_COMPLETED_STAGES=",
         "RELEASE_OBSERVATIONS=",
@@ -256,6 +276,139 @@ def test_stable_assess_requires_and_binds_reviewed_receipt_to_current_head(
     assert mismatched.reviewed_head_receipt_final_sha == ""
 
 
+def _post_promotion_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    checkout_branch: str = "master",
+    hosted_branch: str = "development",
+    hosted_sha: str = REVIEWED_RECEIPT_FINAL_SHA,
+) -> rr.RunFn:
+    import require_ci_green
+    import workflow_state_guard
+
+    state = SimpleNamespace(
+        branch=checkout_branch,
+        head=REVIEWED_RECEIPT_FINAL_SHA,
+        dirty_count=0,
+        unintegrated_worktrees=[],
+        unintegrated_branches=[],
+    )
+    (tmp_path / "TASKS.md").write_text(
+        "".join(
+            f"- [x] {task_id} — repaired | status: completed\n"
+            for task_id in sorted(rr.V012_RELEASE_TASK_IDS)
+        ),
+        encoding="utf-8",
+    )
+    runs = [
+        {
+            "databaseId": number,
+            "headSha": hosted_sha,
+            "headBranch": hosted_branch,
+            "workflowName": workflow,
+            "event": "push",
+            "status": "completed",
+            "conclusion": "success",
+        }
+        for number, workflow in enumerate(("Build and Release", "Molecule Tests"), start=1)
+    ]
+    monkeypatch.setattr(require_ci_green.pipeline_status, "fetch_runs", lambda *_args, **_kwargs: runs)
+    monkeypatch.setattr(workflow_state_guard, "collect_state", lambda **_: state)
+    monkeypatch.setattr(rr, "_release_policy_preflight", lambda *_: (True, "canonical"))
+    monkeypatch.setattr(rr, "_detached_worktrees", lambda *_: [])
+    monkeypatch.setattr(rr, "_unmanaged_local_inference_processes", lambda *_: [])
+    monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK: 0.1.2"))
+    monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_tasks_tick_check", lambda *_: (True, "OK"))
+    return lambda argv, *_: _completed(argv)
+
+
+@pytest.mark.parametrize(
+    ("checkout_branch", "ci_branch", "hosted_branch", "hosted_sha", "ready"),
+    [
+        ("master", "development", "development", REVIEWED_RECEIPT_FINAL_SHA, True),
+        ("master", "", "master", REVIEWED_RECEIPT_FINAL_SHA, True),
+        ("development", "", "development", REVIEWED_RECEIPT_FINAL_SHA, True),
+        ("master", "development", "master", REVIEWED_RECEIPT_FINAL_SHA, False),
+        ("master", "development", "development", "f" * 40, False),
+    ],
+)
+def test_post_promotion_readiness_preserves_checkout_and_exact_ci_source_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    checkout_branch: str,
+    ci_branch: str,
+    hosted_branch: str,
+    hosted_sha: str,
+    ready: bool,
+) -> None:
+    run = _post_promotion_context(
+        monkeypatch,
+        tmp_path,
+        checkout_branch=checkout_branch,
+        hosted_branch=hosted_branch,
+        hosted_sha=hosted_sha,
+    )
+    result = rr.assess(
+        root=tmp_path,
+        run=run,
+        tag="v0.1.2",
+        ci_branch=ci_branch,
+        reviewed_head_integration_receipt=REVIEWED_RECEIPT_FIXTURE,
+        expected_head_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    )
+
+    assert result.ready is ready
+    assert result.branch == checkout_branch
+    assert result.ci_source_branch == (ci_branch or checkout_branch)
+    assert result.head == REVIEWED_RECEIPT_FINAL_SHA
+    if not ready:
+        assert rr._exit_code(result) == rr.EXIT_CI
+
+
+@pytest.mark.parametrize("milestone", ["open", "absent"])
+def test_post_promotion_readiness_still_rejects_unfinished_or_missing_milestone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, milestone: str
+) -> None:
+    run = _post_promotion_context(monkeypatch, tmp_path)
+    ledger = tmp_path / "TASKS.md"
+    complete = "- [x] S98.7 — repaired | status: completed\n"
+    replacement = "- [ ] S98.7 — repaired | status: in_progress\n" if milestone == "open" else ""
+    ledger.write_text(ledger.read_text(encoding="utf-8").replace(complete, replacement), encoding="utf-8")
+    result = rr.assess(
+        root=tmp_path,
+        run=run,
+        tag="v0.1.2",
+        ci_branch="development",
+        reviewed_head_integration_receipt=REVIEWED_RECEIPT_FIXTURE,
+        expected_head_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    )
+
+    assert not result.ready
+    assert rr._exit_code(result) != rr.EXIT_OK
+    assert any("S98.7" in error for error in result.errors)
+
+
+def test_readiness_cli_reports_checkout_and_explicit_ci_source_separately(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run = _post_promotion_context(monkeypatch, tmp_path)
+    real_assess = rr.assess
+    monkeypatch.setattr(rr, "assess", lambda **kwargs: real_assess(run=run, **kwargs))
+    assert rr.main([
+        "--root", str(tmp_path), "--tag", "v0.1.2", "--ci-branch", "development",
+        "--reviewed-head-integration-receipt", str(REVIEWED_RECEIPT_FIXTURE),
+        "--expected-head-sha", REVIEWED_RECEIPT_FINAL_SHA,
+    ]) == rr.EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ready"] is True
+    assert payload["branch"] == "master"
+    assert payload["ci_source_branch"] == "development"
+    assert payload["head"] == REVIEWED_RECEIPT_FINAL_SHA
+    assert "RELEASE_READINESS_CI_BRANCH=development" in payload["remediation"]["recheck_argv"]
+
+
 def test_receipt_check_is_required_and_keeps_invalid_json_content_free(
     tmp_path: Path,
 ) -> None:
@@ -354,6 +507,108 @@ def test_incomplete_tasks_supports_v011_stable_release(tmp_path: Path) -> None:
     )
 
     assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == ["S83.161"]
+
+
+def test_validate_only_supports_v012_stable_release(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        rr.main(
+            [
+                "--tag",
+                "v0.1.2",
+                "--validate-only",
+                "--reviewed-head-integration-receipt",
+                str(REVIEWED_RECEIPT_FIXTURE),
+                "--expected-head-sha",
+                REVIEWED_RECEIPT_FINAL_SHA,
+                "--completed-stages",
+                "",
+                "--observations",
+                "",
+            ]
+        )
+        == rr.EXIT_OK
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["tag"] == "v0.1.2"
+    assert payload["validate_only"] is True
+    assert payload["reviewed_head_integration_receipt"]["valid"] is True
+
+
+def test_incomplete_tasks_supports_v012_stable_release(tmp_path: Path) -> None:
+    lines = [
+        f"- [{' ' if task_id in {10, 12} else 'x'}] S97.{task_id} — v0.1.2 work"
+        f" | status: {'in_progress' if task_id in {10, 12} else 'completed'}\n"
+        for task_id in range(1, 13)
+    ]
+    lines.extend(f"- [x] S98.{task_id} — repaired | status: completed\n" for task_id in range(1, 8))
+    lines.append("- [ ] S83.157 — superseded v0.1.1 task | status: in_progress\n")
+    (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.2") == ["S97.10", "S97.12"]
+
+
+def test_repository_v012_repair_milestone_is_registered_exactly_once() -> None:
+    task_lines = [
+        line for line in (ROOT / "TASKS.md").read_text(encoding="utf-8").splitlines() if line.startswith("- [")
+    ]
+    for task_id in rr.V012_RELEASE_TASK_IDS:
+        matches = [line for line in task_lines if f"] {task_id} " in line]
+        assert len(matches) == 1, f"expected exactly one {task_id} task, got {len(matches)}"
+
+
+def test_v012_required_tasks_pin_both_registered_repair_milestones() -> None:
+    expected = frozenset(f"S97.{number}" for number in range(1, 13)) | frozenset(
+        f"S98.{number}" for number in range(1, 8)
+    )
+    assert expected == rr.V012_RELEASE_TASK_IDS
+
+
+def test_v012_incomplete_tasks_includes_current_release_repairs(tmp_path: Path) -> None:
+    lines = [f"- [x] S97.{task_id} — repaired | status: completed\n" for task_id in range(1, 13)]
+    lines.extend(f"- [x] S98.{task_id} — repaired | status: completed\n" for task_id in range(2, 8))
+    lines.append("- [ ] S98.1 — release readiness | status: in_progress\n")
+    (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.2") == ["S98.1"]
+
+
+def test_v012_incomplete_tasks_retains_future_current_session_repairs(tmp_path: Path) -> None:
+    lines = [
+        f"- [x] {task_id} — repaired | status: completed\n"
+        for task_id in sorted(rr.V012_RELEASE_TASK_IDS)
+    ]
+    lines.append("- [ ] S98.8 — later release repair | status: in_progress\n")
+    (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.2") == ["S98.8"]
+
+
+def test_v012_incomplete_tasks_rejects_missing_repair_evidence(tmp_path: Path) -> None:
+    (tmp_path / "TASKS.md").write_text("- [x] S97.1 — repaired | status: completed\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match=r"v0\.1\.2 milestone is incomplete"):
+        rr._incomplete_tasks(tmp_path, tag="v0.1.2")
+
+
+@pytest.mark.parametrize("missing_task", [f"S98.{number}" for number in range(1, 8)])
+def test_v012_incomplete_tasks_rejects_absent_current_repair(
+    tmp_path: Path, missing_task: str
+) -> None:
+    task_ids = [f"S97.{number}" for number in range(1, 13)] + [
+        f"S98.{number}" for number in range(1, 8)
+    ]
+    (tmp_path / "TASKS.md").write_text(
+        "".join(
+            f"- [x] {task_id} — repaired | status: completed\n"
+            for task_id in task_ids
+            if task_id != missing_task
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match=rf"missing task\(s\): {re.escape(missing_task)}"):
+        rr._incomplete_tasks(tmp_path, tag="v0.1.2")
 
 
 def test_incomplete_tasks_rejects_checked_task_with_noncomplete_status(
@@ -829,9 +1084,17 @@ def test_readiness_main_accepts_supported_stable_release(
     "argv",
     [
         ["--tag", "v0.1.1", "--validate-only"],
+        ["--tag", "v0.1.2", "--validate-only"],
         [
             "--tag",
             "v0.1.1",
+            "--reviewed-head-integration-receipt",
+            str(REVIEWED_RECEIPT_FIXTURE),
+            "--validate-only",
+        ],
+        [
+            "--tag",
+            "v0.1.2",
             "--reviewed-head-integration-receipt",
             str(REVIEWED_RECEIPT_FIXTURE),
             "--validate-only",
@@ -922,6 +1185,8 @@ def test_incomplete_tasks_rejects_unmapped_release(tmp_path: Path) -> None:
 def test_release_readiness_make_target_is_safe_and_contracted() -> None:
     makefile = compose_makefile(ROOT / "Makefile")
     assert "\nrelease-readiness:" in makefile
+    assert "Usage: make release-readiness TAG=v0.1.2" in makefile
+    assert "exact reviewed-head receipt for v0.1.2" in makefile
     assert 'RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)"' in makefile
     contract = json.loads((ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8"))
     entry = next(item for item in contract["targets"] if item["name"] == "release-readiness")
@@ -932,7 +1197,10 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
         "RELEASE_OBSERVATIONS",
         "REVIEWED_HEAD_INTEGRATION_RECEIPT",
         "RELEASE_CANDIDATE_SHA",
+        "RELEASE_READINESS_CI_BRANCH",
     ]
+    assert "TAG=v0.1.2" in entry["behavior"]
+    assert "RELEASE_READINESS_CI_BRANCH=development" in entry["behavior"]
     result = subprocess.run(
         [
             "make",
@@ -1016,6 +1284,7 @@ def test_release_readiness_make_target_binds_the_invoking_worktree() -> None:
             "make",
             "release-readiness",
             "TAG=v0.1.0-beta.4",
+        "RELEASE_READINESS_CI_BRANCH=",
             "RELEASE_READINESS_VALIDATE_ONLY=0",
             "RELEASE_COMPLETED_STAGES=",
             "RELEASE_OBSERVATIONS=",
