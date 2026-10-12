@@ -362,6 +362,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ansible_runtime_artifacts.py::test_controller_azure_identity_has_one_explicit_owner",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "integration-admission-plan-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_integration_admission_target.py::test_integration_admission_validate_only_prints_complete_plan",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "integration-admission-document-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_integration_admission_target.py::test_integration_admission_document_records_queue_evidence_and_boundaries",
+      "full_gate_phase": "test"
     }
   ]
 }

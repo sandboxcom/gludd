@@ -38,6 +38,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     phases = (
         "worktree-guard",
         "check-gate-failure-promotions",
+        "pytest-runtime-compatibility",
         "ansible-role-variable-prefix",
         "cloud-iam-generation-parity",
         "_dead-code-baseline-refresh",
@@ -252,6 +253,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
     for phase in (
         "worktree-guard",
         "check-gate-failure-promotions",
+        "pytest-runtime-compatibility",
         "ansible-role-variable-prefix",
         "cloud-iam-generation-parity",
         "_dead-code-baseline-refresh",
@@ -277,10 +279,11 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         for line in output.splitlines()
         if line.startswith("{") and '"kind":"integration_admission_phase"' in line
     ]
-    assert len(evidence) == 20
+    assert len(evidence) == 21
     assert [item["phase"] for item in evidence] == [
         "worktree-guard",
         "check-gate-failure-promotions",
+        "pytest-runtime-compatibility",
         "ansible-role-variable-prefix",
         "cloud-iam-generation-parity",
         "_dead-code-baseline-refresh",
@@ -307,6 +310,25 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
     }
     assert all(item["max_seconds"] > 0 for item in evidence)
     assert all(item["quiet_seconds"] > 0 for item in evidence)
+    manifest = json.loads(
+        (ROOT / "config" / "gate_failure_promotions.json").read_text(encoding="utf-8")
+    )
+    assert [
+        {
+            "name": item["phase"],
+            "target": item["target"],
+            "budget_class": item["budget_class"],
+            "max_seconds": item["max_seconds"],
+            "quiet_seconds": item["quiet_seconds"],
+        }
+        for item in evidence
+    ] == manifest["runtime_contract"]["phases"]
+    budget_bounds = {"fast": (90, 60), "standard": (180, 120), "slow": (600, 300)}
+    assert all(
+        (item["max_seconds"], item["quiet_seconds"]) == budget_bounds[item["budget_class"]]
+        for item in evidence
+    )
+    assert sum(item["max_seconds"] for item in evidence) == 2850
     assert all(
         item["evidence_label"] == f"integration-admission-{item['phase']}"
         for item in evidence
@@ -344,7 +366,7 @@ def test_integration_admission_document_records_queue_evidence_and_boundaries() 
         "machine-readable",
         "max-runtime-timeout",
         "quiet-output-timeout",
-        "2,760 seconds",
+        "2,850 seconds",
         "coverage-gap-drift",
         "resource-ownership-drift",
         "247.53 seconds",

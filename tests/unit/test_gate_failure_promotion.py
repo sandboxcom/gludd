@@ -386,6 +386,46 @@ def test_ee_metadata_contracts_execute_before_hosted_image_construction(
     assert payload["full_gate_required"] is True
 
 
+@pytest.mark.parametrize(
+    ("family_id", "test_name"),
+    [
+        (
+            "integration-admission-plan-contract",
+            "test_integration_admission_validate_only_prints_complete_plan",
+        ),
+        (
+            "integration-admission-document-contract",
+            "test_integration_admission_document_records_queue_evidence_and_boundaries",
+        ),
+    ],
+)
+def test_admission_plan_contracts_execute_before_hosted_shards(
+    family_id: str, test_name: str,
+) -> None:
+    """Plan and documented bounds belong to the complete executable early cohort."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    node = f"tests/unit/test_integration_admission_target.py::{test_name}"
+    family = next(family for family in payload["families"] if family["id"] == family_id)
+    assert family == {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in owner
+    assert "tests/unit/test_integration_admission_target.py" in executable
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    phase = next(
+        phase for phase in payload["runtime_contract"]["phases"]
+        if phase["target"] == family["owner_target"]
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def _synthetic_repository(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
@@ -676,6 +716,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ee-isolated-metadata-prerequisite",
         "ee-builder-installer-boundary",
         "ee-owned-azure-sdk-pin-parity",
+        "integration-admission-plan-contract",
+        "integration-admission-document-contract",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -828,7 +870,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_pytest_param_fixture_collisions.py '
         'tests/unit/test_ansible_runtime_artifacts.py '
         'tests/unit/test_beta4_python_runtime_boundary.py '
-        'tests/unit/test_ansible_searxng_source_inspection.py"'
+        'tests/unit/test_ansible_searxng_source_inspection.py '
+        'tests/unit/test_integration_admission_target.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner

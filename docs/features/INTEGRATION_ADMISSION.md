@@ -123,8 +123,8 @@ feature worktree.
 ## Runtime budget and evidence
 
 Every child phase runs through the existing `scripts/stream_command.py`
-observer. The manifest assigns fifteen cheap phases a 90-second `fast` ceiling,
-five focused integration phases a 180-second `standard` ceiling, and
+observer. The 21-phase manifest assigns fifteen cheap phases a 90-second `fast`
+ceiling, five focused integration phases a 180-second `standard` ceiling, and
 `pre-commit-check` a 600-second `slow` ceiling. Their quiet-output ceilings are
 60, 120, and 300 seconds respectively. The configured child-runtime ceiling
 therefore totals 2,850 seconds, with only bounded observer teardown and recipe
@@ -145,6 +145,43 @@ The promotion checker compares every manifest phase with the exact observer
 invocation, target, order, budget, heartbeat, label, and retention bound in the
 Make recipe. A renamed target or relaxed/unobserved phase therefore fails
 before the promoted checks begin.
+
+## Plan-contract incident and prevention
+
+Hosted Build `38296150696`, SHA
+`f38ce53d15a8e51514b0e517fbda22a965777f87`, failed in unit-2 batch 025 on
+two obsolete assertions in `tests/unit/test_integration_admission_target.py`.
+They expected 20 phases and a 2,760-second total, while the implemented plan and
+this document already included `pytest-runtime-compatibility`: 21 phases and
+2,850 seconds. Native reproduction retained `2 failed, 4 passed`. The repair
+conforms those tests to the existing contract without increasing any runtime
+or quiet-output ceiling.
+
+Every prior phase assertion remains. The plan contract adds the compatibility
+phase immediately after `check-gate-failure-promotions` and compares each
+ordered JSON record's target, budget class, runtime ceiling, and quiet ceiling
+with the manifest. The document contract pins the same existing total. The
+`integration-admission-plan-contract` and
+`integration-admission-document-contract` promotion families bind the original
+failing nodes to the existing `pytest-runtime-compatibility` owner. That owner
+runs the complete six-case file with `-W error`, one worker, and its unchanged
+90-second runtime and 60-second quiet bounds. Both families retain their
+authoritative full-gate replay.
+
+Focused repair acceptance reports 32 promotion/admission cases passing in
+2.76 seconds and the complete early owner reporting 364 passing in 30.13
+seconds (30.9 seconds observed). These results retain the existing 21-phase,
+2,850-second plan.
+
+The rechecked [Limit runtime? discussion][bounded-ci-runtime] records a hung
+test consuming six hours in 2019 and organization-wide minute exhaustion
+concerns in 2021. The [optional-checks discussion][optional-checks] records a
+failed non-required integration check still allowing a merge in 2022, followed
+by workaround reports in 2023. These reports support explicit bounded owners
+and required integrated-head checks. Validate-only output and focused
+acceptance remain partial evidence; completion still requires independent
+source review, the canonical full gate with unchanged 85% aggregate/75%
+per-file coverage floors, and hosted checks for the same frozen SHA.
 
 ## Mechanical promotion ownership
 
