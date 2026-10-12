@@ -64,6 +64,13 @@ source metadata bytes. The explicit runtime command must still fail. Additional
 actual packaging-default cases check the precise project field rather than an
 unrelated table's version, command-line precedence, and invalid source metadata.
 
+The workflow-state, writable-cache, and dependency-profile contracts inspect
+only the `VERSION` definition when pinning this offline, checkout-bound reader.
+They reject runtime loading in that definition while retaining their existing
+guard-goal, cache-sandbox, and no-sync assertions. The actual-recipe regressions
+above still enforce lockfile and environment nonmutation; conforming the legacy
+structural checks does not relax these behavioral checks or runtime validation.
+
 ## Research and resource boundary
 
 Research reviewed on 2026-10-12:
