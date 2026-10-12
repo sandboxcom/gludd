@@ -3,6 +3,31 @@ body {
   background: #0d1117;
 }
 
+/* Reveal scales the authored canvas, not overflowing content. Reclaim only
+   block spacing on this dense evidence slide; keep all text and typography.
+   Short/mobile canvases retain their existing readable scrolling layout. */
+@media (min-width: 641px) and (min-height: 641px) {
+  .reveal section[data-contract="release-resilience-boundaries"] > h2 {
+    margin: 0 0 0.35em;
+  }
+
+  .reveal section[data-contract="release-resilience-boundaries"] h3 {
+    margin: 0.3em 0 0.1em;
+  }
+
+  .reveal section[data-contract="release-resilience-boundaries"] .bullets-tight {
+    margin: 0.12em 0 0.12em 1em;
+  }
+
+  .reveal section[data-contract="release-resilience-boundaries"] .honest-note {
+    margin: 0.45em 0 0.2em;
+  }
+
+  .reveal section[data-contract="release-resilience-boundaries"] .cite {
+    margin: 0.3em 0;
+  }
+}
+
 /* Mermaid measures text while rendering. Reveal display:none's inactive slides,
    so pending diagrams render in one opaque-zero, offscreen staging area instead.
    Unlike visibility:hidden, opacity preserves SVG text geometry in WebKit. */

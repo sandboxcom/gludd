@@ -393,6 +393,18 @@ practitioner discussion where a centered scroller could reach the bottom but
 not the clipped top
 ([reveal.js discussion #3448](https://github.com/hakimel/reveal.js/discussions/3448)).
 
+Hosted Pages run `38266402434` separately reports bottom overflow on desktop
+horizontal slide 43, `release-resilience-boundaries`, containing the frozen-V1
+replay contract. The repair changes only five margins on that one slide at
+viewports wider and taller than 640px. It preserves all 63 sections, five
+headings, 26 list items, notes, citations, and the frozen-V1 legacy disclaimers;
+fonts, line heights, content, canvas size, clipping, and native/mobile scrolling
+are unchanged. The content-and-margin regression fails first, then passes,
+and locked Stylelint passes. This follows the long-lived overflow reports above
+without hiding evidence. Fresh exact-candidate desktop-landscape WebKit
+acceptance remains required; a source-level capacity guard alone cannot prove
+painted layout.
+
 The 2026-10-06 macOS reproduction separated delivery failures instead of
 guessing from Playwright. The exact deployed public revision
 `1d1cf6b8559d574d04418df52acbec535f16b1cd` passed the revision probe, yet the
