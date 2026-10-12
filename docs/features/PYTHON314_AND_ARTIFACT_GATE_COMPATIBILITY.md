@@ -36,6 +36,37 @@ PyInstaller/Molecule acceptance path.
 
 ### Linux release artifact
 
+#### v0.1.2 native-build coordinate admission
+
+The retained raw warnings from Molecule runs `37963738773` and `38189779992`
+contain the same 866 transitive edges except for one importer coordinate:
+`pyi_rth_pkgutil.py` lives beneath the native builder's six-character `mktemp`
+suffix. The exact comparison reports one added and one removed edge. Both raw
+reports remain unchanged; a separately derived canonical report supplies the
+review receipt for digest
+`fd140a96a39f531fc6bffa207ba54474e8d2fdece099bda0e163a47da2f160bd`.
+
+The digest now canonicalizes only that suffix on the complete native-builder
+runtime-hook path. It retains the Python minor version, hook filename, module,
+import flags, and raw importer diagnostics. New dependencies, project-owned
+imports, foreign roots, different hooks, and changed flags still reject the
+candidate. The existing exact-delta review checker admits the canonical graph;
+the change does not silently accept all warning digests or mutate the raw files.
+
+[PyInstaller issue #1668](https://github.com/pyinstaller/pyinstaller/issues/1668),
+opened in 2015 and reviewed on 2026-10-12, records unequal binaries from repeated
+builds of one source tree. The official
+[reproducible-build guidance](https://pyinstaller.org/en/stable/advanced-topics.html#creating-a-reproducible-build)
+also distinguishes source inputs from build entropy. These findings motivate
+measuring the exact difference; Gludd's two retained reports establish this
+specific coordinate-only case. Stable warning admission is not a claim of
+byte-identical executable output.
+
+The repair is ZDD: it changes candidate validation only, allocates no daemon,
+listener, worker, or durable application state, and keeps temporary build
+directories isolated. Rollback restores the preceding auditor and policy while
+the deployed artifact keeps serving; the preserved raw reports permit replay.
+
 - The Linux executable is built in the digest-pinned Linux image and copied
   into the release output only after PyInstaller and package-update checks
   succeed.

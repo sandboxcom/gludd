@@ -150,6 +150,63 @@ def test_script_exists() -> None:
     assert _SCRIPT.is_file()
 
 
+@pytest.mark.parametrize("coordinate", ["WzZEcW", "mhMYic", "a1B2c3"])
+def test_native_build_coordinate_is_not_transitive_import_drift(tmp_path: Path, coordinate: str) -> None:
+    importer = (
+        f"/tmp/gludd-linux-native-build.{coordinate}/lib/python3.12/site-packages/"
+        "PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py"
+    )
+    canonical_edge = (
+        "missing pyimod02_importers <- /tmp/gludd-linux-native-build.<unique>/"
+        "lib/python3.12/site-packages/PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py (delayed)"
+    )
+    expected = hashlib.sha256(canonical_edge.encode("utf-8")).hexdigest()
+    result = _run_audit(
+        tmp_path,
+        f"missing module named pyimod02_importers - imported by {importer} (delayed)\n",
+        transitive_warning_sha256=expected,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    edges = warning_audit._parse_warning_file(tmp_path / "warn-gludd.txt")
+    assert edges[0].importer == importer
+
+
+@pytest.mark.parametrize(
+    ("module", "importer", "flags"),
+    [
+        ("new_dependency", "native", "delayed"),
+        ("pyimod02_importers", "native", "top-level"),
+        ("pyimod02_importers", "python3.13", "delayed"),
+        ("pyimod02_importers", "other_hook", "delayed"),
+        ("pyimod02_importers", "foreign", "delayed"),
+        ("pyimod02_importers", "project", "delayed"),
+    ],
+)
+def test_native_build_normalization_keeps_import_changes_blocking(
+    tmp_path: Path, module: str, importer: str, flags: str
+) -> None:
+    native = (
+        "/tmp/gludd-linux-native-build.a1B2c3/lib/python3.12/site-packages/"
+        "PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py"
+    )
+    importers = {
+        "native": native,
+        "python3.13": native.replace("python3.12", "python3.13"),
+        "other_hook": native.replace("pyi_rth_pkgutil.py", "pyi_rth_other.py"),
+        "foreign": native.replace("gludd-linux-native-build.", "foreign-build."),
+        "project": "general_ludd.daemon",
+    }
+    canonical = native.replace("a1B2c3", "<unique>")
+    expected = hashlib.sha256(f"missing pyimod02_importers <- {canonical} (delayed)".encode()).hexdigest()
+    result = _run_audit(
+        tmp_path,
+        f"missing module named {module} - imported by {importers[importer]} ({flags})\n",
+        transitive_warning_sha256=expected,
+    )
+    assert result.returncode == 1
+    assert "FAIL:" in result.stdout + result.stderr
+
+
 def test_makefile_exposes_replayable_linux_warning_audit() -> None:
     makefile = compose_makefile(_MAKEFILE)
 
