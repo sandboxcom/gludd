@@ -64,3 +64,29 @@ def test_container_smoke_fails_fast_and_prints_server_diagnostics() -> None:
     assert 'docker logs "$container_name"' in script
     assert "container exited before becoming healthy" in script.lower()
     assert "container did not become healthy" in script.lower()
+
+
+def test_container_validates_committed_locks_before_injecting_artifact_version() -> None:
+    """A branch build must not stale its dependency lock before frozen sync."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text())
+    steps = workflow["jobs"]["container"]["steps"]
+    build = next(step for step in steps if step.get("name") == "Build container image")
+    for step in steps[: steps.index(build)]:
+        script = str(step.get("run", ""))
+        assert "pyproject.toml" not in script
+        assert "src/general_ludd/__init__.py" not in script
+    assert "VERSION=${{ env.VERSION }}" in build["with"]["build-args"]
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    assert dockerfile.index("scripts/dependency_profiles.py sync") < dockerfile.index("RUN sed -i")
+    assert dockerfile.index("RUN sed -i") < dockerfile.index("uv build --wheel")
+
+
+def test_container_build_context_excludes_owned_scratch_and_local_credentials() -> None:
+    """Local caches and secrets must not be uploaded as container build input."""
+    patterns = set((ROOT / ".dockerignore").read_text().splitlines())
+    assert {
+        ".git", ".venv", ".gate-logs", ".mypy_cache", ".pytest_cache",
+        ".ruff_cache", "infra/terraform/.plugin-cache", "**/.terraform",
+        ".env", ".env.*", "**/*.tfstate", "**/*.tfstate.*", "**/*.tfvars",
+    } <= patterns
+    assert not {"src", "config", "requirements", "templates", "playbooks", "uv.lock"} & patterns

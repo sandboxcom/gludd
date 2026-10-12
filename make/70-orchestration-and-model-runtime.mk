@@ -36,8 +36,9 @@ gate-status:
 # removes .gate-background.pid only when the receipt still names its exact PID.
 _GATE_ENTRY_MAKEFILE := $(abspath $(firstword $(MAKEFILE_LIST)))
 _GATE_REPOSITORY_ROOT := $(abspath $(dir $(_GATE_ENTRY_MAKEFILE)))
-gate-background:
-	@$(UV) run --project "$(_GATE_REPOSITORY_ROOT)" python "$(_GATE_REPOSITORY_ROOT)/scripts/start_gate_background.py" \
+gate-background: gate-admission-config
+	@GATE_TEST_PROFILE="$(GATE_TEST_PROFILE)" GATE_EXACT_SHA_RESUME="$(GATE_EXACT_SHA_RESUME)" GATE_MAX_FILES_PER_BATCH="$(GATE_MAX_FILES_PER_BATCH)" GATE_BATCH_WORKERS="$(GATE_BATCH_WORKERS)" GATE_CANDIDATE_SHA="$(GATE_CANDIDATE_SHA)" \
+		$(UV) run --project "$(_GATE_REPOSITORY_ROOT)" python "$(_GATE_REPOSITORY_ROOT)/scripts/start_gate_background.py" \
 		--project-root "$(CURDIR)" \
 		--make-command "$(_GATE_MAKE)" \
 		--makefile "$(_GATE_ENTRY_MAKEFILE)" \
@@ -49,13 +50,13 @@ gate-background:
 # non-blocking launcher owns the gate; gate-wait streams bounded phase
 # heartbeats and preserves the terminal result.
 .PHONY: gate-background-observed
-gate-background-observed:
+gate-background-observed: gate-admission-config
 	@case "$(GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY)" in 0|1) ;; *) echo "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
 	if [ "$(GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY)" = "1" ]; then \
 		echo "gate-background-observed: VALIDATE launch timeout=$${GATE_TIMEOUT:-21600}s poll=$(GATE_POLL_INTERVAL)s"; \
 		exit 0; \
 	fi; \
-	$(_GATE_MAKE) --no-print-directory gate-background GATE_TIMEOUT="$(GATE_TIMEOUT)" || exit $$?; \
+	$(_GATE_MAKE) --no-print-directory gate-background GATE_TIMEOUT="$(GATE_TIMEOUT)" GATE_TEST_PROFILE="$(GATE_TEST_PROFILE)" GATE_EXACT_SHA_RESUME="$(GATE_EXACT_SHA_RESUME)" GATE_MAX_FILES_PER_BATCH="$(GATE_MAX_FILES_PER_BATCH)" GATE_BATCH_WORKERS="$(GATE_BATCH_WORKERS)" GATE_CANDIDATE_SHA="$(GATE_CANDIDATE_SHA)" || exit $$?; \
 	EXPECTED_PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
 	if [ -z "$$EXPECTED_PID" ]; then echo "gate-background-observed: launch published no PID"; exit 1; fi; \
 	$(_GATE_MAKE) --no-print-directory gate-wait GATE_EXPECTED_PID="$$EXPECTED_PID" GATE_POLL_INTERVAL="$(GATE_POLL_INTERVAL)"

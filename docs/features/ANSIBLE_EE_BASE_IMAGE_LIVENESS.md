@@ -25,8 +25,14 @@ builds collection artifacts. A missing manifest therefore fails early with
 the precise refresh command instead of consuming most of the job and failing
 inside the container build. Validate-only builds stay offline.
 
-As of 2026-10-04, the resolved multi-architecture index is
-`sha256:63e8d0c2a4a4b67c8bd7456283d12106bedf815d8c27d1a72498ebcf173baf09`.
+The hosted gate also checks the pinned manifest immediately after locked
+dependency installation, before validation and the expensive downstream job
+fan-out. A vanished base therefore rejects the candidate early instead of
+leaving the unrelated test and artifact jobs running for an unreleasable input.
+The check remains blocking and uses the existing bounded registry request.
+
+As of 2026-10-12, the resolved multi-architecture index is
+`sha256:33346f5fe280763eb78e85f968ad52bc2b2013369de85403f67e802db98ed243`.
 The value is evidence, not a permanent constant; the resolver is the durable
 part of the fix.
 
