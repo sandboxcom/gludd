@@ -1,4 +1,19 @@
-## PRIMARY OBJECTIVE: v0.1.2 RELEASE PREPARATION — S97.1–S97.11 fixes committed, pushed, and merged with release notes; wait for hosted CI green, then cut v0.1.2. HEAD `5b19b26c7` on `development` (2026-10-12).
+## PRIMARY OBJECTIVE: v0.1.2 RELEASE READINESS — Session 98 resumed the committed backlog and is repairing exact-candidate admission and pipeline failures on development (2026-10-12).
+
+**Test Suite Status**: Total tests: 121,921 collected, 1 deselected, 0 collection errors (completed `make test-count`, 2026-10-12).
+
+### Session 98 current evidence and handoff
+
+- Recovered base: `bc9fd78f1483df05f628d9f3c8f2fed62ab30a68`. The older Session 97 state below is historical, not the current HEAD or CI verdict.
+- Last verified remote candidate: `43814531ba0e1bb40d14936280ddd506d45381eb`. Build and Release run `38189779986` and Molecule Tests run `38189779992` both failed; seven failure families are owned by the local CI ledger. A replacement push still requires recorded repair evidence.
+- Integrated repair anchors: `e493d1d76` (v0.1.2 readiness), `095d56aa9` (fixture/AST portability), `cc4f528f9` (early compatibility admission), `7c30ffb93` (invocation-scoped coverage indexing), `e87c76dff` (frozen container inputs and served EE pin), and `729d687eb` (strict native-build warning-coordinate canonicalization). Independent review's missing-current-task repair and promotion/cut admission repair remain in progress before sealing the candidate.
+- Durable focused evidence is in `.gate-logs/coverage-v012-release-readiness.json`, `.gate-logs/coverage-v012-coverage-index.json`, and `.gate-logs/coverage-v012-pyinstaller.json`. Each passes the unchanged 85% aggregate and 75% per-file floors. These focused results are not a replacement for the final clean gate or hosted build.
+- Full gate: the preceding `.gate-status` was a historical refreshed PASS. No fresh exact-candidate full gate or canonical release-policy local attestation is claimed here. Final local and hosted results must bind the same immutable SHA and reviewed-head integration receipt.
+- Resource proof: `make check-disk` reports 89% usage, within the 90% hard limit. `make tf-clean` reclaimed approximately 2.5 GiB of reproducible provider cache (recoverable through `make tf-cache-warm`). Four completed/interrupted worktrees were removed after preserving their commits and known drafts; recovery copies are under `.gate-logs/recovery/`. Model reviewers are logical workstreams, not OS PIDs; use `make active-work-status` and `make ps` for live process evidence.
+- Current release scope: all S97.1-S97.12 predecessor repairs plus S98.1-S98.7. Existing completed-backlog assignments and unreleased notes remain intact. No tag, draft release, published release, or application deployment has been created by this readiness work.
+- Next: finish and independently review the promotion/cut repair, reconcile retained agent branches, seal a clean integration candidate, run the focused integration acceptance once, obtain the full gate and canonical local proof, record each CI repair, push once through guarded targets, and require same-SHA hosted success. Do not publish merely because this document says work is implemented.
+
+## Historical Session 97 handoff — superseded by Session 98 above
 
 **Test Suite Status**: Total tests: 121,859 collected, 1 deselected, 0 collection errors.
 

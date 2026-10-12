@@ -53,7 +53,9 @@ DEFAULT_RELEASE_TAG = "v0.1.0-beta.4"
 STABLE_RELEASE_TAG = "v0.1.1"
 V012_RELEASE_TAG = "v0.1.2"
 STABLE_RELEASE_TASK_IDS = frozenset(f"S83.{number}" for number in range(157, 169))
-V012_RELEASE_TASK_IDS = frozenset(f"S97.{number}" for number in range(1, 13))
+V012_RELEASE_TASK_IDS = frozenset(f"S97.{number}" for number in range(1, 13)) | frozenset(
+    f"S98.{number}" for number in range(1, 8)
+)
 RELEASE_TASK_PREFIXES = {
     DEFAULT_RELEASE_TAG: ("S86.",),
     STABLE_RELEASE_TAG: (),

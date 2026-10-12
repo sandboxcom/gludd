@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -389,6 +390,7 @@ def test_incomplete_tasks_supports_v012_stable_release(tmp_path: Path) -> None:
         f" | status: {'in_progress' if task_id in {10, 12} else 'completed'}\n"
         for task_id in range(1, 13)
     ]
+    lines.extend(f"- [x] S98.{task_id} — repaired | status: completed\n" for task_id in range(1, 8))
     lines.append("- [ ] S83.157 — superseded v0.1.1 task | status: in_progress\n")
     (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
 
@@ -404,17 +406,56 @@ def test_repository_v012_repair_milestone_is_registered_exactly_once() -> None:
         assert len(matches) == 1, f"expected exactly one {task_id} task, got {len(matches)}"
 
 
+def test_v012_required_tasks_pin_both_registered_repair_milestones() -> None:
+    expected = frozenset(f"S97.{number}" for number in range(1, 13)) | frozenset(
+        f"S98.{number}" for number in range(1, 8)
+    )
+    assert expected == rr.V012_RELEASE_TASK_IDS
+
+
 def test_v012_incomplete_tasks_includes_current_release_repairs(tmp_path: Path) -> None:
     lines = [f"- [x] S97.{task_id} — repaired | status: completed\n" for task_id in range(1, 13)]
+    lines.extend(f"- [x] S98.{task_id} — repaired | status: completed\n" for task_id in range(2, 8))
     lines.append("- [ ] S98.1 — release readiness | status: in_progress\n")
     (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
 
     assert rr._incomplete_tasks(tmp_path, tag="v0.1.2") == ["S98.1"]
 
 
+def test_v012_incomplete_tasks_retains_future_current_session_repairs(tmp_path: Path) -> None:
+    lines = [
+        f"- [x] {task_id} — repaired | status: completed\n"
+        for task_id in sorted(rr.V012_RELEASE_TASK_IDS)
+    ]
+    lines.append("- [ ] S98.8 — later release repair | status: in_progress\n")
+    (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.2") == ["S98.8"]
+
+
 def test_v012_incomplete_tasks_rejects_missing_repair_evidence(tmp_path: Path) -> None:
     (tmp_path / "TASKS.md").write_text("- [x] S97.1 — repaired | status: completed\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match=r"v0\.1\.2 milestone is incomplete"):
+        rr._incomplete_tasks(tmp_path, tag="v0.1.2")
+
+
+@pytest.mark.parametrize("missing_task", [f"S98.{number}" for number in range(1, 8)])
+def test_v012_incomplete_tasks_rejects_absent_current_repair(
+    tmp_path: Path, missing_task: str
+) -> None:
+    task_ids = [f"S97.{number}" for number in range(1, 13)] + [
+        f"S98.{number}" for number in range(1, 8)
+    ]
+    (tmp_path / "TASKS.md").write_text(
+        "".join(
+            f"- [x] {task_id} — repaired | status: completed\n"
+            for task_id in task_ids
+            if task_id != missing_task
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match=rf"missing task\(s\): {re.escape(missing_task)}"):
         rr._incomplete_tasks(tmp_path, tag="v0.1.2")
 
 

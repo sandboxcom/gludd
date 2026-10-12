@@ -27,8 +27,11 @@ converting implementation evidence into task, gate, release, or publication
 completion.
 
 The promotion policy now explicitly admits `v0.1.2`. It requires all twelve
-S97 repair records and every S98 release repair, together with a reviewed-head
-integration receipt bound to the full candidate SHA. Missing ledger entries,
+S97 repair records and the seven registered S98.1-S98.7 repair records, together
+with a reviewed-head integration receipt bound to the full candidate SHA. The
+S98 prefix additionally blocks any later unfinished repair in that session;
+prefix filtering cannot replace explicit admission of the seven known records.
+Missing ledger entries,
 unfinished repairs, invalid receipts, or hosted results for another commit
 remain blockers. The Make contract's validation example uses a hermetic fixture;
 that example proves argument routing, not readiness of the real candidate.
