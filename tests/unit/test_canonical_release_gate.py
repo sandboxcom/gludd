@@ -95,6 +95,10 @@ def release_repo(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
         f"#!{sys.executable}\nimport os, sys\nos.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])\n"
     )
     producer_python.chmod(0o755)
+    pairing = serial._attestation_pairing(list(serial.DEFAULT_SHARDS), pytest_args=["-W", "error"])
+    # The fake producer models locked release evidence, not the interpreter running this test.
+    policy = serial.release_execution_policy()
+    pairing.update(execution_policy=policy, execution_policy_sha256=serial.canonical_json_sha256(policy))
     payload = {
         "schema_version": serial.ATTESTATION_SCHEMA_VERSION,
         "lane": "local", "status": "pass", "returncode": 0,
@@ -102,7 +106,7 @@ def release_repo(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
         "runner": "scripts/run_ci_shards_serial.py", "python": "3.11.14 (fixture)",
         "shards": list(serial.DEFAULT_SHARDS),
         "started_at": "2026-10-12T00:00:00Z", "completed_at": "2026-10-12T00:00:01Z",
-        **serial._attestation_pairing(list(serial.DEFAULT_SHARDS), pytest_args=["-W", "error"]),
+        **pairing,
     }
     template = resources / "template.json"
     template.write_text(json.dumps(payload))
@@ -134,6 +138,19 @@ def release_repo(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
         "MAKEFLAGS": "", "MFLAGS": "", "MAKELEVEL": "0",
     }
     return root, environment, template
+
+
+def test_release_receipt_fixture_models_locked_policy_not_native_interpreter(
+    release_repo: tuple[Path, dict[str, str], Path],
+) -> None:
+    _, _, template = release_repo
+    payload = json.loads(template.read_text())
+    policy = payload["execution_policy"]
+    assert policy["python_version"] == "3.11"
+    assert policy["python_implementation"] == "cpython"
+    assert policy["pytest_args"] == ["-W", "error"]
+    assert policy == serial.release_execution_policy()
+    assert payload["execution_policy_sha256"] == serial.canonical_json_sha256(policy)
 
 
 def _run_driver(root: Path, environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -183,7 +200,7 @@ def test_failed_or_cancelled_make_child_never_becomes_pass(
         assert (root / ".gate-terminalized").exists()
 
 
-@pytest.mark.parametrize("invalid", ["native-policy", "wrong-sha", "missing", "unchanged"])
+@pytest.mark.parametrize("invalid", ["native-policy", "wrong-python-version", "wrong-sha", "missing", "unchanged"])
 def test_noncanonical_or_stale_receipt_is_not_gate_release_evidence(
     release_repo: tuple[Path, dict[str, str], Path], invalid: str,
 ) -> None:
@@ -191,6 +208,10 @@ def test_noncanonical_or_stale_receipt_is_not_gate_release_evidence(
     payload = json.loads(template.read_text())
     if invalid == "native-policy":
         policy = serial.execution_policy(["-q"])
+        payload.update(execution_policy=policy, execution_policy_sha256=serial.canonical_json_sha256(policy))
+    elif invalid == "wrong-python-version":
+        policy = serial.release_execution_policy()
+        policy["python_version"] = "3.14"
         payload.update(execution_policy=policy, execution_policy_sha256=serial.canonical_json_sha256(policy))
     elif invalid == "wrong-sha":
         payload["identity"]["head_sha"] = "b" * 40
@@ -206,6 +227,7 @@ def test_noncanonical_or_stale_receipt_is_not_gate_release_evidence(
     assert "GATE-RELEASE-ATTESTATION-REJECTED" in result.stdout
     expected_error = {
         "native-policy": "does not use the release execution policy",
+        "wrong-python-version": "does not use the release execution policy",
         "wrong-sha": "does not match candidate SHA",
         "missing": "unreadable attestation",
         "unchanged": "was not refreshed by this gate",
