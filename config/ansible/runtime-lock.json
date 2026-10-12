@@ -4,9 +4,9 @@
   "base_image": "quay.io/centos/centos:stream9@sha256:33346f5fe280763eb78e85f968ad52bc2b2013369de85403f67e802db98ed243",
   "inputs": {
     "galaxy": "sha256:c361f006d85cd243875c460f484180b134cf8bb0dac7bd7adbbb77d3007a1ff6",
-    "python": "sha256:b2f8abbc609ffc2504f27234789f8e751b74eab7ccf02eff28ca7936d3fbb070",
+    "python": "sha256:ca997eeebc17b00d1558e37773d1a915f8acefedae7841c1afd3651a33b00a30",
     "system": "sha256:64c87891f336f9c13148b3cf13db2d46d503813b5d5b1d890c06fb221e691d39",
-    "definition": "sha256:5d33d909ace591a961dba2a659639f0f0b9ed77975d41d8b7a30040306e35827"
+    "definition": "sha256:4b1b7ec6bddcdadb6a2551371e1c9a69ad24f4ad7187a95553ba6b81d730fd5a"
   },
   "promotion": "build-and-warm-beside-active-then-switch-new-jobs",
   "rollback": "switch-new-jobs-to-previous-digest-and-drain-in-flight-jobs",

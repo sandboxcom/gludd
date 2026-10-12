@@ -2,6 +2,8 @@
 # Runner are pinned once in execution-environment.yml because Ansible Builder
 # must install them before its Galaxy validation phase.
 azure-identity==1.26.0
+azure-cli-core==2.91.0
+azure-core==1.39.0
 azure-monitor-query==2.0.0
 frictionless==5.19.1
 jsonpointer==3.2.0

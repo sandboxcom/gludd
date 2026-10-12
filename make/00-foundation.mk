@@ -417,6 +417,7 @@ help:
 	@echo "  check-collection-python-boundary Enforce exact/strict-zero collection migration inventory"
 	@echo "  check-resource-ownership Enforce exact application acquisition-to-teardown evidence (RESOURCE_OWNERSHIP_*)"
 	@echo "  update-ansible-runtime-lock Refresh deterministic EE input hashes"
+	@echo "  resolve-ansible-runtime-requirements Compile complete staged EE inputs (ANSIBLE_EE_COLLECTION_ROOT, ANSIBLE_EE_RESOLUTION_OUTPUT, ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1)"
 	@echo "  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)"
 	@echo "  inspect-ansible-searxng-source Read nine exact frozen metadata inputs (ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0|1)"
 	@echo "  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)"
@@ -1038,6 +1039,23 @@ validate-ansible-runtime-boundary:
 
 update-ansible-runtime-lock:
 	@$(UV) run python scripts/ansible_runtime_artifacts.py write-lock
+
+ANSIBLE_EE_COLLECTION_ROOT ?= .gludd/ansible-ee-staged-collections
+ANSIBLE_EE_RESOLUTION_OUTPUT ?= .gludd/ansible-ee-resolved-requirements.txt
+ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY ?= 1
+export GLUDD_EE_RESOLUTION_COLLECTION_ROOT := $(value ANSIBLE_EE_COLLECTION_ROOT)
+export GLUDD_EE_RESOLUTION_OUTPUT := $(value ANSIBLE_EE_RESOLUTION_OUTPUT)
+export GLUDD_EE_RESOLUTION_VALIDATE_ONLY := $(value ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY)
+unexport ANSIBLE_EE_COLLECTION_ROOT ANSIBLE_EE_RESOLUTION_OUTPUT ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY
+resolve-ansible-runtime-requirements:
+	@set -eu; \
+	case "$$GLUDD_EE_RESOLUTION_VALIDATE_ONLY" in 0|1) ;; *) echo "ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
+	test -n "$$GLUDD_EE_RESOLUTION_COLLECTION_ROOT" || { echo "ANSIBLE_EE_COLLECTION_ROOT is required"; exit 2; }; \
+	test -n "$$GLUDD_EE_RESOLUTION_OUTPUT" || { echo "ANSIBLE_EE_RESOLUTION_OUTPUT is required"; exit 2; }; \
+	if [ "$$GLUDD_EE_RESOLUTION_VALIDATE_ONLY" = "1" ]; then set -- --validate-only; else set --; fi; \
+	$(UV) run python scripts/ansible_runtime_artifacts.py resolve-requirements \
+		--collection-root "$$GLUDD_EE_RESOLUTION_COLLECTION_ROOT" \
+		--resolution-output "$$GLUDD_EE_RESOLUTION_OUTPUT" "$$@"
 
 ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY ?= 1
 check-ansible-base-image:

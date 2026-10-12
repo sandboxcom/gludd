@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — direct SDK admission did not prove the EE's complete dependency graph
+
+- **Observed**: Exact Build `38307021746` at `c4f499fbd983c4c3a0fdd041ac6c05fcbc740ec5` gets beyond direct identity ownership but EE assembly rejects Linux MSAL: retained Identity 1.26.0 needs >=1.39.0, while inherited CLI Core 2.75.0 fixes 1.33.0b1. Upgrading CLI alone would also conflict with inherited Azure Core 1.38.0. A successful requirements merge was insufficient transitive admission.
+- **Narrow repair**: Own CLI Core 2.91.0 and Azure Core 1.39.0 alongside unchanged Identity 1.26.0; exclude only those three inherited declarations. Reuse actual Builder introspection, Galaxy's version comparator and uv compilation, rejecting missing or drifted recursive collection metadata. Require uv's definition pin and Builder's frozen controller-lock version before real resolution. Preserve every other pin, frozen VCS source, isolation, interpreter, base digest and managed-host input.
+- **Failing-first evidence**: Complete-input acceptance fails 19 cases with 51 passing; tool identity fails 11 with 69 passing; all four public Make wrapper cases fail before wiring. Promoted family/roster checks also fail before their executable owners are added.
+- **Actual acceptance**: All 134 artifact/boundary/source/promotion cases pass with warnings fatal. The 103-case coverage replay is 91.63% combined (93.35% line, 87.50% branch), above unchanged 85/75 floors. Strict source/test typing, Ruff/docstrings, runtime-boundary validation, 217 contracts and the actual offline-safe Make example pass. The existing inventory mechanically admits one context-managed, namespaced temporary workspace, retaining every prior owner.
+- **Proof boundary**: Real resolution requires every exact native/external/transitive staged collection and matching existing tools; neither a fixture graph nor a plan is full resolution proof. No runtime environment or serving controller is replaced. Hosted image/import proof, final source review, canonical gate/coverage and disk admission still block release completion.
+
 ### 2026-10-12 — current handoff and CI observations required repeated manual edits
 
 - **Observed**: Repeated updates to handoff/observation JSON were performed as session bookkeeping after the user had already requested codification. Those records could retain old success, a stale timestamp or an obsolete candidate. The gap should have been treated as a producer defect when it first recurred, not left for another user request.

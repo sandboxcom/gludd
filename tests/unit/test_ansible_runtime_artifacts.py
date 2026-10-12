@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
-from importlib import import_module
+from importlib import import_module, metadata
 from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,6 +24,45 @@ from scripts.makefile_layout import compose_makefile
 
 PINNED_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "b" * 64
 builder_introspect = import_module("ansible_builder._target_scripts.introspect")
+
+
+@pytest.mark.parametrize("mode", ["1", "0", "invalid", "missing"])
+def test_requirement_resolution_make_target_is_bounded_safe_and_registered(
+    tmp_path: Path, mode: str,
+) -> None:
+    collection_root = tmp_path / 'collections" unavailable'
+    output = tmp_path / 'resolved" requirements.txt'
+    output.write_text("previous owned output\n", encoding="utf-8")
+    snapshots = {path: path.read_bytes() for path in [
+        artifacts.DEFINITION, artifacts.LOCK, *artifacts.INPUTS.values(),
+    ]}
+    result = subprocess.run([
+        "make", "--no-print-directory", "resolve-ansible-runtime-requirements",
+        f"ANSIBLE_EE_COLLECTION_ROOT={'' if mode == 'missing' else collection_root}",
+        f"ANSIBLE_EE_RESOLUTION_OUTPUT={output}",
+        f"ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY={'1' if mode == 'missing' else mode}",
+    ], cwd=artifacts.ROOT, capture_output=True, text=True, timeout=30, check=False)
+    if mode == "1":
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "ANSIBLE_EE_REQUIREMENTS_RESOLVE_PLAN" in result.stdout
+        assert str(collection_root) in result.stdout and str(output) in result.stdout
+    else:
+        assert result.returncode != 0
+        if mode == "invalid":
+            assert "ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY must be 0 or 1" in result.stdout
+        elif mode == "missing":
+            assert "ANSIBLE_EE_COLLECTION_ROOT is required" in result.stdout
+        else:
+            assert "ANSIBLE_EE_REQUIREMENTS_RESOLVE_END rc=0" not in result.stdout
+    assert output.read_text(encoding="utf-8") == "previous owned output\n"
+    assert not collection_root.exists()
+    assert all(path.read_bytes() == before for path, before in snapshots.items())
+    contract = json.loads((artifacts.ROOT / "config/make_target_contract.json").read_text())
+    entry = next(item for item in contract["targets"] if item["name"] == "resolve-ansible-runtime-requirements")
+    assert entry["make_variables"] == [
+        "ANSIBLE_EE_COLLECTION_ROOT", "ANSIBLE_EE_RESOLUTION_OUTPUT", "ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY",
+    ]
+    assert "ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1" in entry["behavior"]
 
 # Exact release input, not installed SDKs or a replacement dependency resolver:
 # https://github.com/ansible-collections/azure/blob/v3.21.0/requirements.txt
@@ -99,6 +138,16 @@ requests>=2.32.5
 xmltodict>=1.0.2
 """
 
+# Primary release metadata, including the failure's Linux-only requirement:
+# https://pypi.org/pypi/azure-identity/1.26.0/json
+# https://github.com/Azure/azure-cli/blob/azure-cli-2.75.0/src/azure-cli-core/setup.py
+# https://github.com/Azure/azure-cli/blob/azure-cli-2.91.0/src/azure-cli-core/setup.py
+_AZURE_CLI_TRANSITIVE_REQUIREMENTS = {
+    "2.75.0": ("msal==1.33.0b1; sys_platform != 'win32'",),
+    "2.91.0": ("azure-core~=1.39.0", "msal==1.39.0; sys_platform != 'win32'"),
+}
+_AZURE_IDENTITY_TRANSITIVE_REQUIREMENTS = ("azure-core>=1.31.0", "msal>=1.39.0")
+
 
 @pytest.fixture
 def azure_collection_fixture(tmp_path: Path) -> Path:
@@ -120,6 +169,29 @@ def azure_collection_fixture(tmp_path: Path) -> Path:
         _AZURE_COLLECTION_REQUIREMENTS, encoding="utf-8"
     )
     return root
+
+
+@pytest.fixture
+def complete_collection_fixture(azure_collection_fixture: Path) -> Path:
+    """Supply every required manifest for focused assembly tests, without installs."""
+    azure_manifest = azure_collection_fixture / "ansible_collections" / "azure" / "azcollection" / "MANIFEST.json"
+    azure_metadata = json.loads(azure_manifest.read_text(encoding="utf-8"))
+    azure_metadata["collection_info"]["dependencies"] = {}
+    azure_manifest.write_text(json.dumps(azure_metadata), encoding="utf-8")
+    collections = [
+        ("cloud", "terraform", "4.0.0"),
+        *(("general_ludd", name, release) for name, release in artifacts._COLLECTION_VERSIONS),
+    ]
+    for namespace, name, release in collections:
+        collection = azure_collection_fixture / "ansible_collections" / namespace / name
+        collection.mkdir(parents=True)
+        (collection / "MANIFEST.json").write_text(
+            json.dumps({"collection_info": {
+                "namespace": namespace, "name": name, "version": release, "dependencies": {},
+            }}),
+            encoding="utf-8",
+        )
+    return azure_collection_fixture
 
 
 def _builder_python_requirements(lines: list[str]) -> list[Requirement]:
@@ -247,6 +319,445 @@ def test_tracked_runtime_artifacts_validate() -> None:
     assert artifacts.validate_files() == []
 
 
+def test_artifact_tests_import_their_own_worktree_implementation() -> None:
+    """A shared interpreter must still exercise this checkout's artifact owner."""
+    assert Path(__file__).resolve().parents[2] == artifacts.ROOT
+
+
+def test_controller_azure_cli_has_one_explicit_owner(
+    tmp_path: Path,
+    azure_collection_fixture: Path,
+) -> None:
+    """The obsolete inherited CLI cannot constrain the owned identity's MSAL."""
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    excluded = definition["dependencies"]["exclude"]["python"]
+    assert "azure-cli-core" in excluded
+    exclusion = tmp_path / "exclude-requirements.txt"
+    exclusion.write_text("\n".join(excluded) + "\n", encoding="utf-8")
+    raw = builder_introspect.process(
+        data_dir=str(azure_collection_fixture),
+        user_pip=str(artifacts.INPUTS["python"]),
+        exclude_pip=str(exclusion),
+    )
+    merged = builder_introspect.filter_requirements(
+        raw["python"], exclude=raw["python"].pop("exclude")
+    )
+    cli = [
+        requirement
+        for requirement in _builder_python_requirements(merged)
+        if canonicalize_name(requirement.name) == "azure-cli-core"
+    ]
+    assert len(cli) == 1
+    assert not cli[0].specifier.contains("2.75.0")
+    user = _builder_python_requirements(raw["python"]["user"])
+    assert cli == [
+        requirement
+        for requirement in user
+        if canonicalize_name(requirement.name) == "azure-cli-core"
+    ]
+    assert merged == [
+        f"{line}  # from collection azure.azcollection"
+        for line in _AZURE_COLLECTION_REQUIREMENTS.splitlines()
+        if canonicalize_name(Requirement(line).name) not in excluded
+    ] + [f"{line}  # from collection user" for line in raw["python"]["user"]]
+    assert artifacts.AZURE_IDENTITY_REQUIREMENT == "azure-identity==1.26.0"
+
+
+def test_controller_cli_and_identity_share_supported_linux_transitives(
+    tmp_path: Path,
+    azure_collection_fixture: Path,
+) -> None:
+    """Reproduce both MSAL and Azure Core conflicts from actual release metadata."""
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    exclusion = tmp_path / "exclude-requirements.txt"
+    exclusion.write_text(
+        "\n".join(definition["dependencies"]["exclude"]["python"]) + "\n",
+        encoding="utf-8",
+    )
+    raw = builder_introspect.process(
+        data_dir=str(azure_collection_fixture),
+        user_pip=str(artifacts.INPUTS["python"]),
+        exclude_pip=str(exclusion),
+    )
+    merged = _builder_python_requirements(builder_introspect.filter_requirements(
+        raw["python"], exclude=raw["python"].pop("exclude")
+    ))
+    cli = [item for item in merged if canonicalize_name(item.name) == "azure-cli-core"]
+    assert len(cli) == 1
+    cli_pin = list(cli[0].specifier)
+    assert len(cli_pin) == 1 and cli_pin[0].operator == "=="
+    assert cli_pin[0].version in _AZURE_CLI_TRANSITIVE_REQUIREMENTS
+    transitives = [
+        Requirement(line)
+        for line in (
+            *_AZURE_IDENTITY_TRANSITIVE_REQUIREMENTS,
+            *_AZURE_CLI_TRANSITIVE_REQUIREMENTS[cli_pin[0].version],
+        )
+    ]
+    for package, candidate in (("msal", "1.39.0"), ("azure-core", "1.39.0")):
+        applicable = [
+            item for item in [*merged, *transitives]
+            if canonicalize_name(item.name) == package
+            and (item.marker is None or item.marker.evaluate({"sys_platform": "linux"}))
+        ]
+        assert applicable
+        assert all(item.specifier.contains(candidate) for item in applicable), applicable
+
+
+def test_resolve_requirements_plan_never_reads_collections_or_runs_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Offline planning must never be mistaken for transitive resolution proof."""
+    monkeypatch.setattr(shutil, "which", lambda _name: pytest.fail("tools must not run"))
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("tools must not run"))
+    monkeypatch.setattr(metadata, "version", lambda _name: pytest.fail("package metadata must not be read"))
+    monkeypatch.setattr(artifacts, "find_spec", lambda _name: pytest.fail("tool metadata must not be read"))
+    monkeypatch.setattr(
+        artifacts, "_staged_collection_metadata",
+        lambda _root: pytest.fail("collection metadata must not be read"),
+    )
+    output = tmp_path / "resolved.txt"
+    assert artifacts.resolve_requirements(tmp_path / "absent", output, True) == 0
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("uv_output", "builder_version", "probe_status", "message"),
+    [
+        ("uv 0.12.18\n", "3.1.1", 0, "uv required=0.12.19 observed=0.12.18"),
+        ("uv 0.12.19 (release)\n", "3.1.2", 0, "ansible-builder required=3.1.1 observed=3.1.2"),
+        ("unknown 0.12.19\n", "3.1.1", 0, "invalid uv version response"),
+        ("", "3.1.1", 0, "invalid uv version response"),
+        ("uv 0.12.19\n", "3.1.1", 7, "uv version probe failed: rc=7"),
+    ],
+)
+def test_real_resolution_rejects_unmatched_or_unobservable_tool_identities(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    uv_output: str,
+    builder_version: str,
+    probe_status: int,
+    message: str,
+) -> None:
+    """A successful graph merge cannot authorize tools different from the frozen EE."""
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(metadata, "version", lambda name: builder_version if name == "ansible-builder" else "")
+    monkeypatch.setattr(artifacts, "import_module", lambda _name: pytest.fail("introspection must not run"))
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        assert command == ["/bin/uv", "--version"]
+        assert kwargs["timeout"] == 5
+        assert kwargs["capture_output"] is True and kwargs["text"] is True
+        assert kwargs["cwd"] == artifacts.ROOT and kwargs["check"] is False
+        return SimpleNamespace(returncode=probe_status, stdout=uv_output)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    output = tmp_path / "resolved.txt"
+    assert artifacts.resolve_requirements(complete_collection_fixture, output, False) == 2
+    assert message in capsys.readouterr().err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("error", [OSError("missing uv executable"), subprocess.TimeoutExpired("uv --version", 5)])
+def test_real_resolution_reports_bounded_version_probe_errors(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    error: OSError | subprocess.TimeoutExpired,
+) -> None:
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(artifacts, "import_module", lambda _name: pytest.fail("introspection must not run"))
+
+    def failed_probe(*_args: object, **_kwargs: object) -> None:
+        raise error
+
+    monkeypatch.setattr(subprocess, "run", failed_probe)
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 2
+    assert "uv version probe failed" in capsys.readouterr().err
+
+
+def test_real_resolution_rejects_unavailable_builder_distribution_metadata(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def missing_metadata(_name: str) -> str:
+        raise metadata.PackageNotFoundError("ansible-builder")
+
+    monkeypatch.setattr(metadata, "version", missing_metadata)
+    monkeypatch.setattr(artifacts, "import_module", lambda _name: pytest.fail("introspection must not run"))
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(
+        returncode=0, stdout="uv 0.12.19\n",
+    ))
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 2
+    assert "ansible-builder distribution metadata is unavailable" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("changed_source", ["definition", "controller-lock"])
+def test_real_resolution_derives_tool_identities_from_the_frozen_inputs(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    changed_source: str,
+) -> None:
+    """Read existing source pins; an independently hard-coded expected version can drift."""
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    if changed_source == "definition":
+        definition = tmp_path / "execution-environment.yml"
+        definition.write_text(
+            artifacts.DEFINITION.read_text(encoding="utf-8").replace("uv==0.12.19", "uv==0.12.20"),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(artifacts, "DEFINITION", definition)
+        expected = "uv required=0.12.20 observed=0.12.19"
+    else:
+        profile = tmp_path / "pyproject.toml"
+        profile.write_text(artifacts.CONTROLLER_PROFILE.read_text(encoding="utf-8"), encoding="utf-8")
+        profile.with_name("uv.lock").write_text(
+            '[[package]]\nname = "ansible-builder"\nversion = "3.1.2"\n', encoding="utf-8",
+        )
+        monkeypatch.setattr(artifacts, "CONTROLLER_PROFILE", profile)
+        expected = "ansible-builder required=3.1.2 observed=3.1.1"
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(metadata, "version", lambda _name: "3.1.1")
+    monkeypatch.setattr(artifacts, "import_module", lambda _name: pytest.fail("introspection must not run"))
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(
+        returncode=0, stdout="uv 0.12.19\n",
+    ))
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 2
+    assert expected in capsys.readouterr().err
+
+
+def test_resolve_requirements_rejects_partial_collection_inputs_before_uv(
+    tmp_path: Path,
+    azure_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An Azure-only fixture is not the complete execution environment's graph."""
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
+    assert artifacts.resolve_requirements(azure_collection_fixture, tmp_path / "resolved.txt", False) == 1
+    assert "missing staged collection manifest: cloud.terraform" in capsys.readouterr().err
+
+
+def test_resolve_requirements_uses_real_builder_assembly_and_bounded_uv_compile(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exercise mature introspection and pass the complete graph to uv's resolver."""
+    output = tmp_path / "resolved.txt"
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    calls: list[list[str]] = []
+    version_probes: list[list[str]] = []
+
+    def fake_run(
+        command: list[str], *, cwd: Path, check: bool,
+        env: dict[str, str] | None = None, capture_output: bool = False,
+        text: bool = False, timeout: int | None = None,
+    ) -> SimpleNamespace:
+        assert cwd == artifacts.ROOT and not check
+        if command == ["/bin/uv", "--version"]:
+            assert capture_output and text and timeout == 5
+            version_probes.append(command)
+            return SimpleNamespace(returncode=0, stdout="uv 0.12.19 (release)\n")
+        assert env is not None
+        assert command[:2] == [sys.executable, str(artifacts.ROOT / "scripts" / "stream_command.py")]
+        assert command[command.index("--heartbeat-secs") + 1] == "15"
+        assert command[command.index("--quiet-secs") + 1] == "60"
+        assert command[command.index("--max-secs") + 1] == "180"
+        compile_command = command[command.index("--") + 1:]
+        assert compile_command[:3] == ["/bin/uv", "pip", "compile"]
+        assert compile_command[compile_command.index("--python-version") + 1] == "3.11"
+        assert compile_command[compile_command.index("--python-platform") + 1] == "x86_64-manylinux_2_28"
+        assert "--no-python-downloads" in compile_command
+        assert "install" not in compile_command and "--no-deps" not in compile_command
+        assert "--no-build-isolation" not in compile_command and "--override" not in compile_command
+        assert env["UV_CONCURRENT_BUILDS"] == "1"
+        assert env["UV_HTTP_TIMEOUT"] == "30" and env["UV_HTTP_RETRIES"] == "0"
+        assert env["UV_PYTHON_DOWNLOADS"] == "never"
+        assert env["UV_LINK_MODE"] == "copy"
+        configuration = Path(compile_command[compile_command.index("--config-file") + 1])
+        assert tomllib.loads(configuration.read_text(encoding="utf-8")) == {
+            "pip": {"extra-build-dependencies": {"searxng": ["pyyaml==6.0.2"]}}
+        }
+        combined = _builder_python_requirements(Path(compile_command[3]).read_text(encoding="utf-8").splitlines())
+        requirements = [str(item) for item in combined]
+        assert "ansible-core==2.19.12" in requirements
+        assert "ansible-runner==2.4.3" in requirements
+        assert "azure-identity==1.26.0" in requirements
+        assert "azure-cli-core==2.91.0" in requirements
+        assert "azure-core==1.39.0" in requirements
+        assert "azure-cli-core==2.75.0" not in requirements
+        assert "azure-core==1.38.0" not in requirements
+        excluded = {"azure-identity", "azure-cli-core", "azure-core"}
+        for line in _AZURE_COLLECTION_REQUIREMENTS.splitlines():
+            requirement = Requirement(line)
+            if canonicalize_name(requirement.name) not in excluded:
+                assert requirement in combined
+        for line in artifacts.INPUTS["python"].read_text(encoding="utf-8").splitlines():
+            if line and not line.startswith("#"):
+                assert Requirement(line) in combined
+        destination = Path(compile_command[compile_command.index("--output-file") + 1])
+        assert destination != output
+        assert destination.parent == configuration.parent
+        destination.write_text("msal==1.39.0\n", encoding="utf-8")
+        calls.append(command)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert artifacts.resolve_requirements(complete_collection_fixture, output, False) == 0
+    assert output.read_text(encoding="utf-8") == "msal==1.39.0\n"
+    assert len(calls) == 1
+    assert version_probes == [["/bin/uv", "--version"]]
+    observed = capsys.readouterr().out
+    assert "ANSIBLE_EE_RESOLVER_TOOLS uv=0.12.19 ansible_builder=3.1.1" in observed
+    assert "ANSIBLE_EE_REQUIREMENTS_RESOLVE_END rc=0" in observed
+
+
+def test_resolve_requirements_rejects_invalid_artifacts_before_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: ["stale inputs"])
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("tools must not run"))
+    assert artifacts.resolve_requirements(tmp_path, tmp_path / "resolved.txt", False) == 1
+
+
+@pytest.mark.parametrize(
+    ("available", "expected_message"),
+    [({"uv"}, "ansible-builder is unavailable"), ({"ansible_builder"}, "uv is unavailable")],
+)
+def test_resolve_requirements_reports_missing_tools(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    available: set[str],
+    expected_message: str,
+) -> None:
+    monkeypatch.setattr(artifacts, "find_spec", lambda name: object() if name in available else None)
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}" if name in available else None)
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 2
+    assert expected_message in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        ("not json", "invalid staged collection manifest"),
+        ("{}", "invalid staged collection manifest"),
+        (json.dumps({"collection_info": {
+            "namespace": "azure", "name": "azcollection", "version": "3.20.0", "dependencies": {},
+        }}), "staged collection version mismatch"),
+        (json.dumps({"collection_info": {
+            "namespace": "wrong", "name": "azcollection", "version": "3.21.0", "dependencies": {},
+        }}), "staged collection identity mismatch"),
+        (json.dumps({"collection_info": {
+            "namespace": "azure", "name": "azcollection", "version": "3.21.0",
+            "dependencies": {"missing.transitive": ">=1.0.0"},
+        }}), "missing staged collection manifest: missing.transitive"),
+    ],
+)
+def test_resolve_requirements_rejects_drifted_or_incomplete_staged_metadata(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    replacement: str,
+    message: str,
+) -> None:
+    manifest = complete_collection_fixture / "ansible_collections" / "azure" / "azcollection" / "MANIFEST.json"
+    manifest.write_text(replacement, encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 1
+    assert message in capsys.readouterr().err
+
+
+def test_resolve_requirements_rejects_missing_declared_python_metadata(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    metadata = (
+        complete_collection_fixture / "ansible_collections" / "azure" / "azcollection"
+        / "meta" / "execution-environment.yml"
+    )
+    metadata.write_text("dependencies:\n  python: absent.txt\n", encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 1
+    assert "missing declared collection Python requirements: azure.azcollection" in capsys.readouterr().err
+
+
+def test_resolve_requirements_checks_additional_transitive_collection_metadata(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Every staged dependency is checked, including collections outside the roster."""
+    additional = complete_collection_fixture / "ansible_collections" / "community" / "helper"
+    additional.mkdir(parents=True)
+    (additional / "MANIFEST.json").write_text(json.dumps({"collection_info": {
+        "namespace": "community", "name": "helper", "version": "1.0.0",
+        "dependencies": {"missing.transitive": ">=1.0.0"},
+    }}), encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 1
+    assert "missing staged collection manifest: missing.transitive" in capsys.readouterr().err
+
+
+def test_resolve_requirements_rejects_transitive_collection_version_mismatch(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    manifest = complete_collection_fixture / "ansible_collections" / "cloud" / "terraform" / "MANIFEST.json"
+    metadata = json.loads(manifest.read_text(encoding="utf-8"))
+    metadata["collection_info"]["dependencies"] = {"azure.azcollection": ">=4.0.0"}
+    manifest.write_text(json.dumps(metadata), encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 1
+    assert "staged collection dependency mismatch: cloud.terraform -> azure.azcollection" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("return_code", [1, 124])
+def test_resolve_requirements_retains_previous_output_on_failure_or_timeout(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    return_code: int,
+) -> None:
+    output = tmp_path / "resolved.txt"
+    output.write_text("previous proof\n", encoding="utf-8")
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(subprocess, "run", lambda command, **_kwargs: SimpleNamespace(
+        returncode=0 if command[-1] == "--version" else return_code,
+        stdout="uv 0.12.19\n",
+    ))
+    assert artifacts.resolve_requirements(complete_collection_fixture, output, False) == return_code
+    assert output.read_text(encoding="utf-8") == "previous proof\n"
+
+
+def test_resolve_requirements_rejects_empty_resolver_output(
+    tmp_path: Path,
+    complete_collection_fixture: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(
+        returncode=0, stdout="uv 0.12.19\n",
+    ))
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 1
+
+
 def test_builder_introspection_reproduces_the_unexcluded_azure_sdk_conflict(
     azure_collection_fixture: Path,
 ) -> None:
@@ -278,9 +789,11 @@ def test_controller_azure_identity_has_one_explicit_owner(
     tmp_path: Path,
     azure_collection_fixture: Path,
 ) -> None:
-    """Exclude only the collection declaration, retaining all explicit user pins."""
+    """Keep one identity owner while excluding only explicitly owned Azure pins."""
     definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
-    assert definition["dependencies"].get("exclude") == {"python": ["azure-identity"]}
+    assert definition["dependencies"].get("exclude") == {
+        "python": ["azure-identity", "azure-cli-core", "azure-core"]
+    }
     exclusion = tmp_path / "exclude-requirements.txt"
     exclusion.write_text(
         "\n".join(definition["dependencies"]["exclude"]["python"]) + "\n",
@@ -291,7 +804,7 @@ def test_controller_azure_identity_has_one_explicit_owner(
         user_pip=str(artifacts.INPUTS["python"]),
         exclude_pip=str(exclusion),
     )
-    assert raw["python"]["exclude"] == ["azure-identity"]
+    assert raw["python"]["exclude"] == ["azure-identity", "azure-cli-core", "azure-core"]
     user_requirements = raw["python"]["user"]
     merged = builder_introspect.filter_requirements(
         raw["python"], exclude=raw["python"].pop("exclude")
@@ -299,7 +812,7 @@ def test_controller_azure_identity_has_one_explicit_owner(
     expected_collection = [
         f"{line}  # from collection azure.azcollection"
         for line in _AZURE_COLLECTION_REQUIREMENTS.splitlines()
-        if canonicalize_name(Requirement(line).name) != "azure-identity"
+        if canonicalize_name(Requirement(line).name) not in {"azure-identity", "azure-cli-core", "azure-core"}
     ]
     assert merged == expected_collection + [
         f"{line}  # from collection user" for line in user_requirements
@@ -380,7 +893,8 @@ def test_runtime_validation_rejects_changing_the_owned_azure_identity_pin(
     monkeypatch.setattr(artifacts, "LOCK", changed_lock)
 
     assert artifacts.validate_files() == [
-        "controller Python requirements must contain only pinned Azure Monitor, "
+        "controller Python requirements must contain only pinned Azure Identity, "
+        "CLI Core, Azure Core, Azure Monitor, "
         "Frictionless, jsonpointer, openapi-core, SignXML, and official SearXNG"
     ]
 
@@ -514,7 +1028,7 @@ def test_generated_controller_build_wires_the_narrow_sdk_exclusion(
     rendered = (context / "Dockerfile").read_text(encoding="utf-8")
     build_inputs = context / "_build"
     assert (build_inputs / "exclude-requirements.txt").read_text(encoding="utf-8").splitlines() == [
-        "azure-identity"
+        "azure-identity", "azure-cli-core", "azure-core"
     ]
     assert (build_inputs / "requirements.txt").read_bytes() == artifacts.INPUTS["python"].read_bytes()
     assert "COPY _build/exclude-requirements.txt exclude-requirements.txt" in rendered
@@ -571,7 +1085,7 @@ def test_generated_controller_build_wires_the_narrow_sdk_exclusion(
     assert merged == [
         f"{line}  # from collection azure.azcollection"
         for line in _AZURE_COLLECTION_REQUIREMENTS.splitlines()
-        if canonicalize_name(Requirement(line).name) != "azure-identity"
+        if canonicalize_name(Requirement(line).name) not in {"azure-identity", "azure-cli-core", "azure-core"}
     ] + [f"{line}  # from collection user" for line in user]
 
 

@@ -352,6 +352,14 @@ def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
             "ee-owned-azure-sdk-pin-parity",
             "test_controller_azure_identity_has_one_explicit_owner",
         ),
+        (
+            "ee-owned-linux-transitive-pin-parity",
+            "test_controller_cli_and_identity_share_supported_linux_transitives",
+        ),
+        (
+            "ee-complete-requirement-resolution-contract",
+            "test_resolve_requirements_uses_real_builder_assembly_and_bounded_uv_compile",
+        ),
     ],
 )
 def test_ee_metadata_contracts_execute_before_hosted_image_construction(
@@ -785,6 +793,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ci-repair-evidence-variable-forwarding",
         "automatic-proof-observation-ownership",
         "automatic-proof-handoff-native-query-shape",
+        "ee-owned-linux-transitive-pin-parity",
+        "ee-complete-requirement-resolution-contract",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (

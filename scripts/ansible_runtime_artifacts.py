@@ -8,17 +8,20 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
+from importlib import import_module, metadata
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
 import yaml
+from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = ROOT / "config" / "ansible"
@@ -70,6 +73,8 @@ SEARXNG_REQUIREMENT = (
     f"{SEARXNG_SOURCE_REVISION}"
 )
 AZURE_IDENTITY_REQUIREMENT = "azure-identity==1.26.0"
+AZURE_CLI_CORE_REQUIREMENT = "azure-cli-core==2.91.0"
+AZURE_CORE_REQUIREMENT = "azure-core==1.39.0"
 AZURE_MONITOR_QUERY_REQUIREMENT = "azure-monitor-query==2.0.0"
 FRICTIONLESS_REQUIREMENT = "frictionless==5.19.1"
 JSONPOINTER_REQUIREMENT = "jsonpointer==3.2.0"
@@ -90,7 +95,7 @@ EXPECTED_DEPENDENCIES: dict[str, object] = {
     "galaxy": "requirements.yml",
     "python": "requirements.txt",
     "system": "bindep.txt",
-    "exclude": {"python": ["azure-identity"]},
+    "exclude": {"python": ["azure-identity", "azure-cli-core", "azure-core"]},
     "ansible_core": {"package_pip": "ansible-core==2.19.12"},
     "ansible_runner": {"package_pip": "ansible-runner==2.4.3"},
     "python_interpreter": {
@@ -200,7 +205,7 @@ def check_configured_base_image(*, opener: Any | None = None) -> str:
 
 def _atomic_write_text(path: Path, content: str) -> None:
     """Replace one tracked text artifact without exposing partial content."""
-    mode = path.stat().st_mode & 0o777
+    mode = path.stat().st_mode & 0o777 if path.exists() else 0o644
     temporary_name = ""
     try:
         with tempfile.NamedTemporaryFile(
@@ -303,6 +308,8 @@ def validate_files() -> list[str]:
     ]
     if pinned_requirements != [
         AZURE_IDENTITY_REQUIREMENT,
+        AZURE_CLI_CORE_REQUIREMENT,
+        AZURE_CORE_REQUIREMENT,
         AZURE_MONITOR_QUERY_REQUIREMENT,
         FRICTIONLESS_REQUIREMENT,
         JSONPOINTER_REQUIREMENT,
@@ -311,7 +318,8 @@ def validate_files() -> list[str]:
         SEARXNG_REQUIREMENT,
     ]:
         errors.append(
-            "controller Python requirements must contain only pinned Azure Monitor, "
+            "controller Python requirements must contain only pinned Azure Identity, "
+            "CLI Core, Azure Core, Azure Monitor, "
             "Frictionless, jsonpointer, openapi-core, SignXML, and official SearXNG"
         )
 
@@ -363,6 +371,241 @@ def validate_files() -> list[str]:
     if not isinstance(managed.get("requirements"), list):
         errors.append("managed-host requirements must be an explicit list")
     return errors
+
+
+def _staged_collection_metadata(collection_root: Path) -> None:
+    """Reject partial staged inputs using Galaxy's own dependency version rules."""
+    from ansible.galaxy.dependency_resolution.versioning import meets_requirements
+
+    staged = collection_root / "ansible_collections"
+    if not staged.is_dir():
+        raise ValueError(f"partial collection inputs: missing staged tree: {staged}")
+    galaxy = yaml.safe_load(INPUTS["galaxy"].read_text(encoding="utf-8"))
+    required = {
+        entry["name"]: entry["version"]
+        for entry in galaxy["collections"]
+        if entry.get("type") != "file"
+    }
+    required.update({f"general_ludd.{name}": release for name, release in _COLLECTION_VERSIONS})
+    for name in sorted(required):
+        if not (staged.joinpath(*name.split(".")) / "MANIFEST.json").is_file():
+            raise ValueError(f"missing staged collection manifest: {name}")
+    inventory: dict[str, tuple[str, dict[str, str]]] = {}
+    for collection in sorted(staged.glob("*/*")):
+        if not collection.is_dir():
+            continue
+        name = f"{collection.parent.name}.{collection.name}"
+        if not collection.resolve().is_relative_to(staged.resolve()):
+            raise ValueError(f"staged collection escapes the supplied tree: {name}")
+        manifest = collection / "MANIFEST.json"
+        if not manifest.is_file():
+            raise ValueError(f"missing staged collection manifest: {name}")
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"invalid staged collection manifest: {name}") from exc
+        info = data.get("collection_info") if isinstance(data, dict) else None
+        if not isinstance(info, dict) or any(
+            not isinstance(info.get(field), str) for field in ("namespace", "name", "version")
+        ):
+            raise ValueError(f"invalid staged collection manifest: {name}")
+        if f"{info['namespace']}.{info['name']}" != name:
+            raise ValueError(f"staged collection identity mismatch: {name}")
+        release = info["version"]
+        if name in required and release != required[name]:
+            raise ValueError(f"staged collection version mismatch: {name}")
+        dependencies = info.get("dependencies")
+        if not isinstance(dependencies, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in dependencies.items()
+        ):
+            raise ValueError(f"invalid staged collection dependency metadata: {name}")
+        inventory[name] = (release, dependencies)
+        metadata = collection / "meta" / "execution-environment.yml"
+        if not metadata.is_file():
+            continue
+        definition = yaml.safe_load(metadata.read_text(encoding="utf-8"))
+        declared = definition.get("dependencies", {}) if isinstance(definition, dict) else None
+        if not isinstance(declared, dict):
+            raise ValueError(f"invalid staged collection execution metadata: {name}")
+        for kind in ("python", "system"):
+            if kind not in declared:
+                continue
+            relative = declared[kind]
+            if not isinstance(relative, str) or not relative:
+                raise ValueError(f"invalid declared collection {kind} requirements: {name}")
+            dependency_file = collection / relative
+            if not dependency_file.resolve().is_relative_to(collection.resolve()):
+                raise ValueError(f"declared collection requirements escape the collection: {name}")
+            if not dependency_file.is_file():
+                label = "Python" if kind == "python" else "system"
+                raise ValueError(f"missing declared collection {label} requirements: {name}")
+    for name in sorted(required):
+        if name not in inventory:
+            raise ValueError(f"missing staged collection manifest: {name}")
+    for name, (_release, dependencies) in inventory.items():
+        for dependency, constraint in dependencies.items():
+            if dependency not in inventory:
+                raise ValueError(f"missing staged collection manifest: {dependency} (required by {name})")
+            if not meets_requirements(inventory[dependency][0], constraint):
+                raise ValueError(f"staged collection dependency mismatch: {name} -> {dependency}")
+
+
+def _resolution_build_configuration(definition: dict[str, Any]) -> str:
+    """Reuse the exact package-specific isolated build configuration from the EE."""
+    steps = definition["additional_build_steps"]["append_base"]
+    configurations = [step for step in steps if "[pip.extra-build-dependencies]" in step]
+    if len(configurations) != 1:
+        raise ValueError("execution environment must declare one isolated build configuration")
+    tokens = shlex.split(configurations[0].removeprefix("RUN "))
+    configuration = "\n".join(tokens[tokens.index("printf") + 2:tokens.index(">")]) + "\n"
+    if tomllib.loads(configuration) != {
+        "pip": {"extra-build-dependencies": {"searxng": ["pyyaml==6.0.2"]}}
+    }:
+        raise ValueError("execution environment isolated build configuration differs from frozen SearXNG")
+    return configuration
+
+
+def _check_resolution_tool_identities(uv: str, definition: dict[str, Any]) -> bool:
+    """Require existing tools to match the exact EE and controller lock identities."""
+    try:
+        uv_requirements = [
+            Requirement(token)
+            for step in definition["additional_build_steps"]["append_base"]
+            for token in shlex.split(step.removeprefix("RUN "))
+            if token.startswith("uv==")
+        ]
+        if len(uv_requirements) != 1:
+            raise ValueError("execution environment must pin exactly one uv compiler")
+        uv_specifiers = list(uv_requirements[0].specifier)
+        if len(uv_specifiers) != 1 or uv_specifiers[0].operator != "==" or "*" in uv_specifiers[0].version:
+            raise ValueError("execution environment must pin one exact uv compiler version")
+        expected_uv = uv_specifiers[0].version
+        controller_lock = tomllib.loads(CONTROLLER_PROFILE.with_name("uv.lock").read_text(encoding="utf-8"))
+        builder_versions = [
+            package["version"] for package in controller_lock["package"]
+            if package["name"] == "ansible-builder"
+        ]
+        if len(builder_versions) != 1 or not isinstance(builder_versions[0], str):
+            raise ValueError("controller lock must pin exactly one ansible-builder version")
+        expected_builder = builder_versions[0]
+        try:
+            probe = subprocess.run(
+                [uv, "--version"], cwd=ROOT, check=False, capture_output=True, text=True, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(f"uv version probe failed: {exc}") from exc
+        if probe.returncode != 0:
+            details = "\n".join(
+                stream.strip() for stream in (probe.stdout, getattr(probe, "stderr", "")) if stream.strip()
+            )
+            raise RuntimeError(f"uv version probe failed: rc={probe.returncode}\n{details}")
+        response = re.fullmatch(r"uv ([^\s]+)(?:[ \t]+\([^\r\n]+\))?", probe.stdout.strip())
+        if response is None:
+            raise ValueError(f"invalid uv version response: {probe.stdout!r}")
+        observed_uv = response.group(1)
+        if observed_uv != expected_uv:
+            raise ValueError(f"resolver tool identity mismatch: uv required={expected_uv} observed={observed_uv}")
+        observed_builder = metadata.version("ansible-builder")
+        if observed_builder != expected_builder:
+            raise ValueError(
+                "resolver tool identity mismatch: "
+                f"ansible-builder required={expected_builder} observed={observed_builder}"
+            )
+    except metadata.PackageNotFoundError:
+        print("ansible-builder distribution metadata is unavailable", file=sys.stderr)
+        return False
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        print(f"Ansible EE resolver tool identity validation failed: {exc}", file=sys.stderr)
+        return False
+    print(
+        f"ANSIBLE_EE_RESOLVER_TOOLS uv={observed_uv} ansible_builder={observed_builder} executable={uv}",
+        flush=True,
+    )
+    return True
+
+
+def resolve_requirements(collection_root: Path, output: Path, validate_only: bool) -> int:
+    """Compile every exact Builder-staged requirement without installing a runtime."""
+    errors = validate_files()
+    if errors:
+        for error in errors:
+            print(error, file=sys.stderr)
+        return 1
+    if validate_only:
+        print(
+            f"ANSIBLE_EE_REQUIREMENTS_RESOLVE_PLAN collections={collection_root} "
+            f"output={output} python=3.11 platform=x86_64-manylinux_2_28 max_seconds=180"
+        )
+        return 0
+    if find_spec("ansible_builder") is None:
+        print("ansible-builder is unavailable; sync the controller dependencies", file=sys.stderr)
+        return 2
+    uv = shutil.which("uv")
+    if uv is None:
+        print("uv is unavailable; use the locked controller compiler", file=sys.stderr)
+        return 2
+    try:
+        _staged_collection_metadata(collection_root)
+        definition = yaml.safe_load(DEFINITION.read_text(encoding="utf-8"))
+        if not _check_resolution_tool_identities(uv, definition):
+            return 2
+        configuration = _resolution_build_configuration(definition)
+        introspect = import_module("ansible_builder._target_scripts.introspect")
+        with tempfile.TemporaryDirectory(prefix="gludd-ee-resolution-") as temporary:
+            work = Path(temporary)
+            exclusion = work / "exclude-requirements.txt"
+            exclusion.write_text(
+                "\n".join(definition["dependencies"]["exclude"]["python"]) + "\n",
+                encoding="utf-8",
+            )
+            raw = introspect.process(
+                data_dir=str(collection_root), user_pip=str(INPUTS["python"]),
+                exclude_pip=str(exclusion),
+            )
+            combined = introspect.filter_requirements(
+                raw["python"], exclude=raw["python"].pop("exclude")
+            )
+            for owner in ("ansible_core", "ansible_runner"):
+                combined.append(definition["dependencies"][owner]["package_pip"])
+            requirements = work / "combined-requirements.txt"
+            requirements.write_text("\n".join(combined) + "\n", encoding="utf-8")
+            config = work / "uv.toml"
+            config.write_text(configuration, encoding="utf-8")
+            resolved = work / "resolved.txt"
+            command = [
+                uv, "pip", "compile", str(requirements),
+                "--python-version", "3.11", "--python-platform", "x86_64-manylinux_2_28",
+                "--config-file", str(config), "--no-python-downloads",
+                "--output-file", str(resolved),
+            ]
+            observed = [
+                sys.executable, str(ROOT / "scripts" / "stream_command.py"),
+                "--root", str(ROOT / ".gate-logs" / "observed"),
+                "--label", "ansible-ee-requirements", "--run-id", work.name,
+                "--heartbeat-secs", "15", "--quiet-secs", "60", "--max-secs", "180",
+                "--retain-runs", "20", "--", *command,
+            ]
+            environment = dict(os.environ)
+            environment.update({
+                "UV_CONCURRENT_BUILDS": "1", "UV_CONCURRENT_DOWNLOADS": "4",
+                "UV_HTTP_TIMEOUT": "30", "UV_HTTP_RETRIES": "0",
+                "UV_PYTHON_DOWNLOADS": "never", "UV_LINK_MODE": "copy",
+            })
+            print(f"ANSIBLE_EE_REQUIREMENTS_RESOLVE_START collections={collection_root}", flush=True)
+            result = subprocess.run(observed, cwd=ROOT, env=environment, check=False)
+            if result.returncode != 0:
+                print(f"ANSIBLE_EE_REQUIREMENTS_RESOLVE_END rc={result.returncode}", flush=True)
+                return result.returncode
+            if not resolved.is_file() or resolved.stat().st_size == 0:
+                raise ValueError("uv produced missing or empty resolved requirements")
+            output.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write_text(output, resolved.read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
+        print(f"Ansible EE requirements resolution failed: {exc}", file=sys.stderr)
+        return 1
+    print(f"ANSIBLE_EE_REQUIREMENTS_RESOLVE_END rc=0 output={output}", flush=True)
+    return 0
 
 
 def _require_image(image: str) -> None:
@@ -522,6 +765,7 @@ def main(argv: list[str] | None = None) -> int:
             "build",
             "check-base-image",
             "refresh-base-image",
+            "resolve-requirements",
             "validate",
             "verify",
             "write-lock",
@@ -531,7 +775,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--image", default="gludd-ansible-ee:0.1.0-beta.4")
     parser.add_argument("--context", type=Path, default=Path("/tmp/gludd-ansible-ee-context"))
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--collection-root", type=Path)
+    parser.add_argument("--resolution-output", type=Path)
     args = parser.parse_args(argv)
+    if args.mode == "resolve-requirements":
+        if args.collection_root is None or args.resolution_output is None:
+            parser.error("resolve-requirements requires --collection-root and --resolution-output")
+        return resolve_requirements(args.collection_root, args.resolution_output, args.validate_only)
     if args.mode == "write-lock":
         write_lock()
         print(f"ANSIBLE_RUNTIME_LOCK_UPDATED path={LOCK.relative_to(ROOT)}")

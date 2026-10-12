@@ -2021,6 +2021,11 @@
       "behavior": "make searx-molecule SEARX_MOLECULE_VALIDATE_ONLY=1"
     },
     {
+      "name": "resolve-ansible-runtime-requirements",
+      "make_variables": ["ANSIBLE_EE_COLLECTION_ROOT", "ANSIBLE_EE_RESOLUTION_OUTPUT", "ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY"],
+      "behavior": "make resolve-ansible-runtime-requirements ANSIBLE_EE_COLLECTION_ROOT=/tmp/gludd-contract-ee-collections ANSIBLE_EE_RESOLUTION_OUTPUT=/tmp/gludd-contract-ee-resolution.txt ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1"
+    },
+    {
       "name": "status-heartbeat",
       "make_variables": [
         "INTERVAL",

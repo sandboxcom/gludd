@@ -357,6 +357,13 @@ roster, 90-second runtime/60-second quiet bounds, warning-fatal one-worker
 execution and 2850-second ceiling are unchanged. Generated diagnostic success
 is never canonical gate evidence or release authority.
 
+The same complete artifact cohort now covers
+`ee-owned-linux-transitive-pin-parity` and
+`ee-complete-requirement-resolution-contract`. Builder assembles all staged
+requirements before the bounded compiler path, and real mode checks exact uv
+and Builder identities. These focused contracts do not claim that the complete
+real EE graph has resolved or that a replacement image has built successfully.
+
 ## Zero-downtime and rollback
 
 This is a zero-downtime control-plane check. Admission starts no application

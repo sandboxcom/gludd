@@ -244,3 +244,96 @@ digest; warm verification, switching new jobs, draining and rollback remain
 unchanged. Focused merge/generation acceptance is not transitive resolution or a
 successful image. Replacement exact-SHA assembly/import proof, canonical full
 gate and 85/75 coverage remain mandatory before promotion.
+
+## Complete Azure transitive requirements — 2026-10-12
+
+Hosted Build `38307021746` reaches uv assembly after the direct identity
+ownership repair, then rejects the remaining Linux dependency graph.
+`azure-identity==1.26.0` requires `msal>=1.39.0`, while the collection's
+`azure-cli-core==2.75.0` requires `msal==1.33.0b1` on Linux. Excluding the
+collection's identity declaration cannot reconcile those transitive constraints.
+The controller identity remains intentionally pinned to `1.26.0`.
+
+The compatible release metadata is explicit:
+[Azure Identity 1.26.0](https://pypi.org/pypi/azure-identity/1.26.0/json)
+requires Azure Core `>=1.31.0` and MSAL `>=1.39.0`;
+[Azure CLI Core 2.91.0](https://github.com/Azure/azure-cli/blob/azure-cli-2.91.0/src/azure-cli-core/setup.py)
+requires Linux MSAL `1.39.0`, MSAL Extensions `1.3.1`, and Azure Core
+`~=1.39.0`. CLI releases `2.88.0`, `2.89.1`, and `2.90.0` still select Linux
+MSAL `1.36.0`. Upgrading only CLI Core would retain a second conflict with the
+collection's `azure-core==1.38.0`. Both CLI Core `2.91.0` and
+[Azure Core 1.39.0](https://pypi.org/project/azure-core/1.39.0/) support the
+unchanged controller Python 3.11.
+
+The long-lived
+[Azure CLI issue #15212](https://github.com/Azure/azure-cli/issues/15212)
+reports an earlier CLI/Identity MSAL mismatch, and
+[Azure collection issue #1779](https://github.com/ansible-collections/azure/issues/1779)
+records recurring conflicts when collection and CLI dependencies are combined.
+These reports support validating the assembled graph, rather than treating
+successful direct-pin ownership as transitive compatibility proof.
+
+The EE now owns CLI Core `2.91.0` and Azure Core `1.39.0` explicitly alongside
+the unchanged identity pin. Builder excludes exactly those three inherited
+collection declarations, leaving every other requirement in the graph.
+The existing artifact owner's `resolve-requirements` mode accepts an explicit
+Builder-staged collection root and output path. Before invoking uv, it checks
+all staged manifests, their required versions and recursive collection
+dependencies through Ansible Galaxy's version comparator. A missing declared
+requirements file or transitive collection fails closed.
+
+The compiler consumes Builder's actual merged requirements plus the definition's
+Core and Runner pins, with the same embedded SearXNG configuration. It targets
+Python 3.11 and `x86_64-manylinux_2_28`; that conservative platform selection is
+not proof of the pinned base image's runtime ABI. The existing observed-command
+owner streams output, emits a 15-second heartbeat, and enforces the unchanged
+60-second quiet and 180-second standard-operation bounds. Failed resolution
+retains its observed evidence and leaves earlier output untouched; successful
+output is published atomically. No additional project environment, resolver,
+daemon or proof cache is introduced.
+
+Real resolution also validates the tools already present before introspection
+or compilation. The required uv version comes from the EE's own install
+declaration (`0.12.19`); the required Builder version comes from the controller's
+frozen `uv.lock` (`3.1.1`), rather than its broader project dependency range.
+A five-second `uv --version` probe and installed distribution metadata must
+match those exact identities. Unavailable metadata, a failed or malformed probe,
+or a mismatched version rejects resolution without installing or updating a
+tool and without publishing output. Matching identities are reported visibly.
+Offline plan mode does not inspect collections, probe executables, or read
+installed package metadata, and it creates no resolution output.
+
+Metadata overlap is focused evidence only. The complete graph must include
+every exact Builder-staged native, external, and transitive collection plus
+the owned user requirements, Ansible Core and Runner. The existing Builder
+introspection and uv `0.12.19` compiler supply that resolution; a fixture graph,
+an offline plan, or a successful requirements merge does not replace an actual
+complete solve. Preparing the frozen SearXNG source metadata may create a
+temporary isolated build environment with its existing package-specific PyYAML
+prerequisite. Runtime installation and build-isolation bypasses are unnecessary.
+
+Resolution and candidate builds leave the active image untouched. Hosted image
+assembly, offline imports, the exact-SHA canonical gate, both coverage floors,
+and warm, switch, drain and rollback evidence remain required before promotion.
+
+The public, offline-safe contract example is:
+
+```sh
+make resolve-ansible-runtime-requirements ANSIBLE_EE_COLLECTION_ROOT=/tmp/gludd-contract-ee-collections ANSIBLE_EE_RESOLUTION_OUTPUT=/tmp/gludd-contract-ee-resolution.txt ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1
+```
+
+Mode `0` requires the complete exact staged tree and matching existing tools.
+Mode `1` validates owned configuration and prints a plan without reading that
+tree, probing tools, installing packages or publishing output. The Make wrapper
+uses literal environment carriers, preserves quoted paths and existing output,
+and rejects invalid modes or missing inputs before invoking the owner.
+
+Actual failing-first evidence is 19 failures/51 passes for the complete-input
+contract, then 11 failures/69 passes for exact tool identity. Four public Make
+wrapper cases fail before wiring. After integration all 134 artifact, boundary,
+source-inspection and promotion cases pass with warnings fatal; the 103-case
+coverage replay measures 91.63% combined (93.35% line, 87.50% branch), above
+unchanged 85/75 floors. The two additional early families bind Linux transitive
+parity and complete-assembly contract acceptance, not a mocked solver success
+claim. The 217-target contract and actual safe example pass. This evidence is
+not a complete real collection solve or replacement image proof.

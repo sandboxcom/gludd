@@ -397,6 +397,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_accepts_the_existing_ledger_detail_shape",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-owned-linux-transitive-pin-parity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_runtime_artifacts.py::test_controller_cli_and_identity_share_supported_linux_transitives",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-complete-requirement-resolution-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_runtime_artifacts.py::test_resolve_requirements_uses_real_builder_assembly_and_bounded_uv_compile",
+      "full_gate_phase": "test"
     }
   ]
 }
