@@ -51,6 +51,26 @@ For an explicit source, use the normal readiness target with every argument:
 make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=path/to/receipt.json RELEASE_CANDIDATE_SHA=full-sha RELEASE_READINESS_CI_BRANCH=development
 ```
 
+## Prepared candidate versus publication
+
+`RELEASE_PROMOTE_PUBLISH` defaults to `1`, preserving live publication through
+`release-cut`. Only explicit `0` or `1` values are accepted; empty or unknown
+values fail before topology or evidence operations.
+
+In real mode, `RELEASE_PROMOTE_PUBLISH=0` still requires every existing exact-SHA
+local and hosted result, cleanliness guard, full milestone and receipt check,
+canonical master selection, exact fast-forward, and final branch/SHA verification.
+Only after those checks does it emit `RELEASE-PROMOTE-PREPARED` with the verified
+candidate SHA and `publish=0`. It exits without calling `release-cut`, pushing,
+creating a tag, or publishing artifacts. This supports the requested GitHub-flow
+integration and release preparation independently of a later publication request;
+it does not grant admission to an incomplete candidate.
+
+`RELEASE_PROMOTE_VALIDATE_ONLY=1` remains read-only with either publication
+selection: it runs validation and emits `RELEASE-PROMOTE-VALIDATED`, without
+selecting or advancing master. Preparation-only real mode is explicitly different
+because it advances canonical local master after the complete proof.
+
 A failed publication step propagates a nonzero result. If failure occurs after
 the local fast-forward, local master may remain at the verified candidate; the
 target does not rewrite shared history or automatically reverse published refs.
@@ -69,6 +89,9 @@ captured evidence routing, publication errors, and absent or mismatched receipts
 for both stable tags. The fake readiness owner distinguishes receipt-only
 validation from full admission: valid receipts with open or absent milestones,
 wrong source namespaces, and mismatched CI SHAs must all stop publication.
+Additional tests prove preparation-only mode performs every evidence check and
+exact master promotion, rejects failed proof before any ref write, emits its
+marker only after final verification, and never invokes publication owners.
 
 The literal `release-promote` behavioral example from
 `config/make_target_contract.json` is replayed through those isolated owners and

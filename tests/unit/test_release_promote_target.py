@@ -111,13 +111,21 @@ def test_public_help_and_make_contract_include_safe_behavior() -> None:
     assert "release-promote TAG=.. MSG=.." in makefile
     assert makefile.count('@echo "  release-promote') == 1
     assert "release-promote" in entries
-    assert entries["release-promote"]["make_variables"] == [
+    variables = entries["release-promote"]["make_variables"]
+    assert variables.count("RELEASE_PROMOTE_PUBLISH") <= 1
+    assert [variable for variable in variables if variable != "RELEASE_PROMOTE_PUBLISH"] == [
         "TAG",
         "MSG",
         "RELEASE_PROMOTE_VALIDATE_ONLY",
         "REVIEWED_HEAD_INTEGRATION_RECEIPT",
     ]
     assert "RELEASE_PROMOTE_VALIDATE_ONLY=1" in entries["release-promote"]["behavior"]
+    if "RELEASE_PROMOTE_PUBLISH" in variables:
+        arguments = dict(
+            item.split("=", 1) for item in shlex.split(entries["release-promote"]["behavior"])
+            if "=" in item
+        )
+        assert arguments["RELEASE_PROMOTE_PUBLISH"] in {"0", "1"}
 
 
 def test_release_deploy_is_only_a_compatibility_alias() -> None:
@@ -304,7 +312,7 @@ else:
 def _run_isolated_recipe(
     tmp_path: Path, target: str = "release-promote", *, validate: bool = False,
     tag: str = "v0.1.2", receipt: str = "valid", namespace: bool = True,
-    contract_example: bool = False,
+    contract_example: bool = False, publish: str | None = None,
     **state_overrides: object,
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
     """Run the actual recipe, mapping only its canonical path to harmless owners."""
@@ -343,8 +351,12 @@ def _run_isolated_recipe(
         "MAIN_PATH='/Users/shawnwilson/gludd'", f"MAIN_PATH='{canonical}'"
     )
     fixture_makefile = tmp_path / "Makefile"
+    defaults = "\n".join(
+        line for line in compose_makefile(MAKEFILE).splitlines()
+        if line.startswith("RELEASE_PROMOTE_PUBLISH ?=")
+    )
     fixture_makefile.write_text(
-        f"MAKE := {binary / 'make'}\nPYTHON := {binary / 'python'}\n"
+        defaults + f"\nMAKE := {binary / 'make'}\nPYTHON := {binary / 'python'}\n"
         f"UV := {binary / 'uv'}\n" + block + "\n",
         encoding="utf-8",
     )
@@ -363,6 +375,8 @@ def _run_isolated_recipe(
             "RELEASE_AWAIT_TIMEOUT=1", "RELEASE_AWAIT_INTERVAL=1",
             "RELEASE_READINESS_CI_BRANCH=" + str(state.get("readiness_ci_source", "")),
     ]
+    if publish is not None:
+        variables.append(f"RELEASE_PROMOTE_PUBLISH={publish}")
     if contract_example:
         entry = next(
             item for item in json.loads(CONTRACT.read_text())["targets"]
@@ -373,7 +387,10 @@ def _run_isolated_recipe(
         [real_make, "--no-print-directory", target, *variables],
         cwd=tmp_path, env=env, check=False, capture_output=True, text=True, timeout=10,
     )
-    events = [json.loads(line) for line in events_file.read_text().splitlines()]
+    events = (
+        [json.loads(line) for line in events_file.read_text().splitlines()]
+        if events_file.is_file() else []
+    )
     return result, events
 
 
@@ -599,4 +616,58 @@ def test_readiness_routes_ci_source_without_relabeling_master_checkout(
     assert args[args.index("--ci-branch") + 1] == source
     assert args[args.index("--expected-head-sha") + 1] == "b" * 40
     assert "--validate-only" not in args
+    assert _git_mutations(events) == []
+
+
+def test_prepare_only_promotes_verified_master_without_publication(tmp_path: Path) -> None:
+    """Preparing a candidate changes no admission requirement or publication ref."""
+    result, events = _run_isolated_recipe(tmp_path, publish="0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _make_targets(events) == [
+        "worktree-guard", "main-worktree-guard", "require-dual-track-green", "release-readiness",
+    ]
+    mutations = _git_mutations(events)
+    assert [event["args"][-2:] for event in mutations] == [
+        ["checkout", "master"], ["--ff-only", "b" * 40],
+    ]
+    assert all(event["canonical"] is True for event in mutations)
+    assert mutations[1]["branch"] == "master"
+    checks = events[events.index(mutations[1]) + 1:]
+    assert any("symbolic-ref" in event["args"] for event in checks)
+    assert any("rev-parse" in event["args"] for event in checks)
+    assert "RELEASE-PROMOTE-PREPARED" in result.stdout
+    assert "master=" + "b" * 40 in result.stdout
+    assert "publish=0" in result.stdout
+
+
+@pytest.mark.parametrize("failure", [
+    "worktree-guard", "main-worktree-guard", "require-dual-track-green", "release-readiness",
+])
+def test_prepare_only_rejected_evidence_still_prevents_every_ref_write(
+    tmp_path: Path, failure: str,
+) -> None:
+    result, events = _run_isolated_recipe(tmp_path, publish="0", fail=failure)
+    assert result.returncode != 0
+    assert "RELEASE-PROMOTE-PREPARED" not in result.stdout
+    assert _make_targets(events)[-1] == failure
+    assert _git_mutations(events) == []
+
+
+@pytest.mark.parametrize("validate", [False, True])
+@pytest.mark.parametrize("publish", ["", "unknown"])
+def test_invalid_publication_mode_fails_before_topology_or_evidence(
+    tmp_path: Path, validate: bool, publish: str,
+) -> None:
+    result, events = _run_isolated_recipe(tmp_path, validate=validate, publish=publish)
+    assert result.returncode == 2
+    assert "RELEASE_PROMOTE_PUBLISH must be 0 or 1" in result.stdout
+    assert events == []
+
+
+def test_prepare_selection_does_not_make_validation_mode_mutating(tmp_path: Path) -> None:
+    result, events = _run_isolated_recipe(tmp_path, validate=True, publish="0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "RELEASE-PROMOTE-VALIDATED" in result.stdout
+    assert "RELEASE-PROMOTE-PREPARED" not in result.stdout
+    assert "release-cut" not in _make_targets(events)
     assert _git_mutations(events) == []
