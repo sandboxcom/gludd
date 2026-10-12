@@ -17,6 +17,7 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 DEFAULT_REPO = "sandboxcom/gludd"
@@ -39,6 +40,7 @@ NON_TERMINAL = {"in_progress", "pending", "queued", "requested", "waiting"}
 
 RunCommand = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 ProgressFn = Callable[[str], None]
+_DEFAULT_PROGRESS: ProgressFn = partial(print, flush=True)
 ClockFn = Callable[[], float]
 SleepFn = Callable[[float], None]
 
@@ -176,7 +178,7 @@ def ci_await(
     fetch: Callable[[RunSelector], dict[str, Any] | None] | None = None,
     clock: ClockFn = time.monotonic,
     sleep: SleepFn = time.sleep,
-    progress: ProgressFn = print,
+    progress: ProgressFn = _DEFAULT_PROGRESS,
 ) -> int:
     """Wait for a terminal run; return 0 success, 1 failure, or 2 timeout."""
 

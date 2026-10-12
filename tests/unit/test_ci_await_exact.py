@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
@@ -213,6 +214,53 @@ def test_ci_await_returns_terminal_result_without_sleeping(
 
     assert result == expected
     assert sleeps == []
+
+
+class _ProgressPipe(io.StringIO):
+    """Record only output explicitly made visible to a piped caller."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.flushed: list[str] = []
+
+    def flush(self) -> None:
+        self.flushed.append(self.getvalue())
+        super().flush()
+
+
+def test_default_progress_is_flushed_before_first_remote_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipe = _ProgressPipe()
+    monkeypatch.setattr(sys, "stdout", pipe)
+
+    def fetch(_selector: await_module.RunSelector) -> dict[str, object]:
+        assert pipe.flushed, "startup must be observable before remote I/O"
+        assert "=== CI-AWAIT:" in pipe.flushed[-1]
+        return _payload(status="completed", conclusion="success")
+
+    assert await_module.ci_await(_selector(), 90, fetch=fetch, clock=lambda: 0.0) == 0
+    assert "TERMINAL SUCCESS" in pipe.flushed[-1]
+
+
+def test_default_progress_flushes_heartbeat_before_sleep_and_terminal_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipe = _ProgressPipe()
+    monkeypatch.setattr(sys, "stdout", pipe)
+    runs = iter([_payload(), _payload(status="completed", conclusion="failure")])
+
+    def sleep(seconds: float) -> None:
+        assert seconds == 10
+        assert pipe.flushed, "heartbeat must be observable before waiting"
+        assert "heartbeat; next check in 10s" in pipe.flushed[-1]
+
+    assert await_module.ci_await(
+        _selector(), 90, poll_interval=10,
+        fetch=lambda _selector: next(runs),
+        clock=iter([0.0, 0.0, 10.0]).__next__, sleep=sleep,
+    ) == 1
+    assert "TERMINAL FAILURE" in pipe.flushed[-1]
 
 
 def test_ci_await_retries_lookup_errors_then_succeeds() -> None:

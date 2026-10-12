@@ -347,6 +347,23 @@ neutral, stale, action-required, startup-failure, timed-out, or an unknown
 completed conclusion fails closed. Lookup errors and an absent run retry within
 one bounded 90-minute window, after which timeout remains non-success.
 
+The 2026-10-12 piped reproduction exposes a separate observability gap: the
+default progress callback prints heartbeats but leaves them buffered until
+process exit or interruption. The callback now uses the standard-library
+`functools.partial(print, flush=True)`, so startup is visible before the first
+remote lookup, each heartbeat is visible before sleeping, and terminal output
+is visible before returning. Two failing-first pipe regressions prove that
+ordering, with all original selectors, deadlines, exit codes, and injectable
+callbacks unchanged. The 39-case exact/codification cohort passes; the full
+33-case producer suite passes at 97% targeted coverage.
+
+This follows Python's documented
+[noninteractive stdout buffering](https://docs.python.org/3/library/sys.html#sys.stdout)
+and the long-lived practitioner discussion
+[Disable output buffering](https://stackoverflow.com/questions/107705/disable-output-buffering).
+The change adds no runner, service, process, environment, listener, or schema;
+rollback restores only callback construction after an active waiter exits.
+
 The poll interval falls from 60 seconds to 10 seconds. This cuts average discovery latency
 from at most 60 seconds to at most 10 seconds (and, under a uniform event arrival
 assumption, from 30 seconds to 5 seconds). The timeout ceiling rises from

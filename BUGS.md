@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — piped CI waiter buffered every observable heartbeat
+
+- **Observed**: The exact-SHA CI waiter remains silent through several 30-second polls; interrupting its owned local process flushes all 246 seconds of retained messages at once. No hosted workflow is cancelled.
+- **Repair and actual acceptance**: Two new pipe tests fail first because no startup/heartbeat flush occurs before lookup/sleep. The standard-library partial(print, flush=True) repairs the default callback without changing selectors, deadlines, return codes, or custom callbacks. All 39 exact/codification cases pass, with 33 producer cases at 97% targeted coverage, strict source/test typing and Ruff green. A new live waiter immediately emits its header and heartbeat through the tool pipe.
+- **Evidence boundary**: Both hosted Python quality gates and six artifact jobs now pass for `03e7cae`; its Python 3.11 early owner passes all 115 regressions in 20.03 seconds. EE reaches a newly exposed isolated SearXNG metadata import failure (missing yaml). Those partial hosted successes do not close S98 tasks or satisfy the still-disk-blocked canonical gate.
+
 ### 2026-10-12 — Linux terminal gate leaders looked live after verified TERM/KILL
 
 - **Observed**: Hosted Build `38266403588` unit-3b returns `termination_failed` instead of `timed_out` in three original launcher cases. A Linux zombie retains its start token, PGID, and SID until its parent reaps it, so identity alone cannot prove live execution.
