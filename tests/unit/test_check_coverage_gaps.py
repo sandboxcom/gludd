@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ast
 import json
+from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -369,14 +371,227 @@ def test_indirect_mapping_rejects_unrelated_facade_test(project: Path) -> None:
         _status(project)
 
 
+def _shared_facade_mapping(project: Path) -> Path:
+    """Build two component mappings sharing a transitive, cyclic import graph."""
+    widgets = project / "src" / "general_ludd" / "widgets"
+    (widgets / "facade.py").write_text("from .middle import build_engine\n")
+    (widgets / "middle.py").write_text(
+        "from .engine import Engine\nfrom .other import Other\n"
+        "from . import facade\n\ndef build_engine():\n    return Engine()\n"
+    )
+    test_file = project / "tests" / "unit" / "test_widget_facade.py"
+    test_file.write_text(
+        "import general_ludd.widgets.facade as facade\n\n"
+        "def test_engine_through_facade():\n    assert facade.build_engine() is not None\n"
+    )
+    mapping_path = project / "config" / "coverage_gap_test_mappings.json"
+    mapping_path.parent.mkdir()
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "indirect_test_mappings": {
+                    f"general_ludd.widgets.{component}": {
+                        "via": "general_ludd.widgets.facade",
+                        "tests": ["tests/unit/test_widget_facade.py"],
+                    }
+                    for component in ("engine", "other")
+                }
+            }
+        )
+    )
+    return test_file
+
+
+def test_index_parses_each_source_once_for_shared_facade_graph(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mapping count must not multiply parsing or traversal of shared sources."""
+    test_file = _shared_facade_mapping(project)
+    original_parse = checker._parse_python
+    original_reachable = checker._modules_reachable_from_source
+    parse_counts: Counter[Path] = Counter()
+    reachability_counts: Counter[str] = Counter()
+
+    def tracked_parse(path: Path) -> ast.Module | None:
+        parse_counts[path] += 1
+        return original_parse(path)
+
+    def tracked_reachable(
+        module: str,
+        source_modules: dict[str, Path],
+        source_imports: checker.SourceImports | None = None,
+    ) -> set[str]:
+        reachability_counts[module] += 1
+        return original_reachable(module, source_modules, source_imports)
+
+    monkeypatch.setattr(checker, "_parse_python", tracked_parse)
+    monkeypatch.setattr(checker, "_modules_reachable_from_source", tracked_reachable)
+
+    modules, counts = checker._build_test_index((test_file,))
+
+    assert counts == {test_file: 1}
+    assert modules["general_ludd.widgets.engine"] == (test_file,)
+    assert modules["general_ludd.widgets.other"] == (test_file,)
+    assert parse_counts == Counter(dict.fromkeys([*checker._source_module_paths().values(), test_file], 1))
+    assert reachability_counts == {"general_ludd.widgets.facade": 1}
+
+
+def test_index_rebuild_revalidates_changed_source_and_test_edges(project: Path) -> None:
+    """Reuse ends at the audit boundary so a later broken edge cannot be cached."""
+    test_file = _shared_facade_mapping(project)
+    checker._build_test_index((test_file,))
+    middle = project / "src" / "general_ludd" / "widgets" / "middle.py"
+    original = middle.read_text()
+    middle.write_text("from .other import Other\n")
+
+    with pytest.raises(checker.CoverageMappingError, match=r"does not import general_ludd\.widgets\.engine"):
+        checker._build_test_index((test_file,))
+
+    middle.write_text(original)
+    test_file.write_text("def test_unrelated():\n    assert True\n")
+    with pytest.raises(checker.CoverageMappingError, match="does not import facade"):
+        checker._build_test_index((test_file,))
+
+
+def test_selected_index_still_rejects_unselected_broken_source_mapping(project: Path) -> None:
+    """A focused test selection must retain validation of every declared facade."""
+    _shared_facade_mapping(project)
+    candidate = project / "tests" / "unit" / "test_widgets_engine.py"
+    candidate.write_text("from general_ludd.widgets.engine import Engine\n\ndef test_engine():\n    assert Engine()\n")
+    (project / "src" / "general_ludd" / "widgets" / "middle.py").write_text("from .other import Other\n")
+
+    with pytest.raises(checker.CoverageMappingError, match=r"does not import general_ludd\.widgets\.engine"):
+        checker._build_test_index((candidate,))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from general_ludd.widgets.engine import Engine\n\n"
+        "def test_engine():\n    assert Engine() is not None\n",
+        "import importlib.util\n\n"
+        "def load(path):\n    return importlib.util.spec_from_file_location('engine', path)\n\n"
+        "def test_engine():\n    assert load('src/general_ludd/widgets/engine.py') is not None\n",
+    ],
+    ids=["direct-import", "file-loader-wrapper"],
+)
+def test_index_walks_each_test_module_once(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    """Counting, imports, attributes and file loaders reuse one module traversal."""
+    test_file = project / "tests" / "unit" / "test_widget_behavior.py"
+    test_file.write_text(source)
+    original_parse = checker._parse_python
+    original_walk = ast.walk
+    parsed: dict[ast.Module, Path] = {}
+    walks: Counter[Path] = Counter()
+
+    def tracked_parse(path: Path) -> ast.Module | None:
+        tree = original_parse(path)
+        if tree is not None:
+            parsed[tree] = path
+        return tree
+
+    def tracked_walk(tree: ast.AST) -> Iterator[ast.AST]:
+        if isinstance(tree, ast.Module) and tree in parsed:
+            walks[parsed[tree]] += 1
+        return original_walk(tree)
+
+    monkeypatch.setattr(checker, "_parse_python", tracked_parse)
+    monkeypatch.setattr(ast, "walk", tracked_walk)
+
+    modules, counts = checker._build_test_index((test_file,))
+
+    assert counts == {test_file: 1}
+    assert modules["general_ludd.widgets.engine"] == (test_file,)
+    assert walks[test_file] == 1
+
+
+def test_source_import_summary_matches_fresh_relative_and_cyclic_graph(project: Path) -> None:
+    """Compact source edges retain the original transitive import semantics."""
+    _shared_facade_mapping(project)
+    source_modules = checker._source_module_paths()
+    source_imports: checker.SourceImports = {}
+    exports = checker._module_reexports(source_modules, source_imports)
+    facade = "general_ludd.widgets.facade"
+    expected = {
+        "general_ludd.widgets",
+        "general_ludd.widgets.engine",
+        "general_ludd.widgets.other",
+        "general_ludd.widgets.middle",
+    }
+
+    assert checker._modules_reachable_from_source(facade, source_modules) == expected
+    assert checker._modules_reachable_from_source(facade, source_modules, source_imports) == expected
+    assert checker._module_reexports(source_modules) == exports
+    for module, source_file in source_modules.items():
+        assert checker._modules_imported_by_source(module, source_file, source_modules) == source_imports[module]
+
+    invalid = project / "src" / "general_ludd" / "widgets" / "invalid.py"
+    invalid.write_text("def broken(:\n")
+    assert checker._modules_imported_by_source("general_ludd.widgets.invalid", invalid, source_modules) == set()
+
+
+@pytest.mark.parametrize(
+    ("entry", "error"),
+    [
+        (None, "must be an object"),
+        ({"via": "", "tests": ["tests/unit/test_widget_facade.py"]}, "needs a facade"),
+        ({"via": 42, "tests": ["tests/unit/test_widget_facade.py"]}, "needs a facade"),
+        ({"via": "general_ludd.widgets.facade", "tests": []}, "needs at least one test"),
+        ({"via": "general_ludd.widgets.facade", "tests": "test.py"}, "needs at least one test"),
+        ({"via": "general_ludd.widgets.facade", "tests": [None]}, "invalid test path"),
+        ({"via": "general_ludd.widgets.facade", "tests": [""]}, "invalid test path"),
+        ({"via": "general_ludd.widgets.facade", "tests": ["../escape.py"]}, "escapes the Python test tree"),
+        ({"via": "general_ludd.widgets.facade", "tests": ["tests/unit/test.txt"]}, "escapes the Python test tree"),
+        ({"via": "general_ludd.widgets.facade", "tests": ["tests/unit/missing.py"]}, "missing test"),
+    ],
+)
+def test_mapping_schema_cannot_bypass_coverage_validation(
+    project: Path,
+    entry: object,
+    error: str,
+) -> None:
+    test_file = _shared_facade_mapping(project)
+    mapping_path = project / "config" / "coverage_gap_test_mappings.json"
+    mapping_path.write_text(json.dumps({"indirect_test_mappings": {"general_ludd.widgets.engine": entry}}))
+
+    with pytest.raises(checker.CoverageMappingError, match=error):
+        checker._build_test_index((test_file,))
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        ("{", "invalid test mapping file"),
+        ("[]", "document must be an object"),
+        ("{}", "indirect_test_mappings must be an object"),
+        ('{"indirect_test_mappings": {"": {}}}', "names must be non-empty strings"),
+    ],
+)
+def test_mapping_document_errors_fail_the_audit(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+    payload: str,
+    error: str,
+) -> None:
+    mapping_path = project / "config" / "coverage_gap_test_mappings.json"
+    mapping_path.parent.mkdir()
+    mapping_path.write_text(payload)
+
+    assert checker.main(["check", "--json"]) == 2
+    output = capsys.readouterr()
+    assert error in output.err
+    assert output.out == ""
+
+
 def test_repository_split_component_mappings_are_exact_and_live(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pin every split component that the development coverage gate reported.
-
-    The full-repository index build is slow, so we verify the config file
-    exactly and spot-check a representative sample of live mappings.
-    """
+    """Pin and validate every split component through its live mapped tests."""
     root = Path(__file__).resolve().parents[2]
     monkeypatch.setattr(checker, "PROJECT_ROOT", root)
     monkeypatch.setattr(checker, "SRC_DIR", root / "src" / "general_ludd")
@@ -389,16 +604,10 @@ def test_repository_split_component_mappings_are_exact_and_live(
 
     assert observed == EXPECTED_SPLIT_MAPPINGS
 
-    # Spot-check a representative sample to prove the mappings are live.
-    sample = {
-        "general_ludd.cli_commands.parser": ("tests/unit/test_cli_module_split.py"),
-        "general_ludd.daemon_components.ports": ("tests/unit/test_daemon_module_split_compat.py"),
-        "general_ludd.event_loop.tick_lifecycle": ("tests/unit/test_event_loop_module_split.py"),
-    }
     test_index = checker._build_test_index()
     tests_by_module, test_counts = test_index
     source_modules = checker._source_module_paths()
-    for module, expected_test in sample.items():
+    for module, (_, expected_test) in EXPECTED_SPLIT_MAPPINGS.items():
         result = checker._check_module(source_modules[module], test_index)
         assert result["status"] == "OK", module
         covering_tests = {
