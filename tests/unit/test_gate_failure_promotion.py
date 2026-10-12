@@ -207,6 +207,31 @@ def _target_stanza(makefile: str, target: str) -> str:
     return makefile.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
 
 
+def test_gate_lock_prerequisite_failure_runs_in_whole_file_early_admission() -> None:
+    """A read-only admission check must not be confused with a stateful gate phase."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(
+        family for family in payload["families"]
+        if family["id"] == "gate-lock-prerequisite-order"
+    )
+    assert family == {
+        "id": "gate-lock-prerequisite-order",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": "tests/unit/test_gate_run_lock.py::test_gate_and_refresh_acquire_before_running_phases",
+        "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    assert "tests/unit/test_gate_run_lock.py" in owner
+    assert "test_gate_and_refresh_acquire_before_running_phases" in owner
+    phase = next(
+        phase for phase in payload["runtime_contract"]["phases"]
+        if phase["target"] == family["owner_target"]
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def test_hosted_fanout_requires_executed_runtime_admission() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text())
     jobs = workflow["jobs"]
@@ -514,6 +539,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "gate-timeout-owned-zombie",
         "gate-timeout-term-escalation-zombie",
         "gate-timeout-replaced-receipt-zombie",
+        "gate-lock-prerequisite-order",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -659,7 +685,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py '
         'tests/unit/test_session_persistence_integration.py '
         'tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::'
-        'test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py"'
+        'test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py '
+        'tests/unit/test_gate_run_lock.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
@@ -703,7 +730,10 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "gate-failure-promotions: PASS families=21" in result.stdout
+    # The exact family roster is pinned above; the CLI must report that roster,
+    # including newly mandated early regressions, without hard-coding an old size.
+    family_count = len(json.loads(MANIFEST.read_text(encoding="utf-8"))["families"])
+    assert f"gate-failure-promotions: PASS families={family_count} " in result.stdout
     assert "runtime_phases=21" in result.stdout
     assert "runtime_ceiling_seconds=2850" in result.stdout
     for phrase in (

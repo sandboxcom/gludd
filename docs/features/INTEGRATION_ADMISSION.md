@@ -26,11 +26,14 @@ the first nonzero result:
    missing mandatory full-gate phase.
 3. `pytest-runtime-compatibility` runs the complete crash-recovery,
    hook-runtime split compatibility, async-launcher, and session-persistence
-   files and the complete background-launcher file, plus the exact
+    files and the complete background-launcher and gate-run-lock files, plus the exact
    session-objective CI node, with `-W error` and one
    worker in the invoking Python environment. It rejects deprecated fixtures,
    runtime API snapshot drift, launcher policy drift, and invalid handoff
-   metadata before broader integration checks.
+    metadata before broader integration checks. The complete gate-run-lock cohort
+    includes real Make failure-injection checks: read-only admission precedes
+    lease acquisition, and every stateful gate phase remains protected by the
+    acquired lease. The original full-gate and refresh exclusion guards remain.
    Hosted Python 3.11/3.12 jobs retain their own interpreter coverage; admission
    reuses their environment without creating another dependency matrix.
 4. `ansible-role-variable-prefix` runs the exact warning-fatal

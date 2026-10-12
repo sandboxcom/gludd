@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — gate-lock fixture conflated read-only admission with stateful execution
+
+- **Observed**: Hosted unit-2 fails the old first-prerequisite assertion; native replay retains the same failure and 13 passes. The canonical release policy already requires read-only profile and exact-state checks before lease acquisition, and its existing acceptance explicitly pins that order.
+- **Instruction-conforming test repair**: Preserve production admission, locking, refresh ordering, lease release, active-owner refusal, and every other assertion. The obsolete first-token assertion now pins the exact supported header and existing serialization. Seven real Make cases run that header under -j2, observing native/release success and short-circuiting configuration, exact-state and lease failures before any protected phase. All 57 lock/canonical cases pass; no gate resource is acquired by the fixtures.
+- **Early prevention**: Three new manifest/wiring cases fail first. The existing compatibility owner now executes the complete 21-case gate-run-lock file, not just a comment or sampled selector. Its added failure family retains all 21 phases, the 2850-second total bound, warning-fatal one-worker execution and mandatory exhaustive full-gate proof. Strict typing and all 215 Make contracts remain required.
+- **Proof boundary**: These focused control-plane checks do not mark a task complete, change a serving process, restart a controller, raise a budget, or bypass the hard disk floor. Practitioner evidence and the unchanged canonical policy are recorded in the canonical release-gate document.
+
 ### 2026-10-12 — pinned EE source omitted an isolated metadata prerequisite
 
 - **Exact hosted cause**: Build `38278381965` at `03e7cae` reaches the served base, Git acquisition and current pip, then the frozen SearXNG metadata import fails with missing yaml. Two new acceptance cases reproduce the absent package-specific augmentation and missing generated installer boundaries before implementation.

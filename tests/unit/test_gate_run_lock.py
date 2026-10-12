@@ -156,12 +156,63 @@ def test_gate_and_refresh_acquire_before_running_phases() -> None:
         line for line in text.splitlines() if line.startswith("gate-refresh:")
     )
 
-    assert gate_header.split(":", 1)[1].strip().split()[0] == "_gate-run-lock-acquire"
+    # Admission is read-only; it must reject invalid policy before acquiring a
+    # lease. The lock is still mandatory before any stateful gate recipe runs.
+    assert gate_header == (
+        "gate: gate-admission-config "
+        "$(if $(filter release,$(GATE_TEST_PROFILE)),_gate-release-state-check,) "
+        "_gate-run-lock-acquire"
+    )
+    assert ".NOTPARALLEL: gate gate-refresh" in text
     assert (
         refresh_header.split(":", 1)[1].strip().split()[0]
         == "_gate-run-lock-acquire"
     )
     assert text.count('gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID"') >= 2
+
+
+@pytest.mark.parametrize(
+    ("profile", "failed_check"),
+    [
+        ("native", None),
+        ("release", None),
+        ("native", "gate-admission-config"),
+        ("release", "gate-admission-config"),
+        ("release", "_gate-release-state-check"),
+        ("native", "_gate-run-lock-acquire"),
+        ("release", "_gate-run-lock-acquire"),
+    ],
+)
+def test_real_gate_prerequisites_admit_before_lock_and_lock_before_phases(
+    tmp_path: Path, profile: str, failed_check: str | None,
+) -> None:
+    """Exercise the actual header's ordered checks without acquiring a real lease."""
+    source = compose_makefile(MAKEFILE)
+    header = next(line for line in source.splitlines() if line.startswith("gate:"))
+    targets = ["gate-admission-config", "_gate-release-state-check", "_gate-run-lock-acquire"]
+    fixture = tmp_path / "Makefile"
+    fixture.write_text(
+        f"GATE_TEST_PROFILE := {profile}\n.NOTPARALLEL: gate gate-refresh\n"
+        f"{header}\n\t@printf 'phase\\n' >> events\n"
+        + "\n".join(
+            f"{target}:\n\t@printf '{target}\\n' >> events\n"
+            + ("\t@exit 9\n" if target == failed_check else "")
+            for target in targets
+        ),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-j2", "-f", str(fixture), "gate"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=15, check=False,
+    )
+    expected = [targets[0], *([targets[1]] if profile == "release" else []), targets[2]]
+    if failed_check is None:
+        assert result.returncode == 0, result.stdout + result.stderr
+        expected.append("phase")
+    else:
+        assert result.returncode != 0
+        expected = expected[:expected.index(failed_check) + 1]
+    assert (tmp_path / "events").read_text(encoding="utf-8").splitlines() == expected
 
 
 def test_history_mutation_targets_depend_on_active_gate_guard() -> None:

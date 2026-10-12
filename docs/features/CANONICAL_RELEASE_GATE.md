@@ -50,6 +50,22 @@ Neither validation mode creates a daemon, test worker, or attestation. Both
 background targets validate policy before launching and explicitly forward the
 profile, resume, batch size, worker limit, and captured candidate SHA.
 
+The gate performs read-only configuration and exact-candidate admission before
+acquiring its owned lease. Lease acquisition still precedes every stateful gate
+recipe; failed admission or failed acquisition starts no gate phase. The existing
+`.NOTPARALLEL: gate gate-refresh` is retained. Seven real Make checks execute the
+actual prerequisite header for native/release policy and inject failure at each
+check, including under `-j2`. The old lock fixture's first-token assumption is
+conformed to this documented admission boundary, while refresh ordering,
+release calls, active-owner protection, and every other assertion remain intact.
+
+This follows the long-lived
+[Make prerequisite-order discussion](https://stackoverflow.com/questions/9159960/order-of-processing-components-in-makefile):
+prerequisite position is not a general parallel-execution guarantee. Gludd keeps
+its explicit serialization and tests observable phase execution, rather than
+equating a read-only policy check with a protected stateful phase. No serving
+process, deployment change, lease bypass, or validation-budget increase follows.
+
 Release admission rejects unknown profiles, `PYTEST_CMD`, extra `PYTEST_ARGS` or
 `PYTEST_ADDOPTS`, dirty or focused-reproduction exemptions, producer
 validation-only mode, more than one worker, overridden preflight selection, and

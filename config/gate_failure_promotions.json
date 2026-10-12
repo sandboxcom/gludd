@@ -306,6 +306,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_start_gate_background.py::test_timeout_never_removes_a_replaced_pid_receipt",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "gate-lock-prerequisite-order",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_gate_run_lock.py::test_gate_and_refresh_acquire_before_running_phases",
+      "full_gate_phase": "test"
     }
   ]
 }
