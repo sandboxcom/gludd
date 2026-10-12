@@ -83,6 +83,39 @@ never upgrades failure to pass, and uses the existing cancellation finalizer to
 write a signed terminal failure and release its locks and temporary directory.
 Direct child cancellation codes retain the same cleanup path.
 
+## Reviewed fixture finding in the secrets baseline
+
+The public `GATE_PREFLIGHT_TARGETS` rejection fixture triggered the pinned
+detect-secrets 1.5.0 Base64-entropy heuristic during a real pre-push check.
+Its literal argument selects a local Make fixture target; it is not a credential,
+does not authorize any service, and is deliberately rejected by release
+admission. The unchanged test continues to exercise that real guard.
+
+An observed scan using the existing baseline manager and policy found exactly
+one new identity and no removed identities. Review reconciled only that finding
+into `.secrets.baseline`, labelled `is_secret=false`, while retaining every
+existing finding, audit label, scanner setting, threshold, and exclusion.
+No test rewrite, inline pragma, plugin disable, file exclusion, hook change, or
+push bypass was introduced. Content-free classification and scanner-hash
+evidence are retained outside the checkout; unknown findings remain unapproved.
+
+Validate the canonical artifact without changing it:
+
+```text
+make secrets-baseline-check SECRETS_BASELINE_FILE=.secrets.baseline POLICY=config/detect_secrets_baseline_policy.json REPO_ROOT=. EXECUTABLE=detect-secrets
+```
+
+The existing read-only hook still scans source using a disposable baseline copy
+and refuses every new path/detector/hash occurrence. Audit labels do not alter
+that detection boundary. [Upstream's pinned audit guide][secrets-audit] explains
+review labels; its [design reference][secrets-design] explains identity and
+volatile line metadata. A [practitioner report from 2022-10-22][secrets-forum]
+records a detector mistaking a source identifier for a secret. That report
+involves a different detector, but reinforces reviewing the actual consumer and
+identity rather than broadly suppressing a heuristic. This baseline-only
+reconciliation allocates no environment and changes no deployment or release
+admission policy.
+
 ## Verification and practitioner evidence
 
 Behavioral regressions execute the real shell driver, the extracted real Make
@@ -134,3 +167,6 @@ commit; ordinary native development gates retain their prior test policy.
 [make-recursion]: https://www.gnu.org/s/make/manual/html_node/Quick-Reference.html
 [make-practitioner]: https://lists.gnu.org/r/bug-make/2020-12/msg00055.html
 [pytest-timeout]: https://github.com/pytest-dev/pytest-timeout/issues/60
+[secrets-audit]: https://github.com/Yelp/detect-secrets/blob/v1.5.0/docs/audit.md
+[secrets-design]: https://github.com/Yelp/detect-secrets/blob/v1.5.0/docs/design.md
+[secrets-forum]: https://github.com/Yelp/detect-secrets/issues/629
