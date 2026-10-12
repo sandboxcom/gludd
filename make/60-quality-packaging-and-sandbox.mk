@@ -183,7 +183,7 @@ rpm-package:
 # --- macOS .dmg packaging ---
 # Builds a read-only compressed .dmg from the PyInstaller binary.
 # Only runs on macOS (requires hdiutil).
-DMG_NAME := gludd-$(VERSION)-macos-arm64.dmg
+DMG_NAME = gludd-$(VERSION)-macos-arm64.dmg
 DMG_VOLUME := gludd-install
 macos-dmg: build-executable
 	@if [ "$$(uname -s)" != "Darwin" ]; then echo "macos-dmg requires macOS (hdiutil)"; exit 1; fi
@@ -205,7 +205,7 @@ macos-dmg: build-executable
 # Creates a Windows installer .exe from the PyInstaller binary.
 # Requires makensis (NSIS). Install: brew install makensis or apt install nsis.
 NSI_SCRIPT := dist/windows/gludd.nsi
-WINDOWS_INSTALLER := gludd-$(VERSION)-setup-x86_64.exe
+WINDOWS_INSTALLER = gludd-$(VERSION)-setup-x86_64.exe
 windows-installer:
 	@if ! command -v makensis >/dev/null 2>&1; then echo "windows-installer requires makensis (NSIS). Install: brew install makensis or apt install nsis"; exit 1; fi
 	@echo "Building $(WINDOWS_INSTALLER)..."

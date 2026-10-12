@@ -75,13 +75,52 @@ def test_actual_git_helper_is_silent_without_environment_and_keeps_runtime_check
     assert "fixture runtime import forbidden" in runtime_check.stderr
 
 
+def test_actual_git_helper_is_silent_without_source_metadata_or_environment(
+    tmp_path: Path,
+) -> None:
+    shutil.copy(ROOT / "Makefile", tmp_path / "Makefile")
+    shutil.copytree(ROOT / "make", tmp_path / "make")
+    (tmp_path / "scripts").symlink_to(ROOT / "scripts", target_is_directory=True)
+    _git(tmp_path, "init", "--quiet")
+    _git(tmp_path, "config", "user.name", "Make fixture")
+    _git(tmp_path, "config", "user.email", "make-fixture@example.invalid")
+    _git(tmp_path, "add", "Makefile")
+    _git(tmp_path, "commit", "--quiet", "-m", "metadata-free fixture")
+
+    diagnostic = _make(tmp_path, "git-show-commit", "C=HEAD")
+    assert diagnostic.returncode == 0, diagnostic.stdout + diagnostic.stderr
+    assert diagnostic.stderr == ""
+    assert "--- HEAD summary ---" in diagnostic.stdout
+    assert not (tmp_path / "pyproject.toml").exists()
+    assert not (tmp_path / ".venv").exists()
+    assert not (tmp_path / "uv.lock").exists()
+    assert not (tmp_path / "src").exists()
+
+
+def test_unrelated_external_make_dry_run_needs_no_metadata_and_preserves_environment(
+    tmp_path: Path,
+) -> None:
+    sentinel = tmp_path / ".venv/required-package"
+    sentinel.parent.mkdir()
+    sentinel.write_text("leased", encoding="utf-8")
+    contents_before = sorted(path.relative_to(tmp_path) for path in tmp_path.rglob("*"))
+
+    diagnostic = _make(tmp_path, "-n", f"-I{ROOT}", "-f", str(ROOT / "Makefile"), "clean")
+    assert diagnostic.returncode == 0, diagnostic.stdout + diagnostic.stderr
+    assert diagnostic.stderr == ""
+    assert sentinel.read_text(encoding="utf-8") == "leased"
+    assert sorted(path.relative_to(tmp_path) for path in tmp_path.rglob("*")) == contents_before
+    assert not (tmp_path / "pyproject.toml").exists()
+    assert not (tmp_path / "uv.lock").exists()
+
+
 def _packaging_fixture(tmp_path: Path, project_text: str | None) -> None:
     foundation = (ROOT / "make/50-development-and-guardrails.mk").read_text().splitlines()
     packaging = (ROOT / "make/60-quality-packaging-and-sandbox.mk").read_text().splitlines()
     definitions = [
         line for line in foundation if line.startswith(("VERSION =", "TARBALL_NAME ="))
     ] + [
-        line for line in packaging if line.startswith(("DMG_NAME :=", "WINDOWS_INSTALLER :="))
+        line for line in packaging if line.startswith(("DMG_NAME =", "WINDOWS_INSTALLER ="))
     ]
     (tmp_path / "names.mk").write_text(
         "UV := uv\nGLUDD_UV_CACHE_DIR := /tmp/gludd-uv-cache-public-v2\nPLATFORM := fixture-platform\n"
@@ -128,6 +167,20 @@ def test_make_command_line_version_override_precedence_is_unchanged(tmp_path: Pa
     assert result.stdout.splitlines() == [
         "7.8.9", "general-ludd-agent-7.8.9-fixture-platform",
         "gludd-7.8.9-macos-arm64.dmg", "gludd-7.8.9-setup-x86_64.exe",
+    ]
+
+
+def test_packaging_name_command_line_overrides_remain_authoritative(tmp_path: Path) -> None:
+    _packaging_fixture(tmp_path, None)
+    result = _make(
+        tmp_path, "-f", "names.mk", "names", "VERSION=7.8.9",
+        "DMG_NAME=custom-installer.dmg", "WINDOWS_INSTALLER=custom-installer.exe",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stderr == ""
+    assert result.stdout.splitlines() == [
+        "7.8.9", "general-ludd-agent-7.8.9-fixture-platform",
+        "custom-installer.dmg", "custom-installer.exe",
     ]
 
 

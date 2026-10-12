@@ -29,8 +29,8 @@ a release or replace the full gate and its unchanged 85/75 coverage floors.
 
 ## Read-only source version metadata
 
-Packaging-name defaults expand `VERSION` during Make parsing, even when the
-requested target is only `git-show-commit`. The previous runtime import
+Packaging-name defaults previously expanded `VERSION` during Make parsing,
+even when the requested target was only `git-show-commit`. The runtime import
 allocated an empty `.venv` in a fresh checkout and emitted two application
 import failures before the otherwise successful Git diagnostic.
 
@@ -45,11 +45,20 @@ read-only targets, and introduces no new `UV` override.
 The reader binds its project explicitly to the current checkout, so an ambient
 `UV_PROJECT` setting cannot substitute another project's version.
 
+`DMG_NAME` and `WINDOWS_INSTALLER` use GNU Make's existing recursively expanded
+`=` assignment, like the tarball default. Unrelated Git helpers and an external
+`clean` dry run therefore do not evaluate version metadata at all, even in a
+fresh Git fixture with no `pyproject.toml`, application source, or environment.
+This fixes the unnecessary lookup rather than adding metadata to every fixture.
+
 The existing command-line `VERSION` precedence, tarball name, macOS DMG name,
-and Windows installer name are preserved. Explicit `make version` still uses
-the application runtime and exposes its import failures. Missing, malformed,
-or empty source metadata fails with the original diagnostic and a Make error;
-there is no silent fallback to an installed package's possibly stale version.
+Windows installer name, and explicit installer-name overrides are preserved.
+Explicit `make version` still uses the application runtime and exposes its
+import failures. When version-dependent names are requested, missing, malformed,
+or empty source metadata still fails with the original diagnostic and a Make
+error; there is no silent fallback to an installed package's possibly stale
+version. A dry run of an unrelated target preserves the leased environment's
+sentinel and exact directory inventory.
 
 The read-only behavioral example is:
 
@@ -63,6 +72,9 @@ silent on stderr, leave `.venv` and `uv.lock` absent, and preserve the exact
 source metadata bytes. The explicit runtime command must still fail. Additional
 actual packaging-default cases check the precise project field rather than an
 unrelated table's version, command-line precedence, and invalid source metadata.
+The tiny packaging fixture extracts the lazy definitions without replacing
+their behavior; its four invalid-metadata cases still request actual names and
+must fail. Metadata-free helper fixtures instead prove no lookup is required.
 
 The workflow-state, writable-cache, and dependency-profile contracts inspect
 only the `VERSION` definition when pinning this offline, checkout-bound reader.
@@ -100,6 +112,13 @@ Research reviewed on 2026-10-12:
   dependencies are installed. Its installed-distribution approaches address a
   different lifecycle from a fresh source checkout; this helper reads the
   checkout's metadata instead.
+- GNU Make's [recursive-assignment][make-recursive] and
+  [simple-assignment][make-simple] references distinguish use-time expansion
+  from definition-time expansion. This change applies deferred expansion only
+  to the two version-dependent packaging defaults; it adds no custom loader or
+  persistent cache. A [practitioner discussion begun in 2011][lazy-forum],
+  including an unused shell-command example added in 2021, records how eager
+  assignments can execute work even when no target consumes their value.
 
 ZDD is nonmutation of deployments: these helpers do not promote branches, tag,
 publish, or restart services. The implementation adds no persistent process and
@@ -114,3 +133,6 @@ the full suite or a gate.
 [uv-version]: https://docs.astral.sh/uv/reference/cli/#uv-version
 [project-version]: https://packaging.python.org/en/latest/specifications/pyproject-toml/#version
 [version-forum]: https://stackoverflow.com/questions/2058802/how-can-i-get-the-version-defined-in-setup-py-setuptools-in-my-package
+[make-recursive]: https://www.gnu.org/software/make/manual/html_node/Recursive-Assignment.html
+[make-simple]: https://www.gnu.org/software/make/manual/html_node/Simple-Assignment.html
+[lazy-forum]: https://stackoverflow.com/questions/4879592/whats-the-difference-between-and-in-makefile
