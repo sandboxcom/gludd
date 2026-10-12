@@ -117,7 +117,7 @@ def test_gate_background_observed_keeps_the_launch_owner_alive() -> None:
     content = _content()
     idx = content.find("gate-background-observed:")
     assert idx != -1, "Makefile missing 'gate-background-observed:' target"
-    recipe_block = content[idx : idx + 800]
+    recipe_block = content[idx:].split("# Launch gate-lite detached", 1)[0]
 
     launch = "$(_GATE_MAKE) --no-print-directory gate-background"
     wait = "$(_GATE_MAKE) --no-print-directory gate-wait"
