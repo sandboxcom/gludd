@@ -388,8 +388,7 @@
   }
 
   async function awaitStableSvg(container, deadline) {
-    await animationFrame();
-    await animationFrame();
+    // Mermaid already awaited layout; yield only if measured geometry is not ready.
     while (window.performance.now() < deadline) {
       if (
         validSvgMetadata(container) &&

@@ -345,6 +345,18 @@ visibility-triggered recovery, reload/zoom-sensitive WebKit layout, invalid
 descendant transforms, and clipped text; an SVG-exists assertion alone would
 not catch those failures.
 
+Hosted Pages run `38266402434` later reports chart readiness at 5.410677231
+seconds against the unchanged five-second browser budget. The scratch-SVG
+readiness loop now checks metadata and real positive geometry immediately,
+yielding an animation frame only when those conditions are not yet satisfied.
+It no longer spends two unconditional idle frames on every already-measured
+chart. Eight failing-first Node cases execute the production function and retain
+invalid-metadata/geometry rejection, bounded waiting, and no success at or after
+the deadline. This preserves the actual geometry checks motivated by the WebKit
+reports above; it does not treat an existing SVG element alone as ready. Local
+Playwright prerequisites are absent, so a fresh hosted browser run remains
+required; focused Node acceptance is not the five-second browser proof.
+
 The browser contract serves the exact Pages upload tree below `/gludd/`. In both
 Chromium and WebKit it requires all charts to become decoded SVG images with
 positive natural and client dimensions on a cold load and a cached reload,
