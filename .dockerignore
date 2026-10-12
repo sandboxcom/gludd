@@ -1,0 +1,26 @@
+# Reproducible local tooling and evidence are not container build inputs.
+.git
+.venv
+.venv-*
+.gate-logs
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.cache
+.gludd
+.opencode/node_modules
+**/__pycache__
+**/*.pyc
+infra/terraform/.plugin-cache
+**/.terraform
+
+# Operator credentials and live state must remain outside uploaded contexts.
+.env
+.env.*
+.aws
+.ssh
+.gnupg
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+**/*.tfvars.json

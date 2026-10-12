@@ -57,7 +57,8 @@ class TestCrashRecoveryStatic:
     """Source-level assertions that the crash-recovery code exists."""
 
     @pytest.fixture(scope="class")
-    def src(self):
+    @classmethod
+    def src(cls):
         return PLUGIN.read_text()
 
     def test_session_state_has_pid_field(self, src):

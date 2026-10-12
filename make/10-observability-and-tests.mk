@@ -93,15 +93,17 @@ _ci-replica-clean-tree:
 	exit 1
 
 DUAL_TRACK_RESUME ?= 1
+DUAL_TRACK_WATCHDOG_OWNED_GATE ?= 0
 
 test-ci-dual-track-local: $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),,_ci-replica-clean-tree)
 	@$(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),:,$(MAKE) node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false)
-	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	@set -e; RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
 	TOOLCHAIN_ROOT="$${RESOURCE_ROOT}-toolchain"; \
 	UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py sync --root "$(CURDIR)" --set ci --environment "$$TOOLCHAIN_ROOT/ci-shards/python-3.11" --python 3.11; \
 	UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11" GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run --no-sync --python 3.11 python scripts/run_ci_shards_serial.py \
 		--pytest-args="-W error $(PYTEST_ARGS)" \
 		--require-release-policy \
+		--batch-workers 1 $(if $(filter 1,$(DUAL_TRACK_WATCHDOG_OWNED_GATE)),--watchdog-owned-gate,) \
 		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),16)" $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),--validate-only,) \
 		$(if $(filter 1,$(DUAL_TRACK_RESUME)),--resume,) \
 		--attestation-output "$$RESOURCE_ROOT/ci-shards/attestation.json"
@@ -720,6 +722,14 @@ _module-graph-classification:
 	@$(MAKE) --no-print-directory test-specific \
 		TESTFILE="tests/unit/test_module_graph_deep.py::test_all_subpackages_classified"
 
+_pytest-runtime-compatibility-admission:
+# tests/unit/test_session_start_crash_recovery.py::TestCrashRecoveryStatic::test_session_state_has_pid_field
+# tests/unit/test_hook_runtime_split_compat.py::test_case_inventory_order_signatures_and_marks_match_pre_split_snapshot
+# tests/unit/test_hook_runtime_split_compat.py::test_helper_signatures_match_pre_split_snapshot
+	@$(MAKE) --no-print-directory test-files \
+		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py" \
+		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"
+
 _ansible-role-variable-prefix:
 	@$(MAKE) --no-print-directory test-specific \
 		TESTFILE="tests/unit/test_ansible_lint_deep.py::test_role_variables_use_namespaced_prefix" \
@@ -775,6 +785,7 @@ integration-admission:
 	run_phase "worktree-guard" "worktree-guard" "fast" "90" "60" $(MAKE) --no-print-directory worktree-guard; \
 	run_phase "check-gate-failure-promotions" "check-gate-failure-promotions" "fast" "90" "60" $(MAKE) --no-print-directory check-gate-failure-promotions \
 		GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"; \
+	run_phase "pytest-runtime-compatibility" "_pytest-runtime-compatibility-admission" "fast" "90" "60" $(MAKE) --no-print-directory _pytest-runtime-compatibility-admission; \
 	run_phase "ansible-role-variable-prefix" "_ansible-role-variable-prefix" "fast" "90" "60" $(MAKE) --no-print-directory _ansible-role-variable-prefix; \
 	run_phase "cloud-iam-generation-parity" "_cloud-iam-generation-parity" "fast" "90" "60" $(MAKE) --no-print-directory _cloud-iam-generation-parity; \
 	run_phase "_dead-code-baseline-refresh" "_dead-code-baseline-refresh" "fast" "90" "60" $(MAKE) --no-print-directory _dead-code-baseline-refresh; \
@@ -858,12 +869,21 @@ pants-unit-cache-nightly:
 
 .NOTPARALLEL: gate gate-refresh
 
+GATE_TEST_PROFILE ?= native
+GATE_CANDIDATE_SHA := $(or $(GATE_CANDIDATE_SHA),$(shell git rev-parse HEAD 2>/dev/null))
 GATE_EXACT_SHA_RESUME ?= 1
 GATE_MAX_FILES_PER_BATCH ?= 32
+ifeq ($(GATE_TEST_PROFILE),release)
+GATE_BATCH_WORKERS ?= 1
+endif
 GATE_BATCH_WORKERS ?= 2
+# The supported background launcher inherits these values through its owned
+# session. Keep the exact candidate immutable across recursive Make children.
+export GATE_TEST_PROFILE GATE_CANDIDATE_SHA GATE_EXACT_SHA_RESUME GATE_MAX_FILES_PER_BATCH GATE_BATCH_WORKERS
 
 .PHONY: gate-admission-config
 gate-admission-config:
+	@case "$(GATE_TEST_PROFILE)" in native|release) ;; *) echo "ERROR: GATE_TEST_PROFILE must be native or release"; exit 2;; esac
 	@case "$(GATE_EXACT_SHA_RESUME)" in 0|1) ;; *) echo "ERROR: GATE_EXACT_SHA_RESUME must be 0 or 1"; exit 2;; esac
 	@case "$(GATE_MAX_FILES_PER_BATCH)" in ''|*[!0-9]*) echo "ERROR: GATE_MAX_FILES_PER_BATCH must be an integer in 1..32"; exit 2;; esac; \
 	if [ "$(GATE_MAX_FILES_PER_BATCH)" -lt 1 ] || [ "$(GATE_MAX_FILES_PER_BATCH)" -gt 32 ]; then \
@@ -873,7 +893,28 @@ gate-admission-config:
 	if [ "$(GATE_BATCH_WORKERS)" -lt 1 ] || [ "$(GATE_BATCH_WORKERS)" -gt 2 ]; then \
 		echo "ERROR: GATE_BATCH_WORKERS must be in 1..2"; exit 2; \
 	fi
-	@echo "GATE-ADMISSION-CONFIG exact_sha_resume=$(GATE_EXACT_SHA_RESUME) max_files_per_batch=$(GATE_MAX_FILES_PER_BATCH) workers=$(GATE_BATCH_WORKERS) coverage=85/75"
+	@if [ "$(GATE_TEST_PROFILE)" = "release" ]; then \
+		if [ "$(if $(strip $(PYTEST_CMD) $(PYTEST_ARGS) $(PYTEST_ADDOPTS)),1,0)" = "1" ]; then \
+			echo "ERROR: release profile rejects PYTEST_CMD, PYTEST_ARGS and PYTEST_ADDOPTS overrides"; exit 2; \
+		fi; \
+		if [ "$(if $(filter-out 0,$(or $(ALLOW_DIRTY_CI_REPLICA),0) $(or $(ALLOW_DIRTY_FOCUSED_REPRO),0) $(or $(DUAL_TRACK_LOCAL_VALIDATE_ONLY),0) $(MYPY_MAX)),1,0)" = "1" ]; then \
+			echo "ERROR: release profile rejects dirty, diagnostic, validation-only and typecheck overrides"; exit 2; \
+		fi; \
+		if [ "$(GATE_BATCH_WORKERS)" != "1" ] || [ "$(if $(filter file undefined,$(origin GATE_PREFLIGHT_TARGETS)),0,1)" = "1" ]; then \
+			echo "ERROR: release profile requires one worker and every canonical preflight"; exit 2; \
+		fi; \
+	fi
+	@echo "GATE-ADMISSION-CONFIG profile=$(GATE_TEST_PROFILE) exact_sha_resume=$(GATE_EXACT_SHA_RESUME) max_files_per_batch=$(GATE_MAX_FILES_PER_BATCH) workers=$(GATE_BATCH_WORKERS) coverage=85/75"
+
+.PHONY: _gate-release-state-check
+_gate-release-state-check:
+	@if [ "$(GATE_TEST_PROFILE)" != "release" ]; then exit 0; fi; \
+	HEAD_SHA=$$(git rev-parse HEAD) || exit 2; \
+	DIRTY=$$(git status --porcelain --untracked-files=all) || exit 2; \
+	if [ -z "$(GATE_CANDIDATE_SHA)" ] || [ "$$HEAD_SHA" != "$(GATE_CANDIDATE_SHA)" ] || [ -n "$$DIRTY" ]; then \
+		echo "ERROR: release profile requires the same clean exact candidate SHA throughout the gate"; exit 2; \
+	fi; \
+	echo "GATE-RELEASE-IDENTITY PASS sha=$$HEAD_SHA"
 
 GATE_PREFLIGHT_TARGETS := \
 	gate-admission-config \
@@ -975,7 +1016,7 @@ _gate-validation-admission:
 	cat "$(GATE_ADMISSION_FINAL_STATUS)"; \
 	exit 1
 
-gate: _gate-run-lock-acquire
+gate: gate-admission-config $(if $(filter release,$(GATE_TEST_PROFILE)),_gate-release-state-check,) _gate-run-lock-acquire
 	@rm -f .gate-failed .gate-status.next .gate-status.running .gate-terminalized
 	@mkdir -p .gate-logs
 	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
@@ -1048,7 +1089,7 @@ gate: _gate-run-lock-acquire
 	@#       on any exit, preventing orphan-holds-lock / tmp-leak after a kill.
 	@# run_gate.sh writes a complete test result to the private status snapshot
 	@# and touches .gate-failed on failure, so we only need to propagate its exit.
-	@GLUDD_GATE_EXACT_SHA_RESUME="$(GATE_EXACT_SHA_RESUME)" GLUDD_GATE_MAX_FILES_PER_BATCH="$(GATE_MAX_FILES_PER_BATCH)" GLUDD_GATE_BATCH_WORKERS="$(GATE_BATCH_WORKERS)" GLUDD_GATE_OWNER_PID="$$PPID" GATE_RUN_LOCK_PATH="$(GATE_RUN_LOCK)" GATE_RUN_LOCK_OWNER_PID="$$PPID" GATE_FINAL_STATUS_FILE=.gate-status GATE_TERMINALIZED_FILE=.gate-terminalized GATE_STATUS_FILE=.gate-status.next GATE_FAILED_FILE=.gate-failed bash scripts/run_gate.sh || { EXIT=$$?; \
+	@GATE_TEST_PROFILE="$(GATE_TEST_PROFILE)" GLUDD_CANDIDATE_SHA="$(GATE_CANDIDATE_SHA)" GLUDD_GATE_EXACT_SHA_RESUME="$(GATE_EXACT_SHA_RESUME)" GLUDD_GATE_MAX_FILES_PER_BATCH="$(GATE_MAX_FILES_PER_BATCH)" GLUDD_GATE_BATCH_WORKERS="$(GATE_BATCH_WORKERS)" GLUDD_GATE_OWNER_PID="$$PPID" GATE_RUN_LOCK_PATH="$(GATE_RUN_LOCK)" GATE_RUN_LOCK_OWNER_PID="$$PPID" GATE_FINAL_STATUS_FILE=.gate-status GATE_TERMINALIZED_FILE=.gate-terminalized GATE_STATUS_FILE=.gate-status.next GATE_FAILED_FILE=.gate-failed bash scripts/run_gate.sh || { EXIT=$$?; \
 		if [ -f .gate-terminalized ]; then echo "[gate] cancellation finalized and authenticated"; exit "$$EXIT"; fi; \
 		grep -q '^test .*FAIL' .gate-status.next 2>/dev/null || echo "test FAIL non-zero-exit $$EXIT" >> .gate-status.next; \
 		touch .gate-failed; \
@@ -1057,6 +1098,11 @@ gate: _gate-run-lock-acquire
 	@echo "=== GATE PHASE: smoke ==="
 	@printf "smoke " >> .gate-status.next
 	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
+	@if [ "$(GATE_TEST_PROFILE)" = "release" ]; then \
+		$(MAKE) --no-print-directory _gate-release-state-check GATE_CANDIDATE_SHA="$(GATE_CANDIDATE_SHA)" \
+			&& echo "release-identity PASS sha=$(GATE_CANDIDATE_SHA)" >> .gate-status.next \
+			|| { echo "release-identity FAIL candidate-mutated" >> .gate-status.next; touch .gate-failed; }; \
+	fi
 	@echo "---" >> .gate-status.next
 	@echo "epoch $$(date +%s)" >> .gate-status.next
 	@$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID" || touch .gate-failed
