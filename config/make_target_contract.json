@@ -406,9 +406,10 @@
         "TAG",
         "MSG",
         "RELEASE_PROMOTE_VALIDATE_ONLY",
+        "RELEASE_PROMOTE_PUBLISH",
         "REVIEWED_HEAD_INTEGRATION_RECEIPT"
       ],
-      "behavior": "make release-promote TAG=v0.1.0-beta.4 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1 REVIEWED_HEAD_INTEGRATION_RECEIPT="
+      "behavior": "make release-promote TAG=v0.1.0-beta.4 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1 RELEASE_PROMOTE_PUBLISH=0 REVIEWED_HEAD_INTEGRATION_RECEIPT="
     },
     {
       "name": "replay-codex-file-changes",
@@ -1112,6 +1113,11 @@
       "name": "development-merge-forward-batch",
       "make_variables": ["SOURCES", "APPLY"],
       "behavior": "make development-merge-forward-batch SOURCES=HEAD APPLY=0"
+    },
+    {
+      "name": "development-fast-forward",
+      "make_variables": ["SOURCE", "EXPECTED_BEFORE_SHA", "EXPECTED_AFTER_SHA", "APPLY"],
+      "behavior": "make development-fast-forward SOURCE=development EXPECTED_BEFORE_SHA=HEAD EXPECTED_AFTER_SHA=development APPLY=0"
     },
     {
       "name": "release-view",
