@@ -285,6 +285,213 @@ def test_later_hosted_success_resolves_matching_failure_families() -> None:
     assert all(family["resolved_by_run"] == 102 for family in ledger["families"].values())
 
 
+@pytest.mark.parametrize("conclusion", ["skipped", "neutral"])
+@pytest.mark.parametrize("prior_status", ["open", "repaired"])
+def test_non_success_jobs_do_not_resolve_existing_failure_families(
+    conclusion: str, prior_status: str
+) -> None:
+    module = _load()
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, _failed_payload(), observed_at="first")
+    family_ids = sorted(ledger["families"])
+    if prior_status == "repaired":
+        module.record_repair(
+            ledger,
+            family_ids,
+            repair_sha=SHA_REPAIR,
+            evidence="make test-count",
+            recorded_at="repair",
+            is_ancestor=lambda _old, _new: True,
+        )
+    original_families = json.loads(json.dumps(ledger["families"]))
+    non_success = _payload(
+        102,
+        SHA_REPAIR,
+        [_job(job, conclusion) for job in ("unit-1a1", "unit-2", "ansible-ee")],
+        conclusion="success",
+    )
+
+    assert module.observe_payload(ledger, non_success, observed_at="no-proof") == "recorded"
+
+    assert ledger["families"] == original_families
+    assert {family["status"] for family in ledger["families"].values()} == {prior_status}
+    assert ledger["runs"]["102"]["jobs"][0]["conclusion"] == conclusion
+
+
+def _legacy_non_success_resolution(
+    module: ModuleType,
+    conclusion: str,
+    *,
+    repaired: bool = False,
+    attempt: int = 1,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    """Build the historical projection while keeping its immutable runs truthful."""
+    ledger = module.new_ledger()
+    module.observe_payload(
+        ledger,
+        _payload(101, SHA_FAILED, [_job("unit", "failure"), _job("proven", "failure")]),
+        observed_at="first",
+    )
+    family_id = next(
+        key for key, family in ledger["families"].items() if family["job"] == "unit"
+    )
+    if repaired:
+        module.record_repair(
+            ledger,
+            [family_id],
+            repair_sha=SHA_REPAIR,
+            evidence="make test-count",
+            recorded_at="repair",
+            is_ancestor=lambda _old, _new: True,
+        )
+    payload = _payload(
+        102,
+        SHA_REPAIR,
+        [_job("unit", conclusion), _job("proven", "success")],
+        conclusion="success",
+    )
+    payload["attempt"] = attempt
+    module.observe_payload(ledger, payload, observed_at="legacy")
+    ledger["families"][family_id].update(
+        status="resolved",
+        resolved_by_run=102,
+        resolved_by_sha=SHA_REPAIR,
+        resolved_at="legacy",
+    )
+    return ledger, payload, family_id
+
+
+@pytest.mark.parametrize("conclusion", ["skipped", "neutral"])
+@pytest.mark.parametrize("repaired", [False, True])
+@pytest.mark.parametrize("attempt", [1, 2])
+def test_identical_observation_reconciles_legacy_non_success_resolution(
+    conclusion: str, repaired: bool, attempt: int
+) -> None:
+    module = _load()
+    ledger, payload, family_id = _legacy_non_success_resolution(
+        module, conclusion, repaired=repaired, attempt=attempt
+    )
+    original = json.loads(json.dumps(ledger))
+
+    assert module.observe_payload(ledger, payload, observed_at="later") == "reconciled"
+
+    expected_family = dict(original["families"][family_id])
+    expected_family["status"] = "repaired" if repaired else "open"
+    for key in ("resolved_by_run", "resolved_by_sha", "resolved_at"):
+        expected_family.pop(key)
+    assert ledger["families"][family_id] == expected_family
+    assert ledger["runs"] == original["runs"]
+    assert all(
+        family == original["families"][key]
+        for key, family in ledger["families"].items()
+        if key != family_id
+    )
+    reconciled = json.loads(json.dumps(ledger))
+    assert module.observe_payload(ledger, payload, observed_at="even-later") == "unchanged"
+    assert ledger == reconciled
+    blockers = module.guard_push(ledger, SHA_REPAIR, is_ancestor=lambda _old, _new: True)
+    assert len(blockers) == (0 if repaired else 1)
+
+
+@pytest.mark.parametrize("conclusion", ["skipped", "neutral"])
+def test_new_observation_reconciles_proven_legacy_non_success_resolution(
+    conclusion: str,
+) -> None:
+    module = _load()
+    ledger, _payload_before, family_id = _legacy_non_success_resolution(module, conclusion)
+    original = json.loads(json.dumps(ledger))
+    unrelated = _payload(103, "c" * 40, [_job("unrelated", "success")], conclusion="success")
+
+    assert module.observe_payload(ledger, unrelated, observed_at="new-run") == "recorded"
+
+    assert ledger["families"][family_id]["status"] == "open"
+    assert ledger["families"][family_id]["occurrences"] == original["families"][family_id]["occurrences"]
+    assert {key: ledger["runs"][key] for key in original["runs"]} == original["runs"]
+    assert all(
+        family == original["families"][key]
+        for key, family in ledger["families"].items()
+        if key != family_id
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("resolved_by_run", 999),
+        ("resolved_by_sha", "c" * 40),
+        ("branch", "unrelated"),
+        ("workflow", "Other workflow"),
+        ("job", "unknown-job"),
+    ],
+)
+def test_reconciliation_preserves_resolutions_without_matching_immutable_evidence(
+    field: str, value: str | int
+) -> None:
+    module = _load()
+    ledger, payload, family_id = _legacy_non_success_resolution(module, "skipped")
+    ledger["families"][family_id][field] = value
+    original = json.loads(json.dumps(ledger))
+
+    assert module.observe_payload(ledger, payload, observed_at="later") == "unchanged"
+    assert ledger == original
+
+
+@pytest.mark.parametrize("conclusion", ["skipped", "neutral"])
+def test_reconciliation_preserves_genuine_success_from_an_earlier_attempt(
+    conclusion: str,
+) -> None:
+    module = _load()
+    ledger = module.new_ledger()
+    module.observe_payload(
+        ledger, _payload(101, SHA_FAILED, [_job("unit", "failure")]), observed_at="first"
+    )
+    success = _payload(102, SHA_REPAIR, [_job("unit", "success")], conclusion="success")
+    module.observe_payload(ledger, success, observed_at="hosted-green")
+    retry = _payload(102, SHA_REPAIR, [_job("unit", conclusion)], conclusion="success")
+    retry["attempt"] = 2
+    module.observe_payload(ledger, retry, observed_at="retry")
+    original = json.loads(json.dumps(ledger))
+
+    assert module.observe_payload(ledger, retry, observed_at="later") == "unchanged"
+    assert ledger == original
+    assert next(iter(ledger["families"].values()))["resolved_at"] == "hosted-green"
+
+
+def test_conflicting_terminal_payload_cannot_reconcile_legacy_projection() -> None:
+    module = _load()
+    ledger, payload, _family_id_before = _legacy_non_success_resolution(module, "skipped")
+    original = json.loads(json.dumps(ledger))
+    changed = json.loads(json.dumps(payload))
+    changed["jobs"][0]["conclusion"] = "neutral"
+
+    with pytest.raises(module.LedgerError, match="immutable terminal run"):
+        module.observe_payload(ledger, changed, observed_at="later")
+    assert ledger == original
+
+
+def test_cli_identical_observation_persists_reconciled_legacy_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    module = _load()
+    ledger, payload, family_id = _legacy_non_success_resolution(module, "neutral", repaired=True)
+    ledger_path = tmp_path / "ledger.json"
+    module.write_ledger(ledger_path, ledger)
+    monkeypatch.setattr(module, "fetch_run", lambda _run, _repo: payload)
+    command = ["observe", "--run", "102", "--ledger", str(ledger_path)]
+
+    assert module.main(command) == 0
+
+    persisted = module.read_ledger(ledger_path)
+    assert persisted["families"][family_id]["status"] == "repaired"
+    assert persisted["families"][family_id]["repair"] == ledger["families"][family_id]["repair"]
+    assert persisted["runs"] == ledger["runs"]
+    assert "result=reconciled" in capsys.readouterr().out
+    encoded = ledger_path.read_bytes()
+    assert module.main(command) == 0
+    assert "result=unchanged" in capsys.readouterr().out
+    assert ledger_path.read_bytes() == encoded
+
+
 def test_atomic_ledger_round_trip_is_private_and_malformed_data_fails_closed(
     tmp_path: Path,
 ) -> None:
@@ -504,6 +711,33 @@ def test_cli_repair_rejects_unsafe_or_failed_evidence(
     )
     assert module.main([*base, "--all-open", "--evidence-target", "test-count"]) == 2
     assert "evidence failed" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("invalid_sha", ["5ea84e562", "A" * 40, "b" * 41])
+def test_cli_repair_rejects_invalid_sha_before_running_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any, invalid_sha: str,
+) -> None:
+    module = _load()
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, _failed_payload(), observed_at="first")
+    path = tmp_path / "ledger.json"
+    module.write_ledger(path, ledger)
+    original = path.read_bytes()
+    calls: list[list[str]] = []
+
+    def completed(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(module.subprocess, "run", completed)
+
+    assert module.main([
+        "repair", "--ledger", str(path), "--all-open", "--sha", invalid_sha,
+        "--evidence-target", "test-count",
+    ]) == 2
+    assert "repair SHA must be a full lowercase 40-character hash" in capsys.readouterr().err
+    assert calls == []
+    assert path.read_bytes() == original
 
 
 def test_fetch_run_is_id_bound_and_fail_closed() -> None:

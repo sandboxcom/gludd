@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — skipped hosted jobs falsely closed recorded failures
+
+- **Observed**: Failed Build `38291013073` at `7239008` skips downstream shards and the EE build after its 3.11 admission timeout. The ledger's shared success/skipped/neutral set incorrectly changes the earlier EE failure from repaired to resolved, although no replacement image was built. Hosted merge eligibility is not proof that a previously failing job executed successfully.
+- **Failing-first prevention**: Fifteen new regressions fail while 41 safety cases pass. The new cases cover skipped/neutral non-resolution of open/repaired families, attempts 1/2, conservative legacy reconciliation, immutable conflicts, actual successful resolutions, retained receipts and idempotent CLI persistence.
+- **Repair and acceptance**: Only job success closes the matching branch/workflow/job family; skipped/neutral remain non-failures. Proven false historical projections are corrected using unchanged terminal fingerprints and exact identity, retaining all run history, occurrences and repair receipts. Three further failing-first cases prevent invalid repair SHAs from starting evidence work. All 59 cases pass at 92.40% combined coverage (93.82% line, 89.02% branch), above unchanged 85/75 floors; strict source/test typing, Ruff and docstrings pass. The existing atomic writer persists corrections without creating another ledger or proof owner.
+- **Live correction**: Normal `ci-view` observation reports reconciled once. Exactly one family changes, EE resolved-to-repaired; every immutable run, fingerprint, occurrence and repair receipt remains byte-equivalent as structured data. The actual admission timeout stays open, and five genuine repair receipts remain repaired, with 33 truly resolved families across 33 recorded runs. No skipped test/image is reported as a hosted success.
+- **Boundaries**: The promotion guide records the long-lived GitHub Community failure-then-skip reports and platform conclusion semantics. This operational projection change starts no runner, environment or serving process and preserves ZDD. Exact replacement hosted proof, canonical gate/coverage, final source review and disk admission remain required; no S98 task or release is completed.
+
 ### 2026-10-12 — repeated whole-tree fixture audits exhausted early hosted admission
 
 - **Observed**: Build `38291013073` at `7239008` times out the Python 3.11 owner at 90.1 seconds. Its two passing repository fixture checks spend approximately 61 seconds parsing the same test tree independently; the interrupted later CLI boundary is not proof of a separate CLI hang. Python 3.12 passes, and the prerequisite correctly prevents shard/artifact fan-out.

@@ -32,7 +32,7 @@ FULL_SHA = re.compile(r"[0-9a-f]{40}\Z")
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 MAKE_TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 MAKE_VARIABLE = re.compile(r"[A-Z][A-Z0-9_]*=.*\Z")
-SUCCESS_CONCLUSIONS = {"success", "skipped", "neutral"}
+NON_FAILURE_CONCLUSIONS = {"success", "skipped", "neutral"}
 FAILURE_STATUSES = {"open", "repaired", "resolved"}
 RUN_FIELDS = (
     "attempt,databaseId,headSha,headBranch,status,conclusion,url,workflowName,jobs"
@@ -201,9 +201,9 @@ def _snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         for step_index, raw_step in enumerate(raw_steps):
             step = _require_mapping(raw_step, f"job {name} step {step_index}")
             step_conclusion = str(step.get("conclusion") or "").lower()
-            if step_conclusion and step_conclusion not in SUCCESS_CONCLUSIONS:
+            if step_conclusion and step_conclusion not in NON_FAILURE_CONCLUSIONS:
                 failed_steps.append(_text(step.get("name"), f"job {name} step name"))
-        if job_conclusion not in SUCCESS_CONCLUSIONS and not failed_steps:
+        if job_conclusion not in NON_FAILURE_CONCLUSIONS and not failed_steps:
             failed_steps.append(f"<job:{job_conclusion}>")
         jobs.append(
             {
@@ -247,6 +247,69 @@ def _family_id(snapshot: dict[str, Any], job: dict[str, Any]) -> str:
     )
 
 
+def _non_success_resolution_proven(
+    family: dict[str, Any], runs: dict[str, Any]
+) -> bool:
+    """Require immutable, matching evidence before correcting a legacy resolution."""
+    candidates = [
+        run
+        for run in runs.values()
+        if run.get("run_id") == family.get("resolved_by_run")
+        and run.get("sha") == family.get("resolved_by_sha")
+        and run.get("branch") == family.get("branch")
+        and run.get("workflow") == family.get("workflow")
+        and (
+            "resolved_by_attempt" not in family
+            or _attempt(run) == family["resolved_by_attempt"]
+        )
+    ]
+    # Historical receipts omitted the attempt. Their observation timestamp can
+    # identify it; otherwise every matching attempt must prove non-success.
+    dated_candidates = [
+        run
+        for run in candidates
+        if family.get("resolved_at") is not None
+        and run.get("observed_at") == family["resolved_at"]
+    ]
+    if dated_candidates:
+        candidates = dated_candidates
+    if not candidates:
+        return False
+    for run in candidates:
+        snapshot = {
+            key: value
+            for key, value in run.items()
+            if key not in {"observed_at", "payload_fingerprint"}
+        }
+        if run.get("status") != "completed" or _digest(snapshot) != run["payload_fingerprint"]:
+            return False
+        raw_jobs = run.get("jobs")
+        if not isinstance(raw_jobs, list):
+            return False
+        jobs = [
+            job
+            for job in raw_jobs
+            if isinstance(job, dict) and job.get("name") == family.get("job")
+        ]
+        if not jobs or any(job.get("conclusion") not in {"skipped", "neutral"} for job in jobs):
+            return False
+    return True
+
+
+def _reconcile_non_success_resolutions(ledger: dict[str, Any]) -> bool:
+    """Restore proven false projections without rewriting run or failure history."""
+    changed = False
+    runs = cast(dict[str, Any], ledger["runs"])
+    for family in cast(dict[str, Any], ledger["families"]).values():
+        if family["status"] != "resolved" or not _non_success_resolution_proven(family, runs):
+            continue
+        family["status"] = "repaired" if "repair" in family else "open"
+        for key in ("resolved_by_run", "resolved_by_sha", "resolved_at", "resolved_by_attempt"):
+            family.pop(key, None)
+        changed = True
+    return changed
+
+
 def observe_payload(
     ledger: dict[str, Any], payload: dict[str, Any], *, observed_at: str
 ) -> str:
@@ -260,17 +323,20 @@ def observe_payload(
     existing = runs.get(run_key)
     if existing is not None:
         if existing.get("payload_fingerprint") == fingerprint:
-            return "unchanged"
+            return "reconciled" if _reconcile_non_success_resolutions(ledger) else "unchanged"
         raise LedgerError(f"immutable terminal run {run_key} changed after observation")
     runs[run_key] = {
         **snapshot,
         "observed_at": observed_at,
         "payload_fingerprint": fingerprint,
     }
+    _reconcile_non_success_resolutions(ledger)
 
     families = cast(dict[str, Any], ledger["families"])
     for job in snapshot["jobs"]:
-        if job["conclusion"] in SUCCESS_CONCLUSIONS:
+        if job["conclusion"] in NON_FAILURE_CONCLUSIONS:
+            if job["conclusion"] != "success":
+                continue
             for family in families.values():
                 if (
                     family["branch"] == snapshot["branch"]
@@ -282,6 +348,8 @@ def observe_payload(
                     family["resolved_by_run"] = snapshot["run_id"]
                     family["resolved_by_sha"] = snapshot["sha"]
                     family["resolved_at"] = observed_at
+                    if attempt > 1:
+                        family["resolved_by_attempt"] = attempt
             continue
         family_id = _family_id(snapshot, job)
         occurrence = {
@@ -306,7 +374,9 @@ def observe_payload(
             continue
         family["occurrences"].append(occurrence)
         family["status"] = "open"
-        for stale_key in ("repair", "resolved_by_run", "resolved_by_sha", "resolved_at"):
+        for stale_key in (
+            "repair", "resolved_by_run", "resolved_by_sha", "resolved_at", "resolved_by_attempt"
+        ):
             family.pop(stale_key, None)
     validate_ledger(ledger)
     return "recorded"
@@ -334,7 +404,7 @@ def guard_rerun(
     run = max(run_candidates, key=_attempt) if run_candidates else None
     if run is None:
         return [f"run {run_id} has not been observed into the failure ledger"]
-    if run["conclusion"] in SUCCESS_CONCLUSIONS:
+    if run["conclusion"] in NON_FAILURE_CONCLUSIONS:
         return [f"run {run_id} already succeeded; rerun would waste capacity"]
     if not allow_unchanged:
         return [
@@ -353,7 +423,7 @@ def guard_runner_acquisition_rerun(
     snapshot = _snapshot(payload)
     attempt = _attempt(payload)
     blockers: list[str] = []
-    if snapshot["conclusion"] in SUCCESS_CONCLUSIONS:
+    if snapshot["conclusion"] in NON_FAILURE_CONCLUSIONS:
         blockers.append("run already succeeded; infrastructure recovery is unnecessary")
     if attempt != 1:
         blockers.append(
@@ -365,7 +435,7 @@ def guard_runner_acquisition_rerun(
     failed_jobs = [
         job
         for job in raw_jobs
-        if str(job.get("conclusion") or "").lower() not in SUCCESS_CONCLUSIONS
+        if str(job.get("conclusion") or "").lower() not in NON_FAILURE_CONCLUSIONS
     ]
     if not failed_jobs:
         blockers.append("run has no failed or cancelled jobs to recover")
@@ -376,7 +446,7 @@ def guard_runner_acquisition_rerun(
             for step in job.get("steps", [])
             if isinstance(step, dict)
             and str(step.get("conclusion") or "").lower()
-            not in SUCCESS_CONCLUSIONS | {""}
+            not in NON_FAILURE_CONCLUSIONS | {""}
         ]
         if failed_steps:
             blockers.append(
@@ -587,7 +657,7 @@ def fetch_runner_acquisition_annotations(
     annotations: dict[int, list[str]] = {}
     for index, raw_job in enumerate(raw_jobs):
         job = _require_mapping(raw_job, f"job {index}")
-        if str(job.get("conclusion") or "").lower() in SUCCESS_CONCLUSIONS:
+        if str(job.get("conclusion") or "").lower() in NON_FAILURE_CONCLUSIONS:
             continue
         job_id = _run_id(job.get("databaseId"))
         annotations[job_id] = fetcher(job_id, repository)
@@ -910,6 +980,8 @@ def _command_runner_acquisition_rerun(args: argparse.Namespace) -> int:
 
 
 def _command_repair(args: argparse.Namespace) -> int:
+    if FULL_SHA.fullmatch(args.sha) is None:
+        raise LedgerError("repair SHA must be a full lowercase 40-character hash")
     if MAKE_TARGET.fullmatch(args.evidence_target) is None:
         raise LedgerError("evidence target must be one plain make target")
     if any(MAKE_VARIABLE.fullmatch(value) is None for value in args.evidence_var):
@@ -961,6 +1033,7 @@ def _command_push(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run a validated ledger command and report failures without hiding evidence."""
     args = _parser().parse_args(argv)
     try:
         handlers = {

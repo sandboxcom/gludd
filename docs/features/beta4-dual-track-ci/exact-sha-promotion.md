@@ -530,3 +530,62 @@ The full gate ledger contained exactly one `SHARD-FAIL`; the repaired node passe
 1/1 and the combined delegate/dedup replay passes 21/21. No running service,
 published artifact, or live dispatch owner changes, so the repair is ZDD and its
 rollback is the single test-state binding.
+
+### Success-only historical failure resolution (2026-10-12)
+
+The CI failure ledger now distinguishes a job that supplies repair proof from a
+job that supplies no new failure. Only an actual `success` for the same branch,
+workflow, and job closes a historical failure family. A `skipped` or `neutral`
+job remains a non-failure, adds no new family, and leaves existing `open` or
+`repaired` ownership intact. A successful job may close its own family even when
+another job in that workflow failed; the sibling failures remain independently
+owned. Aggregate workflow status and merge eligibility cannot substitute for
+the missing job proof.
+
+Observation also reconciles legacy families that the previous shared conclusion
+set incorrectly marked resolved. Correction requires a stored terminal run with
+the matching run ID, SHA, branch, workflow, and job, a valid unchanged payload
+fingerprint, and a `skipped` or `neutral` job conclusion. Attempt-specific
+receipts select that attempt; historical receipts use their original observation
+timestamp when it identifies the attempt. Without that identity, every matching
+attempt must prove non-success. Missing, conflicting, or ambiguous evidence
+preserves the existing projection, including a genuine successful resolution.
+New resolutions from later attempts retain their attempt number explicitly.
+
+A proven false resolution returns to `repaired` when its repair receipt is still
+retained, or to `open` otherwise. Only the false resolution markers are removed:
+immutable run records and fingerprints, failure occurrences, repair receipts,
+and successful sibling resolutions remain unchanged. Re-observing identical
+terminal input reports `reconciled` once, persists that correction through the
+existing atomic ledger writer, and then reports `unchanged`. Conflicting input
+for a recorded run attempt fails before any reconciliation mutation.
+
+Repair input also requires its full lowercase 40-character SHA before starting
+the Make evidence command. Three failing-first regressions cover abbreviated,
+uppercase and overlong hashes: each fails without launching evidence or changing
+ledger bytes. Invalid caller input cannot consume a test/gate run before refusal.
+
+Practitioner and platform evidence reviewed 2026-10-12:
+
+- [GitHub Community discussion #52082](https://github.com/orgs/community/discussions/52082),
+  opened 2023-04-05, reports the exact failure-then-skip sequence: a required
+  check fails, a later conditional run skips it, and the merge UI reports that
+  checks passed although the job never succeeded. The ledger requires actual
+  job success before closing the recorded failure.
+- [GitHub Community discussion #28864](https://github.com/orgs/community/discussions/28864),
+  opened 2022-08-09 with follow-ups through 2026, documents automerge admitting
+  skipped required jobs after dependency failures. Its practitioners require
+  explicit dependency-result checks; Gludd retains each missing proof family.
+- [GitHub Community discussion #24754](https://github.com/orgs/community/discussions/24754),
+  opened 2019-01-15 with later follow-ups, records the long-lived ambiguity
+  between neutral check conclusions and successful validation.
+- GitHub's [status-check reference](https://docs.github.com/en/pull-requests/reference/status-checks)
+  explicitly distinguishes `success`, `skipped`, and `neutral`, while treating
+  the latter two as successful for dependent checks. That platform dependency
+  policy does not establish that a previously failing Gludd job ran and passed.
+
+The change preserves ZDD: observation and atomic operational-state correction
+start no service, environment, runner, listener, or additional proof owner, and
+modify no application, database, deployment, or published release. Rollback is
+the isolated script/test/documentation change; retained immutable CI observations
+remain available and all release, coverage, and promotion gates still apply.
