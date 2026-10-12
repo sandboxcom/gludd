@@ -49,6 +49,12 @@ the first nonzero result:
     SearXNG metadata prerequisite and real Builder-generated installer boundaries.
     CI already supplies the locked controller/Builder profile; these checks
     generate no image, install no package, and retain the same phase bounds.
+    Both repository fixture assertions share one fresh source report: each unique
+    test source is parsed once, its AST is released before the next file, and no
+    persistent cache or test-tree sampling changes their evidence. Installed-plugin
+    discovery also parses each visited module once. The Python 3.11 timeout from
+    Build `38291013073` remains recorded; optimizing repeated work does not raise
+    the owner budget or substitute local success for hosted replay.
    Hosted Python 3.11/3.12 jobs retain their own interpreter coverage; admission
    reuses their environment without creating another dependency matrix.
 4. `ansible-role-variable-prefix` runs the exact warning-fatal

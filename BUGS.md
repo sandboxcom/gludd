@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — repeated whole-tree fixture audits exhausted early hosted admission
+
+- **Observed**: Build `38291013073` at `7239008` times out the Python 3.11 owner at 90.1 seconds. Its two passing repository fixture checks spend approximately 61 seconds parsing the same test tree independently; the interrupted later CLI boundary is not proof of a separate CLI hang. Python 3.12 passes, and the prerequisite correctly prevents shard/artifact fan-out.
+- **Failing-first prevention**: Four new cases expose absent combined evidence and duplicate plugin parsing. They pin one parse per sorted unique path/module, collectible prior-file trees, fresh changed-source/path/fixture-name evidence, late aliases, nested ownership, provider boundaries and cyclic plugin discovery. No existing assertion, warning policy or file scope is weakened.
+- **Repair and acceptance**: Reuse stdlib AST declaration traversal and one compact module-scoped report for the two original repository assertions. Every source remains scanned; public helpers remain fresh; no persistent cache or AST tree pool is added. All 22 cases pass at 96.03% combined coverage (97.47% line, 93.27% branch). Strict source/test typing, Ruff and docstrings pass. The real complete owner passes 349 cases in 29.49 seconds (30.3 observed), retaining the 90/60-second owner bounds, 28 families, 21 phases, 2850-second ceiling and mandatory full gate.
+- **Proof boundary**: Hosted 3.11/3.12 timing still requires a new exact-SHA replay. The feature document records the stdlib/pytest reuse decision, long-lived subclass-fixture report, unchanged ZDD and rollback. Disk admission, canonical coverage/gate, final source review, and required hosted success remain pending; no S98 task, master merge or release is claimed.
+
 ### 2026-10-12 — isolated EE prerequisites were not owned by the pre-fan-out test barrier
 
 - **Observed**: Terminal Build run 38278381965 has four known failed jobs, 22 passed and four skipped. The final other shard passes. The new isolated metadata and real generated-installer regressions exist, but no early manifest family or executable compatibility route owns them yet; image construction can therefore discover this prerequisite failure after fan-out.

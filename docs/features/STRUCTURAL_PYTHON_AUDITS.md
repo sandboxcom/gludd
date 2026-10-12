@@ -77,6 +77,35 @@ Run the repository invariant through the existing `_pytest-runtime-compatibility
 within its unchanged 90-second budget. The canonical warning-fatal replay remains required; the static scan does not
 replace the full gate, coverage floors, or exact-SHA evidence.
 
+### Bounded shared source evidence
+
+Build `38291013073` at `7239008` times out the Python 3.11 admission owner at 90.1 seconds. Its two repository fixture
+checks consume approximately 61 seconds independently parsing the same test tree. Both checks pass before the timeout;
+the later interrupted interpreter-boundary node is not evidence of a separate hanging CLI.
+
+`audit_pytest_sources` now parses each sorted unique source once and returns only immutable collision/binding findings.
+The two existing repository assertions share that compact report through a module-scoped fixture, using pytest's
+[documented fixture reuse](https://docs.pytest.org/en/stable/how-to/fixtures.html#scope-sharing-fixtures-across-classes-modules-packages-or-session).
+The standard-library [AST traversal](https://docs.python.org/3.11/library/ast.html#ast.iter_child_nodes) visits declaration
+and statement structure; expressions cannot contain import or function/class declarations, so large parameter values
+need not be walked. Decorators and plugin declarations remain available for the original recognizers.
+
+Alias collection precedes recognition, including imports after decorators or inside nested scopes. Nearest class/function
+ownership remains intact through conditional blocks. Binding checks retain asyncio providers; collision/plugin fixture
+discovery remains pytest-only. Installed plugin modules are likewise parsed once per visited module, retaining cycle
+protection. The existing path/source helpers stay fresh adapters. No cross-invocation cache, file sampling, AST retention,
+allowlist, fixture execution, warning suppression, or budget increase is introduced.
+
+Four regression cases fail first: unique-path parse count and prior-tree weakref release; changed sources, added paths
+and changed fixture names; late aliases/nested ownership/provider boundaries; and one parse per cyclic plugin module.
+All 22 audit cases then pass at 96.03% focused coverage (97.47% line, 93.27% branch), above unchanged 85/75 floors.
+The complete observed owner passes 349 cases in 29.49 seconds (30.3 observed), with all 28 families, 21 phases and
+2850-second ceiling unchanged. This local acceptance does not prove hosted 3.11/3.12 timing or satisfy the canonical gate.
+
+The November 2025 [pytest subclass report](https://github.com/pytest-dev/pytest/issues/13882) describes missing class-fixture
+state in inherited tests. It reinforces preserving binding semantics while optimizing execution; it does not explain this
+repository's measured scan cost. ZDD and rollback remain the administrative-audit contract below.
+
 ### v0.1.2 acceptance and lifecycle
 
 The original ratio replay preserves 41 passing tests and 34 setup errors. After binding conformance, the affected
