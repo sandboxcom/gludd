@@ -366,6 +366,12 @@ real EE graph has resolved or that a replacement image has built successfully.
 
 ## Zero-downtime and rollback
 
+The complete Make bootstrap/search file now belongs to
+`make-search-literal-transport`, retaining every existing early selector. Its
+real recipe cases reject quote splitting, shell interpretation, automatic
+export evaluation and hidden regex errors, without allocating an environment
+or changing any serving process. All phase and full-gate requirements remain.
+
 This is a zero-downtime control-plane check. Admission starts no application
 listener or daemon, changes no schema or durable runtime state, and launches no
 browser in its static browser phase. All temporary browser paths remain under

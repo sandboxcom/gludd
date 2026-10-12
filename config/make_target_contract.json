@@ -2026,6 +2026,11 @@
       "behavior": "make resolve-ansible-runtime-requirements ANSIBLE_EE_COLLECTION_ROOT=/tmp/gludd-contract-ee-collections ANSIBLE_EE_RESOLUTION_OUTPUT=/tmp/gludd-contract-ee-resolution.txt ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1"
     },
     {
+      "name": "search",
+      "make_variables": ["PATTERN", "SEARCH_PATH"],
+      "behavior": "make search PATTERN=^search: SEARCH_PATH=make/95-collections-and-pipelines.mk"
+    },
+    {
       "name": "status-heartbeat",
       "make_variables": [
         "INTERVAL",

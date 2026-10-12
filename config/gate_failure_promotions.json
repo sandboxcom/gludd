@@ -411,6 +411,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ansible_runtime_artifacts.py::test_resolve_requirements_uses_real_builder_assembly_and_bounded_uv_compile",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "make-search-literal-transport",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_readonly_version.py::test_actual_search_never_evaluates_exported_make_function_data",
+      "full_gate_phase": "test"
     }
   ]
 }

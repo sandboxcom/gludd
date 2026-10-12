@@ -472,6 +472,8 @@ def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> No
          "tests/unit/test_proof_observations.py::test_writer_derives_timestamp_and_never_admits_release"),
         ("automatic-proof-handoff-native-query-shape",
          "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_accepts_the_existing_ledger_detail_shape"),
+        ("make-search-literal-transport",
+         "tests/unit/test_make_readonly_version.py::test_actual_search_never_evaluates_exported_make_function_data"),
     ],
 )
 def test_automatic_observation_contracts_execute_in_complete_early_cohorts(
@@ -489,6 +491,7 @@ def test_automatic_observation_contracts_execute_in_complete_early_cohorts(
     for test_file in (
         "tests/unit/test_proof_observations.py", "tests/unit/test_ci_await_exact.py",
         "tests/unit/test_pipeline_status_exact_sha.py", "tests/unit/test_task_ledger_validation.py",
+        "tests/unit/test_make_readonly_version.py",
     ):
         assert test_file in executable
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
@@ -795,6 +798,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "automatic-proof-handoff-native-query-shape",
         "ee-owned-linux-transitive-pin-parity",
         "ee-complete-requirement-resolution-contract",
+        "make-search-literal-transport",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -951,7 +955,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_integration_admission_target.py '
         'tests/unit/test_ci_failure_ledger.py '
         'tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py '
-        'tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_task_ledger_validation.py"'
+        'tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_task_ledger_validation.py '
+        'tests/unit/test_make_readonly_version.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner

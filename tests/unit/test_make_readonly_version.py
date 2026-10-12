@@ -44,6 +44,71 @@ def _git(tmp_path: Path, *arguments: str) -> None:
     )
 
 
+def _search_fixture(tmp_path: Path) -> None:
+    shutil.copy(ROOT / "Makefile", tmp_path / "Makefile")
+    shutil.copytree(ROOT / "make", tmp_path / "make")
+
+
+@pytest.mark.parametrize(
+    ("pattern", "line"),
+    [
+        ('"state": "failure"', '"state": "failure"'),
+        (r'^\$\(printf harmless\)$', '$(printf harmless)'),
+        (r'^\$GLUDD_LITERAL$', '$GLUDD_LITERAL'),
+        (r'^`printf harmless`$', '`printf harmless`'),
+        ('--literal', '--literal'),
+    ],
+)
+def test_actual_search_treats_quoted_patterns_as_data(
+    tmp_path: Path, pattern: str, line: str,
+) -> None:
+    _search_fixture(tmp_path)
+    (tmp_path / "input.txt").write_text(line + "\n", encoding="utf-8")
+    result = _make(tmp_path, "search", f"PATTERN={pattern}", "SEARCH_PATH=input.txt")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stderr == ""
+    assert result.stdout.strip() == "1:" + line
+    assert not (tmp_path / ".venv").exists()
+    assert not (tmp_path / "uv.lock").exists()
+
+
+def test_actual_search_preserves_quoted_path_and_protected_scope(tmp_path: Path) -> None:
+    _search_fixture(tmp_path)
+    name = 'data" file.txt'
+    (tmp_path / name).write_text("owned\n", encoding="utf-8")
+    result = _make(tmp_path, "search", "PATTERN=owned", f"SEARCH_PATH={name}")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "1:owned"
+    rejected = _make(tmp_path, "search", "PATTERN=owned", "SEARCH_PATH=../outside")
+    assert rejected.returncode != 0
+    assert "Refusing path outside workspace" in rejected.stdout
+
+
+@pytest.mark.parametrize("variable", ["PATTERN", "SEARCH_PATH"])
+def test_actual_search_never_evaluates_exported_make_function_data(
+    tmp_path: Path, variable: str,
+) -> None:
+    _search_fixture(tmp_path)
+    (tmp_path / "input.txt").write_text("owned\n", encoding="utf-8")
+    assignments = {"PATTERN": "owned", "SEARCH_PATH": "input.txt"}
+    assignments[variable] = "$(shell printf harmless > make-expansion.txt)"
+    result = _make(tmp_path, "search", *(f"{key}={value}" for key, value in assignments.items()))
+    assert not (tmp_path / "make-expansion.txt").exists()
+    assert result.returncode != 0
+
+
+def test_actual_search_keeps_tool_errors_distinct_from_no_matches(tmp_path: Path) -> None:
+    _search_fixture(tmp_path)
+    (tmp_path / "input.txt").write_text("owned\n", encoding="utf-8")
+    result = _make(tmp_path, "search", "PATTERN=[", "SEARCH_PATH=input.txt")
+    assert result.returncode != 0
+    assert "No matches" not in result.stdout
+    assert "error" in result.stderr.lower()
+    absent = _make(tmp_path, "search", "PATTERN=absent", "SEARCH_PATH=input.txt")
+    assert absent.returncode != 0
+    assert "No matches" in absent.stdout
+
+
 def test_actual_git_helper_is_silent_without_environment_and_keeps_runtime_checks(
     tmp_path: Path,
 ) -> None:

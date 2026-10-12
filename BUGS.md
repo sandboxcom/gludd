@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — search patterns became shell text and backend errors disappeared
+
+- **Observed**: Reading the automatic JSON with an ordinary quoted regex makes `make search` raise a shell syntax error. Six actual-recipe regressions fail first with 12 passing; two further cases prove Make evaluates literal function text while automatically exporting raw inputs. Invalid regex stderr was also discarded and misreported as no matches.
+- **Narrow repair**: Reuse existing GNU Make value/export/unexport and quoted shell parameters to carry literal pattern/path data. Preserve rg/grep, the option and workspace boundaries, namespace the temporary result through mktemp and retain backend errors rather than suppressing them. No new parser, runner, package or environment is added.
+- **Actual acceptance**: All 20 complete helper cases pass, retaining every original metadata, version-override and runtime assertion. The public safe example and variable-aware contract are tested. Failing-first promotion cases bind the complete helper cohort before hosted fan-out, with unchanged warning-fatal one-worker execution, 90/60-second bounds, 21 phases and 2850-second ceiling.
+- **Proof boundary**: The feature document records primary tool semantics and the long-lived 2015 transport report. This administrative repair leaves serving processes and protected history untouched and does not replace final review, canonical gate/coverage or exact-SHA hosted proof.
+
 ### 2026-10-12 — direct SDK admission did not prove the EE's complete dependency graph
 
 - **Observed**: Exact Build `38307021746` at `c4f499fbd983c4c3a0fdd041ac6c05fcbc740ec5` gets beyond direct identity ownership but EE assembly rejects Linux MSAL: retained Identity 1.26.0 needs >=1.39.0, while inherited CLI Core 2.75.0 fixes 1.33.0b1. Upgrading CLI alone would also conflict with inherited Azure Core 1.38.0. A successful requirements merge was insufficient transitive admission.

@@ -90,6 +90,46 @@ dry-run tests compare directory contents, and both retain unchanged metadata
 without allocating an environment. The second sealed integration's two absent
 fixture-metadata failures remain recorded rather than treated as gate success.
 
+## Literal search inputs and error propagation
+
+The actual `search` recipe broke on quoted JSON patterns and paths, interpreted
+backticks and dollar syntax, and reported invalid regexes as no matches. Six
+new actual-recipe cases fail first while 12 cases pass. A further two cases
+reproduce evaluation of Make-function text during automatic variable export.
+
+The existing rg/grep backend now receives raw values through simply expanded,
+namespaced environment carriers using GNU Make's `value` function. Original
+recursive `PATTERN` and `SEARCH_PATH` variables are explicitly unexported;
+otherwise environment construction could evaluate them through a second route.
+Quoted shell parameter expansion preserves each value as one argument. No
+custom parser, escaping engine, runner, environment or daemon is introduced.
+
+Backend status 0 means matches, 1 means no matches, and greater than 1 remains
+an error with its original stderr. The workspace path boundary, option boundary
+and primary rg exclusions remain intact. The invocation's namespaced temporary
+file is created by mktemp and removed by an exit/signal trap. All 20 complete
+helper cases pass, preserving original metadata, override and runtime checks.
+
+The safe public example supplies both documented inputs:
+
+```sh
+make search PATTERN=^search: SEARCH_PATH=make/95-collections-and-pipelines.mk
+```
+
+The promoted `make-search-literal-transport` family executes the complete helper
+file before hosted fan-out. It does not replace the full gate or alter serving
+state. Five routing/roster cases fail first, then the combined helper/promotion/
+plan slice passes 58 cases. The actual complete early owner passes 624 cases in
+34.27 seconds (35.1 observed), retaining 37 families and unchanged 90/60 bounds,
+21 phases and 2850-second ceiling. All 218 contracts and the actual public
+example pass. GNU Make's [raw value][make-raw-value] and
+[export/unexport semantics][make-export] establish the expansion boundary;
+[POSIX shell field splitting][shell-fields] defines quoted argument transport.
+The maintained [rg manual][rg-manual] defines distinct result/error statuses.
+The April 2015 [safe Make-variable transport report][search-forum] reproduces
+embedded quotes splitting one value into multiple shell arguments. These are
+existing tool semantics and practitioner findings, not proof of release success.
+
 ## Research and resource boundary
 
 Research reviewed on 2026-10-12:
@@ -136,3 +176,8 @@ the full suite or a gate.
 [make-recursive]: https://www.gnu.org/software/make/manual/html_node/Recursive-Assignment.html
 [make-simple]: https://www.gnu.org/software/make/manual/html_node/Simple-Assignment.html
 [lazy-forum]: https://stackoverflow.com/questions/4879592/whats-the-difference-between-and-in-makefile
+[make-raw-value]: https://www.gnu.org/s/make/manual/html_node/Value-Function.html
+[make-export]: https://www.gnu.org/software/make/manual/html_node/Variables_002fRecursion.html
+[shell-fields]: https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_06_05
+[rg-manual]: https://github.com/BurntSushi/ripgrep/blob/master/crates/core/flags/doc/template.rg.1
+[search-forum]: https://stackoverflow.com/questions/29906576/safely-pass-make-variable-to-shell-commands
