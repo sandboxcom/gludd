@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — guarded push used missing remote and stale fetch evidence
+
+- **Observed**: Source06 integration `608e37603` passed 771 focused cases, but its normal push failed on one public Make fixture string in the read-only secrets hook. No remote or hosted run advanced. The preceding fetch guard independently printed `remote=/development` and zero divergence because `PUSH_REMOTE` was unset, fetch failure was ignored, and invalid ref/count lookups had success fallbacks.
+- **Test-first repair**: Real local-Git regressions initially failed eight cases and passed one. The guard now defaults to the intended remote, uses the normal push SSH key, verifies exact remote-branch presence, refreshes that tracking ref, and fails closed on lookup/fetch/count errors or missing local commits. Confirmed new-branch creation remains allowed; FORCE cannot bypass divergence, and shared history must merge forward. No live validation-only bypass is introduced.
+- **Actual proof**: All 350 push-policy cases pass with warnings fatal (12 skipped), alongside strict typing, Ruff, Make lint, 212 contracts, and the documented dry-run example. Actual configured remote admission resolves `43814531ba0e1bb40d14936280ddd506d45381eb`, with development 51 ahead and zero behind. This guard never changes local HEAD, remote refs, releases, deployments, or running services. Full local/hosted release proof remains pending; disk is still above its unchanged limit.
+
 ### 2026-10-12 — combined candidate exposed fixture-policy and Make startup drift
 
 - **Observed**: Combined acceptance at `9d86d89a9` passed 566 of 571 selected cases and failed five. Four canonical fixtures inherited the native interpreter instead of the release policy; one contract assertion omitted the newly required source-CI branch. The wrapper also emitted a shell argument-count diagnostic for ordinary quoted Make arguments. Subsequent read-only bootstrap regressions reproduced unwanted environment initialization and missing application imports.

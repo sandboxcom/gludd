@@ -2,6 +2,12 @@
   "version": 1,
   "targets": [
     {
+      "name": "_pull-before-push-guard",
+      "make_variables": ["PUSH_REMOTE", "SSH_KEY"],
+      "not_for_direct_use": true,
+      "behavior": "make _pull-before-push-guard -n PUSH_REMOTE=sandboxcom SSH_KEY=/tmp/gludd-contract-absent-key"
+    },
+    {
       "name": "uv-cache-path",
       "make_variables": [],
       "behavior": "make uv-cache-path"
