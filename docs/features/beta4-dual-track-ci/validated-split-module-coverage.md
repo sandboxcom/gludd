@@ -49,3 +49,59 @@ durable, scoped reporting instead of an unbounded or hidden scan.
 [pytest-imported-tests]: https://github.com/pytest-dev/pytest/discussions/11366
 [pytest-timeout-issue-60]: https://github.com/pytest-dev/pytest-timeout/issues/60
 [testmon-explicit-deps]: https://github.com/tarpas/pytest-testmon/issues/12
+
+## Coverage-index reuse after the release-candidate timeout (2026-10-12)
+
+Hosted run `38189779986` timed out in Python 3.11 `unit-1b` at
+`test_repository_split_component_mappings_are_exact_and_live`. Spot-checking
+three mappings still built the full repository index and therefore retained the
+expensive work. The regression again verifies all 29 exact mappings and their
+live facade tests against that full index.
+
+The checker now derives source re-exports and compact dependency edges from the
+same parse and traversal. Each distinct facade's reachability is computed once
+per index using Python's standard-library [`functools.cache`][python-cache].
+Test counting, normal imports, attribute re-exports, and file-loader discovery
+share one module traversal; tests without a file-loader call avoid inspecting
+every function body for loader wrappers. Each source is parsed once per index,
+and each selected test module is traversed once. These work bounds are verified
+by regressions, including a cyclic relative-import graph and a file-loader
+wrapper, rather than machine-sensitive elapsed-time assertions.
+
+The reuse ends at each audit invocation. Rewriting a source edge or test import
+before the next index build is observed and fails closed; malformed mapping
+documents, paths outside the test tree, missing tests, and unrelated facades
+remain errors. Source ASTs are discarded after their compact summary is built,
+and test traversal data is retained only for the current file. No process-global
+or on-disk cache can silently credit stale coverage.
+
+On the local Python 3.11.14 environment, the original node took **30.53 seconds**;
+the implementation repair, with every live mapping restored, took **13.42
+seconds** (56 percent less time). The focused coverage run passed **41 tests in
+34.91 seconds**, with **96.0 percent line coverage** and **90.8 percent branch
+coverage** for the checker. The 85 percent aggregate and 75 percent per-file
+gates passed, and the per-test timeout remains 180 seconds. These are local
+measurements; a green hosted run is still required for release admission.
+
+The long-lived upstream reports were reviewed again on 2026-10-12:
+
+- [CPython issue #123373][cpython-ast-walk], opened 2024-08-27, explains that
+  `ast.walk()` traverses the descendant tree using a queue. Sharing its result
+  removes repeated traversal while preserving the same static nodes.
+- [pytest-testmon issue #12][testmon-explicit-deps], opened 2015-03-31, discusses
+  combining explicit file dependencies with observed dependency evidence.
+  Gludd continues validating each declared edge rather than treating a mapping
+  as a coverage exemption.
+- [pytest-timeout issue #60][pytest-timeout-issue-60], opened 2020-03-31 and
+  referencing a 2016 pytest mailing-list discussion, reports that a CI timeout
+  can prevent graceful cleanup and a final report. Gludd retains its existing
+  timeout, namespaced temporary roots, and observed progress while reducing the
+  index work.
+
+ZDD remains candidate rejection: this read-only checker neither restarts nor
+changes a serving runtime. Rollback is the isolated implementation, regression,
+and documentation commit. The audit starts no daemon, model, or network client;
+the serial test target owns and removes its temporary test directory.
+
+[python-cache]: https://docs.python.org/3.11/library/functools.html#functools.cache
+[cpython-ast-walk]: https://github.com/python/cpython/issues/123373
