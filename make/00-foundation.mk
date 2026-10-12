@@ -480,7 +480,7 @@ help:
 	@echo "  coverage-files        Observable targeted coverage (COVERAGE_* plus OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_QUIET_SECS, OBSERVED_MAX_SECS, OBSERVED_RETAIN_RUNS)"
 	@echo "  observed-status       Print current/exact retained command status (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)"
 	@echo "  observed-tail         Print bounded current/exact retained log tail (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)"
-	@echo "  run-watched           Observe one bounded command (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)"
+	@echo "  run-watched           Observe one bounded command with quoted child arguments (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)"
