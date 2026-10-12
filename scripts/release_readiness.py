@@ -35,12 +35,6 @@ from typing import cast
 
 from run_ci_shards_serial import canonical_json_sha256, release_execution_policy
 
-
-def _override_enabled(name: str) -> bool:
-    """Return True when an explicit operator override env var is set to 1."""
-    return os.environ.get(name, "") == "1"
-
-
 from general_ludd.git_release.reviewed_head_integration import (
     ReviewedHeadIntegrationReceiptError,
     load_reviewed_head_integration_receipt,
@@ -48,21 +42,34 @@ from general_ludd.git_release.reviewed_head_integration import (
 from general_ludd.quality.preflight import check_tasks_ticks
 from general_ludd.review import release_forecast
 
+
+def _override_enabled(name: str) -> bool:
+    """Return True when an explicit operator override env var is set to 1."""
+    return os.environ.get(name, "") == "1"
+
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RELEASE_TAG = "v0.1.0-beta.4"
 STABLE_RELEASE_TAG = "v0.1.1"
+V012_RELEASE_TAG = "v0.1.2"
 STABLE_RELEASE_TASK_IDS = frozenset(f"S83.{number}" for number in range(157, 169))
+V012_RELEASE_TASK_IDS = frozenset(f"S97.{number}" for number in range(1, 13)) | frozenset(
+    f"S98.{number}" for number in range(1, 8)
+)
 RELEASE_TASK_PREFIXES = {
     DEFAULT_RELEASE_TAG: ("S86.",),
     STABLE_RELEASE_TAG: (),
+    V012_RELEASE_TAG: ("S98.",),
 }
 RELEASE_REQUIRED_TASKS = {
     STABLE_RELEASE_TAG: STABLE_RELEASE_TASK_IDS,
+    V012_RELEASE_TAG: V012_RELEASE_TASK_IDS,
 }
-RELEASE_RECEIPT_REQUIRED_TAGS = frozenset({STABLE_RELEASE_TAG})
+RELEASE_RECEIPT_REQUIRED_TAGS = frozenset({STABLE_RELEASE_TAG, V012_RELEASE_TAG})
 RELEASE_ACTION_TASKS = {
     DEFAULT_RELEASE_TAG: frozenset({"S86.10"}),
     STABLE_RELEASE_TAG: frozenset({"S83.166"}),
+    V012_RELEASE_TAG: frozenset(),
 }
 _SEMVER_NUMBER = r"(?:0|[1-9][0-9]*)"
 _TAG = re.compile(
@@ -136,6 +143,7 @@ class Readiness:
     """Fail-closed evidence collected for one immutable release candidate."""
 
     branch: str = ""
+    ci_source_branch: str = ""
     head: str = ""
     ci_head_sha: str = ""
     ci_verdict: str = "UNKNOWN"
@@ -309,6 +317,7 @@ def build_remediation_plan(
                     "make",
                     "release-readiness",
                     f"TAG={tag}",
+                    f"RELEASE_READINESS_CI_BRANCH={result.ci_source_branch or result.branch}",
                     "RELEASE_READINESS_VALIDATE_ONLY=1",
                     "RELEASE_COMPLETED_STAGES=",
                     "RELEASE_OBSERVATIONS=",
@@ -345,6 +354,7 @@ def build_remediation_plan(
             "make",
             "release-readiness",
             f"TAG={tag}",
+            f"RELEASE_READINESS_CI_BRANCH={result.ci_source_branch or result.branch}",
             "RELEASE_READINESS_VALIDATE_ONLY=0",
             "RELEASE_COMPLETED_STAGES=",
             "RELEASE_OBSERVATIONS=",
@@ -628,12 +638,16 @@ def assess(
     root: Path = ROOT,
     run: RunFn = _run,
     gha_head_sha: str = "",
+    ci_branch: str = "",
     tag: str = DEFAULT_RELEASE_TAG,
     reviewed_head_integration_receipt: Path | None = None,
     expected_head_sha: str = "",
 ) -> Readiness:
     """Collect all release evidence without mutating the repository."""
-    result = Readiness(reviewed_head_receipt_required=tag in RELEASE_RECEIPT_REQUIRED_TAGS)
+    result = Readiness(
+        ci_source_branch=ci_branch,
+        reviewed_head_receipt_required=tag in RELEASE_RECEIPT_REQUIRED_TAGS,
+    )
     try:
         result.release_policy_compatible, result.release_policy_detail = _release_policy_preflight(run, root)
         if not result.release_policy_compatible:
@@ -662,6 +676,7 @@ def assess(
             cwd=str(root),
         )
         result.branch = state.branch
+        result.ci_source_branch = ci_branch or state.branch
         result.head = state.head
         result.ci_head_sha = gha_head_sha or state.head
         result.ci_head_matches = not gha_head_sha or gha_head_sha == state.head
@@ -688,7 +703,7 @@ def assess(
         detached = _detached_worktrees(run, root)
         result.detached_worktrees = detached
 
-        verdict, _ci_detail = _ci_verdict(state.head, state.branch, run)
+        verdict, _ci_detail = _ci_verdict(state.head, result.ci_source_branch, run)
         result.ci_verdict = verdict
         if not result.ci_head_matches or verdict != "GREEN":
             result.errors.append(
@@ -865,6 +880,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the release preflight and emit one machine-readable result."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gha-head-sha", default="", help="expected CI HEAD SHA")
+    parser.add_argument(
+        "--ci-branch",
+        default="",
+        help="source branch for exact-SHA hosted evidence; defaults to the invoking checkout branch",
+    )
     parser.add_argument("--root", default=str(ROOT), help="explicit repository worktree root")
     parser.add_argument("--tag", default=DEFAULT_RELEASE_TAG, help="target release tag")
     parser.add_argument(
@@ -974,6 +994,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "execution_policy_sha256": canonical_json_sha256(release_execution_policy()),
                     },
                     "reviewed_head_integration_receipt": receipt_payload,
+                    "ci_source_branch": cast(str, args.ci_branch),
                     "tag": tag,
                     "validate_only": True,
                 },
@@ -985,6 +1006,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     result = assess(
         root=root,
         gha_head_sha=args.gha_head_sha,
+        ci_branch=cast(str, args.ci_branch),
         tag=tag,
         reviewed_head_integration_receipt=receipt_path,
         expected_head_sha=expected_head_sha,

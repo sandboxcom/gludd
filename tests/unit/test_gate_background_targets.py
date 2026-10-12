@@ -117,7 +117,7 @@ def test_gate_background_observed_keeps_the_launch_owner_alive() -> None:
     content = _content()
     idx = content.find("gate-background-observed:")
     assert idx != -1, "Makefile missing 'gate-background-observed:' target"
-    recipe_block = content[idx : idx + 800]
+    recipe_block = content[idx:].split("# Launch gate-lite detached", 1)[0]
 
     launch = "$(_GATE_MAKE) --no-print-directory gate-background"
     wait = "$(_GATE_MAKE) --no-print-directory gate-wait"
@@ -172,6 +172,9 @@ def test_gate_background_duplicate_does_not_replace_live_pid(
     tmp_path: Path,
 ) -> None:
     """The real target refuses a live owner without reaching its launch step."""
+    metadata = (ROOT / "pyproject.toml").read_bytes()
+    project_file = tmp_path / "pyproject.toml"
+    project_file.write_bytes(metadata)
     owner = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(30)"],
     )
@@ -196,6 +199,8 @@ def test_gate_background_duplicate_does_not_replace_live_pid(
         assert result.returncode == 0, result.stdout + result.stderr
         assert "refusing to launch duplicate" in result.stdout
         assert pid_file.read_text() == f"{owner.pid}\n"
+        assert project_file.read_bytes() == metadata
+        assert not (tmp_path / ".venv").exists()
     finally:
         owner.terminate()
         owner.wait(timeout=10)
@@ -205,6 +210,10 @@ def test_gate_background_dry_run_has_no_filesystem_side_effects(
     tmp_path: Path,
 ) -> None:
     """The real ``make -n`` target prints its recipe and creates nothing."""
+    metadata = (ROOT / "pyproject.toml").read_bytes()
+    project_file = tmp_path / "pyproject.toml"
+    project_file.write_bytes(metadata)
+    before_entries = set(tmp_path.iterdir())
     subprocess.run(
         [
             "make",
@@ -223,3 +232,5 @@ def test_gate_background_dry_run_has_no_filesystem_side_effects(
     )
     assert not (tmp_path / ".gate-background.pid").exists()
     assert not (tmp_path / ".gate-logs").exists()
+    assert project_file.read_bytes() == metadata
+    assert set(tmp_path.iterdir()) == before_entries

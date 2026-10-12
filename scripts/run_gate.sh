@@ -23,6 +23,22 @@
 
 set -euo pipefail
 
+GATE_TEST_PROFILE="${GATE_TEST_PROFILE-native}"
+case "${GATE_TEST_PROFILE}" in
+    native) ;;
+    release)
+        if [ -n "${PYTEST_CMD:-}${PYTEST_ARGS:-}${PYTEST_ADDOPTS:-}" ] \
+            || [ "${ALLOW_DIRTY_CI_REPLICA:-0}" != "0" ] \
+            || [ "${ALLOW_DIRTY_FOCUSED_REPRO:-0}" != "0" ] \
+            || [ "${DUAL_TRACK_LOCAL_VALIDATE_ONLY:-0}" != "0" ]; then
+            echo "run_gate.sh: release profile rejects diagnostic and dirty overrides" >&2
+            exit 2
+        fi
+        : "${GLUDD_GATE_BATCH_WORKERS:=1}"
+        ;;
+    *) echo "run_gate.sh: GATE_TEST_PROFILE must be native or release" >&2; exit 2 ;;
+esac
+
 # ---------------------------------------------------------------------------
 # SUBAGENT GUARD: refuse full gate launches from subagent contexts.
 #
@@ -74,12 +90,30 @@ if [ "${GATE_BATCH_WORKERS}" -lt 1 ] || [ "${GATE_BATCH_WORKERS}" -gt 2 ]; then
     echo "run_gate.sh: GLUDD_GATE_BATCH_WORKERS must be in 1..2" >&2
     exit 2
 fi
+if [ "${GATE_TEST_PROFILE}" = "release" ] && [ "${GATE_BATCH_WORKERS}" != "1" ]; then
+    echo "run_gate.sh: release profile requires exactly one worker" >&2
+    exit 2
+fi
 
 # GATE_LOCK_FILE/BASETEMP_PREFIX can be overridden in tests.  In normal use,
 # derive both paths from the checkout namespace so gates from unrelated
 # projects do not reject one another or share pytest scratch directories.
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
+_release_identity() {
+    local head dirty
+    head="$(git -C "${REPO_ROOT}" rev-parse HEAD)" || return 2
+    dirty="$(git -C "${REPO_ROOT}" status --porcelain --untracked-files=all)" || return 2
+    if [ -n "${dirty}" ] || [ "${head}" != "${GATE_CANDIDATE_SHA}" ]; then
+        echo "run_gate.sh: release profile requires the same clean exact candidate SHA" >&2
+        return 2
+    fi
+}
+if [ "${GATE_TEST_PROFILE}" = "release" ]; then
+    GATE_CANDIDATE_SHA="${GLUDD_CANDIDATE_SHA:-$(git -C "${REPO_ROOT}" rev-parse HEAD)}"
+    _release_identity || exit $?
+    export GLUDD_CANDIDATE_SHA="${GATE_CANDIDATE_SHA}"
+fi
 ARBITER_SCRIPT="${SCRIPT_DIR}/resource_arbiter.py"
 PROJECT_NAMESPACE="${GLUDD_PROJECT_NAMESPACE:-}"
 if [ -z "${PROJECT_NAMESPACE}" ]; then
@@ -274,7 +308,63 @@ echo "[run_gate.sh] live log: ${LOG_FILE}"
 # ---------------------------------------------------------------------------
 PYTEST_CMD=${PYTEST_CMD:-}
 
-if [ -n "${PYTEST_CMD}" ]; then
+if [ "${GATE_TEST_PROFILE}" = "release" ]; then
+    RELEASE_ATTESTATION="${RESOURCE_DIR}/ci-shards/attestation.json"
+    PREVIOUS_ATTESTATION_DIGEST="$(python3 -c 'import hashlib, pathlib, sys; p = pathlib.Path(sys.argv[1]); print(hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else "missing")' "${RELEASE_ATTESTATION}")"
+    echo "[run_gate.sh] canonical release producer sha=${GATE_CANDIDATE_SHA} resume=${GATE_EXACT_SHA_RESUME} workers=1"
+    ( set +e; python3 "${SCRIPT_DIR}/heavy_sem.py" "${HEAVY_MAX_PAR:-3}" gludd-heavy -- \
+        "${MAKE:-make}" --no-print-directory test-ci-dual-track-local \
+        DUAL_TRACK_LOCAL_VALIDATE_ONLY=0 PYTEST_ARGS= \
+        ALLOW_DIRTY_CI_REPLICA=0 ALLOW_DIRTY_FOCUSED_REPRO=0 \
+        WORKERS_PER_SHARD=1 "MAX_FILES_PER_BATCH=${GATE_MAX_FILES_PER_BATCH}" \
+        "DUAL_TRACK_RESUME=${GATE_EXACT_SHA_RESUME}" DUAL_TRACK_WATCHDOG_OWNED_GATE=1; \
+      echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
+    PRODUCER_EXIT="$(cat "${RC_FILE}" 2>/dev/null || echo 1)"
+    if [ "${PRODUCER_EXIT}" = "0" ] || [ -f "${RELEASE_ATTESTATION}" ]; then
+        if { [ "${PRODUCER_EXIT}" != "0" ] || _release_identity; } \
+            && "${RESOURCE_DIR}-toolchain/ci-shards/python-3.11/bin/python" - \
+                "${SCRIPT_DIR}" "${RELEASE_ATTESTATION}" "${GATE_CANDIDATE_SHA}" \
+                "${PREVIOUS_ATTESTATION_DIGEST}" "${PRODUCER_EXIT}" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+from ci_named_shard_files import SHARDS
+from verify_dual_track_ci import _read_attestation, _validate_attestation
+
+path = Path(sys.argv[2])
+producer_exit = int(sys.argv[5])
+payload, errors = _read_attestation(path)
+cancelled = bool(payload and producer_exit and payload.get("status") == "fail" and payload.get("returncode") in (130, 143))
+if payload is not None:
+    shards, _, validation_errors = _validate_attestation(path, payload, sha=sys.argv[3], lane="local")
+    if cancelled:
+        validation_errors = [error for error in validation_errors if error != f"{path}: is not a terminal pass"]
+    errors.extend(validation_errors)
+    if shards != set(SHARDS):
+        errors.append("canonical local attestation does not cover every shard")
+    if not str(payload.get("python", "")).startswith("3.11."):
+        errors.append("canonical local attestation did not use Python 3.11")
+    if hashlib.sha256(path.read_bytes()).hexdigest() == sys.argv[4]:
+        errors.append("canonical local attestation was not refreshed by this gate")
+if errors:
+    print("GATE-RELEASE-ATTESTATION-REJECTED " + "; ".join(errors), flush=True)
+    sys.exit(producer_exit or 2)
+if cancelled:
+    print(f"GATE-RELEASE-ATTESTATION cancelled rc={payload['returncode']}", flush=True)
+    sys.exit(payload["returncode"])
+if producer_exit:
+    sys.exit(producer_exit)
+print(f"GATE-RELEASE-ATTESTATION PASS sha={sys.argv[3]} path={path}", flush=True)
+PY
+        then
+            :
+        else
+            echo $? > "${RC_FILE}"
+        fi
+    fi
+elif [ -n "${PYTEST_CMD}" ]; then
     # set -e would abort the subshell on a non-zero eval before echo $? runs;
     # disable it inside the subshell so the exit code is always captured.
     ( set +e; eval "${PYTEST_CMD}"; echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
@@ -307,7 +397,11 @@ if [ "${EXIT}" -eq 130 ] || [ "${EXIT}" -eq 143 ]; then
     CANCELLATION_RC="${EXIT}"
     CANCELLATION_REASON="child-cancellation"
 elif [ "${EXIT}" -eq 0 ]; then
-    echo "test PASS 0" >> "${STATUS_FILE}"
+    if [ "${GATE_TEST_PROFILE}" = "release" ]; then
+        echo "test PASS 0 profile=release sha=${GATE_CANDIDATE_SHA} attestation=${RELEASE_ATTESTATION}" >> "${STATUS_FILE}"
+    else
+        echo "test PASS 0" >> "${STATUS_FILE}"
+    fi
 else
     echo "test FAIL non-zero-exit" >> "${STATUS_FILE}"
     touch "${FAILED_FILE}"

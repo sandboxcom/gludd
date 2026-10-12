@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tomllib
 from pathlib import Path
@@ -103,8 +104,12 @@ def test_root_project_is_core_only_and_profile_catalog_is_complete() -> None:
 
 def test_root_lock_enforces_current_transitive_security_floors() -> None:
     root_project = _load(ROOT / "pyproject.toml")
+    root_tool = root_project["tool"]
+    assert isinstance(root_tool, dict)
+    root_uv = root_tool["uv"]
+    assert isinstance(root_uv, dict)
 
-    assert root_project["tool"]["uv"]["constraint-dependencies"] == [
+    assert root_uv["constraint-dependencies"] == [
         "anyio>=4.14.2",
         "mako>=1.4.2",
         "urllib3>=2.8.0",
@@ -113,7 +118,11 @@ def test_root_lock_enforces_current_transitive_security_floors() -> None:
         profile_project = _load(
             ROOT / "requirements/profiles" / profile / "pyproject.toml"
         )
-        assert profile_project["tool"]["uv"]["constraint-dependencies"] == [
+        profile_tool = profile_project["tool"]
+        assert isinstance(profile_tool, dict)
+        profile_uv = profile_tool["uv"]
+        assert isinstance(profile_uv, dict)
+        assert profile_uv["constraint-dependencies"] == [
             "anyio>=4.14.2,<4.15",
         ]
 
@@ -121,30 +130,53 @@ def test_root_lock_enforces_current_transitive_security_floors() -> None:
 def test_cuda_profile_uses_current_auditable_runtime_versions() -> None:
     cuda_config = _load(ROOT / "requirements/profiles/cuda-inference/pyproject.toml")
     cuda_project = cuda_config["project"]
+    assert isinstance(cuda_project, dict)
+    cuda_tool = cuda_config["tool"]
+    assert isinstance(cuda_tool, dict)
+    cuda_uv = cuda_tool["uv"]
+    assert isinstance(cuda_uv, dict)
 
     assert cuda_project["dependencies"] == [
         "vllm==0.30.0",
         "torch==2.13.0",
     ]
-    assert cuda_config["tool"]["uv"]["exclude-dependencies"] == ["mcp"]
-    assert "override-dependencies" not in cuda_config["tool"]["uv"]
+    assert cuda_uv["exclude-dependencies"] == ["mcp"]
+    assert "override-dependencies" not in cuda_uv
     cuda_mcp = _load(
         ROOT / "requirements/profiles/cuda-inference-mcp/pyproject.toml"
     )
-    assert cuda_mcp["project"]["dependencies"] == ["mcp==2.3.0"]
+    cuda_mcp_project = cuda_mcp["project"]
+    assert isinstance(cuda_mcp_project, dict)
+    assert cuda_mcp_project["dependencies"] == ["mcp==2.3.0"]
 
     catalog = _load(CATALOG_PATH)
-    assert catalog["sets"]["cuda-inference"]["profiles"] == [
+    install_sets = catalog["sets"]
+    assert isinstance(install_sets, dict)
+    cuda_set = install_sets["cuda-inference"]
+    assert isinstance(cuda_set, dict)
+    assert cuda_set["profiles"] == [
         "agent-runtime",
         "cuda-inference",
         "cuda-inference-mcp",
     ]
-    assert catalog["profiles"]["cuda-inference"]["audit-ignore"] == [
+    profiles = catalog["profiles"]
+    assert isinstance(profiles, dict)
+    cuda_profile = profiles["cuda-inference"]
+    assert isinstance(cuda_profile, dict)
+    assert cuda_profile["audit-ignore"] == [
         "GHSA-h35f-9h28-mq5c",
     ]
     deptry = _load(ROOT / "config/deptry_profiles.toml")
-    assert deptry["tool"]["deptry"]["package_module_name_map"]["mcp"] == "mcp"
-    assert "mcp" in deptry["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    deptry_tool = deptry["tool"]
+    assert isinstance(deptry_tool, dict)
+    deptry_config = deptry_tool["deptry"]
+    assert isinstance(deptry_config, dict)
+    module_name_map = deptry_config["package_module_name_map"]
+    assert isinstance(module_name_map, dict)
+    per_rule_ignores = deptry_config["per_rule_ignores"]
+    assert isinstance(per_rule_ignores, dict)
+    assert module_name_map["mcp"] == "mcp"
+    assert "mcp" in per_rule_ignores["DEP002"]
 
 
 def test_make_commands_never_implicitly_resync_a_composed_profile_environment() -> None:
@@ -152,10 +184,10 @@ def test_make_commands_never_implicitly_resync_a_composed_profile_environment() 
 
     assert "override UV_NO_SYNC := 1" in makefile
     assert "export UV_NO_SYNC" in makefile
-    assert (
-        '$(UV) run --no-sync python -c "from general_ludd import __version__'
-        in makefile
-    )
+    version_line = next(line for line in makefile.splitlines() if line.startswith("VERSION "))
+    assert 'uv version --short --offline --project "$(CURDIR)"' in version_line
+    assert "$(UV) run" not in version_line
+    assert "from general_ludd" not in version_line
     test_count = makefile.split("\ntest-count:\n", 1)[1].split("\ntest-nodeids:\n", 1)[0]
     assert "$(UV) run --no-sync python scripts/stream_command.py" in test_count
     assert "$(UV) run --no-sync python -m pytest" in test_count
@@ -173,16 +205,29 @@ def test_profile_projects_are_independent_and_locks_are_bounded() -> None:
         pyproject_path = project_dir / "pyproject.toml"
         lock_path = project_dir / "uv.lock"
         pyproject = _load(pyproject_path)
+        project = pyproject["project"]
+        assert isinstance(project, dict)
+        tool = pyproject["tool"]
+        assert isinstance(tool, dict)
+        uv = tool["uv"]
+        assert isinstance(uv, dict)
+        dependencies = project["dependencies"]
+        assert isinstance(dependencies, list)
+        assert all(isinstance(dependency, str) for dependency in dependencies)
 
-        assert pyproject["project"]["name"] == f"gludd-profile-{name}"
-        assert pyproject["tool"]["uv"]["package"] is False
-        assert "workspace" not in pyproject["tool"]["uv"]
-        assert "general-ludd-agent" not in "\n".join(pyproject["project"]["dependencies"])
+        assert project["name"] == f"gludd-profile-{name}"
+        assert uv["package"] is False
+        assert "workspace" not in uv
+        assert "general-ludd-agent" not in "\n".join(dependencies)
         assert len(lock_path.read_text(encoding="utf-8").splitlines()) <= 2499
 
-    security_uv = _load(
+    security_project = _load(
         ROOT / "requirements/profiles/dev-security/pyproject.toml"
-    )["tool"]["uv"]
+    )
+    security_tool = security_project["tool"]
+    assert isinstance(security_tool, dict)
+    security_uv = security_tool["uv"]
+    assert isinstance(security_uv, dict)
     assert security_uv["constraint-dependencies"] == ["chardet>=7.6.0,<8"]
 
 
@@ -467,17 +512,36 @@ def test_cli_export_requires_complete_arguments_and_writes_requirements(
 def _requirements_for_set(catalog: dict[str, object], name: str) -> list[str]:
     root = _load(ROOT / "pyproject.toml")["project"]
     assert isinstance(root, dict)
-    requirements = list(root["dependencies"])
+    root_dependencies = root["dependencies"]
+    assert isinstance(root_dependencies, list)
+    assert all(isinstance(dependency, str) for dependency in root_dependencies)
+    requirements = list(root_dependencies)
     install_sets = catalog["sets"]
     profiles = catalog["profiles"]
     assert isinstance(install_sets, dict)
     assert isinstance(profiles, dict)
-    selected = install_sets[name]["profiles"]
+    install_set = install_sets[name]
+    assert isinstance(install_set, dict)
+    selected = install_set["profiles"]
+    assert isinstance(selected, list)
+    assert all(isinstance(profile_name, str) for profile_name in selected)
     partitioned_names: set[str] = set()
     for profile_name in selected:
-        project = _load(ROOT / profiles[profile_name]["project"] / "pyproject.toml")
-        requirements.extend(project["project"]["dependencies"])
-        uv = project.get("tool", {}).get("uv", {})
+        profile = profiles[profile_name]
+        assert isinstance(profile, dict)
+        project_path = profile["project"]
+        assert isinstance(project_path, str)
+        project = _load(ROOT / project_path / "pyproject.toml")
+        project_metadata = project["project"]
+        assert isinstance(project_metadata, dict)
+        dependencies = project_metadata["dependencies"]
+        assert isinstance(dependencies, list)
+        assert all(isinstance(dependency, str) for dependency in dependencies)
+        requirements.extend(dependencies)
+        tool = project.get("tool", {})
+        assert isinstance(tool, dict)
+        uv = tool.get("uv", {})
+        assert isinstance(uv, dict)
         for excluded in uv.get("exclude-dependencies", []):
             assert isinstance(excluded, str)
             partitioned_names.add(canonicalize_name(Requirement(excluded).name))
@@ -528,17 +592,30 @@ def _assert_requirement_parity(expected: list[str], actual: list[str]) -> None:
 def test_profile_sets_preserve_every_pre_split_direct_requirement() -> None:
     legacy = _load(LEGACY_REQUIREMENTS)
     catalog = _load(CATALOG_PATH)
-    legacy_root = legacy["root"]["dependencies"]
+    root = legacy["root"]
+    assert isinstance(root, dict)
+    legacy_root = root["dependencies"]
+    assert isinstance(legacy_root, list)
+    assert all(isinstance(requirement, str) for requirement in legacy_root)
     optional = legacy["optional"]
+    assert isinstance(optional, dict)
 
     for name, extra_requirements in optional.items():
+        assert isinstance(name, str)
+        assert isinstance(extra_requirements, list)
+        assert all(isinstance(requirement, str) for requirement in extra_requirements)
         _assert_requirement_parity(
             [*legacy_root, *extra_requirements],
             _requirements_for_set(catalog, name),
         )
 
+    development = legacy["development"]
+    assert isinstance(development, dict)
+    development_dependencies = development["dependencies"]
+    assert isinstance(development_dependencies, list)
+    assert all(isinstance(requirement, str) for requirement in development_dependencies)
     _assert_requirement_parity(
-        [*legacy_root, *legacy["development"]["dependencies"]],
+        [*legacy_root, *development_dependencies],
         _requirements_for_set(catalog, "development"),
     )
 
@@ -895,14 +972,16 @@ def test_command_executor_merges_environment_and_checks_return_code(
     def fake_run(argv: tuple[str, ...], *, check: bool, env: dict[str, str]) -> None:
         observed.update(argv=argv, check=check, env=env)
 
-    monkeypatch.setattr(dependency_profiles.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     dependency_profiles.execute_commands(
         (dependency_profiles.Command(("uv", "lock"), {"PROFILE_TEST": "yes"}),)
     )
     assert observed["argv"] == ("uv", "lock")
     assert observed["check"] is True
-    assert observed["env"]["PROFILE_TEST"] == "yes"
-    assert observed["env"]["UV_NO_SYNC"] == "0"
+    environment = observed["env"]
+    assert isinstance(environment, dict)
+    assert environment["PROFILE_TEST"] == "yes"
+    assert environment["UV_NO_SYNC"] == "0"
 
 
 def test_validate_only_sync_never_promotes(tmp_path: Path) -> None:
@@ -934,7 +1013,7 @@ def test_promotion_rejects_stale_backup_and_rolls_back_rename_failure(
     staging = tmp_path / "staging"
     target.mkdir()
     staging.mkdir()
-    backup = target.with_name(f".{target.name}.profile-backup-{dependency_profiles.os.getpid()}")
+    backup = target.with_name(f".{target.name}.profile-backup-{os.getpid()}")
     backup.mkdir()
     with pytest.raises(dependency_profiles.ProfileError, match="stale profile backup"):
         dependency_profiles._promote_environment(staging, target)
@@ -970,7 +1049,7 @@ def test_environment_python_uses_the_windows_virtualenv_layout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with monkeypatch.context() as scoped:
-        scoped.setattr(dependency_profiles.os, "name", "nt")
+        scoped.setattr(os, "name", "nt")
         selected = dependency_profiles._environment_python(tmp_path)
 
     assert selected == tmp_path / "Scripts/python.exe"
