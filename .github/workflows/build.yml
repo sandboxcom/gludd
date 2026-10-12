@@ -236,6 +236,17 @@ jobs:
         run: |
           echo "=== CI PHASE: ansible-base-manifest ==="
           make check-ansible-base-image ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0
+      - name: Known runtime and handoff regression admission
+        run: |
+          echo "=== CI PHASE: runtime-regression-admission ==="
+          make run-watched \
+            CMD='make _pytest-runtime-compatibility-admission' \
+            RUN_ID="runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}" \
+            OBSERVED_LABEL=ci-runtime-regression-admission \
+            STALL_SECS=60 MAX_SECS=90 \
+            LOG=.gate-logs/ci-runtime-regression-admission.log \
+            OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2 \
+            OBSERVED_HEARTBEAT_SECS=10
       - name: Inject version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |

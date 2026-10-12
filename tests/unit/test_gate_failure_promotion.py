@@ -11,6 +11,7 @@ from textwrap import dedent
 from types import ModuleType
 
 import pytest
+import yaml
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -180,8 +181,55 @@ def test_session_metadata_failures_are_executed_before_hosted_shards(
     )
 
 
+@pytest.mark.parametrize(
+    "test_name",
+    [
+        "test_timeout_terminates_exact_session_and_removes_owned_pid",
+        "test_timeout_escalates_to_sigkill_for_term_ignoring_gate",
+        "test_timeout_never_removes_a_replaced_pid_receipt",
+    ],
+)
+def test_timeout_teardown_failures_execute_in_early_admission(test_name: str) -> None:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    node = f"tests/unit/test_start_gate_background.py::{test_name}"
+    family = next((family for family in manifest["families"] if family["node"] == node), None)
+    assert family is not None
+    assert family["owner_target"] == "_pytest-runtime-compatibility-admission"
+    assert family["full_gate_phase"] == "test"
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert "tests/unit/test_start_gate_background.py" in executable
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    assert manifest["full_gate_required"] is True
+
+
 def _target_stanza(makefile: str, target: str) -> str:
     return makefile.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
+
+
+def test_hosted_fanout_requires_executed_runtime_admission() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text())
+    jobs = workflow["jobs"]
+    steps = jobs["gate"]["steps"]
+    owners = [
+        step for step in steps
+        if "make _pytest-runtime-compatibility-admission" in step.get("run", "")
+    ]
+    assert len(owners) == 1
+    owner = owners[0]
+    assert "if" not in owner and not owner.get("continue-on-error", False)
+    assert "make run-watched" in owner["run"]
+    assert "STALL_SECS=60 MAX_SECS=90" in owner["run"]
+    assert "OBSERVED_HEARTBEAT_SECS=10" in owner["run"]
+    dependency_step = next(step for step in steps if step.get("name") == "Install deps")
+    assert steps.index(dependency_step) < steps.index(owner)
+    assert "--set ci --environment .venv" in dependency_step["run"]
+    assert jobs["gate"]["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
+    for job_name in (
+        "test-shard", "linux", "macos", "windows", "termux", "container",
+        "ansible-ee", "game-building",
+    ):
+        assert "gate" in jobs[job_name]["needs"]
 
 
 def _synthetic_repository(tmp_path: Path) -> tuple[Path, dict[str, object]]:
@@ -463,6 +511,9 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "async-gate-canonical-profile-contract",
         "session-objective-ci-evidence",
         "session-handoff-git-identity",
+        "gate-timeout-owned-zombie",
+        "gate-timeout-term-escalation-zombie",
+        "gate-timeout-replaced-receipt-zombie",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -608,7 +659,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py '
         'tests/unit/test_session_persistence_integration.py '
         'tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::'
-        'test_primary_objective_mentions_ci"'
+        'test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
@@ -652,7 +703,7 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "gate-failure-promotions: PASS families=18" in result.stdout
+    assert "gate-failure-promotions: PASS families=21" in result.stdout
     assert "runtime_phases=21" in result.stdout
     assert "runtime_ceiling_seconds=2850" in result.stdout
     for phrase in (

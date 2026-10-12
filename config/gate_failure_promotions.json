@@ -285,6 +285,27 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_session_persistence_integration.py::TestHeadHashMatchesGitLog::test_session_head_in_git_log",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "gate-timeout-owned-zombie",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_start_gate_background.py::test_timeout_terminates_exact_session_and_removes_owned_pid",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "gate-timeout-term-escalation-zombie",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_start_gate_background.py::test_timeout_escalates_to_sigkill_for_term_ignoring_gate",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "gate-timeout-replaced-receipt-zombie",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_start_gate_background.py::test_timeout_never_removes_a_replaced_pid_receipt",
+      "full_gate_phase": "test"
     }
   ]
 }

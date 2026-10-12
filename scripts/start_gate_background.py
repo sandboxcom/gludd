@@ -27,6 +27,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
+import psutil
+
 if TYPE_CHECKING:
     from scripts.resource_arbiter import project_namespace
 else:
@@ -212,6 +214,51 @@ def _exec_gate_after_publication(arguments: Sequence[str]) -> int:
     return 126
 
 
+def _process_is_terminal(pid: int) -> bool | None:
+    """Observe exit without consuming the launching parent's child status."""
+    try:
+        status: str = psutil.Process(pid).status()
+    except psutil.ZombieProcess:
+        return True
+    except psutil.NoSuchProcess:
+        return True
+    except (psutil.AccessDenied, OSError):
+        return None
+    if not status or status == "?":
+        return None
+    return status in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD}
+
+
+def _terminal_group_state(identity: GateIdentity) -> str:
+    """A terminal leader cannot hide a live member of its exact group/session."""
+    try:
+        process_ids = psutil.pids()
+    except (psutil.Error, OSError):
+        return "unknown"
+    if identity.pid not in process_ids:
+        # The terminal leader was just identity-verified. An incomplete snapshot
+        # cannot prove its group empty; a subsequent identity probe can prove exit.
+        return "unknown"
+    for pid in process_ids:
+        if pid == identity.pid:
+            continue
+        try:
+            if os.getpgid(pid) != identity.process_group_id:
+                continue
+            if os.getsid(pid) != identity.session_id:
+                continue
+        except ProcessLookupError:
+            continue
+        except OSError:
+            return "unknown"
+        terminal = _process_is_terminal(pid)
+        if terminal is None:
+            return "unknown"
+        if not terminal:
+            return "owned"
+    return "gone"
+
+
 def _process_state(identity: GateIdentity) -> str:
     """Return ``owned``, ``gone``, ``reused``, or ``unknown``."""
     probe_state, started_at = _probe_pid_started_at(identity.pid)
@@ -224,13 +271,20 @@ def _process_state(identity: GateIdentity) -> str:
     try:
         process_group_id = os.getpgid(identity.pid)
         session_id = os.getsid(identity.pid)
-    except (OSError, ProcessLookupError):
+    except ProcessLookupError:
         return "gone"
+    except OSError:
+        return "unknown"
     if (
         process_group_id != identity.process_group_id
         or session_id != identity.session_id
     ):
         return "reused"
+    terminal = _process_is_terminal(identity.pid)
+    if terminal is None:
+        return "unknown"
+    if terminal:
+        return _terminal_group_state(identity)
     return "owned"
 
 

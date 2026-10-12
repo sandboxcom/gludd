@@ -728,8 +728,11 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_hook_runtime_split_compat.py::test_helper_signatures_match_pre_split_snapshot
 # tests/unit/test_gate_async.py::test_default_gate_command_invokes_whole_gate_without_recursion
 # tests/unit/test_session_persistence_integration.py::TestHeadHashMatchesGitLog::test_session_head_in_git_log
+# tests/unit/test_start_gate_background.py::test_timeout_terminates_exact_session_and_removes_owned_pid
+# tests/unit/test_start_gate_background.py::test_timeout_escalates_to_sigkill_for_term_ignoring_gate
+# tests/unit/test_start_gate_background.py::test_timeout_never_removes_a_replaced_pid_receipt
 	@$(MAKE) --no-print-directory test-files \
-		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci" \
+		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py" \
 		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"
 
 _ansible-role-variable-prefix:

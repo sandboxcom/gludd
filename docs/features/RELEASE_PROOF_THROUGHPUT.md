@@ -34,7 +34,7 @@ This serial facade stops on the first nonzero existing owner:
 4. `check-gate-failure-promotions` verifies executable early-failure ownership.
 5. `check-resource-ownership` checks the existing inventory without rewriting it.
 6. `_pytest-runtime-compatibility-admission` executes the existing warning-fatal
-   fixture, AST, launcher, and handoff tests with one worker.
+   fixture, AST, async/background-launcher, and handoff tests with one worker.
 
 Each owner emits a start and terminal phase marker. Failure emits
 `PROOF-ADMISSION-BLOCKED phase=<owner>` and prevents later owners from running.
@@ -114,6 +114,14 @@ that owner, and new failing-first tests verify executable routing.
 This preserves the 90-second early phase, warning-fatal policy, one-worker
 bound, and the authoritative full-gate replay. SESSION.md is repaired; the
 original objective and persistence assertions remain unchanged.
+
+The three original hosted unit-3b timeout failures are also mapped to that
+owner, which runs the complete background-launcher file. Build's Python 3.11
+and 3.12 quality legs execute it through the existing observer after locked
+dependency installation and before required shard/platform fan-out, retaining
+90-second runtime, 60-second quiet, and ten-second heartbeat bounds. The new
+workflow acceptance fails first on absent routing and pins every prerequisite
+edge without skipping authoritative downstream checks.
 
 ## Existing tools and practitioner evidence
 

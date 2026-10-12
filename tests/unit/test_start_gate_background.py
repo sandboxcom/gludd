@@ -12,6 +12,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
+import psutil
 import pytest
 from scripts import start_gate_background as launcher
 from scripts.resource_arbiter import project_namespace
@@ -326,6 +327,217 @@ def test_unavailable_process_identity_never_retires_a_live_gate(
         _stop(result)
 
 
+def _mock_process_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+    statuses: dict[int, str | Exception],
+) -> GateIdentity:
+    """Model unreaped processes without stealing their parent's exit status."""
+    identity = GateIdentity("unreaped-run", 4242, "stable-token", 4242, 4242)
+
+    class StatusProcess:
+        def __init__(self, pid: int) -> None:
+            self.pid = pid
+
+        def status(self) -> str:
+            value = statuses[self.pid]
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+    monkeypatch.setattr(
+        launcher, "_probe_pid_started_at", lambda _pid: ("present", "stable-token")
+    )
+    monkeypatch.setattr(os, "getpgid", lambda _pid: identity.process_group_id)
+    monkeypatch.setattr(os, "getsid", lambda _pid: identity.session_id)
+    monkeypatch.setattr(psutil, "Process", StatusProcess)
+    monkeypatch.setattr(psutil, "pids", lambda: list(statuses))
+    return identity
+
+
+@pytest.mark.parametrize(
+    "terminal_status", (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD, psutil.ZombieProcess(4242))
+)
+def test_unreaped_exact_gate_is_terminal_without_reaping(
+    monkeypatch: pytest.MonkeyPatch, terminal_status: str | Exception
+) -> None:
+    identity = _mock_process_statuses(monkeypatch, {4242: terminal_status})
+
+    def forbidden_waitpid(*_args: object) -> None:
+        pytest.fail("the watcher must not consume the launcher's child exit status")
+
+    monkeypatch.setattr(os, "waitpid", forbidden_waitpid)
+    assert launcher._process_state(identity) == "gone"
+    assert not process_matches(identity)
+    assert not launcher._identity_may_be_live(identity)
+
+
+@pytest.mark.parametrize("peer_status", (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED))
+def test_unreaped_leader_keeps_live_group_descendant_owned(
+    monkeypatch: pytest.MonkeyPatch, peer_status: str
+) -> None:
+    identity = _mock_process_statuses(
+        monkeypatch, {4242: psutil.STATUS_ZOMBIE, 4243: peer_status}
+    )
+    assert launcher._process_state(identity) == "owned"
+    assert launcher._identity_may_be_live(identity)
+
+
+@pytest.mark.parametrize(
+    "failure", (psutil.AccessDenied(4242), OSError("status unavailable"), "?")
+)
+@pytest.mark.parametrize("unavailable_pid", (4242, 4243))
+def test_unavailable_gate_or_descendant_status_retains_uncertain_ownership(
+    monkeypatch: pytest.MonkeyPatch, failure: str | Exception, unavailable_pid: int
+) -> None:
+    statuses: dict[int, str | Exception] = {
+        4242: psutil.STATUS_ZOMBIE,
+        4243: psutil.STATUS_ZOMBIE,
+    }
+    statuses[unavailable_pid] = failure
+    identity = _mock_process_statuses(monkeypatch, statuses)
+    assert launcher._process_state(identity) == "unknown"
+    assert launcher._identity_may_be_live(identity)
+    assert launcher._watch_outcome_when_not_owned(identity) is None
+
+
+@pytest.mark.parametrize("mismatch", ("pid_started_at", "process_group_id", "session_id"))
+def test_zombie_status_never_overrides_exact_identity_mismatch(
+    monkeypatch: pytest.MonkeyPatch, mismatch: str
+) -> None:
+    identity = _mock_process_statuses(monkeypatch, {4242: psutil.STATUS_ZOMBIE})
+    if mismatch == "pid_started_at":
+        mismatched = replace(identity, pid_started_at="reused-token")
+    elif mismatch == "process_group_id":
+        mismatched = replace(identity, process_group_id=4244)
+    else:
+        mismatched = replace(identity, session_id=4244)
+    assert launcher._process_state(mismatched) == "reused"
+    assert not launcher._signal_session(mismatched, signal.SIGKILL)
+
+
+@pytest.mark.parametrize("term_ignored", (False, True))
+def test_terminal_zombie_verification_keeps_bounded_term_kill_contract(
+    monkeypatch: pytest.MonkeyPatch, term_ignored: bool
+) -> None:
+    statuses: dict[int, str | Exception] = {4242: psutil.STATUS_SLEEPING}
+    identity = _mock_process_statuses(monkeypatch, statuses)
+    signals: list[signal.Signals] = []
+
+    def signal_group(group: int, signum: signal.Signals) -> None:
+        assert group == identity.process_group_id
+        signals.append(signum)
+        if signum == signal.SIGKILL or not term_ignored:
+            statuses[identity.pid] = psutil.STATUS_ZOMBIE
+
+    monkeypatch.setattr(os, "killpg", signal_group)
+    assert launcher._terminate_session(identity, grace_seconds=0.01, poll_seconds=0.001)
+    assert signals == ([signal.SIGTERM, signal.SIGKILL] if term_ignored else [signal.SIGTERM])
+
+
+def test_zombie_leader_does_not_hide_term_ignoring_descendant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statuses: dict[int, str | Exception] = {
+        4242: psutil.STATUS_SLEEPING,
+        4243: psutil.STATUS_SLEEPING,
+    }
+    identity = _mock_process_statuses(monkeypatch, statuses)
+    signals: list[signal.Signals] = []
+
+    def signal_group(group: int, signum: signal.Signals) -> None:
+        assert group == identity.process_group_id
+        signals.append(signum)
+        statuses[4242] = psutil.STATUS_ZOMBIE
+        if signum == signal.SIGKILL:
+            statuses[4243] = psutil.STATUS_ZOMBIE
+
+    monkeypatch.setattr(os, "killpg", signal_group)
+    assert launcher._terminate_session(identity, grace_seconds=0.01, poll_seconds=0.001)
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+
+
+@pytest.mark.parametrize("foreign_identity", ("group", "session"))
+def test_terminal_gate_never_adopts_a_foreign_group_or_session_peer(
+    monkeypatch: pytest.MonkeyPatch, foreign_identity: str
+) -> None:
+    identity = _mock_process_statuses(
+        monkeypatch, {4242: psutil.STATUS_ZOMBIE, 4243: psutil.STATUS_SLEEPING}
+    )
+    if foreign_identity == "group":
+        monkeypatch.setattr(os, "getpgid", lambda pid: 4244 if pid == 4243 else 4242)
+    else:
+        monkeypatch.setattr(os, "getsid", lambda pid: 4244 if pid == 4243 else 4242)
+    assert launcher._process_state(identity) == "gone"
+
+
+def test_terminal_leader_retains_ownership_when_group_membership_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = _mock_process_statuses(
+        monkeypatch, {4242: psutil.STATUS_ZOMBIE, 4243: psutil.STATUS_SLEEPING}
+    )
+
+    def group_id(pid: int) -> int:
+        if pid == 4243:
+            raise PermissionError("group identity unavailable")
+        return identity.process_group_id
+
+    monkeypatch.setattr(os, "getpgid", group_id)
+    assert launcher._process_state(identity) == "unknown"
+
+
+@pytest.mark.parametrize("identity_call", ("getpgid", "getsid"))
+def test_unavailable_exact_group_or_session_never_claims_gate_exit(
+    monkeypatch: pytest.MonkeyPatch, identity_call: str
+) -> None:
+    identity = _mock_process_statuses(monkeypatch, {4242: psutil.STATUS_SLEEPING})
+
+    def unavailable(_pid: int) -> int:
+        raise PermissionError("exact process identity unavailable")
+
+    monkeypatch.setattr(os, identity_call, unavailable)
+    assert launcher._process_state(identity) == "unknown"
+    assert not launcher._signal_session(identity, signal.SIGTERM)
+
+
+@pytest.mark.parametrize("missing_snapshot", (False, True))
+def test_terminal_leader_requires_a_complete_process_snapshot(
+    monkeypatch: pytest.MonkeyPatch, missing_snapshot: bool
+) -> None:
+    identity = _mock_process_statuses(monkeypatch, {4242: psutil.STATUS_ZOMBIE})
+
+    def process_ids() -> list[int]:
+        if missing_snapshot:
+            return []
+        raise OSError("process enumeration unavailable")
+
+    monkeypatch.setattr(psutil, "pids", process_ids)
+    assert launcher._process_state(identity) == "unknown"
+
+
+def test_real_unreaped_gate_is_terminal_before_parent_waits(tmp_path: Path) -> None:
+    result = launch_gate(
+        tmp_path, _sleep_command(), timeout_seconds=30, start_watcher=False
+    )
+    assert result.identity is not None
+    assert result.process is not None
+    try:
+        os.killpg(result.identity.process_group_id, signal.SIGTERM)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if psutil.Process(result.identity.pid).status() == psutil.STATUS_ZOMBIE:
+                break
+            time.sleep(0.001)
+        else:
+            pytest.fail("terminated child did not enter its unreaped terminal state")
+
+        assert launcher._process_state(result.identity) == "gone"
+        assert result.process.returncode is None
+        assert result.process.wait(timeout=5) == -signal.SIGTERM
+    finally:
+        _stop(result)
+
+
 def test_validate_only_is_side_effect_free(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     makefile = tmp_path / "Makefile"
     makefile.write_text("gate:\n\t@true\n", encoding="utf-8")
@@ -582,7 +794,8 @@ def test_timeout_escalates_to_sigkill_for_term_ignoring_gate(tmp_path: Path) -> 
     command = [
         sys.executable,
         "-c",
-        "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)",
+        "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "print('ignore-term-ready', flush=True); time.sleep(30)",
     ]
     result = launch_gate(
         tmp_path,
@@ -593,18 +806,22 @@ def test_timeout_escalates_to_sigkill_for_term_ignoring_gate(tmp_path: Path) -> 
     assert result.identity is not None
     assert result.process is not None
     assert result.process is not None
-    time.sleep(0.05)
-    assert (
-        watch_gate(
-            result.identity,
-            GatePaths.for_root(tmp_path),
-            timeout_seconds=0.01,
-            poll_seconds=0.001,
-            grace_seconds=0.01,
+    assert result.log_path is not None
+    try:
+        _wait_for_log_text(result.log_path, "ignore-term-ready")
+        assert (
+            watch_gate(
+                result.identity,
+                GatePaths.for_root(tmp_path),
+                timeout_seconds=0.01,
+                poll_seconds=0.001,
+                grace_seconds=0.01,
+            )
+            == "timed_out"
         )
-        == "timed_out"
-    )
-    assert result.process.wait(timeout=5) == -signal.SIGKILL
+        assert result.process.wait(timeout=5) == -signal.SIGKILL
+    finally:
+        _stop(result)
 
 
 def test_stale_pid_is_replaced_and_early_exit_fails_cleanly(

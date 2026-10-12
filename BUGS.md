@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — Linux terminal gate leaders looked live after verified TERM/KILL
+
+- **Observed**: Hosted Build `38266403588` unit-3b returns `termination_failed` instead of `timed_out` in three original launcher cases. A Linux zombie retains its start token, PGID, and SID until its parent reaps it, so identity alone cannot prove live execution.
+- **Repair**: The existing locked psutil observer checks terminal status only after exact identity validation, verifies same-group/session peers, preserves live descendants and uncertain observations, and never consumes the launching parent's child exit status. The original timeout, KILL, reused-identity, and replaced-receipt assertions remain intact. Three unreaped-status regressions fail first, then all 54 launcher cases pass. Strict typing/Ruff and the unchanged 250-resource inventory pass.
+- **Coverage conformance**: The first instrumented replay preserves a real failure (53 pass, one fails): its fixed-sleep TERM-ignore fixture sends TERM before the handler is installed. Under the no-unseen-events/owned-cleanup instructions, it now prints a ready marker after handler installation, waits for that marker within the existing helper bound, and owns cleanup in finally. No timeout, grace, KILL assertion, warning filter, retry, or skip is changed. The next 54-case replay passes at 96.36% combined coverage, 96.86% line and 94.67% branch.
+- **Pipeline prevention**: Three exact-node mapping tests and one hosted-prerequisite test fail first. The existing admission owner now runs all 115 compatibility/launcher/handoff cases in 16.27 seconds, through the unchanged 90-second runtime, 60-second quiet bound, and ten-second observer heartbeat. Both locked Python quality legs execute it before required shard/platform fan-out. All 33 admission/workflow/package tests pass; all 21 promoted families retain authoritative full-gate replay.
+- **Proof boundary**: Replacement hosted Linux results and the final complete canonical gate/coverage remain pending. This administrative change adds no serving process or restart; documentation records long-lived practitioner evidence and rollback. Physical disk remains 91% versus the unchanged 90% limit, so no new candidate sealing or full-gate attempt is made.
+
 ### 2026-10-12 — repeated partial validation failed to advance completed release proofs
 
 - **Cause**: New candidate refs and focused successes were repeatedly produced while the hard disk prerequisite remained unchanged. Late handoff/launcher failures also consumed hosted shard time. Source-only review and focused acceptance never satisfied the final completion gate, so no additional backlog item could truthfully close.

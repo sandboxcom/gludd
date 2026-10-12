@@ -653,8 +653,9 @@ temporarily unavailable while the PID still exists, neither retirement nor a
 duplicate launch is allowed.
 
 At timeout, PID/start-token/session identity is checked through TERM, the grace
-period, KILL, and the final observation. Only verified absence or verified PID
-reuse permits `timed_out` plus PID retirement. Any live or unobservable owner
+period, KILL, and the final observation. Only verified absence, verified PID
+reuse, or verified terminal execution permits `timed_out` plus PID retirement.
+Any live or unobservable owner
 instead keeps the PID receipt, records `termination_failed` with
 `gate-timeout-termination-failed`, clears only the exiting watcher PID, writes
 `GATE_TIMEOUT_TERMINATION_FAILED`, and returns infrastructure status 125. The
@@ -671,6 +672,35 @@ PID-reuse race between identity validation and signaling, while runner report
 escaping snapshot-based cleanup and remaining alive for hours. These reports
 support retained ownership plus explicit uncertainty; they do not justify a
 broader signal or a success claim after a failed observation.
+
+Linux retains killed children in the process table until their parent reaps
+them. Their start token, PGID, and SID remain valid, so those checks alone
+previously reported `owned` after both TERM and KILL. The watcher now checks
+the locked psutil process status after exact identity validation. A zombie or
+dead leader is terminal only when every observed member of its exact PGID and
+SID is also terminal; a live descendant retains ownership and KILL escalation,
+and unavailable status or group evidence remains `unknown`. The watcher never
+reaps the launcher's child, preserving the original `Popen.wait()` exit status.
+
+The 2017 practitioner report
+[Why does a Popen child process not die?](https://stackoverflow.com/questions/45362807/why-does-a-popen-child-process-not-die)
+reproduces a child remaining visible to `ps` and signal-zero checks after KILL;
+its accepted answer explains that the parent must reap the zombie.
+[psutil's API documentation](https://github.com/giampaolo/psutil/blob/master/docs/api.rst)
+likewise states that `is_running()` includes zombies. This distinction supports
+explicit terminal-status evidence, not acceptance of a still-live or uncertain
+owner. The original timeout, failed-kill, reused-identity, and replacement-receipt
+assertions remain unchanged; regressions additionally cover unreaped leaders,
+TERM-ignoring descendants, unknown observations, and preserved parent reaping.
+
+The first coverage-instrumented replay additionally exposes a fixture
+happens-before error: a fixed sleep can expire before the fake gate installs
+its TERM-ignore handler. In conformance with observable readiness and owned
+cleanup, that fixture now prints a flushed ready marker after installation,
+waits for that exact marker with the existing bounded helper, and cleans its
+child in `finally`. The timeout, poll interval, grace, and SIGKILL assertion are
+unchanged. All 54 cases then pass at 96.36% combined coverage (96.86% line,
+94.67% branch), retaining the failed 53/54 replay as diagnostic evidence.
 
 This remains ZDD and bounded: it starts no additional process, extends no
 deadline, opens no listener, and changes no application state. Normal runs

@@ -26,7 +26,8 @@ the first nonzero result:
    missing mandatory full-gate phase.
 3. `pytest-runtime-compatibility` runs the complete crash-recovery,
    hook-runtime split compatibility, async-launcher, and session-persistence
-   files, plus the exact session-objective CI node, with `-W error` and one
+   files and the complete background-launcher file, plus the exact
+   session-objective CI node, with `-W error` and one
    worker in the invoking Python environment. It rejects deprecated fixtures,
    runtime API snapshot drift, launcher policy drift, and invalid handoff
    metadata before broader integration checks.
@@ -173,6 +174,26 @@ anchor. Repairing SESSION.md, not weakening those assertions, resolves both.
 The complete session-persistence file and exact objective node now execute in
 the same 90-second, warning-fatal, one-worker admission phase. New mapping tests
 fail first and verify executable routing rather than comment-only references.
+
+Hosted unit-3b then exposes unreaped Linux gate leaders mistaken for still-live
+owners after TERM/KILL. The `gate-timeout-owned-zombie`,
+`gate-timeout-term-escalation-zombie`, and
+`gate-timeout-replaced-receipt-zombie` families bind all three original failing
+nodes. The same owner now runs the complete launcher file, including new
+terminal-status, live-descendant, uncertainty, and parent-reaping regressions.
+Three new routing cases fail first on the absent mappings. The phase remains
+bounded to 90 seconds with one worker and warnings fatal; the original full-gate
+nodes and all timeout/identity/receipt assertions remain authoritative.
+
+Build and Release now executes this same owner in both locked Python quality
+legs immediately after dependency installation and the pinned base check.
+The existing observed-command wrapper retains the 90-second runtime,
+60-second quiet bound, and ten-second heartbeat. Every test shard and platform
+artifact job continues to require the `gate` job. Missing or failed admission
+therefore prevents costly fan-out instead of waiting until unit-1b, unit-2, or
+unit-3b reaches the same known node. A new failing-first workflow test checks
+actual executable routing, locked dependencies, both interpreters, no skip or
+continue-on-error condition, and all eight downstream prerequisite edges.
 
 Promotion only moves early feedback forward. The exact full gate remains mandatory.
 The checker fails closed when a node is renamed, deleted, duplicated,
