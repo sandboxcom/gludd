@@ -901,9 +901,10 @@
         "STALE_RESOURCE_NAMESPACE_MAX_CANDIDATES",
         "STALE_RESOURCE_NAMESPACE_MAX_ENTRIES",
         "STALE_RESOURCE_NAMESPACE_HEARTBEAT_SECONDS",
-        "STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY"
+        "STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY",
+        "STALE_RESOURCE_NAMESPACE_PYTHON"
       ],
-      "behavior": "make clean-stale-resource-namespaces STALE_RESOURCE_NAMESPACE_ROOT=/tmp/gludd-resource-cleaner-contract/gludd-resources STALE_RESOURCE_NAMESPACE_PROJECT_ROOT=. STALE_RESOURCE_NAMESPACE_REGISTRY=/tmp/gludd-resource-cleaner-contract/registry.json STALE_RESOURCE_NAMESPACE_RECEIPT=/tmp/gludd-resource-cleaner-contract/receipts.jsonl STALE_RESOURCE_NAMESPACE_GRACE_SECONDS=86400 STALE_RESOURCE_NAMESPACE_MAX_CANDIDATES=20 STALE_RESOURCE_NAMESPACE_MAX_ENTRIES=1000 STALE_RESOURCE_NAMESPACE_HEARTBEAT_SECONDS=1 STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY=1"
+      "behavior": "make clean-stale-resource-namespaces STALE_RESOURCE_NAMESPACE_ROOT=/tmp/gludd-resource-cleaner-contract/gludd-resources STALE_RESOURCE_NAMESPACE_PROJECT_ROOT=. STALE_RESOURCE_NAMESPACE_REGISTRY=/tmp/gludd-resource-cleaner-contract/registry.json STALE_RESOURCE_NAMESPACE_RECEIPT=/tmp/gludd-resource-cleaner-contract/receipts.jsonl STALE_RESOURCE_NAMESPACE_GRACE_SECONDS=86400 STALE_RESOURCE_NAMESPACE_MAX_CANDIDATES=20 STALE_RESOURCE_NAMESPACE_MAX_ENTRIES=1000 STALE_RESOURCE_NAMESPACE_HEARTBEAT_SECONDS=1 STALE_RESOURCE_NAMESPACE_VALIDATE_ONLY=1 STALE_RESOURCE_NAMESPACE_PYTHON=/usr/bin/python3"
     },
     {
       "name": "check-disk-classification",
@@ -2030,6 +2031,11 @@
       "name": "search",
       "make_variables": ["PATTERN", "SEARCH_PATH"],
       "behavior": "make search PATTERN=^search: SEARCH_PATH=make/95-collections-and-pipelines.mk"
+    },
+    {
+      "name": "native-temp-artifact-inspect",
+      "make_variables": ["NATIVE_TEMP_ARTIFACT_PATH", "NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY"],
+      "behavior": "make native-temp-artifact-inspect NATIVE_TEMP_ARTIFACT_PATH=/Users/shawnwilson/tmp/.gludd-native-inspect-contract.dylib NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY=1"
     },
     {
       "name": "status-heartbeat",

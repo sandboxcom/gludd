@@ -439,6 +439,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::test_internal_targets_not_in_help",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "stale-resource-packaged-artifact-identity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_clean_stale_resource_namespaces.py::test_recorded_installed_module_is_not_a_runtime_lease_marker",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "native-artifact-literal-argument-transport",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_native_temp_artifact_target.py::test_native_temp_artifact_inspection_preserves_literal_path_data",
+      "full_gate_phase": "test"
     }
   ]
 }

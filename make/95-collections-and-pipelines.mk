@@ -334,6 +334,33 @@ show-lines:
 ps:
 	@UV=echo $(SYSTEM_PYTHON) scripts/active_work_status.py --process-table
 
+NATIVE_TEMP_ARTIFACT_PATH ?=
+NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY ?= 1
+export GLUDD_NATIVE_TEMP_ARTIFACT_PATH := $(value NATIVE_TEMP_ARTIFACT_PATH)
+export GLUDD_NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY := $(value NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY)
+unexport NATIVE_TEMP_ARTIFACT_PATH NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY
+.PHONY: native-temp-artifact-inspect
+native-temp-artifact-inspect:
+	@case "$$GLUDD_NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY" in 0|1) ;; *) echo 'NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY must be 0 or 1'; exit 2;; esac; \
+	case "$$GLUDD_NATIVE_TEMP_ARTIFACT_PATH" in /Users/shawnwilson/tmp/*.dylib) ;; *) echo 'one exact native artifact under /Users/shawnwilson/tmp is required'; exit 2;; esac; \
+	candidate_name="$${GLUDD_NATIVE_TEMP_ARTIFACT_PATH#/Users/shawnwilson/tmp/}"; \
+	case "$$candidate_name" in */*|*..*) echo 'one exact native artifact without traversal is required'; exit 2;; esac; \
+	if [ "$$GLUDD_NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY" = 1 ]; then \
+		printf 'NATIVE-TEMP-INSPECTION-PLAN path=%s cleanup_authorized=false\n' "$$GLUDD_NATIVE_TEMP_ARTIFACT_PATH"; exit 0; \
+	fi; \
+	[ -f "$$GLUDD_NATIVE_TEMP_ARTIFACT_PATH" ] && [ ! -L "$$GLUDD_NATIVE_TEMP_ARTIFACT_PATH" ] || { echo 'regular non-symlink file required'; exit 2; }; \
+	set -e; \
+	echo 'NATIVE-TEMP-PHASE identity cleanup_authorized=false'; \
+	/usr/bin/stat -f 'uid=%u dev=%d inode=%i links=%l bytes=%z blocks=%b modified=%m' "$$GLUDD_NATIVE_TEMP_ARTIFACT_PATH"; \
+	/usr/bin/shasum -a 256 "$$GLUDD_NATIVE_TEMP_ARTIFACT_PATH"; \
+	echo 'NATIVE-TEMP-PHASE native-type'; \
+	/usr/bin/file "$$GLUDD_NATIVE_TEMP_ARTIFACT_PATH"; \
+	/usr/bin/otool -L "$$GLUDD_NATIVE_TEMP_ARTIFACT_PATH"; \
+	echo 'NATIVE-TEMP-PHASE open-file-lookup diagnostic_only=true'; \
+	lsof_status=0; /usr/sbin/lsof -nP -Fpcfn -- "$$GLUDD_NATIVE_TEMP_ARTIFACT_PATH" || lsof_status=$$?; \
+	printf 'NATIVE-TEMP-INSPECTION-END open_file_lookup_rc=%s cleanup_authorized=false\n' "$$lsof_status"; \
+	[ "$$lsof_status" -le 1 ]
+
 PROCESS_ROOT_PID ?=
 PROCESS_NAMESPACE ?=
 PROCESS_CLEANUP_APPLY ?= 0

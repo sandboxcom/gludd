@@ -130,6 +130,29 @@ The April 2015 [safe Make-variable transport report][search-forum] reproduces
 embedded quotes splitting one value into multiple shell arguments. These are
 existing tool semantics and practitioner findings, not proof of release success.
 
+## Read-only native temporary-library inspection
+
+`native-temp-artifact-inspect` uses the existing system `stat`, SHA-256,
+`file`, `otool`, and `lsof` interfaces on one exact non-symlink library under
+the configured user's temporary root. It prints per-phase progress and never
+loads the library, deletes files, or grants cleanup authority. Raw namespaced
+environment transport keeps literal Make-function text in filenames inert.
+Twelve actual-recipe and contract regressions fail before the target exists,
+then pass after wiring; the documented plan is read-only:
+
+```sh
+make native-temp-artifact-inspect NATIVE_TEMP_ARTIFACT_PATH=/Users/shawnwilson/tmp/.gludd-native-inspect-contract.dylib NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY=1
+```
+
+Actual inspection of one old hash-named file identifies FFF's arm64
+`libfff_c.dylib`, not OpenTUI. A single sample, matching UID, old timestamp,
+or an empty open-file lookup does not establish every file's identity,
+project ownership, or deletion authority. [Bun's long-lived extraction
+report](https://github.com/oven-sh/bun/issues/29585) covers repeated embedded
+native-library copies; [FFF's upstream resolver](https://github.com/dmtrKovalenko/fff/blob/main/packages/fff-bun/src/download.ts)
+identifies the platform asset used for a retained reference. Unknown files and
+all history stay protected; neither this diagnosis nor a plan is release proof.
+
 ## Keep internal guards out of the public Help interface
 
 Terminal Build `38307021746`, exact source `c4f499fbd983c4c3a0fdd041ac6c05fcbc740ec5`,

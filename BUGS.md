@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — installed artifacts were mistaken for runtime owner markers
+
+- **Observed**: A retired 665 MB toolchain is protected by obsolete workstream registrations even after Git reports no such worktree. After retiring those completed registrations, normal inventory refuses installed `virtualenv/util/lock.py`, then generated `_lease.pyc`, then packaged `no_same_owner.md`, as ambiguous leases. Real owner and link safeguards must remain intact.
+- **Codified repair**: Keep marker matching and parsed-owner/kernel-lease precedence. Use stdlib installed-distribution RECORD identity plus source syntax, matching current-runtime compiled payload, or already-locked Markdown parsing to classify only verified static/generated artifacts. Unknown, modified, hashless or duplicate records, opaque owner data, foreign compilers and filename drift remain refused. Four module, nine bytecode and two Markdown positives fail first; the bytecode diagnostic exposes Python 3.14 borrowed references changing marshal's reference flag. Retaining compiler ownership reproduces the standard writer exactly; no bytes are normalized or ignored and cache data is never deserialized.
+- **Acceptance and prevention**: All 136 owner/helper/promotion/plan cases pass with warnings fatal; the 80-case owner coverage replay meets 85/75 line/branch floors at approximately 91% combined. Two routing cases, the exact roster and actual wiring fail first, then all 43 promotion/plan cases pass. The existing early owner gains both complete cohorts, 42 families and unchanged 21-phase/2850-second and 90/60 bounds. The public interpreter selection preserves literal input and uses an existing protected runtime; global/serving Python is unchanged.
+- **Boundary**: Normal inventory now reaches the real descendant-symlink refusal, which remains protected; this repair does not claim the toolchain was reclaimed or physical disk admission cleared. The read-only native-library helper identifies FFF bytes without conferring shared-cache cleanup authority. No history, active mapping, unknown namespace, serving listener, or environment is removed. Exact-SHA hosted success and the canonical full gate remain required for task completion.
+
 ### 2026-10-12 — normal pre-push flagged a public repository fixture
 
 - **Observed**: The unchanged normal push hook rejects the public repository argument at `tests/unit/test_ci_run_summary_target.py:77` as Base64 entropy. No remote update occurs.

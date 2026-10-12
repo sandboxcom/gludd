@@ -830,6 +830,8 @@ help:
 	@echo "  disk-user-caches      Show accessible user-cache and data-root sizes"
 	@echo "  cache-resource-inventory  List largest children of one allowlisted cache root"
 	@echo "  cache-resource-remove     Validate or remove one exact allowlisted cache child"
+	@echo "  native-temp-artifact-inspect  Read-only exact native-cache identity (NATIVE_TEMP_ARTIFACT_PATH, NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY=0|1); no cleanup authority"
+	@echo "  clean-stale-resource-namespaces  Verify idle namespace/toolchain pairs (STALE_RESOURCE_NAMESPACE_PYTHON optional existing trusted runtime); never bypass unknown-owner or link refusal"
 	@echo "  uv-cache-prune-status List uv cache-prune PID, parent, age, and command"
 	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
 	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"

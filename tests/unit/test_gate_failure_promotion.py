@@ -562,6 +562,39 @@ def test_private_help_regression_runs_before_hosted_unit_2() -> None:
     assert payload["full_gate_required"] is True
 
 
+@pytest.mark.parametrize(
+    ("family_id", "file", "node_name"),
+    [
+        (
+            "stale-resource-packaged-artifact-identity", "tests/unit/test_clean_stale_resource_namespaces.py",
+            "test_recorded_installed_module_is_not_a_runtime_lease_marker",
+        ),
+        (
+            "native-artifact-literal-argument-transport", "tests/unit/test_native_temp_artifact_target.py",
+            "test_native_temp_artifact_inspection_preserves_literal_path_data",
+        ),
+    ],
+)
+def test_artifact_identity_and_literal_transport_execute_before_fanout(
+    family_id: str, file: str, node_name: str,
+) -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(item for item in payload["families"] if item["id"] == family_id)
+    assert family == {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": f"{file}::{node_name}", "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert file in executable
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    phase = next(item for item in payload["runtime_contract"]["phases"]
+                 if item["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def _synthetic_repository(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
@@ -863,6 +896,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "hosted-shard-timing-diagnostics",
         "hosted-shard-creation-order",
         "make-private-target-help-visibility",
+        "stale-resource-packaged-artifact-identity",
+        "native-artifact-literal-argument-transport",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1021,6 +1056,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py '
         'tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_task_ledger_validation.py '
         'tests/unit/test_make_readonly_version.py '
+        'tests/unit/test_clean_stale_resource_namespaces.py '
+        'tests/unit/test_native_temp_artifact_target.py '
         'tests/unit/test_ci_run_summary_script.py '
         'tests/unit/test_ci_run_summary_target.py '
         'tests/unit/test_ci_workflow_integrity.py '
