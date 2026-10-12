@@ -115,6 +115,14 @@ No test rewrite, inline pragma, plugin disable, file exclusion, hook change, or
 push bypass was introduced. Content-free classification and scanner-hash
 evidence are retained outside the checkout; unknown findings remain unapproved.
 
+The next normal push exposed the same heuristic on the public repository
+argument in `tests/unit/test_ci_run_summary_target.py:77`. The canonical owner
+again found exactly one added identity and none removed; review labels only that
+exact filename/detector/hash as `is_secret=false`. A failing-first regression
+derives the detected argument from its unchanged source and pins its exact
+identity and review, while existing hook tests keep new identities and duplicate
+occurrences blocked. The public repository name is not an authentication value.
+
 Validate the canonical artifact without changing it:
 
 ```text

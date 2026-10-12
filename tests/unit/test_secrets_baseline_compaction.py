@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
 import subprocess
 from collections import Counter
 from pathlib import Path
+from typing import cast
 
 import pytest
 from scripts import manage_secrets_baseline as subject
@@ -77,6 +79,31 @@ def test_compact_baseline_is_canonical_json() -> None:
         "baseline bytes are not deterministic canonical JSON: "
         f"actual={actual_digest}, canonical={canonical_digest}"
     )
+
+
+def test_public_repository_fixture_has_one_exact_reviewed_finding() -> None:
+    """Review the public slug without exempting other strings or file contents."""
+    filename = "tests/unit/test_ci_run_summary_target.py"
+    source = (ROOT / filename).read_text(encoding="utf-8")
+    arguments = {
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("CI_RUN_SUMMARY_REPO=")
+    }
+    assert len(arguments) == 1
+    repository_argument = arguments.pop()
+    payload = json.loads(BASELINE.read_text(encoding="utf-8"))
+    findings = payload["results"][filename]
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["filename"] == filename
+    assert finding["type"] == "Base64 High Entropy String"
+    assert finding["hashed_secret"] == hashlib.sha1(repository_argument.encode()).hexdigest()
+    assert finding["is_secret"] is False
+    assert finding["is_verified"] is False
 
 
 def test_policy_excludes_only_generated_recursive_boundaries() -> None:
@@ -177,7 +204,8 @@ def test_check_rejects_recursive_result_without_echoing_payload(tmp_path: Path) 
     recursive = _payload(
         _entry("a", filename=".secrets.baseline"),
     )
-    recursive["results"] = {".secrets.baseline": recursive["results"]["src/example.py"]}
+    results = cast(dict[str, list[dict[str, object]]], recursive["results"])
+    recursive["results"] = {".secrets.baseline": results["src/example.py"]}
     baseline.write_text(subject.canonical_text(recursive), encoding="utf-8")
 
     with pytest.raises(subject.BaselineError) as raised:
@@ -346,7 +374,7 @@ def test_scan_failure_is_reported_as_safe_categories_and_digest(
     seed.write_text(subject.canonical_text(_payload()), encoding="utf-8")
     secret_text = b"Traceback\nValueError: credential-material-must-not-echo"
     completed = subprocess.CompletedProcess([], 1, stdout=b"", stderr=secret_text)
-    monkeypatch.setattr(subject.subprocess, "run", lambda *_args, **_kwargs: completed)
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: completed)
 
     with pytest.raises(subject.BaselineError) as raised:
         subject._scan_fresh(
@@ -370,7 +398,7 @@ def test_refresh_rejects_non_policy_filter_drift(
     baseline.write_text(subject.canonical_text(previous), encoding="utf-8")
     drifted = _payload(_entry("a"))
     drifted["filters_used"] = [
-        *drifted["filters_used"],
+        *cast(list[object], drifted["filters_used"]),
         {"path": "custom.unreviewed.filter"},
     ]
     monkeypatch.setattr(subject, "_scan_fresh", lambda **_kwargs: drifted)

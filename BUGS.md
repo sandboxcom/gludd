@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — normal pre-push flagged a public repository fixture
+
+- **Observed**: The unchanged normal push hook rejects the public repository argument at `tests/unit/test_ci_run_summary_target.py:77` as Base64 entropy. No remote update occurs.
+- **Repair**: The existing pinned baseline manager finds exactly one added identity and none removed. Review labels only that exact filename/detector/hash `is_secret=false`; the literal, scanners, thresholds, exclusions and read-only push hook stay unchanged. The exact identity/review regression fails first; all 72 baseline/hook/target cases then pass with warnings fatal. Three pre-existing typing errors receive equivalent casts/module identity, preserving every assertion.
+- **Prevention and boundary**: The canonical release-gate guide records the pinned upstream baseline semantics and practitioner evidence. Baseline membership, not an audit label alone, admits the exact finding; other identities and duplicate occurrences remain blocked. Normal push, exact-SHA CI and full canonical gate are still required; no backlog completion is claimed from this repair.
+
 ### 2026-10-12 — private push guard escaped into public Help and failed late unit-2
 
 - **Observed**: Terminal Build `38307021746` at exact c4 source has two failed jobs, 24 passed and four skipped. Unit-2 reproduces `TestInternalTargetConventions::test_internal_targets_not_in_help` after 237 neighboring passes because Help advertises `_pull-before-push-guard`. Native exact-node replay preserves the same failure.
