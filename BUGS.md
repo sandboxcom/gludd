@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — combined candidate exposed fixture-policy and Make startup drift
+
+- **Observed**: Combined acceptance at `9d86d89a9` passed 566 of 571 selected cases and failed five. Four canonical fixtures inherited the native interpreter instead of the release policy; one contract assertion omitted the newly required source-CI branch. The wrapper also emitted a shell argument-count diagnostic for ordinary quoted Make arguments. Subsequent read-only bootstrap regressions reproduced unwanted environment initialization and missing application imports.
+- **Repair and proof**: `afa7a3eb9` conforms the contract assertion to the explicit CI identity. `57f4dd10c` uses canonical Python 3.11 metadata in positive fixtures without weakening the validator; all 36 cases pass on Python 3.11 and 3.14, including an internally consistent wrong-policy rejection. `071d667ee` uses Make's existing presence functions instead of embedding command text in the shell guard. `dff0e3c5c` uses uv's existing offline source-version reader, explicitly bound to the checkout; invalid metadata still fails, runtime checks still expose import failures, and packaging names and CLI precedence are preserved. All 61 helper and observer regressions pass in 4.83 seconds without unwanted environment allocation. Final combined replay remains required.
+- **Evidence and scope**: The failed result remains in `.gate-logs/reviewed-focused-9d86d89a.log`; the old sealed refs are not approved or relabeled as green. `docs/features/MAKE_HELPER_BOOTSTRAP_DIAGNOSTICS.md` records primary and long-lived practitioner evidence. Helpers add no serving-state, release, listener, or daemon mutation, and retain observed ownership and cleanup. Fresh exact-candidate gate and hosted proof remain mandatory.
+
 ### 2026-10-12 — canonical cleanliness did not identify the integration caller
 
 - **Observed and cause**: Two independent reviews found that the existing `main-worktree-guard` checks the registered main checkout's cleanliness, not the invoking checkout's location. The first development fast-forward recipe could therefore advance a separate clone or linked development worktree despite documenting canonical-main-only execution.
