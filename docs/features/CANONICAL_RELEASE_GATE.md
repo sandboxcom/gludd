@@ -94,6 +94,16 @@ locked-sync failure, and explicit background policy forwarding. Existing native
 gate concurrency and background lifecycle tests continue to pass. These focused
 checks do not run a full gate or certify a release candidate.
 
+Cross-interpreter fixture proof on 2026-10-12: all 36 cases passed on CPython
+3.11.14 (`make test-specific-pyver`) and 3.14.0 (`make test-files`), each with
+`-W error` and one worker. The receipt fixture explicitly derives its policy and
+digest from `release_execution_policy()`, retaining the canonical shard plans;
+the interpreter executing the harness and real validator does not redefine the
+modeled locked 3.11 producer. An explicit metadata regression failed first on
+3.14 before this correction. A fresh 3.14-policy receipt with a consistent digest
+is still rejected on both runtimes, as are all existing negative cases. These
+checks change neither production admission policy nor release-candidate proof.
+
 Research reviewed on 2026-10-12 supports reusing the established interfaces:
 
 - The [GNU Make exit-status documentation][make-exit] distinguishes Make's own
