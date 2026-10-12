@@ -548,21 +548,22 @@ release-dry-run: _release-page-notes-preview _release-dry-run-guard
 #   4. release-view            — confirm the GitHub Release exists
 #   5. ci-await               — await the exact tag workflow (bounded at 90 min)
 #   6. verify release          — verify the final artifact and complete matrix
-# v0.1.1 additionally requires REVIEWED_HEAD_INTEGRATION_RECEIPT and revalidates
+# v0.1.1/v0.1.2 require REVIEWED_HEAD_INTEGRATION_RECEIPT and revalidate
 # it against the exact promoted SHA before any push or tag mutation.
 # Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes' REVIEWED_HEAD_INTEGRATION_RECEIPT=path
 release-cut:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...'] [REVIEWED_HEAD_INTEGRATION_RECEIPT=path]"; exit 1; }
-	@HEAD_SHA="$$(git rev-parse HEAD)"; SHA_TO_VERIFY="$(RELEASE_CANDIDATE_SHA)"; \
+	@set -eu; HEAD_SHA="$$(git rev-parse HEAD)"; SHA_TO_VERIFY="$(RELEASE_CANDIDATE_SHA)"; \
 	if [ -z "$$SHA_TO_VERIFY" ]; then SHA_TO_VERIFY="$$HEAD_SHA"; fi; \
 	if [ -n "$(RELEASE_CANDIDATE_SHA)$(RELEASE_CI_BRANCH)$(RELEASE_LOCAL_ATTESTATION)" ]; then \
 		[ -n "$(RELEASE_CANDIDATE_SHA)" ] && [ -n "$(RELEASE_CI_BRANCH)" ] && [ -n "$(RELEASE_LOCAL_ATTESTATION)" ] || { echo "ERROR: promoted release evidence identity is incomplete"; exit 2; }; \
 		[ "$$HEAD_SHA" = "$$SHA_TO_VERIFY" ] || { echo "ERROR: release-cut HEAD does not match promoted candidate"; exit 2; }; \
 		[ -f "$(RELEASE_LOCAL_ATTESTATION)" ] || { echo "ERROR: promoted local attestation is missing"; exit 2; }; \
 	fi; \
-	if [ "$(TAG)" = "v0.1.1" ]; then \
-		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$SHA_TO_VERIFY"; \
-	fi; \
+	case "$(TAG)" in v0.1.1|v0.1.2) \
+		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_ALLOW_INCOMPLETE_TASKS=0 RELEASE_ALLOW_INVALID_RECEIPT=0 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$SHA_TO_VERIFY"; \
+		;; \
+	esac; \
 	$(MAKE) -s require-dual-track-green SHA="$$SHA_TO_VERIFY" CI_BRANCH="$(RELEASE_CI_BRANCH)" DUAL_TRACK_CI_LOCAL_ATTESTATION="$(RELEASE_LOCAL_ATTESTATION)"
 	@$(MAKE) -s check-readme-status TAG=$(TAG)
 	@$(MAKE) -s git-push-sandboxcom
