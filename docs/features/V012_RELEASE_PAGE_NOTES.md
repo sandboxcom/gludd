@@ -36,6 +36,14 @@ unfinished repairs, invalid receipts, or hosted results for another commit
 remain blockers. The Make contract's validation example uses a hermetic fixture;
 that example proves argument routing, not readiness of the real candidate.
 
+After canonical master selection, full readiness keeps the actual checkout
+branch visible while validating hosted evidence from the explicit
+`RELEASE_READINESS_CI_BRANCH`. An empty selector retains the invoking-branch
+default; selecting development cannot substitute a different commit or skip
+the S97/S98 milestone. The selector also stays in validate-first remediation
+commands. Stable publication must run full readiness, not the hermetic argument
+validation mode.
+
 This is a zero-downtime administrative change: validation starts no application
 worker, changes no schema, and publishes no tag or artifact. Rollback restores
 the former policy while the preceding release continues serving. The unchanged

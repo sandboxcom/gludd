@@ -4,6 +4,11 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — direct stable cut used hermetic validation as release admission
+
+- **Observed and cause**: Independent review of the first promotion repair found that direct stable `release-cut` still passed `RELEASE_READINESS_VALIDATE_ONLY=1`. That mode validates receipt arguments but intentionally does not assess task completion. Changing it blindly to full mode would select master CI after promotion even though the proven source workflow ran on development.
+- **Repair and proof**: Readiness now reports the real checkout branch and a separate explicit CI source branch, preserving full candidate SHA and receipt checks. Eight failing-first real-checker cases cover post-master development evidence, unchanged branch defaults, wrong hosted branch/SHA, open or absent milestones, CLI routing, and source-preserving remediation. The stable publication owner forces full admission and both diagnostic bypasses off; final combined owner tests, exact gate, and hosted proof remain required.
+
 ### 2026-10-12 — strict release-path typing discovered duplicate CI module names
 
 - **Observed and cause**: The real `make typecheck-scope FILES=scripts/release_readiness.py` stopped before checking the release path because the exact-CI verdict helper's runtime import fallback exposed the same file as both `pipeline_status` and `scripts.pipeline_status` to static analysis.

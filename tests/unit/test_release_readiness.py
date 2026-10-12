@@ -100,6 +100,7 @@ def test_main_emits_machine_readable_diagnostics(
         "make",
         "release-readiness",
         f"TAG={rr.DEFAULT_RELEASE_TAG}",
+        "RELEASE_READINESS_CI_BRANCH=",
         "RELEASE_READINESS_VALIDATE_ONLY=0",
         "RELEASE_COMPLETED_STAGES=",
         "RELEASE_OBSERVATIONS=",
@@ -273,6 +274,139 @@ def test_stable_assess_requires_and_binds_reviewed_receipt_to_current_head(
     assert not mismatched.ready
     assert rr._exit_code(mismatched) == rr.EXIT_RECEIPT
     assert mismatched.reviewed_head_receipt_final_sha == ""
+
+
+def _post_promotion_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    checkout_branch: str = "master",
+    hosted_branch: str = "development",
+    hosted_sha: str = REVIEWED_RECEIPT_FINAL_SHA,
+) -> rr.RunFn:
+    import require_ci_green
+    import workflow_state_guard
+
+    state = SimpleNamespace(
+        branch=checkout_branch,
+        head=REVIEWED_RECEIPT_FINAL_SHA,
+        dirty_count=0,
+        unintegrated_worktrees=[],
+        unintegrated_branches=[],
+    )
+    (tmp_path / "TASKS.md").write_text(
+        "".join(
+            f"- [x] {task_id} — repaired | status: completed\n"
+            for task_id in sorted(rr.V012_RELEASE_TASK_IDS)
+        ),
+        encoding="utf-8",
+    )
+    runs = [
+        {
+            "databaseId": number,
+            "headSha": hosted_sha,
+            "headBranch": hosted_branch,
+            "workflowName": workflow,
+            "event": "push",
+            "status": "completed",
+            "conclusion": "success",
+        }
+        for number, workflow in enumerate(("Build and Release", "Molecule Tests"), start=1)
+    ]
+    monkeypatch.setattr(require_ci_green.pipeline_status, "fetch_runs", lambda *_args, **_kwargs: runs)
+    monkeypatch.setattr(workflow_state_guard, "collect_state", lambda **_: state)
+    monkeypatch.setattr(rr, "_release_policy_preflight", lambda *_: (True, "canonical"))
+    monkeypatch.setattr(rr, "_detached_worktrees", lambda *_: [])
+    monkeypatch.setattr(rr, "_unmanaged_local_inference_processes", lambda *_: [])
+    monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK: 0.1.2"))
+    monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_tasks_tick_check", lambda *_: (True, "OK"))
+    return lambda argv, *_: _completed(argv)
+
+
+@pytest.mark.parametrize(
+    ("checkout_branch", "ci_branch", "hosted_branch", "hosted_sha", "ready"),
+    [
+        ("master", "development", "development", REVIEWED_RECEIPT_FINAL_SHA, True),
+        ("master", "", "master", REVIEWED_RECEIPT_FINAL_SHA, True),
+        ("development", "", "development", REVIEWED_RECEIPT_FINAL_SHA, True),
+        ("master", "development", "master", REVIEWED_RECEIPT_FINAL_SHA, False),
+        ("master", "development", "development", "f" * 40, False),
+    ],
+)
+def test_post_promotion_readiness_preserves_checkout_and_exact_ci_source_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    checkout_branch: str,
+    ci_branch: str,
+    hosted_branch: str,
+    hosted_sha: str,
+    ready: bool,
+) -> None:
+    run = _post_promotion_context(
+        monkeypatch,
+        tmp_path,
+        checkout_branch=checkout_branch,
+        hosted_branch=hosted_branch,
+        hosted_sha=hosted_sha,
+    )
+    result = rr.assess(
+        root=tmp_path,
+        run=run,
+        tag="v0.1.2",
+        ci_branch=ci_branch,
+        reviewed_head_integration_receipt=REVIEWED_RECEIPT_FIXTURE,
+        expected_head_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    )
+
+    assert result.ready is ready
+    assert result.branch == checkout_branch
+    assert result.ci_source_branch == (ci_branch or checkout_branch)
+    assert result.head == REVIEWED_RECEIPT_FINAL_SHA
+    if not ready:
+        assert rr._exit_code(result) == rr.EXIT_CI
+
+
+@pytest.mark.parametrize("milestone", ["open", "absent"])
+def test_post_promotion_readiness_still_rejects_unfinished_or_missing_milestone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, milestone: str
+) -> None:
+    run = _post_promotion_context(monkeypatch, tmp_path)
+    ledger = tmp_path / "TASKS.md"
+    complete = "- [x] S98.7 — repaired | status: completed\n"
+    replacement = "- [ ] S98.7 — repaired | status: in_progress\n" if milestone == "open" else ""
+    ledger.write_text(ledger.read_text(encoding="utf-8").replace(complete, replacement), encoding="utf-8")
+    result = rr.assess(
+        root=tmp_path,
+        run=run,
+        tag="v0.1.2",
+        ci_branch="development",
+        reviewed_head_integration_receipt=REVIEWED_RECEIPT_FIXTURE,
+        expected_head_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    )
+
+    assert not result.ready
+    assert rr._exit_code(result) != rr.EXIT_OK
+    assert any("S98.7" in error for error in result.errors)
+
+
+def test_readiness_cli_reports_checkout_and_explicit_ci_source_separately(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run = _post_promotion_context(monkeypatch, tmp_path)
+    real_assess = rr.assess
+    monkeypatch.setattr(rr, "assess", lambda **kwargs: real_assess(run=run, **kwargs))
+    assert rr.main([
+        "--root", str(tmp_path), "--tag", "v0.1.2", "--ci-branch", "development",
+        "--reviewed-head-integration-receipt", str(REVIEWED_RECEIPT_FIXTURE),
+        "--expected-head-sha", REVIEWED_RECEIPT_FINAL_SHA,
+    ]) == rr.EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ready"] is True
+    assert payload["branch"] == "master"
+    assert payload["ci_source_branch"] == "development"
+    assert payload["head"] == REVIEWED_RECEIPT_FINAL_SHA
+    assert "RELEASE_READINESS_CI_BRANCH=development" in payload["remediation"]["recheck_argv"]
 
 
 def test_receipt_check_is_required_and_keeps_invalid_json_content_free(
@@ -1148,6 +1282,7 @@ def test_release_readiness_make_target_binds_the_invoking_worktree() -> None:
             "make",
             "release-readiness",
             "TAG=v0.1.0-beta.4",
+        "RELEASE_READINESS_CI_BRANCH=",
             "RELEASE_READINESS_VALIDATE_ONLY=0",
             "RELEASE_COMPLETED_STAGES=",
             "RELEASE_OBSERVATIONS=",
