@@ -130,6 +130,38 @@ The April 2015 [safe Make-variable transport report][search-forum] reproduces
 embedded quotes splitting one value into multiple shell arguments. These are
 existing tool semantics and practitioner findings, not proof of release success.
 
+## Keep internal guards out of the public Help interface
+
+Terminal Build `38307021746`, exact source `c4f499fbd983c4c3a0fdd041ac6c05fcbc740ec5`,
+exposes the original `test_internal_targets_not_in_help` failure in unit-2 after
+237 neighboring cases pass. Native replay reproduces that same failure: an
+explicit Help line advertises `_pull-before-push-guard` as a public command.
+
+The narrow repair documents current-remote admission on its existing public
+`git-push-sandboxcom` entry and removes only the private command's Help entry.
+The guard, dependencies, current-remote checks, SSH handling and error behavior
+are unchanged. The original test is unchanged. Its exact node now belongs to
+`make-private-target-help-visibility` in the existing early compatibility owner;
+the expensive complete deep-target cohort remains required downstream. New
+mapping/roster tests fail first, followed by the exact executable-wiring test.
+No new helper, Make target, command parser or environment is introduced.
+
+The 2014 [private-target practitioner discussion][private-target-forum], updated
+in 2022, distinguishes internal-target intent from variable scoping and records
+bypassable naming workarounds. That is practitioner evidence, not an access
+control guarantee. Gludd's underscore convention defines public Help visibility;
+omitting a name from Help does not make a target uncallable or replace actual
+push/branch/CI admission. The fix changes no serving process, has no migration
+or service restart, and does not grant deletion or release authority.
+
+Actual `make help` and all 218 variable-aware contracts pass. The early phase
+retains warning-fatal one-worker execution, 90-second runtime/60-second quiet
+bounds, all 21 phases, the 2850-second ceiling, full-gate replay and 85/75 floors.
+All 52 Help, pull-guard, promotion and plan cases pass in 7.53 seconds; the actual
+complete early owner executes 718 cases in 37.91 test seconds (38.8 observed),
+with 40 promoted families. Strict typing, Ruff and Make/Markdown checks pass.
+Focused green is not the replacement exact-SHA hosted proof.
+
 ## Research and resource boundary
 
 Research reviewed on 2026-10-12:
@@ -181,3 +213,4 @@ the full suite or a gate.
 [shell-fields]: https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html#tag_19_06_05
 [rg-manual]: https://github.com/BurntSushi/ripgrep/blob/master/crates/core/flags/doc/template.rg.1
 [search-forum]: https://stackoverflow.com/questions/29906576/safely-pass-make-variable-to-shell-commands
+[private-target-forum]: https://stackoverflow.com/questions/26063839/how-can-i-make-a-target-private-in-gnu-make-for-internal-use-only-or-how-to

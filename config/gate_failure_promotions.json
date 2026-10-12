@@ -432,6 +432,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_workflow_integrity.py::TestTestShardStructure::test_hosted_matrix_prioritizes_long_lanes_without_extra_runners",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "make-private-target-help-visibility",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::test_internal_targets_not_in_help",
+      "full_gate_phase": "test"
     }
   ]
 }

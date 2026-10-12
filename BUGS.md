@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — private push guard escaped into public Help and failed late unit-2
+
+- **Observed**: Terminal Build `38307021746` at exact c4 source has two failed jobs, 24 passed and four skipped. Unit-2 reproduces `TestInternalTargetConventions::test_internal_targets_not_in_help` after 237 neighboring passes because Help advertises `_pull-before-push-guard`. Native exact-node replay preserves the same failure.
+- **Narrow repair**: Document guarded current-remote admission on the existing public push entry, removing only the private Help entry. Do not change the guard, its dependencies, SSH handling, remote/branch checks or the original failing test.
+- **Mechanical prevention**: Mapping/roster tests fail first (two failed, 33 passed), then the exact executable-wiring assertion fails before its expected owner is updated. Bind the original node to the existing warning-fatal one-worker phase rather than waiting for the expensive full deep-target cohort; its downstream full-gate replay stays mandatory, with unchanged 90/60 and 21-phase/2850-second bounds.
+- **Actual acceptance**: All 52 Help/pull-guard/promotion/plan cases pass in 7.53 seconds. The actual complete early owner passes 718 cases in 37.91 test seconds (38.8 observed), with 40 promoted families and unchanged budgets. Strict typing, Ruff and Make/Markdown checks pass.
+- **Evidence boundary**: Actual Help and 218 contracts pass; the feature guide records the long-lived private-target discussion and visibility-versus-authority distinction. Source repair does not resolve hosted failure or unblock capacity, canonical gate/coverage, final review or release promotion. No serving process, dependency, environment or manual JSON tracker is added.
+
 ### 2026-10-12 — hosted shard timing required manual interpretation and creation priority was alphabetical
 
 - **Observed**: Successful long lanes are created late in the eight-shard matrix. The normal immutable run summary has no duration projection or fetch deadline. Its automatic exact-run replay corrects two overstated provisional short-shard timings; failed `unit-2` elapsed remains censored, not a successful full-run measurement.

@@ -366,6 +366,12 @@ real EE graph has resolved or that a replacement image has built successfully.
 
 ## Zero-downtime and rollback
 
+The exact original private-Help visibility node also executes here through
+`make-private-target-help-visibility`. It catches the terminal c4 unit-2 failure
+before costly fan-out while retaining the complete deep-target cohort in the
+authoritative downstream suite. Mapping/roster and executable-wiring acceptance
+fail before promotion; no guard implementation or original assertion changes.
+
 The complete immutable run-summary script/target and workflow-integrity cohorts
 also run in this existing phase. `hosted-shard-timing-diagnostics` rejects
 unbound, missing, ambiguous or partial timing evidence, while

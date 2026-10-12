@@ -539,6 +539,29 @@ def test_hosted_timing_contracts_execute_in_complete_early_cohorts(
     assert payload["full_gate_required"] is True
 
 
+def test_private_help_regression_runs_before_hosted_unit_2() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    node = (
+        "tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::"
+        "test_internal_targets_not_in_help"
+    )
+    family = next(family for family in payload["families"]
+                  if family["id"] == "make-private-target-help-visibility")
+    assert family == {
+        "id": "make-private-target-help-visibility",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in executable
+    phase = next(phase for phase in payload["runtime_contract"]["phases"]
+                 if phase["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    assert payload["full_gate_required"] is True
+
+
 def _synthetic_repository(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
@@ -839,6 +862,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "make-search-literal-transport",
         "hosted-shard-timing-diagnostics",
         "hosted-shard-creation-order",
+        "make-private-target-help-visibility",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -999,7 +1023,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_make_readonly_version.py '
         'tests/unit/test_ci_run_summary_script.py '
         'tests/unit/test_ci_run_summary_target.py '
-        'tests/unit/test_ci_workflow_integrity.py"'
+        'tests/unit/test_ci_workflow_integrity.py '
+        'tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::'
+        'test_internal_targets_not_in_help"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
