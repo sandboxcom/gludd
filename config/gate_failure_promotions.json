@@ -264,6 +264,27 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_hook_runtime_split_compat.py::test_helper_signatures_match_pre_split_snapshot",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "async-gate-canonical-profile-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_gate_async.py::test_default_gate_command_invokes_whole_gate_without_recursion",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "session-objective-ci-evidence",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "session-handoff-git-identity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_session_persistence_integration.py::TestHeadHashMatchesGitLog::test_session_head_in_git_log",
+      "full_gate_phase": "test"
     }
   ]
 }

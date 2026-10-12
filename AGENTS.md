@@ -1,5 +1,18 @@
 # Agentic Harness - Agent Rules
 
+## Release Proof Throughput (READ FIRST)
+
+1. During release stabilization, prioritize the active milestone and its required repairs. Do not start unrelated backlog work or pad dispatch waves while release blockers remain.
+2. Keep one proof owner and one explicit missing-proof record per milestone task; use [Release Proof Throughput](docs/features/RELEASE_PROOF_THROUGHPUT.md). Distinguish implementation, focused acceptance, source review, full gate, exact-SHA CI, and completion.
+3. Before candidate sealing, final combined replay, or a full gate, run `make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0`. Its plan mode and passing scheduling admission are NEVER gate or release evidence.
+4. A failed capacity/configuration/ownership prerequisite blocks expensive final-proof attempts. Repair that prerequisite; do not reseal, replay, or rerun the same failure merely because HEAD, elapsed time, or an observer ID changed.
+5. Identify blockers by failing owner/node and actual failing input, not by commit/run IDs. Retain the failed evidence and name what must change to clear each blocker; do not create a second scanner, runner, daemon, or proof cache.
+6. Bounded failing-first repair tests, required per-commit collection, and normal policy-guarded development CI repair pushes remain allowed while final proof is blocked. Batch all known independent CI repairs before consuming another hosted run.
+7. Promote cheap deterministic failures into the existing executable admission owner, with failing-first routing tests. Keep their authoritative full-gate replay, coverage floors, warning policy, and original assertion intent unchanged.
+8. After hard prerequisites actually clear, freeze one candidate, obtain independent source review, and run combined acceptance, the complete canonical gate, and hosted CI for that exact SHA. Do not edit the candidate while collecting its final evidence.
+9. A source-only approval or green focused suite never closes a backlog item. Tick TASKS.md only with actual green full-gate evidence and all required exact-SHA proofs; preserve historical failures and all immutable candidate refs.
+10. Report blocker repairs and completed proofs separately. When proof is blocked, state the missing evidence and exact next action, not another speculative readiness summary. Never weaken cleanup authority, ZDD, 85% aggregate/75% per-file coverage, or branch/promotion gates to improve throughput.
+
 ## Make Target Selection Contract
 
 Before running project work, read `make help` and choose the narrowest matching target. Set every documented target variable explicitly; do not substitute a bare shell command. Each agent-facing target's variables and safe behavioral example are tracked in `config/make_target_contract.json`. Run `make check-make-target-contract` after changing a target, and run its documented behavioral example before claiming the target works. If no suitable target exists, add and test one first.

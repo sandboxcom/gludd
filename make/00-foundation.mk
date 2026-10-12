@@ -109,6 +109,7 @@ export UV_CACHE_DIR
 override UV_NO_SYNC := 1
 export UV_NO_SYNC
 RELEASE_READINESS_VALIDATE_ONLY ?= 0
+RELEASE_PROOF_ADMISSION_VALIDATE_ONLY ?= 0
 RELEASE_COMPLETED_STAGES ?=
 RELEASE_OBSERVATIONS ?=
 REVIEWED_HEAD_INTEGRATION_RECEIPT ?=
@@ -707,6 +708,7 @@ help:
 	@echo "  release-list          List all GitHub releases"
 	@echo "  reviewed-head-receipt ...  Build exact-topology integration evidence after the final gate"
 	@echo "  release-readiness TAG=..  Fail-closed blockers + exact reviewed-head receipt for v0.1.2"
+	@echo "  release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0|1  Cheap read-only scheduling admission; never release proof"
 	@echo "  release-page-notes TAG=..  Build/validate bounded ledger-backed GitHub release-page notes"
 	@echo "  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings"
 	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"

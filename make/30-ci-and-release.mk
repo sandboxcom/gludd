@@ -428,6 +428,33 @@ reviewed-head-receipt:
 
 RELEASE_READINESS_CI_BRANCH ?=
 
+# Scheduling admission only: existing owners remain the policy authorities.
+# Do not seal/replay a candidate or start a full gate while this is blocked.
+.PHONY: release-proof-admission
+release-proof-admission:
+	@case "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: RELEASE_PROOF_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac; \
+	if [ "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" = "1" ]; then \
+		echo "PROOF-ADMISSION-PLAN capacity -> gate-config -> task-registration -> task-integrity -> failure-promotions -> resource-ownership -> runtime-compatibility; release_ready=false gate_evidence=false"; \
+		exit 0; \
+	fi; \
+	run_owner() { \
+		phase="$$1"; \
+		echo "PROOF-ADMISSION-START phase=$$phase"; \
+		if $(MAKE) --no-print-directory "$$@"; then \
+			echo "PROOF-ADMISSION-PHASE-PASS phase=$$phase"; \
+		else \
+			rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase"; exit "$$rc"; \
+		fi; \
+	}; \
+	run_owner disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800; \
+	run_owner gate-admission-config GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1; \
+	run_owner check-task-registration; \
+	run_owner check-task-integrity; \
+	run_owner check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json; \
+	run_owner check-resource-ownership RESOURCE_OWNERSHIP_ROOT=. RESOURCE_OWNERSHIP_PATHS='' RESOURCE_OWNERSHIP_INVENTORY=config/resource_ownership_inventory.json RESOURCE_OWNERSHIP_WRITE=0; \
+	run_owner _pytest-runtime-compatibility-admission; \
+	echo "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false"
+
 release-readiness:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,... REVIEWED_HEAD_INTEGRATION_RECEIPT=path RELEASE_CANDIDATE_SHA=full-sha RELEASE_READINESS_CI_BRANCH=source-branch-or-empty"; exit 2; }
 	@RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)" \

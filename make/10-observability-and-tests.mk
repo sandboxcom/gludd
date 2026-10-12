@@ -726,8 +726,10 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_session_start_crash_recovery.py::TestCrashRecoveryStatic::test_session_state_has_pid_field
 # tests/unit/test_hook_runtime_split_compat.py::test_case_inventory_order_signatures_and_marks_match_pre_split_snapshot
 # tests/unit/test_hook_runtime_split_compat.py::test_helper_signatures_match_pre_split_snapshot
+# tests/unit/test_gate_async.py::test_default_gate_command_invokes_whole_gate_without_recursion
+# tests/unit/test_session_persistence_integration.py::TestHeadHashMatchesGitLog::test_session_head_in_git_log
 	@$(MAKE) --no-print-directory test-files \
-		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py" \
+		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci" \
 		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"
 
 _ansible-role-variable-prefix:

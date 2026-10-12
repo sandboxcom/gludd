@@ -2,6 +2,17 @@
   "version": 1,
   "targets": [
     {
+      "name": "release-proof-admission",
+      "make_variables": ["RELEASE_PROOF_ADMISSION_VALIDATE_ONLY"],
+      "behavior": "make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "_pytest-runtime-compatibility-admission",
+      "make_variables": [],
+      "not_for_direct_use": true,
+      "behavior": "make _pytest-runtime-compatibility-admission"
+    },
+    {
       "name": "_pull-before-push-guard",
       "make_variables": ["PUSH_REMOTE", "SSH_KEY"],
       "not_for_direct_use": true,

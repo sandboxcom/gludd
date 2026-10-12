@@ -24,10 +24,12 @@ the first nonzero result:
    before any promoted node runs. It rejects duplicate families or nodes,
    missing Make owners, stale pytest node IDs, admission wiring drift, and a
    missing mandatory full-gate phase.
-3. `pytest-runtime-compatibility` runs the complete crash-recovery and
-   hook-runtime split compatibility files with `-W error` and one worker in the
-   invoking Python environment. It rejects deprecated class-scoped instance
-   fixtures and runtime API snapshot drift before broader integration checks.
+3. `pytest-runtime-compatibility` runs the complete crash-recovery,
+   hook-runtime split compatibility, async-launcher, and session-persistence
+   files, plus the exact session-objective CI node, with `-W error` and one
+   worker in the invoking Python environment. It rejects deprecated fixtures,
+   runtime API snapshot drift, launcher policy drift, and invalid handoff
+   metadata before broader integration checks.
    Hosted Python 3.11/3.12 jobs retain their own interpreter coverage; admission
    reuses their environment without creating another dependency matrix.
 4. `ansible-role-variable-prefix` runs the exact warning-fatal
@@ -146,6 +148,31 @@ Python versions. It never evaluates snapshot text. Names, argument order and
 kinds, annotations, defaults, return annotations, and decorators still compare
 structurally; focused regressions prove ten forms of API or mark drift are
 rejected, including an actual empty-list default or mark value.
+
+Hosted run `38266403588` later exposes the async launcher's obsolete
+lock-first prerequisite substring in unit-2 batch 008. Canonical profile
+admission must precede lock acquisition, so the conformed test now verifies
+that exact ordering, conditional release-state check, one lock owner, and
+unchanged nonrecursive gate execution. The original failing result is retained;
+no production owner or cancellation behavior is weakened to satisfy the test.
+
+The same compatibility owner now runs the complete async launcher file beside
+the fixture/AST checks. Its new `async-gate-canonical-profile-contract`
+manifest entry binds the exact previously failing node to that existing early
+phase. A new test fails first on the absent mapping and verifies executable
+file routing, warning-fatal one-worker policy, and the still-required full
+gate. The 90-second phase budget is unchanged; these checks fail cheaply
+before costly hosted shard fan-out rather than relaxing or skipping those
+shards.
+
+The `session-objective-ci-evidence` and `session-handoff-git-identity`
+families retain the original tests that exposed late metadata failures. Hosted
+unit-1b batch 026 first rejected the objective's missing explicit CI wording;
+an earlier combined replay rejected an observer suffix mistaken for a Git
+anchor. Repairing SESSION.md, not weakening those assertions, resolves both.
+The complete session-persistence file and exact objective node now execute in
+the same 90-second, warning-fatal, one-worker admission phase. New mapping tests
+fail first and verify executable routing rather than comment-only references.
 
 Promotion only moves early feedback forward. The exact full gate remains mandatory.
 The checker fails closed when a node is renamed, deleted, duplicated,

@@ -49,7 +49,13 @@ def test_default_gate_command_invokes_whole_gate_without_recursion() -> None:
     assert 'GATE_CMD="${GATE_CMD:-make gate gludd_watchdog_owned_gate=1}"' in text
 
     makefile = compose_makefile(MAKEFILE)
-    gate_start = makefile.index("gate: _gate-run-lock-acquire")
+    gate_start = makefile.index("\ngate: ") + 1
+    gate_header = makefile[gate_start:].splitlines()[0]
+    # Canonical release-profile admission precedes ownership acquisition.
+    assert gate_header.startswith("gate: gate-admission-config ")
+    assert "$(if $(filter release,$(GATE_TEST_PROFILE)),_gate-release-state-check,)" in gate_header
+    assert gate_header.count("_gate-run-lock-acquire") == 1
+    assert gate_header.endswith(" _gate-run-lock-acquire")
     gate_end = makefile.index("# gate-lite:", gate_start)
     assert "gate_async.sh" not in makefile[gate_start:gate_end]
 

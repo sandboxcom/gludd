@@ -119,6 +119,67 @@ def _checker() -> ModuleType:
     return importlib.import_module("scripts.check_gate_failure_promotions")
 
 
+def test_async_canonical_profile_contract_fails_in_compatibility_admission_first() -> None:
+    """A cheap exact-node failure must not recur deep in hosted unit-2."""
+    node = (
+        "tests/unit/test_gate_async.py::"
+        "test_default_gate_command_invokes_whole_gate_without_recursion"
+    )
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next((family for family in manifest["families"] if family["node"] == node), None)
+    assert family is not None
+    assert family["owner_target"] == "_pytest-runtime-compatibility-admission"
+    assert family["full_gate_phase"] == "test"
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    assert "tests/unit/test_gate_async.py" in owner
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in owner
+    assert manifest["full_gate_required"] is True
+
+
+@pytest.mark.parametrize(
+    ("family_id", "node", "executable_input"),
+    [
+        (
+            "session-objective-ci-evidence",
+            "tests/unit/test_enforce_objective_plugin.py::"
+            "TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
+            "tests/unit/test_enforce_objective_plugin.py::"
+            "TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
+        ),
+        (
+            "session-handoff-git-identity",
+            "tests/unit/test_session_persistence_integration.py::"
+            "TestHeadHashMatchesGitLog::test_session_head_in_git_log",
+            "tests/unit/test_session_persistence_integration.py",
+        ),
+    ],
+)
+def test_session_metadata_failures_are_executed_before_hosted_shards(
+    family_id: str, node: str, executable_input: str,
+) -> None:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(
+        (family for family in manifest["families"] if family["id"] == family_id),
+        None,
+    )
+    assert family is not None
+    assert family == {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert executable_input in executable
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    assert manifest["full_gate_required"] is True
+    assert ("pytest-runtime-compatibility", family["owner_target"], "fast", 90, 60) in (
+        EXPECTED_RUNTIME_PHASES
+    )
+
+
 def _target_stanza(makefile: str, target: str) -> str:
     return makefile.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
 
@@ -399,6 +460,9 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "pytest-class-fixture-scope",
         "hook-runtime-case-ast-portability",
         "hook-runtime-helper-ast-portability",
+        "async-gate-canonical-profile-contract",
+        "session-objective-ci-evidence",
+        "session-handoff-git-identity",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -541,7 +605,10 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert "$(MAKE) --no-print-directory test-files" in runtime_compatibility_owner
     assert (
         'TESTFILES="tests/unit/test_session_start_crash_recovery.py '
-        'tests/unit/test_hook_runtime_split_compat.py"'
+        'tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py '
+        'tests/unit/test_session_persistence_integration.py '
+        'tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::'
+        'test_primary_objective_mentions_ci"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
@@ -585,7 +652,7 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "gate-failure-promotions: PASS families=15" in result.stdout
+    assert "gate-failure-promotions: PASS families=18" in result.stdout
     assert "runtime_phases=21" in result.stdout
     assert "runtime_ceiling_seconds=2850" in result.stdout
     for phrase in (

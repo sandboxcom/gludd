@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: v0.1.2 RELEASE READINESS — Session 98 resumed the committed backlog and is repairing exact-candidate admission and pipeline failures on development (2026-10-12).
+## PRIMARY OBJECTIVE: v0.1.2 RELEASE READINESS — Session 98 is repairing exact-candidate admission and hosted CI failures on development; full local gate and exact-SHA CI proof remain pending (2026-10-12).
 
 **Immutable integration anchor (failed acceptance)**: `1f978bf323ea627a4c12ed476ab571faea181dee`, source04's real two-parent integration. This explicit Git identity precedes observer-run IDs so recovery cannot mistake a telemetry suffix for a commit.
 
