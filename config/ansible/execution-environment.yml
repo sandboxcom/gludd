@@ -40,6 +40,21 @@ additional_build_steps:
     - RUN $PKGMGR install -y git-core && $PKGMGR clean all
     # The distro pip emitted an update notice during actual hosted assembly.
     - RUN $PYCMD -m pip install --no-cache-dir --upgrade pip==26.2.1
+    # Supply the pinned source's undeclared metadata dependency in isolation.
+    - RUN $PYCMD -m pip install --no-cache-dir uv==0.12.19
+    - >-
+      RUN mkdir -p /etc/gludd && printf '%s\n'
+      '[pip.extra-build-dependencies]'
+      'searxng = ["pyyaml==6.0.2"]'
+      > /etc/gludd/ansible-ee-uv.toml
+    # Both standard Builder dependency scripts honor PIPCMD; no wrapper needed.
+    - ENV PIPCMD="/usr/bin/python3.11 -m uv pip"
+    - ENV UV_CONFIG_FILE=/etc/gludd/ansible-ee-uv.toml
+    - ENV UV_PYTHON=/usr/bin/python3.11 UV_SYSTEM_PYTHON=true UV_BREAK_SYSTEM_PACKAGES=true
+    - ENV UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_CONCURRENT_BUILDS=1
+  prepend_builder:
+    # assemble creates and activates this venv before resolving requirements.
+    - ENV UV_PYTHON=/tmp/venv/bin/python UV_SYSTEM_PYTHON=false
   append_final:
     - >-
       RUN set -eu; machine="$(uname -m)";

@@ -418,6 +418,7 @@ help:
 	@echo "  check-resource-ownership Enforce exact application acquisition-to-teardown evidence (RESOURCE_OWNERSHIP_*)"
 	@echo "  update-ansible-runtime-lock Refresh deterministic EE input hashes"
 	@echo "  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)"
+	@echo "  inspect-ansible-searxng-source Read nine exact frozen metadata inputs (ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0|1)"
 	@echo "  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  update-collection-python-boundary-inventory Refresh exact legacy migration inventory"
 	@echo "  deps-audit            Fail-closed Python dependency truth audit"
@@ -1046,6 +1047,20 @@ ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY ?= 1
 refresh-ansible-base-image:
 	@case "$(ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@if [ "$(ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY)" = "1" ]; then echo "ANSIBLE_BASE_IMAGE_REFRESH_VALIDATED source=quay.io/centos/centos:stream9"; else $(UV) run python scripts/ansible_runtime_artifacts.py refresh-base-image; fi
+
+ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY ?= 1
+inspect-ansible-searxng-source:
+	@case "$(ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@set -eu; revision=$$(sed -n 's|^searxng @ git+https://github.com/searxng/searxng.git@||p' config/ansible/requirements.txt); \
+		test "$${#revision}" = 40; case "$$revision" in *[!0-9a-f]*) echo "invalid frozen SearXNG revision" >&2; exit 2;; esac; \
+		if [ "$(ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY)" = "1" ]; then \
+			echo "ANSIBLE_SEARXNG_SOURCE_INSPECTION plan_only=true files=9 revision=$$revision"; exit 0; \
+		fi; \
+		for source_file in setup.py searx/__init__.py searx/settings_loader.py searx/version.py requirements.txt searx/settings_defaults.py searx/unixthreadname.py searx/exceptions.py searx/sxng_locales.py; do \
+			printf '\nANSIBLE_SEARXNG_SOURCE_INSPECTION file=%s revision=%s\n' "$$source_file" "$$revision"; \
+			curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --proto '=https' --tlsv1.2 \
+				"https://raw.githubusercontent.com/searxng/searxng/$$revision/$$source_file"; \
+		done
 
 build-ansible-execution-environment:
 	@case "$(ANSIBLE_EE_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac

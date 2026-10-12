@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — pinned EE source omitted an isolated metadata prerequisite
+
+- **Exact hosted cause**: Build `38278381965` at `03e7cae` reaches the served base, Git acquisition and current pip, then the frozen SearXNG metadata import fails with missing yaml. Two new acceptance cases reproduce the absent package-specific augmentation and missing generated installer boundaries before implementation.
+- **Repair**: Reuse pinned uv through the existing Ansible Builder PIPCMD interface and augment only the SearXNG isolated build with PyYAML matching the frozen source. Nine exact upstream source reads confirm the import chain; no msgspec augmentation, global isolation bypass, runtime requirement change, custom packaging engine, controller/core leak, or local environment allocation is introduced. Only the existing definition lock hash changes.
+- **Actual acceptance**: All 60 runtime, interpreter-boundary and real-recipe inspection cases pass with warnings fatal; targeted source coverage is 92% and meets unchanged 85/75 floors. Real Builder CLI generation requires no container; strict typing, Ruff, runtime-boundary validation, 215 Make contracts, safe offline example and Markdown pass. Practitioner findings and unchanged warm/switch/drain/rollback behavior are recorded in the EE feature document.
+- **Remaining proof**: Both hosted quality gates, all six platform build jobs, presentation validation, and independent Molecule 6/6 pass for 03e7cae. Build still has EE, bulkhead scheduling and gate-lock fixture failures. This repair has no replacement hosted image or canonical full-gate proof yet; S98 stays open and the unchanged 91% disk blocker is not bypassed.
+
 ### 2026-10-12 — piped CI waiter buffered every observable heartbeat
 
 - **Observed**: The exact-SHA CI waiter remains silent through several 30-second polls; interrupting its owned local process flushes all 246 seconds of retained messages at once. No hosted workflow is cancelled.

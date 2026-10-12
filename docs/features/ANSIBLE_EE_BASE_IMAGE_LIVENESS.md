@@ -101,3 +101,61 @@ explains the same host-versus-image boundary and why later bindep installation
 cannot repair an earlier Git consumer. This change builds candidates beside
 the active digest and retains the existing warm, switch, drain, and rollback
 policy; it does not replace a running controller.
+
+## Isolated SearXNG source metadata — 2026-10-12
+
+Hosted Build `38278381965` gets beyond the served base manifest and the Git
+and pip prerequisites, then fails while obtaining the pinned SearXNG wheel
+requirements. The metadata import runs `searx/__init__.py`, which loads
+`searx.settings_loader` and imports `yaml`. Installing PyYAML in the builder
+interpreter cannot satisfy an import in pip's separate PEP 517 environment.
+This is a source-package build dependency, not a missing runtime requirement.
+
+`make inspect-ansible-searxng-source
+ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0` reads nine fixed files at the
+committed Git revision without writing files or installing packages. Each
+request has a 10-second connect limit and a 20-second total limit; mode `1`
+prints the offline plan. Inspection confirms that the metadata import chain
+needs only PyYAML: the frozen `settings_defaults`, `unixthreadname`, and
+`exceptions` imports use standard-library or local modules, and `sxng_locales`
+contains generated data. Runtime `msgspec` is not a metadata prerequisite.
+
+The controller definition uses pinned uv `0.12.19` through Ansible Builder's
+existing `PIPCMD` setting. The
+[Builder assembly script](https://github.com/ansible/ansible-builder/blob/3.1.1/src/ansible_builder/_target_scripts/assemble)
+and its
+[final installation script](https://github.com/ansible/ansible-builder/blob/3.1.1/src/ansible_builder/_target_scripts/install-from-bindep)
+both honor this setting. uv's documented
+[extra build dependencies](https://docs.astral.sh/uv/reference/settings/#pip_extra-build-dependencies)
+add `pyyaml==6.0.2`, matching the frozen source, only to SearXNG's isolated
+metadata and wheel environment.
+The definition embeds that configuration, so the existing definition hash
+accounts for the entire repair. The Git revision, committed requirements,
+collection artifacts, controller Python 3.11, core profile, and managed-host
+lock retain their identities.
+
+The base and final stages select `/usr/bin/python3.11`. The builder selects
+the temporary `/tmp/venv/bin/python` created by the original assembly script.
+This preserves the existing temporary-install and final-install boundaries.
+Build isolation and runtime dependency resolution remain enabled; the recipe
+does not replace upstream packaging with a custom builder.
+
+The long-lived October 2023
+[Python packaging forum report](https://discuss.python.org/t/no-network-interrogate-whether-dependencies-are-satisfied/36507/9)
+explains why already-installed packages cannot satisfy an isolated build's
+undeclared dependencies. The October 2024
+[SearXNG practitioner report #3896](https://github.com/searxng/searxng/issues/3896)
+also shows metadata imports failing before normal requirements installation
+and warns about unconstrained prerequisite upgrades. Gludd therefore records
+the package-specific build prerequisite and keeps the runtime source frozen.
+
+The regression cohort parses the embedded TOML and generates a real Ansible
+Builder Dockerfile without starting containers or installing dependencies.
+It checks the installer inheritance, temporary interpreter selection,
+unchanged staged VCS requirement, and absence of isolation or dependency
+bypasses. These are focused acceptance checks. An actual source metadata
+replay, hosted image assembly, offline import verification, and the unchanged
+full gate and 85% aggregate/75% per-file coverage floors remain required
+before promotion. Candidate
+builds still run beside the active digest, with warm, switch, drain, and
+rollback behavior unchanged.

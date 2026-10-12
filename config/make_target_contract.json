@@ -2,6 +2,11 @@
   "version": 1,
   "targets": [
     {
+      "name": "inspect-ansible-searxng-source",
+      "make_variables": ["ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY"],
+      "behavior": "make inspect-ansible-searxng-source ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "release-proof-admission",
       "make_variables": ["RELEASE_PROOF_ADMISSION_VALIDATE_ONLY"],
       "behavior": "make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=1"

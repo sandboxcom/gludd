@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -152,6 +153,88 @@ def test_controller_base_pins_current_pip_before_python_installation() -> None:
     definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
     base_steps = definition["additional_build_steps"].get("append_base", [])
     assert "RUN $PYCMD -m pip install --no-cache-dir --upgrade pip==26.2.1" in base_steps
+
+
+def test_controller_augments_only_searxng_isolated_metadata_dependencies() -> None:
+    """Runtime PyYAML cannot satisfy the source package's isolated metadata import."""
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    base_steps = definition["additional_build_steps"].get("append_base", [])
+    assert "RUN $PYCMD -m pip install --no-cache-dir uv==0.12.19" in base_steps
+    config_steps = [step for step in base_steps if "[pip.extra-build-dependencies]" in step]
+    assert len(config_steps) == 1
+    tokens = shlex.split(config_steps[0].removeprefix("RUN "))
+    printf_index = tokens.index("printf")
+    redirect_index = tokens.index(">")
+    assert tokens[printf_index + 1] == "%s\\n"
+    assert tokens[redirect_index + 1] == "/etc/gludd/ansible-ee-uv.toml"
+    configuration = tomllib.loads("\n".join(tokens[printf_index + 2:redirect_index]))
+    assert configuration == {
+        "pip": {"extra-build-dependencies": {"searxng": ["pyyaml==6.0.2"]}}
+    }
+    rendered_steps = "\n".join(
+        step for steps in definition["additional_build_steps"].values() for step in steps
+    )
+    assert "--no-build-isolation" not in rendered_steps
+    assert "NO_BUILD_ISOLATION" not in rendered_steps
+    assert "--no-deps" not in rendered_steps
+
+
+def test_generated_controller_build_preserves_installer_and_interpreter_boundaries(
+    tmp_path: Path,
+) -> None:
+    """Exercise Builder's real generation, without a container or dependency install."""
+    staged_config = tmp_path / "config" / "ansible"
+    staged_config.mkdir(parents=True)
+    for input_path in artifacts.INPUTS.values():
+        shutil.copy2(input_path, staged_config / input_path.name)
+    for _source, artifact in artifacts.COLLECTION_ARTIFACTS:
+        staged_artifact = tmp_path / "dist" / "collections" / artifact.name
+        staged_artifact.parent.mkdir(parents=True, exist_ok=True)
+        staged_artifact.write_bytes(b"generation-only collection fixture")
+    context = tmp_path / "context"
+    generated = subprocess.run(
+        [
+            sys.executable,
+            "-W",
+            "error",
+            "-m",
+            "ansible_builder",
+            "create",
+            "--file",
+            str(staged_config / artifacts.DEFINITION.name),
+            "--context",
+            str(context),
+            "--output-filename",
+            "Dockerfile",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    rendered = (context / "Dockerfile").read_text(encoding="utf-8")
+    base, downstream = rendered.split("FROM base AS galaxy", 1)
+    builder, final = downstream.split("FROM base AS final", 1)
+    assert 'ENV PIPCMD="/usr/bin/python3.11 -m uv pip"' in base
+    assert "ENV UV_CONFIG_FILE=/etc/gludd/ansible-ee-uv.toml" in base
+    assert "ENV UV_PYTHON=/usr/bin/python3.11 UV_SYSTEM_PYTHON=true" in base
+    assert "ENV UV_PYTHON=/tmp/venv/bin/python UV_SYSTEM_PYTHON=false" in builder
+    assert builder.index("ENV UV_PYTHON=/tmp/venv/bin/python") < builder.index(
+        "RUN /output/scripts/assemble"
+    )
+    assert "/tmp/venv/bin/python" not in final
+    assert "RUN /output/scripts/install-from-bindep" in final
+    scripts = context / "_build" / "scripts"
+    for script_name in ("assemble", "install-from-bindep"):
+        script = (scripts / script_name).read_text(encoding="utf-8")
+        assert 'PIPCMD="${PIPCMD:=$PYCMD -m pip}"' in script
+        assert "$PIPCMD install" in script
+    assert (context / "_build" / "requirements.txt").read_text(encoding="utf-8") == (
+        artifacts.INPUTS["python"].read_text(encoding="utf-8")
+    )
+    assert not (context / "_build" / "setup.py").exists()
 
 
 def test_runtime_stages_native_collections_dependencies_and_pinned_opentofu() -> None:

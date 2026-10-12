@@ -6,7 +6,7 @@
     "galaxy": "sha256:c361f006d85cd243875c460f484180b134cf8bb0dac7bd7adbbb77d3007a1ff6",
     "python": "sha256:b2f8abbc609ffc2504f27234789f8e751b74eab7ccf02eff28ca7936d3fbb070",
     "system": "sha256:64c87891f336f9c13148b3cf13db2d46d503813b5d5b1d890c06fb221e691d39",
-    "definition": "sha256:a319cee378be4040f9db59ae3973f8d06285ffd38de4a2d44eece536db6cf787"
+    "definition": "sha256:0b66777480e5f097b6f116346ade86259f326a46fdd70bb2113d7b2ed3ff923c"
   },
   "promotion": "build-and-warm-beside-active-then-switch-new-jobs",
   "rollback": "switch-new-jobs-to-previous-digest-and-drain-in-flight-jobs",
