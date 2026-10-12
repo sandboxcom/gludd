@@ -26,6 +26,62 @@ gate. The preview therefore records useful candidate contents without
 converting implementation evidence into task, gate, release, or publication
 completion.
 
+The promotion policy now explicitly admits `v0.1.2`. It requires all twelve
+S97 repair records and the seven registered S98.1-S98.7 repair records, together
+with a reviewed-head integration receipt bound to the full candidate SHA. The
+S98 prefix additionally blocks any later unfinished repair in that session;
+prefix filtering cannot replace explicit admission of the seven known records.
+Missing ledger entries,
+unfinished repairs, invalid receipts, or hosted results for another commit
+remain blockers. The Make contract's validation example uses a hermetic fixture;
+that example proves argument routing, not readiness of the real candidate.
+
+After canonical master selection, full readiness keeps the actual checkout
+branch visible while validating hosted evidence from the explicit
+`RELEASE_READINESS_CI_BRANCH`. An empty selector retains the invoking-branch
+default; selecting development cannot substitute a different commit or skip
+the S97/S98 milestone. The selector also stays in validate-first remediation
+commands. Stable publication must run full readiness, not the hermetic argument
+validation mode.
+
+This is a zero-downtime administrative change: validation starts no application
+worker, changes no schema, and publishes no tag or artifact. Rollback restores
+the former policy while the preceding release continues serving. The unchanged
+coverage contract requires 85% aggregate and 75% in every measured file.
+
+Container builds preserve the committed `pyproject.toml` and lockfiles until
+the Dockerfile finishes frozen core installation. Only then does its existing
+version argument stamp the application wheel. This removes the hosted branch
+build's stale-lock failure without a second dependency resolution. The build
+context excludes local virtual environments, validation logs, Terraform
+provider caches, credentials, and live state, while retaining all source and
+locked dependency inputs. These changes affect candidate builds only; active
+images continue serving and normal canary, drain, and rollback rules apply.
+
+The long-lived [GitHub Community discussion #26603][release-tag-filter], opened
+in 2021 and revisited in 2024, records release-event tag filters that did not
+constrain workflow execution. [SemVer issue #583][semver-numeric], opened in
+2020, records ambiguity around numeric prerelease identifiers. Reviewed again
+on 2026-10-12, these findings support explicit tag admission and a registered
+release milestone before promotion; a syntactically valid tag is insufficient
+evidence for release readiness.
+
+[release-tag-filter]: https://github.com/orgs/community/discussions/26603
+[semver-numeric]: https://github.com/semver/semver/issues/583
+
+Static checking also uses a single canonical package identity for the exact-CI
+verdict dependency. Direct-script imports retain their existing runtime fallback
+and still rethrow a missing transitive dependency. The real strict-typing
+acceptance reproduced the duplicate-module failure before the repair; all 50
+CLI/verdict tests now pass at 100% line and branch coverage without real Git or
+GitHub I/O. The long-running [mypy issue #9058][mypy-identity] and its
+[module-mapping guidance][mypy-mapping], reviewed 2026-10-12, document why one
+source can be discovered under incompatible qualified names. This is an import
+identity repair, not a new ignored-error or skipped-import rule.
+
+[mypy-identity]: https://github.com/python/mypy/issues/9058
+[mypy-mapping]: https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules
+
 S31-S37 describe the user-visible outcome as safer model-performance,
 benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
 messages before its deterministic 100-message inbox bound, so stale head rows

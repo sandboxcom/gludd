@@ -21,7 +21,7 @@ from general_ludd.ansible.isolation import ProcessIsolationConfig
 ROOT = Path(__file__).resolve().parents[2]
 SHA256_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "a" * 64
 CENTOS_STREAM9_INDEX = (
-    "quay.io/centos/centos:stream9@sha256:63e8d0c2a4a4b67c8bd7456283d12106bedf815d8c27d1a72498ebcf173baf09"
+    "quay.io/centos/centos:stream9@sha256:33346f5fe280763eb78e85f968ad52bc2b2013369de85403f67e802db98ed243"
 )
 
 
@@ -127,6 +127,22 @@ def test_execution_environment_uses_supported_published_beta4_base_index() -> No
     lock = json.loads((ROOT / "config/ansible/runtime-lock.json").read_text(encoding="utf-8"))
     assert ee["images"]["base_image"]["name"] == CENTOS_STREAM9_INDEX
     assert lock["base_image"] == CENTOS_STREAM9_INDEX
+
+
+def test_hosted_gate_checks_base_manifest_before_expensive_validation() -> None:
+    """An unservable EE pin must stop the pipeline before the test fan-out."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["gate"]["steps"]
+    checks = [
+        index for index, step in enumerate(steps)
+        if "make check-ansible-base-image" in str(step.get("run", ""))
+    ]
+    assert len(checks) == 1
+    step = steps[checks[0]]
+    assert "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0" in step["run"]
+    assert not step.get("continue-on-error", False)
+    lint_index = next(index for index, item in enumerate(steps) if item.get("name") == "Lint")
+    assert checks[0] < lint_index
 
 
 def test_ee_build_target_forwards_namespaced_docker_config() -> None:
