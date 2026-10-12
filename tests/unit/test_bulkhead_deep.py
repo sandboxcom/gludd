@@ -158,20 +158,30 @@ class TestThreadPoolSubmit:
 
     def test_submit_rejects_when_queue_full_nonblocking(self) -> None:
         tp = ThreadPoolBulkhead(max_workers=1, max_queue_size=1)
-        tp.submit(time.sleep, 0.1, blocking=False)
-        tp.submit(time.sleep, 0.1, blocking=False)
-        with pytest.raises(BulkheadRejectedError, match="admission queue full"):
-            tp.submit(time.sleep, 0.1, blocking=False)
-        assert tp.rejected_count == 1
+        release_workers = threading.Event()
+        try:
+            tp.submit(release_workers.wait, blocking=False)
+            tp.submit(release_workers.wait, blocking=False)
+            with pytest.raises(BulkheadRejectedError, match="admission queue full"):
+                tp.submit(release_workers.wait, blocking=False)
+            assert tp.rejected_count == 1
+        finally:
+            release_workers.set()
+            tp.shutdown()
 
     def test_submit_increments_rejected_count(self) -> None:
         tp = ThreadPoolBulkhead(max_workers=1, max_queue_size=1)
-        tp.submit(time.sleep, 0.1, blocking=False)
-        tp.submit(time.sleep, 0.1, blocking=False)
-        for _ in range(2):
-            with contextlib.suppress(BulkheadRejectedError):
-                tp.submit(time.sleep, 0, blocking=False)
-        assert tp.rejected_count == 2
+        release_workers = threading.Event()
+        try:
+            tp.submit(release_workers.wait, blocking=False)
+            tp.submit(release_workers.wait, blocking=False)
+            for _ in range(2):
+                with contextlib.suppress(BulkheadRejectedError):
+                    tp.submit(release_workers.wait, blocking=False)
+            assert tp.rejected_count == 2
+        finally:
+            release_workers.set()
+            tp.shutdown()
 
     def test_submit_shutdown_rejects(self) -> None:
         tp = ThreadPoolBulkhead(max_workers=1, max_queue_size=4)
@@ -186,12 +196,18 @@ class TestThreadPoolIsolation:
     def test_independent_pools(self) -> None:
         tp1 = ThreadPoolBulkhead(max_workers=1, max_queue_size=1)
         tp2 = ThreadPoolBulkhead(max_workers=1, max_queue_size=2)
-        tp1.submit(time.sleep, 0.2, blocking=False)
-        tp1.submit(time.sleep, 0.2, blocking=False)
-        with pytest.raises(BulkheadRejectedError):
-            tp1.submit(time.sleep, 0, blocking=False)
-        f = tp2.submit(lambda: 99)
-        assert f.result(timeout=5) == 99
+        release_workers = threading.Event()
+        try:
+            tp1.submit(release_workers.wait, blocking=False)
+            tp1.submit(release_workers.wait, blocking=False)
+            with pytest.raises(BulkheadRejectedError):
+                tp1.submit(release_workers.wait, blocking=False)
+            f = tp2.submit(lambda: 99)
+            assert f.result(timeout=5) == 99
+        finally:
+            release_workers.set()
+            tp1.shutdown()
+            tp2.shutdown()
 
 
 class TestThreadPoolGracefulDegradation:

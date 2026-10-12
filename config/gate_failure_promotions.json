@@ -313,6 +313,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_gate_run_lock.py::test_gate_and_refresh_acquire_before_running_phases",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "threadpool-bulkhead-nonblocking-admission",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_bulkhead_deep.py::TestThreadPoolSubmit::test_submit_rejects_when_queue_full_nonblocking",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "threadpool-bulkhead-worker-reservations",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_bulkhead_admission.py::test_admission_reserves_workers_before_backlog",
+      "full_gate_phase": "test"
     }
   ]
 }

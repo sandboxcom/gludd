@@ -732,8 +732,10 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_start_gate_background.py::test_timeout_escalates_to_sigkill_for_term_ignoring_gate
 # tests/unit/test_start_gate_background.py::test_timeout_never_removes_a_replaced_pid_receipt
 # tests/unit/test_gate_run_lock.py::test_gate_and_refresh_acquire_before_running_phases
+# tests/unit/test_bulkhead_deep.py::TestThreadPoolSubmit::test_submit_rejects_when_queue_full_nonblocking
+# tests/unit/test_bulkhead_admission.py::test_admission_reserves_workers_before_backlog
 	@$(MAKE) --no-print-directory test-files \
-		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py tests/unit/test_gate_run_lock.py" \
+		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py tests/unit/test_bulkhead_admission.py" \
 		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"
 
 _ansible-role-variable-prefix:

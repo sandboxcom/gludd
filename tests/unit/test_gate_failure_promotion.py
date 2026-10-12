@@ -232,6 +232,45 @@ def test_gate_lock_prerequisite_failure_runs_in_whole_file_early_admission() -> 
     assert payload["full_gate_required"] is True
 
 
+@pytest.mark.parametrize(
+    ("family_id", "node", "test_file"),
+    [
+        (
+            "threadpool-bulkhead-nonblocking-admission",
+            "tests/unit/test_bulkhead_deep.py::TestThreadPoolSubmit::test_submit_rejects_when_queue_full_nonblocking",
+            "tests/unit/test_bulkhead_deep.py",
+        ),
+        (
+            "threadpool-bulkhead-worker-reservations",
+            "tests/unit/test_bulkhead_admission.py::test_admission_reserves_workers_before_backlog",
+            "tests/unit/test_bulkhead_admission.py",
+        ),
+    ],
+)
+def test_bulkhead_scheduling_failures_execute_in_complete_early_cohorts(
+    family_id: str, node: str, test_file: str,
+) -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(family for family in payload["families"] if family["id"] == family_id)
+    assert family == {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    assert node in owner
+    assert test_file in owner
+    phase = next(
+        phase for phase in payload["runtime_contract"]["phases"]
+        if phase["target"] == family["owner_target"]
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert "-W error" in owner and "-n 1" in owner
+    assert payload["full_gate_required"] is True
+
+
 def test_hosted_fanout_requires_executed_runtime_admission() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text())
     jobs = workflow["jobs"]
@@ -540,6 +579,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "gate-timeout-term-escalation-zombie",
         "gate-timeout-replaced-receipt-zombie",
         "gate-lock-prerequisite-order",
+        "threadpool-bulkhead-nonblocking-admission",
+        "threadpool-bulkhead-worker-reservations",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -686,7 +727,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_session_persistence_integration.py '
         'tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::'
         'test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py '
-        'tests/unit/test_gate_run_lock.py"'
+        'tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py '
+        'tests/unit/test_bulkhead_admission.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner

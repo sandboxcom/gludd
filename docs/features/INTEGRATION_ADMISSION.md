@@ -34,6 +34,11 @@ the first nonzero result:
     includes real Make failure-injection checks: read-only admission precedes
     lease acquisition, and every stateful gate phase remains protected by the
     acquired lease. The original full-gate and refresh exclusion guards remain.
+    The complete bulkhead deep/admission files also execute here, including held
+    worker startup, shared worker/backlog reservations, cancellation, timed
+    admission and owned shutdown. The original overflow failure and deterministic
+    reservation reproducer are mapped as two separate promoted families, with
+    the same one-worker, 90-second/60-second phase bounds and mandatory full gate.
    Hosted Python 3.11/3.12 jobs retain their own interpreter coverage; admission
    reuses their environment without creating another dependency matrix.
 4. `ansible-role-variable-prefix` runs the exact warning-fatal

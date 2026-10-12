@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — worker startup consumed the thread bulkhead backlog budget
+
+- **Observed**: Hosted unit-1d rejects the second nonblocking submission before the intended overflow. Five held-worker cases reproduce the race deterministically, including zero-backlog admission. The full new draft exposes 13 failures and four passes across capacity, cancellation, exceptional completion, failed submissions, concurrent producers and shutdown ownership.
+- **Production repair**: Keep the mature stdlib executor and serialize worker-plus-backlog reservations with Condition. Cancelled queued wrappers retain capacity until consumed; completion reclaims capacity before publishing results/errors; synchronous submission failure rolls back reservations; shutdown rejects new work, wakes waiters and joins through the original executor. Threads have unique gludd-bulkhead namespaces. Two further failing-first compatibility cases preserve negative blocking-timeout validation without changing nonblocking behavior.
+- **Instruction-conforming fixtures**: Three original deep cases replace scheduling sleeps with Event-held work and explicit cleanup; every rejection, counter, result and isolation assertion remains. All 56 cases pass at 97% targeted coverage, strict source/test typing and Ruff, with the same 250 ownership entries and no inventory exemption.
+- **Early prevention**: Four mapping/wiring cases fail first, then all 19 promotion cases pass. Both complete bulkhead files now run before hosted fan-out in the existing one-worker warning-fatal owner. Actual observed acceptance passes all 192 regressions in 18.78 seconds (19.5 observed), within unchanged 90-second/60-second bounds and the same 21 phases/2850-second ceiling. New fixture failures remain separate tracked repairs, not evidence that this entire release is green.
+- **Proof boundary**: The feature document records primary executor contracts, long-lived forum findings and unchanged ZDD. Fresh exact-SHA hosted success and the complete canonical 85/75 gate remain required; no task tick, master merge, tag or publication follows focused acceptance.
+
 ### 2026-10-12 — gate-lock fixture conflated read-only admission with stateful execution
 
 - **Observed**: Hosted unit-2 fails the old first-prerequisite assertion; native replay retains the same failure and 13 passes. The canonical release policy already requires read-only profile and exact-state checks before lease acquisition, and its existing acceptance explicitly pins that order.
