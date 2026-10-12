@@ -850,6 +850,14 @@ work, malformed responses, mismatched identity, and GitHub API errors remain
 visible and fail closed. `CI_RUN_SUMMARY_VALIDATE_ONLY=1` validates arguments and
 the Make contract without network access or mutable state.
 
+`CI_RUN_SUMMARY_SHARD_TIMINGS=1` adds diagnostic timing for all eight canonical
+Python 3.11 shards from that same exact-run payload. The bounded lookup retains
+source timestamps and exposes failed/censored/unknown intervals rather than
+claiming successful completion durations. It does not change legacy job-summary
+output, failure exits, proof fingerprints or release authority. Scheduling
+semantics, practitioner findings and the exact-SHA measurement requirement are
+documented in [Release Proof Throughput](RELEASE_PROOF_THROUGHPUT.md).
+
 ## Zero-downtime development
 
 Project identity follows explicit argument, ambient environment, then cwd. That

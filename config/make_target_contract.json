@@ -330,9 +330,10 @@
       "make_variables": [
         "RUN",
         "CI_RUN_SUMMARY_REPO",
-        "CI_RUN_SUMMARY_VALIDATE_ONLY"
+        "CI_RUN_SUMMARY_VALIDATE_ONLY",
+        "CI_RUN_SUMMARY_SHARD_TIMINGS"
       ],
-      "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1"
+      "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1 CI_RUN_SUMMARY_SHARD_TIMINGS=1"
     },
     {
       "name": "ci-view",

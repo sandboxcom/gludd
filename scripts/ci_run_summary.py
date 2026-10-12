@@ -6,9 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import runpy
 import subprocess
 import sys
 from collections.abc import Iterable, Sequence
+from datetime import datetime
+from pathlib import Path
 from typing import cast
 
 Job = dict[str, object]
@@ -18,6 +21,8 @@ RUN_FIELDS = "databaseId,headSha,status,conclusion,url,workflowName,jobs"
 _RUN_ID = re.compile(r"[1-9][0-9]*\Z")
 _REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 _FULL_SHA = re.compile(r"[0-9a-fA-F]{40}\Z")
+_SHARD_JOB = re.compile(r"test-shard \(3\.11, ([^,()]+)(?:, [^)]*)?\)\Z")
+_GATE_JOB = re.compile(r"gate \((?:3\.11|3\.12)\)\Z")
 
 
 def _value(job: Job, key: str, default: str = "?") -> str:
@@ -58,12 +63,18 @@ def _fetch_run(run_id: str, repository: str) -> tuple[Payload | None, int]:
         "--json",
         RUN_FIELDS,
     ]
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    print(f"CI_RUN_SUMMARY_FETCH_START run={run_id} repo={repository}", file=sys.stderr, flush=True)
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"ci-run-summary: gh run view failed: {exc}", file=sys.stderr)
+        return None, 1
     if result.returncode != 0:
         detail = result.stderr.rstrip()
         if detail:
@@ -90,6 +101,152 @@ def _validate_identity(payload: Payload, run_id: str) -> bool:
         print("ci-run-summary: invalid immutable head SHA", file=sys.stderr)
         return False
     return True
+
+
+def _timestamp(value: object) -> datetime | None:
+    """Parse source timestamps, rejecting unfinished and timezone-free values."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.year < 1970 or parsed.utcoffset() is None:
+        return None
+    return parsed
+
+
+def _elapsed(start: object, end: object) -> float | None:
+    begin, finish = _timestamp(start), _timestamp(end)
+    if begin is None or finish is None or finish < begin:
+        return None
+    return (finish - begin).total_seconds()
+
+
+def _source_timestamp(job: Job, key: str) -> str | None:
+    value = job.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _timing_state(job: Job) -> str:
+    status, conclusion = job.get("status"), job.get("conclusion")
+    if conclusion == "failure":
+        return "failed"
+    if status in ("queued", "waiting", "pending", "requested"):
+        return "pending"
+    if status == "in_progress" or conclusion in ("cancelled", "timed_out", "skipped", "stale"):
+        return "censored"
+    if status == "completed" and conclusion == "success":
+        return "success"
+    return "unknown"
+
+
+def _shard_timings(payload: Payload, run_id: str) -> Payload:
+    """Describe source measurements without granting gate or release authority."""
+    inventory = runpy.run_path(str(Path(__file__).with_name("ci_named_shard_files.py")))
+    shards = tuple(cast(dict[str, object], inventory["SHARDS"]))
+    raw_jobs = payload.get("jobs")
+    jobs = [cast(Job, item) for item in raw_jobs if isinstance(item, dict)] if isinstance(raw_jobs, list) else []
+    gate_legs = [job for job in jobs if _GATE_JOB.fullmatch(_value(job, "name"))]
+    gates = [job for job in gate_legs if job.get("status") == "completed"]
+    valid_gates = [(timestamp, job) for job in gates if (timestamp := _timestamp(job.get("completedAt"))) is not None]
+    latest_gate = max(valid_gates, key=lambda pair: pair[0])[1] if valid_gates else None
+    gate_completed = None if latest_gate is None else _source_timestamp(latest_gate, "completedAt")
+    gate_states = [_timing_state(job) for job in gate_legs]
+    gate_complete = (
+        sorted(_value(job, "name") for job in gate_legs) == ["gate (3.11)", "gate (3.12)"]
+        and all(state == "success" for state in gate_states)
+        and len(valid_gates) == 2
+    )
+    gate_state = "success" if gate_complete else "unknown"
+    for incomplete in ("failed", "censored", "pending"):
+        if incomplete in gate_states:
+            gate_state = incomplete
+            break
+    rows: list[Job] = []
+    for shard in shards:
+        matches = [
+            job for job in jobs
+            if (match := _SHARD_JOB.fullmatch(_value(job, "name"))) and match.group(1) == shard
+        ]
+        row: Job = {
+            "shard": shard, "python_version": "3.11", "state": "unknown",
+            "source_job_id": None, "source_job_name": None,
+            "source_job_status": None, "source_job_conclusion": None,
+            "source_job_started_at": None, "source_job_completed_at": None,
+            "source_test_name": None, "source_test_status": None, "source_test_conclusion": None,
+            "source_test_started_at": None, "source_test_completed_at": None,
+            "test_step_seconds": None, "delay_from_gate_seconds": None,
+            "test_step_duration_censored": True,
+        }
+        rows.append(row)
+        if not matches:
+            if payload.get("status") in ("queued", "waiting", "pending", "in_progress"):
+                row["state"] = "pending"
+            continue
+        if len(matches) != 1:
+            row["source_job_ids"] = [job.get("databaseId") for job in matches]
+            continue
+        job = matches[0]
+        row.update({
+            "state": _timing_state(job), "source_job_id": job.get("databaseId"),
+            "source_job_name": job.get("name"), "source_job_status": job.get("status"),
+            "source_job_conclusion": job.get("conclusion"),
+            "source_job_started_at": _source_timestamp(job, "startedAt"),
+            "source_job_completed_at": _source_timestamp(job, "completedAt"),
+            "delay_from_gate_seconds": _elapsed(gate_completed, job.get("startedAt")) if gate_complete else None,
+        })
+        raw_steps = job.get("steps")
+        steps = [
+            cast(Job, step) for step in raw_steps
+            if isinstance(step, dict) and step.get("name") == f"Test (shard {shard}, Python 3.11)"
+        ] if isinstance(raw_steps, list) else []
+        if len(steps) != 1:
+            if row["state"] == "success":
+                row["state"] = "unknown"
+            continue
+        step = steps[0]
+        row.update({
+            "source_test_name": step.get("name"), "source_test_status": step.get("status"),
+            "source_test_conclusion": step.get("conclusion"),
+            "source_test_started_at": _source_timestamp(step, "startedAt"),
+            "source_test_completed_at": _source_timestamp(step, "completedAt"),
+        })
+        step_state = _timing_state(step)
+        if step.get("status") == "completed" and step.get("conclusion") != "skipped":
+            job_start, job_end = _timestamp(job.get("startedAt")), _timestamp(job.get("completedAt"))
+            step_start, step_end = _timestamp(step.get("startedAt")), _timestamp(step.get("completedAt"))
+            if (
+                job_start is not None and job_end is not None
+                and step_start is not None and step_end is not None
+                and job_start <= step_start <= step_end <= job_end
+                and _RUN_ID.fullmatch(str(job.get("databaseId"))) is not None
+            ):
+                row["test_step_seconds"] = _elapsed(step.get("startedAt"), step.get("completedAt"))
+        if step_state == "failed":
+            row["state"] = "failed"
+        elif row["state"] == "success":
+            row["state"] = step_state
+            if step_state == "success" and (
+                row["test_step_seconds"] is None or row["delay_from_gate_seconds"] is None
+                or _elapsed(job.get("startedAt"), job.get("completedAt")) is None
+            ):
+                row["state"] = "unknown"
+        row["test_step_duration_censored"] = row["state"] != "success"
+    return {
+        "run_id": run_id, "head_sha": payload["headSha"], "authority": "diagnostic-only",
+        "release_ready": False, "gate_evidence": False,
+        "gate_completed_at": gate_completed,
+        "gate_barrier_complete": gate_complete, "gate_barrier_state": gate_state,
+        "gate_job_id": None if latest_gate is None else latest_gate.get("databaseId"),
+        "gate_job_name": None if latest_gate is None else latest_gate.get("name"),
+        "gate_conclusion": None if latest_gate is None else latest_gate.get("conclusion"),
+        "shards": rows,
+    }
+
+
+def _print_shard_timings(payload: Payload, run_id: str) -> None:
+    print("SHARD_TIMINGS " + json.dumps(_shard_timings(payload, run_id), sort_keys=True))
 
 
 def _summarize(payload: Payload, run_id: str | None = None) -> int:
@@ -152,14 +309,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run", help="immutable numeric GitHub Actions run ID")
     parser.add_argument("--repo", default="sandboxcom/gludd", help="owner/repository")
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--shard-timings", action="store_true", help="append diagnostic canonical 3.11 timing JSON")
     return parser
 
 
 def main(argv: Sequence[str] = ()) -> int:
+    """Validate inputs and summarize one immutable run or legacy stdin payload."""
     args = _parser().parse_args(argv)
     run_id = cast("str | None", args.run)
     repository = cast(str, args.repo)
     validate_only = cast(bool, args.validate_only)
+    shard_timings = cast(bool, args.shard_timings)
 
     if run_id is None:
         if validate_only:
@@ -171,7 +331,17 @@ def main(argv: Sequence[str] = ()) -> int:
             print(f"ci-run-summary: failed to read JSON from stdin: {exc}", file=sys.stderr)
             return 1
         payload = _parse_payload(raw_payload, "stdin")
-        return 1 if payload is None else _summarize(payload)
+        if payload is None:
+            return 1
+        if shard_timings:
+            source_id = str(payload.get("databaseId", ""))
+            if _RUN_ID.fullmatch(source_id) is None or not _validate_identity(payload, source_id):
+                print("ci-run-summary: immutable run identity is required for shard timings", file=sys.stderr)
+                return 1
+            result = _summarize(payload)
+            _print_shard_timings(payload, source_id)
+            return result
+        return _summarize(payload)
 
     if _RUN_ID.fullmatch(run_id) is None:
         print("ci-run-summary: --run must be a positive numeric ID", file=sys.stderr)
@@ -188,7 +358,10 @@ def main(argv: Sequence[str] = ()) -> int:
         return fetch_rc or 1
     if not _validate_identity(payload, run_id):
         return 1
-    return _summarize(payload, run_id)
+    result = _summarize(payload, run_id)
+    if shard_timings:
+        _print_shard_timings(payload, run_id)
+    return result
 
 
 if __name__ == "__main__":

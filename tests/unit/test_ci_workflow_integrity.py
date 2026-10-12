@@ -144,6 +144,22 @@ class TestTestShardStructure:
         }
         assert names == expected, f"Expected shards {expected!r}, got {names!r}"
 
+    def test_hosted_matrix_prioritizes_long_lanes_without_extra_runners(self) -> None:
+        strategy = _load_workflow()["jobs"]["test-shard"]["strategy"]
+
+        assert strategy["max-parallel"] == 3
+        assert strategy["matrix"]["python-version"] == ["3.11"]
+        assert strategy["matrix"]["shard"] == [
+            "other",
+            "unit-3a",
+            "unit-3b",
+            "unit-1b",
+            "unit-1d",
+            "unit-1a2",
+            "unit-1a1",
+            "unit-2",
+        ]
+
     def test_oversized_unit_3_is_partitioned_without_overlap(self) -> None:
         from scripts.ci_named_shard_files import SHARDS
 

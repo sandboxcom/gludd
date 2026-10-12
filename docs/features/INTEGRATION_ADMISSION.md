@@ -366,6 +366,15 @@ real EE graph has resolved or that a replacement image has built successfully.
 
 ## Zero-downtime and rollback
 
+The complete immutable run-summary script/target and workflow-integrity cohorts
+also run in this existing phase. `hosted-shard-timing-diagnostics` rejects
+unbound, missing, ambiguous or partial timing evidence, while
+`hosted-shard-creation-order` pins the existing eight-label scheduling experiment
+without increasing its three-runner cap. Their mapping and exact roster tests
+fail first before ownership is added. The unchanged 90/60-second phase bounds,
+warning-fatal one-worker execution, 21 phases, 2850-second ceiling and mandatory
+canonical full gate still apply. Diagnostic durations are not release proof.
+
 The complete Make bootstrap/search file now belongs to
 `make-search-literal-transport`, retaining every existing early selector. Its
 real recipe cases reject quote splitting, shell interpretation, automatic

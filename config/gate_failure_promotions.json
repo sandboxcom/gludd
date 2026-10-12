@@ -418,6 +418,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_make_readonly_version.py::test_actual_search_never_evaluates_exported_make_function_data",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "hosted-shard-timing-diagnostics",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_run_summary_script.py::test_shard_timings_bind_all_eight_rows_to_one_exact_run_fetch",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "hosted-shard-creation-order",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_workflow_integrity.py::TestTestShardStructure::test_hosted_matrix_prioritizes_long_lanes_without_extra_runners",
+      "full_gate_phase": "test"
     }
   ]
 }

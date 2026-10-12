@@ -76,8 +76,28 @@ def test_workflow_matrix_delegates_shard_plans_to_canonical_registry() -> None:
     include = workflow["jobs"]["test-shard"]["strategy"]["matrix"]["include"]
     workflow_shards = workflow["jobs"]["test-shard"]["strategy"]["matrix"]["shard"]
 
-    assert tuple(workflow_shards) == tuple(module.SHARDS)
+    # Hosted creation priority is separate from the local registry's default
+    # order. Compare the complete multiset, retaining duplicate/omission checks.
+    assert tuple(sorted(workflow_shards)) == tuple(sorted(module.SHARDS))
     assert all("testpaths" not in item and "exclude" not in item for item in include)
+
+
+@pytest.mark.parametrize("change", ["duplicate", "missing", "unknown"])
+def test_matrix_registry_parity_still_rejects_membership_drift(
+    change: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
+    labels = workflow["jobs"]["test-shard"]["strategy"]["matrix"]["shard"]
+    if change == "duplicate":
+        labels.append(labels[0])
+    elif change == "missing":
+        labels.pop()
+    else:
+        labels[-1] = "not-a-canonical-shard"
+    monkeypatch.setattr(yaml, "safe_load", lambda _source: workflow)
+
+    with pytest.raises(AssertionError):
+        test_workflow_matrix_delegates_shard_plans_to_canonical_registry()
 
 
 def test_local_shards_exclude_fresh_process_suites() -> None:
@@ -1165,11 +1185,11 @@ def test_serial_runner_stops_before_batches_when_gate_owner_is_dead(
         lambda shard: [f"tests/unit/test_{shard}.py"],
     )
     monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
-    monkeypatch.setattr(
-        module,
-        "_run_owned_pytest",
-        lambda *_args, label, **_kwargs: started.append(label) or 0,
-    )
+    def record_owned_pytest(*_args: object, label: str, **_kwargs: object) -> int:
+        started.append(label)
+        return 0
+
+    monkeypatch.setattr(module, "_run_owned_pytest", record_owned_pytest)
 
     assert (
         module.run(

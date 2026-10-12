@@ -782,7 +782,7 @@ help:
 	@echo "  ci-pyinstaller-warning-audit replay the complete warning graph from one exact-run artifact (RUN, ARTIFACT, PYINSTALLER_WARNING_*, CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)"
 	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
 	@echo "  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)"
-	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
+	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1 CI_RUN_SUMMARY_SHARD_TIMINGS=0|1"
 	@echo "  ci-failure-status        Show every durable hosted failure family"
 	@echo "  ci-failure-repair        Run make-based evidence and receipt selected repairs"
 	@echo "  ci-failure-push-guard    Block pushes with open or non-ancestral repairs"

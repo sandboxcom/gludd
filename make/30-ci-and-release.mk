@@ -217,13 +217,15 @@ ci-dashboard: _require-gh
 # ci-run-summary: fetch one immutable numeric workflow-run identity and print a
 # concise, terminal-only summary. Validation mode is network-free for contracts.
 # Usage: make ci-run-summary RUN=<id> [CI_RUN_SUMMARY_REPO=owner/repo]
-#        [CI_RUN_SUMMARY_VALIDATE_ONLY=0|1]
+#        [CI_RUN_SUMMARY_VALIDATE_ONLY=0|1] [CI_RUN_SUMMARY_SHARD_TIMINGS=0|1]
 CI_RUN_SUMMARY_REPO ?= sandboxcom/gludd
 CI_RUN_SUMMARY_VALIDATE_ONLY ?= 0
+CI_RUN_SUMMARY_SHARD_TIMINGS ?= 0
 ci-run-summary:
-	@[ -n "$(RUN)" ] || { echo "Usage: make ci-run-summary RUN=<id> [CI_RUN_SUMMARY_REPO=owner/repo] [CI_RUN_SUMMARY_VALIDATE_ONLY=0|1]"; exit 2; }
+	@[ -n "$(RUN)" ] || { echo "Usage: make ci-run-summary RUN=<id> [CI_RUN_SUMMARY_REPO=owner/repo] [CI_RUN_SUMMARY_VALIDATE_ONLY=0|1] [CI_RUN_SUMMARY_SHARD_TIMINGS=0|1]"; exit 2; }
 	@case "$(CI_RUN_SUMMARY_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_RUN_SUMMARY_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
-	@$(PYTHON) scripts/ci_run_summary.py --run "$(RUN)" --repo "$(CI_RUN_SUMMARY_REPO)" $(if $(filter 1,$(CI_RUN_SUMMARY_VALIDATE_ONLY)),--validate-only,)
+	@case "$(CI_RUN_SUMMARY_SHARD_TIMINGS)" in 0|1) ;; *) echo "CI_RUN_SUMMARY_SHARD_TIMINGS must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_run_summary.py --run "$(RUN)" --repo "$(CI_RUN_SUMMARY_REPO)" $(if $(filter 1,$(CI_RUN_SUMMARY_VALIDATE_ONLY)),--validate-only,) $(if $(filter 1,$(CI_RUN_SUMMARY_SHARD_TIMINGS)),--shard-timings,)
 
 # Durable all-failure ownership.  The observer binds terminal evidence to one
 # immutable run/SHA; the central push guard makes the ledger non-optional.

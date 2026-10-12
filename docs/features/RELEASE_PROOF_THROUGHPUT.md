@@ -128,6 +128,107 @@ dependency installation and before required shard/platform fan-out, retaining
 workflow acceptance fails first on absent routing and pins every prerequisite
 edge without skipping authoritative downstream checks.
 
+## Hosted shard scheduling and automatic timing
+
+The hosted scheduling experiment changes only the existing eight-label matrix
+creation order. Known successful long lanes are created first; `unit-2` remains
+explicitly provisional because its failed parent interval is censored, not a
+successful full-shard duration. The local runner's canonical shard membership
+and default order stay unchanged. The three-runner cap, Python 3.11, isolated
+fresh-process suites, worker and batch policy, warning-fatal arguments, timeouts,
+all eight coverage databases and the 85/75 audit remain mandatory.
+
+The automatic replay of terminal Build `38296150696`, exact SHA
+`f38ce53d15a8e51514b0e517fbda22a965777f87`, gives this baseline. It keeps the
+run's failure exit and confirms both gate legs completed before these jobs.
+An earlier provisional interpretation overstated the two short unit-1a timings;
+the source-derived measurements below replace that interpretation, not the
+original failed evidence.
+
+| Shard | Test-step seconds | Delay after gate (seconds) | Timing state |
+| --- | ---: | ---: | --- |
+| other | 3214 | 1633 | successful complete interval |
+| unit-3a | 2566 | 1338 | successful complete interval |
+| unit-3b | 1813 | 1470 | successful complete interval |
+| unit-1b | 1431 | 3 | successful complete interval |
+| unit-1d | 1241 | 347 | successful complete interval |
+| unit-1a2 | 415 | 3 | successful complete interval |
+| unit-1a1 | 302 | 3 | successful complete interval |
+| unit-2 | 850 | 455 | failed/censored, not a full-success duration |
+
+The matrix follows the seven successful durations in descending order, then
+the explicitly provisional failed lane. This ranks known complete intervals;
+it does not estimate `unit-2`'s successful runtime or prove the experiment helps.
+
+GitHub documents matrix job creation order and a concurrency cap, not guaranteed
+runner acquisition order. Earlier creation is therefore a reversible experiment,
+not a measured throughput result. Compare job starts, test-step durations and
+coverage fan-in on the replacement's exact SHA before claiming a speedup.
+[Matrix creation semantics][hosted-matrix-syntax],
+[concurrency cap][hosted-matrix-cap].
+
+The existing immutable run-summary producer exposes timing without another
+runner, tracker, cache, dependency or daemon:
+
+```sh
+make ci-run-summary RUN=38296150696 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=0 CI_RUN_SUMMARY_SHARD_TIMINGS=1
+```
+
+It uses the same fetched job/step payload, a visible lookup-start marker and a
+15-second fetch timeout. The `SHARD_TIMINGS` JSON is bound to the returned run ID
+and full commit SHA. It preserves source job/step timestamps and conclusions,
+reports all eight canonical Python 3.11 shards, and derives test-step seconds
+and delay from the latest completed gate timestamp. Missing, queued, failed,
+partial, cancelled, invalid or ambiguous evidence stays explicit; failed elapsed
+intervals are marked censored rather than ranked as successful completion times.
+Both `release_ready` and `gate_evidence` are always false. Legacy job-summary
+output and failure exits remain unchanged. A failed run still returns nonzero
+even when its timing diagnostics are usable.
+
+The documented validate-only behavior performs no lookup and emits no durations:
+
+```sh
+make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1 CI_RUN_SUMMARY_SHARD_TIMINGS=1
+```
+
+Long-lived forum evidence supports measuring instead of assuming scheduling
+behavior. A December 2024 report describes unordered starts despite a
+one-job matrix cap. An August 2020 report initially described batch barriers,
+but its responder observed replenishment as jobs completed and the author
+accepted that correction. These are practitioner reports, not guarantees about
+the current service or proof of Gludd's queueing cause.
+[Ordering report][hosted-ordering-report],
+[corrected batch-barrier report][hosted-slot-report].
+
+Use the existing runner and standard-library timestamp/JSON handling. Richer
+duration partitioning is a separate change requiring exact-once collection,
+fixture/resource lifetime and complete coverage reconciliation; applying another
+splitter independently to the current batches would not establish those
+properties. This administrative change touches no serving component and needs
+no service restart or data migration. Rollback restores the prior array and
+removes the optional timing flag without changing shard ownership.
+
+The instruction-conforming parity test now compares the exact shard multiset,
+not the hosted creation order against the local default order. Its original
+path/exclusion checks and local-order assertion stay intact; three mutation
+cases reject duplicates, omissions and unknown labels. One pre-existing callback
+typing error is repaired with an equivalent explicit function, retaining all
+original event and early-stop assertions.
+
+Actual acceptance: the timing mode first fails 17 new cases with 10 legacy cases
+passing; native unfinished timestamps add another failing-first case. Three
+source-interval/job-identity regressions then expose invalid intervals reported
+as success and fail before the producer is repaired. The final 46-case producer
+and Make/policy coverage replay measures 92.24% combined, 93.78% line and 88.30%
+branch coverage, above the unchanged 85/75 requirements. Complete scheduling,
+canonical registry, isolated-suite and fail-closed artifact acceptance passes
+154 warning-fatal cases. Early mapping/roster and exact-wiring checks fail first;
+the complete 40-case promotion/plan slice then passes. The actual existing early
+owner executes 717 cases in 37.84 test seconds (38.8 observed), retaining all 39
+families, 21 phases, the 2850-second ceiling and 90/60-second phase bounds.
+These are focused acceptance results, not a passing full gate, exhaustive
+coverage proof, hosted optimization result or release completion.
+
 ## Existing tools and practitioner evidence
 
 ### Producer-owned current observations
@@ -282,3 +383,7 @@ required.
 [observation-utc]: https://docs.python.org/3.11/library/datetime.html#datetime.datetime.now
 [observation-replace]: https://docs.python.org/3.11/library/os.html#os.replace
 [stale-workflow-observations]: https://github.com/orgs/community/discussions/24626
+[hosted-matrix-syntax]: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstrategymatrix
+[hosted-matrix-cap]: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations#defining-the-maximum-number-of-concurrent-jobs
+[hosted-ordering-report]: https://github.com/orgs/community/discussions/147882
+[hosted-slot-report]: https://github.com/orgs/community/discussions/26042
