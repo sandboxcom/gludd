@@ -27,5 +27,5 @@ install -m 0755 %{SOURCE0} %{buildroot}%{_bindir}/gludd
 %attr(0755, root, root) %{_bindir}/gludd
 
 %changelog
-* Thu Jul 24 2026 General Ludd <noreply@sandboxcom.github.io> - 0.1.0-1
+* Fri Jul 24 2026 General Ludd <noreply@sandboxcom.github.io> - 0.1.0-1
 - Initial beta release

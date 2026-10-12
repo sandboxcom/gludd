@@ -1033,7 +1033,7 @@ jobs:
       - name: Build .deb package
         run: |
           echo "=== CI PHASE: package-deb-linux ==="
-          make deb-package || {
+          make deb-package VERSION="$VERSION" || {
             echo "::error::DEB PACKAGE FAILED — .deb build for linux-x86_64 failed. Run 'make deb-package' locally for details."
             exit 1
           }
@@ -1041,7 +1041,7 @@ jobs:
         run: |
           echo "=== CI PHASE: package-rpm-linux ==="
           sudo apt-get update -qq && sudo apt-get install -y -qq rpm cpio
-          make rpm-package || {
+          make rpm-package VERSION="$VERSION" || {
             echo "::error::RPM PACKAGE FAILED — .rpm build for linux-x86_64 failed. Run 'make rpm-package' locally for details."
             exit 1
           }
