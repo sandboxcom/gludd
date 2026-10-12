@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from importlib import import_module
+from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -15,10 +17,117 @@ from urllib.request import Request
 
 import pytest
 import yaml
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 from scripts import ansible_runtime_artifacts as artifacts
 from scripts.makefile_layout import compose_makefile
 
 PINNED_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "b" * 64
+builder_introspect = import_module("ansible_builder._target_scripts.introspect")
+
+# Exact release input, not installed SDKs or a replacement dependency resolver:
+# https://github.com/ansible-collections/azure/blob/v3.21.0/requirements.txt
+_AZURE_COLLECTION_REQUIREMENTS = """aiohttp>=3.13.0
+azure-appconfiguration==1.8.0
+azure-cli-core==2.75.0
+azure-common==1.1.28
+azure-containerregistry==1.2.0
+azure-core==1.38.0
+azure-eventhub==5.15.0
+azure-identity==1.25.2
+azure-iot-hub==2.6.1; platform_machine == "x86_64" and python_version < "3.14"
+azure-keyvault==4.2.0
+azure-keyvault-securitydomain==1.0.0b1
+azure-mgmt-apimanagement==4.0.1
+azure-mgmt-appconfiguration==5.0.0
+azure-mgmt-authorization==4.0.0
+azure-mgmt-automation==1.1.0b4
+azure-mgmt-batch==17.3.0
+azure-mgmt-cdn==13.1.1
+azure-mgmt-cognitiveservices==13.7.0
+azure-mgmt-compute==33.0.0
+azure-mgmt-containerinstance==10.1.0
+azure-mgmt-containerregistry==10.3.0
+azure-mgmt-containerservice==32.1.0
+azure-mgmt-core==1.6.0
+azure-mgmt-cosmosdb==10.0.0b3
+azure-mgmt-datafactory==9.0.0
+azure-mgmt-databricks==2.0.0
+azure-mgmt-devtestlabs==10.0.0b2
+azure-mgmt-dns==8.1.0
+azure-mgmt-eventhub==11.1.0
+azure-mgmt-hdinsight==9.1.0b1
+azure-mgmt-iothub==3.0.0
+azure-mgmt-keyvault==14.0.1
+azure-mgmt-loganalytics==13.0.0b7
+azure-mgmt-hybridcompute==9.0.0
+azure-mgmt-managedservices==7.0.0b2
+azure-mgmt-managementgroups==1.1.0b2
+azure-mgmt-marketplaceordering==1.2.0b2
+azure-mgmt-monitor==6.0.2
+azure-mgmt-mysqlflexibleservers==1.0.0
+azure-mgmt-network==28.0.0
+azure-mgmt-notificationhubs==8.1.0b1
+azure-mgmt-nspkg==3.0.2
+azure-mgmt-postgresqlflexibleservers==2.0.0
+azure-mgmt-privatedns==1.2.0
+azure-mgmt-rdbms==10.2.0b17
+azure-mgmt-recoveryservices==3.0.0
+azure-mgmt-recoveryservicesbackup==9.1.0
+azure-mgmt-redis==14.4.0
+azure-mgmt-resource==23.2.0
+azure-mgmt-resourcegraph==8.1.0b3
+azure-mgmt-resourcehealth==1.0.0b6
+azure-mgmt-search==9.2.0b2
+azure-mgmt-servicebus==8.2.1
+azure-mgmt-sql==4.0.0b19
+azure-mgmt-storage==25.0.0
+azure-mgmt-trafficmanager==1.1.0
+azure-mgmt-web==7.3.1
+azure-mgmt-eventgrid==10.4.0
+azure-ai-ml==1.31.0
+azure-nspkg==3.0.2
+azure-servicebus==7.14.2
+azure-storage-blob==12.23.0b1
+azure-storage-file-share==12.24.0
+msgraph-sdk==1.6.0
+netaddr>=1.3.0
+oras>=0.2.38
+packaging>=25.0
+pandas>=2.3.3
+requests>=2.32.5
+xmltodict>=1.0.2
+"""
+
+
+@pytest.fixture
+def azure_collection_fixture(tmp_path: Path) -> Path:
+    """Stage the release's actual EE metadata and requirements without installs."""
+    root = tmp_path / "collection-fixture"
+    collection = root / "ansible_collections" / "azure" / "azcollection"
+    (collection / "meta").mkdir(parents=True)
+    (collection / "meta" / "execution-environment.yml").write_text(
+        "dependencies:\n  python: requirements.txt\nversion: 1\n",
+        encoding="utf-8",
+    )
+    (collection / "MANIFEST.json").write_text(
+        json.dumps(
+            {"collection_info": {"namespace": "azure", "name": "azcollection", "version": "3.21.0"}}
+        ),
+        encoding="utf-8",
+    )
+    (collection / "requirements.txt").write_text(
+        _AZURE_COLLECTION_REQUIREMENTS, encoding="utf-8"
+    )
+    return root
+
+
+def _builder_python_requirements(lines: list[str]) -> list[Requirement]:
+    """Parse Builder's annotations with its own comment handling and packaging."""
+    return [
+        Requirement(line)
+        for line in builder_introspect.strip_comments({"combined": lines})["combined"]
+    ]
 
 
 class _RegistryResponse:
@@ -138,6 +247,144 @@ def test_tracked_runtime_artifacts_validate() -> None:
     assert artifacts.validate_files() == []
 
 
+def test_builder_introspection_reproduces_the_unexcluded_azure_sdk_conflict(
+    azure_collection_fixture: Path,
+) -> None:
+    """Builder does not reconcile incompatible collection and explicit user pins."""
+    assert version("ansible-builder") == "3.1.1"
+    collection = azure_collection_fixture / "ansible_collections" / "azure" / "azcollection"
+    collection_python, collection_system = builder_introspect.process_collection(str(collection))
+    assert collection_python == _AZURE_COLLECTION_REQUIREMENTS.splitlines()
+    assert collection_system == []
+    raw = builder_introspect.process(
+        data_dir=str(azure_collection_fixture),
+        user_pip=str(artifacts.INPUTS["python"]),
+    )
+    assert raw["python"]["azure.azcollection"] == collection_python
+    merged = builder_introspect.filter_requirements(raw["python"])
+    assert "azure-identity==1.25.2  # from collection azure.azcollection" in merged
+    assert "azure-identity==1.26.0  # from collection user" in merged
+    identity = [
+        requirement
+        for requirement in _builder_python_requirements(merged)
+        if canonicalize_name(requirement.name) == "azure-identity"
+    ]
+    assert [str(requirement.specifier) for requirement in identity] == ["==1.25.2", "==1.26.0"]
+    for candidate in ("1.25.2", "1.26.0"):
+        assert not all(requirement.specifier.contains(candidate) for requirement in identity)
+
+
+def test_controller_azure_identity_has_one_explicit_owner(
+    tmp_path: Path,
+    azure_collection_fixture: Path,
+) -> None:
+    """Exclude only the collection declaration, retaining all explicit user pins."""
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    assert definition["dependencies"].get("exclude") == {"python": ["azure-identity"]}
+    exclusion = tmp_path / "exclude-requirements.txt"
+    exclusion.write_text(
+        "\n".join(definition["dependencies"]["exclude"]["python"]) + "\n",
+        encoding="utf-8",
+    )
+    raw = builder_introspect.process(
+        data_dir=str(azure_collection_fixture),
+        user_pip=str(artifacts.INPUTS["python"]),
+        exclude_pip=str(exclusion),
+    )
+    assert raw["python"]["exclude"] == ["azure-identity"]
+    user_requirements = raw["python"]["user"]
+    merged = builder_introspect.filter_requirements(
+        raw["python"], exclude=raw["python"].pop("exclude")
+    )
+    expected_collection = [
+        f"{line}  # from collection azure.azcollection"
+        for line in _AZURE_COLLECTION_REQUIREMENTS.splitlines()
+        if canonicalize_name(Requirement(line).name) != "azure-identity"
+    ]
+    assert merged == expected_collection + [
+        f"{line}  # from collection user" for line in user_requirements
+    ]
+    identity = [
+        requirement
+        for requirement in _builder_python_requirements(merged)
+        if canonicalize_name(requirement.name) == "azure-identity"
+    ]
+    assert len(identity) == 1
+    assert str(identity[0].specifier) == "==1.26.0"
+    assert identity[0].specifier.contains("1.26.0")
+    assert not identity[0].specifier.contains("1.25.2")
+    assert f"{artifacts.SEARXNG_REQUIREMENT}  # from collection user" in merged
+    controller = tomllib.loads(artifacts.CONTROLLER_PROFILE.read_text(encoding="utf-8"))
+    assert [
+        line
+        for line in controller["project"]["dependencies"]
+        if canonicalize_name(Requirement(line).name) == "azure-identity"
+    ] == ["azure-identity==1.26.0"]
+
+
+@pytest.mark.parametrize(
+    "exclusion",
+    [
+        None,
+        {"python": []},
+        {"python": ["azure-identity", "azure-core"]},
+        {"python": ["~azure.*"]},
+        {"all_from_collections": ["azure.azcollection"]},
+    ],
+)
+def test_runtime_validation_rejects_missing_or_broadened_sdk_exclusion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    exclusion: dict[str, list[str]] | None,
+) -> None:
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    if exclusion is None:
+        definition["dependencies"].pop("exclude", None)
+    else:
+        definition["dependencies"]["exclude"] = exclusion
+    changed_definition = tmp_path / "execution-environment.yml"
+    changed_definition.write_text(yaml.safe_dump(definition), encoding="utf-8")
+    inputs = dict(artifacts.INPUTS)
+    inputs["definition"] = changed_definition
+    monkeypatch.setattr(artifacts, "DEFINITION", changed_definition)
+    monkeypatch.setattr(artifacts, "INPUTS", inputs)
+    lock = json.loads(artifacts.LOCK.read_text(encoding="utf-8"))
+    lock["inputs"] = artifacts.expected_input_hashes()
+    changed_lock = tmp_path / "runtime-lock.json"
+    changed_lock.write_text(json.dumps(lock), encoding="utf-8")
+    monkeypatch.setattr(artifacts, "LOCK", changed_lock)
+
+    assert artifacts.validate_files() == [
+        "execution environment dependencies must name the locked inputs and controller interpreter"
+    ]
+
+
+def test_runtime_validation_rejects_changing_the_owned_azure_identity_pin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_requirements = artifacts.INPUTS["python"].read_text(encoding="utf-8")
+    assert "azure-identity==1.26.0" in user_requirements
+    changed_requirements = tmp_path / "requirements.txt"
+    changed_requirements.write_text(
+        user_requirements.replace("azure-identity==1.26.0", "azure-identity==1.25.2"),
+        encoding="utf-8",
+    )
+    inputs = dict(artifacts.INPUTS)
+    inputs["python"] = changed_requirements
+    monkeypatch.setattr(artifacts, "INPUTS", inputs)
+    lock = json.loads(artifacts.LOCK.read_text(encoding="utf-8"))
+    lock["inputs"] = artifacts.expected_input_hashes()
+    changed_lock = tmp_path / "runtime-lock.json"
+    changed_lock.write_text(json.dumps(lock), encoding="utf-8")
+    monkeypatch.setattr(artifacts, "LOCK", changed_lock)
+
+    assert artifacts.validate_files() == [
+        "controller Python requirements must contain only pinned Azure Monitor, "
+        "Frictionless, jsonpointer, openapi-core, SignXML, and official SearXNG"
+    ]
+
+
 def test_controller_base_installs_git_before_vcs_python_dependencies() -> None:
     """The source-pinned SearXNG build must not depend on host Git."""
     definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
@@ -235,6 +482,97 @@ def test_generated_controller_build_preserves_installer_and_interpreter_boundari
         artifacts.INPUTS["python"].read_text(encoding="utf-8")
     )
     assert not (context / "_build" / "setup.py").exists()
+
+
+def test_generated_controller_build_wires_the_narrow_sdk_exclusion(
+    tmp_path: Path,
+    azure_collection_fixture: Path,
+) -> None:
+    """Execute the generated introspection script locally, never its installers."""
+    staged_config = tmp_path / "config" / "ansible"
+    staged_config.mkdir(parents=True)
+    for input_path in artifacts.INPUTS.values():
+        shutil.copy2(input_path, staged_config / input_path.name)
+    for _source, artifact in artifacts.COLLECTION_ARTIFACTS:
+        staged_artifact = tmp_path / "dist" / "collections" / artifact.name
+        staged_artifact.parent.mkdir(parents=True, exist_ok=True)
+        staged_artifact.write_bytes(b"generation-only collection fixture")
+    context = tmp_path / "context"
+    generated = subprocess.run(
+        [
+            sys.executable, "-W", "error", "-m", "ansible_builder", "create",
+            "--file", str(staged_config / artifacts.DEFINITION.name),
+            "--context", str(context), "--output-filename", "Dockerfile",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    rendered = (context / "Dockerfile").read_text(encoding="utf-8")
+    build_inputs = context / "_build"
+    assert (build_inputs / "exclude-requirements.txt").read_text(encoding="utf-8").splitlines() == [
+        "azure-identity"
+    ]
+    assert (build_inputs / "requirements.txt").read_bytes() == artifacts.INPUTS["python"].read_bytes()
+    assert "COPY _build/exclude-requirements.txt exclude-requirements.txt" in rendered
+    assert "COPY _build/requirements.txt requirements.txt" in rendered
+    introspection = [
+        line for line in rendered.splitlines()
+        if line.startswith("RUN $PYCMD /output/scripts/introspect.py introspect")
+    ]
+    assert len(introspection) == 1
+    assert rendered.index(introspection[0]) < rendered.index("RUN /output/scripts/assemble")
+    tokens = shlex.split(introspection[0].removeprefix("RUN "))
+    assert tokens[:3] == ["$PYCMD", "/output/scripts/introspect.py", "introspect"]
+    assert "--user-pip=requirements.txt" in tokens
+    assert "--exclude-pip-reqs=exclude-requirements.txt" in tokens
+    for forbidden in (
+        "--exclude-collection-reqs", "--no-deps", "--no-build-isolation",
+        "PIP_NO_DEPS", "UV_NO_BUILD_ISOLATION", "--skip-pip-check",
+    ):
+        assert forbidden not in rendered
+    scripts = build_inputs / "scripts"
+    assemble = (scripts / "assemble").read_text(encoding="utf-8")
+    assert (
+        "$PIPCMD install $CONSTRAINTS $PIP_OPTS --cache-dir=/output/wheels "
+        "-r /tmp/src/requirements.txt"
+    ) in assemble
+    assert "--no-deps" not in assemble
+    assert "--no-build-isolation" not in assemble
+    builder_source = builder_introspect.__file__
+    assert builder_source is not None
+    assert (scripts / "introspect.py").read_bytes() == Path(builder_source).read_bytes()
+    combined_python = tmp_path / "combined-requirements.txt"
+    path_options = {
+        "--user-pip": build_inputs / "requirements.txt",
+        "--exclude-pip-reqs": build_inputs / "exclude-requirements.txt",
+        "--user-bindep": build_inputs / "bindep.txt",
+        "--write-pip": combined_python,
+        "--write-bindep": tmp_path / "combined-bindep.txt",
+    }
+    command = [
+        sys.executable, "-W", "error", str(scripts / "introspect.py"),
+        "introspect", str(azure_collection_fixture),
+    ]
+    for token in tokens[3:]:
+        option, separator, _value = token.partition("=")
+        assert separator == "=" and option in path_options
+        command.append(f"{option}={path_options[option]}")
+    introspected = subprocess.run(
+        command, cwd=tmp_path, capture_output=True, encoding="utf-8",
+        check=False, timeout=30,
+    )
+    assert introspected.returncode == 0, introspected.stdout + introspected.stderr
+    merged = combined_python.read_text(encoding="utf-8").splitlines()
+    user = builder_introspect.pip_file_data(str(artifacts.INPUTS["python"]))
+    assert merged == [
+        f"{line}  # from collection azure.azcollection"
+        for line in _AZURE_COLLECTION_REQUIREMENTS.splitlines()
+        if canonicalize_name(Requirement(line).name) != "azure-identity"
+    ] + [f"{line}  # from collection user" for line in user]
 
 
 def test_runtime_stages_native_collections_dependencies_and_pinned_opentofu() -> None:

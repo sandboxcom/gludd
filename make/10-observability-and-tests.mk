@@ -738,6 +738,7 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_pytest_param_fixture_collisions.py::test_repository_class_scoped_fixtures_use_supported_binding
 # tests/unit/test_ansible_runtime_artifacts.py::test_controller_augments_only_searxng_isolated_metadata_dependencies
 # tests/unit/test_ansible_runtime_artifacts.py::test_generated_controller_build_preserves_installer_and_interpreter_boundaries
+# tests/unit/test_ansible_runtime_artifacts.py::test_controller_azure_identity_has_one_explicit_owner
 	@$(MAKE) --no-print-directory test-files \
 		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py tests/unit/test_bulkhead_admission.py tests/unit/test_enhancement_ratio_plugin.py tests/unit/test_pytest_param_fixture_collisions.py tests/unit/test_ansible_runtime_artifacts.py tests/unit/test_beta4_python_runtime_boundary.py tests/unit/test_ansible_searxng_source_inspection.py" \
 		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"

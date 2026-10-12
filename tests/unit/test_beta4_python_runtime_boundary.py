@@ -92,6 +92,7 @@ def test_execution_environment_definition_uses_locked_inputs() -> None:
         "galaxy": "requirements.yml",
         "python": "requirements.txt",
         "system": "bindep.txt",
+        "exclude": {"python": ["azure-identity"]},
         "ansible_core": {"package_pip": "ansible-core==2.19.12"},
         "ansible_runner": {"package_pip": "ansible-runner==2.4.3"},
         "python_interpreter": {

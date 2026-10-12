@@ -187,3 +187,60 @@ This early control-plane check does not replace the hosted pull/build result,
 the exact canonical full gate, or either coverage floor. A failed source-input
 contract blocks fan-out and leaves every serving controller untouched, retaining
 the same zero-downtime warm, switch, drain, and rollback policy.
+
+## Single-owner Azure SDK pins — 2026-10-12
+
+Build `38296150696` at `f38ce53d15a8e51514b0e517fbda22a965777f87`
+passes both Python quality jobs and their 349-case admission cohorts, then
+fails EE assembly on incompatible direct requirements: collection
+`azure.azcollection==3.21.0` declares `azure-identity==1.25.2`, while the owned
+controller and EE inputs intentionally require `1.26.0`. The collection's
+[exact release requirements](https://raw.githubusercontent.com/ansible-collections/azure/v3.21.0/requirements.txt)
+confirm that source. This is a separate dependency-ownership failure, not
+another missing isolated SearXNG metadata import.
+
+Ansible Builder 3.1.1 supplies the
+[supported collection-only exclusion](https://docs.ansible.com/projects/builder/en/latest/definition/#dependencies):
+`dependencies.exclude.python: [azure-identity]`. The explicit user requirement
+remains `azure-identity==1.26.0`. Exclusion affects only the inherited top-level
+declaration; the resolver still checks user requirements and all transitive
+dependencies. Every other collection requirement, controller pin, VCS revision,
+interpreter, base digest, uv prerequisite and isolation setting stays unchanged.
+The runtime-boundary validator requires that exact single-name policy, and the
+existing lock writer refreshes only the changed definition's content hash.
+
+Offline regressions reuse Builder's actual `process_collection`, `process` and
+`filter_requirements` functions, with the exact upstream requirement snapshot in
+a disposable collection fixture. `packaging.Requirement` checks the resulting
+owned pin and constraints. Real Dockerfile generation verifies the exclusion
+file and introspection flags before assembly; no dependency install, source
+download, image build, custom resolver or additional environment is involved.
+Existing owned-version assertions remain unchanged. The promoted
+`ee-owned-azure-sdk-pin-parity` family runs in the same complete early artifact
+file, with warning-fatal one-worker execution and unchanged 90/60-second bounds.
+
+The original exact runtime-boundary mapping retains every prior entry and adds
+only this explicit exclusion. Three new artifact cases fail first while 47
+cases pass; the early routing and roster checks separately fail twice while 22
+cases pass. After repair all 136 related acceptance cases pass, including Azure's
+unchanged owned-pin assertions. The 50-case artifact cohort measures 92.77%
+combined source coverage (93.73% line, 90.18% branch), above unchanged 85/75
+floors. The real complete early owner executes 358 cases in 29.42 seconds
+(30.2 observed), preserving 21 phases, the 2850-second ceiling and mandatory
+full-gate proof; the manifest now owns 29 failure families. The existing lock
+writer changes only the definition hash to
+`sha256:5d33d909ace591a961dba2a659639f0f0b9ed77975d41d8b7a30040306e35827`.
+
+The September 2023
+[EE content forum discussion](https://forum.ansible.com/t/community-execution-environment-image-content-and-location/262)
+describes conflicts from combining collection-declared dependencies. The
+November 2023–January 2024
+[collection requirements debate](https://forum.ansible.com/t/vote-ended-on-2024-01-17-collection-inclusion-requirements-add-requirements-txt-and-bindep-txt/2611)
+records fixed-pin conflicts and misleading requirement-file ownership. Builder
+3.1's current documented exclusion facility supplies the narrow ownership rule.
+
+This changes candidate build policy only. Serving controllers retain the active
+digest; warm verification, switching new jobs, draining and rollback remain
+unchanged. Focused merge/generation acceptance is not transitive resolution or a
+successful image. Replacement exact-SHA assembly/import proof, canonical full
+gate and 85/75 coverage remain mandatory before promotion.

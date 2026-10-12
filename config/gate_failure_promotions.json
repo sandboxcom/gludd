@@ -355,6 +355,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ansible_runtime_artifacts.py::test_generated_controller_build_preserves_installer_and_interpreter_boundaries",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-owned-azure-sdk-pin-parity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_runtime_artifacts.py::test_controller_azure_identity_has_one_explicit_owner",
+      "full_gate_phase": "test"
     }
   ]
 }

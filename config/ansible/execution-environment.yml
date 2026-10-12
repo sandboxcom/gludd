@@ -10,6 +10,9 @@ dependencies:
   galaxy: requirements.yml
   python: requirements.txt
   system: bindep.txt
+  exclude:
+    python:
+      - azure-identity
   ansible_core:
     package_pip: ansible-core==2.19.12
   ansible_runner:

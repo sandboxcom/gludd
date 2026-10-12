@@ -348,6 +348,10 @@ def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
             "ee-builder-installer-boundary",
             "test_generated_controller_build_preserves_installer_and_interpreter_boundaries",
         ),
+        (
+            "ee-owned-azure-sdk-pin-parity",
+            "test_controller_azure_identity_has_one_explicit_owner",
+        ),
     ],
 )
 def test_ee_metadata_contracts_execute_before_hosted_image_construction(
@@ -671,6 +675,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "pytest-class-fixture-binding-invariant",
         "ee-isolated-metadata-prerequisite",
         "ee-builder-installer-boundary",
+        "ee-owned-azure-sdk-pin-parity",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (

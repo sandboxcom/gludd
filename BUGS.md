@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — collection and controller duplicated incompatible Azure SDK pins
+
+- **Observed**: Build `38296150696` at `f38ce53d15a8e51514b0e517fbda22a965777f87` passes both Python quality jobs and their 349-case early cohorts, then EE assembly rejects `azure-identity==1.25.2` from the frozen Azure 3.21.0 collection alongside the controller's deliberately owned `1.26.0`. This is a separately exposed dependency conflict, not another metadata import failure.
+- **Failing-first prevention**: Actual Builder 3.1.1 introspection reproduces both incompatible declarations from the exact upstream requirement snapshot. Three new artifact cases fail while 47 pass; the new early-family routing and roster checks separately fail twice while 22 pass. Regressions also reject absent, empty, broad and whole-collection exclusions and changes to the owned SDK pin.
+- **Narrow repair**: Reuse Builder's supported single-name, collection-only exclusion. Retain the user pin, all unrelated collection/user requirements, transitive resolution, frozen Git revision, isolation, interpreter and base digest. The original exact runtime-boundary mapping adds only the new required entry, preserving all original pins and other assertions. The existing lock writer changes only the definition hash; no package install, container, custom resolver or new environment is added.
+- **Actual acceptance**: All 136 related tests pass. The 50-case artifact cohort reaches 92.77% combined coverage (93.73% line, 90.18% branch), above unchanged 85/75 floors. Real generated Dockerfile and generated introspection execution preserve every unrelated requirement and route exclusion before assembly. The complete real early owner passes 358 cases in 29.42 seconds (30.2 observed); all 29 promoted families retain 21 phases, a 2850-second ceiling, unchanged 90/60 owner bounds and mandatory full gate. Resource ownership remains 250 entries without an exemption.
+- **Proof boundary**: The feature guide records official Builder semantics and long-lived Ansible forum findings. Serving controllers remain on their active digest with unchanged warm/switch/drain/rollback. Offline merge/generation evidence does not prove transitive resolution or a successful replacement image. Exact replacement hosted proof, canonical gate/coverage, final source review and disk admission remain required; no S98 task is ticked or master/release promotion claimed.
+
 ### 2026-10-12 — skipped hosted jobs falsely closed recorded failures
 
 - **Observed**: Failed Build `38291013073` at `7239008` skips downstream shards and the EE build after its 3.11 admission timeout. The ledger's shared success/skipped/neutral set incorrectly changes the earlier EE failure from repaired to resolved, although no replacement image was built. Hosted merge eligibility is not proof that a previously failing job executed successfully.
