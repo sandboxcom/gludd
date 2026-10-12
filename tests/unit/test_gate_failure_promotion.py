@@ -457,6 +457,39 @@ def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> No
     assert payload["full_gate_required"] is True
 
 
+@pytest.mark.parametrize(
+    ("family_id", "node"),
+    [
+        ("automatic-proof-observation-ownership",
+         "tests/unit/test_proof_observations.py::test_writer_derives_timestamp_and_never_admits_release"),
+        ("automatic-proof-handoff-native-query-shape",
+         "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_accepts_the_existing_ledger_detail_shape"),
+    ],
+)
+def test_automatic_observation_contracts_execute_in_complete_early_cohorts(
+    family_id: str, node: str,
+) -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(family for family in payload["families"] if family["id"] == family_id)
+    assert family == {
+        "id": family_id, "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in owner
+    for test_file in (
+        "tests/unit/test_proof_observations.py", "tests/unit/test_ci_await_exact.py",
+        "tests/unit/test_pipeline_status_exact_sha.py", "tests/unit/test_task_ledger_validation.py",
+    ):
+        assert test_file in executable
+    phase = next(phase for phase in payload["runtime_contract"]["phases"]
+                 if phase["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    assert payload["full_gate_required"] is True
+
+
 def _synthetic_repository(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
@@ -750,6 +783,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "integration-admission-plan-contract",
         "integration-admission-document-contract",
         "ci-repair-evidence-variable-forwarding",
+        "automatic-proof-observation-ownership",
+        "automatic-proof-handoff-native-query-shape",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -904,7 +939,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_beta4_python_runtime_boundary.py '
         'tests/unit/test_ansible_searxng_source_inspection.py '
         'tests/unit/test_integration_admission_target.py '
-        'tests/unit/test_ci_failure_ledger.py"'
+        'tests/unit/test_ci_failure_ledger.py '
+        'tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py '
+        'tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_task_ledger_validation.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner

@@ -3,12 +3,16 @@
   "targets": [
     {
       "name": "inspect-ansible-searxng-source",
-      "make_variables": ["ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY"],
+      "make_variables": [
+        "ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY"
+      ],
       "behavior": "make inspect-ansible-searxng-source ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=1"
     },
     {
       "name": "release-proof-admission",
-      "make_variables": ["RELEASE_PROOF_ADMISSION_VALIDATE_ONLY"],
+      "make_variables": [
+        "RELEASE_PROOF_ADMISSION_VALIDATE_ONLY"
+      ],
       "behavior": "make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=1"
     },
     {
@@ -19,7 +23,10 @@
     },
     {
       "name": "_pull-before-push-guard",
-      "make_variables": ["PUSH_REMOTE", "SSH_KEY"],
+      "make_variables": [
+        "PUSH_REMOTE",
+        "SSH_KEY"
+      ],
       "not_for_direct_use": true,
       "behavior": "make _pull-before-push-guard -n PUSH_REMOTE=sandboxcom SSH_KEY=/tmp/gludd-contract-absent-key"
     },
@@ -230,17 +237,23 @@
     },
     {
       "name": "test-self-improve-failure-corpus",
-      "make_variables": ["SELF_IMPROVE_FAILURE_CORPUS_FILE"],
+      "make_variables": [
+        "SELF_IMPROVE_FAILURE_CORPUS_FILE"
+      ],
       "behavior": "make test-self-improve-failure-corpus SELF_IMPROVE_FAILURE_CORPUS_FILE=config/self-improve/failure-corpus.json"
     },
     {
       "name": "test-self-improve-catalog-truth",
-      "make_variables": ["SELF_IMPROVE_CATALOG_LIVE"],
+      "make_variables": [
+        "SELF_IMPROVE_CATALOG_LIVE"
+      ],
       "behavior": "make test-self-improve-catalog-truth SELF_IMPROVE_CATALOG_LIVE=0"
     },
     {
       "name": "test-self-improve-multifile",
-      "make_variables": ["SELF_IMPROVE_MULTIFILE_LIVE"],
+      "make_variables": [
+        "SELF_IMPROVE_MULTIFILE_LIVE"
+      ],
       "behavior": "make test-self-improve-multifile SELF_IMPROVE_MULTIFILE_LIVE=0"
     },
     {
@@ -281,22 +294,35 @@
     },
     {
       "name": "test-specific",
-      "make_variables": ["TESTFILE", "PYTEST_ARGS"],
+      "make_variables": [
+        "TESTFILE",
+        "PYTEST_ARGS"
+      ],
       "behavior": "make test-specific TESTFILE=tests/unit/test_make_target_contract.py::test_make_target_contract_is_valid PYTEST_ARGS=-q"
     },
     {
       "name": "test-specific-pyver",
-      "make_variables": ["TESTFILE", "PYTHON_VERSION", "PYTEST_ARGS"],
+      "make_variables": [
+        "TESTFILE",
+        "PYTHON_VERSION",
+        "PYTEST_ARGS"
+      ],
       "behavior": "make test-specific-pyver TESTFILE=tests/unit/test_ci_hosted_failure_tooling.py PYTHON_VERSION=3.11 PYTEST_ARGS=-q"
     },
     {
       "name": "test-files",
-      "make_variables": ["TESTFILES", "PYTEST_ARGS"],
+      "make_variables": [
+        "TESTFILES",
+        "PYTEST_ARGS"
+      ],
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
     },
     {
       "name": "migrate-up",
-      "make_variables": ["MIGRATE_DATABASE_URL", "MIGRATE_REVISION"],
+      "make_variables": [
+        "MIGRATE_DATABASE_URL",
+        "MIGRATE_REVISION"
+      ],
       "behavior": "make migrate-up MIGRATE_DATABASE_URL=sqlite:// MIGRATE_REVISION=head"
     },
     {
@@ -379,9 +405,10 @@
         "PIPELINE_STATUS_REMOTE",
         "PIPELINE_STATUS_SHA",
         "PIPELINE_STATUS_FAILURE_LEDGER",
-        "PIPELINE_STATUS_VALIDATE_ONLY"
+        "PIPELINE_STATUS_VALIDATE_ONLY",
+        "PIPELINE_STATUS_OUTPUT"
       ],
-      "behavior": "make pipeline-status PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANCH=development PIPELINE_STATUS_REMOTE=sandboxcom PIPELINE_STATUS_SHA= PIPELINE_STATUS_FAILURE_LEDGER=.gludd/ci-failure-ledger.json PIPELINE_STATUS_VALIDATE_ONLY=1"
+      "behavior": "make pipeline-status PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANCH=development PIPELINE_STATUS_REMOTE=sandboxcom PIPELINE_STATUS_SHA= PIPELINE_STATUS_FAILURE_LEDGER=.gludd/ci-failure-ledger.json PIPELINE_STATUS_VALIDATE_ONLY=1 PIPELINE_STATUS_OUTPUT=/tmp/gludd-contract-pipeline-status.json"
     },
     {
       "name": "reviewed-head-receipt",
@@ -419,7 +446,9 @@
     },
     {
       "name": "check-release-failure-ledger",
-      "make_variables": ["RELEASE_FAILURE_LEDGER"],
+      "make_variables": [
+        "RELEASE_FAILURE_LEDGER"
+      ],
       "behavior": "make check-release-failure-ledger RELEASE_FAILURE_LEDGER=docs/releases/beta-release-failures.json"
     },
     {
@@ -539,12 +568,17 @@
     },
     {
       "name": "typecheck-scope",
-      "make_variables": ["FILES"],
+      "make_variables": [
+        "FILES"
+      ],
       "behavior": "make typecheck-scope FILES=scripts/status_snapshot.py"
     },
     {
       "name": "lint-markdown",
-      "make_variables": ["MARKDOWN_FILES", "MARKDOWNLINT_CONFIG"],
+      "make_variables": [
+        "MARKDOWN_FILES",
+        "MARKDOWNLINT_CONFIG"
+      ],
       "behavior": "make lint-markdown MARKDOWN_FILES=docs/features/XMSS_BACKEND_SAFETY.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc"
     },
     {
@@ -554,7 +588,9 @@
     },
     {
       "name": "lint-docstrings",
-      "make_variables": ["DOCSTRING_FILES"],
+      "make_variables": [
+        "DOCSTRING_FILES"
+      ],
       "behavior": "make lint-docstrings DOCSTRING_FILES=src/general_ludd/security/xmss.py"
     },
     {
@@ -598,12 +634,16 @@
     },
     {
       "name": "molecule-test",
-      "make_variables": ["SCENARIO"],
+      "make_variables": [
+        "SCENARIO"
+      ],
       "behavior": "make molecule-test SCENARIO=test_gludd_observe"
     },
     {
       "name": "molecule-reset",
-      "make_variables": ["SCENARIO"],
+      "make_variables": [
+        "SCENARIO"
+      ],
       "behavior": "make molecule-reset SCENARIO=default"
     },
     {
@@ -613,72 +653,132 @@
     },
     {
       "name": "core-dependency-ownership-refresh",
-      "make_variables": ["CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY"],
+      "make_variables": [
+        "CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY"
+      ],
       "behavior": "make core-dependency-ownership-refresh CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY=1"
     },
     {
       "name": "sync",
-      "make_variables": ["DEPENDENCY_PROFILE_SET", "DEPENDENCY_PROFILE_ENVIRONMENT", "DEPENDENCY_PROFILE_PYTHON", "DEPENDENCY_PROFILE_VALIDATE_ONLY"],
+      "make_variables": [
+        "DEPENDENCY_PROFILE_SET",
+        "DEPENDENCY_PROFILE_ENVIRONMENT",
+        "DEPENDENCY_PROFILE_PYTHON",
+        "DEPENDENCY_PROFILE_VALIDATE_ONLY"
+      ],
       "behavior": "make sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON=3.12 DEPENDENCY_PROFILE_VALIDATE_ONLY=1"
     },
     {
       "name": "relock",
-      "make_variables": ["DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY"],
+      "make_variables": [
+        "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY"
+      ],
       "behavior": "make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1"
     },
     {
       "name": "sync-llama-cpp",
-      "make_variables": ["SYNC_LLAMA_CPP_VALIDATE_ONLY"],
+      "make_variables": [
+        "SYNC_LLAMA_CPP_VALIDATE_ONLY"
+      ],
       "behavior": "make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1"
     },
     {
       "name": "test-local-model-inference",
-      "make_variables": ["LOCAL_MODEL_INFERENCE_MODEL_PATH", "LOCAL_MODEL_INFERENCE_VALIDATE_ONLY"],
+      "make_variables": [
+        "LOCAL_MODEL_INFERENCE_MODEL_PATH",
+        "LOCAL_MODEL_INFERENCE_VALIDATE_ONLY"
+      ],
       "behavior": "make test-local-model-inference LOCAL_MODEL_INFERENCE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1"
     },
     {
       "name": "test-e2e-game-pipeline",
-      "make_variables": ["CI_SAFE", "GAME_DEV_MODEL", "GAME_DEV_GAME", "PYTEST_ARGS"],
+      "make_variables": [
+        "CI_SAFE",
+        "GAME_DEV_MODEL",
+        "GAME_DEV_GAME",
+        "PYTEST_ARGS"
+      ],
       "behavior": "make test-e2e-game-pipeline CI_SAFE=1 GAME_DEV_MODEL=Qwen2.5-0.5B-Instruct GAME_DEV_GAME=snake PYTEST_ARGS='-q -W error'"
     },
     {
       "name": "clean-e2e-small-model",
-      "make_variables": ["E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY"],
+      "make_variables": [
+        "E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY"
+      ],
       "behavior": "make clean-e2e-small-model E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=1"
     },
     {
       "name": "clean-hf-cache",
-      "make_variables": ["CLEAN_HF_CACHE_ROOT", "CLEAN_HF_CACHE_REQUIRED_BYTES", "CLEAN_HF_CACHE_VALIDATE_ONLY"],
+      "make_variables": [
+        "CLEAN_HF_CACHE_ROOT",
+        "CLEAN_HF_CACHE_REQUIRED_BYTES",
+        "CLEAN_HF_CACHE_VALIDATE_ONLY"
+      ],
       "behavior": "make clean-hf-cache CLEAN_HF_CACHE_ROOT=/tmp/gludd-clean-hf-cache-contract CLEAN_HF_CACHE_REQUIRED_BYTES=0 CLEAN_HF_CACHE_VALIDATE_ONLY=1"
     },
     {
       "name": "node-deps-sync",
-      "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_NPM_UPDATE_NOTIFIER"],
+      "make_variables": [
+        "NODE_DEPS_VALIDATE_ONLY",
+        "NODE_DEPS_NPM_USERCONFIG",
+        "NODE_DEPS_NPM_CACHE",
+        "NODE_DEPS_NPM_REGISTRY",
+        "NODE_DEPS_NPM_UPDATE_NOTIFIER"
+      ],
       "behavior": "make node-deps-sync NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false"
     },
     {
       "name": "node-deps-relock",
-      "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_NPM_UPDATE_NOTIFIER"],
+      "make_variables": [
+        "NODE_DEPS_VALIDATE_ONLY",
+        "NODE_DEPS_NPM_USERCONFIG",
+        "NODE_DEPS_NPM_CACHE",
+        "NODE_DEPS_NPM_REGISTRY",
+        "NODE_DEPS_NPM_UPDATE_NOTIFIER"
+      ],
       "behavior": "make node-deps-relock NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false"
     },
     {
       "name": "node-deps-audit",
-      "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_NPM_UPDATE_NOTIFIER", "NODE_DEPS_AUDIT_LEVEL"],
+      "make_variables": [
+        "NODE_DEPS_VALIDATE_ONLY",
+        "NODE_DEPS_NPM_USERCONFIG",
+        "NODE_DEPS_NPM_CACHE",
+        "NODE_DEPS_NPM_REGISTRY",
+        "NODE_DEPS_NPM_UPDATE_NOTIFIER",
+        "NODE_DEPS_AUDIT_LEVEL"
+      ],
       "behavior": "make node-deps-audit NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false NODE_DEPS_AUDIT_LEVEL=moderate"
     },
     {
       "name": "freellmapi-upstream-admission",
-      "make_variables": ["FREELLMAPI_ADMISSION_TAG", "FREELLMAPI_ADMISSION_COMMIT", "FREELLMAPI_ADMISSION_LIVE", "FREELLMAPI_ADMISSION_OUTPUT"],
+      "make_variables": [
+        "FREELLMAPI_ADMISSION_TAG",
+        "FREELLMAPI_ADMISSION_COMMIT",
+        "FREELLMAPI_ADMISSION_LIVE",
+        "FREELLMAPI_ADMISSION_OUTPUT"
+      ],
       "behavior": "make freellmapi-upstream-admission FREELLMAPI_ADMISSION_TAG=v0.11.1 FREELLMAPI_ADMISSION_COMMIT=4191d8e7abef39fcd93fab009123467036f39750 FREELLMAPI_ADMISSION_LIVE=0 FREELLMAPI_ADMISSION_OUTPUT=config/freellmapi/upstream_candidate.json"
     },
     {
       "name": "freellmapi-upstream-build",
-      "make_variables": ["FREELLMAPI_BUILD_LIVE", "FREELLMAPI_BUILD_CANDIDATE", "FREELLMAPI_BUILD_PLAN", "FREELLMAPI_BUILD_REPORT"],
+      "make_variables": [
+        "FREELLMAPI_BUILD_LIVE",
+        "FREELLMAPI_BUILD_CANDIDATE",
+        "FREELLMAPI_BUILD_PLAN",
+        "FREELLMAPI_BUILD_REPORT"
+      ],
       "behavior": "make freellmapi-upstream-build FREELLMAPI_BUILD_LIVE=0 FREELLMAPI_BUILD_CANDIDATE=config/freellmapi/upstream_candidate.json FREELLMAPI_BUILD_PLAN=config/freellmapi/upstream_build_plan.json FREELLMAPI_BUILD_REPORT=/tmp/gludd-freellmapi-upstream-build/evidence.json"
     },
     {
       "name": "freellmapi-three-arm-replay",
-      "make_variables": ["FREELLMAPI_THREE_ARM_MODE", "FREELLMAPI_THREE_ARM_CANDIDATE", "FREELLMAPI_THREE_ARM_PLAN", "FREELLMAPI_THREE_ARM_CORPUS", "FREELLMAPI_THREE_ARM_REPORT"],
+      "make_variables": [
+        "FREELLMAPI_THREE_ARM_MODE",
+        "FREELLMAPI_THREE_ARM_CANDIDATE",
+        "FREELLMAPI_THREE_ARM_PLAN",
+        "FREELLMAPI_THREE_ARM_CORPUS",
+        "FREELLMAPI_THREE_ARM_REPORT"
+      ],
       "behavior": "make freellmapi-three-arm-replay FREELLMAPI_THREE_ARM_MODE=validate FREELLMAPI_THREE_ARM_CANDIDATE=config/freellmapi/upstream_candidate.json FREELLMAPI_THREE_ARM_PLAN=config/freellmapi/three_arm_plan.json FREELLMAPI_THREE_ARM_CORPUS=config/freellmapi/three_arm_corpus.json FREELLMAPI_THREE_ARM_REPORT=/tmp/gludd-freellmapi-three-arm/evidence.json"
     },
     {
@@ -693,18 +793,29 @@
     },
     {
       "name": "provider-harness",
-      "make_variables": ["PROVIDER", "LIVE"],
+      "make_variables": [
+        "PROVIDER",
+        "LIVE"
+      ],
       "behavior": "make provider-harness PROVIDER=runpod LIVE=0"
     },
     {
       "name": "azure-harness",
-      "make_variables": ["LIVE"],
-      "environment_variables": ["AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"],
+      "make_variables": [
+        "LIVE"
+      ],
+      "environment_variables": [
+        "AZURE_SUBSCRIPTION_ID",
+        "AZURE_TENANT_ID"
+      ],
       "behavior": "make azure-harness LIVE=0 AZURE_SUBSCRIPTION_ID=sub-123 AZURE_TENANT_ID=tenant-456"
     },
     {
       "name": "test-e2e-azure-provision-sourced",
-      "make_variables": ["AZURE_E2E_ENV_FILE", "AZURE_E2E_VALIDATE_ONLY"],
+      "make_variables": [
+        "AZURE_E2E_ENV_FILE",
+        "AZURE_E2E_VALIDATE_ONLY"
+      ],
       "behavior": "make test-e2e-azure-provision-sourced AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_E2E_VALIDATE_ONLY=1"
     },
     {
@@ -729,32 +840,53 @@
     },
     {
       "name": "test-e2e-games",
-      "make_variables": ["PYTEST_ARGS"],
+      "make_variables": [
+        "PYTEST_ARGS"
+      ],
       "behavior": "make test-e2e-games PYTEST_ARGS='-q -k test_ssim_identity'"
     },
     {
       "name": "test-e2e-games-local",
-      "make_variables": ["PYTEST_ARGS"],
+      "make_variables": [
+        "PYTEST_ARGS"
+      ],
       "behavior": "make test-e2e-games-local PYTEST_ARGS=-q"
     },
     {
       "name": "test-e2e-games-local-model",
-      "make_variables": ["LOCAL_MODEL_E2E_MODE", "LOCAL_MODEL_BASE_URL", "LOCAL_MODEL_NAME", "LOCAL_MODEL_KEY", "LOCAL_MODEL_GAME", "LOCAL_MODEL_PATH", "PYTEST_ARGS"],
+      "make_variables": [
+        "LOCAL_MODEL_E2E_MODE",
+        "LOCAL_MODEL_BASE_URL",
+        "LOCAL_MODEL_NAME",
+        "LOCAL_MODEL_KEY",
+        "LOCAL_MODEL_GAME",
+        "LOCAL_MODEL_PATH",
+        "PYTEST_ARGS"
+      ],
       "behavior": "make test-e2e-games-local-model LOCAL_MODEL_E2E_MODE=hermetic LOCAL_MODEL_BASE_URL= LOCAL_MODEL_NAME=gludd-hermetic-game-e2e LOCAL_MODEL_KEY=local-hermetic LOCAL_MODEL_GAME=snake LOCAL_MODEL_PATH= PYTEST_ARGS=-q"
     },
     {
       "name": "grep",
-      "make_variables": ["Q", "SEARCH_PATH"],
+      "make_variables": [
+        "Q",
+        "SEARCH_PATH"
+      ],
       "behavior": "make grep Q=GAME_E2E SEARCH_PATH=docs"
     },
     {
       "name": "check-disk",
-      "make_variables": ["CHECK_DISK_VALIDATE_ONLY"],
+      "make_variables": [
+        "CHECK_DISK_VALIDATE_ONLY"
+      ],
       "behavior": "make check-disk CHECK_DISK_VALIDATE_ONLY=1"
     },
     {
       "name": "disk-cleanup-preflight",
-      "make_variables": ["DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY", "DISK_CLEANUP_PREFLIGHT_DRY_RUN", "DISK_CLEANUP_RECEIPT_GRACE_SECONDS"],
+      "make_variables": [
+        "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY",
+        "DISK_CLEANUP_PREFLIGHT_DRY_RUN",
+        "DISK_CLEANUP_RECEIPT_GRACE_SECONDS"
+      ],
       "behavior": "make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"
     },
     {
@@ -779,27 +911,41 @@
     },
     {
       "name": "cache-resource-inventory",
-      "make_variables": ["CACHE_RESOURCE_ROOT", "CACHE_RESOURCE_LIMIT", "CACHE_RESOURCE_VALIDATE_ONLY"],
+      "make_variables": [
+        "CACHE_RESOURCE_ROOT",
+        "CACHE_RESOURCE_LIMIT",
+        "CACHE_RESOURCE_VALIDATE_ONLY"
+      ],
       "behavior": "make cache-resource-inventory CACHE_RESOURCE_ROOT=/Users/shawnwilson/Library/Caches CACHE_RESOURCE_LIMIT=20 CACHE_RESOURCE_VALIDATE_ONLY=1"
     },
     {
       "name": "cache-resource-remove",
-      "make_variables": ["CACHE_RESOURCE_ROOT", "CACHE_RESOURCE_CANDIDATE", "CACHE_RESOURCE_VALIDATE_ONLY"],
+      "make_variables": [
+        "CACHE_RESOURCE_ROOT",
+        "CACHE_RESOURCE_CANDIDATE",
+        "CACHE_RESOURCE_VALIDATE_ONLY"
+      ],
       "behavior": "make cache-resource-remove CACHE_RESOURCE_ROOT=/Users/shawnwilson/Library/Caches CACHE_RESOURCE_CANDIDATE=/Users/shawnwilson/Library/Caches/pip CACHE_RESOURCE_VALIDATE_ONLY=1"
     },
     {
       "name": "tmp-gludd-clean-ci-shards-now",
-      "make_variables": ["TMP_GLUDD_CLEAN_VALIDATE_ONLY"],
+      "make_variables": [
+        "TMP_GLUDD_CLEAN_VALIDATE_ONLY"
+      ],
       "behavior": "make tmp-gludd-clean-ci-shards-now TMP_GLUDD_CLEAN_VALIDATE_ONLY=1"
     },
     {
       "name": "tmp-gludd-clean-orphan-worktrees-now",
-      "make_variables": ["TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY"],
+      "make_variables": [
+        "TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY"
+      ],
       "behavior": "make tmp-gludd-clean-orphan-worktrees-now TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1"
     },
     {
       "name": "clean-worktree-venvs",
-      "make_variables": ["CLEAN_WORKTREE_VENVS_VALIDATE_ONLY"],
+      "make_variables": [
+        "CLEAN_WORKTREE_VENVS_VALIDATE_ONLY"
+      ],
       "behavior": "make clean-worktree-venvs CLEAN_WORKTREE_VENVS_VALIDATE_ONLY=1"
     },
     {
@@ -888,7 +1034,9 @@
     },
     {
       "name": "disk-reclaim",
-      "make_variables": ["GLUDD_DISK_THRESHOLD"],
+      "make_variables": [
+        "GLUDD_DISK_THRESHOLD"
+      ],
       "behavior": "make disk-reclaim GLUDD_DISK_THRESHOLD=101"
     },
     {
@@ -898,17 +1046,27 @@
     },
     {
       "name": "gate-refresh",
-      "make_variables": ["GATE_REFRESH_VALIDATE_ONLY"],
+      "make_variables": [
+        "GATE_REFRESH_VALIDATE_ONLY"
+      ],
       "behavior": "make gate-refresh GATE_REFRESH_VALIDATE_ONLY=1"
     },
     {
       "name": "triage-failures",
-      "make_variables": ["LOG", "TRIAGE_STATE", "TRIAGE_FORMAT"],
+      "make_variables": [
+        "LOG",
+        "TRIAGE_STATE",
+        "TRIAGE_FORMAT"
+      ],
       "behavior": "make triage-failures LOG=/dev/null TRIAGE_STATE=/tmp/gludd-triage-contract.json TRIAGE_FORMAT=json"
     },
     {
       "name": "sast-summary",
-      "make_variables": ["SAST_REPORT", "SAST_SUMMARY", "SAST_BASELINE"],
+      "make_variables": [
+        "SAST_REPORT",
+        "SAST_SUMMARY",
+        "SAST_BASELINE"
+      ],
       "behavior": "make sast-summary SAST_REPORT=tests/fixtures/security/sast-report.json SAST_SUMMARY=/tmp/gludd-sast-summary-contract.json SAST_BASELINE=tests/fixtures/security/sast-baseline.json"
     },
     {
@@ -926,12 +1084,16 @@
     },
     {
       "name": "gate-tail",
-      "make_variables": ["GATE_TAIL_LINES"],
+      "make_variables": [
+        "GATE_TAIL_LINES"
+      ],
       "behavior": "make gate-tail GATE_TAIL_LINES=5"
     },
     {
       "name": "gate-lite-tail",
-      "make_variables": ["GATE_TAIL_LINES"],
+      "make_variables": [
+        "GATE_TAIL_LINES"
+      ],
       "behavior": "make gate-lite-tail GATE_TAIL_LINES=5"
     },
     {
@@ -946,7 +1108,10 @@
     },
     {
       "name": "azure-cleanup-inspect",
-      "make_variables": ["AZURE_E2E_ENV_FILE", "AZURE_CLI"],
+      "make_variables": [
+        "AZURE_E2E_ENV_FILE",
+        "AZURE_CLI"
+      ],
       "behavior": "make azure-cleanup-inspect AZURE_E2E_ENV_FILE=tests/fixtures/azure-e2e.env.example AZURE_CLI=true"
     },
     {
@@ -997,23 +1162,37 @@
     },
     {
       "name": "runpod-harness",
-      "make_variables": ["LIVE"],
-      "environment_variables": ["RUNPOD_API_KEY", "RUNPOD_BUDGET_USD"],
+      "make_variables": [
+        "LIVE"
+      ],
+      "environment_variables": [
+        "RUNPOD_API_KEY",
+        "RUNPOD_BUDGET_USD"
+      ],
       "behavior": "make runpod-harness LIVE=0 RUNPOD_API_KEY=placeholder RUNPOD_BUDGET_USD=5"
     },
     {
       "name": "test-opa-policies",
-      "make_variables": ["OPA_ARGS", "OPA_IMAGE"],
+      "make_variables": [
+        "OPA_ARGS",
+        "OPA_IMAGE"
+      ],
       "behavior": "make test-opa-policies OPA_ARGS=--strict OPA_IMAGE=openpolicyagent/opa:1.6.0"
     },
     {
       "name": "tf-init-local",
-      "make_variables": ["STACK", "TF_INIT_LOCAL_VALIDATE_ONLY"],
+      "make_variables": [
+        "STACK",
+        "TF_INIT_LOCAL_VALIDATE_ONLY"
+      ],
       "behavior": "make tf-init-local STACK=stacks/azure-vllm TF_INIT_LOCAL_VALIDATE_ONLY=1"
     },
     {
       "name": "audit-coverage",
-      "make_variables": ["THRESHOLD", "SOURCE"],
+      "make_variables": [
+        "THRESHOLD",
+        "SOURCE"
+      ],
       "behavior": "make audit-coverage THRESHOLD=85 SOURCE=src/general_ludd"
     },
     {
@@ -1023,7 +1202,9 @@
     },
     {
       "name": "git-commit",
-      "make_variables": ["MSG"],
+      "make_variables": [
+        "MSG"
+      ],
       "behavior": "make git-commit MSG='documented change'"
     },
     {
@@ -1062,12 +1243,18 @@
     },
     {
       "name": "ci-record-verdict",
-      "make_variables": ["VERDICT", "SHA"],
+      "make_variables": [
+        "VERDICT",
+        "SHA"
+      ],
       "behavior": "make ci-record-verdict VERDICT=failure SHA=<40-hex-sha>"
     },
     {
       "name": "deploy-and-forget",
-      "make_variables": ["BRANCH", "DEPLOY_AND_FORGET_VALIDATE_ONLY"],
+      "make_variables": [
+        "BRANCH",
+        "DEPLOY_AND_FORGET_VALIDATE_ONLY"
+      ],
       "behavior": "make deploy-and-forget BRANCH=feature/hermetic-ci DEPLOY_AND_FORGET_VALIDATE_ONLY=1"
     },
     {
@@ -1088,7 +1275,9 @@
     },
     {
       "name": "clean",
-      "make_variables": ["CLEAN_VALIDATE_ONLY"],
+      "make_variables": [
+        "CLEAN_VALIDATE_ONLY"
+      ],
       "behavior": "make clean CLEAN_VALIDATE_ONLY=1"
     },
     {
@@ -1103,12 +1292,17 @@
     },
     {
       "name": "kill-worktree-e2e",
-      "make_variables": ["PID", "KILL_WORKTREE_E2E_VALIDATE_ONLY"],
+      "make_variables": [
+        "PID",
+        "KILL_WORKTREE_E2E_VALIDATE_ONLY"
+      ],
       "behavior": "make kill-worktree-e2e PID=1 KILL_WORKTREE_E2E_VALIDATE_ONLY=1"
     },
     {
       "name": "status-snapshot",
-      "make_variables": ["STATUS_SNAPSHOT_VALIDATE_ONLY"],
+      "make_variables": [
+        "STATUS_SNAPSHOT_VALIDATE_ONLY"
+      ],
       "behavior": "make status-snapshot STATUS_SNAPSHOT_VALIDATE_ONLY=1"
     },
     {
@@ -1118,83 +1312,134 @@
     },
     {
       "name": "branch-reconciliation-inventory",
-      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT", "RECONCILE_AFTER"],
+      "make_variables": [
+        "RECONCILE_TARGET",
+        "RECONCILE_LIMIT",
+        "RECONCILE_AFTER"
+      ],
       "behavior": "make branch-reconciliation-inventory RECONCILE_TARGET=development RECONCILE_LIMIT=20 RECONCILE_AFTER="
     },
     {
       "name": "branch-reconciliation-summary",
-      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT", "RECONCILE_DETAILS", "RECONCILE_CURRENT_ONLY", "RECONCILE_QUIET_PROGRESS", "RECONCILE_HEAD_SEMANTICS"],
+      "make_variables": [
+        "RECONCILE_TARGET",
+        "RECONCILE_LIMIT",
+        "RECONCILE_DETAILS",
+        "RECONCILE_CURRENT_ONLY",
+        "RECONCILE_QUIET_PROGRESS",
+        "RECONCILE_HEAD_SEMANTICS"
+      ],
       "behavior": "make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0 RECONCILE_QUIET_PROGRESS=0 RECONCILE_HEAD_SEMANTICS=0"
     },
     {
       "name": "development-merge-forward",
-      "make_variables": ["SOURCE", "MODE", "APPLY"],
+      "make_variables": [
+        "SOURCE",
+        "MODE",
+        "APPLY"
+      ],
       "behavior": "make development-merge-forward SOURCE=HEAD MODE=content APPLY=0"
     },
     {
       "name": "development-merge-forward-batch",
-      "make_variables": ["SOURCES", "APPLY"],
+      "make_variables": [
+        "SOURCES",
+        "APPLY"
+      ],
       "behavior": "make development-merge-forward-batch SOURCES=HEAD APPLY=0"
     },
     {
       "name": "development-fast-forward",
-      "make_variables": ["SOURCE", "EXPECTED_BEFORE_SHA", "EXPECTED_AFTER_SHA", "APPLY"],
+      "make_variables": [
+        "SOURCE",
+        "EXPECTED_BEFORE_SHA",
+        "EXPECTED_AFTER_SHA",
+        "APPLY"
+      ],
       "behavior": "make development-fast-forward SOURCE=development EXPECTED_BEFORE_SHA=HEAD EXPECTED_AFTER_SHA=development APPLY=0"
     },
     {
       "name": "release-view",
-      "make_variables": ["TAG"],
+      "make_variables": [
+        "TAG"
+      ],
       "behavior": "make release-view TAG=v0.1.0-beta.2"
     },
     {
       "name": "feature-spec-inventory",
-      "make_variables": ["FORMAT"],
+      "make_variables": [
+        "FORMAT"
+      ],
       "behavior": "make feature-spec-inventory FORMAT=json"
     },
     {
       "name": "sandbox-state-dir",
-      "make_variables": ["GLUDD_SANDBOX_STATE_DIR", "GLUDD_PROJECT_ROOT"],
+      "make_variables": [
+        "GLUDD_SANDBOX_STATE_DIR",
+        "GLUDD_PROJECT_ROOT"
+      ],
       "behavior": "make sandbox-state-dir GLUDD_SANDBOX_STATE_DIR=/tmp/gludd-sandbox-state GLUDD_PROJECT_ROOT=."
     },
     {
       "name": "sandbox-state-list",
-      "make_variables": ["GLUDD_SANDBOX_STATE_DIR", "GLUDD_PROJECT_ROOT"],
+      "make_variables": [
+        "GLUDD_SANDBOX_STATE_DIR",
+        "GLUDD_PROJECT_ROOT"
+      ],
       "behavior": "make sandbox-state-list GLUDD_SANDBOX_STATE_DIR=/tmp/gludd-sandbox-state GLUDD_PROJECT_ROOT=."
     },
     {
       "name": "sandbox-state-clean",
-      "make_variables": ["GLUDD_SANDBOX_STATE_DIR", "GLUDD_PROJECT_ROOT"],
+      "make_variables": [
+        "GLUDD_SANDBOX_STATE_DIR",
+        "GLUDD_PROJECT_ROOT"
+      ],
       "behavior": "make sandbox-state-clean GLUDD_SANDBOX_STATE_DIR=/tmp/gludd-sandbox-state GLUDD_PROJECT_ROOT=."
     },
     {
       "name": "check-plugin-liveness",
       "make_variables": [],
-      "environment_variables": ["GLUDD_MIN_DISPATCHES"],
+      "environment_variables": [
+        "GLUDD_MIN_DISPATCHES"
+      ],
       "behavior": "make check-plugin-liveness GLUDD_MIN_DISPATCHES=10"
     },
     {
       "name": "resolve-development-conflicts",
-      "make_variables": ["MERGE_SOURCE", "APPLY"],
+      "make_variables": [
+        "MERGE_SOURCE",
+        "APPLY"
+      ],
       "behavior": "make resolve-development-conflicts MERGE_SOURCE=master APPLY=0"
     },
     {
       "name": "git-show-commit",
-      "make_variables": ["C"],
+      "make_variables": [
+        "C"
+      ],
       "behavior": "make git-show-commit C=e4c9b68aea0ff59cab77a06747471e248e9e0601"
     },
     {
       "name": "git-show-full",
-      "make_variables": ["SHA"],
+      "make_variables": [
+        "SHA"
+      ],
       "behavior": "make git-show-full SHA=e4c9b68aea0ff59cab77a06747471e248e9e0601"
     },
     {
       "name": "git-patch-equivalence",
-      "make_variables": ["PATCH_UPSTREAM", "PATCH_HEAD", "PATCH_LIMIT"],
+      "make_variables": [
+        "PATCH_UPSTREAM",
+        "PATCH_HEAD",
+        "PATCH_LIMIT"
+      ],
       "behavior": "make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=master PATCH_LIMIT=3"
     },
     {
       "name": "submodule-init",
-      "make_variables": ["SUBMODULE_INIT_VALIDATE_ONLY"],
+      "make_variables": [
+        "SUBMODULE_INIT_VALIDATE_ONLY"
+      ],
       "behavior": "make submodule-init SUBMODULE_INIT_VALIDATE_ONLY=1"
     },
     {
@@ -1301,7 +1546,9 @@
     },
     {
       "name": "install-workflow-hook",
-      "make_variables": ["INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY"],
+      "make_variables": [
+        "INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY"
+      ],
       "behavior": "make install-workflow-hook INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY=1"
     },
     {
@@ -1315,9 +1562,10 @@
         "CI_AWAIT_INTERVAL",
         "CI_AWAIT_VALIDATE_ONLY",
         "CI_AWAIT_AFTER_RUN_ID",
-        "CI_AWAIT_SNAPSHOT_ONLY"
+        "CI_AWAIT_SNAPSHOT_ONLY",
+        "CI_AWAIT_OBSERVATION_OUTPUT"
       ],
-      "behavior": "make ci-await BRANCH=v0.1.1 TIMEOUT=5400 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=1 CI_AWAIT_SNAPSHOT_ONLY=0"
+      "behavior": "make ci-await BRANCH=v0.1.1 TIMEOUT=5400 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=1 CI_AWAIT_SNAPSHOT_ONLY=0 CI_AWAIT_OBSERVATION_OUTPUT=/tmp/gludd-contract-ci-await.json"
     },
     {
       "name": "coverage-files",
@@ -1337,37 +1585,78 @@
     },
     {
       "name": "observed-status",
-      "make_variables": ["OBSERVED_LABEL", "RUN_ID", "OBSERVED_ROOT", "OBSERVED_STALE_SECS"],
+      "make_variables": [
+        "OBSERVED_LABEL",
+        "RUN_ID",
+        "OBSERVED_ROOT",
+        "OBSERVED_STALE_SECS"
+      ],
       "behavior": "make observed-status OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"
     },
     {
       "name": "observed-tail",
-      "make_variables": ["OBSERVED_LABEL", "RUN_ID", "OBSERVED_ROOT", "OBSERVED_TAIL_LINES"],
+      "make_variables": [
+        "OBSERVED_LABEL",
+        "RUN_ID",
+        "OBSERVED_ROOT",
+        "OBSERVED_TAIL_LINES"
+      ],
       "behavior": "make observed-tail OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"
     },
     {
       "name": "run-watched",
-      "make_variables": ["CMD", "OBSERVED_LABEL", "RUN_ID", "STALL_SECS", "MAX_SECS", "LOG", "OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_RETAIN_RUNS"],
+      "make_variables": [
+        "CMD",
+        "OBSERVED_LABEL",
+        "RUN_ID",
+        "STALL_SECS",
+        "MAX_SECS",
+        "LOG",
+        "OBSERVED_ROOT",
+        "OBSERVED_HEARTBEAT_SECS",
+        "OBSERVED_RETAIN_RUNS"
+      ],
       "behavior": "make run-watched CMD='printf observed-contract' OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched STALL_SECS=180 MAX_SECS=3600 LOG=.gate-logs/observed/run-watched/contract.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_RETAIN_RUNS=20"
     },
     {
       "name": "test-count",
-      "make_variables": ["OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_QUIET_SECS", "OBSERVED_MAX_SECS", "OBSERVED_RETAIN_RUNS"],
+      "make_variables": [
+        "OBSERVED_ROOT",
+        "OBSERVED_HEARTBEAT_SECS",
+        "OBSERVED_QUIET_SECS",
+        "OBSERVED_MAX_SECS",
+        "OBSERVED_RETAIN_RUNS"
+      ],
       "behavior": "make test-count OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20"
     },
     {
       "name": "collect-check",
-      "make_variables": ["OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_QUIET_SECS", "OBSERVED_MAX_SECS", "OBSERVED_RETAIN_RUNS", "OBSERVED_TAIL_LINES"],
+      "make_variables": [
+        "OBSERVED_ROOT",
+        "OBSERVED_HEARTBEAT_SECS",
+        "OBSERVED_QUIET_SECS",
+        "OBSERVED_MAX_SECS",
+        "OBSERVED_RETAIN_RUNS",
+        "OBSERVED_TAIL_LINES"
+      ],
       "behavior": "make collect-check OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20 OBSERVED_TAIL_LINES=80"
     },
     {
       "name": "test-xdist-trace",
-      "make_variables": ["LOG", "TESTPATH", "PYTEST_ARGS", "RUN_ID"],
+      "make_variables": [
+        "LOG",
+        "TESTPATH",
+        "PYTEST_ARGS",
+        "RUN_ID"
+      ],
       "behavior": "make test-xdist-trace LOG=/tmp/gludd-xdist-contract.jsonl TESTPATH=tests/unit/test_xdist_trace_diagnostics.py PYTEST_ARGS='-k summary_filters_an_append_only_trace_by_run_id' RUN_ID=contract-run"
     },
     {
       "name": "test-xdist-trace-summary",
-      "make_variables": ["LOG", "RUN_ID"],
+      "make_variables": [
+        "LOG",
+        "RUN_ID"
+      ],
       "behavior": "make test-xdist-trace-summary LOG=/tmp/gludd-xdist-contract.jsonl RUN_ID=contract-run"
     },
     {
@@ -1382,32 +1671,56 @@
     },
     {
       "name": "refresh-ansible-base-image",
-      "make_variables": ["ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY"],
+      "make_variables": [
+        "ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY"
+      ],
       "behavior": "make refresh-ansible-base-image ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=1"
     },
     {
       "name": "check-ansible-base-image",
-      "make_variables": ["ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY"],
+      "make_variables": [
+        "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY"
+      ],
       "behavior": "make check-ansible-base-image ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1"
     },
     {
       "name": "build-ansible-execution-environment",
-      "make_variables": ["ANSIBLE_EE_VALIDATE_ONLY", "ANSIBLE_EE_RUNTIME", "ANSIBLE_EE_IMAGE", "ANSIBLE_EE_CONTEXT", "ANSIBLE_EE_DOCKER_CONFIG", "ANSIBLE_EE_DOCKER_HOST"],
+      "make_variables": [
+        "ANSIBLE_EE_VALIDATE_ONLY",
+        "ANSIBLE_EE_RUNTIME",
+        "ANSIBLE_EE_IMAGE",
+        "ANSIBLE_EE_CONTEXT",
+        "ANSIBLE_EE_DOCKER_CONFIG",
+        "ANSIBLE_EE_DOCKER_HOST"
+      ],
       "behavior": "make build-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=docker ANSIBLE_EE_IMAGE=gludd-ansible-ee:0.1.0-beta.4 ANSIBLE_EE_CONTEXT=/tmp/gludd-ansible-ee-contract ANSIBLE_EE_DOCKER_CONFIG=/tmp/gludd-docker-config ANSIBLE_EE_DOCKER_HOST=unix:///tmp/gludd-docker.sock"
     },
     {
       "name": "verify-ansible-execution-environment",
-      "make_variables": ["ANSIBLE_EE_VALIDATE_ONLY", "ANSIBLE_EE_RUNTIME", "ANSIBLE_EE_IMAGE"],
+      "make_variables": [
+        "ANSIBLE_EE_VALIDATE_ONLY",
+        "ANSIBLE_EE_RUNTIME",
+        "ANSIBLE_EE_IMAGE"
+      ],
       "behavior": "make verify-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=podman ANSIBLE_EE_IMAGE=registry.example/gludd-ee:beta4@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     {
       "name": "check-collection-python-boundary",
-      "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY", "COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO"],
+      "make_variables": [
+        "COLLECTION_PYTHON_BOUNDARY_ROOT",
+        "COLLECTION_PYTHON_BOUNDARY_INVENTORY",
+        "COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO"
+      ],
       "behavior": "make check-collection-python-boundary COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=config/ansible/collection-python-boundary-inventory.json COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO=0"
     },
     {
       "name": "check-resource-ownership",
-      "make_variables": ["RESOURCE_OWNERSHIP_ROOT", "RESOURCE_OWNERSHIP_PATHS", "RESOURCE_OWNERSHIP_INVENTORY", "RESOURCE_OWNERSHIP_WRITE"],
+      "make_variables": [
+        "RESOURCE_OWNERSHIP_ROOT",
+        "RESOURCE_OWNERSHIP_PATHS",
+        "RESOURCE_OWNERSHIP_INVENTORY",
+        "RESOURCE_OWNERSHIP_WRITE"
+      ],
       "behavior": "make check-resource-ownership RESOURCE_OWNERSHIP_ROOT=. RESOURCE_OWNERSHIP_PATHS='' RESOURCE_OWNERSHIP_INVENTORY=config/resource_ownership_inventory.json RESOURCE_OWNERSHIP_WRITE=0"
     },
     {
@@ -1417,32 +1730,53 @@
     },
     {
       "name": "check-file-line-limits",
-      "make_variables": ["FILE_LINE_LIMIT_POLICY", "FILE_LINE_LIMIT_STAGED"],
+      "make_variables": [
+        "FILE_LINE_LIMIT_POLICY",
+        "FILE_LINE_LIMIT_STAGED"
+      ],
       "behavior": "make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json FILE_LINE_LIMIT_STAGED=0"
     },
     {
       "name": "check-duplicate-code",
-      "make_variables": ["DUPLICATE_CODE_CONFIG", "DUPLICATE_CODE_ENGINE", "DUPLICATE_CODE_SOURCE", "DUPLICATE_CODE_BASE_REF", "DUPLICATE_CODE_CURRENT_REF", "DUPLICATE_CODE_VALIDATE_ONLY"],
+      "make_variables": [
+        "DUPLICATE_CODE_CONFIG",
+        "DUPLICATE_CODE_ENGINE",
+        "DUPLICATE_CODE_SOURCE",
+        "DUPLICATE_CODE_BASE_REF",
+        "DUPLICATE_CODE_CURRENT_REF",
+        "DUPLICATE_CODE_VALIDATE_ONLY"
+      ],
       "behavior": "make check-duplicate-code DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=1"
     },
     {
       "name": "split-makefile-layout",
-      "make_variables": ["MAKEFILE_SPLIT_APPLY"],
+      "make_variables": [
+        "MAKEFILE_SPLIT_APPLY"
+      ],
       "behavior": "make split-makefile-layout MAKEFILE_SPLIT_APPLY=0"
     },
     {
       "name": "update-collection-python-boundary-inventory",
-      "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY"],
+      "make_variables": [
+        "COLLECTION_PYTHON_BOUNDARY_ROOT",
+        "COLLECTION_PYTHON_BOUNDARY_INVENTORY"
+      ],
       "behavior": "make update-collection-python-boundary-inventory COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=/tmp/gludd-collection-python-boundary-contract.json"
     },
     {
       "name": "pre-commit-check",
-      "make_variables": ["FILE_LINE_LIMIT_POLICY", "DUPLICATE_CODE_CONFIG", "DUPLICATE_CODE_ENGINE"],
+      "make_variables": [
+        "FILE_LINE_LIMIT_POLICY",
+        "DUPLICATE_CODE_CONFIG",
+        "DUPLICATE_CODE_ENGINE"
+      ],
       "behavior": "make pre-commit-check FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd"
     },
     {
       "name": "check-gate-failure-promotions",
-      "make_variables": ["GATE_FAILURE_PROMOTION_MANIFEST"],
+      "make_variables": [
+        "GATE_FAILURE_PROMOTION_MANIFEST"
+      ],
       "behavior": "make check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json"
     },
     {
@@ -1471,37 +1805,63 @@
     },
     {
       "name": "release-branch-new",
-      "make_variables": ["NAME", "BASE", "RELEASE_BRANCH_VALIDATE_ONLY"],
+      "make_variables": [
+        "NAME",
+        "BASE",
+        "RELEASE_BRANCH_VALIDATE_ONLY"
+      ],
       "behavior": "make release-branch-new NAME=release/contract-validation BASE=development RELEASE_BRANCH_VALIDATE_ONLY=1"
     },
     {
       "name": "test-ci-dual-track-local",
-      "make_variables": ["DUAL_TRACK_LOCAL_VALIDATE_ONLY", "PYTEST_ARGS", "MAX_FILES_PER_BATCH", "DUAL_TRACK_RESUME", "DUAL_TRACK_WATCHDOG_OWNED_GATE"],
+      "make_variables": [
+        "DUAL_TRACK_LOCAL_VALIDATE_ONLY",
+        "PYTEST_ARGS",
+        "MAX_FILES_PER_BATCH",
+        "DUAL_TRACK_RESUME",
+        "DUAL_TRACK_WATCHDOG_OWNED_GATE"
+      ],
       "behavior": "make test-ci-dual-track-local DUAL_TRACK_LOCAL_VALIDATE_ONLY=1 PYTEST_ARGS='' MAX_FILES_PER_BATCH=64 DUAL_TRACK_RESUME=0 DUAL_TRACK_WATCHDOG_OWNED_GATE=0"
     },
     {
       "name": "require-dual-track-green",
-      "make_variables": ["SHA", "DUAL_TRACK_CI_VALIDATE_ONLY"],
+      "make_variables": [
+        "SHA",
+        "DUAL_TRACK_CI_VALIDATE_ONLY"
+      ],
       "behavior": "make require-dual-track-green SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa DUAL_TRACK_CI_VALIDATE_ONLY=1"
     },
     {
       "name": "workstream-register",
-      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY"],
+      "make_variables": [
+        "BRANCH",
+        "WORKTREE",
+        "ACTIVE_WORKSTREAM_REGISTRY"
+      ],
       "behavior": "make workstream-register BRANCH=contract/workstream WORKTREE=/tmp/gludd-workstream-contract ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
     },
     {
       "name": "workstream-unregister",
-      "make_variables": ["BRANCH", "ACTIVE_WORKSTREAM_REGISTRY"],
+      "make_variables": [
+        "BRANCH",
+        "ACTIVE_WORKSTREAM_REGISTRY"
+      ],
       "behavior": "make workstream-unregister BRANCH=contract/workstream ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
     },
     {
       "name": "wt-prune-safe",
-      "make_variables": ["ACTIVE_WORKSTREAM_REGISTRY", "WT_PRUNE_VALIDATE_ONLY"],
+      "make_variables": [
+        "ACTIVE_WORKSTREAM_REGISTRY",
+        "WT_PRUNE_VALIDATE_ONLY"
+      ],
       "behavior": "make wt-prune-safe ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json WT_PRUNE_VALIDATE_ONLY=1"
     },
     {
       "name": "test-failures",
-      "make_variables": ["TEST_FAILURES_CACHE", "TEST_FAILURES_LIMIT"],
+      "make_variables": [
+        "TEST_FAILURES_CACHE",
+        "TEST_FAILURES_LIMIT"
+      ],
       "behavior": "make test-failures TEST_FAILURES_CACHE=/tmp/gludd-no-prior-failures-contract.json TEST_FAILURES_LIMIT=5"
     },
     {
@@ -1516,37 +1876,78 @@
     },
     {
       "name": "pants-launcher-bootstrap",
-      "make_variables": ["PANTS_LAUNCHER_CONFIG", "PANTS_LAUNCHER_DESTINATION", "PANTS_LAUNCHER_ASSET", "PANTS_LAUNCHER_VALIDATE_ONLY", "PANTS_LAUNCHER_METADATA_ONLY"],
+      "make_variables": [
+        "PANTS_LAUNCHER_CONFIG",
+        "PANTS_LAUNCHER_DESTINATION",
+        "PANTS_LAUNCHER_ASSET",
+        "PANTS_LAUNCHER_VALIDATE_ONLY",
+        "PANTS_LAUNCHER_METADATA_ONLY"
+      ],
       "behavior": "make pants-launcher-bootstrap PANTS_LAUNCHER_CONFIG=config/pants_launcher_assets.json PANTS_LAUNCHER_DESTINATION=.pants.d/bin/pants PANTS_LAUNCHER_ASSET=auto PANTS_LAUNCHER_VALIDATE_ONLY=1 PANTS_LAUNCHER_METADATA_ONLY=0"
     },
     {
       "name": "pants-unit-cache-lane",
-      "make_variables": ["PANTS_UNIT_CACHE_MANIFEST", "PANTS_UNIT_CACHE_BIN", "PANTS_UNIT_CACHE_MODE", "PANTS_UNIT_CACHE_HOSTED_CI", "PANTS_UNIT_CACHE_VALIDATE_ONLY", "PANTS_UNIT_CACHE_POLICY_ENVIRONMENT"],
+      "make_variables": [
+        "PANTS_UNIT_CACHE_MANIFEST",
+        "PANTS_UNIT_CACHE_BIN",
+        "PANTS_UNIT_CACHE_MODE",
+        "PANTS_UNIT_CACHE_HOSTED_CI",
+        "PANTS_UNIT_CACHE_VALIDATE_ONLY",
+        "PANTS_UNIT_CACHE_POLICY_ENVIRONMENT"
+      ],
       "behavior": "make pants-unit-cache-lane PANTS_UNIT_CACHE_MANIFEST=config/pants_unit_cache_lane.json PANTS_UNIT_CACHE_BIN=pants PANTS_UNIT_CACHE_MODE=cached PANTS_UNIT_CACHE_HOSTED_CI=0 PANTS_UNIT_CACHE_VALIDATE_ONLY=1 PANTS_UNIT_CACHE_POLICY_ENVIRONMENT=v1"
     },
     {
       "name": "pants-unit-cache-nightly",
-      "make_variables": ["PANTS_UNIT_CACHE_MANIFEST", "PANTS_UNIT_CACHE_BIN", "PANTS_UNIT_CACHE_HOSTED_CI", "PANTS_UNIT_CACHE_VALIDATE_ONLY", "PANTS_UNIT_CACHE_POLICY_ENVIRONMENT"],
+      "make_variables": [
+        "PANTS_UNIT_CACHE_MANIFEST",
+        "PANTS_UNIT_CACHE_BIN",
+        "PANTS_UNIT_CACHE_HOSTED_CI",
+        "PANTS_UNIT_CACHE_VALIDATE_ONLY",
+        "PANTS_UNIT_CACHE_POLICY_ENVIRONMENT"
+      ],
       "behavior": "make pants-unit-cache-nightly PANTS_UNIT_CACHE_MANIFEST=config/pants_unit_cache_lane.json PANTS_UNIT_CACHE_BIN=pants PANTS_UNIT_CACHE_HOSTED_CI=0 PANTS_UNIT_CACHE_VALIDATE_ONLY=1 PANTS_UNIT_CACHE_POLICY_ENVIRONMENT=v1"
     },
     {
       "name": "gate-admission-config",
-      "make_variables": ["GATE_TEST_PROFILE", "GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS"],
+      "make_variables": [
+        "GATE_TEST_PROFILE",
+        "GATE_EXACT_SHA_RESUME",
+        "GATE_MAX_FILES_PER_BATCH",
+        "GATE_BATCH_WORKERS"
+      ],
       "behavior": "make gate-admission-config GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
     },
     {
       "name": "gate-background",
-      "make_variables": ["GATE_TIMEOUT", "GATE_BACKGROUND_VALIDATE_ONLY", "GATE_TEST_PROFILE", "GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS"],
+      "make_variables": [
+        "GATE_TIMEOUT",
+        "GATE_BACKGROUND_VALIDATE_ONLY",
+        "GATE_TEST_PROFILE",
+        "GATE_EXACT_SHA_RESUME",
+        "GATE_MAX_FILES_PER_BATCH",
+        "GATE_BATCH_WORKERS"
+      ],
       "behavior": "make gate-background GATE_TIMEOUT=3600 GATE_BACKGROUND_VALIDATE_ONLY=1 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
     },
     {
       "name": "gate-background-observed",
-      "make_variables": ["GATE_TIMEOUT", "GATE_POLL_INTERVAL", "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY", "GATE_TEST_PROFILE", "GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS"],
+      "make_variables": [
+        "GATE_TIMEOUT",
+        "GATE_POLL_INTERVAL",
+        "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY",
+        "GATE_TEST_PROFILE",
+        "GATE_EXACT_SHA_RESUME",
+        "GATE_MAX_FILES_PER_BATCH",
+        "GATE_BATCH_WORKERS"
+      ],
       "behavior": "make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
     },
     {
       "name": "vendor-presentation-assets",
-      "make_variables": ["PRESENTATION_VENDOR_VALIDATE_ONLY"],
+      "make_variables": [
+        "PRESENTATION_VENDOR_VALIDATE_ONLY"
+      ],
       "behavior": "make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1"
     },
     {
@@ -1618,6 +2019,22 @@
         "SEARX_MOLECULE_VALIDATE_ONLY"
       ],
       "behavior": "make searx-molecule SEARX_MOLECULE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "status-heartbeat",
+      "make_variables": [
+        "INTERVAL",
+        "COUNT",
+        "STATUS_HEARTBEAT_VALIDATE_ONLY",
+        "PIPELINE_STATUS_REPO",
+        "PIPELINE_STATUS_BRANCH",
+        "PIPELINE_STATUS_REMOTE",
+        "PIPELINE_STATUS_SHA",
+        "PIPELINE_STATUS_FAILURE_LEDGER",
+        "PIPELINE_STATUS_VALIDATE_ONLY",
+        "PIPELINE_STATUS_OUTPUT"
+      ],
+      "behavior": "make status-heartbeat INTERVAL=300 COUNT=1 STATUS_HEARTBEAT_VALIDATE_ONLY=1 PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANCH=development PIPELINE_STATUS_REMOTE=sandboxcom PIPELINE_STATUS_SHA=0000000000000000000000000000000000000000 PIPELINE_STATUS_FAILURE_LEDGER=.gludd/ci-failure-ledger.json PIPELINE_STATUS_VALIDATE_ONLY=1 PIPELINE_STATUS_OUTPUT=/tmp/gludd-contract-heartbeat.json"
     }
   ]
 }

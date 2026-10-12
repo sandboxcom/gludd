@@ -18,7 +18,15 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from proof_observations import write_snapshot
+else:
+    if __package__ in {None, ""}:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.proof_observations import write_snapshot
 
 DEFAULT_REPO = "sandboxcom/gludd"
 DEFAULT_TIMEOUT = int(os.environ.get("CI_AWAIT_TIMEOUT", "3600"))
@@ -94,7 +102,6 @@ def select_latest_run(
     selector: RunSelector,
 ) -> dict[str, Any] | None:
     """Select the newest locally verified run for the selector."""
-
     if not isinstance(runs, list):
         return None
     matches = [
@@ -119,7 +126,6 @@ def get_latest_run(
     runner: RunCommand = _run,
 ) -> dict[str, Any] | None:
     """Query GitHub and return the newest run matching every identity field."""
-
     command = [
         "gh",
         "run",
@@ -170,6 +176,33 @@ def _describe(selector: RunSelector) -> str:
     )
 
 
+def _publish_observation(
+    path: Path | None, selector: RunSelector, run: dict[str, Any] | None,
+    *, state: str, elapsed: float, exit_code: int | None,
+    error: str | None, progress: ProgressFn,
+) -> bool:
+    """Publish exact diagnostic state before sleeping or returning a verdict."""
+    if path is None:
+        return True
+    try:
+        if not selector.sha or (run is not None and not _matches(run, selector)):
+            raise ValueError("observation identity must match a full exact selector")
+        write_snapshot(
+            path, producer="ci-await",
+            identity={"repo": selector.repo, "branch": selector.ref, "sha": selector.sha},
+            state=state,
+            evidence={
+                "workflow": selector.workflow, "event": selector.event,
+                "after_run_id": selector.after_run_id, "run": run,
+                "elapsed_seconds": elapsed, "exit_code": exit_code, "error": error,
+            },
+        )
+    except (OSError, ValueError) as exc:
+        progress(f"CI-AWAIT: observation-error={exc}")
+        return False
+    return True
+
+
 def ci_await(
     selector: RunSelector | str,
     timeout: int,
@@ -179,9 +212,9 @@ def ci_await(
     clock: ClockFn = time.monotonic,
     sleep: SleepFn = time.sleep,
     progress: ProgressFn = _DEFAULT_PROGRESS,
+    observation_path: Path | None = None,
 ) -> int:
     """Wait for a terminal run; return 0 success, 1 failure, or 2 timeout."""
-
     if isinstance(selector, str):
         selector = RunSelector(ref=selector)
     fetch_run = fetch or get_latest_run
@@ -193,11 +226,18 @@ def ci_await(
 
     while True:
         elapsed = max(0.0, clock() - started)
+        lookup_error: str | None = None
         try:
             run = fetch_run(selector)
         except AwaitError as exc:
             progress(f"[{elapsed:g}s] CI-AWAIT: lookup-error={exc}")
+            lookup_error = str(exc)
             run = None
+
+        publish = partial(
+            _publish_observation, observation_path, selector, run,
+            elapsed=elapsed, error=lookup_error, progress=progress,
+        )
 
         if run is None:
             progress(
@@ -210,12 +250,16 @@ def ci_await(
             conclusion = str(run.get("conclusion") or "")
 
             if status == "completed" and conclusion in TERMINAL_SUCCESS:
+                if not publish(state="success", exit_code=0):
+                    return 1
                 progress(
                     f"[{elapsed:g}s] CI-AWAIT: TERMINAL SUCCESS run={run_id} "
                     f"sha={head_sha} conclusion={conclusion}"
                 )
                 return 0
             if conclusion in TERMINAL_FAILURE or status == "completed":
+                if not publish(state="failure", exit_code=1):
+                    return 1
                 progress(
                     f"[{elapsed:g}s] CI-AWAIT: TERMINAL FAILURE run={run_id} "
                     f"sha={head_sha} conclusion={conclusion or 'missing'}"
@@ -228,10 +272,15 @@ def ci_await(
             )
 
         if elapsed >= timeout:
+            if not publish(state="timeout", exit_code=2):
+                return 1
             progress(
                 f"=== CI-AWAIT: TIMEOUT after {elapsed:g}s (still pending) ==="
             )
             return 2
+
+        if not publish(state="lookup_error" if lookup_error else "pending", exit_code=None):
+            return 1
 
         wait_seconds = min(poll_interval, timeout - elapsed)
         progress(
@@ -263,6 +312,7 @@ def _validate(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Validate the selector and run the existing exact-workflow waiter."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("legacy_branch", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument(
@@ -308,6 +358,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="print the newest matching run ID, or zero, without waiting",
     )
+    parser.add_argument(
+        "--observation-output", type=Path,
+        help="atomically refresh a diagnostic JSON observation on every poll",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     ref = args.ref or args.legacy_branch or os.environ.get("BRANCH", "master")
@@ -332,6 +386,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout=timeout,
         poll_interval=args.poll_interval,
     )
+    if args.observation_output is not None and not selector.sha:
+        parser.error("observation output requires a full exact SHA")
 
     if args.validate_only:
         print(
@@ -347,6 +403,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         print(int(run.get("databaseId") or 0) if run is not None else 0)
         return 0
+    if args.observation_output is not None:
+        return ci_await(
+            selector, timeout, poll_interval=args.poll_interval,
+            observation_path=args.observation_output,
+        )
     return ci_await(
         selector,
         timeout,

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-validate_task_ledger.py
+"""Validate TASKS.md for self-tracking integrity.
 
 Validates TASKS.md for self-tracking integrity:
   - Duplicate IDs
@@ -18,27 +17,35 @@ Exit codes:
 
 from __future__ import annotations
 
+import importlib
 import sys
 import time
 from collections import defaultdict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SRC = _REPO_ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from general_ludd.validation.backlog_sources import ID_PATTERN as ID_PATTERN  # noqa: E402
-from general_ludd.validation.backlog_sources import (  # noqa: E402
-    TaskRecord,
-    extract_tasks,
-    task_is_effectively_complete,
-)
+if TYPE_CHECKING:
+    from general_ludd.validation.backlog_sources import ID_PATTERN as ID_PATTERN
+    from general_ludd.validation.backlog_sources import TaskRecord as TaskRecord
+    from general_ludd.validation.backlog_sources import extract_tasks as extract_tasks
+    from general_ludd.validation.backlog_sources import task_is_effectively_complete as task_is_effectively_complete
+else:
+    _sources = importlib.import_module("general_ludd.validation.backlog_sources")
+    ID_PATTERN = _sources.ID_PATTERN
+    TaskRecord = _sources.TaskRecord
+    extract_tasks = _sources.extract_tasks
+    task_is_effectively_complete = _sources.task_is_effectively_complete
 
 STALE_SECONDS = 24 * 3600
 
 
 def main() -> int:
+    """Validate task identity, completion consistency and stale activity."""
     tasks_path = _REPO_ROOT / "TASKS.md"
 
     if not tasks_path.exists():

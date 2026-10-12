@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — current handoff and CI observations required repeated manual edits
+
+- **Observed**: Repeated updates to handoff/observation JSON were performed as session bookkeeping after the user had already requested codification. Those records could retain old success, a stale timestamp or an obsolete candidate. The gap should have been treated as a producer defect when it first recurred, not left for another user request.
+- **Narrow automation**: Existing `ci-await` and `pipeline-status` now produce bounded, schema-checked, exact-identity current records using the existing atomic writer. The existing heartbeat calls the complete producer instead of manufacturing timestamp-only JSON. Pending/error/timeout outcomes replace prior success; manual history and symlinks are protected. Generated records always deny release/gate authority.
+- **Failing-first prevention**: Shared-writer and real Make wiring tests fail before implementation, as do seven waiter and three pipeline cases. A real hosted replay then exposes an incorrect assumption that the ledger's job query returns `event`; four native-shape/run-identity/malformed-step/contradictory-success cases fail with 33 passing, before a narrow identity fix. Known failed jobs are observable before whole-workflow termination.
+- **Actual acceptance**: All 139 producer/facade cases pass with warnings fatal at 94.50% combined coverage (95.77% line, 91.12% branch); every measured file exceeds 75% line and branch. Four routing/roster cases fail first, then all 35 promotion/plan cases pass. Original selectors, immutable failures, ledger authority, full-gate requirements and 90/60-second phase bounds remain intact.
+- **Remaining gaps**: The full EE graph and replacement image still need proof; final review/canonical gate/coverage receipts are not validated by this diagnostic projection. Hosted critical-path reordering is only a proposal, not a measured optimization. Disk admission and ambiguous/shared-history preservation are already codified hard prerequisites. No S98 completion, gate success, master merge or release is claimed.
+
 ### 2026-10-12 — Make split quoted repair-evidence values into invalid pytest arguments
 
 - **Observed**: The normal `ci-failure-repair` command attempts evidence for the known unit-2 family with two quoted test paths. GNU Make `foreach` splits the variable on whitespace, inserting a literal `--evidence-var` inside `TESTFILES`. Pytest rejects the command; no successful proof or new receipt is reported. The existing atomic ledger is not a substitute for successful evidence execution.

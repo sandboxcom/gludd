@@ -54,6 +54,108 @@ def _selector() -> await_module.RunSelector:
     )
 
 
+@pytest.mark.parametrize("conclusion, expected", [("success", 0), ("failure", 1)])
+def test_waiter_automatically_publishes_terminal_observation(
+    tmp_path: Path, conclusion: str, expected: int,
+) -> None:
+    path = tmp_path / "ci-current.json"
+    result = await_module.ci_await(
+        _selector(), 90, fetch=lambda _: _payload(status="completed", conclusion=conclusion),
+        observation_path=path, progress=lambda _: None,
+    )
+    assert result == expected
+    record = json.loads(path.read_text())
+    assert record["producer"] == "ci-await"
+    assert record["identity"]["sha"] == SHA
+    assert record["state"] == conclusion
+    assert record["evidence"]["run"]["databaseId"] == 42
+    assert record["evidence"]["exit_code"] == expected
+    assert record["release_ready"] is False
+
+
+def test_waiter_publishes_pending_before_sleep_and_timeout_before_return(tmp_path: Path) -> None:
+    path = tmp_path / "ci-current.json"
+    elapsed = [0.0]
+    observed: list[str] = []
+
+    def sleep(seconds: float) -> None:
+        observed.append(json.loads(path.read_text())["state"])
+        elapsed[0] += seconds
+
+    result = await_module.ci_await(
+        _selector(), 1, poll_interval=1, fetch=lambda _: _payload(),
+        clock=lambda: elapsed[0], sleep=sleep, progress=lambda _: None,
+        observation_path=path,
+    )
+    assert result == 2
+    assert observed == ["pending"]
+    final = json.loads(path.read_text())
+    assert final["state"] == "timeout"
+    assert final["evidence"]["exit_code"] == 2
+    assert final["evidence"]["run"]["status"] == "queued"
+
+
+def test_waiter_replaces_old_success_when_lookup_fails(tmp_path: Path) -> None:
+    path = tmp_path / "ci-current.json"
+    await_module.ci_await(_selector(), 1, observation_path=path,
+                          fetch=lambda _: _payload(status="completed", conclusion="success"),
+                          progress=lambda _: None)
+    observed: list[str] = []
+    elapsed = [0.0]
+
+    def fetch(_: await_module.RunSelector) -> dict[str, object]:
+        raise await_module.AwaitError("network unavailable")
+
+    def sleep(seconds: float) -> None:
+        snapshot = json.loads(path.read_text())
+        observed.append(snapshot["state"])
+        assert snapshot["evidence"]["run"] is None
+        assert "network unavailable" in snapshot["evidence"]["error"]
+        elapsed[0] += seconds
+
+    assert await_module.ci_await(
+        _selector(), 1, poll_interval=1, fetch=fetch, clock=lambda: elapsed[0],
+        sleep=sleep, observation_path=path, progress=lambda _: None,
+    ) == 2
+    assert observed == ["lookup_error"]
+    assert json.loads(path.read_text())["state"] == "timeout"
+
+
+def test_waiter_refuses_foreign_run_as_durable_success(tmp_path: Path) -> None:
+    path = tmp_path / "ci-current.json"
+    messages: list[str] = []
+    result = await_module.ci_await(
+        _selector(), 1, observation_path=path, progress=messages.append,
+        fetch=lambda _: _payload(sha=OTHER_SHA, status="completed", conclusion="success"),
+    )
+    assert result != 0
+    assert not path.exists()
+    assert any("observation" in message and "identity" in message for message in messages)
+
+
+def test_waiter_observation_write_failure_is_not_success(tmp_path: Path) -> None:
+    path = tmp_path / "manual-history.json"
+    path.write_text('{"keep": true}')
+    messages: list[str] = []
+    assert await_module.ci_await(
+        _selector(), 1, observation_path=path, progress=messages.append,
+        fetch=lambda _: _payload(status="completed", conclusion="success"),
+    ) != 0
+    assert json.loads(path.read_text()) == {"keep": True}
+    assert any("observation" in message for message in messages)
+
+
+def test_waiter_validate_only_does_not_create_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "ci-current.json"
+    monkeypatch.setattr(await_module, "get_latest_run", lambda _: pytest.fail("no network"))
+    assert await_module.main([
+        "--ref", TAG, "--sha", SHA, "--observation-output", str(path), "--validate-only",
+    ]) == 0
+    assert not path.exists()
+
+
 def test_select_latest_run_requires_every_exact_identity_field() -> None:
     exact_old = _payload(run_id=40, created_at="2026-09-27T11:00:00Z")
     exact_new = _payload(run_id=41, created_at="2026-09-27T12:00:00Z")

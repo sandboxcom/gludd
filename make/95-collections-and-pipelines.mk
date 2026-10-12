@@ -583,6 +583,7 @@ PIPELINE_STATUS_REMOTE ?= sandboxcom
 PIPELINE_STATUS_SHA ?=
 PIPELINE_STATUS_VALIDATE_ONLY ?= 0
 PIPELINE_STATUS_FAILURE_LEDGER ?= .gludd/ci-failure-ledger.json
+PIPELINE_STATUS_OUTPUT ?= .gludd/release-proof-status.json
 pipeline-status:
 	@case "$(PIPELINE_STATUS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PIPELINE_STATUS_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
 	@OBSERVE_RC=0; STATUS_RC=0; \
@@ -594,6 +595,8 @@ pipeline-status:
 	$(UV) run python scripts/pipeline_status.py status \
 		--repo "$(PIPELINE_STATUS_REPO)" --branch "$(PIPELINE_STATUS_BRANCH)" \
 		--remote "$(PIPELINE_STATUS_REMOTE)" \
+		--failure-ledger "$(PIPELINE_STATUS_FAILURE_LEDGER)" \
+		--snapshot-output "$(PIPELINE_STATUS_OUTPUT)" --ledger-observation-exit-code "$$OBSERVE_RC" \
 		$(if $(PIPELINE_STATUS_SHA),--sha "$(PIPELINE_STATUS_SHA)",) \
 		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,) || STATUS_RC=$$?; \
 	if [ $$OBSERVE_RC -ne 0 ]; then echo "pipeline-status: failure-ledger observation failed rc=$$OBSERVE_RC"; fi; \
@@ -602,12 +605,15 @@ pipeline-status:
 
 # Emit an auditable pipeline heartbeat at a five-minute cadence by default.
 # Use COUNT=0 for a continuous loop; artifacts are project-namespaced.
+STATUS_HEARTBEAT_VALIDATE_ONLY ?= 0
 status-heartbeat:
-	@PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; \
+	@case "$(STATUS_HEARTBEAT_VALIDATE_ONLY)" in 0|1) ;; *) echo "STATUS_HEARTBEAT_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
+	if [ "$(STATUS_HEARTBEAT_VALIDATE_ONLY)" = "1" ]; then echo "STATUS-HEARTBEAT-PLAN output=$(PIPELINE_STATUS_OUTPUT) release_ready=false"; exit 0; fi; \
+	PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; \
 	if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; \
 	RESOURCE_ROOT="$${GLUDD_RESOURCE_ROOT:-$${TMPDIR:-/tmp}/gludd-resources}/$$PROJECT_NAMESPACE"; \
-	mkdir -p "$$RESOURCE_ROOT"; LOG="$$RESOURCE_ROOT/status-heartbeat.log"; STATE="$$RESOURCE_ROOT/status-heartbeat.json"; \
-	INTERVAL_VALUE="$${INTERVAL:-300}"; COUNT_VALUE="$${COUNT:-1}"; \
+	mkdir -p "$$RESOURCE_ROOT"; LOG="$$RESOURCE_ROOT/status-heartbeat.log"; \
+	INTERVAL_VALUE="$(or $(INTERVAL),300)"; COUNT_VALUE="$(or $(COUNT),1)"; \
 	case "$$INTERVAL_VALUE" in ''|*[!0-9]*) echo "INTERVAL must be a non-negative integer"; exit 2;; esac; \
 	case "$$COUNT_VALUE" in ''|*[!0-9]*) echo "COUNT must be a non-negative integer"; exit 2;; esac; \
 	if [ "$$INTERVAL_VALUE" -lt 300 ]; then echo "INTERVAL must be >= 300 seconds"; exit 2; fi; \
@@ -615,9 +621,9 @@ status-heartbeat:
 		timestamp="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; sha="$$(git rev-parse HEAD 2>/dev/null || echo unknown)"; \
 		echo "=== PIPELINE HEARTBEAT $$timestamp sha=$$sha ===" | tee -a "$$LOG"; \
 		$(MAKE) --no-print-directory gate-status 2>&1 | tee -a "$$LOG" || true; \
-		$(MAKE) --no-print-directory pipeline-status 2>&1 | tee -a "$$LOG" || true; \
+		$(MAKE) --no-print-directory pipeline-status PIPELINE_STATUS_REPO="$(PIPELINE_STATUS_REPO)" PIPELINE_STATUS_BRANCH="$(PIPELINE_STATUS_BRANCH)" PIPELINE_STATUS_REMOTE="$(PIPELINE_STATUS_REMOTE)" PIPELINE_STATUS_SHA="$(PIPELINE_STATUS_SHA)" PIPELINE_STATUS_FAILURE_LEDGER="$(PIPELINE_STATUS_FAILURE_LEDGER)" PIPELINE_STATUS_VALIDATE_ONLY="$(PIPELINE_STATUS_VALIDATE_ONLY)" PIPELINE_STATUS_OUTPUT="$(PIPELINE_STATUS_OUTPUT)" 2>&1 | tee -a "$$LOG" || true; \
 		$(MAKE) --no-print-directory active-work-status 2>&1 | tee -a "$$LOG" || true; \
-		tmp="$$STATE.tmp.$$$$"; printf '{"timestamp":"%s","sha":"%s","interval_seconds":%s,"iteration":%s}\n' "$$timestamp" "$$sha" "$$INTERVAL_VALUE" "$$i" > "$$tmp"; mv -f "$$tmp" "$$STATE"; \
+		echo "STATUS-HEARTBEAT-SNAPSHOT path=$(PIPELINE_STATUS_OUTPUT)"; \
 		i=$$((i + 1)); if [ "$$COUNT_VALUE" -ne 0 ] && [ "$$i" -ge "$$COUNT_VALUE" ]; then break; fi; sleep "$$INTERVAL_VALUE"; \
 	done
 

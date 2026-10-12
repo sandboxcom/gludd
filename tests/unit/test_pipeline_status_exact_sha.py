@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from scripts.makefile_layout import compose_makefile
@@ -15,6 +16,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import pipeline_status  # noqa: E402
+
+if TYPE_CHECKING:
+    import active_work_status
+    import ci_failure_ledger
+else:
+    from scripts import active_work_status, ci_failure_ledger
 
 SHA = "a" * 40
 OTHER_SHA = "b" * 40
@@ -371,6 +378,7 @@ def test_make_target_forwards_explicit_identity_and_has_safe_contract() -> None:
         "PIPELINE_STATUS_SHA",
         "PIPELINE_STATUS_FAILURE_LEDGER",
         "PIPELINE_STATUS_VALIDATE_ONLY",
+        "PIPELINE_STATUS_OUTPUT",
     ]
     assert "PIPELINE_STATUS_VALIDATE_ONLY=1" in contract["behavior"]
 
@@ -380,3 +388,180 @@ def test_verify_state_uses_current_branch_instead_of_master_remote() -> None:
     block = makefile.split("verify-state:", maxsplit=1)[1].split("\n\ngha-usage:", maxsplit=1)[0]
     assert "refs/heads/master" not in block
     assert "refs/heads/$$BRANCH" in block
+
+
+def _snapshot_local() -> dict[str, object]:
+    return {"git": {"branch": "development", "head": SHA},
+            "gate": {"state": "FAIL", "status_file": ".gate-status"},
+            "open_task_ids": ["S98.1", "S98.4"], "observed_processes": [],
+            "task_scope": {"open_count": 2}}
+
+
+def test_pipeline_generates_current_handoff_from_owners(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "current-proof.json"
+    monkeypatch.setattr(active_work_status, "collect_status", _snapshot_local)
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: [
+        _run("Build and Release", 124, status="in_progress", conclusion=""),
+        _run("Molecule Tests", 101),
+    ])
+    monkeypatch.setattr(ci_failure_ledger, "fetch_run", lambda run_id, _repo: {
+        **_run("Build and Release" if run_id == 124 else "Molecule Tests", run_id),
+        "jobs": [{"name": "gate (3.11)", "status": "completed", "conclusion": "success",
+                  "steps": [{"name": "early admission", "status": "completed", "conclusion": "success"}]}],
+    })
+    assert pipeline_status.main([
+        "--remote-only", "--sha", SHA, "--snapshot-output", str(path),
+        "--failure-ledger", str(tmp_path / "absent-ledger.json"),
+    ]) == 2
+    record = json.loads(path.read_text())
+    assert record["producer"] == "pipeline-status"
+    assert record["identity"] == {"repo": "sandboxcom/gludd", "branch": "development", "sha": SHA}
+    assert record["state"] == "pending"
+    evidence = record["evidence"]
+    assert evidence["local"] == _snapshot_local()
+    assert evidence["hosted"]["runs"][0]["jobs"][0]["name"] == "gate (3.11)"
+    assert evidence["failure_ledger"]["observed"] is False
+    assert set(evidence["missing_proofs"]) == {"S98.1", "S98.4"}
+    assert evidence["missing_proofs"]["S98.4"]["hosted_sha"] == SHA
+    assert evidence["missing_proofs"]["S98.4"]["canonical_gate"] == "not_collected"
+    assert record["gate_evidence"] is False
+    assert record["release_ready"] is False
+
+
+def test_pipeline_lookup_error_replaces_previous_success_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "current-proof.json"
+    monkeypatch.setattr(active_work_status, "collect_status", _snapshot_local)
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: [
+        _run("Build and Release", 124), _run("Molecule Tests", 101),
+    ])
+    monkeypatch.setattr(ci_failure_ledger, "fetch_run", lambda run_id, _repo: {
+        **_run("Build and Release" if run_id == 124 else "Molecule Tests", run_id), "jobs": [],
+    })
+    args = ["--remote-only", "--sha", SHA, "--snapshot-output", str(path),
+            "--failure-ledger", str(tmp_path / "absent.json")]
+    assert pipeline_status.main(args) == 0
+    assert json.loads(path.read_text())["state"] == "success"
+
+    def unavailable(*_a: object, **_k: object) -> list[dict[str, object]]:
+        raise pipeline_status.PipelineStatusError("upstream unavailable")
+
+    monkeypatch.setattr(pipeline_status, "fetch_runs", unavailable)
+    assert pipeline_status.main(args) == 2
+    record = json.loads(path.read_text())
+    assert record["state"] == "lookup_error"
+    assert record["evidence"]["hosted"] is None
+    assert "upstream unavailable" in record["evidence"]["errors"]
+    assert record["release_ready"] is False
+
+
+def test_pipeline_validate_only_does_not_create_or_replace_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "manual-history.json"
+    path.write_text('{"historical": true}')
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: pytest.fail("no network"))
+    assert pipeline_status.main(["--snapshot-output", str(path), "--validate-only"]) == 0
+    assert json.loads(path.read_text()) == {"historical": True}
+
+
+def test_pipeline_snapshot_exposes_failed_job_before_workflow_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "current-proof.json"
+    runs = [_run("Build and Release", 124, status="in_progress", conclusion=""),
+            _run("Molecule Tests", 101)]
+    monkeypatch.setattr(active_work_status, "collect_status", _snapshot_local)
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: runs)
+    monkeypatch.setattr(ci_failure_ledger, "fetch_run", lambda run_id, _repo: {
+        **next(run for run in runs if run["databaseId"] == run_id),
+        "jobs": [{"name": "ansible-ee", "status": "completed", "conclusion": "failure",
+                  "steps": [{"name": "Build Ansible execution environment", "conclusion": "failure"}]}]
+        if run_id == 124 else [],
+    })
+    assert pipeline_status.main([
+        "--remote-only", "--sha", SHA, "--snapshot-output", str(path),
+        "--failure-ledger", str(tmp_path / "absent.json"),
+    ]) == 2
+    record = json.loads(path.read_text())
+    assert record["state"] == "failure"
+    assert record["evidence"]["hosted_failures"] == [{
+        "workflow": "Build and Release", "run_id": 124, "job": "ansible-ee",
+        "steps": ["Build Ansible execution environment"],
+    }]
+    assert record["evidence"]["missing_proofs"]["S98.4"]["next_action"] == "repair_hosted_failure"
+    assert not (tmp_path / "absent.json").exists()
+
+
+def test_pipeline_snapshot_accepts_the_existing_ledger_detail_shape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "current-proof.json"
+    runs = [_run("Build and Release", 124, status="in_progress", conclusion=""),
+            _run("Molecule Tests", 101)]
+    monkeypatch.setattr(active_work_status, "collect_status", _snapshot_local)
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: runs)
+
+    def detail(run_id: int, _repo: str) -> dict[str, object]:
+        payload = {key: value for key, value in next(
+            run for run in runs if run["databaseId"] == run_id
+        ).items() if key not in {"event", "createdAt"}}
+        payload["jobs"] = []
+        return payload
+
+    monkeypatch.setattr(ci_failure_ledger, "fetch_run", detail)
+    assert pipeline_status.main([
+        "--remote-only", "--sha", SHA, "--snapshot-output", str(path),
+        "--failure-ledger", str(tmp_path / "absent.json"),
+    ]) == 2
+    record = json.loads(path.read_text())
+    assert record["state"] == "pending"
+    assert record["evidence"]["errors"] == []
+    assert record["evidence"]["hosted"]["runs"][0]["source_created_at"] is None
+
+
+@pytest.mark.parametrize(
+    "mode", ["wrong_identity", "wrong_run", "changed_success", "malformed_jobs",
+             "malformed_steps", "contradictory_success", "ledger_error", "manual_history"],
+)
+def test_pipeline_snapshot_collection_failures_never_report_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str,
+) -> None:
+    path = tmp_path / "current-proof.json"
+    runs = [_run("Build and Release", 124), _run("Molecule Tests", 101)]
+    monkeypatch.setattr(active_work_status, "collect_status", _snapshot_local)
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: runs)
+
+    def detail(run_id: int, _repo: str) -> dict[str, object]:
+        payload = {**next(run for run in runs if run["databaseId"] == run_id), "jobs": []}
+        if mode == "wrong_identity":
+            payload["headSha"] = OTHER_SHA
+        elif mode == "wrong_run":
+            payload["databaseId"] = run_id + 1
+        elif mode == "changed_success":
+            payload["conclusion"] = "failure"
+        elif mode == "malformed_jobs":
+            payload["jobs"] = {}
+        elif mode in {"malformed_steps", "contradictory_success"}:
+            payload["jobs"] = [{"name": "failed", "conclusion": "failure",
+                                "steps": None if mode == "malformed_steps" else []}]
+        return payload
+
+    monkeypatch.setattr(ci_failure_ledger, "fetch_run", detail)
+    if mode == "manual_history":
+        path.write_text('{"keep": true}')
+    args = ["--remote-only", "--sha", SHA, "--snapshot-output", str(path),
+            "--failure-ledger", str(tmp_path / "absent.json")]
+    if mode == "ledger_error":
+        args.extend(["--ledger-observation-exit-code", "1"])
+    assert pipeline_status.main(args) == 2
+    record = json.loads(path.read_text())
+    if mode == "manual_history":
+        assert record == {"keep": True}
+    else:
+        assert record["state"] == "lookup_error"
+        assert record["evidence"]["errors"]
+        assert record["release_ready"] is False

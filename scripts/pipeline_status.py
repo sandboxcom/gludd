@@ -9,15 +9,25 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import os as os
 import re
 import subprocess
 import sys
-import time
+import time as time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import active_work_status
+    import ci_failure_ledger
+    from proof_observations import write_snapshot
+else:
+    if __package__ in {None, ""}:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts import active_work_status, ci_failure_ledger
+    from scripts.proof_observations import write_snapshot
 
 DEFAULT_REPO = "sandboxcom/gludd"
 DEFAULT_BRANCH = "development"
@@ -64,14 +74,17 @@ class PipelineSummary:
 
     @property
     def failures(self) -> tuple[WorkflowRun, ...]:
+        """Return every newest run with a terminal non-success result."""
         return tuple(run for run in self.runs if run.state == "failure")
 
     @property
     def pending(self) -> tuple[WorkflowRun, ...]:
+        """Return newest runs that have not reached a terminal result."""
         return tuple(run for run in self.runs if run.state == "pending")
 
     @property
     def successes(self) -> tuple[WorkflowRun, ...]:
+        """Return only newest runs with explicit terminal success."""
         return tuple(run for run in self.runs if run.state == "success")
 
     @property
@@ -274,6 +287,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--sha", default="")
     parser.add_argument("--remote-only", action="store_true")
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--snapshot-output", type=Path)
+    parser.add_argument("--failure-ledger", type=Path, default=Path(".gludd/ci-failure-ledger.json"))
+    parser.add_argument("--ledger-observation-exit-code", type=int, default=0)
     parser.add_argument(
         "--required-workflow",
         action="append",
@@ -281,6 +297,96 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
     )
     return parser
+
+
+def _publish_snapshot(
+    args: argparse.Namespace, summary: PipelineSummary | None,
+    *, sha: str | None, error: str | None = None,
+) -> bool:
+    """Generate the current handoff from authorities, never from agent notes."""
+    if args.snapshot_output is None:
+        return True
+    errors = [error] if error is not None else []
+    if args.ledger_observation_exit_code:
+        errors.append(f"failure-ledger observation failed rc={args.ledger_observation_exit_code}")
+    local: dict[str, object] | None = None
+    ledger_status: dict[str, object] | None = None
+    hosted: dict[str, Any] | None = asdict(summary) if summary is not None else None
+    hosted_failures: list[dict[str, object]] = []
+    print("PIPELINE-SNAPSHOT-START", flush=True)
+    try:
+        local = active_work_status.collect_status()
+        ledger = ci_failure_ledger.read_ledger(args.failure_ledger)
+        ledger_status = {
+            "path": str(args.failure_ledger), "observed": args.failure_ledger.exists(),
+            "counts": {state: sum(family["status"] == state for family in ledger["families"].values())
+                       for state in ("open", "repaired", "resolved")},
+            "runs": len(ledger["runs"]),
+        }
+        if summary is not None and hosted is not None:
+            for record, run in zip(hosted["runs"], summary.runs, strict=True):
+                print(f"PIPELINE-SNAPSHOT-JOBS workflow={run.workflow!r} run={run.run_id}", flush=True)
+                detail = ci_failure_ledger.fetch_run(run.run_id, args.repo)
+                if (detail.get("databaseId") != run.run_id
+                        or detail.get("headSha") != summary.sha
+                        or detail.get("headBranch") != summary.branch
+                        or detail.get("workflowName") != run.workflow
+                        or detail.get("event", "push") != "push"):
+                    raise ValueError("job observation identity differs from the exact workflow")
+                if run.state == "success" and (
+                    detail.get("status") != "completed" or detail.get("conclusion") != "success"
+                ):
+                    raise ValueError("job observation no longer confirms workflow success")
+                jobs = detail.get("jobs")
+                if not isinstance(jobs, list) or any(not isinstance(job, dict) for job in jobs):
+                    raise ValueError("job observation has malformed jobs")
+                if any(not isinstance(job.get("steps", []), list)
+                       or any(not isinstance(step, dict) for step in job.get("steps", [])) for job in jobs):
+                    raise ValueError("job observation has malformed steps")
+                if run.state == "success" and any(job.get("conclusion") == "failure" for job in jobs):
+                    raise ValueError("job observation contradicts workflow success")
+                record["jobs"] = jobs
+                record["source_created_at"] = detail.get("createdAt")
+                record["source_updated_at"] = detail.get("updatedAt")
+                record["source_attempt"] = detail.get("attempt")
+                hosted_failures.extend({
+                    "workflow": run.workflow, "run_id": run.run_id,
+                    "job": job.get("name"),
+                    "steps": [step.get("name") for step in job.get("steps", [])
+                              if isinstance(step, dict) and step.get("conclusion") == "failure"],
+                } for job in jobs if job.get("conclusion") == "failure")
+    except (OSError, ValueError, subprocess.SubprocessError, ci_failure_ledger.LedgerError) as exc:
+        errors.append(str(exc))
+    state = ("lookup_error" if errors else
+             "success" if summary is not None and summary.exit_code == 0 else
+             "failure" if hosted_failures or (summary is not None and summary.exit_code == 1) else "pending")
+    local_git = local.get("git") if local is not None else None
+    implementation_sha = local_git.get("head") if isinstance(local_git, dict) else None
+    open_tasks = local.get("open_task_ids", []) if local is not None else []
+    missing_proofs = {
+        task_id: {
+            "implementation_sha": implementation_sha, "hosted_sha": sha,
+            "hosted_status": state, "canonical_gate": "not_collected",
+            "canonical_coverage": "not_collected", "source_review": "not_collected",
+            "next_action": ("repair_hosted_failure" if state == "failure" else
+                            "collect_exact_final_proofs" if state == "success" else
+                            "resolve_or_await_hosted_evidence"),
+        }
+        for task_id in open_tasks if isinstance(task_id, str)
+    } if isinstance(open_tasks, list) else {}
+    try:
+        write_snapshot(
+            args.snapshot_output, producer="pipeline-status",
+            identity={"repo": args.repo, "branch": args.branch, "sha": sha}, state=state,
+            evidence={"local": local, "hosted": hosted, "failure_ledger": ledger_status,
+                      "missing_proofs": missing_proofs, "hosted_failures": hosted_failures,
+                      "errors": errors},
+        )
+    except (OSError, ValueError) as exc:
+        print(f"PIPELINE-SNAPSHOT-BLOCKED error={exc}", flush=True)
+        return False
+    print(f"PIPELINE-SNAPSHOT-WRITTEN path={args.snapshot_output} state={state} release_ready=false", flush=True)
+    return not errors
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -309,6 +415,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.remote_only:
         local_gate()
     print("\n=== REMOTE CI (exact pushed SHA, all workflows) ===")
+    sha = None
     try:
         sha = args.sha or remote_head(branch=args.branch, remote=args.remote)
         summary = evaluate_runs(
@@ -323,8 +430,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except PipelineStatusError as exc:
         print(f"CI ERROR: {exc}")
+        _publish_snapshot(args, None, sha=sha, error=str(exc))
         return 2
     print("\n".join(summary.lines()))
+    if not _publish_snapshot(args, summary, sha=sha):
+        return 2
     return summary.exit_code
 
 

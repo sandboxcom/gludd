@@ -55,11 +55,16 @@ unchanged capacity failure. Invalid plan modes fail before any owner runs.
 
 ## Missing-proof record and work order
 
-Keep one current record owned by the orchestrator, rather than repeated
-readiness summaries. For every task, record: implementation commit(s), focused
-acceptance, source-review scope, full-gate run/result, hosted SHA/run/result,
-remaining blocker, and next action. Missing evidence stays explicitly pending.
-TASKS.md owns task status; SESSION.md is a handoff, not a gate authority.
+Keep one generated current handoff projected by the existing observation
+producers, rather than an orchestrator-maintained JSON tracker. The projection
+uses the existing task, local proof, hosted workflow, and failure-ledger owners;
+it does not independently decide their outcomes. Its current task map records
+the observed local HEAD, hosted SHA/state and next action. Canonical gate,
+coverage and source review remain `not_collected`: this producer does not yet
+validate those authoritative receipts. Local HEAD alone does not describe a
+tested or clean working tree. Focused acceptance and historical evidence stay
+in TASKS.md; missing final evidence stays explicitly pending. TASKS.md owns task status; SESSION.md and the
+generated handoff are not gate authorities.
 
 As observed during the 2026-10-12 repair session, all seven S98 tasks still lack
 their final passing canonical gate and replacement exact-SHA hosted proof.
@@ -125,6 +130,126 @@ edge without skipping authoritative downstream checks.
 
 ## Existing tools and practitioner evidence
 
+### Producer-owned current observations
+
+The automatic observation contract addresses a specific gap: a manually edited
+handoff or observation JSON can retain an earlier success after a producer sees
+pending work, a lookup error, a timeout, or a different candidate. Timestamp and
+identity fields must come from the producing command, not from prose or an
+editor. The existing producers now generate those records automatically;
+historical manually curated JSON remains preserved, not updated or relabelled.
+
+Normal `make ci-await` with a full SHA writes `.gludd/ci-await.json` through
+`CI_AWAIT_OBSERVATION_OUTPUT`. Normal `make pipeline-status` writes
+`.gludd/release-proof-status.json` through `PIPELINE_STATUS_OUTPUT`.
+`status-heartbeat` reuses that complete producer instead of constructing a
+timestamp-only JSON file; its existing bounded loop starts no extra daemon.
+Its contract's validate-only example invokes no owners and writes no files.
+
+`scripts/proof_observations.py` is shared serialization and validation glue for
+the existing producers. It reuses `scripts.stream_command._atomic_write_json`
+rather than introducing another tracker, scanner, runner, cache, or daemon.
+That existing writer creates its temporary file beside the destination, flushes
+and fsyncs JSON, replaces the visible file, and fsyncs the directory. Python
+documents atomic successful replacement and warns that replacement can fail
+across filesystems; using the destination directory preserves the established
+publication path. [Python replacement semantics][observation-replace].
+
+The producer contract is:
+
+- `ci-await` updates its owned current observation at each poll and on lookup
+  error, timeout, and terminal result. A new non-success state replaces the
+  previous current success; it cannot leave an earlier green value looking
+  current. The observation adds no polling loop or waiting process.
+- `pipeline-status` automatically projects the generated handoff from its
+  existing all-workflow report, local status, task ledger, and CI failure-ledger
+  owner. Failure-ledger observation errors remain visible failures. Generating
+  the handoff cannot clear a ledger entry or synthesize missing proof.
+  Job-detail identity is checked against the exact push-run index, using the
+  existing ledger query's real field set. Known failed jobs appear immediately
+  even while their overall workflow remains queued or running. Malformed steps,
+  mismatched run identity and contradictory success become lookup errors.
+- Each record declares schema version, `kind=proof_observation`, producer,
+  producer-generated `generated_at`, state, evidence, and the complete
+  repository/branch/commit-SHA identity. UTC timestamps are timezone-aware;
+  Python recommends aware UTC values for unambiguous comparisons.
+  [Python UTC timestamps][observation-utc].
+- Readers require their expected producer and complete identity, validate the
+  schema, and reject stale or future records. Missing or malformed JSON is not
+  usable current evidence. A record from another repo, branch, or SHA cannot be
+  relabelled merely by advancing an observer name or changing HEAD.
+- `release_ready=false` and `gate_evidence=false` are mandatory even when the
+  observed state is success. Altering these flags invalidates the schema. The
+  records describe observations; the existing admission, gate, exact-SHA CI,
+  coverage, artifact, and promotion owners remain authoritative.
+
+Only the owning producer refreshes its generated current record. Writers refuse
+a destination containing unrelated/manual history or a symlink target. Retain
+the original handoff, failed logs, immutable candidate refs, and protected
+OpenCode history. This contract grants no deletion, cache cleanup, migration,
+or external-state authority. It also does not provide cryptographic attestation
+merely by naming a producer in JSON.
+
+### Fresh observation is not complete proof
+
+`generated_at` establishes when the local producer wrote an observation. It does
+not establish that an upstream API response was fresh or complete. Hosted
+records must retain the source run identity and outcome provided by the existing
+CI owner. GitHub's API exposes `head_sha`, `head_branch`, run ID/attempt,
+status/conclusion, and source timestamps; its `head_sha` filter supports exact
+candidate lookup. Consumers must retain that identity instead of substituting
+the latest branch tip for the tested commit.
+[GitHub workflow-run API][observation-api].
+
+The long-lived [workflow-run filtering report][stale-workflow-observations]
+began in March 2021 and continued into 2026. Users reported missing filtered
+runs and stale responses, including normal HTTP 200 responses that omitted
+recent results. These are practitioner observations, not a guarantee about
+GitHub's current service or proof that Gludd has the same API failure. The
+engineering inference is to preserve explicit unknown/error states, inspect
+returned identity, and keep generated observations diagnostic. A fresh local
+write cannot make a stale remote result authoritative.
+
+The writer/reader behavior is specified in
+`tests/unit/test_proof_observations.py`: producer-derived UTC time, replacement
+of prior success, identity mismatch, stale/future time, schema/authority
+tampering, protected manual history, symlink targets, and missing/malformed
+JSON. Actual shared-writer, waiter, pipeline and ledger-facade replay passes
+139 warning-fatal cases. Branch-aware coverage is 94.50% combined (95.77% line,
+91.12% branch), with every measured file above 75% in both dimensions.
+Four additional actual-response/contradiction cases first fail with 33 passing,
+then pass without changing the original selector or exit-code assertions.
+Four early-routing/roster cases first fail with 25 passing, then the complete
+promotion/plan slice passes all 35. Both new families route complete producer
+cohorts through the retained 90/60-second owner, without changing its 21-phase,
+2850-second schedule or mandatory full gate. These are focused results, not
+complete release evidence. The actual expanded warning-fatal one-worker owner
+passes all 590 cases in 32.35 test seconds (33.1 observed), within those unchanged
+bounds; the 216-target Make contract and all three actual public safe examples
+also pass.
+
+Confirmed remaining gaps are explicit: complete EE dependency resolution and
+replacement image proof; validated final source-review/canonical gate/coverage
+receipts; and measured hosted critical-path optimization. A shard-ordering
+proposal exists, but has not been implemented or demonstrated faster. Capacity
+admission and protected-history ownership are already codified and still
+require real capacity or operator authority, not another status-file edit.
+
+This automation leaves every missing-proof requirement above in force. A
+generated success cannot substitute for the passing full canonical gate,
+85% aggregate/75% per-file coverage, required hosted workflows and artifacts for
+the same frozen SHA, independent source review, or required native/browser
+acceptance. It does not clear the retained capacity prerequisite. Partial
+local evidence and historical failures stay explicit, and TASKS.md cannot be
+ticked from a current-observation JSON.
+
+Observation publication is a control-plane file update. It changes no serving
+process, listener, deployment, database, model worker, or active release
+artifact, so ZDD requirements remain intact. Existing resource namespaces and
+cleanup authority remain unchanged. Rollback removes observation integration
+through the same development flow while retaining all original proof and
+protected history; it cannot turn cached observations into promotion authority.
+
 The repository already provides the necessary capacity owner, `pytest`, Make
 composition, `scripts/stream_command.py`, task integrity, exact-CI failure
 ledger, and release readiness. The research decision therefore rejects a
@@ -153,3 +278,7 @@ required.
 [workflow-syntax]: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
+[observation-api]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository
+[observation-utc]: https://docs.python.org/3.11/library/datetime.html#datetime.datetime.now
+[observation-replace]: https://docs.python.org/3.11/library/os.html#os.replace
+[stale-workflow-observations]: https://github.com/orgs/community/discussions/24626

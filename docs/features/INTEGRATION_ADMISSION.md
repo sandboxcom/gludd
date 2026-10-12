@@ -344,6 +344,19 @@ authoritative integration result.
 [pytest-class-fixture]: https://docs.pytest.org/en/stable/deprecations.html#class-scoped-fixture-as-instance-method
 [ast-dump]: https://docs.python.org/3/library/ast.html#ast.dump
 
+## Automatic current-observation regression ownership
+
+The existing compatibility phase also executes the complete writer, exact-SHA
+waiter, pipeline-status and task-ledger facade cohorts. The two new families
+`automatic-proof-observation-ownership` and
+`automatic-proof-handoff-native-query-shape` bind producer-derived identity and
+timestamps, prior-success invalidation and the existing ledger's actual query
+shape to executable early checks. Four routing/roster cases fail first, then
+the complete 35-case promotion/plan slice passes. The original ordered phase
+roster, 90-second runtime/60-second quiet bounds, warning-fatal one-worker
+execution and 2850-second ceiling are unchanged. Generated diagnostic success
+is never canonical gate evidence or release authority.
+
 ## Zero-downtime and rollback
 
 This is a zero-downtime control-plane check. Admission starts no application
