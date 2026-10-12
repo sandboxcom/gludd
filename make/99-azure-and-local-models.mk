@@ -169,14 +169,17 @@ compare-models:
 	@$(UV) run python scripts/compare_models.py
 
 # --- New Targets (auto-categorized add-target) ---
+RELEASE_PROMOTE_PUBLISH ?= 1
+
 # Promote the exact green development commit from the canonical main checkout.
 # Validation mode proves topology and release policy without network or ref writes.
 # Real mode revalidates exact-SHA evidence, fast-forwards master in the main
-# checkout, then delegates tag publication and artifact verification to release-cut.
-# Usage: make release-promote TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1 REVIEWED_HEAD_INTEGRATION_RECEIPT=path
+# checkout, then publishes through release-cut only when RELEASE_PROMOTE_PUBLISH=1.
+# Usage: make release-promote TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1 RELEASE_PROMOTE_PUBLISH=0|1 REVIEWED_HEAD_INTEGRATION_RECEIPT=path
 release-promote:
-	@[ -n "$(TAG)" ] || { echo "Usage: make release-promote TAG=v0.1.0-beta.N [MSG=release-notes] [RELEASE_PROMOTE_VALIDATE_ONLY=0|1] [REVIEWED_HEAD_INTEGRATION_RECEIPT=path]"; exit 2; }
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-promote TAG=v0.1.0-beta.N [MSG=release-notes] [RELEASE_PROMOTE_VALIDATE_ONLY=0|1] [RELEASE_PROMOTE_PUBLISH=0|1] [REVIEWED_HEAD_INTEGRATION_RECEIPT=path]"; exit 2; }
 	@case "$(RELEASE_PROMOTE_VALIDATE_ONLY)" in 0|1|"") ;; *) echo "ERROR: RELEASE_PROMOTE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@case "$(RELEASE_PROMOTE_PUBLISH)" in 0|1) ;; *) echo "ERROR: RELEASE_PROMOTE_PUBLISH must be 0 or 1"; exit 2;; esac
 	@set -eu; MAIN_PATH='/Users/shawnwilson/gludd'; \
 	CURRENT_SHA="$$(git rev-parse --verify HEAD^{commit})" || { echo "ERROR: current HEAD does not resolve"; exit 2; }; \
 	DEV_SHA="$$(git rev-parse --verify development^{commit})" || { echo "ERROR: development does not resolve"; exit 2; }; \
@@ -203,6 +206,10 @@ release-promote:
 	git -C "$$MAIN_PATH" merge --ff-only "$$DEV_SHA"; \
 	[ "$$(git -C "$$MAIN_PATH" symbolic-ref --short HEAD)" = "master" ] || { echo "ERROR: canonical master selection changed during promotion"; exit 2; }; \
 	[ "$$(git -C "$$MAIN_PATH" rev-parse --verify HEAD^{commit})" = "$$DEV_SHA" ] || { echo "ERROR: canonical master does not match the verified development candidate"; exit 2; }; \
+	if [ "$(RELEASE_PROMOTE_PUBLISH)" = "0" ]; then \
+		echo "RELEASE-PROMOTE-PREPARED tag=$(TAG) master=$$DEV_SHA development=$$DEV_SHA mode=ff-only publish=0"; \
+		exit 0; \
+	fi; \
 	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)" REVIEWED_HEAD_INTEGRATION_RECEIPT="$(if $(strip $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),$(abspath $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_CI_BRANCH=development RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"
 
 # Background the long local dual-track CI evidence producer so the orchestrator
