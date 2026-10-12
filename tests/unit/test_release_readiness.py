@@ -45,6 +45,24 @@ def test_exit_codes_are_stable_and_prioritized() -> None:
     assert rr._exit_code(rr.Readiness(errors=["reviewed-head integration receipt is invalid"])) == rr.EXIT_RECEIPT
 
 
+def test_release_readiness_has_one_typechecked_ci_dependency_identity() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "--no-print-directory",
+            "typecheck-scope",
+            "FILES=scripts/release_readiness.py",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=45,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_unmanaged_local_inference_detection_requires_daemon_ancestor() -> None:
     process_table = (
         "  101     1 /project/.venv/bin/python -m general_ludd.cli daemon\n"

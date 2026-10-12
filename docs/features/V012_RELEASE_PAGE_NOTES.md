@@ -61,6 +61,19 @@ evidence for release readiness.
 [release-tag-filter]: https://github.com/orgs/community/discussions/26603
 [semver-numeric]: https://github.com/semver/semver/issues/583
 
+Static checking also uses a single canonical package identity for the exact-CI
+verdict dependency. Direct-script imports retain their existing runtime fallback
+and still rethrow a missing transitive dependency. The real strict-typing
+acceptance reproduced the duplicate-module failure before the repair; all 50
+CLI/verdict tests now pass at 100% line and branch coverage without real Git or
+GitHub I/O. The long-running [mypy issue #9058][mypy-identity] and its
+[module-mapping guidance][mypy-mapping], reviewed 2026-10-12, document why one
+source can be discovered under incompatible qualified names. This is an import
+identity repair, not a new ignored-error or skipped-import rule.
+
+[mypy-identity]: https://github.com/python/mypy/issues/9058
+[mypy-mapping]: https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules
+
 S31-S37 describe the user-visible outcome as safer model-performance,
 benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
 messages before its deterministic 100-message inbox bound, so stale head rows

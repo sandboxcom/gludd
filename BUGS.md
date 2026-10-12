@@ -4,6 +4,11 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — strict release-path typing discovered duplicate CI module names
+
+- **Observed and cause**: The real `make typecheck-scope FILES=scripts/release_readiness.py` stopped before checking the release path because the exact-CI verdict helper's runtime import fallback exposed the same file as both `pipeline_status` and `scripts.pipeline_status` to static analysis.
+- **Repair and proof**: A failing-first acceptance runs the actual scoped checker. The established `TYPE_CHECKING` pattern gives static analysis one canonical identity while preserving the runtime import fallback and missing-transitive-dependency rethrow. All 50 CLI/verdict tests pass at 100% line and branch coverage, using harmless Git/GitHub doubles. Strict typing and Ruff pass without additional suppressions. Feature documentation records the long-lived mypy practitioner report and zero-downtime administrative scope.
+
 ### 2026-10-12 — hosted image failures and build-coordinate warning churn
 
 - **Observed causes**: Run `38189779986` changed `pyproject.toml` before the container's frozen lock check and used a Quay EE base digest returning 404. Molecule run `38189779992` rejected a warning graph differing from its accepted predecessor only in `/tmp/gludd-linux-native-build`'s six-character random suffix.
