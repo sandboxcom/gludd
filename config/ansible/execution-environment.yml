@@ -35,6 +35,11 @@ additional_build_files:
   - src: ../../dist/collections/general_ludd-xml-0.1.0.tar.gz
     dest: collections
 additional_build_steps:
+  append_base:
+    # The pinned SearXNG Python source needs Git in the builder, not just final.
+    - RUN $PKGMGR install -y git-core && $PKGMGR clean all
+    # The distro pip emitted an update notice during actual hosted assembly.
+    - RUN $PYCMD -m pip install --no-cache-dir --upgrade pip==26.2.1
   append_final:
     - >-
       RUN set -eu; machine="$(uname -m)";

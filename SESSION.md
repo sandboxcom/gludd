@@ -2,7 +2,7 @@
 
 **Immutable integration anchor (failed acceptance)**: `1f978bf323ea627a4c12ed476ab571faea181dee`, source04's real two-parent integration. This explicit Git identity precedes observer-run IDs so recovery cannot mistake a telemetry suffix for a commit.
 
-**Test Suite Status**: Total tests: 122,154 collected, 1 deselected, 0 collection errors (completed native `make test-count` during downstream test-first repairs, 2026-10-12; observed run `20261012T152746Z-28926-636c4069` passed in 56.4 seconds).
+**Test Suite Status**: Total tests: 122,174 collected, 1 deselected, 0 collection errors (completed native `make test-count` during downstream test-first repairs, 2026-10-12; observed run `20261012T153830Z-33466-06072d0b` passed in 55.7 seconds).
 
 ### Session 98 current evidence and handoff
 

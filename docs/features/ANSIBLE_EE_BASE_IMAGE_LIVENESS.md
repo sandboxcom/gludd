@@ -67,3 +67,37 @@ and lock synchronization, early build failure, and Make target registration.
 `tests/unit/test_beta4_python_runtime_boundary.py` pins the reviewed release
 identity. The hosted execution-environment job supplies the final independent
 pull-and-build proof.
+
+## Builder-stage source dependencies — 2026-10-12
+
+Exact hosted run `38266403588` for `2564d61449d2782583f311ecbde9198c3662298b`
+reaches the refreshed manifest but fails while pip acquires the committed
+SearXNG Git revision: the builder image has no Git executable. The repair
+uses Ansible Builder's existing `append_base` hook to install `git-core`
+before the Galaxy and builder stages inherit that base. Putting Git only
+in the final image or assuming the CI host's Git is available would not
+repair this isolated build.
+
+The same log reports distro pip 22.3.1 as outdated. The base hook upgrades
+to explicit pip 26.2.1, the current non-yanked release verified against
+[PyPI metadata](https://pypi.org/project/pip/26.2.1/) on 2026-10-12;
+its Python >=3.10 requirement includes the unchanged controller Python 3.11.
+No update-notice suppression, floating installer pin, mutable image,
+core dependency, or managed-host lock change is introduced. The existing
+runtime-lock writer refreshes the definition hash; all other lock inputs
+remain unchanged.
+
+Two test-first checks reproduce the missing base-stage prerequisites.
+The repaired 39-case artifact cohort and runtime-boundary validator pass
+with warnings fatal. Hosted image assembly, warm verification, and
+exact-candidate full coverage remain required before promotion; an input
+contract test is not a successful image build.
+
+[Ansible Builder's definition reference](https://docs.ansible.com/projects/builder/en/latest/definition/#additional-build-steps)
+explicitly supports installing Git after the base stage for later dependency
+installation. The long-lived
+[Ansible forum report from January 2024](https://forum.ansible.com/t/ansible-builder-error-when-scm-git-sourced-content-is-in-requirements-yml/3387)
+explains the same host-versus-image boundary and why later bindep installation
+cannot repair an earlier Git consumer. This change builds candidates beside
+the active digest and retains the existing warm, switch, drain, and rollback
+policy; it does not replace a running controller.

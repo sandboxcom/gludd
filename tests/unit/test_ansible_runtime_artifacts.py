@@ -132,6 +132,23 @@ def test_tracked_runtime_artifacts_validate() -> None:
     assert artifacts.validate_files() == []
 
 
+def test_controller_base_installs_git_before_vcs_python_dependencies() -> None:
+    """The source-pinned SearXNG build must not depend on host Git."""
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    base_steps = definition["additional_build_steps"].get("append_base", [])
+    assert "RUN $PKGMGR install -y git-core && $PKGMGR clean all" in base_steps
+    assert any("git+https://" in line for line in (
+        artifacts.CONFIG_ROOT / "requirements.txt"
+    ).read_text(encoding="utf-8").splitlines())
+
+
+def test_controller_base_pins_current_pip_before_python_installation() -> None:
+    """Repair the observed outdated installer, without suppressing notices."""
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    base_steps = definition["additional_build_steps"].get("append_base", [])
+    assert "RUN $PYCMD -m pip install --no-cache-dir --upgrade pip==26.2.1" in base_steps
+
+
 def test_runtime_stages_native_collections_dependencies_and_pinned_opentofu() -> None:
     requirements = yaml.safe_load(
         (artifacts.CONFIG_ROOT / "requirements.yml").read_text(encoding="utf-8")
