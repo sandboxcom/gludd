@@ -1197,8 +1197,10 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
         "RELEASE_OBSERVATIONS",
         "REVIEWED_HEAD_INTEGRATION_RECEIPT",
         "RELEASE_CANDIDATE_SHA",
+        "RELEASE_READINESS_CI_BRANCH",
     ]
     assert "TAG=v0.1.2" in entry["behavior"]
+    assert "RELEASE_READINESS_CI_BRANCH=development" in entry["behavior"]
     result = subprocess.run(
         [
             "make",
