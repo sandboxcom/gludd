@@ -1,10 +1,99 @@
 """Release-container startup and smoke observability regressions."""
 
+import shlex
+import shutil
+import tomllib
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _wheel_force_include_sources() -> tuple[Path, ...]:
+    section: object = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    for key in ("tool", "hatch", "build", "targets", "wheel", "force-include"):
+        assert isinstance(section, dict)
+        section = section[key]
+    assert isinstance(section, dict) and section
+    sources = []
+    for source, destination in section.items():
+        assert isinstance(source, str) and isinstance(destination, str)
+        path = Path(source)
+        assert not path.is_absolute() and ".." not in path.parts
+        sources.append(path)
+    return tuple(sources)
+
+
+def _builder_copy_routes() -> list[tuple[Path, Path]]:
+    """Read the actual simple context COPY statements before the wheel build."""
+    dockerfile = (ROOT / "Dockerfile").read_text().replace("\\\n", " ")
+    _, separator, builder = dockerfile.partition(" AS builder\n")
+    assert separator
+    builder, separator, _ = builder.partition("uv build --wheel")
+    assert separator and "\nFROM " not in builder
+    assert [line for line in builder.splitlines() if line.startswith("WORKDIR ")] == [
+        "WORKDIR /app"
+    ]
+    routes = []
+    for line in builder.splitlines():
+        if not line.startswith("COPY "):
+            continue
+        tokens = shlex.split(line)
+        assert len(tokens) >= 3 and not tokens[1].startswith(("--", "["))
+        destination = Path(tokens[-1])
+        assert not destination.is_absolute() and ".." not in destination.parts
+        for token in tokens[1:-1]:
+            source = Path(token)
+            assert not source.is_absolute() and ".." not in source.parts
+            assert (ROOT / source).exists(), source
+            target = destination
+            if (ROOT / source).is_file() and (tokens[-1].endswith("/") or len(tokens) > 3):
+                target /= source.name
+            routes.append((source, target))
+    return routes
+
+
+def test_container_builder_stages_every_declared_wheel_force_include(tmp_path: Path) -> None:
+    """Repository inputs must also exist at their exact Hatch paths in /app."""
+    routes = _builder_copy_routes()
+    for source in _wheel_force_include_sources():
+        original = ROOT / source
+        assert original.exists(), source
+        for context_source, destination in routes:
+            if not source.is_relative_to(context_source):
+                continue
+            target = tmp_path / destination
+            if (ROOT / context_source).is_dir():
+                target /= source.relative_to(context_source)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if original.is_dir():
+                shutil.copytree(original, target, dirs_exist_ok=True)
+            else:
+                shutil.copy2(original, target)
+        staged = tmp_path / source
+        assert staged.exists(), f"Hatch wheel input absent from builder layout: {source}"
+        assert staged.is_dir() == original.is_dir(), source
+        if original.is_file():
+            assert staged.read_bytes() == original.read_bytes(), source
+
+
+def test_container_stages_only_declared_core_collection_files_after_frozen_sync() -> None:
+    """The wheel adapter must not bring controller collections into core sync."""
+    required = {
+        source
+        for source in _wheel_force_include_sources()
+        if source.parts[0] == "collections"
+    }
+    routes = _builder_copy_routes()
+    assert all(source != Path(".") for source, _destination in routes)
+    copied = {source for source, _destination in routes if source.parts[0] == "collections"}
+    assert copied == required and required
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    for source in copied:
+        assert (ROOT / source).is_file(), source
+        assert dockerfile.index("--no-install-project") < dockerfile.index(f"COPY {source}")
+        assert dockerfile.index(f"COPY {source}") < dockerfile.index("uv build --wheel")
 
 
 def _container_smoke_script() -> str:

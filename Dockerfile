@@ -60,6 +60,9 @@ ARG VERSION=0.1.0-alpha.5
 COPY src ./src
 COPY infra/terraform ./infra/terraform
 COPY LICENSE THIRD_PARTY_LICENSES.md ./
+# The core wheel requires this stdlib adapter, not the controller collection tree.
+COPY collections/ansible_collections/general_ludd/git_release/plugins/module_utils/provenance.py \
+     ./collections/ansible_collections/general_ludd/git_release/plugins/module_utils/provenance.py
 RUN sed -i "s/^__version__ = \".*\"/__version__ = \"${VERSION}\"/" src/general_ludd/__init__.py \
  && sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \

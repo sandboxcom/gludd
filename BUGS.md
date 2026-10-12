@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — fresh hosted candidate exposed downstream artifact failures
+
+- **Exact evidence**: Candidate `2564d61449d2782583f311ecbde9198c3662298b` passes 1182 focused tests (12 skipped), both hosted Python quality gates, and all six independent Molecule Tests shards in run `38266403317`. Its normal development push passes every unchanged hook. This is not full release approval: the local canonical gate fails fast at disk 91% versus the unchanged 90% limit, Build and Release run `38266403588` has downstream failures, and Presentation Pages run `38266402434` fails WebKit acceptance.
+- **Container cause and repair**: Hatch cannot find the forced provenance adapter in the Docker builder. Two new real-layout/core-boundary tests fail first while six existing tests pass; copying only that committed file at its exact declared source path repairs all eight without broadening the controller boundary or changing locks. Fresh hosted runtime proof remains required.
+- **Other observed families**: The pinned NSIS metadata request returns HTTP 504; the EE's source-pinned Python dependency cannot find Git and reports outdated pip; Linux platform packaging uses UV's normalized prerelease spelling instead of the workflow's asset version and emits an incorrect RPM changelog weekday. WebKit's chart readiness exceeds the unchanged five-second budget and Replay Evidence V2 overflows the canvas. Hosted unit-2 also exposes an obsolete gate prerequisite substring assertion. Each family needs its own repair and exact-candidate proof; no old failure is relabeled green.
+
 ### 2026-10-12 — guarded push used missing remote and stale fetch evidence
 
 - **Source07 follow-through**: Actual integration `94c2fff12` passes 1182 cases with 12 skips in 124.89 seconds, but the canonical gate still fails at disk admission and the whole normal push rejects a new KeywordDetector match on the public task line. Source07's independent review is `changes_requested`; no hosted run starts. Managed discovery finds exactly one new identity (`TASKS.md`, Secret Keyword, hash `eb40333f2fd1af2a036fd86ba52a48edaa73f539`) and zero removals. The pinned quoted-value rule greedily matches the public registration/evidence span after the baseline filename. Moving that same owned path to the end of the list preserves registration and removes the ambiguity; no test, scanner, hook, baseline entry, or suppression changes. Fresh full-source and whole-push proof remain required.

@@ -58,6 +58,26 @@ provider caches, credentials, and live state, while retaining all source and
 locked dependency inputs. These changes affect candidate builds only; active
 images continue serving and normal canary, drain, and rollback rules apply.
 
+The next exact candidate (`2564d61449d2782583f311ecbde9198c3662298b`)
+exposed a separate missing wheel input in hosted run `38266403588`.
+The Docker builder now copies only the committed stdlib provenance adapter
+at Hatch's declared source path, after frozen sync and before wheel creation.
+It does not copy the controller collection tree or change the build backend,
+locks, forced-inclusion validation, or runtime dependency boundary. Two new
+real-layout tests reproduce the missing file first; the repaired eight-case
+container cohort passes with warnings fatal. A new hosted build is still
+required; native layout proof is not container runtime or release proof.
+
+[Hatch's forced-inclusion contract][hatch-force-include] requires exact
+file mappings and rejects missing sources. The long-lived
+[uv practitioner report #12131][uv-force-include], reviewed 2026-10-12,
+shows why a relative source present in a checkout can still be absent from
+an isolated build layout. The fix uses the existing backend and a narrow
+Docker COPY rather than weakening that validation.
+
+[hatch-force-include]: https://hatch.pypa.io/latest/config/build/#forced-inclusion
+[uv-force-include]: https://github.com/astral-sh/uv/issues/12131
+
 The long-lived [GitHub Community discussion #26603][release-tag-filter], opened
 in 2021 and revisited in 2024, records release-event tag filters that did not
 constrain workflow execution. [SemVer issue #583][semver-numeric], opened in
