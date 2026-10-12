@@ -35,12 +35,6 @@ from typing import cast
 
 from run_ci_shards_serial import canonical_json_sha256, release_execution_policy
 
-
-def _override_enabled(name: str) -> bool:
-    """Return True when an explicit operator override env var is set to 1."""
-    return os.environ.get(name, "") == "1"
-
-
 from general_ludd.git_release.reviewed_head_integration import (
     ReviewedHeadIntegrationReceiptError,
     load_reviewed_head_integration_receipt,
@@ -48,21 +42,32 @@ from general_ludd.git_release.reviewed_head_integration import (
 from general_ludd.quality.preflight import check_tasks_ticks
 from general_ludd.review import release_forecast
 
+
+def _override_enabled(name: str) -> bool:
+    """Return True when an explicit operator override env var is set to 1."""
+    return os.environ.get(name, "") == "1"
+
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RELEASE_TAG = "v0.1.0-beta.4"
 STABLE_RELEASE_TAG = "v0.1.1"
+V012_RELEASE_TAG = "v0.1.2"
 STABLE_RELEASE_TASK_IDS = frozenset(f"S83.{number}" for number in range(157, 169))
+V012_RELEASE_TASK_IDS = frozenset(f"S97.{number}" for number in range(1, 13))
 RELEASE_TASK_PREFIXES = {
     DEFAULT_RELEASE_TAG: ("S86.",),
     STABLE_RELEASE_TAG: (),
+    V012_RELEASE_TAG: ("S98.",),
 }
 RELEASE_REQUIRED_TASKS = {
     STABLE_RELEASE_TAG: STABLE_RELEASE_TASK_IDS,
+    V012_RELEASE_TAG: V012_RELEASE_TASK_IDS,
 }
-RELEASE_RECEIPT_REQUIRED_TAGS = frozenset({STABLE_RELEASE_TAG})
+RELEASE_RECEIPT_REQUIRED_TAGS = frozenset({STABLE_RELEASE_TAG, V012_RELEASE_TAG})
 RELEASE_ACTION_TASKS = {
     DEFAULT_RELEASE_TAG: frozenset({"S86.10"}),
     STABLE_RELEASE_TAG: frozenset({"S83.166"}),
+    V012_RELEASE_TAG: frozenset(),
 }
 _SEMVER_NUMBER = r"(?:0|[1-9][0-9]*)"
 _TAG = re.compile(

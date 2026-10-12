@@ -356,6 +356,68 @@ def test_incomplete_tasks_supports_v011_stable_release(tmp_path: Path) -> None:
     assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == ["S83.161"]
 
 
+def test_validate_only_supports_v012_stable_release(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        rr.main(
+            [
+                "--tag",
+                "v0.1.2",
+                "--validate-only",
+                "--reviewed-head-integration-receipt",
+                str(REVIEWED_RECEIPT_FIXTURE),
+                "--expected-head-sha",
+                REVIEWED_RECEIPT_FINAL_SHA,
+                "--completed-stages",
+                "",
+                "--observations",
+                "",
+            ]
+        )
+        == rr.EXIT_OK
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["tag"] == "v0.1.2"
+    assert payload["validate_only"] is True
+    assert payload["reviewed_head_integration_receipt"]["valid"] is True
+
+
+def test_incomplete_tasks_supports_v012_stable_release(tmp_path: Path) -> None:
+    lines = [
+        f"- [{' ' if task_id in {10, 12} else 'x'}] S97.{task_id} — v0.1.2 work"
+        f" | status: {'in_progress' if task_id in {10, 12} else 'completed'}\n"
+        for task_id in range(1, 13)
+    ]
+    lines.append("- [ ] S83.157 — superseded v0.1.1 task | status: in_progress\n")
+    (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.2") == ["S97.10", "S97.12"]
+
+
+def test_repository_v012_repair_milestone_is_registered_exactly_once() -> None:
+    task_lines = [
+        line for line in (ROOT / "TASKS.md").read_text(encoding="utf-8").splitlines() if line.startswith("- [")
+    ]
+    for task_id in rr.V012_RELEASE_TASK_IDS:
+        matches = [line for line in task_lines if f"] {task_id} " in line]
+        assert len(matches) == 1, f"expected exactly one {task_id} task, got {len(matches)}"
+
+
+def test_v012_incomplete_tasks_includes_current_release_repairs(tmp_path: Path) -> None:
+    lines = [f"- [x] S97.{task_id} — repaired | status: completed\n" for task_id in range(1, 13)]
+    lines.append("- [ ] S98.1 — release readiness | status: in_progress\n")
+    (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.2") == ["S98.1"]
+
+
+def test_v012_incomplete_tasks_rejects_missing_repair_evidence(tmp_path: Path) -> None:
+    (tmp_path / "TASKS.md").write_text("- [x] S97.1 — repaired | status: completed\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match=r"v0\.1\.2 milestone is incomplete"):
+        rr._incomplete_tasks(tmp_path, tag="v0.1.2")
+
+
 def test_incomplete_tasks_rejects_checked_task_with_noncomplete_status(
     tmp_path: Path,
 ) -> None:
@@ -829,9 +891,17 @@ def test_readiness_main_accepts_supported_stable_release(
     "argv",
     [
         ["--tag", "v0.1.1", "--validate-only"],
+        ["--tag", "v0.1.2", "--validate-only"],
         [
             "--tag",
             "v0.1.1",
+            "--reviewed-head-integration-receipt",
+            str(REVIEWED_RECEIPT_FIXTURE),
+            "--validate-only",
+        ],
+        [
+            "--tag",
+            "v0.1.2",
             "--reviewed-head-integration-receipt",
             str(REVIEWED_RECEIPT_FIXTURE),
             "--validate-only",
@@ -922,6 +992,8 @@ def test_incomplete_tasks_rejects_unmapped_release(tmp_path: Path) -> None:
 def test_release_readiness_make_target_is_safe_and_contracted() -> None:
     makefile = compose_makefile(ROOT / "Makefile")
     assert "\nrelease-readiness:" in makefile
+    assert "Usage: make release-readiness TAG=v0.1.2" in makefile
+    assert "exact reviewed-head receipt for v0.1.2" in makefile
     assert 'RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)"' in makefile
     contract = json.loads((ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8"))
     entry = next(item for item in contract["targets"] if item["name"] == "release-readiness")
@@ -933,6 +1005,7 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
         "REVIEWED_HEAD_INTEGRATION_RECEIPT",
         "RELEASE_CANDIDATE_SHA",
     ]
+    assert "TAG=v0.1.2" in entry["behavior"]
     result = subprocess.run(
         [
             "make",

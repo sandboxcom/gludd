@@ -427,7 +427,7 @@ reviewed-head-receipt:
 	fi
 
 release-readiness:
-	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.1 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,... REVIEWED_HEAD_INTEGRATION_RECEIPT=path RELEASE_CANDIDATE_SHA=full-sha"; exit 2; }
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,... REVIEWED_HEAD_INTEGRATION_RECEIPT=path RELEASE_CANDIDATE_SHA=full-sha"; exit 2; }
 	@RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)" \
 		$(UV) run python scripts/release_readiness.py --root "$(CURDIR)" --tag "$(TAG)" \
 		--completed-stages "$(RELEASE_COMPLETED_STAGES)" \

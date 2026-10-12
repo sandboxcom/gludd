@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — v0.1.2 candidate rejected by obsolete release policy
+
+- **Observed**: `make release-readiness TAG=v0.1.2` rejected the project's current version as unsupported before collecting readiness evidence. The previous session's notes still named an older local SHA and pending hosted run.
+- **Cause**: Readiness mapped only beta4 and v0.1.1, while the package and release notes already named v0.1.2. S97.9 had implementation evidence but no task entry, so simply admitting the new tag would still omit required repair ownership.
+- **Repair and evidence**: Failing-first acceptance pins the supported tag, the complete S97 milestone, current S98 repair admission, missing-milestone rejection, and mandatory candidate-bound receipts. The initial release-path slice passes 141 tests at 96% aggregate coverage, with all measured files above 75%; the 210-target Make contract and its updated hermetic v0.1.2 example pass. Final candidate and hosted gate evidence remain required.
+- **Hosted ownership**: Runs `38189779986` and `38189779992` for `43814531ba0e1bb40d14936280ddd506d45381eb` are terminal failures, with seven open families recorded by `make pipeline-status`. Current HEAD `bc9fd78f1483df05f628d9f3c8f2fed62ab30a68` has no hosted runs. A historical refreshed PASS is not proof for the edited candidate.
+- **Practitioner evidence and ZDD**: `docs/features/V012_RELEASE_PAGE_NOTES.md` records the long-lived GitHub tag-filter and SemVer reports. Validation mutates no running application or published release; rollback restores policy while retaining the previous serving artifact.
+
 ### 2026-10-07 — (resolved locally; replacement exact gate required) One-hour owners killed a healthy complete gate
 
 - **What happened**: The non-short-circuit gate passed every preflight and the first four of eight serial shards, retained two presentation-contract failures, and continued into `unit-2:batch-018`. At roughly one hour, the background ownership boundary terminated the healthy process tree before the remaining shards could report, while `.gate-status` still said `RUNNING` for a dead PID.

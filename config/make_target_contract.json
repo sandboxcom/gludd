@@ -382,7 +382,7 @@
         "REVIEWED_HEAD_INTEGRATION_RECEIPT",
         "RELEASE_CANDIDATE_SHA"
       ],
-      "behavior": "make release-readiness TAG=v0.1.1 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=tests/fixtures/reviewed_head_integration_receipt.json RELEASE_CANDIDATE_SHA=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      "behavior": "make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=tests/fixtures/reviewed_head_integration_receipt.json RELEASE_CANDIDATE_SHA=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     },
     {
       "name": "release-page-notes",

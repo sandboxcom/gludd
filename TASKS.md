@@ -27,6 +27,14 @@ prevents prior-release assignments, the ledger, release notes, and exact Git
 ancestry from drifting independently.
 <!-- /v0.1.2-completed-backlog -->
 
+## Session 98 — v0.1.2 release admission and hosted pipeline repairs
+
+- [ ] S98.1 — **Admit v0.1.2 through the supported stable-release policy** across `scripts/release_readiness.py`, `tests/unit/test_release_readiness.py`, `make/00-foundation.mk`, `make/30-ci-and-release.mk`, `config/make_target_contract.json`, `docs/features/V012_RELEASE_PAGE_NOTES.md`, `TASKS.md`, and `BUGS.md`: require every S97 repair and all current S98 release repairs, retain the reviewed-head receipt and exact candidate SHA, reject missing milestone entries, and update the documented Make behavior. | evidence: failing-first acceptance exposed the unsupported tag, missing S97.9, and omitted current repair admission; `make coverage-files` passes 146 tests at 96% aggregate coverage with every measured file above 75%; the 210-target Make contract and v0.1.2 validate-only behavioral example pass; `make test-count` collects 121867/121868 tests with one intentional deselection and zero errors; final local and hosted gates remain required | priority: critical | effort: XS | status: in_progress
+
+- [ ] S98.2 — **Make pytest fixture binding and hook-runtime inventories portable across hosted Python versions** across `tests/unit/test_session_start_crash_recovery.py`, `tests/unit/test_hook_runtime_split_compat.py`, `scripts/`, `config/gate_failure_promotions.json`, `make/10-observability-and-tests.mk`, and the owning feature guide: reproduce the Python 3.11 warning and AST-dump drift from hosted run `38189779986`, preserve strict fixture warnings and signature/mark validation, and front-load the exact regressions before expensive test shards. | evidence: hosted unit-3b reports seven fixture errors and unit-2 reports two AST inventory failures; isolated implementation and proof are in progress | priority: critical | effort: S | status: in_progress
+
+- [ ] S98.3 — **Reuse the coverage source index within one invocation while retaining exhaustive live split mappings** across `scripts/check_coverage_gaps.py`, its related source-index implementation, `tests/unit/test_check_coverage_gaps.py`, and the owning feature guide: eliminate repeated transitive parsing that times out on hosted unit-1b without raising the timeout, sampling mappings, or weakening exact coverage validation. | evidence: hosted run `38189779986` times out at 180 seconds in the exact live mapping acceptance; measured implementation and regression proof are in progress | priority: critical | effort: S | status: in_progress
+
 **Session 96 v0.1.2 release-prep fixes (committed):**
 
 | Fix | Commit | Evidence |
@@ -59,6 +67,9 @@ ancestry from drifting independently.
 | Proactively fix class-scoped fixture warnings in 8 additional e2e test files | `93db512b6`–`490f08687` | Subagent verified each file with `make test TESTFILE=<path>` |
 
 **Open blockers:**
+
+- [ ] S97.9 — **Distinguish HTML contract tags from CSS selectors in hosted runner-capacity deck validation** across `tests/unit/test_hosted_runner_capacity_deck_sync.py`: retain every prior contract and live token while counting only actual opening HTML tags. | files: tests/unit/test_hosted_runner_capacity_deck_sync.py | evidence: repair is integrated in `43814531ba0e1bb40d14936280ddd506d45381eb`; `make test TESTFILE=tests/unit/test_hosted_runner_capacity_deck_sync.py` is the focused proof; release-candidate gate and hosted replay remain required | priority: high | effort: XS | status: in_progress
+
 - Previous `make gate-background` run (pid 57752) failed at `unit-1b:batch-006` (`test_clean_stale_resource_namespaces.py::test_current_registered_and_git_worktree_namespaces_are_protected`) due to leaked `GLUDD_PROJECT_NAMESPACE=gludd-a24d2f0bddee`; fixed by adding `monkeypatch.delenv` isolation as S97.7.
 - Second and third `make gate-background` runs (pids 86160 and 11525) stalled at `unit-1b:batch-003` after reaching 98% (>120s no progress); killed with `make gate-kill` and stale CI shard scratch cleaned with `make tmp-gludd-clean-ci-shards-now`.
 - Fourth `make gate-background` run (pid 37879, log `.gate-logs/gate-20261010115446-0dd3e3a1.log`) failed at `unit-1b:batch-021` (`tests/unit/test_core_dependency_ownership_inventory.py::test_inventory_exactly_proves_every_direct_core_dependency`) because `config/core-python-dependency-ownership.json` had stale collection-import paths for `httpx`, `pyyaml`, and `safehttpx`; fixed by adding the observed paths and verifying the single test passes.

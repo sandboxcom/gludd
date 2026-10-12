@@ -26,6 +26,29 @@ gate. The preview therefore records useful candidate contents without
 converting implementation evidence into task, gate, release, or publication
 completion.
 
+The promotion policy now explicitly admits `v0.1.2`. It requires all twelve
+S97 repair records and every S98 release repair, together with a reviewed-head
+integration receipt bound to the full candidate SHA. Missing ledger entries,
+unfinished repairs, invalid receipts, or hosted results for another commit
+remain blockers. The Make contract's validation example uses a hermetic fixture;
+that example proves argument routing, not readiness of the real candidate.
+
+This is a zero-downtime administrative change: validation starts no application
+worker, changes no schema, and publishes no tag or artifact. Rollback restores
+the former policy while the preceding release continues serving. The unchanged
+coverage contract requires 85% aggregate and 75% in every measured file.
+
+The long-lived [GitHub Community discussion #26603][release-tag-filter], opened
+in 2021 and revisited in 2024, records release-event tag filters that did not
+constrain workflow execution. [SemVer issue #583][semver-numeric], opened in
+2020, records ambiguity around numeric prerelease identifiers. Reviewed again
+on 2026-10-12, these findings support explicit tag admission and a registered
+release milestone before promotion; a syntactically valid tag is insufficient
+evidence for release readiness.
+
+[release-tag-filter]: https://github.com/orgs/community/discussions/26603
+[semver-numeric]: https://github.com/semver/semver/issues/583
+
 S31-S37 describe the user-visible outcome as safer model-performance,
 benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
 messages before its deterministic 100-message inbox bound, so stale head rows
