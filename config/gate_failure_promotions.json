@@ -25,6 +25,13 @@
         "quiet_seconds": 60
       },
       {
+        "name": "pytest-runtime-compatibility",
+        "target": "_pytest-runtime-compatibility-admission",
+        "budget_class": "fast",
+        "max_seconds": 90,
+        "quiet_seconds": 60
+      },
+      {
         "name": "ansible-role-variable-prefix",
         "target": "_ansible-role-variable-prefix",
         "budget_class": "fast",
@@ -235,6 +242,27 @@
       "owner_target": "_cloud-iam-generation-parity",
       "node_kind": "pytest_node",
       "node": "tests/unit/test_cloud_iam_expert.py::TestGenerateCloudRole::test_generate_aws_terraform_deploy",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "pytest-class-fixture-scope",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_session_start_crash_recovery.py::TestCrashRecoveryStatic::test_session_state_has_pid_field",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "hook-runtime-case-ast-portability",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_hook_runtime_split_compat.py::test_case_inventory_order_signatures_and_marks_match_pre_split_snapshot",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "hook-runtime-helper-ast-portability",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_hook_runtime_split_compat.py::test_helper_signatures_match_pre_split_snapshot",
       "full_gate_phase": "test"
     }
   ]

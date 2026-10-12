@@ -41,6 +41,39 @@ development-force-push:
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch force-pushed and verified"
 
+# Advance development to an already constructed reviewed integration commit.
+# Dry-run expectations may be refs; real writes require two explicit full SHAs.
+APPLY ?= 0
+development-fast-forward: _gate-mutation-guard main-worktree-guard
+	@set -eu; MAIN_PATH='/Users/shawnwilson/gludd'; \
+	case "$(APPLY)" in 0|1) ;; *) echo "ERROR: APPLY must be 0 or 1"; exit 2;; esac; \
+	[ -n "$(SOURCE)" ] && [ -n "$(EXPECTED_BEFORE_SHA)" ] && [ -n "$(EXPECTED_AFTER_SHA)" ] || { echo "Usage: make development-fast-forward SOURCE=ref EXPECTED_BEFORE_SHA=sha EXPECTED_AFTER_SHA=sha APPLY=0|1"; exit 2; }; \
+	[ "$$(git rev-parse --show-toplevel)" = "$$MAIN_PATH" ] || { echo "ERROR: fast-forward must run from the canonical main checkout"; exit 2; }; \
+	[ "$$(git symbolic-ref --short HEAD)" = development ] || { echo "ERROR: current branch must be development"; exit 2; }; \
+	[ -z "$$(git status --porcelain --untracked-files=all)" ] || { echo "ERROR: development must be clean"; exit 2; }; \
+	if [ "$(APPLY)" = 1 ]; then \
+		for expected in "$(EXPECTED_BEFORE_SHA)" "$(EXPECTED_AFTER_SHA)"; do \
+			case "$$expected" in *[!0-9a-f]*|"") echo "ERROR: real fast-forward expectations must be full SHA-1 values"; exit 2;; esac; \
+			[ "$${#expected}" = 40 ] || { echo "ERROR: real fast-forward expectations must be full SHA-1 values"; exit 2; }; \
+		done; \
+	fi; \
+	BEFORE_SHA="$$(git rev-parse --verify HEAD^{commit})"; \
+	SOURCE_SHA="$$(git rev-parse --verify --end-of-options '$(SOURCE)^{commit}')"; \
+	EXPECTED_BEFORE="$$(git rev-parse --verify --end-of-options '$(EXPECTED_BEFORE_SHA)^{commit}')"; \
+	EXPECTED_AFTER="$$(git rev-parse --verify --end-of-options '$(EXPECTED_AFTER_SHA)^{commit}')"; \
+	[ "$$BEFORE_SHA" = "$$EXPECTED_BEFORE" ] || { echo "ERROR: development differs from expected before SHA"; exit 2; }; \
+	[ "$$SOURCE_SHA" = "$$EXPECTED_AFTER" ] || { echo "ERROR: source differs from expected after SHA"; exit 2; }; \
+	git merge-base --is-ancestor "$$BEFORE_SHA" "$$SOURCE_SHA" || { echo "ERROR: development cannot fast-forward to source"; exit 2; }; \
+	if [ "$(APPLY)" = 0 ]; then \
+		echo "DEVELOPMENT-FAST-FORWARD-VALIDATED source=$(SOURCE) before=$$BEFORE_SHA after=$$SOURCE_SHA apply=0"; exit 0; \
+	fi; \
+	[ "$$(git symbolic-ref --short HEAD)" = development ] && [ "$$(git rev-parse --verify HEAD^{commit})" = "$$BEFORE_SHA" ] || { echo "ERROR: development identity changed before fast-forward"; exit 2; }; \
+	git merge --ff-only "$$SOURCE_SHA"; \
+	[ "$$(git symbolic-ref --short HEAD)" = development ] || { echo "ERROR: development selection changed during fast-forward"; exit 2; }; \
+	[ "$$(git rev-parse --verify HEAD^{commit})" = "$$SOURCE_SHA" ] && [ "$$(git rev-parse --verify development^{commit})" = "$$SOURCE_SHA" ] && [ "$$(git rev-parse --verify --end-of-options '$(SOURCE)^{commit}')" = "$$SOURCE_SHA" ] || { echo "ERROR: fast-forward result differs from the pinned candidate"; exit 2; }; \
+	[ -z "$$(git status --porcelain --untracked-files=all)" ] || { echo "ERROR: development changed during fast-forward"; exit 2; }; \
+	echo "DEVELOPMENT-FAST-FORWARDED source=$(SOURCE) before=$$BEFORE_SHA after=$$SOURCE_SHA mode=ff-only"
+
 # Reconcile a branch into development while retaining a merge parent. MODE is
 # required so an ancestry-only (-s ours) decision remains visible and auditable.
 # APPLY defaults to 0; APPLY=1 is fail-closed outside a clean development tree.
@@ -219,7 +252,9 @@ test-zai-identity:
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINER_IMAGE := gl-agent:latest
 
-VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run --no-sync python -c "from general_ludd import __version__; print(__version__)")
+# Packaging names expand during Make parsing, including read-only Git helpers.
+# Use uv's existing source-version reader, independently of runtime UV shims.
+VERSION = $(or $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" uv version --short --offline --project "$(CURDIR)"),$(error Cannot read [project].version from pyproject.toml))
 PLATFORM = $(shell uname -s)-$(shell uname -m)
 TARBALL_NAME = general-ludd-agent-$(VERSION)-$(PLATFORM)
 TARBALL_DIR = dist/$(TARBALL_NAME)
@@ -786,30 +821,39 @@ _commit-lint-guard:
 _commit-docstring-guard:
 	@STAGED_SRC_PY=$$(git diff --cached --name-only --diff-filter=ACM | grep '^src/general_ludd/.*\.py$$' | tr '\n' ' ' || true); 	if [ -z "$$STAGED_SRC_PY" ]; then 		echo "_commit-docstring-guard: SKIP - no staged production Python files."; 		exit 0; 	fi; 	if $(MAKE) --no-print-directory lint-docstrings DOCSTRING_FILES="$$STAGED_SRC_PY"; then 		echo "_commit-docstring-guard: PASS"; 	else 		echo "_commit-docstring-guard: FAIL - add or repair Google-style docstrings in staged source files."; 		exit 1; 	fi
 
-# AA029 — _pull-before-push-guard: git fetch before push, block if remote ahead.
-# Agent pushed to master without pulling first, causing "failed to push refs".
-# Guard: fetch sandboxcom, check if remote is ahead of local. If ahead, BLOCK push
-# and require pull+rebase first. FORCE=1 bypasses.
+# AA029 — refresh the exact named remote branch before admitting a normal push.
+# Fetch/lookup failures must not fall back to stale refs or zero divergence.
+# Shared branches require merge-forward; FORCE never bypasses remote divergence.
+PUSH_REMOTE ?= sandboxcom
 _pull-before-push-guard:
-	@echo "PULL-BEFORE-PUSH: fetching sandboxcom..."
-	@GIT_SSH_COMMAND="$(GIT_SSH_COMMAND)" git fetch $(PUSH_REMOTE) $(shell git branch --show-current) 2>/dev/null || true
-	@LOCAL=$$(git rev-parse HEAD); \
-	REMOTE=$$(git rev-parse $(PUSH_REMOTE)/$(shell git branch --show-current) 2>/dev/null || echo "none"); \
-	if [ "$$REMOTE" = "none" ]; then \
-		echo "PULL-BEFORE-PUSH: no remote tracking branch, skipping ahead check."; \
-	elif [ "$$LOCAL" != "$$REMOTE" ]; then \
-		AHEAD=$$(git rev-list --count $$REMOTE..$$LOCAL 2>/dev/null || echo 0); \
-		BEHIND=$$(git rev-list --count $$LOCAL..$$REMOTE 2>/dev/null || echo 0); \
-		if [ "$$BEHIND" -gt 0 ] && [ "$$FORCE" != "1" ]; then \
-			echo "BLOCKED: remote is $$BEHIND commit(s) ahead of local."; \
-			echo "Run 'make git-pull-sandboxcom' to pull+rebase before pushing. See AA029."; \
-			exit 1; \
-		fi; \
-		echo "PULL-BEFORE-PUSH: local=$$LOCAL remote=$$REMOTE ahead=$$AHEAD behind=$$BEHIND"; \
+	@echo "PULL-BEFORE-PUSH: fetch required; ahead/behind evidence must be current."; \
+	REMOTE_NAME="$(PUSH_REMOTE)"; \
+	case "$$REMOTE_NAME" in ''|-*) echo "BLOCKED: invalid push remote."; exit 1 ;; esac; \
+	BRANCH=$$(git symbolic-ref --quiet --short HEAD) || { echo "BLOCKED: detached HEAD cannot be pushed by this guard."; exit 1; }; \
+	LOCAL=$$(git rev-parse --verify HEAD) || exit 1; \
+	git remote get-url "$$REMOTE_NAME" >/dev/null || { echo "BLOCKED: push remote is not configured."; exit 1; }; \
+	echo "PULL-BEFORE-PUSH: verifying $$REMOTE_NAME/$$BRANCH..."; \
+	if GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote --exit-code --heads "$$REMOTE_NAME" "refs/heads/$$BRANCH" >/dev/null; then \
+		:; \
 	else \
-		echo "PULL-BEFORE-PUSH: local and remote in sync."; \
-	fi
-	@echo "_pull-before-push-guard: PASS"
+		LOOKUP_RC=$$?; \
+		if [ "$$LOOKUP_RC" -eq 2 ]; then \
+			echo "PULL-BEFORE-PUSH: remote confirms branch $$BRANCH is absent; normal branch creation is allowed."; \
+			echo "_pull-before-push-guard: PASS"; exit 0; \
+		fi; \
+		echo "BLOCKED: remote lookup failed (exit $$LOOKUP_RC); cached refs are not admission evidence."; exit 1; \
+	fi; \
+	echo "PULL-BEFORE-PUSH: fetching $$REMOTE_NAME/$$BRANCH..."; \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git fetch --no-tags "$$REMOTE_NAME" "refs/heads/$$BRANCH:refs/remotes/$$REMOTE_NAME/$$BRANCH" || { echo "BLOCKED: fetch failed; cached refs are not admission evidence."; exit 1; }; \
+	REMOTE=$$(git rev-parse --verify "refs/remotes/$$REMOTE_NAME/$$BRANCH^{commit}") || exit 1; \
+	AHEAD=$$(git rev-list --count "$$REMOTE..$$LOCAL") || exit 1; \
+	BEHIND=$$(git rev-list --count "$$LOCAL..$$REMOTE") || exit 1; \
+	echo "PULL-BEFORE-PUSH: local=$$LOCAL remote=$$REMOTE ahead=$$AHEAD behind=$$BEHIND"; \
+	if [ "$$BEHIND" -gt 0 ]; then \
+		echo "BLOCKED: remote is $$BEHIND commit(s) ahead of local."; \
+		echo "Use merge-forward reconciliation before pushing; never rebase shared branches. See AA029."; exit 1; \
+	fi; \
+	echo "_pull-before-push-guard: PASS"
 
 # AA030 — _push-parameter-audit: validates PUSH=1 on ship-commit meets batch threshold.
 # Agent used ship-commit PUSH=1 to bypass batch discipline. This guard refuses
