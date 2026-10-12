@@ -380,9 +380,10 @@
         "RELEASE_COMPLETED_STAGES",
         "RELEASE_OBSERVATIONS",
         "REVIEWED_HEAD_INTEGRATION_RECEIPT",
-        "RELEASE_CANDIDATE_SHA"
+        "RELEASE_CANDIDATE_SHA",
+        "RELEASE_READINESS_CI_BRANCH"
       ],
-      "behavior": "make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=tests/fixtures/reviewed_head_integration_receipt.json RELEASE_CANDIDATE_SHA=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      "behavior": "make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=tests/fixtures/reviewed_head_integration_receipt.json RELEASE_CANDIDATE_SHA=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee RELEASE_READINESS_CI_BRANCH=development"
     },
     {
       "name": "release-page-notes",
@@ -1447,8 +1448,8 @@
     },
     {
       "name": "test-ci-dual-track-local",
-      "make_variables": ["DUAL_TRACK_LOCAL_VALIDATE_ONLY", "PYTEST_ARGS", "MAX_FILES_PER_BATCH"],
-      "behavior": "make test-ci-dual-track-local DUAL_TRACK_LOCAL_VALIDATE_ONLY=1 PYTEST_ARGS='' MAX_FILES_PER_BATCH=64"
+      "make_variables": ["DUAL_TRACK_LOCAL_VALIDATE_ONLY", "PYTEST_ARGS", "MAX_FILES_PER_BATCH", "DUAL_TRACK_RESUME", "DUAL_TRACK_WATCHDOG_OWNED_GATE"],
+      "behavior": "make test-ci-dual-track-local DUAL_TRACK_LOCAL_VALIDATE_ONLY=1 PYTEST_ARGS='' MAX_FILES_PER_BATCH=64 DUAL_TRACK_RESUME=0 DUAL_TRACK_WATCHDOG_OWNED_GATE=0"
     },
     {
       "name": "require-dual-track-green",
@@ -1502,18 +1503,18 @@
     },
     {
       "name": "gate-admission-config",
-      "make_variables": ["GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS"],
-      "behavior": "make gate-admission-config GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
+      "make_variables": ["GATE_TEST_PROFILE", "GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS"],
+      "behavior": "make gate-admission-config GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
     },
     {
       "name": "gate-background",
-      "make_variables": ["GATE_TIMEOUT", "GATE_BACKGROUND_VALIDATE_ONLY"],
-      "behavior": "make gate-background GATE_TIMEOUT=3600 GATE_BACKGROUND_VALIDATE_ONLY=1"
+      "make_variables": ["GATE_TIMEOUT", "GATE_BACKGROUND_VALIDATE_ONLY", "GATE_TEST_PROFILE", "GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS"],
+      "behavior": "make gate-background GATE_TIMEOUT=3600 GATE_BACKGROUND_VALIDATE_ONLY=1 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
     },
     {
       "name": "gate-background-observed",
-      "make_variables": ["GATE_TIMEOUT", "GATE_POLL_INTERVAL", "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY"],
-      "behavior": "make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1"
+      "make_variables": ["GATE_TIMEOUT", "GATE_POLL_INTERVAL", "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY", "GATE_TEST_PROFILE", "GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS"],
+      "behavior": "make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
     },
     {
       "name": "vendor-presentation-assets",
