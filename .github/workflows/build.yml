@@ -1350,17 +1350,21 @@ jobs:
           $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
           "$zipHash  $(Split-Path -Leaf $zipPath)" | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ascii
       - name: Build NSIS installer
+        timeout-minutes: 12
         shell: pwsh
         run: |
           Write-Host "=== CI PHASE: package-nsis-windows ==="
-          choco install nsis --version=3.12.0 -y --no-progress
+          uv run --no-sync --python 3.12 python -W error scripts/windows_nsis_acquisition.py choco install nsis --version=3.12.0 -y --no-progress --execution-timeout=180
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::NSIS INSTALL FAILED — Chocolatey failed to install NSIS 3.12.0 (exit $LASTEXITCODE)"
             throw "Chocolatey failed to install NSIS 3.12.0 (exit $LASTEXITCODE)"
           }
           New-Item -ItemType Directory -Force -Path dist/windows | Out-Null
           Copy-Item dist/gludd.exe dist/windows/gludd.exe
-          $makensis = (Get-Command makensis.exe -ErrorAction Stop).Source
+          $makensis = Join-Path ${env:ProgramFiles(x86)} "NSIS\makensis.exe"
+          if (-not (Test-Path -LiteralPath $makensis -PathType Leaf)) {
+            throw "NSIS BUILD FAILED — verified vendor compiler is missing: $makensis"
+          }
           & $makensis /WX "/DVERSION=$env:VERSION" "/DBUILDDIR=.." dist/windows/gludd.nsi
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::NSIS BUILD FAILED — makensis failed with exit code $LASTEXITCODE"

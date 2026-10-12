@@ -78,6 +78,57 @@ Docker COPY rather than weakening that validation.
 [hatch-force-include]: https://hatch.pypa.io/latest/config/build/#forced-inclusion
 [uv-force-include]: https://github.com/astral-sh/uv/issues/12131
 
+Windows acquisition keeps the exact Chocolatey NSIS 3.12.0 command and all
+existing package-integrity and strict installer checks. The actual hosted
+metadata request returns HTTP 504; its subsequent not-found trailer does not
+mean every package-resolution error is retryable. The existing locked
+[Tenacity retry owner][nsis-tenacity] repeats only explicit 502/503/504
+failures from the official HTTPS V2 feed, at most three times, with 5/10-second
+backoff. Permanent HTTP, integrity, permission, timeout, and unclassified
+failures remain terminal. There is no unpinned fallback or force/checksum bypass.
+
+Each attempt owns one process tree, preserves Chocolatey's live console,
+emits 15-second heartbeats, and has a 180-second bound. Its unique namespaced
+temporary logs have a four-MiB diagnostic-read bound and are removed by their
+owner. The locked psutil owner recognizes its actual timeout exception,
+checks process identity for teardown, reports already-exited children, and
+does not hide permission errors or surviving processes. The step separately
+has a twelve-minute bound. These are acquisition limits, not relaxed tests.
+
+The compiler probe and strict `/WX` build use the same existing absolute vendor
+file under `PROGRAMFILES(X86)/NSIS`, not inherited PATH. The pinned
+`nsis.install` package creates no compiler shim; a missing environment,
+file, nonzero probe, or wrong compiler version blocks packaging. Successful
+installation does not authorize reinstall retries for a broken compiler.
+Existing artifact-existence, SHA-256, and packaged-binary smoke checks remain.
+
+Sixty harmless tests pass at 98% targeted combined coverage, including real
+psutil timeout types, finite retry exhaustion, mixed integrity errors, compiler
+location/version, and owned cleanup. Both source and tests pass strict typing
+and Ruff without suppressions. The resource inventory adds only the new
+context-owned temporary directory; all 249 prior resources remain unchanged.
+Actual Windows package installation and exact-candidate hosted proof remain
+required. This changes ephemeral candidate tool acquisition, not an active
+deployment, promotion, tag, or publication.
+
+Research uses [Chocolatey's install contract][nsis-choco],
+[the exact package contents][nsis-install], and
+[the vendor compiler source][nsis-compiler]. Package approval is not a new
+safety certification: the package page's scan note remains visible and no
+verification is bypassed. The long-lived
+[Chocolatey Q&A #2396][nsis-timeout-forum] (2021/2022) and
+[Helm's V2-feed 504 report #31471][nsis-feed-504] (2025) explain why a failed
+feed query can end in not-found text. Their distinction between service
+availability and deterministic failures is retained, not generalized into
+retry-all handling.
+
+[nsis-tenacity]: https://tenacity.readthedocs.io/en/stable/
+[nsis-choco]: https://docs.chocolatey.org/en-us/choco/commands/install/
+[nsis-install]: https://community.chocolatey.org/packages/nsis.install/3.12.0
+[nsis-compiler]: https://github.com/NSIS-Dev/nsis/blob/master/Source/makenssi.cpp
+[nsis-timeout-forum]: https://github.com/chocolatey/choco/discussions/2396
+[nsis-feed-504]: https://github.com/helm/helm/issues/31471
+
 The long-lived [GitHub Community discussion #26603][release-tag-filter], opened
 in 2021 and revisited in 2024, records release-event tag filters that did not
 constrain workflow execution. [SemVer issue #583][semver-numeric], opened in
