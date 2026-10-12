@@ -81,6 +81,7 @@ class NamespaceDecision:
     action: Literal["preserve", "reclaim"]
     reason: str
     fingerprints: tuple[PathFingerprint, ...]
+    blocking_marker: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,7 @@ class CleanupResult:
 class _Scan:
     fingerprint: PathFingerprint | None
     reason: str | None
+    blocking_marker: Path | None = None
 
 
 def _normalize_start(value: str) -> str:
@@ -282,7 +284,7 @@ def _scan_candidate(
             elif _is_marker(child):
                 lease = inspect_lease(child) if child.name.lower().endswith(".lock") else None
                 if reason := _owner_reason(child, processes, lease):
-                    return _Scan(None, reason)
+                    return _Scan(None, reason, child)
     return _Scan(
         PathFingerprint(path, top.st_dev, top.st_ino, digest.hexdigest(), newest, size_bytes),
         None,
@@ -341,17 +343,19 @@ def plan_cleanup(
             continue
         fingerprints: list[PathFingerprint] = []
         refusal: str | None = None
+        blocking_marker: Path | None = None
         for path in ordered:
             scan = _scan_candidate(path, config, process_identities)
             if scan.reason is not None:
                 refusal = scan.reason
+                blocking_marker = scan.blocking_marker
                 break
             if scan.fingerprint is None:  # defensive fail-closed invariant
                 refusal = "candidate-unreadable"
                 break
             fingerprints.append(scan.fingerprint)
         if refusal is not None:
-            decisions.append(NamespaceDecision(base, ordered, "preserve", refusal, ()))
+            decisions.append(NamespaceDecision(base, ordered, "preserve", refusal, (), blocking_marker))
             continue
         newest = max(fingerprint.newest_mtime for fingerprint in fingerprints)
         if config.now_epoch - newest < config.grace_seconds:
@@ -580,6 +584,9 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(
                     {
                         "action": decision.action,
+                        "blocking_marker": (
+                            str(decision.blocking_marker) if decision.blocking_marker is not None else None
+                        ),
                         "namespace": decision.base_name,
                         "paths": [str(path) for path in decision.paths],
                         "reason": decision.reason,

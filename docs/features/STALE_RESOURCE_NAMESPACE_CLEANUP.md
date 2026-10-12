@@ -42,6 +42,26 @@ After reviewing every `reclaim` decision, repeat the exact inputs with
 identity checks before each deletion. A nonzero result means a race or unsafe
 observation was preserved and should be investigated, not manually bypassed.
 
+Inventory JSON includes `blocking_marker`: the exact first marker path that
+caused an owner or lease refusal, or `null` when no blocking marker was reported.
+The field is additive; `action`, `reason`, paired ownership, and every existing
+age, process, registry, lease, link, identity, and inventory-bound check are
+unchanged. A protected namespace can have `blocking_marker: null` because it is
+preserved before scanning; `null` is not proof of inactivity.
+
+The path is captured at the existing rejection point without another traversal,
+subprocess, or allocation of a test environment. JSON safely escapes unusual
+path characters, including newlines. Marker contents, owner payloads, and other
+environment data are not added to the report. Validate-only mode still deletes
+nothing and writes no cleanup receipts.
+
+An empty `.lock` file is not itself an ownership record: the existing kernel
+lease inspection must also show that the lock is available. Another ambiguous
+marker still preserves the entire namespace/toolchain pair. Use the reported
+path to investigate its origin and owner; do not assume a marker-looking
+installed file is harmless, remove the marker, rename the environment into
+another cleanup namespace, or substitute an unguarded directory-clear command.
+
 ## Long-lived operator reports considered
 
 - A [GitHub Actions runner report](https://github.com/actions/runner/issues/4357)
@@ -61,6 +81,15 @@ observation was preserved and should be investigated, not manually bypassed.
 - The older [systemd tmpfiles hard-link discussion](https://github.com/systemd/systemd/issues/7736)
   documents recursive cleanup hazards beyond symlinks. Gludd refuses linked
   regular files instead of changing or removing them.
+- A [uv shared-directory lock report from 2024-10-09](https://github.com/astral-sh/uv/issues/8032)
+  describes lock ownership conflicting with the directory's users. This supports
+  reporting the precise blocking path rather than inferring ownership from a
+  generic `.lock` filename or an empty record.
+- A [uv operator report from 2026-05-13](https://github.com/astral-sh/uv/issues/19395)
+  describes data loss after `--clear` targeted a project directory. The
+  [uv CLI reference](https://docs.astral.sh/uv/reference/cli/#uv-venv) describes
+  that option as clearing a target before creating an environment, not as a
+  Gludd ownership-aware retirement mechanism. It is not a cleanup bypass here.
 
 The reports span several cleanup implementations and years, so the feature
 encodes their recurring failure modes as tests rather than relying on operator

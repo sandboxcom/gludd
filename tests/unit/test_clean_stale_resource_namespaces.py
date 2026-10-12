@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal
@@ -172,6 +173,7 @@ def test_held_or_uninspectable_kernel_lease_preserves_pair(
     assert plan.decisions[0].action == "preserve"
     assert plan.decisions[0].reason == f"lease-{state}"
     assert plan.decisions[0].paths == (base, toolchain)
+    assert plan.decisions[0].blocking_marker == lock
 
 
 def test_live_pid_requires_matching_start_identity_and_ambiguous_pid_fails_closed(
@@ -195,6 +197,9 @@ def test_live_pid_requires_matching_start_identity_and_ambiguous_pid_fails_close
     assert decisions[exact.name].reason == "live-lease-owner"
     assert decisions[ambiguous.name].reason == "ambiguous-lease-owner"
     assert decisions[reused.name].action == "reclaim"
+    assert decisions[exact.name].blocking_marker == exact / "worker.pid"
+    assert decisions[ambiguous.name].blocking_marker == ambiguous / "worker.pid"
+    assert decisions[reused.name].blocking_marker is None
 
 
 def test_missing_process_census_fails_closed_for_every_candidate(tmp_path: Path) -> None:
@@ -321,13 +326,60 @@ def test_available_kernel_lock_uses_record_and_empty_lock_is_inactive(
         {555: ProcessIdentity(555, "live-start")},
     )
     assert plan.decisions[0].reason == "ambiguous-lease-owner"
+    assert plan.decisions[0].blocking_marker == lock
 
     monkeypatch.setattr(
         cleanup,
         "inspect_lease",
         lambda _path: LeaseInspection("available", None),
     )
-    assert plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0].action == "reclaim"
+    inactive = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert inactive.action == "reclaim"
+    assert inactive.blocking_marker is None
+
+
+def test_first_nested_blocking_marker_is_reported_without_rescanning_or_mutating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    base = _namespace(root, "thread")
+    toolchain = _namespace(root, "thread", toolchain=True)
+    environment = toolchain / "ci-shards/python-3.11"
+    environment.mkdir(parents=True)
+    (environment / ".lock").write_text("")
+    payload_directory = environment / "lib/fixture_package"
+    payload_directory.mkdir(parents=True)
+    first_marker = payload_directory / "a.owner"
+    later_marker = payload_directory / "z.owner"
+    for marker in (first_marker, later_marker):
+        marker.write_text("opaque-marker-body-secret", encoding="utf-8")
+    inspected: list[Path] = []
+    original_scan = cleanup._scan_candidate
+
+    def scan_once(
+        path: Path, config: CleanupConfig, processes: Mapping[int, ProcessIdentity],
+    ) -> cleanup._Scan:
+        inspected.append(path)
+        return original_scan(path, config, processes)
+
+    monkeypatch.setattr(cleanup, "_scan_candidate", scan_once)
+    receipt = tmp_path / "receipt.jsonl"
+    config = _config(root, receipt)
+    plan = plan_cleanup(config, set(), {})
+    decision = plan.decisions[0]
+
+    assert decision.action == "preserve"
+    assert decision.reason == "ambiguous-lease-owner"
+    assert decision.paths == (base, toolchain)
+    assert decision.fingerprints == ()
+    assert decision.blocking_marker == first_marker
+    assert inspected == [base, toolchain]
+    assert apply_cleanup(plan, config, set(), {}).deleted == ()
+    assert inspected == [base, toolchain]
+    assert first_marker.read_text(encoding="utf-8") == "opaque-marker-body-secret"
+    assert later_marker.read_text(encoding="utf-8") == "opaque-marker-body-secret"
+    assert not receipt.exists()
 
 
 def test_directory_scan_refuses_file_hardlink_and_entry_overflow(tmp_path: Path) -> None:
@@ -475,6 +527,58 @@ def test_main_validate_only_inventory_and_refusal_paths(
     args[1] = str(tmp_path / "wrong-name")
     assert cleanup.main(args) == 2
     assert "RESOURCE_CLEANUP_REFUSED" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("marker_name", ["worker.owner", "owner\nrecord.pid"])
+def test_read_only_json_reports_exact_blocking_marker_without_owner_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], marker_name: str,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "obsolete", toolchain=True)
+    marker_directory = candidate / "ci-shards/python-3.11/lib/fixture_package"
+    marker_directory.mkdir(parents=True)
+    marker = marker_directory / marker_name
+    marker.write_text("opaque-marker-body-secret", encoding="utf-8")
+    stale = _namespace(root, "stale")
+    protected = root / project_namespace(project)
+    protected.mkdir()
+    (protected / "worker.pid").write_text("opaque-protected-owner-secret", encoding="utf-8")
+    receipt = tmp_path / "receipt.jsonl"
+    monkeypatch.setattr(cleanup, "_git_worktrees", lambda _root: (project,))
+    monkeypatch.setattr(cleanup, "_registered_worktrees", lambda _path: ())
+    monkeypatch.setattr(cleanup, "_process_identities", lambda: {})
+    monkeypatch.setattr(time, "time", lambda: NOW)
+
+    result = cleanup.main([
+        "--root", str(root), "--project-root", str(project),
+        "--registry", str(tmp_path / "registry"), "--receipt", str(receipt),
+        "--grace-seconds", "3600", "--max-candidates", "50",
+        "--max-entries", "100", "--heartbeat-seconds", "1", "--validate-only",
+    ])
+    output = capsys.readouterr().out
+    rows = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
+    by_namespace = {row["namespace"]: row for row in rows}
+    refused = by_namespace["obsolete-0123456789ab"]
+
+    assert result == 0
+    assert refused["action"] == "preserve"
+    assert refused["reason"] == "ambiguous-lease-owner"
+    assert refused["paths"] == [str(candidate)]
+    assert refused["blocking_marker"] == str(marker)
+    assert by_namespace[stale.name]["action"] == "reclaim"
+    assert by_namespace[stale.name]["blocking_marker"] is None
+    assert by_namespace[protected.name]["reason"] == "protected-worktree-namespace"
+    assert by_namespace[protected.name]["blocking_marker"] is None
+    assert "opaque-marker-body-secret" not in output
+    assert "opaque-protected-owner-secret" not in output
+    assert "deleted=0" in output
+    assert candidate.exists() and stale.exists() and protected.exists()
+    assert marker.read_text(encoding="utf-8") == "opaque-marker-body-secret"
+    assert not receipt.exists()
 
 
 def test_main_apply_deletes_stale_namespace_with_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
