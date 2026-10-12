@@ -337,6 +337,51 @@ def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
     assert payload["full_gate_required"] is True
 
 
+@pytest.mark.parametrize(
+    ("family_id", "test_name"),
+    [
+        (
+            "ee-isolated-metadata-prerequisite",
+            "test_controller_augments_only_searxng_isolated_metadata_dependencies",
+        ),
+        (
+            "ee-builder-installer-boundary",
+            "test_generated_controller_build_preserves_installer_and_interpreter_boundaries",
+        ),
+    ],
+)
+def test_ee_metadata_contracts_execute_before_hosted_image_construction(
+    family_id: str, test_name: str,
+) -> None:
+    """Reuse the installed Builder with complete frozen-input acceptance files."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    node = f"tests/unit/test_ansible_runtime_artifacts.py::{test_name}"
+    family = next(family for family in payload["families"] if family["id"] == family_id)
+    assert family == {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in owner
+    for test_file in (
+        "tests/unit/test_ansible_runtime_artifacts.py",
+        "tests/unit/test_beta4_python_runtime_boundary.py",
+        "tests/unit/test_ansible_searxng_source_inspection.py",
+    ):
+        assert test_file in executable
+    phase = next(
+        phase for phase in payload["runtime_contract"]["phases"]
+        if phase["target"] == family["owner_target"]
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    assert payload["full_gate_required"] is True
+
+
 def _synthetic_repository(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
@@ -624,6 +669,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "threadpool-bulkhead-worker-reservations",
         "enhancement-ratio-class-fixture-binding",
         "pytest-class-fixture-binding-invariant",
+        "ee-isolated-metadata-prerequisite",
+        "ee-builder-installer-boundary",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -773,7 +820,10 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py '
         'tests/unit/test_bulkhead_admission.py '
         'tests/unit/test_enhancement_ratio_plugin.py '
-        'tests/unit/test_pytest_param_fixture_collisions.py"'
+        'tests/unit/test_pytest_param_fixture_collisions.py '
+        'tests/unit/test_ansible_runtime_artifacts.py '
+        'tests/unit/test_beta4_python_runtime_boundary.py '
+        'tests/unit/test_ansible_searxng_source_inspection.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner

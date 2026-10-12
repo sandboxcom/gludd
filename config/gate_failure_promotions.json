@@ -341,6 +341,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_pytest_param_fixture_collisions.py::test_repository_class_scoped_fixtures_use_supported_binding",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-isolated-metadata-prerequisite",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_runtime_artifacts.py::test_controller_augments_only_searxng_isolated_metadata_dependencies",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-builder-installer-boundary",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_runtime_artifacts.py::test_generated_controller_build_preserves_installer_and_interpreter_boundaries",
+      "full_gate_phase": "test"
     }
   ]
 }

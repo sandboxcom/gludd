@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — isolated EE prerequisites were not owned by the pre-fan-out test barrier
+
+- **Observed**: Terminal Build run 38278381965 has four known failed jobs, 22 passed and four skipped. The final other shard passes. The new isolated metadata and real generated-installer regressions exist, but no early manifest family or executable compatibility route owns them yet; image construction can therefore discover this prerequisite failure after fan-out.
+- **Failing-first prevention**: Two exact EE mapping cases, the complete roster assertion and executable owner wiring fail first (four failed, 19 passed). Two manifest families now own the prerequisite and Builder-generation nodes. The existing owner runs all three complete EE runtime/boundary/inspection files alongside every prior compatibility case; no selector sampling, skip, warning suppression, custom runner or phase-budget change is introduced.
+- **Actual acceptance**: All 23 promotion cases pass. The real observed owner passes all 345 cases in 47.02 seconds (47.8 observed), within its unchanged 90-second runtime and 60-second quiet limit. All 28 families retain 21 phases, a 2850-second ceiling and mandatory canonical full-gate replay. Strict typing/Ruff, Make lint, all 215 contracts, the real safe owner behavior and Markdown pass.
+- **Boundaries**: The locked CI set already includes the controller profile and Ansible Builder; the early phase allocates no new environment and builds no image. Source inspection is exercised with bounded harmless fixtures. Source inputs, installer pins, lock hashes and serving controllers remain unchanged by this routing enhancement. Final source review, canonical coverage/gate and replacement exact-SHA hosted success remain required; disk capacity is not bypassed.
+
 ### 2026-10-12 — unsupported class fixtures escaped collection into late hosted setup
 
 - **Observed**: Hosted unit-1b batch029 raises 34 warning-fatal setup errors from three enhancement-ratio fixtures. Native replay preserves the original 41-pass/34-error result. Collection does not resolve fixture bindings, so another collect-only check cannot prevent this class of late failure.

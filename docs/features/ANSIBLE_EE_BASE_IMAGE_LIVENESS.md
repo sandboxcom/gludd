@@ -159,3 +159,31 @@ full gate and 85% aggregate/75% per-file coverage floors remain required
 before promotion. Candidate
 builds still run beside the active digest, with warm, switch, drain, and
 rollback behavior unchanged.
+
+## Early build-input admission
+
+The existing `_pytest-runtime-compatibility-admission` owner now executes the
+complete runtime-artifact, Python-boundary, and frozen-source inspection files
+before hosted shard and image fan-out. The promoted
+`ee-isolated-metadata-prerequisite` and `ee-builder-installer-boundary` families
+bind the exact prerequisite assertion and real Builder generation case to this
+owner. Four routing, roster, and executable-wiring checks fail first when that
+early ownership is absent.
+
+The locked CI install set already includes `ansible-controller` and its Builder
+dependency. Admission reuses that interpreter and the existing pytest runner;
+it does not allocate another environment, install a package, download source,
+or build an image. Complete acceptance files run with warnings fatal and one
+worker, within the existing 90-second runtime and 60-second quiet bound. All
+21 phases and the 2850-second aggregate ceiling remain unchanged.
+
+Actual warning-fatal acceptance passes all 23 promotion cases and all 345 cases
+in the real early owner, taking 47.02 seconds (47.8 observed). The manifest
+validates all 28 failure families against executable owners and authoritative
+full-gate phases; the 215-target contract, strict typing, Ruff, Make lint, and
+Markdown remain green.
+
+This early control-plane check does not replace the hosted pull/build result,
+the exact canonical full gate, or either coverage floor. A failed source-input
+contract blocks fan-out and leaves every serving controller untouched, retaining
+the same zero-downtime warm, switch, drain, and rollback policy.

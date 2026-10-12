@@ -44,6 +44,11 @@ the first nonzero result:
     class-scoped instance bindings; it does not sample files, import fixtures,
     or introduce an allowlist. Both the original ratio failure and whole-tree
     binding invariant have explicit manifest owners before hosted shard fan-out.
+    The complete EE runtime-artifact, interpreter-boundary, and frozen-source
+    inspection files execute here as well. Two promoted nodes cover the isolated
+    SearXNG metadata prerequisite and real Builder-generated installer boundaries.
+    CI already supplies the locked controller/Builder profile; these checks
+    generate no image, install no package, and retain the same phase bounds.
    Hosted Python 3.11/3.12 jobs retain their own interpreter coverage; admission
    reuses their environment without creating another dependency matrix.
 4. `ansible-role-variable-prefix` runs the exact warning-fatal
