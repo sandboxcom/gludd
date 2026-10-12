@@ -41,6 +41,38 @@ development-force-push:
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch force-pushed and verified"
 
+# Advance development to an already constructed reviewed integration commit.
+# Dry-run expectations may be refs; real writes require two explicit full SHAs.
+APPLY ?= 0
+development-fast-forward: _gate-mutation-guard main-worktree-guard
+	@set -eu; \
+	case "$(APPLY)" in 0|1) ;; *) echo "ERROR: APPLY must be 0 or 1"; exit 2;; esac; \
+	[ -n "$(SOURCE)" ] && [ -n "$(EXPECTED_BEFORE_SHA)" ] && [ -n "$(EXPECTED_AFTER_SHA)" ] || { echo "Usage: make development-fast-forward SOURCE=ref EXPECTED_BEFORE_SHA=sha EXPECTED_AFTER_SHA=sha APPLY=0|1"; exit 2; }; \
+	[ "$$(git symbolic-ref --short HEAD)" = development ] || { echo "ERROR: current branch must be development"; exit 2; }; \
+	[ -z "$$(git status --porcelain --untracked-files=all)" ] || { echo "ERROR: development must be clean"; exit 2; }; \
+	if [ "$(APPLY)" = 1 ]; then \
+		for expected in "$(EXPECTED_BEFORE_SHA)" "$(EXPECTED_AFTER_SHA)"; do \
+			case "$$expected" in *[!0-9a-f]*|"") echo "ERROR: real fast-forward expectations must be full SHA-1 values"; exit 2;; esac; \
+			[ "$${#expected}" = 40 ] || { echo "ERROR: real fast-forward expectations must be full SHA-1 values"; exit 2; }; \
+		done; \
+	fi; \
+	BEFORE_SHA="$$(git rev-parse --verify HEAD^{commit})"; \
+	SOURCE_SHA="$$(git rev-parse --verify --end-of-options '$(SOURCE)^{commit}')"; \
+	EXPECTED_BEFORE="$$(git rev-parse --verify --end-of-options '$(EXPECTED_BEFORE_SHA)^{commit}')"; \
+	EXPECTED_AFTER="$$(git rev-parse --verify --end-of-options '$(EXPECTED_AFTER_SHA)^{commit}')"; \
+	[ "$$BEFORE_SHA" = "$$EXPECTED_BEFORE" ] || { echo "ERROR: development differs from expected before SHA"; exit 2; }; \
+	[ "$$SOURCE_SHA" = "$$EXPECTED_AFTER" ] || { echo "ERROR: source differs from expected after SHA"; exit 2; }; \
+	git merge-base --is-ancestor "$$BEFORE_SHA" "$$SOURCE_SHA" || { echo "ERROR: development cannot fast-forward to source"; exit 2; }; \
+	if [ "$(APPLY)" = 0 ]; then \
+		echo "DEVELOPMENT-FAST-FORWARD-VALIDATED source=$(SOURCE) before=$$BEFORE_SHA after=$$SOURCE_SHA apply=0"; exit 0; \
+	fi; \
+	[ "$$(git symbolic-ref --short HEAD)" = development ] && [ "$$(git rev-parse --verify HEAD^{commit})" = "$$BEFORE_SHA" ] || { echo "ERROR: development identity changed before fast-forward"; exit 2; }; \
+	git merge --ff-only "$$SOURCE_SHA"; \
+	[ "$$(git symbolic-ref --short HEAD)" = development ] || { echo "ERROR: development selection changed during fast-forward"; exit 2; }; \
+	[ "$$(git rev-parse --verify HEAD^{commit})" = "$$SOURCE_SHA" ] && [ "$$(git rev-parse --verify development^{commit})" = "$$SOURCE_SHA" ] && [ "$$(git rev-parse --verify --end-of-options '$(SOURCE)^{commit}')" = "$$SOURCE_SHA" ] || { echo "ERROR: fast-forward result differs from the pinned candidate"; exit 2; }; \
+	[ -z "$$(git status --porcelain --untracked-files=all)" ] || { echo "ERROR: development changed during fast-forward"; exit 2; }; \
+	echo "DEVELOPMENT-FAST-FORWARDED source=$(SOURCE) before=$$BEFORE_SHA after=$$SOURCE_SHA mode=ff-only"
+
 # Reconcile a branch into development while retaining a merge parent. MODE is
 # required so an ancestry-only (-s ours) decision remains visible and auditable.
 # APPLY defaults to 0; APPLY=1 is fail-closed outside a clean development tree.

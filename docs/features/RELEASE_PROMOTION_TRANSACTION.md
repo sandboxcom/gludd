@@ -27,6 +27,47 @@ captured local attestation, and the absolute reviewed-receipt path. Selecting
 master never replaces the already verified source evidence with another
 branch's namespace.
 
+## Reviewed candidate integration
+
+Seal one immutable source ref at clean development tip `S`, and independently
+review that source against the recovered integration base `B`. Construct a real
+no-fast-forward integration commit `I` on an isolated branch from `B`, with
+ordered parents `[B, S]` and exactly the source tree. Existing `git-branch`,
+`agent-worktree-base`, and named-ref `git-merge` targets own that operation.
+Do not call a normal commit a cherry-pick or invent merge parents for a receipt.
+
+`development-fast-forward` then advances only canonical main-checkout development
+from exact `S` to exact `I`, without adding another merge. It retains the inactive
+gate and main-checkout guards, requires a clean development checkout, checks both
+expected full SHAs and ancestry before any ref write, merges only the captured
+SHA with Git's `--ff-only`, and verifies branch, HEAD, development, source ref,
+and cleanliness afterward. Divergence or identity drift fails closed. It creates
+no tag, remote push, release, daemon, or deployment, and never changes master.
+
+Safe validation accepts resolvable expectations and writes no refs:
+
+```text
+make development-fast-forward SOURCE=development EXPECTED_BEFORE_SHA=HEAD EXPECTED_AFTER_SHA=development APPLY=0
+```
+
+Real application requires explicit immutable 40-character SHA expectations:
+
+```text
+make development-fast-forward SOURCE=sealed-integration-ref EXPECTED_BEFORE_SHA=full-source-sha EXPECTED_AFTER_SHA=full-integration-sha APPLY=1
+```
+
+Run the combined focused acceptance and fresh canonical full gate at clean `I`
+in the main checkout. The reviewed-head receipt records actual source `S`, actual
+parents `[B, S]`, and focused/gate tip `I`; hosted evidence separately proves `I`.
+The existing receipt builder checks real refs and parents against the external
+review. Its `passed` fields must describe executed checks, never anticipated work.
+
+Temporary real-Git recipe tests prove successful exact fast-forward without an
+extra commit, nonmutating validation, rejected malformed or mismatched pins,
+dirty/untracked/staged trees, wrong branch, divergence, failed ownership guards,
+and post-merge hook identity drift. Only existing external guards are replaced;
+the target recipe and Git operations run unchanged against test-owned repositories.
+
 ## Stable release publication
 
 `release-cut` applies full readiness admission (`RELEASE_READINESS_VALIDATE_ONLY=0`)
