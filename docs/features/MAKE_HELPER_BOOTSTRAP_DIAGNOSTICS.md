@@ -71,6 +71,13 @@ guard-goal, cache-sandbox, and no-sync assertions. The actual-recipe regressions
 above still enforce lockfile and environment nonmutation; conforming the legacy
 structural checks does not relax these behavioral checks or runtime validation.
 
+Isolated launcher fixtures that invoke the full external Make entrypoint copy
+the source `pyproject.toml` before invocation. They do not override `VERSION` or
+weaken missing-metadata rejection. Duplicate-owner tests retain the live PID;
+dry-run tests compare directory contents, and both retain unchanged metadata
+without allocating an environment. The second sealed integration's two absent
+fixture-metadata failures remain recorded rather than treated as gate success.
+
 ## Research and resource boundary
 
 Research reviewed on 2026-10-12:
