@@ -1,4 +1,4 @@
-"""Detect test parameters that shadow fixtures supplied by pytest plugins."""
+"""Detect pytest parameter collisions and deprecated class-fixture binding."""
 
 from __future__ import annotations
 
@@ -19,6 +19,16 @@ class ParametrizedFixtureCollision:
     name: str
 
 
+@dataclass(frozen=True, order=True)
+class ClassScopedInstanceFixture:
+    """A class-scoped fixture that binds to a disposable test instance."""
+
+    path: Path
+    line: int
+    class_name: str
+    name: str
+
+
 @dataclass(frozen=True)
 class _PytestAliases:
     modules: frozenset[str]
@@ -26,17 +36,18 @@ class _PytestAliases:
     marks: frozenset[str]
 
 
-def _pytest_aliases(tree: ast.AST) -> _PytestAliases:
-    modules = {"pytest"}
+def _pytest_aliases(tree: ast.AST, *, include_asyncio: bool = False) -> _PytestAliases:
+    providers = {"pytest", "pytest_asyncio"} if include_asyncio else {"pytest"}
+    modules = set(providers)
     fixture_decorators: set[str] = set()
     marks: set[str] = set()
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for imported in node.names:
-                if imported.name == "pytest":
+                if imported.name in providers:
                     modules.add(imported.asname or imported.name)
-        elif isinstance(node, ast.ImportFrom) and node.module == "pytest":
+        elif isinstance(node, ast.ImportFrom) and node.module in providers:
             for imported in node.names:
                 public_name = imported.asname or imported.name
                 if imported.name == "fixture":
@@ -83,7 +94,6 @@ def _fixture_name(
 
 def fixture_names_from_source(source: str, *, filename: str = "<plugin>") -> set[str]:
     """Extract public fixture names from one pytest plugin source module."""
-
     tree = ast.parse(source, filename=filename)
     aliases = _pytest_aliases(tree)
     names: set[str] = set()
@@ -99,7 +109,6 @@ def fixture_names_from_source(source: str, *, filename: str = "<plugin>") -> set
 
 def pytest_plugin_modules_from_source(source: str, *, filename: str) -> set[str]:
     """Extract literal modules delegated through ``pytest_plugins``."""
-
     tree = ast.parse(source, filename=filename)
     modules: set[str] = set()
 
@@ -144,7 +153,6 @@ def _pytest_entry_point_modules() -> set[str]:
 
 def external_pytest_fixture_names() -> set[str]:
     """Discover fixtures from installed pytest entry-point plugins statically."""
-
     pending = sorted(_pytest_entry_point_modules())
     visited: set[str] = set()
     fixture_names: set[str] = set()
@@ -208,7 +216,6 @@ def find_parametrized_fixture_collisions(
     external_fixture_names: set[str],
 ) -> list[ParametrizedFixtureCollision]:
     """Return static collisions in deterministic path/line/name order."""
-
     collisions: list[ParametrizedFixtureCollision] = []
     for path in sorted(set(paths)):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -227,3 +234,52 @@ def find_parametrized_fixture_collisions(
                             )
                         )
     return sorted(collisions)
+
+
+def find_class_scoped_instance_fixtures(
+    paths: Iterable[Path],
+) -> list[ClassScopedInstanceFixture]:
+    """Report unsupported literal class-scope bindings without executing fixtures."""
+    bindings: list[ClassScopedInstanceFixture] = []
+    for path in sorted(set(paths)):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        aliases = _pytest_aliases(tree, include_asyncio=True)
+        parents = {
+            child: parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            owner = parents[node]
+            while not isinstance(owner, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                owner = parents[owner]
+            if not isinstance(owner, ast.ClassDef):
+                continue
+            if any(
+                isinstance(decorator, ast.Name) and decorator.id in {"staticmethod", "classmethod"}
+                for decorator in node.decorator_list
+            ):
+                continue
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call):
+                    continue
+                name = _fixture_name(decorator, function_name=node.name, aliases=aliases)
+                if name is None:
+                    continue
+                if any(
+                    keyword.arg == "scope"
+                    and isinstance(keyword.value, ast.Constant)
+                    and keyword.value.value == "class"
+                    for keyword in decorator.keywords
+                ):
+                    bindings.append(
+                        ClassScopedInstanceFixture(
+                            path=path,
+                            line=decorator.lineno,
+                            class_name=owner.name,
+                            name=name,
+                        )
+                    )
+    return sorted(bindings)

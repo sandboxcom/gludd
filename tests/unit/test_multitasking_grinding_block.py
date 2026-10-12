@@ -16,7 +16,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 
@@ -25,7 +25,7 @@ PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
 CONFIG = ROOT / ".opencode" / "lib" / "multitask_config.ts"
 
 
-def _run_test_script(script: str, env_extra: dict | None = None) -> dict:
+def _run_test_script(script: str, env_extra: dict[str, str] | None = None) -> dict[str, Any]:
     """Run a Node.js .mjs script that imports enforce-multitask.
 
     Returns the parsed JSON stdout, or raw output on parse failure.
@@ -46,9 +46,9 @@ def _run_test_script(script: str, env_extra: dict | None = None) -> dict:
         )
         combined = (result.stdout or "") + "\n" + (result.stderr or "")
         try:
-            out = json.loads((result.stdout or "").strip().split("\n")[-1] or "{}")
+            out = cast(dict[str, Any], json.loads((result.stdout or "").strip().split("\n")[-1] or "{}"))
         except json.JSONDecodeError:
-            out: dict = {"_raw": result.stdout, "_stderr": result.stderr, "_exit": result.returncode}
+            out = {"_raw": result.stdout, "_stderr": result.stderr, "_exit": result.returncode}
         out["_combined"] = combined
         out["_exit_code"] = result.returncode
         return out
@@ -64,32 +64,34 @@ class TestGrindingBlockStatic:
     """Source-level assertions that the grinding detection code exists."""
 
     @pytest.fixture(scope="class")
-    def src(self):
+    @staticmethod
+    def src() -> str:
         return PLUGIN.read_text()
 
     @pytest.fixture(scope="class")
-    def config_src(self):
+    @staticmethod
+    def config_src() -> str:
         return CONFIG.read_text()
 
-    def test_consecutive_non_dispatch_threshold_constant(self, src):
+    def test_consecutive_non_dispatch_threshold_constant(self, src: str) -> None:
         """CONSECUTIVE_NON_DISPATCH_THRESHOLD must be defined and defaults to 5."""
         assert "CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src, (
             "CONSECUTIVE_NON_DISPATCH_THRESHOLD constant must exist in plugin source"
         )
 
-    def test_consecutive_non_dispatch_block_exists(self, src):
+    def test_consecutive_non_dispatch_block_exists(self, src: str) -> None:
         """The CONSECUTIVE-NON-DISPATCH-STREAK deny branch must exist."""
         assert "CONSECUTIVE NON-DISPATCH STREAK" in src, (
             "CONSECUTIVE NON-DISPATCH STREAK deny message must exist in plugin source"
         )
 
-    def test_consecutive_counter_incremented(self, src):
+    def test_consecutive_counter_incremented(self, src: str) -> None:
         """consecutiveNonDispatch counter must be incremented for non-dispatch calls."""
         assert "consecutiveNonDispatch++" in src or "consecutiveNonDispatch ++" in src, (
             "consecutiveNonDispatch counter must be incremented"
         )
 
-    def test_consecutive_counter_reset_on_dispatch(self, src):
+    def test_consecutive_counter_reset_on_dispatch(self, src: str) -> None:
         """consecutiveNonDispatch must reset to 0 inside the dispatch-tool branch."""
         # The reset line exists: _state.consecutiveNonDispatch = 0 (line ~235)
         assert "_state.consecutiveNonDispatch = 0" in src, (
@@ -99,21 +101,21 @@ class TestGrindingBlockStatic:
             "Comment confirming counter reset in dispatch branch must exist"
         )
 
-    def test_env_var_tunable_threshold(self, src, config_src):
+    def test_env_var_tunable_threshold(self, src: str, config_src: str) -> None:
         """Threshold must be env-tunable via GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD."""
         assert "CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src
         assert "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD" in config_src, (
             "CONSECUTIVE_NON_DISPATCH_THRESHOLD must read from env var"
         )
 
-    def test_defaultimpl_is_module_private(self, src):
+    def test_defaultimpl_is_module_private(self, src: str) -> None:
         """The fallback implementation must not become a loader-visible export."""
         assert "const defaultImpl: HotModule" in src
         assert "export const defaultImpl" not in src
 
     def test_state_isolation_uses_configurable_file_not_named_reset(
-        self, src, config_src,
-    ):
+        self, src: str, config_src: str,
+    ) -> None:
         """Tests isolate state through the configured file and a fresh process."""
         assert "MULTITASK_STATE_FILE" in src
         assert "GLUDD_MULTITASK_STATE_FILE" in config_src
@@ -203,7 +205,7 @@ console.log(JSON.stringify(results));
 """
         return script, tmp_project, state_file, script_path
 
-    def _run_script(self, script: str, script_path: str) -> list:
+    def _run_script(self, script: str, script_path: str) -> list[dict[str, Any]]:
         """Write script to file, run as subprocess, parse JSON result list."""
         with open(script_path, "w") as f:
             f.write(script)
@@ -238,12 +240,12 @@ console.log(JSON.stringify(results));
                     "_stderr": result.stderr,
                     "_exit": result.returncode,
                 }]
-            return json.loads(json_line)
+            return cast(list[dict[str, Any]], json.loads(json_line))
         finally:
             with __import__("contextlib").suppress(OSError):
                 os.unlink(script_path)
 
-    def test_consecutive_non_dispatch_blocked_at_threshold(self):
+    def test_consecutive_non_dispatch_blocked_at_threshold(self) -> None:
         """Third consecutive non-read non-dispatch call (bash) is denied.
 
         Setup: MIN_DISPATCHES=2, THRESHOLD=3, pending work in TASKS.md.
@@ -346,7 +348,7 @@ console.log(JSON.stringify(results));
             import shutil
             shutil.rmtree(tmp_project, ignore_errors=True)
 
-    def test_consecutive_counter_resets_after_dispatch(self):
+    def test_consecutive_counter_resets_after_dispatch(self) -> None:
         """After hitting threshold, dispatching a subagent resets the counter.
 
         1. Accumulate 2 non-dispatch calls (edit, write) → counter at 2.
@@ -447,7 +449,7 @@ console.log(JSON.stringify(results));
             import shutil
             shutil.rmtree(tmp_project, ignore_errors=True)
 
-    def test_no_deny_when_no_pending_work(self):
+    def test_no_deny_when_no_pending_work(self) -> None:
         """When TASKS.md has NO unchecked items, grinding should NOT be blocked."""
         tmp_project = self._create_temp_project("# Tasks\n\n- [x] All done\n")  # Checked item = no pending
         pid = os.getpid()
@@ -508,7 +510,7 @@ console.log(JSON.stringify(results));
             import shutil
             shutil.rmtree(tmp_project, ignore_errors=True)
 
-    def test_threshold_env_override_takes_effect(self):
+    def test_threshold_env_override_takes_effect(self) -> None:
         """Setting CONSECUTIVE_NON_DISPATCH_THRESHOLD=2 blocks on the 2nd
         non-read non-dispatch call. Uses edit→write (not read/grep) since
         read tools are excluded from the counter."""
@@ -579,7 +581,7 @@ console.log(JSON.stringify(results));
             import shutil
             shutil.rmtree(tmp_project, ignore_errors=True)
 
-    def test_multitask_enforce_disabled_allows_grinding(self):
+    def test_multitask_enforce_disabled_allows_grinding(self) -> None:
         """When MULTITASK_FLOOR_ENFORCE=0, ALL non-dispatch calls are allowed."""
         tmp_project = self._create_temp_project("# Tasks\n\n- [ ] Unchecked task\n")
         pid = os.getpid()

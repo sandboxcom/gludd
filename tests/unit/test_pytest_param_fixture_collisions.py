@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
+import pytest
+from scripts import check_pytest_param_fixture_collisions as fixture_audit
 from scripts.check_pytest_param_fixture_collisions import (
     external_pytest_fixture_names,
     find_parametrized_fixture_collisions,
@@ -152,4 +154,183 @@ def test_repository_parameters_do_not_shadow_external_pytest_fixtures() -> None:
 
     assert not collisions, "Parametrized arguments shadow external pytest fixtures:\n" + "\n".join(
         f"  {item.path.relative_to(REPO_ROOT)}:{item.line}: {item.name}" for item in collisions
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            '''
+            import pytest
+            class TestExample:
+                @pytest.fixture(scope="class")
+                def shared(self):
+                    return [1, 2, 3]
+            ''',
+            [("TestExample", "shared")],
+        ),
+        (
+            '''
+            import pytest as pt
+            class TestExample:
+                @pt.fixture(name="public_name", scope="class")
+                async def internal_name(self):
+                    return [1, 2, 3]
+            ''',
+            [("TestExample", "public_name")],
+        ),
+        (
+            '''
+            from pytest import fixture as provide
+            class BaseExample:
+                @provide(autouse=True, scope="class")
+                def shared(instance):
+                    instance.value = 1
+            ''',
+            [("BaseExample", "shared")],
+        ),
+        (
+            '''
+            import pytest
+            @pytest.fixture(scope="class")
+            def shared():
+                return [1, 2, 3]
+            ''',
+            [],
+        ),
+        (
+            '''
+            import pytest
+            class TestExample:
+                @pytest.fixture(scope="class")
+                @staticmethod
+                def shared():
+                    return [1, 2, 3]
+            ''',
+            [],
+        ),
+        (
+            '''
+            import pytest
+            class TestExample:
+                @pytest.fixture(scope="class")
+                @classmethod
+                def shared(cls):
+                    cls.value = 1
+            ''',
+            [],
+        ),
+        (
+            '''
+            import pytest
+            class TestExample:
+                @pytest.fixture
+                def per_test(self):
+                    return [1, 2, 3]
+                @pytest.fixture(scope="function")
+                def also_per_test(self):
+                    return [1, 2, 3]
+                @custom.fixture(scope="class")
+                def unrelated(self):
+                    return [1, 2, 3]
+            ''',
+            [],
+        ),
+        (
+            '''
+            import pytest
+            class TestExample:
+                def test_local_fixture(self):
+                    @pytest.fixture(scope="class")
+                    def local_fixture():
+                        return [1, 2, 3]
+            ''',
+            [],
+        ),
+        (
+            '''
+            import pytest
+            class TestExample:
+                if True:
+                    @pytest.fixture(scope="class")
+                    def conditional(self):
+                        return [1, 2, 3]
+            ''',
+            [("TestExample", "conditional")],
+        ),
+    ],
+)
+def test_class_fixture_binding_shapes(
+    tmp_path: Path,
+    source: str,
+    expected: list[tuple[str, str]],
+) -> None:
+    test_file = tmp_path / "test_binding.py"
+    test_file.write_text(dedent(source), encoding="utf-8")
+
+    bindings = fixture_audit.find_class_scoped_instance_fixtures([test_file])
+
+    assert [(item.class_name, item.name) for item in bindings] == expected
+
+
+def test_class_fixture_bindings_have_stable_source_locations(tmp_path: Path) -> None:
+    first = tmp_path / "test_a.py"
+    second = tmp_path / "test_b.py"
+    source = (
+        'import pytest\n'
+        'class TestExample:\n'
+        '    @pytest.fixture(scope="class")\n'
+        '    def shared(self):\n'
+        '        return 1\n'
+    )
+    for path in (first, second):
+        path.write_text(source, encoding="utf-8")
+
+    bindings = fixture_audit.find_class_scoped_instance_fixtures([second, first, first])
+
+    assert [(item.path, item.line, item.class_name, item.name) for item in bindings] == [
+        (first, 3, "TestExample", "shared"),
+        (second, 3, "TestExample", "shared"),
+    ]
+
+
+def test_class_fixture_bindings_understand_pytest_asyncio_aliases(tmp_path: Path) -> None:
+    source = dedent(
+        '''
+        import pytest_asyncio as pa
+        from pytest_asyncio import fixture as provide_async
+        class TestExample:
+            @pa.fixture(scope="class", loop_scope="class")
+            async def module_alias(self):
+                yield 1
+            @provide_async(scope="class", name="public_async")
+            async def imported_alias(self):
+                return 2
+            @pa.fixture(scope="class", loop_scope="class")
+            @staticmethod
+            async def supported_static():
+                return 3
+        '''
+    )
+    test_file = tmp_path / "test_async_binding.py"
+    test_file.write_text(source, encoding="utf-8")
+
+    # The existing plugin-fixture discovery contract remains pytest-only.
+    assert fixture_names_from_source(source, filename=str(test_file)) == set()
+    bindings = fixture_audit.find_class_scoped_instance_fixtures([test_file])
+
+    assert [(item.class_name, item.name) for item in bindings] == [
+        ("TestExample", "module_alias"),
+        ("TestExample", "public_async"),
+    ]
+
+
+def test_repository_class_scoped_fixtures_use_supported_binding() -> None:
+    bindings = fixture_audit.find_class_scoped_instance_fixtures(
+        (REPO_ROOT / "tests").rglob("*.py"),
+    )
+
+    assert not bindings, "Class-scoped fixtures require staticmethod or classmethod binding:\n" + "\n".join(
+        f"  {item.path.relative_to(REPO_ROOT)}:{item.line}: {item.class_name}.{item.name}" for item in bindings
     )

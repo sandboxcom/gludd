@@ -126,7 +126,8 @@ class TestTaskStepOrdering:
 
 class TestDefaultsSanity:
     @pytest.fixture(scope="class")
-    def defaults(self) -> dict[str, Any]:
+    @staticmethod
+    def defaults() -> dict[str, Any]:
         return cast(dict[str, Any], _load_yaml("defaults/main.yml"))
 
     def test_required_default_keys_exist(self, defaults: dict[str, Any]) -> None:

@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — unsupported class fixtures escaped collection into late hosted setup
+
+- **Observed**: Hosted unit-1b batch029 raises 34 warning-fatal setup errors from three enhancement-ratio fixtures. Native replay preserves the original 41-pass/34-error result. Collection does not resolve fixture bindings, so another collect-only check cannot prevent this class of late failure.
+- **Instruction-conforming repair**: The three return-only keyword fixtures keep their class lifetime, values, parametrization and assertions through pytest's supported static method binding. The automated whole-test-tree audit finds five further return-only fixtures in materials, local-model-role and grinding-block tests; those use the same binding correction. Accurate test annotations and JSON casts remove 44 pre-existing strict typing findings without changing assertions or runtime scripts.
+- **Mechanical prevention**: Extend the existing pytest AST audit rather than adding a linter or scanner. Twelve new cases fail first, including alias/async providers and the whole-tree invariant, then all 18 audit cases pass. Existing plugin fixture discovery and parameter-collision behavior stay unchanged; the binding invariant has no allowlist, sampling, warning suppression or fixture execution. Focused coverage is 95.67% combined, 97.08% line and 93.40% branch, above unchanged 85/75 floors.
+- **Actual early admission**: Four new mapping/roster/wiring assertions fail first; all 21 promotion cases then pass. Both complete affected files execute in the existing warning-fatal one-worker owner: 285 cases pass in 43.38 seconds (44.1 observed), within the same 90-second runtime and 60-second quiet bound. All 26 families preserve 21 phases, the 2850-second ceiling and mandatory exhaustive proof. Strict typing, Ruff, docstrings, Make lint, 215 contracts and Markdown pass.
+- **Proof and resources**: Completed bulkhead worktree drafts are backed up before retirement; physical disk remains 91% against the hard 90% limit. No unchanged full-gate replay, candidate reseal, task tick, master merge, tag or release follows these focused successes. The feature guide records the long-lived pytest issue and practitioner migration discussion; this administrative audit adds no serving process and preserves ZDD.
+
 ### 2026-10-12 — worker startup consumed the thread bulkhead backlog budget
 
 - **Observed**: Hosted unit-1d rejects the second nonblocking submission before the intended overflow. Five held-worker cases reproduce the race deterministically, including zero-backlog admission. The full new draft exposes 13 failures and four passes across capacity, cancellation, exceptional completion, failed submissions, concurrent producers and shutdown ownership.

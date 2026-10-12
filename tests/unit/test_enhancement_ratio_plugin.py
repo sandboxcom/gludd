@@ -60,60 +60,62 @@ def _check_ratio(fix_count: int, total: int) -> tuple[bool, float, float]:
 # ── Test suite ──────────────────────────────────────────────────────────────
 
 class TestPluginStructure:
-    def test_plugin_file_exists(self):
+    def test_plugin_file_exists(self) -> None:
         assert PLUGIN_PATH.exists(), f"Plugin missing at {PLUGIN_PATH}"
 
-    def test_plugin_registered_in_opencode_json(self):
+    def test_plugin_registered_in_opencode_json(self) -> None:
         oc = (PLUGIN_PATH.parents[2] / "opencode.json").read_text()
         assert "enforce-enhancement-ratio.ts" in oc, "Plugin not registered in opencode.json"
 
-    def test_exports_keyword_lists(self):
+    def test_exports_keyword_lists(self) -> None:
         src = _plugin_source()
         assert "ENHANCEMENT_KEYWORDS" in src, "ENHANCEMENT_KEYWORDS export missing"
         assert "FIX_KEYWORDS" in src, "FIX_KEYWORDS export missing"
 
-    def test_tool_execute_before_hook_registered(self):
+    def test_tool_execute_before_hook_registered(self) -> None:
         src = _plugin_source()
         assert "tool.execute.before" in src, "tool.execute.before hook missing"
 
-    def test_no_text_complete_hook(self):
+    def test_no_text_complete_hook(self) -> None:
         """Refactored: self-contained plugin has NO text.complete hook key."""
         src = _plugin_source()
         assert '"text.complete":' not in src, \
             "text.complete hook key present — plugin is self-contained, only tool.execute.before"
 
-    def test_fail_open_present(self):
+    def test_fail_open_present(self) -> None:
         src = _plugin_source()
         assert "catch" in src.lower(), "No try/catch fail-open block found"
 
-    def test_env_var_disable_present(self):
+    def test_env_var_disable_present(self) -> None:
         src = _plugin_source()
         assert "GLUDD_ENHANCEMENT_RATIO_ENFORCE" in src, "Env-var disable switch missing"
 
-    def test_block_env_var_present(self):
+    def test_block_env_var_present(self) -> None:
         src = _plugin_source()
         assert "GLUDD_ENHANCEMENT_RATIO_BLOCK" in src, "BLOCK env var (soft/hard switch) missing"
 
-    def test_subagent_skip_present(self):
+    def test_subagent_skip_present(self) -> None:
         src = _plugin_source()
         assert "OPENCODE_SUBAGENT" in src, "Subagent skip gate missing"
 
-    def test_state_file_defined(self):
+    def test_state_file_defined(self) -> None:
         src = _plugin_source()
         assert "gludd-enhancement-ratio.json" in src, "State file path not defined"
 
-    def test_isDispatchTool_function(self):
+    def test_isDispatchTool_function(self) -> None:
         src = _plugin_source()
         assert "task" in src and "agent" in src and "workflow" in src, "Dispatch tool detection incomplete"
 
 
 class TestKeywordClassification:
     @pytest.fixture(scope="class")
-    def enhancement_keywords(self) -> list[str]:
+    @staticmethod
+    def enhancement_keywords() -> list[str]:
         return _extract_keywords(_plugin_source(), "ENHANCEMENT_KEYWORDS")
 
     @pytest.fixture(scope="class")
-    def fix_keywords(self) -> list[str]:
+    @staticmethod
+    def fix_keywords() -> list[str]:
         return _extract_keywords(_plugin_source(), "FIX_KEYWORDS")
 
     @pytest.mark.parametrize("prompt", [
@@ -132,7 +134,7 @@ class TestKeywordClassification:
         "New feature: add project scaffolding",
         "Enhancement: improve plugin liveness checks",
     ])
-    def test_classifies_as_enhancement(self, enhancement_keywords, prompt):
+    def test_classifies_as_enhancement(self, enhancement_keywords: list[str], prompt: str) -> None:
         lower = prompt.lower()
         matched = any(kw in lower for kw in enhancement_keywords)
         assert matched, f"Should classify as enhancement: {prompt!r}"
@@ -148,7 +150,7 @@ class TestKeywordClassification:
         "Fix: repair broken gate target",
         "Bug fix: repair broken CI",
     ])
-    def test_classifies_as_fix(self, fix_keywords, prompt):
+    def test_classifies_as_fix(self, fix_keywords: list[str], prompt: str) -> None:
         lower = prompt.lower()
         matched = any(kw in lower for kw in fix_keywords)
         assert matched, f"Should classify as fix: {prompt!r}"
@@ -163,14 +165,14 @@ class TestKeywordClassification:
         "Update dependencies",
         "Analyze performance bottlenecks",
     ])
-    def test_unknown_defaults_to_fix(self, prompt):
+    def test_unknown_defaults_to_fix(self, prompt: str) -> None:
         lower = prompt.lower()
         enh_match = any(kw in lower for kw in _extract_keywords(_plugin_source(), "ENHANCEMENT_KEYWORDS"))
         fix_match = any(kw in lower for kw in _extract_keywords(_plugin_source(), "FIX_KEYWORDS"))
         if not enh_match and not fix_match:
             pass
 
-    def test_enhancement_checked_before_fix(self):
+    def test_enhancement_checked_before_fix(self) -> None:
         """Keywords are checked enhancement-first; 'fix bug in tests' is enhancement."""
         enh_kw = _extract_keywords(_plugin_source(), "ENHANCEMENT_KEYWORDS")
         fix_kw = _extract_keywords(_plugin_source(), "FIX_KEYWORDS")
@@ -181,20 +183,20 @@ class TestKeywordClassification:
 
 
 class TestStateFilePersistence:
-    def test_state_file_path_consistent(self):
+    def test_state_file_path_consistent(self) -> None:
         src = _plugin_source()
         match = re.search(r'STATE_FILE\s*=\s*[^"]*"([^"]*)"', src)
         assert match, "STATE_FILE not found in plugin source"
         state_path = match.group(1)
         assert state_path.endswith("gludd-enhancement-ratio.json"), f"Unexpected state path: {state_path}"
 
-    def test_state_file_has_wave_field(self):
+    def test_state_file_has_wave_field(self) -> None:
         src = _plugin_source()
         assert "wave" in src, "State shape missing 'wave' field"
         assert "session_enhancements" in src, "State shape missing 'session_enhancements'"
         assert "session_fixes" in src, "State shape missing 'session_fixes'"
 
-    def test_state_file_has_session_counters(self):
+    def test_state_file_has_session_counters(self) -> None:
         src = _plugin_source()
         assert "session_enhancements" in src, "State shape missing 'session_enhancements'"
         assert "session_fixes" in src, "State shape missing 'session_fixes'"
@@ -202,58 +204,58 @@ class TestStateFilePersistence:
         assert "lastPid" in src, "State shape missing 'lastPid'"
         assert "lastTs" in src, "State shape missing 'lastTs'"
 
-    def test_classify_returns_enhancement_or_fix(self):
+    def test_classify_returns_enhancement_or_fix(self) -> None:
         src = _plugin_source()
         assert '"enhancement"' in src, "classify() does not return 'enhancement'"
         assert '"fix"' in src, "classify() does not return 'fix'"
 
 
 class TestWaveThresholds:
-    def test_minimum_wave_size_is_two(self):
+    def test_minimum_wave_size_is_two(self) -> None:
         src = _plugin_source()
         assert (
             "s.wave.length >= 2" in src or "wave.length >= 2" in src
             or "length >= 2" in src or "length > 1" in src
         ), "Wave threshold check for >=2 dispatches not found"
 
-    def test_fix_ratio_threshold_at_50_percent(self):
+    def test_fix_ratio_threshold_at_50_percent(self) -> None:
         src = _plugin_source()
         assert "0.5" in src, "Fix ratio threshold (0.5 / 50%) not found in source"
 
-    def test_console_warn_on_violation(self):
+    def test_console_warn_on_violation(self) -> None:
         src = _plugin_source()
         assert "console.warn" in src, "console.warn call for violation not found"
 
-    def test_violation_message_contains_ag_ents_md(self):
+    def test_violation_message_contains_ag_ents_md(self) -> None:
         src = _plugin_source()
         assert "AGENTS.md" in src, "Violation message does not reference AGENTS.md"
 
-    def test_wave_resets_after_check(self):
+    def test_wave_resets_after_check(self) -> None:
         src = _plugin_source()
         wave_reset = src.count("s.wave = []") + src.count("s.wave=[]") + src.count("s.wave = []")
         assert wave_reset >= 1, "Wave does not reset after ratio check"
 
-    def test_no_legacy_early_warned_state(self):
+    def test_no_legacy_early_warned_state(self) -> None:
         src = _plugin_source()
         assert "early_warned" not in src, "legacy early_warned state should not be present"
 
 
 class TestExtractPrompt:
-    def test_extracts_prompt_field(self):
+    def test_extracts_prompt_field(self) -> None:
         src = _plugin_source()
         assert "args.prompt" in src, "Prompt extraction missing args.prompt"
 
-    def test_extracts_description_field(self):
+    def test_extracts_description_field(self) -> None:
         src = _plugin_source()
         assert "args.description" in src, "Prompt extraction missing args.description"
 
-    def test_fallback_to_stringify(self):
+    def test_fallback_to_stringify(self) -> None:
         src = _plugin_source()
         assert "JSON.stringify" in src, "No JSON.stringify fallback for unknown args shape"
 
 
 class TestSubagentSkip:
-    def test_skip_in_tool_execute_before(self):
+    def test_skip_in_tool_execute_before(self) -> None:
         src = _plugin_source()
         hook_blocks = re.findall(r'tool\.execute\.before.*?=>\s*\{', src, re.DOTALL)
         assert len(hook_blocks) >= 1, "tool.execute.before hook not found"
@@ -263,26 +265,26 @@ class TestSubagentSkip:
 class TestBlockMode:
     """Tests for GLUDD_ENHANCEMENT_RATIO_BLOCK=1 hard-block mode."""
 
-    def test_block_env_var_defined(self):
+    def test_block_env_var_defined(self) -> None:
         src = _plugin_source()
         assert "GLUDD_ENHANCEMENT_RATIO_BLOCK" in src, "BLOCK env var not defined in source"
 
-    def test_block_default_on(self):
+    def test_block_default_on(self) -> None:
         """BLOCK defaults to enabled: !== '0'."""
         src = _plugin_source()
         assert "BLOCK" in src, "BLOCK variable not present"
         match = re.search(r'BLOCK\s*=\s*\([^)]+\)\s*!==\s*"0"', src)
         assert match, "BLOCK should default on (strict !== '0' check)"
 
-    def test_block_returns_permission_deny_on_violation(self):
+    def test_block_returns_permission_deny_on_violation(self) -> None:
         src = _plugin_source()
         assert 'permissionDecision: "deny"' in src, "permissionDecision deny not in source"
 
-    def test_console_warn_still_present_for_soft_mode(self):
+    def test_console_warn_still_present_for_soft_mode(self) -> None:
         src = _plugin_source()
         assert "console.warn" in src, "console.warn must remain for soft mode (BLOCK=0)"
 
-    def test_deny_message_format(self):
+    def test_deny_message_format(self) -> None:
         src = _plugin_source()
         assert "ENHANCEMENT RATIO VIOLATION" in src, "Deny message header missing"
         assert "Must be ≤50%" in src, "Deny message threshold instruction missing"
@@ -293,17 +295,18 @@ class TestWaveRatioSimulations:
     """Behavioral ratio simulations using extracted keywords."""
 
     @pytest.fixture(scope="class")
-    def keywords(self):
+    @staticmethod
+    def keywords() -> dict[str, list[str]]:
         src = _plugin_source()
         return {
             "enhancement": _extract_keywords(src, "ENHANCEMENT_KEYWORDS"),
             "fix": _extract_keywords(src, "FIX_KEYWORDS"),
         }
 
-    def _classify_prompts(self, prompts, kw):
+    def _classify_prompts(self, prompts: list[str], kw: dict[str, list[str]]) -> list[str]:
         return [_classify(p, kw["enhancement"], kw["fix"]) for p in prompts]
 
-    def test_6_fixes_1_enhancement_violates(self, keywords):
+    def test_6_fixes_1_enhancement_violates(self, keywords: dict[str, list[str]]) -> None:
         """6 fixes + 1 enhancement = 85.7% fixes -> violation."""
         prompts = [
             "Fix bug in auth module",
@@ -322,7 +325,7 @@ class TestWaveRatioSimulations:
         assert violation, f"6 fixes / 1 enhancement ({fix_ratio:.0%}) should trigger violation"
         assert fix_ratio > 0.5, f"Fix ratio {fix_ratio:.2%} should exceed 50%"
 
-    def test_4_enhancements_3_fixes_no_violation(self, keywords):
+    def test_4_enhancements_3_fixes_no_violation(self, keywords: dict[str, list[str]]) -> None:
         """4 enhancements + 3 fixes = 42.9% fixes -> no violation."""
         prompts = [
             "Write tests for the daemon module",
@@ -340,7 +343,7 @@ class TestWaveRatioSimulations:
         assert fix_count == 3, f"Expected 3 fixes, got {fix_count}: {list(zip(prompts, results, strict=False))}"
         assert not violation, f"3 fixes / 4 enhancements ({fix_ratio:.0%}) should NOT trigger violation"
 
-    def test_5_enhancements_2_fixes_no_violation(self, keywords):
+    def test_5_enhancements_2_fixes_no_violation(self, keywords: dict[str, list[str]]) -> None:
         """5 enhancements + 2 fixes = 28.6% fixes -> no violation."""
         prompts = [
             "Add a new feature for user auth",
@@ -357,7 +360,7 @@ class TestWaveRatioSimulations:
         assert fix_count == 2, f"Expected 2 fixes, got {fix_count}"
         assert not violation
 
-    def test_all_enhancements_no_violation(self, keywords):
+    def test_all_enhancements_no_violation(self, keywords: dict[str, list[str]]) -> None:
         """All 7 enhancements -> no violation."""
         prompts = [
             "Add a new feature for user auth",
@@ -374,7 +377,7 @@ class TestWaveRatioSimulations:
         assert fix_count == 0, f"Expected 0 fixes, got {fix_count}"
         assert not violation
 
-    def test_all_fixes_violates(self, keywords):
+    def test_all_fixes_violates(self, keywords: dict[str, list[str]]) -> None:
         """All 7 fixes -> violation."""
         prompts = [
             "Fix bug in auth module",
@@ -391,7 +394,7 @@ class TestWaveRatioSimulations:
         assert fix_count == 7, f"Expected 7 fixes, got {fix_count}"
         assert violation, f"All fixes should trigger violation (ratio {fix_ratio:.0%})"
 
-    def test_exactly_50_percent_even_wave(self, keywords):
+    def test_exactly_50_percent_even_wave(self, keywords: dict[str, list[str]]) -> None:
         """3 enhancements + 3 fixes = 50% -> no violation (threshold is > 0.5)."""
         prompts = [
             "Add tests for auth module",
@@ -407,7 +410,7 @@ class TestWaveRatioSimulations:
         assert fix_count == 3, f"Expected 3 fixes, got {fix_count}"
         assert not violation, "Exactly 50% (3/6) should NOT trigger violation"
 
-    def test_exactly_50_percent_odd_wave(self, keywords):
+    def test_exactly_50_percent_odd_wave(self, keywords: dict[str, list[str]]) -> None:
         """2 enhancements + 2 fixes + 1 enhancement = 2/5 fixes (40%) -> no violation."""
         prompts = [
             "Add tests for auth module",
@@ -422,7 +425,7 @@ class TestWaveRatioSimulations:
         assert fix_count == 2
         assert not violation, f"2/5 fixes ({fix_ratio:.0%}) should NOT trigger violation"
 
-    def test_two_fixes_no_enhancements_violates_ratio(self, keywords):
+    def test_two_fixes_no_enhancements_violates_ratio(self, keywords: dict[str, list[str]]) -> None:
         """2 fixes + 0 enhancements: fixRatio = 1.0 > 0.5 -> violation."""
         prompts = [
             "Fix bug in auth module",
@@ -436,13 +439,13 @@ class TestWaveRatioSimulations:
             f"2 fixes / 0 enhancements ({fix_ratio:.0%}) should trigger violation via ratio check"
         )
 
-    def test_one_fix_zero_enhancements_below_wave_threshold(self, keywords):
+    def test_one_fix_zero_enhancements_below_wave_threshold(self, keywords: dict[str, list[str]]) -> None:
         """1 fix + 0 enhancements: wave < 2, no ratio check triggered."""
         prompts = ["Fix bug in auth module"]
         results = self._classify_prompts(prompts, keywords)
         assert len(results) < 2, "Single entry wave should not trigger ratio check"
 
-    def test_one_fix_one_enhancement_no_violation(self, keywords):
+    def test_one_fix_one_enhancement_no_violation(self, keywords: dict[str, list[str]]) -> None:
         """1 fix + 1 enhancement: fixRatio = 0.5, NOT > 0.5 -> no violation."""
         prompts = [
             "Fix bug in auth module",
@@ -453,7 +456,7 @@ class TestWaveRatioSimulations:
         violation, fix_ratio, _ = _check_ratio(fix_count, len(results))
         assert not violation, f"1f+1e ({fix_ratio:.0%}) should NOT trigger violation (≤50%)"
 
-    def test_subagent_prompts_are_classifiable(self, keywords):
+    def test_subagent_prompts_are_classifiable(self, keywords: dict[str, list[str]]) -> None:
         """Realistic subagent-style prompts all get a classification."""
         prompts = [
             "ENHANCEMENT: Add new self-tests for the guardrail plugins",
@@ -492,12 +495,12 @@ class TestEnhancedKeywordsCoverage:
         "self-test",
     )
 
-    def test_all_required_categories_present(self):
+    def test_all_required_categories_present(self) -> None:
         enh_kw = _extract_keywords(_plugin_source(), "ENHANCEMENT_KEYWORDS")
         for cat in self.REQUIRED_CATEGORIES:
             assert cat in enh_kw, f"Required enhancement category {cat!r} missing from ENHANCEMENT_KEYWORDS"
 
-    def test_fix_keywords_coverage(self):
+    def test_fix_keywords_coverage(self) -> None:
         fix_kw = _extract_keywords(_plugin_source(), "FIX_KEYWORDS")
         required_fix = ["fix", "bug", "repair", "regression", "broken", "incident", "hotfix"]
         for cat in required_fix:

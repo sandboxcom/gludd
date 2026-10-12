@@ -327,6 +327,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_bulkhead_admission.py::test_admission_reserves_workers_before_backlog",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "enhancement-ratio-class-fixture-binding",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_enhancement_ratio_plugin.py::TestKeywordClassification::test_classifies_as_enhancement",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "pytest-class-fixture-binding-invariant",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_pytest_param_fixture_collisions.py::test_repository_class_scoped_fixtures_use_supported_binding",
+      "full_gate_phase": "test"
     }
   ]
 }

@@ -296,6 +296,47 @@ def test_hosted_fanout_requires_executed_runtime_admission() -> None:
         assert "gate" in jobs[job_name]["needs"]
 
 
+@pytest.mark.parametrize(
+    ("family_id", "node", "test_file"),
+    [
+        (
+            "enhancement-ratio-class-fixture-binding",
+            "tests/unit/test_enhancement_ratio_plugin.py::TestKeywordClassification::test_classifies_as_enhancement",
+            "tests/unit/test_enhancement_ratio_plugin.py",
+        ),
+        (
+            "pytest-class-fixture-binding-invariant",
+            "tests/unit/test_pytest_param_fixture_collisions.py::test_repository_class_scoped_fixtures_use_supported_binding",
+            "tests/unit/test_pytest_param_fixture_collisions.py",
+        ),
+    ],
+)
+def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
+    family_id: str, node: str, test_file: str,
+) -> None:
+    """Unsupported fixture declarations must fail before late hosted setup."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(family for family in payload["families"] if family["id"] == family_id)
+    assert family == {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in owner
+    assert test_file in executable
+    phase = next(
+        phase for phase in payload["runtime_contract"]["phases"]
+        if phase["target"] == family["owner_target"]
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    assert payload["full_gate_required"] is True
+
+
 def _synthetic_repository(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
@@ -581,6 +622,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "gate-lock-prerequisite-order",
         "threadpool-bulkhead-nonblocking-admission",
         "threadpool-bulkhead-worker-reservations",
+        "enhancement-ratio-class-fixture-binding",
+        "pytest-class-fixture-binding-invariant",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -728,7 +771,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::'
         'test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py '
         'tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py '
-        'tests/unit/test_bulkhead_admission.py"'
+        'tests/unit/test_bulkhead_admission.py '
+        'tests/unit/test_enhancement_ratio_plugin.py '
+        'tests/unit/test_pytest_param_fixture_collisions.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner

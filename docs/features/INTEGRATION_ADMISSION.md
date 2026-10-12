@@ -39,6 +39,11 @@ the first nonzero result:
     admission and owned shutdown. The original overflow failure and deterministic
     reservation reproducer are mapped as two separate promoted families, with
     the same one-worker, 90-second/60-second phase bounds and mandatory full gate.
+    The complete enhancement-ratio and pytest-fixture-audit files also execute
+    here. The existing AST audit checks every Python test source for unsupported
+    class-scoped instance bindings; it does not sample files, import fixtures,
+    or introduce an allowlist. Both the original ratio failure and whole-tree
+    binding invariant have explicit manifest owners before hosted shard fan-out.
    Hosted Python 3.11/3.12 jobs retain their own interpreter coverage; admission
    reuses their environment without creating another dependency matrix.
 4. `ansible-role-variable-prefix` runs the exact warning-fatal

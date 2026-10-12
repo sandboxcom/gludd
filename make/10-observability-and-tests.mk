@@ -734,8 +734,10 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_gate_run_lock.py::test_gate_and_refresh_acquire_before_running_phases
 # tests/unit/test_bulkhead_deep.py::TestThreadPoolSubmit::test_submit_rejects_when_queue_full_nonblocking
 # tests/unit/test_bulkhead_admission.py::test_admission_reserves_workers_before_backlog
+# tests/unit/test_enhancement_ratio_plugin.py::TestKeywordClassification::test_classifies_as_enhancement
+# tests/unit/test_pytest_param_fixture_collisions.py::test_repository_class_scoped_fixtures_use_supported_binding
 	@$(MAKE) --no-print-directory test-files \
-		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py tests/unit/test_bulkhead_admission.py" \
+		TESTFILES="tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py tests/unit/test_bulkhead_admission.py tests/unit/test_enhancement_ratio_plugin.py tests/unit/test_pytest_param_fixture_collisions.py" \
 		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"
 
 _ansible-role-variable-prefix:
