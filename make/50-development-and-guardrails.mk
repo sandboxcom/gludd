@@ -252,7 +252,9 @@ test-zai-identity:
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINER_IMAGE := gl-agent:latest
 
-VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run --no-sync python -c "from general_ludd import __version__; print(__version__)")
+# Packaging names expand during Make parsing, including read-only Git helpers.
+# Use uv's existing source-version reader, independently of runtime UV shims.
+VERSION = $(or $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" uv version --short --offline --project "$(CURDIR)"),$(error Cannot read [project].version from pyproject.toml))
 PLATFORM = $(shell uname -s)-$(shell uname -m)
 TARBALL_NAME = general-ludd-agent-$(VERSION)-$(PLATFORM)
 TARBALL_DIR = dist/$(TARBALL_NAME)
