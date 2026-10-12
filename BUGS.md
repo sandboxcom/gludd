@@ -4,6 +4,16 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — direct stable cut used hermetic validation as release admission
+
+- **Observed and cause**: Independent review of the first promotion repair found that direct stable `release-cut` still passed `RELEASE_READINESS_VALIDATE_ONLY=1`. That mode validates receipt arguments but intentionally does not assess task completion. Changing it blindly to full mode would select master CI after promotion even though the proven source workflow ran on development.
+- **Repair and proof**: Readiness now reports the real checkout branch and a separate explicit CI source branch, preserving full candidate SHA and receipt checks. Eight failing-first real-checker cases cover post-master development evidence, unchanged branch defaults, wrong hosted branch/SHA, open or absent milestones, CLI routing, and source-preserving remediation. The stable publication owner forces full admission and both diagnostic bypasses off; final combined owner tests, exact gate, and hosted proof remain required.
+
+### 2026-10-12 — strict release-path typing discovered duplicate CI module names
+
+- **Observed and cause**: The real `make typecheck-scope FILES=scripts/release_readiness.py` stopped before checking the release path because the exact-CI verdict helper's runtime import fallback exposed the same file as both `pipeline_status` and `scripts.pipeline_status` to static analysis.
+- **Repair and proof**: A failing-first acceptance runs the actual scoped checker. The established `TYPE_CHECKING` pattern gives static analysis one canonical identity while preserving the runtime import fallback and missing-transitive-dependency rethrow. All 50 CLI/verdict tests pass at 100% line and branch coverage, using harmless Git/GitHub doubles. Strict typing and Ruff pass without additional suppressions. Feature documentation records the long-lived mypy practitioner report and zero-downtime administrative scope.
+
 ### 2026-10-12 — hosted image failures and build-coordinate warning churn
 
 - **Observed causes**: Run `38189779986` changed `pyproject.toml` before the container's frozen lock check and used a Quay EE base digest returning 404. Molecule run `38189779992` rejected a warning graph differing from its accepted predecessor only in `/tmp/gludd-linux-native-build`'s six-character random suffix.
@@ -14,8 +24,8 @@ All premature-stop incidents and process failures are tracked here.
 
 - **Observed**: `make release-readiness TAG=v0.1.2` rejected the project's current version as unsupported before collecting readiness evidence. The previous session's notes still named an older local SHA and pending hosted run.
 - **Cause**: Readiness mapped only beta4 and v0.1.1, while the package and release notes already named v0.1.2. S97.9 had implementation evidence but no task entry, so simply admitting the new tag would still omit required repair ownership.
-- **Repair and evidence**: Failing-first acceptance pins the supported tag, the complete S97 milestone, current S98 repair admission, missing-milestone rejection, and mandatory candidate-bound receipts. The initial release-path slice passes 141 tests at 96% aggregate coverage, with all measured files above 75%; the 210-target Make contract and its updated hermetic v0.1.2 example pass. Final candidate and hosted gate evidence remain required.
-- **Hosted ownership**: Runs `38189779986` and `38189779992` for `43814531ba0e1bb40d14936280ddd506d45381eb` are terminal failures, with seven open families recorded by `make pipeline-status`. Current HEAD `bc9fd78f1483df05f628d9f3c8f2fed62ab30a68` has no hosted runs. A historical refreshed PASS is not proof for the edited candidate.
+- **Repair and evidence**: Failing-first acceptance pins the supported tag, the complete S97 milestone, current S98 repair admission, missing-milestone rejection, and mandatory candidate-bound receipts. Independent review additionally caught that prefix filtering alone did not reject removal of an S98 task; seven failing-first absence cases now pin S98.1-S98.7 explicitly while retaining admission of later unfinished S98 repairs. The complete release-path slice passes 155 tests at 96% aggregate coverage, with all measured files above 75%; the 210-target Make contract and its updated hermetic v0.1.2 example pass. Final candidate and hosted gate evidence remain required.
+- **Hosted ownership**: Runs `38189779986` and `38189779992` for `43814531ba0e1bb40d14936280ddd506d45381eb` are terminal failures, with seven open families recorded by `make pipeline-status`. The recovered base `bc9fd78f1483df05f628d9f3c8f2fed62ab30a68` had no hosted runs. A historical refreshed PASS is not proof for the edited candidate.
 - **Practitioner evidence and ZDD**: `docs/features/V012_RELEASE_PAGE_NOTES.md` records the long-lived GitHub tag-filter and SemVer reports. Validation mutates no running application or published release; rollback restores policy while retaining the previous serving artifact.
 
 ### 2026-10-07 — (resolved locally; replacement exact gate required) One-hour owners killed a healthy complete gate

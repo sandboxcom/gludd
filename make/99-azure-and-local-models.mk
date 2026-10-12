@@ -177,7 +177,7 @@ compare-models:
 release-promote:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-promote TAG=v0.1.0-beta.N [MSG=release-notes] [RELEASE_PROMOTE_VALIDATE_ONLY=0|1] [REVIEWED_HEAD_INTEGRATION_RECEIPT=path]"; exit 2; }
 	@case "$(RELEASE_PROMOTE_VALIDATE_ONLY)" in 0|1|"") ;; *) echo "ERROR: RELEASE_PROMOTE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@MAIN_PATH='/Users/shawnwilson/gludd'; \
+	@set -eu; MAIN_PATH='/Users/shawnwilson/gludd'; \
 	CURRENT_SHA="$$(git rev-parse --verify HEAD^{commit})" || { echo "ERROR: current HEAD does not resolve"; exit 2; }; \
 	DEV_SHA="$$(git rev-parse --verify development^{commit})" || { echo "ERROR: development does not resolve"; exit 2; }; \
 	MASTER_SHA="$$(git -C "$$MAIN_PATH" rev-parse --verify master^{commit})" || { echo "ERROR: canonical master does not resolve"; exit 2; }; \
@@ -190,14 +190,19 @@ release-promote:
 	git -C "$$MAIN_PATH" merge-base --is-ancestor "$$MASTER_SHA" "$$DEV_SHA" || { echo "ERROR: master cannot fast-forward to development"; exit 2; }; \
 	if [ "$(RELEASE_PROMOTE_VALIDATE_ONLY)" = "1" ]; then \
 		$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" CI_BRANCH=development DUAL_TRACK_CI_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION" DUAL_TRACK_CI_VALIDATE_ONLY=1; \
-		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_ALLOW_INCOMPLETE_TASKS=0 RELEASE_ALLOW_INVALID_RECEIPT=0 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$DEV_SHA"; \
+		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_ALLOW_INCOMPLETE_TASKS=0 RELEASE_ALLOW_INVALID_RECEIPT=0 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_READINESS_CI_BRANCH=development; \
 		echo "RELEASE-PROMOTE-VALIDATED tag=$(TAG) master=$$MASTER_SHA development=$$DEV_SHA mode=ff-only"; \
 		exit 0; \
 	fi; \
 	[ -f "$$LOCAL_ATTESTATION" ] || { echo "ERROR: development local attestation is missing: $$LOCAL_ATTESTATION"; exit 2; }; \
 	$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" CI_BRANCH=development DUAL_TRACK_CI_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION" DUAL_TRACK_CI_VALIDATE_ONLY=0; \
-	$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_ALLOW_INCOMPLETE_TASKS=0 RELEASE_ALLOW_INVALID_RECEIPT=0 RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$DEV_SHA"; \
+	$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_ALLOW_INCOMPLETE_TASKS=0 RELEASE_ALLOW_INVALID_RECEIPT=0 RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_READINESS_CI_BRANCH=development; \
+	git -C "$$MAIN_PATH" checkout master; \
+	[ "$$(git -C "$$MAIN_PATH" symbolic-ref --short HEAD)" = "master" ] || { echo "ERROR: canonical checkout is not on master"; exit 2; }; \
+	[ "$$(git -C "$$MAIN_PATH" rev-parse --verify HEAD^{commit})" = "$$MASTER_SHA" ] || { echo "ERROR: canonical master changed during promotion checks"; exit 2; }; \
 	git -C "$$MAIN_PATH" merge --ff-only "$$DEV_SHA"; \
+	[ "$$(git -C "$$MAIN_PATH" symbolic-ref --short HEAD)" = "master" ] || { echo "ERROR: canonical master selection changed during promotion"; exit 2; }; \
+	[ "$$(git -C "$$MAIN_PATH" rev-parse --verify HEAD^{commit})" = "$$DEV_SHA" ] || { echo "ERROR: canonical master does not match the verified development candidate"; exit 2; }; \
 	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)" REVIEWED_HEAD_INTEGRATION_RECEIPT="$(if $(strip $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),$(abspath $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_CI_BRANCH=development RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"
 
 # Background the long local dual-track CI evidence producer so the orchestrator

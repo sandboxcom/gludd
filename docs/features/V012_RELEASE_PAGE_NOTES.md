@@ -27,11 +27,22 @@ converting implementation evidence into task, gate, release, or publication
 completion.
 
 The promotion policy now explicitly admits `v0.1.2`. It requires all twelve
-S97 repair records and every S98 release repair, together with a reviewed-head
-integration receipt bound to the full candidate SHA. Missing ledger entries,
+S97 repair records and the seven registered S98.1-S98.7 repair records, together
+with a reviewed-head integration receipt bound to the full candidate SHA. The
+S98 prefix additionally blocks any later unfinished repair in that session;
+prefix filtering cannot replace explicit admission of the seven known records.
+Missing ledger entries,
 unfinished repairs, invalid receipts, or hosted results for another commit
 remain blockers. The Make contract's validation example uses a hermetic fixture;
 that example proves argument routing, not readiness of the real candidate.
+
+After canonical master selection, full readiness keeps the actual checkout
+branch visible while validating hosted evidence from the explicit
+`RELEASE_READINESS_CI_BRANCH`. An empty selector retains the invoking-branch
+default; selecting development cannot substitute a different commit or skip
+the S97/S98 milestone. The selector also stays in validate-first remediation
+commands. Stable publication must run full readiness, not the hermetic argument
+validation mode.
 
 This is a zero-downtime administrative change: validation starts no application
 worker, changes no schema, and publishes no tag or artifact. Rollback restores
@@ -57,6 +68,19 @@ evidence for release readiness.
 
 [release-tag-filter]: https://github.com/orgs/community/discussions/26603
 [semver-numeric]: https://github.com/semver/semver/issues/583
+
+Static checking also uses a single canonical package identity for the exact-CI
+verdict dependency. Direct-script imports retain their existing runtime fallback
+and still rethrow a missing transitive dependency. The real strict-typing
+acceptance reproduced the duplicate-module failure before the repair; all 50
+CLI/verdict tests now pass at 100% line and branch coverage without real Git or
+GitHub I/O. The long-running [mypy issue #9058][mypy-identity] and its
+[module-mapping guidance][mypy-mapping], reviewed 2026-10-12, document why one
+source can be discovered under incompatible qualified names. This is an import
+identity repair, not a new ignored-error or skipped-import rule.
+
+[mypy-identity]: https://github.com/python/mypy/issues/9058
+[mypy-mapping]: https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules
 
 S31-S37 describe the user-visible outcome as safer model-performance,
 benchmark, memory, and agent-message repository lifecycles. S34 rejects expired
