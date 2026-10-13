@@ -14,7 +14,18 @@ from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING or __package__:
+if TYPE_CHECKING:
+    from collection_lock import (
+        LeaseInspection,
+        LeaseRecord,
+        RepositoryIdentityError,
+        default_collection_lock,
+        default_resource_lock,
+        inspect_lease,
+    )
+    from resource_arbiter import resource_path, resource_root
+    from task_scope import task_inventory as _task_inventory
+elif __package__:
     from scripts.collection_lock import (
         LeaseInspection,
         LeaseRecord,

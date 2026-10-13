@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict
 
 if TYPE_CHECKING:
-    from scripts.ci_batch_receipts import (
+    from ci_batch_receipts import (
         action_identity_error,
         canonical_json_bytes,
         canonical_json_sha256,
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
         read_strict_json,
         validate_batch_receipt,
     )
-    from scripts.ci_receipt_auth import (
+    from ci_receipt_auth import (
         ReceiptAuthStatus,
         ReceiptTrustPolicy,
         authenticate_receipt,

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from scripts.ci_batch_receipts import (
+    from ci_batch_receipts import (
         MAX_FAILURE_RECEIPTS_PER_GENERATION,
         MAX_RECEIPT_GENERATIONS,
         RECEIPT_SCHEMA_VERSION,
@@ -28,8 +28,8 @@ if TYPE_CHECKING:
         validate_batch_receipt,
         validate_failure_receipt,
     )
-    from scripts.ci_gate_progress import receipt_duration_seconds
-    from scripts.ci_receipt_auth import (
+    from ci_gate_progress import receipt_duration_seconds
+    from ci_receipt_auth import (
         ReceiptAuthStatus,
         ReceiptTrustPolicy,
         authenticate_receipt,

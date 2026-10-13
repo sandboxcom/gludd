@@ -22,20 +22,20 @@ if __name__ in _MODULE_ALIASES:
     sys.modules.setdefault(_MODULE_ALIASES[__name__], sys.modules[__name__])
 
 if TYPE_CHECKING:
-    from scripts.ci_batch_receipts import (
+    from ci_batch_receipts import (
         MAX_FAILURE_NODES,
         MAX_FAILURE_RECEIPTS_PER_GENERATION,
         FailureReceiptRequest,
         ShadowBatchReceiptWriter,
         ShadowFailureReceiptWriter,
     )
-    from scripts.ci_batch_replay_audit import (
+    from ci_batch_replay_audit import (
         ReplayAdmissionRequest,
         ReplayAdmissionResult,
         ReplayAuditRequest,
         ShadowReplayAuditor,
     )
-    from scripts.ci_gate_progress import (
+    from ci_gate_progress import (
         MAX_PROGRESS_BATCHES,
         MAX_PROGRESS_OUTPUT_BYTES,
         MAX_TIMING_SAMPLES,
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
         ReceiptStatus,
         ShadowGateProgress,
     )
-    from scripts.ci_receipt_auth import AUTH_ALGORITHM
+    from ci_receipt_auth import AUTH_ALGORITHM
 else:
     from ci_batch_receipts import (
         MAX_FAILURE_NODES,

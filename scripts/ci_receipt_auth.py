@@ -22,7 +22,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from scripts.gate_status_attestation import _read_key
+    from gate_status_attestation import _read_key
 else:
     from gate_status_attestation import _read_key
 

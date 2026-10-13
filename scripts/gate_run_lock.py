@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from scripts.resource_arbiter import project_namespace, project_root
+    from resource_arbiter import project_namespace, project_root
 else:
     from resource_arbiter import project_namespace, project_root
 

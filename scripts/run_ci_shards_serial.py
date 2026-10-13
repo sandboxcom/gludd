@@ -28,8 +28,8 @@ from coverage import CoverageData
 from coverage.exceptions import CoverageException
 
 if TYPE_CHECKING:
-    from scripts import ci_shadow_receipt_runtime as _receipt_runtime
-    from scripts.ci_batch_receipts import (
+    import ci_shadow_receipt_runtime as _receipt_runtime
+    from ci_batch_receipts import (
         BatchReceiptRequest,
         ShadowBatchReceiptWriter,
         ShadowFailureReceiptWriter,
@@ -37,17 +37,17 @@ if TYPE_CHECKING:
         normalize_junit_failure_metadata,
         normalize_junit_outcomes,
     )
-    from scripts.ci_batch_replay_audit import ShadowReplayAuditor
-    from scripts.ci_gate_progress import (
+    from ci_batch_replay_audit import ShadowReplayAuditor
+    from ci_gate_progress import (
         ProgressBatch,
         ReceiptStatus,
         ShadowGateProgress,
     )
-    from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
-    from scripts.ci_receipt_auth import load_gate_receipt_auth_context, parse_revoked_signers
-    from scripts.gate_status_attestation import repository_state_id
-    from scripts.resource_arbiter import resource_root as project_resource_root
-    from scripts.run_ci_shards_parallel import _env_for_shard, _parse_shards
+    from ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+    from ci_receipt_auth import load_gate_receipt_auth_context, parse_revoked_signers
+    from gate_status_attestation import repository_state_id
+    from resource_arbiter import resource_root as project_resource_root
+    from run_ci_shards_parallel import _env_for_shard, _parse_shards
 else:
     import ci_shadow_receipt_runtime as _receipt_runtime
     from ci_batch_receipts import (

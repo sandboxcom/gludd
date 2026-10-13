@@ -27,14 +27,14 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from scripts.ci_receipt_auth import (
+    from ci_receipt_auth import (
         ReceiptSigner,
         create_receipt_envelope,
         load_gate_receipt_auth_context,
         parse_revoked_signers,
     )
-    from scripts.gate_status_attestation import repository_state_id
-    from scripts.resource_arbiter import resource_root as project_resource_root
+    from gate_status_attestation import repository_state_id
+    from resource_arbiter import resource_root as project_resource_root
 else:
     from ci_receipt_auth import (
         ReceiptSigner,

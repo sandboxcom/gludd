@@ -20,7 +20,9 @@ from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TextIO
 
-if TYPE_CHECKING or __package__:
+if TYPE_CHECKING:
+    from resource_arbiter import project_root, resource_path
+elif __package__:
     from scripts.resource_arbiter import project_root, resource_path
 else:  # pragma: no cover - direct script execution
     _resource_arbiter = import_module("resource_arbiter")

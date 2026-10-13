@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Hosted CI imports acquired two static module identities
+
+- Exact development run 38379268292 fails unit-3a when strict mypy reaches the same receipt/collection owners under both bare and scripts-qualified names. Unit-1b also retains an obsolete inline-verdict recipe assertion after the shared native owner migration.
+- TYPE_CHECKING imports now use one canonical static identity; actual runtime imports and existing gate/auth owners are unchanged. The structural verdict regression follows the shared recipe while retaining its explicit-SHA, native argument and record-verdict assertions. Both original failures are reproduced before repair.
+- All 107 release-readiness/verdict cases pass under the existing Python 3.11 environment with warning-fatal execution; strict typing passes the eleven directly selected production/test inputs. Exact new-SHA CI and the full release gate remain pending. These repairs do not authorize task completion.
+
 ### 2026-10-13 — Retained owned checkpoints were mistaken for leaked hook stashes
 
 - Normal scoped commit was blocked by the old any-stash guard even though the saved work had explicit native ownership. Nine failing-first cases also expose misleading audit instructions, redirected-state bypass, forged untracked ancestry and shared refusal receipts.

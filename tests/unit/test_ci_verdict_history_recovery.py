@@ -26,6 +26,8 @@ def test_safe_verdict_forwards_and_records_an_explicit_sha() -> None:
     """The prescribed SHA parameter must reach both lookup and persisted verdict."""
     block = _target_block("ci-verdict-safe:", "# ci-record-verdict")
 
-    assert "ci-verdict SHA=$(SHA)" in block
-    assert 'if [ -n "$(SHA)" ]; then SHA="$(SHA)"; fi' in block
-    assert "record-verdict $$V $$SHA" in block
+    # The shared native owner replaced nested Make invocation and hand-written
+    # persistence; retain exact capture, lookup and record binding assertions.
+    assert 'VERDICT_SHA="$(or $(SHA),$$(git rev-parse HEAD))"' in block
+    assert '--sha "$$VERDICT_SHA"' in block
+    assert "$(_CI_VERDICT_COMMAND) --record-verdict" in block
