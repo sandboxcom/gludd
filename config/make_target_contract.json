@@ -2052,6 +2052,16 @@
         "PIPELINE_STATUS_OUTPUT"
       ],
       "behavior": "make status-heartbeat INTERVAL=300 COUNT=1 STATUS_HEARTBEAT_VALIDATE_ONLY=1 PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANCH=development PIPELINE_STATUS_REMOTE=sandboxcom PIPELINE_STATUS_SHA=0000000000000000000000000000000000000000 PIPELINE_STATUS_FAILURE_LEDGER=.gludd/ci-failure-ledger.json PIPELINE_STATUS_VALIDATE_ONLY=1 PIPELINE_STATUS_OUTPUT=/tmp/gludd-contract-heartbeat.json"
+    },
+    {
+      "name": "ci-verdict-safe",
+      "make_variables": [
+        "SHA",
+        "CI_BRANCH",
+        "CI_CHECK_COOLDOWN_SEC",
+        "CI_VERDICT_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-verdict-safe SHA=0000000000000000000000000000000000000000 CI_BRANCH=development CI_CHECK_COOLDOWN_SEC=600 CI_VERDICT_VALIDATE_ONLY=1"
     }
   ]
 }

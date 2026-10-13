@@ -26,10 +26,18 @@ if TYPE_CHECKING:
     import check_disk_usage
     import ci_failure_ledger
     from proof_observations import write_snapshot
+
+    from scripts import ci_check_cooldown
 else:
     if __package__ in {None, ""}:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from scripts import active_work_status, automatic_disk_cleanup, check_disk_usage, ci_failure_ledger
+    from scripts import (
+        active_work_status,
+        automatic_disk_cleanup,
+        check_disk_usage,
+        ci_check_cooldown,
+        ci_failure_ledger,
+    )
     from scripts.proof_observations import write_snapshot
 
 DEFAULT_REPO = "sandboxcom/gludd"
@@ -290,7 +298,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--sha", default="")
     parser.add_argument("--remote-only", action="store_true")
     parser.add_argument("--validate-only", action="store_true")
-    parser.add_argument("--snapshot-output", type=Path)
+    publication = parser.add_mutually_exclusive_group()
+    publication.add_argument("--snapshot-output", type=Path)
+    publication.add_argument(
+        "--record-verdict", action="store_true",
+        help="record a complete terminal all-workflow verdict through the existing history owner",
+    )
     parser.add_argument("--failure-ledger", type=Path, default=Path(".gludd/ci-failure-ledger.json"))
     parser.add_argument("--ledger-observation-exit-code", type=int, default=0)
     parser.add_argument(
@@ -300,6 +313,21 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
     )
     return parser
+
+
+def _terminal_verdict(
+    args: argparse.Namespace, summary: PipelineSummary | None, sha: str | None,
+) -> str | None:
+    """Authorize history only for a canonical, complete, exact terminal observation."""
+    if (summary is None or args.repo != DEFAULT_REPO or not args.branch.strip()
+            or summary.sha != sha or summary.branch != args.branch
+            or SHA_RE.fullmatch(summary.sha) is None
+            or args.ledger_observation_exit_code
+            or not summary.runs or summary.pending or summary.missing_workflows
+            or not set(DEFAULT_REQUIRED_WORKFLOWS).issubset(run.workflow for run in summary.runs)
+            or any(run.status != "completed" or not run.conclusion for run in summary.runs)):
+        return None
+    return "failure" if summary.failures else "success"
 
 
 def _publish_snapshot(
@@ -317,6 +345,7 @@ def _publish_snapshot(
     ledger_status: dict[str, object] | None = None
     hosted: dict[str, Any] | None = asdict(summary) if summary is not None else None
     hosted_failures: list[dict[str, object]] = []
+    terminal_observed = False
     print("PIPELINE-SNAPSHOT-START", flush=True)
     try:
         local = active_work_status.collect_status()
@@ -342,6 +371,7 @@ def _publish_snapshot(
             "runs": len(ledger["runs"]),
         }
         if summary is not None and hosted is not None:
+            terminal_observed = bool(summary.runs) and not summary.pending and not summary.missing_workflows
             for record, run in zip(hosted["runs"], summary.runs, strict=True):
                 print(f"PIPELINE-SNAPSHOT-JOBS workflow={run.workflow!r} run={run.run_id}", flush=True)
                 detail = ci_failure_ledger.fetch_run(run.run_id, args.repo)
@@ -363,6 +393,10 @@ def _publish_snapshot(
                     raise ValueError("job observation has malformed steps")
                 if run.state == "success" and any(job.get("conclusion") == "failure" for job in jobs):
                     raise ValueError("job observation contradicts workflow success")
+                terminal_observed = terminal_observed and (
+                    detail.get("status") == "completed"
+                    and detail.get("conclusion") == run.conclusion
+                )
                 record["jobs"] = jobs
                 record["source_created_at"] = detail.get("createdAt")
                 record["source_updated_at"] = detail.get("updatedAt")
@@ -396,18 +430,39 @@ def _publish_snapshot(
         }
         for task_id in open_tasks if isinstance(task_id, str)
     } if isinstance(open_tasks, list) else {}
-    try:
-        write_snapshot(
-            args.snapshot_output, producer="pipeline-status",
-            identity={"repo": args.repo, "branch": args.branch, "sha": sha}, state=state,
-            evidence={"local": local, "hosted": hosted, "failure_ledger": ledger_status,
-                       "missing_proofs": missing_proofs, "hosted_failures": hosted_failures,
-                       "capacity": capacity,
-                      "errors": errors},
-        )
-    except (OSError, ValueError) as exc:
-        print(f"PIPELINE-SNAPSHOT-BLOCKED error={exc}", flush=True)
+    def publish() -> bool:
+        try:
+            write_snapshot(
+                args.snapshot_output, producer="pipeline-status",
+                identity={"repo": args.repo, "branch": args.branch, "sha": sha}, state=state,
+                evidence={"local": local, "hosted": hosted, "failure_ledger": ledger_status,
+                           "missing_proofs": missing_proofs, "hosted_failures": hosted_failures,
+                           "capacity": capacity, "errors": errors},
+            )
+        except (OSError, ValueError) as exc:
+            print(f"PIPELINE-SNAPSHOT-BLOCKED error={exc}", flush=True)
+            return False
+        return True
+
+    if not publish():
         return False
+    verdict = _terminal_verdict(args, summary, sha)
+    if terminal_observed and not errors and verdict is not None:
+        try:
+            history = ci_check_cooldown.load_history()
+            if history.get("last_push_sha") == sha and (
+                history.get("last_checked_sha") != sha or history.get("last_verdict") != verdict
+            ):
+                ci_check_cooldown.cmd_record_verdict(verdict, sha)
+                print(f"PIPELINE-SNAPSHOT-VERDICT-RECORDED sha={sha} verdict={verdict}", flush=True)
+        except (OSError, ValueError) as exc:
+            errors.append(str(exc))
+            state = "lookup_error"
+            for missing in missing_proofs.values():
+                missing["hosted_status"] = state
+                missing["next_action"] = "resolve_observation_error"
+            if not publish():
+                return False
     print(f"PIPELINE-SNAPSHOT-WRITTEN path={args.snapshot_output} state={state} release_ready=false", flush=True)
     return not errors
 
@@ -458,6 +513,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("\n".join(summary.lines()))
     if not _publish_snapshot(args, summary, sha=sha):
         return 2
+    if args.record_verdict:
+        try:
+            verdict = _terminal_verdict(args, summary, sha)
+            history = ci_check_cooldown.load_history()
+            if verdict is None or (
+                history.get("last_push_sha") and history["last_push_sha"] != sha
+            ):
+                ci_check_cooldown.cmd_record_verdict("pending")
+                return 2
+            if history.get("last_checked_sha") != sha or history.get("last_verdict") != verdict:
+                ci_check_cooldown.cmd_record_verdict(verdict, sha)
+        except (OSError, ValueError) as exc:
+            print(f"CI VERDICT RECORD ERROR: {exc}")
+            return 2
     return summary.exit_code
 
 

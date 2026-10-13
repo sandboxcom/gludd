@@ -140,6 +140,35 @@ not in the combined cohort. Routing and roster regressions fail first; neither
 the owner's 90-second runtime/60-second quiet limits nor the exhaustive gate are
 relaxed. A native repair is not an exact hosted resolution or release proof.
 
+### Automatic terminal push verification
+
+The exact snapshot producer now feeds terminal evidence into the existing native
+cooldown/history writer, avoiding a separate manual bookkeeping step or extra
+query. Snapshot validation and publication must succeed first. Every selected
+run's details must confirm completion and conclusion, from the canonical repository
+with both default required workflows. Pending/missing workflows, narrowed or foreign
+selectors, observation errors, changed snapshot identity and a different last pushed
+SHA cannot verify it. Repeated same-verdict observations do not rewrite state.
+Write failures remain visible and fail closed. Gate and release authority remain false.
+
+The legacy verdict command now reuses the canonical all-workflow verifier:
+successful Pages cannot hide failed Build. One captured SHA/branch reaches the
+backend and recorder; direct native exit codes distinguish failure from pending
+without recursive Make aliasing. The Python owner, not a numeric shell-exit guess,
+authorizes recording; pending, mixed failure/pending and owner crashes leave pushed
+history and restart budget intact. Validation never queries or records. Initial
+native and publisher regressions fail first. Independent source review then supplies
+22 publication/authorization cases: 21 fail first and one original-parity case passes.
+All 140 publisher, native-target and cooldown cases pass. The unchanged coverage
+profile passes 133 cases at 97% combined coverage with 85/75 audit.
+Both failure families join the existing early owner, without new phases or
+relaxed bounds. Full gate and exact hosted successor proof remain mandatory.
+
+The historical [operator report about incomplete job listings][context-operator-completeness]
+supports treating a selected workflow or human listing as incomplete evidence;
+it does not assert that today's locked CLI has that old defect. Aggregate,
+identity-bound native observations are the source of truth here.
+
 ### Search diagnostics are not complete-scan proof
 
 The original transient-error and empty-PATH fallback cases fail before the

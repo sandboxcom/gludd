@@ -87,21 +87,8 @@ pages-enable:
 # *** PREFER `make ci-verdict-safe` (cooldown-enforced) OVER this target. ***
 # Bare `ci-verdict` exists for release-cut internals only.
 ci-verdict:
-	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); \
-	RUN=$$(gh run list --commit=$$SHA --json databaseId,conclusion,headSha,status --jq '.[0]' 2>/dev/null || echo "{}"); \
-	HEAD_SHA=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('headSha',''))" 2>/dev/null); \
-	CONCLUSION=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null); \
-	STATUS=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null); \
-	RUN_ID=$$(echo $$RUN | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('databaseId',''))" 2>/dev/null); \
-	if [ "$$CONCLUSION" = "success" ]; then \
-		echo "CI GREEN: $$HEAD_SHA run $$RUN_ID conclusion=$$CONCLUSION"; \
-	elif [ "$$STATUS" = "pending" ] || [ "$$STATUS" = "in_progress" ] || [ "$$STATUS" = "queued" ]; then \
-		echo "CI PENDING: $$HEAD_SHA run $$RUN_ID status='$$STATUS'"; exit 2; \
-	elif [ -n "$$CONCLUSION" ]; then \
-		echo "CI RED: $$HEAD_SHA run $$RUN_ID conclusion='$$CONCLUSION'"; exit 1; \
-	else \
-		echo "CI RED: no run found for SHA $$SHA"; exit 1; \
-	fi
+	@case "$(CI_VERDICT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_VERDICT_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@VERDICT_SHA="$(or $(SHA),$$(git rev-parse HEAD))"; VERDICT_BRANCH="$(CI_BRANCH)"; $(_CI_VERDICT_COMMAND)
 
 # ci-verdict-safe: COOLDOWN-ENFORCED CI check. Refuses to run more than once
 # per CI_CHECK_COOLDOWN_SEC (default 600s = 10 min). Prevents the anti-pattern
@@ -115,14 +102,15 @@ ci-verdict:
 # Exit codes: 0=GREEN, 1=RED/no-run (or last verdict was failure during cooldown),
 # 2=PENDING, 3=COOLDOWN-ACTIVE (refused, last verdict was success/pending/unknown).
 # Override: FORCE=1 (release-cut ONLY; never use for routine checks).
+CI_VERDICT_VALIDATE_ONLY ?= 0
+_CI_VERDICT_COMMAND = $(PYTHON) scripts/pipeline_status.py status --remote-only --repo sandboxcom/gludd --remote sandboxcom --branch "$$VERDICT_BRANCH" --sha "$$VERDICT_SHA" $(if $(filter 1,$(CI_VERDICT_VALIDATE_ONLY)),--validate-only,)
+
 ci-verdict-safe:
-	@$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) || exit $$?; \
-	$(MAKE) --no-print-directory ci-verdict SHA=$(SHA); RC=$$?; \
-	if [ $$RC -eq 0 ]; then V="success"; elif [ $$RC -eq 2 ]; then V="pending"; else V="failure"; fi; \
-	SHA=$$(git rev-parse HEAD 2>/dev/null || echo ""); \
-	if [ -n "$(SHA)" ]; then SHA="$(SHA)"; fi; \
-	$(PYTHON) scripts/ci_check_cooldown.py record-verdict $$V $$SHA; \
-	exit $$RC
+	@case "$(CI_VERDICT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_VERDICT_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@VERDICT_SHA="$(or $(SHA),$$(git rev-parse HEAD))"; VERDICT_BRANCH="$(CI_BRANCH)"; \
+	if [ "$(CI_VERDICT_VALIDATE_ONLY)" = 1 ]; then $(_CI_VERDICT_COMMAND); exit $$?; fi; \
+	$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) || exit $$?; \
+	$(_CI_VERDICT_COMMAND) --record-verdict
 
 # ci-record-verdict: record a known CI verdict directly (no cooldown, no gh
 # call). For adjudicating already-completed runs when the cooldown would

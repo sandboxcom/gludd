@@ -683,3 +683,266 @@ def test_pipeline_snapshot_collection_failures_never_report_success(
         assert record["state"] == "lookup_error"
         assert record["evidence"]["errors"]
         assert record["release_ready"] is False
+
+
+
+def _verdict_history_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    conclusion: str = "success",
+) -> tuple[Path, list[str], Path, Path]:
+    from scripts import ci_check_cooldown
+
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch, conclusion=conclusion)
+    history = tmp_path / "history.json"
+    restart = tmp_path / "restart-count"
+    history.write_text(json.dumps({"last_push_sha": SHA, "retained": "owned"}))
+    restart.write_text("2")
+    monkeypatch.setattr(ci_check_cooldown, "HISTORY_FILE", history)
+    monkeypatch.setattr(ci_check_cooldown, "STATE_FILE", tmp_path / "cooldown.json")
+    monkeypatch.setattr(ci_check_cooldown, "RESTART_COUNT_FILE", restart)
+    return path, args, history, restart
+
+
+@pytest.mark.parametrize("conclusion", ["success", "failure"])
+def test_pipeline_terminal_snapshot_records_owned_push_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, conclusion: str,
+) -> None:
+    path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch, conclusion)
+    assert pipeline_status.main(args) == (0 if conclusion == "success" else 1)
+    record = json.loads(history.read_text())
+    assert record["last_checked_sha"] == SHA
+    assert record["last_verdict"] == conclusion
+    assert record["retained"] == "owned"
+    assert restart.read_text() == "0"
+    proof = json.loads(path.read_text())
+    assert proof["release_ready"] is False
+    assert proof["gate_evidence"] is False
+
+
+@pytest.mark.parametrize(
+    "mode", ["pending", "failure-pending", "missing", "detail-pending", "ledger-error", "foreign-push"],
+)
+def test_pipeline_incomplete_or_foreign_snapshot_never_verifies_push(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str,
+) -> None:
+    _path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch)
+    expected = 0
+    if mode in {"pending", "failure-pending", "missing", "detail-pending"}:
+        runs = [_run("Build and Release", 124), _run("Molecule Tests", 101)]
+        if mode == "pending":
+            runs[0].update(status="in_progress", conclusion="")
+            expected = 2
+        elif mode == "failure-pending":
+            runs[0]["conclusion"] = "failure"
+            runs[1].update(status="in_progress", conclusion="")
+            expected = 1
+        elif mode == "missing":
+            runs.pop()
+            expected = 2
+        else:
+            runs[0]["conclusion"] = "failure"
+            expected = 1
+        monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: runs)
+
+        def detail(run_id: int, _repo: str) -> dict[str, object]:
+            result = {**next(run for run in runs if run["databaseId"] == run_id), "jobs": []}
+            if mode == "detail-pending" and run_id == 124:
+                result.update(status="in_progress", conclusion="")
+            return result
+
+        monkeypatch.setattr(ci_failure_ledger, "fetch_run", detail)
+    elif mode == "ledger-error":
+        args.extend(["--ledger-observation-exit-code", "1"])
+        expected = 2
+    else:
+        history.write_text(json.dumps({"last_push_sha": OTHER_SHA, "retained": "owned"}))
+    before = history.read_bytes()
+    assert pipeline_status.main(args) == expected
+    assert history.read_bytes() == before
+    assert restart.read_text() == "2"
+
+
+
+@pytest.mark.parametrize("conclusion", ["success", "failure"])
+@pytest.mark.parametrize("blocked", ["manual", "foreign-owner", "write-error", "oversized"])
+def test_pipeline_rejected_publication_never_authorizes_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, conclusion: str, blocked: str,
+) -> None:
+    if TYPE_CHECKING:
+        from proof_observations import write_snapshot
+    else:
+        from scripts.proof_observations import write_snapshot
+
+    path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch, conclusion)
+    previous = None
+    if blocked == "manual":
+        path.write_text('{"retained": "manual"}')
+        previous = path.read_bytes()
+    elif blocked == "foreign-owner":
+        write_snapshot(
+            path, producer="pipeline-status",
+            identity={"repo": "foreign/project", "branch": "development", "sha": SHA},
+            state="success", evidence={},
+        )
+        previous = path.read_bytes()
+    elif blocked == "write-error":
+        def unavailable(*_a: object, **_k: object) -> None:
+            raise OSError("snapshot destination unavailable")
+
+        monkeypatch.setattr(pipeline_status, "write_snapshot", unavailable)
+    else:
+        monkeypatch.setattr(
+            active_work_status, "collect_status",
+            lambda: {**_snapshot_local(), "oversized": "x" * (2 * 1024 * 1024)},
+        )
+    before = history.read_bytes()
+    assert pipeline_status.main(args) == 2
+    assert history.read_bytes() == before
+    assert restart.read_text() == "2"
+    if previous is not None:
+        assert path.read_bytes() == previous
+
+
+@pytest.mark.parametrize("narrowed", ["foreign-repo", "required-subset"])
+def test_pipeline_diagnostic_selectors_cannot_relax_history_authorization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, narrowed: str,
+) -> None:
+    _path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch)
+    if narrowed == "foreign-repo":
+        args.extend(["--repo", "foreign/project"])
+    else:
+        args.extend(["--required-workflow", "Molecule Tests"])
+        runs = [_run("Molecule Tests", 101)]
+        monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: runs)
+        monkeypatch.setattr(ci_failure_ledger, "fetch_run", lambda *_a: {**runs[0], "jobs": []})
+    before = history.read_bytes()
+    assert pipeline_status.main(args) == 0
+    assert history.read_bytes() == before
+    assert restart.read_text() == "2"
+
+
+def test_pipeline_publishes_validated_snapshot_before_authorizing_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import ci_check_cooldown
+
+    if TYPE_CHECKING:
+        from proof_observations import read_snapshot
+    else:
+        from scripts.proof_observations import read_snapshot
+
+    path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch)
+    original = ci_check_cooldown.cmd_record_verdict
+
+    def record_after_publication(verdict: str, sha: str | None = None) -> int:
+        proof = read_snapshot(
+            path, producer="pipeline-status",
+            identity={"repo": pipeline_status.DEFAULT_REPO, "branch": "development", "sha": SHA},
+        )
+        assert proof["state"] == "success"
+        assert proof["release_ready"] is False
+        assert proof["gate_evidence"] is False
+        return original(verdict, sha)
+
+    monkeypatch.setattr(ci_check_cooldown, "cmd_record_verdict", record_after_publication)
+    assert pipeline_status.main(args) == 0
+    assert json.loads(history.read_text())["last_checked_sha"] == SHA
+    assert restart.read_text() == "0"
+
+
+@pytest.mark.parametrize("mode", ["foreign-repo", "required-subset", "ledger-error", "foreign-push"])
+def test_pipeline_explicit_verdict_requires_canonical_complete_owned_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str,
+) -> None:
+    _path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch)
+    index = args.index("--snapshot-output")
+    del args[index:index + 2]
+    args.append("--record-verdict")
+    if mode == "foreign-repo":
+        args.extend(["--repo", "foreign/project"])
+    elif mode == "required-subset":
+        args.extend(["--required-workflow", "Molecule Tests"])
+        monkeypatch.setattr(pipeline_status, "fetch_runs",
+                            lambda *_a, **_k: [_run("Molecule Tests", 101)])
+    elif mode == "ledger-error":
+        args.extend(["--ledger-observation-exit-code", "1"])
+    else:
+        history.write_text(json.dumps({"last_push_sha": OTHER_SHA, "retained": "owned"}))
+    before = history.read_bytes()
+    assert pipeline_status.main(args) == 2
+    assert history.read_bytes() == before
+    assert restart.read_text() == "2"
+
+def test_pipeline_owned_terminal_verdict_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import ci_check_cooldown
+
+    _path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch)
+    record = json.loads(history.read_text())
+    record.update(last_checked_sha=SHA, last_verdict="success")
+    history.write_text(json.dumps(record))
+    monkeypatch.setattr(ci_check_cooldown, "cmd_record_verdict",
+                        lambda *_a: pytest.fail("already observed verdict must not be rewritten"))
+    before = history.read_bytes()
+    assert pipeline_status.main(args) == 0
+    assert history.read_bytes() == before
+    assert restart.read_text() == "2"
+
+
+def test_pipeline_verdict_write_error_is_visible_and_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import ci_check_cooldown
+
+    path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch)
+
+    def unavailable(*_a: object) -> int:
+        raise OSError("owned verdict writer unavailable")
+
+    monkeypatch.setattr(ci_check_cooldown, "cmd_record_verdict", unavailable)
+    before = history.read_bytes()
+    assert pipeline_status.main(args) == 2
+    proof = json.loads(path.read_text())
+    assert proof["state"] == "lookup_error"
+    assert "owned verdict writer unavailable" in " ".join(proof["evidence"]["errors"])
+    assert history.read_bytes() == before
+    assert restart.read_text() == "2"
+
+
+@pytest.mark.parametrize("validate_only", [False, True])
+def test_pipeline_verdict_observation_requires_real_snapshot_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validate_only: bool,
+) -> None:
+    _path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch)
+    if validate_only:
+        args.append("--validate-only")
+    else:
+        index = args.index("--snapshot-output")
+        del args[index:index + 2]
+    before = history.read_bytes()
+    assert pipeline_status.main(args) == 0
+    assert history.read_bytes() == before
+    assert restart.read_text() == "2"
+
+
+@pytest.mark.parametrize("changed", ["sha", "branch"])
+def test_pipeline_verdict_observation_requires_matching_snapshot_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str,
+) -> None:
+    _path, args, history, restart = _verdict_history_sources(tmp_path, monkeypatch)
+    parsed = pipeline_status._parser().parse_args(args)
+    summary = pipeline_status.evaluate_runs(
+        [_run("Build and Release", 124), _run("Molecule Tests", 101)],
+        SHA, branch="development",
+    )
+    observed_sha = SHA
+    if changed == "sha":
+        observed_sha = OTHER_SHA
+    else:
+        parsed.branch = "another-branch"
+    before = history.read_bytes()
+    assert pipeline_status._publish_snapshot(parsed, summary, sha=observed_sha)
+    assert history.read_bytes() == before
+    assert restart.read_text() == "2"
+

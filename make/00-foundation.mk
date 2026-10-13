@@ -787,7 +787,7 @@ help:
 	@echo "  ci-failure-repair        Run make-based evidence and receipt selected repairs"
 	@echo "  ci-failure-push-guard    Block pushes with open or non-ancestral repairs"
 	@echo "  ci-await BRANCH=<ref> TIMEOUT=<s> [SHA=.. CI_AWAIT_*]  Await one exact CI identity"
-	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
+	@echo "  ci-verdict-safe        Exact all-workflow check (SHA, CI_BRANCH, CI_CHECK_COOLDOWN_SEC, CI_VERDICT_VALIDATE_ONLY=0|1); validation never queries or records"
 	@echo "  ci-dashboard           One-shot compact CI run listing"
 	@echo "  ci-diagnose            Fetch CI failure annotations and group by root cause"
 	@echo "  ci-cooldown-status     Show remaining cooldown seconds"

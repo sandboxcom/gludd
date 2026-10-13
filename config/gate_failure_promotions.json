@@ -516,6 +516,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_make_help_audit.py::test_search_fallback_succeeds_when_match_precedes_scan_error",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "automatic-terminal-push-verdict",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_terminal_snapshot_records_owned_push_verdict",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "all-required-ci-verdict",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_verdict_all_required.py::test_ci_verdict_safe_records_failure_without_recursive_make_exit_aliasing",
+      "full_gate_phase": "test"
     }
   ]
 }

@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Terminal observations did not feed the native push-verification owner
+
+- The tested seven-commit batch was blocked because the last pushed SHA's verdict history remained unverified despite automatic terminal observations. The legacy verdict target selected only the newest workflow, allowing successful Pages to conceal failed Build; recursive Make also aliases native red and pending exit codes.
+- Initial publisher and native-target regressions fail first. Independent source review adds 22 boundary cases, reproducing 21 failures and one original-parity pass: rejected publication, foreign repository, narrowed required-workflow selection, pending/mixed evidence and owner crashes must not verify pushed history or reset the restart budget.
+- Validated publication now precedes authorization. Canonical repository and both default workflows are mandatory for native history updates, with exact completed matching details on the snapshot path. The safe target delegates recording to the canonical Python owner rather than guessing authority from a numeric shell exit. Same-verdict observations remain idempotent; write failure stays visible/fail-closed.
+- All 140 publisher, native-target and cooldown cases pass; the existing coverage profile passes 133 cases at 97% combined coverage with unchanged 85/75 floors. Both targets capture SHA/branch once, and validation has no query or state-write effects.
+- This removes manual JSON bookkeeping, not the exhaustive gate or exact hosted successor requirements. Source/native repair only; release readiness remains false.
+
 ### 2026-10-13 — Literal search rewrite regressed partial matches and empty-PATH fallback
 
 - Build `38325261900`, job `115065438183`, failed three original help-audit cases: workspace match discovery, matches followed by scan errors, and fallback with an empty PATH. The latter two fail natively first (2 failed, 6 passed).
