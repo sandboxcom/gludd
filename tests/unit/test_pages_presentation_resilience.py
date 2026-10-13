@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "pages.yml"
 MAKE_FRAGMENT = ROOT / "make" / "90-infrastructure-and-services.mk"
@@ -13,6 +15,51 @@ BROWSER_TEST = ROOT / "tests" / "browser" / "test_presentation.py"
 SETUP_PYTHON_V7_SHA = "5fda3b95a4ea91299a34e894583c3862153e4b97"
 
 
+def test_pages_browser_matrix_retains_every_engine_without_sibling_cancellation() -> None:
+    """Independent hosted engines must retain both failure and success evidence."""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    validate = workflow["jobs"]["validate"]
+    assert validate["strategy"] == {
+        "fail-fast": False,
+        "max-parallel": 2,
+        "matrix": {"browser": ["chromium", "webkit"]},
+    }
+    assert validate["timeout-minutes"] == 20
+    assert "continue-on-error" not in validate
+    for name in (
+        "Install and launch-probe pinned browser system dependencies",
+        "Install pinned browsers",
+        "Test exact Pages directory below /gludd/",
+    ):
+        step = next(step for step in validate["steps"] if step["name"] == name)
+        assert 'PRESENTATION_BROWSER_ENGINES="${{ matrix.browser }}"' in step["run"]
+    assert "PRESENTATION_BROWSER_TIMEOUT=600" in next(
+        step["run"] for step in validate["steps"]
+        if step["name"] == "Test exact Pages directory below /gludd/"
+    )
+
+
+def test_pages_matrix_diagnostics_are_unique_and_all_engines_gate_one_artifact() -> None:
+    """Both engines gate deployment while only one validated tree is uploaded."""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    steps = jobs["validate"]["steps"]
+    diagnostic = next(step for step in steps if step["name"] == "Retain presentation browser diagnostics")
+    assert diagnostic["if"] == "failure() || cancelled()"
+    assert diagnostic["with"]["name"] == (
+        "presentation-browser-diagnostics-${{ matrix.browser }}-${{ github.run_attempt }}"
+    )
+    upload = next(step for step in steps if step["name"] == "Preserve validated Pages directory")
+    assert upload["if"] == (
+        "github.event_name == 'push' && github.ref == 'refs/heads/master' "
+        "&& matrix.browser == 'chromium'"
+    )
+    assert upload["with"]["name"] == "gludd-pages-deck"
+    assert upload["with"]["path"] == "docs/presentation/deck"
+    assert jobs["deploy"]["needs"] == "validate"
+    assert "always()" not in jobs["deploy"]["if"]
+
+
 def test_pages_validates_development_and_pull_requests_before_upload() -> None:
     """The exact Pages tree must pass the browser lane before upload."""
     workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -20,7 +67,8 @@ def test_pages_validates_development_and_pull_requests_before_upload() -> None:
     assert "branches: [master, development]" in workflow
     assert "make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1" in workflow
     assert "make presentation-browser-install" in workflow
-    assert 'PRESENTATION_BROWSER_ENGINES="chromium webkit"' in workflow
+    assert 'PRESENTATION_BROWSER_ENGINES="${{ matrix.browser }}"' in workflow
+    assert "browser: [chromium, webkit]" in workflow
     build = workflow.index("make deck-build")
     browser = workflow.index("make presentation-browser-test")
     upload = workflow.index("actions/upload-artifact@")
@@ -60,7 +108,8 @@ def test_pages_installs_linux_webkit_dependencies_before_launch() -> None:
     browser_target = "make presentation-browser-install\n"
     test_target = "make presentation-browser-test"
     assert deps_target in workflow
-    assert 'PRESENTATION_BROWSER_ENGINES="webkit"' in workflow
+    assert 'PRESENTATION_BROWSER_ENGINES="${{ matrix.browser }}"' in workflow
+    assert "browser: [chromium, webkit]" in workflow
     assert workflow.index(deps_target) < workflow.index(browser_target)
     assert workflow.index(deps_target) < workflow.index(test_target)
     assert "presentation-browser-install-deps:" in make_fragment

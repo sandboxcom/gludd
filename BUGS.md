@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Serial hosted browser engines exhausted one shared job deadline
+
+- Exact pushed SHA `6be0e00feb032bd8f1be2d563a95b73bc647bbf3`, Pages run `38413186651`, passed Chromium's 17 desktop cases (304.12s) and compact viewport case (48.89s), then cancelled WebKit at 16/17 desktop cases when the 20-minute job deadline expired. WebKit and deployment acceptance were not complete.
+- Two new structural regressions genuinely failed before the change. The workflow now uses native Chromium/WebKit matrix jobs, maximum two hosted runners, and no sibling fail-fast. Browser/viewport assertions and the existing subprocess/job deadlines remain unchanged; only each job's own pinned engine is installed and launch-probed.
+- Engine-specific failure/cancellation diagnostics prevent artifact collisions. Both jobs gate deployment, while only Chromium uploads the master-only validated deck; the public exact-SHA probe and ZDD rollback contract remain intact. Hosted successor acceptance and full gate remain pending, so S98.4 stays open.
+
 ### 2026-10-13 — Publication could bypass the existing bounded dependent-runtime owner
 
 - The full early runtime cohort catches three defects that scoped source tests missed, but normal push admission reaches only lint/types/collection. Twenty-eight native behavioral cases fail first while two threshold/nonpublication controls pass; red runtime children still reach fake Git transport.

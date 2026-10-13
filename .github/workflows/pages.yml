@@ -39,6 +39,11 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        browser: [chromium, webkit]
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
@@ -59,11 +64,11 @@ jobs:
         run: make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1
       - name: Build exact Pages directory
         run: make deck-build
-      - name: Install and launch-probe pinned WebKit system dependencies
+      - name: Install and launch-probe pinned browser system dependencies
         run: >-
           make presentation-browser-install-deps
           PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0
-          PRESENTATION_BROWSER_ENGINES="webkit"
+          PRESENTATION_BROWSER_ENGINES="${{ matrix.browser }}"
           PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers
           PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser
           PRESENTATION_BROWSER_INSTALL_TIMEOUT=600
@@ -71,7 +76,7 @@ jobs:
         run: >-
           make presentation-browser-install
           PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0
-          PRESENTATION_BROWSER_ENGINES="chromium webkit"
+          PRESENTATION_BROWSER_ENGINES="${{ matrix.browser }}"
           PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers
           PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser
           PRESENTATION_BROWSER_INSTALL_TIMEOUT=600
@@ -79,20 +84,20 @@ jobs:
         run: >-
           make presentation-browser-test
           PRESENTATION_BROWSER_VALIDATE_ONLY=0
-          PRESENTATION_BROWSER_ENGINES="chromium webkit"
+          PRESENTATION_BROWSER_ENGINES="${{ matrix.browser }}"
           PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers
           PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser
           PRESENTATION_BROWSER_TIMEOUT=600
       - name: Retain presentation browser diagnostics
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
-          name: presentation-browser-diagnostics-${{ github.run_attempt }}
+          name: presentation-browser-diagnostics-${{ matrix.browser }}-${{ github.run_attempt }}
           path: /tmp/gludd-presentation-browser
           if-no-files-found: ignore
           retention-days: 7
       - name: Preserve validated Pages directory
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && matrix.browser == 'chromium'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-pages-deck

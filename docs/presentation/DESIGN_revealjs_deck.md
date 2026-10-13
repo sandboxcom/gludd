@@ -532,3 +532,37 @@ post-deploy identity check; no in-place Pages mutation or unverified fallback
 is used. The compact-label change follows the same rule: its commit is reverted
 as one unit with its structural contract and documentation, and no unaliased
 replacement can deploy unless the exact Chromium viewport suite is green.
+
+### Hosted browser isolation — 2026-10-13
+
+[Pages run 38413186651](https://github.com/sandboxcom/gludd/actions/runs/38413186651)
+tested `6be0e00feb032bd8f1be2d563a95b73bc647bbf3`. Chromium passed all 17
+desktop cases in 304.12 seconds and the compact viewport case in 48.89 seconds.
+The same hosted job then started WebKit and reached 16 of 17 desktop passes
+before its 20-minute job deadline cancelled it; this is not a WebKit pass or
+deployment proof. The serial engines shared the deadline with dependency setup.
+
+The workflow now uses GitHub's native two-engine job matrix, capped at two
+concurrent hosted runners, with `fail-fast: false`. Each engine runs the unchanged
+full desktop suite and compact viewport case, with the existing 600-second
+subprocess and 20-minute job limits. Each job installs and launch-probes only its
+own pinned engine; local Make acceptance retains its existing serial default.
+This removes the earlier engine's elapsed time from the other engine's job
+budget without increasing browser workers or relaxing assertions. Fresh hosted
+completion and the improvement in wall time still require measurement.
+
+Both engine jobs remain required by `deploy`. Only the successful Chromium job
+uploads the master-only validated deck, preventing duplicate artifact writes;
+WebKit must also pass before deployment can consume it. Failure/cancellation
+diagnostics have engine-specific artifact names. Master-only deployment and the
+exact public-SHA probe remain unchanged; rollback still promotes the previous
+browser-green artifact through the normal release flow.
+
+This uses [GitHub's documented native matrix controls](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations).
+Long-lived user reports explain the additional boundaries:
+[community discussion 26117](https://github.com/orgs/community/discussions/26117)
+describes sibling jobs cancelled by default matrix fail-fast, while
+[community discussion 17245](https://github.com/orgs/community/discussions/17245)
+records artifact name collisions after immutable artifact uploads were introduced.
+The new structural regressions retain both engines, independent evidence, unique
+diagnostics, and one deployment artifact. They do not close S98.4 or the release.
