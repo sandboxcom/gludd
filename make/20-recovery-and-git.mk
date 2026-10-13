@@ -1229,12 +1229,14 @@ force-push:
 
 master-force-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) --no-print-directory _push-rate-guard
+	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
 	@$(MAKE) --no-print-directory require-sandboxcom-ssh-key
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom master
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
 git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _stash-before-push-guard _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit _ci-restart-cap
+	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
 	@BRANCH=$$(git branch --show-current); \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH
 	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd"
@@ -1248,6 +1250,7 @@ push-dev: check-clean-tree ci-busy-check _push-rate-guard _stash-before-push-gua
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 push-dev-nv: check-clean-tree _push-rate-guard
+	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
@@ -1257,6 +1260,7 @@ push-dev-nv: check-clean-tree _push-rate-guard
 # and CI is the gate. The _push-rate-guard (CI-pending / cooldown / thrash)
 # is STILL enforced. Mirrors commit-no-verify for the push side.
 git-push-sandboxcom-nv: check-clean-tree _push-rate-guard _stash-before-push-guard _pull-before-push-guard _ci-verdict-history-guard _ci-restart-cap
+	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
 	@BRANCH=$$(git branch --show-current); \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
 	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd (--no-verify)"
@@ -1266,6 +1270,7 @@ git-push-sandboxcom-nv: check-clean-tree _push-rate-guard _stash-before-push-gua
 # Push only the committed HEAD for the current branch. This is for CI candidate
 # runs from a dirty integration checkout; uncommitted files are not included.
 git-push-current-head-nv: check-clean-tree _push-rate-guard
+	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
 	@BRANCH=$$(git branch --show-current); \
 	if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
@@ -1273,6 +1278,7 @@ git-push-current-head-nv: check-clean-tree _push-rate-guard
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 git-push-current-head-to-master-nv: check-clean-tree _push-rate-guard
+	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom HEAD:master
 	@echo "Pushed committed HEAD to sandboxcom/gludd master"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
@@ -1291,6 +1297,31 @@ batch-push-nv: check-clean-tree _no-bypass-guard _stash-before-push-guard _ci-re
 	echo "$$COUNT unpushed commits, threshold met. Pushing (--no-verify)..."; \
 	$(MAKE) git-push-sandboxcom-nv
 
+# Publication reuses the installed canonical runtime and existing bounded observer.
+RUNTIME_PUBLISH_ENVIRONMENT ?=
+RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY ?= 0
+.PHONY: _runtime-publish-admission
+_runtime-publish-admission:
+	@case "$(RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo 'RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY must be 0 or 1'; exit 2;; esac
+	@if [ "$(RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY)" = 1 ]; then \
+		echo "RUNTIME-PUBLISH-ADMISSION-PLAN environment=$(RUNTIME_PUBLISH_ENVIRONMENT) max_seconds=90 quiet_seconds=60 observed_root=$(OBSERVED_ROOT) release_ready=false gate_evidence=false"; exit 0; \
+	fi; \
+	runtime_environment="$(RUNTIME_PUBLISH_ENVIRONMENT)"; \
+	if [ -z "$$runtime_environment" ]; then \
+		resource_root="$$($(PYTHON) scripts/resource_arbiter.py root)" || exit $$?; \
+		runtime_environment="$${resource_root}-toolchain/ci-shards/python-3.11"; \
+	fi; \
+	[ -x "$$runtime_environment/bin/python" ] || { echo "Runtime publication admission requires the existing canonical Python 3.11 environment: $$runtime_environment" >&2; exit 2; }; \
+	"$$runtime_environment/bin/python" -c 'import importlib.util, sys; sys.version_info[:2] == (3, 11) or sys.exit("runtime publication requires Python 3.11"); importlib.util.find_spec("pytest_playwright") is not None or sys.exit("runtime publication requires the installed Playwright pytest fixture plugin")' || exit $$?; \
+	runtime_run_id="batch-push-runtime-admission-$$$$"; \
+	UV_PROJECT_ENVIRONMENT="$$runtime_environment" UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never \
+	$(MAKE) --no-print-directory run-watched WORK_ITEM_ID="$(WORK_ITEM_ID)" UV_PROJECT_ENVIRONMENT="$$runtime_environment" \
+		CMD='$(MAKE) --no-print-directory _pytest-runtime-compatibility-admission' \
+		OBSERVED_LABEL=batch-push-runtime-admission RUN_ID="$$runtime_run_id" STALL_SECS=60 MAX_SECS=90 \
+		LOG="$(OBSERVED_ROOT)/batch-push-runtime-admission/$$runtime_run_id.log" \
+		OBSERVED_ROOT="$(OBSERVED_ROOT)" OBSERVED_HEARTBEAT_SECS=10 OBSERVED_RETAIN_RUNS="$(or $(OBSERVED_RETAIN_RUNS),20)" \
+		|| { runtime_rc=$$?; echo "Runtime publication admission failed (exit $$runtime_rc); Git transport was not attempted." >&2; exit $$runtime_rc; }
+
 # Batch push: only push after substantial local work (default 5+ unpushed commits).
 # Override: GLUDD_FORCE_PUSH=1. COMMIT_THRESHOLD=1 is blocked.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
@@ -1307,6 +1338,7 @@ batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-bef
 		exit 0; \
 	fi; \
 	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
+	$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0 || exit $$?; \
 	BRANCH=$$(git branch --show-current); \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH || { PUSH_RC=$$?; echo "Push failed for $$BRANCH (exit $$PUSH_RC); success was not recorded." >&2; exit $$PUSH_RC; }; \
 	echo "Pushed $$BRANCH to sandboxcom/gludd ($$COUNT commits)"; \

@@ -100,3 +100,44 @@ The complete current native owner then passes 1167 cases plus fresh help in
 These source receipts do not repair hosted evidence retroactively or establish
 installed-image, full-gate or deployment acceptance. Once-per-publication
 admission of this same maintained owner is a separate pipeline enhancement.
+
+## Mandatory publication admission (2026-10-13)
+
+The new internal runtime-publication owner reuses the complete existing
+compatibility cohort through the existing watched runner. Normal batch
+publication runs it exactly once after threshold admission and before Git
+transport. Rejected thresholds incur no replay. All existing forced and seven
+legacy NV transports share the same owner and explicitly pin execution mode;
+they cannot turn the check into a validation-only plan. The normal installed
+pre-push hook remains unchanged and does not duplicate this owner.
+
+Automatic discovery uses the existing resource-arbiter namespace and canonical
+ci-shards/python-3.11 environment. An explicit existing environment is also
+supported. Missing/wrong-minor interpreters and missing Playwright fixtures
+fail closed before observation or transport. No environment, package, resolver,
+installer or service is created. Explicit recursive environment/no-sync and
+no-download settings prevent outer .venv hints from selecting Python 3.14.
+
+The original two-worker cohort, one-worker fresh help, fatal warnings, 90-second
+maximum, 60-second quiet limit and 10-second heartbeat are unchanged. Retention
+honours the existing caller setting. Source rejection keeps failure evidence;
+transport failure never records success. Plan mode mutates nothing and never
+grants gate or release authority.
+
+Root's initial matrix has 28 failures and two unchanged nonpublication controls.
+The final 35-case native Make/observer matrix passes on both Python versions,
+including normal, forced/NV, child/transport/identity refusals and the real
+contract validator. Root's actual automatic environment selection runs all
+1167 existing cases plus fresh help successfully in 45.3 observed seconds.
+Strict typing, Ruff, the 227-target contract, documented plan example and
+zero-new-clone staged admission pass. Fixture-source final-LF conformance and
+missing retention defaults were repaired without changing assertions.
+
+The maintained [loadgroup contract](https://pytest-xdist.readthedocs.io/en/stable/distribution.html)
+and [2018 session-fixture report](https://github.com/pytest-dev/pytest-xdist/issues/271)
+support retaining the existing isolation rather than adding workers or a runner.
+The [GitHub runtime discussion](https://github.com/orgs/community/discussions/25631)
+supports keeping bounded, attributable execution before expensive publication.
+These are source/control-plane receipts, not hosted speed, full gate, installed
+controller or deployment proof. ZDD and the unchanged 85/75 requirements remain;
+rollback is the isolated Make/contract/test/documentation commit.

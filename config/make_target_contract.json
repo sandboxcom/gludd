@@ -50,6 +50,17 @@
       "behavior": "make _pytest-runtime-compatibility-admission"
     },
     {
+      "name": "_runtime-publish-admission",
+      "make_variables": [
+        "RUNTIME_PUBLISH_ENVIRONMENT",
+        "RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY",
+        "WORK_ITEM_ID",
+        "OBSERVED_ROOT"
+      ],
+      "not_for_direct_use": true,
+      "behavior": "make _runtime-publish-admission RUNTIME_PUBLISH_ENVIRONMENT=/tmp/gludd-runtime-publish-absent RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=1 WORK_ITEM_ID='' OBSERVED_ROOT=/tmp/gludd-runtime-publish-contract-observed"
+    },
+    {
       "name": "_pull-before-push-guard",
       "make_variables": [
         "PUSH_REMOTE",

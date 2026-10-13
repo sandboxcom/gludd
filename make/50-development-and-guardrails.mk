@@ -36,6 +36,7 @@ development-push: check-clean-tree ci-busy-check _push-rate-guard
 # Force-push the development branch (when rebase rewrites history).
 development-force-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) --no-print-directory _push-rate-guard
+	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
 	@$(MAKE) require-sandboxcom-ssh-key
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)

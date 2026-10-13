@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Publication could bypass the existing bounded dependent-runtime owner
+
+- The full early runtime cohort catches three defects that scoped source tests missed, but normal push admission reaches only lint/types/collection. Twenty-eight native behavioral cases fail first while two threshold/nonpublication controls pass; red runtime children still reach fake Git transport.
+- One shared internal owner now runs the existing full compatibility cohort and fresh help once per admitted publication, not once per small commit. Normal, forced and all seven legacy NV transports call that owner with execution mode pinned. Canonical existing Python 3.11/Playwright identity is required; no bootstrap, budget increase or new runner is introduced.
+- All 35 native Make/observer/contract cases pass on both Python versions. Actual automatic existing-environment selection passes 1167 cases plus fresh help in 45.3 observed seconds under the original 90/60 bounds. The documented mutation-free plan and 227-target contract pass; staged clone admission adds zero findings. Missing retention defaults and fixture final-LF metadata were corrected without assertion weakening.
+- Serving processes and data remain untouched. Full gate, new exact-SHA hosted, installed EE health and deployment acceptance remain pending; this publication guard does not close a release item or authorize force/NV use.
+
 ### 2026-10-13 — Scoped EE/Git source proofs missed dependent early-runtime assertions
 
 - Exact SHA 6be0e00 fails Build 38413188456 on both Python gates. The one early native run reports three failures and 1164 passes in 49.03 seconds, not a timeout: two EE boundary expectations remain on the distro interpreter/four-input contract, and a new native test parameter shadows Playwright's context fixture.

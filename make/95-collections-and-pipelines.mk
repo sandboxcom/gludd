@@ -467,6 +467,7 @@ expand-specs:
 
 # Push exactly the current clean HEAD for the current branch.
 git-push-committed-head-nv: commit-ready
+	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
 	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed clean HEAD $$HEAD to sandboxcom/$$BRANCH."
 
 # Idempotently signal the Build and Release workflow for the exact clean HEAD.
