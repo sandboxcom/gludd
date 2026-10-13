@@ -610,6 +610,8 @@ help:
 	@echo "  ci-cancel               cancel a CI run by id — use for zombie runs blocking push"
 	@echo "  (Single-source policy: features land on development first, then merge to master)"
 	@echo "  git-status            Show git status"
+	@echo "  git-owned-checkpoint-push     Checkpoint explicit owned files (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_VALIDATE_ONLY)"
+	@echo "  git-owned-checkpoint-restore  Restore exact top checkpoint, retaining evidence (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_VALIDATE_ONLY)"
 	@echo "  git-diff              Show diff stats"
 	@echo "  git-staged            Show staged changes"
 	@echo "  git-log               Show recent commits"

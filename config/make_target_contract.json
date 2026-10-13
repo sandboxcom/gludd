@@ -2,6 +2,16 @@
   "version": 1,
   "targets": [
     {
+      "name": "git-owned-checkpoint-push",
+      "make_variables": ["FILES", "GIT_CHECKPOINT_LABEL", "GIT_CHECKPOINT_VALIDATE_ONLY"],
+      "behavior": "make git-owned-checkpoint-push FILES=Makefile GIT_CHECKPOINT_LABEL=gludd-contract-checkpoint GIT_CHECKPOINT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "git-owned-checkpoint-restore",
+      "make_variables": ["FILES", "GIT_CHECKPOINT_LABEL", "GIT_CHECKPOINT_SHA", "GIT_CHECKPOINT_VALIDATE_ONLY"],
+      "behavior": "make git-owned-checkpoint-restore FILES=Makefile GIT_CHECKPOINT_LABEL=gludd-contract-checkpoint GIT_CHECKPOINT_SHA=0000000000000000000000000000000000000000 GIT_CHECKPOINT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "work-item",
       "make_variables": [
         "WORK_ITEM_ACTION",

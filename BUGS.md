@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Manual WIP checkpoints lacked exact scope and input-data admission
+
+- Native scoped stash can capture unrelated staged paths. The existing broad stash/pop helpers also cannot require an exact expected object, worktree owner or file scope before restoration. Source proof must not mix unfinished work into the tested candidate.
+- The new thin native-Git owner requires explicit files, exact top SHA, unique label and matching worktree/scope. It preserves partial index and untracked files, retains the checkpoint after apply, refuses conflicts/foreign staged state and fails before unsupported staged-deletion mutation. It adds no second history store or reset/clear operation.
+- Root's full missing-owner replay fails 34 cases with two controls passing. Four additional native regressions expose Make evaluating input data before Python admission; raw value exports repair that boundary. Native Git and long-lived scoped-stash findings are documented in OWNED_GIT_CHECKPOINT.md. Full release proof remains separate.
+
 ### 2026-10-13 — Empty SearXNG initializer bypassed actual default-source acceptance
 
 - Two native regressions fail before repair: default inputs are absent and invalid settings incorrectly allow freezing through an empty initializer. A further native case proves adjacent files can shadow registered fixture inputs.

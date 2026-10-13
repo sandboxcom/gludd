@@ -650,6 +650,27 @@ git-stash:
 git-stash-pop:
 	@git stash pop || echo "No stash to pop"
 
+GIT_CHECKPOINT_LABEL ?=
+GIT_CHECKPOINT_SHA ?=
+GIT_CHECKPOINT_VALIDATE_ONLY ?= 1
+ifneq (,$(filter git-owned-checkpoint-push git-owned-checkpoint-restore,$(MAKECMDGOALS)))
+ifneq (,$(findstring $$,$(value FILES)$(value GIT_CHECKPOINT_LABEL)$(value GIT_CHECKPOINT_SHA)$(value GIT_CHECKPOINT_VALIDATE_ONLY)))
+$(error OWNED-CHECKPOINT-REFUSED inputs must be literal file and identity data)
+endif
+endif
+GIT_CHECKPOINT_OWNER := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../scripts/owned_git_checkpoint.py)
+export GIT_CHECKPOINT_FILES := $(value FILES)
+export GIT_CHECKPOINT_LABEL GIT_CHECKPOINT_SHA GIT_CHECKPOINT_VALIDATE_ONLY
+
+.PHONY: git-owned-checkpoint-push git-owned-checkpoint-restore
+git-owned-checkpoint-push:
+	@# FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_VALIDATE_ONLY are exported without shell interpolation.
+	@$(PYTHON) "$(GIT_CHECKPOINT_OWNER)" push
+
+git-owned-checkpoint-restore:
+	@# FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_VALIDATE_ONLY are environment-exported.
+	@$(PYTHON) "$(GIT_CHECKPOINT_OWNER)" restore
+
 git-stash-clear:
 	@COUNT=$$(git stash list 2>/dev/null | wc -l | tr -d ' '); \
 	git stash clear && echo "Cleared $$COUNT stash entries." || echo "No stashes to clear."
