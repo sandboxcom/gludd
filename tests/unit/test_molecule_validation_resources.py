@@ -118,5 +118,3 @@ def test_old_python_large_cpu_count_does_not_reject_a_small_native_workload(
     monkeypatch.setattr(runpy, "run_module", lambda module, **_kwargs: calls.append(module))
     exec(compile(bootstrap, "<native-lint-admission>", "exec"), {})
     assert calls == ["ansiblelint"]
-
-

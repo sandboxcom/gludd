@@ -3,10 +3,10 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        # Vendored presentation bytes are digest-pinned; never rewrite them.
-        exclude: ^docs/presentation/deck/vendor/
+        # Vendor and exact upstream fixture bytes are digest-pinned.
+        exclude: ^(docs/presentation/deck/vendor/|tests/fixtures/ansible_ee_searxng/limiter\.toml\.txt$)
       - id: end-of-file-fixer
-        exclude: ^(config/self-improve/catalog-truth\.json|docs/presentation/deck/vendor/)
+        exclude: ^(config/self-improve/catalog-truth\.json|docs/presentation/deck/vendor/|tests/fixtures/ansible_ee_searxng/limiter\.toml\.txt$)
       - id: check-yaml
         args: [--allow-multiple-documents]
       - id: check-json

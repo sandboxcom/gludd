@@ -161,5 +161,3 @@ def test_role_rendered_module_check_mode_retains_mutation_boundary_and_read_only
         assert result.value.payload["changed"] is True
         factory.assert_not_called()
         assert result.value.payload["result"]["would_change"] is True
-
-

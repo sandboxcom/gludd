@@ -101,3 +101,39 @@ The rollback is one atomic revert of the hook entries, Make wiring, scripts,
 policy, package manifest, and package lock. No data migration or service
 rollback is required. Reverting only the package pin while leaving the hook is
 invalid because the missing executable is deliberately a hard failure.
+
+## Frozen fixture formatting and early admission (2026-10-13)
+
+The push formatter added a final LF to the checksum-frozen upstream limiter
+fixture, invalidating its existing native source-integrity assertion. Its
+verified 1176-byte upstream representation intentionally has no final LF.
+Restoring those exact bytes makes the original SHA assertion pass again.
+Five ordinary source files legitimately required EOF normalization and retain
+that normalization and all formatter enforcement.
+
+Both mutating text hooks protect only that exact fixture path, anchored at
+both ends. Existing catalog and vendored-byte boundaries remain unchanged.
+Adjacent fixtures, application/scripts/tests, prose/config and path lookalikes
+remain selected. Security, schema and native checksum checks still run.
+
+The existing scoped content guard now runs maintained trailing-whitespace and
+EOF hooks before secrets, line/clone checks and collection. A rewrite returns
+nonzero before commit; the guard does not silently restage or hide failures.
+Five new portable regressions fail first, then the integrated hook/fixture
+cohort passes 46 cases in each installed Python environment. A separate focused
+replay uses the exact already-installed upstream hook to preserve frozen bytes
+while actually repairing an ordinary file; it is not a cache-dependent unit
+test or a release proof.
+
+The [maintained selection contract](https://pre-commit.com/#regular-expressions)
+owns per-hook regex filtering, and [individual hook execution](https://pre-commit.com/#pre-commit-run)
+provides the existing cheap admission mechanism. The [pinned native EOF source](https://github.com/pre-commit/pre-commit-hooks/blob/v5.0.0/pre_commit_hooks/end_of_file_fixer.py)
+owns the byte transformation. A [2020 fixture-selection report](https://github.com/pre-commit/pre-commit-hooks/issues/517)
+recommends per-hook boundaries so unrelated checks continue; a [2023 golden-data report](https://github.com/pre-commit/pre-commit/issues/2812)
+shows that excluding the text type can unintentionally exempt every text file.
+The exact-path and ordinary-file negative controls prevent that broader defect.
+
+These control-plane changes do not restart serving services or change data,
+controller images or promotion authority. Rollback is the isolated config,
+guard/tests/documentation commit. Full gate, exact-SHA hosted and deployment
+acceptance, with unchanged 85/75 coverage requirements, remain pending.

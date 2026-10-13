@@ -404,5 +404,3 @@ def test_native_shared_radio_geometry_retains_outputs_and_registrations(tmp_path
             assert result["model_name"] == "Free-Space Path Loss"
             assert result["verdict"] == "success"
             assert result["loss_db"] > 0
-
-

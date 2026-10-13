@@ -292,5 +292,6 @@ class TestConfigStructure:
 
         assert hook.get("exclude") == (
             r"^(config/self-improve/catalog-truth\.json|"
-            r"docs/presentation/deck/vendor/)"
+            r"docs/presentation/deck/vendor/|"
+            r"tests/fixtures/ansible_ee_searxng/limiter\.toml\.txt$)"
         )

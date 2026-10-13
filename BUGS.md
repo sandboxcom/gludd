@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Scoped commit admission omitted text formatting and rewrote frozen data at push
+
+- Normal batch push refuses publication after maintained EOF formatting changes five ordinary files and appends LF to the exact checksum-frozen limiter fixture. Its existing native SHA test fails; restoring verified upstream bytes makes that unchanged assertion pass. No push success is recorded.
+- Five portable failing-first cases precede exact fixture routing and maintained formatter execution in the existing scoped content owner, before secrets/line/clone/collection. Both ordinary rewrite failures stop later work; ordinary source/data neighbours remain selected. The original catalog/vendor boundaries and checksum assertion are retained.
+- The integrated hook/fixture cohort passes 46 cases on both Python versions. Separate actual installed-hook acceptance verifies immutable bytes and real ordinary EOF repair without adding a cache-dependent unit test, formatter, runner, environment, scanner exclusion or release authority. The canonical gate, exact-SHA CI and deployment acceptance remain pending.
+
 ### 2026-10-13 — Binary/radio task dictionaries failed native argument and reuse admission
 
 - Sixteen failing-first native cases expose unresolved nested task expressions and short-form fixture actions. Thirteen callers now pass their same dictionaries through native task-local variables, retaining every nested required field, type, choice and default; actual builtin fixture actions use their maintained FQCNs.

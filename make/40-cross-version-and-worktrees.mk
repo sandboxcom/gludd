@@ -304,6 +304,8 @@ _commit-lock-acquire: _gate-mutation-guard
 # pre-commit hooks and do not repeat these checks.
 .PHONY: _pre-commit-secrets-guard
 _pre-commit-secrets-guard:
+	@$(UV) run pre-commit run trailing-whitespace
+	@$(UV) run pre-commit run end-of-file-fixer
 	@$(UV) run pre-commit run detect-secrets-readonly
 
 _pre-commit-content-guard: _pre-commit-secrets-guard

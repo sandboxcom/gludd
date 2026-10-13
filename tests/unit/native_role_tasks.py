@@ -84,4 +84,3 @@ def effective_arguments(task: Task, templar: Templar) -> dict[str, Any]:
         )
     rendered = templar.template(merged)
     return {key: value for key, value in cast(dict[str, Any], rendered).items() if value != "__native_role_omit__"}
-
