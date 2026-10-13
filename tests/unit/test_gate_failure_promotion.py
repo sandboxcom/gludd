@@ -28,6 +28,7 @@ EXPECTED_RUNTIME_PHASES = [
         90,
         60,
     ),
+    ("check-duplicate-code", "check-duplicate-code", "standard", 180, 120),
     (
         "pytest-runtime-compatibility",
         "_pytest-runtime-compatibility-admission",
@@ -82,7 +83,6 @@ EXPECTED_RUNTIME_PHASES = [
         90,
         60,
     ),
-    ("check-duplicate-code", "check-duplicate-code", "standard", 180, 120),
     ("yaml-lint", "yaml-lint", "standard", 180, 120),
     (
         "project-dispatch-integration",

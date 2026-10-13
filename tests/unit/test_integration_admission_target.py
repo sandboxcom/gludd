@@ -18,6 +18,15 @@ def _target_stanza(makefile: str, target: str) -> str:
     return makefile.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
 
 
+def test_clone_admission_precedes_runtime_and_collection_work() -> None:
+    """Known cheap clone failures must reject candidates before heavy cohorts."""
+    stanza = _target_stanza(compose_makefile(MAKEFILE), "integration-admission")
+    clone = stanza.index('run_phase "check-duplicate-code"')
+    assert stanza.index('run_phase "check-gate-failure-promotions"') < clone
+    assert clone < stanza.index('run_phase "pytest-runtime-compatibility"')
+    assert clone < stanza.index('run_phase "pre-commit-check"')
+
+
 def test_integration_admission_is_public_and_fail_fast() -> None:
     """The public target reuses existing checks in cheapest-first order."""
     makefile = compose_makefile(MAKEFILE)
@@ -38,6 +47,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     phases = (
         "worktree-guard",
         "check-gate-failure-promotions",
+        "check-duplicate-code",
         "pytest-runtime-compatibility",
         "ansible-role-variable-prefix",
         "cloud-iam-generation-parity",
@@ -50,7 +60,6 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
         "check-generated-artifact-hygiene",
         "lint-markdown",
         "check-make-target-contract",
-        "check-duplicate-code",
         "yaml-lint",
         "project-dispatch-integration",
         "mcp-workspace-jail-integration",
@@ -253,6 +262,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
     for phase in (
         "worktree-guard",
         "check-gate-failure-promotions",
+        "check-duplicate-code",
         "pytest-runtime-compatibility",
         "ansible-role-variable-prefix",
         "cloud-iam-generation-parity",
@@ -265,7 +275,6 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         "check-generated-artifact-hygiene",
         "lint-markdown",
         "check-make-target-contract",
-        "check-duplicate-code",
         "yaml-lint",
         "project-dispatch-integration",
         "mcp-workspace-jail-integration",
@@ -283,6 +292,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
     assert [item["phase"] for item in evidence] == [
         "worktree-guard",
         "check-gate-failure-promotions",
+        "check-duplicate-code",
         "pytest-runtime-compatibility",
         "ansible-role-variable-prefix",
         "cloud-iam-generation-parity",
@@ -295,7 +305,6 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         "check-generated-artifact-hygiene",
         "lint-markdown",
         "check-make-target-contract",
-        "check-duplicate-code",
         "yaml-lint",
         "project-dispatch-integration",
         "mcp-workspace-jail-integration",

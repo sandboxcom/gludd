@@ -4,6 +4,18 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Advisory enforcement callers duplicated the native model owner
+
+- Staged native clone admission rejects the repeated model-invocation blocks in the gate and verification roles. Both role prompts, ordering, advisory status and artifact facts must remain intact.
+- Sixteen native failing-first cases precede a shared task include inside the existing gate role. Actual Ansible task loading and templating feed the real module's check-mode argument owner; all sixteen cases pass on both Python 3.14/Ansible 2.21.5 and Python 3.11/Ansible 2.19.14. The original role-specific raw results and response/confidence defaults are preserved.
+- The documented native reuse decision addresses long-lived community concerns without adding a model runner or changing the disabled-by-default behavior. These source tests do not establish live-daemon, full-gate, same-SHA hosted or deployment proof; S98.4 remains pending.
+
+### 2026-10-13 — Clone admission ran after expensive source replay
+
+- Normal commit admission discovered repeated source blocks only after hundreds of focused tests had run. The existing integration plan also placed duplicate-code admission after runtime compatibility and collection-sensitive work.
+- A failing-first ordering regression precedes moving the unchanged native jscpd phase directly after clean-tree and promotion-manifest admission. The complete admission/promotion cohort passes all 59 cases; the native validation-only plan retains all 21 phases, the 2850-second aggregate ceiling and every original phase budget. Existing phase-order fixtures conform to the new policy without weakening their owner or budget assertions.
+- No duplicate-code configuration, release criterion or resource limit changes. The full gate, exact-SHA hosted evidence and deployment acceptance remain pending; this source optimization does not add a completed backlog item.
+
 ### 2026-10-13 — Native Molecule diagnostic logs could falsely authorize acceptance
 
 - Real native controls exit zero while logging missing-module option validation, an ignored ArgsRule exception, and an unresolved templated renderer import that omits an invalid child. Root reproduces 13 failures and two unchanged nonzero controls before repair.

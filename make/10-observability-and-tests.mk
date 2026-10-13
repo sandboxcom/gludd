@@ -831,6 +831,13 @@ integration-admission:
 	run_phase "worktree-guard" "worktree-guard" "fast" "90" "60" $(MAKE) --no-print-directory worktree-guard; \
 	run_phase "check-gate-failure-promotions" "check-gate-failure-promotions" "fast" "90" "60" $(MAKE) --no-print-directory check-gate-failure-promotions \
 		GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"; \
+	run_phase "check-duplicate-code" "check-duplicate-code" "standard" "180" "120" $(MAKE) --no-print-directory check-duplicate-code \
+		DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" \
+		DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" \
+		DUPLICATE_CODE_SOURCE="committed" \
+		DUPLICATE_CODE_BASE_REF="$(DUPLICATE_CODE_BASE_REF)" \
+		DUPLICATE_CODE_CURRENT_REF="$(DUPLICATE_CODE_CURRENT_REF)" \
+		DUPLICATE_CODE_VALIDATE_ONLY=0; \
 	run_phase "pytest-runtime-compatibility" "_pytest-runtime-compatibility-admission" "fast" "90" "60" $(MAKE) --no-print-directory _pytest-runtime-compatibility-admission; \
 	run_phase "ansible-role-variable-prefix" "_ansible-role-variable-prefix" "fast" "90" "60" $(MAKE) --no-print-directory _ansible-role-variable-prefix; \
 	run_phase "cloud-iam-generation-parity" "_cloud-iam-generation-parity" "fast" "90" "60" $(MAKE) --no-print-directory _cloud-iam-generation-parity; \
@@ -845,13 +852,6 @@ integration-admission:
 		MARKDOWN_FILES="$(MARKDOWN_FILES)" \
 		MARKDOWNLINT_CONFIG="$(MARKDOWNLINT_CONFIG)"; \
 	run_phase "check-make-target-contract" "check-make-target-contract" "fast" "90" "60" $(MAKE) --no-print-directory check-make-target-contract; \
-	run_phase "check-duplicate-code" "check-duplicate-code" "standard" "180" "120" $(MAKE) --no-print-directory check-duplicate-code \
-		DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" \
-		DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" \
-		DUPLICATE_CODE_SOURCE="committed" \
-		DUPLICATE_CODE_BASE_REF="$(DUPLICATE_CODE_BASE_REF)" \
-		DUPLICATE_CODE_CURRENT_REF="$(DUPLICATE_CODE_CURRENT_REF)" \
-		DUPLICATE_CODE_VALIDATE_ONLY=0; \
 	run_phase "yaml-lint" "yaml-lint" "standard" "180" "120" $(MAKE) --no-print-directory yaml-lint; \
 	run_phase "project-dispatch-integration" "_project-dispatch-integration" "standard" "180" "120" $(MAKE) --no-print-directory _project-dispatch-integration; \
 	run_phase "mcp-workspace-jail-integration" "_mcp-workspace-jail-integration" "standard" "180" "120" $(MAKE) --no-print-directory _mcp-workspace-jail-integration; \

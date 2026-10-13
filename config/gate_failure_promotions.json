@@ -25,6 +25,13 @@
         "quiet_seconds": 60
       },
       {
+        "name": "check-duplicate-code",
+        "target": "check-duplicate-code",
+        "budget_class": "standard",
+        "max_seconds": 180,
+        "quiet_seconds": 120
+      },
+      {
         "name": "pytest-runtime-compatibility",
         "target": "_pytest-runtime-compatibility-admission",
         "budget_class": "fast",
@@ -107,13 +114,6 @@
         "budget_class": "fast",
         "max_seconds": 90,
         "quiet_seconds": 60
-      },
-      {
-        "name": "check-duplicate-code",
-        "target": "check-duplicate-code",
-        "budget_class": "standard",
-        "max_seconds": 180,
-        "quiet_seconds": 120
       },
       {
         "name": "yaml-lint",

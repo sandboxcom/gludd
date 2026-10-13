@@ -24,7 +24,12 @@ the first nonzero result:
    before any promoted node runs. It rejects duplicate families or nodes,
    missing Make owners, stale pytest node IDs, admission wiring drift, and a
    missing mandatory full-gate phase.
-3. `pytest-runtime-compatibility` runs the complete crash-recovery,
+3. `check-duplicate-code` compares the complete bounded production snapshot at
+   feature `HEAD` with the explicit development base through locked `jscpd`.
+   Existing findings remain visible while only newly introduced clone
+   fingerprints fail admission. It runs before runtime compatibility and test
+   collection so a deterministic clone failure does not consume those lanes.
+4. `pytest-runtime-compatibility` runs the complete crash-recovery,
    hook-runtime split compatibility, async-launcher, and session-persistence
     files and the complete background-launcher and gate-run-lock files, plus the exact
     session-objective CI node, with `-W error` and two bounded
@@ -72,36 +77,32 @@ the first nonzero result:
     the owner budget or substitute local success for hosted replay.
    Hosted Python 3.11/3.12 jobs retain their own interpreter coverage; admission
    reuses their environment without creating another dependency matrix.
-4. `ansible-role-variable-prefix` runs the exact warning-fatal
+5. `ansible-role-variable-prefix` runs the exact warning-fatal
    `test_role_variables_use_namespaced_prefix` node. The control gate first
    found this deterministic failure in batch 10 after minutes of work; admission
    now reports it in seconds before integration health checks can consume their
    eight-minute bound.
-5. `cloud-iam-generation-parity` serially runs
+6. `cloud-iam-generation-parity` serially runs
    `test_aws_prune_produces_warning_when_actions_removed` followed by
    `test_generate_aws_terraform_deploy`. This order reproduces cross-call
    mutation of nested role templates in one process, while `-W error` keeps
    warning drift fatal and `-n 0` prevents worker isolation from hiding the
    shared-state invariant.
-6. `_dead-code-baseline-refresh` checks exact dead-code baseline parity without
+7. `_dead-code-baseline-refresh` checks exact dead-code baseline parity without
    rewriting reviewed policy. It names added or stale entries and stops the
    admission plan before broader metadata, documentation, or quality work.
-7. `check-coverage-gaps` rejects a production module without a mapped focused
+8. `check-coverage-gaps` rejects a production module without a mapped focused
    coverage test. `check-resource-ownership` then verifies the exact tracked
    acquisition-to-teardown inventory in read-only mode. These promoted checks
    catch both missing mappings after a module split and new or stale lifecycle
    sites before the expensive gate starts.
-8. `validate-task-ledger`, `check-task-registration`, and
+9. `validate-task-ledger`, `check-task-registration`, and
    `check-task-integrity` reject malformed or unowned work.
-9. `check-generated-artifact-hygiene` catches documentation and generated-data
+10. `check-generated-artifact-hygiene` catches documentation and generated-data
    drift before broader quality work.
-10. `lint-markdown` checks the explicitly supplied feature documents.
-11. `check-make-target-contract` rejects missing help, variables, or safe
+11. `lint-markdown` checks the explicitly supplied feature documents.
+12. `check-make-target-contract` rejects missing help, variables, or safe
    behavioral examples for agent-facing targets.
-12. `check-duplicate-code` compares the complete bounded production snapshot at
-   feature `HEAD` with the explicit development base through locked `jscpd`.
-   Existing findings remain visible while only newly introduced clone
-   fingerprints fail admission.
 13. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
    tracked YAML from the checkout, runs with a disposable namespaced Ansible
    home, and emits ten-second observer heartbeats. A stale user-installed
@@ -380,6 +381,15 @@ and Builder identities. These focused contracts do not claim that the complete
 real EE graph has resolved or that a replacement image has built successfully.
 
 ## Zero-downtime and rollback
+
+On 2026-10-13 the existing duplicate-code owner moves immediately after the
+worktree and promotion-manifest checks. Staged source validation had discovered
+deterministic clone failures only after substantial focused replay. The new
+ordering regression fails before repair; the complete admission/promotion
+cohort then passes 59 cases. The native validation-only plan confirms the same
+21 phases and 2850-second aggregate ceiling. No checker policy, phase budget,
+required test, or full-gate acceptance condition changes. This is fail-fast
+wiring acceptance, not a measured hosted speed improvement or release proof.
 
 The exact original private-Help visibility node also executes here through
 `make-private-target-help-visibility`. It catches the terminal c4 unit-2 failure
