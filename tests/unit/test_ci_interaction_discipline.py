@@ -29,6 +29,8 @@ from pathlib import Path
 
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_ci_verdict_all_required import SHA, _run, _sandbox
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-no-ci-poll.ts"
 NOWAIT_PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-no-wait.ts"
@@ -77,6 +79,34 @@ def _target_recipe(makefile: str, target: str) -> str:
                 break
             out.append(line)
     return "\n".join(out)
+
+
+def _verdict_source(makefile: str) -> str:
+    """Follow ci-verdict's shared command to its actual native Python owner."""
+    recipe = _target_recipe(makefile, "ci-verdict")
+    assert "$(_CI_VERDICT_COMMAND)" in recipe
+    commands = [
+        line for line in makefile.splitlines()
+        if line.startswith("_CI_VERDICT_COMMAND = ")
+    ]
+    assert len(commands) == 1
+    command = commands[0]
+    assert command.startswith("_CI_VERDICT_COMMAND = $(PYTHON) scripts/pipeline_status.py status ")
+    assert "--remote-only" in command
+    assert '--branch "$$VERDICT_BRANCH"' in command and '--sha "$$VERDICT_SHA"' in command
+    return (ROOT / "scripts/pipeline_status.py").read_text(encoding="utf-8")
+
+
+def _native_verdict(tmp_path: Path, state: str) -> subprocess.CompletedProcess[str]:
+    """Reuse the existing bounded native Make harness, not a second verdict evaluator."""
+    runs = [_run("Build and Release", 1), _run("Molecule Tests", 2)]
+    if state == "red":
+        runs[0]["conclusion"] = "failure"
+    elif state == "pending":
+        runs[1].update(status="in_progress", conclusion="")
+    elif state != "green":
+        raise ValueError(f"unsupported verdict fixture: {state}")
+    return _sandbox(tmp_path, runs)
 
 
 # ── CID.1 / CID.6: ci-verdict-safe cooldown ──────────────────────────────────
@@ -379,14 +409,14 @@ class TestCiVerdictHeadSha:
 
     def test_ci_verdict_prints_headsha(self):
         mk = _makefile()
-        recipe = _target_recipe(mk, "ci-verdict")
+        recipe = _verdict_source(mk)
         assert "headSha" in recipe, (
             "ci-verdict must print headSha in output (CID.7 — stale-run detection)"
         )
 
     def test_ci_verdict_prints_run_id(self):
         mk = _makefile()
-        recipe = _target_recipe(mk, "ci-verdict")
+        recipe = _verdict_source(mk)
         assert "RUN_ID" in recipe or "databaseId" in recipe, (
             "ci-verdict must print the run id (CID.10)"
         )
@@ -487,32 +517,47 @@ class TestNoWaitPluginRule:
 
 
 class TestCiVerdictOutputFormat:
-    """CID.13 — verdict format: 'CI GREEN: sha= run=' / 'CI RED: sha= run= conclusion='."""
+    """CID.13 — exact-SHA, all-workflow output preserves each state and run id."""
 
-    def test_green_format(self):
-        mk = _makefile()
-        recipe = _target_recipe(mk, "ci-verdict")
-        assert "CI GREEN" in recipe, (
-            "ci-verdict must emit 'CI GREEN: ...' format (CID.13)"
+    def test_green_format(self, tmp_path: Path) -> None:
+        result = _native_verdict(tmp_path, "green")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert f"CI GREEN: sha={SHA} run=1,2" in result.stdout
+        assert "PASS Build and Release run 1 status=completed conclusion=success" in result.stdout, (
+            "ci-verdict must emit the complete successful workflow format (CID.13)"
         )
+        assert "PASS Molecule Tests run 2 status=completed conclusion=success" in result.stdout
+        assert "SUMMARY 0 failed, 0 pending, 2 passed, 0 missing" in result.stdout
 
-    def test_red_format(self):
-        mk = _makefile()
-        recipe = _target_recipe(mk, "ci-verdict")
-        assert "CI RED" in recipe, "ci-verdict must emit 'CI RED: ...' format (CID.13)"
-
-    def test_pending_format(self):
-        mk = _makefile()
-        recipe = _target_recipe(mk, "ci-verdict")
-        assert "CI PENDING" in recipe, (
-            "ci-verdict must emit 'CI PENDING: ...' format (CID.13)"
+    def test_red_format(self, tmp_path: Path) -> None:
+        result = _native_verdict(tmp_path, "red")
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert f"CI RED: sha={SHA} run=1,2" in result.stdout
+        assert "FAIL Build and Release run 1 status=completed conclusion=failure" in result.stdout, (
+            "ci-verdict must emit the terminal failed workflow format (CID.13)"
         )
+        assert "SUMMARY 1 failed, 0 pending, 1 passed, 0 missing" in result.stdout
+        assert "Error 1" in result.stderr
 
-    def test_includes_sha_and_run_in_output(self):
-        mk = _makefile()
-        recipe = _target_recipe(mk, "ci-verdict")
-        assert "HEAD_SHA" in recipe and "RUN_ID" in recipe, (
-            "ci-verdict output must include both SHA and run id (CID.13)"
+    def test_pending_format(self, tmp_path: Path) -> None:
+        result = _native_verdict(tmp_path, "pending")
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert f"CI PENDING: sha={SHA} run=1,2" in result.stdout
+        assert "PENDING Molecule Tests run 2 status=in_progress conclusion=none" in result.stdout, (
+            "ci-verdict must emit the incomplete pending workflow format (CID.13)"
+        )
+        assert "SUMMARY 0 failed, 1 pending, 1 passed, 0 missing" in result.stdout
+        assert "Error 2" in result.stderr
+
+    def test_includes_sha_and_run_in_output(self, tmp_path: Path) -> None:
+        result = _native_verdict(tmp_path, "green")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert f"CI GREEN: sha={SHA} run=1,2" in result.stdout
+        assert f"REMOTE CI branch=development sha={SHA}" in result.stdout, (
+            "ci-verdict output must include the exact SHA (CID.13)"
+        )
+        assert "Build and Release run 1" in result.stdout and "Molecule Tests run 2" in result.stdout, (
+            "ci-verdict output must include every observed workflow run id (CID.13)"
         )
 
 

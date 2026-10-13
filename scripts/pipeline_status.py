@@ -133,6 +133,26 @@ class PipelineSummary:
         return tuple(output)
 
 
+def _compatibility_verdict_line(summary: PipelineSummary, exit_code: int) -> str:
+    """Render the operational outcome for existing consumers, never synthetic proof."""
+    marker = {0: "CI GREEN", 1: "CI RED", 2: "CI PENDING"}[exit_code]
+    run_ids = ",".join(str(run.run_id) for run in summary.runs) or "none"
+    status = (
+        summary.pending[0].status if summary.pending
+        else "incomplete" if summary.missing_workflows or not summary.runs
+        else "completed"
+    )
+    conclusion = (
+        "success" if exit_code == 0
+        else ",".join(dict.fromkeys(run.conclusion for run in summary.failures)) if exit_code == 1
+        else "none"
+    )
+    return (
+        f"{marker}: sha={summary.sha} run={run_ids} "
+        f"status='{status}' conclusion={conclusion} branch={summary.branch}"
+    )
+
+
 def _run_id(payload: dict[str, Any]) -> int:
     try:
         return int(payload.get("databaseId") or 0)
@@ -521,12 +541,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 history.get("last_push_sha") and history["last_push_sha"] != sha
             ):
                 ci_check_cooldown.cmd_record_verdict("pending")
+                print(_compatibility_verdict_line(summary, 2))
                 return 2
             if history.get("last_checked_sha") != sha or history.get("last_verdict") != verdict:
                 ci_check_cooldown.cmd_record_verdict(verdict, sha)
         except (OSError, ValueError) as exc:
             print(f"CI VERDICT RECORD ERROR: {exc}")
             return 2
+    print(_compatibility_verdict_line(summary, summary.exit_code))
     return summary.exit_code
 
 

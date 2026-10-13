@@ -551,6 +551,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ansible_ee_searx_acceptance.py::test_installer_copies_only_matching_real_frozen_provenance",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "native-verdict-caller-compatibility",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_verdict_structural_repair.py::test_native_shared_verdict_owner_retains_identity_states_and_run_ids",
+      "full_gate_phase": "test"
     }
   ]
 }

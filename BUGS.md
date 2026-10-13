@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Native verdict migration broke release consumers and branch forwarding
+
+- Run 38340797931, jobs 115114319346 and 115114319363, exposed seven structural assertions still inspecting inline shell output after verdicts moved to the native all-required owner. Actual ci-wait and ci-poll-master consumers also depend on CI GREEN/CI RED markers, so merely changing tests would hide a real compatibility defect.
+- Complete RED reproduces 21 failures and seven controls. The native owner now emits one operational compatibility summary after publication/recording guards, retaining every workflow row, exact SHA and real selected run IDs. Validation, owner errors, incomplete evidence and foreign history cannot emit terminal proof or reset the push budget.
+- Four branch failures and two explicit-precedence controls precede forwarding explicit CI_BRANCH, legacy BRANCH or one captured current branch. Original target, identity, format and state assertions follow the actual shared owner and execute native output; no failure is removed or weakened.
+- All 287 related original/new cases pass with warnings fatal; the status and required-CI source owners measure 98% and 100% coverage respectively. The existing feature guide records primary Make behavior and a long-lived user report; full gate, exact hosted successor and release completion remain required.
+- Three early mapping/roster/wiring failures precede 52 promotion passes; the full early owner passes 1163 plus one fresh-process help case in 73.1 observed seconds under unchanged 90/60 bounds. Both native and existing Python 3.11 focused replays pass all 287 cases; collection reports 122818/122819 cases with one deselection and zero errors. All 220 target contracts and the documented no-query/no-record behavior pass.
+
 ### 2026-10-13 — Complete EE warm exposed unfrozen SearXNG metadata and default configuration
 
 - Run 38340797931, job 115114319261, built immutable image d41a2ec590240b389d10f77f6023cd8b6bd7b05aecaeb81a9300b78120288959 and passed OpenTofu, but the required Python phase logged missing Git metadata and refused the production default secret.

@@ -9,6 +9,8 @@ from pathlib import Path
 
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_ci_interaction_discipline import _verdict_source
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 MAKEFILE_PATH = ROOT / "Makefile"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
@@ -187,7 +189,7 @@ class TestCIVerdictMustMatchHeadSHA:
         text = makefile_text()
         idx = text.find("ci-verdict:")
         assert idx != -1
-        block = text[idx : idx + 800]
+        block = _verdict_source(text)
         assert "headSha" in block, "P06: ci-verdict does not report headSha"
 
 

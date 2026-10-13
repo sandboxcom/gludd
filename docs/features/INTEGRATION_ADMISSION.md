@@ -55,6 +55,12 @@ the first nonzero result:
      installed provenance before copying metadata. The manifest owns the actual
      installer regression; the full installed nine-import image smoke remains
      required independently. No image, environment or relaxed budget is added.
+     The complete native verdict compatibility cohort also runs before fan-out.
+     It replays the original identity/output assertions, preserves existing
+     release-consumer filters and explicit/legacy/current branch selection, and
+     refuses validation or incomplete/foreign-history terminal proof. Actual
+     native Make output is exercised without running polling loops or querying
+     hosted CI; all required-workflow and recording guards remain mandatory.
     Both repository fixture assertions share one fresh source report: each unique
     test source is parsed once, its AST is released before the next file, and no
     persistent cache or test-tree sampling changes their evidence. Installed-plugin

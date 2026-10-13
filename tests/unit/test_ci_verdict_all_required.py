@@ -31,6 +31,7 @@ def _run(workflow: str, number: int) -> dict[str, object]:
 def _sandbox(
     tmp_path: Path, runs: list[dict[str, object]],
     target: str = "ci-verdict", validate_only: int = 0, owner_crash: bool = False,
+    make_variables: tuple[str, ...] = (),
 ) -> subprocess.CompletedProcess[str]:
     content = compose_makefile(ROOT / "Makefile")
     carriers = "\n".join(line for line in content.splitlines()
@@ -63,7 +64,11 @@ def _sandbox(
     )
     gh.chmod(0o755)
     git = bin_dir / "git"
-    git.write_text(f"#!{sys.executable}\nprint({SHA!r})\n", encoding="utf-8")
+    git.write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"print('development' if sys.argv[1:] == ['branch', '--show-current'] else {SHA!r})\n",
+        encoding="utf-8",
+    )
     git.chmod(0o755)
     env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                GLUDD_VERDICT_TEST_RUNS=json.dumps(runs),
@@ -75,7 +80,7 @@ def _sandbox(
     return subprocess.run(
         ["make", "--no-print-directory", target, f"PYTHON={sys.executable}",
          f"SHA={SHA}", "CI_BRANCH=development", "CI_CHECK_COOLDOWN_SEC=600",
-         f"CI_VERDICT_VALIDATE_ONLY={int(validate_only)}"],
+         f"CI_VERDICT_VALIDATE_ONLY={int(validate_only)}", *make_variables],
         cwd=tmp_path, env=env, text=True, capture_output=True, timeout=30,
     )
 

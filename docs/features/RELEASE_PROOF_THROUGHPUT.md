@@ -65,6 +65,30 @@ commit or installed-file identity fail without a success marker. All 137 related
 cases pass in both native environments, with the same focused coverage. These
 tests do not claim that isolated imports prove the real image dependency graph.
 
+### Verdict caller compatibility
+
+Hosted run 38340797931 found seven assertions still inspecting the old inline
+verdict recipe. Actual release pollers also consumed its CI GREEN/RED labels.
+The native owner now restores a compatibility line after validated publication
+and recording checks, retaining every exact-SHA workflow row and actual run ID.
+Validate-only, owner errors and incomplete/foreign history emit no terminal
+proof marker. Explicit CI_BRANCH takes precedence over legacy BRANCH; otherwise
+the native recipes capture the current branch once, alongside the captured SHA.
+
+Original tests retain identity, format and green/red/pending expectations while
+following the shared owner and executing real Make output. Complete RED reports
+21 failures with seven controls; branch selection reproduces four failures with
+two precedence controls. All 287 related cases pass, and the two production
+owners measure 98% and 100% coverage. Existing consumer grep filters are exercised
+directly without running their polling loops or making hosted queries.
+
+The [GNU Make manual](https://www.gnu.org/software/make/manual/html_node/Running.html)
+defines Make's own exit statuses; it does not preserve arbitrary recipe codes.
+A [2016 user report](https://stackoverflow.com/questions/39875208/recursive-make-loses-status-code)
+documents this long-lived confusion. Tests retain both native outcome and
+recipe Error 1/Error 2 evidence instead of interpreting a wrapper exit as proof.
+Focused/source acceptance does not close the canonical gate or hosted proof.
+
 ### Scheduling owners
 
 Run before sealing a replacement candidate, final combined replay, or a full

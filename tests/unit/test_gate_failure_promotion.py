@@ -986,6 +986,28 @@ def test_current_task_inventory_real_scanner_executes_before_hosted_fanout() -> 
     assert payload["full_gate_required"] is True
 
 
+def test_native_verdict_compatibility_contract_executes_before_hosted_fanout() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    node = (
+        "tests/unit/test_ci_verdict_structural_repair.py::"
+        "test_native_shared_verdict_owner_retains_identity_states_and_run_ids"
+    )
+    family = next((f for f in payload["families"] if f["id"] == "native-verdict-caller-compatibility"), None)
+    assert family == {
+        "id": "native-verdict-caller-compatibility",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    assert node in owner
+    combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
+    assert node.split("::", 1)[0] in combined
+    phase = next(p for p in payload["runtime_contract"]["phases"]
+                 if p["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def test_searxng_frozen_source_contract_executes_before_hosted_fanout() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     node = (
@@ -1170,6 +1192,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "current-task-inventory-real-secret-scan",
         "workflow-safe-parser-throughput",
         "ee-searxng-frozen-source-acceptance",
+        "native-verdict-caller-compatibility",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1329,6 +1352,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ci_failure_ledger.py '
         'tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py '
         'tests/unit/test_ci_verdict_all_required.py '
+        'tests/unit/test_ci_verdict_structural_repair.py '
         'tests/unit/test_secrets_baseline_compaction.py '
         'tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_task_ledger_validation.py '
         'tests/unit/test_make_readonly_version.py '

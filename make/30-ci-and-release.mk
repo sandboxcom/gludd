@@ -88,7 +88,7 @@ pages-enable:
 # Bare `ci-verdict` exists for release-cut internals only.
 ci-verdict:
 	@case "$(CI_VERDICT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_VERDICT_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@VERDICT_SHA="$(or $(SHA),$$(git rev-parse HEAD))"; VERDICT_BRANCH="$(CI_BRANCH)"; $(_CI_VERDICT_COMMAND)
+	@VERDICT_SHA="$(or $(SHA),$$(git rev-parse HEAD))"; VERDICT_BRANCH="$(or $(CI_BRANCH),$(BRANCH),$$(git branch --show-current))"; $(_CI_VERDICT_COMMAND)
 
 # ci-verdict-safe: COOLDOWN-ENFORCED CI check. Refuses to run more than once
 # per CI_CHECK_COOLDOWN_SEC (default 600s = 10 min). Prevents the anti-pattern
@@ -107,7 +107,7 @@ _CI_VERDICT_COMMAND = $(PYTHON) scripts/pipeline_status.py status --remote-only 
 
 ci-verdict-safe:
 	@case "$(CI_VERDICT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_VERDICT_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@VERDICT_SHA="$(or $(SHA),$$(git rev-parse HEAD))"; VERDICT_BRANCH="$(CI_BRANCH)"; \
+	@VERDICT_SHA="$(or $(SHA),$$(git rev-parse HEAD))"; VERDICT_BRANCH="$(or $(CI_BRANCH),$(BRANCH),$$(git branch --show-current))"; \
 	if [ "$(CI_VERDICT_VALIDATE_ONLY)" = 1 ]; then $(_CI_VERDICT_COMMAND); exit $$?; fi; \
 	$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) || exit $$?; \
 	$(_CI_VERDICT_COMMAND) --record-verdict

@@ -2058,10 +2058,11 @@
       "make_variables": [
         "SHA",
         "CI_BRANCH",
+        "BRANCH",
         "CI_CHECK_COOLDOWN_SEC",
         "CI_VERDICT_VALIDATE_ONLY"
       ],
-      "behavior": "make ci-verdict-safe SHA=0000000000000000000000000000000000000000 CI_BRANCH=development CI_CHECK_COOLDOWN_SEC=600 CI_VERDICT_VALIDATE_ONLY=1"
+      "behavior": "make ci-verdict-safe SHA=0000000000000000000000000000000000000000 CI_BRANCH=development BRANCH= CI_CHECK_COOLDOWN_SEC=600 CI_VERDICT_VALIDATE_ONLY=1"
     }
   ]
 }
