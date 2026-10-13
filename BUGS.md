@@ -4,6 +4,19 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Native Molecule diagnostic logs could falsely authorize acceptance
+
+- Real native controls exit zero while logging missing-module option validation, an ignored ArgsRule exception, and an unresolved templated renderer import that omits an invalid child. Root reproduces 13 failures and two unchanged nonzero controls before repair.
+- The existing checker retains native strict mode, every input, all rules, original logging and bounded stream/process ownership. It refuses zero-exit acceptance when the owned log contains WARNING-or-higher diagnostics or cannot be read. A portable literal relative renderer import restores actual child closure; the positive and invalid-child fixtures both exercise native lint. Existing mock owner conformance writes its truthful log without changing assertions.
+- All 35 diagnostic/budget cases and all 176 focused diagnostic/Git cases on Python 3.11 pass. Full checker coverage and complete repository replay are still being validated. POSIX cannot establish Windows PowerShell parameter-type proof; unsupported coverage remains explicit proof=none. No diagnostic is suppressed or counted as release completion.
+
+### 2026-10-13 — Installed EE import success concealed unhealthy initialization
+
+- Exact Build 38379268292 reports a successful EE job and IMPORT_OK while logging a missing limiter configuration, SQLite 3.34.1 with disabled favicon caching, and offline engine initialization failures. Exit zero is not healthy runtime acceptance.
+- The existing smoke owner retains all nine imports and frozen-source identity checks, collects every WARNING-or-higher native log record without suppressing output, and refuses its success marker on any diagnostic. Packaged native smoke settings/limiter preserve production defaults. Checksum-pinned maintained standalone CPython supplies the required SQLite runtime without replacing the distro library; every controller consumer uses one explicit public path. Real Builder generation pins bootstrap/pip ordering before their consumers.
+- Root reproduces 22 failing-first cases and three later boundary failures. All 181 integrated source cases pass; artifact-owner line/branch coverage is 92% at unchanged 85/75 floors. The native lock producer hashes all six inputs. Twelve independently verified public SHA findings are reviewed through native baseline maintenance, with no prior finding removal or scanner-policy change.
+- Replacement installed Linux-image smoke, same-SHA hosted evidence, canonical full gate and deployment acceptance remain pending. Source tests do not close S98.4 or authorize switching a serving controller; candidate warm/switch/drain/rollback ownership is unchanged.
+
 ### 2026-10-13 — Hosted CI imports acquired two static module identities
 
 - Exact development run 38379268292 fails unit-3a when strict mypy reaches the same receipt/collection owners under both bare and scripts-qualified names. Unit-1b also retains an obsolete inline-verdict recipe assertion after the shared native owner migration.

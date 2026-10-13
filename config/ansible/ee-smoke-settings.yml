@@ -1,0 +1,6 @@
+---
+# Native non-serving offline import proof; production settings are independent.
+use_default_settings:
+  engines:
+    keep_only:
+      - wikipedia

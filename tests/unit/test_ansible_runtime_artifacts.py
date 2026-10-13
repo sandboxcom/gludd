@@ -912,7 +912,7 @@ def test_controller_base_installs_git_before_vcs_python_dependencies() -> None:
 def test_controller_base_pins_current_pip_before_python_installation() -> None:
     """Repair the observed outdated installer, without suppressing notices."""
     definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
-    base_steps = definition["additional_build_steps"].get("append_base", [])
+    base_steps = definition["additional_build_steps"].get("prepend_base", [])
     assert "RUN $PYCMD -m pip install --no-cache-dir --upgrade pip==26.2.1" in base_steps
 
 
@@ -978,9 +978,9 @@ def test_generated_controller_build_preserves_installer_and_interpreter_boundari
     rendered = (context / "Dockerfile").read_text(encoding="utf-8")
     base, downstream = rendered.split("FROM base AS galaxy", 1)
     builder, final = downstream.split("FROM base AS final", 1)
-    assert 'ENV PIPCMD="/usr/bin/python3.11 -m uv pip"' in base
+    assert f'ENV PIPCMD="{artifacts.CONTROLLER_PYTHON_PATH} -m uv pip"' in base
     assert "ENV UV_CONFIG_FILE=/etc/gludd/ansible-ee-uv.toml" in base
-    assert "ENV UV_PYTHON=/usr/bin/python3.11 UV_SYSTEM_PYTHON=true" in base
+    assert f"ENV UV_PYTHON={artifacts.CONTROLLER_PYTHON_PATH} UV_SYSTEM_PYTHON=true" in base
     assert "ENV UV_PYTHON=/tmp/venv/bin/python UV_SYSTEM_PYTHON=false" in builder
     assert builder.index("ENV UV_PYTHON=/tmp/venv/bin/python") < builder.index(
         "RUN /output/scripts/assemble"
@@ -1258,7 +1258,7 @@ def test_validate_reports_definition_lock_and_managed_host_drift(
 
 def test_expected_hashes_are_named_and_content_addressed() -> None:
     hashes = artifacts.expected_input_hashes()
-    assert set(hashes) == {"galaxy", "python", "system", "definition"}
+    assert set(hashes) == {"galaxy", "python", "system", "definition", "smoke_settings", "smoke_limiter"}
     assert all(value.startswith("sha256:") and len(value) == 71 for value in hashes.values())
 
 

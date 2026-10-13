@@ -1754,7 +1754,7 @@ jobs:
           set -euo pipefail
           echo "=== CI PHASE: ansible-ee-smoke ==="
           docker run --rm --network=none "${EE_TAG}" /usr/local/bin/tofu version
-          docker run --rm --network=none "${EE_TAG}"             /usr/bin/python3.11 -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
+          docker run --rm --network=none --pull=never "${EE_TAG}"             /opt/gludd/ansible-ee-python/bin/python3.11 -W error -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
       - name: Log in to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0 (node24)
@@ -1778,6 +1778,8 @@ jobs:
           cp config/ansible/requirements.txt dist/ee-release/ansible-ee-requirements.txt
           cp config/ansible/bindep.txt dist/ee-release/ansible-ee-bindep.txt
           cp config/ansible/runtime-lock.json dist/ee-release/ansible-ee-runtime-lock.json
+          cp config/ansible/ee-smoke-settings.yml dist/ee-release/ansible-ee-smoke-settings.yml
+          cp config/ansible/ee-smoke-limiter.toml dist/ee-release/ansible-ee-smoke-limiter.toml
           cp config/ansible/managed-host-python.lock.json dist/ee-release/ansible-managed-host-python.lock.json
           cp config/ansible/collection-python-boundary-inventory.json             dist/ee-release/ansible-collection-python-boundary-inventory.json
           cp dist/collections/*.tar.gz dist/ee-release/

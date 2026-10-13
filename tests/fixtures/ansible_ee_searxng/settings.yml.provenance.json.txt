@@ -13,6 +13,32 @@
   "serialized_yaml_sha256": "e525cf729b6e00793c5630c3da25d49ba1c28ced09eafffd1b1f80da94bad4ad",
   "effective_defaults_sha256": "81130964268a31068a7fdaac70c42f9221ca1c7fe56c584e5976f2d3d6b12add",
   "effective_engine_count": 246,
+  "runtime_source_fixtures": {
+    "wikipedia.py": {
+      "source_revision": "7b4612e86250389dc9d5ee67e4cc2cd64d06602a",
+      "source_path": "searx/engines/wikipedia.py",
+      "source_url": "https://raw.githubusercontent.com/searxng/searxng/7b4612e86250389dc9d5ee67e4cc2cd64d06602a/searx/engines/wikipedia.py",
+      "source_sha256": "184789eba028a7f7a192d61303b57a2d61af2e29752d1f0a0634aca9af9488b9"
+    },
+    "botdetection-config.py": {
+      "source_revision": "7b4612e86250389dc9d5ee67e4cc2cd64d06602a",
+      "source_path": "searx/botdetection/config.py",
+      "source_url": "https://raw.githubusercontent.com/searxng/searxng/7b4612e86250389dc9d5ee67e4cc2cd64d06602a/searx/botdetection/config.py",
+      "source_sha256": "aafa5a4120fb18ffabdb6085d3674030d9e89c7cd55e92660f5b9d5e70f198dd"
+    },
+    "compat.py": {
+      "source_revision": "7b4612e86250389dc9d5ee67e4cc2cd64d06602a",
+      "source_path": "searx/compat.py",
+      "source_url": "https://raw.githubusercontent.com/searxng/searxng/7b4612e86250389dc9d5ee67e4cc2cd64d06602a/searx/compat.py",
+      "source_sha256": "3ae8b8f374247f9cb948610141eb89328495b8873c4605913663f1c5bc740e2c"
+    },
+    "limiter.toml": {
+      "source_revision": "7b4612e86250389dc9d5ee67e4cc2cd64d06602a",
+      "source_path": "searx/limiter.toml",
+      "source_url": "https://raw.githubusercontent.com/searxng/searxng/7b4612e86250389dc9d5ee67e4cc2cd64d06602a/searx/limiter.toml",
+      "source_sha256": "f90c7cb5e8e92c14139e8f14b741b520c7e2af4f27407eab6b187905a58656cd"
+    }
+  },
   "effective_top_level_keys": [
     "brand",
     "categories_as_tabs",

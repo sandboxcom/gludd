@@ -55,7 +55,7 @@ HashiCorp Terraform belongs on the host.
   runs `/usr/local/bin/tofu version` with `--network=none`; HashiCorp Terraform
   is neither installed nor invoked.
 - The offline Ansible import smoke uses the EE definition's exact managed
-  interpreter, `/usr/bin/python3.11`, through the validated
+  interpreter, `/opt/gludd/ansible-ee-python/bin/python3.11`, through the validated
   `execution_environment_bootstrap_candidate_python_executable` variable. The
   role rejects overrides, so verification cannot drift to ambient host Python.
 

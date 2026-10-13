@@ -21,7 +21,8 @@ dependencies:
     package_pip: ansible-runner==2.4.3
   python_interpreter:
     package_system: python3.11
-    python_path: /usr/bin/python3.11
+    # Distro Python bootstraps the image; the controller uses isolated native SQLite.
+    python_path: /opt/gludd/ansible-ee-python/bin/python3.11
 additional_build_files:
   - src: ../../dist/collections/general_ludd-agent-0.2.0.tar.gz
     dest: collections
@@ -39,12 +40,41 @@ additional_build_files:
     dest: collections
   - src: ../../dist/collections/general_ludd-xml-0.1.0.tar.gz
     dest: collections
+  - src: ee-smoke-settings.yml
+    dest: smoke
+  - src: ee-smoke-limiter.toml
+    dest: smoke
 additional_build_steps:
+  prepend_base:
+    # Builder's pip/Ansible steps consume PYCMD before append_base.
+    - RUN $PKGMGR install -y python3.11 curl-minimal tar gzip coreutils && $PKGMGR clean all
+    - RUN /usr/bin/python3.11 -c 'import sys; assert sys.version_info[:2] == (3, 11)'
+    - >-
+      RUN set -eu; machine="$(uname -m)";
+      case "$machine" in
+      x86_64) archive="cpython-3.11.17+20261001-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz";
+      sha256="7086a336e6ea0a49595cf891066ab6517156c85116f77fbc23b62c1d9e9b7d92" ;;
+      aarch64|arm64) archive="cpython-3.11.17+20261001-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz";
+      sha256="26ee69bff5d6d4173360275fcf38d4d25228286b79a7d9b36ad39af970909e37" ;;
+      *) echo "unsupported controller Python architecture: $machine" >&2; exit 2 ;;
+      esac; archive_path="$(mktemp /tmp/gludd-ansible-ee-python-XXXXXXXX.tar.gz)";
+      trap 'rm -f -- "$archive_path"' EXIT HUP INT TERM;
+      curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2
+      --connect-timeout 10 --max-time 120 --output "$archive_path"
+      "https://github.com/astral-sh/python-build-standalone/releases/download/20261001/$archive";
+      printf '%s  %s\n' "$sha256" "$archive_path" | sha256sum --check --strict;
+      install -d -m 0755 /opt/gludd/ansible-ee-python;
+      tar --extract --gzip --file "$archive_path" --strip-components=1
+      --directory /opt/gludd/ansible-ee-python;
+      /opt/gludd/ansible-ee-python/bin/python3.11 -c
+      'import sqlite3, sys; assert sys.version_info[:3] == (3, 11, 17);
+      assert sqlite3.sqlite_version_info >= (3, 35, 0);
+      assert sqlite3.threadsafety == 3'
+    # The standalone archive's pip must be current before Builder's first install.
+    - RUN $PYCMD -m pip install --no-cache-dir --upgrade pip==26.2.1
   append_base:
     # The pinned SearXNG Python source needs Git in the builder, not just final.
     - RUN $PKGMGR install -y git-core && $PKGMGR clean all
-    # The distro pip emitted an update notice during actual hosted assembly.
-    - RUN $PYCMD -m pip install --no-cache-dir --upgrade pip==26.2.1
     # Supply the pinned source's undeclared metadata dependency in isolation.
     - RUN $PYCMD -m pip install --no-cache-dir uv==0.12.19
     - >-
@@ -53,14 +83,18 @@ additional_build_steps:
       'searxng = ["pyyaml==6.0.2"]'
       > /etc/gludd/ansible-ee-uv.toml
     # Both standard Builder dependency scripts honor PIPCMD; no wrapper needed.
-    - ENV PIPCMD="/usr/bin/python3.11 -m uv pip"
+    - ENV PIPCMD="/opt/gludd/ansible-ee-python/bin/python3.11 -m uv pip"
     - ENV UV_CONFIG_FILE=/etc/gludd/ansible-ee-uv.toml
-    - ENV UV_PYTHON=/usr/bin/python3.11 UV_SYSTEM_PYTHON=true UV_BREAK_SYSTEM_PACKAGES=true
+    - ENV UV_PYTHON=/opt/gludd/ansible-ee-python/bin/python3.11 UV_SYSTEM_PYTHON=true UV_BREAK_SYSTEM_PACKAGES=true
     - ENV UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_CONCURRENT_BUILDS=1
   prepend_builder:
     # assemble creates and activates this venv before resolving requirements.
     - ENV UV_PYTHON=/tmp/venv/bin/python UV_SYSTEM_PYTHON=false
   append_final:
+    # Only non-serving import proof selects this isolated native configuration.
+    - RUN install -d -m 0755 /etc/gludd/ansible-ee-smoke
+    - COPY _build/smoke/ee-smoke-settings.yml /etc/gludd/ansible-ee-smoke/settings.yml
+    - COPY _build/smoke/ee-smoke-limiter.toml /etc/gludd/ansible-ee-smoke/limiter.toml
     # Upstream freezer runs from the verified source, then installs real metadata.
     - >-
       RUN set -eu; source_dir="$(mktemp -d /tmp/gludd-ansible-ee-searxng-XXXXXXXX)";
@@ -70,8 +104,8 @@ additional_build_steps:
       git -C "$source_dir" fetch --depth=1 origin 7b4612e86250389dc9d5ee67e4cc2cd64d06602a;
       git -C "$source_dir" checkout --detach 7b4612e86250389dc9d5ee67e4cc2cd64d06602a;
       test "$(git -C "$source_dir" rev-parse HEAD)" = 7b4612e86250389dc9d5ee67e4cc2cd64d06602a;
-      cd "$source_dir"; /usr/bin/python3.11 -m searx.version freeze;
-      /usr/bin/python3.11 -c 'import json, runpy, shutil, sys;
+      cd "$source_dir"; /opt/gludd/ansible-ee-python/bin/python3.11 -m searx.version freeze;
+      /opt/gludd/ansible-ee-python/bin/python3.11 -c 'import json, runpy, shutil, sys;
       from importlib import metadata;
       from pathlib import Path;
       from packaging.version import Version;
@@ -104,7 +138,7 @@ additional_build_steps:
       "https://github.com/opentofu/opentofu/releases/download/v1.12.6/$archive";
       printf '%s  %s\n' "$sha256" "/tmp/$archive"
       | sha256sum --check --strict;
-      /usr/bin/python3.11 -m zipfile -e "/tmp/$archive" /tmp/opentofu-extract;
+      /opt/gludd/ansible-ee-python/bin/python3.11 -m zipfile -e "/tmp/$archive" /tmp/opentofu-extract;
       install -m 0755 /tmp/opentofu-extract/tofu /usr/local/bin/tofu;
       /usr/local/bin/tofu version;
       rm -rf "/tmp/$archive" /tmp/opentofu-extract

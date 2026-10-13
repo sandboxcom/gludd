@@ -154,7 +154,7 @@ def test_acceptance_warms_all_controller_imports_with_owned_offline_containers(
         assert CANDIDATE_IMAGE not in command
         assert command.count(image) == 1
     assert smokes[0][-2:] == ["/usr/local/bin/tofu", "version"]
-    assert smokes[1][-3:-1] == ["/usr/bin/python3.11", "-c"]
+    assert smokes[1][-5:-1] == [artifacts.CONTROLLER_PYTHON_PATH, "-W", "error", "-c"]
     smoke_tree = ast.parse(smokes[1][-1])
     controller_statements = [
         node
@@ -233,7 +233,7 @@ def test_smoke_consumes_validator_interpreter_source_of_truth(
     }
     monkeypatch.setattr(artifacts, "EXPECTED_DEPENDENCIES", dependencies)
     assert _invoke(mode, tmp_path / "context") == 0
-    assert calls[-1][-3] == "/validator-owned/python3.11"
+    assert calls[-1][-5] == "/validator-owned/python3.11"
 
 
 def test_container_namespace_is_distinct_for_each_project_root(

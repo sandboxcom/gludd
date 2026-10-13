@@ -35,7 +35,12 @@ INPUTS = {
     "python": CONFIG_ROOT / "requirements.txt",
     "system": CONFIG_ROOT / "bindep.txt",
     "definition": DEFINITION,
+    "smoke_settings": CONFIG_ROOT / "ee-smoke-settings.yml",
+    "smoke_limiter": CONFIG_ROOT / "ee-smoke-limiter.toml",
 }
+CONTROLLER_PYTHON_PATH = "/opt/gludd/ansible-ee-python/bin/python3.11"
+SMOKE_SETTINGS_PATH = Path("/etc/gludd/ansible-ee-smoke/settings.yml")
+EXPECTED_SMOKE_SETTINGS = {"use_default_settings": {"engines": {"keep_only": ["wikipedia"]}}}
 IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:+-]*@sha256:[0-9a-f]{64}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 BASE_IMAGE_TAG = "quay.io/centos/centos:stream9"
@@ -101,7 +106,7 @@ EXPECTED_DEPENDENCIES: dict[str, object] = {
     "ansible_runner": {"package_pip": "ansible-runner==2.4.3"},
     "python_interpreter": {
         "package_system": "python3.11",
-        "python_path": "/usr/bin/python3.11",
+        "python_path": CONTROLLER_PYTHON_PATH,
     },
 }
 EXPECTED_BUILD_FILES = [
@@ -110,7 +115,20 @@ EXPECTED_BUILD_FILES = [
         "dest": "collections",
     }
     for _source, artifact in COLLECTION_ARTIFACTS
+] + [
+    {"src": "ee-smoke-settings.yml", "dest": "smoke"},
+    {"src": "ee-smoke-limiter.toml", "dest": "smoke"},
 ]
+EXPECTED_CONTROLLER_PYTHON_MARKERS = (
+    "cpython-3.11.17+20261001-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+    "cpython-3.11.17+20261001-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+    "7086a336e6ea0a49595cf891066ab6517156c85116f77fbc23b62c1d9e9b7d92",
+    "26ee69bff5d6d4173360275fcf38d4d25228286b79a7d9b36ad39af970909e37",
+    "github.com/astral-sh/python-build-standalone/releases/download/20261001",
+    "sha256sum --check --strict",
+    "/usr/bin/python3.11",
+    CONTROLLER_PYTHON_PATH,
+)
 EXPECTED_OPENTOFU_MARKERS = (
     "tofu_1.12.6_linux_amd64.zip",
     "tofu_1.12.6_linux_arm64.zip",
@@ -333,8 +351,22 @@ def validate_files() -> list[str]:
     if definition.get("dependencies") != EXPECTED_DEPENDENCIES:
         errors.append("execution environment dependencies must name the locked inputs and controller interpreter")
     if definition.get("additional_build_files") != EXPECTED_BUILD_FILES:
-        errors.append("execution environment must stage the exact locked collection artifacts")
+        errors.append("execution environment must stage the exact locked collection artifacts and smoke configuration")
     build_steps = definition.get("additional_build_steps", {})
+    prepend_base = build_steps.get("prepend_base", []) if isinstance(build_steps, dict) else []
+    rendered_bootstrap = "\n".join(step for step in prepend_base if isinstance(step, str))
+    if any(marker not in rendered_bootstrap for marker in EXPECTED_CONTROLLER_PYTHON_MARKERS):
+        errors.append("execution environment must bootstrap the exact checksum-pinned native controller Python")
+    if yaml.safe_load(INPUTS["smoke_settings"].read_text(encoding="utf-8")) != EXPECTED_SMOKE_SETTINGS:
+        errors.append("execution environment smoke settings must use only the native Wikipedia engine")
+    try:
+        with INPUTS["smoke_limiter"].open("rb") as handle:
+            limiter = tomllib.load(handle)
+    except tomllib.TOMLDecodeError:
+        errors.append("execution environment smoke limiter configuration is invalid TOML")
+    else:
+        if limiter != {"botdetection": {}}:
+            errors.append("execution environment smoke limiter must inherit pinned native defaults")
     append_final = (
         build_steps.get("append_final", [])
         if isinstance(build_steps, dict)
@@ -667,10 +699,25 @@ def _controller_import_smoke_code() -> str:
     """Import every controller dependency with a child-only secret and frozen identity."""
     return "\n".join(
         (
-            "import json, os, secrets, sys",
+            "import json, logging, os, secrets, sqlite3, sys, tomllib",
             "from importlib import metadata",
             "from pathlib import Path",
             "from packaging.version import Version",
+            "diagnostic_records = []",
+            "class RuntimeDiagnostics(logging.Handler):",
+            "    def emit(self, record):",
+            "        diagnostic_records.append(record)",
+            "diagnostic_handler = RuntimeDiagnostics(level=logging.WARNING)",
+            "logging.basicConfig(level=logging.WARNING)",
+            "logging.getLogger().addHandler(diagnostic_handler)",
+            f"settings_path = Path({str(SMOKE_SETTINGS_PATH)!r})",
+            '(settings_path.is_file() and not settings_path.is_symlink()) or '
+            'sys.exit("Native EE smoke settings are missing or not a regular file")',
+            'limiter_path = settings_path.parent / "limiter.toml"',
+            '(limiter_path.is_file() and not limiter_path.is_symlink()) or '
+            'sys.exit("Native EE smoke limiter is missing or not a regular file")',
+            'tomllib.loads(limiter_path.read_text(encoding="utf-8"))',
+            'os.environ["SEARXNG_SETTINGS_PATH"] = str(settings_path)',
             'os.environ["SEARXNG_SECRET"] = secrets.token_hex(32)',
             "import " + ", ".join(EXPECTED_CONTROLLER_IMPORTS),
             "import searx.version_frozen as frozen",
@@ -696,6 +743,18 @@ def _controller_import_smoke_code() -> str:
             'frozen.GIT_URL in {"https://github.com/searxng/searxng", "unknow"} and '
             'isinstance(frozen.GIT_BRANCH, str) and bool(frozen.GIT_BRANCH)) or '
             'sys.exit("SearXNG frozen version differs from installed source identity")',
+            "runtime_errors = []",
+            "if sqlite3.sqlite_version_info < (3, 35, 0):",
+            '    runtime_errors.append("SQLite runtime must be >= 3.35: " + sqlite3.sqlite_version)',
+            "if sqlite3.threadsafety != 3:",
+            '    runtime_errors.append("SQLite runtime must use serialized threading: " + str(sqlite3.threadsafety))',
+            "runtime_errors.extend(",
+            "    record.levelname + ':' + record.name + ': ' + record.getMessage()",
+            "    for record in diagnostic_records",
+            ")",
+            "logging.getLogger().removeHandler(diagnostic_handler)",
+            "if runtime_errors:",
+            '    sys.exit("Native EE runtime initialization failed:\\n" + "\\n".join(runtime_errors))',
             "print('ANSIBLE_EE_IMPORT_OK')",
         )
     )
@@ -736,6 +795,8 @@ def _smoke_environment(runtime: str, image: str) -> int:
                 f"{namespace}-python",
                 image,
                 interpreter,
+                "-W",
+                "error",
                 "-c",
                 _controller_import_smoke_code(),
             ],
@@ -894,7 +955,7 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(error, file=sys.stderr)
         return 1
-    print("ANSIBLE_RUNTIME_BOUNDARY_PASS inputs=4 managed_host=locked core=separate")
+    print(f"ANSIBLE_RUNTIME_BOUNDARY_PASS inputs={len(INPUTS)} managed_host=locked core=separate")
     return 0
 
 

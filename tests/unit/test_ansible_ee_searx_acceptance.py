@@ -6,12 +6,13 @@ import ast
 import hashlib
 import importlib.util
 import json
+import logging
 import os
 import runpy
 import shlex
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import NamedTuple, cast
@@ -24,6 +25,20 @@ IMPORTS = (
     "ansible", "ansible_runner", "azure.identity", "azure.monitor.query",
     "frictionless", "jsonpointer", "openapi_core", "searx.webapp", "signxml",
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_native_smoke_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Replay the native child config without leaking log handlers into pytest."""
+    settings = tmp_path / "settings.yml"
+    settings.write_bytes(artifacts.INPUTS["smoke_settings"].read_bytes())
+    (tmp_path / "limiter.toml").write_bytes(artifacts.INPUTS["smoke_limiter"].read_bytes())
+    monkeypatch.setattr(artifacts, "SMOKE_SETTINGS_PATH", settings)
+    previous = tuple(logging.getLogger().handlers)
+    yield
+    logging.getLogger().handlers[:] = previous
 
 
 class FrozenSource(NamedTuple):
@@ -121,7 +136,7 @@ def _smoke(monkeypatch: pytest.MonkeyPatch) -> str:
     assert len(calls) == 2
     python = calls[1]
     assert "--network=none" in python and "--pull=never" in python
-    assert python[-3:-1] == ["/usr/bin/python3.11", "-c"]
+    assert python[-5:-1] == [artifacts.CONTROLLER_PYTHON_PATH, "-W", "error", "-c"]
     return python[-1]
 
 
@@ -153,7 +168,7 @@ def _installer() -> str:
     tokens = shlex.split(_freeze_step().removeprefix("RUN "))
     indexes = [
         index for index, token in enumerate(tokens)
-        if token == "-c" and index > 0 and tokens[index - 1] == "/usr/bin/python3.11"
+        if token == "-c" and index > 0 and tokens[index - 1] == artifacts.CONTROLLER_PYTHON_PATH
     ]
     assert len(indexes) == 1
     return tokens[indexes[0] + 1]
@@ -207,7 +222,7 @@ def test_packaging_uses_verified_owned_clone_and_native_upstream_freezer() -> No
     assert "https://github.com/searxng/searxng.git" in step
     assert artifacts.SEARXNG_SOURCE_REVISION in step
     assert "checkout --detach" in step and "rev-parse HEAD" in step
-    assert "/usr/bin/python3.11 -m searx.version freeze" in step
+    assert f"{artifacts.CONTROLLER_PYTHON_PATH} -m searx.version freeze" in step
     assert "direct_url.json" in _installer()
     assert "SEARXNG_SECRET" not in step and "sys.modules" not in step
 
@@ -249,6 +264,35 @@ def test_default_settings_fixture_preserves_complete_pinned_source() -> None:
         defaults, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
     ).encode()
     assert hashlib.sha256(semantic).hexdigest() == contract["effective_defaults_sha256"]
+    expected_sources = {
+        "wikipedia.py": (
+            "searx/engines/wikipedia.py",
+            "184789eba028a7f7a192d61303b57a2d61af2e29752d1f0a0634aca9af9488b9",
+        ),
+        "botdetection-config.py": (
+            "searx/botdetection/config.py",
+            "aafa5a4120fb18ffabdb6085d3674030d9e89c7cd55e92660f5b9d5e70f198dd",
+        ),
+        "compat.py": (
+            "searx/compat.py",
+            "3ae8b8f374247f9cb948610141eb89328495b8873c4605913663f1c5bc740e2c",
+        ),
+        "limiter.toml": (
+            "searx/limiter.toml",
+            "f90c7cb5e8e92c14139e8f14b741b520c7e2af4f27407eab6b187905a58656cd",
+        ),
+    }
+    sources = contract["runtime_source_fixtures"]
+    assert set(sources) == set(expected_sources)
+    for name, (source_path, source_sha256) in expected_sources.items():
+        assert sources[name] == {
+            "source_revision": artifacts.SEARXNG_SOURCE_REVISION,
+            "source_path": source_path,
+            "source_url": "https://raw.githubusercontent.com/searxng/searxng/"
+            + artifacts.SEARXNG_SOURCE_REVISION + "/" + source_path,
+            "source_sha256": source_sha256,
+        }
+        assert hashlib.sha256(_fixture(name).read_bytes()).hexdigest() == source_sha256
 
 
 def test_module_freezer_loads_real_pinned_initializer_before_writing(
@@ -283,7 +327,10 @@ def test_ephemeral_smoke_secret_uses_real_pinned_settings_schema(
             break
         if (
             isinstance(node, ast.Import)
-            and all(alias.name in {"os", "secrets", "json", "sys"} for alias in node.names)
+            and all(
+                alias.name in {"os", "secrets", "json", "sys", "logging", "sqlite3", "tomllib"}
+                for alias in node.names
+            )
         ) or (
             isinstance(node, ast.Assign)
             and any(

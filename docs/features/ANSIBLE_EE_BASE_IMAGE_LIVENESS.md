@@ -417,3 +417,61 @@ required; the earlier hosted partial-import smoke is not this proof.
 [builder-iid-cli]: https://raw.githubusercontent.com/ansible/ansible-builder/3.1.1/src/ansible_builder/cli.py
 [builder-iid-forwarding]: https://raw.githubusercontent.com/ansible/ansible-builder/3.1.1/src/ansible_builder/main.py
 [iidfile-operator]: https://github.com/moby/moby/issues/46571
+
+## Native EE initialization diagnostics — 2026-10-13
+
+Build run `38379268292`, job `115241183631`, for `d6769ef` printed
+`ANSIBLE_EE_IMPORT_OK` and exited zero while its installed-image Python phase
+logged a missing limiter configuration, disabled favicon caching because stdlib
+SQLite was 3.34.1, and SoundCloud/Wikidata initialization errors under
+`--network=none`. These retained failures do not establish healthy initialization.
+
+The repair keeps the CentOS Stream 9 base and installs checksum-pinned
+CPython 3.11.17 from the immutable `python-build-standalone` build `20261001`
+into `/opt/gludd/ansible-ee-python`. Native `sqlite3` must satisfy SQLite 3.35
+or newer with serialized threading (`threadsafety == 3`). Distro Python remains
+the image bootstrap; the public controller interpreter path changes from
+`/usr/bin/python3.11` to `/opt/gludd/ansible-ee-python/bin/python3.11`.
+Controller, dependency installation, version freezing, and hosted smoke use
+that path. Consumers invoking the old controller path must adopt the new path;
+the independent managed-host Python boundary remains inventory controlled.
+
+Builder's generated base stage installs the isolated interpreter in
+`prepend_base`, before `pip_install` and Ansible's package installation consume
+`PYCMD`. Its maintained standalone runtime leaves the distro SQLite library
+intact. Both architecture-specific archive names and SHA256 values are frozen
+in the hashed EE definition; source metadata alone is not installed-image proof.
+
+The non-serving child selects a packaged native settings override using
+`use_default_settings.engines.keep_only: [wikipedia]`, with a valid sibling
+`limiter.toml` inheriting every frozen default. Pinned Wikipedia has no `init`
+or `setup` callback; its top-level update changes only a local language map.
+Production retains its engine defaults. The complete ordered nine imports and
+installed Git/frozen-version assertions remain required. A stdlib logging
+handler collects all records at WARNING or higher while normal handlers retain
+the diagnostic output, then refuses `IMPORT_OK` if any were collected.
+
+Practitioner reports corroborate the failure modes. [SearXNG issue #3754]
+(https://github.com/searxng/searxng/issues/3754), opened 2024-08-22, reports the
+same missing limiter file after the official installation process. [Docker
+issue #325](https://github.com/searxng/searxng-docker/issues/325), opened
+2025-01-16, reports SoundCloud initialization errors despite ready WSGI workers
+and a successful ping. Neither startup completion nor network ping is adequate
+engine initialization evidence.
+
+Artifact acceptance executes the pinned settings loader and limiter parser,
+native logging records and stdlib SQLite checks, and Builder's real generation.
+Root's initial 22 cases failed before implementation; three additional ordering
+and public-path regressions failed before their repair. The integrated focused
+cohort passes all 181 cases with warnings fatal. Native branch-aware coverage of
+the existing artifact owner is 92%, above unchanged 85% aggregate/75% per-file
+floors; this is not exhaustive whole-project coverage. The maintained
+[standalone build's published release assets](https://github.com/astral-sh/python-build-standalone/releases/expanded_assets/20261001)
+independently supply both frozen architecture checksums. Native baseline
+maintenance adds twelve explicitly reviewed public checksum findings, retains
+all 1,126 previous findings and scanner policy, and passes canonical admission.
+These checks do not provide the rebuilt Linux image, canonical CPython 3.11 gate,
+complete-project coverage, or exact-SHA hosted evidence. S98.4 remains open until those proofs
+are collected for the immutable candidate. ZDD still requires warming the new
+digest beside the active one, switching new jobs, draining old jobs and retaining
+the prior digest for rollback.

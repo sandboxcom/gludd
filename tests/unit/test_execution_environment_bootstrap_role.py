@@ -129,7 +129,7 @@ def test_defaults_are_namespaced_bounded_and_zdd_safe() -> None:
     assert defaults["execution_environment_bootstrap_cleanup_on_failure"] is True
     assert (
         defaults["execution_environment_bootstrap_candidate_python_executable"]
-        == "/usr/bin/python3.11"
+        == "/opt/gludd/ansible-ee-python/bin/python3.11"
     )
 
 

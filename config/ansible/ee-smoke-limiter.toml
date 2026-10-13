@@ -1,0 +1,2 @@
+# Inherit the frozen SearXNG limiter schema/defaults without disabling features.
+[botdetection]
