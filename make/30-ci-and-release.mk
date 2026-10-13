@@ -1040,7 +1040,11 @@ ci-job-failure-context:
 	mkdir -p "$$RESOURCE_ROOT"; \
 	LOG=$$(mktemp "$$RESOURCE_ROOT/ci-job-$(RUN)-$(JOB).log.XXXXXX"); \
 	trap 'rm -f "$$LOG"' EXIT INT TERM; \
-	BOUND=$$(gh run view -R sandboxcom/gludd "$(RUN)" --json jobs --jq '.jobs[] | select(.databaseId == $(JOB)) | .databaseId'); \
+	BOUND=$$(gh api --method GET \
+		-H "Accept: application/vnd.github+json" \
+		-H "X-GitHub-Api-Version: 2026-03-10" \
+		"repos/sandboxcom/gludd/actions/jobs/$(JOB)" \
+		--jq 'select(.id == $(JOB) and .run_id == $(RUN)) | .id'); \
 	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: job lookup failed rc=$$RC"; exit $$RC; fi; \
 	if [ "$$BOUND" != "$(JOB)" ]; then echo "ci-job-failure-context: job $(JOB) is not bound to run $(RUN)"; exit 1; fi; \
 	gh api --method GET \

@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Run-wide log lookup repeatedly failed before exact-job retrieval
+
+- The normal failure-context target repeatedly received HTTP 502 while fetching the entire run's job inventory, although the exact job identity was already known. Native canonical TDD reproduces 13 failures and one validation-only control before the authenticated single-job REST lookup replaces that dependency.
+- Both job ID and parent run must match before log download. All original metadata/log error exits, owned cleanup, arguments and UTF-8 context bounds remain. One obsolete structural expectation fails with 54 controls passing before assertion conformance; all 55 related checks then pass on Python 3.11, with strict typing and lint green. The documented safe behavior and all 232 target contracts pass; a live authenticated probe retrieves the bound Python 3.12 timeout context. Source acceptance is not terminal workflow or release proof.
+- The actual new hosted failure is a 90.6-second Python 3.12 early-admission timeout at 88% while tests still pass. Profiling the new native EE-consumer overhead is pending; limits, test inventory and warnings remain unchanged. The local disk-capacity and upstream native-warning barriers remain separate.
+
 ### 2026-10-13 — Git MCP schema acceptance omitted implemented composites
 
 - Terminal Build 38451761526 exposes one unit-2 schema failure: the generated native module schema contains all eight already implemented composite Git operations, while the original exact-choice expectation stops at ci_cancel. The unchanged required-field and exact-choice assertions are retained, with those eight supported operations appended; no generator or production operation is removed.

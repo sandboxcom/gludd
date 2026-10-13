@@ -22,8 +22,10 @@ def test_ci_job_failure_context_is_authenticated_bounded_and_fail_closed() -> No
     source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "ci-job-failure-context")
 
-    assert "gh run view -R sandboxcom/gludd" in block
-    assert "--json jobs" in block
+    assert "gh run view -R sandboxcom/gludd" not in block
+    assert "--json jobs" not in block
+    assert '"repos/sandboxcom/gludd/actions/jobs/$(JOB)"' in block
+    assert "select(.id == $(JOB) and .run_id == $(RUN)) | .id" in block
     assert "gh api --method GET" in block
     assert "repos/sandboxcom/gludd/actions/jobs/$(JOB)/logs" in block
     assert "X-GitHub-Api-Version: 2026-03-10" in block

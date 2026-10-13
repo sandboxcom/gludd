@@ -131,6 +131,38 @@ log, missing literal pattern, invalid numeric bound, or run/job mismatch fails
 closed. `BEFORE`, `AFTER`, and `MAX_MATCHES` bound output without silently
 discarding later independent failure batches.
 
+### Exact job ownership without a run inventory lookup
+
+`ci-job-failure-context` resolves the supplied numeric `JOB` through
+`GET /repos/sandboxcom/gludd/actions/jobs/{job_id}` and requires both the
+response `id` and `run_id` to match `JOB` and `RUN` before downloading logs.
+The maintained `gh api` command performs both authenticated GET requests with
+the existing media type and API version. GitHub documents these identity fields
+on the single-job endpoint and the separate job-log download endpoint.
+[GitHub workflow-job REST API](https://docs.github.com/en/rest/actions/workflow-jobs?apiVersion=2026-03-10#get-a-job-for-a-workflow-run).
+
+During v0.1.2 stabilization, the run-wide job lookup repeatedly returned HTTP
+502 on its `per_page=100` fan-out while the exact job ID was already available.
+Direct job ownership lookup removes that unnecessary list request. Metadata
+errors retain the original CLI exit status; a missing or mismatched identity
+fails before log retrieval. Log download errors, empty logs, missing literal
+patterns, cleanup, all existing context arguments, and the 2,048-byte line and
+32,768-byte total UTF-8 display limits retain their existing behavior.
+
+Historical practitioner evidence supports treating job inventory as a distinct
+retrieval dependency. In CLI issue #9341 (July 2024), a user could retrieve a
+specific job while the run view omitted it; the maintainer linked the older
+client behavior to pagination, and the reporter confirmed upgrading fixed that
+case. That resolved pagination report is evidence for the dependency boundary;
+it does not establish the cause of the current HTTP 502 response.
+[GitHub CLI practitioner report #9341](https://github.com/cli/cli/issues/9341).
+
+The fake-CLI regression fixture executes the native Make recipe and the same
+context collector. It exercises exact job/run ownership, missing identities,
+metadata and log errors, empty responses, context bounds, and owned-file
+cleanup. Focused diagnostics remain separate from terminal workflow inventory
+and exact-SHA release proof.
+
 ## Terminal reconciliation of an active-run diagnosis
 
 Per-job access accelerates diagnosis, but it does not make an active workflow's
