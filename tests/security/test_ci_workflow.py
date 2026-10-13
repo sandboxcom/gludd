@@ -17,6 +17,7 @@ These tests parse the workflow YAML and enforce the post-fix invariants:
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -615,13 +616,51 @@ class TestGateMatrixStructure:
             "unit-3b",
             "other",
         ]
-        assert matrix.get("shard") == expected, (
-            f"test-shard shard dimension must be {expected!r}; "
-            f"got {matrix.get('shard')!r}"
+        # Hosted job creation order is separate from local registry order;
+        # compare every label and count without imposing scheduling priority.
+        shards = matrix.get("shard")
+        assert isinstance(shards, list) and Counter(shards) == Counter(expected), (
+            f"test-shard shard dimension must contain exactly {expected!r}; "
+            f"got {shards!r}"
         )
         assert strategy.get("fail-fast") is False, (
             "test-shard strategy.fail-fast must be false so all shards report results"
         )
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_test_shard_matrix_accepts_reordered_membership(
+        self, reverse: bool, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from scripts.ci_named_shard_files import SHARDS
+
+        wf = _load_workflow()
+        labels = list(SHARDS)
+        if reverse:
+            labels.reverse()
+        wf["jobs"]["test-shard"]["strategy"]["matrix"]["shard"] = labels
+        monkeypatch.setattr(yaml, "safe_load", lambda _source: wf)
+
+        self.test_test_shard_matrix_dimensions()
+
+    @pytest.mark.parametrize("change", ["duplicate", "missing", "unknown"])
+    def test_test_shard_matrix_rejects_membership_drift(
+        self, change: str, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from scripts.ci_named_shard_files import SHARDS
+
+        wf = _load_workflow()
+        labels = list(SHARDS)
+        if change == "duplicate":
+            labels.append(labels[0])
+        elif change == "missing":
+            labels.pop()
+        else:
+            labels[-1] = "not-a-canonical-shard"
+        wf["jobs"]["test-shard"]["strategy"]["matrix"]["shard"] = labels
+        monkeypatch.setattr(yaml, "safe_load", lambda _source: wf)
+
+        with pytest.raises(AssertionError, match="test-shard shard dimension"):
+            self.test_test_shard_matrix_dimensions()
 
     def test_molecule_fail_fast_is_false(self) -> None:
         wf = _load_workflow()

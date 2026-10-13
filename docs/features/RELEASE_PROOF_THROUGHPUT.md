@@ -173,6 +173,14 @@ optimization bounds diagnostic cost; it does not prove release readiness.
 
 ### Exact timing and creation order
 
+The security contract compares the exact eight-label multiset, not scheduling
+order. Its original assertion and reversed-order regression fail before the
+correction; all 67 security cases now pass, including duplicate, missing and
+unknown-label rejection. The complete file joins the existing early owner.
+Separate unchanged checks still pin canonical local order, hosted creation
+priority and the three-runner cap. No shard, Python version, warning policy or
+coverage database is omitted; exact hosted successor proof remains required.
+
 The hosted scheduling experiment changes only the existing eight-label matrix
 creation order. Known successful long lanes are created first; `unit-2` remains
 explicitly provisional because its failed parent interval is censored, not a

@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Security membership assertion conflated scheduling and registry order
+
+- Build `38325261900`, job `115065438257`, failed the original security-workflow ordered comparison after the eight hosted jobs were intentionally scheduled longest-first.
+- The original assertion and reversed-order regression fail first (2 failed, 4 passed). Exact multiset comparison now admits either creation order but refuses duplicate, missing or unknown labels. Python dimensions and fail-fast assertions are unchanged; existing registry and workflow checks still pin local order, hosted priority and the three-runner cap.
+- All 67 security-workflow cases pass; the complete cohort is promoted into the existing early owner without changing the 90s/60s bounds or complete-gate requirement. Exact hosted successor proof remains pending.
+
 ### 2026-10-13 — Hosted isolated lane found a duplicate public help row
 
 - Build run `38325261900`, job `115065438271`, failed the original `TestHelpNoDupTargets::test_no_duplicate_help_entries` because `clean-stale-resource-namespaces` had been appended to help instead of replacing its older description.
