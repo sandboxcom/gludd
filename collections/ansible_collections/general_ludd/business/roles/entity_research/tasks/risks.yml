@@ -22,41 +22,25 @@
 # ── Compile risk categories ──
 - name: Build risk category assessments
   ansible.builtin.set_fact:
-    entity_risks: "{{ entity_risks | combine({
-      'categories': {
-        'financial': {
-          'score': null,
-          'rating': 'unknown',
-          'signals_count': (searx_financial_risk.json.number_of_results | default(0)) if (searx_financial_risk is success) else 0,
-          'template': risk_categories.financial,
-        },
-        'security': {
-          'score': null,
-          'rating': 'unknown',
-          'signals_count': (searx_security_risk.json.number_of_results | default(0)) if (searx_security_risk is success) else 0,
-          'template': risk_categories.security,
-          'breaches': entity_exposure.breach_history | default([]) | length,
-        },
-        'personnel': {
-          'score': null,
-          'rating': 'unknown',
-          'signals_count': (searx_personnel_risk.json.number_of_results | default(0)) if (searx_personnel_risk is success) else 0,
-          'template': risk_categories.personnel,
-        },
-        'market': {
-          'score': null,
-          'rating': 'unknown',
-          'signals_count': (searx_market_risk.json.number_of_results | default(0)) if (searx_market_risk is success) else 0,
-          'template': risk_categories.market,
-        },
-        'legal': {
-          'score': null,
-          'rating': 'unknown',
-          'signals_count': (searx_legal_risk.json.number_of_results | default(0)) if (searx_legal_risk is success) else 0,
-          'template': risk_categories.legal,
-        },
-      },
-    }) }}"
+    entity_risks: |-
+      {%- set assessments = namespace(categories={}) -%}
+      {%- for name, scan in [
+        ('financial', searx_financial_risk | default({})),
+        ('security', searx_security_risk | default({})),
+        ('personnel', searx_personnel_risk | default({})),
+        ('market', searx_market_risk | default({})),
+        ('legal', searx_legal_risk | default({}))
+      ] -%}
+      {%- set category = {
+        'score': none, 'rating': 'unknown', 'template': risk_categories[name],
+        'signals_count': (scan.json.number_of_results | default(0)) if (scan is success) else 0
+      } -%}
+      {%- if name == 'security' -%}
+      {%- set category = category | combine({'breaches': entity_exposure.breach_history | default([]) | length}) -%}
+      {%- endif -%}
+      {%- set assessments.categories = assessments.categories | combine({name: category}) -%}
+      {%- endfor -%}
+      {{ entity_risks | combine({'categories': assessments.categories}) }}
 
 - name: Write risk analysis artifact
   ansible.builtin.copy:

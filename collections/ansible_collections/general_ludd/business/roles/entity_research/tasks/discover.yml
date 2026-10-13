@@ -73,11 +73,7 @@
 
 - name: Cache Wikipedia results
   ansible.builtin.set_fact:
-    entity_discovered: "{{ entity_discovered | combine({
-      'raw_results': entity_discovered.raw_results + [
-        {'source': 'wikipedia_extract', 'data': wiki_extract_result.json | default({})}
-      ]
-    }) }}"
+    entity_discovered: "{{ entity_discovered | combine({'raw_results': entity_discovered.raw_results + [{'source': 'wikipedia_extract', 'data': wiki_extract_result.json | default({})}]}) }}"
   when:
     - entity_research_use_wikipedia | bool
     - wiki_extract_result is success
@@ -101,12 +97,15 @@
 
 - name: Parse OpenCorporates result
   ansible.builtin.set_fact:
-    entity_discovered: "{{ entity_discovered | combine({
-      'raw_results': entity_discovered.raw_results + [{'source': 'opencorporates', 'data': oc_search_result.json | default({})}],
-      'legal_name': (oc_search_result.json.results.companies[0].company.name | default(entity_name)),
-      'jurisdiction': (oc_search_result.json.results.companies[0].company.jurisdiction_code | default(entity_jurisdiction)),
-      'entity_type': (oc_search_result.json.results.companies[0].company.company_type | default('organization')),
-    }) }}"
+    entity_discovered: |-
+      {{ entity_discovered | combine(
+          {
+              'raw_results': entity_discovered.raw_results + [{'source': 'opencorporates', 'data': oc_search_result.json | default({})}],
+              'legal_name': (oc_search_result.json.results.companies[0].company.name | default(entity_name)),
+              'jurisdiction': (oc_search_result.json.results.companies[0].company.jurisdiction_code | default(entity_jurisdiction)),
+              'entity_type': (oc_search_result.json.results.companies[0].company.company_type | default('organization')),
+          }
+      ) }}
   when:
     - entity_research_use_opencorporates | bool
     - oc_search_result is success
@@ -135,9 +134,7 @@
 
 - name: Cache SEC EDGAR result
   ansible.builtin.set_fact:
-    entity_discovered: "{{ entity_discovered | combine({
-      'raw_results': entity_discovered.raw_results + [{'source': 'sec_edgar', 'data': sec_search_result.json | default({})}]
-    }) }}"
+    entity_discovered: "{{ entity_discovered | combine({'raw_results': entity_discovered.raw_results + [{'source': 'sec_edgar', 'data': sec_search_result.json | default({})}]}) }}"
   when:
     - entity_research_use_sec_edgar | bool
     - sec_search_result is success

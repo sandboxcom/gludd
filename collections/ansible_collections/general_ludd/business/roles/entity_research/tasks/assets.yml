@@ -38,12 +38,7 @@
 
 - name: Parse domains from crt.sh results
   ansible.builtin.set_fact:
-    entity_assets: "{{ entity_assets | combine({
-      'digital_assets': entity_assets.digital_assets | combine({
-        'domains': (crtsh_result.json | default([]) | map(attribute='name_value') | list | flatten | unique | list)[:100],
-        'ssl_certificates': crtsh_result.json | default([])
-      })
-    }) }}"
+    entity_assets: "{{ entity_assets | combine({'digital_assets': entity_assets.digital_assets | combine({'domains': (crtsh_result.json | default([]) | map(attribute='name_value') | list | flatten | unique | list)[:100], 'ssl_certificates': crtsh_result.json | default([])})}) }}"
   when:
     - entity_domain | length > 0
     - crtsh_result is success

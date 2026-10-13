@@ -1,3 +1,6 @@
 ---
-# Intentionally empty: this canonical scenario creates no shared resources.
-[]
+# This canonical phase creates no shared resources but remains a valid playbook.
+- name: Resource-free canonical convergence
+  hosts: [localhost]
+  gather_facts: false
+  tasks: []

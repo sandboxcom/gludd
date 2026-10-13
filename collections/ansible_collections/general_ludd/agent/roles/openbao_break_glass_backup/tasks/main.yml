@@ -28,7 +28,6 @@
       | grep '^sec' | head -1
   args:
     executable: /bin/bash
-    warn: false
   register: gpg_key_check
   changed_when: false
   failed_when: false

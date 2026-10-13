@@ -1,3 +1,6 @@
 ---
-# Intentionally empty: named scenarios own their behavioral assertions.
-[]
+# Named scenarios own their behavioral assertions; this phase is resource-free.
+- name: Resource-free canonical verification
+  hosts: [localhost]
+  gather_facts: false
+  tasks: []

@@ -2,6 +2,14 @@
   "version": 1,
   "targets": [
     {
+      "name": "check-molecule-yaml",
+      "make_variables": [
+        "MOLECULE_YAML_LINT_TIMEOUT_SECONDS",
+        "MOLECULE_YAML_VALIDATE_ONLY"
+      ],
+      "behavior": "make check-molecule-yaml MOLECULE_YAML_LINT_TIMEOUT_SECONDS=120 MOLECULE_YAML_VALIDATE_ONLY=1"
+    },
+    {
       "name": "git-owned-checkpoint-push",
       "make_variables": ["FILES", "GIT_CHECKPOINT_LABEL", "GIT_CHECKPOINT_VALIDATE_ONLY"],
       "behavior": "make git-owned-checkpoint-push FILES=Makefile GIT_CHECKPOINT_LABEL=gludd-contract-checkpoint GIT_CHECKPOINT_VALIDATE_ONLY=1"

@@ -49,15 +49,7 @@
       us_legal_exposure: >-
         {{ 'HIGH' if 'US Federal law' in _ca_info.applicable_laws or 'US-' in _ca_info.jurisdiction_code else 'MEDIUM' if _ca_info.jurisdiction_country in ['GB', 'CA', 'AU', 'NZ'] else 'LOW' }}
       surveillance_alliance: >-
-        {%- if _ca_info.jurisdiction_country in ['US', 'GB', 'CA', 'AU', 'NZ'] -%}
-        Five Eyes
-        {%- elif _ca_info.jurisdiction_country in ['DK', 'FR', 'NO', 'NL'] -%}
-        Nine Eyes
-        {%- elif _ca_info.jurisdiction_country in ['DE', 'BE', 'IT', 'ES', 'SE'] -%}
-        Fourteen Eyes
-        {%- else -%}
-        None known
-        {%- endif -%}
+        {%- if _ca_info.jurisdiction_country in ['US', 'GB', 'CA', 'AU', 'NZ'] -%} Five Eyes{%- elif _ca_info.jurisdiction_country in ['DK', 'FR', 'NO', 'NL'] -%} Nine Eyes{%- elif _ca_info.jurisdiction_country in ['DE', 'BE', 'IT', 'ES', 'SE'] -%} Fourteen Eyes{%- else -%} None known{%- endif -%}
       gdpr_coverage: "{{ 'Yes (EU/EEA)' if _ca_info.jurisdiction_code in ['FR', 'DE', 'IT', 'ES', 'SE', 'NL', 'DK', 'BE', 'IE', 'PT', 'GR', 'PL', 'CZ', 'HU', 'AT', 'BG', 'RO', 'FI', 'SK', 'HR', 'LT', 'LV', 'EE', 'SI', 'CY', 'LU', 'MT', 'NO', 'IS', 'LI'] else 'No' }}"
       government_ownership: >-
         {{ 'Yes (state-owned)' if 'state-owned' in _ca_info.ownership_chain | join(' ') | lower

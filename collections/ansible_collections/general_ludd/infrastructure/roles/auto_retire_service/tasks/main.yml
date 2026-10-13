@@ -61,11 +61,7 @@
     _svc: "{{ catalog_data.services[service_name] }}"
   ansible.builtin.set_fact:
     pricing_removed: >-
-      {%- if 'pricing_sources' in _svc and _svc.pricing_sources | length > 0 -%}
-      true
-      {%- else -%}
-      false
-      {%- endif -%}
+      {%- if 'pricing_sources' in _svc and _svc.pricing_sources | length > 0 -%} true{%- else -%} false{%- endif -%}
   when: service_exists
 
 - name: Strip pricing sources from retired service

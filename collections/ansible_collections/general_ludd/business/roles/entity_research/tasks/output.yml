@@ -68,7 +68,7 @@
 
       | Category | Rating | Signals |
       |---|---|---|
-      {% for name, cat in entity_risks.categories | default({}).items() %}
+      {% for name, cat in (entity_risks.categories | default({})).items() %}
       | {{ name }} | {{ cat.rating | default('unknown') }} | {{ cat.signals_count | default(0) }} |
       {% endfor %}
 
@@ -125,7 +125,7 @@
   ansible.builtin.set_fact:
     entity_report_csv: |
       Category,Rating,Score,Signals,Threshold_Low,Threshold_High
-      {% for name, cat in entity_risks.categories | default({}).items() %}
+      {% for name, cat in (entity_risks.categories | default({})).items() %}
       {{ name }},{{ cat.rating | default('unknown') }},{{ cat.score | default('N/A') }},{{ cat.signals_count | default(0) }},{{ cat.template.thresholds.low_risk | default('N/A') }},{{ cat.template.thresholds.high_risk | default('N/A') }}
       {% endfor %}
 

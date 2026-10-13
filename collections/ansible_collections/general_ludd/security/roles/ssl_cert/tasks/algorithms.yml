@@ -14,17 +14,9 @@
 - name: Evaluate algorithm against security standards
   ansible.builtin.set_fact:
     _algo_group: >-
-      {%- if ssl_cert_key_type | default('RSA') == 'RSA' %}rsa
-      {%- elif ssl_cert_key_type | default('RSA') == 'ECDSA' %}ecdsa
-      {%- elif ssl_cert_key_type | default('RSA') == 'Ed25519' %}eddsa
-      {%- elif ssl_cert_key_type | default('RSA') == 'DSA' %}dsa
-      {%- else %}unknown{%- endif -%}
+      {%- if ssl_cert_key_type | default('RSA') == 'RSA' %}rsa{%- elif ssl_cert_key_type | default('RSA') == 'ECDSA' %}ecdsa{%- elif ssl_cert_key_type | default('RSA') == 'Ed25519' %}eddsa{%- elif ssl_cert_key_type | default('RSA') == 'DSA' %}dsa{%- else %}unknown{%- endif -%}
     _algo_id: >-
-      {%- if ssl_cert_key_type | default('RSA') == 'RSA' %}rsa-{{ ssl_cert_key_size }}
-      {%- elif ssl_cert_key_type | default('RSA') == 'ECDSA' %}ecdsa-{{ ssl_cert_ec_curve | replace('secp', 'p') }}
-      {%- elif ssl_cert_key_type | default('RSA') == 'Ed25519' %}ed25519
-      {%- elif ssl_cert_key_type | default('RSA') == 'DSA' %}dsa-{{ ssl_cert_key_size }}
-      {%- else %}unknown{%- endif -%}
+      {%- if ssl_cert_key_type | default('RSA') == 'RSA' %}rsa-{{ ssl_cert_key_size }}{%- elif ssl_cert_key_type | default('RSA') == 'ECDSA' %}ecdsa-{{ ssl_cert_ec_curve | replace('secp', 'p') }}{%- elif ssl_cert_key_type | default('RSA') == 'Ed25519' %}ed25519{%- elif ssl_cert_key_type | default('RSA') == 'DSA' %}dsa-{{ ssl_cert_key_size }}{%- else %}unknown{%- endif -%}
   tags: [algorithms]
 
 - name: Lookup algorithm metadata

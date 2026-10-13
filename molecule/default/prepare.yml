@@ -1,3 +1,6 @@
 ---
-# Intentionally empty: named Gludd scenarios prepare their own isolated state.
-[]
+# Named Gludd scenarios prepare their own isolated state; this phase is resource-free.
+- name: Resource-free canonical preparation
+  hosts: [localhost]
+  gather_facts: false
+  tasks: []

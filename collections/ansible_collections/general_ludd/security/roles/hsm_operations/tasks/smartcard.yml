@@ -39,7 +39,7 @@
     _hsm_atr_hex: >-
       {{ _hsm_card_atr.stdout | default('')
          | regex_search('ATR:\s*([0-9A-Fa-f:]+)') | default('') | replace(':', '') }}
-    _hsm_card_type: "{{ _hsm_card_atr.stdout | default('')[:500] }}"
+    _hsm_card_type: "{{ (_hsm_card_atr.stdout | default(''))[:500] }}"
   when: hsm_operations__mode == 'card_atr'
 
 - name: Build ATR lookup table
@@ -199,14 +199,14 @@
       {% if hsm_operations__mode == 'card_atr' %}
       ATR: {{ _hsm_atr_hex | default('(not obtained)') }}
       Card type: {{ _hsm_card_identified | default('(not identified)') }}
-      Raw: {{ _hsm_card_type | default('(no output)')[:1000] }}
+      Raw: {{ (_hsm_card_type | default('(no output)'))[:1000] }}
       {% elif hsm_operations__mode == 'card_pin' %}
       PIN operation: {{ hsm_operations__card_pin_op | default('verify') }}
       Retries remaining: {{ _hsm_pin_retries_remaining | default('unknown') }}
       Locked: {{ _hsm_pin_locked | default(false) }}
       {% elif hsm_operations__mode == 'card_apdu' %}
       APDU sent: {{ hsm_operations__apdu_command | default('') }}
-      Response: {{ _hsm_card_apdu.stdout | default('(no response)')[:500] }}
+      Response: {{ (_hsm_card_apdu.stdout | default('(no response)'))[:500] }}
       {% endif %}
 
       Diagnose any issues and provide corrective steps in 3 bullet points or fewer.

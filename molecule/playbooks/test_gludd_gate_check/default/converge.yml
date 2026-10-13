@@ -29,7 +29,7 @@
 
     - name: Persist results for verify
       ansible.builtin.copy:
-        content: "{{ { 'passed': passed_result, 'failed': failed_result, 'missing': missing_result, 'default': default_result } | to_nice_json }}"
+        content: "{{ {'passed': passed_result, 'failed': failed_result, 'missing': missing_result, 'default': default_result} | to_nice_json }}"
         dest: "/tmp/gludd-test-gate-check-results.json"
         mode: "0644"
 

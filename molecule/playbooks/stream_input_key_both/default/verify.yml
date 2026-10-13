@@ -39,7 +39,7 @@
         that:
           - "requests | select('match', 'POST /admin/stream/dispatch') | list | length >= 4"
         fail_msg: "expected >= 4 stream dispatch POSTs, got: {{ requests }}"
-        success_msg: "{{ requests | select('match','POST /admin/stream/dispatch') | list | length }} stream dispatch POSTs recorded"
+        success_msg: "{{ requests | select('match', 'POST /admin/stream/dispatch') | list | length }} stream dispatch POSTs recorded"
 
     - name: Stop mock daemon
       ansible.builtin.shell:

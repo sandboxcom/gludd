@@ -173,6 +173,8 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_GATE_FRESHNESS_SECS` | Auto-indexed (see source) | — | optional | `scripts/gate_status_attestation.py:313` |
 | `GLUDD_GATE_KEY_PATH` | Auto-indexed (see source) | — | optional | `scripts/gate_status_attestation.py:306` |
 | `GLUDD_GATE_OWNER_PID` | Auto-indexed (see source) | — | optional | `scripts/ci_shadow_receipt_runtime.py:204` |
+| `GLUDD_MOLECULE_YAML_LINT_TIMEOUT_SECONDS` | Internal Make-to-CLI bridge; configure `MOLECULE_YAML_LINT_TIMEOUT_SECONDS` | `120` | optional | `make/10-observability-and-tests.mk` |
+| `GLUDD_MOLECULE_YAML_VALIDATE_ONLY` | Internal Make-to-CLI bridge; configure `MOLECULE_YAML_VALIDATE_ONLY` | `0` | optional | `make/10-observability-and-tests.mk` |
 | `GLUDD_GATE_REFRESH_LOCK_TIMEOUT` | Auto-indexed (see source) | — | optional | `scripts/collection_lock.py:56` |
 | `GLUDD_GGUF_MODEL_DIR` | Auto-indexed (see source) | — | optional | `src/general_ludd/cloud/model_sources.py:27` |
 | `GLUDD_GHA_SIGNAL_STATE_DIR` | Auto-indexed (see source) | — | optional | `scripts/ci_signal_exact_sha.py:468` |

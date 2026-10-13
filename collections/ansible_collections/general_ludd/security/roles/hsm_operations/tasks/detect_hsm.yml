@@ -12,8 +12,6 @@
       find /usr/lib /opt/homebrew/lib /usr/local/lib
       -name 'libsofthsm2.so' -o -name 'libsofthsm2.dylib'
       2>/dev/null | head -1
-  args:
-    warn: false
   register: _hsm_detect_softhsm_find
   changed_when: false
   failed_when: false
@@ -113,7 +111,7 @@
       {{ _hsm_slots_output[:4000] }}
 
       Token listing:
-      {{ _hsm_detect_tokens.stdout | default('(token listing not obtained)')[:4000] }}
+      {{ (_hsm_detect_tokens.stdout | default('(token listing not obtained)'))[:4000] }}
     model_profile: "{{ hsm_operations__model_profile | default('') }}"
   register: _hsm_diag_result
   no_log: "{{ hsm_operations__psk | length > 0 }}"

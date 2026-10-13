@@ -446,6 +446,7 @@ help:
 	@echo "  lint-python           Run the canonical Python Ruff gate (application + tests)"
 	@echo "  lint-make             Run duplicate-target, parity, and Make dry-run validation"
 	@echo "  lint-files            Run ruff linter on FILES only"
+	@echo "  check-molecule-yaml   Complete native inputs (MOLECULE_YAML_LINT_TIMEOUT_SECONDS=1..120, MOLECULE_YAML_VALIDATE_ONLY=0|1)"
 	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
 	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
 	@echo "  check-file-line-limits  Enforce <2500 lines on tracked or staged content (FILE_LINE_LIMIT_POLICY, FILE_LINE_LIMIT_STAGED=0|1)"

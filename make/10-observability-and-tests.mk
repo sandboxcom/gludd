@@ -1939,8 +1939,20 @@ test-opencode-binary:
 # Node v26 --experimental-strip-types compatibility: loads every .ts plugin
 # file and asserts exit code 0. Catches patterns like try-inside-catch
 # without semicolon separator that Node v26's TS parser rejects.
+MOLECULE_YAML_LINT_TIMEOUT_SECONDS ?= 120
+MOLECULE_YAML_VALIDATE_ONLY ?= 0
+export GLUDD_MOLECULE_YAML_LINT_TIMEOUT_SECONDS := $(value MOLECULE_YAML_LINT_TIMEOUT_SECONDS)
+export GLUDD_MOLECULE_YAML_VALIDATE_ONLY := $(value MOLECULE_YAML_VALIDATE_ONLY)
+unexport MOLECULE_YAML_LINT_TIMEOUT_SECONDS MOLECULE_YAML_VALIDATE_ONLY
+
 check-molecule-yaml:
-	@$(UV) run python scripts/check_molecule_yaml.py
+	@case "$$GLUDD_MOLECULE_YAML_VALIDATE_ONLY" in \
+		0) set -- ;; \
+		1) set -- --validate-only ;; \
+		*) echo "MOLECULE_YAML_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; \
+	esac; \
+	$(UV) run python scripts/check_molecule_yaml.py \
+		--lint-timeout-seconds "$$GLUDD_MOLECULE_YAML_LINT_TIMEOUT_SECONDS" "$$@"
 
 check-workflow-yaml:
 	@$(UV) run python -c "import yaml, sys; f=sys.argv[1] if len(sys.argv)>1 else '.github/workflows/build.yml'; yaml.safe_load(open(f)); print(f'YAML valid ({f})')" .github/workflows/build.yml

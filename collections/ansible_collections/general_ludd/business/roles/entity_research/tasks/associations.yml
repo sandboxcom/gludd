@@ -36,14 +36,20 @@
 # ── Compile association edges ──
 - name: Register root entity node
   ansible.builtin.set_fact:
-    entity_associations: "{{ entity_associations | combine({
-      'nodes': entity_associations.nodes + [{
-        'name': entity_name,
-        'type': 'root',
-        'jurisdiction': (entity_discovered.jurisdiction | default('')),
-        'industry': (entity_discovered.industry_classification.naics | default('')),
-      }]
-    }) }}"
+    entity_associations: |-
+      {{ entity_associations | combine(
+          {
+              'nodes': entity_associations.nodes
+              + [
+                  {
+                      'name': entity_name,
+                      'type': 'root',
+                      'jurisdiction': (entity_discovered.jurisdiction | default('')),
+                      'industry': (entity_discovered.industry_classification.naics | default('')),
+                  }
+              ]
+          }
+      ) }}
 
 - name: Write association mapping artifact
   ansible.builtin.copy:

@@ -160,7 +160,7 @@
 
       {% if hsm_operations__mode == 'sign_csr' %}
       CSR signing exit code: {{ _hsm_sign_csr.rc | default(-1) }}
-      Stderr (first 2000 chars): {{ _hsm_sign_csr.stderr | default('')[:2000] }}
+      Stderr (first 2000 chars): {{ (_hsm_sign_csr.stderr | default(''))[:2000] }}
       {% elif hsm_operations__mode == 'verify_sig' %}
       Signature valid: {{ _hsm_sig_valid | default('unknown') }}
       Verify exit code: {{ _hsm_verify_sig.rc | default(-1) }}

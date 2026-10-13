@@ -49,19 +49,22 @@
 # ── Compile alerts ──
 - name: Compile monitoring alerts
   ansible.builtin.set_fact:
-    entity_monitoring: "{{ entity_monitoring | combine({
-      'last_check': ansible_date_time.iso8601,
-      'check_results': [
-        {'topic': 'general_news', 'scan_name': 'searx_monitor_scan', 'results': (searx_monitor_scan.json.number_of_results | default(0)) if (searx_monitor_scan is success) else 0},
-        {'topic': 'acquisition', 'scan_name': 'searx_acquisition_scan', 'results': (searx_acquisition_scan.json.number_of_results | default(0)) if (searx_acquisition_scan is success) else 0},
-        {'topic': 'breach', 'scan_name': 'searx_breach_scan', 'results': (searx_breach_scan.json.number_of_results | default(0)) if (searx_breach_scan is success) else 0},
-        {'topic': 'funding', 'scan_name': 'searx_funding_scan', 'results': (searx_funding_scan.json.number_of_results | default(0)) if (searx_funding_scan is success) else 0},
-        {'topic': 'layoff', 'scan_name': 'searx_layoff_scan', 'results': (searx_layoff_scan.json.number_of_results | default(0)) if (searx_layoff_scan is success) else 0},
-        {'topic': 'leadership', 'scan_name': 'searx_leadership_scan', 'results': (searx_leadership_scan.json.number_of_results | default(0)) if (searx_leadership_scan is success) else 0},
-        {'topic': 'lawsuit', 'scan_name': 'searx_lawsuit_scan', 'results': (searx_lawsuit_scan.json.number_of_results | default(0)) if (searx_lawsuit_scan is success) else 0},
-        {'topic': 'bankruptcy', 'scan_name': 'searx_bankruptcy_scan', 'results': (searx_bankruptcy_scan.json.number_of_results | default(0)) if (searx_bankruptcy_scan is success) else 0},
-      ],
-    }) }}"
+    entity_monitoring: |-
+      {{ entity_monitoring | combine(
+          {
+              'last_check': ansible_date_time.iso8601,
+              'check_results': [
+                  {'topic': 'general_news', 'scan_name': 'searx_monitor_scan', 'results': (searx_monitor_scan.json.number_of_results | default(0)) if (searx_monitor_scan is success) else 0},
+                  {'topic': 'acquisition', 'scan_name': 'searx_acquisition_scan', 'results': (searx_acquisition_scan.json.number_of_results | default(0)) if (searx_acquisition_scan is success) else 0},
+                  {'topic': 'breach', 'scan_name': 'searx_breach_scan', 'results': (searx_breach_scan.json.number_of_results | default(0)) if (searx_breach_scan is success) else 0},
+                  {'topic': 'funding', 'scan_name': 'searx_funding_scan', 'results': (searx_funding_scan.json.number_of_results | default(0)) if (searx_funding_scan is success) else 0},
+                  {'topic': 'layoff', 'scan_name': 'searx_layoff_scan', 'results': (searx_layoff_scan.json.number_of_results | default(0)) if (searx_layoff_scan is success) else 0},
+                  {'topic': 'leadership', 'scan_name': 'searx_leadership_scan', 'results': (searx_leadership_scan.json.number_of_results | default(0)) if (searx_leadership_scan is success) else 0},
+                  {'topic': 'lawsuit', 'scan_name': 'searx_lawsuit_scan', 'results': (searx_lawsuit_scan.json.number_of_results | default(0)) if (searx_lawsuit_scan is success) else 0},
+                  {'topic': 'bankruptcy', 'scan_name': 'searx_bankruptcy_scan', 'results': (searx_bankruptcy_scan.json.number_of_results | default(0)) if (searx_bankruptcy_scan is success) else 0},
+              ],
+          }
+      ) }}
 
 - name: Write monitoring state
   ansible.builtin.copy:

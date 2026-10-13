@@ -46,7 +46,7 @@
 
     - name: Persist results for verify
       ansible.builtin.copy:
-        content: "{{ { 'hello': hello_result, 'versions': versions_result, 'bad': bad_result } | to_nice_json }}"
+        content: "{{ {'hello': hello_result, 'versions': versions_result, 'bad': bad_result} | to_nice_json }}"
         dest: "/tmp/gludd-test-make-results.json"
         mode: "0644"
 

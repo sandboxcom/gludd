@@ -162,47 +162,33 @@
 - name: Build log findings with severity and attack type classification
   ansible.builtin.set_fact:
     _sql_log_findings: >-
-      {{
-        (
-          ([{'attack_type': 'UNION SELECT', 'severity': 'critical', 'log_source': 'web',
-             'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
-             'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
-            for item in _sql_log_union.stdout_lines if _sql_log_union.rc == 0])
-          + ([{'attack_type': 'Boolean-based blind', 'severity': 'high', 'log_source': 'web',
-               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
-               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
-              for item in _sql_log_boolean.stdout_lines if _sql_log_boolean.rc == 0])
-          + ([{'attack_type': 'Time-based blind', 'severity': 'critical', 'log_source': 'web',
-               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
-               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
-              for item in _sql_log_time.stdout_lines if _sql_log_time.rc == 0])
-          + ([{'attack_type': 'Information schema probe', 'severity': 'medium', 'log_source': 'web',
-               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
-               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
-              for item in _sql_log_info_schema.stdout_lines if _sql_log_info_schema.rc == 0])
-          + ([{'attack_type': 'Stacked queries', 'severity': 'critical', 'log_source': 'web',
-               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
-               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
-              for item in _sql_log_stacked.stdout_lines if _sql_log_stacked.rc == 0])
-          + ([{'attack_type': 'Encoded payload', 'severity': 'medium', 'log_source': 'web',
-               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
-               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
-              for item in _sql_log_encoded.stdout_lines if _sql_log_encoded.rc == 0])
-          + ([{'attack_type': 'Advanced exploitation', 'severity': 'critical', 'log_source': 'web',
-               'entry': item, 'source_ip': item | regex_search('^\d+\.\d+\.\d+\.\d+', ignorecase=True) | default('unknown'),
-               'timestamp': item | regex_search('\[\d{2}/\w{3}/\d{4}[^\]]+\]', ignorecase=True) | default('unknown')}
-              for item in _sql_log_advanced.stdout_lines if _sql_log_advanced.rc == 0])
-          + ([{'attack_type': 'Suspicious full scan', 'severity': 'medium', 'log_source': 'database',
-               'entry': item, 'source_ip': 'N/A (database log)', 'timestamp': 'unknown'}
-              for item in _sql_db_select_star.stdout_lines if _sql_db_select_star.rc == 0])
-          + ([{'attack_type': 'UNION SELECT (DB log)', 'severity': 'critical', 'log_source': 'database',
-               'entry': item, 'source_ip': 'N/A (database log)', 'timestamp': 'unknown'}
-              for item in _sql_db_union.stdout_lines if _sql_db_union.rc == 0])
-          + ([{'attack_type': 'Schema exploration (DB log)', 'severity': 'medium', 'log_source': 'database',
-               'entry': item, 'source_ip': 'N/A (database log)', 'timestamp': 'unknown'}
-              for item in _sql_db_schema.stdout_lines if _sql_db_schema.rc == 0])
-          + ([{'attack_type': 'File/OS operations (DB log)', 'severity': 'critical', 'log_source': 'database',
-               'entry': item, 'source_ip': 'N/A (database log)', 'timestamp': 'unknown'}
-              for item in _sql_db_fileops.stdout_lines if _sql_db_fileops.rc == 0])
-        )
-      }}
+      {%- set findings = namespace(items=[]) -%}
+      {%- for result, attack_type, severity, log_source in [
+        (_sql_log_union | default({}), 'UNION SELECT', 'critical', 'web'),
+        (_sql_log_boolean | default({}), 'Boolean-based blind', 'high', 'web'),
+        (_sql_log_time | default({}), 'Time-based blind', 'critical', 'web'),
+        (_sql_log_info_schema | default({}), 'Information schema probe', 'medium', 'web'),
+        (_sql_log_stacked | default({}), 'Stacked queries', 'critical', 'web'),
+        (_sql_log_encoded | default({}), 'Encoded payload', 'medium', 'web'),
+        (_sql_log_advanced | default({}), 'Advanced exploitation', 'critical', 'web'),
+        (_sql_db_select_star | default({}), 'Suspicious full scan', 'medium', 'database'),
+        (_sql_db_union | default({}), 'UNION SELECT (DB log)', 'critical', 'database'),
+        (_sql_db_schema | default({}), 'Schema exploration (DB log)', 'medium', 'database'),
+        (_sql_db_fileops | default({}), 'File/OS operations (DB log)', 'critical', 'database')
+      ] -%}
+      {%- if result.rc | default(1) == 0 -%}
+      {%- for entry in result.stdout_lines | default([]) -%}
+      {%- set findings.items = findings.items + [{
+        'attack_type': attack_type,
+        'severity': severity,
+        'log_source': log_source,
+        'entry': entry,
+        'source_ip': (entry | regex_search('^\\d+\\.\\d+\\.\\d+\\.\\d+', ignorecase=True)
+                      | default('unknown', true)) if log_source == 'web' else 'N/A (database log)',
+        'timestamp': (entry | regex_search('\\[\\d{2}/\\w{3}/\\d{4}[^\\]]+\\]', ignorecase=True)
+                      | default('unknown', true)) if log_source == 'web' else 'unknown'
+      }] -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ findings.items }}
