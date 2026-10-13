@@ -1,9 +1,22 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
+
+from tests.unit.native_role_tasks import effective_arguments, role_tasks
 
 ROOT = Path(__file__).resolve().parents[2]
 ROLE = ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles" / "git_automation"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def isolated_ansible_state() -> Iterator[None]:
+    from general_ludd.ansible.core_runner import _isolated_ansible_process_state
+
+    with _isolated_ansible_process_state(None):
+        yield
 
 
 def test_git_automation_role_exposes_full_state_machine_guards() -> None:
@@ -74,24 +87,53 @@ def test_git_automation_role_exposes_gated_git_operations() -> None:
     assert "ansible.builtin.command" not in merge_task
 
 
-def test_git_automation_role_delegates_all_git_ops_to_module() -> None:
-    task_names = ["clone", "branch", "worktree", "push"]
+def _assert_git_module_delegation(role: Path) -> None:
+    for task_name, options, expected in (
+        ("clone", {}, "clone"),
+        ("branch", {"branch_op": "list"}, "branch_list"),
+        ("branch", {"branch_op": "create"}, "branch"),
+        ("branch", {"branch_op": "delete"}, "branch_delete"),
+        ("worktree", {"worktree_op": "list"}, "worktree_list"),
+        ("worktree", {"worktree_op": "create"}, "worktree_create"),
+        ("worktree", {"worktree_op": "remove"}, "worktree_remove"),
+        ("push", {}, "push"),
+    ):
+        tasks = list(role_tasks(role, {
+            "git_op": task_name, "repo_path": "/repo", "daemon_url": "http://daemon:8000", "psk": "secret",
+            "clone_url": "https://example.org/repository.git", "target_dir": "/owned/clone",
+            "branch_name": "topic", "worktree_branch": "topic", "worktree_path_param": "/owned/topic",
+            "push_branch": "development", **options,
+        }))
+        assert all(task.action not in {"ansible.builtin.command", "command", "ansible.builtin.shell", "shell"}
+                   for task, _ in tasks), task_name
+        calls = [effective_arguments(task, templar) for task, templar in tasks
+                 if task.action == "general_ludd.agent.gludd_git"]
+        assert len(calls) == 1 and calls[0]["op"] == expected, (task_name, options)
+        assert calls[0]["path"] == "/repo"
+        assert calls[0]["daemon_url"] == "http://daemon:8000" and calls[0]["psk"] == "secret"
 
-    for task_name in task_names:
-        task = (ROLE / "tasks" / f"{task_name}.yml").read_text(encoding="utf-8")
-        assert "general_ludd.agent.gludd_git" in task, task_name
-        assert "ansible.builtin.command" not in task, task_name
-
-    clone_task = (ROLE / "tasks" / "clone.yml").read_text(encoding="utf-8")
-    branch_task = (ROLE / "tasks" / "branch.yml").read_text(encoding="utf-8")
-    worktree_task = (ROLE / "tasks" / "worktree.yml").read_text(encoding="utf-8")
-    push_task = (ROLE / "tasks" / "push.yml").read_text(encoding="utf-8")
+    clone_task = (role / "tasks" / "clone.yml").read_text(encoding="utf-8")
+    push_task = (role / "tasks" / "push.yml").read_text(encoding="utf-8")
 
     for token in ["op: clone", "git_clone_timeout", "clone_url", "target_dir"]:
         assert token in clone_task
-    for token in ["op: branch_list", "op: branch", "op: branch_delete"]:
-        assert token in branch_task
-    for token in ["op: worktree_list", "op: worktree_create", "op: worktree_remove"]:
-        assert token in worktree_task
     for token in ["op: push", "push_remote", "push_branch"]:
         assert token in push_task
+
+
+def test_git_automation_role_delegates_all_git_ops_to_module() -> None:
+    _assert_git_module_delegation(ROLE)
+
+
+@pytest.mark.parametrize("replacement", (
+    'ansible.builtin.command: "git status"',
+    'ansible.builtin.debug: {msg: "not the native Git module"}',
+))
+def test_git_delegation_acceptance_rejects_bypass_of_shared_owner(tmp_path: Path, replacement: str) -> None:
+    from shutil import copytree
+
+    role = tmp_path / "git_automation"
+    copytree(ROLE, role)
+    (role / "tasks/git_request.yml").write_text("---\n- name: Bypass\n  " + replacement + "\n", encoding="utf-8")
+    with pytest.raises(AssertionError):
+        _assert_git_module_delegation(role)

@@ -72,3 +72,23 @@ Long-lived Ansible forum threads also show why gludd keeps explicit state eviden
 
 - https://forum.ansible.com/t/git-module-often-marked-as-changed-even-when-nothing-changed/31555
 - https://forum.ansible.com/t/error-your-local-changes-to-the-following-files-would-be-overwritten-by-checkout/20465
+
+### Native shared-task delegation acceptance
+
+The hosted inline-only assertion cannot see `gludd_git` after branch/worktree
+tasks delegate through the shared native request owner. Acceptance now loads
+the actual public role through the existing Ansible include/default owner and
+checks all eight original clone, branch-list/create/delete, worktree-list/create/remove
+and push operations. Each must produce exactly one expected Git module call,
+retain repository/authentication inputs, and contain no command/shell bypass.
+The original clone/push source-variable checks remain. Negative controls replace
+the shared request with command or non-Git debug and require rejection.
+
+The original failure reproduces on Python 3.11, then the expanded 112-case
+dispatch/default/result cohort passes. The complete 209-case hosted-defect
+acceptance cohort passes on Python 3.11 and 3.14; the observed 3.11 replay takes
+21.0 seconds. This is source acceptance, not remote Git/deployment execution.
+Existing forum findings above remain relevant to retaining explicit state and
+authenticated ownership. No daemon, service, Git mutation or ZDD transition is
+introduced; rollback reverts the acceptance change, not shared production tasks.
+Canonical gate, successor exact-SHA CI and deployment proof remain pending.
