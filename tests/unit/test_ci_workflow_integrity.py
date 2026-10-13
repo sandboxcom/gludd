@@ -13,7 +13,7 @@ Workflow = dict[object, Any]
 
 def _load_workflow() -> Workflow:
     content = WORKFLOW_PATH.read_text()
-    parsed: Workflow = yaml.safe_load(content)
+    parsed: Workflow = yaml.load(content, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
     return parsed
 
 

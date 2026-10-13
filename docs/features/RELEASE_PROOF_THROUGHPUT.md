@@ -231,6 +231,32 @@ optimization bounds diagnostic cost; it does not prove release readiness.
 [context-operator-completeness]: https://github.com/cli/cli/issues/6378
 [context-operator-names]: https://github.com/cli/cli/issues/7642
 
+### Safe workflow parsing within the unchanged budget
+
+Build 38336411509 at 6ba81dd5 passes Python 3.11 quality, but Python 3.12's early
+owner expires at 90.0s with passing cases reaching 89%. Existing workflow helpers
+reparse full YAML through the Python loader on every assertion. Use PyYAML's
+existing C-safe backend when installed, retaining the Python-safe fallback and
+fresh parses/results. Do not cache source, raise the timeout, drop cases or
+weaken schema, normalization, safe-tag or error behavior.
+
+[Official documentation][safe-yaml-docs] and [library source][safe-yaml-source]
+establish that safe_load selects SafeLoader; installing LibYAML alone does not
+change that selection. The [2020 operator performance report][safe-yaml-perf]
+and [2022 C-loader error report][safe-yaml-error] reinforce explicit backend and
+error checks; neither alone proves the cause or current timing of this pipeline.
+
+Three actual-reader routing cases fail first and 45 safety/parity cases pass.
+All 265 parser/workflow/registry/privacy cases then pass in 10.10s. Both old
+matrix-mutation tests inject at their existing workflow helper instead of the
+replaced parser call, preserving all input data, cases and assertions. Actual
+bounded-owner and exact-SHA hosted success still determine throughput acceptance.
+
+[safe-yaml-docs]: https://pyyaml.org/wiki/PyYAMLDocumentation
+[safe-yaml-source]: https://github.com/yaml/pyyaml/blob/main/lib/yaml/__init__.py
+[safe-yaml-perf]: https://github.com/yaml/pyyaml/issues/439
+[safe-yaml-error]: https://github.com/yaml/pyyaml/issues/655
+
 ### Exact timing and creation order
 
 The security contract compares the exact eight-label multiset, not scheduling

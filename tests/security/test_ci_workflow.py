@@ -35,7 +35,7 @@ BUILD_JOBS = ["linux", "macos", "windows", "termux"]
 def _load_workflow() -> dict[str, Any]:
     assert WORKFLOW_PATH.is_file(), f"build.yml not found at {WORKFLOW_PATH}"
     with WORKFLOW_PATH.open() as f:
-        data = yaml.safe_load(f)
+        data = yaml.load(f, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
     assert isinstance(data, dict), "build.yml must be a valid YAML mapping"
     # PyYAML parses the bare word `on` as a YAML boolean True.
     # Normalise the key so the rest of the tests can use "on".
@@ -47,7 +47,7 @@ def _load_workflow() -> dict[str, Any]:
 def _load_pages_workflow() -> dict[str, Any]:
     assert PAGES_WORKFLOW_PATH.is_file(), f"pages.yml not found at {PAGES_WORKFLOW_PATH}"
     with PAGES_WORKFLOW_PATH.open() as f:
-        data = yaml.safe_load(f)
+        data = yaml.load(f, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
     assert isinstance(data, dict), "pages.yml must be a valid YAML mapping"
     # PyYAML parses the bare word `on` as a YAML boolean True (see _load_workflow above).
     if True in data and "on" not in data:
@@ -638,7 +638,7 @@ class TestGateMatrixStructure:
         if reverse:
             labels.reverse()
         wf["jobs"]["test-shard"]["strategy"]["matrix"]["shard"] = labels
-        monkeypatch.setattr(yaml, "safe_load", lambda _source: wf)
+        monkeypatch.setattr(f"{__name__}._load_workflow", lambda: wf)
 
         self.test_test_shard_matrix_dimensions()
 
@@ -657,7 +657,7 @@ class TestGateMatrixStructure:
         else:
             labels[-1] = "not-a-canonical-shard"
         wf["jobs"]["test-shard"]["strategy"]["matrix"]["shard"] = labels
-        monkeypatch.setattr(yaml, "safe_load", lambda _source: wf)
+        monkeypatch.setattr(f"{__name__}._load_workflow", lambda: wf)
 
         with pytest.raises(AssertionError, match="test-shard shard dimension"):
             self.test_test_shard_matrix_dimensions()
