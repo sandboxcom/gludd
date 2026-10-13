@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import cast
@@ -126,6 +127,20 @@ def test_public_task_file_inventory_has_one_exact_reviewed_finding() -> None:
     assert finding["hashed_secret"] == hashlib.sha1(public_evidence.encode()).hexdigest()
     assert finding["is_secret"] is False
     assert finding["is_verified"] is False
+
+
+def test_current_task_inventory_passes_real_readonly_secret_owner() -> None:
+    """Exercise the scanner, not merely the previously reviewed substring."""
+    before = hashlib.sha256(BASELINE.read_bytes()).hexdigest()
+    completed = subprocess.run(
+        [
+            sys.executable, str(ROOT / "scripts" / "detect_secrets_readonly.py"),
+            "--baseline", str(BASELINE), "TASKS.md",
+        ],
+        cwd=ROOT, capture_output=True, text=True, check=False, timeout=30,
+    )
+    assert hashlib.sha256(BASELINE.read_bytes()).hexdigest() == before
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_policy_excludes_only_generated_recursive_boundaries() -> None:

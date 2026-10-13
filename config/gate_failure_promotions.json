@@ -530,6 +530,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_verdict_all_required.py::test_ci_verdict_safe_records_failure_without_recursive_make_exit_aliasing",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "current-task-inventory-real-secret-scan",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_secrets_baseline_compaction.py::test_current_task_inventory_passes_real_readonly_secret_owner",
+      "full_gate_phase": "test"
     }
   ]
 }

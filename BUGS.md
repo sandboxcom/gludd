@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — The substring-only public inventory check missed detector-span drift
+
+- Normal push hooks refused the new quoted review-receipt path on TASKS line 47: it extended the previously reviewed public keyword span. The existing substring/hash test remained green because it did not execute the real scanner against the complete current line.
+- A new real read-only scanner regression fails first, preserving the canonical baseline byte digest. The receipt remains documented as unquoted prose, restoring the existing exact reviewed identity without changing baseline findings, detector settings, exclusions or hooks.
+- Native mapping and exact-roster regressions fail first, then the complete baseline-management cohort gains the existing early owner. Warning-fatal, one-worker, 90/60 bounds and the full-gate requirement remain unchanged. No new findings are automatically approved.
+- All 120 scanner/routing cases pass; the early owner passes 1059 cases plus its fresh help node in 56.9s. Strict lint/types, 220 target contracts, 54 failure-family mappings and 252 resource owners remain green. The baseline is unchanged; exact hosted successor and the complete canonical gate remain required.
+
 ### 2026-10-13 — Terminal observations did not feed the native push-verification owner
 
 - The tested seven-commit batch was blocked because the last pushed SHA's verdict history remained unverified despite automatic terminal observations. The legacy verdict target selected only the newest workflow, allowing successful Pages to conceal failed Build; recursive Make also aliases native red and pending exit codes.

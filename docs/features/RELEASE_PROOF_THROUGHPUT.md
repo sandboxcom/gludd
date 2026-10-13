@@ -142,6 +142,16 @@ relaxed. A native repair is not an exact hosted resolution or release proof.
 
 ### Automatic terminal push verification
 
+Current TASKS input also runs through the real read-only detect-secrets owner in
+the early cohort. The old public-span hash assertion alone could remain green
+while a later quoted receipt extended the detector's actual match. The new
+regression fails first on that exact condition and proves the canonical baseline
+is not rewritten. Preserve the reviewed span, record later receipt paths as
+unquoted prose, and keep every detector/hook enabled; do not auto-approve drift.
+All 120 scanner/routing cases pass. The expanded early owner passes 1059 cases
+plus its fresh help node in 56.9s, keeping its 90/60 bounds, 21 phases and required
+complete gate unchanged. Scanner settings and baseline bytes are unchanged.
+
 The exact snapshot producer now feeds terminal evidence into the existing native
 cooldown/history writer, avoiding a separate manual bookkeeping step or extra
 query. Snapshot validation and publication must succeed first. Every selected
