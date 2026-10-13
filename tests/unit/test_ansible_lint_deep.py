@@ -14,6 +14,8 @@ from typing import Any
 
 import pytest
 import yaml
+from ansible.parsing.mod_args import ModuleArgsParser
+from ansible.playbook.block import Block
 from scripts.makefile_layout import compose_makefile
 
 pytestmark = pytest.mark.xdist_group("ansible_lint_deep")
@@ -76,52 +78,13 @@ def _load_yaml(path: Path) -> Any:
 
 
 def _collect_task_module_names(task: dict[str, Any]) -> list[str]:
-    module_names: list[str] = []
-    known_directives = {
-        "name",
-        "when",
-        "notify",
-        "loop",
-        "register",
-        "vars",
-        "tags",
-        "ignore_errors",
-        "become",
-        "become_user",
-        "become_method",
-        "changed_when",
-        "failed_when",
-        "no_log",
-        "check_mode",
-        "delegate_to",
-        "run_once",
-        "environment",
-        "any_errors_fatal",
-        "async",
-        "poll",
-        "args",
-        "delay",
-        "retries",
-        "until",
-        "throttle",
-        "serial",
-        "order",
-        "strategy",
-        "loop_control",
-        "with_items",
-        "with_dict",
-        "with_sequence",
-        "with_fileglob",
-        "with_together",
-        "connection",
-        "block",
-        "rescue",
-        "always",
-    }
-    for key in task:
-        if key not in known_directives and isinstance(task[key], dict):
-            module_names.append(key)
-    return module_names
+    """Use native task metadata without resolving away the supplied module name."""
+    if Block.is_block(task):
+        task = {key: value for key, value in task.items() if key not in Block.fattributes}
+        if not task:
+            return []
+    action, _args, _delegate_to = ModuleArgsParser(task).parse(skip_action_validation=True)
+    return [action]
 
 
 def _walk_tasks(
@@ -162,6 +125,56 @@ def test_all_task_modules_use_fqcn() -> None:
             continue
         _walk_tasks(tasks, _check, tf)
     assert violations == [], f"{len(violations)} FQCN violations:\n" + "\n".join(f"  - {v}" for v in violations)
+
+
+@pytest.mark.parametrize("keyword", ["module_defaults", "vars", "environment", "loop_control"])
+def test_native_mapping_task_keywords_are_not_modules(keyword: str) -> None:
+    """Native task keywords must never be reported as module invocations."""
+    from ansible.playbook.task import Task
+
+    assert keyword in Task.fattributes
+    task = {keyword: {}, "ansible.builtin.debug": {"msg": "qualified"}}
+    assert _collect_task_module_names(task) == ["ansible.builtin.debug"]
+
+
+def test_native_default_block_checks_each_nested_module() -> None:
+    """Inherited defaults are directives; nested actions still need FQCNs."""
+    tasks = [{
+        "name": "Native defaults block",
+        "module_defaults": {"ansible.builtin.debug": {"verbosity": 0}},
+        "block": [{"ansible.builtin.debug": {"msg": "body"}}],
+        "rescue": [{"ansible.builtin.fail": {"msg": "rescue"}}],
+        "always": [{"ansible.builtin.debug": {"msg": "always"}}],
+    }]
+    modules: list[str] = []
+
+    def collect(task: dict[str, Any], _idx: int) -> None:
+        modules.extend(_collect_task_module_names(task))
+
+    _walk_tasks(tasks, collect)
+    assert modules == ["ansible.builtin.debug", "ansible.builtin.fail", "ansible.builtin.debug"]
+
+
+@pytest.mark.parametrize("task", [
+    {"debug": {"msg": "short mapping"}},
+    {"command": "true"},
+    {"action": "debug msg=short"},
+    {"local_action": "debug msg=short"},
+    {"module_defaults": {"ansible.builtin.debug": {}}, "debug": {"msg": "short with defaults"}},
+    {"module_defaults": {"ansible.builtin.debug": {}}, "block": [{"debug": {"msg": "nested short"}}]},
+    {"block": [], "debug": {"msg": "short beside a block"}},
+])
+def test_fqcn_acceptance_rejects_genuine_unqualified_modules(
+    task: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Native keyword acceptance cannot exempt an actual short module name."""
+    task_file = tmp_path / "tasks.yml"
+    task_file.write_text(yaml.safe_dump([task]), encoding="utf-8")
+    monkeypatch.setitem(globals(), "ROOT", tmp_path)
+    monkeypatch.setitem(globals(), "_discover_task_files", lambda: [task_file])
+
+    with pytest.raises(AssertionError, match=r"short name '(debug|command)'"):
+        test_all_task_modules_use_fqcn()
 
 
 # ── Test 2: Every task has a name ───────────────────────────────────

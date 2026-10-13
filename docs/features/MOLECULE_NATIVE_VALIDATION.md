@@ -483,3 +483,31 @@ Actual private offline install of that same set passes on Ansible 2.21.5 in
 source-pin guess or proof of Windows argument execution. The canonical source
 requirements, runtime-lock binding, native checker/hosted/EE consumption, final
 Linux/Windows acceptance, full gate and deployment proof remain pending.
+
+### Native task keywords and Make transport acceptance
+
+Hosted run 38430314549's FQCN audit mistakes legitimate `module_defaults` in
+the shared Git tasks for an unqualified module. Canonical RED has six failures
+and 27 controls. Acceptance now uses installed `ModuleArgsParser` metadata and
+native `Block.fattributes`, preserving submitted action names without resolving
+short names into qualified ones. The existing walker still checks block, rescue
+and always children. All 33 cases pass, including seven controls that reject
+actual short mapping, scalar, action/local_action and nested/block-side modules.
+No handwritten directive inventory, warning suppression or skipped rule remains.
+
+The [Ansible user discussion](https://forum.ansible.com/t/import-role-and-module-defaults/4277)
+describes recurring defaults-scope confusion across roles. Native task/block
+scope and inheritance are defined by the
+[official module-defaults guide](https://docs.ansible.com/projects/ansible/14/playbook_guide/playbooks_module_defaults.html).
+The discussion motivates native scope acceptance, not a claim that upstream
+caused this audit defect.
+
+The environment-documentation audit also recognizes actual executable Make
+transport. It uses the existing ordered Make source owner and standard `shlex`;
+only an explicit export read by a shell recipe counts. Comment-only references,
+single-quoted literals, unused exports and unknown variables remain rejected.
+Two new controls and all 25 original documentation/security cases pass on both
+Python versions; original documentation entries and Python-source checks remain.
+These audit changes add no daemon or serving-state mutation. Rollback reverts
+the acceptance owners together with their controls. Same-SHA hosted, canonical
+gate and installed/deployment acceptance remain required.
