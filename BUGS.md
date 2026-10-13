@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Interpreter-specific YAML workaround disabled safe fast parsing everywhere
+
+- Exact 9f677f92 hosted Python 3.12 passes 1182 main cases in 82.74s, then times out at the original 90s bound during fresh help. Both pytest bootstraps unconditionally removed safe LibYAML loaders despite documenting a Python 3.14-only workaround, defeating the existing safe-reader optimization on 3.11/3.12.
+- A natural installed-backend test fails first with 48 existing safe-reader controls passing. Both existing guards now target only 3.14; installed/absent backend behavior and all unsafe/malformed/fresh-result checks remain intact. Four controls execute the real unit bootstrap across version routes and verify path and cleanup ownership.
+- All 53 reader/bootstrap cases pass on 3.11. Expanded maintained coverage passes 192 cases with one existing conditional skip, measures root 91% and unit 94%, and passes unchanged aggregate 85%/per-file line-and-branch 75% floors. No deadline, plugin provider, test selection or warning policy is removed. Source evidence is not hosted, deployment or full-gate acceptance.
+
 ### 2026-10-13 — Long repair evidence overwrote concurrent native CI observations
 
 - A real repair read the ledger before its 44-second evidence command; concurrent pipeline observation added two terminal runs. The repair's stale whole-ledger write erased both (56 runs became 54). Sequential native re-observation restored them, but could not prevent recurrence.

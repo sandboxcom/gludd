@@ -68,9 +68,11 @@ _CANONICAL_HTTPX_GET = httpx.get
 # Python 3.14: yaml C extension (CSafeLoader) fails parsing ansible config.
 # Force-load yaml first, then strip C classes so ansible falls back to
 # the pure-Python SafeLoader via its existing (ImportError, AttributeError) catch.
-for _name in ("CSafeLoader", "CSafeDumper", "CParser"):
-    _yaml_mod.__dict__.pop(_name, None)
-del _yaml_mod, _name
+if sys.version_info[:2] == (3, 14):
+    for _name in ("CSafeLoader", "CSafeDumper", "CParser"):
+        _yaml_mod.__dict__.pop(_name, None)
+    del _name
+del _yaml_mod
 
 # Python 3.14: unittest.mock._is_async_obj triggers RecursionError when
 # creating NonCallableMock(spec_set=_CODE_ATTRS) because

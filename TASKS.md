@@ -29,6 +29,18 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
+S98.4 interpreter-specific YAML repair scope: `tests/conftest.py`,
+`tests/unit/conftest.py`, `tests/unit/test_workflow_safe_parser.py`,
+`config/coverage_pytest_worktree_confinement.ini`, and
+`docs/features/RUNTIME_ADMISSION_THROUGHPUT.md`. The real supported-interpreter
+backend regression fails first; all 53 reader/bootstrap cases pass on Python
+3.11. The maintained coverage owner now audits both changed bootstrap files,
+passes 192 cases with one existing conditional skip, and measures 91%/94%
+above unchanged aggregate 85% and per-file line/branch 75% floors. The guards
+preserve the 3.14 workaround without stripping supported safe loaders.
+Full gate, exact-SHA hosted, installed-image and deployment acceptance remain
+pending; this note does not tick any item or add a completed backlog entry.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

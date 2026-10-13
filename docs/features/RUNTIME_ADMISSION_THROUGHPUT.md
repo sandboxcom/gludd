@@ -182,3 +182,26 @@ serving process, release closure, master promotion or image is changed. Full gat
 and exact-SHA hosted acceptance remain pending. Rollback reverts the isolated
 ledger, tests and early-owner wiring together, then re-observes native evidence;
 it never restores an old JSON snapshot over newer observations.
+
+## Interpreter-specific safe YAML bootstrap (2026-10-13)
+
+Build 38423157704 at exact 9f677f92ce372b4aacb4185606d37d7fd4dfa8e7
+passes all 1182 main-cohort cases on Python 3.12 in 82.74 pytest seconds,
+then reaches the unchanged 90-second observed deadline during fresh help.
+The prior safe-parser selection was ineffective: both root and unit pytest
+bootstraps removed LibYAML classes unconditionally despite documenting a
+Python 3.14-only Ansible workaround. Scope both removals to that interpreter.
+Supported 3.11/3.12 retain installed safe loaders; absent LibYAML still falls
+back safely, and 3.14 retains its original workaround.
+
+A natural installed-backend regression fails first on Python 3.11 while all
+48 existing safe-reader controls pass. The final 53-case reader/bootstrap
+suite passes on 3.11, retaining malformed/unsafe-tag rejection, fresh nested
+results, mapping validation, and original on-key handling. Four version
+controls execute the actual unit bootstrap and verify collection-path and
+temporary-name cleanup. The expanded existing coverage profile audits both
+changed bootstraps: 91% combined; root 91%, unit 94%, with each owner's line
+and branch floors passing unchanged 85/75 admission. It passes 192 cases
+with one pre-existing canonical-checkout conditional skip, not a new waiver.
+Ruff and strict typing pass. Rollback restores both bootstrap guards together;
+this source repair does not close S98.4 or supply hosted/full-gate/deployment proof.

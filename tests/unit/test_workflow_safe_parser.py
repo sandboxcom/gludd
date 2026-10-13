@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import runpy
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -29,6 +30,39 @@ class WorkflowReader(NamedTuple):
 
 
 AvailableCSafeLoader = type("AvailableCSafeLoader", (yaml.SafeLoader,), {})
+
+
+def test_installed_safe_yaml_backend_is_retained_on_supported_python() -> None:
+    """Only the affected 3.14 interpreter needs the Ansible C-backend workaround."""
+    affected_interpreter = sys.version_info[:2] == (3, 14)
+    expected_available = yaml.__with_libyaml__ and not affected_interpreter
+    for name in ("CSafeLoader", "CSafeDumper"):
+        assert hasattr(yaml, name) is expected_available, name
+
+
+@pytest.mark.parametrize("minor", (11, 12, 14, 15))
+def test_unit_yaml_workaround_routes_only_affected_interpreter(
+    minor: int, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Execute the real unit bootstrap, including its collection-path ownership."""
+    root = Path(__file__).resolve().parents[1]
+    collections_path = str(root.parent / "collections")
+    monkeypatch.setattr(sys, "version_info", (3, minor, 0, "final", 0))
+    monkeypatch.setattr(sys, "path", [entry for entry in sys.path if entry != collections_path])
+    backends = {name: object() for name in ("CSafeLoader", "CSafeDumper", "CParser")}
+    for name, backend in backends.items():
+        monkeypatch.setitem(yaml.__dict__, name, backend)
+
+    namespace = runpy.run_path(str(root / "unit/conftest.py"))
+
+    for name, backend in backends.items():
+        if minor == 14:
+            assert not hasattr(yaml, name)
+        else:
+            assert getattr(yaml, name) is backend
+    assert sys.path.count(collections_path) == 1
+    assert sys.path[0] == collections_path
+    assert not {"_yaml_mod", "_name", "_collections"}.intersection(namespace)
 
 
 @pytest.fixture(scope="module")
