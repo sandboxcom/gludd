@@ -291,6 +291,44 @@ Consequently, Gludd records the first terminal evidence before any retry,
 keys it by immutable run ID and exact SHA, and treats a retry as an exception
 rather than a repair.
 
+## Late terminal step details (2026-10-13)
+
+The exact native observation for run 38477108604, attempt 1, initially records
+19 terminal jobs with gate (3.12) failed steps reported only as job failure.
+The next authenticated observation preserves every run and ordered-job
+identity and outcome, but supplies the named admission failure. Rejecting this
+narrow refinement as a rewritten terminal run leaves the snapshot in lookup
+error and prevents the bounded heartbeat from terminating.
+
+The existing locked ledger owner now stores optional terminal_details,
+bounded to one entry per original run/attempt and the unchanged 2 MiB ledger
+limit. The projection binds both the original receipt fingerprint and the
+recomputed refined fingerprint. Original run receipts, failure occurrences,
+repair evidence and family status remain unchanged. Only a failure job's
+missing step names can be filled. Subsequent observations compare against
+the accepted details; changed identity, outcome, job order or known step
+names still fail closed. Legacy version-1 ledgers require no migration.
+
+The [attempt-specific jobs API](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt)
+provides job and step data but does not promise byte-identical terminal
+responses. The 2022 [CLI inventory report](https://github.com/cli/cli/issues/6378)
+and longstanding [workflow API discussion](https://github.com/orgs/community/discussions/24626)
+describe related inconsistent or missing results; they are not proof of this
+exact cause. The paired local observations establish the narrow correction.
+No new client, watcher, retry, status writer or deployment action is added.
+
+Three canonical history controls fail first on the original producer. The
+38 additive controls preserve all existing assertions; 293 ledger, concurrency,
+status and CI-verdict cases pass on both installed Python versions. The original
+coverage profile passes 193 cases at 96.53% lines and 93.39% branches, with zero
+exclusions and unchanged 85/75 floors; its audit is
+.gate-logs/coverage-20261013T225503Z.json. Ruff, strict typing and docstrings pass.
+The live native owner enriches the exact existing receipt, emits failure with
+no lookup errors, and automatically stops nonzero with release_ready=false.
+The real Python 3.12 timeout remains open; this repair supplies no release proof.
+Rollback restores the owner and additive tests together; retain original
+receipts and their validated optional details rather than deleting evidence.
+
 ## Verification
 
 `tests/unit/test_ci_failure_ledger.py` covers all-failure collection,

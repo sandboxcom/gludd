@@ -1769,3 +1769,237 @@ def test_native_inventory_normalizes_utc_offset_and_keeps_failed_annotation_ids(
         payload, NATIVE_REPOSITORY, fetcher=annotations
     ) == {9001: ["hosted runner error"]}
     assert calls == [(9001, NATIVE_REPOSITORY)]
+
+
+DETAIL_RUN_ID = 38477108604
+# Public Git object and content-addressed receipt identities, not credentials.
+DETAIL_GIT_OBJECT_ID = "768eaf6e759215c4bf7735930b917f69e9ab484c"
+DETAIL_RECEIPT_CONTENT_ID = "f7d45cf69445d9f222e4fccc44ed82bcc746dc3417865741c87f4ad4e73841a8"
+DETAIL_STEP = "Known runtime and handoff regression admission"
+DETAIL_FIRST = "2026-10-13T22:32:05Z"
+DETAIL_LATER = "2026-10-13T22:37:00Z"
+
+
+def _detail_payload() -> dict[str, Any]:
+    """Freeze the actual 19-job observation without reading mutable operational data."""
+    jobs = [
+        ("version", "success"), ("e2e-providers", "skipped"), ("gate (3.12)", "failure"),
+        ("claim-before-provision-acceptance", "success"),
+        ("postgres-winner-compute-lifecycle-acceptance", "success"), ("gate (3.11)", "success"),
+        ("release_source_proof", "skipped"), ("freellmapi-upstream-build", "skipped"),
+        ("linux", "skipped"), ("game-building", "skipped"), ("coverage", "skipped"),
+        ("container", "skipped"), ("termux", "skipped"), ("macos", "skipped"),
+        ("molecule", "skipped"), ("test-shard", "skipped"), ("windows", "skipped"),
+        ("ansible-ee", "skipped"), ("release", "skipped"),
+    ]
+    return {
+        "attempt": 1, "databaseId": DETAIL_RUN_ID, "headSha": DETAIL_GIT_OBJECT_ID, "headBranch": "development",
+        "status": "completed", "conclusion": "failure", "workflowName": "Build and Release",
+        "url": f"https://github.com/sandboxcom/gludd/actions/runs/{DETAIL_RUN_ID}",
+        "jobs": [
+            {"name": name, "status": "completed", "conclusion": conclusion, "steps": []}
+            for name, conclusion in jobs
+        ],
+    }
+
+
+def _detail_enriched() -> dict[str, Any]:
+    payload = _detail_payload()
+    payload["jobs"][2]["steps"] = [{"name": DETAIL_STEP, "status": "completed", "conclusion": "failure"}]
+    return payload
+
+
+def _detail_seed(module: ModuleType) -> dict[str, Any]:
+    ledger: dict[str, Any] = module.new_ledger()
+    assert module.observe_payload(ledger, _detail_payload(), observed_at=DETAIL_FIRST) == "recorded"
+    assert ledger["runs"][str(DETAIL_RUN_ID)]["payload_fingerprint"] == DETAIL_RECEIPT_CONTENT_ID
+    return ledger
+
+
+@pytest.mark.parametrize("history", ["open", "repaired", "resolved"])
+def test_native_cli_accepts_exact_late_step_detail_and_retains_all_original_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any, history: str,
+) -> None:
+    module = _load()
+    ledger = _detail_seed(module)
+    if history == "repaired":
+        module.record_repair(
+            ledger, list(ledger["families"]), repair_sha="b" * 40,
+            evidence="make test-count", recorded_at="repair", is_ancestor=lambda _old, _new: True,
+        )
+    elif history == "resolved":
+        success = _detail_payload()
+        success.update(databaseId=DETAIL_RUN_ID + 1, headSha="b" * 40, conclusion="success")
+        success["url"] = f"https://github.com/sandboxcom/gludd/actions/runs/{DETAIL_RUN_ID + 1}"
+        success["jobs"][2]["conclusion"] = "success"
+        module.observe_payload(ledger, success, observed_at="hosted-success")
+    original = deepcopy(ledger)
+    path = tmp_path / "ledger.json"
+    module.write_ledger(path, ledger)
+    monkeypatch.setattr(module, "fetch_run", lambda _run, _repo: _detail_enriched())
+    monkeypatch.setattr(module, "_now", lambda: DETAIL_LATER)
+    command = ["observe", "--run", str(DETAIL_RUN_ID), "--ledger", str(path)]
+
+    assert module.main(command) == 0
+
+    current = module.read_ledger(path)
+    assert current["runs"] == original["runs"]
+    assert current["families"] == original["families"]
+    detail = current["terminal_details"][str(DETAIL_RUN_ID)]
+    assert detail == {
+        "schema_version": 1, "original_payload_fingerprint": DETAIL_RECEIPT_CONTENT_ID,
+        "payload_fingerprint": module._digest(module._snapshot(_detail_enriched())),
+        "observed_at": DETAIL_LATER, "jobs": module._snapshot(_detail_enriched())["jobs"],
+    }
+    assert "result=enriched" in capsys.readouterr().out
+    assert "unchanged failed run" in " ".join(module.guard_rerun(current, DETAIL_RUN_ID))
+    if history == "open":
+        assert len(module.guard_push(current, "b" * 40, is_ancestor=lambda _old, _new: True)) == 1
+    encoded = path.read_bytes()
+    monkeypatch.setattr(module, "_now", lambda: "2026-10-13T23:00:00Z")
+    assert module.main(command) == 0
+    assert "result=unchanged" in capsys.readouterr().out
+    assert path.read_bytes() == encoded
+
+
+@pytest.mark.parametrize("change", [
+    "sha", "branch", "workflow", "repository", "outcome", "job-outcome", "job-name",
+    "job-status", "job-order", "job-drop", "job-add", "known-step-add", "known-step-rename", "known-step-drop",
+])
+def test_accepted_detail_never_permits_identity_outcome_or_known_step_mutation(change: str) -> None:
+    module = _load()
+    ledger = _detail_seed(module)
+    module.observe_payload(ledger, _detail_enriched(), observed_at=DETAIL_LATER)
+    original = deepcopy(ledger)
+    payload = _detail_enriched()
+    fields = {"sha": "headSha", "branch": "headBranch", "workflow": "workflowName", "repository": "url"}
+    if change in fields:
+        payload[fields[change]] = "b" * 40 if change == "sha" else "changed"
+    elif change == "outcome":
+        payload["conclusion"] = "success"
+    elif change == "job-outcome":
+        payload["jobs"][2]["conclusion"] = "success"
+    elif change == "job-name":
+        payload["jobs"][2]["name"] = "changed"
+    elif change == "job-status":
+        payload["jobs"][2]["status"] = "queued"
+    elif change == "job-order":
+        payload["jobs"].reverse()
+    elif change == "job-drop":
+        payload["jobs"].pop()
+    elif change == "job-add":
+        payload["jobs"].append(deepcopy(payload["jobs"][-1]))
+    elif change == "known-step-add":
+        payload["jobs"][2]["steps"].append({"name": "unexpected", "conclusion": "failure"})
+    elif change == "known-step-rename":
+        payload["jobs"][2]["steps"][0]["name"] = "unexpected"
+    else:
+        payload["jobs"][2]["steps"] = []
+
+    with pytest.raises(module.LedgerError):
+        module.observe_payload(ledger, payload, observed_at="later")
+    assert ledger == original
+
+
+@pytest.mark.parametrize("conclusion", ["cancelled", "timed_out", "skipped", "neutral", "success"])
+def test_only_missing_failure_steps_qualify_for_enrichment(conclusion: str) -> None:
+    module = _load()
+    ledger = module.new_ledger()
+    baseline = _detail_payload()
+    baseline["jobs"][2]["conclusion"] = conclusion
+    module.observe_payload(ledger, baseline, observed_at=DETAIL_FIRST)
+    original = deepcopy(ledger)
+    enriched = deepcopy(baseline)
+    enriched["jobs"][2]["steps"] = _detail_enriched()["jobs"][2]["steps"]
+
+    with pytest.raises(module.LedgerError, match="immutable terminal run"):
+        module.observe_payload(ledger, enriched, observed_at=DETAIL_LATER)
+    assert ledger == original
+
+
+def test_enrichment_is_monotonic_bounded_and_distinct_for_each_attempt() -> None:
+    module = _load()
+    ledger = module.new_ledger()
+    baseline = _detail_payload()
+    baseline["jobs"][5]["conclusion"] = "failure"
+    module.observe_payload(ledger, baseline, observed_at=DETAIL_FIRST)
+    original = deepcopy(ledger)
+    first = deepcopy(baseline)
+    first["jobs"][2]["steps"] = _detail_enriched()["jobs"][2]["steps"]
+    assert module.observe_payload(ledger, first, observed_at=DETAIL_LATER) == "enriched"
+    second = deepcopy(first)
+    second["jobs"][5]["steps"] = [{"name": "second job detail", "conclusion": "failure"}]
+    assert module.observe_payload(ledger, second, observed_at="second") == "enriched"
+    assert module.observe_payload(ledger, second, observed_at="again") == "unchanged"
+    assert ledger["runs"] == original["runs"]
+    assert ledger["families"] == original["families"]
+    assert len(ledger["terminal_details"]) == 1
+    retry = _detail_payload()
+    retry["attempt"] = 2
+    assert module.observe_payload(ledger, retry, observed_at="retry") == "recorded"
+    retry_detail = _detail_enriched()
+    retry_detail["attempt"] = 2
+    assert module.observe_payload(ledger, retry_detail, observed_at="retry-detail") == "enriched"
+    assert set(ledger["terminal_details"]) == {str(DETAIL_RUN_ID), f"{DETAIL_RUN_ID}:2"}
+    assert ledger["runs"][str(DETAIL_RUN_ID)] == original["runs"][str(DETAIL_RUN_ID)]
+
+
+@pytest.mark.parametrize("corruption", [
+    "map", "entry", "version", "boolean-version", "extra-field", "missing-field", "unknown-run",
+    "binding", "digest", "jobs-type", "job-type", "outcome", "no-refinement", "original-receipt",
+])
+def test_optional_terminal_detail_schema_rejects_malformed_or_stale_receipt_bindings(corruption: str) -> None:
+    module = _load()
+    ledger = _detail_seed(module)
+    module.observe_payload(ledger, _detail_enriched(), observed_at=DETAIL_LATER)
+    details = ledger["terminal_details"]
+    detail = details[str(DETAIL_RUN_ID)]
+    if corruption == "map":
+        ledger["terminal_details"] = []
+    elif corruption == "entry":
+        details[str(DETAIL_RUN_ID)] = []
+    elif corruption == "version":
+        detail["schema_version"] = 2
+    elif corruption == "boolean-version":
+        detail["schema_version"] = True
+    elif corruption == "extra-field":
+        detail["extra"] = True
+    elif corruption == "missing-field":
+        detail.pop("observed_at")
+    elif corruption == "unknown-run":
+        details["999"] = details.pop(str(DETAIL_RUN_ID))
+    elif corruption == "binding":
+        detail["original_payload_fingerprint"] = "0" * 64
+    elif corruption == "digest":
+        detail["payload_fingerprint"] = "0" * 64
+    elif corruption == "jobs-type":
+        detail["jobs"] = {}
+    elif corruption == "job-type":
+        detail["jobs"][2] = "bad job"
+    elif corruption == "outcome":
+        detail["jobs"][2]["conclusion"] = "success"
+    elif corruption == "no-refinement":
+        detail["jobs"] = deepcopy(ledger["runs"][str(DETAIL_RUN_ID)]["jobs"])
+    else:
+        ledger["runs"][str(DETAIL_RUN_ID)]["branch"] = "rewritten"
+
+    with pytest.raises(module.LedgerError, match="terminal detail"):
+        module.validate_ledger(ledger)
+
+
+def test_optional_details_preserve_legacy_version_one_and_existing_size_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any,
+) -> None:
+    module = _load()
+    ledger = _detail_seed(module)
+    assert "terminal_details" not in ledger
+    path = tmp_path / "ledger.json"
+    module.write_ledger(path, ledger)
+    original = path.read_bytes()
+    enriched = _detail_enriched()
+    enriched["jobs"][2]["steps"][0]["name"] = "x" * module.MAX_LEDGER_BYTES
+    monkeypatch.setattr(module, "fetch_run", lambda _run, _repo: enriched)
+
+    assert module.main(["observe", "--run", str(DETAIL_RUN_ID), "--ledger", str(path)]) == 2
+    assert "2 MiB" in capsys.readouterr().err
+    assert path.read_bytes() == original

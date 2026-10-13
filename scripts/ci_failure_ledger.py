@@ -103,6 +103,7 @@ def validate_ledger(ledger: dict[str, Any]) -> None:
         occurrences = record.get("occurrences")
         if not isinstance(occurrences, list) or not occurrences:
             raise LedgerError(f"family {family_id} has no occurrences")
+    _validate_terminal_details(ledger, runs)
 
 
 def read_ledger(path: Path) -> dict[str, Any]:
@@ -255,6 +256,72 @@ def _digest(value: object) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _receipt_snapshot(receipt: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value for key, value in receipt.items()
+        if key not in {"observed_at", "payload_fingerprint"}
+    }
+
+
+def _is_terminal_detail_enrichment(before: dict[str, Any], after: dict[str, Any]) -> bool:
+    """Permit only missing failed-step names to fill for identical ordered jobs."""
+    if {key: value for key, value in before.items() if key != "jobs"} != {
+        key: value for key, value in after.items() if key != "jobs"
+    }:
+        return False
+    old_jobs, new_jobs = before.get("jobs"), after.get("jobs")
+    if not isinstance(old_jobs, list) or not isinstance(new_jobs, list) or len(old_jobs) != len(new_jobs):
+        return False
+    changed = False
+    for old, new in zip(old_jobs, new_jobs, strict=True):
+        if not isinstance(old, dict) or not isinstance(new, dict):
+            return False
+        if old == new:
+            continue
+        steps = new.get("failed_steps")
+        if (
+            old.get("conclusion") != "failure" or old.get("failed_steps") != ["<job:failure>"]
+            or not isinstance(steps, list) or not steps
+            or not all(
+                isinstance(step, str) and bool(step) and step == step.strip() and not step.startswith("<job:")
+                for step in steps
+            )
+            or {**old, "failed_steps": steps} != new
+        ):
+            return False
+        changed = True
+    return changed
+
+
+def _validate_terminal_details(ledger: dict[str, Any], runs: dict[str, Any]) -> None:
+    """Validate bounded additive detail projections against immutable receipts."""
+    details = _require_mapping(ledger.get("terminal_details", {}), "terminal details")
+    if len(details) > len(runs):
+        raise LedgerError("terminal details exceed the immutable run inventory")
+    fields = {"schema_version", "original_payload_fingerprint", "payload_fingerprint", "observed_at", "jobs"}
+    for run_key, raw in details.items():
+        detail = _require_mapping(raw, f"terminal detail {run_key}")
+        if (
+            run_key not in runs or set(detail) != fields
+            or type(detail.get("schema_version")) is not int or detail["schema_version"] != 1
+        ):
+            raise LedgerError(f"terminal detail {run_key} has invalid schema or run identity")
+        _text(detail["observed_at"], f"terminal detail {run_key} observation time")
+        receipt = cast(dict[str, Any], runs[run_key])
+        original = _receipt_snapshot(receipt)
+        if (
+            detail["original_payload_fingerprint"] != receipt["payload_fingerprint"]
+            or _digest(original) != receipt["payload_fingerprint"]
+        ):
+            raise LedgerError(f"terminal detail {run_key} original receipt fingerprint mismatch")
+        refined = {**original, "jobs": detail["jobs"]}
+        if (
+            not _is_terminal_detail_enrichment(original, refined)
+            or _digest(refined) != detail["payload_fingerprint"]
+        ):
+            raise LedgerError(f"terminal detail {run_key} is not a verified failure-step enrichment")
+
+
 def _family_id(snapshot: dict[str, Any], job: dict[str, Any]) -> str:
     return _digest(
         {
@@ -342,8 +409,25 @@ def observe_payload(
     runs = cast(dict[str, Any], ledger["runs"])
     existing = runs.get(run_key)
     if existing is not None:
-        if existing.get("payload_fingerprint") == fingerprint:
+        detail = ledger.get("terminal_details", {}).get(run_key)
+        accepted_fingerprint = detail["payload_fingerprint"] if detail else existing["payload_fingerprint"]
+        if accepted_fingerprint == fingerprint:
             return "reconciled" if _reconcile_non_success_resolutions(ledger) else "unchanged"
+        original = _receipt_snapshot(existing)
+        accepted = {**original, "jobs": detail["jobs"]} if detail else original
+        if _is_terminal_detail_enrichment(accepted, snapshot):
+            if _digest(original) != existing["payload_fingerprint"]:
+                raise LedgerError(f"terminal detail {run_key} original receipt fingerprint mismatch")
+            ledger.setdefault("terminal_details", {})[run_key] = {
+                "schema_version": 1,
+                "original_payload_fingerprint": existing["payload_fingerprint"],
+                "payload_fingerprint": fingerprint,
+                "observed_at": observed_at,
+                "jobs": snapshot["jobs"],
+            }
+            validate_ledger(ledger)
+            _reconcile_non_success_resolutions(ledger)
+            return "enriched"
         raise LedgerError(f"immutable terminal run {run_key} changed after observation")
     runs[run_key] = {
         **snapshot,

@@ -2,6 +2,8 @@
 
 **Last audited: 2026-10-12 on `development`. Session 98 resumed from `bc9fd78f1483df05f628d9f3c8f2fed62ab30a68` and verified that hosted runs `38189779986` and `38189779992` for remote `43814531ba0e1bb40d14936280ddd506d45381eb` failed with seven owned families. The preceding gate-refresh PASS is historical, not exact-candidate release evidence. S98 records the readiness, portability, coverage-index, frozen-image, warning-graph, and promotion repairs below. S97 implementation is committed but its required final proof remains open. Fresh clean local gate, canonical release-policy attestation, same-SHA hosted results, and the reviewed-head integration receipt remain mandatory before promotion. No v0.1.2 tag or release was published.**
 
+S98.4 observation, 2026-10-13: exact pushed source 768eaf6e759215c4bf7735930b917f69e9ab484c passes Molecule and Pages, while Build and Release fails its 90-second Python 3.12 admission despite all 1566 main cases passing in 86.61 seconds. Deployment acceptance, clean local gate and exact-successor hosted proof remain pending. Three native controls reproduce late terminal step enrichment being rejected; the repaired ledger preserves original receipts and failure history. All 293 consumers pass on Python 3.11 and 3.14; unchanged coverage passes 193 cases at 96.53% lines/93.39% branches (.gate-logs/coverage-20261013T225503Z.json). Live native observation returns failure, no lookup errors and release_ready=false, then stops nonzero automatically. No task checkbox or completed-backlog entry changes.
+
 <!-- v0.1.2-completed-backlog -->
 **v0.1.2 completed backlog scope (unreleased):** the six formally completed
 post-v0.1.1 backlog items, S83.114-S83.117, S83.128, and S83.178, are assigned

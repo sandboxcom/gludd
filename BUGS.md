@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Late step details invalidated an immutable terminal observation
+
+- Run 38477108604 first records 19 terminal jobs and a job-level Python 3.12 failure. A later authenticated observation preserves all identities and outcomes but supplies the actual admission step. The ledger rejects the changed detail fingerprint, producing lookup error and preventing the bounded heartbeat from stopping. All 1566 main tests pass in 86.61 seconds, but the real 90.5-second observed timeout remains a separate open failure.
+- Three canonical history controls fail first. The native locked producer adds bounded, fingerprint-bound terminal details without replacing original run receipts, occurrences, repairs or family status. Known-step, identity and outcome changes remain fatal. The 38 additive controls retain all original assertions; 293 consumers pass on both installed Python versions. The original coverage profile passes 193 cases at 96.53% lines/93.39% branches, zero exclusions and unchanged 85/75 floors (.gate-logs/coverage-20261013T225503Z.json). Ruff, strict typing and docstrings pass.
+- Real native observation enriches the existing receipt and stops automatically with failure, errors=[], and release_ready=false. No manual ledger rewrite, retry, alternate client, hosted cancellation or release closure occurs. Source publication, successor hosted acceptance, full gate and deployment acceptance remain pending. Primary and longstanding forum evidence is documented in docs/features/CI_FAILURE_LEDGER.md.
+
 ### 2026-10-13 — Complete hosted inventory still depended on the failing large-page lookup
 
 - Exact-job diagnostic retrieval was repaired, but the native ledger and pipeline snapshot still requested the run-wide job inventory implicitly through run-view. Repeated HTTP 502 responses from that large-page endpoint prevented complete owned observation; fixing the diagnostic facade alone did not fix this consumer.
