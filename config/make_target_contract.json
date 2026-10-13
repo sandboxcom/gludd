@@ -323,9 +323,10 @@
       "name": "test-files",
       "make_variables": [
         "TESTFILES",
-        "PYTEST_ARGS"
+        "PYTEST_ARGS",
+        "UV_PROJECT_ENVIRONMENT"
       ],
-      "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
+      "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q UV_PROJECT_ENVIRONMENT=.venv"
     },
     {
       "name": "migrate-up",

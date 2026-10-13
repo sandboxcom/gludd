@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -88,3 +89,25 @@ def test_native_scoped_scan_rejects_a_new_finding_without_mutating_baseline(tmp_
     assert result.returncode != 0
     assert "Potential secrets" in result.stdout + result.stderr
     assert baseline.read_bytes() == original
+
+
+def test_nested_test_files_uses_declared_environment_without_uv_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run real nested UV/pytest without inheriting an unrelated active env."""
+    probe = tmp_path / "test_runtime_identity.py"
+    probe.write_text(
+        "import sys\n"
+        "def test_runtime_identity():\n"
+        f"    assert sys.prefix == {sys.prefix!r}\n"
+        f"    assert sys.version_info[:2] == {sys.version_info[:2]!r}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "unrelated-active-environment"))
+    result = _make(
+        "test-files", f"TESTFILES={probe}", "PYTEST_ARGS=-q",
+        "NPROC=1", "GLUDD_XDIST_WORKERS=1", f"UV_PROJECT_ENVIRONMENT={sys.prefix}",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "does not match the project environment" not in result.stdout + result.stderr
+    assert "will be ignored" not in result.stdout + result.stderr

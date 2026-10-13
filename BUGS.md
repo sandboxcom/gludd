@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Nested observed tests inherit an unrelated active-environment hint
+
+- The observed Python 3.11 replay passes but UV warns that the outer active environment disagrees with the explicitly selected project environment. A real nested pytest regression reproduces that warning while checking actual interpreter identity.
+- The existing test-files recipe aligns VIRTUAL_ENV only when UV_PROJECT_ENVIRONMENT is explicitly provided. It does not use active-environment precedence, suppress warnings, synchronize dependencies or change pytest limits. Eight admission cases, seven safe contract-behavior cases and fourteen watched Python 3.11 cases pass without the mismatch warning.
+- This is source acceptance. Exact-SHA CI, the hard disk admission and deployment acceptance remain separate and pending.
+
 ### 2026-10-13 — Secret fixture failure surfaced only after commit and push collection
 
 - The normal batch push correctly refused a public SearXNG default in an assertion. The inherited value is now captured before the actual smoke runs and checked afterward; length, replacement and pinned-schema assertions remain unchanged in meaning. No scanner suppression, baseline change or bypass is used.

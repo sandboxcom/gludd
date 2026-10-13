@@ -561,7 +561,7 @@ help:
 	@echo "  test-opencode-e2e-hour  1-hour E2E spawner test (TIMEOUT=3600)"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-specific-pyver   Single test under explicit Python (TESTFILE, PYTHON_VERSION)"
-	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
+	@echo "  test-files            Multiple tests (TESTFILES, PYTEST_ARGS, UV_PROJECT_ENVIRONMENT); explicit environments route nested UV consistently"
 	@echo "  grep                  Repository text search (Q=regex SEARCH_PATH=path)"
 	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
 	@echo "  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)"

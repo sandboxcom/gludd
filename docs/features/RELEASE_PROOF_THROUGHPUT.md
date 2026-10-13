@@ -34,6 +34,11 @@ for a narrow diagnosis. A generated non-credential fixture must still be refused
 `make git-unstage-files FILES='explicit paths'` is index-only checkpoint support;
 it cannot restore or discard worktree content.
 
+Explicit `UV_PROJECT_ENVIRONMENT` selection in `test-files` also aligns the
+inherited active-environment hint before invoking UV. A real nested pytest
+regression checks interpreter identity and rejects UV mismatch warnings; no
+active-environment override, warning suppression or environment sync is used.
+
 ### Item-scoped execution controls
 
 `make work-item` owns administrative primary/support selection. One primary
