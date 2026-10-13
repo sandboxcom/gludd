@@ -33,11 +33,15 @@ import re
 
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_collection_lock import _native_collection_recipe
+
 MAKEFILE = pathlib.Path(__file__).parents[2] / "Makefile"
 
 
 def _recipe_lines(target: str) -> str:
     """Extract the recipe text for a given Makefile target."""
+    if target in {"test-count", "collect-check"}:
+        return _native_collection_recipe(target)
     text = compose_makefile(MAKEFILE)
     # Find the target header, then collect lines until the next non-indented line
     in_target = False

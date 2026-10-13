@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -73,26 +74,44 @@ def test_stale_owner_record_is_replaced_without_unlinking_lock_inode(
     assert lock_path.stat().st_ino == inode
 
 
+def _native_collection_recipe(target: str, *, preserve_variables: bool = False) -> str:
+    policy = {
+        "OBSERVED_ROOT": ".gate-logs/observed",
+        "OBSERVED_HEARTBEAT_SECS": "30",
+        "OBSERVED_QUIET_SECS": "900",
+        "OBSERVED_MAX_SECS": "3600",
+        "OBSERVED_RETAIN_RUNS": "20",
+        "OBSERVED_TAIL_LINES": "80",
+    }
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "-n", target,
+            *(f"{name}=$$({name})" if preserve_variables else f"{name}={value}"
+              for name, value in policy.items()),
+        ],
+        cwd=ROOT, check=False, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return result.stdout
+
+
 def test_collect_check_uses_project_collection_lock() -> None:
-    makefile = compose_makefile(ROOT / "Makefile")
-    target = makefile.split("collect-check:", 1)[1].split("\n\n", 1)[0]
+    target = _native_collection_recipe("collect-check")
     assert "scripts/collection_lock.py --run" in target
 
 
 def test_test_count_uses_repository_collection_lock() -> None:
-    makefile = compose_makefile(ROOT / "Makefile")
-    target = makefile.split("test-count:", 1)[1].split("\n\n", 1)[0]
+    target = _native_collection_recipe("test-count")
 
     assert "scripts/collection_lock.py --run" in target
 
 
 def test_collect_check_confines_ansible_temp_to_owned_observed_root() -> None:
-    makefile = compose_makefile(ROOT / "Makefile")
-    target = makefile.split("collect-check:", 1)[1].split("\n\n", 1)[0]
+    target = _native_collection_recipe("collect-check")
 
-    assert 'ANSIBLE_TMP="$(OBSERVED_ROOT)/ansible-local-' in target
-    assert 'ANSIBLE_LOCAL_TEMP="$$ANSIBLE_TMP"' in target
-    assert "trap 'rm -rf -- \"$$ANSIBLE_TMP\"'" in target
+    assert 'ANSIBLE_TMP=".gate-logs/observed/ansible-local-' in target
+    assert 'ANSIBLE_LOCAL_TEMP="$ANSIBLE_TMP"' in target
+    assert "trap 'rm -rf -- \"$ANSIBLE_TMP\"'" in target
 
 
 def test_gate_refresh_uses_singleton_project_resource_lock() -> None:

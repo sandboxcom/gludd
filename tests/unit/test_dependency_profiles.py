@@ -188,9 +188,18 @@ def test_make_commands_never_implicitly_resync_a_composed_profile_environment() 
     assert 'uv version --short --offline --project "$(CURDIR)"' in version_line
     assert "$(UV) run" not in version_line
     assert "from general_ludd" not in version_line
-    test_count = makefile.split("\ntest-count:\n", 1)[1].split("\ntest-nodeids:\n", 1)[0]
-    assert "$(UV) run --no-sync python scripts/stream_command.py" in test_count
-    assert "$(UV) run --no-sync python -m pytest" in test_count
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "-n", "test-count", "UV=uv",
+            "OBSERVED_ROOT=.gate-logs/observed", "OBSERVED_HEARTBEAT_SECS=30",
+            "OBSERVED_QUIET_SECS=900", "OBSERVED_MAX_SECS=3600",
+            "OBSERVED_RETAIN_RUNS=20", "OBSERVED_TAIL_LINES=80",
+        ],
+        cwd=ROOT, check=False, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "uv run --no-sync python scripts/stream_command.py" in result.stdout
+    assert "uv run --no-sync python -m pytest" in result.stdout
 
 
 def test_profile_projects_are_independent_and_locks_are_bounded() -> None:

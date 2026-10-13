@@ -137,3 +137,75 @@ These control-plane changes do not restart serving services or change data,
 controller images or promotion authority. Rollback is the isolated config,
 guard/tests/documentation commit. Full gate, exact-SHA hosted and deployment
 acceptance, with unchanged 85/75 coverage requirements, remain pending.
+
+## One native collection before a source commit
+
+The commit workflow now owns the fresh count and collection admission together.
+`ship-commit` calls `test-count` after recording the staged tree and before
+revalidating that tree. `ship-commit-files` retains its explicit staging scope,
+commit lock, and delegation to `ship-commit`. The caller can use that one
+sanctioned workflow without first running another manual `test-count`.
+
+Both public entry points use one private Make recipe, `_collection-admission`.
+It retains the complete native `pytest tests/ --co -q` inventory, repository
+collection lease, xdist trace plugin, observer heartbeat/quiet/duration/retention
+policy, and per-invocation Ansible temporary directory beneath OBSERVED_ROOT.
+`test-count` retains its `--no-sync` boundaries and three-line success summary;
+`collect-check` retains its own observation label and `Collection OK` marker.
+Both refuse every nonzero collection result and emit the configured bounded
+failure tail. A failed diagnostic tail cannot replace the original collection
+exit status; a failed success-summary tail still refuses the commit. Temporary
+Ansible state is removed on every ordinary exit, interrupt, or termination.
+
+Every content, secret, clone, lint, docstring, scope, and index-change guard
+remains in place. No previous observation or receipt is read as admission, and
+there is no caller-provided success boolean, narrower selection, cache, second
+scanner, or additional daemon. Each commit invocation starts its own fresh
+collection. Full gate, exact-SHA hosted CI, coverage floors, and promotion
+requirements remain authoritative and unchanged.
+
+Upstream practitioner evidence supports eliminating repeated collection while
+preserving its boundary. In the 2021 pytest user discussion
+[Speeding up collection phase](https://github.com/pytest-dev/pytest/discussions/9260),
+the reporter measured expensive startup even for a single test file; a
+maintainer recommended collection profiling. In the 2019 report
+[Tests collection is slow on high number of tests](https://github.com/pytest-dev/pytest/issues/5516),
+the reporter described substantial collection cost at scale. These reports
+support avoiding duplicate work, but do not measure Gludd or justify skipping
+required collection. The 2019 concurrency report
+[pytest temporary-directory lock race](https://github.com/pytest-dev/pytest/issues/5456)
+also reinforces retaining isolation and the existing canonical lease.
+
+The regression invokes native Make source recipes with harmless Git and UV
+capture boundaries. It checks one fresh full-inventory collection, observation
+policy, cleanup, failure refusal, content/secret/clone prerequisites, exact
+staged scope, before/after staged-tree ordering, and detection of four owner or
+guard mutations. These focused regressions establish command routing and
+atomicity at the recipe boundary; they do not execute the real full test
+inventory, prove coverage, replace canonical acceptance, or establish hosted
+throughput improvement. The observed earlier ~56-second, 123537-case collection
+is context supplied by the integrator, not a new measurement from this patch.
+
+This change is zero-downtime: it changes command ownership only and adds no
+service, listener, migration, or process pool. Existing service operation and
+in-flight collectors remain untouched. Rollback reverts the two Make fragments,
+matching contract/tests, and this feature documentation together; it restores
+the prior two-command operator workflow without a state migration.
+
+Root's canonical RED reproduces eight failures with 21 passing controls.
+Mechanical dependent-consumer selection finds three additional source-only
+contract failures. Their assertions now inspect native Make expansion through
+the existing collection test helper, retaining the original observer-variable,
+exit-code, collection-only and no-global-gate-lock checks. Harmless type
+annotations preserve all existing lock-plugin assertions and capture fields.
+All 192 focused and dependent cases pass warning-fatal on Python 3.14 and
+3.11. Strict typing, Ruff, all 227 target contracts, native Make parity/help,
+task integrity and the unchanged 253-resource inventory pass. Actual full
+collection and successor hosted acceptance remain separately required.
+
+The exact documented test-count example then executes the real complete
+inventory: 123565/123566 cases collected (one existing deselection), zero
+collection errors, original canonical lease released, and Collection OK in
+56.7 observed seconds. This is a fresh native example, not the capture fixture's
+printed count; the commit workflow must independently collect once before
+committing its exact index.

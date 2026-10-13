@@ -192,14 +192,31 @@ task:
 	$(UV) run python3 scripts/task_runner.py /tmp/gludd-task-cmd.txt $(GLUDD_TASK_TIMEOUT)
 	@EXIT=$$?; if [ $$EXIT -eq 124 ]; then echo "TASK TIMEOUT: $(CMD) exceeded $(GLUDD_TASK_TIMEOUT)s"; fi; exit $$EXIT
 
+# One fresh collection owner. Arguments: label, UV flags, observed root,
+# heartbeat, quiet limit, maximum duration, retention, and failure-tail lines.
+# Both public calls forward their documented policy; inventory and lease cannot
+# be narrowed. No receipt or previous run can admit a commit.
+define _collection-admission
+	@ANSIBLE_TMP="$(3)/ansible-local-$${PPID}-$$$$"; \
+	mkdir -p "$$ANSIBLE_TMP" || exit $$?; \
+	trap 'rm -rf -- "$$ANSIBLE_TMP"' EXIT INT TERM; \
+	ANSIBLE_LOCAL_TEMP="$$ANSIBLE_TMP" $(UV) run $(2) python scripts/stream_command.py --root "$(3)" --label $(1) \
+		--heartbeat-secs "$(4)" --quiet-secs "$(5)" \
+		--max-secs "$(6)" --retain-runs "$(7)" --quiet --pytest-trace -- \
+		$(UV) run $(2) python scripts/collection_lock.py --run $(UV) run $(2) python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
+	if [ "$$RC" -ne 0 ]; then \
+		echo "COLLECTION ERRORS DETECTED (rc=$$RC; bounded tail follows)"; \
+		$(UV) run $(2) python scripts/stream_command.py --tail "$(8)" --root "$(3)" --label $(1) || true; \
+		exit "$$RC"; \
+	fi; \
+	if [ "$(1)" = "test-count" ]; then \
+		$(UV) run $(2) python scripts/stream_command.py --tail 3 --root "$(3)" --label $(1) || exit $$?; \
+	fi; \
+	echo "Collection OK"
+endef
+
 test-count:
-	@$(UV) run --no-sync python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label test-count \
-		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
-		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --quiet --pytest-trace -- \
-		$(UV) run --no-sync python scripts/collection_lock.py --run \
-		$(UV) run --no-sync python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
-		$(UV) run --no-sync python scripts/stream_command.py --tail 3 --root "$(OBSERVED_ROOT)" --label test-count || TAIL_RC=$$?; \
-		if [ "$$RC" -ne 0 ]; then exit "$$RC"; fi; exit "$${TAIL_RC:-0}"
+	$(call _collection-admission,test-count,--no-sync,$(OBSERVED_ROOT),$(OBSERVED_HEARTBEAT_SECS),$(OBSERVED_QUIET_SECS),$(OBSERVED_MAX_SECS),$(OBSERVED_RETAIN_RUNS),$(OBSERVED_TAIL_LINES))
 test-nodeids:
 	@$(UV) run python scripts/collect_nodeids.py --start $(or $(START),1) --limit $(or $(LIMIT),120) $(or $(TESTPATH),tests/)
 
@@ -223,19 +240,7 @@ check-makefile-structure:
 	@$(UV) run python -m pytest tests/unit/test_makefile_syntax.py -q -n 0
 
 collect-check:
-	@ANSIBLE_TMP="$(OBSERVED_ROOT)/ansible-local-$${PPID}-$$$$"; \
-	mkdir -p "$$ANSIBLE_TMP"; \
-	trap 'rm -rf -- "$$ANSIBLE_TMP"' EXIT INT TERM; \
-	ANSIBLE_LOCAL_TEMP="$$ANSIBLE_TMP" $(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label collect-check \
-		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
-		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --quiet --pytest-trace -- \
-		$(UV) run python scripts/collection_lock.py --run $(UV) run python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
-	if [ "$$RC" -ne 0 ]; then \
-		echo "COLLECTION ERRORS DETECTED (rc=$$RC; bounded tail follows)"; \
-		$(UV) run python scripts/stream_command.py --tail "$(OBSERVED_TAIL_LINES)" --root "$(OBSERVED_ROOT)" --label collect-check || true; \
-		exit "$$RC"; \
-	fi; \
-	echo "Collection OK"
+	$(call _collection-admission,collect-check,,$(OBSERVED_ROOT),$(OBSERVED_HEARTBEAT_SECS),$(OBSERVED_QUIET_SECS),$(OBSERVED_MAX_SECS),$(OBSERVED_RETAIN_RUNS),$(OBSERVED_TAIL_LINES))
 
 collect-check-e2e-live:
 	@$(UV) run python -m pytest tests/e2e/ tests/live/ --collect-only -q 2>&1 | tail -5

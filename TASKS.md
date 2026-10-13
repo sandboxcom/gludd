@@ -67,6 +67,31 @@ node. Target contracts (227), failure families (58), native Make parity/help,
 Ruff, strict typing and task integrity pass. Exact successor hosted admission,
 canonical full gate, installed EE and deployment acceptance remain pending.
 
+S98.4 single native commit-collection enhancement scope:
+`make/10-observability-and-tests.mk`, `make/40-cross-version-and-worktrees.mk`,
+`config/make_target_contract.json`, `tests/unit/test_single_native_commit_collection.py`,
+`tests/unit/test_collection_lock.py`, `tests/unit/test_dependency_profiles.py`,
+`tests/unit/test_commit_lock_plugin.py`, `tests/unit/test_gate_lock_decoupling.py`,
+`tests/unit/test_observability_guardrails.py`, and
+`docs/features/PRE_COMMIT_QUALITY_GUARDS.md`. Canonical RED has eight failures
+and 21 passing controls. One shared native recipe preserves full collection,
+owned Ansible temp state, lease, observer policy and failure diagnostics;
+ship-commit invokes fresh test-count inside unchanged index guards. Three
+dependent source-only contract failures conform to actual native Make expansion
+without dropping original safety assertions. Release acceptance stays pending.
+
+The final single-collection source suite passes all 192 affected cases on both
+installed Python versions, with fatal warnings. Strict typing and Ruff pass
+after behavior-preserving capture/legacy test annotations. All 227 target
+contracts, native Make parity/help, task integrity and the unchanged 253-resource
+ownership inventory pass. Actual fresh collection and successor hosted proof
+remain required; no backlog closure or full-gate proof is inferred.
+
+The documented single-owner test-count example actually passes the complete
+123565/123566-case inventory (one existing deselection) with zero collection
+errors in 56.7 observed seconds and releases the canonical lease. No captured
+fixture count or earlier receipt supplies commit/full-gate/release authority.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

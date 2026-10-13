@@ -370,7 +370,7 @@ ship-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _
 		fi; \
 		STAGED_TREE=$$(git write-tree); \
 		echo "Running pre-commit collection check..."; \
-		$(MAKE) --no-print-directory collect-check || exit $$?; \
+		$(MAKE) --no-print-directory test-count || exit $$?; \
 		CURRENT_TREE=$$(git write-tree); \
 		if [ "$$CURRENT_TREE" != "$$STAGED_TREE" ]; then \
 			echo "BLOCKED: staged index changed during preflight; refusing mixed commit." >&2; \

@@ -18,6 +18,8 @@ from pathlib import Path
 
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_collection_lock import _native_collection_recipe
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 RUN_GATE_SH = ROOT / "scripts" / "run_gate.sh"
@@ -26,6 +28,8 @@ SERIAL_SHARD_RUNNER = ROOT / "scripts" / "run_ci_shards_serial.py"
 
 def _recipe(target: str) -> str:
     """Return the indented recipe body for a single Makefile target."""
+    if target in {"test-count", "collect-check"}:
+        return _native_collection_recipe(target, preserve_variables=True)
     lines = compose_makefile(MAKEFILE).splitlines()
     body: list[str] = []
     in_target = False
@@ -283,7 +287,7 @@ class TestNoSilentStalls:
         assert "--quiet" in collect
         assert "scripts/collection_lock.py --run" in collect
         assert "/tmp/gludd-collect-output.txt" not in collect
-        assert 'exit "$$RC"' in collect
+        assert 'exit "$RC"' in collect
         assert "--quiet-secs \"$(STALL_SECS)\"" in watched
         assert "--max-secs \"$(MAX_SECS)\"" in watched
         assert '$(if $(RUN_ID),--run-id "$(RUN_ID)",)' in watched

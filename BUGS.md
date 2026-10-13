@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Commit admission duplicated the same full collection
+
+- Root ran test-count before each commit, then ship-commit collected the same 123537-case inventory again through collect-check. Each real observed collection cost about 56 seconds. A bare target substitution would lose collect-check's isolated Ansible state and bounded failure diagnostics, so those controls must remain.
+- Canonical failing-first native Make capture has eight failures and 21 passing controls. One shared private recipe preserves the full inventory, canonical collection lease, per-invocation temp cleanup, observer policy, labels and original exit code. ship-commit owns fresh test-count between its unchanged staged-tree snapshot and recheck; no caller boolean, stale receipt, narrowed cohort or cache can admit a commit.
+- Native mutation/failure controls retain every content/secret/clone/lock/index guard. Mechanical dependent-consumer selection exposes three stale source-only recipe assertions; they now use the actual native Make expansion while retaining collection-only, no-global-gate-lock, heartbeat, retention and exit assertions. Runtime state and deployment authority are unchanged; full gate and exact successor hosted proof stay pending.
+- All 192 affected cases pass on Python 3.14 and 3.11 with fatal warnings. Behavior-preserving type annotations retain legacy plugin assertions and captured fields; strict typing and Ruff pass. The 227-target contract, native Make parity/help, task integrity and unchanged 253-resource ownership pass. Real full collection and successor hosted acceptance remain distinct required receipts.
+
 ### 2026-10-13 — Fresh singleton admission paid for a redundant pytest worker
 
 - After the complete two-worker cohort, the help-only test-files invocation already owns a fresh interpreter and temp directory. Starting an additional xdist worker repeats startup/collection for one case; native isolated comparison passes in 0.79s serial versus 1.75s with one worker.

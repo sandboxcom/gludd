@@ -69,42 +69,42 @@ def _matches_commit_command(cmd: str, targets: list[str]) -> bool:
 
 
 class TestPluginStructure:
-    def test_plugin_file_exists(self):
+    def test_plugin_file_exists(self) -> None:
         assert PLUGIN_PATH.exists(), f"Plugin missing at {PLUGIN_PATH}"
 
-    def test_plugin_registered_in_opencode_json(self):
+    def test_plugin_registered_in_opencode_json(self) -> None:
         oc = (ROOT / "opencode.json").read_text()
         assert "enforce-commit-lock.ts" in oc, "Plugin not registered in opencode.json"
 
-    def test_exports_commit_targets(self):
+    def test_exports_commit_targets(self) -> None:
         src = _helper_source()
         assert "export const COMMIT_TARGETS" in src, "COMMIT_TARGETS export missing"
 
-    def test_exports_stale_threshold(self):
+    def test_exports_stale_threshold(self) -> None:
         src = _plugin_source()
         assert "STALE_THRESHOLD_MS" in src, "STALE_THRESHOLD_MS export missing"
 
-    def test_tool_execute_before_hook(self):
+    def test_tool_execute_before_hook(self) -> None:
         src = _plugin_source()
         assert "tool.execute.before" in src, "tool.execute.before hook missing"
 
-    def test_tool_execute_after_hook(self):
+    def test_tool_execute_after_hook(self) -> None:
         src = _plugin_source()
         assert "tool.execute.after" in src, "tool.execute.after hook missing"
 
-    def test_fail_open_present(self):
+    def test_fail_open_present(self) -> None:
         src = _plugin_source()
         assert "catch" in src.lower(), "No try/catch fail-open block found"
 
-    def test_env_var_disable(self):
+    def test_env_var_disable(self) -> None:
         src = _plugin_source()
         assert "GLUDD_COMMIT_LOCK_ENFORCE" in src, "Env-var disable switch missing"
 
-    def test_env_var_path_override(self):
+    def test_env_var_path_override(self) -> None:
         src = _plugin_source()
         assert "GLUDD_COMMIT_LOCK_PATH" in src, "Env-var path override missing"
 
-    def test_o_excl_create(self):
+    def test_o_excl_create(self) -> None:
         src = _plugin_source()
         assert '"wx"' in src or "O_EXCL" in src, (
             "Must use O_EXCL exclusive create (fs.openSync 'wx')"
@@ -112,12 +112,12 @@ class TestPluginStructure:
 
 
 class TestCommitTargetsList:
-    def test_all_expected_targets_present(self):
+    def test_all_expected_targets_present(self) -> None:
         targets = _extract_commit_targets(_helper_source())
         for expected in EXPECTED_COMMIT_TARGETS:
             assert expected in targets, f"Missing commit target: {expected}"
 
-    def test_target_count_matches(self):
+    def test_target_count_matches(self) -> None:
         targets = _extract_commit_targets(_helper_source())
         assert len(targets) == len(EXPECTED_COMMIT_TARGETS), (
             f"Expected {len(EXPECTED_COMMIT_TARGETS)} targets, got {len(targets)}: {targets}"
@@ -146,7 +146,7 @@ class TestDenyOnHeld:
             "make git-amend-msg MSG='msg'",
         ],
     )
-    def test_commit_command_detected(self, targets, cmd):
+    def test_commit_command_detected(self, targets: list[str], cmd: str) -> None:
         assert _matches_commit_command(cmd, targets), f"Should detect: {cmd!r}"
 
     @pytest.mark.parametrize(
@@ -161,10 +161,10 @@ class TestDenyOnHeld:
             "make ship-async REF=abc123",
         ],
     )
-    def test_non_commit_command_not_detected(self, targets, cmd):
+    def test_non_commit_command_not_detected(self, targets: list[str], cmd: str) -> None:
         assert not _matches_commit_command(cmd, targets), f"Should NOT detect: {cmd!r}"
 
-    def test_ship_commit_files_not_matched(self, targets):
+    def test_ship_commit_files_not_matched(self, targets: list[str]) -> None:
         """ship-commit-files is the atomic wrapper — it should NOT be in the
         lock list (it acquires the lock itself via _commit-lock-acquire prereq)."""
         assert "ship-commit-files" not in targets
@@ -176,7 +176,7 @@ class TestDenyOnHeld:
 class TestAllowOnFree:
     """When no lock file exists, the commit should be allowed (lock acquired)."""
 
-    def test_try_acquire_logic(self, tmp_path):
+    def test_try_acquire_logic(self, tmp_path: Path) -> None:
         """Simulate the O_EXCL create + release cycle with a temp lock file."""
         lock = tmp_path / "test-commit.lock"
 
@@ -200,18 +200,18 @@ class TestAllowOnFree:
 
 
 class TestStaleBreak:
-    def test_stale_threshold_is_2_minutes(self):
+    def test_stale_threshold_is_2_minutes(self) -> None:
         threshold = _extract_stale_threshold_ms(_plugin_source())
         assert threshold == 120000, f"Expected 120000ms (2 min), got {threshold}"
 
-    def test_stale_break_logic_present(self):
+    def test_stale_break_logic_present(self) -> None:
         src = _plugin_source()
         assert "STALE_THRESHOLD_MS" in src
         assert "releaseLock" in src or "unlinkSync" in src, (
             "Must have stale-break logic (releaseLock/unlinkSync)"
         )
 
-    def test_stale_break_flow(self, tmp_path):
+    def test_stale_break_flow(self, tmp_path: Path) -> None:
         """Simulate the stale-break: old lock file → break → acquire."""
         import os
         import time
@@ -237,7 +237,7 @@ class TestStaleBreak:
 
 
 class TestMakefileLockTarget:
-    def test_commit_lock_acquire_target_exists(self):
+    def test_commit_lock_acquire_target_exists(self) -> None:
         assert MAKEFILE_PATH.exists()
         makefile = compose_makefile(MAKEFILE_PATH)
         assert "_commit-lock-acquire" in makefile, (
@@ -245,27 +245,27 @@ class TestMakefileLockTarget:
         )
 
     @pytest.mark.parametrize("target", EXPECTED_COMMIT_TARGETS)
-    def test_commit_target_has_lock_prereq(self, target):
+    def test_commit_target_has_lock_prereq(self, target: str) -> None:
         makefile = compose_makefile(MAKEFILE_PATH)
         pattern = rf"^{target}:\s+.*_commit-lock-acquire"
         assert re.search(pattern, makefile, re.MULTILINE), (
             f"Target '{target}' missing _commit-lock-acquire prerequisite"
         )
 
-    def test_ship_commit_files_target_exists(self):
+    def test_ship_commit_files_target_exists(self) -> None:
         makefile = compose_makefile(MAKEFILE_PATH)
         assert "ship-commit-files" in makefile, (
             "ship-commit-files target missing from Makefile"
         )
 
-    def test_ship_commit_files_has_lock_prereq(self):
+    def test_ship_commit_files_has_lock_prereq(self) -> None:
         makefile = compose_makefile(MAKEFILE_PATH)
         pattern = r"^ship-commit-files:\s+_commit-lock-acquire"
         assert re.search(pattern, makefile, re.MULTILINE), (
             "ship-commit-files missing _commit-lock-acquire prereq"
         )
 
-    def test_ship_commit_files_enforces_exact_staged_scope(self):
+    def test_ship_commit_files_enforces_exact_staged_scope(self) -> None:
         makefile = compose_makefile(MAKEFILE_PATH)
         wrapper = re.search(
             r"^ship-commit-files:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
@@ -286,7 +286,7 @@ class TestMakefileLockTarget:
         assert scope_check < snapshot
         assert "staged files differ from requested commit scope" in recipe
 
-    def test_commit_lock_acquire_uses_flock_or_fcntl(self):
+    def test_commit_lock_acquire_uses_flock_or_fcntl(self) -> None:
         makefile = compose_makefile(MAKEFILE_PATH)
         target_block = re.search(
             r"_commit-lock-acquire:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
@@ -303,7 +303,7 @@ class TestMakefileLockTarget:
             "_commit-lock-acquire must use flock or fcntl fallback"
         )
 
-    def test_ship_commit_rejects_index_drift_after_collection(self):
+    def test_ship_commit_rejects_index_drift_after_collection(self) -> None:
         """A concurrent stage during collection must never enter the commit."""
         makefile = compose_makefile(MAKEFILE_PATH)
         target = re.search(
@@ -314,7 +314,7 @@ class TestMakefileLockTarget:
         assert target, "ship-commit recipe block not found"
         recipe = target.group(1)
         snapshot = recipe.find("STAGED_TREE=$$(git write-tree)")
-        collection = recipe.find("collect-check")
+        collection = recipe.find("test-count")
         verification = recipe.find("CURRENT_TREE=$$(git write-tree)")
         commit = recipe.find("git commit")
         assert -1 not in (snapshot, collection, verification, commit), (
