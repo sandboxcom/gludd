@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+import yaml
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +24,34 @@ def _load_shard_registry() -> ModuleType:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _assert_other_shard_once(workflow: str) -> None:
+    shards = yaml.safe_load(workflow)["jobs"]["test-shard"]["strategy"]["matrix"]["shard"]
+    assert shards.count("other") == 1
+
+
+@pytest.mark.parametrize(
+    "shards", [["other", "unit-2"], ["unit-2", "other"]]
+)
+def test_private_policy_hosted_membership_is_independent_of_creation_order(
+    shards: list[str],
+) -> None:
+    workflow = yaml.safe_dump(
+        {"jobs": {"test-shard": {"strategy": {"matrix": {"shard": shards}}}}}
+    )
+    _assert_other_shard_once(workflow)
+
+
+@pytest.mark.parametrize("shards", [["unit-2"], ["other", "unit-2", "other"]])
+def test_private_policy_hosted_membership_rejects_missing_and_duplicate_other(
+    shards: list[str],
+) -> None:
+    workflow = yaml.safe_dump(
+        {"jobs": {"test-shard": {"strategy": {"matrix": {"shard": shards}}}}}
+    )
+    with pytest.raises(AssertionError):
+        _assert_other_shard_once(workflow)
 
 
 def test_private_policy_e2e_has_one_local_and_hosted_release_contract() -> None:
@@ -59,7 +89,7 @@ def test_private_policy_e2e_has_one_local_and_hosted_release_contract() -> None:
     hosted_recipe = workflow.split(
         "- name: Test (shard ${{ matrix.shard }}", 1
     )[1].split("- name: Collect failure diagnostics", 1)[0]
-    assert "other]" in workflow
+    _assert_other_shard_once(workflow)
     assert "scripts/run_ci_shards_serial.py" in hosted_recipe
     assert '--shards "${{ matrix.shard }}"' in hosted_recipe
     assert '--pytest-args="-W error"' in hosted_recipe

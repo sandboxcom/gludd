@@ -215,6 +215,18 @@ cases reject duplicates, omissions and unknown labels. One pre-existing callback
 typing error is repaired with an equivalent explicit function, retaining all
 original event and early-stop assertions.
 
+Build `38325261900` exposes a second representation-dependent assertion in the
+private-policy release contract: `other]` requires the privacy lane to be last.
+The instruction-conforming repair uses PyYAML to require exactly one `other`
+matrix member, preserving every original local/hosted privacy, warning and
+isolation assertion. Four new regressions accept either creation order and
+reject missing or duplicate privacy ownership; all 182 workflow, registry and
+privacy cases pass. The complete five-case file now executes in the existing
+early owner, not only late in `unit-3b`. Mapping/roster acceptance fails first,
+then all 45 promotion/plan cases pass with 44 families and unchanged budgets.
+The existing scheduling references above remain the authority for the
+creation-order versus runner-start distinction; this repair claims no speedup.
+
 Actual acceptance: the timing mode first fails 17 new cases with 10 legacy cases
 passing; native unfinished timestamps add another failing-first case. Three
 source-interval/job-identity regressions then expose invalid intervals reported

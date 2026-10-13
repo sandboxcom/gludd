@@ -460,6 +460,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_current_capacity_selects_safe_next_action",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "private-policy-hosted-matrix-membership",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_self_improve_private_policy_ci_contract.py::test_private_policy_e2e_has_one_local_and_hosted_release_contract",
+      "full_gate_phase": "test"
     }
   ]
 }

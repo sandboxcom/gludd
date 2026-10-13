@@ -853,6 +853,32 @@ def test_cli_rejects_missing_invalid_and_oversized_manifests(
         checker._load_manifest(oversized)
 
 
+def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(
+        family for family in payload["families"]
+        if family["id"] == "private-policy-hosted-matrix-membership"
+    )
+    node = (
+        "tests/unit/test_self_improve_private_policy_ci_contract.py::"
+        "test_private_policy_e2e_has_one_local_and_hosted_release_contract"
+    )
+    assert family == {
+        "id": "private-policy-hosted-matrix-membership",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in owner
+    assert node.split("::", 1)[0] in executable
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    phase = next(phase for phase in payload["runtime_contract"]["phases"]
+                 if phase["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
@@ -901,6 +927,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "stale-resource-packaged-artifact-identity",
         "native-artifact-literal-argument-transport",
         "producer-current-capacity-proof-admission",
+        "private-policy-hosted-matrix-membership",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1064,6 +1091,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ci_run_summary_script.py '
         'tests/unit/test_ci_run_summary_target.py '
         'tests/unit/test_ci_workflow_integrity.py '
+        'tests/unit/test_self_improve_private_policy_ci_contract.py '
         'tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::'
         'test_internal_targets_not_in_help"'
         in runtime_compatibility_owner

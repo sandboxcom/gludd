@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — private-policy CI contract accidentally pinned shard creation order
+
+- **Observed**: Build `38325261900`, job `115065438148`, fails the original private-policy contract because the string assertion requires `other` to be last. Native replay reproduces that failure after the requested long-lane-first scheduling change; matrix membership and privacy routing are unchanged.
+- **Instruction-conforming repair**: Parse the existing YAML matrix and require exactly one `other` member. Preserve every local/hosted privacy, warning and isolation assertion. Four new cases accept either creation order while rejecting missing and duplicate ownership; all 182 workflow/registry/privacy cases pass with warnings fatal.
+- **Codified prevention**: Mapping and exact-roster tests fail first, then the complete five-case contract is bound to the existing early warning-fatal, one-worker owner. All 45 promotion/plan cases pass, with 44 families and unchanged 90/60 bounds, 21 phases and 2850-second ceiling. Hosted successor and canonical full gate remain required; no completed backlog proof is inferred.
+
 ### 2026-10-12 — current handoff recommended proof replay without current capacity
 
 - **Observed**: The generated handoff records a historical failed gate but selects full proof from hosted success without observing present volume pressure. Repeated continuation prompts therefore cannot distinguish a current hard-capacity prerequisite from stale history.
