@@ -333,3 +333,153 @@ Root's final canonical replay passes all 27 binary/radio controls in each
 installed environment with warnings fatal. Final staged clone admission reports
 zero new clones before the source commit. These results supersede the earlier
 six-clone candidate refusal above without providing release acceptance.
+
+### S98.4 native Galaxy artifact closure
+
+The implementation extends `scripts/ansible_runtime_artifacts.py`, retaining its
+existing staged MANIFEST and Galaxy dependency-version validation. It introduces
+one owner for three operations: a bounded native Galaxy refresh of explicitly
+pinned roots, exact acquisition of an already reviewed artifact closure, and
+private offline staging of supplied digest-verified local tarballs. No operation
+installs Python packages, creates an environment/image, or starts a daemon.
+
+The reviewed lock is schema 1 with `collections` entries containing exactly
+`name`, `version`, `artifact`, `origin`, `sha256`, and `size`. Identities/versions
+use Ansible's native collection name and semantic version rules; artifacts are
+unique local tarball basenames; origin is an explicit credential-free HTTPS
+Galaxy URL ending in `/`; SHA256 and positive byte size are mandatory. The
+offline/acquire caller supplies the independently recorded lock SHA256 and all
+required exact root versions. Every tarball is copied into private owned state
+before verification. Galaxy's native `ConcreteArtifactsManager` reads authentic
+MANIFEST identity/dependencies; the existing native dependency-version owner
+rejects missing or incompatible transitive dependencies. Unsupported or missing
+`requires_ansible` metadata fails closed. Core 2.19 uses maintained tarfile/YAML/
+packaging solely for runtime metadata because its native manager predates the
+newer runtime accessor; MANIFEST resolution remains native in both lanes.
+
+Native commands run under the existing `stream_command` observer, with one child
+and a validated 1–120 second deadline. They use private configuration, home,
+temporary paths and response-cache state, and disable sys.path collection
+discovery. Inherited collection paths/configuration are refused; only the
+explicit repository source collection path may be inherited. The offline command
+uses `collection install --offline --no-cache` and only verified local `file`
+requirements; it never requests a Galaxy/URL/Git source. Native emitted warnings
+and errors fail through the existing diagnostic owner, now also recognizing
+Galaxy's `[DEPRECATION WARNING]:` and `ERROR!` formats. No warning is hidden.
+
+Refresh receives exact supplied direct pins and lets native Galaxy resolve the
+transitive closure. It publishes a candidate artifact generation containing a
+new complete lock; it requires that candidate lock to live inside that new
+generation. Acquire requests every reviewed exact closure entry, disables
+additional dependency downloads only because the closure is explicit, then
+verifies every downloaded digest/size and the actual MANIFEST dependency graph.
+Publication builds a complete sibling generation and uses native atomic exclusive
+rename into an unused output; existing generations are refused. Reviewed locks are not rewritten.
+The offline context manager retains its stage only while its consumer runs and
+cleans it on success, native error, timeout, or consumer exception. The process
+context remains unchanged; native child-only execution is detailed below.
+
+The standalone target is preparation/metadata proof only. It is not Molecule
+deployment, Windows parameter execution, full-gate, or release evidence. A
+resolved Windows `.ps1` remains unsupported for native argument execution on
+POSIX; its authentic installed metadata must not be presented as that proof.
+
+Root integration still needs a reviewed complete artifact lock with actual
+tarball SHA256/size values; no production pin or digest was invented. The current
+requirements file supplies only Azure 3.21.0 and Terraform 4.0.0 plus eight owned
+Gludd tarballs. Add verified missing direct pins and all native transitive
+MANIFEST dependencies to the single source. Bind the new lock via the existing
+runtime-lock input hashing/validator and its canonical update target. The native Make
+entrypoint/help/contract, ownership evidence and focused tests are integrated;
+use the offline context inside the native checker, before loader initialization, with
+`ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false` established before Ansible constants
+are imported. Hosted setup and the existing EE must consume the same reviewed
+artifact closure. Existing discovery scope, lint rules, argument assertions,
+120-second lint maximum and 85% aggregate/75% per-file floors are unchanged.
+
+Rollout builds/warms a complete candidate beside the current lock/EE, validates
+offline acceptance, full gate and exact-SHA hosted evidence, then selects it only
+for new jobs. Rollback selects the previous immutable lock/EE and drains existing
+jobs; cleanup only removes each completed owner's private stage.
+
+Historical user evidence inspected for the decision: [2022 AWX collection forum](https://forum.ansible.com/t/awx-21-0-unable-to-locate-collection-community-general/36749)
+locates collection availability in the actual execution environment; [2026 loader-path forum](https://forum.ansible.com/t/role-in-collection-cannot-find-module-in-the-same-collection/45676)
+distinguishes native/lint collection paths. Closed [offline-path issue 2683](https://github.com/ansible/ansible-lint/issues/2683)
+motivates private explicit paths without asserting a current upstream defect.
+Closed [Windows issue 3200](https://github.com/ansible/ansible-lint/issues/3200)
+explains the installed native `.ps1` skip. Native behavior follows [Galaxy's CLI](https://docs.ansible.com/projects/ansible-core/2.19/cli/ansible-galaxy.html)
+and [offline artifact workflow](https://docs.ansible.com/projects/ansible-core/devel/collections_guide/collections_downloading.html).
+
+### S98.4 child lifecycle and exclusive artifact publication amendment
+
+This amendment supersedes the original fragment's process-environment restoration
+claim and ordinary-rename publication description. Both native acquisition and
+offline staging leave the calling process environment, cwd, and library import
+path unchanged. The existing observer accepts a copied child-only environment
+mapping and child cwd through maintained [Popen boundaries](https://docs.python.org/3/library/subprocess.html#subprocess.Popen).
+Its session/process-group teardown, tracing, warning refusal and deadlines remain
+owned by the original observer. Private values are not added to argv or status.
+
+Existing administrative admission now hashes effective child cwd with its
+established environment/toolchain identity. A changed cwd is an input change;
+an unchanged failure remains refused. Before publication or Popen, the observer
+rejects mismatched command, private environment/cwd, or bounds. Trace injection
+retains the established volatile-trace exclusions. Admission remains explicit:
+the existing CLI/focus owner governs it; staging introduces no second focus owner.
+
+Publication delegates one complete sibling-directory promotion to native
+exclusive rename: Linux [renameat2 RENAME_NOREPLACE](https://man7.org/linux/man-pages/man2/renameat2.2.html),
+macOS [renamex_np RENAME_EXCL](https://developer.apple.com/documentation/foundation/urlresourcevalues/volumesupportsexclusiverenaming),
+or Windows' non-replacing rename. A missing primitive/unsupported filesystem
+fails closed; ordinary replacing POSIX rename is never a fallback. A late
+concurrent destination retains its inode and contents. No daemon/cache or new
+dependency is introduced; previous generations and serving processes stay live.
+
+Focused acceptance retains all 42 original controls and adds 13 lifecycle/native
+controls. Native CLI builds two tiny local dependency-linked collections with
+valid MANIFEST/FILES metadata, verifies their locked bytes, installs them offline,
+and removes the owned stage. A child-only Python audit hook rejects network/DNS;
+numeric getaddrinfo remains local so Ansible's maintained socket-type probe works.
+Actual Popen, trace injection, unchanged-failure admission, mismatched admission,
+TERM-ignoring descendant cleanup after leader exit, and macOS late-inode refusal
+are exercised. Real Linux/Windows publication acceptance remains a Root proof.
+
+Historical user findings remain documented: [AWX's 2022 collection-path forum](https://forum.ansible.com/t/awx-21-0-unable-to-locate-collection-community-general/36749)
+places availability in the execution owner; [native/lint loader-path discussion](https://forum.ansible.com/t/role-in-collection-cannot-find-module-in-the-same-collection/45676)
+supports explicit resolution paths. Neither is used as publication-race evidence.
+
+Rollout selects a reviewed complete artifact generation only for new jobs after
+canonical offline/coverage/full-gate/exact-SHA acceptance. Rollback selects the
+previous immutable lock/EE while existing jobs drain. Never revert to replacing
+publication or process-global mutation. Actual pins/digests/origins, Terraform's
+MANIFEST closure, runtime-lock binding, Make contract, and Molecule consumer
+integration remain Root work. These focused tests are not deployment or release
+proof, and do not assert Windows parameter acceptance on POSIX.
+
+### Canonical integration receipts (2026-10-13)
+
+Root's canonical failing-first suite has 53 failures and two passing diagnostic
+controls. All 255 combined staging/runtime/progress/observer/native-diagnostic
+cases subsequently pass, and the final typed candidate passes all 438 related
+cases. Native coverage measures 92.2% statements and 85.1% branches across all
+four changed production owners; every file passes unchanged 75% line/branch
+floors. The 64 staging/Make cases and 165 control-plane cases also pass on the
+existing Python 3.11 environment. Strict typing and Ruff pass. The native
+ownership producer now records 256 owned resources, including the three new
+private artifact contexts; no operational proof JSON is hand-edited.
+
+All nine explicit Make transport/refusal cases fail before the target exists,
+then pass with quote/semicolon paths transported literally. The 228-target
+contract and the documented validate-only example pass without acquisition.
+
+The real native refresh completes in 35.8 seconds and downloads eight authentic
+artifacts: supplied Azure 3.21.0/Terraform 4.0.0, crypto 3.4.0, general 13.5.0,
+Windows 3.8.0/community.windows 3.3.0, posix 2.2.2, and native transitive
+library_inventory_filtering_v1 1.1.5. Its producer-owned generation is
+`.gludd/collection-artifacts/v012-candidate-01`; its complete lock digest is
+`sha256:7d176b02362222535077a47b4a4f8191e6e9b4a00be0fbc6d3a1f93d4a7a9588`.
+Actual private offline install of that same set passes on Ansible 2.21.5 in
+2.5 seconds without warnings. This is real artifact/metadata acceptance, not a
+source-pin guess or proof of Windows argument execution. The canonical source
+requirements, runtime-lock binding, native checker/hosted/EE consumption, final
+Linux/Windows acceptance, full gate and deployment proof remain pending.

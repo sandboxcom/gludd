@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -13,16 +15,21 @@ import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import tomllib
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from importlib import import_module, metadata
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 import yaml
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = ROOT / "config" / "ansible"
@@ -406,20 +413,40 @@ def validate_files() -> list[str]:
     return errors
 
 
-def _staged_collection_metadata(collection_root: Path) -> None:
-    """Reject partial staged inputs using Galaxy's own dependency version rules."""
+def _validate_collection_dependencies(
+    inventory: Mapping[str, tuple[str, dict[str, str]]], required: Mapping[str, str],
+) -> None:
+    """Use Galaxy's version owner for both archive and installed closure admission."""
     from ansible.galaxy.dependency_resolution.versioning import meets_requirements
 
+    for name, version in required.items():
+        if name not in inventory:
+            raise ValueError(f"missing staged collection manifest: {name}")
+        if inventory[name][0] != version:
+            raise ValueError(f"staged collection version mismatch: {name}")
+    for name, (_release, dependencies) in inventory.items():
+        for dependency, constraint in dependencies.items():
+            if dependency not in inventory:
+                raise ValueError(f"missing staged collection manifest: {dependency} (required by {name})")
+            if not meets_requirements(inventory[dependency][0], constraint):
+                raise ValueError(f"staged collection dependency mismatch: {name} -> {dependency}")
+
+
+def _staged_collection_metadata(
+    collection_root: Path, *, required: Mapping[str, str] | None = None, exact: bool = False,
+) -> None:
+    """Reject partial staged inputs using Galaxy's own dependency version rules."""
     staged = collection_root / "ansible_collections"
     if not staged.is_dir():
         raise ValueError(f"partial collection inputs: missing staged tree: {staged}")
-    galaxy = yaml.safe_load(INPUTS["galaxy"].read_text(encoding="utf-8"))
-    required = {
-        entry["name"]: entry["version"]
-        for entry in galaxy["collections"]
-        if entry.get("type") != "file"
-    }
-    required.update({f"general_ludd.{name}": release for name, release in _COLLECTION_VERSIONS})
+    if required is None:
+        galaxy = yaml.safe_load(INPUTS["galaxy"].read_text(encoding="utf-8"))
+        required = {
+            entry["name"]: entry["version"]
+            for entry in galaxy["collections"]
+            if entry.get("type") != "file"
+        }
+        required.update({f"general_ludd.{name}": release for name, release in _COLLECTION_VERSIONS})
     for name in sorted(required):
         if not (staged.joinpath(*name.split(".")) / "MANIFEST.json").is_file():
             raise ValueError(f"missing staged collection manifest: {name}")
@@ -473,15 +500,395 @@ def _staged_collection_metadata(collection_root: Path) -> None:
             if not dependency_file.is_file():
                 label = "Python" if kind == "python" else "system"
                 raise ValueError(f"missing declared collection {label} requirements: {name}")
-    for name in sorted(required):
-        if name not in inventory:
-            raise ValueError(f"missing staged collection manifest: {name}")
-    for name, (_release, dependencies) in inventory.items():
-        for dependency, constraint in dependencies.items():
-            if dependency not in inventory:
-                raise ValueError(f"missing staged collection manifest: {dependency} (required by {name})")
-            if not meets_requirements(inventory[dependency][0], constraint):
-                raise ValueError(f"staged collection dependency mismatch: {name} -> {dependency}")
+    _validate_collection_dependencies(inventory, required)
+    if exact and set(inventory) != set(required):
+        raise ValueError("staged collection inventory differs from the exact artifact closure")
+
+
+def _collection_origin(origin: object) -> str:
+    """Require an explicit credential-free HTTPS Galaxy origin."""
+    if not isinstance(origin, str):
+        raise ValueError("collection artifact origin must be an HTTPS Galaxy URL")
+    parsed = urlsplit(origin)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None
+            or parsed.password is not None or parsed.query or parsed.fragment or not origin.endswith("/")):
+        raise ValueError("collection artifact origin must be a credential-free HTTPS Galaxy URL ending in /")
+    return origin
+
+
+def _collection_versions(required: Mapping[str, str]) -> dict[str, str]:
+    """Require real FQCNs and exact native semantic versions, never ranges/latest."""
+    from ansible.utils.collection_loader import AnsibleCollectionRef
+    from ansible.utils.version import SemanticVersion
+
+    if not required:
+        raise ValueError("required collection versions must not be empty")
+    for name, version in required.items():
+        if not isinstance(name, str) or not AnsibleCollectionRef.is_valid_collection_name(name):
+            raise ValueError("required collection identity must be a native FQCN")
+        if not isinstance(version, str) or not version:
+            raise ValueError(f"required collection version must be exact: {name}")
+        SemanticVersion(version)
+    return dict(required)
+
+
+class CollectionArtifactEntry(TypedDict):
+    """One exact reviewed native collection artifact after runtime validation."""
+
+    name: str
+    version: str
+    artifact: str
+    origin: str
+    sha256: str
+    size: int
+
+
+def _collection_lock_entries(
+    lock_file: Path, expected_lock_sha256: str, required: Mapping[str, str],
+) -> list[CollectionArtifactEntry]:
+    """Admit an independently bound reviewed lock, with no default identities."""
+    if (not isinstance(expected_lock_sha256, str) or DIGEST_RE.fullmatch(expected_lock_sha256) is None
+            or lock_file.is_symlink() or not lock_file.is_file()):
+        raise ValueError("collection lock digest does not match the reviewed input")
+    content = lock_file.read_bytes()
+    if "sha256:" + hashlib.sha256(content).hexdigest() != expected_lock_sha256:
+        raise ValueError("collection lock digest does not match the reviewed input")
+    document = json.loads(content)
+    if (not isinstance(document, dict) or type(document.get("schema_version")) is not int
+            or document["schema_version"] != 1):
+        raise ValueError("collection lock schema must be 1")
+    entries = document.get("collections")
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("collection artifact closure must be nonempty")
+    versions: dict[str, str] = {}
+    filenames: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {"name", "version", "artifact", "origin", "sha256", "size"}:
+            raise ValueError("collection artifact lock entry has missing or unknown fields")
+        name, version, filename = entry["name"], entry["version"], entry["artifact"]
+        _collection_versions({name: version})
+        if (name in versions or not isinstance(filename, str) or Path(filename).name != filename
+                or not filename.endswith(".tar.gz") or filename in filenames):
+            raise ValueError("collection artifact identities and safe filenames must be unique")
+        if (not isinstance(entry["sha256"], str) or DIGEST_RE.fullmatch(entry["sha256"]) is None
+                or type(entry["size"]) is not int or entry["size"] <= 0):
+            raise ValueError("collection artifact digest and positive size are required")
+        _collection_origin(entry["origin"])
+        versions[name] = version
+        filenames.add(filename)
+    for name, version in _collection_versions(required).items():
+        if versions.get(name) != version:
+            raise ValueError(f"missing required exact collection version: {name}:{version}")
+    return cast(list[CollectionArtifactEntry], entries)
+
+
+def _collection_environment(state: Path) -> dict[str, str]:
+    """Refuse ambient resolution, then isolate every native Galaxy writable path."""
+    inherited = os.environ.get("ANSIBLE_COLLECTIONS_PATH", "")
+    if inherited and inherited != str(ROOT / "collections"):
+        raise ValueError("ambient ANSIBLE_COLLECTIONS_PATH is not admitted")
+    scan = os.environ.get("ANSIBLE_COLLECTIONS_SCAN_SYS_PATH", "false").lower()
+    if scan not in {"false", "0", "no"} or os.environ.get("ANSIBLE_CONFIG"):
+        raise ValueError("ambient Ansible configuration or sys.path discovery is not admitted")
+    private = {name: value for name, value in os.environ.items() if not name.startswith("ANSIBLE_")}
+    for name in ("tmp", "home", "response-cache", "plugins", "roles", "collections"):
+        (state / name).mkdir()
+    configuration = state / "ansible.cfg"
+    configuration.write_text("[defaults]\n", encoding="utf-8")
+    private.update(
+        ANSIBLE_CONFIG=str(configuration), ANSIBLE_HOME=str(state / "home"),
+        ANSIBLE_LOCAL_TEMP=str(state / "tmp"), ANSIBLE_GALAXY_CACHE_DIR=str(state / "response-cache"),
+        ANSIBLE_COLLECTIONS_PATH=str(state / "collections"), ANSIBLE_COLLECTIONS_SCAN_SYS_PATH="false",
+        ANSIBLE_LIBRARY=str(state / "plugins"), ANSIBLE_ACTION_PLUGINS=str(state / "plugins"),
+        ANSIBLE_FILTER_PLUGINS=str(state / "plugins"), ANSIBLE_ROLES_PATH=str(state / "roles"),
+        ANSIBLE_NOCOLOR="true", PYTHONWARNINGS="error", PYTHON_CPU_COUNT="1", TMPDIR=str(state / "tmp"),
+    )
+    return private
+
+
+def _run_collection_command(
+    command: list[str], log: Path, *, max_seconds: int, environment: Mapping[str, str], cwd: Path,
+) -> int:
+    """Use the existing observer's bounded process group and teardown owner."""
+    stream = import_module("scripts.stream_command").stream_command
+    return cast(int, stream(command, log, observed_root=log.parent / "observed",
+                            label="gludd-collection-stage", heartbeat_seconds=10, max_seconds=max_seconds,
+                            environment=environment, cwd=cwd))
+
+
+def _checked_collection_command(
+    command: list[str], state: Path, timeout: int, *, environment: Mapping[str, str], cwd: Path,
+) -> None:
+    """Reject native exit/diagnostics without changing logging, rules or warnings."""
+    if TYPE_CHECKING:
+        from check_molecule_yaml import validate_native_lint_diagnostics
+    else:
+        from scripts.check_molecule_yaml import validate_native_lint_diagnostics
+
+    log = state / "galaxy.log"
+    result = _run_collection_command(command, log, max_seconds=timeout, environment=environment, cwd=cwd)
+    if result != 0 or not validate_native_lint_diagnostics(log):
+        raise ValueError(f"native Galaxy collection command failed: rc={result}")
+
+
+def _collection_archive_inventory(
+    state: Path, entries: list[CollectionArtifactEntry], artifact_root: Path,
+) -> dict[str, tuple[str, dict[str, str]]]:
+    """Read authentic tar metadata through Galaxy's own artifact manager."""
+    from ansible.galaxy.collection.concrete_artifact_manager import ConcreteArtifactsManager
+    from ansible.galaxy.dependency_resolution.dataclasses import Candidate
+    from ansible.release import __version__ as core_version
+
+    inventory: dict[str, tuple[str, dict[str, str]]] = {}
+    with ConcreteArtifactsManager.under_tmpdir(str(state)) as manager:
+        for entry in entries:
+            path = artifact_root / entry["artifact"]
+            if path.is_symlink() or not path.is_file() or path.resolve().parent != artifact_root.resolve():
+                raise ValueError(f"collection artifact is missing or unsafe: {entry['name']}")
+            with path.open("rb") as source:
+                actual_hash = "sha256:" + hashlib.file_digest(source, "sha256").hexdigest()
+            if path.stat().st_size != entry["size"] or actual_hash != entry["sha256"]:
+                raise ValueError(f"collection artifact checksum or size differs: {entry['name']}")
+            candidate = Candidate(entry["name"], entry["version"], os.fsencode(path), "file", None)
+            info = manager.get_direct_collection_meta(candidate)
+            if (not isinstance(info, dict) or info.get("namespace") != entry["name"].split(".")[0]
+                    or info.get("name") != entry["name"].split(".")[1]
+                    or info.get("version") != entry["version"]):
+                raise ValueError(f"native artifact identity differs: {entry['name']}")
+            dependencies = info.get("dependencies")
+            if not isinstance(dependencies, dict) or any(
+                not isinstance(name, str) or not isinstance(constraint, str)
+                for name, constraint in dependencies.items()
+            ):
+                raise ValueError(f"native artifact dependency metadata is invalid: {entry['name']}")
+            if hasattr(manager, "get_direct_requires_ansible"):
+                requires = manager.get_direct_requires_ansible(candidate)
+            else:
+                # Core 2.19's native manager predates this accessor. Use maintained
+                # tarfile/YAML/packaging owners solely for its runtime metadata.
+                with tarfile.open(path) as archive:
+                    try:
+                        member = archive.extractfile("meta/runtime.yml")
+                    except KeyError:
+                        member = None
+                    if member is None:
+                        runtime = None
+                    else:
+                        with member:
+                            runtime = yaml.safe_load(member)
+                requires = runtime.get("requires_ansible") if isinstance(runtime, dict) else None
+            if not isinstance(requires, str) or not requires or not SpecifierSet(requires).contains(
+                core_version, prereleases=True,
+            ):
+                raise ValueError(f"native artifact requires_ansible is missing or unsupported: {entry['name']}")
+            inventory[entry["name"]] = (entry["version"], dependencies)
+    return inventory
+
+
+@contextmanager
+def staged_collection_closure(
+    lock_file: Path, artifact_root: Path, *, expected_lock_sha256: str,
+    required_versions: Mapping[str, str], timeout_seconds: int = 120,
+) -> Iterator[Path]:
+    """Install only the reviewed closure privately, offline, and clean it on exit."""
+    if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 120:
+        raise ValueError("collection timeout must be an integer from 1 through 120")
+    required = _collection_versions(required_versions)
+    entries = _collection_lock_entries(lock_file, expected_lock_sha256, required)
+    lock_file, artifact_root = lock_file.absolute(), artifact_root.absolute()
+    project = hashlib.sha256(str(ROOT).encode()).hexdigest()[:12]
+    with tempfile.TemporaryDirectory(prefix=f"gludd-collection-stage-{project}-") as temporary:
+        state = Path(temporary)
+        private = _collection_environment(state)
+        copied = state / "artifacts"
+        copied.mkdir()
+        for entry in entries:
+            source = artifact_root / entry["artifact"]
+            if source.is_symlink() or not source.is_file() or artifact_root.is_symlink():
+                raise ValueError(f"collection artifact is missing or unsafe: {entry['name']}")
+            shutil.copyfile(source, copied / entry["artifact"])
+        inventory = _collection_archive_inventory(state, entries, copied)
+        exact = {entry["name"]: entry["version"] for entry in entries}
+        _validate_collection_dependencies(inventory, exact)
+        requirements = state / "offline-requirements.json"
+        requirements.write_text(json.dumps({"collections": [
+            {"name": str(copied / entry["artifact"]), "type": "file", "version": entry["version"]}
+            for entry in entries
+        ]}), encoding="utf-8")
+        stage = state / "collections"
+        command = [sys.executable, "-m", "ansible.cli.galaxy", "collection", "install",
+                   "--offline", "--no-cache", "--requirements-file", str(requirements),
+                   "--collections-path", str(stage)]
+        _checked_collection_command(command, state, timeout_seconds, environment=private, cwd=state)
+        _staged_collection_metadata(stage, required=exact, exact=True)
+        yield stage
+
+
+def _downloaded_collection_entries(state: Path, downloaded: Path, origin: str) -> list[CollectionArtifactEntry]:
+    """Consume Galaxy's own generated offline requirements and native metadata."""
+    from ansible.galaxy.collection.concrete_artifact_manager import ConcreteArtifactsManager
+    from ansible.galaxy.dependency_resolution.dataclasses import Requirement as GalaxyRequirement
+
+    document = yaml.safe_load((downloaded / "requirements.yml").read_text(encoding="utf-8"))
+    declared = document.get("collections") if isinstance(document, dict) else None
+    if not isinstance(declared, list) or not declared:
+        raise ValueError("native Galaxy download produced no complete artifact requirements")
+    entries: list[CollectionArtifactEntry] = []
+    with ConcreteArtifactsManager.under_tmpdir(str(state)) as manager:
+        for entry in declared:
+            if (not isinstance(entry, dict) or not isinstance(entry.get("name"), str)
+                    or Path(entry["name"]).name != entry["name"] or not entry["name"].endswith(".tar.gz")):
+                raise ValueError("native Galaxy download produced an unsafe artifact reference")
+            path = downloaded / entry["name"]
+            if path.is_symlink() or not path.is_file():
+                raise ValueError("native Galaxy download produced a missing or unsafe artifact")
+            candidate = GalaxyRequirement.from_requirement_dict({"name": str(path), "type": "file"}, manager)
+            info = manager.get_direct_collection_meta(candidate)
+            name = f"{info['namespace']}.{info['name']}"
+            _collection_versions({name: info["version"]})
+            if entry.get("version") != info["version"]:
+                raise ValueError("native Galaxy download version differs from the artifact manifest")
+            with path.open("rb") as source:
+                sha256 = "sha256:" + hashlib.file_digest(source, "sha256").hexdigest()
+            entries.append({"name": name, "version": info["version"], "artifact": path.name,
+                            "origin": origin, "sha256": sha256, "size": path.stat().st_size})
+    return entries
+
+
+def _rename_collection_generation_no_replace(source: Path, destination: Path) -> None:
+    """Delegate one atomic exclusive directory rename to the operating system."""
+    if sys.platform == "win32":
+        # Windows os.rename never replaces an existing destination.
+        os.rename(source, destination)
+        return
+    native = ctypes.CDLL(None, use_errno=True)
+    try:
+        if sys.platform == "darwin":
+            rename = native.renamex_np
+            rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+            parameters = (os.fsencode(source.absolute()), os.fsencode(destination.absolute()), 0x00000004)
+        elif sys.platform.startswith("linux"):
+            rename = native.renameat2
+            rename.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+            parameters = (-100, os.fsencode(source.absolute()), -100, os.fsencode(destination.absolute()), 1)
+        else:
+            raise OSError(errno.ENOTSUP, "native exclusive directory rename is unsupported")
+    except AttributeError as exc:
+        raise OSError(errno.ENOTSUP, "native exclusive directory rename is unavailable") from exc
+    rename.restype = ctypes.c_int
+    if rename(*parameters) != 0:
+        failure = ctypes.get_errno()
+        raise OSError(failure, os.strerror(failure), str(destination))
+
+
+def _publish_collection_generation(
+    downloaded: Path, entries: list[CollectionArtifactEntry], destination: Path, lock_bytes: bytes,
+) -> None:
+    """Publish a new complete generation atomically, never replace an active tree."""
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("collection artifact generation already exists; choose a new owned output")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".gludd-collection-generation-", dir=destination.parent) as temporary:
+        prepared = Path(temporary) / "generation"
+        prepared.mkdir()
+        for entry in entries:
+            shutil.copyfile(downloaded / entry["artifact"], prepared / entry["artifact"])
+        (prepared / "collections.lock.json").write_bytes(lock_bytes)
+        (prepared / "requirements.yml").write_text(json.dumps({"collections": [
+            {"name": entry["artifact"], "version": entry["version"], "type": "file"} for entry in entries
+        ]}), encoding="utf-8")
+        if destination.exists() or destination.is_symlink():
+            raise ValueError("collection artifact generation was acquired by another owner")
+        _rename_collection_generation_no_replace(prepared, destination)
+
+
+def prepare_collection_artifacts(
+    mode: str, lock_file: Path, artifact_root: Path, *, required_versions: Mapping[str, str],
+    origin: str, expected_lock_sha256: str = "", timeout_seconds: int = 120, validate_only: bool = False,
+) -> int:
+    """Run bounded native refresh/acquisition or a private offline closure replay."""
+    try:
+        if mode not in {"refresh", "acquire", "offline"}:
+            raise ValueError("collection stage mode must be refresh, acquire or offline")
+        if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 120:
+            raise ValueError("collection timeout must be an integer from 1 through 120")
+        required, source = _collection_versions(required_versions), _collection_origin(origin)
+        if validate_only:
+            print(f"ANSIBLE_COLLECTION_STAGE_PLAN mode={mode} lock={lock_file} artifacts={artifact_root} "
+                  f"timeout={timeout_seconds} source={source} proof=none")
+            return 0
+        if mode == "offline":
+            with staged_collection_closure(lock_file, artifact_root, expected_lock_sha256=expected_lock_sha256,
+                                           required_versions=required, timeout_seconds=timeout_seconds):
+                print("ANSIBLE_COLLECTION_STAGE_REPLAY_PASS proof=collection-metadata-only")
+            return 0
+        if artifact_root.exists() or artifact_root.is_symlink():
+            raise ValueError("collection acquisition requires a new artifact generation output")
+        reviewed: list[CollectionArtifactEntry] | None = None
+        if mode == "acquire":
+            reviewed = _collection_lock_entries(lock_file, expected_lock_sha256, required)
+            if any(entry["origin"] != source for entry in reviewed):
+                raise ValueError("reviewed artifact origin differs from the explicit Galaxy source")
+            requested = {entry["name"]: entry["version"] for entry in reviewed}
+        else:
+            if lock_file != artifact_root / "collections.lock.json":
+                raise ValueError("refresh lock must be inside the new candidate artifact generation")
+            requested = required
+        lock_file, artifact_root = lock_file.absolute(), artifact_root.absolute()
+        project = hashlib.sha256(str(ROOT).encode()).hexdigest()[:12]
+        with tempfile.TemporaryDirectory(prefix=f"gludd-collection-acquire-{project}-") as temporary:
+            state = Path(temporary)
+            private = _collection_environment(state)
+            downloaded = state / "artifacts"
+            downloaded.mkdir()
+            requirements = state / "galaxy-requirements.json"
+            requirements.write_text(json.dumps({"collections": [
+                {"name": name, "version": version, "type": "galaxy", "source": source}
+                for name, version in sorted(requested.items())
+            ]}), encoding="utf-8")
+            command = [sys.executable, "-m", "ansible.cli.galaxy", "collection", "download", "--no-cache",
+                       "--requirements-file", str(requirements), "--download-path", str(downloaded),
+                       "--server", source, "--timeout", str(min(timeout_seconds, 30))]
+            if reviewed is not None:
+                command.append("--no-deps")
+            _checked_collection_command(command, state, timeout_seconds, environment=private, cwd=state)
+            entries = (reviewed if reviewed is not None else
+                       _downloaded_collection_entries(state, downloaded, source))
+            lock_bytes = (lock_file.read_bytes() if reviewed is not None else
+                          (json.dumps({"schema_version": 1, "collections": entries}, indent=2) + "\n").encode())
+            if reviewed is not None and "sha256:" + hashlib.sha256(lock_bytes).hexdigest() != expected_lock_sha256:
+                raise ValueError("reviewed collection lock digest changed during acquisition")
+            candidate_lock = state / "collections.lock.json"
+            candidate_lock.write_bytes(lock_bytes)
+            entries = _collection_lock_entries(candidate_lock, _sha256(candidate_lock), required)
+            inventory = _collection_archive_inventory(state, entries, downloaded)
+            _validate_collection_dependencies(inventory, {entry["name"]: entry["version"] for entry in entries})
+            _publish_collection_generation(downloaded, entries, artifact_root, lock_bytes)
+        print(f"ANSIBLE_COLLECTION_ARTIFACTS_READY mode={mode} path={artifact_root} "
+              f"lock={_sha256(artifact_root / 'collections.lock.json')} proof=artifact-closure-only")
+        return 0
+    except Exception as exc:
+        print(f"ANSIBLE_COLLECTION_STAGE_FAILED: {exc} proof=none", file=sys.stderr)
+        return 1
+
+
+def _required_collection_versions(path: Path) -> dict[str, str]:
+    """Retain supplied direct Galaxy pins while local tarballs keep their EE owner."""
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    entries = document.get("collections") if isinstance(document, dict) else None
+    if not isinstance(entries, list):
+        raise ValueError("collection requirements must declare a collections list")
+    required: dict[str, str] = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("type", "galaxy") not in {"galaxy", "file"}:
+            raise ValueError("collection requirements must contain only explicit Galaxy pins or owned local files")
+        if entry.get("type") == "file":
+            continue
+        name, version = entry.get("name"), entry.get("version")
+        if not isinstance(name, str) or not isinstance(version, str) or name in required:
+            raise ValueError("collection requirements must declare unique exact versions")
+        required[name] = version
+    return _collection_versions(required)
 
 
 def _resolution_build_configuration(definition: dict[str, Any]) -> str:
@@ -918,6 +1325,7 @@ def main(argv: list[str] | None = None) -> int:
             "check-base-image",
             "refresh-base-image",
             "resolve-requirements",
+            "stage-collections",
             "validate",
             "verify",
             "write-lock",
@@ -929,7 +1337,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--collection-root", type=Path)
     parser.add_argument("--resolution-output", type=Path)
+    parser.add_argument("--collection-stage-mode", choices=("refresh", "acquire", "offline"), default="offline")
+    parser.add_argument("--collection-lock", type=Path)
+    parser.add_argument("--artifact-root", type=Path)
+    parser.add_argument("--collection-requirements", type=Path, default=INPUTS["galaxy"])
+    parser.add_argument("--collection-lock-sha256", default="")
+    parser.add_argument("--galaxy-origin", default="https://galaxy.ansible.com/")
+    parser.add_argument("--collection-timeout-seconds", type=int, default=120)
     args = parser.parse_args(argv)
+    if args.mode == "stage-collections":
+        if args.collection_lock is None or args.artifact_root is None:
+            parser.error("stage-collections requires --collection-lock and --artifact-root")
+        try:
+            required = _required_collection_versions(args.collection_requirements)
+        except Exception as exc:
+            print(f"ANSIBLE_COLLECTION_STAGE_FAILED: {exc} proof=none", file=sys.stderr)
+            return 1
+        return prepare_collection_artifacts(
+            args.collection_stage_mode, args.collection_lock, args.artifact_root,
+            required_versions=required, origin=args.galaxy_origin, expected_lock_sha256=args.collection_lock_sha256,
+            timeout_seconds=args.collection_timeout_seconds, validate_only=args.validate_only,
+        )
     if args.mode == "resolve-requirements":
         if args.collection_root is None or args.resolution_output is None:
             parser.error("resolve-requirements requires --collection-root and --resolution-output")
@@ -960,4 +1388,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Bootstrap the standalone CLI only; library calls never change sys.path.
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     raise SystemExit(main())

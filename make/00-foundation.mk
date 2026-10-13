@@ -417,6 +417,7 @@ help:
 	@echo "  check-collection-python-boundary Enforce exact/strict-zero collection migration inventory"
 	@echo "  check-resource-ownership Enforce exact application acquisition-to-teardown evidence (RESOURCE_OWNERSHIP_*)"
 	@echo "  update-ansible-runtime-lock Refresh deterministic EE input hashes"
+	@echo "  stage-ansible-runtime-collections Prepare/replay explicit native Galaxy artifacts (ANSIBLE_COLLECTION_STAGE_*, validate-only by default)"
 	@echo "  resolve-ansible-runtime-requirements Compile complete staged EE inputs (ANSIBLE_EE_COLLECTION_ROOT, ANSIBLE_EE_RESOLUTION_OUTPUT, ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1)"
 	@echo "  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)"
 	@echo "  inspect-ansible-searxng-source Read eleven exact frozen source/default-build inputs (ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0|1)"
@@ -1045,6 +1046,50 @@ validate-ansible-runtime-boundary:
 
 update-ansible-runtime-lock:
 	@$(UV) run python scripts/ansible_runtime_artifacts.py write-lock
+
+ANSIBLE_COLLECTION_STAGE_MODE ?= offline
+ANSIBLE_COLLECTION_STAGE_LOCK ?= config/ansible/collections.lock.json
+ANSIBLE_COLLECTION_STAGE_LOCK_SHA256 ?=
+ANSIBLE_COLLECTION_STAGE_REQUIREMENTS ?= config/ansible/requirements.yml
+ANSIBLE_COLLECTION_STAGE_ARTIFACT_ROOT ?= dist/collections/third-party
+ANSIBLE_COLLECTION_STAGE_ORIGIN ?= https://galaxy.ansible.com/
+ANSIBLE_COLLECTION_STAGE_TIMEOUT_SECONDS ?= 120
+ANSIBLE_COLLECTION_STAGE_VALIDATE_ONLY ?= 1
+export GLUDD_COLLECTION_STAGE_MODE := $(value ANSIBLE_COLLECTION_STAGE_MODE)
+export GLUDD_COLLECTION_STAGE_LOCK := $(value ANSIBLE_COLLECTION_STAGE_LOCK)
+export GLUDD_COLLECTION_STAGE_LOCK_SHA256 := $(value ANSIBLE_COLLECTION_STAGE_LOCK_SHA256)
+export GLUDD_COLLECTION_STAGE_REQUIREMENTS := $(value ANSIBLE_COLLECTION_STAGE_REQUIREMENTS)
+export GLUDD_COLLECTION_STAGE_ARTIFACT_ROOT := $(value ANSIBLE_COLLECTION_STAGE_ARTIFACT_ROOT)
+export GLUDD_COLLECTION_STAGE_ORIGIN := $(value ANSIBLE_COLLECTION_STAGE_ORIGIN)
+export GLUDD_COLLECTION_STAGE_TIMEOUT_SECONDS := $(value ANSIBLE_COLLECTION_STAGE_TIMEOUT_SECONDS)
+export GLUDD_COLLECTION_STAGE_VALIDATE_ONLY := $(value ANSIBLE_COLLECTION_STAGE_VALIDATE_ONLY)
+unexport ANSIBLE_COLLECTION_STAGE_MODE ANSIBLE_COLLECTION_STAGE_LOCK ANSIBLE_COLLECTION_STAGE_LOCK_SHA256
+unexport ANSIBLE_COLLECTION_STAGE_REQUIREMENTS ANSIBLE_COLLECTION_STAGE_ARTIFACT_ROOT
+unexport ANSIBLE_COLLECTION_STAGE_ORIGIN ANSIBLE_COLLECTION_STAGE_TIMEOUT_SECONDS ANSIBLE_COLLECTION_STAGE_VALIDATE_ONLY
+.PHONY: stage-ansible-runtime-collections
+stage-ansible-runtime-collections:
+	@set -eu; \
+	test -n "$$GLUDD_COLLECTION_STAGE_MODE" || { echo "ANSIBLE_COLLECTION_STAGE_MODE is required"; exit 2; }; \
+	test -n "$$GLUDD_COLLECTION_STAGE_LOCK" || { echo "ANSIBLE_COLLECTION_STAGE_LOCK is required"; exit 2; }; \
+	test -n "$$GLUDD_COLLECTION_STAGE_REQUIREMENTS" || { echo "ANSIBLE_COLLECTION_STAGE_REQUIREMENTS is required"; exit 2; }; \
+	test -n "$$GLUDD_COLLECTION_STAGE_ARTIFACT_ROOT" || { echo "ANSIBLE_COLLECTION_STAGE_ARTIFACT_ROOT is required"; exit 2; }; \
+	test -n "$$GLUDD_COLLECTION_STAGE_ORIGIN" || { echo "ANSIBLE_COLLECTION_STAGE_ORIGIN is required"; exit 2; }; \
+	test -n "$$GLUDD_COLLECTION_STAGE_TIMEOUT_SECONDS" || { echo "ANSIBLE_COLLECTION_STAGE_TIMEOUT_SECONDS is required"; exit 2; }; \
+	if [ "$$GLUDD_COLLECTION_STAGE_VALIDATE_ONLY" = "0" ] && [ "$$GLUDD_COLLECTION_STAGE_MODE" != "refresh" ]; then \
+		test -n "$$GLUDD_COLLECTION_STAGE_LOCK_SHA256" || { echo "ANSIBLE_COLLECTION_STAGE_LOCK_SHA256 is required for reviewed execution"; exit 2; }; \
+	fi; \
+	case "$$GLUDD_COLLECTION_STAGE_VALIDATE_ONLY" in \
+		0) set -- ;; 1) set -- --validate-only ;; \
+		*) echo "ANSIBLE_COLLECTION_STAGE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; \
+	esac; \
+	$(UV) run python scripts/ansible_runtime_artifacts.py stage-collections \
+		--collection-stage-mode "$$GLUDD_COLLECTION_STAGE_MODE" \
+		--collection-lock "$$GLUDD_COLLECTION_STAGE_LOCK" \
+		--collection-lock-sha256 "$$GLUDD_COLLECTION_STAGE_LOCK_SHA256" \
+		--collection-requirements "$$GLUDD_COLLECTION_STAGE_REQUIREMENTS" \
+		--artifact-root "$$GLUDD_COLLECTION_STAGE_ARTIFACT_ROOT" \
+		--galaxy-origin "$$GLUDD_COLLECTION_STAGE_ORIGIN" \
+		--collection-timeout-seconds "$$GLUDD_COLLECTION_STAGE_TIMEOUT_SECONDS" "$$@"
 
 ANSIBLE_EE_COLLECTION_ROOT ?= .gludd/ansible-ee-staged-collections
 ANSIBLE_EE_RESOLUTION_OUTPUT ?= .gludd/ansible-ee-resolved-requirements.txt

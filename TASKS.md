@@ -106,6 +106,25 @@ and read-only secrets admission pass without a canonical baseline change.
 Successful Linux package/build, offline installed-image, same-SHA hosted, full
 gate and deployment acceptance remain pending; no release task is ticked.
 
+S98.4 native collection-stage scope: `scripts/ansible_runtime_artifacts.py`,
+`scripts/check_molecule_yaml.py`, `scripts/item_progress.py`,
+`scripts/stream_command.py`, `tests/unit/test_ansible_collection_staging.py`,
+`tests/unit/test_ansible_collection_stage_target.py`,
+`config/coverage_ansible_collection_staging.ini`,
+`config/resource_ownership_inventory.json`, `make/00-foundation.mk`,
+`config/make_target_contract.json`, and `docs/features/MOLECULE_NATIVE_VALIDATION.md`.
+Canonical RED has 53 failures/two controls; Make transport adds nine RED cases.
+The integrated typed source passes 438 cases, with 92.2% line/85.1% branch
+coverage across all four production owners and unchanged 75% per-file floors.
+Python 3.11 passes 64 staging/transport and 165 owner controls. The actual native
+refresh produces the complete eight-artifact digest/size/origin lock, and actual
+private offline installation passes without warnings. The native observer owns
+child-only environment/cwd, admission identity, cleanup and native no-clobber
+publication. The 228-target contract, documented safe behavior, strict typing,
+Ruff and native 256-resource inventory pass. This source/metadata delivery does
+not complete checker/EE/hosted consumption, full gate or deployment acceptance;
+all release checkboxes and completed-backlog counts remain unchanged.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

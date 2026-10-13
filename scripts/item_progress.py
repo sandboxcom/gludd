@@ -185,27 +185,33 @@ def support_item(root: Path, task_id: str, reason: str) -> dict[str, object]:
         return state
 
 
+def _environment_identity(environment: Mapping[str, str], cwd: Path | str | None = None) -> str:
+    """Hash the effective private child context without publishing its values."""
+    with Path(sys.executable).open("rb") as executable:
+        executable_digest = hashlib.file_digest(executable, "sha256").hexdigest()
+    return _command_key({
+        "variables": {key: value for key, value in environment.items()
+                      if key not in _VOLATILE_ENV and not key.startswith("OBSERVED_")},
+        "cwd": str((Path.cwd() if cwd is None else Path(cwd)).resolve()),
+        "python": sys.version, "executable": executable_digest,
+        "installed_distributions": sorted(
+            (distribution.metadata["Name"], distribution.version)
+            for distribution in importlib.metadata.distributions()
+        ),
+    })
+
+
 def _identity(root: Path, command: Sequence[str], environment: Mapping[str, str],
-              quiet_seconds: float, max_seconds: float) -> dict[str, object]:
+              quiet_seconds: float, max_seconds: float, *, cwd: Path | str | None = None) -> dict[str, object]:
     if (not command or len(command) > 128
             or any(not isinstance(arg, str) or not arg or len(arg) > 8192 for arg in command)
             or any(isinstance(limit, bool) or not math.isfinite(limit) or limit < 0
                    for limit in (quiet_seconds, max_seconds))):
         raise ValueError("command arguments and runtime bounds are invalid")
-    with Path(sys.executable).open("rb") as executable:
-        executable_digest = hashlib.file_digest(executable, "sha256").hexdigest()
     return {
         "root": str(root), "command": list(command),
         "source": repository_state_id(root, include_head=False, exclude_bookkeeping=True),
-        "environment": _command_key({
-            "variables": {key: value for key, value in environment.items()
-                          if key not in _VOLATILE_ENV and not key.startswith("OBSERVED_")},
-            "python": sys.version, "executable": executable_digest,
-            "installed_distributions": sorted(
-                (distribution.metadata["Name"], distribution.version)
-                for distribution in importlib.metadata.distributions()
-            ),
-        }),
+        "environment": _environment_identity(environment, cwd),
         "limits": [quiet_seconds, max_seconds],
     }
 
@@ -248,6 +254,16 @@ class Admission:
     state: dict[str, object]
     identity: dict[str, object]
     token: str
+
+    def validate_execution(
+        self, command: Sequence[str], *, environment: Mapping[str, str], cwd: Path | str | None,
+        quiet_seconds: float, max_seconds: float,
+    ) -> None:
+        """Refuse an effective child context not admitted by the existing owner."""
+        if (self.identity["command"] != list(command)
+                or self.identity["environment"] != _environment_identity(environment, cwd)
+                or self.identity["limits"] != [quiet_seconds, max_seconds]):
+            raise ValueError("observed child execution context differs from native admission")
 
     def preserved_run_ids(self, observed_root: Path, label: str) -> frozenset[str]:
         """Protect bounded referenced native runs from ordinary observer pruning."""
@@ -297,6 +313,7 @@ def command_admission(
     root: Path, command: Sequence[str], *, environment: Mapping[str, str],
     quiet_seconds: float, max_seconds: float, primary_task_id: str | None = None,
     task_id: str | None = None, supporting_tasks: Mapping[str, str] | None = None,
+    cwd: Path | str | None = None,
 ) -> Iterator[Admission | None]:
     """Admit scoped execution; diagnostics and external-state waits stay available."""
     targets = [arg for arg in command[1:] if "=" not in arg and arg != "--no-print-directory"]
@@ -308,7 +325,8 @@ def command_admission(
         yield None
         return
     root = root.resolve()
-    identity = _identity(root, command, environment, quiet_seconds, max_seconds)
+    identity = _identity(root, command, environment, quiet_seconds, max_seconds,
+                         **({"cwd": cwd} if cwd is not None else {}))
     key = _command_key(list(command))
     token = uuid.uuid4().hex
     with _locked(root) as (path, state):

@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Ambient collection availability and unsafe staging lifecycle
+
+- The native complete-input checker still encounters missing third-party collections; host/site-package discovery is not reproducible consumer-owned deployment evidence. The existing artifact owner now acquires a complete exact native Galaxy closure, verifies real tarball SHA256/size/origin and native MANIFEST/runtime constraints, then installs only those verified file inputs in private offline state.
+- Canonical failing-first acceptance has 53 failures and two controls. Review exposes two additional lifecycle gaps in the original candidate: changing the calling process environment/cwd and replacing a concurrently created empty destination. Child-only Popen inputs and OS-native exclusive rename repair both without a second runner/resolver/cache or warning suppression. Native admission binds the effective child context without exposing its values.
+- All 438 related cases pass after precise typing/static-identity conformance; coverage measures 92.2% lines/85.1% branches across four owners and passes every unchanged 75% per-file floor. Both 64 staging/transport and 165 control cases pass on existing Python 3.11. The real fixture builds dependency-linked Galaxy tarballs, denies network/DNS, actually installs offline and tears down its stage.
+- Native refresh obtains all seven selected roots plus library_inventory_filtering_v1 1.1.5, publishes a complete eight-artifact generation in 35.8 seconds, and the actual private offline replay passes warning-free on core 2.21.5 in 2.5 seconds. The documented Make plan/228-target contract and regenerated 256-resource ownership pass; no native operational JSON is hand-edited.
+- Source requirements/runtime-lock/checker/hosted/EE consumption, real Linux/Windows publication, full gate and item deployment acceptance remain separate unfinished work. Metadata resolution never establishes Windows parameter execution or release readiness; S98.4 remains unchecked.
+
 ### 2026-10-13 — Controller bootstrap requested a conflicting executable provider
 
 - Exact published source 39b52845b, Build run 38430314549/job 115417409716, fails before assembly: the pinned CentOS Stream 9 base already has coreutils-single, while the bootstrap asks DNF for mutually exclusive full coreutils.

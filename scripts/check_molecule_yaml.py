@@ -8,6 +8,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Callable
@@ -173,10 +174,13 @@ def validate_action_option_names(paths: tuple[Path, ...]) -> None:
 def validate_native_lint_diagnostics(log: Path) -> bool:
     """Reject emitted native diagnostics without changing logging or native rules."""
     accepted = True
+    diagnostic = re.compile(
+        r"^\s*(?:\[(?:DEPRECATION )?(?:WARNING|ERROR|CRITICAL|FATAL)\]|"
+        r"(?:WARNING|ERROR|CRITICAL|FATAL)\b)"
+    )
     with log.open(encoding="utf-8") as output:
         for line in output:
-            fields = line.split(maxsplit=1)
-            if fields and fields[0].strip("[]:") in {"WARNING", "ERROR", "CRITICAL", "FATAL"}:
+            if diagnostic.match(line):
                 accepted = False
                 print(
                     f"MOLECULE_VALIDATION_DIAGNOSTIC_FAILED: {line.rstrip()} proof=none",

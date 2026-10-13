@@ -20,6 +20,20 @@
       "behavior": "make git-owned-checkpoint-restore FILES=Makefile GIT_CHECKPOINT_LABEL=gludd-contract-checkpoint GIT_CHECKPOINT_SHA=0000000000000000000000000000000000000000 GIT_CHECKPOINT_VALIDATE_ONLY=1"
     },
     {
+      "name": "stage-ansible-runtime-collections",
+      "make_variables": [
+        "ANSIBLE_COLLECTION_STAGE_MODE",
+        "ANSIBLE_COLLECTION_STAGE_LOCK",
+        "ANSIBLE_COLLECTION_STAGE_LOCK_SHA256",
+        "ANSIBLE_COLLECTION_STAGE_REQUIREMENTS",
+        "ANSIBLE_COLLECTION_STAGE_ARTIFACT_ROOT",
+        "ANSIBLE_COLLECTION_STAGE_ORIGIN",
+        "ANSIBLE_COLLECTION_STAGE_TIMEOUT_SECONDS",
+        "ANSIBLE_COLLECTION_STAGE_VALIDATE_ONLY"
+      ],
+      "behavior": "make stage-ansible-runtime-collections ANSIBLE_COLLECTION_STAGE_MODE=offline ANSIBLE_COLLECTION_STAGE_LOCK=config/ansible/collections.lock.json ANSIBLE_COLLECTION_STAGE_LOCK_SHA256= ANSIBLE_COLLECTION_STAGE_REQUIREMENTS=config/ansible/requirements.yml ANSIBLE_COLLECTION_STAGE_ARTIFACT_ROOT=dist/collections/third-party ANSIBLE_COLLECTION_STAGE_ORIGIN=https://galaxy.ansible.com/ ANSIBLE_COLLECTION_STAGE_TIMEOUT_SECONDS=120 ANSIBLE_COLLECTION_STAGE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "work-item",
       "make_variables": [
         "WORK_ITEM_ACTION",

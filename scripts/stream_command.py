@@ -19,7 +19,7 @@ from contextlib import AbstractContextManager, nullcontext, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
-from typing import TYPE_CHECKING, Any, BinaryIO, Protocol
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, TypedDict
 
 DEFAULT_OBSERVED_ROOT = Path(".gate-logs/observed")
 DEFAULT_HEARTBEAT_SECS = 30.0
@@ -33,10 +33,23 @@ _NAME_CHARS = frozenset(
 )
 
 
+class _ChildCwdOptions(TypedDict, total=False):
+    """Only the explicitly supplied child cwd; keep inherited-call kwargs unchanged."""
+
+    cwd: Path | str
+
+
 class _ProgressAdmission(Protocol):
     """Native item admission bound to one observed command publication."""
 
     identity: dict[str, object]
+
+    def validate_execution(
+        self, command: Sequence[str], *, environment: Mapping[str, str], cwd: Path | str | None,
+        quiet_seconds: float, max_seconds: float,
+    ) -> None:
+        """Bind only this owner's effective child environment and working directory."""
+        ...
 
     def record(self, observed_root: Path, label: str, run_id: str) -> None:
         """Bind only this owner's actual native starting publication."""
@@ -262,6 +275,8 @@ def stream_command(
     retain_runs: int = DEFAULT_RETAIN_RUNS,
     termination_grace_seconds: float = 0.5,
     progress_admission: _ProgressAdmission | None = None,
+    environment: Mapping[str, str] | None = None,
+    cwd: Path | str | None = None,
 ) -> int:
     """Run ``command`` with live output, bounded waits, and atomic status.
 
@@ -280,6 +295,12 @@ def stream_command(
         raise ValueError("retain_runs must be at least 1")
     if progress_admission is not None and label is None:
         raise ValueError("item admission requires native observed mode")
+    child_environment = dict(os.environ if environment is None else environment)
+    if progress_admission is not None:
+        progress_admission.validate_execution(
+            command, environment=child_environment, cwd=cwd,
+            quiet_seconds=quiet_seconds, max_seconds=max_seconds,
+        )
 
     publisher: _StatusPublisher | None = None
     status: dict[str, object] | None = None
@@ -339,12 +360,12 @@ def stream_command(
         print(f"observed-command: log open failed: {exc}", file=sys.stderr, flush=True)
         return OBSERVER_FAILURE
 
-    environment = os.environ.copy()
     if trace_path is not None and effective_run_id is not None:
-        environment["GLUDD_XDIST_TRACE_LOG"] = str(trace_path)
-        environment["GLUDD_XDIST_TRACE_RUN_ID"] = effective_run_id
-        environment["GLUDD_XDIST_TRACE_TRUNCATE"] = "1"
+        child_environment["GLUDD_XDIST_TRACE_LOG"] = str(trace_path)
+        child_environment["GLUDD_XDIST_TRACE_RUN_ID"] = effective_run_id
+        child_environment["GLUDD_XDIST_TRACE_TRUNCATE"] = "1"
 
+    child_cwd: _ChildCwdOptions = {"cwd": cwd} if cwd is not None else {}
     try:
         process = subprocess.Popen(
             list(command),
@@ -352,7 +373,8 @@ def stream_command(
             stderr=subprocess.STDOUT,
             bufsize=0,
             start_new_session=True,
-            env=environment,
+            env=child_environment,
+            **child_cwd,
         )
     except OSError as exc:
         log_file.close()
