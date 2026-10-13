@@ -572,6 +572,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_azure_containerapp_coverage_target.py::test_native_azure_coverage_selects_complete_runtime_closure_and_keeps_policy",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-owned-collection-runtime-metadata",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ee_owned_collection_runtime_metadata.py::test_owned_ee_collection_declares_supported_runtime_metadata",
+      "full_gate_phase": "test"
     }
   ]
 }

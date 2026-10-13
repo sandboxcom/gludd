@@ -216,6 +216,32 @@ with strict typing/Ruff, unchanged 256-resource ownership, Make parity and 231
 contracts green. Full native early admission,
 successor exact-SHA hosted, canonical gate and deployment proof remain required.
 
+S98.4 real owned-collection metadata scope:
+`collections/ansible_collections/general_ludd/ai_ml/meta/runtime.yml`,
+`collections/ansible_collections/general_ludd/azure/meta/runtime.yml`,
+`collections/ansible_collections/general_ludd/infrastructure/meta/runtime.yml`,
+`collections/ansible_collections/general_ludd/language/meta/runtime.yml`,
+`collections/ansible_collections/general_ludd/networking/meta/runtime.yml`,
+`collections/ansible_collections/general_ludd/xml/meta/runtime.yml`,
+`tests/unit/test_ee_owned_collection_runtime_metadata.py`,
+`make/10-observability-and-tests.mk`, `config/gate_failure_promotions.json`,
+`tests/unit/test_runtime_admission_scheduling.py`,
+`tests/unit/test_gate_failure_promotion.py`, and
+`docs/features/MOLECULE_NATIVE_VALIDATION.md`. Real native builds expose six
+missing runtime declarations together; six canonical metadata cases fail first,
+with two existing controls passing. The six collections now declare the supported
+Core 2.19/2.21 range. All sixteen authentic local/third-party archives pass native
+identity, dependency and runtime admission plus fresh offline installation on
+Core 2.19.14 and 2.21.5 with fatal warnings and private-stage cleanup. A separate
+native entrypoint regression fails first before the existing pre-publication
+owner gains the metadata cohort and promotion family. These source/archive
+controls pass all 107 related cases on both runtimes; actual complete Python 3.11
+early admission passes 1202 main cases plus fresh help in 40.9 observed seconds
+under unchanged 90/60 bounds. Strict typing/Ruff, 60 promoted families, 231 target
+contracts, native Make parity and task integrity pass. These source/archive
+results do not prove an installed EE, deployment, full gate or exact-SHA hosted
+acceptance; no release checkbox or completion count changes.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

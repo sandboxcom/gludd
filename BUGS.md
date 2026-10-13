@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Real EE collection archives lacked admitted runtime metadata
+
+- Native Galaxy successfully builds all eight owned EE collections, but strict authentic-archive admission rejects six together: ai_ml, azure, infrastructure, language, networking and xml lack meta/runtime.yml. Inert byte-copy fixtures cannot reveal this deployment-input defect.
+- Six canonical metadata regressions fail before implementation, with agent/travel controls passing. The missing native declarations now admit the supported Core 2.19/2.21 lanes; existing declarations, collection versions, modules, roles and dependency constraints remain unchanged. A separate native Make regression reproduces missing early selection before the existing pre-publication owner gains the cohort and its required full-gate promotion family.
+- All sixteen real owned/reviewed archives pass native identity, complete dependency graph and runtime admission plus fresh offline, cache-free installation on Core 2.19.14 and 2.21.5. Python warnings and native diagnostics remain fatal; private fresh-install stages are cleaned. The disposable proof harness's initial search/install-path mismatch is retained as a failed diagnostic, then repaired by using the same privately configured stage for both paths. No warning is hidden and cached installation is not presented as fresh installation.
+- Metadata/source acceptance is not image execution, hosted acceptance, full-gate readiness, ZDD deployment or backlog completion. The feature guide records native metadata and the long-lived offline-builder forum findings. No live shared dependency is patched or serving image switched.
+- All 107 related scheduling/promotion/publication cases pass on both Python runtimes. The actual complete pre-publication owner passes 1202 main cases plus fresh help in 40.9 observed seconds under unchanged 90/60 bounds; strict typing/Ruff, 60 native families, 231 target contracts, Make parity and task integrity pass. Only the known proof-generated old install tree is removed after exact native inventory/receipt verification; archives, diagnostic logs and receipts remain available for offline recovery.
+
 ### 2026-10-13 — Shared runtime growth was absent from Azure coverage execution
 
 - Build run 38447639445 fails Python 3.11's Azure coverage step: every test passes, but runtime-artifact coverage is 63.1% lines/53.8% branches and aggregate branches are 82.1%. The canonical reviewed-binding HEAD reproduces the same missing-selection defect at 69.1%/61.9% runtime coverage and 83.1% aggregate branches. The profile measures the expanded owner, but the old 47-file execution list omits its staging tests.

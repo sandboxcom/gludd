@@ -590,3 +590,51 @@ shows compat expanding paths and an offline workaround. Neither establishes
 strict-root or fatal-child-diagnostic acceptance; the
 [official configuration reference](https://docs.ansible.com/projects/ansible/latest/reference_appendices/config.html#collections-scan-sys-path)
 defines the scan setting but does not remove those native lifecycle differences.
+
+## Real owned EE archive metadata (2026-10-13)
+
+Native Galaxy builds of all eight EE-owned collections expose six missing runtime
+files: `ai_ml`, `azure`, `infrastructure`, `language`, `networking` and `xml`.
+Their new `meta/runtime.yml` declarations require Core `>=2.19.0,<2.22.0`, admitting
+the pinned EE's 2.19.12 and installed test lanes 2.19.14/2.21.5 without promising
+untested future versions. Existing agent/travel declarations, all eight versions
+and every module, role and dependency constraint remain unchanged.
+
+The [native collection structure reference](https://docs.ansible.com/projects/ansible/latest/dev_guide/developing_collections_structure.html#meta-directory)
+defines this runtime compatibility declaration. The
+[2024 offline-builder user discussion](https://forum.ansible.com/t/ansible-builder-installing-collections-and-components-with-no-access-to-galaxy/7974)
+explains that local archives must include the complete transitive dependency
+closure. Both were reviewed on 2026-10-13; native MANIFEST/runtime admission is
+retained rather than replacing dependency resolution or enabling ambient roots.
+
+Six canonical cases fail before the metadata repair, while both existing controls
+pass. The eight-collection regression additionally checks the actual native Make
+expansion and binds the cohort to the existing pre-publication owner and mandatory
+full-gate family. Original admission tests, fresh-help separation, worker caps and
+90/60-second bounds remain unchanged.
+
+The real eight Gludd artifacts plus eight reviewed third-party artifacts pass
+native identities, runtime constraints and the complete dependency graph. Fresh
+private offline installation succeeds on Core 2.19.14 and 2.21.5 with warnings
+fatal, no forced reinstall, no cache and automatic stage cleanup. Receipts are
+retained under `/tmp/gludd-v012-real-ee-collection-proof/run-metadata-repair/`.
+The first harness search/install-path mismatch remains a failed observation;
+matching the privately configured installation root fixes it without filtering
+diagnostics. A subsequent already-installed replay is not fresh-install proof;
+the final receipts explicitly record fresh state and teardown.
+
+No image is built or deployed by this metadata check. Production coverage owners
+and the 85/75 line/branch floors are unchanged because no production Python is
+modified. Existing jobs retain their selected immutable EE; release rollout and
+rollback still require separately verified images, staged promotion and draining.
+Installed EE, exact-SHA hosted, full-gate and item deployment acceptance remain
+pending. This source repair closes no backlog item and alters no native dependency.
+
+Final source acceptance passes 107 related cases on each Python runtime. Actual
+complete early admission passes 1202 main cases plus fresh help in 40.9 observed
+seconds, keeping the original 90/60 bounds. Strict typing/Ruff, all 60 promoted
+families, 231 target contracts, Make parity and task integrity pass. After native
+exact-inventory and owned-receipt checks, only the disposable harness's old
+generated installation is reclaimed; archives, logs and receipts are retained
+and can reproduce it offline. Neither cleanup nor admission establishes release
+readiness or permission to modify a live dependency environment.
