@@ -768,6 +768,7 @@ def build_environment(runtime: str, image: str, context: Path, validate_only: bo
             image,
             "--container-runtime",
             runtime,
+            "--verbosity=3",
             "--extra-build-cli-args="
             + shlex.join(["--iidfile", str(image_id_path)]),
         ]

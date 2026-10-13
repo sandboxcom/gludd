@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Builder default verbosity hid native build progress
+
+- The exact hosted EE command began at 03:28:22 and emitted no Docker build progress before completion at 03:30:52. Only the outer phase markers were visible; the native Builder parser confirms default verbosity 2.
+- Two Docker/Podman forwarding regressions fail through the actual installed Builder parser. The wrapper now selects its supported verbosity 3, exposing existing native build output without another observer, timeout or runner.
+- All 117 related cases and 33 cases in the existing Python 3.11 environment pass. Immutable image capture, complete offline warm-up, private names, failure propagation and cleanup remain unchanged. This observability repair does not resolve the separate SearXNG acceptance failure or provide full release proof.
+
 ### 2026-10-13 — Ansible escaping changed process identity into thread count
 
 - Molecule run 38336411530, job 115097379679, refused packaged-daemon teardown with expected start ticks 1 and observed ticks 2 although both executables matched. The startup and teardown regexes each retained the comm prefix after Ansible's lexer preserved their literal backslashes, making split index 19 read num_threads instead of immutable starttime.

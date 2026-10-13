@@ -17,6 +17,20 @@ dependency resolver, or proof cache is introduced.
 
 ## Mechanical scheduling admission
 
+### Native build progress
+
+The EE build in run 38340797931 emitted no native build output between
+03:28:22 and 03:30:52. The existing Builder parser defaults to verbosity 2;
+the wrapper now explicitly selects its supported verbosity 3 for Docker and
+Podman. This streams the maintained tool's existing output without adding an
+observer or increasing a timeout. Two parser-forwarding regressions fail first,
+then all 117 related tests and 33 tests in the existing Python 3.11 environment
+pass. Original IID, import, offline, naming, failure and cleanup guards remain
+unchanged. The SearXNG acceptance failure and final hosted/full-gate proof remain
+separate requirements.
+
+### Scheduling owners
+
 Run before sealing a replacement candidate, final combined replay, or a full
 gate:
 

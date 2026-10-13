@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import errno
 import hashlib
+import importlib
 import os
 import shlex
 import shutil
@@ -157,6 +159,22 @@ def test_acceptance_warms_all_controller_imports_with_owned_offline_containers(
         "import " + ", ".join(CONTROLLER_IMPORTS) + "; print('ANSIBLE_EE_IMPORT_OK')",
     ]
     assert tuple(artifacts.EXPECTED_CONTROLLER_IMPORTS) == CONTROLLER_IMPORTS
+
+
+@pytest.mark.parametrize("runtime", ["podman", "docker"])
+def test_builder_streams_native_progress_at_supported_verbosity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime: str,
+) -> None:
+    calls, _events = _record_commands(monkeypatch, (0, 0, 0), runtime=runtime)
+    assert artifacts.build_environment(runtime, CANDIDATE_IMAGE, tmp_path / "context", False) == 0
+    builder_cli = importlib.import_module("ansible_builder.cli")
+    monkeypatch.setattr(sys, "argv", ["ansible-builder", *calls[0][3:]])
+    parsed: object = builder_cli.parse_args()
+    assert isinstance(parsed, argparse.Namespace)
+    assert parsed.verbosity == 3
+    assert parsed.container_runtime == runtime
 
 
 @pytest.mark.parametrize("mode", ["build", "verify"])
