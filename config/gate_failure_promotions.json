@@ -609,6 +609,20 @@
       "full_gate_phase": "test"
     },
     {
+      "id": "ee-native-format-backend-throughput",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_native_builder_optional_formats.py::test_native_jsonschema_selects_real_rfc3987_without_syntax_parser_startup",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-native-format-tooling-literal-env",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_native_format_profile_sync_target.py::test_relative_environment_stays_bound_to_the_caller_absolute_environment",
+      "full_gate_phase": "test"
+    },
+    {
       "id": "mcp-git-composite-choice-closure",
       "owner_target": "_pytest-runtime-compatibility-admission",
       "node_kind": "pytest_node",

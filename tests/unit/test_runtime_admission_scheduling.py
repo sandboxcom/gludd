@@ -61,6 +61,8 @@ ROSTER = (
     "tests/unit/test_ee_owned_collection_runtime_metadata.py",
     "tests/unit/test_no_sleep_subagent.py",
     "tests/unit/test_ansible_ee_locked_consumer.py",
+    "tests/unit/test_native_builder_optional_formats.py",
+    "tests/unit/test_native_format_profile_sync_target.py",
     "tests/unit/test_ansible_ee_locked_consumer_admission.py",
     "tests/unit/test_release_asset_matrix.py",
     "tests/unit/test_release_ee_collection_closure.py",

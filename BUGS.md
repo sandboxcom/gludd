@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Native format-parser startup exhausted hosted early admission
+
+- The exact hosted Python 3.12 job timed out at 90.6 seconds with tests passing at 88%. Profiling the unchanged 52-case EE consumer identifies 23.29 of 26.52 accumulated native-worker seconds in the optional syntax parser's eager imports. The supported unmodified development-only RFC3987 backend reduces that same local profile from 34.79 to 8.68 seconds without removing validation, worker isolation, fatal warnings, input binding or original limits.
+- Canonical package/selection controls fail twice before the locked pin, with four format-semantic controls passing. Ten native installer controls fail before its narrow maintained-uv façade; a separate relative-path control reproduces the environment-binding gap before normalization. Actual native plans and installations add only the reviewed package to both existing tooling environments. No environment creation, package fork, import mask, warning exemption, timeout increase or runtime/image dependency is introduced.
+- Three existing exact registration assertions fail before additive cohort/family conformance. All 284 related cases pass on Python 3.11 and 3.14, with Ruff, strict typing, 233 target contracts, 67 native families and unchanged 258-resource Python inventory green. Native catalog/render/plan evidence covers all 25 profiles and 29 sets; the GPL dependency and development-only boundary are documented. This repairs source/configuration, not hosted timeout resolution, image/deployment acceptance or S98.4 completion.
+
 ### 2026-10-13 — A completed CI owner continued identical terminal polling
 
 - The bounded heartbeat kept observing the same failed exact-SHA workflows after every workflow had completed. Its snapshot was current but never authorized an end to the watch; elapsed polling was not feature progress.

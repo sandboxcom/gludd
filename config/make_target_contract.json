@@ -2,6 +2,11 @@
   "version": 1,
   "targets": [
     {
+      "name": "sync-ansible-native-format",
+      "make_variables": ["ANSIBLE_FORMAT_SYNC_ENVIRONMENT", "ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY"],
+      "behavior": "make sync-ansible-native-format ANSIBLE_FORMAT_SYNC_ENVIRONMENT=.venv ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY=1"
+    },
+    {
       "name": "check-molecule-yaml",
       "make_variables": [
         "MOLECULE_YAML_LINT_TIMEOUT_SECONDS",

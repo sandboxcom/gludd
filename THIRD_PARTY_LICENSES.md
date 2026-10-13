@@ -86,6 +86,19 @@ Key runtime dependencies:
   distribution. Gludd uses the unmodified packages through their public Python
   interfaces.
 
+## Development-only native validation dependency
+
+- rfc3987 1.3.8 (GPL-3.0-or-later) — JSONschema's supported RFC3987 format
+  backend, selected only by the `dev-ansible` tooling profile. The original
+  publisher package is used without vendoring or modification; it is not added
+  to Gludd's core wheel, `ansible-controller` profile or EE image requirements.
+  [Publisher/source information](https://pypi.org/project/rfc3987/),
+  [upstream license](https://www.gnu.org/licenses/gpl-3.0.html).
+  Development use does not relicense this dependency as MIT. Any redistribution
+  of a development environment containing it must retain the GPL license and
+  applicable corresponding-source obligations. The existing SBOM profile set
+  includes `dev-ansible`, so the dependency must remain visible in that inventory.
+
 ## Collected Prompts
 
 The `config/prompt_profiles/collected/` directory contains system prompts

@@ -9,6 +9,8 @@ dependencies = [
     "molecule>=24.0.0",
     "molecule-plugins[docker]>=25.8.12",
     "ansible-lint>=24.0.0",
+    # JSONschema's supported GPL format backend avoids eager Lark parser startup.
+    "rfc3987==1.3.8",
 ]
 
 [tool.uv]

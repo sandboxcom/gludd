@@ -405,6 +405,7 @@ help:
 	@echo "  --- Setup ---"
 	@echo "  init                  Set up project (dirs + deps)"
 	@echo "  sync                  Atomically sync an explicit locked dependency profile set (DEPENDENCY_PROFILE_*)"
+	@echo "  sync-ansible-native-format Native locked/inexact dev tooling sync (ANSIBLE_FORMAT_SYNC_*, dry-plan by default)"
 	@echo "  uv-cache-path         Print the sandbox-writable Gludd uv cache path"
 	@echo "  migrate-up            Upgrade an explicit database URL to a revision (MIGRATE_DATABASE_URL, MIGRATE_REVISION)"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
@@ -1003,6 +1004,33 @@ sync:
 		--environment "$(DEPENDENCY_PROFILE_ENVIRONMENT)" \
 		$(if $(strip $(DEPENDENCY_PROFILE_PYTHON)),--python "$(DEPENDENCY_PROFILE_PYTHON)",) \
 		$(if $(filter 1,$(DEPENDENCY_PROFILE_VALIDATE_ONLY)),--validate-only,)
+
+ANSIBLE_FORMAT_SYNC_ENVIRONMENT ?= .venv
+ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY ?= 1
+export GLUDD_ANSIBLE_FORMAT_SYNC_ENVIRONMENT := $(value ANSIBLE_FORMAT_SYNC_ENVIRONMENT)
+export GLUDD_ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY := $(value ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY)
+export GLUDD_ANSIBLE_FORMAT_SYNC_CALLER_ROOT := $(value CURDIR)
+unexport ANSIBLE_FORMAT_SYNC_ENVIRONMENT ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY
+.PHONY: sync-ansible-native-format
+# ANSIBLE_FORMAT_SYNC_ENVIRONMENT -> literal GLUDD_ANSIBLE_FORMAT_SYNC_ENVIRONMENT
+# ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY -> literal GLUDD_ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY
+sync-ansible-native-format:
+	@set -eu; \
+	case "$$GLUDD_ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY" in \
+		1) set -- --dry-run ;; 0) set -- ;; \
+		*) echo "ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; \
+	esac; \
+	case "$$GLUDD_ANSIBLE_FORMAT_SYNC_ENVIRONMENT" in \
+		/*) gludd_native_format_environment="$$GLUDD_ANSIBLE_FORMAT_SYNC_ENVIRONMENT" ;; \
+		*) gludd_native_format_environment="$$GLUDD_ANSIBLE_FORMAT_SYNC_CALLER_ROOT/$$GLUDD_ANSIBLE_FORMAT_SYNC_ENVIRONMENT" ;; \
+	esac; \
+	test -f "$$gludd_native_format_environment/pyvenv.cfg" && \
+		test -x "$$gludd_native_format_environment/bin/python" || \
+		{ echo "ANSIBLE_FORMAT_SYNC_ENVIRONMENT must be an existing tooling environment"; exit 2; }; \
+	UV_PROJECT_ENVIRONMENT="$$gludd_native_format_environment" \
+		VIRTUAL_ENV="$$gludd_native_format_environment" UV_NO_SYNC=0 UV_PYTHON_DOWNLOADS=never \
+		$(UV) sync --project "$(CURDIR)/requirements/profiles/dev-ansible" --locked --inexact \
+		--python "$$gludd_native_format_environment/bin/python" "$$@"
 
 uv-cache-path:
 	@printf '%s\n' "$$UV_CACHE_DIR"

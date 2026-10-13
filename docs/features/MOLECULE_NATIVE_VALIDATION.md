@@ -750,3 +750,67 @@ remains the native metadata owner. Tiny deterministic test archives use an
 independently supplied fixture digest; they are not installable-archive or image
 proof. No resolver, image build, deployment, coverage exclusion, warning waiver,
 85/75 floor change or ZDD/rollback authority change is introduced.
+
+### Native EE consumer import throughput
+
+The unchanged 52-case locked-consumer profile identified JSONschema 4.26.0's
+optional `rfc3987_syntax` startup as 23.29 seconds of 26.52 seconds accumulated
+across sixteen fresh native Builder workers. This agrees with the long-lived
+[upstream user/maintainer import discussion](https://github.com/python-jsonschema/jsonschema/issues/1428):
+format registration has import-time side effects, so hiding imports or disabling
+formats is not an equivalent repair. Its published timings vary by platform;
+the local cProfile receipts, not that thread's numbers, are the measured evidence.
+
+The development-only `dev-ansible` profile selects the exact unmodified
+`rfc3987==1.3.8` package. JSONschema's
+[maintained native selection](https://github.com/python-jsonschema/jsonschema/blob/v4.26.0/jsonschema/_format.py)
+prefers this supported regex-backed implementation without loading the syntax
+parser. The existing nongpl closure remains intact. No module masking, dependency
+fork, import filter, unchecked cache, worker reuse or new runner is introduced.
+The dependency is GPL-3.0-or-later, not MIT; its development-only boundary and
+redistribution obligations are recorded in `THIRD_PARTY_LICENSES.md`. It is not
+added to core runtime or EE image inputs.
+
+Six failing-first controls establish the locked package/digest and native backend
+selection, explicitly registered IRI/IRI-reference/URI/URI-reference formats,
+Unicode and percent-encoding acceptance, and malformed-input rejection. The
+unchanged 52 consumer cases still exercise sixteen fresh native workers,
+Docker/Podman context creation, all archive/graph checks, owned cleanup and fatal
+rc-zero warnings, full canonical context bytes, and immutable-IID warm controls.
+Same-instrumentation local Python 3.11 acceptance improves from 34.79 to 8.68
+seconds, with native worker cumulative time 26.52 to 3.12 seconds. Existing source
+and consumer-test digests match before and after. Evidence is retained under
+`/tmp/gludd-v012-native-consumer-throughput/{before,after}`; a profile is diagnostic
+acceptance, not hosted timing, image, deployment, full-gate or release proof.
+The original 90/60 bounds, one-worker test setting, warning policy, 85/75 coverage
+floors, ZDD and all source admission controls remain unchanged. Exact-SHA hosted
+Python 3.12 whole-owner acceptance is still required to close the timeout blocker.
+
+The existing-environment native installer is
+`make sync-ansible-native-format ANSIBLE_FORMAT_SYNC_ENVIRONMENT=<existing-env> ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY=1`.
+It forwards the caller's absolute environment to maintained `uv sync --locked
+--inexact` for only the development tooling profile. Its default is a dry-plan;
+after reviewing that plan, set `ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY=0` to apply.
+Missing environments are rejected rather than created; Python downloads are
+disabled. Relative paths remain bound to the caller, and Make/shell metacharacters
+remain literal data. Native failures and output are never discarded.
+
+All 25 profile locks and 29 configured sets were inspected through the native
+profile catalog/render/sync-plan owners. Only `dev-ansible` gains the dependency;
+six CI/development/SBOM sets include it. Core, controller and both native binary
+build sets exclude it. Six hosted environment owners, the native build owner's
+fresh environment replacement, explicit Hatch file selections and unchanged EE
+input hashes confirm the configured boundary. This is not built-binary proof.
+
+Canonical plans and actual installations in the existing Python 3.11 and 3.14
+tooling environments add only `rfc3987==1.3.8`, with no other package changes.
+Ten installer controls fail before implementation; a separate relative-path
+control fails before normalization. All eleven then pass. Three old exact
+registration expectations fail before adding the two new complete cohorts and
+families to those expectations, preserving every original assertion. All 284
+combined producer, format, installer, native-consumer and registration cases
+pass with fatal warnings on both Python versions (31.27/33.87 seconds).
+The 233-target contract, 67 early-failure families, strict typing/Ruff, Make
+parity and unchanged 258-resource Python inventory pass. No new production Python
+coverage owner is added. Complete bounded early admission, exact successor CI,
+image/deployment acceptance and the full gate remain required.
