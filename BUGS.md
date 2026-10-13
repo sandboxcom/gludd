@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Controller bootstrap requested a conflicting executable provider
+
+- Exact published source 39b52845b, Build run 38430314549/job 115417409716, fails before assembly: the pinned CentOS Stream 9 base already has coreutils-single, while the bootstrap asks DNF for mutually exclusive full coreutils.
+- The existing real Builder-generation regression fails first. The definition now requests the installed coreutils-single provider; Python, curl-minimal, tar, gzip, all immutable pins and native cleanup remain unchanged. No allowerasing, skip-broken, nobest or dependency omission is permitted. The canonical lock producer regenerates the definition hash, not a hand-edited receipt.
+- All 196 related source tests pass on Python 3.14 and existing Python 3.11 with fatal warnings; the native watched 3.11 replay completes in 32.3 observed seconds. Strict typing/Ruff, native runtime boundary, 227 target contracts, 58 early failure families and unchanged 253-resource inventory pass. The feature document records the 2017 maintainer explanation and 2018 container/Ansible user report. Read-only secrets admission finds no new finding and leaves the canonical baseline unchanged.
+- Native Linux package/build acceptance, full installed-image smoke, successor exact-SHA hosted, canonical full gate and deployment readiness remain required. This repair is not a new backlog closure or permission to switch a serving image.
+
 ### 2026-10-13 — Commit admission duplicated the same full collection
 
 - Root ran test-count before each commit, then ship-commit collected the same 123537-case inventory again through collect-check. Each real observed collection cost about 56 seconds. A bare target substitution would lose collect-check's isolated Ansible state and bounded failure diagnostics, so those controls must remain.

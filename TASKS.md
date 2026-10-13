@@ -92,6 +92,20 @@ The documented single-owner test-count example actually passes the complete
 errors in 56.7 observed seconds and releases the canonical lease. No captured
 fixture count or earlier receipt supplies commit/full-gate/release authority.
 
+S98.4 pinned-base executable-provider repair scope:
+`config/ansible/execution-environment.yml`, `config/ansible/runtime-lock.json`,
+`tests/unit/test_ansible_runtime_artifacts.py`, and
+`docs/features/ANSIBLE_EE_BASE_IMAGE_LIVENESS.md`. Hosted Build 38430314549/job
+115417409716 proves the full-coreutils request conflicts with the installed
+coreutils-single provider. Real Builder generation fails first; the narrow
+provider change and native lock producer retain all other inputs. All 196 related
+cases pass warning-fatal on both 3.14 and existing 3.11; the native watched 3.11
+replay takes 32.3 observed seconds. Strict typing, native runtime validation,
+227 target contracts, 58 early failure families, unchanged 253-resource inventory
+and read-only secrets admission pass without a canonical baseline change.
+Successful Linux package/build, offline installed-image, same-SHA hosted, full
+gate and deployment acceptance remain pending; no release task is ticked.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

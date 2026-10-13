@@ -978,6 +978,12 @@ def test_generated_controller_build_preserves_installer_and_interpreter_boundari
     rendered = (context / "Dockerfile").read_text(encoding="utf-8")
     base, downstream = rendered.split("FROM base AS galaxy", 1)
     builder, final = downstream.split("FROM base AS final", 1)
+    bootstrap = "RUN $PKGMGR install -y python3.11 curl-minimal tar gzip coreutils-single && $PKGMGR clean all"
+    assert bootstrap in base
+    assert base.index(bootstrap) < base.index("sha256sum --check --strict")
+    for unsafe_option in ("--allowerasing", "--skip-broken", "--nobest"):
+        assert unsafe_option not in base
+    assert "RUN $PKGMGR install -y python3.11 curl-minimal tar gzip coreutils &&" not in base
     assert f'ENV PIPCMD="{artifacts.CONTROLLER_PYTHON_PATH} -m uv pip"' in base
     assert "ENV UV_CONFIG_FILE=/etc/gludd/ansible-ee-uv.toml" in base
     assert f"ENV UV_PYTHON={artifacts.CONTROLLER_PYTHON_PATH} UV_SYSTEM_PYTHON=true" in base

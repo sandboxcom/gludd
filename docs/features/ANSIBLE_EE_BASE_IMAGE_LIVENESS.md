@@ -475,3 +475,36 @@ complete-project coverage, or exact-SHA hosted evidence. S98.4 remains open unti
 are collected for the immutable candidate. ZDD still requires warming the new
 digest beside the active one, switching new jobs, draining old jobs and retaining
 the prior digest for rollback.
+
+## Preserve the pinned base's executable provider (2026-10-13)
+
+Exact source `39b52845b46cc35e58babf4c1a3bcd8a701f1bea`, Build run
+`38430314549`, job `115417409716`, fails in base step 4 before Python or
+collection assembly. DNF reports that the pinned CentOS Stream 9 image already
+contains `coreutils-single-8.32-43.el9`, which conflicts with the requested full
+`coreutils` package. This is a package-selection failure, not disk pressure or
+successful installed-image acceptance.
+
+Keep the existing `coreutils-single` provider in the explicit bootstrap request.
+Python 3.11, curl-minimal, tar, gzip, native cache cleanup, the pinned base and
+both standalone-interpreter archives remain unchanged. Do not use allowerasing,
+skip-broken or nobest to conceal or bypass package resolution. The canonical
+runtime-lock producer updates only the EE definition's content hash.
+
+The [2017 upstream maintainer explanation](https://bugzilla.redhat.com/show_bug.cgi?id=1446494)
+states that the providers intentionally conflict because they supply the same
+executables. The [2018 Fedora container user report](https://github.com/fedora-cloud/docker-brew-fedora/issues/58)
+records the same conflict during Ansible's container integration tests. Retaining
+the already installed provider is the narrow application of that evidence; those
+reports do not prove our rebuilt image.
+
+The existing regression executes Builder's real generation and now checks the
+provider, installation order and absence of dependency-bypass flags, preserving
+every installer/interpreter assertion. It fails first on the actual conflicting
+request; all 196 related source tests then pass with warnings fatal on Python
+3.14 and existing Python 3.11. The native watched 3.11 replay completes in 32.3
+observed seconds with its original quiet/runtime bounds and owned cleanup.
+Source acceptance does not replace a successful DNF transaction, the full
+installed offline smoke, exact-SHA hosted proof or the canonical release gate.
+Warm the replacement beside the active digest; switching, draining and rollback
+remain pending until deployment acceptance. S98.4 stays unchecked.

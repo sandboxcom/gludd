@@ -47,7 +47,8 @@ additional_build_files:
 additional_build_steps:
   prepend_base:
     # Builder's pip/Ansible steps consume PYCMD before append_base.
-    - RUN $PKGMGR install -y python3.11 curl-minimal tar gzip coreutils && $PKGMGR clean all
+    # The pinned base already owns coreutils-single; full coreutils conflicts.
+    - RUN $PKGMGR install -y python3.11 curl-minimal tar gzip coreutils-single && $PKGMGR clean all
     - RUN /usr/bin/python3.11 -c 'import sys; assert sys.version_info[:2] == (3, 11)'
     - >-
       RUN set -eu; machine="$(uname -m)";
