@@ -697,6 +697,8 @@ help:
 	@echo "  secrets-scrub         Interactive secret audit + scrub"
 	@echo "  secrets-baseline      Refresh and verify canonical .secrets.baseline"
 	@echo "  secrets-baseline-check Verify canonical .secrets.baseline without mutation (SECRETS_BASELINE_FILE, POLICY, REPO_ROOT, EXECUTABLE)"
+	@echo "  check-secrets-files   Native read-only hook on explicit files (SECRETS_FILES, SECRETS_BASELINE_FILE)"
+	@echo "  git-unstage-files     Remove explicit files from index, preserving content (FILES)"
 	@echo "  scan-secrets          Alias for secrets-scan"
 	@echo "  scan-secrets-baseline Alias for secrets-baseline"
 	@echo "  sast-summary          Summarize Bandit JSON by severity/rule/file with baseline deltas (SAST_REPORT, SAST_SUMMARY, SAST_BASELINE)"

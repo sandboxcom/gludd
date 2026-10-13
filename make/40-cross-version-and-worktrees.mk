@@ -114,6 +114,17 @@ SECRETS_BASELINE_FILE ?= .secrets.baseline
 POLICY ?= config/detect_secrets_baseline_policy.json
 REPO_ROOT ?= $(CURDIR)
 EXECUTABLE ?= detect-secrets
+SECRETS_FILES ?=
+
+.PHONY: check-secrets-files git-unstage-files
+check-secrets-files:
+	@[ -n "$(strip $(SECRETS_FILES))" ] || { echo "SECRETS_FILES must name explicit files" >&2; exit 2; }
+	@echo "[check-secrets-files] native read-only admission files=$(words $(SECRETS_FILES))"
+	@$(UV) run python scripts/detect_secrets_readonly.py --baseline "$(SECRETS_BASELINE_FILE)" -- $(foreach SECRET_FILE,$(SECRETS_FILES),"$(SECRET_FILE)")
+
+git-unstage-files:
+	@[ -n "$(strip $(FILES))" ] || { echo "FILES must name explicit files" >&2; exit 2; }
+	@git restore --staged -- $(foreach INDEX_FILE,$(FILES),"$(INDEX_FILE)")
 
 secrets-baseline:
 	@$(UV) run python scripts/manage_secrets_baseline.py refresh --baseline "$(SECRETS_BASELINE_FILE)" --policy "$(POLICY)" --repo-root "$(REPO_ROOT)" --executable "$(EXECUTABLE)"
@@ -291,7 +302,11 @@ _commit-lock-acquire: _gate-mutation-guard
 # Commit recipes that intentionally pass --no-verify still enforce the same
 # staged-content quality boundary once. Normal commit paths use the real
 # pre-commit hooks and do not repeat these checks.
-_pre-commit-content-guard:
+.PHONY: _pre-commit-secrets-guard
+_pre-commit-secrets-guard:
+	@$(UV) run pre-commit run detect-secrets-readonly
+
+_pre-commit-content-guard: _pre-commit-secrets-guard
 	@$(MAKE) --no-print-directory check-file-line-limits FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)" FILE_LINE_LIMIT_STAGED=1
 	@$(MAKE) --no-print-directory check-duplicate-code DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=0
 

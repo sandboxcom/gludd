@@ -26,6 +26,14 @@ clean success and visible refusal for modified, staged, untracked, deleted or
 unknown state. The guard must not mutate, stash or conceal pending feature work.
 This source acceptance does not replace gate, exact-SHA CI or deployment proof.
 
+The normal staged-content preflight runs the existing read-only secrets hook
+before collection. Native pre-commit selects files and preserves configured
+filters; the canonical baseline is never refreshed by admission. Use
+`make check-secrets-files SECRETS_FILES=scripts/check_clean_tree.py SECRETS_BASELINE_FILE=.secrets.baseline`
+for a narrow diagnosis. A generated non-credential fixture must still be refused.
+`make git-unstage-files FILES='explicit paths'` is index-only checkpoint support;
+it cannot restore or discard worktree content.
+
 ### Item-scoped execution controls
 
 `make work-item` owns administrative primary/support selection. One primary

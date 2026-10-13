@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Secret fixture failure surfaced only after commit and push collection
+
+- The normal batch push correctly refused a public SearXNG default in an assertion. The inherited value is now captured before the actual smoke runs and checked afterward; length, replacement and pinned-schema assertions remain unchanged in meaning. No scanner suppression, baseline change or bypass is used.
+- Four failing Make cases precede narrow native read-only secret admission and explicit index-only checkpoint support. Two additional failures require the existing configured secrets hook in normal staged-content preflight before repeated collection work. The maintained hook retains its native file filtering and baseline ownership.
+- The validator checkpoint is restored after the rejected push. Incomplete source remains pending; a repaired source receipt and a commit are not deployment completion.
+- All 35 related tests and 27 Python 3.11 tests pass. The maintained scanner refuses a generated test finding without changing the baseline and accepts the repaired fixtures and actual changed files. All 223 contracts, both safe behaviors and collection with 122976/122977 cases and zero errors pass. No release item is closed.
+
 ### 2026-10-13 — Tracked clean-tree push guard unconditionally succeeded
 
 - The existing push guard was a temporary success stub, so dirty or unknown Git state passed without evidence. This undermined the requested deployment-ready definition.

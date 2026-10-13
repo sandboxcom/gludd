@@ -1786,6 +1786,16 @@
       "behavior": "make pre-commit-check FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd"
     },
     {
+      "name": "check-secrets-files",
+      "make_variables": ["SECRETS_FILES", "SECRETS_BASELINE_FILE"],
+      "behavior": "make check-secrets-files SECRETS_FILES=scripts/check_clean_tree.py SECRETS_BASELINE_FILE=.secrets.baseline"
+    },
+    {
+      "name": "git-unstage-files",
+      "make_variables": ["FILES"],
+      "behavior": "make git-unstage-files FILES=docs/features/RELEASE_PROOF_THROUGHPUT.md"
+    },
+    {
       "name": "check-gate-failure-promotions",
       "make_variables": [
         "GATE_FAILURE_PROMOTION_MANIFEST"

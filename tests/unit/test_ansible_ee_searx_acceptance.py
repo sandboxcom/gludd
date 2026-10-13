@@ -221,9 +221,10 @@ def test_ephemeral_smoke_secret_uses_real_pinned_settings_schema(
             prefix_nodes.append(node)
     prefix = ast.Module(body=prefix_nodes, type_ignores=[])
     monkeypatch.setenv("SEARXNG_SECRET", "ultrasecretkey")
+    inherited_value = os.environ["SEARXNG_SECRET"]
     exec(compile(prefix, "<real-smoke-secret-prefix>", "exec"), {})
     secret = os.environ["SEARXNG_SECRET"]
-    assert len(secret) == 64 and secret != "ultrasecretkey"
+    assert len(secret) == 64 and secret != inherited_value
     with monkeypatch.context() as context:
         package = ModuleType("searx")
         package.__path__ = [str(frozen_source.root / "searx")]
@@ -306,6 +307,7 @@ def test_actual_installed_smoke_enforces_frozen_provenance_and_normalization(
     target.write_bytes(frozen_source.frozen.read_bytes())
     monkeypatch.setattr(artifacts, "SEARXNG_SOURCE_REVISION", frozen_source.commit)
     monkeypatch.setenv("SEARXNG_SECRET", "ultrasecretkey")
+    inherited_value = os.environ["SEARXNG_SECRET"]
     source = _smoke(monkeypatch)
     capsys.readouterr()
 
@@ -371,7 +373,7 @@ def test_actual_installed_smoke_enforces_frozen_provenance_and_normalization(
         exec(compile(source, "<actual-installed-controller-smoke>", "exec"), {})
         assert capsys.readouterr().out == "ANSIBLE_EE_IMPORT_OK\n"
         assert len(os.environ["SEARXNG_SECRET"]) == 64
-        assert os.environ["SEARXNG_SECRET"] != "ultrasecretkey"
+        assert os.environ["SEARXNG_SECRET"] != inherited_value
     else:
         with pytest.raises((SystemExit, ValueError, TypeError, ImportError)):
             exec(compile(source, "<actual-installed-controller-smoke>", "exec"), {})
