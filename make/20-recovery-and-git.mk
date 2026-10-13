@@ -35,14 +35,16 @@ clean-pycache-test-chat-history:
 	@find /Users/shawnwilson/gludd -name "*.pyc" -path "*test_chat_history*" -delete 2>/dev/null || true
 	@echo "test_chat_history cache cleared"
 
-# Disk guard — checks disk usage % and cleans caches (pip, uv, pytest, mypy,
-# ruff, __pycache__, tmp) when above GLUDD_DISK_THRESHOLD (default 95%).
-# Delegate to scripts/disk-guard.sh for the full cleanup logic.
+# Legacy names share the canonical fixed limits and ownership-checked cleanup.
 disk-guard:
-	@bash scripts/disk-guard.sh guard
+	@SYSTEM_PYTHON="$(SYSTEM_PYTHON)" \
+		DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY="$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" \
+		DISK_CLEANUP_PREFLIGHT_DRY_RUN="$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" \
+		DISK_CLEANUP_RECEIPT_GRACE_SECONDS="$(DISK_CLEANUP_RECEIPT_GRACE_SECONDS)" \
+		bash scripts/disk-guard.sh guard
 
 disk-check:
-	@bash scripts/disk-guard.sh check
+	@SYSTEM_PYTHON="$(SYSTEM_PYTHON)" bash scripts/disk-guard.sh check
 
 uv-cache-prune-status:
 	@/bin/ps -ax -o pid=,ppid=,etime=,command= | /usr/bin/awk '/[u]v cache prune/ { found=1; print } END { if (!found) print "UV_CACHE_PRUNE_IDLE" }'

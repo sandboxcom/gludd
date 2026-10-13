@@ -294,11 +294,14 @@ class TestDiskMonitoring:
 
     def test_disk_guard_uses_bounded_visible_uv_prune(self):
         script = (SCRIPTS_DIR / "disk-guard.sh").read_text(encoding="utf-8")
-        assert "uv cache prune" in script
-        assert "UV_LOCK_TIMEOUT" in script
-        assert "DISK_GUARD_UV_LOCK_TIMEOUT" in script
-        assert "DISK_GUARD_UV_MAX_SECONDS" in script
-        assert "UV_CACHE_PRUNE_HEARTBEAT" in script
+        owner = (SCRIPTS_DIR / "automatic_disk_cleanup.py").read_text(encoding="utf-8")
+        assert "disk-cleanup-preflight" in script
+        assert '_run_uv_cache_command(cache_root, "prune")' in owner
+        assert 'environment["UV_LOCK_TIMEOUT"] = "15"' in owner
+        assert "timeout=120" in owner
+        assert "phase=cleanup action=uv-cache-prune status=starting" in owner
+        assert "phase=cleanup action=uv-cache-clean status=complete" in owner
+        assert "flush=True" in owner
         assert "uv cache clean" not in script
         assert "uv cache prune 2>/dev/null" not in script
 

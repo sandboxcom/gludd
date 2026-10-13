@@ -479,6 +479,8 @@ def test_disk_checks_use_portable_system_tools_without_project_venv() -> None:
     )[0]
     lightweight_targets = {
         "disk-cleanup-preflight",
+        "disk-check",
+        "disk-guard",
         "check-disk",
         "check-disk-classification",
         "tmp-gludd-clean-ci-shards",
@@ -492,8 +494,9 @@ def test_disk_checks_use_portable_system_tools_without_project_venv() -> None:
         "\ncheck-disk-classification:\n", 1
     )[1].split("\n# Read-only system load", 1)[0]
 
-    assert 'df -Pk "$TARGET_DIR"' in guard_source
-    assert "awk 'END {gsub(/%/,\"\"); print $5}'" in guard_source
+    checker_source = SCRIPT.read_text()
+    assert 'subprocess.check_output(["df", "-Pk", str(target)]' in checker_source
+    assert 'exec "${SYSTEM_PYTHON:-python3}" "$GLUDD_ROOT/scripts/check_disk_usage.py"' in guard_source
     assert lightweight_targets <= set(no_uv_goals.split())
     assert "disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0" in (
         check_disk_recipe
@@ -517,16 +520,25 @@ def test_shell_disk_guard_never_deletes_global_pytest_roots() -> None:
 def test_shell_disk_guard_defers_while_project_validation_is_active() -> None:
     source = DISK_GUARD_SCRIPT.read_text()
 
-    assert "active_project_validation" in source
-    assert 'pgrep -f "${GLUDD_ROOT}/.*(pytest|mypy|ruff)"' in source
-    assert "DISK_CLEANUP_DEFERRED" in source
+    owner_source = (ROOT / "scripts" / "automatic_disk_cleanup.py").read_text()
+    assert "disk-cleanup-preflight" in source
+    assert "clean_invoking_worktree_disposable_caches" in owner_source
+    assert "active_process_pids: ActiveProcessPids = clean_ci_shard_scratch._active_process_pids" in owner_source
+    assert "initial_pids = _blocking_invoking_process_pids(" in owner_source
+    assert "refreshed_pids = _blocking_invoking_process_pids(" in owner_source
+    assert "process-revalidation-failed" in owner_source
 
 
 def test_shell_disk_guard_removes_only_namespaced_node_download_caches() -> None:
     source = DISK_GUARD_SCRIPT.read_text()
 
-    assert 'GLUDD_NODE_CACHE_DIRS=(' in source
-    assert '"/tmp/gludd-npm-cache"' in source
-    assert '"/tmp/gludd-npm-cache-public-v1"' in source
-    assert 'rm -rf -- "$cache_dir"' in source
+    owner_source = (ROOT / "scripts" / "automatic_disk_cleanup.py").read_text()
+    assert "disk-cleanup-preflight" in source
+    assert "OWNED_NODE_CACHE_ROOTS = (" in owner_source
+    assert 'Path("/tmp/gludd-npm-cache")' in owner_source
+    assert 'Path("/tmp/gludd-npm-cache-public-v1")' in owner_source
+    assert "def clean_stale_node_download_caches(" in owner_source
+    assert "initial_pids = active_process_pids(cache_root)" in owner_source
+    assert "final_pids = active_process_pids(cache_root)" in owner_source
+    assert "rm -rf" not in source
     assert "rm -rf /tmp/gludd-*" not in source

@@ -125,6 +125,36 @@ Ruff and native 256-resource inventory pass. This source/metadata delivery does
 not complete checker/EE/hosted consumption, full gate or deployment acceptance;
 all release checkboxes and completed-backlog counts remain unchanged.
 
+S98.4 canonical disk-alias scope: `scripts/disk-guard.sh`,
+`make/20-recovery-and-git.mk`, `make/00-foundation.mk`,
+`make/50-development-and-guardrails.mk`,
+`config/make_target_contract.json`, `tests/unit/test_disk_alias_admission.py`,
+`tests/unit/test_check_disk_usage.py`, `tests/unit/test_process_monitoring.py`,
+and `docs/automatic-disk-cleanup.md`. The legacy alias falsely admits 91% below
+its separate 95% limit. Failing-first native fixtures reproduce the disagreement,
+masked measurements, unsupported overrides and unsafe duplicate cleanup owner.
+Canonical routing passes all 196 related cases and 25 subtests on Python 3.11;
+172 native-owner coverage cases measure 85.8% lines and 86.4% branches without
+changing either coverage floor or profile. All 230 target contracts, Make parity,
+documented validate-only behavior and unchanged 256-resource ownership pass.
+The actual read-only alias refuses 91% volume/601.1 MB scratch rather than
+claiming capacity recovery; no protected data is deleted or release task ticked.
+
+S98.4 hosted native-acceptance repair scope: `scripts/reap_stale_collection_locks.py`,
+`tests/unit/test_reap_stale_collection_locks.py`, `tests/unit/test_ansible_lint_deep.py`,
+`tests/unit/test_env_var_audit_deep.py`, `tests/unit/test_git_automation_role_state.py`,
+`docs/features/CROSS_WORKTREE_COLLECTION_LEASE.md`,
+`docs/features/MOLECULE_NATIVE_VALIDATION.md`, and `docs/WORKFLOW_STATE_MACHINE.md`.
+Actual hosted run 38430314549 fails five jobs; all contexts are collected together.
+Four test-owner defects reproduce before conformance: native static/runtime import
+identities, maintained Ansible task keywords, executable Make-export reads, and
+effective included Git operations. The combined 209-case cohort passes on Python
+3.11 and 3.14; the bounded 3.11 owner completes in 21.0 seconds. Negative controls
+still reject genuine short modules, dead/unknown environment variables, missing
+helpers and shell/non-Git delegation. The image-bootstrap repair has its separate
+196-case source receipt. Successor same-SHA CI, full gate and deployment proof
+remain pending; no failure family is marked resolved from these source results.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

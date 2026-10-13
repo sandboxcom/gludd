@@ -929,6 +929,20 @@
       "behavior": "make grep Q=GAME_E2E SEARCH_PATH=docs"
     },
     {
+      "name": "disk-guard",
+      "make_variables": [
+        "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY",
+        "DISK_CLEANUP_PREFLIGHT_DRY_RUN",
+        "DISK_CLEANUP_RECEIPT_GRACE_SECONDS"
+      ],
+      "behavior": "make disk-guard DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"
+    },
+    {
+      "name": "disk-check",
+      "make_variables": [],
+      "behavior": "make disk-check"
+    },
+    {
       "name": "check-disk",
       "make_variables": [
         "CHECK_DISK_VALIDATE_ONLY"
@@ -1091,9 +1105,11 @@
     {
       "name": "disk-reclaim",
       "make_variables": [
-        "GLUDD_DISK_THRESHOLD"
+        "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY",
+        "DISK_CLEANUP_PREFLIGHT_DRY_RUN",
+        "DISK_CLEANUP_RECEIPT_GRACE_SECONDS"
       ],
-      "behavior": "make disk-reclaim GLUDD_DISK_THRESHOLD=101"
+      "behavior": "make disk-reclaim DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"
     },
     {
       "name": "uv-cache-prune-status",

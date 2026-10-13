@@ -4,6 +4,20 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Four hosted audit owners pinned obsolete source structure
+
+- Terminal Build run 38430314549 exposes five failed jobs; all five contexts are collected before replacement publication. The image-bootstrap source repair is tracked separately. The other four failures are stale import-branch spelling, module_defaults treated as a module, valid Make-owned environment reads absent from a Python-only documentation audit, and inline-only Git delegation assertions.
+- Canonical failing-first replays retain each original failure. Acceptance now verifies static/runtime helper identity, maintained Ansible task metadata, explicit exported recipe consumption, and effective native included Git operations. The reaper's typing imports are aligned without changing runtime imports or cleanup authority; no production role is distorted to appease an obsolete audit.
+- All 209 combined cases pass on both local runtimes, with the watched Python 3.11 replay taking 21.0 seconds. Negative controls reject missing helpers, real short/scalar modules, dead/unknown/literal environment references, and command/non-Git delegation. The expanded 116-case three-owner production coverage passes unchanged 85/75 floors at 90% combined coverage. Source and acceptance typing are checked under canonical identities without ignores.
+- These scoped results do not resolve hosted failure families, satisfy full gate or create deployment proof. Feature guides preserve native-owner, ZDD/rollback boundaries and practitioner findings. Operational ledgers/observations remain native-producer owned; all release checkboxes stay open.
+
+### 2026-10-13 — Legacy disk aliases disagreed with release capacity admission
+
+- Native disk-check reported 91% as safe against a separate 95% threshold, while the canonical release owner refuses above 90%. The legacy shell also duplicated cache deletion and could hide failed measurement behind an empty or zero value.
+- Failing-first disposable fixtures reproduce admission, measurement, scope, override and cleanup-owner defects without permitting actual cleanup. The compatibility entrypoint now delegates to check_disk_usage or automatic_disk_cleanup; native interpreter, fixed thresholds, receipt grace, process/ownership rechecks and unknown-owner preservation remain intact.
+- All 196 related cases and 25 subtests pass on existing Python 3.11. The unchanged native-owner coverage profile measures 85.8% lines/86.4% branches across 172 passing cases. The alias fixture cohort passes separately; transient fake-owner files are not claimed as production coverage. Make parity/230 contracts, the real validate-only example and unchanged 256-resource inventory pass.
+- The actual canonical read-only check refuses 91% volume and 601.1 MB scratch. This change removes false admission, not physical storage. No protected cache/database/checkpoint is removed, no threshold is raised, and canonical full-gate/exact-SHA/deployment acceptance remains pending. The feature document records upstream locking guidance and long-lived practitioner reports.
+
 ### 2026-10-13 — Ambient collection availability and unsafe staging lifecycle
 
 - The native complete-input checker still encounters missing third-party collections; host/site-package discovery is not reproducible consumer-owned deployment evidence. The existing artifact owner now acquires a complete exact native Galaxy closure, verifies real tarball SHA256/size/origin and native MANIFEST/runtime constraints, then installs only those verified file inputs in private offline state.

@@ -236,7 +236,10 @@ clean:
 # cleanup implementation single-sourced so uv pruning always has a heartbeat,
 # lock timeout, and maximum runtime rather than becoming an unseen stall.
 disk-reclaim:
-	@$(MAKE) --no-print-directory disk-guard GLUDD_DISK_THRESHOLD="$(GLUDD_DISK_THRESHOLD)"
+	@$(MAKE) --no-print-directory disk-guard \
+		DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY="$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" \
+		DISK_CLEANUP_PREFLIGHT_DRY_RUN="$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" \
+		DISK_CLEANUP_RECEIPT_GRACE_SECONDS="$(DISK_CLEANUP_RECEIPT_GRACE_SECONDS)"
 
 test-live-zai:
 	@echo "Running live Z.AI integration tests..."

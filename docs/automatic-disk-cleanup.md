@@ -279,3 +279,42 @@ shortcut.
 These reports are durable failure patterns rather than dependencies on a specific
 tool version: unbounded generated data, cleanup racing active processes, and
 workspace deletion racing agent ownership.
+
+## Legacy disk aliases
+
+`make disk-check` and `scripts/disk-guard.sh check` use the existing read-only
+`scripts/check_disk_usage.py` owner, including both fixed limits and fail-closed
+measurement/registry errors. At 91% repository-volume use they refuse admission
+at the canonical 90% boundary. The read-only checker enforces the 100 MB scratch
+budget; the automatic preflight retains its documented soft-scratch treatment
+after one bounded cleanup attempt. Those distinct owner semantics are unchanged.
+
+`make disk-guard`, `make disk-reclaim`, and the shell `guard` mode delegate to
+`make disk-cleanup-preflight`. Native system Python is forwarded explicitly;
+neither alias requires a project environment or dependency synchronization.
+The shell preserves `check`, `disk-check`, `guard`, `disk-guard`, and the optional
+exact invoking-repository root. Other modes, extra arguments, and alternate
+volumes fail before admission or cleanup. The obsolete `GLUDD_DISK_THRESHOLD`,
+`GLUDD_DISK_CLEANUP_LOG`, and `DISK_GUARD_UV_*` settings are rejected, including
+empty assignments, rather than silently changing or ignoring caller policy.
+Use the existing `DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY`,
+`DISK_CLEANUP_PREFLIGHT_DRY_RUN`, and `DISK_CLEANUP_RECEIPT_GRACE_SECONDS` settings.
+The shell contains no separate cache-deletion or capacity-measurement engine.
+
+This alias routing preserves the existing ZDD ownership, receipt, age, identity,
+process-recheck, retained-evidence, and bounded cleanup controls. Reverting the
+alias-routing commit needs no migration or service restart, but reintroduces the
+legacy disagreement and is not a capacity-recovery action. No aggregate or
+per-file coverage floor, release admission, or branch-promotion rule is changed.
+
+The [upstream cache-safety guidance](https://docs.astral.sh/uv/concepts/cache/)
+requires supported cache commands rather than direct shared-cache deletion and
+documents exclusive cache-operation locking. The
+[practitioner report #11694](https://github.com/astral-sh/uv/issues/11694), opened
+in February 2025, describes pruning a running `uvx` tool's files; the maintainer
+closed it in November 2025 after cache locking was introduced. The historical
+failure supports retaining Gludd's existing fresh owner checks and native lock
+authority, and does not establish a current uv defect. The
+[cache-maintenance discussion #5409](https://github.com/astral-sh/uv/issues/5409)
+records recurring operational questions about concurrent CI users. This repair
+therefore shares the current cleanup owner rather than adding another engine.
