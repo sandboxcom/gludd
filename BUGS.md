@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Tracked clean-tree push guard unconditionally succeeded
+
+- The existing push guard was a temporary success stub, so dirty or unknown Git state passed without evidence. This undermined the requested deployment-ready definition.
+- Six real-Git failing-first cases expose clean evidence omission and acceptance of modified, staged, untracked, deleted and unknown worktrees. The thin entrypoint now delegates to the existing canonical worktree owner with mandatory clean-state assertion; no second Git scanner or bypass is introduced.
+- All 126 related cases and seven existing Python 3.11 cases pass. Entry-point coverage is 100% without coverage warnings; collection reports 122969/122970 cases, one intentional deselection and zero errors. The actual dirty checkout is refused with native identity and a nonzero exit.
+- Source acceptance remains separate from full gate, exact-SHA CI and deployment acceptance. The existing incomplete Molecule work remains preserved, not hidden or marked complete.
+
 ### 2026-10-13 — Legacy Molecule regexes and migrated task inputs disagree with native validation
 
 - The old input checker reports 21 layout findings while rejecting supported facts, expressions, script arguments and limited/empty sequences. Maintained Molecule configuration and native Ansible metadata/lint replace those approximations without running lifecycle actions or weakening argument failures.

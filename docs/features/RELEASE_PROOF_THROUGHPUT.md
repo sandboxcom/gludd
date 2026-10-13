@@ -17,6 +17,15 @@ dependency resolver, or proof cache is introduced.
 
 ## Mechanical scheduling admission
 
+### Real worktree admission
+
+The push entrypoint delegates to the existing path-qualified worktree owner
+with mandatory clean-state assertion. A temporary unconditional-success stub
+cannot count as admission. Six real-Git regressions require native identity on
+clean success and visible refusal for modified, staged, untracked, deleted or
+unknown state. The guard must not mutate, stash or conceal pending feature work.
+This source acceptance does not replace gate, exact-SHA CI or deployment proof.
+
 ### Item-scoped execution controls
 
 `make work-item` owns administrative primary/support selection. One primary

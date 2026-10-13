@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
-"""Temporarily bypassed for user-requested push — restore after."""
-import sys
-sys.exit(0)
+"""Enforce clean-tree push admission through the canonical worktree owner."""
+
+from worktree_state_guard import main
+
+raise SystemExit(main(["--assert-clean"]))
