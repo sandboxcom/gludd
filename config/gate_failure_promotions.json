@@ -544,6 +544,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_workflow_safe_parser.py::test_each_workflow_reader_uses_selected_safe_backend",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-searxng-frozen-source-acceptance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_ee_searx_acceptance.py::test_installer_copies_only_matching_real_frozen_provenance",
+      "full_gate_phase": "test"
     }
   ]
 }

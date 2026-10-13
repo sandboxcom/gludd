@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Complete EE warm exposed unfrozen SearXNG metadata and default configuration
+
+- Run 38340797931, job 115114319261, built immutable image d41a2ec590240b389d10f77f6023cd8b6bd7b05aecaeb81a9300b78120288959 and passed OpenTofu, but the required Python phase logged missing Git metadata and refused the production default secret.
+- Ten failing cases and one native pinned-freezer pass precede repair. In the final stage, a private namespaced exact-commit source runs upstream freeze; the real installed module is copied only after canonical PEP 610 provenance and normalized release/hash checks. The complete smoke verifies the physical installed module and identity.
+- A fresh secret is scoped only to the no-serving smoke child through the supported settings API. All nine imports, production default-key refusal, offline/IID/namespace/failure guards remain. All 128 related cases pass under Python 3.14 and the existing Python 3.11 environment; combined coverage is 92.06% with unchanged floors.
+- The feature guide records the pinned upstream implementation, supported settings and long-lived user report. This native exact-source fixture proof is not the full installed image import, successor hosted proof or canonical release gate; those remain required.
+- Independent review adds nine execution cases for the actual smoke program, closing the AST-only gap. All 137 related cases pass; the complete early owner passes 1129 plus one fresh-process help case in 63.0 observed seconds under unchanged 90/60 bounds. Source and test lints/types pass, and collection reports 122783/122784 cases with one deselection and zero errors.
+
 ### 2026-10-13 — Builder default verbosity hid native build progress
 
 - The exact hosted EE command began at 03:28:22 and emitted no Docker build progress before completion at 03:30:52. Only the outer phase markers were visible; the native Builder parser confirms default verbosity 2.

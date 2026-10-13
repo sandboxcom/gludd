@@ -49,6 +49,12 @@ the first nonzero result:
     SearXNG metadata prerequisite and real Builder-generated installer boundaries.
     CI already supplies the locked controller/Builder profile; these checks
     generate no image, install no package, and retain the same phase bounds.
+     The complete SearXNG acceptance fixture cohort also executes here. It runs
+     the exact pinned upstream freezer in a private detached Git fixture, checks
+     supported child-only secret configuration, and rejects foreign/missing
+     installed provenance before copying metadata. The manifest owns the actual
+     installer regression; the full installed nine-import image smoke remains
+     required independently. No image, environment or relaxed budget is added.
     Both repository fixture assertions share one fresh source report: each unique
     test source is parsed once, its AST is released before the next file, and no
     persistent cache or test-tree sampling changes their evidence. Installed-plugin

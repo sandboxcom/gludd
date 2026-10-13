@@ -29,6 +29,42 @@ pass. Original IID, import, offline, naming, failure and cleanup guards remain
 unchanged. The SearXNG acceptance failure and final hosted/full-gate proof remain
 separate requirements.
 
+### Complete SearXNG image acceptance
+
+The real image in run 38340797931 passed OpenTofu but its required Python smoke
+failed because VCS-installed SearXNG lacked frozen version metadata and retained
+the production default secret. Keep all nine imports and fix these inputs.
+
+The final image stage now runs the pinned upstream
+[native freezer](https://github.com/searxng/searxng/blob/7b4612e86250389dc9d5ee67e4cc2cd64d06602a/searx/version.py)
+in a private namespaced clone detached at the exact verified revision. It copies
+the generated physical module only after canonical PEP 610 URL/full-commit checks
+and [normalized version comparison](https://packaging.pypa.io/en/stable/version.html).
+The installed short hash must match the verified full source commit; the frozen
+hash records that full commit. Native Git metadata and Docker-tag derivation stay
+intact. Acceptance independently checks the installed module path and identity.
+
+Only the non-serving smoke child sets a fresh 32-byte random secret through the
+supported [SEARXNG_SECRET setting](https://docs.searxng.org/admin/settings/settings_server.html).
+No secret is baked into the image and production default-key refusal remains.
+The [2022 upstream user report](https://github.com/searxng/searxng/issues/1519)
+documents similar Git-version noise and default-key refusal when settings were
+misapplied. That is supporting context, not proof that our image is repaired.
+
+Ten cases fail first and the real pinned freezer already passes. All 128 related
+cases then pass under Python 3.14 and existing Python 3.11, with 92.06% combined
+coverage and unchanged 85/75 floors. Source fixtures retain upstream AGPL notices.
+The fixture proof does not replace the full installed nine-import image smoke,
+successor hosted proof, or canonical full gate.
+
+Independent review also required execution of the emitted smoke program rather
+than relying only on AST/text inspection. Nine cases now exercise its actual
+metadata predicates with dependency availability isolated: matching full and
+normalized-short versions succeed; foreign/missing provenance, version, frozen
+commit or installed-file identity fail without a success marker. All 137 related
+cases pass in both native environments, with the same focused coverage. These
+tests do not claim that isolated imports prove the real image dependency graph.
+
 ### Scheduling owners
 
 Run before sealing a replacement candidate, final combined replay, or a full

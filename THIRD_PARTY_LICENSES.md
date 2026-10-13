@@ -4,6 +4,18 @@ General Ludd bundles and depends on the following third-party software.
 
 ## Vendored Source
 
+### SearXNG regression fixtures
+
+- License: AGPL-3.0-or-later (upstream notices retained in each source fixture).
+- Homepage: https://github.com/searxng/searxng
+- Pinned commit: `7b4612e86250389dc9d5ee67e4cc2cd64d06602a`.
+- Unmodified `searx/version.py`, `searx/settings_defaults.py`, and
+  `searx/sxng_locales.py` are stored as text fixtures under
+  `tests/fixtures/ansible_ee_searxng/` for native freezer/settings regressions.
+- These test-only source files are not included in the core wheel. The controller
+  execution environment separately installs the pinned upstream distribution.
+- Upstream license: https://github.com/searxng/searxng/blob/7b4612e86250389dc9d5ee67e4cc2cd64d06602a/LICENSE
+
 ### FreeLLMAPI scoring subset
 
 - License: MIT

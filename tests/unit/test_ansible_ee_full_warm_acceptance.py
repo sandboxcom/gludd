@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import errno
 import hashlib
 import importlib
@@ -153,11 +154,17 @@ def test_acceptance_warms_all_controller_imports_with_owned_offline_containers(
         assert CANDIDATE_IMAGE not in command
         assert command.count(image) == 1
     assert smokes[0][-2:] == ["/usr/local/bin/tofu", "version"]
-    assert smokes[1][-3:] == [
-        "/usr/bin/python3.11",
-        "-c",
-        "import " + ", ".join(CONTROLLER_IMPORTS) + "; print('ANSIBLE_EE_IMPORT_OK')",
+    assert smokes[1][-3:-1] == ["/usr/bin/python3.11", "-c"]
+    smoke_tree = ast.parse(smokes[1][-1])
+    controller_statements = [
+        node
+        for node in smoke_tree.body
+        if isinstance(node, ast.Import)
+        and tuple(alias.name for alias in node.names) == CONTROLLER_IMPORTS
     ]
+    assert len(controller_statements) == 1
+    assert isinstance(smoke_tree.body[-1], ast.Expr)
+    assert ast.unparse(smoke_tree.body[-1]) == "print('ANSIBLE_EE_IMPORT_OK')"
     assert tuple(artifacts.EXPECTED_CONTROLLER_IMPORTS) == CONTROLLER_IMPORTS
 
 

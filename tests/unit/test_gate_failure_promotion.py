@@ -986,6 +986,30 @@ def test_current_task_inventory_real_scanner_executes_before_hosted_fanout() -> 
     assert payload["full_gate_required"] is True
 
 
+def test_searxng_frozen_source_contract_executes_before_hosted_fanout() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    node = (
+        "tests/unit/test_ansible_ee_searx_acceptance.py::"
+        "test_installer_copies_only_matching_real_frozen_provenance"
+    )
+    family = next(
+        (f for f in payload["families"] if f["id"] == "ee-searxng-frozen-source-acceptance"), None
+    )
+    assert family == {
+        "id": "ee-searxng-frozen-source-acceptance",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    assert node in owner
+    combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
+    assert node.split("::", 1)[0] in combined
+    phase = next(p for p in payload["runtime_contract"]["phases"]
+                 if p["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def test_workflow_safe_parser_contract_executes_before_hosted_fanout() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     node = (
@@ -1145,6 +1169,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "all-required-ci-verdict",
         "current-task-inventory-real-secret-scan",
         "workflow-safe-parser-throughput",
+        "ee-searxng-frozen-source-acceptance",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1297,6 +1322,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_pytest_param_fixture_collisions.py '
         'tests/unit/test_ansible_runtime_artifacts.py '
         'tests/unit/test_ansible_ee_full_warm_acceptance.py '
+        'tests/unit/test_ansible_ee_searx_acceptance.py '
         'tests/unit/test_beta4_python_runtime_boundary.py '
         'tests/unit/test_ansible_searxng_source_inspection.py '
         'tests/unit/test_integration_admission_target.py '

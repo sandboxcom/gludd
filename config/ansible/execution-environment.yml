@@ -61,6 +61,35 @@ additional_build_steps:
     # assemble creates and activates this venv before resolving requirements.
     - ENV UV_PYTHON=/tmp/venv/bin/python UV_SYSTEM_PYTHON=false
   append_final:
+    # Upstream freezer runs from the verified source, then installs real metadata.
+    - >-
+      RUN set -eu; source_dir="$(mktemp -d /tmp/gludd-ansible-ee-searxng-XXXXXXXX)";
+      trap 'rm -rf -- "$source_dir"' EXIT HUP INT TERM;
+      git clone --filter=blob:none --no-checkout --depth=1 --config core.abbrev=40
+      https://github.com/searxng/searxng.git "$source_dir";
+      git -C "$source_dir" fetch --depth=1 origin 7b4612e86250389dc9d5ee67e4cc2cd64d06602a;
+      git -C "$source_dir" checkout --detach 7b4612e86250389dc9d5ee67e4cc2cd64d06602a;
+      test "$(git -C "$source_dir" rev-parse HEAD)" = 7b4612e86250389dc9d5ee67e4cc2cd64d06602a;
+      cd "$source_dir"; /usr/bin/python3.11 -m searx.version freeze;
+      /usr/bin/python3.11 -c 'import json, runpy, shutil, sys;
+      from importlib import metadata;
+      from pathlib import Path;
+      from packaging.version import Version;
+      expected = sys.argv[2];
+      dist = metadata.distribution("searxng");
+      record = json.loads(dist.read_text("direct_url.json") or "null");
+      isinstance(record, dict) or sys.exit("SearXNG installed source provenance is missing");
+      vcs = record.get("vcs_info", {});
+      (isinstance(vcs, dict) and record.get("url", "").removesuffix(".git") == "https://github.com/searxng/searxng" and vcs.get("vcs") == "git" and vcs.get("commit_id") == expected) or sys.exit("SearXNG installed source provenance differs from the frozen revision");
+      frozen = runpy.run_path(sys.argv[1]);
+      installed_version = Version(dist.version);
+      frozen_version = Version(frozen["VERSION_TAG"]);
+      (installed_version.local is not None and 7 <= len(installed_version.local) <= 40 and expected.startswith(installed_version.local) and installed_version.public == frozen_version.public and frozen_version.local == expected and frozen["VERSION_STRING"] == frozen["VERSION_TAG"] and frozen["DOCKER_TAG"] == frozen["VERSION_STRING"].replace("+", "-")) or sys.exit("SearXNG frozen version differs from installed source identity");
+      (frozen["GIT_URL"] in {"https://github.com/searxng/searxng", "unknow"} and isinstance(frozen["GIT_BRANCH"], str) and bool(frozen["GIT_BRANCH"])) or sys.exit("SearXNG frozen upstream metadata is malformed");
+      target = Path(dist.locate_file("searx/version_frozen.py"));
+      (target.parent.is_dir() and not target.parent.is_symlink() and not target.is_symlink()) or sys.exit("SearXNG installed metadata target is not a regular package path");
+      shutil.copyfile(sys.argv[1], target);
+      print("ANSIBLE_EE_SEARXNG_FROZEN_OK source=" + expected)' "$source_dir/searx/version_frozen.py" 7b4612e86250389dc9d5ee67e4cc2cd64d06602a
     - >-
       RUN set -eu; machine="$(uname -m)";
       case "$machine" in

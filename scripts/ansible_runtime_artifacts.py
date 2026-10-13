@@ -663,6 +663,44 @@ def _built_image_id(path: Path) -> str:
     return image
 
 
+def _controller_import_smoke_code() -> str:
+    """Import every controller dependency with a child-only secret and frozen identity."""
+    return "\n".join(
+        (
+            "import json, os, secrets, sys",
+            "from importlib import metadata",
+            "from pathlib import Path",
+            "from packaging.version import Version",
+            'os.environ["SEARXNG_SECRET"] = secrets.token_hex(32)',
+            "import " + ", ".join(EXPECTED_CONTROLLER_IMPORTS),
+            "import searx.version_frozen as frozen",
+            f"expected = {SEARXNG_SOURCE_REVISION!r}",
+            'dist = metadata.distribution("searxng")',
+            'record = json.loads(dist.read_text("direct_url.json") or "null")',
+            'isinstance(record, dict) or sys.exit("SearXNG installed source provenance is missing")',
+            'vcs = record.get("vcs_info", {})',
+            '(isinstance(vcs, dict) and record.get("url", "").removesuffix(".git") == '
+            '"https://github.com/searxng/searxng" and vcs.get("vcs") == "git" and '
+            'vcs.get("commit_id") == expected) or sys.exit("SearXNG installed source identity differs")',
+            'target = Path(dist.locate_file("searx/version_frozen.py"))',
+            '(target.is_file() and not target.is_symlink() and '
+            'Path(frozen.__file__).resolve() == target.resolve()) or '
+            'sys.exit("SearXNG frozen module is not the installed package file")',
+            'installed_version = Version(dist.version)',
+            'frozen_version = Version(frozen.VERSION_TAG)',
+            '(installed_version.local is not None and 7 <= len(installed_version.local) <= 40 and '
+            'expected.startswith(installed_version.local) and '
+            'installed_version.public == frozen_version.public and frozen_version.local == expected and '
+            'frozen.VERSION_STRING == frozen.VERSION_TAG and '
+            'frozen.DOCKER_TAG == frozen.VERSION_STRING.replace("+", "-") and '
+            'frozen.GIT_URL in {"https://github.com/searxng/searxng", "unknow"} and '
+            'isinstance(frozen.GIT_BRANCH, str) and bool(frozen.GIT_BRANCH)) or '
+            'sys.exit("SearXNG frozen version differs from installed source identity")',
+            "print('ANSIBLE_EE_IMPORT_OK')",
+        )
+    )
+
+
 def _smoke_environment(runtime: str, image: str) -> int:
     """Warm the complete controller and OpenTofu offline in owned containers."""
     interpreter = cast(
@@ -699,9 +737,7 @@ def _smoke_environment(runtime: str, image: str) -> int:
                 image,
                 interpreter,
                 "-c",
-                "import "
-                + ", ".join(EXPECTED_CONTROLLER_IMPORTS)
-                + "; print('ANSIBLE_EE_IMPORT_OK')",
+                _controller_import_smoke_code(),
             ],
         ),
     )
