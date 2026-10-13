@@ -8,11 +8,13 @@ module scans the source tree at import time so it always reflects the live code.
 from __future__ import annotations
 
 import re
+import shlex
 from collections import defaultdict
 from pathlib import Path
 from typing import NamedTuple
 
 import pytest
+from scripts.makefile_layout import makefile_sources
 
 # ---------------------------------------------------------------------------
 # Scanner helpers
@@ -132,28 +134,97 @@ def _read_ref_md_gludd_vars() -> set[str]:
     return vars_found
 
 
+def _make_environment_usages(makefile: Path) -> list[EnvUsage]:
+    """Recognize explicit Make exports read by executable shell recipe tokens."""
+    sources = [(path, path.read_text(encoding="utf-8").splitlines()) for path in makefile_sources(makefile)]
+    export_pattern = re.compile(r"^export (GLUDD_[A-Z0-9_]+)\s*(?::=|=|\?=)")
+    read_pattern = re.compile(r"\$\$(?:\{(GLUDD_[A-Z0-9_]+)\}|(GLUDD_[A-Z0-9_]+)\b)")
+    exported = {
+        match.group(1)
+        for _, lines in sources
+        for line in lines
+        if (match := export_pattern.match(line)) is not None
+    }
+    usages: list[EnvUsage] = []
+    for path, lines in sources:
+        numbered_lines = iter(enumerate(lines, start=1))
+        for lineno, line in numbered_lines:
+            if not line.startswith("\t"):
+                continue
+            while line.endswith("\\"):
+                _, continuation = next(numbered_lines)
+                line = line[:-1] + " " + continuation.lstrip()
+            if not any((match.group(1) or match.group(2)) in exported for match in read_pattern.finditer(line)):
+                continue
+            lexer = shlex.shlex(line, posix=False)
+            lexer.whitespace_split = True
+            for token in lexer:
+                if token.startswith("'"):
+                    continue
+                for match in read_pattern.finditer(token):
+                    name = match.group(1) or match.group(2)
+                    if name in exported:
+                        usages.append(EnvUsage(name, str(path), lineno, line))
+    return usages
+
+
+def test_make_environment_documentation_requires_exported_recipe_consumption(tmp_path: Path) -> None:
+    makefile = tmp_path / "Makefile"
+    makefile.write_text(
+        "export GLUDD_LIVE_INPUT := $(value LIVE_INPUT)\n"
+        "export GLUDD_UNUSED_INPUT := $(value UNUSED_INPUT)\n"
+        "export GLUDD_QUOTED_INPUT := $(value QUOTED_INPUT)\n"
+        "export GLUDD_COMMENT_INPUT := $(value COMMENT_INPUT)\n"
+        "# export GLUDD_FAKE_INPUT := $(value FAKE_INPUT)\n"
+        "GLUDD_UNUSED_TEXT := $$GLUDD_UNUSED_INPUT\n"
+        "probe:\n"
+        '\t@tool --input "$$GLUDD_LIVE_INPUT" --unknown "$$GLUDD_UNKNOWN_INPUT"\n'
+        "\t@tool '$$GLUDD_QUOTED_INPUT' # $$GLUDD_COMMENT_INPUT\n",
+        encoding="utf-8",
+    )
+    usages = _make_environment_usages(makefile)
+    assert {usage.var_name for usage in usages} == {"GLUDD_LIVE_INPUT"}
+    assert all(usage.file_path == str(makefile) and usage.line == 8 for usage in usages)
+
+
+def test_make_environment_documentation_follows_native_fragment_owners(tmp_path: Path) -> None:
+    makefile = tmp_path / "Makefile"
+    makefile.write_text("include make/native.mk\n", encoding="utf-8")
+    fragment = tmp_path / "make" / "native.mk"
+    fragment.parent.mkdir()
+    fragment.write_text(
+        "export GLUDD_FRAGMENT_INPUT := $(value FRAGMENT_INPUT)\n"
+        "probe:\n"
+        '\t@tool --input "$${GLUDD_FRAGMENT_INPUT}"\n',
+        encoding="utf-8",
+    )
+    usages = _make_environment_usages(makefile)
+    assert {usage.var_name for usage in usages} == {"GLUDD_FRAGMENT_INPUT"}
+    assert all(usage.file_path == str(fragment) and usage.line == 3 for usage in usages)
+
+
 # ---------------------------------------------------------------------------
 # Tests — GLUDD_* env vars
 # ---------------------------------------------------------------------------
 
 
 class TestGLUDDNamingConvention:
-    def test_all_uppercase_underscore(self):
+    def test_all_uppercase_underscore(self) -> None:
         """Every GLUDD_* env var uses uppercase with underscores only."""
         bad = [v for v in _GLUDD_VARS if not re.fullmatch(r"GLUDD_[A-Z][A-Z0-9_]*", v)]
         assert not bad, (
             f"GLUDD_ env vars violating UPPER_SNAKE_CASE: {bad}. All GLUDD_ vars must be like GLUDD_EXAMPLE_NAME."
         )
 
-    def test_no_double_underscores(self):
+    def test_no_double_underscores(self) -> None:
         bad = [v for v in _GLUDD_VARS if "__" in v]
         assert not bad, f"GLUDD_ env vars with double underscore: {bad}"
 
-    def test_no_trailing_underscore(self):
+    def test_no_trailing_underscore(self) -> None:
         bad = [v for v in _GLUDD_VARS if v.endswith("_")]
         assert not bad, f"GLUDD_ env vars with trailing underscore: {bad}"
 
-    def test_minimum_two_segments(self):
+    def test_minimum_two_segments(self) -> None:
         """GLUDD_ALONE would be too generic; require at least GLUDD_X_Y."""
         bad = [v for v in _GLUDD_VARS if v.count("_") < 2]
         assert not bad, f"GLUDD_ prefix-only vars (too generic): {bad}"
@@ -162,7 +233,7 @@ class TestGLUDDNamingConvention:
 class TestGLUDDDocumentation:
     ref_vars = _read_ref_md_gludd_vars()
 
-    def test_config_reference_documents_live_vars(self):
+    def test_config_reference_documents_live_vars(self) -> None:
         """Every GLUDD_ env var found in the source tree is documented in
         CONFIG_REFERENCE.md — or at least one of the config docs."""
         if not TestGLUDDDocumentation.ref_vars:
@@ -177,11 +248,13 @@ class TestGLUDDDocumentation:
                 f"GLUDD_ env vars used in code but not in CONFIG_REFERENCE.md (or other docs): {sorted(still_missing)}"
             )
 
-    def test_config_reference_entries_are_real(self):
+    def test_config_reference_entries_are_real(self) -> None:
         """Every GLUDD_ entry in CONFIG_REFERENCE.md has a code-level usage."""
         if not TestGLUDDDocumentation.ref_vars:
             pytest.skip("CONFIG_REFERENCE.md not found; no ref vars to check")
-        code_set = set(_GLUDD_VARS)
+        code_set = set(_GLUDD_VARS) | {
+            usage.var_name for usage in _make_environment_usages(_SRC.parent / "Makefile")
+        }
         stale = TestGLUDDDocumentation.ref_vars - code_set
         assert not stale, f"CONFIG_REFERENCE.md documents GLUDD_ vars not found in code: {sorted(stale)}"
 
@@ -189,7 +262,7 @@ class TestGLUDDDocumentation:
 class TestGLUDDSecurityClassification:
     SECRET_PATTERN = re.compile(r"(?:KEY|TOKEN|PSK|SECRET|PASSWORD|PASSPHRASE)(?:_|$)")
 
-    def test_secret_env_vars_identified(self):
+    def test_secret_env_vars_identified(self) -> None:
         """Env vars matching secret/credential patterns are explicitly flagged."""
         secrets = [v for v in _GLUDD_VARS if _SECRET_PATTERN_RE.search(v)]
         non_secret_names = [
@@ -210,7 +283,7 @@ class TestGLUDDSecurityClassification:
                 f"GLUDD var {v} matches secret pattern; if it IS a secret, add to expect list; if not, rename it."
             )
 
-    def test_psK_not_in_env_secrets_allowlist(self):
+    def test_psK_not_in_env_secrets_allowlist(self) -> None:
         """GLUDD_AUTH_PSK must NEVER appear in secrets/env.py allowlist patterns."""
         env_py = _SRC / "general_ludd" / "secrets" / "env.py"
         if not env_py.exists():
@@ -221,7 +294,7 @@ class TestGLUDDSecurityClassification:
             "it must NEVER be resolvable via the ambient-env secrets pathway"
         )
 
-    def test_gludd_psk_not_os_environ_get_without_strip(self):
+    def test_gludd_psk_not_os_environ_get_without_strip(self) -> None:
         """GLUDD_AUTH_PSK reads should use .strip() to avoid whitespace mismatch."""
         for u in _usages_for("GLUDD_AUTH_PSK"):
             if ".get(" in u.raw_line:
@@ -231,7 +304,7 @@ class TestGLUDDSecurityClassification:
 
 
 class TestGLUDDDefaultConsistency:
-    def test_same_default_not_hardcoded_twice(self):
+    def test_same_default_not_hardcoded_twice(self) -> None:
         """The same default value should not appear at two different call sites.
         If it changes, both places drift.  A shared constant is safer."""
         default_map: dict[tuple[str, str], list[tuple[str, int]]] = defaultdict(list)
@@ -253,7 +326,7 @@ class TestGLUDDDefaultConsistency:
             f"Env vars with the same hardcoded default at multiple call sites (risk of drift): {dupes_list}"
         )
 
-    def test_default_values_consistent(self):
+    def test_default_values_consistent(self) -> None:
         """The same GLUDD_ var should have the same default wherever read."""
         var_defaults: dict[str, str] = {}
         violations: list[str] = []
@@ -278,7 +351,7 @@ class TestGLUDDDefaultConsistency:
 
 
 class TestNonGLUDDEnvVars:
-    def test_all_credential_vars_identified(self):
+    def test_all_credential_vars_identified(self) -> None:
         """Non-GLUDD credential vars (API_KEY, TOKEN, etc.) are explicitly listed."""
         credential_like = [v for v in _NON_GLUDD_VARS if _SECRET_PATTERN_RE.search(v)]
         assert credential_like, "No credential-like non-GLUDD env vars found — test may be stale"
@@ -286,7 +359,7 @@ class TestNonGLUDDEnvVars:
             r = TestGLUDDSecurityClassification.SECRET_PATTERN
             assert r.search(v), f"Non-GLUDD credential var {v} doesn't match secret pattern"
 
-    def test_no_plaintext_secrets_in_defaults(self):
+    def test_no_plaintext_secrets_in_defaults(self) -> None:
         """No hardcoded default looks like a real credential (sk-..., etc.)."""
         for e in _SCANNED:
             m = re.search(r'os\.environ\.get\(\s*"\w+"\s*,\s*"([^"]+)"', e.raw_line)
@@ -304,11 +377,11 @@ class TestNonGLUDDEnvVars:
 
 
 class TestEnvVarCoverage:
-    def test_every_gludd_var_has_usage_location(self):
+    def test_every_gludd_var_has_usage_location(self) -> None:
         """Scanned GLUDD_ vars could be traceable."""
         assert len(_GLUDD_VARS) >= 10, f"Expected at least 10 GLUDD_ env vars; found {len(_GLUDD_VARS)}"
 
-    def test_var_count_stable(self):
+    def test_var_count_stable(self) -> None:
         """Confirm we are scanning what we expect.
 
         This is informational — if the count changes drastically, investigate
@@ -316,7 +389,7 @@ class TestEnvVarCoverage:
         """
         assert len(_GLUDD_VARS) >= 15, f"Found only {len(_GLUDD_VARS)} GLUDD_ vars — scan may be incomplete"
 
-    def test_scripts_and_src_both_scanned(self):
+    def test_scripts_and_src_both_scanned(self) -> None:
         src_dir_vars = {e.var_name for e in _SCANNED if e.var_name.startswith("GLUDD_") and str(_SRC) in e.file_path}
         scr_vars = {e.var_name for e in _SCANNED if e.var_name.startswith("GLUDD_") and str(_SCRIPTS) in e.file_path}
         both = src_dir_vars & scr_vars
@@ -329,7 +402,7 @@ class TestEnvVarCoverage:
 class TestBoolPatternConsistency:
     TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 
-    def test_truthy_check_patterns_consistent(self):
+    def test_truthy_check_patterns_consistent(self) -> None:
         """Bool-ish GLUDD_ vars should use a consistent truthy-check pattern."""
         bool_vars = [
             v
@@ -346,7 +419,7 @@ class TestBoolPatternConsistency:
 
 
 class TestSecretsManagerAllowlist:
-    def test_allowlist_covers_provider_credentials(self):
+    def test_allowlist_covers_provider_credentials(self) -> None:
         """Secrets manager allowlist patterns cover all provider API_KEY/BASE_URL vars."""
         env_py = _SRC / "general_ludd" / "secrets" / "env.py"
         if not env_py.exists():
@@ -362,7 +435,7 @@ class TestSecretsManagerAllowlist:
             ok = any(re.search(pat.replace("\\\\", "\\"), v) for pat in patterns_raw) or v in text
             assert ok, f"Provider credential var {v} not covered by secrets/env.py allowlist patterns: {patterns_raw}"
 
-    def test_gludd_secret_prefix_in_allowlist(self):
+    def test_gludd_secret_prefix_in_allowlist(self) -> None:
         """Allowlist patterns include GLUDD_SECRET_ for proper namespacing."""
         env_py = _SRC / "general_ludd" / "secrets" / "env.py"
         if not env_py.exists():
@@ -374,7 +447,7 @@ class TestSecretsManagerAllowlist:
 
 
 class TestAuthVarsConfig:
-    def test_auth_vars_consistent_across_daemon_and_worker(self):
+    def test_auth_vars_consistent_across_daemon_and_worker(self) -> None:
         """Auth posture vars (GLUDD_AUTH_PSK, GLUDD_REQUIRE_AUTH, ...) read with
         consistent semantics in daemon and worker."""
         auth_vars = [
@@ -387,7 +460,7 @@ class TestAuthVarsConfig:
             usages = _usages_for(av)
             assert len(usages) >= 1, f"Auth var {av} not found in source scan"
 
-    def test_psk_rotation_vars_if_documented(self):
+    def test_psk_rotation_vars_if_documented(self) -> None:
         """If PSK rotation vars are used in code, they should be documented."""
         rotation_vars = {v for v in _GLUDD_VARS if "PSK_ROTATION" in v or "PSK_IDENTITY" in v}
         if rotation_vars:
@@ -400,7 +473,7 @@ class TestAuthVarsConfig:
 
 
 class TestEnvVarSourceTracking:
-    def test_daemon_boot_reads_expected_vars(self):
+    def test_daemon_boot_reads_expected_vars(self) -> None:
         """daemon.py explicitly reads the GLUDD_* vars listed in
         CONFIG_REFERENCE.md's daemon/runtime table at startup."""
         daemon_path = _SRC / "general_ludd" / "daemon.py"
@@ -435,7 +508,7 @@ class TestEnvVarSourceTracking:
             f"facade or lifecycle component: {missing_in_daemon}"
         )
 
-    def test_worker_reads_auth_vars(self):
+    def test_worker_reads_auth_vars(self) -> None:
         worker_path = _SRC / "general_ludd" / "worker" / "app.py"
         if not worker_path.exists():
             pytest.skip("worker/app.py not found")
@@ -445,7 +518,7 @@ class TestEnvVarSourceTracking:
 
 
 class TestNoEnvVarInjection:
-    def test_no_os_environ_write_in_prod_paths(self):
+    def test_no_os_environ_write_in_prod_paths(self) -> None:
         """Production code (src/) should not write os.environ[...] = ..."""
         writes: list[tuple[str, int]] = []
         for py_file in sorted(_SRC.rglob("*.py")):
@@ -460,7 +533,7 @@ class TestNoEnvVarInjection:
             f"Check if excessive. Files: {writes[:10]}"
         )
 
-    def test_no_eval_on_env_vars(self):
+    def test_no_eval_on_env_vars(self) -> None:
         """No env var is fed to eval()/exec()."""
         for py_file in sorted({str(_SRC), str(_SCRIPTS)}):
             if py_file.endswith(".py"):
