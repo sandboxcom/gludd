@@ -745,6 +745,46 @@ This is a zero-downtime administrative change. Rollback reverts source/acceptanc
 together after watched owners finish, reintroducing history-capacity refusal;
 never clear operational JSON manually. Full gate and deployment proof stay pending.
 
+## One-run diagnostic failure collection
+
+`make ci-shards-diagnostic` exposes the existing serial runner's maintained
+collect-all mode; it adds no runner, resolver, cache or release authority.
+Set `CI_SHARDS_DIAGNOSTIC_SHARDS` explicitly and
+`CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY=1` for a mutation-free plan. Execution requires
+an explicit `0`. The documented safe example is:
+
+```sh
+make ci-shards-diagnostic CI_SHARDS_DIAGNOSTIC_SHARDS=unit-2 CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY=1
+```
+
+The target transports literal values through private
+`GLUDD_CI_SHARDS_DIAGNOSTIC_SHARDS` and
+`GLUDD_CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY` exports; raw public values are unexported.
+It pins Python 3.11, no dependency synchronization, fatal warnings, one batch
+worker and 16-file batches. It preserves the native heartbeat, no-progress,
+cleanup, cancellation, isolated-test and coverage policy. Ordinary test failures
+can accumulate across selected batches; safety and cleanup failures still stop
+execution. A failed diagnostic remains failed, and collect-all cannot be combined
+with the native required release policy or supply deployment completion proof.
+
+The [2016 long-running pytest discussion](https://stackoverflow.com/questions/36804181/long-running-py-test-stop-at-first-failure)
+illustrates the recurring first-failure/all-failures tradeoff. The
+[2020 setup-error discussion](https://stackoverflow.com/questions/63248262/stop-pytest-on-errors-but-not-on-fails)
+distinguishes ordinary test failures from unsafe initialization errors. Native
+execution controls follow [pytest's maintained reference](https://docs.pytest.org/en/latest/reference/reference.html#test-execution-control).
+The project reuses its existing orchestrator rather than adopting either thread's
+custom hooks or altering release-gate policy.
+
+All 22 canonical entrypoint controls fail first, then the 99-case native
+entrypoint/collect-all/safety/dual-track cohort passes on Python 3.11. All 126
+related cases, including environment-documentation checks, pass on Python 3.14.
+The documented native plan, 231-target contract, strict typing, Ruff and Make
+parity pass. Cold imports use test-owned restored Python paths without depending
+on the suite's legacy setuptools shim. Rollout adds only a diagnostic interface;
+rollback removes it after active diagnostic owners finish. Serving processes,
+release producers, bounds and coverage floors remain unchanged. These checks do
+not close S98.4 or replace exact-SHA hosted/full-gate/deployment evidence.
+
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
 [observation-api]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository

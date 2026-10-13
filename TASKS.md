@@ -186,6 +186,18 @@ Strict source/test typing, Ruff/docstrings, native 256-resource ownership and ta
 registration pass. Native checker/hosted/EE consumption, canonical gate and item
 deployment proof remain required; no release checkbox or completion count changes.
 
+S98.4 collect-all diagnostic entrypoint scope: `make/10-observability-and-tests.mk`,
+`make/00-foundation.mk`, `config/make_target_contract.json`,
+`tests/unit/test_ci_shards_diagnostic_entrypoint.py`, and
+`docs/features/RELEASE_PROOF_THROUGHPUT.md`. All 22 canonical entrypoint controls
+fail before implementation. The existing serial owner gains a safe explicit-shard
+Make interface with default mutation-free planning, literal transport, fatal
+warnings, one worker and unchanged safety/coverage boundaries. All 99 native
+control cases pass on Python 3.11 and 126 related cases pass on Python 3.14;
+the documented actual plan, 231-target contract, strict typing, Ruff and Make
+parity pass. Diagnostic execution cannot satisfy required release policy or
+deployment acceptance; all release tasks and backlog completion counts stay open.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

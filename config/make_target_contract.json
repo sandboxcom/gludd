@@ -1897,6 +1897,14 @@
       "behavior": "make release-branch-new NAME=release/contract-validation BASE=development RELEASE_BRANCH_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-shards-diagnostic",
+      "make_variables": [
+        "CI_SHARDS_DIAGNOSTIC_SHARDS",
+        "CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-shards-diagnostic CI_SHARDS_DIAGNOSTIC_SHARDS=unit-2 CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY=1"
+    },
+    {
       "name": "test-ci-dual-track-local",
       "make_variables": [
         "DUAL_TRACK_LOCAL_VALIDATE_ONLY",

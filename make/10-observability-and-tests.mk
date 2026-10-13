@@ -2078,3 +2078,28 @@ molecule-test-shard:
 # Usage: make log-agent-result AGENT_ID=agent-foo RESULT_SUMMARY="fixed X"
 log-agent-result:
 	@$(UV) run python3 scripts/log_agent_result.py
+
+# Diagnostics share the existing serial runner and its terminal safety policy.
+# Explicit shards and a default mutation-free plan prevent accidental full runs.
+CI_SHARDS_DIAGNOSTIC_SHARDS ?=
+CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY ?= 1
+override GLUDD_CI_SHARDS_DIAGNOSTIC_SHARDS := $(value CI_SHARDS_DIAGNOSTIC_SHARDS)
+override GLUDD_CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY := $(value CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY)
+export GLUDD_CI_SHARDS_DIAGNOSTIC_SHARDS GLUDD_CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY
+unexport CI_SHARDS_DIAGNOSTIC_SHARDS CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY
+
+.PHONY: ci-shards-diagnostic
+ci-shards-diagnostic:
+	@case "$$GLUDD_CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY" in \
+		0) set -- ;; \
+		1) set -- --validate-only ;; \
+		*) echo "CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; \
+	esac; \
+	case "$$GLUDD_CI_SHARDS_DIAGNOSTIC_SHARDS" in \
+		*[![:space:]]*) ;; \
+		*) echo "CI_SHARDS_DIAGNOSTIC_SHARDS must name explicit shards"; exit 2 ;; \
+	esac; \
+	exec $(UV) run --no-sync --python 3.11 python scripts/run_ci_shards_serial.py \
+		--shards "$$GLUDD_CI_SHARDS_DIAGNOSTIC_SHARDS" \
+		--pytest-args="-W error" --batch-workers 1 --max-files-per-batch 16 \
+		--collect-all-failures "$$@"

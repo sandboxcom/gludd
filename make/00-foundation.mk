@@ -565,6 +565,7 @@ help:
 	@echo "  test-specific-pyver   Single test under explicit Python (TESTFILE, PYTHON_VERSION)"
 	@echo "  test-files            Multiple tests (TESTFILES, PYTEST_ARGS, UV_PROJECT_ENVIRONMENT); explicit environments route nested UV consistently"
 	@echo "  grep                  Repository text search (Q=regex SEARCH_PATH=path)"
+	@echo "  ci-shards-diagnostic Serial collect-all diagnostics (CI_SHARDS_DIAGNOSTIC_SHARDS, CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY=0|1; default 1)"
 	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
 	@echo "  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)"
 	@echo "  test-count            Count collected tests"

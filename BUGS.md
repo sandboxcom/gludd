@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Existing multi-failure diagnostics had no safe Make entrypoint
+
+- The mature serial runner already supports collecting ordinary failures across batches while retaining terminal safety, cleanup and cancellation rules. No public Make interface exposed that mode, encouraging one-failure retry loops or ad hoc invocation. Release policy intentionally remains incompatible with diagnostic collection.
+- All 22 canonical entrypoint controls fail first. One additive diagnostic target now requires explicit shards, defaults to mutation-free planning, transports literal inputs, and pins fatal warnings/one worker/16-file batches without changing any native bounds or source-proof authority. The exact documented native plan passes; the original release producer stays unchanged.
+- All 99 native orchestration/control cases pass on Python 3.11 and all 126 related cases pass on Python 3.14. Strict typing, Ruff, 231 target contracts and Make parity pass. Two initial test setup errors are repaired by using restored test-owned Python paths rather than pytest's namespace helper against the suite's legacy setuptools shim; the two genuine missing-entrypoint failures then reproduce before implementation.
+- This diagnostic interface is not release proof, live deployment or a backlog closure. The feature guide records long-lived first-failure/setup-error practitioner discussions and zero-downtime rollout/rollback; real failures retain unsuccessful status and native operational evidence ownership.
+
 ### 2026-10-13 — Canonical runtime omitted verified collection closure inputs
 
 - Two canonical controls first fail because five required direct collections are absent and the runtime manifest binds no collection lock. The real native producer has already acquired and offline-installed the complete eight-artifact closure; availability outside the canonical manifest is not reproducible release input.
