@@ -318,3 +318,23 @@ authority, and does not establish a current uv defect. The
 [cache-maintenance discussion #5409](https://github.com/astral-sh/uv/issues/5409)
 records recurring operational questions about concurrent CI users. This repair
 therefore shares the current cleanup owner rather than adding another engine.
+
+### Polling policy conformance
+
+Hosted Build `38451761526` fails the old polling-exception inventory because
+`disk-guard.sh` is now a synchronous canonical facade with no sleep loop. Remove
+only that obsolete allowance; retain all documented daemon/readiness exceptions
+and both executable scanners. Adding a new wait loop would restore the defect,
+not repair policy. The explicit facade regression prohibits polling and its
+allowance; native Make planning additionally checks that the original full
+polling cohort runs before publication, with a mandatory full-gate promotion
+family. Initial stale-allowance and missing-entrypoint controls fail before their
+repair. This is test-policy conformance with a narrower exception set, not a
+capacity recovery, coverage exclusion, service change or release proof.
+
+The combined policy/runtime cohort passes 248 cases on each Python runtime. The
+actual complete early owner passes 1211 main cases plus fresh help in 41.2
+observed seconds under unchanged 90/60 bounds; all 61 promoted families and 231
+target contracts pass. Both full scanners and their genuine sleep-loop negative
+controls remain required. Exact-SHA hosted, physical capacity and release/deployed
+acceptance remain separate unfinished requirements.

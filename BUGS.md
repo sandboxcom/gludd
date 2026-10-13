@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Hosted native controller lookup and stale polling allowance
+
+- Exact Build 38451761526 exposes two owned failures together while other jobs remain active. Both Python gate jobs pass; the overall queued workflow label does not mean all jobs are queued. The completed EE build fails native console-script lookup, and unit-3a fails a stale disk-facade polling exception. No pending/skipped job is reported successful.
+- The polling cohort reproduces one real failure; an explicit alias control additionally fails before only disk-guard.sh is removed from the exception set. A separate Make-plan control fails before the whole scanner cohort is appended to the existing early owner and required promotion family. Assertions, both scanners, every legitimate exception and native bounds are preserved; no sleep loop is added to satisfy an obsolete test.
+- The native generated-context regression reproduces absent controller PATH wiring. The EE adds the already selected isolated interpreter's bin directory before installation, retaining unchanged check_ansible/check_galaxy scripts and Galaxy/final execution. Existing native lock maintenance binds the changed definition. Helper tests retain missing-lookup negative controls and require successful fresh-child lookup with the selected native bin path.
+- Root-user pip warnings in the failed EE run remain visible and unresolved by the PATH repair. No warning suppression, dependency fork, image deployment, hosted-failure resolution, master promotion or additional completed backlog issue is claimed. Independent owned failure contexts are collected before another candidate is published.
+- Combined source acceptance passes all 248 cases on Python 3.11 and 3.14. Actual complete early admission passes 1211 main cases plus fresh help in 41.2 observed seconds under unchanged 90/60 bounds. Strict typing/Ruff, 61 promoted families, 231 target contracts, Make parity, native seven-input runtime validation and unchanged 256-resource ownership pass. Source results are not successor CI or release proof.
+
 ### 2026-10-13 — Real EE collection archives lacked admitted runtime metadata
 
 - Native Galaxy successfully builds all eight owned EE collections, but strict authentic-archive admission rejects six together: ai_ml, azure, infrastructure, language, networking and xml lack meta/runtime.yml. Inert byte-copy fixtures cannot reveal this deployment-input defect.

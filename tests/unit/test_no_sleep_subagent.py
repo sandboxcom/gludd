@@ -16,7 +16,10 @@ documented justification) or refactored to remove the sleep-in-loop.
 from __future__ import annotations
 
 import ast
+import json
 import re
+import shlex
+import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -37,7 +40,6 @@ ALLOWLIST = frozenset({
     "collection_lock.py",
     "postgres_e2e_runner.py",
     # Background lifecycle supervisors are signal-stoppable and continuously observable.
-    "disk-guard.sh",
     "e2e_supervisor.py",
     # Exact gate-tree waits have computed attempt ceilings and emit wait heartbeats.
     "kill_owned_gate.py",
@@ -145,6 +147,35 @@ def test_allowlisted_files_exist() -> None:
     assert not missing, (
         f"ALLOWLIST entries do not exist in scripts/: {', '.join(sorted(missing))}"
     )
+
+
+def test_canonical_disk_alias_requires_no_polling_allowance() -> None:
+    """Keep the narrowed canonical disk facade outside polling exceptions."""
+    assert not _has_sleep_in_loop(SCRIPTS_DIR / "disk-guard.sh")
+    assert "disk-guard.sh" not in ALLOWLIST
+
+
+def test_disk_alias_polling_contract_is_checked_before_publication() -> None:
+    """Execute the native owner plan and retain full-gate authority."""
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-n", "_pytest-runtime-compatibility-admission"],
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assignments = [
+        argument.removeprefix("TESTFILES=")
+        for argument in shlex.split(result.stdout) if argument.startswith("TESTFILES=")
+    ]
+    assert assignments and "tests/unit/test_no_sleep_subagent.py" in assignments[0].split()
+    manifest = json.loads((REPO_ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    family = next(entry for entry in manifest["families"] if entry["id"] == "disk-alias-polling-exception-drift")
+    assert family == {
+        "id": "disk-alias-polling-exception-drift",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": "tests/unit/test_no_sleep_subagent.py::test_allowlist_entries_are_still_valid",
+        "full_gate_phase": "test",
+    }
 
 
 def test_no_unexpected_sleep_in_loop_files() -> None:

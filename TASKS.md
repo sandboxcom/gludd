@@ -242,6 +242,35 @@ contracts, native Make parity and task integrity pass. These source/archive
 results do not prove an installed EE, deployment, full gate or exact-SHA hosted
 acceptance; no release checkbox or completion count changes.
 
+S98.4 polling-policy conformance scope: `tests/unit/test_no_sleep_subagent.py`,
+`make/10-observability-and-tests.mk`, `config/gate_failure_promotions.json`,
+`tests/unit/test_runtime_admission_scheduling.py`,
+`tests/unit/test_gate_failure_promotion.py`, and `docs/automatic-disk-cleanup.md`.
+Exact hosted Build 38451761526 fails the obsolete disk facade sleep allowance.
+Canonical replay reproduces it; an additional regression forbids reintroducing
+polling or its exception. Only that obsolete allowance is removed, preserving
+every scanner and legitimate background-owner exception. A separate failing-first
+native entrypoint control promotes the whole cohort into the existing early
+owner without replacing full-gate authority. Hosted acceptance remains pending.
+Combined native policy/runtime acceptance passes 248 cases on both Python lanes.
+The actual complete early owner passes 1211 main cases plus fresh help in 41.2
+observed seconds, retaining 90/60 bounds. Strict typing/Ruff, 61 promoted families,
+231 target contracts, Make parity and unchanged 256-resource ownership pass.
+
+S98.4 native controller CLI lookup scope: `config/ansible/execution-environment.yml`,
+`config/ansible/runtime-lock.json`, `tests/unit/test_ansible_runtime_artifacts.py`,
+and `docs/features/ANSIBLE_EE_BASE_IMAGE_LIVENESS.md`. Exact hosted Build 38451761526
+installs the pinned core/runner successfully, then the unchanged native checks
+fail with missing console-script lookup. Actual Builder generation fails first
+on absent PATH wiring. The definition now adds the isolated controller bin path
+before installation, keeping every pin, native check and downstream stage.
+The native lock producer updates its definition hash. Required rebuilt-image,
+warning remediation, full-gate/exact-SHA and deployment proof remain unfinished.
+The combined 248-case cohort passes on both Python lanes, including the real
+generated context and unchanged native check scripts in fresh lookup-control
+children. Actual complete early admission passes 1211 cases plus fresh help in
+41.2 observed seconds; native runtime validation retains all seven bound inputs.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 
