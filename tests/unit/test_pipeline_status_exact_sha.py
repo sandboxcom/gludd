@@ -19,12 +19,21 @@ import pipeline_status  # noqa: E402
 
 if TYPE_CHECKING:
     import active_work_status
+    import automatic_disk_cleanup
+    import check_disk_usage
     import ci_failure_ledger
 else:
-    from scripts import active_work_status, ci_failure_ledger
+    from scripts import active_work_status, automatic_disk_cleanup, check_disk_usage, ci_failure_ledger
 
 SHA = "a" * 40
 OTHER_SHA = "b" * 40
+
+
+@pytest.fixture(autouse=True)
+def deterministic_capacity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep machine pressure outside exact-workflow unit-test decisions."""
+    monkeypatch.setattr(pipeline_status, "automatic_disk_cleanup", automatic_disk_cleanup, raising=False)
+    monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage", lambda: automatic_disk_cleanup.DiskSnapshot(0.0, 80.0))
 
 
 def _run(
@@ -395,6 +404,115 @@ def _snapshot_local() -> dict[str, object]:
             "gate": {"state": "FAIL", "status_file": ".gate-status"},
             "open_task_ids": ["S98.1", "S98.4"], "observed_processes": [],
             "task_scope": {"open_count": 2}}
+
+
+def _capacity_snapshot_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str = "completed", conclusion: str = "success",
+) -> tuple[Path, list[str]]:
+    path = tmp_path / "current-proof.json"
+    runs = [_run("Build and Release", 124, status=status, conclusion=conclusion), _run("Molecule Tests", 101)]
+    monkeypatch.setattr(active_work_status, "collect_status", _snapshot_local)
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: runs)
+    monkeypatch.setattr(ci_failure_ledger, "fetch_run", lambda run_id, _repo: {
+        **next(run for run in runs if run["databaseId"] == run_id), "jobs": [],
+    })
+    monkeypatch.setattr(automatic_disk_cleanup, "_automatic_cleanup",
+                        lambda *_a, **_k: pytest.fail("observation must not clean"))
+    return path, ["--remote-only", "--sha", SHA, "--snapshot-output", str(path),
+                  "--failure-ledger", str(tmp_path / "absent-ledger.json")]
+
+
+@pytest.mark.parametrize(
+    ("status", "conclusion", "disk_pct", "scratch_mb", "expected_rc", "action", "blocked"),
+    [
+        ("completed", "success", 91.0, 173.0, 0, "clear_hard_capacity_before_local_proofs", True),
+        ("in_progress", "", 91.0, 173.0, 2, "clear_hard_capacity_before_local_proofs", True),
+        ("completed", "failure", 91.0, 173.0, 1, "repair_hosted_failure", True),
+        ("completed", "success", 90.0, 1000.0, 0, "collect_exact_final_proofs", False),
+        ("completed", "success", 80.0, 0.0, 0, "collect_exact_final_proofs", False),
+    ],
+)
+def test_pipeline_snapshot_current_capacity_selects_safe_next_action(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str, conclusion: str,
+    disk_pct: float, scratch_mb: float, expected_rc: int, action: str, blocked: bool,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch, status, conclusion)
+    monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage",
+                        lambda: automatic_disk_cleanup.DiskSnapshot(scratch_mb, disk_pct))
+    assert pipeline_status.main(args) == expected_rc
+    record = json.loads(path.read_text())
+    capacity = record["evidence"]["capacity"]
+    assert capacity["disk_pct"] == disk_pct
+    assert capacity["scratch_mb"] == scratch_mb
+    assert capacity["hard_blocked"] is blocked
+    assert capacity["disk_limit_kind"] == "hard"
+    assert capacity["scratch_limit_kind"] == "soft"
+    assert capacity["disk_limit_pct"] == check_disk_usage.DISK_USAGE_PCT_LIMIT
+    assert capacity["scratch_limit_mb"] == check_disk_usage.GLUDD_TMP_LIMIT_MB
+    assert {item["next_action"] for item in record["evidence"]["missing_proofs"].values()} == {action}
+    assert record["release_ready"] is False
+    assert record["gate_evidence"] is False
+
+
+def test_pipeline_snapshot_remeasures_capacity_instead_of_reusing_stale_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch)
+    measurements = iter([automatic_disk_cleanup.DiskSnapshot(173.0, 91.0),
+                         automatic_disk_cleanup.DiskSnapshot(173.0, 89.0)])
+    monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage", lambda: next(measurements))
+    for blocked in (True, False):
+        assert pipeline_status.main(args) == 0
+        record = json.loads(path.read_text())
+        assert record["evidence"]["capacity"]["hard_blocked"] is blocked
+        assert record["evidence"]["local"]["gate"]["state"] == "FAIL"
+        assert record["gate_evidence"] is False
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -1.0, 101.0])
+def test_pipeline_snapshot_invalid_capacity_never_grants_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid: float,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch)
+    monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage",
+                        lambda: automatic_disk_cleanup.DiskSnapshot(0.0, invalid))
+    assert pipeline_status.main(args) == 2
+    record = json.loads(path.read_text())
+    assert record["state"] == "lookup_error"
+    assert record["evidence"]["capacity"] is None
+    assert "capacity" in " ".join(record["evidence"]["errors"]).lower()
+    assert record["gate_evidence"] is False
+
+
+def test_pipeline_snapshot_capacity_lookup_error_is_observable_and_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch)
+
+    def unavailable() -> automatic_disk_cleanup.DiskSnapshot:
+        raise automatic_disk_cleanup.DiskInspectionError("capacity inspection unavailable")
+
+    monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage", unavailable)
+    assert pipeline_status.main(args) == 2
+    record = json.loads(path.read_text())
+    assert record["state"] == "lookup_error"
+    assert record["evidence"]["capacity"] is None
+    assert "capacity inspection unavailable" in record["evidence"]["errors"]
+    actions = {item["next_action"] for item in record["evidence"]["missing_proofs"].values()}
+    assert actions == {"resolve_observation_error"}
+
+
+@pytest.mark.parametrize(("scratch_mb", "disk_pct"), [(True, 80.0), (False, 80.0), (0.0, True), (0.0, False)])
+def test_pipeline_snapshot_boolean_capacity_is_not_a_usage_measurement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_mb: float, disk_pct: float,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch)
+    monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage",
+                        lambda: automatic_disk_cleanup.DiskSnapshot(scratch_mb, disk_pct))
+    assert pipeline_status.main(args) == 2
+    record = json.loads(path.read_text())
+    assert record["state"] == "lookup_error"
+    assert record["evidence"]["capacity"] is None
 
 
 def test_pipeline_generates_current_handoff_from_owners(

@@ -453,6 +453,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_native_temp_artifact_target.py::test_native_temp_artifact_inspection_preserves_literal_path_data",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "producer-current-capacity-proof-admission",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_current_capacity_selects_safe_next_action",
+      "full_gate_phase": "test"
     }
   ]
 }

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os as os
 import re
 import subprocess
@@ -21,12 +22,14 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import active_work_status
+    import automatic_disk_cleanup
+    import check_disk_usage
     import ci_failure_ledger
     from proof_observations import write_snapshot
 else:
     if __package__ in {None, ""}:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from scripts import active_work_status, ci_failure_ledger
+    from scripts import active_work_status, automatic_disk_cleanup, check_disk_usage, ci_failure_ledger
     from scripts.proof_observations import write_snapshot
 
 DEFAULT_REPO = "sandboxcom/gludd"
@@ -310,12 +313,27 @@ def _publish_snapshot(
     if args.ledger_observation_exit_code:
         errors.append(f"failure-ledger observation failed rc={args.ledger_observation_exit_code}")
     local: dict[str, object] | None = None
+    capacity: dict[str, object] | None = None
     ledger_status: dict[str, object] | None = None
     hosted: dict[str, Any] | None = asdict(summary) if summary is not None else None
     hosted_failures: list[dict[str, object]] = []
     print("PIPELINE-SNAPSHOT-START", flush=True)
     try:
         local = active_work_status.collect_status()
+        print("PIPELINE-SNAPSHOT-CAPACITY-START", flush=True)
+        measured = automatic_disk_cleanup.inspect_usage()
+        if (isinstance(measured.scratch_mb, bool) or isinstance(measured.disk_pct, bool)
+                or not math.isfinite(measured.scratch_mb) or measured.scratch_mb < 0
+                or not math.isfinite(measured.disk_pct) or not 0 <= measured.disk_pct <= 100):
+            raise ValueError("capacity inspection produced invalid usage")
+        capacity = {
+            **asdict(measured), "hard_blocked": measured.has_hard_pressure,
+            "disk_limit_pct": check_disk_usage.DISK_USAGE_PCT_LIMIT,
+            "disk_limit_kind": "hard",
+            "scratch_limit_mb": check_disk_usage.GLUDD_TMP_LIMIT_MB,
+            "scratch_limit_kind": "soft",
+        }
+        print(f"PIPELINE-SNAPSHOT-CAPACITY-END hard_blocked={measured.has_hard_pressure}", flush=True)
         ledger = ci_failure_ledger.read_ledger(args.failure_ledger)
         ledger_status = {
             "path": str(args.failure_ledger), "observed": args.failure_ledger.exists(),
@@ -355,7 +373,8 @@ def _publish_snapshot(
                     "steps": [step.get("name") for step in job.get("steps", [])
                               if isinstance(step, dict) and step.get("conclusion") == "failure"],
                 } for job in jobs if job.get("conclusion") == "failure")
-    except (OSError, ValueError, subprocess.SubprocessError, ci_failure_ledger.LedgerError) as exc:
+    except (OSError, ValueError, subprocess.SubprocessError, ci_failure_ledger.LedgerError,
+            automatic_disk_cleanup.DiskInspectionError) as exc:
         errors.append(str(exc))
     state = ("lookup_error" if errors else
              "success" if summary is not None and summary.exit_code == 0 else
@@ -363,14 +382,17 @@ def _publish_snapshot(
     local_git = local.get("git") if local is not None else None
     implementation_sha = local_git.get("head") if isinstance(local_git, dict) else None
     open_tasks = local.get("open_task_ids", []) if local is not None else []
+    next_action = ("resolve_observation_error" if errors else
+                   "repair_hosted_failure" if state == "failure" else
+                   "clear_hard_capacity_before_local_proofs" if capacity is not None and capacity["hard_blocked"] else
+                   "collect_exact_final_proofs" if state == "success" else
+                   "resolve_or_await_hosted_evidence")
     missing_proofs = {
         task_id: {
             "implementation_sha": implementation_sha, "hosted_sha": sha,
             "hosted_status": state, "canonical_gate": "not_collected",
             "canonical_coverage": "not_collected", "source_review": "not_collected",
-            "next_action": ("repair_hosted_failure" if state == "failure" else
-                            "collect_exact_final_proofs" if state == "success" else
-                            "resolve_or_await_hosted_evidence"),
+            "next_action": next_action,
         }
         for task_id in open_tasks if isinstance(task_id, str)
     } if isinstance(open_tasks, list) else {}
@@ -379,7 +401,8 @@ def _publish_snapshot(
             args.snapshot_output, producer="pipeline-status",
             identity={"repo": args.repo, "branch": args.branch, "sha": sha}, state=state,
             evidence={"local": local, "hosted": hosted, "failure_ledger": ledger_status,
-                      "missing_proofs": missing_proofs, "hosted_failures": hosted_failures,
+                       "missing_proofs": missing_proofs, "hosted_failures": hosted_failures,
+                       "capacity": capacity,
                       "errors": errors},
         )
     except (OSError, ValueError) as exc:

@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — current handoff recommended proof replay without current capacity
+
+- **Observed**: The generated handoff records a historical failed gate but selects full proof from hosted success without observing present volume pressure. Repeated continuation prompts therefore cannot distinguish a current hard-capacity prerequisite from stale history.
+- **Codified repair**: Reuse the canonical read-only capacity owner on each actual snapshot. Preserve hosted verdict/exit semantics and prioritize lookup errors, real hosted failures, then hard-capacity clearance before local proof. Soft scratch pressure remains soft; invalid or unavailable measurements fail closed. No cleanup, new daemon, manual JSON update or release authority is introduced.
+- **Acceptance**: Eleven cases fail first, followed by four boolean-measurement failures. All 85 workflow/verdict cases pass at 97% combined coverage with unchanged 85/75 floors; original assertions remain. Two routing/roster cases fail before all 44 promotion/plan cases pass. The existing complete early producer cohort remains mandatory within unchanged 90/60 and 21-phase/2850-second budgets.
+- **Boundary**: The feature guide links the long-lived native-extraction user report without inferring project ownership. Capacity, canonical full gate/coverage, independent review and exact-SHA CI still determine completion; shared-cache cleanup still requires authority.
+
 ### 2026-10-12 — the unchanged task inventory triggered a quoted-keyword false positive
 
 - **Observed**: Normal push stops before publication on one new Secret Keyword identity at TASKS line 47. A bounded replay of the pinned detector identifies exactly 3,311 characters of public filenames and historical proof text, not a credential.

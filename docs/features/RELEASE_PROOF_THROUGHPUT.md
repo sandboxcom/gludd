@@ -311,6 +311,32 @@ engineering inference is to preserve explicit unknown/error states, inspect
 returned identity, and keep generated observations diagnostic. A fresh local
 write cannot make a stale remote result authoritative.
 
+### Current capacity owns local proof scheduling
+
+The producer now reads `automatic_disk_cleanup.inspect_usage()` on each actual
+snapshot, without calling cleanup. It records current scratch and volume use,
+the canonical owner's limits, and their soft/hard distinction. It does not
+derive present capacity from a historical failed gate. An unavailable, boolean,
+non-finite or out-of-range measurement is an observable lookup error, not green
+admission.
+
+Missing-proof actions prioritize observation errors, then real hosted failures,
+then clearing hard capacity before local proof. Hosted success retains its
+original CLI meaning; blocked capacity never becomes a passing local gate.
+Soft scratch pressure alone does not invent a new hard floor. Hosted work may
+continue independently while local proof waits. No cleanup authority, serving
+change, daemon, extra tracker or policy bypass is added.
+
+The April 2026 [Bun user report][native-extraction-pressure] describes persistent
+native-library extraction copies growing temporary storage. It motivates
+observing storage alongside work, but does not establish Gludd ownership or
+authorize deleting shared cache files. The repository-specific scheduling gap
+is reproduced by eleven failing-first cases and four additional boolean cases;
+all 85 exact-workflow/verdict cases then pass. Both measured source files meet
+unchanged 85/75 coverage floors, at 97% combined coverage. The complete existing
+early cohort owns this regression; actual full gate and exact-SHA proof remain
+mandatory.
+
 The writer/reader behavior is specified in
 `tests/unit/test_proof_observations.py`: producer-derived UTC time, replacement
 of prior success, identity mismatch, stale/future time, schema/authority
@@ -329,10 +355,10 @@ passes all 590 cases in 32.35 test seconds (33.1 observed), within those unchang
 bounds; the 216-target Make contract and all three actual public safe examples
 also pass.
 
-Confirmed remaining gaps are explicit: complete EE dependency resolution and
+Remaining proof requirements are explicit: complete EE dependency resolution and
 replacement image proof; validated final source-review/canonical gate/coverage
-receipts; and measured hosted critical-path optimization. A shard-ordering
-proposal exists, but has not been implemented or demonstrated faster. Capacity
+receipts; and measured hosted critical-path optimization. Hosted creation order
+has been changed, but has not been demonstrated faster. Capacity
 admission and protected-history ownership are already codified and still
 require real capacity or operator authority, not another status-file edit.
 
@@ -343,6 +369,8 @@ the same frozen SHA, independent source review, or required native/browser
 acceptance. It does not clear the retained capacity prerequisite. Partial
 local evidence and historical failures stay explicit, and TASKS.md cannot be
 ticked from a current-observation JSON.
+
+[native-extraction-pressure]: https://github.com/oven-sh/bun/issues/29585
 
 Observation publication is a control-plane file update. It changes no serving
 process, listener, deployment, database, model worker, or active release

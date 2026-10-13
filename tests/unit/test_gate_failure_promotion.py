@@ -474,6 +474,8 @@ def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> No
          "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_accepts_the_existing_ledger_detail_shape"),
         ("make-search-literal-transport",
          "tests/unit/test_make_readonly_version.py::test_actual_search_never_evaluates_exported_make_function_data"),
+        ("producer-current-capacity-proof-admission",
+         "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_current_capacity_selects_safe_next_action"),
     ],
 )
 def test_automatic_observation_contracts_execute_in_complete_early_cohorts(
@@ -898,6 +900,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "make-private-target-help-visibility",
         "stale-resource-packaged-artifact-identity",
         "native-artifact-literal-argument-transport",
+        "producer-current-capacity-proof-admission",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
