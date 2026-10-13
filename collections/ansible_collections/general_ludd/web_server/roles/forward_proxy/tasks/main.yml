@@ -49,7 +49,7 @@
 
         - name: "Generate basic auth file"
           when: auth_method == "basic"
-          ansible.builtin.htpasswd:
+          community.general.htpasswd:
             path: /etc/squid/passwd
             name: "{{ squid_user | default('proxy') }}"
             password: "{{ squid_password | default('changeme') }}"

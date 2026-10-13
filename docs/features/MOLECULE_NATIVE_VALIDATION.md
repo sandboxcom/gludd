@@ -208,3 +208,83 @@ the eight-worker admission, bounded deadlines, child syntax/Jinja checks and
 existing stream owner. The complete retained native run, canonical gate,
 85/75 coverage floors and exact-SHA hosted proofs remain separate requirements;
 this focused result does not close S98.4.
+
+## Typed binary/radio dictionaries and native argument acceptance (2026-10-13)
+
+The real failing-first replay reproduces four ignored ArgsRule child-option
+exceptions in binary_re and five in radio. Installed ArgsRule extracts the
+reported leaf name from a nested type error and reads it from the top-level
+action, where that name is absent. Its warning is not a successful type check;
+the existing diagnostic owner correctly rejects native exit zero in these cases.
+An [April 2025 user reproduction](https://github.com/ansible/ansible-lint/issues/4568)
+documents the same top-level lookup failure for an aliased option. That report
+corroborates the failure mechanism, rather than proving all exceptions share it.
+
+Each of the thirteen shipped binary/radio role calls now supplies its existing
+dictionary through a task-local variable and a single `params` expression.
+All operation names, parameter expressions, omissions, required dictionary
+contracts, nested types, choices, defaults, registrations, conditional checks
+and atomic artifact writes are preserved. No module argument specification,
+lint rule, loader, ignore list or diagnostic policy is changed. Static lint
+validates the supported templated dictionary path; separate native rendering
+and ArgumentSpecValidator acceptance verify the concrete nested values. Native
+AnsibleModule still rejects invalid nested boolean, integer and floating values
+before operation execution. The [maintained argument-spec owner](https://docs.ansible.com/projects/ansible/latest/dev_guide/developing_program_flow_modules.html#argument-spec)
+retains this runtime authority.
+
+The capability playbook's separate import warning comes from installed core
+`set_fact` action code using a package-relative import while native ArgsRule
+loads a short action name. Its four calls now use `ansible.builtin.set_fact`;
+every fact assignment remains identical. Collection plugins were not the cause.
+
+The inspected [2023 practitioner discussion](https://forum.ansible.com/t/ansible-lint-causes-massive-amount-of-debug-logging-to-syslog/853)
+describes module initialization and syslog side effects inside ArgsRule itself;
+it also includes a user report about lint CPU/RAM pressure across projects.
+This source repair keeps the existing native rule and its bounded, private
+state owner. It adds no scanner, runner, daemon, cache or logging suppression.
+
+Before source edits, the focused suite recorded 16 failures and 9 passes,
+including all three warning-fatal native source groups. The candidate passes
+25 cases on Python 3.14.0/Ansible 2.21.5 and Python 3.11.14/Ansible 2.19.14 with
+one pytest worker and warnings-as-errors. Three cases exercise the unchanged
+warning-fatal native checker, thirteen render and validate the actual shipped
+role dictionaries, and nine invoke the actual Ansible module entrypoints with
+invalid nested values. Ruff and strict mypy pass for the added test file.
+These are focused source/argument results, not full-gate, hosted, lifecycle,
+Windows or deployment proof. S98.4, the 85/75 coverage floors and promotion
+requirements retain their separate required evidence.
+
+## Maintained module names and collection ownership (2026-10-13)
+
+SSL key and CSR tasks use `community.crypto.openssl_privatekey` and
+`community.crypto.openssl_csr`; the certificate task uses
+`community.crypto.x509_certificate`. Forward-proxy basic authentication uses
+`community.general.htpasswd`. Only the owner names change: every argument,
+condition, path, mode and handler remains intact. The four infrastructure
+module calls in their native scenario likewise use their actual
+`general_ludd.agent` FQCNs.
+
+Six failing-first cases precede the repair. The focused six-case replay then
+passes: four pin the maintained web module names, one validates the actual
+infrastructure scenario through native lint, and one proves that an unsupported
+module parameter is still refused. The isolated scenario fixture retains the
+exact production infrastructure modules and their client dependency; it does
+not provide fake modules or count namespace-only resolution as argument proof.
+This validates source names and native infrastructure arguments, not certificate
+or proxy runtime acceptance, cloud provisioning, check-mode authorization,
+full-gate, hosted or deployment readiness.
+
+The [maintained htpasswd reference](https://docs.ansible.com/projects/ansible/latest/collections/community/general/htpasswd_module.html)
+identifies its community owner and managed-host passlib prerequisite. The
+[removed certificate alias reference](https://docs.ansible.com/projects/ansible/latest/collections/community/crypto/openssl_certificate_module.html)
+records removal in community.crypto 2.0.0 and the supported x509 name.
+The [2022 AWX practitioner report](https://forum.ansible.com/t/awx-21-0-unable-to-locate-collection-community-general/36749)
+describes collections missing inside the actual execution environment, even
+when operators expect host installation to supply them. Correct names and
+reproducible consumer-owned collection staging are separate requirements.
+The latter remains pending; ambient user installations are not release proof.
+
+The binary/radio dictionary candidate's focused argument tests pass, but native
+staged clone admission currently refuses six repeated source blocks. It remains
+uncommitted and is being refactored through maintained native task owners.
+No clone exclusion, fingerprint baseline, coverage floor or native rule changes.

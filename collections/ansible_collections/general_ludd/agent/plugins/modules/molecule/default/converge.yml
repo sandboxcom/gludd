@@ -4,7 +4,7 @@
   gather_facts: false
   tasks:
     - name: "Check-mode deploy with allowed role"
-      infra_deploy:
+      general_ludd.agent.infra_deploy:
         stack: test-stack
         provider: aws
         engine: vllm
@@ -22,7 +22,7 @@
           - "'msg' in _deploy"
 
     - name: "Deploy with denied role should fail"
-      infra_deploy:
+      general_ludd.agent.infra_deploy:
         stack: test-stack
         provider: aws
         engine: vllm
@@ -38,7 +38,7 @@
           - "'denied by access policy' in _denied_deploy.msg"
 
     - name: "Check-mode destroy with allowed role"
-      infra_destroy:
+      general_ludd.agent.infra_destroy:
         instance_id: i-fake-id
         provider: aws
         role: admin
@@ -53,7 +53,7 @@
           - "'msg' in _destroy"
 
     - name: "Destroy with denied role should fail"
-      infra_destroy:
+      general_ludd.agent.infra_destroy:
         instance_id: i-fake-id
         provider: aws
         role: viewer

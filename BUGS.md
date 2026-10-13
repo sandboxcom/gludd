@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Native task calls selected removed or unresolved module names
+
+- Six failing-first cases identify four nonexistent builtin web-module owners and four short infrastructure calls that cannot resolve in the native isolated scenario.
+- The source now names the maintained community crypto/general owners and actual Gludd infrastructure FQCNs, preserving every argument and condition. Six focused cases pass; the real native infrastructure checker also rejects an unsupported parameter. Its fixture copies the exact production modules/client so a local collection namespace cannot shadow missing dependencies.
+- Web module-name checks do not establish installed third-party arguments or serving runtime health. Reproducible collection staging, check-mode authorization, full gate, exact-SHA hosted evidence and deployment acceptance remain pending. Binary/radio and Git reuse candidates retain their separate failed clone admission; no task is closed.
+
 ### 2026-10-13 — Advisory enforcement callers duplicated the native model owner
 
 - Staged native clone admission rejects the repeated model-invocation blocks in the gate and verification roles. Both role prompts, ordering, advisory status and artifact facts must remain intact.

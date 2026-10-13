@@ -32,19 +32,19 @@
   when: generate_self_signed | default(false)
   block:
     - name: "Generate private key"
-      ansible.builtin.openssl_privatekey:
+      community.crypto.openssl_privatekey:
         path: "{{ key_path }}"
         size: 4096
         mode: "0600"
 
     - name: "Generate CSR"
-      ansible.builtin.openssl_csr:
+      community.crypto.openssl_csr:
         path: "{{ cert_path | splitext | first }}.csr"
         privatekey_path: "{{ key_path }}"
         common_name: "{{ ssl_common_name | default(server_name | default(ansible_fqdn)) }}"
 
     - name: "Generate self-signed certificate"
-      ansible.builtin.openssl_certificate:
+      community.crypto.x509_certificate:
         path: "{{ cert_path }}"
         privatekey_path: "{{ key_path }}"
         csr_path: "{{ cert_path | splitext | first }}.csr"
