@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
+from textwrap import dedent
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 import scripts.collection_lock as collection_lock_module
 import scripts.reap_stale_collection_locks as reaper
 from scripts.collection_lock import lock_timeout
-from scripts.process_cleanup import ProcessInfo
+
+if TYPE_CHECKING:
+    from process_cleanup import ProcessInfo
+else:
+    from scripts.process_cleanup import ProcessInfo
 from scripts.reap_stale_collection_locks import (
     assess_lock,
     reap_stale_gate_refresh_roots,
@@ -383,9 +391,195 @@ def test_main_forwards_namespaced_roots_and_apply(
 def test_static_analysis_and_direct_execution_use_distinct_import_paths() -> None:
     """Direct execution must not make mypy load one helper under two names."""
 
-    for module in (reaper, collection_lock_module):
+    for module, expected_helpers in (
+        (reaper, {"process_cleanup", "resource_arbiter"}),
+        (collection_lock_module, {"resource_arbiter"}),
+    ):
         module_file = module.__file__
         assert module_file is not None
         source = Path(module_file).read_text(encoding="utf-8")
-        assert "if TYPE_CHECKING or __package__:" in source
+        typing_guards = [
+            statement
+            for statement in ast.parse(source).body
+            if isinstance(statement, ast.If)
+            and any(
+                isinstance(node, ast.Name) and node.id == "TYPE_CHECKING"
+                for node in ast.walk(statement.test)
+            )
+        ]
+        assert len(typing_guards) == 1
+        assert {
+            statement.module
+            for statement in typing_guards[0].body
+            if isinstance(statement, ast.ImportFrom)
+        } == expected_helpers
         assert "except ModuleNotFoundError" not in source
+
+
+def _native_import_probe(
+    module_name: str,
+    *,
+    package: bool,
+    tmp_path: Path,
+    program: str,
+) -> subprocess.CompletedProcess[str]:
+    module_file = collection_lock_module.__file__
+    assert module_file is not None
+    script_root = Path(module_file).resolve().parent
+    prefix = "scripts." if package else ""
+    return subprocess.run(
+        [
+            sys.executable, "-I", "-B", "-W", "error", "-c", dedent(program),
+            str(script_root.parent if package else script_root),
+            f"{prefix}{module_name}", prefix, str(tmp_path),
+        ],
+        cwd=tmp_path,
+        env={"PATH": os.defpath, "GLUDD_RESOURCE_ROOT": str(tmp_path / "resources")},
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize("module_name", ["collection_lock", "reap_stale_collection_locks"])
+@pytest.mark.parametrize("package", [True, False], ids=["package", "direct-script"])
+def test_native_import_preserves_helper_identity_and_project_isolation(
+    module_name: str,
+    package: bool,
+    tmp_path: Path,
+) -> None:
+    """Fresh interpreters must bind helpers once under the intended names."""
+
+    result = _native_import_probe(
+        module_name,
+        package=package,
+        tmp_path=tmp_path,
+        program="""
+            import importlib
+            import sys
+            from pathlib import Path
+
+            sys.path.insert(0, sys.argv[1])
+            module = importlib.import_module(sys.argv[2])
+            prefix = sys.argv[3]
+            helpers = {"project_root": "resource_arbiter"}
+            if sys.argv[2].endswith("collection_lock"):
+                helpers["resource_path"] = "resource_arbiter"
+            else:
+                helpers.update({
+                    "ProcessInfo": "process_cleanup",
+                    "snapshot_processes": "process_cleanup",
+                    "project_namespace": "resource_arbiter",
+                    "resource_root": "resource_arbiter",
+                })
+            for attribute, helper_name in helpers.items():
+                helper = sys.modules[prefix + helper_name]
+                assert getattr(module, attribute) is getattr(helper, attribute)
+                alternate = helper_name if prefix else "scripts." + helper_name
+                assert alternate not in sys.modules
+            arbiter = sys.modules[prefix + "resource_arbiter"]
+            first = Path(sys.argv[4]) / "project-a"
+            second = Path(sys.argv[4]) / "project-b"
+            assert module.project_root(first) == first.resolve()
+            assert module.project_root(second) == second.resolve()
+            assert arbiter.resource_path("collection", first) != arbiter.resource_path(
+                "collection", second
+            )
+            print("IMPORT-BOUNDARY-OK")
+        """,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "IMPORT-BOUNDARY-OK"
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize("module_name", ["collection_lock", "reap_stale_collection_locks"])
+@pytest.mark.parametrize("package", [True, False], ids=["package", "direct-script"])
+def test_native_import_does_not_mask_a_missing_helper(
+    module_name: str,
+    package: bool,
+    tmp_path: Path,
+) -> None:
+    """A dependency failure must propagate without trying another identity."""
+
+    result = _native_import_probe(
+        module_name,
+        package=package,
+        tmp_path=tmp_path,
+        program="""
+            import importlib
+            import importlib.abc
+            import sys
+
+            sys.path.insert(0, sys.argv[1])
+            prefix = sys.argv[3]
+            missing = prefix + "resource_arbiter"
+
+            class MissingHelper(importlib.abc.MetaPathFinder):
+                def find_spec(self, fullname, path=None, target=None):
+                    if fullname == missing:
+                        raise ModuleNotFoundError("injected helper failure", name=fullname)
+                    return None
+
+            sys.meta_path.insert(0, MissingHelper())
+            try:
+                importlib.import_module(sys.argv[2])
+            except ModuleNotFoundError as error:
+                assert error.name == missing
+                assert str(error) == "injected helper failure"
+            else:
+                raise AssertionError("dependency failure was masked")
+            alternate = "resource_arbiter" if prefix else "scripts.resource_arbiter"
+            assert alternate not in sys.modules
+            print("DEPENDENCY-FAILURE-PRESERVED")
+        """,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "DEPENDENCY-FAILURE-PRESERVED"
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    ("module_name", "arguments", "expected_status", "expected_output"),
+    [
+        ("collection_lock", [], 2, "usage: collection_lock.py"),
+        ("reap_stale_collection_locks", ["--help"], 0, "--stale-after"),
+    ],
+)
+@pytest.mark.parametrize("package", [True, False], ids=["package", "direct-script"])
+def test_native_cli_imports_from_an_unrelated_working_directory(
+    module_name: str,
+    arguments: list[str],
+    expected_status: int,
+    expected_output: str,
+    package: bool,
+    tmp_path: Path,
+) -> None:
+    """Both entry points load native helpers before their side-effect-free CLI."""
+
+    module_file = collection_lock_module.__file__
+    assert module_file is not None
+    script_root = Path(module_file).resolve().parent
+    environment = {"PATH": os.defpath}
+    if package:
+        environment["PYTHONPATH"] = str(script_root.parent)
+        entrypoint = ["-m", f"scripts.{module_name}"]
+    else:
+        entrypoint = [str(script_root / f"{module_name}.py")]
+    result = subprocess.run(
+        [sys.executable, "-B", "-W", "error", *entrypoint, *arguments],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert result.returncode == expected_status, result.stdout + result.stderr
+    assert expected_output in result.stdout
+    assert result.stderr == ""
+    assert list(tmp_path.iterdir()) == []

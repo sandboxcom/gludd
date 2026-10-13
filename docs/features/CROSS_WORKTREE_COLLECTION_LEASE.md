@@ -72,3 +72,30 @@ Rollback reverts the resolver, regressions, and this document together after
 any active collection finishes. It restores worktree-local serialization and
 therefore the known concurrent-collection risk; no persisted data or service
 state needs migration.
+
+## Collection helper import boundaries
+
+Collection serialization and stale-owner inspection support package imports and
+direct script entry points. Static typing resolves their dependency-free helpers
+through the existing `MYPYPATH=src:scripts` base; package execution binds the
+`scripts.*` helpers, while direct execution binds the adjacent bare modules. A
+missing helper remains an import failure, never an exception-based fallback to
+another module identity. The reaper's typing branch uses that same canonical
+identity; its runtime package/direct branches remain unchanged.
+
+Long-lived user reports support checking identity rather than branch spelling:
+[mypy #13202](https://github.com/python/mypy/issues/13202), opened July 2022,
+reproduces duplicate source discovery even with explicit package bases;
+[mypy #19500](https://github.com/python/mypy/issues/19500), opened July 2025,
+reproduces identity confusion around a package CLI and working directory.
+These are analogous failure modes, not proof of the exact Gludd defect.
+
+Acceptance runs both native entry points in fresh interpreters from unrelated
+directories, verifies bound helper identity and distinct project resources, and
+preserves injected missing-helper failures. Canonical RED has one failure with
+27 controls; all 37 collection/reaper cases then pass on Python 3.11. The expanded
+116-case native coverage replay measures all three existing production owners
+at 90% combined coverage and passes unchanged aggregate/per-file line-and-branch
+floors. No lease, process ownership, cleanup authority or runtime service changes.
+Rollback reverts typing and acceptance together. Full-gate, exact-SHA hosted and
+deployment proofs remain pending.

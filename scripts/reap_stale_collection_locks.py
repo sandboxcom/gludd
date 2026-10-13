@@ -19,7 +19,10 @@ from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING or __package__:
+if TYPE_CHECKING:
+    from process_cleanup import ProcessInfo, snapshot_processes
+    from resource_arbiter import project_namespace, project_root, resource_root
+elif __package__:
     from scripts.process_cleanup import ProcessInfo, snapshot_processes
     from scripts.resource_arbiter import project_namespace, project_root, resource_root
 else:  # pragma: no cover - direct script execution
