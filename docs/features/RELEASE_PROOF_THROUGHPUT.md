@@ -714,6 +714,37 @@ authoritative gate phases. No plugin source changes or runtime restart are
 required.
 
 [workflow-syntax]: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+## Superseded successful observation retention
+
+An observed S98.4 repair was refused before launch because 32 historical command
+pointers filled the bounded administrative inventory. That lifetime count kept
+growing after successful source work, although each native run already owned its
+terminal result and receipt. A passing observation is not feature completion.
+
+Before reserving a new command at capacity, the existing producer may release
+one pointer only when its native result verifies success, its command hash matches,
+its source or runtime context is superseded, and no reservation still owns it.
+Current-context successes, failed/timed-out/interrupted runs, active owners, missing
+or malformed receipts, forged identities and release-authority claims remain
+protected. The same 32-command/128-KiB bounds, primary/support rules and unchanged
+failure guard remain. An atomic write failure preserves the original state.
+
+`ITEM_PROGRESS_RETENTION_RELEASED` reports the native administrative change.
+Admission deletes no receipt, log, task, lease or process; the existing observer's
+retention policy still owns historical run files, and referenced failed evidence
+stays protected. This adds no parallel history tracker or completion authority.
+The long-lived [stale workflow observation discussion][stale-workflow-observations]
+supports retaining exact native identity rather than treating an old status as
+current proof; it does not establish the exact Gludd inventory defect.
+
+Two canonical capacity regressions fail first with 11 safety controls passing.
+The final 88-case producer/wiring cohort passes on Python 3.11 and 3.14. Native
+coverage measures 93.4% lines and 86.1% branches without changing 85/75 floors;
+strict typing, Ruff and the unchanged 256-resource ownership inventory pass.
+This is a zero-downtime administrative change. Rollback reverts source/acceptance
+together after watched owners finish, reintroducing history-capacity refusal;
+never clear operational JSON manually. Full gate and deployment proof stay pending.
+
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
 [observation-api]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository

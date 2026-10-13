@@ -308,6 +308,27 @@ def _release(root: Path, key: str, token: str) -> None:
             _atomic_write_json(path, state)
 
 
+def _retire_superseded_success(
+    root: Path, observations: dict[str, object], reservations: Mapping[str, object],
+    identity: Mapping[str, object],
+) -> str | None:
+    """Release one obsolete successful pointer, never a receipt or unsafe owner."""
+    for key, value in sorted(observations.items()):
+        if key in reservations:
+            continue
+        try:
+            native = _native(root, cast(dict[str, str], value))
+        except (OSError, ValueError):
+            # Missing, malformed or inaccessible evidence cannot authorize retirement.
+            continue
+        previous = cast(dict[str, object], native["progress_identity"])
+        if (native["state"] == "passed" and _command_key(previous["command"]) == key
+                and any(previous[field] != identity[field] for field in ("source", "environment"))):
+            del observations[key]
+            return key
+    return None
+
+
 @contextmanager
 def command_admission(
     root: Path, command: Sequence[str], *, environment: Mapping[str, str],
@@ -360,10 +381,17 @@ def command_admission(
                 )
             if native["state"] in {"starting", "running"} and _pid_alive(native.get("owner_pid")):
                 raise ValueError("prior native command still has an active owner")
-        if key not in observations and len(set(observations) | set(reservations)) >= _MAX_COMMANDS:
-            raise ValueError("primary has reached the bounded command inventory")
+        retired: list[str] = []
+        while key not in observations and len(set(observations) | set(reservations)) >= _MAX_COMMANDS:
+            obsolete = _retire_superseded_success(root, observations, reservations, identity)
+            if obsolete is None:
+                raise ValueError("primary has reached the bounded command inventory")
+            retired.append(obsolete)
         reservations[key] = {"owner_pid": os.getpid(), "token": token}
         _atomic_write_json(path, state)
+        for obsolete in retired:
+            print(f"ITEM_PROGRESS_RETENTION_RELEASED command={obsolete} reason=superseded-native-success "
+                  "receipt_deleted=false release_ready=false gate_evidence=false", flush=True)
         admission = Admission(root, path, state, identity, token)
     try:
         yield admission

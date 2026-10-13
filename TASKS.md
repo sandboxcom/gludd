@@ -155,6 +155,17 @@ helpers and shell/non-Git delegation. The image-bootstrap repair has its separat
 196-case source receipt. Successor same-SHA CI, full gate and deployment proof
 remain pending; no failure family is marked resolved from these source results.
 
+S98.4 bounded-observation lifecycle scope: `scripts/item_progress.py`,
+`tests/unit/test_item_progress_retention.py`, and
+`docs/features/RELEASE_PROOF_THROUGHPUT.md`. The next real watched repair is refused
+at the unchanged 32-command inventory; native terminal success from superseded
+contexts now releases an administrative pointer without deleting a receipt or
+weakening failed/live/unknown-owner protection. Two canonical capacity regressions
+fail first; all 88 producer/wiring cases pass on Python 3.11 and 3.14. Native
+coverage is 93.4% lines/86.1% branches under unchanged 85/75 floors, with strict
+typing/Ruff/docstrings and unchanged 256-resource ownership green. Source acceptance
+does not close S98.4 or supply full-gate/exact-SHA/deployment evidence.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

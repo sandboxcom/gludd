@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Successful historical observations exhausted primary admission
+
+- The real watched five-family repair stops before execution at the 32-command inventory. The producer bounded retained history as a lifetime work quota, so successful source/runtime observations could prevent the next meaningful owner from starting.
+- Two canonical capacity cases fail before repair, with 11 safety controls passing. The existing locked producer now releases only a verified native-success pointer whose source/runtime context is superseded and whose command identity matches; reserved/current/failed/interrupted/unknown/tampered entries remain protected. All receipt files are left intact by admission, and the native retention owner remains authoritative.
+- All 88 producer/wiring cases pass on both runtimes; native coverage measures 93.4% lines/86.1% branches under unchanged 85/75 floors. Strict typing, Ruff/docstrings and unchanged 256-resource ownership pass. The bound remains 32, atomic-write failure preserves history, unchanged failures stay blocked, and no JSON is manually cleared or marked release-ready.
+- This source repair enables another bounded owner; it does not establish task completion, hosted acceptance or physical capacity recovery. The feature guide records the superseded-status boundary, native lifecycle, zero-downtime rollback and practitioner context.
+
 ### 2026-10-13 — Four hosted audit owners pinned obsolete source structure
 
 - Terminal Build run 38430314549 exposes five failed jobs; all five contexts are collected before replacement publication. The image-bootstrap source repair is tracked separately. The other four failures are stale import-branch spelling, module_defaults treated as a module, valid Make-owned environment reads absent from a Python-only documentation audit, and inline-only Git delegation assertions.
