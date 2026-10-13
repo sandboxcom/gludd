@@ -1,0 +1,6 @@
+---
+- name: "Validate the request's required input"
+  ansible.builtin.import_tasks: required_value.yml
+
+- name: "Perform the validated Git request"
+  ansible.builtin.import_tasks: git_request.yml

@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 _TAIL_CHARS = 16000
 _DEFAULT_TIMEOUT_S = 300
+DEFAULT_GATE_TIMEOUT_SECONDS = 3600
 _READ_CHUNK = 8192
 _FORBIDDEN_METACHARS: frozenset[str] = frozenset(
     {";", "|", "&", "$", "`", "(", ")", "{", "}", "<", ">", "!", "\\", "'", '"', "\t", "\n", "\r"}
@@ -327,7 +328,7 @@ class MakeRunner:
 
     def run_gate(self, *, timeout_s: int | None = None) -> MakeResult:
         """Run the project gate with its release-safe default timeout."""
-        return self.run("gate", timeout_s=timeout_s or 3600)
+        return self.run("gate", timeout_s=timeout_s or DEFAULT_GATE_TIMEOUT_SECONDS)
 
     def run_lint(self, *, timeout_s: int | None = None) -> MakeResult:
         """Run the project lint target."""

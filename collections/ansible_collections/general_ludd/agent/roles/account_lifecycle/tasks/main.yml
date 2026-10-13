@@ -57,6 +57,7 @@
 - name: Announce account lifecycle result on the message queue
   general_ludd.agent.gludd_message:
     state: send
+    sender: "account_lifecycle"
     recipient: "broadcast"
     topic: "account_lifecycle"
     body: >-

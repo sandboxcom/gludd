@@ -1,29 +1,15 @@
 ---
-# worktree.yml — git worktree operations through the guarded gludd_git module.
-# Operations: list, create, remove, merge, cleanup, health_check, merge_all
-
-- name: "Assert parameters for worktree operation"
-  ansible.builtin.assert:
-    that:
-      - repo_path | string | length > 0
-      - worktree_op | string | length > 0
-    fail_msg: "repo_path and worktree_op are required"
-
-# ── list ────────────────────────────────────────────────────────────────
-
-- name: "List worktrees through gludd_git"
-  general_ludd.agent.gludd_git:
-    path: "{{ repo_path }}"
-    op: worktree_list
-  register: _wt_list
-  when: worktree_op == 'list'
-
-- name: "Set worktree list result"
-  ansible.builtin.set_fact:
-    git_automation_worktree_result:
-      op: list
-      worktrees: "{{ _wt_list.result.worktrees | default([]) }}"
-  when: worktree_op == 'list'
+# Worktree operations retain their existing guards and result facts.
+- name: "Validate worktree operation and publish any requested list"
+  ansible.builtin.import_tasks: guarded_list.yml
+  vars:
+    _git_automation_required_value: "{{ worktree_op }}"
+    _git_automation_required_failure: "repo_path and worktree_op are required"
+    _git_automation_request_op: worktree_list
+    _git_automation_request_register: _wt_list
+    _git_automation_request_options: {}
+    _git_automation_list_result_fact: git_automation_worktree_result
+    _git_automation_list_field: worktrees
 
 # ── create ──────────────────────────────────────────────────────────────
 
@@ -45,13 +31,14 @@
         _base: "{{ worktree_base_branch | default('HEAD') }}"
 
     - name: "Create worktree through gludd_git"
-      general_ludd.agent.gludd_git:
-        path: "{{ repo_path }}"
-        op: worktree_create
-        branch: "{{ worktree_branch }}"
-        worktree_path: "{{ worktree_path_param }}"
-        base: "{{ _base }}"
-      register: _wt_create
+      ansible.builtin.import_tasks: git_request.yml
+      vars:
+        _git_automation_request_op: worktree_create
+        _git_automation_request_register: _wt_create
+        _git_automation_request_options:
+          branch: "{{ worktree_branch }}"
+          worktree_path: "{{ worktree_path_param }}"
+          base: "{{ _base }}"
 
     - name: "Set worktree create result"
       ansible.builtin.set_fact:
@@ -60,28 +47,20 @@
 # ── remove ──────────────────────────────────────────────────────────────
 
 - name: "Remove worktree"
+  ansible.builtin.import_tasks: ref_result.yml
   when: worktree_op == 'remove'
-  block:
-    - name: "Assert worktree path provided"
-      ansible.builtin.assert:
-        that:
-          - worktree_path_param | string | length > 0
-          - not worktree_path_param.startswith('-')
-        fail_msg: "worktree_path_param required for worktree remove, no leading '-'"
-
-    - name: "Remove worktree through gludd_git"
-      general_ludd.agent.gludd_git:
-        path: "{{ repo_path }}"
-        op: worktree_remove
-        worktree_path: "{{ worktree_path_param }}"
-      register: _wt_remove
-
-    - name: "Set worktree remove result"
-      ansible.builtin.set_fact:
-        git_automation_worktree_result:
-          op: remove
-          success: "{{ _wt_remove.result.removed | default(false) | bool }}"
-          path: "{{ worktree_path_param }}"
+  vars:
+    _git_automation_ref: "{{ worktree_path_param }}"
+    _git_automation_ref_failure: "worktree_path_param required for worktree remove, no leading '-'"
+    _git_automation_request_op: worktree_remove
+    _git_automation_request_register: _wt_remove
+    _git_automation_request_options:
+      worktree_path: "{{ worktree_path_param }}"
+    _git_automation_ref_result_fact: git_automation_worktree_result
+    _git_automation_ref_result:
+      op: remove
+      success: "{{ _wt_remove.result.removed | default(false) | bool }}"
+      path: "{{ worktree_path_param }}"
 
 # ── merge ───────────────────────────────────────────────────────────────
 
@@ -89,23 +68,24 @@
   when: worktree_op == 'merge'
   block:
     - name: "Assert merge params"
-      ansible.builtin.assert:
-        that:
-          - worktree_branch | string | length > 0
-          - not worktree_branch.startswith('-')
-        fail_msg: "worktree_branch required for merge, no leading '-'"
+      ansible.builtin.import_tasks: assert_ref.yml
+      vars:
+        _git_automation_ref: "{{ worktree_branch }}"
+        _git_automation_ref_failure: "worktree_branch required for merge, no leading '-'"
 
     - name: "Set merge target default"
       ansible.builtin.set_fact:
         _merge_target: "{{ merge_target_branch | default('development') }}"
 
     - name: "Merge branch through gludd_git"
-      general_ludd.agent.gludd_git:
-        path: "{{ repo_path }}"
-        op: worktree_merge
-        branch: "{{ worktree_branch }}"
-        target: "{{ _merge_target }}"
-      register: _wt_merge
+      ansible.builtin.import_tasks: git_request.yml
+      vars:
+        _git_automation_request_op: worktree_merge
+        _git_automation_request_register: _wt_merge
+        _git_automation_request_options:
+          branch: "{{ worktree_branch }}"
+          target: "{{ _merge_target }}"
+          timeout: "{{ git_gate_api_timeout }}"
 
     - name: "Set merge result"
       ansible.builtin.set_fact:
@@ -123,18 +103,18 @@
   when: worktree_op == 'cleanup'
   block:
     - name: "Assert cleanup params"
-      ansible.builtin.assert:
-        that:
-          - worktree_branch | string | length > 0
-          - not worktree_branch.startswith('-')
-        fail_msg: "worktree_branch required for cleanup, no leading '-'"
+      ansible.builtin.import_tasks: assert_ref.yml
+      vars:
+        _git_automation_ref: "{{ worktree_branch }}"
+        _git_automation_ref_failure: "worktree_branch required for cleanup, no leading '-'"
 
     - name: "Cleanup worktree through gludd_git"
-      general_ludd.agent.gludd_git:
-        path: "{{ repo_path }}"
-        op: worktree_cleanup
-        branch: "{{ worktree_branch }}"
-      register: _wt_cleanup
+      ansible.builtin.import_tasks: git_request.yml
+      vars:
+        _git_automation_request_op: worktree_cleanup
+        _git_automation_request_register: _wt_cleanup
+        _git_automation_request_options:
+          branch: "{{ worktree_branch }}"
 
     - name: "Set cleanup result"
       ansible.builtin.set_fact:
@@ -156,13 +136,14 @@
         _target: "{{ health_target_branch | default('development') }}"
 
     - name: "Run health check through gludd_git"
-      general_ludd.agent.gludd_git:
-        path: "{{ repo_path }}"
-        op: worktree_health_check
-        max_age_hours: "{{ _max_age }}"
-        remote_name: "{{ _remote }}"
-        target_branch: "{{ _target }}"
-      register: _wt_health
+      ansible.builtin.import_tasks: git_request.yml
+      vars:
+        _git_automation_request_op: worktree_health_check
+        _git_automation_request_register: _wt_health
+        _git_automation_request_options:
+          max_age_hours: "{{ _max_age }}"
+          remote_name: "{{ _remote }}"
+          target_branch: "{{ _target }}"
 
     - name: "Set health check result"
       ansible.builtin.set_fact:
@@ -182,11 +163,13 @@
         _ma_target: "{{ merge_all_target_branch | default('development') }}"
 
     - name: "Run merge_all through gludd_git"
-      general_ludd.agent.gludd_git:
-        path: "{{ repo_path }}"
-        op: worktree_merge_all
-        target: "{{ _ma_target }}"
-      register: _wt_ma
+      ansible.builtin.import_tasks: git_request.yml
+      vars:
+        _git_automation_request_op: worktree_merge_all
+        _git_automation_request_register: _wt_ma
+        _git_automation_request_options:
+          target: "{{ _ma_target }}"
+          timeout: "{{ git_gate_api_timeout }}"
 
     - name: "Set merge_all result"
       ansible.builtin.set_fact:

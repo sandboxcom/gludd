@@ -1,22 +1,15 @@
 ---
-# feature_start.yml — Create and switch to a feature branch.
-# Mirrors: make feature-start MSG='feature/name'
-
-- name: "Assert parameters for feature-start"
-  ansible.builtin.assert:
-    that:
-      - repo_path | string | length > 0
-      - feature_name | string | length > 0
-      - not feature_name.startswith('-')
-    fail_msg: "repo_path and feature_name are required; feature_name must not start with '-'"
-
-- name: "Create feature branch through gludd_git"
-  general_ludd.agent.gludd_git:
-    path: "{{ repo_path }}"
-    op: feature_start
-    feature_name: "{{ feature_name }}"
-    base: "{{ base | default('master') }}"
-  register: _feature_start
+# Create a feature branch through the existing guarded Git owner.
+- name: "Create and validate the feature branch"
+  ansible.builtin.import_tasks: ref_request.yml
+  vars:
+    _git_automation_ref: "{{ feature_name }}"
+    _git_automation_ref_failure: "repo_path and feature_name are required; feature_name must not start with '-'"
+    _git_automation_request_op: feature_start
+    _git_automation_request_register: _feature_start
+    _git_automation_request_options:
+      feature_name: "{{ feature_name }}"
+      base: "{{ base | default('master') }}"
 
 - name: "Set feature-start result"
   ansible.builtin.set_fact:

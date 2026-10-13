@@ -1116,13 +1116,18 @@ class GitAutomation:
             )
         return CloneResult(path=target, url=url, success=True)
 
-    def create_worktree(self, repo_path: str, branch_name: str, worktree_path: str) -> WorktreeResult:
+    def create_worktree(
+        self, repo_path: str, branch_name: str, worktree_path: str, *, base_branch: str = "HEAD",
+    ) -> WorktreeResult:
         """Create a worktree only at an authorized canonical destination."""
         # Fail closed on dash-leading branch/path (would be parsed as a git
         # option) and on a path that escapes the repo parent via `..`.
         try:
             _reject_leading_dash(branch_name, kind="branch name")
             _reject_leading_dash(worktree_path, kind="worktree path")
+            _reject_leading_dash(base_branch, kind="base ref")
+            if not base_branch.strip():
+                raise ValueError("base ref must not be empty")
             self._reject_escaping_path(repo_path, worktree_path)
         except ValueError as exc:
             return WorktreeResult(
@@ -1138,7 +1143,7 @@ class GitAutomation:
                 branch_name,
                 "--",
                 worktree_path,
-                "HEAD",
+                base_branch,
                 _cwd=repo_path,
             )
             return WorktreeResult(path=worktree_path, branch=branch_name, success=True)

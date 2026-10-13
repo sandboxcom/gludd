@@ -20,7 +20,7 @@
 
       CA to research: {{ ssl_cert_ca_name | default('unknown') }}
       Additional CA identifier (if known): {{ ssl_cert_ca_identifier | default('') }}
-    model_label: "{{ ssl_cert_model_label }}"
+    model_profile: "{{ ssl_cert_model_label }}"
     max_tokens: 1024
     daemon_url: "{{ daemon_url }}"
     psk: "{{ psk }}"
@@ -44,7 +44,7 @@
       - Government ability to compel key disclosure
 
       Return a structured risk assessment.
-    model_label: "{{ ssl_cert_model_label }}"
+    model_profile: "{{ ssl_cert_model_label }}"
     max_tokens: 768
     daemon_url: "{{ daemon_url }}"
     psk: "{{ psk }}"

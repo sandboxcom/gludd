@@ -257,29 +257,22 @@
 # ── Step 9: Model analysis (optional, off by default) ────────────────────
 
 - name: Run model analysis for enforcement verification
-  general_ludd.agent.gludd_model_call:
-    prompt_profile: "enforcement_verify"
-    model_profile: "{{ model_profile }}"
-    daemon_url: "{{ daemon_url }}"
-    psk: "{{ psk }}"
-    task_type: "{{ analysis_task_type }}"
-    work_type: "enforcement_verify"
-    extra_body:
-      verdict: "{{ _ev_verdict }}"
-      silent_mechanisms: "{{ _ev_silent_mechanisms }}"
-      healthy_count: "{{ _ev_healthy_count | int }}"
-      total_count: "{{ _ev_total_count | int }}"
-  register: _ev_model_analysis
-  failed_when: false
-  no_log: "{{ psk | length > 0 }}"
+  ansible.builtin.include_tasks: ../../enforcement_gate/tasks/model_analysis.yml
+  vars:
+    _enforcement_analysis_prompt: >-
+      Analyze enforcement_verify results and explain any silent mechanisms.
+      Verdict={{ _ev_verdict }};
+      silent mechanisms={{ _ev_silent_mechanisms | to_json }};
+      healthy count={{ _ev_healthy_count | int }};
+      total count={{ _ev_total_count | int }}.
+      Provide advisory analysis; the deterministic checks own the verdict.
   when: enable_model_call | bool
 
 - name: Extract model analysis text
   ansible.builtin.set_fact:
-    _ev_model_response: >-
-      {{ _ev_model_analysis.response | default('') }}
-    _ev_model_confidence: >-
-      {{ _ev_model_analysis.confidence | default(0) | float }}
+    _ev_model_analysis: "{{ _enforcement_model_analysis }}"
+    _ev_model_response: "{{ _enforcement_model_analysis.text | default('') }}"
+    _ev_model_confidence: "{{ _enforcement_model_analysis.confidence | default(0) | float }}"
   when: enable_model_call | bool
 
 # ── Write artifacts ───────────────────────────────────────────────────────

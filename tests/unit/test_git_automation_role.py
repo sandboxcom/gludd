@@ -8,16 +8,27 @@ is no longer the canonical test; run ``molecule test -s default`` instead.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
 
 import pytest
 import yaml
 
+from tests.unit.native_role_tasks import role_tasks
+
 ROLE_ROOT = (
     Path(__file__).resolve().parent.parent.parent
     / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles" / "git_automation"
 )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def isolated_ansible_state() -> Iterator[None]:
+    from general_ludd.ansible.core_runner import _isolated_ansible_process_state
+
+    with _isolated_ansible_process_state(None):
+        yield
 
 
 class TestGitAutomationRoleStructure:
@@ -124,23 +135,12 @@ class TestMainYmlImportsAllSubTasks:
     }
 
     def test_main_includes_all_sub_tasks(self) -> None:
-        path = ROLE_ROOT / "tasks" / "main.yml"
-        content = path.read_text()
-        found = set()
-        for line in content.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                continue
-            for req in self.REQUIRED_INCLUDES:
-                if req in stripped and "include_tasks" in content:
-                    found.add(req)
-        # Re-parse properly via yaml
-        docs = list(yaml.safe_load_all(content))
-        tasks = docs[0]
-        for task in tasks:
-            if "ansible.builtin.include_tasks" in task:
-                file_ref = task["ansible.builtin.include_tasks"]
-                found.add(file_ref)
+        found = {templar.template(task.args["_raw_params"])
+                 for filename in self.REQUIRED_INCLUDES
+                 for task, templar in role_tasks(
+                     ROLE_ROOT, {"git_op": filename.removesuffix(".yml")}, expand_includes=False,
+                 )
+                 if task.action == "ansible.builtin.include_tasks"}
         missing = self.REQUIRED_INCLUDES - found
         assert not missing, f"main.yml missing includes: {missing}"
 

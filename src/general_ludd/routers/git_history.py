@@ -10,10 +10,19 @@ from typing import Any, Literal
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import Field, StrictBool, StrictInt, StrictStr, field_validator, model_validator
 
+from general_ludd.commands.make import MakeRunner
 from general_ludd.git_automation.batch_push import batch_push
 from general_ludd.git_automation.ci_ops import ci_cancel, ci_verdict
+from general_ludd.git_automation.feature_branch import feature_done, feature_start, rebranch_onto
 from general_ludd.git_automation.release_ops import release_cut, release_delete, release_recut
 from general_ludd.git_automation.repo import GitAutomation
+from general_ludd.git_automation.ship_commit import ShipCommitError, collect_check, ship_commit
+from general_ludd.git_automation.worktree import (
+    worktree_cleanup,
+    worktree_health_check,
+    worktree_merge,
+    worktree_merge_all,
+)
 from general_ludd.history.git_indexer import GitHistoryIndexer
 from general_ludd.routers._runtime import IdempotencyStore, StrictRuntimeRequest
 from general_ludd.security.capability_guard import RequireCapability
@@ -25,10 +34,13 @@ GitOperation = Literal[
     "tag_release", "tag_checkpoint", "release_tag", "checkpoint_tag", "state",
     "batch_push", "release_cut", "release_delete", "release_recut", "ci_verdict",
     "ci_cancel",
+    "feature_start", "feature_done", "rebranch_onto", "ship_commit",
+    "worktree_merge", "worktree_cleanup", "worktree_health_check", "worktree_merge_all",
 ]
 
 _READ_ONLY_GIT_OPS = frozenset(
-    {"current_branch", "branch_list", "worktree_list", "verify_remote", "state", "ci_verdict"}
+    {"current_branch", "branch_list", "worktree_list", "verify_remote", "state", "ci_verdict",
+     "worktree_health_check"}
 )
 
 
@@ -45,6 +57,15 @@ class GitOperationRequest(StrictRuntimeRequest):
     files: list[StrictStr] = Field(default_factory=list, max_length=256)
     gate_cmd: list[StrictStr] = Field(default_factory=list, max_length=32)
     branch: StrictStr | None = Field(default=None, max_length=512)
+    feature_name: StrictStr | None = Field(default=None, max_length=512)
+    base: StrictStr | None = Field(default=None, max_length=512)
+    new_base: StrictStr | None = Field(default=None, max_length=512)
+    commits: list[StrictStr] = Field(default_factory=list, max_length=256)
+    push: StrictBool = False
+    skip_gate: StrictBool = False
+    max_age_hours: StrictInt = Field(default=24, ge=1, le=87600)
+    remote_name: StrictStr = Field(default="sandboxcom", min_length=1, max_length=256)
+    target_branch: StrictStr = Field(default="development", min_length=1, max_length=512)
     worktree_path: StrictStr | None = Field(default=None, max_length=4096)
     source: StrictStr | None = Field(default=None, max_length=512)
     target: StrictStr | None = Field(default=None, max_length=512)
@@ -83,11 +104,25 @@ class GitOperationRequest(StrictRuntimeRequest):
     state_assert_no_unintegrated_branches: StrictBool = False
     idempotency_key: StrictStr | None = Field(default=None, min_length=1, max_length=256)
 
-    @field_validator("files", "state_preserve_branch_patterns", "state_reconciled_preserve_heads")
+    @field_validator("files", "state_preserve_branch_patterns", "state_reconciled_preserve_heads", "commits")
     @classmethod
     def _bound_list_items(cls, value: list[str]) -> list[str]:
         if any(not item or len(item) > 4096 for item in value):
             raise ValueError("list entries must be non-empty and at most 4096 characters")
+        return value
+
+    @field_validator("feature_name", "base", "new_base", "remote_name", "target_branch")
+    @classmethod
+    def _reject_option_ref(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or value.startswith("-")):
+            raise ValueError("Git refs must be non-empty and must not begin with '-'")
+        return value
+
+    @field_validator("commits")
+    @classmethod
+    def _reject_option_commits(cls, value: list[str]) -> list[str]:
+        if any(item.startswith("-") for item in value):
+            raise ValueError("commit refs must not begin with '-'")
         return value
 
     @field_validator("gate_cmd")
@@ -125,10 +160,18 @@ class GitOperationRequest(StrictRuntimeRequest):
             "release_delete": ("release_tag",),
             "release_recut": ("release_tag",),
             "ci_cancel": ("run_id",),
+            "feature_start": ("feature_name",),
+            "feature_done": ("feature_name",),
+            "rebranch_onto": ("new_base",),
+            "ship_commit": ("message",),
+            "worktree_merge": ("branch", "target"),
+            "worktree_cleanup": ("branch",),
         }
         missing = [name for name in required.get(self.op, ()) if not getattr(self, name)]
         if missing:
             raise ValueError(f"{self.op} requires: {', '.join(missing)}")
+        if self.op == "ship_commit" and self.skip_gate:
+            raise ValueError("ship_commit does not permit skip_gate")
         return self
 
 
@@ -143,6 +186,15 @@ def _as_json(value: object) -> dict[str, Any]:
 def _dispatch_git(req: GitOperationRequest) -> tuple[dict[str, Any], bool]:
     git = GitAutomation(req.path)
     op = req.op
+    if op in {"feature_done", "worktree_merge", "worktree_merge_all"}:
+        if (req.target or "development").removeprefix("refs/heads/") == "master":
+            raise ValueError("master promotion requires reviewed make release-promote")
+        gate = MakeRunner(cwd=req.path).run_gate()
+        if (
+            gate.target != "gate" or gate.success is not True or gate.exit_code != 0
+            or gate.timed_out or gate.oom_killed or gate.error is not None
+        ):
+            raise ValueError(f"{op} requires a successful canonical gate before mutation")
     if op == "init":
         result = _as_json(git.init_repo(req.path))
         return result, bool(result.get("created"))
@@ -179,7 +231,12 @@ def _dispatch_git(req: GitOperationRequest) -> tuple[dict[str, Any], bool]:
     if op == "worktree_list":
         return {"worktrees": [asdict(item) for item in git.list_worktrees(req.path)]}, False
     if op == "worktree_create":
-        result = _as_json(git.create_worktree(req.path, req.branch or "", req.worktree_path or ""))
+        if req.base is None:
+            result = _as_json(git.create_worktree(req.path, req.branch or "", req.worktree_path or ""))
+        else:
+            result = _as_json(git.create_worktree(
+                req.path, req.branch or "", req.worktree_path or "", base_branch=req.base,
+            ))
         return result, bool(result.get("success"))
     if op == "worktree_remove":
         removed = git.remove_worktree(req.path, req.worktree_path or "")
@@ -253,6 +310,35 @@ def _dispatch_git(req: GitOperationRequest) -> tuple[dict[str, Any], bool]:
         return dict(ci_verdict(req.branch or "development", req.sha)), False
     if op == "ci_cancel":
         return dict(ci_cancel(req.run_id or "")), True
+    if op == "feature_start":
+        branch = feature_start(git=git, name=req.feature_name or "", base=req.base or "master")
+        return {"branch": branch, "success": True}, True
+    if op == "feature_done":
+        result = feature_done(git=git, name=req.feature_name or "", target=req.target or "development")
+        return result, bool(result.get("success"))
+    if op == "rebranch_onto":
+        result = rebranch_onto(git=git, new_base=req.new_base or "", commits=req.commits)
+        return result, bool(result.get("success"))
+    if op == "ship_commit":
+        collect_check(req.path)
+        sha = ship_commit(req.message or "", git=git, files=req.files, push=req.push, repo_root=req.path)
+        return {"sha": sha, "success": True}, True
+    if op == "worktree_merge":
+        result = _as_json(worktree_merge(req.path, req.branch or "", req.target or ""))
+        return result, bool(result.get("success"))
+    if op == "worktree_cleanup":
+        result = worktree_cleanup(req.path, req.branch or "")
+        return result, bool(result.get("cleaned") or result.get("branch_removed"))
+    if op == "worktree_health_check":
+        violations = worktree_health_check(req.path, req.max_age_hours, req.remote_name, req.target_branch)
+        return {"violations": [
+            {"worktree_path": item.worktree_path, "branch": item.branch,
+             "reason": item.reason, "severity": item.severity}
+            for item in violations
+        ]}, False
+    if op == "worktree_merge_all":
+        result = worktree_merge_all(req.path, req.target or "development")
+        return result, bool(result.get("merged") or result.get("skipped"))
     raise ValueError("unsupported git operation")
 
 
@@ -269,7 +355,7 @@ def register(app: FastAPI, daemon_state: dict[str, object]) -> None:
         async def _run() -> dict[str, Any]:
             try:
                 result, changed = await asyncio.to_thread(_dispatch_git, req)
-            except (ValueError, subprocess.CalledProcessError) as exc:
+            except (ValueError, subprocess.CalledProcessError, RuntimeError, ShipCommitError) as exc:
                 raise HTTPException(status_code=422, detail=f"git operation rejected: {exc}") from exc
             except Exception as exc:
                 raise HTTPException(status_code=500, detail="git operation failed") from exc

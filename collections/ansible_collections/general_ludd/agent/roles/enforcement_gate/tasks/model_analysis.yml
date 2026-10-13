@@ -1,0 +1,13 @@
+---
+# Shared advisory invocation. The caller supplies its full deterministic context
+# and remains responsible for its verdict and role-specific artifact facts.
+- name: Run advisory enforcement model analysis
+  general_ludd.agent.gludd_model_call:
+    prompt: "{{ _enforcement_analysis_prompt }}"
+    model_profile: "{{ model_profile if model_profile | length > 0 else omit }}"
+    route_task_type: "{{ analysis_task_type if model_profile | length == 0 else omit }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _enforcement_model_analysis
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"

@@ -1,0 +1,13 @@
+---
+- name: "Run the authenticated native Git request"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: "{{ _git_automation_request_op }}"
+  module_defaults:
+    general_ludd.agent.gludd_git: "{{ git_automation_api_options | combine(_git_automation_request_options | default({})) }}"
+  register: _git_automation_request_result
+
+- name: "Preserve the operation's native registration"
+  ansible.builtin.set_fact:
+    "{{ _git_automation_request_register }}": "{{ _git_automation_request_result }}"
+  when: _git_automation_request_result is defined

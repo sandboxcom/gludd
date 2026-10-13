@@ -139,7 +139,22 @@
 
     - name: "3c. Extract include_tasks references"
       ansible.builtin.set_fact:
-        _included: "{{ _main_tasks | selectattr('ansible.builtin.include_tasks', 'defined') | map(attribute='ansible.builtin.include_tasks') | list }}"
+        _operation_dispatch: "{{ _main_tasks | selectattr('ansible.builtin.include_tasks', 'defined') | first }}"
+
+    - name: "3c. Verify the native operation selector uses its bounded domain"
+      vars:
+        _expected_selector: "{% raw %}{{ git_op | regex_replace('^gated_', '') }}.yml{% endraw %}"
+      ansible.builtin.assert:
+        that:
+          - _operation_dispatch['ansible.builtin.include_tasks'].file == _expected_selector
+          - _operation_dispatch['ansible.builtin.include_tasks'].apply.module_defaults['general_ludd.agent.gludd_git'] is defined
+
+    - name: "3c. Extract the selected task-file domain"
+      ansible.builtin.set_fact:
+        _included: >-
+          {{ _operation_dispatch.vars._git_automation_supported_ops
+             | map('regex_replace', '^gated_', '')
+             | map('regex_replace', '$', '.yml') | unique | list }}
 
     - name: "3d. Assert all six sub-task files are included"
       ansible.builtin.assert:

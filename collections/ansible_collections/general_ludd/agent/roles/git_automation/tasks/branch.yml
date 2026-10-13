@@ -1,71 +1,44 @@
 ---
-# branch.yml — branch operations through the guarded gludd_git module.
-
-- name: "Assert parameters for branch operation"
-  ansible.builtin.assert:
-    that:
-      - repo_path | string | length > 0
-      - branch_op | string | length > 0
-    fail_msg: "repo_path and branch_op are required"
-
-- name: "List branches through gludd_git"
-  general_ludd.agent.gludd_git:
-    path: "{{ repo_path }}"
-    op: branch_list
-  register: _branch_list
-  when: branch_op == 'list'
-
-- name: "Set branch list result"
-  ansible.builtin.set_fact:
-    git_automation_branch_result:
-      op: list
-      branches: "{{ _branch_list.result.branches | default([]) }}"
-  when: branch_op == 'list'
+# Branch operations retain their original result facts and guarded Git owner.
+- name: "Validate branch operation and publish any requested list"
+  ansible.builtin.import_tasks: guarded_list.yml
+  vars:
+    _git_automation_required_value: "{{ branch_op }}"
+    _git_automation_required_failure: "repo_path and branch_op are required"
+    _git_automation_request_op: branch_list
+    _git_automation_request_register: _branch_list
+    _git_automation_request_options: {}
+    _git_automation_list_result_fact: git_automation_branch_result
+    _git_automation_list_field: branches
 
 - name: "Create branch"
+  ansible.builtin.import_tasks: ref_result.yml
   when: branch_op == 'create'
-  block:
-    - name: "Assert branch name provided"
-      ansible.builtin.assert:
-        that:
-          - branch_name | string | length > 0
-          - not branch_name.startswith('-')
-        fail_msg: "branch_name must be set and not start with '-'"
-
-    - name: "Create branch through gludd_git"
-      general_ludd.agent.gludd_git:
-        path: "{{ repo_path }}"
-        op: branch
-        branch: "{{ branch_name }}"
-      register: _branch_create
-
-    - name: "Set branch create result"
-      ansible.builtin.set_fact:
-        git_automation_branch_result:
-          op: create
-          name: "{{ _branch_create.branch | default(branch_name) }}"
-          created: "{{ _branch_create.changed | default(false) | bool }}"
+  vars:
+    _git_automation_ref: "{{ branch_name }}"
+    _git_automation_ref_failure: "branch_name must be set and not start with '-'"
+    _git_automation_request_op: branch
+    _git_automation_request_register: _branch_create
+    _git_automation_request_options:
+      branch: "{{ branch_name }}"
+    _git_automation_ref_result_fact: git_automation_branch_result
+    _git_automation_ref_result:
+      op: create
+      name: "{{ _branch_create.branch | default(branch_name) }}"
+      created: "{{ _branch_create.changed | default(false) | bool }}"
 
 - name: "Delete branch"
+  ansible.builtin.import_tasks: ref_result.yml
   when: branch_op == 'delete'
-  block:
-    - name: "Assert branch name provided"
-      ansible.builtin.assert:
-        that:
-          - branch_name | string | length > 0
-          - not branch_name.startswith('-')
-        fail_msg: "branch_name must be set and not start with '-'"
-
-    - name: "Delete branch through gludd_git"
-      general_ludd.agent.gludd_git:
-        path: "{{ repo_path }}"
-        op: branch_delete
-        branch: "{{ branch_name }}"
-      register: _branch_delete
-
-    - name: "Set branch delete result"
-      ansible.builtin.set_fact:
-        git_automation_branch_result:
-          op: delete
-          name: "{{ branch_name }}"
-          deleted: "{{ _branch_delete.result.deleted | default(false) | bool }}"
+  vars:
+    _git_automation_ref: "{{ branch_name }}"
+    _git_automation_ref_failure: "branch_name must be set and not start with '-'"
+    _git_automation_request_op: branch_delete
+    _git_automation_request_register: _branch_delete
+    _git_automation_request_options:
+      branch: "{{ branch_name }}"
+    _git_automation_ref_result_fact: git_automation_branch_result
+    _git_automation_ref_result:
+      op: delete
+      name: "{{ branch_name }}"
+      deleted: "{{ _branch_delete.result.deleted | default(false) | bool }}"

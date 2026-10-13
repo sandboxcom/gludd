@@ -1,0 +1,7 @@
+---
+- name: "Perform the guarded Git reference request"
+  ansible.builtin.import_tasks: ref_request.yml
+
+- name: "Publish guarded Git reference result"
+  ansible.builtin.set_fact:
+    "{{ _git_automation_ref_result_fact }}": "{{ _git_automation_ref_result }}"

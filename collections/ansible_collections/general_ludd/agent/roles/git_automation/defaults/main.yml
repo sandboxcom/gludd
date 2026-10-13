@@ -1,6 +1,12 @@
 ---
 # git_automation role defaults — timeouts, retry settings, and operational params
 
+# Native module_defaults scopes these shared arguments to selected role tasks.
+# Explicit composite timeout arguments override this ordinary request budget.
+git_automation_api_options:
+  daemon_url: "{{ daemon_url }}"
+  psk: "{{ psk }}"
+  timeout: "{{ git_api_timeout }}"
 # ── Git operation selector ────────────────────────────────────────────────
 # Which sub-task file to execute: clone, commit, gated_commit, push, merge, gated_merge, branch, worktree, state
 git_op: ""
@@ -52,6 +58,10 @@ git_retry_delay: 5             # seconds between retries
 daemon_url: "http://localhost:8000"
 psk: ""
 git_api_timeout: 300
+# Composite merges await the canonical 3600-second gate and reserve 300 seconds
+# for process cleanup and the existing Git mutation owner. Lower explicit
+# budgets are refused before dispatch; ordinary/read-only calls keep 300 seconds.
+git_gate_api_timeout: 3900
 
 # ── Environment ────────────────────────────────────────────────────────────
 git_non_interactive_env:

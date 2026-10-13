@@ -1,71 +1,37 @@
 ---
-# git_automation role — main entry point
-# Delegates to sub-task files based on git_op parameter.
-# SSRF validation and path safety checks are done in Python
-# (general_ludd.git_automation.repo) BEFORE invoking this role.
-
+# SSRF/path authority remains with the existing authenticated Git owner.
 - name: "Assert git_op is set"
   ansible.builtin.assert:
     that:
       - git_op | string | length > 0
     fail_msg: "git_op is required (clone|commit|gated_commit|push|merge|gated_merge|branch|worktree|batch_push|state|release_cut|release_delete|release_recut|ci_verdict|ci_cancel)"
 
-- name: "Include clone tasks"
-  ansible.builtin.include_tasks: clone.yml
-  when: git_op == "clone"
-
-- name: "Include commit tasks"
-  ansible.builtin.include_tasks: commit.yml
-  when: git_op in ["commit", "gated_commit"]
-
-- name: "Include ship-commit tasks"
-  ansible.builtin.include_tasks: ship_commit.yml
-  when: git_op == "ship_commit"
-
-- name: "Include push tasks"
-  ansible.builtin.include_tasks: push.yml
-  when: git_op == "push"
-
-- name: "Include merge tasks"
-  ansible.builtin.include_tasks: merge.yml
-  when: git_op in ["merge", "gated_merge"]
-
-- name: "Include branch tasks"
-  ansible.builtin.include_tasks: branch.yml
-  when: git_op == "branch"
-
-- name: "Include worktree tasks"
-  ansible.builtin.include_tasks: worktree.yml
-  when: git_op == "worktree"
-
-- name: "Include batch-push tasks"
-  ansible.builtin.include_tasks: batch_push.yml
-  when: git_op == "batch_push"
-
-- name: "Include state-machine guard tasks"
-  ansible.builtin.include_tasks: state.yml
-  when: git_op == "state"
-
-- name: "Include verify-remote tasks"
-  ansible.builtin.include_tasks: verify_remote.yml
-  when: git_op == "verify_remote"
-
-- name: "Include release_cut tasks"
-  ansible.builtin.include_tasks: release_cut.yml
-  when: git_op == "release_cut"
-
-- name: "Include release_delete tasks"
-  ansible.builtin.include_tasks: release_delete.yml
-  when: git_op == "release_delete"
-
-- name: "Include release_recut tasks"
-  ansible.builtin.include_tasks: release_recut.yml
-  when: git_op == "release_recut"
-
-- name: "Include CI verdict tasks"
-  ansible.builtin.include_tasks: ci_verdict.yml
-  when: git_op == "ci_verdict"
-
-- name: "Include CI cancel tasks"
-  ansible.builtin.include_tasks: ci_cancel.yml
-  when: git_op == "ci_cancel"
+- name: "Include the requested Git operation"
+  ansible.builtin.include_tasks:
+    file: "{{ git_op | regex_replace('^gated_', '') }}.yml"
+    apply:
+      module_defaults:
+        general_ludd.agent.gludd_git: "{{ git_automation_api_options }}"
+  vars:
+    _git_automation_supported_ops:
+      - clone
+      - commit
+      - gated_commit
+      - ship_commit
+      - push
+      - merge
+      - gated_merge
+      - branch
+      - feature_start
+      - feature_done
+      - rebranch_onto
+      - worktree
+      - batch_push
+      - state
+      - verify_remote
+      - release_cut
+      - release_delete
+      - release_recut
+      - ci_verdict
+      - ci_cancel
+  when: git_op in _git_automation_supported_ops

@@ -116,31 +116,22 @@
 # ── Model analysis (optional, off by default) ────────────────────────────
 
 - name: Run model analysis for enforcement context
-  general_ludd.agent.gludd_model_call:
-    prompt_profile: "enforcement_gate"
-    model_profile: "{{ model_profile }}"
-    daemon_url: "{{ daemon_url }}"
-    psk: "{{ psk }}"
-    task_type: "{{ analysis_task_type }}"
-    work_type: "enforcement_gate"
-    extra_body:
-      gate_complete: "{{ _eg_gate_complete }}"
-      gate_passed: "{{ _eg_gate_passed }}"
-      gate_fresh: "{{ _eg_gate_fresh }}"
-      gate_age_seconds: "{{ _eg_gate_age_seconds }}"
-      push_bypass_allowed: "{{ _eg_push_bypass_allowed }}"
-      push_bypass_count: "{{ _eg_push_bypass_count }}"
-  register: _eg_model_analysis
-  failed_when: false
-  no_log: "{{ psk | length > 0 }}"
+  ansible.builtin.include_tasks: model_analysis.yml
+  vars:
+    _enforcement_analysis_prompt: >-
+      Analyze enforcement_gate decision context and explain any blocked checks.
+      Gate complete={{ _eg_gate_complete }}; passed={{ _eg_gate_passed }};
+      fresh={{ _eg_gate_fresh }}; age_seconds={{ _eg_gate_age_seconds }}.
+      Push bypass allowed={{ _eg_push_bypass_allowed }};
+      bypass count={{ _eg_push_bypass_count }}.
+      Provide advisory analysis; the deterministic checks own the gate verdict.
   when: enable_model_call | bool
 
 - name: Extract model analysis text
   ansible.builtin.set_fact:
-    _eg_model_response: >-
-      {{ _eg_model_analysis.response | default('') }}
-    _eg_model_confidence: >-
-      {{ _eg_model_analysis.confidence | default(0) | float }}
+    _eg_model_analysis: "{{ _enforcement_model_analysis }}"
+    _eg_model_response: "{{ _enforcement_model_analysis.text | default('') }}"
+    _eg_model_confidence: "{{ _enforcement_model_analysis.confidence | default(0) | float }}"
   when: enable_model_call | bool
 
 # ── FAIL-CLOSED gate decision ────────────────────────────────────────────

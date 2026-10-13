@@ -1,0 +1,13 @@
+---
+- name: "Validate the branch or worktree operation selector"
+  ansible.builtin.import_tasks: required_value.yml
+
+- name: "Run the guarded Git list request"
+  ansible.builtin.import_tasks: git_request.yml
+  when: _git_automation_required_value == 'list'
+
+- name: "Publish guarded Git list result"
+  ansible.builtin.set_fact:
+    "{{ _git_automation_list_result_fact }}":
+      "{{ {'op': 'list', _git_automation_list_field: (_git_automation_request_result.result[_git_automation_list_field] | default([]))} }}"
+  when: _git_automation_required_value == 'list'

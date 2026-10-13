@@ -1,0 +1,7 @@
+---
+- name: "Validate the required Git operation input"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - _git_automation_required_value | string | length > 0
+    fail_msg: "{{ _git_automation_required_failure }}"

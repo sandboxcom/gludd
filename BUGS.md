@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Native Git reuse left inline-only acceptance assumptions
+
+- Guarded Git composite operations retain canonical gate admission, development-only ordinary merge defaults, reviewed master promotion and full gate-sized API budgets. Native request, reference, list/result and advisory model owners remove new duplicated blocks without changing original authentication, operation or publication contracts.
+- Eighteen new shared-reference/result cases fail first. Final native staged clone admission reports zero new clones; all 803 integrated Git/native-advisory cases pass on Python 3.14 and 3.11, with 95% combined coverage across the same four production owners and every owner above the unchanged per-file minimum.
+- A retained test assumed the feature-done module was a top-level inline task. Its actual native block/default owner now supplies the resolved target assertion, still requiring development. All original core gate-refusal, default and master-promotion assertions remain intact.
+- These source checks do not establish full gate, installed EE health, exact-SHA hosted or deployment acceptance. S98.4 and the release remain open.
+
 ### 2026-10-13 — Native task calls selected removed or unresolved module names
 
 - Six failing-first cases identify four nonexistent builtin web-module owners and four short infrastructure calls that cannot resolve in the native isolated scenario.

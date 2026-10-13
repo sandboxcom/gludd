@@ -1,0 +1,9 @@
+---
+- name: "Validate the required Git reference"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - _git_automation_ref | string | length > 0
+      - not _git_automation_ref.startswith('-')
+    fail_msg: "{{ _git_automation_ref_failure }}"
+

@@ -1,0 +1,6 @@
+---
+- name: "Validate the request's Git reference"
+  ansible.builtin.import_tasks: assert_ref.yml
+
+- name: "Perform the guarded Git reference request"
+  ansible.builtin.import_tasks: git_request.yml

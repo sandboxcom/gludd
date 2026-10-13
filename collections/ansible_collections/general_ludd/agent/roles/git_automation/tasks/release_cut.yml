@@ -15,10 +15,13 @@
     op: release_cut
     release_tag: "{{ release_tag }}"
     release_message: "{{ release_message | default('') }}"
-    release_branch: "{{ release_branch | default('master') }}"
+    branch: "{{ release_branch | default('master') }}"
     release_remote: "{{ release_remote | default('sandboxcom') }}"
-    release_skip_readme_check: "{{ release_skip_readme_check | default(false) | bool }}"
-    release_skip_ci_check: "{{ release_skip_ci_check | default(false) | bool }}"
+    skip_readme_check: "{{ release_skip_readme_check | default(false) | bool }}"
+    skip_ci_check: "{{ release_skip_ci_check | default(false) | bool }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    timeout: "{{ git_api_timeout }}"
   register: _release_cut
 
 - name: "Set release_cut result fact"

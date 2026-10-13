@@ -20,7 +20,9 @@ DOCUMENTATION:
         branch_list, branch_delete, worktree_list, worktree_create,
         worktree_remove, merge, gated_merge, push, verify_remote, tag_release,
         tag_checkpoint, release_tag, checkpoint_tag, state, batch_push,
-        release_cut, release_delete, release_recut, ci_verdict, ci_cancel]
+        release_cut, release_delete, release_recut, ci_verdict, ci_cancel,
+        feature_start, feature_done, rebranch_onto, ship_commit, worktree_merge,
+        worktree_cleanup, worktree_health_check, worktree_merge_all]
     daemon_url:
       type: str
       default: http://localhost:8000
@@ -28,6 +30,48 @@ DOCUMENTATION:
       type: str
       no_log: true
       default: ""
+    timeout:
+      description:
+        - HTTP timeout in seconds; ordinary and read-only operations default to 300.
+        - feature_done, worktree_merge and worktree_merge_all default to 3900,
+          covering the canonical 3600-second gate plus a 300-second cleanup and Git operation reserve.
+        - An explicitly supplied composite merge timeout below 3900 is rejected before HTTP dispatch.
+        - Adequate explicit values are preserved; transport failures and cancellation are not retried.
+      type: int
+    feature_name:
+      description: Short feature name or full branch ref for feature_start and feature_done.
+      type: str
+    base:
+      description: Exact base ref for feature_start or worktree_create; defaults to master or HEAD respectively.
+      type: str
+    new_base:
+      description: Base commit ref for the existing rollback-safe rebranch_onto owner.
+      type: str
+    commits:
+      description: Ordered commit refs to cherry-pick onto new_base.
+      type: list
+      elements: str
+      default: []
+    push:
+      description: Explicitly request a push after ship_commit succeeds.
+      type: bool
+      default: false
+    skip_gate:
+      description: Compatibility input; true is rejected for ship_commit, which always requires its gate.
+      type: bool
+      default: false
+    max_age_hours:
+      description: Worktree health age budget; the daemon requires an integer from 1 through 87600.
+      type: int
+      default: 24
+    remote_name:
+      description: Remote used by the existing worktree health owner.
+      type: str
+      default: sandboxcom
+    target_branch:
+      description: Integration target used by the existing worktree health owner.
+      type: str
+      default: development
 
 EXAMPLES:
   - name: Create a branch through the daemon control plane
@@ -56,8 +100,15 @@ from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
 )
 
 _READ_ONLY_OPS = frozenset(
-    {"current_branch", "branch_list", "worktree_list", "verify_remote", "state", "ci_verdict"}
+    {"current_branch", "branch_list", "worktree_list", "verify_remote", "state", "ci_verdict",
+     "worktree_health_check"}
 )
+_GATE_RUNNING_OPS = frozenset({"feature_done", "worktree_merge", "worktree_merge_all"})
+_DEFAULT_TIMEOUT_SECONDS = 300
+# The isolated collection owns its protocol constants; native tests pin the gate
+# value to commands.make.DEFAULT_GATE_TIMEOUT_SECONDS without importing core here.
+_GATE_TIMEOUT_SECONDS = 3600
+_GATE_MIN_TIMEOUT_SECONDS = _GATE_TIMEOUT_SECONDS + _DEFAULT_TIMEOUT_SECONDS
 
 
 def _argument_spec() -> dict[str, dict[str, Any]]:
@@ -74,6 +125,8 @@ def _argument_spec() -> dict[str, dict[str, Any]]:
                 "release_tag", "checkpoint_tag", "state", "batch_push",
                 "release_cut", "release_delete", "release_recut", "ci_verdict",
                 "ci_cancel",
+                "feature_start", "feature_done", "rebranch_onto", "ship_commit",
+                "worktree_merge", "worktree_cleanup", "worktree_health_check", "worktree_merge_all",
             ],
         },
         "clone_url": {"type": "str", "default": None},
@@ -84,6 +137,15 @@ def _argument_spec() -> dict[str, dict[str, Any]]:
         "files": {"type": "list", "elements": "str", "default": []},
         "gate_cmd": {"type": "list", "elements": "str", "default": []},
         "branch": {"type": "str", "default": None},
+        "feature_name": {"type": "str", "default": None},
+        "base": {"type": "str", "default": None},
+        "new_base": {"type": "str", "default": None},
+        "commits": {"type": "list", "elements": "str", "default": []},
+        "push": {"type": "bool", "default": False},
+        "skip_gate": {"type": "bool", "default": False},
+        "max_age_hours": {"type": "int", "default": 24},
+        "remote_name": {"type": "str", "default": "sandboxcom"},
+        "target_branch": {"type": "str", "default": "development"},
         "worktree_path": {"type": "str", "default": None},
         "source": {"type": "str", "default": None},
         "target": {"type": "str", "default": None},
@@ -120,7 +182,7 @@ def _argument_spec() -> dict[str, dict[str, Any]]:
         "state_assert_no_unintegrated_branches": {"type": "bool", "default": False},
         "daemon_url": {"type": "str", "default": "http://localhost:8000"},
         "psk": {"type": "str", "default": "", "no_log": True},
-        "timeout": {"type": "int", "default": 300},
+        "timeout": {"type": "int", "default": None},
         "idempotency_key": {"type": "str", "default": None},
     }
 
@@ -147,10 +209,28 @@ def main() -> None:
             ("op", "release_delete", ["release_tag"]),
             ("op", "release_recut", ["release_tag"]),
             ("op", "ci_cancel", ["run_id"]),
+            ("op", "feature_start", ["feature_name"]),
+            ("op", "feature_done", ["feature_name"]),
+            ("op", "rebranch_onto", ["new_base"]),
+            ("op", "ship_commit", ["message"]),
+            ("op", "worktree_merge", ["branch", "target"]),
+            ("op", "worktree_cleanup", ["branch"]),
         ],
         supports_check_mode=True,
     )
     op = str(module.params["op"])
+    timeout = module.params["timeout"]
+    if timeout is None:
+        timeout = _GATE_MIN_TIMEOUT_SECONDS if op in _GATE_RUNNING_OPS else _DEFAULT_TIMEOUT_SECONDS
+    if op in _GATE_RUNNING_OPS and timeout < _GATE_MIN_TIMEOUT_SECONDS:
+        module.fail_json(**error_result(
+            f"{op} requires timeout >= {_GATE_MIN_TIMEOUT_SECONDS} seconds "
+            "to await the canonical gate and cleanup; insufficient explicit budgets are not extended"
+        ))
+        return
+    if op == "ship_commit" and module.params["skip_gate"]:
+        module.fail_json(**error_result("ship_commit does not permit skip_gate"))
+        return
     if op in {"gated_commit", "gated_merge"} and not module.params["gate_cmd"]:
         module.fail_json(**error_result(f"{op} requires non-empty gate_cmd"))
         return
@@ -173,7 +253,7 @@ def main() -> None:
     response = GluddClient(
         base_url=module.params["daemon_url"],
         psk=module.params["psk"],
-        timeout=module.params["timeout"],
+        timeout=timeout,
     ).post("/admin/git/operation", body)
     if response.get("_error") or response.get("_status") != 200:
         module.fail_json(
