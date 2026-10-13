@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — a bounded CI context window still emitted an unbounded assertion line
+
+- **Observed**: The exact failed private-policy job emits more than 60,000 tokens inside one workflow-representation assertion. Line/match limits do not bound that output, wasting context and obscuring the actionable failure.
+- **Codified repair**: Keep full-source literal matching, source line numbers, overlap ordering, exact artifact identity and exit statuses. Cap each displayed line at 2048 UTF-8 bytes and total context at 32768 bytes, including printed newlines, using explicit Unicode-safe truncation notices. Late literal hits remain visible when they fit; source files are never rewritten. Do not imply that the native target's temporary download is retained after its existing cleanup.
+- **Acceptance**: Fourteen new cases fail first with two original-parity cases passing; all 41 context/hosted-tooling cases then pass and all 28 coverage cases pass at 94% combined coverage with unchanged 85/75 floors. Three mapping/roster/wiring cases fail before the existing early owner gains both complete cohorts. A real authenticated replay of run `38325261900`, job `115065438148`, succeeds with 11143 output bytes and visible truncation, retaining the exact failure context.
+- **Boundary**: The feature guide records the long-lived GitHub CLI operator reports and distinguishes bounded display from evidence completeness. No log mutation, new cache/process, release authority or completed backlog proof is introduced.
+
 ### 2026-10-12 — successful EE assembly did not prove the complete offline controller
 
 - **Observed**: The public build owner returned Builder's status without executing the verifier's complete nine-import warm. Verification used ambient Python instead of the validator's explicit 3.11 interpreter. Source review also found that separate mutable-tag resolutions could smoke different builds.

@@ -481,6 +481,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ansible_ee_full_warm_acceptance.py::test_build_warms_captured_image_after_candidate_tag_can_be_retargeted",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ci-failure-context-output-byte-bound",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_shards_log_context_bounds.py::test_cumulative_bound_preserves_source_order_and_declares_omitted_context",
+      "full_gate_phase": "test"
     }
   ]
 }

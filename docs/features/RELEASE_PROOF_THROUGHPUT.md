@@ -130,6 +130,39 @@ edge without skipping authoritative downstream checks.
 
 ## Hosted shard scheduling and automatic timing
 
+### Byte-bounded failure context
+
+Exact job context must be bounded in bytes, not only lines. One failed workflow
+assertion produced over 60,000 tokens despite a short context window. The
+existing formatter now limits each displayed line to 2048 UTF-8 bytes and the
+whole output to 32768 bytes, including newlines. Truncation is explicit, preserves
+whole code points and a late literal hit when it fits, and never changes the full
+source match count, source line numbers, overlap order or input file. Normal
+fitting output and existing success/refusal statuses remain unchanged.
+
+The [2022 GitHub CLI operator report][context-operator-completeness] describes
+incomplete human job listings preventing reliable failure comparisons. The
+[2023 long-job-name report][context-operator-names] describes archive-name
+truncation causing missing logs; it was closed through upstream work. These are
+historical evidence about identity and presentation, not claims that today's
+locked tooling reproduces them. Gludd retains authenticated numeric job/run
+binding and exact artifact roots; a bounded display is never a complete verdict.
+Downloaded artifact files stay unchanged. The native job reader's existing
+temporary-download cleanup still applies; its complete source remains the
+exact hosted job, not an alleged new local cache.
+
+Fourteen cases fail first, then all 41 formatter/hosted-tooling cases and all
+28 coverage cases pass at 94% combined coverage, retaining 85/75 floors. Three
+early routing/roster/wiring cases fail before both complete formatter cohorts
+gain ownership. Actual authenticated replay of the same failed hosted job returns
+11143 bytes with visible truncation and the actionable context intact. This
+optimization bounds diagnostic cost; it does not prove release readiness.
+
+[context-operator-completeness]: https://github.com/cli/cli/issues/6378
+[context-operator-names]: https://github.com/cli/cli/issues/7642
+
+### Exact timing and creation order
+
 The hosted scheduling experiment changes only the existing eight-label matrix
 creation order. Known successful long lanes are created first; `unit-2` remains
 explicitly provisional because its failed parent interval is censored, not a

@@ -5,12 +5,59 @@ from __future__ import annotations
 
 import argparse
 import re
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 _SAFE_ARTIFACT_FILE = re.compile(r"[A-Za-z0-9._-]+")
+# Hard UTF-8 display limits include each newline printed by main(). The
+# input file is untouched; only its displayed context is clipped.
+_MAX_LINE_BYTES = 2_048
+_MAX_OUTPUT_BYTES = 32_768
+_LINE_TRUNCATION_NOTICE = " ... [line truncated; source unmodified]"
+
+
+def _bounded_line(line: str, *, prefix: str = "", pattern: str | None = None) -> str:
+    """Clip whole UTF-8 characters, keeping a late literal hit when it fits."""
+    rendered = prefix + line
+    encoded = rendered.encode("utf-8")
+    if len(encoded) + 1 <= _MAX_LINE_BYTES:
+        return rendered
+    content_bytes = _MAX_LINE_BYTES - 1 - len(_LINE_TRUNCATION_NOTICE.encode("utf-8"))
+    if pattern is not None:
+        match_start = line.find(pattern)
+        match_end = match_start + len(pattern)
+        match_end_bytes = len((prefix + line[:match_end]).encode("utf-8"))
+        if match_start > 0 and match_end_bytes > content_bytes:
+            rendered = prefix + "[line truncated before match] " + line[match_start:]
+            encoded = rendered.encode("utf-8")
+    content = encoded[:content_bytes].decode("utf-8", errors="ignore")
+    return content + _LINE_TRUNCATION_NOTICE
+
+
+def _bounded_output(lines: Iterable[str]) -> list[str]:
+    """Retain fitting output exactly and make room for a visible total-limit notice."""
+    output: list[str] = []
+    used_bytes = 0
+    notice = (
+        f"--- output truncated: {_MAX_OUTPUT_BYTES}-byte UTF-8 limit; "
+        "source unmodified ---"
+    )
+    notice_bytes = len(notice.encode("utf-8")) + 1
+    for raw_line in lines:
+        line = _bounded_line(raw_line)
+        line_bytes = len(line.encode("utf-8")) + 1
+        if used_bytes + line_bytes > _MAX_OUTPUT_BYTES:
+            while output and used_bytes + notice_bytes > _MAX_OUTPUT_BYTES:
+                used_bytes -= len(output.pop().encode("utf-8")) + 1
+            output.append(notice)
+            break
+        output.append(line)
+        used_bytes += line_bytes
+    return output
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
+    """Check containment without accepting sibling paths."""
     try:
         path.relative_to(root)
     except ValueError:
@@ -19,6 +66,7 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 
 
 def _allowed_log_path(path: Path, allowed_root: Path | None = None) -> bool:
+    """Retain local-log and exact artifact-root input guards."""
     if ".." in path.parts:
         return False
     if allowed_root is None:
@@ -35,7 +83,6 @@ def _allowed_log_path(path: Path, allowed_root: Path | None = None) -> bool:
 
 def resolve_artifact_file(artifact_root: Path, file_name: str) -> Path:
     """Resolve exactly one safe basename inside an exact-run artifact root."""
-
     if Path(file_name).name != file_name or _SAFE_ARTIFACT_FILE.fullmatch(file_name) is None:
         raise ValueError(f"artifact file must be a safe basename: {file_name}")
     if artifact_root.is_symlink():
@@ -69,8 +116,7 @@ def extract_context(
     max_matches: int = 5,
     allowed_root: Path | None = None,
 ) -> list[str]:
-    """Return context blocks around lines containing pattern."""
-
+    """Return byte-bounded context around full source lines containing pattern."""
     if not pattern:
         raise ValueError("pattern is required")
     if before < 0 or after < 0 or max_matches < 1:
@@ -82,20 +128,28 @@ def extract_context(
 
     lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
     matches = [idx for idx, line in enumerate(lines) if pattern in line]
-    blocks: list[str] = []
-    for match_number, idx in enumerate(matches[:max_matches], start=1):
-        start = max(0, idx - before)
-        end = min(len(lines), idx + after + 1)
-        blocks.append(f"--- match {match_number}/{len(matches)} line {idx + 1} ---")
-        for line_no in range(start, end):
-            marker = ">" if line_no == idx else " "
-            blocks.append(f"{marker}{line_no + 1}: {lines[line_no]}")
-    if not blocks:
-        blocks.append(f"No matches for pattern: {pattern}")
-    return blocks
+
+    def context_lines() -> Iterator[str]:
+        for match_number, idx in enumerate(matches[:max_matches], start=1):
+            start = max(0, idx - before)
+            end = min(len(lines), idx + after + 1)
+            yield f"--- match {match_number}/{len(matches)} line {idx + 1} ---"
+            for line_no in range(start, end):
+                is_match = line_no == idx
+                marker = ">" if is_match else " "
+                yield _bounded_line(
+                    lines[line_no],
+                    prefix=f"{marker}{line_no + 1}: ",
+                    pattern=pattern if is_match else None,
+                )
+        if not matches:
+            yield f"No matches for pattern: {pattern}"
+
+    return _bounded_output(context_lines())
 
 
 def main() -> int:
+    """Display bounded context while preserving success and refusal statuses."""
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--log", type=Path)
@@ -129,7 +183,7 @@ def main() -> int:
             allowed_root=allowed_root,
         )
     except Exception as exc:
-        print(f"CI-SHARDS-LOG-CONTEXT error: {exc}")
+        print(_bounded_line(f"CI-SHARDS-LOG-CONTEXT error: {exc}"))
         return 1
     for line in lines:
         print(line)
