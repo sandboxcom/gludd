@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Two workers rebuilt the same repository fixture inventory
+
+- The real duration profile reports 7.06s and 6.62s setup for the two consumers of one module-scoped source audit. xdist gives each worker its own module fixture, so the prior combined parser still walked the complete test inventory twice.
+- A grouping regression fails first. Only the two existing inventory consumers receive the same native xdist_group; all collision/binding/plugin controls and independent scheduling remain intact. No new parser, persistent cache or runner is introduced.
+- All 130 related parser/fixture/scheduling/promotion cases pass on both runtimes. The complete candidate trace records 1184 main cases plus fresh help exactly once with no failures/unfinished nodes, and both consumers share PID 29820 with one 7.65s setup. The 41.1s observed whole-candidate result includes the separate help change; exact hosted, full-gate and deployment acceptance remain pending.
+
 ### 2026-10-13 — Interpreter-specific YAML workaround disabled safe fast parsing everywhere
 
 - Exact 9f677f92 hosted Python 3.12 passes 1182 main cases in 82.74s, then times out at the original 90s bound during fresh help. Both pytest bootstraps unconditionally removed safe LibYAML loaders despite documenting a Python 3.14-only workaround, defeating the existing safe-reader optimization on 3.11/3.12.

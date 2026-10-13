@@ -283,6 +283,21 @@ def repository_fixture_audit() -> fixture_audit.PytestSourceAudit:
     )
 
 
+def test_repository_inventory_consumers_share_one_xdist_fixture_owner() -> None:
+    """The expensive module-scoped inventory must not be rebuilt on two workers."""
+    for consumer in (
+        test_repository_parameters_do_not_shadow_external_pytest_fixtures,
+        test_repository_class_scoped_fixtures_use_supported_binding,
+    ):
+        groups = [
+            mark.args
+            for mark in getattr(consumer, "pytestmark", ())
+            if mark.name == "xdist_group"
+        ]
+        assert groups == [("pytest-source-inventory",)]
+
+
+@pytest.mark.xdist_group("pytest-source-inventory")
 def test_repository_parameters_do_not_shadow_external_pytest_fixtures(
     repository_fixture_audit: fixture_audit.PytestSourceAudit,
 ) -> None:
@@ -465,6 +480,7 @@ def test_class_fixture_bindings_understand_pytest_asyncio_aliases(tmp_path: Path
     ]
 
 
+@pytest.mark.xdist_group("pytest-source-inventory")
 def test_repository_class_scoped_fixtures_use_supported_binding(
     repository_fixture_audit: fixture_audit.PytestSourceAudit,
 ) -> None:

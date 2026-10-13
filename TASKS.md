@@ -41,6 +41,14 @@ preserve the 3.14 workaround without stripping supported safe loaders.
 Full gate, exact-SHA hosted, installed-image and deployment acceptance remain
 pending; this note does not tick any item or add a completed backlog entry.
 
+S98.4 fixture-inventory scheduling repair: the existing
+`tests/unit/test_pytest_param_fixture_collisions.py` consumers now share one
+native xdist group. Its regression fails first; all 130 related cases pass
+on both runtimes. The complete 1184-case candidate trace plus fresh help has
+exactly-once outcomes and one shared inventory setup, preserving all source,
+plugin, collision and binding assertions. This source receipt is not release
+or deployment acceptance; S98.4 remains unchecked.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

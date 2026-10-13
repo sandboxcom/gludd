@@ -205,3 +205,30 @@ and branch floors passing unchanged 85/75 admission. It passes 192 cases
 with one pre-existing canonical-checkout conditional skip, not a new waiver.
 Ruff and strict typing pass. Rollback restores both bootstrap guards together;
 this source repair does not close S98.4 or supply hosted/full-gate/deployment proof.
+
+## One native owner for the repository fixture inventory (2026-10-13)
+
+The real duration profile at 9f677f92 shows the same module-scoped repository
+inventory being constructed on two workers: 7.06 and 6.62 setup seconds.
+The existing combined source audit already parses each unique file once and
+releases its AST. No parser, persistent cache or allocator is needed. Give
+only its two consumers the same native pytest-source-inventory xdist_group.
+All input discovery, plugin fixture names, collision/binding assertions,
+negative controls and the rest of the two-worker schedule remain unchanged.
+
+The grouping regression genuinely fails first. All 130 parser, fixture,
+scheduling and promotion cases then pass on both installed Python versions.
+An actual full-owner trace contains 1184 main cases plus fresh help, each
+with exactly one START/FINISH, zero failure reports and no unfinished node.
+Both inventory consumers execute on gw1/PID 29820; setup costs 7.65s once,
+and the second consumer reuses the module fixture. Fresh help runs later in
+PID 32156. The candidate whole-owner replay takes 41.1 observed seconds at
+the original 90/60 bounds; it includes the separately tracked singleton
+help change and is not an isolated grouping benchmark or hosted speed claim.
+
+The maintained [loadgroup contract](https://pytest-xdist.readthedocs.io/en/stable/distribution.html)
+guarantees same-group worker ownership while leaving unmarked tests normally
+scheduled. The existing [session-fixture user report](https://github.com/pytest-dev/pytest-xdist/issues/271)
+explains separate worker sessions, supporting measurement of repeated setup.
+Rollback reverts the two marks and their regression together. No serving
+process, ZDD action, release closure or full-gate requirement is changed.
