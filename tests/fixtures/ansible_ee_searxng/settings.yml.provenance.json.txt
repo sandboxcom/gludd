@@ -1,0 +1,31 @@
+{
+  "upstream_repository": "https://github.com/searxng/searxng",
+  "source_revision": "7b4612e86250389dc9d5ee67e4cc2cd64d06602a",
+  "source_path": "searx/settings.yml",
+  "source_sha256": "def5b71f3b85eba27d54766796444a336ef1dbc360c5b37903417aeeef8f12c5",
+  "serialization": {
+    "parser": "PyYAML.safe_load",
+    "emitter": "PyYAML.safe_dump",
+    "sort_keys": false,
+    "allow_unicode": true
+  },
+  "semantic_serialization": "json.dumps(sort_keys=True,ensure_ascii=False,separators=(comma,colon))",
+  "serialized_yaml_sha256": "e525cf729b6e00793c5630c3da25d49ba1c28ced09eafffd1b1f80da94bad4ad",
+  "effective_defaults_sha256": "81130964268a31068a7fdaac70c42f9221ca1c7fe56c584e5976f2d3d6b12add",
+  "effective_engine_count": 246,
+  "effective_top_level_keys": [
+    "brand",
+    "categories_as_tabs",
+    "checker",
+    "default_doi_resolver",
+    "doi_resolvers",
+    "engines",
+    "general",
+    "outgoing",
+    "plugins",
+    "redis",
+    "search",
+    "server",
+    "ui"
+  ]
+}

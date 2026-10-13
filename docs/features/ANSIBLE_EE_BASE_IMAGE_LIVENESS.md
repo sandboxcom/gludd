@@ -162,6 +162,40 @@ rollback behavior unchanged.
 
 ## Early build-input admission
 
+### Native pinned initialization acceptance
+
+The freezer fixture now uses all seven pinned first-party modules, including
+the actual package initializer and settings loader. It no longer substitutes
+an empty initializer. Invalid settings must fail before frozen metadata is
+rewritten; adjacent unregistered fixtures cannot shadow the canonical owner.
+Ambient local SearXNG configuration is isolated only in the non-serving fixture.
+The production module-freezer invocation remains unchanged.
+
+The complete upstream default configuration is stored as effective YAML using
+installed [PyYAML safe loading and emission](https://pyyaml.org/wiki/PyYAMLDocumentation).
+The typed-tree digest, all 246 engines, top-level keys, frozen revision and raw
+source/serialized digests are checked. This removes credential-bearing comments
+without omitting configuration or encoding values to evade inspection. Original
+first-party AGPL notices and raw acquisition evidence remain retained.
+
+The initial canonical scanner correctly refuses six raw-fixture findings,
+including an upstream comment labelled as a working API key. That comment is
+not admitted. After native parser serialization, only six public revision and
+checksum findings remain. Existing native baseline maintenance adds exactly
+those six; all 1,120 prior identities, detector thresholds and filter semantics
+are preserved. They are explicitly reviewed as noncredentials, following
+[detect-secrets baseline auditing](https://github.com/Yelp/detect-secrets#auditing-a-baseline).
+No inline suppression or fixture exclusion is added, and normal admission
+continues to scan through its read-only disposable-copy owner.
+
+The [2025 packaging discussion](https://github.com/searxng/searxng/issues/4372)
+shows why metadata freezing and installed-webapp initialization need separate
+acceptance. It does not establish a defective pinned freezer. Real native
+regressions expose missing defaults, bypassed initialization and adjacent-file
+shadowing before repair. These focused proofs do not establish a CentOS EE,
+the complete installed dependency graph, exact-SHA hosted success or deployment
+readiness; the original full nine-import/offline image proof remains required.
+
 The pinned-source inspection owner now reads eleven exact inputs, adding the
 upstream Dockerfile and complete default settings to the existing nine source
 files. Its plan-only path makes no network request; actual acquisition retains

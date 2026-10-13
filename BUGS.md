@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Empty SearXNG initializer bypassed actual default-source acceptance
+
+- Two native regressions fail before repair: default inputs are absent and invalid settings incorrectly allow freezing through an empty initializer. A further native case proves adjacent files can shadow registered fixture inputs.
+- The fixture now executes all seven real pinned first-party modules with complete effective upstream defaults. PyYAML preserves every parsed value and all 246 engines while removing credential-bearing comments; independently pinned source/effective hashes and canonical path ownership prevent partial or shadow fixtures. The production module-freezer entrypoint is retained.
+- The canonical scanner refuses raw source findings before any commit. The working-key comment is removed, not baselined. Native baseline maintenance adds only six reviewed public revision/checksum findings, preserves every prior finding and scanner setting, and ordinary read-only admission is green. Raw evidence remains recoverable outside the checkout.
+- Full installed-image smoke, exact-SHA hosted acceptance and the canonical release gate remain pending. Native fixture tests and source commits do not close S98.4.
+
 ### 2026-10-13 — Runtime admission timed out and shared-state groups arrived too late
 
 - Exact c9d2e98 Build 38362521808 failed both Python 3.11 and 3.12 early owners at the original 90-second deadline; downstream EE/shards did not run. No skipped downstream check is counted green.

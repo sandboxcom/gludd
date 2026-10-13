@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import json
 import os
@@ -34,9 +35,6 @@ class FrozenSource(NamedTuple):
 
 
 def _fixture(name: str) -> Path:
-    adjacent = Path(__file__).parent / "fixtures" / f"{name}.txt"
-    if adjacent.is_file():
-        return adjacent
     return artifacts.ROOT / "tests/fixtures/ansible_ee_searxng" / f"{name}.txt"
 
 
@@ -48,14 +46,41 @@ def _git(root: Path, *arguments: str) -> str:
     return result.stdout.strip()
 
 
+def test_pinned_fixture_owner_cannot_be_shadowed_by_adjacent_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adjacent = tmp_path / "fixtures"
+    adjacent.mkdir()
+    (adjacent / "version.py.txt").write_text("foreign source fixture\n")
+    monkeypatch.setitem(globals(), "__file__", str(tmp_path / "test_acceptance.py"))
+    expected = artifacts.ROOT / "tests/fixtures/ansible_ee_searxng/version.py.txt"
+    assert _fixture("version.py") == expected
+    assert _fixture("version.py").read_bytes() == expected.read_bytes()
+
+
+def _source_environment() -> dict[str, str]:
+    """Use pinned source defaults independently of local SearXNG configuration."""
+    environment = {
+        key: value for key, value in os.environ.items()
+        if not key.startswith("SEARXNG_") and key != "PYTHONPATH"
+    }
+    environment["SEARXNG_DISABLE_ETC_SETTINGS"] = "1"
+    return environment
+
+
 @pytest.fixture
 def frozen_source(tmp_path: Path) -> FrozenSource:
     root = tmp_path / "gludd-searxng-source"
     package = root / "searx"
     package.mkdir(parents=True)
-    (package / "__init__.py").write_text("")
-    for name in ("version.py", "settings_defaults.py", "sxng_locales.py"):
-        (package / name).write_text(_fixture(name).read_text())
+    for name in (
+        "__init__.py", "exceptions.py", "settings_loader.py", "settings_defaults.py",
+        "sxng_locales.py", "unixthreadname.py", "version.py", "settings.yml",
+    ):
+        fixture_name = "settings.yml.effective" if name == "settings.yml" else name
+        (package / name).write_bytes(_fixture(fixture_name).read_bytes())
+    for directory in ("static", "templates"):
+        (package / directory).mkdir()
     _git(root, "init", "--quiet", "--initial-branch=master")
     _git(root, "config", "user.name", "Gludd source fixture")
     _git(root, "config", "user.email", "fixture@example.test")
@@ -72,7 +97,8 @@ def frozen_source(tmp_path: Path) -> FrozenSource:
     _git(root, "checkout", "--quiet", "--detach", commit)
     generated = subprocess.run(
         [sys.executable, "-W", "error", "-m", "searx.version", "freeze"],
-        cwd=root, check=True, capture_output=True, text=True, timeout=10,
+        cwd=root, env=_source_environment(), check=True,
+        capture_output=True, text=True, timeout=10,
     )
     assert "version_frozen.py created" in generated.stdout
     assert "ERROR" not in generated.stderr
@@ -195,6 +221,55 @@ def test_real_pinned_freezer_preserves_verified_detached_git_identity(
     assert values["DOCKER_TAG"] == frozen_source.version.replace("+", "-")
     assert values["GIT_URL"] == "https://github.com/searxng/searxng"
     assert values["GIT_BRANCH"] == "master"
+
+
+def test_default_settings_fixture_preserves_complete_pinned_source() -> None:
+    """Require every effective default while excluding nonconfiguration comments."""
+    contract = json.loads(_fixture("settings.yml.provenance.json").read_text())
+    settings = _fixture("settings.yml.effective").read_bytes()
+    assert len(settings.splitlines()) < 2500
+    assert contract["source_revision"] == artifacts.SEARXNG_SOURCE_REVISION
+    assert contract["source_path"] == "searx/settings.yml"
+    assert contract["source_sha256"] == (
+        "def5b71f3b85eba27d54766796444a336ef1dbc360c5b37903417aeeef8f12c5"
+    )
+    assert contract["effective_defaults_sha256"] == (
+        "81130964268a31068a7fdaac70c42f9221ca1c7fe56c584e5976f2d3d6b12add"
+    )
+    assert contract["effective_engine_count"] == 246
+    assert contract["serialization"] == {
+        "parser": "PyYAML.safe_load", "emitter": "PyYAML.safe_dump",
+        "sort_keys": False, "allow_unicode": True,
+    }
+    assert hashlib.sha256(settings).hexdigest() == contract["serialized_yaml_sha256"]
+    defaults = yaml.safe_load(settings)
+    assert len(defaults["engines"]) == contract["effective_engine_count"]
+    assert sorted(defaults) == contract["effective_top_level_keys"]
+    semantic = json.dumps(
+        defaults, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+    ).encode()
+    assert hashlib.sha256(semantic).hexdigest() == contract["effective_defaults_sha256"]
+
+
+def test_module_freezer_loads_real_pinned_initializer_before_writing(
+    frozen_source: FrozenSource, tmp_path: Path,
+) -> None:
+    """Malformed settings must fail inside the actual first-party initializer."""
+    settings = tmp_path / "invalid-settings.yml"
+    settings.write_text("use_default_settings: true\nserver:\n  secret_key: 7\n")
+    environment = _source_environment()
+    environment["SEARXNG_SETTINGS_PATH"] = str(settings)
+    before = frozen_source.frozen.read_bytes()
+    result = subprocess.run(
+        [sys.executable, "-W", "error", "-m", "searx.version", "freeze"],
+        cwd=frozen_source.root, env=environment, check=False,
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode != 0
+    assert "server.secret_key" in result.stderr
+    assert "Invalid settings.yml" in result.stderr
+    assert "version_frozen.py created" not in result.stdout
+    assert frozen_source.frozen.read_bytes() == before
 
 
 def test_ephemeral_smoke_secret_uses_real_pinned_settings_schema(
