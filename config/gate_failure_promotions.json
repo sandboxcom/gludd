@@ -628,6 +628,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_mcp_tool_gen.py::test_tool_def_required_and_choices",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "observer-terminal-retention-concurrency",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_observer_retention_concurrency.py::test_native_retention_distinguishes_concurrent_removal_from_io_failure",
+      "full_gate_phase": "test"
     }
   ]
 }

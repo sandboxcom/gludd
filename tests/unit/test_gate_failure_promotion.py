@@ -1240,6 +1240,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ee-native-format-backend-throughput",
         "ee-native-format-tooling-literal-env",
         "mcp-git-composite-choice-closure",
+        "observer-terminal-retention-concurrency",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1427,7 +1428,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ansible_ee_locked_consumer_admission.py '
         'tests/unit/test_release_asset_matrix.py '
         'tests/unit/test_release_ee_collection_closure.py '
-        'tests/unit/test_mcp_tool_gen.py"'
+        'tests/unit/test_mcp_tool_gen.py '
+        'tests/unit/test_observed_command.py '
+        'tests/unit/test_observer_retention_concurrency.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner

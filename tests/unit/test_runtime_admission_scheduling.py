@@ -67,6 +67,8 @@ ROSTER = (
     "tests/unit/test_release_asset_matrix.py",
     "tests/unit/test_release_ee_collection_closure.py",
     "tests/unit/test_mcp_tool_gen.py",
+    "tests/unit/test_observed_command.py",
+    "tests/unit/test_observer_retention_concurrency.py",
 )
 
 

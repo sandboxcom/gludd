@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Parallel retention turned a successful child into an observer failure
+
+- A normal guarded publication of 4d0833ca5 passes 1461 early tests but fails one native consumer when parallel retention owners race on a superseded status JSON. The publication gate fails closed, and Git transport is not attempted. A prior successful local replay is not authority to bypass this failure.
+- Two canonical read/unlink races fail first, with both permission-error controls passing. The existing retention owner now skips only concurrently absent status records and uses native idempotent unlink. Genuine I/O failures remain fatal; current/running evidence and all original protections remain. All 90 observer/registration checks pass on Python 3.11 and 3.14, with unchanged limits and additive native early selection.
+- The original four-owner coverage profile first exposes missing execution coverage at 83.0% aggregate branches. Adding existing process-ownership/item-progress/streaming cases makes all 182 tests pass at 92.8% lines/86.0% branches; every original file meets both 75% floors (.gate-logs/coverage-20261013T220433Z.json). Ruff, strict typing, native ownership, 233 contracts, 68 promoted families and Make parity pass. Publication, complete gate, hosted successor and deployment acceptance remain pending.
+
 ### 2026-10-13 — Native format-parser startup exhausted hosted early admission
 
 - The exact hosted Python 3.12 job timed out at 90.6 seconds with tests passing at 88%. Profiling the unchanged 52-case EE consumer identifies 23.29 of 26.52 accumulated native-worker seconds in the optional syntax parser's eager imports. The supported unmodified development-only RFC3987 backend reduces that same local profile from 34.79 to 8.68 seconds without removing validation, worker isolation, fatal warnings, input binding or original limits.

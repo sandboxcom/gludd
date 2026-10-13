@@ -128,6 +128,8 @@ def _prune_terminal_runs(
             continue
         try:
             value = json.loads(status_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
         except (json.JSONDecodeError, UnicodeDecodeError):
             continue
         if not isinstance(value, dict) or value.get("state") not in _TERMINAL_STATES:
@@ -166,7 +168,7 @@ def _prune_terminal_runs(
             artifact = Path(raw_path).resolve()
             if artifact.parent == resolved_directory and artifact.name == f"{run_id}{suffix}":
                 artifact.unlink(missing_ok=True)
-        status_path.unlink()
+        status_path.unlink(missing_ok=True)
 
 
 def _terminate_process_group(process: subprocess.Popen[bytes], grace_seconds: float) -> None:

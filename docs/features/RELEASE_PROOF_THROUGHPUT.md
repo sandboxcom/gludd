@@ -867,6 +867,30 @@ Make acceptance exercises the real producer and target with local adapters,
 including a live-streaming handshake and stale same-SHA marker regressions.
 Those local fixtures are not hosted timing, full-gate, or release evidence.
 
+### Concurrent cleanup of superseded observer records
+
+A normal publication replay passes 1461 cases but fails one native consumer
+because parallel observers remove the same superseded status record. The existing
+retention owner now tolerates only a record disappearing before read or unlink;
+it uses standard `Path.unlink(missing_ok=True)`, not a new cleaner or retry loop.
+Current/running records, retention bounds and namespace/identity checks remain.
+Permission and other genuine I/O failures still fail the observer closed.
+
+The [2017 CPython practitioner report](https://github.com/python/cpython/issues/73885)
+documents the same class of concurrent-removal failure in recursive cleanup;
+it is background evidence, not proof of Gludd's specific race. The maintained
+[Python 3.11 unlink contract](https://docs.python.org/3.11/library/pathlib.html#pathlib.Path.unlink)
+provides the narrow missing-file behavior without suppressing other errors.
+Two deterministic race cases fail first while two permission-error controls pass.
+All 90 observer/registration cases then pass on both Python versions. The unchanged
+four-owner coverage profile passes 182 tests at 92.8% lines/86.0% branches, with
+all four owners above both 75% floors; the initial missing-execution receipt is
+retained. Audit: `.gate-logs/coverage-20261013T220433Z.json`.
+Both full observer cohorts join the existing early owner, and family 68 retains
+the complete gate and original 90/60 bounds. No serving service changes; rollback
+reverts the native cleanup change and its controls together after owners finish.
+Source acceptance is not a successful push, hosted successor or release proof.
+
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
 [observation-api]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository
