@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from importlib import import_module, metadata
 from importlib.metadata import version
 from pathlib import Path
@@ -997,6 +999,21 @@ def test_generated_controller_build_preserves_installer_and_interpreter_boundari
         assert unsafe_option not in base
     assert "RUN $PKGMGR install -y python3.11 curl-minimal tar gzip coreutils &&" not in base
     controller_bin = str(Path(artifacts.CONTROLLER_PYTHON_PATH).parent)
+    runtime = "/opt/gludd/ansible-ee-runtime"
+    controller = str(Path(artifacts.CONTROLLER_PYTHON_PATH).parent.parent)
+    create_venv = f"{runtime}/bin/python3.11 -m venv {controller}"
+    assert f"install -d -m 0755 {runtime};" in base
+    assert f"--directory {runtime};" in base
+    assert create_venv in base
+    pip_upgrade = "RUN $PYCMD -m pip install --no-cache-dir --upgrade pip==26.2.1"
+    assert base.index(create_venv) < base.index(pip_upgrade)
+    assert f'assert sys.prefix == "{controller}"' in base
+    assert f'assert sys.base_prefix == "{runtime}"' in base
+    assert "assert sys.version_info[:3] == (3, 11, 17)" in base
+    assert "assert sqlite3.sqlite_version_info >= (3, 35, 0)" in base
+    assert "assert sqlite3.threadsafety == 3" in base
+    assert "--root-user-action" not in rendered
+    assert "PIP_ROOT_USER_ACTION" not in rendered
     native_path = f'ENV PATH="{controller_bin}:$PATH"'
     assert native_path in base
     assert base.index(native_path) < base.index("RUN $PYCMD -m pip install --no-cache-dir $ANSIBLE_INSTALL_REFS")
@@ -1006,7 +1023,7 @@ def test_generated_controller_build_preserves_installer_and_interpreter_boundari
     assert "RUN /output/scripts/check_ansible $PYCMD" in final
     assert f'ENV PIPCMD="{artifacts.CONTROLLER_PYTHON_PATH} -m uv pip"' in base
     assert "ENV UV_CONFIG_FILE=/etc/gludd/ansible-ee-uv.toml" in base
-    assert f"ENV UV_PYTHON={artifacts.CONTROLLER_PYTHON_PATH} UV_SYSTEM_PYTHON=true" in base
+    assert f"ENV UV_PYTHON={artifacts.CONTROLLER_PYTHON_PATH} UV_SYSTEM_PYTHON=false" in base
     assert "ENV UV_PYTHON=/tmp/venv/bin/python UV_SYSTEM_PYTHON=false" in builder
     assert builder.index("ENV UV_PYTHON=/tmp/venv/bin/python") < builder.index(
         "RUN /output/scripts/assemble"
@@ -1395,7 +1412,9 @@ def test_build_reports_missing_tools(
         lambda _name: object() if "ansible-builder" in available else None,
     )
     monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}" if name in available else None)
-    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path / "context", False) == expected
+    assert artifacts.build_environment(
+        "podman", "gludd-ee:beta4", tmp_path / "context", False, tmp_path / "reviewed-artifacts",
+    ) == expected
     assert message in capsys.readouterr().err
 
 
@@ -1418,7 +1437,9 @@ def test_build_stops_before_collection_when_pinned_base_disappears(
         lambda: pytest.fail("collection builds must not start for a dead base image"),
     )
 
-    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path, False) == 1
+    assert artifacts.build_environment(
+        "podman", "gludd-ee:beta4", tmp_path, False, tmp_path / "reviewed-artifacts",
+    ) == 1
     error = capsys.readouterr().err
     assert "manifest unknown" in error
     assert "make refresh-ansible-base-image" in error
@@ -1432,7 +1453,7 @@ def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monk
     monkeypatch.setattr(artifacts, "check_configured_base_image", lambda: PINNED_IMAGE)
     collection_artifacts = tuple(
         (tmp_path / f"source-{index}", tmp_path / "dist" / f"collection-{index}.tar.gz")
-        for index in range(3)
+        for index in range(8)
     )
     monkeypatch.setattr(artifacts, "COLLECTION_ARTIFACTS", collection_artifacts)
 
@@ -1442,26 +1463,28 @@ def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monk
         if command[:3] == ["ansible-galaxy", "collection", "build"]:
             index = len(calls) - 1
             collection_artifacts[index][1].write_bytes(b"collection")
-        elif command[:4] == [sys.executable, "-m", "ansible_builder", "build"]:
-            forwarded = next(
-                arg.partition("=")[2] for arg in command
-                if arg.startswith("--extra-build-cli-args=")
-            )
-            capture = shlex.split(forwarded)
-            assert len(capture) == 2 and capture[0] == "--iidfile"
-            Path(capture[1]).write_text("sha256:" + "c" * 64 + "\n", encoding="ascii")
+        elif command[:2] == ["podman", "build"]:
+            assert command[-3] == "--iidfile"
+            Path(command[-2]).write_text("sha256:" + "c" * 64 + "\n", encoding="ascii")
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    @contextmanager
+    def admitted_context(runtime: str, image: str, context: Path, artifact_root: Path) -> Iterator[list[str]]:
+        assert artifact_root == tmp_path / "reviewed-artifacts"
+        assert artifacts._build_collection_artifacts() == 0
+        context.mkdir()
+        capture = tmp_path / "immutable-image-id"
+        yield [runtime, "build", "-f", str(context / "Containerfile"), "-t", image,
+               "--iidfile", str(capture), str(context)]
+
+    monkeypatch.setattr(artifacts, "_prepared_native_context", admitted_context)
     context = tmp_path / "gludd-ee"
-    assert artifacts.build_environment("podman", "gludd-ee:beta4", context, False) == 0
-    assert [call[0][:3] for call in calls[:3]] == [
-        ["ansible-galaxy", "collection", "build"],
-        ["ansible-galaxy", "collection", "build"],
-        ["ansible-galaxy", "collection", "build"],
-    ]
-    assert calls[3][0][:4] == [sys.executable, "-m", "ansible_builder", "build"]
-    assert calls[3][1] == artifacts.ROOT
+    assert artifacts.build_environment("podman", "gludd-ee:beta4", context, False, tmp_path / "reviewed-artifacts") == 0
+    assert [call[0][:3] for call in calls[:8]] == [["ansible-galaxy", "collection", "build"]] * 8
+    assert calls[8][0][:2] == ["podman", "build"]
+    assert calls[8][1] == artifacts.ROOT
+    assert all("sha256:" + "c" * 64 in command for command, _cwd in calls[9:])
     assert context.is_dir()
 
 
@@ -1475,8 +1498,17 @@ def test_build_fails_closed_when_collection_artifact_is_missing(
     monkeypatch.setattr(artifacts, "check_configured_base_image", lambda: PINNED_IMAGE)
     monkeypatch.setattr(artifacts, "COLLECTION_ARTIFACTS", ((source, output),))
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0))
+    @contextmanager
+    def admitted_context(runtime: str, image: str, context: Path, artifact_root: Path) -> Iterator[list[str]]:
+        if artifacts._build_collection_artifacts():
+            raise ValueError("owned producer failed")
+        yield [runtime, "build", image, str(context), str(artifact_root)]
 
-    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path / "context", False) == 1
+    monkeypatch.setattr(artifacts, "_prepared_native_context", admitted_context)
+
+    assert artifacts.build_environment(
+        "podman", "gludd-ee:beta4", tmp_path / "context", False, tmp_path / "reviewed-artifacts",
+    ) == 1
     assert f"collection artifact missing or empty: {output}" in capsys.readouterr().err
 
 
@@ -1551,7 +1583,8 @@ def test_verify_stops_when_opentofu_smoke_fails(
 def test_cli_validate_and_validate_only_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(artifacts, "validate_files", lambda: [])
     assert artifacts.main(["validate"]) == 0
-    assert artifacts.main(["build", "--validate-only", "--context", "/tmp/gludd-ee-test"]) == 0
+    assert artifacts.main(["build", "--validate-only", "--context", "/tmp/gludd-ee-test",
+                           "--artifact-root", "/tmp/gludd-reviewed-artifacts"]) == 0
     assert artifacts.main(["verify", "--validate-only", "--image", PINNED_IMAGE]) == 0
 
 

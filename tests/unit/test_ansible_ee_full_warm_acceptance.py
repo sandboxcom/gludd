@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import argparse
 import ast
 import errno
 import hashlib
-import importlib
+import json
 import os
-import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -66,19 +66,12 @@ def _record_commands(
         assert check is False
         calls.append(command)
         returncode = next(statuses)
-        if command[:4] == [sys.executable, "-m", "ansible_builder", "build"]:
+        if command[:2] == [runtime, "build"]:
             assert cwd == artifacts.ROOT
             events.append("builder")
-            capture = next(
-                (
-                    arg.partition("=")[2]
-                    for arg in command
-                    if arg.startswith("--extra-build-cli-args=")
-                ),
-                None,
-            )
+            capture = command.index("--iidfile") if "--iidfile" in command else None
             if capture is not None and returncode == 0:
-                forwarded = shlex.split(capture)
+                forwarded = command[capture:capture + 2]
                 assert len(forwarded) == 2 and forwarded[0] == "--iidfile"
                 image_id_path = Path(forwarded[1])
                 project = hashlib.sha256(str(artifacts.ROOT).encode()).hexdigest()[:12]
@@ -111,14 +104,28 @@ def _record_commands(
             events.append("opentofu" if command[-2:] == ["/usr/local/bin/tofu", "version"] else "python")
         return SimpleNamespace(returncode=returncode)
 
-    monkeypatch.setattr(artifacts, "_build_collection_artifacts", collections)
+    @contextmanager
+    def admitted_context(
+        selected_runtime: str, image: str, context: Path, artifact_root: Path,
+    ) -> Iterator[list[str]]:
+        """Isolate warm acceptance from separately tested archive/context admission."""
+        assert artifact_root == context.parent / "reviewed-artifacts"
+        assert collections() == 0
+        project = hashlib.sha256(str(artifacts.ROOT).encode()).hexdigest()[:12]
+        with tempfile.TemporaryDirectory(prefix=f"gludd-ansible-ee-{project}-{OWNER_PID}-") as temporary:
+            filename = "Dockerfile" if selected_runtime == "docker" else "Containerfile"
+            yield [selected_runtime, "build", "-f", str(context / filename), "-t", image,
+                   "--iidfile", str(Path(temporary) / "built-image-id"), str(context)]
+
+    monkeypatch.setattr(artifacts, "_prepared_native_context", admitted_context)
     monkeypatch.setattr(subprocess, "run", run)
     return calls, events
 
 
 def _invoke(mode: str, context: Path) -> int:
     if mode == "build":
-        return artifacts.build_environment("podman", CANDIDATE_IMAGE, context, False)
+        return artifacts.build_environment("podman", CANDIDATE_IMAGE, context, False,
+                                           context.parent / "reviewed-artifacts")
     return artifacts.verify_environment("podman", PINNED_IMAGE, False)
 
 
@@ -174,14 +181,36 @@ def test_builder_streams_native_progress_at_supported_verbosity(
     monkeypatch: pytest.MonkeyPatch,
     runtime: str,
 ) -> None:
+    real_run = subprocess.run
     calls, _events = _record_commands(monkeypatch, (0, 0, 0), runtime=runtime)
-    assert artifacts.build_environment(runtime, CANDIDATE_IMAGE, tmp_path / "context", False) == 0
-    builder_cli = importlib.import_module("ansible_builder.cli")
-    monkeypatch.setattr(sys, "argv", ["ansible-builder", *calls[0][3:]])
-    parsed: object = builder_cli.parse_args()
-    assert isinstance(parsed, argparse.Namespace)
-    assert parsed.verbosity == 3
-    assert parsed.container_runtime == runtime
+    assert artifacts.build_environment(runtime, CANDIDATE_IMAGE, tmp_path / "context", False,
+                                       tmp_path / "reviewed-artifacts") == 0
+    assert calls[0][:2] == [runtime, "build"]
+    definition = tmp_path / "native-definition.yml"
+    galaxy = tmp_path / "requirements.yml"
+    galaxy.write_text("collections: []\n", encoding="utf-8")
+    definition.write_text(f"version: 3\ndependencies:\n  galaxy: {galaxy}\n", encoding="utf-8")
+    probe = tmp_path / "native-generator-probe.py"
+    probe.write_text(
+        "import importlib, json, sys\nfrom pathlib import Path\nfrom types import SimpleNamespace\n"
+        "sys.path.insert(0, sys.argv[1])\nfrom scripts import ansible_runtime_artifacts as owner\n"
+        "native = importlib.import_module('ansible_builder.main')\n"
+        "real_import = owner.import_module\nvalues = []\n"
+        "def constructor(**kwargs):\n    values.append(kwargs)\n    return native.AnsibleBuilder(**kwargs)\n"
+        "owner.import_module = lambda name: SimpleNamespace(AnsibleBuilder=constructor) "
+        "if name == 'ansible_builder.main' else real_import(name)\n"
+        "output = Path(sys.argv[3]) / 'native-context.json'\n"
+        "owner._native_create_context(Path(sys.argv[2]), Path(sys.argv[3]) / 'gludd-native-context', "
+        "sys.argv[4], 'gludd:test', Path(sys.argv[3]) / 'iid', output)\n"
+        "assert len(values) == 1 and values[0]['action'] == 'create'\n"
+        "print(json.dumps({'verbosity': values[0]['verbosity'], "
+        "'container_runtime': values[0]['container_runtime']}))\n",
+        encoding="utf-8",
+    )
+    result = real_run([sys.executable, "-W", "error", str(probe), str(artifacts.ROOT), str(definition),
+                       str(tmp_path), runtime], capture_output=True, text=True, timeout=20, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout.splitlines()[-1]) == {"verbosity": 3, "container_runtime": runtime}
 
 
 @pytest.mark.parametrize("mode", ["build", "verify"])
@@ -264,10 +293,10 @@ def test_build_warms_captured_image_after_candidate_tag_can_be_retargeted(
 ) -> None:
     calls, events = _record_commands(monkeypatch, (0, 0, 0), runtime=runtime)
     assert artifacts.build_environment(
-        runtime, CANDIDATE_IMAGE, tmp_path / "context", False
+        runtime, CANDIDATE_IMAGE, tmp_path / "context", False, tmp_path / "reviewed-artifacts"
     ) == 0
     assert events == ["collections", "builder", "opentofu", "python"]
-    assert calls[0][calls[0].index("--tag") + 1] == CANDIDATE_IMAGE
+    assert calls[0][calls[0].index("-t") + 1] == CANDIDATE_IMAGE
     for command in calls[1:]:
         assert command[0] == runtime
         assert BUILT_IMAGE in command
@@ -299,7 +328,7 @@ def test_missing_malformed_or_oversized_builder_identity_stops_before_smoke(
         monkeypatch, (0, 0, 0), iid_contents=contents
     )
     assert artifacts.build_environment(
-        "podman", CANDIDATE_IMAGE, tmp_path / "context", False
+        "podman", CANDIDATE_IMAGE, tmp_path / "context", False, tmp_path / "reviewed-artifacts"
     ) == 1
     assert events == ["collections", "builder"]
     assert len(calls) == 1
@@ -313,7 +342,7 @@ def test_builder_identity_requires_an_owned_regular_single_link_file(
 ) -> None:
     calls, events = _record_commands(monkeypatch, (0, 0, 0), iid_kind=kind)
     assert artifacts.build_environment(
-        "podman", CANDIDATE_IMAGE, tmp_path / "context", False
+        "podman", CANDIDATE_IMAGE, tmp_path / "context", False, tmp_path / "reviewed-artifacts"
     ) == 1
     assert events == ["collections", "builder"]
     assert len(calls) == 1
@@ -329,13 +358,12 @@ def test_builder_capture_is_private_unique_and_preserves_literal_path(
     calls, _events = _record_commands(monkeypatch, (0,) * 6)
     for _attempt in range(2):
         assert artifacts.build_environment(
-            "podman", CANDIDATE_IMAGE, tmp_path / "context", False
+            "podman", CANDIDATE_IMAGE, tmp_path / "context", False, tmp_path / "reviewed-artifacts"
         ) == 0
     captures = [
-        Path(shlex.split(arg.partition("=")[2])[1])
+        Path(command[command.index("--iidfile") + 1])
         for command in calls
-        for arg in command
-        if arg.startswith("--extra-build-cli-args=")
+        if "--iidfile" in command
     ]
     assert len(captures) == 2
     assert captures[0].parent != captures[1].parent
@@ -354,7 +382,7 @@ def test_input_refusal_or_plan_never_captures_an_image_or_starts_work(
         monkeypatch.setattr(artifacts, "validate_files", lambda: ["invalid inputs"])
     context = tmp_path / "context"
     assert artifacts.build_environment(
-        "podman", CANDIDATE_IMAGE, context, validate_only
+        "podman", CANDIDATE_IMAGE, context, validate_only, tmp_path / "reviewed-artifacts"
     ) == (0 if validate_only else 1)
     assert calls == []
     assert events == []

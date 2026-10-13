@@ -586,6 +586,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_no_sleep_subagent.py::test_allowlist_entries_are_still_valid",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-locked-archive-context-consumer",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_ee_locked_consumer.py::test_native_create_consumes_sixteen_local_metadata_fixtures_once",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-release-reviewed-collection-closure",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_release_ee_collection_closure.py::test_workflow_manifest_is_the_exact_sorted_native_validator_closure",
+      "full_gate_phase": "test"
     }
   ]
 }

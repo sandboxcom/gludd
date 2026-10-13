@@ -132,6 +132,94 @@ zero new clones. This is source acceptance, not a new deployment proof.
 
 ## Resource and offline ownership
 
+### Reviewed archives reach the native EE consumer
+
+The controller artifact owner now prepares a schema-3 native Builder context from
+all sixteen archives: eight freshly built Gludd collections and eight reviewed
+third-party/transitive inputs. Each archive is checked against its native
+manifest, runtime requirements and complete dependency graph before generation;
+the third-party lock is independently bound by the runtime lock. Native Galaxy
+receives only relative local file inputs with offline, cache-free installation.
+Builder's original Python/system introspection, SDK exclusions, pinned controller
+and Runner, smoke inputs and additional steps remain authoritative. No resolver,
+collection downloader, dependency bypass or image builder is reimplemented.
+
+One fresh CLI child owns Builder 3.1.1 generation. It requires an initially empty
+native temporary-file registry/cache and a single-threaded owner, creates once
+at native verbosity three, closes its own handles and preserves original plus
+cleanup errors. Concurrent or pre-existing ownership fails without closing
+another owner's handles. The existing observed-command owner streams diagnostics,
+retains a durable namespaced log and rejects warning/error output even at exit
+zero. Generated file hashes, original input bytes, full additional steps, all
+archives and the native runtime command are independently admitted afterward.
+
+Failed output is removed only after exclusive quarantine and moved-inode
+verification. A concurrent replacement is restored or explicitly retained with
+its path; foreign bytes never reach recursive deletion. Successful contexts are
+retained for the native runtime, while private definition/report/IID state is
+context-managed. Image builds use that same admitted command and keep private
+IID state alive through the original immutable-image warm; they do not regenerate
+a different context or infer build identity from a mutable tag.
+
+`make prepare-ansible-execution-environment-context` exposes generation separately
+from image assembly, with `ANSIBLE_EE_VALIDATE_ONLY=1` producing a non-mutating
+`proof=none` plan. Both preparation and build transport all seven documented EE
+values as literal data. Real execution requires an explicit reviewed artifact
+root. This does not install a runtime, switch a serving digest or prove deployment.
+
+Canonical failing-first consumer acceptance has 43 failures and one control.
+After observer-fixture conformance all 44 cases pass; five additional lifecycle
+and retained-output controls bring the consumer to 49 cases. Existing warm
+fixtures now use the admitted-context seam while preserving every smoke failure,
+malformed/private IID, retarget and cleanup assertion. Actual canonical generation
+with all sixteen real archives succeeds in 5.0 observed seconds. Its first outer
+uv call reports a mismatched ambient venv, so subsequent explicit environment
+selection must align both environment variables; that diagnostic is not hidden.
+Generation is not image execution or an offline-installed release receipt.
+
+The new native Make-plan regression fails before the whole consumer cohort gains
+exactly-once pre-publication selection and its required full-gate promotion
+family. Three exact old roster/family expectations then fail; they append only
+the new requirements and keep all original budgets, checks and fresh-help work.
+The combined canonical lifecycle/warm/scheduling replay passes 143 cases; the
+ownership checker passes 257 acquisitions after its native inventory refresh.
+All 232 public Make contracts and both documented non-mutating EE examples pass.
+Coverage, exact-SHA hosted/full gate, installed-image health and deployment
+acceptance still remain necessary. S98.4 stays unchecked.
+
+The long-lived [August 2024 offline Builder discussion](https://forum.ansible.com/t/ansible-builder-installing-collections-and-components-with-no-access-to-galaxy/7974)
+requires copying local tarballs into the build context and listing their complete
+transitive closure to avoid Galaxy access. This informs the explicit archive
+handoff; that user report does not establish Gludd's image or Windows parameter
+acceptance.
+
+The hosted job now uses the existing independently bound acquisition owner before
+building, passes the reviewed artifact root explicitly, and stages the reviewed
+lock plus all sixteen archives. Three native workflow controls fail first, then
+the 229-case workflow/warm/security replay passes after an original stale smoke
+assertion adopts the existing public controller selector and fatal warnings.
+Combined strict typing passes all ten changed test files without alternate static
+module identities or waivers. This is workflow source acceptance, not a hosted
+image or release receipt.
+
+The Azure owner preserves its 51 existing test selections and appends four
+complete EE cohorts. Four real Make-selection regressions fail before the append;
+all 39 selection and additional behavioral controls then pass. Its complete
+canonical execution after the shared result-reader repair passes 1506 tests in
+57.1 observed seconds, with all 70 original measured owners, 92.8% aggregate
+lines and 85.5% aggregate branches. Every file passes both unchanged 75% floors;
+the runtime-artifact owner measures 91.1% lines and 82.7% branches. The native
+audit receipt is `.gate-logs/coverage-20261013T202533Z.json`. Neither measured scope, thresholds nor
+observer limits are reduced.
+
+Actual complete pre-publication admission, including the downstream release
+closure cohorts, passes 1368 main cases plus fresh help in 52.2 observed seconds
+under its original 90/60 bounds. No image build or full
+gate runs while native capacity admission is hard-blocked at 91% disk against its
+90% limit. Downstream metadata verification exposes the eight-only verifier and
+unsorted manifest together; the source repair described below now admits the
+native closure and deterministic manifest. These receipts do not close S98.4.
+
 One gludd-molecule-yaml TemporaryDirectory owns Ansible state, local temp files, scenario state, native lint configuration, an empty ignore file, log and observer artifacts. Context exit removes the complete private subtree; original environment and working directory are restored. Existing repository/config inputs are never rewritten by validation, and shared home/venv caches are not selected as lint workspace.
 
 The checker calls the existing scripts.stream_command.stream_command owner, not a second scheduler. It streams native output, publishes namespaced heartbeats every ten seconds, enforces the admitted 1..120-second lint deadline (default 45; canonical complete-workload target 120) and terminates only its start_new_session process group with TERM then KILL after the grace period. Cleanup does not stop merely because the group leader exits; real regressions cover a TERM-ignoring grandchild and an unrelated session that must survive. Fixture outer subprocesses remain bounded at 60 seconds.
@@ -638,3 +726,27 @@ exact-inventory and owned-receipt checks, only the disposable harness's old
 generated installation is reclaimed; archives, logs and receipts are retained
 and can reproduce it offline. Neither cleanup nor admission establishes release
 readiness or permission to modify a live dependency environment.
+
+### Downstream reviewed EE release closure
+
+The release matrix now consumes the canonical runtime owner's independent lock
+binding and native archive/graph admission. It requires all eight original Gludd
+identities plus the reviewed eight-archive third-party closure, a byte-matching
+packaged `ansible-ee-collections.lock.json`, and an exactly sorted sixteen-entry
+collection manifest. Refreshed outer checksums cannot approve changed reviewed
+archive bytes. Missing or invalid lock/archive inputs remain collected errors
+alongside the original image, checksum, smoke and rollback checks.
+
+Private copies keep native metadata extraction away from live producer paths;
+original archive identities and independently approved digests remain mandatory.
+Fifteen canonical cases fail before implementation, then all 228 related cases
+pass under both Python 3.11 and 3.14 with warnings fatal. Native coverage passes
+104 cases at 93.4% lines and 88.1% branches, retaining the 85/75 floors;
+receipt: `.gate-logs/coverage-20261013T204641Z.json`. This establishes the source
+handoff for the local-file pattern in the
+[long-lived offline Builder discussion](https://forum.ansible.com/t/ansible-builder-installing-collections-and-components-with-no-access-to-galaxy/7974).
+The maintained [Galaxy artifact API](https://github.com/ansible/ansible/blob/stable-2.19/lib/ansible/galaxy/collection/concrete_artifact_manager.py)
+remains the native metadata owner. Tiny deterministic test archives use an
+independently supplied fixture digest; they are not installable-archive or image
+proof. No resolver, image build, deployment, coverage exclusion, warning waiver,
+85/75 floor change or ZDD/rollback authority change is introduced.

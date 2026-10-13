@@ -1730,6 +1730,8 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       EE_TAG: ghcr.io/${{ github.repository }}/ansible-ee:${{ needs.version.outputs.version }}
       EE_CONTEXT: /tmp/gludd-ansible-ee-${{ github.run_id }}-${{ github.run_attempt }}
+      EE_ARTIFACT_ROOT: .gludd/collection-artifacts/gludd-ee-${{ github.run_id }}-${{ github.run_attempt }}
+      EE_COLLECTION_LOCK_SHA256: sha256:7d176b02362222535077a47b4a4f8191e6e9b4a00be0fbc6d3a1f93d4a7a9588
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
@@ -1745,10 +1747,25 @@ jobs:
         run: |
           echo "=== CI PHASE: ansible-ee-boundary ==="
           make validate-ansible-runtime-boundary
+      - name: Acquire reviewed native collection closure
+        run: |
+          make stage-ansible-runtime-collections \
+            ANSIBLE_COLLECTION_STAGE_MODE=acquire \
+            ANSIBLE_COLLECTION_STAGE_LOCK=config/ansible/collections.lock.json \
+            ANSIBLE_COLLECTION_STAGE_LOCK_SHA256="${EE_COLLECTION_LOCK_SHA256}" \
+            ANSIBLE_COLLECTION_STAGE_REQUIREMENTS=config/ansible/requirements.yml \
+            ANSIBLE_COLLECTION_STAGE_ARTIFACT_ROOT="${EE_ARTIFACT_ROOT}" \
+            ANSIBLE_COLLECTION_STAGE_ORIGIN=https://galaxy.ansible.com/ \
+            ANSIBLE_COLLECTION_STAGE_TIMEOUT_SECONDS=120 \
+            ANSIBLE_COLLECTION_STAGE_VALIDATE_ONLY=0
       - name: Build Ansible execution environment
         run: |
           echo "=== CI PHASE: ansible-ee-build ==="
-          make build-ansible-execution-environment             ANSIBLE_EE_VALIDATE_ONLY=0             ANSIBLE_EE_RUNTIME=docker             ANSIBLE_EE_IMAGE="${EE_TAG}"             ANSIBLE_EE_CONTEXT="${EE_CONTEXT}"
+          make build-ansible-execution-environment \
+            ANSIBLE_EE_VALIDATE_ONLY=0 ANSIBLE_EE_RUNTIME=docker \
+            ANSIBLE_EE_IMAGE="${EE_TAG}" ANSIBLE_EE_CONTEXT="${EE_CONTEXT}" \
+            ANSIBLE_EE_ARTIFACT_ROOT="${EE_ARTIFACT_ROOT}" \
+            ANSIBLE_EE_DOCKER_CONFIG= ANSIBLE_EE_DOCKER_HOST=
       - name: Smoke Ansible execution environment
         run: |
           set -euo pipefail
@@ -1778,11 +1795,13 @@ jobs:
           cp config/ansible/requirements.txt dist/ee-release/ansible-ee-requirements.txt
           cp config/ansible/bindep.txt dist/ee-release/ansible-ee-bindep.txt
           cp config/ansible/runtime-lock.json dist/ee-release/ansible-ee-runtime-lock.json
+          cp config/ansible/collections.lock.json dist/ee-release/ansible-ee-collections.lock.json
           cp config/ansible/ee-smoke-settings.yml dist/ee-release/ansible-ee-smoke-settings.yml
           cp config/ansible/ee-smoke-limiter.toml dist/ee-release/ansible-ee-smoke-limiter.toml
           cp config/ansible/managed-host-python.lock.json dist/ee-release/ansible-managed-host-python.lock.json
           cp config/ansible/collection-python-boundary-inventory.json             dist/ee-release/ansible-collection-python-boundary-inventory.json
           cp dist/collections/*.tar.gz dist/ee-release/
+          cp "${EE_ARTIFACT_ROOT}"/*.tar.gz dist/ee-release/
 
           image_id=$(docker image inspect --format='{{.Id}}' "${EE_TAG}")
           image_ref="ghcr.io/${{ github.repository }}/ansible-ee@${image_id}"
@@ -1797,7 +1816,7 @@ jobs:
           {"version":"${VERSION}","checks":{"ansible_ee":"passed","collections":"passed"}}
           JSON
           cat > "dist/ee-release/gludd-collections-${VERSION}.json" <<JSON
-          {"version":"${VERSION}","artifacts":["general_ludd-agent-0.2.0.tar.gz","general_ludd-azure-0.2.0.tar.gz","general_ludd-language-0.1.0.tar.gz","general_ludd-networking-0.2.0.tar.gz"]}
+          {"version":"${VERSION}","artifacts":["ansible-posix-2.2.2.tar.gz","ansible-windows-3.8.0.tar.gz","azure-azcollection-3.21.0.tar.gz","cloud-terraform-4.0.0.tar.gz","community-crypto-3.4.0.tar.gz","community-general-13.5.0.tar.gz","community-library_inventory_filtering_v1-1.1.5.tar.gz","community-windows-3.3.0.tar.gz","general_ludd-agent-0.2.0.tar.gz","general_ludd-ai_ml-0.2.0.tar.gz","general_ludd-azure-0.2.0.tar.gz","general_ludd-infrastructure-0.2.0.tar.gz","general_ludd-language-0.1.0.tar.gz","general_ludd-networking-0.2.0.tar.gz","general_ludd-travel-0.1.0.tar.gz","general_ludd-xml-0.1.0.tar.gz"]}
           JSON
       - name: Upload execution-environment artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)

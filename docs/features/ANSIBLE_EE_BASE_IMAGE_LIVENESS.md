@@ -553,3 +553,48 @@ seconds under unchanged 90/60 bounds. Strict typing/Ruff, native seven-input
 runtime validation, Make parity/231 contracts and unchanged 256-resource
 ownership pass. This is bounded source/native-generation acceptance, not rebuilt
 image or item deployment proof.
+
+## Native controller virtual environment (2026-10-13)
+
+The retained Build `38451761526` also emits root-user pip warnings. PATH repairs
+console-script lookup, but does not change pip's installation environment. The
+definition now extracts the same checksum-pinned standalone runtime under
+`/opt/gludd/ansible-ee-runtime` and uses its maintained `python3.11 -m venv` to
+create `/opt/gludd/ansible-ee-python`. The public controller interpreter and PATH
+remain unchanged. Executable prefix assertions require the real controller venv
+and its private base runtime, alongside the original Python and SQLite checks.
+
+[pip 26.2.1's native warning owner](https://raw.githubusercontent.com/pypa/pip/26.2.1/src/pip/_internal/utils/misc.py)
+returns for an actual virtual environment before inspecting UID. This removes
+the warning's cause; no root-warning opt-out, logging filter, upstream source
+patch or installer replacement is used. Native Builder's ensurepip, Ansible
+installation, Galaxy helpers, assembly and final-install scripts remain enabled.
+All package/archive pins, SDK exclusions and isolated SearXNG metadata inputs
+retain their identities. Both the base runtime and controller venv remain in the
+candidate image.
+
+Creating Builder's temporary venv from the controller venv uses the original base
+Python, not the controller's installed packages. The existing explicit uv
+`PIPCMD` therefore still loads from the controller while `UV_PYTHON` selects
+`/tmp/venv/bin/python` during assembly. Controller system mode is now false,
+consistent with its real environment. An explicit absolute interpreter can
+bypass uv's system-discovery filter, so the old true value is not claimed to have
+caused a resolver failure. [CPython venv](https://docs.python.org/3.11/library/venv.html),
+[uv environment selection](https://docs.astral.sh/uv/pip/environments/).
+
+The [2021 pip user report](https://github.com/pypa/pip/issues/10556) records recurring
+root warnings; its suppression request is not adopted. The
+[December 2025 Ansible Builder forum report](https://forum.ansible.com/t/ansible-builder-failing-on-new-host/44937)
+shows successful installation, warnings and a subsequent mismatched-interpreter
+failure. These are distinct conditions, not reasons to ignore native checks.
+
+The new real-generation assertions fail before the definition changes. An
+artifact-only host probe also verifies native venv/ensurepip, nested environment
+selection and SQLite with automatic cleanup, but runs as UID 501 with Python
+3.11.14 and uv 0.11.17. It is not root/Linux or pinned-image execution proof.
+Direct upstream CLI generation retains three native handle warnings and is not
+accepted merely because it exits zero; the reviewed exclusive generation worker
+owns those handles. Required image build, warning-free full offline warm,
+coverage, exact-SHA hosted/full gate and deployment acceptance remain pending.
+The serving digest, new-job switch, in-flight drain and rollback remain unchanged;
+S98.4 stays open.

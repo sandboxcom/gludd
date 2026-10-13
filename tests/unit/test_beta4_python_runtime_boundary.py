@@ -157,8 +157,16 @@ def test_ee_build_target_forwards_namespaced_docker_config() -> None:
     target = next(item for item in contract["targets"] if item["name"] == "build-ansible-execution-environment")
     assert "ANSIBLE_EE_DOCKER_CONFIG ?=" in makefile
     assert "ANSIBLE_EE_DOCKER_HOST ?=" in makefile
-    assert 'DOCKER_CONFIG="$(ANSIBLE_EE_DOCKER_CONFIG)"' in makefile
-    assert 'DOCKER_HOST="$(ANSIBLE_EE_DOCKER_HOST)"' in makefile
+    unexported = {
+        name for line in makefile.splitlines() if line.startswith("unexport ")
+        for name in line.split()[1:]
+    }
+    for public in ("ANSIBLE_EE_DOCKER_CONFIG", "ANSIBLE_EE_DOCKER_HOST"):
+        private = public.replace("ANSIBLE_EE_", "GLUDD_EE_BUILD_")
+        assert f"export {private} := $(value {public})" in makefile
+        assert public in unexported
+    assert 'export DOCKER_CONFIG="$$GLUDD_EE_BUILD_DOCKER_CONFIG"' in makefile
+    assert 'export DOCKER_HOST="$$GLUDD_EE_BUILD_DOCKER_HOST"' in makefile
     assert "ANSIBLE_EE_DOCKER_CONFIG" in target["make_variables"]
     assert "ANSIBLE_EE_DOCKER_HOST" in target["make_variables"]
     assert "ANSIBLE_EE_DOCKER_CONFIG=/tmp/gludd-docker-config" in target["behavior"]

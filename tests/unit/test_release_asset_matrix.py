@@ -1,15 +1,18 @@
 """Tests for the fail-closed release asset matrix."""
 from __future__ import annotations
 
+import gzip
 import hashlib
 import io
 import json
+import shutil
 import stat
 import tarfile
 import zipfile
 from pathlib import Path
 
 import pytest
+from scripts import ansible_runtime_artifacts as runtime_artifacts
 from scripts.verify_release_asset_matrix import (
     FOUNDATION_RELEASE_NAMES,
     MAX_PUBLISHED_ROLLBACK_ERRORS,
@@ -30,6 +33,42 @@ PRIOR_VERSION = "0.1.0-beta.3"
 SOURCE_SHA = "a" * 40
 PRIOR_ROUTE_SHA256 = "b" * 64
 ACTIVE_WORK_SHA256 = "c" * 64
+FIXTURE_REVIEWED_LOCK_SHA256 = "sha256:e2b8dcbdf86fc5cdff63c6c3a85389560e17809bbe4da2b558f1204ddc10e705"
+
+
+@pytest.fixture(autouse=True)
+def trusted_fixture_review(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Supply reviewed test identity independently of every staged lock read."""
+    monkeypatch.setattr(runtime_artifacts, "bound_collection_lock_sha256",
+                        lambda: FIXTURE_REVIEWED_LOCK_SHA256)
+
+
+def _reviewed_fixture_entries(config: Path, assets: Path) -> None:
+    """Create tiny deterministic native metadata fixtures, not install/image proof."""
+    canonical = json.loads(runtime_artifacts.INPUTS["collection_lock"].read_text())
+    dependencies = {"community.general": {"community.library_inventory_filtering_v1": ">=1.0.0"},
+                    "community.windows": {"ansible.windows": ">=3.0.0,<4.0.0"}}
+    entries = []
+    for declared in canonical["collections"]:
+        namespace, name = declared["name"].split(".")
+        path = assets / declared["artifact"]
+        info = {"collection_info": {"namespace": namespace, "name": name, "version": declared["version"],
+                                    "dependencies": dependencies.get(declared["name"], {})}}
+        payloads = {"MANIFEST.json": json.dumps(info, sort_keys=True).encode(),
+                    "meta/runtime.yml": b"requires_ansible: '>=2.19,<2.22'\n"}
+        with (
+            path.open("wb") as output,
+            gzip.GzipFile(fileobj=output, mode="wb", mtime=0, filename="") as compressed,
+            tarfile.open(fileobj=compressed, mode="w") as archive,
+        ):
+            for filename, payload in payloads.items():
+                member = tarfile.TarInfo(filename)
+                member.size = len(payload)
+                archive.addfile(member, io.BytesIO(payload))
+        entries.append({**declared, "sha256": "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest(),
+                        "size": path.stat().st_size})
+    (config / "collections.lock.json").write_text(json.dumps({"schema_version": 1, "collections": entries},
+                                                            sort_keys=True, separators=(",", ":")) + "\n")
 
 
 def _collection_tar(path: Path, name: str, version: str) -> None:
@@ -146,19 +185,15 @@ def _complete_matrix(tmp_path: Path) -> tuple[Path, Path]:
     config = repo / "config" / "ansible"
     config.mkdir(parents=True)
     assets.mkdir()
-    (config / "requirements.yml").write_text(
-        "---\ncollections:\n"
-        "  - name: ../../dist/collections/general_ludd-agent-0.2.0.tar.gz\n"
-        "    type: file\n"
-        "  - name: ../../dist/collections/general_ludd-language-0.1.0.tar.gz\n"
-        "    type: file\n",
-        encoding="utf-8",
-    )
+    for name in ("requirements.yml", "execution-environment.yml", "runtime-lock.json"):
+        shutil.copyfile(runtime_artifacts.CONFIG_ROOT / name, config / name)
+    _reviewed_fixture_entries(config, assets)
+    runtime = json.loads((config / "runtime-lock.json").read_text())
+    runtime["inputs"]["collection_lock"] = FIXTURE_REVIEWED_LOCK_SHA256
+    (config / "runtime-lock.json").write_text(json.dumps(runtime))
     for name in (
-        "execution-environment.yml",
         "requirements.txt",
         "bindep.txt",
-        "runtime-lock.json",
         "managed-host-python.lock.json",
         "collection-python-boundary-inventory.json",
     ):
@@ -182,6 +217,7 @@ def _complete_matrix(tmp_path: Path) -> tuple[Path, Path]:
     _windows_zip(assets / f"gludd-{VERSION}-windows-x86_64.zip")
     for source_name, release_name in FOUNDATION_RELEASE_NAMES.items():
         (assets / release_name).write_bytes((config / source_name).read_bytes())
+    (assets / "ansible-ee-collections.lock.json").write_bytes((config / "collections.lock.json").read_bytes())
 
     install = assets / "install.sh"
     install.write_text("#!/usr/bin/env bash\nset -euo pipefail\n", encoding="utf-8")
@@ -202,7 +238,8 @@ def _complete_matrix(tmp_path: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
 
-    for filename in referenced_collection_artifacts(repo):
+    for _source, artifact in runtime_artifacts.COLLECTION_ARTIFACTS:
+        filename = artifact.name
         collection_name = filename.removeprefix("general_ludd-").split("-")[0]
         collection_version = filename.removesuffix(".tar.gz").rsplit("-", maxsplit=1)[1]
         _collection_tar(assets / filename, collection_name, collection_version)

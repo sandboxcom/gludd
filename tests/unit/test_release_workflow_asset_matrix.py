@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import yaml
+from scripts import ansible_runtime_artifacts as artifacts
 
 WORKFLOW = (
     Path(__file__).parents[2] / ".github" / "workflows" / "build.yml"
@@ -90,7 +91,7 @@ def test_execution_environment_smoke_uses_the_managed_python() -> None:
     """Ansible belongs to the EE interpreter, never ambient ``python3``."""
     script = _step_script("ansible-ee", "Smoke Ansible execution environment")
 
-    assert "/usr/bin/python3.11 -c" in script
+    assert f"{artifacts.CONTROLLER_PYTHON_PATH} -W error -c" in script
     assert ' python3 -c "import ansible' not in script
 
 

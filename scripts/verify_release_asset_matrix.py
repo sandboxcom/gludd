@@ -8,20 +8,27 @@ import hashlib
 import hmac
 import json
 import re
+import shutil
 import stat
 import sys
 import tarfile
+import tempfile
 import zipfile
 from email.parser import Parser
 from pathlib import Path
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import yaml
+from packaging.requirements import Requirement
 
 from general_ludd.git_release.release_state import (
     ReleaseState,
     ReleaseStateMachine,
     TransitionError,
 )
+from scripts import ansible_runtime_artifacts as runtime_artifacts
 
 FOUNDATION_RELEASE_NAMES = {
     "execution-environment.yml": "ansible-ee-execution-environment.yml",
@@ -29,6 +36,7 @@ FOUNDATION_RELEASE_NAMES = {
     "requirements.txt": "ansible-ee-requirements.txt",
     "bindep.txt": "ansible-ee-bindep.txt",
     "runtime-lock.json": "ansible-ee-runtime-lock.json",
+    "collections.lock.json": "ansible-ee-collections.lock.json",
     "managed-host-python.lock.json": "ansible-managed-host-python.lock.json",
     "collection-python-boundary-inventory.json": (
         "ansible-collection-python-boundary-inventory.json"
@@ -82,12 +90,15 @@ def distribution_version(version: str) -> str:
     return re.sub(r"-rc\.", "rc", normalized, flags=re.IGNORECASE)
 
 
-def referenced_collection_artifacts(repository_root: Path) -> set[str]:
-    """Return collection tarball basenames locked by the canonical EE requirements."""
+def _local_collection_artifacts(repository_root: Path) -> set[str]:
+    """Retain original explicitly referenced local Gludd archive identities."""
     requirements = repository_root / "config" / "ansible" / "requirements.yml"
     if not requirements.is_file():
         return set()
-    raw: object = yaml.safe_load(requirements.read_text(encoding="utf-8"))
+    try:
+        raw: object = yaml.safe_load(requirements.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return set()
     if not isinstance(raw, dict):
         return set()
     collections: object = raw.get("collections")
@@ -101,6 +112,80 @@ def referenced_collection_artifacts(repository_root: Path) -> set[str]:
         if isinstance(name, str) and name.endswith(".tar.gz"):
             artifacts.add(Path(name).name)
     return artifacts
+
+
+def _reviewed_release_collection_entries(repository_root: Path) -> list[runtime_artifacts.CollectionArtifactEntry]:
+    """Reuse canonical independent approval, never sample staged bytes as trust."""
+    expected = runtime_artifacts.bound_collection_lock_sha256()
+    config = repository_root / "config/ansible"
+    requirements = config / "requirements.yml"
+    if "sha256:" + _sha256_file(requirements) != runtime_artifacts._reviewed_runtime_input_hash("galaxy"):
+        raise ValueError("canonical collection requirements differ from the reviewed runtime input")
+    manifest, error = _json_object(config / "runtime-lock.json")
+    inputs = manifest.get("inputs")
+    if error or not isinstance(inputs, dict) or inputs.get("collection_lock") != expected:
+        raise ValueError("runtime lock must independently bind the reviewed collection closure")
+    return runtime_artifacts._collection_lock_entries(config / "collections.lock.json", expected,
+                                                       runtime_artifacts.required_collection_versions())
+
+
+def referenced_collection_artifacts(repository_root: Path) -> set[str]:
+    """Return original local files plus the independently admitted native closure."""
+    artifacts = _local_collection_artifacts(repository_root)
+    try:
+        entries = _reviewed_release_collection_entries(repository_root)
+    except Exception:
+        # This read-only reference helper has no error channel. The matrix owner
+        # below collects the same admission failure; it never treats this as proof.
+        return artifacts
+    return artifacts | {entry["artifact"] for entry in entries}
+
+
+def _verify_reviewed_release_archives(
+    asset_dir: Path, repository_root: Path, entries: list[runtime_artifacts.CollectionArtifactEntry],
+) -> list[str]:
+    """Reuse Galaxy's metadata/graph owner with the reviewed expected digests."""
+    errors: list[str] = []
+    inventory: dict[str, tuple[str, dict[str, str]]] = {}
+    try:
+        definition_path = repository_root / "config/ansible/execution-environment.yml"
+        if "sha256:" + _sha256_file(definition_path) != runtime_artifacts._reviewed_runtime_input_hash("definition"):
+            raise ValueError("canonical collection controller definition differs from its reviewed input")
+        definition: object = yaml.safe_load(definition_path.read_text(encoding="utf-8"))
+        dependencies = definition.get("dependencies") if isinstance(definition, dict) else None
+        core = dependencies.get("ansible_core") if isinstance(dependencies, dict) else None
+        package = core.get("package_pip") if isinstance(core, dict) else None
+        if not isinstance(package, str):
+            raise ValueError("collection controller definition requires one exact Ansible Core pin")
+        parsed = Requirement(package)
+        pins = list(parsed.specifier)
+        if parsed.name != "ansible-core" or len(pins) != 1 or pins[0].operator != "==":
+            raise ValueError("collection controller definition requires one exact Ansible Core pin")
+        controller_version = pins[0].version
+    except Exception as exc:
+        return [f"reviewed native collection controller admission failed: {exc}"]
+    project = hashlib.sha256(str(repository_root).encode()).hexdigest()[:12]
+    with tempfile.TemporaryDirectory(prefix=f"gludd-ee-release-{project}-") as temporary:
+        state = Path(temporary)
+        copied = state / "archives"
+        copied.mkdir()
+        for entry in entries:
+            try:
+                source = asset_dir / entry["artifact"]
+                if source.is_symlink() or not source.is_file():
+                    raise ValueError(f"collection artifact is missing or unsafe: {entry['name']}")
+                shutil.copyfile(source, copied / entry["artifact"])
+                inventory.update(runtime_artifacts._collection_archive_inventory(
+                    state, [entry], copied, controller_version=controller_version,
+                ))
+            except Exception as exc:
+                errors.append(f"{entry['artifact']}: reviewed native collection admission failed: {exc}")
+        try:
+            runtime_artifacts._validate_collection_dependencies(inventory,
+                                                                {entry["name"]: entry["version"] for entry in entries})
+        except Exception as exc:
+            errors.append(f"reviewed native collection dependency admission failed: {exc}")
+    return errors
 
 
 def _json_object(path: Path) -> tuple[dict[str, object], str | None]:
@@ -1012,7 +1097,20 @@ def verify_release_asset_matrix(
         elif source.read_bytes() != artifact.read_bytes():
             errors.append(f"stale execution-environment metadata: {release_name}")
 
-    collections = referenced_collection_artifacts(repository_root)
+    collections = _local_collection_artifacts(repository_root)
+    original_local = {artifact.name for _source, artifact in runtime_artifacts.COLLECTION_ARTIFACTS}
+    if collections != original_local:
+        errors.append("canonical execution environment must retain exactly the original eight Gludd file artifacts")
+    try:
+        reviewed = _reviewed_release_collection_entries(repository_root)
+    except Exception as exc:
+        errors.append(f"reviewed collection lock admission failed: {exc}")
+    else:
+        collections.update(entry["artifact"] for entry in reviewed)
+        try:
+            errors.extend(_verify_reviewed_release_archives(asset_dir, repository_root, reviewed))
+        except Exception as exc:
+            errors.append(f"reviewed native collection archive teardown failed: {exc}")
     if not collections:
         errors.append("canonical execution environment references no collection artifacts")
     for filename in sorted(collections):

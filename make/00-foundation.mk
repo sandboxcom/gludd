@@ -413,6 +413,7 @@ help:
 	@echo "  clean-hf-cache             Diagnose/reclaim Gludd-owned unleased models (CLEAN_HF_CACHE_ROOT, CLEAN_HF_CACHE_REQUIRED_BYTES, CLEAN_HF_CACHE_VALIDATE_ONLY=0|1)"
 	@echo "  validate-ansible-runtime-boundary  Validate split core/controller/managed-host artifacts"
 	@echo "  build-ansible-execution-environment  Build the locked controller EE (ANSIBLE_EE_*)"
+	@echo "  prepare-ansible-execution-environment-context Prepare one reviewed native context without image build (ANSIBLE_EE_*)"
 	@echo "  verify-ansible-execution-environment Verify one digest-addressed controller EE (ANSIBLE_EE_*)"
 	@echo "  check-collection-python-boundary Enforce exact/strict-zero collection migration inventory"
 	@echo "  check-resource-ownership Enforce exact application acquisition-to-teardown evidence (RESOURCE_OWNERSHIP_*)"
@@ -1031,8 +1032,18 @@ ANSIBLE_EE_VALIDATE_ONLY ?= 1
 ANSIBLE_EE_RUNTIME ?= podman
 ANSIBLE_EE_IMAGE ?= gludd-ansible-ee:0.1.0-beta.4
 ANSIBLE_EE_CONTEXT ?= /tmp/gludd-ansible-ee-context
+ANSIBLE_EE_ARTIFACT_ROOT ?= dist/collections/third-party
 ANSIBLE_EE_DOCKER_CONFIG ?=
 ANSIBLE_EE_DOCKER_HOST ?=
+export GLUDD_EE_BUILD_VALIDATE_ONLY := $(value ANSIBLE_EE_VALIDATE_ONLY)
+export GLUDD_EE_BUILD_RUNTIME := $(value ANSIBLE_EE_RUNTIME)
+export GLUDD_EE_BUILD_IMAGE := $(value ANSIBLE_EE_IMAGE)
+export GLUDD_EE_BUILD_CONTEXT := $(value ANSIBLE_EE_CONTEXT)
+export GLUDD_EE_BUILD_ARTIFACT_ROOT := $(value ANSIBLE_EE_ARTIFACT_ROOT)
+export GLUDD_EE_BUILD_DOCKER_CONFIG := $(value ANSIBLE_EE_DOCKER_CONFIG)
+export GLUDD_EE_BUILD_DOCKER_HOST := $(value ANSIBLE_EE_DOCKER_HOST)
+unexport ANSIBLE_EE_VALIDATE_ONLY ANSIBLE_EE_RUNTIME ANSIBLE_EE_IMAGE ANSIBLE_EE_CONTEXT
+unexport ANSIBLE_EE_ARTIFACT_ROOT ANSIBLE_EE_DOCKER_CONFIG ANSIBLE_EE_DOCKER_HOST
 COLLECTION_PYTHON_BOUNDARY_ROOT ?= collections/ansible_collections
 COLLECTION_PYTHON_BOUNDARY_INVENTORY ?= config/ansible/collection-python-boundary-inventory.json
 COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO ?= 0
@@ -1134,8 +1145,33 @@ inspect-ansible-searxng-source:
 		done
 
 build-ansible-execution-environment:
-	@case "$(ANSIBLE_EE_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@$(if $(strip $(ANSIBLE_EE_DOCKER_CONFIG)),DOCKER_CONFIG="$(ANSIBLE_EE_DOCKER_CONFIG)") $(if $(strip $(ANSIBLE_EE_DOCKER_HOST)),DOCKER_HOST="$(ANSIBLE_EE_DOCKER_HOST)") $(UV) run python scripts/ansible_runtime_artifacts.py build --runtime "$(ANSIBLE_EE_RUNTIME)" --image "$(ANSIBLE_EE_IMAGE)" --context "$(ANSIBLE_EE_CONTEXT)" $(if $(filter 1,$(ANSIBLE_EE_VALIDATE_ONLY)),--validate-only,)
+	@# Literal ANSIBLE_EE_RUNTIME -> GLUDD_EE_BUILD_RUNTIME; ANSIBLE_EE_IMAGE -> GLUDD_EE_BUILD_IMAGE.
+	@# Literal ANSIBLE_EE_CONTEXT -> GLUDD_EE_BUILD_CONTEXT; optional Docker fields preserve inherited defaults.
+	@# ANSIBLE_EE_DOCKER_CONFIG -> GLUDD_EE_BUILD_DOCKER_CONFIG; ANSIBLE_EE_DOCKER_HOST -> GLUDD_EE_BUILD_DOCKER_HOST.
+	@set -eu; \
+	case "$$GLUDD_EE_BUILD_VALIDATE_ONLY" in 0) set -- ;; 1) set -- --validate-only ;; \
+		*) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac; \
+	test -n "$$GLUDD_EE_BUILD_ARTIFACT_ROOT" || { echo "ANSIBLE_EE_ARTIFACT_ROOT is required"; exit 2; }; \
+	if [ -n "$$GLUDD_EE_BUILD_DOCKER_CONFIG" ]; then export DOCKER_CONFIG="$$GLUDD_EE_BUILD_DOCKER_CONFIG"; fi; \
+	if [ -n "$$GLUDD_EE_BUILD_DOCKER_HOST" ]; then export DOCKER_HOST="$$GLUDD_EE_BUILD_DOCKER_HOST"; fi; \
+	$(UV) run python scripts/ansible_runtime_artifacts.py build \
+		--runtime "$$GLUDD_EE_BUILD_RUNTIME" --image "$$GLUDD_EE_BUILD_IMAGE" \
+		--context "$$GLUDD_EE_BUILD_CONTEXT" --artifact-root "$$GLUDD_EE_BUILD_ARTIFACT_ROOT" "$$@"
+
+.PHONY: prepare-ansible-execution-environment-context
+prepare-ansible-execution-environment-context:
+	@# Literal ANSIBLE_EE_RUNTIME -> GLUDD_EE_BUILD_RUNTIME; ANSIBLE_EE_IMAGE -> GLUDD_EE_BUILD_IMAGE.
+	@# Literal ANSIBLE_EE_CONTEXT -> GLUDD_EE_BUILD_CONTEXT; optional Docker fields preserve inherited defaults.
+	@# ANSIBLE_EE_DOCKER_CONFIG -> GLUDD_EE_BUILD_DOCKER_CONFIG; ANSIBLE_EE_DOCKER_HOST -> GLUDD_EE_BUILD_DOCKER_HOST.
+	@set -eu; \
+	case "$$GLUDD_EE_BUILD_VALIDATE_ONLY" in 0) set -- ;; 1) set -- --validate-only ;; \
+		*) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac; \
+	test -n "$$GLUDD_EE_BUILD_ARTIFACT_ROOT" || { echo "ANSIBLE_EE_ARTIFACT_ROOT is required"; exit 2; }; \
+	if [ -n "$$GLUDD_EE_BUILD_DOCKER_CONFIG" ]; then export DOCKER_CONFIG="$$GLUDD_EE_BUILD_DOCKER_CONFIG"; fi; \
+	if [ -n "$$GLUDD_EE_BUILD_DOCKER_HOST" ]; then export DOCKER_HOST="$$GLUDD_EE_BUILD_DOCKER_HOST"; fi; \
+	$(UV) run python scripts/ansible_runtime_artifacts.py prepare-context \
+		--runtime "$$GLUDD_EE_BUILD_RUNTIME" --image "$$GLUDD_EE_BUILD_IMAGE" \
+		--context "$$GLUDD_EE_BUILD_CONTEXT" --artifact-root "$$GLUDD_EE_BUILD_ARTIFACT_ROOT" "$$@"
 
 verify-ansible-execution-environment:
 	@case "$(ANSIBLE_EE_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
