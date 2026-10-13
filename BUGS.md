@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Hosted isolated lane found a duplicate public help row
+
+- Build run `38325261900`, job `115065438271`, failed the original `TestHelpNoDupTargets::test_no_duplicate_help_entries` because `clean-stale-resource-namespaces` had been appended to help instead of replacing its older description.
+- The original native test failed first. The source now has one combined description; no test exclusions or cleanup ownership/link guards changed. The unchanged 35-case isolated cohort passes in 4.61s.
+- Its exact failing node is promoted into a second, fresh-process invocation inside the existing early owner. It is deliberately not mixed into the general cohort; the 90s/60s bound and exhaustive release gate remain required.
+- Native repair only; exact hosted successor proof is still required.
+
 ### 2026-10-12 — a bounded CI context window still emitted an unbounded assertion line
 
 - **Observed**: The exact failed private-policy job emits more than 60,000 tokens inside one workflow-representation assertion. Line/match limits do not bound that output, wasting context and obscuring the actionable failure.

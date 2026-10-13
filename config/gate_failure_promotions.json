@@ -488,6 +488,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_shards_log_context_bounds.py::test_cumulative_bound_preserves_source_order_and_declares_omitted_context",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "make-help-duplicate-admission",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries",
+      "full_gate_phase": "test"
     }
   ]
 }

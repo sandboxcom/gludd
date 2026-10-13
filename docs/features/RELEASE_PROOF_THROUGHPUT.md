@@ -130,6 +130,16 @@ edge without skipping authoritative downstream checks.
 
 ## Hosted shard scheduling and automatic timing
 
+### Fresh-process help admission
+
+Hosted Build `38325261900` exposed a duplicate public help row in its isolated
+lane. The original assertion failed natively before the source description was
+consolidated; all 35 original isolated cases now pass in 4.61 seconds. The failing
+help node runs in its own second pytest process inside the existing early owner,
+not in the combined cohort. Routing and roster regressions fail first; neither
+the owner's 90-second runtime/60-second quiet limits nor the exhaustive gate are
+relaxed. A native repair is not an exact hosted resolution or release proof.
+
 ### Byte-bounded failure context
 
 Exact job context must be bounded in bytes, not only lines. One failed workflow

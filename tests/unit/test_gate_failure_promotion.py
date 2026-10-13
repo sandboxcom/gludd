@@ -936,6 +936,33 @@ def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
     assert payload["full_gate_required"] is True
 
 
+def test_duplicate_help_failure_runs_in_a_fresh_early_process() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(
+        family for family in payload["families"]
+        if family["id"] == "make-help-duplicate-admission"
+    )
+    node = (
+        "tests/unit/test_makefile_audit_deep.py::"
+        "TestHelpNoDupTargets::test_no_duplicate_help_entries"
+    )
+    assert family == {
+        "id": "make-help-duplicate-admission",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    recipes = owner.split("\t@$(MAKE) --no-print-directory test-files")
+    assert len(recipes) == 3
+    assert "tests/unit/test_makefile_audit_deep.py" not in recipes[1]
+    assert f'TESTFILES="{node}"' in recipes[2]
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in recipes[2]
+    phase = next(phase for phase in payload["runtime_contract"]["phases"]
+                 if phase["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
@@ -988,6 +1015,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ee-complete-offline-build-acceptance",
         "ee-immutable-built-image-acceptance",
         "ci-failure-context-output-byte-bound",
+        "make-help-duplicate-admission",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
