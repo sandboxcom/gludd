@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Ansible escaping changed process identity into thread count
+
+- Molecule run 38336411530, job 115097379679, refused packaged-daemon teardown with expected start ticks 1 and observed ticks 2 although both executables matched. The startup and teardown regexes each retained the comm prefix after Ansible's lexer preserved their literal backslashes, making split index 19 read num_threads instead of immutable starttime.
+- Real Ansible template regressions reproduce 21 failures with 17 passes. Both facts now use the existing string rsplit/split operations to select field 22 after the last closing comm delimiter; spaces, nested parentheses and newlines no longer shift the index.
+- All 102 related cases pass under Python 3.14/Ansible 2.21 and the existing Python 3.11.14/Ansible 2.19 environment. Positive pinned starttime, exact PID and executable, liveness recheck, reused/foreign refusal, exact-PID signal and bounded endpoint/PID-record release remain intact. No daemon is started by these controller-only tests.
+- The unrelated legacy check-molecule-yaml target also reports 21 existing scenario-layout findings outside these edits; it is not substituted for the canonical lifecycle suite or treated as passing. Exact hosted Molecule replay and the full canonical gate remain required.
+
 ### 2026-10-13 — Pure-Python workflow parsing consumes the bounded early cohort
 
 - Build run 38336411509 at 6ba81dd5 succeeds in Python 3.11 quality but Python 3.12 times out its known-runtime owner at 90.0s, with passing cases reaching 89% completion. Repeated simple workflow checks show roughly 0.1s between cases; their helpers reparse the full YAML through the Python SafeLoader on every call.

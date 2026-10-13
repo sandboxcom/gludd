@@ -113,6 +113,41 @@ internal actions because canonical names avoid ambiguity and redirect overhead:
 
 ## Verification
 
+### Packaged-daemon process identity
+
+The 2026-10-13 Molecule run 38336411530 refused teardown because the pinned
+identity changed from 1 to 2 while the executable stayed unchanged. Real
+Ansible templating reproduced this as thread-count extraction: escaped regex
+whitespace did not remove the process-name prefix. Linux `/proc/PID/stat`
+field 20 is thread count; field 22 is immutable process start time.
+
+Startup and teardown now use `stdout.rsplit(')', 1)[1].split()[19]`. This
+standard string operation selects field 22 after the final process-name
+delimiter, tolerating spaces, parentheses and newlines without regex escaping.
+The [Linux stat specification](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html)
+and [Python rsplit contract](https://docs.python.org/3/library/stdtypes.html#str.rsplit)
+define this layout and operation. No replacement parser or dependency is added.
+
+The [Ansible regex documentation discussion from January 2024](https://github.com/ansible/ansible-documentation/issues/1086)
+records another long-lived backslash-sensitive template failure. That forum
+report supports avoiding unnecessary escaping; it is not evidence of this
+specific field-index defect. The regression instead invokes the real Ansible
+`Templar` and template-trust API against both actual YAML facts.
+
+Fail-first verification records 21 failures and 17 passes. After the two
+expression changes, all 102 process-identity and lifecycle cases pass on both
+Python 3.14/Ansible 2.21 and Python 3.11.14/Ansible 2.19. The existing environment
+is reused without allocating or synchronizing another toolchain.
+
+PID equality, positive pinned start time, executable identity, liveness
+recheck, foreign/reused-PID refusal, exact-PID signalling, and bounded endpoint
+and PID-record release remain unchanged. These tests launch no daemon or
+container and alter no serving process. Hosted Molecule replay and the full
+canonical release gate remain mandatory; controller-level success is not a
+completed release proof.
+
+### Retained verification owners
+
 - `tests/unit/test_molecule_playbooks_deep.py` validates all registered
   scenario YAML, lifecycle ordering, action identity, and configured paths.
 - `tests/unit/test_molecule_mock_daemon_lifecycle.py` validates namespaced

@@ -82,12 +82,7 @@
 - name: Decode the current packaged daemon start identity
   ansible.builtin.set_fact:
     _binary_daemon_current_start_ticks: >-
-      {{
-        (
-          _binary_daemon_stat.stdout
-          | regex_replace('^.*[)]\\s+', '')
-        ).split()[19]
-      }}
+      {{ _binary_daemon_stat.stdout.rsplit(')', 1)[1].split()[19] }}
   when:
     - _binary_daemon_pidfile.stat.exists
     - _binary_daemon_ps.rc == 0

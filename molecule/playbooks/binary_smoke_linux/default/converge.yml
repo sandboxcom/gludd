@@ -195,12 +195,7 @@
     - name: Pin the packaged daemon process identity
       ansible.builtin.set_fact:
         daemon_process_start_ticks: >-
-          {{
-            (
-              daemon_process_stat.stdout
-              | regex_replace('^.*[)]\\s+', '')
-            ).split()[19]
-          }}
+          {{ daemon_process_stat.stdout.rsplit(')', 1)[1].split()[19] }}
 
     - name: Validate the packaged daemon process identity
       ansible.builtin.assert:
