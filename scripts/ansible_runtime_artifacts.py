@@ -10,6 +10,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -17,7 +18,7 @@ import tomllib
 from importlib import import_module, metadata
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.request import Request, urlopen
 
 import yaml
@@ -641,6 +642,84 @@ def _build_collection_artifacts() -> int:
     return 0
 
 
+def _built_image_id(path: Path) -> str:
+    """Read one bounded, owned builder result without following links."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        identity = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(identity.st_mode)
+            or identity.st_uid != os.getuid()
+            or identity.st_nlink != 1
+            or not 0 < identity.st_size <= 80
+        ):
+            raise ValueError("built image ID must be a bounded owned regular file")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            image = handle.read(81).decode("ascii").strip()
+    finally:
+        os.close(descriptor)
+    if DIGEST_RE.fullmatch(image) is None:
+        raise ValueError("built image ID must be one full sha256 identity")
+    return image
+
+
+def _smoke_environment(runtime: str, image: str) -> int:
+    """Warm the complete controller and OpenTofu offline in owned containers."""
+    interpreter = cast(
+        dict[str, str], EXPECTED_DEPENDENCIES["python_interpreter"]
+    )["python_path"]
+    project = hashlib.sha256(str(ROOT).encode()).hexdigest()[:12]
+    namespace = f"gludd-ansible-ee-{project}-{os.getpid()}"
+    smoke_commands = (
+        (
+            "opentofu",
+            [
+                runtime,
+                "run",
+                "--rm",
+                "--network=none",
+                "--pull=never",
+                "--name",
+                f"{namespace}-opentofu",
+                image,
+                "/usr/local/bin/tofu",
+                "version",
+            ],
+        ),
+        (
+            "python",
+            [
+                runtime,
+                "run",
+                "--rm",
+                "--network=none",
+                "--pull=never",
+                "--name",
+                f"{namespace}-python",
+                image,
+                interpreter,
+                "-c",
+                "import "
+                + ", ".join(EXPECTED_CONTROLLER_IMPORTS)
+                + "; print('ANSIBLE_EE_IMPORT_OK')",
+            ],
+        ),
+    )
+    for phase, command in smoke_commands:
+        print(
+            f"ANSIBLE_EE_SMOKE_START phase={phase} runtime={runtime} image={image}",
+            flush=True,
+        )
+        result = subprocess.run(command, check=False)
+        print(
+            f"ANSIBLE_EE_SMOKE_END phase={phase} rc={result.returncode}",
+            flush=True,
+        )
+        if result.returncode != 0:
+            return result.returncode
+    return 0
+
+
 def build_environment(runtime: str, image: str, context: Path, validate_only: bool) -> int:
     """Build through ansible-builder after fail-closed input validation."""
     errors = validate_files()
@@ -671,24 +750,40 @@ def build_environment(runtime: str, image: str, context: Path, validate_only: bo
     if collection_status != 0:
         return collection_status
     context.mkdir(parents=True, exist_ok=True)
-    command = [
-        sys.executable,
-        "-m",
-        "ansible_builder",
-        "build",
-        "--file",
-        str(DEFINITION),
-        "--context",
-        str(context),
-        "--tag",
-        image,
-        "--container-runtime",
-        runtime,
-    ]
-    print(f"ANSIBLE_EE_BUILD_START runtime={runtime} tag={image} context={context}", flush=True)
-    result = subprocess.run(command, cwd=ROOT, check=False)
-    print(f"ANSIBLE_EE_BUILD_END rc={result.returncode}", flush=True)
-    return result.returncode
+    project = hashlib.sha256(str(ROOT).encode()).hexdigest()[:12]
+    with tempfile.TemporaryDirectory(
+        prefix=f"gludd-ansible-ee-{project}-{os.getpid()}-"
+    ) as temporary:
+        image_id_path = Path(temporary) / "built-image-id"
+        command = [
+            sys.executable,
+            "-m",
+            "ansible_builder",
+            "build",
+            "--file",
+            str(DEFINITION),
+            "--context",
+            str(context),
+            "--tag",
+            image,
+            "--container-runtime",
+            runtime,
+            "--extra-build-cli-args="
+            + shlex.join(["--iidfile", str(image_id_path)]),
+        ]
+        print(f"ANSIBLE_EE_BUILD_START runtime={runtime} tag={image} context={context}", flush=True)
+        result = subprocess.run(command, cwd=ROOT, check=False)
+        status = result.returncode
+        if status == 0:
+            try:
+                built_image = _built_image_id(image_id_path)
+            except (OSError, ValueError) as exc:
+                print(f"Ansible EE built image identity failed: {exc}", file=sys.stderr, flush=True)
+                status = 1
+            else:
+                status = _smoke_environment(runtime, built_image)
+    print(f"ANSIBLE_EE_BUILD_END rc={status}", flush=True)
+    return status
 
 
 def verify_environment(runtime: str, image: str, validate_only: bool) -> int:
@@ -712,48 +807,7 @@ def verify_environment(runtime: str, image: str, validate_only: bool) -> int:
     inspect = subprocess.run([runtime, "image", "inspect", image], check=False)
     if inspect.returncode != 0:
         return inspect.returncode
-    smoke_commands = (
-        (
-            "opentofu",
-            [
-                runtime,
-                "run",
-                "--rm",
-                "--network=none",
-                image,
-                "/usr/local/bin/tofu",
-                "version",
-            ],
-        ),
-        (
-            "python",
-            [
-                runtime,
-                "run",
-                "--rm",
-                "--network=none",
-                image,
-                "python3",
-                "-c",
-                "import "
-                + ", ".join(EXPECTED_CONTROLLER_IMPORTS)
-                + "; print('ANSIBLE_EE_IMPORT_OK')",
-            ],
-        ),
-    )
-    for phase, command in smoke_commands:
-        print(
-            f"ANSIBLE_EE_SMOKE_START phase={phase} runtime={runtime} image={image}",
-            flush=True,
-        )
-        result = subprocess.run(command, check=False)
-        print(
-            f"ANSIBLE_EE_SMOKE_END phase={phase} rc={result.returncode}",
-            flush=True,
-        )
-        if result.returncode != 0:
-            return result.returncode
-    return 0
+    return _smoke_environment(runtime, image)
 
 
 def main(argv: list[str] | None = None) -> int:

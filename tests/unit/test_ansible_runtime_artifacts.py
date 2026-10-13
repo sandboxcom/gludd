@@ -1390,6 +1390,14 @@ def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monk
         if command[:3] == ["ansible-galaxy", "collection", "build"]:
             index = len(calls) - 1
             collection_artifacts[index][1].write_bytes(b"collection")
+        elif command[:4] == [sys.executable, "-m", "ansible_builder", "build"]:
+            forwarded = next(
+                arg.partition("=")[2] for arg in command
+                if arg.startswith("--extra-build-cli-args=")
+            )
+            capture = shlex.split(forwarded)
+            assert len(capture) == 2 and capture[0] == "--iidfile"
+            Path(capture[1]).write_text("sha256:" + "c" * 64 + "\n", encoding="ascii")
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(subprocess, "run", fake_run)

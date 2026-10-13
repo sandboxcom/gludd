@@ -337,3 +337,40 @@ unchanged 85/75 floors. The two additional early families bind Linux transitive
 parity and complete-assembly contract acceptance, not a mocked solver success
 claim. The 217-target contract and actual safe example pass. This evidence is
 not a complete real collection solve or replacement image proof.
+
+## Complete offline acceptance of the built image — 2026-10-12
+
+Build success now requires the same complete OpenTofu/controller warm used by
+digest-addressed verification. Both phases run the captured build ID, never a
+mutable tag, with no network or pull, automatic container removal, and names
+derived from the project root, PID and phase. Python comes from the validator's
+`/usr/bin/python3.11` boundary; all nine existing imports remain mandatory.
+Any build, identity or smoke failure rejects acceptance before later work.
+
+The [locked Builder CLI][builder-iid-cli] forwards its existing extra-build
+arguments through [shlex splitting][builder-iid-forwarding]. A unique private
+temporary directory therefore captures the runtime's image ID without an
+extra build or post-build tag lookup. Reads require one bounded, owned regular
+single-link SHA-256 file, reject links and nonregular inputs, and close the raw
+descriptor even if wrapper construction fails. The existing resource inventory
+admits the context-managed owner; no image, environment or serving ref is removed.
+
+The first-hand [2023 Docker operator report][iidfile-operator] explains why an
+image-ID filename must not be substituted with stdout or a pipe. Gludd uses a
+private real file rather than inferring identity from streamed build output.
+This historical report supports the design, not a claim of a reproduced runtime
+bug in today's toolchain.
+
+Acceptance fails 22 of 30 cases first, then the descriptor-failure case fails
+separately. All 134 related cases pass with warnings fatal, and all 115 coverage
+cases pass at 92% combined coverage, above unchanged 85/75 floors. The original
+successful-build fixture now produces the required image-ID file while retaining
+every original assertion. Four routing/roster/wiring cases fail first, then all
+47 promotion/plan cases pass with 46 families and unchanged phase budgets.
+The public plan behaviors, strict typing, Ruff and docstrings pass. Actual
+replacement hosted full warm, canonical full gate and exhaustive coverage remain
+required; the earlier hosted partial-import smoke is not this proof.
+
+[builder-iid-cli]: https://raw.githubusercontent.com/ansible/ansible-builder/3.1.1/src/ansible_builder/cli.py
+[builder-iid-forwarding]: https://raw.githubusercontent.com/ansible/ansible-builder/3.1.1/src/ansible_builder/main.py
+[iidfile-operator]: https://github.com/moby/moby/issues/46571

@@ -853,6 +853,36 @@ def test_cli_rejects_missing_invalid_and_oversized_manifests(
         checker._load_manifest(oversized)
 
 
+@pytest.mark.parametrize(
+    ("family_id", "test_name"),
+    [
+        ("ee-complete-offline-build-acceptance",
+         "test_acceptance_warms_all_controller_imports_with_owned_offline_containers"),
+        ("ee-immutable-built-image-acceptance",
+         "test_build_warms_captured_image_after_candidate_tag_can_be_retargeted"),
+    ],
+)
+def test_full_ee_acceptance_executes_before_hosted_fanout(
+    family_id: str, test_name: str,
+) -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(family for family in payload["families"] if family["id"] == family_id)
+    node = f"tests/unit/test_ansible_ee_full_warm_acceptance.py::{test_name}"
+    assert family == {
+        "id": family_id, "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in owner
+    assert node.split("::", 1)[0] in executable
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1"' in executable
+    phase = next(phase for phase in payload["runtime_contract"]["phases"]
+                 if phase["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(
@@ -928,6 +958,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "native-artifact-literal-argument-transport",
         "producer-current-capacity-proof-admission",
         "private-policy-hosted-matrix-membership",
+        "ee-complete-offline-build-acceptance",
+        "ee-immutable-built-image-acceptance",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1079,6 +1111,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_enhancement_ratio_plugin.py '
         'tests/unit/test_pytest_param_fixture_collisions.py '
         'tests/unit/test_ansible_runtime_artifacts.py '
+        'tests/unit/test_ansible_ee_full_warm_acceptance.py '
         'tests/unit/test_beta4_python_runtime_boundary.py '
         'tests/unit/test_ansible_searxng_source_inspection.py '
         'tests/unit/test_integration_admission_target.py '

@@ -467,6 +467,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_self_improve_private_policy_ci_contract.py::test_private_policy_e2e_has_one_local_and_hosted_release_contract",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-complete-offline-build-acceptance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_ee_full_warm_acceptance.py::test_acceptance_warms_all_controller_imports_with_owned_offline_containers",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "ee-immutable-built-image-acceptance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ansible_ee_full_warm_acceptance.py::test_build_warms_captured_image_after_candidate_tag_can_be_retargeted",
+      "full_gate_phase": "test"
     }
   ]
 }

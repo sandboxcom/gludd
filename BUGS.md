@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — successful EE assembly did not prove the complete offline controller
+
+- **Observed**: The public build owner returned Builder's status without executing the verifier's complete nine-import warm. Verification used ambient Python instead of the validator's explicit 3.11 interpreter. Source review also found that separate mutable-tag resolutions could smoke different builds.
+- **Codified repair**: Reuse one complete offline smoke helper in build and digest-addressed verify. Capture the actual built identity through locked Builder's supported image-ID output, validate a bounded private owned regular single-link file, and run both phases with that ID, no pull/network, automatic removal, and project/PID/phase names. Raw descriptors close even on wrapper-construction failure; failures stop later work.
+- **Acceptance**: Thirty cases reproduce 22 failures first; descriptor construction fails separately. All 134 related cases and all 115 coverage cases pass with warnings fatal at 92% combined coverage. The original build fixture conforms only by simulating the new required ID output; every assertion remains. Four early-routing/roster/wiring cases fail first, then all 47 promotion/plan cases pass with 46 families and unchanged budgets. The existing inventory adds one context-managed owner, retaining every previous owner.
+- **Boundary**: The feature guide records the long-lived first-hand image-ID pipe report and locked primary CLI support. Replacement hosted complete warm, canonical full gate/coverage and final exact-source review remain required; no release or additional completed backlog proof is claimed from mocks.
+
 ### 2026-10-12 — private-policy CI contract accidentally pinned shard creation order
 
 - **Observed**: Build `38325261900`, job `115065438148`, fails the original private-policy contract because the string assertion requires `other` to be last. Native replay reproduces that failure after the requested long-lane-first scheduling change; matrix membership and privacy routing are unchanged.
