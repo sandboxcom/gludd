@@ -163,6 +163,48 @@ metadata and log errors, empty responses, context bounds, and owned-file
 cleanup. Focused diagnostics remain separate from terminal workflow inventory
 and exact-SHA release proof.
 
+### Complete inventory through native pagination
+
+`fetch_run` keeps GitHub CLI's run metadata fields while requesting `jobs`
+separately with authenticated `gh api --paginate --slurp`. Each request uses
+50 jobs per page and the latest metadata's explicit attempt endpoint, so every
+page belongs to the same run attempt even if a rerun starts during retrieval.
+The native CLI follows pagination links; Gludd adds no HTTP client or retry
+loop. [GitHub CLI API manual](https://cli.github.com/manual/gh_api) and
+[GitHub attempt jobs endpoint](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt).
+
+The adapter preserves the existing run-view job and step keys, ordering, empty
+conclusions, and timestamp representation. It verifies run/repository/SHA
+ownership, explicit job attempts when supplied, unique job IDs, stable page
+totals, and complete job counts. A failed final page rejects the entire
+inventory, including otherwise valid partial output. Existing ledger and
+pipeline-status consumers retain their field contract and fail-closed behavior.
+[GitHub CLI field projection](https://github.com/cli/cli/blob/v2.80.0/pkg/cmd/run/shared/shared.go).
+
+Practitioner report [CLI #9341](https://github.com/cli/cli/issues/9341) describes
+missing run-view jobs resolved by upgrading to a CLI with pagination. GitHub
+Community [#196998](https://github.com/orgs/community/discussions/196998)
+reports workflow and job attempt counts disagreeing after a rerun. These
+reports support complete pagination and explicit attempt checks; neither proves
+the cause of Gludd's observed HTTP 502. The regression suite includes 123 jobs
+over three pages, a final-page error, malformed payloads, ownership mismatches,
+null values, and timestamp compatibility.
+
+Canonical final selection reproduces 67 failures and six controls before the
+native transport change. All 269 ledger/concurrency/status/CI-green consumer
+cases then pass on Python 3.11 and 3.14 (2.94/4.33 seconds). The unchanged native
+coverage profile passes 155 cases at 96.34% lines/93.52% branches and both 85/75
+floors; audit: `.gate-logs/coverage-20261013T221146Z.json`. Strict typing/Ruff,
+docstrings and unchanged 258-resource ownership pass. All 73 new cases reside in
+the already admitted complete ledger test file; no early assertion or scope is
+removed. The native duplicate-code guard then rejects a repeated API response
+block. Jobs and existing annotations now share one bounded CLI JSON helper,
+retaining both exact argument lists, existing error messages, and annotation-only
+empty-output behavior. All 269 consumers pass again on both Python versions;
+the unchanged profile passes 155 cases at 95.65% combined coverage, with both
+line and branch floors green (`.gate-logs/coverage-20261013T221530Z.json`).
+This is source acceptance, not live hosted inventory or release proof.
+
 ## Terminal reconciliation of an active-run diagnosis
 
 Per-job access accelerates diagnosis, but it does not make an active workflow's

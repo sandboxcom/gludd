@@ -9,11 +9,13 @@ import shlex
 import stat
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pytest
+from scripts import ci_failure_ledger as _native_owner
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -941,11 +943,37 @@ def test_make_ci_failure_repair_exports_quoted_values_to_cli_probe(tmp_path: Pat
 def test_fetch_run_is_id_bound_and_fail_closed() -> None:
     module = _load()
     payload = _failed_payload()
+    payload.update(attempt=1, url="https://github.com/sandboxcom/gludd/actions/runs/101")
+    native_jobs = []
+    for index, job in enumerate(payload["jobs"], start=1):
+        job.update(
+            databaseId=9000 + index,
+            startedAt="0001-01-01T00:00:00Z",
+            completedAt="0001-01-01T00:00:00Z",
+            url=f"https://github.com/sandboxcom/gludd/actions/runs/101/job/{9000 + index}",
+        )
+        for step in job["steps"]:
+            step.update(startedAt="0001-01-01T00:00:00Z", completedAt="0001-01-01T00:00:00Z")
+        native_jobs.append({
+            "id": job["databaseId"], "run_id": 101, "run_attempt": 1,
+            "run_url": "https://api.github.com/repos/sandboxcom/gludd/actions/runs/101",
+            "head_sha": payload["headSha"],
+            "url": f"https://api.github.com/repos/sandboxcom/gludd/actions/jobs/{job['databaseId']}",
+            "html_url": job["url"], "name": job["name"], "status": job["status"],
+            "conclusion": job["conclusion"], "started_at": None, "completed_at": None,
+            "steps": [{
+                "name": step["name"], "status": step["status"], "conclusion": step["conclusion"],
+                "number": step["number"], "started_at": None, "completed_at": None,
+            } for step in job["steps"]],
+        })
+    metadata = {key: value for key, value in payload.items() if key != "jobs"}
     calls: list[list[str]] = []
 
     def success(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
         calls.append(command)
-        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+        response = ([{"total_count": len(native_jobs), "jobs": native_jobs}]
+                    if command[:2] == ["gh", "api"] else metadata)
+        return subprocess.CompletedProcess(command, 0, json.dumps(response), "")
 
     assert module.fetch_run(101, "sandboxcom/gludd", runner=success) == payload
     assert calls[0][:4] == ["gh", "run", "view", "101"]
@@ -964,7 +992,7 @@ def test_fetch_run_is_id_bound_and_fail_closed() -> None:
 
     with pytest.raises(module.LedgerError, match="invalid JSON"):
         module.fetch_run(101, "sandboxcom/gludd", runner=invalid)
-    wrong = dict(payload, databaseId=102)
+    wrong = dict(metadata, databaseId=102)
     with pytest.raises(module.LedgerError, match="different run identity"):
         module.fetch_run(
             101,
@@ -1461,3 +1489,283 @@ def test_observe_sha_cli_persists_results_and_reports_all_errors(
     error = capsys.readouterr().err
     assert "count=2" in error
     assert "run 1" in error and "run 2" in error
+
+
+NATIVE_REPOSITORY = "sandboxcom/gludd"
+NATIVE_RUN_ID = 101
+NATIVE_ATTEMPT = 3
+NATIVE_SHA = "a" * 40
+NATIVE_ZERO_TIME = "0001-01-01T00:00:00Z"
+
+
+def _native_metadata() -> dict[str, Any]:
+    return {
+        "attempt": NATIVE_ATTEMPT,
+        "databaseId": NATIVE_RUN_ID,
+        "headSha": NATIVE_SHA,
+        "headBranch": "development",
+        "status": "completed",
+        "conclusion": "failure",
+        "url": f"https://github.com/{NATIVE_REPOSITORY}/actions/runs/{NATIVE_RUN_ID}",
+        "workflowName": "Build and Release",
+    }
+
+
+def _native_job(index: int = 1, *, failed: bool = False) -> dict[str, Any]:
+    job_id = 9000 + index
+    return {
+        "id": job_id,
+        "run_id": NATIVE_RUN_ID,
+        "run_attempt": NATIVE_ATTEMPT,
+        "run_url": f"https://api.github.com/repos/{NATIVE_REPOSITORY}/actions/runs/{NATIVE_RUN_ID}",
+        "head_sha": NATIVE_SHA,
+        "url": f"https://api.github.com/repos/{NATIVE_REPOSITORY}/actions/jobs/{job_id}",
+        "html_url": f"https://github.com/{NATIVE_REPOSITORY}/actions/runs/{NATIVE_RUN_ID}/job/{job_id}",
+        "name": f"unit-{index}",
+        "status": "completed",
+        "conclusion": "failure" if failed else "success",
+        "started_at": "2026-10-13T12:00:00Z",
+        "completed_at": "2026-10-13T12:01:00Z",
+        "steps": [
+            {
+                "name": "Run tests",
+                "status": "completed",
+                "conclusion": "failure" if failed else "success",
+                "number": 1,
+                "started_at": "2026-10-13T12:00:01Z",
+                "completed_at": "2026-10-13T12:00:59Z",
+            },
+        ],
+    }
+
+
+def _native_project(job: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "databaseId": job["id"],
+        "status": job["status"],
+        "conclusion": job["conclusion"] or "",
+        "name": job["name"],
+        "startedAt": job["started_at"] or NATIVE_ZERO_TIME,
+        "completedAt": job["completed_at"] or NATIVE_ZERO_TIME,
+        "url": job["html_url"],
+        "steps": [
+            {
+                "name": step["name"],
+                "status": step["status"],
+                "conclusion": step["conclusion"] or "",
+                "number": step["number"],
+                "startedAt": step["started_at"] or NATIVE_ZERO_TIME,
+                "completedAt": step["completed_at"] or NATIVE_ZERO_TIME,
+            }
+            for step in job["steps"] or []
+        ],
+    }
+
+
+class NativeResponses:
+    """Record bounded native transport calls without any network access."""
+
+    def __init__(self, metadata: object, pages: object, *, jobs_rc: int = 0) -> None:
+        self.metadata = metadata
+        self.pages = pages
+        self.jobs_rc = jobs_rc
+        self.calls: list[list[str]] = []
+
+    def __call__(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        self.calls.append(command)
+        assert kwargs == {"capture_output": True, "text": True, "timeout": 30, "check": False}
+        if command[:3] == ["gh", "run", "view"]:
+            return subprocess.CompletedProcess(command, 0, json.dumps(self.metadata), "")
+        assert command[:2] == ["gh", "api"]
+        return subprocess.CompletedProcess(
+            command, self.jobs_rc, json.dumps(self.pages), "last page HTTP 502" if self.jobs_rc else ""
+        )
+
+
+def test_native_inventory_has_every_page_and_exact_run_view_fields() -> None:
+    jobs = [_native_job(index, failed=index == 123) for index in range(1, 124)]
+    pages = [{"total_count": len(jobs), "jobs": jobs[offset:offset + 50]} for offset in (0, 50, 100)]
+    runner = NativeResponses(_native_metadata(), pages)
+
+    payload = _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner)
+
+    assert payload == {**_native_metadata(), "jobs": [_native_project(job) for job in jobs]}
+    assert len(runner.calls) == 2
+    assert runner.calls[0][:6] == ["gh", "run", "view", str(NATIVE_RUN_ID), "--repo", NATIVE_REPOSITORY]
+    assert "jobs" not in runner.calls[0][-1].split(",")
+    assert runner.calls[1] == [
+        "gh", "api",
+        f"repos/{NATIVE_REPOSITORY}/actions/runs/{NATIVE_RUN_ID}/attempts/{NATIVE_ATTEMPT}/jobs?per_page=50",
+        "--paginate", "--slurp",
+    ]
+    ledger = _native_owner.new_ledger()
+    _native_owner.observe_payload(ledger, payload, observed_at="2026-10-13T12:02:00Z")
+    assert len(ledger["runs"][f"{NATIVE_RUN_ID}:{NATIVE_ATTEMPT}"]["jobs"]) == 123
+    assert [family["job"] for family in ledger["families"].values()] == ["unit-123"]
+    assert next(iter(ledger["families"].values()))["failed_steps"] == ["Run tests"]
+
+
+def test_later_page_error_rejects_valid_partial_output_without_retry() -> None:
+    runner = NativeResponses(_native_metadata(), [{"total_count": 51, "jobs": [_native_job()]}], jobs_rc=1)
+    with pytest.raises(_native_owner.LedgerError, match="last page HTTP 502"):
+        _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner)
+    assert len(runner.calls) == 2
+
+
+@pytest.mark.parametrize("pages", [
+    {}, None, [], [None], [{}], [{"total_count": True, "jobs": []}],
+    [{"total_count": -1, "jobs": []}], [{"total_count": "1", "jobs": [_native_job()]}],
+    [{"total_count": 1.5, "jobs": [_native_job()]}], [{"total_count": 1, "jobs": {}}],
+    [{"total_count": 1, "jobs": []}], [{"total_count": 0, "jobs": [_native_job()]}],
+    [{"total_count": 2, "jobs": [_native_job()]}, {"total_count": 3, "jobs": [_native_job(2)]}],
+    [{"total_count": 2, "jobs": [_native_job()]}, {"total_count": 2, "jobs": [_native_job()]}],
+    [{"total_count": 1, "jobs": [None]}],
+])
+def test_native_inventory_rejects_malformed_incomplete_and_duplicate_pages(pages: object) -> None:
+    with pytest.raises(_native_owner.LedgerError):
+        _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=NativeResponses(_native_metadata(), pages))
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("run_id", 102), ("run_id", None), ("id", 0), ("id", True), ("id", 1.5),
+    ("run_attempt", NATIVE_ATTEMPT - 1), ("run_attempt", NATIVE_ATTEMPT + 1), ("run_attempt", True),
+    ("head_sha", "b" * 40),
+    ("run_url", f"https://api.github.com/repos/other/gludd/actions/runs/{NATIVE_RUN_ID}"),
+    ("run_url", f"https://api.github.com/repos/{NATIVE_REPOSITORY}/actions/runs/102"),
+    ("url", f"https://api.github.com/repos/{NATIVE_REPOSITORY}/actions/jobs/9002"),
+    ("name", []), ("status", 4), ("conclusion", {}), ("steps", {}),
+    ("steps", [None]), ("started_at", "not-a-time"), ("completed_at", 123),
+])
+def test_native_inventory_rejects_foreign_or_malformed_jobs(field: str, value: object) -> None:
+    job = {**_native_job(), field: value}
+    with pytest.raises(_native_owner.LedgerError):
+        _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=NativeResponses(
+            _native_metadata(), [{"total_count": 1, "jobs": [job]}]
+        ))
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("name", None), ("status", None), ("number", True), ("number", 0),
+    ("number", "1"), ("number", 1.5), ("conclusion", []),
+    ("started_at", "2026-10-13T12:00:00"), ("completed_at", "2026-10-99T12:00:00Z"),
+])
+def test_native_inventory_rejects_malformed_steps(field: str, value: object) -> None:
+    job = _native_job()
+    job["steps"][0][field] = value
+    with pytest.raises(_native_owner.LedgerError):
+        _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=NativeResponses(
+            _native_metadata(), [{"total_count": 1, "jobs": [job]}]
+        ))
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("databaseId", 102), ("databaseId", True), ("attempt", 0), ("attempt", None),
+    ("attempt", True), ("attempt", 2.5), ("headSha", "short"), ("headBranch", None),
+    ("status", []), ("conclusion", []), ("workflowName", 123),
+    ("url", f"https://github.com/other/gludd/actions/runs/{NATIVE_RUN_ID}"),
+])
+def test_run_metadata_errors_fail_before_job_lookup(field: str, value: object) -> None:
+    runner = NativeResponses({**_native_metadata(), field: value}, [{"total_count": 1, "jobs": [_native_job()]}])
+    with pytest.raises(_native_owner.LedgerError):
+        _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner)
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize("metadata", [[], None, {}, {**_native_metadata(), "jobs": []}])
+def test_run_metadata_shape_must_match_requested_fields(metadata: object) -> None:
+    runner = NativeResponses(metadata, [{"total_count": 1, "jobs": [_native_job()]}])
+    with pytest.raises(_native_owner.LedgerError):
+        _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner)
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize("run_id", [0, -1, True, 1.5])
+def test_invalid_numeric_identity_never_starts_transport(run_id: int) -> None:
+    runner = NativeResponses(_native_metadata(), [])
+    with pytest.raises(_native_owner.LedgerError):
+        _native_owner.fetch_run(run_id, NATIVE_REPOSITORY, runner=runner)
+    assert runner.calls == []
+
+
+def test_empty_active_inventory_and_nulls_keep_cli_projection() -> None:
+    metadata = {**_native_metadata(), "status": "queued", "conclusion": ""}
+    empty = _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=NativeResponses(
+        metadata, [{"total_count": 0, "jobs": []}]
+    ))
+    assert empty == {**metadata, "jobs": []}
+    job = {**_native_job(), "status": "queued", "conclusion": None, "started_at": None,
+           "completed_at": None, "steps": None}
+    runner = NativeResponses(metadata, [{"total_count": 1, "jobs": [job]}])
+    assert _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner) == {
+        **metadata, "jobs": [_native_project(job)]
+    }
+
+
+def test_steps_preserve_order_offsets_and_nanoseconds_like_native_run_view() -> None:
+    job = _native_job()
+    step = deepcopy(job["steps"][0])
+    step.update(number=2, conclusion=None, started_at=None, completed_at=None)
+    job["steps"].insert(0, step)
+    job["steps"][1]["started_at"] = "2026-10-13T09:42:40.000-08:00"
+    job["steps"][1]["completed_at"] = "2026-10-13T12:00:59.123456789Z"
+    job["started_at"] = "2026-10-13T12:00:00.120000Z"
+    runner = NativeResponses(_native_metadata(), [{"total_count": 1, "jobs": [job]}])
+    projected = _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner)["jobs"][0]
+    assert projected["startedAt"] == "2026-10-13T12:00:00.12Z"
+    assert [value["number"] for value in projected["steps"]] == [2, 1]
+    assert projected["steps"][0]["conclusion"] == ""
+    assert projected["steps"][0]["completedAt"] == NATIVE_ZERO_TIME
+    assert projected["steps"][1]["startedAt"] == "2026-10-13T09:42:40-08:00"
+    assert projected["steps"][1]["completedAt"] == "2026-10-13T12:00:59.123456789Z"
+
+
+def test_attempt_endpoint_is_authoritative_when_api_omits_run_attempt() -> None:
+    job = _native_job()
+    del job["run_attempt"]
+    runner = NativeResponses(_native_metadata(), [{"total_count": 1, "jobs": [job]}])
+    assert _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner)["jobs"] == [_native_project(job)]
+
+
+@pytest.mark.parametrize("stage", ["metadata", "jobs"])
+def test_invalid_transport_json_is_rejected(stage: str) -> None:
+    calls: list[list[str]] = []
+
+    def runner(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        if stage == "jobs" and len(calls) == 1:
+            return subprocess.CompletedProcess(command, 0, json.dumps(_native_metadata()), "")
+        return subprocess.CompletedProcess(command, 0, "{", "")
+
+    with pytest.raises(_native_owner.LedgerError, match="invalid JSON"):
+        _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner)
+    assert len(calls) == (2 if stage == "jobs" else 1)
+
+
+@pytest.mark.parametrize("kind", ["job", "step"])
+def test_native_inventory_rejects_missing_required_fields(kind: str) -> None:
+    job = _native_job()
+    if kind == "job":
+        del job["conclusion"]
+    else:
+        del job["steps"][0]["completed_at"]
+    runner = NativeResponses(_native_metadata(), [{"total_count": 1, "jobs": [job]}])
+    with pytest.raises(_native_owner.LedgerError, match="missing required fields"):
+        _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner)
+
+
+def test_native_inventory_normalizes_utc_offset_and_keeps_failed_annotation_ids() -> None:
+    job = _native_job(failed=True)
+    job["started_at"] = "2026-10-13T12:00:00.000+00:00"
+    runner = NativeResponses(_native_metadata(), [{"total_count": 1, "jobs": [job]}])
+    payload = _native_owner.fetch_run(NATIVE_RUN_ID, NATIVE_REPOSITORY, runner=runner)
+    assert payload["jobs"][0]["startedAt"] == "2026-10-13T12:00:00Z"
+    calls: list[tuple[int, str]] = []
+
+    def annotations(job_id: int, repository: str) -> list[str]:
+        calls.append((job_id, repository))
+        return ["hosted runner error"]
+
+    assert _native_owner.fetch_runner_acquisition_annotations(
+        payload, NATIVE_REPOSITORY, fetcher=annotations
+    ) == {9001: ["hosted runner error"]}
+    assert calls == [(9001, NATIVE_REPOSITORY)]

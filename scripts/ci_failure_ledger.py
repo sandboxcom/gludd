@@ -21,6 +21,7 @@ import tempfile
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -41,6 +42,7 @@ FAILURE_STATUSES = {"open", "repaired", "resolved"}
 RUN_FIELDS = (
     "attempt,databaseId,headSha,headBranch,status,conclusion,url,workflowName,jobs"
 )
+RUN_METADATA_FIELDS = RUN_FIELDS.removesuffix(",jobs")
 RUNNER_ACQUISITION_MESSAGE = (
     "The job was not acquired by Runner of type hosted even after multiple attempts"
 )
@@ -584,10 +586,120 @@ def status_lines(ledger: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _paginated_json(
+    endpoint: str, *, runner: Runner, failure_context: str, json_context: str, empty_json: str = "",
+) -> object:
+    """Decode one bounded native paginated CLI response without hiding partial failure."""
+    result = runner(
+        ["gh", "api", endpoint, "--paginate", "--slurp"],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "gh api failed").strip()
+        raise LedgerError(f"{failure_context} failed: {detail}")
+    try:
+        return cast(object, json.loads(result.stdout or empty_json))
+    except json.JSONDecodeError as exc:
+        raise LedgerError(f"{json_context} returned invalid JSON: {exc}") from exc
+
+
+def _inventory_integer(value: object, label: str, *, minimum: int = 1) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise LedgerError(f"{label} must be an integer >= {minimum}")
+    return value
+
+
+def _inventory_string(value: object, label: str, *, nullable: bool = False) -> str:
+    if value is None and nullable:
+        return ""
+    if not isinstance(value, str) or (not nullable and not value.strip()):
+        raise LedgerError(f"{label} must be a string")
+    return value
+
+
+def _inventory_time(value: object, label: str) -> str:
+    """Match GitHub CLI's Go time.Time JSON, including null and nanoseconds."""
+    if value is None:
+        return "0001-01-01T00:00:00Z"
+    if not isinstance(value, str) or re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})", value
+    ) is None:
+        raise LedgerError(f"{label} must be an RFC3339 timestamp or null")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise LedgerError(f"{label} must be an RFC3339 timestamp or null") from exc
+    normalized = re.sub(
+        r"\.(\d+)(?=Z|[+-])",
+        lambda match: f".{match[1].rstrip('0')}" if match[1].rstrip("0") else "",
+        value,
+    )
+    if not normalized.endswith("Z") and parsed.utcoffset() == timedelta(0):
+        normalized = f"{normalized[:-6]}Z"
+    return normalized
+
+
+def _inventory_job(
+    raw: object, payload: dict[str, Any], repository: str
+) -> dict[str, Any]:
+    """Validate native job ownership and project the existing run-view schema."""
+    job = _require_mapping(raw, "GitHub job")
+    required = {
+        "id", "run_id", "run_url", "head_sha", "url", "html_url", "name", "status",
+        "conclusion", "started_at", "completed_at",
+    }
+    if not required.issubset(job):
+        raise LedgerError("GitHub job is missing required fields")
+    job_id = _inventory_integer(job["id"], "GitHub job ID")
+    run_id = payload["databaseId"]
+    if _inventory_integer(job["run_id"], "GitHub job run ID") != run_id:
+        raise LedgerError("GitHub job belongs to a different run identity")
+    if "run_attempt" in job and (
+        _inventory_integer(job["run_attempt"], "GitHub job run attempt") != payload["attempt"]
+    ):
+        raise LedgerError("GitHub job belongs to a different run attempt")
+    run_url = f"https://api.github.com/repos/{repository}/actions/runs/{run_id}"
+    job_url = f"https://api.github.com/repos/{repository}/actions/jobs/{job_id}"
+    if (_inventory_string(job["run_url"], "GitHub job run URL").lower() != run_url.lower()
+            or _inventory_string(job["url"], "GitHub job API URL").lower() != job_url.lower()
+            or job["head_sha"] != payload["headSha"]):
+        raise LedgerError("GitHub job repository, run, or head SHA identity mismatch")
+    raw_steps = job.get("steps")
+    if raw_steps is None:
+        raw_steps = []
+    if not isinstance(raw_steps, list):
+        raise LedgerError("GitHub job steps must be an array or null")
+    steps: list[dict[str, Any]] = []
+    for index, raw_step in enumerate(raw_steps):
+        step = _require_mapping(raw_step, f"GitHub job step {index}")
+        required_step = {"name", "status", "conclusion", "number", "started_at", "completed_at"}
+        if not required_step.issubset(step):
+            raise LedgerError("GitHub job step is missing required fields")
+        steps.append({
+            "name": _inventory_string(step["name"], "GitHub step name"),
+            "status": _inventory_string(step["status"], "GitHub step status"),
+            "conclusion": _inventory_string(step["conclusion"], "GitHub step conclusion", nullable=True),
+            "number": _inventory_integer(step["number"], "GitHub step number"),
+            "startedAt": _inventory_time(step["started_at"], "GitHub step start"),
+            "completedAt": _inventory_time(step["completed_at"], "GitHub step completion"),
+        })
+    return {
+        "databaseId": job_id,
+        "name": _inventory_string(job["name"], "GitHub job name"),
+        "status": _inventory_string(job["status"], "GitHub job status"),
+        "conclusion": _inventory_string(job["conclusion"], "GitHub job conclusion", nullable=True),
+        "startedAt": _inventory_time(job["started_at"], "GitHub job start"),
+        "completedAt": _inventory_time(job["completed_at"], "GitHub job completion"),
+        "url": _inventory_string(job["html_url"], "GitHub job URL"),
+        "steps": steps,
+    }
+
+
 def fetch_run(run_id: int, repository: str, *, runner: Runner = subprocess.run) -> dict[str, Any]:
-    """Fetch the latest immutable attempt with every job and step from GitHub."""
+    """Fetch latest run metadata and its complete native, attempt-pinned inventory."""
     if REPOSITORY.fullmatch(repository) is None:
         raise LedgerError("repository must be owner/name")
+    _inventory_integer(run_id, "run ID")
     result = runner(
         [
             "gh",
@@ -597,7 +709,7 @@ def fetch_run(run_id: int, repository: str, *, runner: Runner = subprocess.run) 
             "--repo",
             repository,
             "--json",
-            RUN_FIELDS,
+            RUN_METADATA_FIELDS,
         ],
         capture_output=True,
         text=True,
@@ -612,8 +724,44 @@ def fetch_run(run_id: int, repository: str, *, runner: Runner = subprocess.run) 
     except json.JSONDecodeError as exc:
         raise LedgerError(f"GitHub run lookup returned invalid JSON: {exc}") from exc
     payload = _require_mapping(decoded, "GitHub run")
-    if _run_id(payload.get("databaseId")) != run_id:
+    if set(payload) != set(RUN_METADATA_FIELDS.split(",")):
+        raise LedgerError("GitHub run metadata does not match the requested fields")
+    if _inventory_integer(payload["databaseId"], "GitHub run ID") != run_id:
         raise LedgerError("GitHub returned a different run identity")
+    attempt = _inventory_integer(payload["attempt"], "GitHub run attempt")
+    for field in ("headSha", "headBranch", "status", "url", "workflowName"):
+        _inventory_string(payload[field], f"GitHub run {field}")
+    _inventory_string(payload["conclusion"], "GitHub run conclusion", nullable=True)
+    run_url = f"https://github.com/{repository}/actions/runs/{run_id}"
+    if payload["url"].lower() != run_url.lower() or FULL_SHA.fullmatch(payload["headSha"]) is None:
+        raise LedgerError("GitHub run repository or head SHA identity mismatch")
+    pages = _paginated_json(
+        f"repos/{repository}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=50",
+        runner=runner, failure_context="GitHub job inventory lookup", json_context="GitHub job inventory",
+    )
+    if not isinstance(pages, list) or not pages:
+        raise LedgerError("GitHub job inventory must contain an array of pages")
+    jobs: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    total_count: int | None = None
+    for index, raw_page in enumerate(pages):
+        page = _require_mapping(raw_page, f"GitHub job inventory page {index}")
+        count = _inventory_integer(page.get("total_count"), "GitHub job total_count", minimum=0)
+        if total_count is not None and count != total_count:
+            raise LedgerError("GitHub job inventory total_count changed during pagination")
+        total_count = count
+        raw_jobs = page.get("jobs")
+        if not isinstance(raw_jobs, list):
+            raise LedgerError("GitHub job inventory page jobs must be an array")
+        for raw_job in raw_jobs:
+            job = _inventory_job(raw_job, payload, repository)
+            if job["databaseId"] in seen:
+                raise LedgerError("GitHub job inventory contains a duplicate job identity")
+            seen.add(job["databaseId"])
+            jobs.append(job)
+    if len(jobs) != total_count:
+        raise LedgerError("GitHub job inventory is incomplete or contradicts total_count")
+    payload["jobs"] = jobs
     return payload
 
 
@@ -625,26 +773,10 @@ def fetch_job_annotations(
         raise LedgerError("check-run ID must be a positive integer")
     if REPOSITORY.fullmatch(repository) is None:
         raise LedgerError("repository must be owner/name")
-    result = runner(
-        [
-            "gh",
-            "api",
-            f"repos/{repository}/check-runs/{job_id}/annotations",
-            "--paginate",
-            "--slurp",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
+    decoded = _paginated_json(
+        f"repos/{repository}/check-runs/{job_id}/annotations", runner=runner,
+        failure_context="check-run annotation lookup", json_context="check-run annotations", empty_json="[]",
     )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "gh api failed").strip()
-        raise LedgerError(f"check-run annotation lookup failed: {detail}")
-    try:
-        decoded = json.loads(result.stdout or "[]")
-    except json.JSONDecodeError as exc:
-        raise LedgerError(f"check-run annotations returned invalid JSON: {exc}") from exc
     if not isinstance(decoded, list):
         raise LedgerError("check-run annotations must be an array")
     raw_annotations: list[object] = []

@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Complete hosted inventory still depended on the failing large-page lookup
+
+- Exact-job diagnostic retrieval was repaired, but the native ledger and pipeline snapshot still requested the run-wide job inventory implicitly through run-view. Repeated HTTP 502 responses from that large-page endpoint prevented complete owned observation; fixing the diagnostic facade alone did not fix this consumer.
+- The canonical 73-case selection reproduces 67 failures with six controls before native pagination. The original metadata CLI omits only jobs; maintained authenticated API pagination fetches all 50-job pages bound to the metadata's explicit attempt. Complete counts, unique IDs, run/repository/SHA ownership, fields and timestamps are validated. Final-page failures reject valid partial output; no retry loop, alternate client, watcher, status writer or truncated inventory is added.
+- All 269 existing and new ledger/concurrency/status/CI-green cases pass on Python 3.11 and 3.14. The original coverage profile passes 155 cases at 96.34% lines/93.52% branches, meeting all 85/75 floors (.gate-logs/coverage-20261013T221146Z.json). One existing fake transport conforms to the split fields while retaining all original assertions; all new controls are in the already admitted complete ledger file. The native duplication guard subsequently rejects a repeated API response block. Existing annotations and jobs now share the bounded native CLI helper, preserving all transport arguments, error messages and annotation-only empty-output behavior. Both 269-case replays and the final unchanged coverage profile pass again (.gate-logs/coverage-20261013T221530Z.json); the baseline and guard remain unchanged. Native live inventory, publication, successor CI and release acceptance remain pending.
+
 ### 2026-10-13 — Parallel retention turned a successful child into an observer failure
 
 - A normal guarded publication of 4d0833ca5 passes 1461 early tests but fails one native consumer when parallel retention owners race on a superseded status JSON. The publication gate fails closed, and Git transport is not attempted. A prior successful local replay is not authority to bypass this failure.
