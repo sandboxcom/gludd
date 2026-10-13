@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-12 — the unchanged task inventory triggered a quoted-keyword false positive
+
+- **Observed**: Normal push stops before publication on one new Secret Keyword identity at TASKS line 47. A bounded replay of the pinned detector identifies exactly 3,311 characters of public filenames and historical proof text, not a credential.
+- **Codified repair**: The canonical baseline owner adds exactly one identity and removes none. Review only that exact path/detector/hash, preserving source, scanner thresholds, exclusions and both push/commit hooks. The source-derived exact identity/review regression fails first on the absent label; it must remain green without a keyword-wide exemption.
+- **Boundary**: Correct the release-gate document's stale claim that the inventory was rearranged. No rearrangement or scanner bypass is performed. Whole-push, exact-SHA hosted CI and canonical release proof still determine completion.
+
 ### 2026-10-12 — installed artifacts were mistaken for runtime owner markers
 
 - **Observed**: A retired 665 MB toolchain is protected by obsolete workstream registrations even after Git reports no such worktree. After retiring those completed registrations, normal inventory refuses installed `virtualenv/util/lock.py`, then generated `_lease.pyc`, then packaged `no_same_owner.md`, as ambiguous leases. Real owner and link safeguards must remain intact.

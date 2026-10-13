@@ -142,23 +142,25 @@ admission policy.
 
 ### Unambiguous task-path registration
 
-The full normal source07 push repaired the public fixture finding, then exposed
-a separate KeywordDetector match in the new task metadata. The unchanged managed
-scanner found exactly one new identity at `TASKS.md` line 47 and no removals.
-Its upstream quoted-value rule matched nearly four thousand characters of
-public registered filenames and evidence after the baseline filename at the
-start of the ownership list; there was no authentication value in that span.
+The normal development push exposes a separate KeywordDetector match in the
+task metadata. The unchanged managed scanner finds exactly one new identity at
+`TASKS.md` line 47 and no removals. A bounded replay of the pinned upstream
+detector identifies 3,311 characters of public registered filenames and proof
+text after the baseline filename. Its exact SHA-1 identity is
+`3d87c12867a9e3a7e5aeeeaf9d820091df6cec8c`; there is no authentication value in
+that span.
 
-The same baseline path now appears at the end of that list, immediately before
-the description. All file registrations and task status are retained. This
-documentation-structure correction changes no test, scanner, hook, exclusion,
-threshold, or baseline finding; the reviewed fixture identity remains required.
-The temporary discovery artifact is diagnostic, not a replacement baseline.
+The canonical owner retains every previous identity and adds only that reviewed
+finding. Its audit label records a false positive, not a detector exemption.
+The new failing-first regression derives the span from the unchanged source and
+requires exactly one filename/detector/hash finding with the review label.
+No file registration, task status, source text, scanner, hook, exclusion or
+threshold changes. The independently reviewed public fixture remains required.
 
 [The pinned upstream keyword implementation][secrets-keyword] defines that
 quoted-value heuristic. The practitioner report above concerns a different
 source token, so it supplies context, not proof of this particular collision.
-Actual full-source and whole-push admission must still verify the corrected
+Actual full-source and whole-push admission must still verify the reviewed
 candidate before hosted or release success is claimed.
 
 ## Verification and practitioner evidence

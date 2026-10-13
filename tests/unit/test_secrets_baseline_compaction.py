@@ -106,6 +106,28 @@ def test_public_repository_fixture_has_one_exact_reviewed_finding() -> None:
     assert finding["is_verified"] is False
 
 
+def test_public_task_file_inventory_has_one_exact_reviewed_finding() -> None:
+    """Pin the reviewed public file/proof span, not a keyword-wide exemption."""
+    source = (ROOT / "TASKS.md").read_text(encoding="utf-8")
+    prefix = "`.secrets.baseline`, `"
+    suffix = ".gate-logs/reviewed-focused-1f978bf3.log"
+    assert source.count(prefix) == 1
+    start = source.index(prefix) + len(prefix)
+    end = source.index(suffix, start) + len(suffix)
+    public_evidence = source[start:end]
+    assert public_evidence.startswith("tests/unit/test_secrets_baseline_compaction.py`")
+    assert len(public_evidence) == 3_311
+    payload = json.loads(BASELINE.read_text(encoding="utf-8"))
+    findings = payload["results"]["TASKS.md"]
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["filename"] == "TASKS.md"
+    assert finding["type"] == "Secret Keyword"
+    assert finding["hashed_secret"] == hashlib.sha1(public_evidence.encode()).hexdigest()
+    assert finding["is_secret"] is False
+    assert finding["is_verified"] is False
+
+
 def test_policy_excludes_only_generated_recursive_boundaries() -> None:
     """Known caches/vendors are excluded without hiding ordinary source paths."""
     policy = subject.load_policy(POLICY)
