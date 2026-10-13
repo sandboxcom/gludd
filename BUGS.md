@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Long repair evidence overwrote concurrent native CI observations
+
+- A real repair read the ledger before its 44-second evidence command; concurrent pipeline observation added two terminal runs. The repair's stale whole-ledger write erased both (56 runs became 54). Sequential native re-observation restored them, but could not prevent recurrence.
+- Eleven isolated failing-first cases and four unchanged error controls precede the shared pinned FileLock transaction. Every native writer reloads under the same private, stable sidecar; remote fetch, slow evidence and ancestry work stay outside it. Only selected unchanged-family receipts merge, so unrelated observations/repairs survive and newly arriving failures remain open.
+- All 82 original/new cases pass on both Python versions. The actual canonical coverage owner audits one production file at 93.11% combined (94.33% statements, 90.15% branches), passing unchanged 85/75 floors. The complete race suite is wired into the existing bounded early owner; its new mapping regression fails first. Atomic-file ownership and immutable/exact-SHA evidence remain unchanged.
+- This is a source and proof-publication repair. Full gate, successor hosted acceptance and deployment readiness stay pending; no backlog item or release is closed, and ignored operational JSON is never hand-edited.
+- Actual expanded early acceptance passes 1182 cases plus fresh help in 47.1 observed seconds under unchanged 90/60 bounds; all 60 mapping/admission cases, the 58-family manifest and original resource ownership pass.
+
 ### 2026-10-13 — Serial hosted browser engines exhausted one shared job deadline
 
 - Exact pushed SHA `6be0e00feb032bd8f1be2d563a95b73bc647bbf3`, Pages run `38413186651`, passed Chromium's 17 desktop cases (304.12s) and compact viewport case (48.89s), then cancelled WebKit at 16/17 desktop cases when the 20-minute job deadline expired. WebKit and deployment acceptance were not complete.

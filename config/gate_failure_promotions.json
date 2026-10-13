@@ -385,6 +385,13 @@
       "full_gate_phase": "test"
     },
     {
+      "id": "ci-ledger-concurrent-evidence",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_failure_ledger_concurrency.py::test_repair_retains_concurrent_run_and_other_family_receipt",
+      "full_gate_phase": "test"
+    },
+    {
       "id": "automatic-proof-observation-ownership",
       "owner_target": "_pytest-runtime-compatibility-admission",
       "node_kind": "pytest_node",

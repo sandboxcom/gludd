@@ -434,6 +434,37 @@ def test_admission_plan_contracts_execute_before_hosted_shards(
     assert payload["full_gate_required"] is True
 
 
+def test_ci_ledger_concurrent_evidence_executes_in_complete_early_cohort() -> None:
+    """Publication must prove the complete ledger race suite before hosted fan-out."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(
+        family for family in payload["families"]
+        if family["id"] == "ci-ledger-concurrent-evidence"
+    )
+    node = (
+        "tests/unit/test_ci_failure_ledger_concurrency.py::"
+        "test_repair_retains_concurrent_run_and_other_family_receipt"
+    )
+    assert family == {
+        "id": "ci-ledger-concurrent-evidence",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in owner
+    assert "tests/unit/test_ci_failure_ledger_concurrency.py" in executable
+    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    phase = next(
+        phase for phase in payload["runtime_contract"]["phases"]
+        if phase["target"] == family["owner_target"]
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> None:
     """The real Make argument transport must be proved before hosted fan-out."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -1168,6 +1199,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "integration-admission-plan-contract",
         "integration-admission-document-contract",
         "ci-repair-evidence-variable-forwarding",
+        "ci-ledger-concurrent-evidence",
         "automatic-proof-observation-ownership",
         "automatic-proof-handoff-native-query-shape",
         "ee-owned-linux-transitive-pin-parity",
@@ -1350,6 +1382,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ansible_searxng_source_inspection.py '
         'tests/unit/test_integration_admission_target.py '
         'tests/unit/test_ci_failure_ledger.py '
+        'tests/unit/test_ci_failure_ledger_concurrency.py '
         'tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py '
         'tests/unit/test_ci_verdict_all_required.py '
         'tests/unit/test_ci_verdict_structural_repair.py '

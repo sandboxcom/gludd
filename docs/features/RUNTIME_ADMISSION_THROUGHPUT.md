@@ -141,3 +141,44 @@ supports keeping bounded, attributable execution before expensive publication.
 These are source/control-plane receipts, not hosted speed, full gate, installed
 controller or deployment proof. ZDD and the unchanged 85/75 requirements remain;
 rollback is the isolated Make/contract/test/documentation commit.
+
+## Concurrent proof publication (2026-10-13)
+
+A real 44-second repair replay read the ledger before executing evidence.
+Concurrent terminal-workflow observation added two runs, then the stale repair
+write removed both (56 recorded runs became 54). Sequential native observations
+restored them, but that recovery did not correct the shared writer race.
+
+The existing ledger owner now reuses the pinned FileLock library already used
+by item progress and CI receipts. All three native writers share one private,
+stable sidecar and a two-second acquisition bound. GitHub fetches, evidence
+execution and ancestry checks remain outside the short transaction. Inside it,
+the writer reloads current state and publishes through the original atomic
+replace owner. Repairs merge only their selected receipts; a changed selected
+failure refuses stale evidence instead of overwriting newer failure, success or
+repair data. Newly arriving failures remain open, even during an all-open repair.
+
+Root's isolated canonical RED has eleven failures and four unchanged error
+controls. The complete original/new ledger suite passes 82 cases on Python 3.11
+and 3.14. Canonical coverage measures 93.11% combined, including 94.33% statements
+and 90.15% branches, with the unchanged 85/75 floors and one production file
+actually audited. Original immutable run IDs, exact-SHA ancestry, two-MiB size
+limit, private permissions and atomic-file cleanup remain unchanged.
+
+The complete race suite joins the existing early owner, retaining its two-worker
+cohort, separate fresh help, 90/60 bounds and fatal warnings. A failing-first
+promotion regression pins that complete wiring; no second runner is introduced.
+Root's actual expanded owner then passes all 1182 cases plus fresh help in 47.1
+observed seconds, under the same 90/60 limits. All 60 mapping/admission cases and
+the 58-family manifest pass, alongside unchanged resource-ownership admission.
+The maintained [FileLock guidance](https://py-filelock.readthedocs.io/en/latest/)
+uses a separate lock file, and the long-lived
+[2018 shared-JSON user report](https://stackoverflow.com/questions/50485037/loading-json-from-a-locked-file)
+describes rereading current contents while holding the update lock. The regression
+also refuses symlinked locks and preserves the sidecar identity between writers.
+
+This repairs automatic proof-state ownership, not deployment acceptance. No
+serving process, release closure, master promotion or image is changed. Full gate
+and exact-SHA hosted acceptance remain pending. Rollback reverts the isolated
+ledger, tests and early-owner wiring together, then re-observes native evidence;
+it never restores an old JSON snapshot over newer observations.

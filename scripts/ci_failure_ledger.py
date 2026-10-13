@@ -19,15 +19,19 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
+
+from filelock import FileLock, Timeout
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LEDGER = ROOT / ".gludd" / "ci-failure-ledger.json"
 DEFAULT_REPOSITORY = "sandboxcom/gludd"
 LEDGER_VERSION = 1
 MAX_LEDGER_BYTES = 2 * 1024 * 1024
+LOCK_TIMEOUT_SECONDS = 2
 FULL_SHA = re.compile(r"[0-9a-f]{40}\Z")
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 MAKE_TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
@@ -138,6 +142,20 @@ def write_ledger(path: Path, ledger: dict[str, Any]) -> None:
     finally:
         if temporary is not None and temporary.exists():
             temporary.unlink()
+
+
+@contextmanager
+def _locked_ledger(path: Path) -> Iterator[dict[str, Any]]:
+    """Reload the latest state under one bounded, private native writer lock."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock_path = path.with_name(f".{path.name}.lock")
+    if lock_path.is_symlink():
+        raise LedgerError("ledger transaction lock must not be a symbolic link")
+    try:
+        with FileLock(str(lock_path), timeout=LOCK_TIMEOUT_SECONDS, mode=0o600):
+            yield read_ledger(path)
+    except Timeout as exc:
+        raise LedgerError("ledger transaction lock is already held; retry the command") from exc
 
 
 def _text(value: object, label: str) -> str:
@@ -710,18 +728,13 @@ def fetch_run_index(
     return cast(list[dict[str, Any]], decoded)
 
 
-def observe_exact_sha(
-    ledger: dict[str, Any],
+def _exact_sha_terminal_runs(
     index: Sequence[dict[str, Any]],
     *,
     sha: str,
     branch: str,
-    repository: str,
-    observed_at: str,
-    fetcher: Callable[[int, str], dict[str, Any]] = fetch_run,
-) -> tuple[list[tuple[int, str]], list[str]]:
-    """Observe newest terminal runs for all workflows without short-circuiting."""
-    validate_ledger(ledger)
+) -> list[int]:
+    """Select the newest terminal push attempt from every exact-SHA workflow."""
     newest: dict[str, dict[str, Any]] = {}
     for run in index:
         workflow = str(run.get("workflowName") or "").strip()
@@ -744,13 +757,28 @@ def observe_exact_sha(
         if key > current_key:
             newest[workflow] = run
 
+    return [
+        _run_id(newest[workflow].get("databaseId"))
+        for workflow in sorted(newest)
+        if str(newest[workflow].get("status") or "").lower() == "completed"
+    ]
+
+
+def observe_exact_sha(
+    ledger: dict[str, Any],
+    index: Sequence[dict[str, Any]],
+    *,
+    sha: str,
+    branch: str,
+    repository: str,
+    observed_at: str,
+    fetcher: Callable[[int, str], dict[str, Any]] = fetch_run,
+) -> tuple[list[tuple[int, str]], list[str]]:
+    """Observe newest terminal runs for all workflows without short-circuiting."""
+    validate_ledger(ledger)
     results: list[tuple[int, str]] = []
     errors: list[str] = []
-    for workflow in sorted(newest):
-        summary = newest[workflow]
-        if str(summary.get("status") or "").lower() != "completed":
-            continue
-        run_id = _run_id(summary.get("databaseId"))
+    for run_id in _exact_sha_terminal_runs(index, sha=sha, branch=branch):
         try:
             payload = fetcher(run_id, repository)
             if str(payload.get("headSha") or "").lower() != sha:
@@ -897,11 +925,14 @@ def _print_blockers(blockers: Sequence[str], operation: str) -> int:
 
 
 def _command_observe(args: argparse.Namespace) -> int:
-    ledger = new_ledger() if args.validate_only else read_ledger(args.ledger)
     payload = _validation_payload(args.run) if args.validate_only else fetch_run(args.run, args.repo)
-    result = observe_payload(ledger, payload, observed_at=_now())
-    if not args.validate_only:
-        write_ledger(args.ledger, ledger)
+    if args.validate_only:
+        ledger = new_ledger()
+        result = observe_payload(ledger, payload, observed_at=_now())
+    else:
+        with _locked_ledger(args.ledger) as ledger:
+            result = observe_payload(ledger, payload, observed_at=_now())
+            write_ledger(args.ledger, ledger)
     print(f"CI_FAILURE_LEDGER_OBSERVE run={args.run} result={result}")
     print("\n".join(status_lines(ledger)))
     return 0
@@ -924,18 +955,32 @@ def _command_observe_sha(args: argparse.Namespace) -> int:
         print("CI_FAILURE_LEDGER_OBSERVE_SHA_VALIDATE_ONLY_PASS")
         return 0
     sha = args.sha.lower() if args.sha else remote_head(args.branch, args.remote)
-    ledger = read_ledger(args.ledger)
     index = fetch_run_index(sha, args.repo)
-    results, errors = observe_exact_sha(
-        ledger,
-        index,
-        sha=sha,
-        branch=args.branch,
-        repository=args.repo,
-        observed_at=_now(),
-    )
-    if results:
-        write_ledger(args.ledger, ledger)
+    fetched: dict[int, dict[str, Any] | str] = {}
+    for run_id in _exact_sha_terminal_runs(index, sha=sha, branch=args.branch):
+        try:
+            fetched[run_id] = fetch_run(run_id, args.repo)
+        except (LedgerError, OSError) as exc:
+            fetched[run_id] = str(exc)
+
+    def prepared_run(run_id: int, _repository: str) -> dict[str, Any]:
+        payload = fetched[run_id]
+        if isinstance(payload, str):
+            raise LedgerError(payload)
+        return payload
+
+    with _locked_ledger(args.ledger) as ledger:
+        results, errors = observe_exact_sha(
+            ledger,
+            index,
+            sha=sha,
+            branch=args.branch,
+            repository=args.repo,
+            observed_at=_now(),
+            fetcher=prepared_run,
+        )
+        if results:
+            write_ledger(args.ledger, ledger)
     for run_id, result in results:
         print(f"CI_FAILURE_LEDGER_OBSERVE_SHA run={run_id} result={result}")
     print("\n".join(status_lines(ledger)))
@@ -1006,6 +1051,9 @@ def _command_repair(args: argparse.Namespace) -> int:
             if family["status"] == "open"
         )
     selected = sorted(set(selected))
+    selected_fingerprints = {
+        family_id: _digest(families.get(family_id)) for family_id in selected
+    }
     command = ["make", args.evidence_target, *evidence_vars]
     print(f"CI_FAILURE_REPAIR_EVIDENCE command={shlex.join(command)}", flush=True)
     result = subprocess.run(command, cwd=ROOT, check=False)
@@ -1019,7 +1067,15 @@ def _command_repair(args: argparse.Namespace) -> int:
         recorded_at=_now(),
         is_ancestor=_git_is_ancestor,
     )
-    write_ledger(args.ledger, ledger)
+    with _locked_ledger(args.ledger) as current:
+        current_families = cast(dict[str, Any], current["families"])
+        for family_id in selected:
+            if _digest(current_families.get(family_id)) != selected_fingerprints[family_id]:
+                raise LedgerError(
+                    f"family {family_id} changed while repair evidence ran; rerun its evidence"
+                )
+        current_families.update({family_id: families[family_id] for family_id in selected})
+        write_ledger(args.ledger, current)
     print(f"CI_FAILURE_REPAIR_RECORDED families={len(selected)} sha={args.sha}")
     return 0
 
