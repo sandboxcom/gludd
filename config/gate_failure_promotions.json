@@ -600,6 +600,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_release_ee_collection_closure.py::test_workflow_manifest_is_the_exact_sorted_native_validator_closure",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "mcp-git-composite-choice-closure",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_mcp_tool_gen.py::test_tool_def_required_and_choices",
+      "full_gate_phase": "test"
     }
   ]
 }

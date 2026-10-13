@@ -63,6 +63,7 @@ ROSTER = (
     "tests/unit/test_ansible_ee_locked_consumer_admission.py",
     "tests/unit/test_release_asset_matrix.py",
     "tests/unit/test_release_ee_collection_closure.py",
+    "tests/unit/test_mcp_tool_gen.py",
 )
 
 

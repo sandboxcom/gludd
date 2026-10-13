@@ -64,6 +64,26 @@ diagnostic/composite/native-regression replay passes all 176 cases. These are
 source-level results, not deployed authentication, the full release gate or
 exact-SHA hosted acceptance. S98.4 remains open; no master promotion is authorized.
 
+### Git MCP schema publication acceptance
+
+Terminal Build 38451761526 exposes a stale exact-choice expectation: generated
+MCP schema already contains the eight authenticated composites documented above,
+but its original test ends at `ci_cancel`. Native replay reproduces that failure;
+the original required-field and exact-choice assertions remain, with only those
+eight supported operations appended. No generator or production operation is
+changed. All 102 related checks pass warning-fatal on Python 3.11 and 3.14.
+
+A new failing-first publication control and three append-only roster/family
+controls require the entire generator test file in the existing early owner.
+The control checks the executable recipe's quoted test selections exactly once,
+not its evidence comments. Native promotion validation retains 64 families, all
+21 phases, the 2850-second ceiling and required complete gate. This source repair
+does not prove deployed authentication, hosted successor or release completion.
+
+Actual complete early admission passes 1412 main cases plus fresh help in 52.7
+observed seconds under the original 90/60 bounds. Receipt:
+`.gate-logs/v012-mcp-composite-choices-early-admission.log`.
+
 ## S98.4 shared advisory enforcement-model owner
 
 The enforcement roles now reach one existing-role task include,

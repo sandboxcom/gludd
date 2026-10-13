@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Git MCP schema acceptance omitted implemented composites
+
+- Terminal Build 38451761526 exposes one unit-2 schema failure: the generated native module schema contains all eight already implemented composite Git operations, while the original exact-choice expectation stops at ci_cancel. The unchanged required-field and exact-choice assertions are retained, with those eight supported operations appended; no generator or production operation is removed.
+- The canonical failing node reproduces before migration. A new publication-ownership control and three append-only scheduling/family expectations then fail before the complete generator file is added to the existing bounded early owner. All 102 related checks pass on Python 3.11 and 3.14 with fatal warnings. The native manifest admits 64 families with the same full-gate requirement, 21 phases and 2850-second ceiling. Hosted successor and release/deployment proof remain pending.
+- Actual complete early admission passes 1412 main cases plus fresh help in 52.7 observed seconds under unchanged 90/60 bounds. Executable selections must include the complete file exactly once; an evidence comment alone cannot satisfy the new control.
+
 ### 2026-10-13 — Reviewed collection artifacts stopped before the EE consumer
 
 - Archive acquisition and offline staging did not make the existing EE build consume those reviewed bytes; its original Galaxy input still depended on online name resolution. Canonical consumer regressions fail 43 times before one control passes. The existing native artifact owner now hands all sixteen verified archives to one exclusive Builder context, retaining complete native dependency/introspection/runtime/smoke inputs and the original immutable-image warm.

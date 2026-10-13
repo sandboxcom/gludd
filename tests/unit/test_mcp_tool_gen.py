@@ -19,6 +19,7 @@ from types import ModuleType
 
 import pytest
 import yaml
+from scripts.makefile_layout import compose_makefile
 from scripts.mcp_topics import load_topics, topic_artifact_paths
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -117,7 +118,41 @@ def test_tool_def_required_and_choices() -> None:
         "release_recut",
         "ci_verdict",
         "ci_cancel",
+        "feature_start",
+        "feature_done",
+        "rebranch_onto",
+        "ship_commit",
+        "worktree_merge",
+        "worktree_cleanup",
+        "worktree_health_check",
+        "worktree_merge_all",
     ]
+
+
+def test_git_tool_schema_is_checked_before_publication() -> None:
+    """Keep every generator contract in the existing bounded early owner."""
+    manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    family = next(
+        entry for entry in manifest["families"]
+        if entry["id"] == "mcp-git-composite-choice-closure"
+    )
+    assert family == {
+        "id": "mcp-git-composite-choice-closure",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": "tests/unit/test_mcp_tool_gen.py::test_tool_def_required_and_choices",
+        "full_gate_phase": "test",
+    }
+    stanza = compose_makefile(ROOT / "Makefile").split(
+        "\n_pytest-runtime-compatibility-admission:\n", 1
+    )[1].split("\n\n", 1)[0]
+    selections = [
+        line.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+        for line in stanza.splitlines() if line.lstrip().startswith('TESTFILES="')
+    ]
+    assert selections[0].count("tests/unit/test_mcp_tool_gen.py") == 1
+    assert manifest["full_gate_target"] == "gate"
+    assert manifest["full_gate_required"] is True
 
 
 def test_argspec_to_json_schema_unit() -> None:
