@@ -888,7 +888,7 @@ help:
 	@echo "  check-gate-fresh        validate .gate-status is fresh and all phases pass — replaces broken _gate-fresh-check inline shell"
 	@echo "  pipeline-health         verify both local and remote pipelines are actually running (not stalled/zombie)"
 	@echo "  pipeline-status         exact pushed-SHA local/all-workflow status and automatic JSON handoff (PIPELINE_STATUS_*)"
-	@echo "  status-heartbeat         Refresh producer-owned proof state (INTERVAL, COUNT, STATUS_HEARTBEAT_VALIDATE_ONLY, PIPELINE_STATUS_*)"
+	@echo "  status-heartbeat         Refresh producer-owned proof state (INTERVAL, COUNT, STATUS_HEARTBEAT_VALIDATE_ONLY, STATUS_HEARTBEAT_STOP_ON_TERMINAL=0|1, PIPELINE_STATUS_*)"
 	@echo "  gate-all-background     run gate-all in background, poll with gate-status-check"
 	@echo "  target-two              Second test target"
 	@echo "  target-one              First test target"

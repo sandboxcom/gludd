@@ -42,6 +42,7 @@ ROSTER = (
     "tests/unit/test_ci_verdict_structural_repair.py",
     "tests/unit/test_secrets_baseline_compaction.py",
     "tests/unit/test_pipeline_status_exact_sha.py",
+    "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
     "tests/unit/test_make_help_audit.py",

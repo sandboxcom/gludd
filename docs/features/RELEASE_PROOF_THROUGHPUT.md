@@ -823,6 +823,50 @@ guards together after owners finish, knowingly restoring the failed admission.
 Canonical full gate, successor exact-SHA CI and installed/deployment proof remain
 required; no release task or backlog item is marked complete from this receipt.
 
+### Terminal ownership for an explicitly pinned heartbeat
+
+`STATUS_HEARTBEAT_STOP_ON_TERMINAL=1` lets the existing `status-heartbeat` owner
+finish after its current invocation fully observes every workflow for the
+explicit `PIPELINE_STATUS_SHA`. The default remains `0`; `COUNT=0` therefore
+retains its continuous behavior. The five-minute minimum interval remains.
+
+The existing `pipeline_status.py` producer emits an identity-bound terminal
+marker only after publishing its owned snapshot, validating all run details,
+and completing the existing ledger/history observation without errors. It
+reuses `_terminal_verdict`, the canonical all-workflow outcome rules also used
+by `require_ci_green.py`. The heartbeat streams output through its existing
+log owner and retains only this invocation's matching marker in one temporary
+file under the project namespace. It resets that file before each invocation
+and removes it on exit or interruption. An old same-SHA snapshot or marker
+cannot stop a failed current observation. No additional GitHub query, watcher,
+client, daemon, or polling owner is introduced.
+
+All workflows must be terminal, including optional sibling workflows. Pending,
+missing, empty, foreign, malformed, lookup-error, ledger-error, publication-error,
+and validate-only observations do not stop the loop. An unpinned invocation
+remains continuous. A terminal failure stops with a nonzero result and reports
+`outcome=failure release_ready=false`. Success also reports `release_ready=false`;
+the snapshot never becomes gate or release authority.
+
+Practitioner evidence illustrates why completion, failure, and missing evidence
+remain separate. In [GitHub Community discussion #207496](https://github.com/orgs/community/discussions/207496),
+a September 2026 report describes a workflow remaining queued for 22 days with
+no jobs and contradictory cancellation responses, linking earlier occurrences
+of the same class. These are practitioner observations, not proof about Gludd
+or a guaranteed GitHub workaround; elapsed time cannot authorize a terminal
+stop. A [July 2021 CLI report](https://github.com/cli/cli/issues/3962) also showed
+already-completed failures returning zero from `gh run watch --exit-status`.
+That specific defect was fixed that month; it motivates retaining the explicit
+failure result in the regression contract. The [current CLI manual](https://cli.github.com/manual/gh_run_watch)
+describes a per-run watcher, which does not replace Gludd's required all-workflow,
+exact-SHA producer and its ledger observation.
+
+The contract's safe example uses `STATUS_HEARTBEAT_VALIDATE_ONLY=1` together with
+the explicit stop option and invokes no owners or file writes. Focused native
+Make acceptance exercises the real producer and target with local adapters,
+including a live-streaming handshake and stale same-SHA marker regressions.
+Those local fixtures are not hosted timing, full-gate, or release evidence.
+
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
 [observation-api]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository

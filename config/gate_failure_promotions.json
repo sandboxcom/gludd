@@ -532,6 +532,13 @@
       "full_gate_phase": "test"
     },
     {
+      "id": "terminal-heartbeat-ownership",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_status_heartbeat_terminal.py::test_opted_in_continuous_heartbeat_stops_after_exact_complete_terminal_result",
+      "full_gate_phase": "test"
+    },
+    {
       "id": "all-required-ci-verdict",
       "owner_target": "_pytest-runtime-compatibility-admission",
       "node_kind": "pytest_node",

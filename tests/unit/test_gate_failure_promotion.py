@@ -967,13 +967,19 @@ def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
     assert payload["full_gate_required"] is True
 
 
-@pytest.mark.parametrize("kind", ["automatic-terminal-push-verdict", "all-required-ci-verdict"])
+@pytest.mark.parametrize("kind", [
+    "automatic-terminal-push-verdict", "terminal-heartbeat-ownership", "all-required-ci-verdict",
+])
 def test_verdict_history_contract_executes_before_hosted_fanout(kind: str) -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     nodes = {
         "automatic-terminal-push-verdict": (
             "tests/unit/test_pipeline_status_exact_sha.py::"
             "test_pipeline_terminal_snapshot_records_owned_push_verdict"
+        ),
+        "terminal-heartbeat-ownership": (
+            "tests/unit/test_status_heartbeat_terminal.py::"
+            "test_opted_in_continuous_heartbeat_stops_after_exact_complete_terminal_result"
         ),
         "all-required-ci-verdict": (
             "tests/unit/test_ci_verdict_all_required.py::"
@@ -1220,6 +1226,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "make-search-transient-error-contract",
         "make-search-fallback-runtime-contract",
         "automatic-terminal-push-verdict",
+        "terminal-heartbeat-ownership",
         "all-required-ci-verdict",
         "current-task-inventory-real-secret-scan",
         "workflow-safe-parser-throughput",
@@ -1393,7 +1400,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ci_verdict_all_required.py '
         'tests/unit/test_ci_verdict_structural_repair.py '
         'tests/unit/test_secrets_baseline_compaction.py '
-        'tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_task_ledger_validation.py '
+        'tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_status_heartbeat_terminal.py '
+        'tests/unit/test_task_ledger_validation.py '
         'tests/unit/test_make_readonly_version.py '
         'tests/unit/test_make_help_audit.py '
         'tests/unit/test_clean_stale_resource_namespaces.py '

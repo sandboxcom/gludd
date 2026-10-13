@@ -484,6 +484,11 @@ def _publish_snapshot(
             if not publish():
                 return False
     print(f"PIPELINE-SNAPSHOT-WRITTEN path={args.snapshot_output} state={state} release_ready=false", flush=True)
+    if terminal_observed and not errors and verdict is not None:
+        print(
+            f"PIPELINE-TERMINAL-OBSERVED repo={args.repo} branch={args.branch} "
+            f"sha={sha} verdict={verdict} release_ready=false", flush=True,
+        )
     return not errors
 
 

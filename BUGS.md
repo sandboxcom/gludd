@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — A completed CI owner continued identical terminal polling
+
+- The bounded heartbeat kept observing the same failed exact-SHA workflows after every workflow had completed. Its snapshot was current but never authorized an end to the watch; elapsed polling was not feature progress.
+- Canonical failing-first tests reproduce ten failures with 23 controls passing. The existing native target now offers an explicit terminal-stop option, defaulting off. Only the current producer's complete identity-bound, successfully published all-workflow observation can stop it; stale same-SHA snapshots or marker files, incomplete evidence and query/ledger/history/publication errors cannot. A terminal failure exits nonzero and remains release_ready=false.
+- All 156 original and new focused cases pass on Python 3.11 with fatal warnings. The canonical native scoped coverage audit passes unchanged 85/75 floors for its measured owner (.gate-logs/coverage-20261013T214057Z.json). Four additional registration failures reproduce before the whole new cohort joins the existing early owner; all 215 related cases then pass on Python 3.11 and 3.14. Live streaming, five-minute cadence, count semantics, owned cleanup and original assertions remain. The Python ownership inventory remains exact at 258 resources; native lifecycle tests separately prove cleanup of the Make-owned temporary marker. Required complete early admission, hosted successor, complete gate and release/deployment acceptance remain pending.
+
 ### 2026-10-13 — Run-wide log lookup repeatedly failed before exact-job retrieval
 
 - The normal failure-context target repeatedly received HTTP 502 while fetching the entire run's job inventory, although the exact job identity was already known. Native canonical TDD reproduces 13 failures and one validation-only control before the authenticated single-job REST lookup replaces that dependency.

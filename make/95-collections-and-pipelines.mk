@@ -639,10 +639,12 @@ pipeline-status:
 	exit $$STATUS_RC
 
 # Emit an auditable pipeline heartbeat at a five-minute cadence by default.
-# Use COUNT=0 for a continuous loop; artifacts are project-namespaced.
+# COUNT=0 stays continuous unless an explicit pinned terminal stop is enabled.
 STATUS_HEARTBEAT_VALIDATE_ONLY ?= 0
+STATUS_HEARTBEAT_STOP_ON_TERMINAL ?= 0
 status-heartbeat:
 	@case "$(STATUS_HEARTBEAT_VALIDATE_ONLY)" in 0|1) ;; *) echo "STATUS_HEARTBEAT_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
+	case "$(STATUS_HEARTBEAT_STOP_ON_TERMINAL)" in 0|1) ;; *) echo "STATUS_HEARTBEAT_STOP_ON_TERMINAL must be 0 or 1"; exit 2;; esac; \
 	if [ "$(STATUS_HEARTBEAT_VALIDATE_ONLY)" = "1" ]; then echo "STATUS-HEARTBEAT-PLAN output=$(PIPELINE_STATUS_OUTPUT) release_ready=false"; exit 0; fi; \
 	PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; \
 	if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; \
@@ -652,13 +654,38 @@ status-heartbeat:
 	case "$$INTERVAL_VALUE" in ''|*[!0-9]*) echo "INTERVAL must be a non-negative integer"; exit 2;; esac; \
 	case "$$COUNT_VALUE" in ''|*[!0-9]*) echo "COUNT must be a non-negative integer"; exit 2;; esac; \
 	if [ "$$INTERVAL_VALUE" -lt 300 ]; then echo "INTERVAL must be >= 300 seconds"; exit 2; fi; \
+	TERMINAL_MARKER_FILE=""; \
+	cleanup_heartbeat() { if [ -n "$$TERMINAL_MARKER_FILE" ]; then rm -f -- "$$TERMINAL_MARKER_FILE"; fi; }; \
+	trap cleanup_heartbeat EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	if [ "$(STATUS_HEARTBEAT_STOP_ON_TERMINAL)" = "1" ] && [ -n "$(PIPELINE_STATUS_SHA)" ] && [ "$(PIPELINE_STATUS_VALIDATE_ONLY)" = "0" ]; then \
+		TERMINAL_MARKER_FILE="$$(mktemp "$$RESOURCE_ROOT/status-heartbeat-terminal.XXXXXX")" || exit 2; \
+	fi; \
+	pipeline_status_tick() { \
+		$(MAKE) --no-print-directory pipeline-status PIPELINE_STATUS_REPO="$(PIPELINE_STATUS_REPO)" PIPELINE_STATUS_BRANCH="$(PIPELINE_STATUS_BRANCH)" PIPELINE_STATUS_REMOTE="$(PIPELINE_STATUS_REMOTE)" PIPELINE_STATUS_SHA="$(PIPELINE_STATUS_SHA)" PIPELINE_STATUS_FAILURE_LEDGER="$(PIPELINE_STATUS_FAILURE_LEDGER)" PIPELINE_STATUS_VALIDATE_ONLY="$(PIPELINE_STATUS_VALIDATE_ONLY)" PIPELINE_STATUS_OUTPUT="$(PIPELINE_STATUS_OUTPUT)"; \
+	}; \
 	i=0; while [ "$$COUNT_VALUE" -eq 0 ] || [ "$$i" -lt "$$COUNT_VALUE" ]; do \
 		timestamp="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; sha="$$(git rev-parse HEAD 2>/dev/null || echo unknown)"; \
 		echo "=== PIPELINE HEARTBEAT $$timestamp sha=$$sha ===" | tee -a "$$LOG"; \
 		$(MAKE) --no-print-directory gate-status 2>&1 | tee -a "$$LOG" || true; \
-		$(MAKE) --no-print-directory pipeline-status PIPELINE_STATUS_REPO="$(PIPELINE_STATUS_REPO)" PIPELINE_STATUS_BRANCH="$(PIPELINE_STATUS_BRANCH)" PIPELINE_STATUS_REMOTE="$(PIPELINE_STATUS_REMOTE)" PIPELINE_STATUS_SHA="$(PIPELINE_STATUS_SHA)" PIPELINE_STATUS_FAILURE_LEDGER="$(PIPELINE_STATUS_FAILURE_LEDGER)" PIPELINE_STATUS_VALIDATE_ONLY="$(PIPELINE_STATUS_VALIDATE_ONLY)" PIPELINE_STATUS_OUTPUT="$(PIPELINE_STATUS_OUTPUT)" 2>&1 | tee -a "$$LOG" || true; \
+		TERMINAL_OUTCOME=""; \
+		if [ -n "$$TERMINAL_MARKER_FILE" ]; then \
+			: > "$$TERMINAL_MARKER_FILE" || exit 2; \
+			pipeline_status_tick 2>&1 | tee -a "$$LOG" | while IFS= read -r line; do \
+				printf '%s\n' "$$line"; \
+				case "$$line" in \
+					"PIPELINE-TERMINAL-OBSERVED repo=$(PIPELINE_STATUS_REPO) branch=$(PIPELINE_STATUS_BRANCH) sha=$(PIPELINE_STATUS_SHA) verdict=success release_ready=false"|"PIPELINE-TERMINAL-OBSERVED repo=$(PIPELINE_STATUS_REPO) branch=$(PIPELINE_STATUS_BRANCH) sha=$(PIPELINE_STATUS_SHA) verdict=failure release_ready=false") printf '%s\n' "$$line" >> "$$TERMINAL_MARKER_FILE" ;; \
+				esac; \
+			done || true; \
+			while IFS= read -r marker; do \
+				case "$$marker" in *" verdict=success release_ready=false") TERMINAL_OUTCOME=success ;; *" verdict=failure release_ready=false") TERMINAL_OUTCOME=failure ;; esac; \
+			done < "$$TERMINAL_MARKER_FILE"; \
+		else pipeline_status_tick 2>&1 | tee -a "$$LOG" || true; fi; \
 		$(MAKE) --no-print-directory active-work-status 2>&1 | tee -a "$$LOG" || true; \
 		echo "STATUS-HEARTBEAT-SNAPSHOT path=$(PIPELINE_STATUS_OUTPUT)"; \
+		if [ -n "$$TERMINAL_OUTCOME" ]; then \
+			echo "STATUS-HEARTBEAT-STOP sha=$(PIPELINE_STATUS_SHA) outcome=$$TERMINAL_OUTCOME release_ready=false" | tee -a "$$LOG"; \
+			if [ "$$TERMINAL_OUTCOME" = "failure" ]; then exit 1; fi; break; \
+		fi; \
 		i=$$((i + 1)); if [ "$$COUNT_VALUE" -ne 0 ] && [ "$$i" -ge "$$COUNT_VALUE" ]; then break; fi; sleep "$$INTERVAL_VALUE"; \
 	done
 
