@@ -84,3 +84,19 @@ or release authority. The exact successor hosted SHA must be measured with
 the existing immutable ci-run-summary timing owner before claiming hosted
 throughput improvement. Serving processes, listeners, deployment artifacts,
 ZDD, and rollback authority are unchanged.
+
+## Dependent boundary acceptance (2026-10-13)
+
+Exact successor 6be0e00 fails the early hosted owner with three failures and
+1164 passes in 49.03 seconds: stale EE interpreter/input-copy/lock expectations
+and a native test parameter colliding with Playwright's context fixture.
+Local canonical Python 3.11 reproduces all three failures. Boundary conformance
+retains every original dependency/collection assertion, checks the current
+public interpreter and smoke copies, and verifies bytes for all six inputs.
+Renaming the test parameter leaves its values and assertions unchanged.
+
+The complete current native owner then passes 1167 cases plus fresh help in
+46.3 observed seconds, preserving the 90/60 bounds and original grouping.
+These source receipts do not repair hosted evidence retroactively or establish
+installed-image, full-gate or deployment acceptance. Once-per-publication
+admission of this same maintained owner is a separate pipeline enhancement.

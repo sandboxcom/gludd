@@ -102,7 +102,7 @@ def _model_owner(role: str) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 @pytest.mark.parametrize(
-    ("role", "context"),
+    ("role", "decision_fields"),
     (
         ("enforcement_gate", (
             "_eg_gate_complete", "_eg_gate_passed", "_eg_gate_fresh", "_eg_gate_age_seconds",
@@ -114,7 +114,7 @@ def _model_owner(role: str) -> tuple[dict[str, Any], dict[str, Any]]:
     ),
 )
 def test_enforcement_prompts_retain_decision_context_and_native_text(
-    role: str, context: tuple[str, ...],
+    role: str, decision_fields: tuple[str, ...],
 ) -> None:
     tasks = _tasks(f"agent/roles/{role}/tasks/main.yml")
     caller, call = _model_owner(role)
@@ -122,7 +122,7 @@ def test_enforcement_prompts_retain_decision_context_and_native_text(
     assert isinstance(parameters, dict)
     prompt = caller["vars"]["_enforcement_analysis_prompt"]
     assert isinstance(prompt, str) and role in prompt
-    for field in context:
+    for field in decision_fields:
         assert field in prompt, f"analysis must retain {field}"
     assert "omit" in parameters["model_profile"]
     assert "omit" in parameters["route_task_type"]

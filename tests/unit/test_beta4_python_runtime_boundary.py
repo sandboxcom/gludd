@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -97,7 +98,7 @@ def test_execution_environment_definition_uses_locked_inputs() -> None:
         "ansible_runner": {"package_pip": "ansible-runner==2.4.3"},
         "python_interpreter": {
             "package_system": "python3.11",
-            "python_path": "/usr/bin/python3.11",
+            "python_path": "/opt/gludd/ansible-ee-python/bin/python3.11",
         },
     }
     generic_requirements = (ROOT / "config/ansible/requirements.txt").read_text(encoding="utf-8")
@@ -118,6 +119,9 @@ def test_execution_environment_definition_uses_locked_inputs() -> None:
             ("travel", "0.1.0"),
             ("xml", "0.1.0"),
         )
+    ] + [
+        {"src": "ee-smoke-settings.yml", "dest": "smoke"},
+        {"src": "ee-smoke-limiter.toml", "dest": "smoke"},
     ]
     assert ee["options"]["package_manager_path"] == "/usr/bin/dnf"
 
@@ -167,8 +171,18 @@ def test_runtime_manifests_are_versioned_and_content_addressed() -> None:
     assert lock["schema_version"] == 1
     assert lock["release"] == "0.1.0-beta.4"
     assert re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", lock["base_image"])
-    assert set(lock["inputs"]) == {"galaxy", "python", "system", "definition"}
+    input_paths = {
+        "galaxy": ROOT / "config/ansible/requirements.yml",
+        "python": ROOT / "config/ansible/requirements.txt",
+        "system": ROOT / "config/ansible/bindep.txt",
+        "definition": ROOT / "config/ansible/execution-environment.yml",
+        "smoke_settings": ROOT / "config/ansible/ee-smoke-settings.yml",
+        "smoke_limiter": ROOT / "config/ansible/ee-smoke-limiter.toml",
+    }
+    assert set(lock["inputs"]) == set(input_paths)
     assert all(re.fullmatch(r"sha256:[0-9a-f]{64}", value) for value in lock["inputs"].values())
+    for name, path in input_paths.items():
+        assert lock["inputs"][name] == "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
     assert managed["schema_version"] == 1
     assert managed["interpreter_variable"] == "ansible_python_interpreter"
     assert managed["ambient_interpreters_allowed"] is False

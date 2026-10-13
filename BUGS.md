@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Scoped EE/Git source proofs missed dependent early-runtime assertions
+
+- Exact SHA 6be0e00 fails Build 38413188456 on both Python gates. The one early native run reports three failures and 1164 passes in 49.03 seconds, not a timeout: two EE boundary expectations remain on the distro interpreter/four-input contract, and a new native test parameter shadows Playwright's context fixture.
+- Local native Python 3.11 reproduces all three failures. Boundary conformance retains every original dependency and eight collection-copy assertion, requires the checksum-pinned public interpreter and both actual smoke copies, and verifies the exact bytes of all six lock inputs. The native role test only renames the conflicting parameter; every supplied field and prompt/security assertion remains.
+- The complete existing two-worker early cohort then passes 1167 cases plus its separately isolated one-worker help case in 46.3 observed seconds at unchanged 90/60 bounds. Scope tests do not substitute for this dependent owner, full gate, installed-image, replacement exact-SHA hosted or deployment acceptance. Mandatory once-per-publication owner wiring is being added separately; no release task is closed.
+
 ### 2026-10-13 — Scoped commit admission omitted text formatting and rewrote frozen data at push
 
 - Normal batch push refuses publication after maintained EOF formatting changes five ordinary files and appends LF to the exact checksum-frozen limiter fixture. Its existing native SHA test fails; restoring verified upstream bytes makes that unchanged assertion pass. No push success is recorded.
