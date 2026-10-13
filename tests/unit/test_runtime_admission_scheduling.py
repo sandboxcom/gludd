@@ -35,6 +35,7 @@ ROSTER = (
     "tests/unit/test_ansible_searxng_source_inspection.py",
     "tests/unit/test_integration_admission_target.py",
     "tests/unit/test_ci_failure_ledger.py",
+    "tests/unit/test_ci_failure_ledger_concurrency.py",
     "tests/unit/test_proof_observations.py",
     "tests/unit/test_ci_await_exact.py",
     "tests/unit/test_ci_verdict_all_required.py",
@@ -104,11 +105,11 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help"]
     assert len({row["pid"] for row in rows}) == 2
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1")]
-    for row, workers in zip(rows, (2, 1), strict=True):
+    for row, workers, limit in zip(rows, (2, 0), (2, 1), strict=True):
         flags = str(row["flags"])
         assert "-W error" in flags
         assert f"-n {workers}" in flags
-        assert f"--maxprocesses {workers}" in flags
+        assert f"--maxprocesses {limit}" in flags
         assert not any(flag in flags for flag in ("--lf", "--ff", "--collect-only", "-W ignore", "-k "))
     test_files = _stanza("test-files")
     assert '--basetemp="$$BT"' in test_files

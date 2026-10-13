@@ -232,3 +232,47 @@ scheduled. The existing [session-fixture user report](https://github.com/pytest-
 explains separate worker sessions, supporting measurement of repeated setup.
 Rollback reverts the two marks and their regression together. No serving
 process, ZDD action, release closure or full-gate requirement is changed.
+
+## Fresh singleton without a redundant worker (2026-10-13)
+
+Only the second existing test-files child changes to -n 0 with maxprocesses 1.
+It still starts a separate interpreter after the complete two-worker cohort,
+owns a distinct basetemp and Ansible temporary path, loads all installed
+plugins/autouse fixtures, and runs the unchanged duplicate-help assertion.
+It does not depend on worker_id, workerinput or PYTEST_XDIST_WORKER. Removing
+the extra worker avoids a second interpreter and collection for one case;
+it does not merge the help test into the preceding mutable-state session.
+
+The existing real Make capture test fails first on the new serial expectation.
+Its complete roster now also includes the already-required ledger concurrency
+suite rather than the stale pre-addition roster. Two child PIDs, full/help
+order, complete selections, limits, warning-fatal behavior and both failure
+exits remain asserted. Existing native shared-file, exactly-once and fatal
+warning controls still use the original one/two-worker matrix. Dependent
+promotion pins conform to the new exact help flag and retain 90/60 bounds.
+
+An isolated native comparison passes the exact help node in 0.79s serial
+versus 1.75s with one worker. The complete candidate replay passes 1184 main
+cases and help in 41.1 observed seconds; trace PID 32156 is distinct from
+both cohort worker PIDs. No tests, plugins, warning policies, deadlines or
+coverage requirements are disabled. These local receipts do not establish
+hosted Python 3.12 improvement or authorize any backlog closure.
+
+The official [distribution contract](https://pytest-xdist.readthedocs.io/en/stable/distribution.html)
+supports native -n 0 and worker ceilings. The documented
+[worker architecture](https://pytest-xdist.readthedocs.io/en/stable/how-it-works.html)
+explains per-worker interpreters and collection. A long-lived
+[2018 worker-startup report](https://github.com/pytest-dev/pytest-xdist/issues/346)
+motivates measuring startup rather than blindly adding workers; its 88-core
+case is not asserted to reproduce Gludd's two-worker issue. Rollback restores
+the second child's worker flag and exact pins together. No serving runtime,
+ZDD switch, installed image or release authority changes.
+
+Final source acceptance includes all 169 parser/bootstrap, fixture, scheduling,
+promotion and publication cases on both installed Python versions. The expanded
+actual Python 3.14 owner passes 1188 main cases in 43.87 pytest seconds and
+fresh help in 0.83s, 46.8s observed total under unchanged 90/60 bounds. Its
+run-isolated trace has exactly 1189 starts/finishes, zero failure reports and
+no unfinished node. This local source receipt remains separate from hosted
+Python 3.12 acceptance. All 227 target contracts, 58 failure families, native
+Make parity/help, Ruff, strict typing and task integrity pass; no task is ticked.

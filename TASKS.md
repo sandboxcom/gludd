@@ -49,6 +49,24 @@ exactly-once outcomes and one shared inventory setup, preserving all source,
 plugin, collision and binding assertions. This source receipt is not release
 or deployment acceptance; S98.4 remains unchecked.
 
+S98.4 fresh-singleton repair scope: `make/10-observability-and-tests.mk`,
+`tests/unit/test_runtime_admission_scheduling.py`, and
+`tests/unit/test_gate_failure_promotion.py`. The actual Make regression fails
+first; only fresh help selects native serial scheduling with cap one. All
+complete-roster, process separation, ordering, warning and failure assertions
+remain; the old roster adds the existing ledger concurrency suite. All 130
+related cases pass on both runtimes. Earlier complete candidate observation
+passes 1184 main cases plus help in 41.1s; expanded final cohort and exact-SHA
+hosted/full-gate/deployment acceptance are still pending, not completed proof.
+
+Final S98.4 runtime-optimization source acceptance passes all 169 related cases
+on Python 3.11 and 3.14. The expanded real 3.14 owner passes 1188 main cases
+plus fresh help in 46.8 observed seconds, under unchanged 90/60 bounds; its
+native trace has 1189 exactly-once starts/finishes and no failure or unfinished
+node. Target contracts (227), failure families (58), native Make parity/help,
+Ruff, strict typing and task integrity pass. Exact successor hosted admission,
+canonical full gate, installed EE and deployment acceptance remain pending.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

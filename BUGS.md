@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Fresh singleton admission paid for a redundant pytest worker
+
+- After the complete two-worker cohort, the help-only test-files invocation already owns a fresh interpreter and temp directory. Starting an additional xdist worker repeats startup/collection for one case; native isolated comparison passes in 0.79s serial versus 1.75s with one worker.
+- The actual Make capture regression fails before the change. Only the second child selects -n 0 with cap one; complete roster, distinct child PIDs, all plugin/autouse loading, fatal warnings, original help assertion, child failure exits and 90/60 bounds remain. The stale roster expectation adds the already-required ledger concurrency suite; no former selection is removed.
+- All 130 original/new related cases pass on both runtimes. A complete 1184-main-case candidate trace plus help proves exact-once outcomes and a distinct fresh-help PID in 41.1 observed seconds. Final expanded-cohort, exact-SHA hosted, full gate and deployment receipts remain required; no item is marked complete.
+- Final source replay passes all 169 related cases on both runtimes. The expanded real Python 3.14 owner passes all 1188 main cases plus help in 46.8 observed seconds; its trace has 1189 exactly-once starts/finishes, no failure reports and no unfinished node. This does not retroactively repair the prior hosted timeout or authorize release.
+
 ### 2026-10-13 — Two workers rebuilt the same repository fixture inventory
 
 - The real duration profile reports 7.06s and 6.62s setup for the two consumers of one module-scoped source audit. xdist gives each worker its own module fixture, so the prior combined parser still walked the complete test inventory twice.

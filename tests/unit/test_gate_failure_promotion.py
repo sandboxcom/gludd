@@ -267,7 +267,7 @@ def test_bulkhead_scheduling_failures_execute_in_complete_early_cohorts(
         if phase["target"] == family["owner_target"]
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
-    assert "-W error" in owner and "-n 1" in owner
+    assert "-W error" in owner and "-n 2" in owner
     assert payload["full_gate_required"] is True
 
 
@@ -1155,7 +1155,7 @@ def test_duplicate_help_failure_runs_in_a_fresh_early_process() -> None:
     assert len(recipes) == 3
     assert "tests/unit/test_makefile_audit_deep.py" not in recipes[1]
     assert f'TESTFILES="{node}"' in recipes[2]
-    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 1 --maxprocesses 1"' in recipes[2]
+    assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 0 --maxprocesses 1"' in recipes[2]
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
@@ -1405,7 +1405,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
-    assert "-n 1" in runtime_compatibility_owner
+    assert "-n 0" in runtime_compatibility_owner
 
     contracts = json.loads(CONTRACT.read_text(encoding="utf-8"))["targets"]
     check_contract = next(
