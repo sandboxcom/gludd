@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Runtime admission timed out and shared-state groups arrived too late
+
+- Exact c9d2e98 Build 38362521808 failed both Python 3.11 and 3.12 early owners at the original 90-second deadline; downstream EE/shards did not run. No skipped downstream check is counted green.
+- Five new native cases reproduce two failures before repair: the current serial owner violates bounded two-worker scheduling, and a real exclusive-create shared fixture races because canonical group marks arrive after xdist expands node IDs. The existing collection hook now runs first; the complete classification and ratchet behavior are retained.
+- The whole first cohort uses two workers with maxprocesses two; the separate fresh help child remains one worker with maxprocesses one. Five cases pass in both existing Python environments and all 78 related isolation/ratchet/promotion/admission cases pass. Original test membership, warning-fatal execution, failure propagation, time bounds, coverage and release acceptance stay mandatory.
+- Upstream session-fixture and grouping reports are documented in RUNTIME_ADMISSION_THROUGHPUT.md. Native timing is not measured hosted improvement, a global worker-allocation lease, a passing full gate or feature deployment proof.
+
 ### 2026-10-13 — Nested observed tests inherit an unrelated active-environment hint
 
 - The observed Python 3.11 replay passes but UV warns that the outer active environment disagrees with the explicitly selected project environment. A real nested pytest regression reproduces that warning while checking actual interpreter identity.

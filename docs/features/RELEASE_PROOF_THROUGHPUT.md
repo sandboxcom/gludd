@@ -96,6 +96,10 @@ change required workflows or relax resource limits to produce faster numbers.
 
 ### Native build progress
 
+The [runtime admission scheduling decision](RUNTIME_ADMISSION_THROUGHPUT.md)
+records the unchanged whole-roster deadline, real shared-state race regression,
+bounded existing-xdist repair and native-versus-hosted proof distinction.
+
 The EE build in run 38340797931 emitted no native build output between
 03:28:22 and 03:30:52. The existing Builder parser defaults to verbosity 2;
 the wrapper now explicitly selects its supported verbosity 3 for Docker and

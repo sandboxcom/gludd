@@ -27,8 +27,8 @@ the first nonzero result:
 3. `pytest-runtime-compatibility` runs the complete crash-recovery,
    hook-runtime split compatibility, async-launcher, and session-persistence
     files and the complete background-launcher and gate-run-lock files, plus the exact
-   session-objective CI node, with `-W error` and one
-   worker in the invoking Python environment. It rejects deprecated fixtures,
+    session-objective CI node, with `-W error` and two bounded
+    workers in the invoking Python environment. It rejects deprecated fixtures,
    runtime API snapshot drift, launcher policy drift, and invalid handoff
     metadata before broader integration checks. The complete gate-run-lock cohort
     includes real Make failure-injection checks: read-only admission precedes
@@ -38,7 +38,10 @@ the first nonzero result:
     worker startup, shared worker/backlog reservations, cancellation, timed
     admission and owned shutdown. The original overflow failure and deterministic
     reservation reproducer are mapped as two separate promoted families, with
-    the same one-worker, 90-second/60-second phase bounds and mandatory full gate.
+    the unchanged 90-second/60-second phase bounds and mandatory full gate.
+    The fresh help-only child remains a separate one-worker process. The
+    [native scheduling decision](RUNTIME_ADMISSION_THROUGHPUT.md) preserves
+    historical one-worker measurements and documents actual shared-state safety.
     The complete enhancement-ratio and pytest-fixture-audit files also execute
     here. The existing AST audit checks every Python test source for unsupported
     class-scoped instance bindings; it does not sample files, import fixtures,

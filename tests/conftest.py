@@ -47,10 +47,12 @@ import socket
 import sys
 import tempfile
 import unittest.mock as _mock_mod
-from collections.abc import Iterator, Mapping
+from asyncio import Future
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from queue import SimpleQueue
 from types import ModuleType
 from typing import Any, cast
 
@@ -75,7 +77,7 @@ del _yaml_mod, _name
 # inspect.iscoroutinefunction -> _has_code_flag -> _unwrap_partialmethod
 # enters infinite recursion on mock objects.
 # Workaround: wrap _is_async_obj to catch RecursionError.
-_orig_is_async_obj = _mock_mod._is_async_obj
+_orig_is_async_obj = cast(Callable[[object], bool], vars(_mock_mod)["_is_async_obj"])
 
 
 def _safe_is_async_obj(obj: object) -> bool:
@@ -85,7 +87,7 @@ def _safe_is_async_obj(obj: object) -> bool:
         return False
 
 
-_mock_mod._is_async_obj = _safe_is_async_obj
+vars(_mock_mod)["_is_async_obj"] = _safe_is_async_obj
 
 # Python 3.14: pkg_resources was removed from the stdlib.
 # The ``fs`` (pyfilesystem) package calls ``__import__("pkg_resources").declare_namespace``
@@ -93,7 +95,7 @@ _mock_mod._is_async_obj = _safe_is_async_obj
 # Provide a stub ``pkg_resources`` module that exposes a no-op
 # ``declare_namespace`` so ``fs`` can import without error.
 _FAKE_PKG_RESOURCES = type(sys)("pkg_resources")
-_FAKE_PKG_RESOURCES.declare_namespace = lambda _name: None
+vars(_FAKE_PKG_RESOURCES)["declare_namespace"] = lambda _name: None
 sys.modules.setdefault("pkg_resources", _FAKE_PKG_RESOURCES)
 del _FAKE_PKG_RESOURCES
 
@@ -556,7 +558,7 @@ def _deny_unowned_unit_gunicorn(
     if not current_test.startswith("tests/unit/"):
         return
     try:
-        executable = os.fsdecode(os.fspath(args[0]))
+        executable = os.fsdecode(os.fspath(cast(str | bytes | os.PathLike[str] | os.PathLike[bytes], args[0])))
     except TypeError:
         return
     if Path(executable).name == "gunicorn":
@@ -745,6 +747,7 @@ def pytest_collection(session: pytest.Session) -> Iterator[None]:
         _PYTEST_COLLECTION_ACTIVE = False
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Serialize shared enforcement state and apply strict ratchet markers.
 
@@ -808,7 +811,7 @@ def _disable_gate_refresh_autospawn(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True, scope="session")
-def _testclient_presents_loopback_host():
+def _testclient_presents_loopback_host() -> Iterator[None]:
     """Make Starlette's ``TestClient`` present the loopback IP it actually is.
 
     ``starlette.testclient.TestClient`` defaults to ``client=("testclient",
@@ -833,18 +836,18 @@ def _testclient_presents_loopback_host():
     """
     import starlette.testclient as _testclient_mod
 
-    original_init = _testclient_mod.TestClient.__init__
+    original_init = cast(Callable[..., None], _testclient_mod.TestClient.__init__)
 
     @functools.wraps(original_init)
-    def _loopback_init(self, *args: object, **kwargs: object) -> None:
+    def _loopback_init(self: _testclient_mod.TestClient, *args: object, **kwargs: object) -> None:
         kwargs.setdefault("client", ("127.0.0.1", 50000))
-        original_init(self, *args, **kwargs)  # type: ignore[arg-type]
+        original_init(self, *args, **kwargs)
 
-    _testclient_mod.TestClient.__init__ = _loopback_init  # type: ignore[method-assign]
+    type.__setattr__(_testclient_mod.TestClient, "__init__", _loopback_init)
     try:
         yield
     finally:
-        _testclient_mod.TestClient.__init__ = original_init  # type: ignore[method-assign]
+        type.__setattr__(_testclient_mod.TestClient, "__init__", original_init)
 
 
 _LEAKY_ENV_VARS: frozenset[str] = frozenset(
@@ -867,7 +870,7 @@ _LEAKY_ENV_VARS: frozenset[str] = frozenset(
 
 
 @pytest.fixture(autouse=True)
-def _restore_leaky_env_vars(monkeypatch):
+def _restore_leaky_env_vars(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Snapshot and restore leaky env vars around every test.
 
     Backstop for tests that still mutate ``os.environ`` directly.  Guarantees
@@ -887,7 +890,7 @@ def _restore_leaky_env_vars(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _restore_cwd_after_test() -> None:
+def _restore_cwd_after_test() -> Iterator[None]:
     """Restore the worker CWD after every test.
 
     Some tests intentionally chdir into temporary project roots. If a test fails
@@ -906,7 +909,7 @@ def _restore_cwd_after_test() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_root_logger():
+def _isolate_root_logger() -> Iterator[None]:
     """Snapshot and restore the ENTIRE logging state around every test.
 
     Prevents caplog pollution: tests that mutate any logger's level,
@@ -955,12 +958,12 @@ def _isolate_root_logger():
     root.level, root.propagate, root.handlers[:], root.disabled = snap_root
 
     for name, (level, propagate, handlers, disabled) in snap_named.items():
-        logger = logger_dict.get(name)
-        if isinstance(logger, logging.Logger):
-            logger.level = level
-            logger.propagate = propagate
-            logger.handlers[:] = handlers
-            logger.disabled = disabled
+        existing_logger = logger_dict.get(name)
+        if isinstance(existing_logger, logging.Logger):
+            existing_logger.level = level
+            existing_logger.propagate = propagate
+            existing_logger.handlers[:] = handlers
+            existing_logger.disabled = disabled
 
     if hasattr(manager, "disable"):
         manager.disable = snap_disable
@@ -975,7 +978,7 @@ def _isolate_root_logger():
 
 
 @pytest.fixture(autouse=True)
-def _reset_process_registry():
+def _reset_process_registry() -> Iterator[None]:
     """Reset the process.registry._DEFAULT_REGISTRY singleton around every test.
 
     Prevents order-dependent failures when tests register managed PIDs into
@@ -991,7 +994,7 @@ def _reset_process_registry():
 
 
 @pytest.fixture(autouse=True)
-def _reset_language_parsers():
+def _reset_language_parsers() -> Iterator[None]:
     """Clear the _LANGUAGE_PARSERS cache around every test.
 
     Prevents the MagicMock injected by test_returns_cached_parser
@@ -1010,7 +1013,7 @@ def _reset_language_parsers():
 
 
 @pytest.fixture(autouse=True)
-def _reset_worker_runner():
+def _reset_worker_runner() -> Iterator[None]:
     """Reset the worker.app._runner singleton around every test.
 
     Prevents the 2026-06-21 xdist flake (documented in SESSION_HANDOFF) where
@@ -1239,7 +1242,7 @@ requires_postgres = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True, scope="session")
-def _ensure_gludd_dir_exists():
+def _ensure_gludd_dir_exists() -> Iterator[None]:
     """Ensure .gludd/ directory exists once per test session.
 
     The .gludd/ directory is gitignored and absent from fresh CI checkouts.
@@ -1280,7 +1283,7 @@ def _ensure_gludd_dir_exists():
 
 
 @pytest.fixture(autouse=True)
-def _reset_httpx_and_abtest_runner():
+def _reset_httpx_and_abtest_runner() -> Iterator[None]:
     """Reset ``httpx.get`` and ``run_candidate_in_subprocess`` around every test.
 
     Prevents async mock contamination across xdist workers: tests patch
@@ -1300,14 +1303,14 @@ def _reset_httpx_and_abtest_runner():
     import httpx as _httpx
 
     _httpx.get = _CANONICAL_HTTPX_GET
-    _ab_compare.run_candidate_in_subprocess = _CANONICAL_RUN_CANDIDATE
+    vars(_ab_compare)["run_candidate_in_subprocess"] = _CANONICAL_RUN_CANDIDATE
     yield
     _httpx.get = _CANONICAL_HTTPX_GET
-    _ab_compare.run_candidate_in_subprocess = _CANONICAL_RUN_CANDIDATE
+    vars(_ab_compare)["run_candidate_in_subprocess"] = _CANONICAL_RUN_CANDIDATE
 
 
 @pytest.fixture(autouse=True, scope="session")
-def _patch_aiosqlite_worker_for_closed_loop_teardown():
+def _patch_aiosqlite_worker_for_closed_loop_teardown() -> Iterator[None]:
     """Patch aiosqlite's background worker to survive event-loop shutdown.
 
     aiosqlite.Connection creates a daemon thread that calls
@@ -1325,7 +1328,7 @@ def _patch_aiosqlite_worker_for_closed_loop_teardown():
 
     _orig_worker = _ac._connection_worker_thread
 
-    def _safe_worker(tx):
+    def _safe_worker(tx: SimpleQueue[tuple[Future[Any] | None, Callable[[], Any]]]) -> None:
         while True:
             future, function = tx.get()
             try:
