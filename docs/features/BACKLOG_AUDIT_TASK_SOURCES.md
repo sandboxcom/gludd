@@ -2,11 +2,19 @@
 
 ## Outcome
 
-The backlog audit now executes evidence for checked `TASKS.md` completion
-claims. A checked task with a valid pytest node ID can reach
-`VERIFIED_COMPLETE`; prose, commit hashes, missing tests, skipped tests,
-collection errors, failed setup/call/teardown phases, and malformed source data
-fail closed.
+The backlog audit executes evidence for checked `TASKS.md` completion claims.
+Passing unit tests and present implementation files alone produce `INCOMPLETE`,
+not `VERIFIED_COMPLETE`. Completion also requires a trusted, item-scoped
+deployment validator to return exactly `True`. A task's own status or inline
+`deployment_ready` field is not deployment evidence. Missing acceptance, probe
+errors, unsupported acceptance criteria, missing or skipped tests, collection
+errors, and failed setup/call/teardown phases fail closed.
+
+The validator is injected by the caller that owns deployment acceptance; the
+CLI does not invent an acceptance result when no owner is connected. Acceptance
+of one item is independent of another item's incomplete work. This item-level
+verdict does not replace the canonical gate, exact-SHA CI, and release promotion
+requirements for shipping the combined release.
 
 The implementation repairs an API-drift gap in `scripts/backlog_audit.py`. The
 script previously constructed `BacklogAuditor` without its required
@@ -28,7 +36,9 @@ visible error if source or execution wiring fails.
    outcomes for every collected node.
 4. `BacklogAuditor` receives cached results; it does not start another pytest
    session for each task. Its file reader resolves only regular files inside
-   the selected repository and refuses symlink escapes.
+    the selected repository and refuses symlink escapes. `audit_task_ledger`
+    forwards the caller's item-scoped deployment validator; no validator means
+    no item can be classified as verified complete.
 5. The CLI preserves `BUG-CLASS SWEEP`, `GUARD COVERAGE`, `BACKLOG VERDICTS`,
    and the final `SUMMARY` sections. False or incomplete task claims now make
    the command nonzero.
@@ -46,6 +56,8 @@ visible error if source or execution wiring fails.
 | Missing test evidence | `FALSE_CLAIM`; never an implicit full-suite run |
 | Collection/internal/usage/no-tests error | Every requested evidence ID fails |
 | Skipped or incomplete phase sequence | Requested evidence ID fails |
+| Missing deployment owner, rejected acceptance, non-boolean result, or probe error | `INCOMPLETE`; never unit-test-only completion |
+| Empty or unsupported acceptance criterion | `INCOMPLETE`; never assumed satisfied |
 | Unsafe path, duplicate ID, status mismatch, unsupported marker | Source error and nonzero CLI exit |
 
 The project ledger's canonical parser accepts only `- [x]` and `- [ ]` task
@@ -89,5 +101,8 @@ Focused unit tests cover canonical-source reuse, the API-drift regression,
 resource limits, duplicate evidence, collection errors, all test phases,
 missing tests, no-test tasks, repository and symlink confinement, visible
 progress, CLI failure propagation, and the narrow rollback. Branch-aware
-coverage uses `config/coverage_backlog_audit_task_sources.ini`; the required
+coverage also exercises missing, failed, non-boolean and successful deployment
+acceptance, and independent verdicts for unrelated items. The completion-policy
+profile is `config/coverage_backlog_deployment_completion.ini`. Adapter coverage
+uses `config/coverage_backlog_audit_task_sources.ini`; the required
 floor is 85% aggregate and 75% for every measured production file.

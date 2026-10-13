@@ -330,13 +330,63 @@ def test_checked_task_with_evidence_is_verified_not_swallowed_api_drift(
             plugin.pytest_runtest_logreport(_report(node, phase))
         return int(pytest.ExitCode.OK)
 
-    report = audit_task_ledger(tmp_path, pytest_main=fake_main)
+    report = audit_task_ledger(
+        tmp_path, pytest_main=fake_main, deployment_validator=lambda _task: True,
+    )
 
     assert calls == 1
     assert report.total_audited == 1
     assert report.verified_complete == 1
     assert report.false_claim == 0
     assert report.verdicts[0].verdict == "VERIFIED_COMPLETE"
+
+
+@pytest.mark.parametrize("accepted", (None, False, 0, 1, "success", True))
+def test_task_ledger_requires_explicit_boolean_deployment_acceptance(
+    accepted: object, tmp_path: Path,
+) -> None:
+    node = "tests/unit/test_feature.py::test_feature"
+    _write_task_repo(
+        tmp_path,
+        "- [x] T-READY — add `src/feature.py` | evidence: "
+        f"`{node}` | status: completed",
+    )
+
+    def fake_main(args: list[str], *, plugins: list[object]) -> int:
+        assert node in args
+        plugin = plugins[0]
+        assert isinstance(plugin, EvidenceResultPlugin)
+        for phase in ("setup", "call", "teardown"):
+            plugin.pytest_runtest_logreport(_report(node, phase))
+        return int(pytest.ExitCode.OK)
+
+    report = audit_task_ledger(
+        tmp_path, pytest_main=fake_main,
+        deployment_validator=lambda _task: accepted,
+    )
+    assert report.verified_complete == int(accepted is True)
+    assert report.incomplete == int(accepted is not True)
+
+
+def test_task_ledger_without_deployment_owner_is_incomplete(tmp_path: Path) -> None:
+    node = "tests/unit/test_feature.py::test_feature"
+    _write_task_repo(
+        tmp_path,
+        "- [x] T-NO-OWNER — add `src/feature.py` | evidence: "
+        f"`{node}` | status: completed",
+    )
+
+    def fake_main(args: list[str], *, plugins: list[object]) -> int:
+        assert node in args
+        plugin = plugins[0]
+        assert isinstance(plugin, EvidenceResultPlugin)
+        for phase in ("setup", "call", "teardown"):
+            plugin.pytest_runtest_logreport(_report(node, phase))
+        return int(pytest.ExitCode.OK)
+
+    report = audit_task_ledger(tmp_path, pytest_main=fake_main)
+    assert report.verified_complete == 0
+    assert report.incomplete == 1
 
 
 def test_checked_task_without_test_evidence_is_false_claim(tmp_path: Path) -> None:

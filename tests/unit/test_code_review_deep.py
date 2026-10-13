@@ -729,7 +729,10 @@ class TestBacklogAuditorDeep:
             return {ids[0]: True}
         def file_reader(path):
             return "def foo(): return 42\n" if "mod.py" in path else None
-        auditor = BacklogAuditor(".", test_runner=test_runner, file_reader=file_reader)
+        auditor = BacklogAuditor(
+            ".", test_runner=test_runner, file_reader=file_reader,
+            deployment_validator=lambda _task: True,
+        )
         report = auditor.audit(tasks)
         assert report.verified_complete == 1
         assert report.verdicts[0].verdict == VERIFIED_COMPLETE
@@ -819,7 +822,10 @@ class TestBacklogAuditorDeep:
             return {ids[0]: True}
         def file_reader(path):
             return "def foo(): return 1\n" if "ok.py" in path else None
-        auditor = BacklogAuditor(".", test_runner=test_runner, file_reader=file_reader)
+        auditor = BacklogAuditor(
+            ".", test_runner=test_runner, file_reader=file_reader,
+            deployment_validator=lambda _task: True,
+        )
         report = auditor.audit(tasks)
         assert report.total_audited == 2
         assert report.false_claim == 1

@@ -41,6 +41,7 @@ def test_verified_complete_when_evidence_passes_files_exist_no_stubs(tmp_path: P
     auditor = BacklogAuditor(
         repo_root=str(tmp_path),
         test_runner=_fake_runner({"tests/unit/test_feature.py::test_ok": True}),
+        deployment_validator=lambda _task: True,
     )
     report = auditor.audit(
         [
@@ -239,6 +240,7 @@ def test_injected_file_reader_is_used_instead_of_real_fs(tmp_path: Path) -> None
         repo_root=str(tmp_path),
         test_runner=_fake_runner({"n::t": True}),
         file_reader=fake_reader,
+        deployment_validator=lambda _task: True,
     )
     report = auditor.audit(
         [
@@ -302,6 +304,7 @@ def test_report_aggregates_mixed_verdicts(tmp_path: Path) -> None:
         test_runner=_fake_runner(
             {"t::good": True, "t::fail": False, "t::stub": True}
         ),
+        deployment_validator=lambda _task: True,
     )
     report = auditor.audit(
         [

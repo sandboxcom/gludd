@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
 
-from general_ludd.validation.backlog_auditor import BacklogAuditor, BacklogAuditReport
+from general_ludd.validation.backlog_auditor import BacklogAuditor, BacklogAuditReport, DeploymentValidator
 from general_ludd.validation.backlog_sources import (
     MAX_EVIDENCE_IDS,
     confined_file_reader,
@@ -224,8 +224,9 @@ def audit_task_ledger(
     *,
     tasks_path: str | Path | None = None,
     pytest_main: PytestMain | None = None,
+    deployment_validator: DeploymentValidator | None = None,
 ) -> BacklogAuditReport:
-    """Load checked tasks, execute all evidence once, and adjudicate claims."""
+    """Audit checked tasks with batched tests and explicit deployment acceptance."""
     root = _resolved_repo_root(repo_root)
     tasks = load_task_ledger(root, tasks_path=tasks_path)
     all_node_ids: list[str] = []
@@ -245,6 +246,7 @@ def audit_task_ledger(
         repo_root=str(root),
         test_runner=cached_runner,
         file_reader=confined_file_reader(root),
+        deployment_validator=deployment_validator,
     )
     return auditor.audit(tasks)
 

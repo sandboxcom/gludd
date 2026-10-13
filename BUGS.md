@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Unit-test evidence incorrectly authorized completion
+
+- The existing backlog auditor returned VERIFIED_COMPLETE from passing evidence tests, present files and no detected stubs. It also assumed unsupported or empty acceptance criteria were satisfied. Neither result established item deployment readiness.
+- Fourteen new policy cases fail first. Seven entrypoint cases then fail because the native ledger adapter cannot forward deployment acceptance; one missing-owner control passes. The adapter and auditor now require an injected item-scoped acceptance owner to return exactly True. Status text, inline deployment_ready, truthy non-booleans, missing owners and probe exceptions cannot authorize completion.
+- Existing positive unit fixtures explicitly model successful acceptance; their original assertions remain. An unrelated incomplete item does not invalidate an accepted item's verdict. All 248 related cases pass, with 89% branch-aware completion-owner coverage above unchanged 85% aggregate/75% per-file floors.
+- The default CLI remains fail-closed when no deployment owner is connected. These policy tests and source changes are not deployment proof for backlog features, do not add release ledger closures, and do not replace the canonical gate, exact-SHA CI or release promotion.
+
 ### 2026-10-13 — Native verdict migration broke release consumers and branch forwarding
 
 - Run 38340797931, jobs 115114319346 and 115114319363, exposed seven structural assertions still inspecting inline shell output after verdicts moved to the native all-required owner. Actual ci-wait and ci-poll-master consumers also depend on CI GREEN/CI RED markers, so merely changing tests would hide a real compatibility defect.

@@ -266,7 +266,10 @@ class TestPipelineAggregatesFindingsAcrossStages:
             runner = MagicMock(return_value={"t1": True, "t2": False})
             pipeline = _TestPipeline(
                 gap_analyzer=GapAnalyzer(),
-                backlog_auditor=BacklogAuditor(repo_root=repo_root, test_runner=runner),
+                backlog_auditor=BacklogAuditor(
+                    repo_root=repo_root, test_runner=runner,
+                    deployment_validator=lambda _task: True,
+                ),
                 log_auditor=LogAuditor(),
             )
             report = pipeline.run(
@@ -618,7 +621,10 @@ class TestGapToBacklogTransitionWithRealFiles:
             mk_runner = MagicMock(return_value={"t_x": True})
             pipeline = _TestPipeline(
                 gap_analyzer=GapAnalyzer(),
-                backlog_auditor=BacklogAuditor(repo_root=repo_root, test_runner=mk_runner),
+                backlog_auditor=BacklogAuditor(
+                    repo_root=repo_root, test_runner=mk_runner,
+                    deployment_validator=lambda _task: True,
+                ),
                 log_auditor=LogAuditor(),
             )
             report = pipeline.run(

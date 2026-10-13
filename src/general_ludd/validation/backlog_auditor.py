@@ -10,8 +10,9 @@ real evidence, instead of trusting the status field.  Three verdicts:
                     carries a stub marker (NotImplementedError / TODO / FIXME /
                     ``pass  # stub`` / ``@pytest.mark.xfail``) or a stated
                     acceptance criterion is unmet.
-  VERIFIED_COMPLETE evidence tests pass, every referenced file exists, and no
-                    stub markers or unmet criteria remain.
+  VERIFIED_COMPLETE evidence tests pass, every referenced file exists, no
+                    unmet criteria remain, and item-scoped deployment acceptance
+                    is verified by an explicitly supplied trusted owner.
 
 The class is pure and dependency-injected: a ``test_runner`` callable
 (``run(node_ids) -> {node_id: passed_bool}``) and a ``file_reader`` callable
@@ -23,7 +24,7 @@ suite stays hermetic.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -49,6 +50,7 @@ VERIFIED_COMPLETE = "VERIFIED_COMPLETE"
 
 TestRunner = Callable[[list[str]], dict[str, bool]]
 FileReader = Callable[[str], "str | None"]
+DeploymentValidator = Callable[[Mapping[str, object]], object]
 
 
 @dataclass
@@ -121,6 +123,10 @@ class BacklogAuditor:
     file_reader:
         Callable ``read(path) -> str | None`` returning a file's text or ``None``
         when absent.  Defaults to the real filesystem.
+    deployment_validator:
+        Trusted item-scoped deployment acceptance owner. Only an actual boolean
+        True authorizes completion; missing, failed or errored evidence does not.
+        A status or deployment_ready field in task data is never authority.
     """
 
     def __init__(
@@ -128,10 +134,14 @@ class BacklogAuditor:
         repo_root: str,
         test_runner: TestRunner,
         file_reader: FileReader | None = None,
+        *,
+        deployment_validator: DeploymentValidator | None = None,
     ) -> None:
+        """Bind evidence adapters without assuming deployment acceptance."""
         self._root = repo_root
         self._run_tests = test_runner
         self._read = file_reader if file_reader is not None else _repo_file_reader(repo_root)
+        self._verify_deployment = deployment_validator
 
     # ------------------------------------------------------------------
     # Public API
@@ -210,10 +220,28 @@ class BacklogAuditor:
         if incomplete_reasons:
             return TaskVerdict(id=task_id, verdict=INCOMPLETE, reasons=incomplete_reasons)
 
+        if self._verify_deployment is None:
+            return TaskVerdict(
+                id=task_id, verdict=INCOMPLETE,
+                reasons=["item-scoped deployment acceptance evidence is missing"],
+            )
+        try:
+            deployment_result = self._verify_deployment(task)
+        except Exception as exc:
+            return TaskVerdict(
+                id=task_id, verdict=INCOMPLETE,
+                reasons=[f"deployment acceptance owner failed: {exc}"],
+            )
+        if deployment_result is not True:
+            return TaskVerdict(
+                id=task_id, verdict=INCOMPLETE,
+                reasons=["item-scoped deployment acceptance is not verified"],
+            )
+
         return TaskVerdict(
             id=task_id,
             verdict=VERIFIED_COMPLETE,
-            reasons=["evidence tests pass, files exist, no stub markers"],
+            reasons=["evidence tests pass, files exist, no stub markers; deployment acceptance verified"],
         )
 
     # ------------------------------------------------------------------
@@ -222,16 +250,17 @@ class BacklogAuditor:
 
     @staticmethod
     def _criterion_met(criterion: str, file_text: dict[str, str]) -> bool:
-        """A criterion ``must export <symbol>`` is met iff some touched file
-        contains ``<symbol>``.  Criteria without that grammar are treated as
-        satisfied (we cannot disprove free-text criteria, so fail-open for them
-        but fail-closed for the structured ``must export`` form).
+        """Check the supported symbol criterion without assuming others pass.
+
+        ``must export <symbol>`` requires a matching touched file. Unsupported
+        or empty criteria are unverified,
+        never assumed satisfied; deployment acceptance is checked separately.
         """
         marker = "must export "
         idx = criterion.lower().find(marker)
         if idx == -1:
-            return True
+            return False
         symbol = criterion[idx + len(marker):].strip()
         if not symbol:
-            return True
+            return False
         return any(symbol in text for text in file_text.values())
