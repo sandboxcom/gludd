@@ -140,6 +140,17 @@ identity rather than broadly suppressing a heuristic. This baseline-only
 reconciliation allocates no environment and changes no deployment or release
 admission policy.
 
+Read-only scan diagnostics also honor that disposable-copy boundary. Native
+status 3 is admitted only after the existing finding-identity comparison proves
+there are no added occurrences. The wrapper then replaces only the exact native
+update-and-staging instructions for the temporary copy with a visible message
+that the copy was updated and the canonical baseline is unchanged. All other
+stdout/stderr and failure statuses remain visible. Practitioners described
+metadata updates blocking commits in [upstream issue #212](https://github.com/Yelp/detect-secrets/issues/212)
+and repeated staging instructions in [issue #149](https://github.com/Yelp/detect-secrets/issues/149),
+both opened in 2019. The diagnostic changes no detector, filter, threshold,
+baseline identity, or release policy.
+
 ### Unambiguous task-path registration
 
 The normal development push exposes a separate KeywordDetector match in the

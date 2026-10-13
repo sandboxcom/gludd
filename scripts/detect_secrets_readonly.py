@@ -73,20 +73,34 @@ def run_readonly_scan(
         os.close(descriptor)
         shutil.copyfile(baseline, disposable)
         command = [executable, "--baseline", str(disposable), *filenames]
-        completed = runner(command, check=False)
+        completed = runner(command, check=False, capture_output=True, text=True)
         status = int(completed.returncode)
-        if status != 3:
-            return status
-
-        # detect-secrets uses status 3 both when it only refreshes volatile
-        # baseline metadata and when it adds a finding. Admit the former while
-        # failing closed on every new path/detector/hash occurrence.
-        try:
-            canonical_findings = _finding_counts(baseline)
-            disposable_findings = _finding_counts(disposable)
-        except (OSError, ValueError):
-            return status
-        return status if disposable_findings - canonical_findings else 0
+        stdout = completed.stdout or ""
+        if status == 3:
+            # detect-secrets uses status 3 both when it only refreshes volatile
+            # baseline metadata and when it adds a finding. Admit the former while
+            # failing closed on every new path/detector/hash occurrence.
+            try:
+                canonical_findings = _finding_counts(baseline)
+                disposable_findings = _finding_counts(disposable)
+            except (OSError, ValueError):
+                pass
+            else:
+                if not disposable_findings - canonical_findings:
+                    status = 0
+                    native_update = (
+                        "The baseline file was updated.\n"
+                        "Probably to keep line numbers of secrets up-to-date.\n"
+                        f"Please `git add {disposable}`, thank you.\n\n\n"
+                    )
+                    stdout = stdout.replace(
+                        native_update,
+                        "detect-secrets: disposable baseline copy updated; no new findings. "
+                        "Canonical baseline unchanged.\n",
+                    )
+        sys.stdout.write(stdout)
+        sys.stderr.write(completed.stderr or "")
+        return status
     finally:
         disposable.unlink(missing_ok=True)
 
@@ -106,6 +120,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Scan explicit files without modifying the canonical secrets baseline."""
     args = _parser().parse_args(argv)
     executable = shutil.which("detect-secrets-hook")
     if executable is None:

@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Disposable scanner refreshes emitted misleading staging instructions
+
+- The read-only owner safely scans a disposable baseline, but native metadata-refresh output instructed staging that temporary path. Three failing-first cases expose misleading stdout and lost diagnostic boundaries.
+- The owner captures native output and replaces only the exact disposable-path update block after proving there are no additional findings or occurrences. Real failures, unfamiliar stdout and all stderr pass through unchanged; scanner policy and the canonical baseline are untouched.
+- All 32 portable cases pass with 100% line and branch coverage, strict typing and Ruff. The unchanged public TASKS finding regression also passes after correcting source registration order; the failed clean-66 replay remains evidence, not a passing proof. Full gate, same-SHA hosted checks and deployment acceptance remain pending.
+
 ### 2026-10-13 — Manual WIP checkpoints lacked exact scope and input-data admission
 
 - Native scoped stash can capture unrelated staged paths. The existing broad stash/pop helpers also cannot require an exact expected object, worktree owner or file scope before restoration. Source proof must not mix unfinished work into the tested candidate.

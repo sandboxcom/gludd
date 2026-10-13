@@ -36,7 +36,7 @@ def test_hook_scans_a_disposable_copy_and_preserves_canonical_baseline(
     """An upstream line-number refresh must never dirty the candidate tree."""
     module = _load_hook()
     baseline = tmp_path / ".secrets.baseline"
-    original_payload = {
+    original_payload: dict[str, Any] = {
         "results": {
             "src/example.py": [
                 {
@@ -54,9 +54,13 @@ def test_hook_scans_a_disposable_copy_and_preserves_canonical_baseline(
     baseline.write_text(original, encoding="utf-8")
     observed: dict[str, Any] = {}
 
-    def runner(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+    def runner(
+        command: list[str], *, check: bool, capture_output: bool, text: bool,
+    ) -> subprocess.CompletedProcess[str]:
         observed["command"] = command
         observed["check"] = check
+        assert capture_output is True
+        assert text is True
         disposable = Path(command[command.index("--baseline") + 1])
         observed["disposable"] = disposable
         assert disposable != baseline
@@ -108,8 +112,10 @@ def test_hook_rejects_new_finding_even_when_upstream_only_returns_update_status(
     }
     baseline.write_text(json.dumps(original), encoding="utf-8")
 
-    def runner(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
-        del check
+    def runner(
+        command: list[str], *, check: bool, capture_output: bool, text: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        del check, capture_output, text
         disposable = Path(command[command.index("--baseline") + 1])
         changed = json.loads(disposable.read_text(encoding="utf-8"))
         changed["results"]["src/example.py"].append(
@@ -143,8 +149,10 @@ def test_hook_fails_closed_when_updated_disposable_baseline_is_malformed(
     baseline = tmp_path / ".secrets.baseline"
     baseline.write_text('{"results": {}}', encoding="utf-8")
 
-    def runner(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
-        del check
+    def runner(
+        command: list[str], *, check: bool, capture_output: bool, text: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        del check, capture_output, text
         disposable = Path(command[command.index("--baseline") + 1])
         disposable.write_text("not-json", encoding="utf-8")
         return subprocess.CompletedProcess(command, 3)
@@ -210,8 +218,10 @@ def test_hook_propagates_non_update_scanner_status(tmp_path: Path) -> None:
     original = '{"results": {}}'
     baseline.write_text(original, encoding="utf-8")
 
-    def runner(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
-        del check
+    def runner(
+        command: list[str], *, check: bool, capture_output: bool, text: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        del check, capture_output, text
         return subprocess.CompletedProcess(command, 7)
 
     assert (
@@ -233,8 +243,10 @@ def test_hook_cleans_disposable_baseline_when_scanner_raises(tmp_path: Path) -> 
     baseline.write_text('{"results": {}}\n', encoding="utf-8")
     observed: dict[str, Path] = {}
 
-    def runner(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
-        del check
+    def runner(
+        command: list[str], *, check: bool, capture_output: bool, text: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        del check, capture_output, text
         observed["disposable"] = Path(command[command.index("--baseline") + 1])
         raise OSError("scanner unavailable")
 
