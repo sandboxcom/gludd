@@ -736,12 +736,14 @@ _merge-strategy-guard: _gate-mutation-guard
 	@echo "_merge-strategy-guard: PASS"
 
 # AA028 — _stash-leak-guard: BLOCKING check for stash entries after commit.
-# Any stash entry means uncommitted changes were stashed and never restored.
+# Unknown stash entries mean uncommitted hook work was never restored.
 # This caused merge conflicts (2026-07-28 incident: 3 accumulated stashes
 # produced conflicts in engine.py + test_escalation_no_self_approve.py).
-# BLOCKING: deny commit when any stash entry exists. Auto-pop if clean.
+# BLOCKING: deny commit for any unknown stash; verify and retain owned checkpoints.
+STASH_LEAK_CHECKPOINT_OWNER := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../scripts/owned_git_checkpoint.py)
 _stash-leak-guard:
 	@STASH_COUNT=$$(git stash list 2>/dev/null | wc -l | tr -d ' '); \
+	STASH_COUNT=$$($(PYTHON) "$(STASH_LEAK_CHECKPOINT_OWNER)" count-leaks) || exit 1; \
 	if [ "$$STASH_COUNT" -gt 0 ]; then \
 		if [ "$$FORCE" = "1" ]; then \
 			echo "STASH-LEAK (FORCED): $$STASH_COUNT stash entries exist — FORCE=1 bypass. Run 'make git-stash-pop'. See AA028."; \
@@ -749,7 +751,8 @@ _stash-leak-guard:
 			echo "STASH-LEAK BLOCKED: $$STASH_COUNT stash entries exist — pre-commit hooks stashed changes without popping."; \
 			echo "This caused merge conflicts (2026-07-28: engine.py + test_escalation_no_self_approve.py)."; \
 			echo "Run 'make git-stash-pop' to restore stashed work, then re-commit. See AA028."; \
-			echo '{"last_push_blocked":true,"block_reason":"_stash-leak-guard:stash-entries","stash_count":'$$STASH_COUNT',"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
+			STATE_PATH=$$(git rev-parse --git-path gludd-stash-leak-state.json) || exit 1; \
+			echo '{"last_push_blocked":true,"block_reason":"_stash-leak-guard:stash-entries","stash_count":'$$STASH_COUNT',"epoch":'$$(date +%s)'}' > "$$STATE_PATH"; \
 			exit 1; \
 		fi; \
 	fi
@@ -905,8 +908,10 @@ _record-push-verdict:
 # appears modified. This guard checks for unstaged changes AFTER a commit attempt
 # and warns about potential stash conflicts. FORCE=1 bypasses.
 _pre-commit-stash-audit:
+	@$(PYTHON) "$(STASH_LEAK_CHECKPOINT_OWNER)" count-leaks > /dev/null || exit 1
 	@if git status --porcelain | grep -q '^ M'; then \
 		STASH_COUNT=$$(git stash list 2>/dev/null | wc -l | tr -d ' '); \
+		STASH_COUNT=$$($(PYTHON) "$(STASH_LEAK_CHECKPOINT_OWNER)" count-leaks) || exit 1; \
 		if [ "$$STASH_COUNT" -gt 0 ]; then \
 			echo "PRE-COMMIT-STASH-AUDIT: unstaged modifications detected with $$STASH_COUNT stash entries."; \
 			echo "Pre-commit hooks may have auto-fixed files that are in stash."; \

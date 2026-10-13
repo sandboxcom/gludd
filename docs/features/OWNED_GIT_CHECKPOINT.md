@@ -34,6 +34,17 @@ version; the owner never resets or discards conflict evidence. Single-writer
 coordination remains required: checks plus native Git operations are not a
 global transaction against arbitrary simultaneous Git writers.
 
+Commit and pre-commit stash guards distinguish verified retained checkpoints
+from unknown hook stashes using the same native owner. Verification reads every
+stash's worktree identity, literal scope, parent/index topology and captured
+regular-file modes; a matching label alone is insufficient. Unknown, foreign or
+malformed entries remain blocking. Redirected Git state fails closed even when
+the visible stash count is zero. The inspection prints exact checkpoint SHAs
+and never applies, pops, drops or deletes saved work. Known checkpoints no longer
+produce instructions to pop an unrelated stash.
+An unknown-stash refusal receipt uses Git's worktree-local path, preventing
+this guard's regression tests or another checkout from clobbering shared state.
+
 The installed Git rejects scoped already-staged deletions. One stdin-pathspec
 experiment also created a stash before returning an error. The owner therefore
 refuses staged deletions explicitly **before mutation**, rather than rewriting

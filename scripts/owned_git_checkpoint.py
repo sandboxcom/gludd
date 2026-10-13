@@ -32,8 +32,8 @@ def names(output: str) -> set[str]:
     return set(output.rstrip("\0").split("\0")) if output else set()
 
 
-def root_and_files(raw: str, *, restore: bool) -> tuple[Path, list[str]]:
-    """Refuse broad, missing, redirected, symlinked and nonliteral file scope."""
+def repository_root() -> Path:
+    """Require the invoking repository's native, unredirected named-branch state."""
     redirected = {
         "GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR",
         "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE",
@@ -48,6 +48,12 @@ def root_and_files(raw: str, *, restore: bool) -> tuple[Path, list[str]]:
     git(root, "rev-parse", "--verify", "HEAD")
     if not git(root, "branch", "--show-current").strip():
         raise Refused("a named branch is required")
+    return root
+
+
+def root_and_files(raw: str, *, restore: bool) -> tuple[Path, list[str]]:
+    """Refuse broad, missing, redirected, symlinked and nonliteral file scope."""
+    root = repository_root()
     files = raw.split()
     if not files or len(files) != len(set(files)):
         raise Refused("FILES must name nonempty distinct explicit files")
@@ -98,6 +104,56 @@ def checkpoint_paths(root: Path, sha: str) -> set[str]:
     if len(parents) == 4:
         result |= names(git(root, "ls-tree", "-r", "--name-only", "-z", f"{sha}^3"))
     return result
+
+
+def count_leaks(root: Path) -> int:
+    """Count unknown stashes while verifying retained checkpoints without mutation."""
+    retained = unowned = 0
+    labels: set[str] = set()
+    records = git(root, "stash", "list", "--format=%H%x00%s%x00")
+    for record in records.splitlines():
+        fields = record.split("\0")
+        if len(fields) != 3 or fields[-1] or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", fields[0]):
+            raise Refused("malformed native stash inventory; no checkpoints changed")
+        sha, subject, _ = fields
+        message = subject.split(": ", 1)[-1]
+        match = re.fullmatch(r"gludd-owned-checkpoint label=(\S+) owner=([0-9a-f]{64}) files=(\S+)", message)
+        if not match:
+            unowned += 1
+            continue
+        label, _identity, scope = match.groups()
+        files = scope.split(",")
+        try:
+            if (files != sorted(set(files)) or label in labels
+                    or any(not re.fullmatch(r"[A-Za-z0-9_./+@-]+", name)
+                           or any(part in {"", ".", "..", ".git"} for part in name.split("/"))
+                           for name in files)
+                    or metadata(root, files, label) != message):
+                raise Refused("foreign or nonliteral owned checkpoint metadata")
+            parents = git(root, "rev-list", "--parents", "-n", "1", sha).split()
+            if len(parents) not in {3, 4}:
+                raise Refused("owned checkpoint has no native stash parent topology")
+            index_parents = git(root, "rev-list", "--parents", "-n", "1", parents[2]).split()
+            if index_parents != [parents[2], parents[1]] or checkpoint_paths(root, sha) != set(files):
+                raise Refused("owned checkpoint native index or captured scope differs")
+            if (len(parents) == 4
+                    and git(root, "rev-list", "--parents", "-n", "1", parents[3]).split() != [parents[3]]):
+                raise Refused("owned checkpoint untracked parent is not a native root commit")
+            for tree in (parents[1], sha, *parents[2:]):
+                entries = git(root, "ls-tree", "-r", "-z", tree)
+                for entry in entries.rstrip("\0").split("\0") if entries else []:
+                    mode, name = entry.split(" ", 1)[0], entry.split("\t", 1)[-1]
+                    if name in files and mode not in {"100644", "100755"}:
+                        raise Refused("owned checkpoint captures a symlink or submodule")
+        except Refused as exc:
+            unowned += 1
+            print(f"OWNED-CHECKPOINT-UNOWNED checkpoint_sha={sha} reason={exc}", file=sys.stderr, flush=True)
+            continue
+        labels.add(label)
+        retained += 1
+        print(f"OWNED-CHECKPOINT-VERIFIED checkpoint_sha={sha}", file=sys.stderr, flush=True)
+    print(f"OWNED-CHECKPOINT-COUNT retained={retained} unowned={unowned}", file=sys.stderr, flush=True)
+    return unowned
 
 
 def push(root: Path, files: list[str], label: str, *, validate: bool) -> None:
@@ -169,9 +225,12 @@ def restore(root: Path, files: list[str], label: str, sha: str, *, validate: boo
 def main() -> int:
     """Read Make-exported values without injecting untrusted values into a shell."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("push", "restore"))
+    parser.add_argument("action", choices=("push", "restore", "count-leaks"))
     args = parser.parse_args()
     try:
+        if args.action == "count-leaks":
+            print(count_leaks(repository_root()), flush=True)
+            return 0
         validate = os.environ.get("GIT_CHECKPOINT_VALIDATE_ONLY", "1")
         if validate not in {"0", "1"}:
             raise Refused("GIT_CHECKPOINT_VALIDATE_ONLY must be 0 or 1")

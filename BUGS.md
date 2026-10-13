@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Retained owned checkpoints were mistaken for leaked hook stashes
+
+- Normal scoped commit was blocked by the old any-stash guard even though the saved work had explicit native ownership. Nine failing-first cases also expose misleading audit instructions, redirected-state bypass, forged untracked ancestry and shared refusal receipts.
+- Both guards reuse the native checkpoint owner to inspect the entire stack without changing objects, index or worktree data. Exact worktree identity, literal scope, parent/index topology and regular-file modes are verified; unknown and malformed entries remain blocking. Redirected state fails closed even when the visible inventory is empty. Refusal receipts use a Git worktree-local path.
+- All 166 related cases and 76 Python 3.11 cases pass, with 93% combined native line/branch coverage above unchanged 85/75 floors. Both installed guards verify the actual retained checkpoint without a bypass. The original structural assertions and native FORCE compatibility are retained; no override is used for the candidate.
+- This permits normal scoped source commits, not release completion. Full gate, exact-SHA hosted results and deployment acceptance remain pending.
+
 ### 2026-10-13 — Disposable scanner refreshes emitted misleading staging instructions
 
 - The read-only owner safely scans a disposable baseline, but native metadata-refresh output instructed staging that temporary path. Three failing-first cases expose misleading stdout and lost diagnostic boundaries.
