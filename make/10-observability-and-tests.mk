@@ -1448,6 +1448,7 @@ MAX_SECS ?= 3600
 run-watched:
 	@if [ -z "$(if $(strip $(CMD)),1,)" ]; then echo "Usage: make run-watched CMD='<command>' [OBSERVED_LABEL=run-watched] [RUN_ID=name] [STALL_SECS=180] [MAX_SECS=3600] [LOG=.gate-logs/observed/run-watched/name.log] [OBSERVED_RETAIN_RUNS=20]"; exit 1; fi
 	@$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label "$(if $(strip $(OBSERVED_LABEL)),$(OBSERVED_LABEL),run-watched)" \
+		--item-progress --item-task "$(WORK_ITEM_ID)" \
 		$(if $(RUN_ID),--run-id "$(RUN_ID)",) $(if $(LOG),--log "$(LOG)",) --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" \
 		--quiet-secs "$(STALL_SECS)" --max-secs "$(MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" -- $(CMD)
 

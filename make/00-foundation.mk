@@ -584,6 +584,7 @@ help:
 	@echo "  terminate-project-process-tree  Identity-check and preview/apply one project process tree"
 	@echo "  kill-worktree-e2e    Stop one verified local E2E tree (PID=; validate with KILL_WORKTREE_E2E_VALIDATE_ONLY=1)"
 	@echo "  status-snapshot       Rewrite SESSION.md gate evidence (STATUS_SNAPSHOT_VALIDATE_ONLY=1 for read-only validation)"
+	@echo "  work-item             Administrative focus/support/status; WORK_ITEM_ACTION, WORK_ITEM_ID, WORK_ITEM_REASON, WORK_ITEM_VALIDATE_ONLY"
 	@echo "  codex-stop-guard      Fail closed when tracked work remains; emit a Codex stop challenge token"
 	@echo "  codex-stop-confirm    Confirm a previously issued token before recording a valid stop"
 	@echo "  iam-headless-smoke    Validate least-privilege provider manifests without credentials"

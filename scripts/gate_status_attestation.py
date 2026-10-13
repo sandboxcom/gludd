@@ -27,6 +27,7 @@ _FIELDS = (
 )
 _REQUIRED_PHASES = ("lint", "typecheck", "collect", "test", "smoke")
 _DEFAULT_FRESHNESS_SECONDS = 1800
+_BOOKKEEPING_PATHS = frozenset({"TASKS.md", "BUGS.md", "SESSION.md"})
 _DEFAULT_KEY_PATH = Path.home() / ".config" / "gludd" / "gate-attestation.key"
 
 
@@ -96,8 +97,18 @@ def _state_digest(
     return digest.hexdigest()
 
 
-def repository_state_id(repo_root: Path, *, source: str = "worktree") -> str:
-    """Hash HEAD plus the worktree or index tree in one comparable format."""
+def repository_state_id(
+    repo_root: Path,
+    *,
+    source: str = "worktree",
+    include_head: bool = True,
+    exclude_bookkeeping: bool = False,
+) -> str:
+    """Hash repository content with HEAD and complete-content gate defaults.
+
+    Non-authoritative execution admission may explicitly omit commit identity
+    and the fixed bookkeeping files. Gate callers retain the strict defaults.
+    """
     root = Path(
         os.fsdecode(_run_git(repo_root, "rev-parse", "--show-toplevel")).strip()
     )
@@ -106,6 +117,10 @@ def repository_state_id(repo_root: Path, *, source: str = "worktree") -> str:
         _run_git(root, "rev-parse", "--show-object-format").decode("ascii").strip()
     )
     index = _index_entries(root)
+    if not include_head:
+        head = ""
+    if exclude_bookkeeping:
+        index = {path: entry for path, entry in index.items() if path not in _BOOKKEEPING_PATHS}
     if source == "index":
         return _state_digest(head, index, object_format=object_format)
     if source != "worktree":
@@ -124,6 +139,8 @@ def repository_state_id(repo_root: Path, *, source: str = "worktree") -> str:
         if not raw_path:
             continue
         path = os.fsdecode(raw_path)
+        if exclude_bookkeeping and path in _BOOKKEEPING_PATHS:
+            continue
         full_path = root / path
         indexed_mode, indexed_object_id = index.get(path, ("", ""))
         if indexed_mode == "160000":
@@ -391,6 +408,7 @@ def _read_key(path: Path, *, create: bool) -> bytes:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Sign or verify canonical status with strict default source identity."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("sign", "sign-terminal", "verify"))
     parser.add_argument("status", nargs="?", default=".gate-status")

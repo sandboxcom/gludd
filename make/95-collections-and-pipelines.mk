@@ -663,6 +663,16 @@ status-heartbeat:
 
 # Repository-level Codex stop invariant.  This cannot control the Codex host;
 # it gives CI and an external runner a fail-closed, auditable decision instead.
+WORK_ITEM_ACTION ?= status
+WORK_ITEM_ID ?=
+WORK_ITEM_REASON ?=
+WORK_ITEM_VALIDATE_ONLY ?= 0
+.PHONY: work-item
+work-item:
+	@$(UV) run python scripts/item_progress.py "$(WORK_ITEM_ACTION)" \
+		--task "$(WORK_ITEM_ID)" --reason "$(WORK_ITEM_REASON)" \
+		--validate-only "$(WORK_ITEM_VALIDATE_ONLY)"
+
 codex-stop-guard:
 	@$(PYTHON) scripts/codex_stop_guard.py
 

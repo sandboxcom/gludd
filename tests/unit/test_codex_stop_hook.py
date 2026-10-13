@@ -6,6 +6,26 @@ from pathlib import Path
 from scripts.codex_stop_hook import handle
 
 
+def test_stop_hook_names_the_native_selected_primary(tmp_path):
+    from scripts.item_progress import focus_item
+
+    (tmp_path / "TASKS.md").write_text("- [ ] F12.1 — primary | status: pending\n", encoding="utf-8")
+    focus_item(tmp_path, "F12.1")
+    response = handle({"cwd": str(tmp_path), "stop_hook_active": True})
+    assert response["decision"] == "block"
+    assert "Selected primary: F12.1" in response["reason"]
+    assert "deployment acceptance" in response["reason"]
+
+
+def test_stop_hook_rejects_corrupt_administrative_focus(tmp_path):
+    (tmp_path / "TASKS.md").write_text("- [ ] F12.1 — primary | status: pending\n", encoding="utf-8")
+    (tmp_path / ".gludd").mkdir()
+    (tmp_path / ".gludd/item-progress.json").write_text("{}", encoding="utf-8")
+    response = handle({"cwd": str(tmp_path), "stop_hook_active": True})
+    assert response["decision"] == "block"
+    assert "item progress error" in response["reason"].lower()
+
+
 def test_stop_hook_blocks_pending_work_with_fresh_challenge(tmp_path):
     (tmp_path / "TASKS.md").write_text("- [ ] pending\n", encoding="utf-8")
     (tmp_path / "config").mkdir()

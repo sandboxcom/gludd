@@ -15,11 +15,11 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Mapping, Sequence
-from contextlib import suppress
+from contextlib import AbstractContextManager, nullcontext, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol
 
 DEFAULT_OBSERVED_ROOT = Path(".gate-logs/observed")
 DEFAULT_HEARTBEAT_SECS = 30.0
@@ -31,6 +31,20 @@ _TERMINAL_STATES = frozenset({"passed", "failed", "timed_out", "interrupted"})
 _NAME_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-"
 )
+
+
+class _ProgressAdmission(Protocol):
+    """Native item admission bound to one observed command publication."""
+
+    identity: dict[str, object]
+
+    def record(self, observed_root: Path, label: str, run_id: str) -> None:
+        """Bind only this owner's actual native starting publication."""
+        ...
+
+    def preserved_run_ids(self, observed_root: Path, label: str) -> frozenset[str]:
+        """Return bounded native references still needed by admission."""
+        ...
 
 
 def _utc_now() -> str:
@@ -89,7 +103,9 @@ class _StatusPublisher:
         _atomic_write_json(self.current_path, payload)
 
 
-def _prune_terminal_runs(directory: Path, *, retain_runs: int) -> None:
+def _prune_terminal_runs(
+    directory: Path, *, retain_runs: int, preserve_runs: frozenset[str] = frozenset(),
+) -> None:
     """Prune only superseded terminal runs, never current or active evidence."""
     if retain_runs < 1:
         raise ValueError("retain_runs must be at least 1")
@@ -126,6 +142,8 @@ def _prune_terminal_runs(directory: Path, *, retain_runs: int) -> None:
     resolved_directory = directory.resolve()
     for _started_at, _name, status_path, value in terminal[retain_runs:]:
         run_id = value.get("run_id")
+        if run_id in preserve_runs:
+            continue
         if not isinstance(run_id, str) or status_path.name != f"{run_id}.json":
             continue
         for field, suffix in (("log_path", ".log"), ("trace_path", ".pytest.jsonl")):
@@ -140,19 +158,30 @@ def _prune_terminal_runs(directory: Path, *, retain_runs: int) -> None:
 
 def _terminate_process_group(process: subprocess.Popen[bytes], grace_seconds: float) -> None:
     """Terminate only the observed child's session, escalating after a grace."""
-    if process.poll() is not None:
-        return
+    import psutil
+
+    owned: list[psutil.Process] = []
+    for candidate in psutil.process_iter():
+        with suppress(ProcessLookupError, psutil.NoSuchProcess):
+            if (
+                candidate.pid != process.pid
+                and os.getpgid(candidate.pid) == process.pid
+                and os.getsid(candidate.pid) == process.pid
+            ):
+                owned.append(candidate)
+    deadline = time.monotonic() + grace_seconds
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
         return
     except OSError:
         process.terminate()
-    try:
+    with suppress(subprocess.TimeoutExpired):
         process.wait(timeout=grace_seconds)
-        return
-    except subprocess.TimeoutExpired:
-        pass
+    # The leader exiting is not proof that its owned descendants have exited.
+    remaining = deadline - time.monotonic()
+    if remaining > 0:
+        time.sleep(remaining)
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
@@ -160,6 +189,7 @@ def _terminate_process_group(process: subprocess.Popen[bytes], grace_seconds: fl
     except OSError:
         process.kill()
     process.wait(timeout=max(grace_seconds, 1.0))
+    psutil.wait_procs(owned, timeout=max(grace_seconds, 1.0))
 
 
 def _write_chunk(chunk: bytes, log_file: BinaryIO, *, quiet: bool) -> None:
@@ -231,6 +261,7 @@ def stream_command(
     pytest_trace: bool = False,
     retain_runs: int = DEFAULT_RETAIN_RUNS,
     termination_grace_seconds: float = 0.5,
+    progress_admission: _ProgressAdmission | None = None,
 ) -> int:
     """Run ``command`` with live output, bounded waits, and atomic status.
 
@@ -247,6 +278,8 @@ def stream_command(
         raise ValueError("termination grace must be positive")
     if retain_runs < 1:
         raise ValueError("retain_runs must be at least 1")
+    if progress_admission is not None and label is None:
+        raise ValueError("item admission requires native observed mode")
 
     publisher: _StatusPublisher | None = None
     status: dict[str, object] | None = None
@@ -276,8 +309,12 @@ def stream_command(
             log_path=resolved_log,
             trace_path=trace_path,
         )
+        if progress_admission is not None:
+            status["progress_identity"] = progress_admission.identity
         if not _publish_or_fail(publisher, status):
             return OBSERVER_FAILURE
+        if progress_admission is not None:
+            progress_admission.record(observed_root.resolve(), effective_label, effective_run_id)
         print(
             f"[observed {effective_label}] start run_id={effective_run_id} "
             f"log={resolved_log}",
@@ -525,7 +562,14 @@ def stream_command(
             return OBSERVER_FAILURE
         assert publisher is not None
         try:
-            _prune_terminal_runs(publisher.directory, retain_runs=retain_runs)
+            if progress_admission is None:
+                _prune_terminal_runs(publisher.directory, retain_runs=retain_runs)
+            else:
+                assert observed_root is not None and effective_label is not None
+                _prune_terminal_runs(
+                    publisher.directory, retain_runs=retain_runs,
+                    preserve_runs=progress_admission.preserved_run_ids(observed_root, effective_label),
+                )
         except OSError as exc:
             requested_code = OBSERVER_FAILURE
             state = "failed"
@@ -683,6 +727,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--pytest-trace", action="store_true")
     parser.add_argument("--retain-runs", type=int, default=DEFAULT_RETAIN_RUNS)
+    parser.add_argument("--item-progress", action="store_true")
+    parser.add_argument("--item-task", default="")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.command[:1] == ["--"]:
@@ -727,19 +773,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         heartbeat = args.heartbeat_secs
         if heartbeat is None:
             heartbeat = DEFAULT_HEARTBEAT_SECS if label else 0.0
-        return stream_command(
-            args.command,
-            log_path,
-            observed_root=args.root if label else None,
-            label=label,
-            run_id=run_id,
-            heartbeat_seconds=heartbeat,
-            quiet_seconds=args.quiet_secs,
-            max_seconds=args.max_secs,
-            quiet=args.quiet,
-            pytest_trace=args.pytest_trace,
-            retain_runs=args.retain_runs,
-        )
+        context: AbstractContextManager[_ProgressAdmission | None] = nullcontext(None)
+        if args.item_progress:
+            if TYPE_CHECKING:
+                from item_progress import command_admission, progress_status
+            else:
+                if __package__ in {None, ""}:
+                    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+                from scripts.item_progress import command_admission, progress_status
+            # Unattended CI keeps its established owner contract. Interactive
+            # work enables scope admission through the native focus command.
+            if progress_status(Path.cwd()) is not None:
+                context = command_admission(
+                    Path.cwd(), args.command, environment=os.environ,
+                    quiet_seconds=args.quiet_secs, max_seconds=args.max_secs,
+                    task_id=args.item_task or None,
+                )
+        with context as admission:
+            return stream_command(
+                args.command,
+                log_path,
+                observed_root=args.root if label else None,
+                label=label,
+                run_id=run_id,
+                heartbeat_seconds=heartbeat,
+                quiet_seconds=args.quiet_secs,
+                max_seconds=args.max_secs,
+                quiet=args.quiet,
+                pytest_trace=args.pytest_trace,
+                retain_runs=args.retain_runs,
+                progress_admission=admission,
+            )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"observed-command: {exc}", file=sys.stderr)
         return 2

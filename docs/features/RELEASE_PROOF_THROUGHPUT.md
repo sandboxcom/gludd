@@ -17,6 +17,61 @@ dependency resolver, or proof cache is introduced.
 
 ## Mechanical scheduling admission
 
+### Item-scoped execution controls
+
+`make work-item` owns administrative primary/support selection. One primary
+stays selected while its canonical task remains open; at most two active tasks
+may be declared as direct support with an explicit bounded reason. Native
+observer success does not tick tasks, prove deployment acceptance, or close
+the item. A ledger transition permits administrative advancement only.
+
+The existing watched-command owner integrates this policy once focus is
+initialized. It binds actual argv, content identity, effective environment and
+native observer results. Its bounded record references existing observations,
+not a second runner or reusable proof cache. Failed or timed-out unchanged
+inputs cannot be retried merely by changing a commit, bookkeeping notes, run
+name or observer label. Diagnostics and legitimate external-state waits remain
+available. Native gate defaults retain full HEAD/content identity.
+
+Independent supporting commands must not hold a singleton lock for their
+entire execution. Selection and publication use short serialized sections;
+the existing observer retains child-process, timeout and cleanup ownership.
+Referenced native evidence must survive ordinary observer retention.
+
+This protects execution admission, not the model's internal reasoning or every
+editor action. The existing exact-SHA gate, coverage, deployment acceptance and
+promotion checks remain mandatory. No runtime restart or serving change is
+required for this control-plane addition.
+
+### Research decisions for this pipeline
+
+- DORA recommends limiting simultaneous work and following items across the
+  complete delivery path, not treating development-only throughput as success.
+  Apply one primary with bounded direct support and visible missing-proof
+  stages. Do not enlarge the existing three-agent ceiling.
+  [DORA WIP limits](https://dora.dev/capabilities/wip-limits/).
+- DORA's small-batch guidance emphasizes independently testable changes and
+  deployment feedback, including for AI-assisted development. Keep small source
+  commits, but do not count them as feature completion.
+  [DORA small batches](https://dora.dev/capabilities/working-in-small-batches/).
+- Fowler describes fast early feedback followed by more expensive, higher
+  confidence stages. Keep cheap multi-failure diagnostics early and retain all
+  final integration checks; never reuse unit acceptance as deployment proof.
+  [Deployment pipelines](https://martinfowler.com/bliki/DeploymentPipeline.html).
+- Google's release engineering uses reproducible artifacts and independent
+  system tests on packaged builds. Reuse the existing immutable EE identity and
+  ZDD lifecycle acceptance rather than another build or rollout engine.
+  [Google release engineering](https://sre.google/sre-book/release-engineering/).
+- The 2023 Actions runner discussion documents that an aggregate check can
+  misrepresent skipped dependency jobs. Preserve the existing all-required,
+  success-only exact-SHA verdict; skipped jobs cannot close failure families.
+  [Actions practitioner discussion](https://github.com/actions/runner/discussions/2419).
+
+These are design inputs, not measured Gludd speed improvements. Evaluate future
+scheduling changes with exact hosted timing; retain censored failures and
+separate queue delay from test runtime. Do not cancel an active validation run,
+change required workflows or relax resource limits to produce faster numbers.
+
 ### Native build progress
 
 The EE build in run 38340797931 emitted no native build output between

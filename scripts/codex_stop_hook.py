@@ -50,10 +50,17 @@ def _pending(root: Path) -> tuple[int, int, int, str]:
 
 
 def handle(event: dict[str, Any]) -> dict[str, Any]:
+    """Keep tracked work open and expose its selected native proof owner."""
     root = _root_from_event(event)
     task_count, backlog_count, ratchet_count, scope_label = _pending(root)
     if not task_count and not ratchet_count:
         return {"continue": True}
+    from scripts.item_progress import progress_status
+
+    try:
+        progress = progress_status(root)
+    except (OSError, ValueError) as exc:
+        return {"decision": "block", "reason": f"Item progress error: {exc}; repair the native focus owner."}
     token = secrets.token_urlsafe(18)
     active = bool(event.get("stop_hook_active"))
     attempt = "continuation stop attempt" if active else "stop attempt"
@@ -70,10 +77,18 @@ def handle(event: dict[str, Any]) -> dict[str, Any]:
         f"{task_summary} and {ratchet_count} ratchet entry(ies) remain. "
         "Continue the event loop, execute the next tracked task, and re-check the gate."
     )
+    if progress is not None:
+        reason += (
+            f" Selected primary: {progress['primary_task_id']}. "
+            "Keep required deployment acceptance and exact-SHA proof pending until verified; "
+            "commits or passing unit tests do not complete the item. "
+            "Use the native work-item status and bounded watched owner; do not repeat unchanged failures."
+        )
     return {"decision": "block", "reason": reason}
 
 
 def main() -> int:
+    """Emit the Codex hook protocol without inventing completion evidence."""
     try:
         event = json.load(sys.stdin)
         response = handle(event)

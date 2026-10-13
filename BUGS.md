@@ -4,6 +4,22 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Legacy Molecule regexes and migrated task inputs disagree with native validation
+
+- The old input checker reports 21 layout findings while rejecting supported facts, expressions, script arguments and limited/empty sequences. Maintained Molecule configuration and native Ansible metadata/lint replace those approximations without running lifecycle actions or weakening argument failures.
+- Forty-seven removed delegated labels become the maintained default driver. Real failing-first task fixtures identify two unsupported warn options and one environment block nested under command; native Jinja then exposes an unparenthesized filter/slice in HSM diagnostics. Only those actual fields change, preserving intended environment and truncation behavior.
+- Seven metadata failures and three controls precede maintained module/action/sidecar resolution. Missing options are explicit unsupported coverage, never successful option validation; malformed metadata and unsupported closed options remain failures. One-run diagnostics retain every independently discovered closed-option failure.
+- Fifty cases pass in both existing Python environments, with 93% checker coverage. Private state avoids the accidental ansible executable-name collision, and the existing bounded owner retains heartbeat, eight-worker admission and owned descendant cleanup.
+- Complete repository lint remains unsuccessful: 211 configurations resolve, but native lint times out at the unchanged 45-second limit on 1014 inputs. This source repair does not close S98.4, provide lifecycle/deployment proof, or permit treating this owner or the full release gate as green.
+
+### 2026-10-13 — Continuation without item focus or unchanged-failure admission
+
+- The stop hook repeated pending counts but did not name a primary proof owner. Bookkeeping, new observer names and partial tests could appear to be progress while no more items became deployment ready.
+- Native administrative focus now keeps one canonical active primary and at most two declared direct supports. The existing watched owner binds actual command, content and effective environment to its own observed result. Notes, empty commits, role metadata, observer IDs and larger supervisor budgets cannot clear an unchanged failure. Success never ticks tasks or asserts release/gate readiness.
+- Actual integration regressions expose diagnostic recipe-override bypass, loss of referenced failed evidence during pruning, and missing selected-item hook guidance. A first concurrency version also holds its shared lock for the full child lifetime; short locked reservations and merged publication repair that while preserving duplicate-launch refusal. Plain-Python status reads require no test-environment dependency.
+- All 298 related cases and 129 focused Python 3.11 cases pass. Policy and integrated observer profiles each meet unchanged 85% aggregate/75% per-file line and branch floors at 91% combined coverage. All 221 Make contracts and both documented behaviors pass; live S98.4 focus/S98.1 support executes all 69 policy cases in 15.2 observed seconds. These are source acceptance results, not release closures or a measured hosted speed improvement.
+- DORA, staged delivery, packaged-artifact testing and long-lived Actions practitioner findings are documented in RELEASE_PROOF_THROUGHPUT.md. No required validation, resource limit, cleanup authority, ZDD behavior or branch promotion rule is relaxed.
+
 ### 2026-10-13 — Unit-test evidence incorrectly authorized completion
 
 - The existing backlog auditor returned VERIFIED_COMPLETE from passing evidence tests, present files and no detected stubs. It also assumed unsupported or empty acceptance criteria were satisfied. Neither result established item deployment readiness.
