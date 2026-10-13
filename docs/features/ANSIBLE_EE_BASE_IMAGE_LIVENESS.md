@@ -162,6 +162,15 @@ rollback behavior unchanged.
 
 ## Early build-input admission
 
+The pinned-source inspection owner now reads eleven exact inputs, adding the
+upstream Dockerfile and complete default settings to the existing nine source
+files. Its plan-only path makes no network request; actual acquisition retains
+the fixed revision, HTTPS-only transport, 10-second connection bound,
+20-second per-input bound and first-failure refusal. Two failing-first plan
+and complete-input cases precede four passing inspector cases. The native
+S98.4 source-defaults observation acquires all eleven inputs at the frozen
+revision. Inspection is diagnostic, not installed-image or deployment proof.
+
 The existing `_pytest-runtime-compatibility-admission` owner now executes the
 complete runtime-artifact, Python-boundary, and frozen-source inspection files
 before hosted shard and image fan-out. The promoted

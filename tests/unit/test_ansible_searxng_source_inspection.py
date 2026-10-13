@@ -40,7 +40,7 @@ def curl_env(tmp_path: Path) -> dict[str, str]:
 def test_source_inspection_plan_never_fetches(curl_env: dict[str, str]) -> None:
     result = _inspect("1", curl_env)
     assert result.returncode == 0, result.stderr
-    assert "plan_only=true files=9" in result.stdout
+    assert "plan_only=true files=11" in result.stdout
     assert not Path(curl_env["GLUDD_INSPECT_CALLS"]).exists()
 
 
@@ -52,7 +52,8 @@ def test_source_inspection_reads_only_pinned_bounded_files(
     calls = Path(curl_env["GLUDD_INSPECT_CALLS"]).read_text().splitlines()
     expected = ["setup.py", "searx/__init__.py", "searx/settings_loader.py",
                 "searx/version.py", "requirements.txt", "searx/settings_defaults.py",
-                "searx/unixthreadname.py", "searx/exceptions.py", "searx/sxng_locales.py"]
+                "searx/unixthreadname.py", "searx/exceptions.py", "searx/sxng_locales.py",
+                "Dockerfile", "searx/settings.yml"]
     assert len(calls) == len(expected)
     for call, filename in zip(calls, expected, strict=True):
         assert "--connect-timeout 10 --max-time 20" in call

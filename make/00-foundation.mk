@@ -419,7 +419,7 @@ help:
 	@echo "  update-ansible-runtime-lock Refresh deterministic EE input hashes"
 	@echo "  resolve-ansible-runtime-requirements Compile complete staged EE inputs (ANSIBLE_EE_COLLECTION_ROOT, ANSIBLE_EE_RESOLUTION_OUTPUT, ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1)"
 	@echo "  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)"
-	@echo "  inspect-ansible-searxng-source Read nine exact frozen metadata inputs (ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0|1)"
+	@echo "  inspect-ansible-searxng-source Read eleven exact frozen source/default-build inputs (ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0|1)"
 	@echo "  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  update-collection-python-boundary-inventory Refresh exact legacy migration inventory"
 	@echo "  deps-audit            Fail-closed Python dependency truth audit"
@@ -1076,9 +1076,9 @@ inspect-ansible-searxng-source:
 	@set -eu; revision=$$(sed -n 's|^searxng @ git+https://github.com/searxng/searxng.git@||p' config/ansible/requirements.txt); \
 		test "$${#revision}" = 40; case "$$revision" in *[!0-9a-f]*) echo "invalid frozen SearXNG revision" >&2; exit 2;; esac; \
 		if [ "$(ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY)" = "1" ]; then \
-			echo "ANSIBLE_SEARXNG_SOURCE_INSPECTION plan_only=true files=9 revision=$$revision"; exit 0; \
+			echo "ANSIBLE_SEARXNG_SOURCE_INSPECTION plan_only=true files=11 revision=$$revision"; exit 0; \
 		fi; \
-		for source_file in setup.py searx/__init__.py searx/settings_loader.py searx/version.py requirements.txt searx/settings_defaults.py searx/unixthreadname.py searx/exceptions.py searx/sxng_locales.py; do \
+		for source_file in setup.py searx/__init__.py searx/settings_loader.py searx/version.py requirements.txt searx/settings_defaults.py searx/unixthreadname.py searx/exceptions.py searx/sxng_locales.py Dockerfile searx/settings.yml; do \
 			printf '\nANSIBLE_SEARXNG_SOURCE_INSPECTION file=%s revision=%s\n' "$$source_file" "$$revision"; \
 			curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --proto '=https' --tlsv1.2 \
 				"https://raw.githubusercontent.com/searxng/searxng/$$revision/$$source_file"; \
