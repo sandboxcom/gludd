@@ -56,6 +56,7 @@ ROSTER = (
     "tests/unit/test_ci_shards_log_context.py",
     "tests/unit/test_ci_shards_log_context_bounds.py",
     "tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::test_internal_targets_not_in_help",
+    "tests/unit/test_azure_containerapp_coverage_target.py",
 )
 
 

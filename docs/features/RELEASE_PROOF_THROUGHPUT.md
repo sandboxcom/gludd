@@ -785,6 +785,44 @@ rollback removes it after active diagnostic owners finish. Serving processes,
 release producers, bounds and coverage floors remain unchanged. These checks do
 not close S98.4 or replace exact-SHA hosted/full-gate/deployment evidence.
 
+## Shared-owner coverage execution closure
+
+Actual Build run 38447639445 fails Azure coverage despite all tests passing.
+The expanded runtime-artifact owner is already included in measurement, but its
+staging cases are absent from the existing 47-file execution list. The canonical
+reviewed-binding replay retains the failure: 69.1% lines/61.9% branches for that
+owner and 83.1% aggregate branches. This is not repaired by source inclusion alone.
+
+The same native Azure target appends existing collection-staging, stage-target
+and canonical-binding cohorts plus `test_azure_containerapp_coverage_target.py`.
+All 47 originals retain their order. Five failing-first native regression cases
+check actual recursive Make argv, exact original/new selections, no duplicates,
+unchanged policy and child-failure propagation, including caller override attempts.
+The existing pre-publication runtime owner also executes these cases; promotion
+family `azure-runtime-artifact-coverage-roster` retains full-gate admission rather
+than declaring a source test to be release evidence. Exact legacy expectations
+add only this required file/family, without removing existing guarantees.
+
+The actual Python 3.11 Azure owner passes all 1407 tests in 41.2 observed seconds.
+Native coverage reports 92.8% lines/85.3% branches, with all 70 original production
+files above both 75% floors. Runtime artifacts measure 89.9% lines/80.8% branches.
+The original profile, 85/75 thresholds, 300-second observer maximum, 60-second
+quiet limit and cleanup policy are unchanged. Report:
+`.gate-logs/coverage-20261013T185516Z.json`. All 98 related admission/control cases
+pass on Python 3.11 and 3.14; strict typing/Ruff, unchanged 256-resource ownership,
+Make parity and 231 contracts pass.
+
+The [2021 pytest selection question](https://stackoverflow.com/questions/67078075/select-suite-of-tests-for-coverage-with-pytest)
+and [maintained coverage execution reference](https://coverage.readthedocs.io/en/latest/commands/cmd_run.html)
+distinguish program/test selection from coverage measurement. Applied inference:
+select the missing existing tests in the owner that measures their source, rather
+than changing measurement scope to hide the gap. This change creates no service
+or alternate coverage engine. Rollout adds the tests to new diagnostic/CI jobs;
+existing jobs keep their immutable inputs. Rollback reverts selection and its
+guards together after owners finish, knowingly restoring the failed admission.
+Canonical full gate, successor exact-SHA CI and installed/deployment proof remain
+required; no release task or backlog item is marked complete from this receipt.
+
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
 [observation-api]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository

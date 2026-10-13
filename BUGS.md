@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Shared runtime growth was absent from Azure coverage execution
+
+- Build run 38447639445 fails Python 3.11's Azure coverage step: every test passes, but runtime-artifact coverage is 63.1% lines/53.8% branches and aggregate branches are 82.1%. The canonical reviewed-binding HEAD reproduces the same missing-selection defect at 69.1%/61.9% runtime coverage and 83.1% aggregate branches. The profile measures the expanded owner, but the old 47-file execution list omits its staging tests.
+- Five canonical native regressions fail first. The existing target now appends staging, stage-target, canonical-binding and owner-regression cohorts, preserving every original test, profile, coverage floor and observer bound. Actual Azure execution passes all 1407 tests in 41.2 observed seconds at 92.8% lines/85.3% branches; all 70 original measured owners pass both 75% per-file floors. Native report: .gate-logs/coverage-20261013T185516Z.json.
+- The original pre-publication runtime owner gains the native selection regression, with promotion family 59 retaining the complete full gate. Three dependent golden expectations initially fail; they now add only the new required file/family while retaining exact original order, fresh-help behavior, worker/warning controls and failure propagation. All 98 related controls pass on Python 3.11 and 3.14; strict typing/Ruff, unchanged 256-resource ownership, Make parity and 231 contracts pass.
+- This repairs a real coverage failure and codifies its earlier detection, not deployment completion. Exact successor hosted acceptance, full native early admission, canonical gate and installed/deployment proofs remain mandatory. No profile exclusion, assertion weakening, timeout increase, warning suppression or hand-edited operational JSON is used.
+
 ### 2026-10-13 — Existing multi-failure diagnostics had no safe Make entrypoint
 
 - The mature serial runner already supports collecting ordinary failures across batches while retaining terminal safety, cleanup and cancellation rules. No public Make interface exposed that mode, encouraging one-failure retry loops or ad hoc invocation. Release policy intentionally remains incompatible with diagnostic collection.

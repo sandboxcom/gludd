@@ -1225,6 +1225,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "workflow-safe-parser-throughput",
         "ee-searxng-frozen-source-acceptance",
         "native-verdict-caller-compatibility",
+        "azure-runtime-artifact-coverage-roster",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1401,7 +1402,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ci_shards_log_context.py '
         'tests/unit/test_ci_shards_log_context_bounds.py '
         'tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::'
-        'test_internal_targets_not_in_help"'
+        'test_internal_targets_not_in_help '
+        'tests/unit/test_azure_containerapp_coverage_target.py"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner

@@ -565,6 +565,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_verdict_structural_repair.py::test_native_shared_verdict_owner_retains_identity_states_and_run_ids",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "azure-runtime-artifact-coverage-roster",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_azure_containerapp_coverage_target.py::test_native_azure_coverage_selects_complete_runtime_closure_and_keeps_policy",
+      "full_gate_phase": "test"
     }
   ]
 }

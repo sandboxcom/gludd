@@ -198,6 +198,24 @@ the documented actual plan, 231-target contract, strict typing, Ruff and Make
 parity pass. Diagnostic execution cannot satisfy required release policy or
 deployment acceptance; all release tasks and backlog completion counts stay open.
 
+S98.4 Azure coverage-closure admission scope: `make/40-cross-version-and-worktrees.mk`,
+`make/10-observability-and-tests.mk`, `config/gate_failure_promotions.json`,
+`tests/unit/test_azure_containerapp_coverage_target.py`,
+`tests/unit/test_runtime_admission_scheduling.py`,
+`tests/unit/test_gate_failure_promotion.py`, and
+`docs/features/RELEASE_PROOF_THROUGHPUT.md`. Actual hosted run 38447639445 and the
+canonical Python 3.11 owner expose missing runtime-staging test selection, not
+failing tests. All 47 original files remain; three existing staging/binding cohorts
+and the new native owner regression are appended without profile/floor changes.
+Five canonical regressions fail first; final Azure execution passes 1407 tests
+in 41.2 observed seconds at 92.8% lines/85.3% branches across all 70 original
+production owners, each above both 75% floors. The existing pre-publication owner
+now selects the roster regression; promotion family 59 binds it to the still-required
+full gate. All 98 related admission/control cases pass on Python 3.11 and 3.14,
+with strict typing/Ruff, unchanged 256-resource ownership, Make parity and 231
+contracts green. Full native early admission,
+successor exact-SHA hosted, canonical gate and deployment proof remain required.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 
