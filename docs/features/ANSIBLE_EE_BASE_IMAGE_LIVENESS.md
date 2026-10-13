@@ -508,3 +508,48 @@ Source acceptance does not replace a successful DNF transaction, the full
 installed offline smoke, exact-SHA hosted proof or the canonical release gate.
 Warm the replacement beside the active digest; switching, draining and rollback
 remain pending until deployment acceptance. S98.4 stays unchecked.
+
+## Preserve native controller console-script lookup (2026-10-13)
+
+Exact source `4721aa273fae51bf5b8f7afe6814ef5c87e86209`, Build `38451761526`,
+job `115490425617`, installs core 2.19.12 and runner 2.4.3 successfully, but native
+`check_ansible` and `check_galaxy` then exit after their console scripts cannot be
+found. Both execute bare Ansible commands; selecting an absolute `PYCMD` does not
+put its scripts directory on `PATH`.
+
+The EE definition prepends the existing isolated controller's `bin` directory
+to the inherited base-stage `PATH` before native package installation. Galaxy,
+builder and final inherit that base environment. Native check scripts remain
+unchanged and enabled; no system interpreter, package pin, artifact hash, SQLite
+requirement, SDK exclusion or installer boundary is weakened. The existing lock
+producer updates only the definition input hash.
+
+The real native-generation regression fails first on missing PATH wiring, then
+checks ordering, both unchanged native helper commands and their retained Galaxy
+and final-stage execution. Fresh child helper checks reproduce missing lookup
+without the selected bin path and require success with it. These host-generator
+checks are not a rebuilt Linux image or installed-image acceptance.
+
+The [2021 upstream user report](https://github.com/ansible/ansible/issues/74900)
+records successful package installation followed by command-not-found. The
+[2023 Ansible Builder forum](https://forum.ansible.com/t/ansible-builder-and-galaxy-ng/1669)
+shows using schema-3 additional build steps for image environment declarations;
+its old Galaxy server workaround is not adopted. The
+[Docker environment reference](https://docs.docker.com/reference/dockerfile/#env)
+defines inherited stage environments. These were reviewed on 2026-10-13 and
+support fixing the generated image definition instead of altering native checks.
+
+Root-user pip warnings in the retained failed build remain separate unsuccessful
+diagnostics; this PATH repair neither filters them nor claims their remediation.
+The replacement digest must still build, warm offline with fatal diagnostics,
+pass exact-SHA hosted/full-gate acceptance and receive deployment acceptance
+before new jobs switch. Existing jobs retain the serving digest and drain only
+after promotion; rollback retains the prior verified image. S98.4 stays open.
+
+Combined source acceptance passes 248 cases on Python 3.11 and 3.14, including
+actual native helper failure without the selected bin path and success with it.
+The complete early owner passes 1211 main cases plus fresh help in 41.2 observed
+seconds under unchanged 90/60 bounds. Strict typing/Ruff, native seven-input
+runtime validation, Make parity/231 contracts and unchanged 256-resource
+ownership pass. This is bounded source/native-generation acceptance, not rebuilt
+image or item deployment proof.

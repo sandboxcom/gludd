@@ -72,6 +72,8 @@ additional_build_steps:
       assert sqlite3.sqlite_version_info >= (3, 35, 0);
       assert sqlite3.threadsafety == 3'
     # The standalone archive's pip must be current before Builder's first install.
+    # Native Builder checks and Galaxy invoke console scripts through PATH.
+    - ENV PATH="/opt/gludd/ansible-ee-python/bin:$PATH"
     - RUN $PYCMD -m pip install --no-cache-dir --upgrade pip==26.2.1
   append_base:
     # The pinned SearXNG Python source needs Git in the builder, not just final.

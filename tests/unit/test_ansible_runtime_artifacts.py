@@ -996,6 +996,14 @@ def test_generated_controller_build_preserves_installer_and_interpreter_boundari
     for unsafe_option in ("--allowerasing", "--skip-broken", "--nobest"):
         assert unsafe_option not in base
     assert "RUN $PKGMGR install -y python3.11 curl-minimal tar gzip coreutils &&" not in base
+    controller_bin = str(Path(artifacts.CONTROLLER_PYTHON_PATH).parent)
+    native_path = f'ENV PATH="{controller_bin}:$PATH"'
+    assert native_path in base
+    assert base.index(native_path) < base.index("RUN $PYCMD -m pip install --no-cache-dir $ANSIBLE_INSTALL_REFS")
+    assert "ansible --version" in (context / "_build/scripts/check_ansible").read_text(encoding="utf-8")
+    assert "ansible-galaxy --version" in (context / "_build/scripts/check_galaxy").read_text(encoding="utf-8")
+    assert "RUN /output/scripts/check_galaxy" in builder
+    assert "RUN /output/scripts/check_ansible $PYCMD" in final
     assert f'ENV PIPCMD="{artifacts.CONTROLLER_PYTHON_PATH} -m uv pip"' in base
     assert "ENV UV_CONFIG_FILE=/etc/gludd/ansible-ee-uv.toml" in base
     assert f"ENV UV_PYTHON={artifacts.CONTROLLER_PYTHON_PATH} UV_SYSTEM_PYTHON=true" in base
@@ -1010,6 +1018,25 @@ def test_generated_controller_build_preserves_installer_and_interpreter_boundari
         script = (scripts / script_name).read_text(encoding="utf-8")
         assert 'PIPCMD="${PIPCMD:=$PYCMD -m pip}"' in script
         assert "$PIPCMD install" in script
+    native_state = tmp_path / "native-controller-checks"
+    native_state.mkdir()
+    child_environment = artifacts._collection_environment(native_state)
+    for helper in ("check_ansible", "check_galaxy"):
+        command = ["/bin/bash", str(scripts / helper), sys.executable]
+        child_environment["PATH"] = "/usr/bin:/bin"
+        missing = subprocess.run(
+            command, cwd=tmp_path, env=child_environment, capture_output=True,
+            text=True, timeout=20, check=False,
+        )
+        assert missing.returncode != 0
+        assert "command not found" in missing.stderr
+        child_environment["PATH"] = f"{Path(sys.executable).parent}:/usr/bin:/bin"
+        selected = subprocess.run(
+            command, cwd=tmp_path, env=child_environment, capture_output=True,
+            text=True, timeout=20, check=False,
+        )
+        assert selected.returncode == 0, selected.stdout + selected.stderr
+        assert "[WARNING]" not in selected.stdout + selected.stderr
     assert (context / "_build" / "requirements.txt").read_text(encoding="utf-8") == (
         artifacts.INPUTS["python"].read_text(encoding="utf-8")
     )
