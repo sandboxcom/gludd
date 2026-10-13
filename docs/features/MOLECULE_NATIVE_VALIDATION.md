@@ -284,7 +284,52 @@ when operators expect host installation to supply them. Correct names and
 reproducible consumer-owned collection staging are separate requirements.
 The latter remains pending; ambient user installations are not release proof.
 
-The binary/radio dictionary candidate's focused argument tests pass, but native
-staged clone admission currently refuses six repeated source blocks. It remains
-uncommitted and is being refactored through maintained native task owners.
+At this earlier checkpoint the binary/radio dictionary candidate passed focused
+argument tests, but staged clone admission refused six repeated source blocks.
+The subsequent native-owner acceptance below supersedes that source refusal.
 No clone exclusion, fingerprint baseline, coverage floor or native rule changes.
+
+## Native task reuse and controlled execution (2026-10-13)
+
+The staged clone guard rejected six repeated blocks introduced by the argument
+repair. Native task reuse now gives binary artifact writing, publication and
+reporting one owner; the identical deobfuscation input dictionary has one role
+variable owner. Link-budget and propagation calls share RF geometry preparation,
+and propagation/signal publication share one native include. Every module
+operation and register remains literal. Existing parameter expressions,
+conditional checks, result names, artifact content, output paths and write order
+remain unchanged. No detector policy, warning policy or argument API is changed.
+
+The extended fixtures copy the actual include and variable-file closure. The
+thirteen concrete-value/type checks and nine real invalid-nested-input controls
+are retained. Two additional controlled playbooks exercise all eight binary
+registrations/publications/artifacts and the link-budget/propagation roles.
+The binary fixture uses native `include_role`/`tasks_from` with private role
+variables instead of fixture-global `include_vars`. The inspected
+[January 2025 practitioner exchange](https://forum.ansible.com/t/role-variables-not-properly-scoped-subsequent-roles-inherit-variables-from-previous-roles-instead-of-loading-their-own/39749/4)
+explains why `include_vars` can override role variables; the
+[maintained include-role contract](https://docs.ansible.com/projects/ansible-core/2.19/collections/ansible/builtin/include_role_module.html)
+owns private variable exposure and task-file selection.
+
+Real execution also exposed the newly deprecated internal `vars` dictionary;
+both publication owners now use the maintained `vars` lookup. A successful raw
+CLI run still left its connection-lock TemporaryFile open under Python 3.14.
+The existing CoreAnsibleRunner already owns and closes that exact descriptor.
+The playbook controls use its public native execution API, bounded at 75 seconds
+inside a 90-second child limit; no second runner or ad hoc cleanup is introduced.
+All warnings remain fatal and captured stderr must be empty.
+
+The two new controls pass on Python 3.14.0/Ansible 2.21.5 and Python
+3.11.14/Ansible 2.19.14. Radio assertions use the existing distinct payload
+schemas: link-budget viability/path loss, propagation success/path loss, and
+role identity through each original verdict fact. The coverage-guided fixture
+deliberately exercises the existing unavailable-fuzzer result; it does not prove
+an external fuzzer run. These are controlled source/argument/execution checks,
+not complete lifecycle, deployment, Windows, full-gate or exact-SHA hosted proof.
+S98.4 and the unchanged 85/75 coverage and promotion requirements remain open
+until their separate required evidence exists.
+
+Root's final canonical replay passes all 27 binary/radio controls in each
+installed environment with warnings fatal. Final staged clone admission reports
+zero new clones before the source commit. These results supersede the earlier
+six-clone candidate refusal above without providing release acceptance.

@@ -1,1 +1,3 @@
 ---
+_binary_runtime_params:
+  binary_path: "{{ binary_path }}"

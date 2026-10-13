@@ -2,25 +2,14 @@
 - name: Triage crash findings through packaged runtime
   general_ludd.binary_re.binary_runtime:
     operation: crash_triage
-    params:
+    params: "{{ _binary_runtime_params }}"
+  vars:
+    _binary_runtime_params:
       crash_dir: "{{ crash_dir | default(output_dir + '/crashes') }}"
       retention_days: "{{ crash_retention_days | default(omit, true) }}"
   register: _crash_triage_runtime
 
-- name: Write crash triage artifact atomically
-  ansible.builtin.copy:
-    content: "{{ _crash_triage_runtime.artifact_content }}"
-    dest: "{{ output_dir }}/{{ _crash_triage_runtime.artifact_filename }}"
-    mode: "0644"
-
-- name: Publish crash triage artifact
-  ansible.builtin.set_fact:
-    crash_triage_artifact: "{{ _crash_triage_runtime.result }}"
-
-- name: Report crash triage summary
-  ansible.builtin.debug:
-    msg: >-
-      Crash triage complete:
-      total={{ crash_triage_artifact.get('total_crashes', 0) }},
-      unique={{ crash_triage_artifact.get('unique_crashes', 0) }},
-      exploitable={{ crash_triage_artifact.get('exploitable', 0) }}
+- name: Write, publish and report the crash_triage artifact
+  ansible.builtin.include_tasks: ../../deobfuscate/tasks/runtime_artifact.yml
+  vars:
+    _binary_artifact_operation: crash_triage

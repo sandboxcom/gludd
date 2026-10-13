@@ -1,0 +1,9 @@
+---
+- name: Load the shared RF geometry parameter dictionary
+  ansible.builtin.include_vars: ../vars/runtime_geometry.yml
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ _radio_output_directory }}"
+    state: directory
+    mode: "0755"

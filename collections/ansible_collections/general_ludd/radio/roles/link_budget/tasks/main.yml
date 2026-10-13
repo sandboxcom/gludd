@@ -14,29 +14,28 @@
       two_ray, itm, rain
   when: link_budget_enabled | bool
 
-- name: Ensure output directory exists
-  ansible.builtin.file:
-    path: "{{ link_budget_output_dir }}"
-    state: directory
-    mode: "0755"
+- name: Prepare the RF runtime output and geometry
+  ansible.builtin.include_tasks: ../../propagation_model/tasks/prepare_runtime.yml
+  vars:
+    _radio_output_directory: "{{ link_budget_output_dir }}"
   when: link_budget_enabled | bool
 
 - name: Compute link budget through packaged runtime
   general_ludd.radio.radio_runtime:
     operation: link_budget
-    params:
+    params: "{{ _radio_runtime_params }}"
+  vars:
+    _radio_runtime_params: "{{ _radio_geometry_params | combine(_radio_operation_params) }}"
+    _radio_geometry_namespace: link_budget
+    _radio_geometry_model: "{{ link_budget_model }}"
+    _radio_operation_params:
       tx_power_dbm: "{{ link_budget_tx_power_dbm }}"
-      freq_hz: "{{ link_budget_freq_hz }}"
-      distance_m: "{{ link_budget_distance_m }}"
-      model: "{{ link_budget_model }}"
       tx_antenna_type: "{{ link_budget_tx_antenna_type }}"
       tx_antenna_gain_dbi: "{{ link_budget_tx_antenna_gain_dbi }}"
       tx_line_loss_db: "{{ link_budget_tx_line_loss_db }}"
-      tx_height_m: "{{ link_budget_tx_height_m }}"
       rx_antenna_type: "{{ link_budget_rx_antenna_type }}"
       rx_antenna_gain_dbi: "{{ link_budget_rx_antenna_gain_dbi }}"
       rx_line_loss_db: "{{ link_budget_rx_line_loss_db }}"
-      rx_height_m: "{{ link_budget_rx_height_m }}"
       rx_sensitivity_dbm: "{{ link_budget_rx_sensitivity_dbm }}"
       required_snr_db: "{{ link_budget_required_snr_db }}"
       rain_enabled: "{{ link_budget_rain_enabled }}"

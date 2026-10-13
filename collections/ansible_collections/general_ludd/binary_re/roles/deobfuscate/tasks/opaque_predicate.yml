@@ -2,24 +2,10 @@
 - name: Detect opaque predicates through packaged runtime
   general_ludd.binary_re.binary_runtime:
     operation: opaque_predicates
-    params:
-      binary_path: "{{ binary_path }}"
+    params: "{{ _binary_runtime_params }}"
   register: _opaque_runtime
 
-- name: Write opaque predicate artifact atomically
-  ansible.builtin.copy:
-    content: "{{ _opaque_runtime.artifact_content }}"
-    dest: "{{ output_dir }}/{{ _opaque_runtime.artifact_filename }}"
-    mode: "0644"
-
-- name: Publish opaque predicate artifact
-  ansible.builtin.set_fact:
-    opaque_predicate_artifact: "{{ _opaque_runtime.result }}"
-
-- name: Report opaque predicate summary
-  ansible.builtin.debug:
-    msg: >-
-      Opaque predicate detection complete:
-      detected={{ opaque_predicate_artifact.get('detected', false) }},
-      confidence={{ opaque_predicate_artifact.get('confidence', 'none') }},
-      patterns_found={{ opaque_predicate_artifact.get('patterns', []) | length }}
+- name: Write, publish and report the opaque_predicates artifact
+  ansible.builtin.include_tasks: runtime_artifact.yml
+  vars:
+    _binary_artifact_operation: opaque_predicates

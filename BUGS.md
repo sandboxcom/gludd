@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Binary/radio task dictionaries failed native argument and reuse admission
+
+- Sixteen failing-first native cases expose unresolved nested task expressions and short-form fixture actions. Thirteen callers now pass their same dictionaries through native task-local variables, retaining every nested required field, type, choice and default; actual builtin fixture actions use their maintained FQCNs.
+- The unchanged clone guard first rejects six repeated blocks. Existing-role native includes now own binary artifact publication, common RF geometry and radio result publication. Operations, registers, result fields, write order and conditional guards remain unchanged. Final staged admission passes with zero new clones.
+- All 27 focused controls pass on Python 3.14/Ansible 2.21.5 and Python 3.11/Ansible 2.19.14, including thirteen concrete dictionaries, nine invalid nested-input refusals, and actual playbooks covering all eight binary registrations/artifacts plus link-budget/propagation execution. Maintained vars lookup removes deprecation warnings; the existing CoreAnsibleRunner owns connection-lock cleanup. No test-runner or warning suppression is introduced.
+- Private role variable scope prevents fixture host-variable leakage. Radio checks retain their distinct existing payload schemas rather than inventing a uniform verdict. External fuzzer execution, complete lifecycle/deployment, installed EE health, full gate and exact-SHA hosted acceptance remain separate pending proofs; no item is marked complete.
+
 ### 2026-10-13 — Native Git reuse left inline-only acceptance assumptions
 
 - Guarded Git composite operations retain canonical gate admission, development-only ordinary merge defaults, reviewed master promotion and full gate-sized API budgets. Native request, reference, list/result and advisory model owners remove new duplicated blocks without changing original authentication, operation or publication contracts.

@@ -1,0 +1,7 @@
+---
+_radio_geometry_params:
+  model: "{{ _radio_geometry_model }}"
+  freq_hz: "{{ lookup('vars', _radio_geometry_namespace + '_freq_hz') }}"
+  distance_m: "{{ lookup('vars', _radio_geometry_namespace + '_distance_m') }}"
+  tx_height_m: "{{ lookup('vars', _radio_geometry_namespace + '_tx_height_m') }}"
+  rx_height_m: "{{ lookup('vars', _radio_geometry_namespace + '_rx_height_m') }}"

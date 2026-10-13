@@ -24,7 +24,9 @@
 - name: Look up regulation through packaged runtime
   general_ludd.radio.radio_runtime:
     operation: regulation_lookup
-    params:
+    params: "{{ _radio_runtime_params }}"
+  vars:
+    _radio_runtime_params:
       country: "{{ regulation_lookup_country }}"
       freq_mhz: "{{ regulation_lookup_freq_mhz | default(omit, true) }}"
       band_name: "{{ regulation_lookup_band_name | default(omit, true) }}"

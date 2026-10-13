@@ -1,0 +1,67 @@
+---
+- name: Complete the registered binary runtime artifact
+  block:
+    - name: Write runtime artifact atomically
+      ansible.builtin.copy:
+        content: "{{ _binary_artifact_payload.artifact_content }}"
+        dest: "{{ output_dir }}/{{ _binary_artifact_payload.artifact_filename }}"
+        mode: "0644"
+
+    - name: Publish the operation result
+      ansible.builtin.set_fact:
+        "{{ _binary_artifact_alias.published }}": "{{ _binary_artifact_payload.result }}"
+
+    - name: Report the operation summary
+      ansible.builtin.debug:
+        msg: "{{ _binary_artifact_summaries[_binary_artifact_operation] }}"
+  vars:
+    _binary_artifact_aliases:
+      prompt_injection_scan: {registered: _scan_runtime, published: scan_artifact}
+      coverage_guided: {registered: _coverage_runtime, published: coverage_guided_artifact}
+      mutation: {registered: _mutation_runtime, published: mutation_artifact}
+      crash_triage: {registered: _crash_triage_runtime, published: crash_triage_artifact}
+      packing: {registered: _packing_runtime, published: packing_artifact}
+      strings: {registered: _strings_runtime, published: strings_artifact}
+      cfg_flattening: {registered: _cfg_runtime, published: cfg_flattening_artifact}
+      opaque_predicates: {registered: _opaque_runtime, published: opaque_predicate_artifact}
+    _binary_artifact_alias: "{{ _binary_artifact_aliases[_binary_artifact_operation] }}"
+    _binary_artifact_payload: "{{ lookup('vars', _binary_artifact_alias.registered) }}"
+    _binary_artifact_summaries:
+      prompt_injection_scan: >-
+        Scan complete: {{ scan_artifact.get('scan', {}).get('finding_count', 0) }} findings,
+        severity {{ scan_artifact.get('scan', {}).get('overall_severity', 'unknown') }}
+      coverage_guided: >-
+        Coverage-guided fuzzing complete:
+        fuzzer={{ coverage_guided_artifact.get('fuzzer', 'unknown') }},
+        executions={{ coverage_guided_artifact.get('executions', 0) }},
+        crashes={{ coverage_guided_artifact.get('crashes', 0) }}
+      mutation: >-
+        Mutation fuzzing complete:
+        mutations={{ mutation_artifact.get('mutations_total', 0) }},
+        crashes={{ mutation_artifact.get('crashes', 0) }},
+        strategy={{ mutation_artifact.get('mutation_strategy', 'unknown') }}
+      crash_triage: >-
+        Crash triage complete:
+        total={{ crash_triage_artifact.get('total_crashes', 0) }},
+        unique={{ crash_triage_artifact.get('unique_crashes', 0) }},
+        exploitable={{ crash_triage_artifact.get('exploitable', 0) }}
+      packing: >-
+        Packing detection complete:
+        file_type={{ packing_artifact.get('file_type', 'unknown') }},
+        detections={{ packing_artifact.get('detections', []) | length }},
+        packed={{ packing_artifact.get('packed', false) }}
+      strings: >-
+        String deobfuscation complete:
+        encrypted_strings={{ strings_artifact.get('encrypted_strings', 0) }},
+        deobfuscated={{ strings_artifact.get('deobfuscated', 0) }},
+        confidence={{ strings_artifact.get('confidence', 'none') }}
+      cfg_flattening: >-
+        CFG flattening detection complete:
+        flattened={{ cfg_flattening_artifact.get('flattened', false) }},
+        confidence={{ cfg_flattening_artifact.get('confidence', 'none') }},
+        markers_found={{ cfg_flattening_artifact.get('markers', []) | length }}
+      opaque_predicates: >-
+        Opaque predicate detection complete:
+        detected={{ opaque_predicate_artifact.get('detected', false) }},
+        confidence={{ opaque_predicate_artifact.get('confidence', 'none') }},
+        patterns_found={{ opaque_predicate_artifact.get('patterns', []) | length }}

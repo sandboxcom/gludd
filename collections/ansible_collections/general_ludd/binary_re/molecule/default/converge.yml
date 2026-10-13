@@ -12,19 +12,19 @@
         mode: "0755"
 
     - name: "Validate disassembly contract"
-      set_fact:
+      ansible.builtin.set_fact:
         disasm_test_bytecode: "\\x55\\x48\\x89\\xe5\\x48\\x8b\\x05"
 
     - name: "Validate PE parser contract"
-      set_fact:
+      ansible.builtin.set_fact:
         pe_test: "PE format header parsing available"
 
     - name: "Validate ELF parser contract"
-      set_fact:
+      ansible.builtin.set_fact:
         elf_test: "ELF format header parsing available"
 
     - name: "Validate Mach-O parser contract"
-      set_fact:
+      ansible.builtin.set_fact:
         macho_test: "Mach-O format header parsing available"
 
     - name: "Report collection capability check"

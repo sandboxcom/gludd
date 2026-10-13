@@ -2,7 +2,9 @@
 - name: Run coverage-guided fuzzing through packaged runtime
   general_ludd.binary_re.binary_runtime:
     operation: coverage_guided
-    params:
+    params: "{{ _binary_runtime_params }}"
+  vars:
+    _binary_runtime_params:
       fuzzer: "{{ fuzzer }}"
       fuzzer_path: "{{ fuzzer_path }}"
       target_binary: "{{ target_binary }}"
@@ -12,20 +14,7 @@
       fuzz_dict: "{{ fuzz_dict | default(omit, true) }}"
   register: _coverage_runtime
 
-- name: Write coverage-guided artifact atomically
-  ansible.builtin.copy:
-    content: "{{ _coverage_runtime.artifact_content }}"
-    dest: "{{ output_dir }}/{{ _coverage_runtime.artifact_filename }}"
-    mode: "0644"
-
-- name: Publish coverage-guided artifact
-  ansible.builtin.set_fact:
-    coverage_guided_artifact: "{{ _coverage_runtime.result }}"
-
-- name: Report coverage-guided summary
-  ansible.builtin.debug:
-    msg: >-
-      Coverage-guided fuzzing complete:
-      fuzzer={{ coverage_guided_artifact.get('fuzzer', 'unknown') }},
-      executions={{ coverage_guided_artifact.get('executions', 0) }},
-      crashes={{ coverage_guided_artifact.get('crashes', 0) }}
+- name: Write, publish and report the coverage_guided artifact
+  ansible.builtin.include_tasks: ../../deobfuscate/tasks/runtime_artifact.yml
+  vars:
+    _binary_artifact_operation: coverage_guided

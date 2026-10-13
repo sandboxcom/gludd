@@ -1,0 +1,14 @@
+---
+- name: Publish the registered radio result and artifact
+  block:
+    - name: Publish the radio operation result
+      ansible.builtin.set_fact:
+        "{{ _radio_runtime_publication.fact }}": "{{ _radio_published_payload.result }}"
+
+    - name: Write the radio artifact atomically
+      ansible.builtin.copy:
+        content: "{{ _radio_published_payload.artifact_content }}"
+        dest: "{{ _radio_runtime_publication.output_directory }}/{{ _radio_published_payload.artifact_filename }}"
+        mode: "0644"
+  vars:
+    _radio_published_payload: "{{ lookup('vars', _radio_runtime_publication.registered) }}"

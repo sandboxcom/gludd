@@ -20,7 +20,9 @@
 - name: Identify signals through packaged runtime
   general_ludd.radio.radio_runtime:
     operation: signal_identify
-    params:
+    params: "{{ _radio_runtime_params }}"
+  vars:
+    _radio_runtime_params:
       input_file: "{{ signal_identify_input_file | default(omit, true) }}"
       sample_rate: "{{ signal_identify_sample_rate }}"
       center_freq_hz: "{{ signal_identify_center_freq_hz }}"
@@ -32,16 +34,13 @@
   register: _signal_runtime
   when: signal_identify_enabled | bool
 
-- name: Publish classification result
-  ansible.builtin.set_fact:
-    signal_identify_result: "{{ _signal_runtime.result }}"
-  when: signal_identify_enabled | bool
-
-- name: Write JSON output atomically
-  ansible.builtin.copy:
-    content: "{{ _signal_runtime.artifact_content }}"
-    dest: "{{ signal_identify_output_dir }}/{{ _signal_runtime.artifact_filename }}"
-    mode: "0644"
+- name: Publish the signal_identify result and write its artifact
+  ansible.builtin.include_tasks: ../../propagation_model/tasks/publish_runtime.yml
+  vars:
+    _radio_runtime_publication:
+      registered: _signal_runtime
+      fact: signal_identify_result
+      output_directory: "{{ signal_identify_output_dir }}"
   when: signal_identify_enabled | bool
 
 - name: Register signal identify verdict

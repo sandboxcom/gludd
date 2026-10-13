@@ -14,22 +14,21 @@
       freq_hz, distance_m, tx_height_m, rx_height_m must be > 0
   when: propagation_model_enabled | bool
 
-- name: Ensure output directory exists
-  ansible.builtin.file:
-    path: "{{ propagation_model_output_dir }}"
-    state: directory
-    mode: "0755"
+- name: Prepare the RF runtime output and geometry
+  ansible.builtin.include_tasks: prepare_runtime.yml
+  vars:
+    _radio_output_directory: "{{ propagation_model_output_dir }}"
   when: propagation_model_enabled | bool
 
 - name: Compute path loss through packaged runtime
   general_ludd.radio.radio_runtime:
     operation: propagation_model
-    params:
-      model: "{{ propagation_model_type }}"
-      freq_hz: "{{ propagation_model_freq_hz }}"
-      distance_m: "{{ propagation_model_distance_m }}"
-      tx_height_m: "{{ propagation_model_tx_height_m }}"
-      rx_height_m: "{{ propagation_model_rx_height_m }}"
+    params: "{{ _radio_runtime_params }}"
+  vars:
+    _radio_runtime_params: "{{ _radio_geometry_params | combine(_radio_operation_params) }}"
+    _radio_geometry_namespace: propagation_model
+    _radio_geometry_model: "{{ propagation_model_type }}"
+    _radio_operation_params:
       terrain_irregularity_m: "{{ propagation_model_terrain_irregularity_m | default(30.0) }}"
       climate: "{{ propagation_model_climate_code | default(5) }}"
       refractivity: "{{ propagation_model_refractivity | default(301.0) }}"
@@ -40,16 +39,13 @@
   register: _propagation_runtime
   when: propagation_model_enabled | bool
 
-- name: Publish propagation result
-  ansible.builtin.set_fact:
-    propagation_model_result: "{{ _propagation_runtime.result }}"
-  when: propagation_model_enabled | bool
-
-- name: Write JSON output atomically
-  ansible.builtin.copy:
-    content: "{{ _propagation_runtime.artifact_content }}"
-    dest: "{{ propagation_model_output_dir }}/{{ _propagation_runtime.artifact_filename }}"
-    mode: "0644"
+- name: Publish the propagation_model result and write its artifact
+  ansible.builtin.include_tasks: publish_runtime.yml
+  vars:
+    _radio_runtime_publication:
+      registered: _propagation_runtime
+      fact: propagation_model_result
+      output_directory: "{{ propagation_model_output_dir }}"
   when: propagation_model_enabled | bool
 
 - name: Register propagation model verdict

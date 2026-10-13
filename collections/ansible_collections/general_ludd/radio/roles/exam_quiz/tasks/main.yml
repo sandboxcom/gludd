@@ -22,7 +22,9 @@
 - name: Load or grade exam through packaged runtime
   general_ludd.radio.radio_runtime:
     operation: exam_quiz
-    params:
+    params: "{{ _radio_runtime_params }}"
+  vars:
+    _radio_runtime_params:
       exam: "{{ exam_quiz_exam }}"
       count: "{{ exam_quiz_count }}"
       seed: "{{ exam_quiz_seed | default(42) }}"
