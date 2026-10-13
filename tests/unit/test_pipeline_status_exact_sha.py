@@ -945,4 +945,3 @@ def test_pipeline_verdict_observation_requires_matching_snapshot_identity(
     assert pipeline_status._publish_snapshot(parsed, summary, sha=observed_sha)
     assert history.read_bytes() == before
     assert restart.read_text() == "2"
-
