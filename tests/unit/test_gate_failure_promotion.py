@@ -133,7 +133,9 @@ def test_async_canonical_profile_contract_fails_in_compatibility_admission_first
     assert family["full_gate_phase"] == "test"
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert "tests/unit/test_gate_async.py" in owner
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in owner
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in owner
     assert manifest["full_gate_required"] is True
 
 
@@ -174,7 +176,9 @@ def test_session_metadata_failures_are_executed_before_hosted_shards(
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert executable_input in executable
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     assert manifest["full_gate_required"] is True
     assert ("pytest-runtime-compatibility", family["owner_target"], "fast", 90, 60) in (
         EXPECTED_RUNTIME_PHASES
@@ -199,7 +203,9 @@ def test_timeout_teardown_failures_execute_in_early_admission(test_name: str) ->
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert "tests/unit/test_start_gate_background.py" in executable
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     assert manifest["full_gate_required"] is True
 
 
@@ -333,7 +339,9 @@ def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
         if phase["target"] == family["owner_target"]
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     assert payload["full_gate_required"] is True
 
 
@@ -390,7 +398,9 @@ def test_ee_metadata_contracts_execute_before_hosted_image_construction(
         if phase["target"] == family["owner_target"]
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     assert payload["full_gate_required"] is True
 
 
@@ -425,7 +435,9 @@ def test_admission_plan_contracts_execute_before_hosted_shards(
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in owner
     assert "tests/unit/test_integration_admission_target.py" in executable
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     phase = next(
         phase for phase in payload["runtime_contract"]["phases"]
         if phase["target"] == family["owner_target"]
@@ -456,7 +468,9 @@ def test_ci_ledger_concurrent_evidence_executes_in_complete_early_cohort() -> No
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in owner
     assert "tests/unit/test_ci_failure_ledger_concurrency.py" in executable
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     phase = next(
         phase for phase in payload["runtime_contract"]["phases"]
         if phase["target"] == family["owner_target"]
@@ -487,7 +501,9 @@ def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> No
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in owner
     assert "tests/unit/test_ci_failure_ledger.py" in executable
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     phase = next(
         phase for phase in payload["runtime_contract"]["phases"]
         if phase["target"] == family["owner_target"]
@@ -530,7 +546,9 @@ def test_automatic_observation_contracts_execute_in_complete_early_cohorts(
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     assert payload["full_gate_required"] is True
 
 
@@ -568,7 +586,9 @@ def test_hosted_timing_contracts_execute_in_complete_early_cohorts(
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     assert payload["full_gate_required"] is True
 
 
@@ -591,7 +611,9 @@ def test_private_help_regression_runs_before_hosted_unit_2() -> None:
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     assert payload["full_gate_required"] is True
 
 
@@ -621,7 +643,9 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert file in executable
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     phase = next(item for item in payload["runtime_contract"]["phases"]
                  if item["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
@@ -907,7 +931,9 @@ def test_full_ee_acceptance_executes_before_hosted_fanout(
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in owner
     assert node.split("::", 1)[0] in executable
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
@@ -934,7 +960,9 @@ def test_byte_bounded_ci_context_executes_in_complete_early_cohort() -> None:
     assert node in owner
     for path in ("tests/unit/test_ci_shards_log_context.py", node.split("::", 1)[0]):
         assert path in executable
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
@@ -960,7 +988,9 @@ def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in owner
     assert node.split("::", 1)[0] in executable
-    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2"' in executable
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
@@ -1241,6 +1271,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ee-native-format-tooling-literal-env",
         "mcp-git-composite-choice-closure",
         "observer-terminal-retention-concurrency",
+        "runtime-admission-initial-path-sibling-collection",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1430,7 +1461,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_release_ee_collection_closure.py '
         'tests/unit/test_mcp_tool_gen.py '
         'tests/unit/test_observed_command.py '
-        'tests/unit/test_observer_retention_concurrency.py"'
+        "tests/unit/test_observer_retention_concurrency.py "
+        "tests/unit/test_admission_cold_start_selection.py::"
+        'test_real_admission_filters_only_never_selected_main_siblings"'
         in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner

@@ -276,3 +276,120 @@ run-isolated trace has exactly 1189 starts/finishes, zero failure reports and
 no unfinished node. This local source receipt remains separate from hosted
 Python 3.12 acceptance. All 227 target contracts, 58 failure families, native
 Make parity/help, Ruff, strict typing and task integrity pass; no task is ticked.
+
+## Fixed initial-path collection throughput (2026-10-13)
+
+Hosted SHA 768eaf6e759215c4bf7735930b917f69e9ab484c, Build 38477108604,
+Python 3.12 job 115570429529 produced its first visible pytest header after
+39.3 seconds. All 1,566 main nodes passed in 86.61 pytest seconds, but the
+unchanged observer timed out at 90.5 seconds before the fresh help child.
+The 3.11 lane passed the same nodes in 78.89 seconds and completed help.
+The log confirms rfc3987 1.3.8 was installed; no optional-format failure or
+failing node was observed. These hosted failures remain historical evidence.
+
+Research used installed pytest 9.1.1, Python's existing
+[cProfile](https://docs.python.org/3.14/library/profile.html) and importtime
+tools rather than adding a collector or cache. A cold, collect-only native
+profile kept all 1,566 nodes: 35.123 seconds total, with Package.collect
+accounting for 28.531 cumulative seconds. It recorded 174,720 standard
+pytest_collect_file calls, 172,529 pytest_ignore_collect calls and 699,787
+stat calls. These are profiler call counts; generator resumptions are not
+distinct package enumerations. A separate importtime observation finished
+in 14.598 seconds and had no individual cumulative import above 0.5 seconds.
+This identifies repeated parent/sibling collection work locally, not the
+entire hosted 39.3-second interval as import overhead. Header timing can be
+buffered. Profile data is diagnostic, not a gate or benchmark receipt.
+
+The supported [pytest ignore-glob option](https://docs.pytest.org/en/stable/example/pythoncollection.html)
+is scoped only to the fixed main admission's explicit file/node selectors:
+--ignore-glob=tests/*. In the
+[installed-version Package collector](https://github.com/pytest-dev/pytest/blob/9.1.1/src/_pytest/python.py),
+explicit initial files and directories leading to explicit paths bypass
+ignore hooks. The flag therefore avoids constructing never-selected sibling
+collectors while retaining the native collectors, all original admitted
+files/nodes, their parent packages, conftests, fixture lifecycles, assertion
+rewriting and autoloaded plugins. Directory selectors are prohibited by the
+new cheap owner control. The flag is absent from generic test-files, full
+suite defaults and the sequential fresh help child. It is not deselection.
+
+Two long-lived upstream user reports informed the controls. An
+[August 2018 import-rewrite profile](https://github.com/pytest-dev/pytest/issues/3918)
+shows why startup attribution must be measured; assertion rewriting remains
+enabled here. A
+[September 2020 package-collection discussion](https://github.com/pytest-dev/pytest/issues/7777)
+describes duplicate parent/package work and package-scope fixture implications.
+Those historical reports motivate verification, not a claim that their old
+pytest implementations exactly reproduce the installed version. Whole-env
+[uv bytecode compilation](https://docs.astral.sh/uv/reference/settings/#compile-bytecode)
+was rejected: it scans all site-packages and ignores compilation errors,
+and neither the profile nor the disk budget supports that larger mutation.
+
+Artifact failing-first execution exposed the absent flag. After conforming
+the new missing-path control to native xdist's nonzero/no-tests outcome,
+all four behavioral controls passed in 10.85 seconds. They compare complete
+expanded selected IDs/order/marks, plugin distributions and fixture signatures;
+execute parent/package/plugin fixtures and package setup/teardown; retain an
+explicit outside-tests file and exact class node; and prove warning, assertion
+and missing-file failures cannot be hidden. Forty-eight unselected siblings
+are constructed by the original collector but not by the filtered collector.
+Only the cheap actual-owner/full-roster/registration control joins early
+admission. All four native subprocess cases remain mandatory full-suite tests.
+
+One serial native Python 3.14 comparison retained all 1,566 original main nodes
+plus one fresh help node at identical source-content identity
+738cc938da5c5ec275bce79554ca085cbd769a72dc1674f4c22b54a70bf246e6.
+Original: 68.09 main + 0.98 help pytest seconds, 71.886 observed seconds.
+Filtered: 63.95 main + 0.93 help, 67.913 observed seconds. Both exited zero
+under 90-total/60-quiet limits with two main workers and a distinct later help
+process. The observed difference is 3.973 seconds (5.5%), a single local
+comparison, not a hosted improvement or a guaranteed cold-start saving.
+Complete original node order/marks, plugin and fixture signatures match.
+
+The prototype snapshot used an obsolete conftest-path map and wrote empty
+path lists. Those raw receipts DO NOT prove conftest-path equality. Real
+parent/package fixture execution and fixture-signature equality were proven.
+The final tracked diagnostic fixture reads the actual _conftest_plugins owner,
+and its portable regression positively requires both real conftest paths;
+Root must replay that strengthened control after adoption. No historical
+observation JSON was edited. This comparison also predates Root's 70ef3b8
+ledger addendum adding 38 cases and the new one-case structural promotion;
+it is not a final current-source roster replay. Final portable artifacts
+passed Ruff and strict typing, but require their own genuine RED/GREEN replay.
+
+Research receipts and immutable adoption patches live under
+/tmp/gludd-v012-admission-cold-start; producer-owned native logs are
+.gate-logs/v012-admission-cold-start-whole-roster-original-314.log and
+.gate-logs/v012-admission-cold-start-whole-roster-proposed-314.log.
+The observer owns its existing .gate-logs/observed evidence. No new runner,
+daemon, allocator, persistent cache, install or environment is adopted.
+The owner remains bounded at two concurrent workers; resource sampling is
+diagnostic, not a global allocation lease. Root coordinates the unchanged
+eight-worker ceiling. ZDD/serving processes, 85/75 coverage, full gate,
+promotion and exact-SHA hosted obligations remain unchanged. Hosted successor
+timing must come from the existing immutable ci-run-summary owner before
+claiming hosted improvement. Rollback reverts the one flag, its additive
+structural promotion and portable regression fixture together.
+
+Canonical adoption reproduces one missing-flag failure before implementation.
+The strengthened native controls now positively verify both conftest paths;
+all 106 selection, scheduling, promotion and publication cases pass on Python
+3.11 and 3.14. Seventeen additive conformance hunks preserve original assertions
+while pinning the scoped flag, extra structural selector and failure family.
+The diagnostic-only profile config/coverage_admission_cold_start.ini initially
+exposes 75% aggregate branch coverage and a parent no-data warning. Its added
+opt-in/absent-manager test executes both missing boundaries rather than exempting
+the warning or lowering policy. All 11 controls then pass with 100% fixture
+lines and branches, zero exclusions and unchanged 85/75 floors; native audit
+.gate-logs/coverage-20261013T230959Z.json records that result. Ruff, strict typing,
+233 target contracts, 69 failure families, Make parity and task registration pass.
+Final current-source admission and hosted successor proof remain pending.
+
+The expanded native Python 3.14 admission now passes all 1605 main cases in
+64.24 seconds and the separate fresh help case in 0.93 seconds, 68.2 observed
+seconds at unchanged 90/60 bounds. Its producer-owned receipt is
+.gate-logs/v012-initial-path-current314.log. The final typed boundary replay
+preserves the explicit None-return assertions through correctly typed callback
+interfaces; all 11 controls and 100% fixture lines/branches pass again with no
+coverage warning (.gate-logs/coverage-20261013T231244Z.json). Strict typing is
+green on all four changed Python files. This is local source acceptance,
+not successor hosted timing, a complete gate, deployment acceptance or closure.

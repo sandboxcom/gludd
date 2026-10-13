@@ -635,6 +635,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_observer_retention_concurrency.py::test_native_retention_distinguishes_concurrent_removal_from_io_failure",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "runtime-admission-initial-path-sibling-collection",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
+      "full_gate_phase": "test"
     }
   ]
 }
