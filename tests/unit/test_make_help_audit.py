@@ -75,6 +75,8 @@ def test_search_target_succeeds_when_ripgrep_finds_match_before_transient_error(
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert "Makefile:5833:cat-file:" in proc.stdout
+    assert "rg: transient file disappeared" in proc.stderr
+    assert "SEARCH-PARTIAL matches_found=true scan_exit=2 complete=false" in proc.stderr
 
 
 def test_search_fallback_succeeds_when_match_precedes_scan_error(
@@ -108,6 +110,7 @@ def test_search_fallback_succeeds_when_match_precedes_scan_error(
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert "needle.txt:1:cat-file:" in proc.stdout
+    assert "SEARCH-PARTIAL matches_found=true scan_exit=2 complete=false" in proc.stderr
 
 
 def test_codex_system_skill_read_uses_explicit_root(tmp_path: Path) -> None:

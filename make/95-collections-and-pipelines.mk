@@ -309,7 +309,7 @@ search:
 	@[ -n "$$GLUDD_SEARCH_PATTERN" ] || { echo "Usage: make search PATTERN=regex [SEARCH_PATH=path]"; exit 1; }
 	@SEARCH_ROOT="$${GLUDD_SEARCH_PATH:-.}"; \
 	case "$$SEARCH_ROOT" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
-	TMP=$$(mktemp /tmp/gludd-search.XXXXXX) || exit $$?; \
+	TMP=$$(/usr/bin/mktemp /tmp/gludd-search.XXXXXX) || exit $$?; \
 	trap '/bin/rm -f "$$TMP"' EXIT HUP INT TERM; \
 	RC=0; \
 	if command -v rg >/dev/null 2>&1; then \
@@ -317,12 +317,13 @@ search:
 	else \
 		/usr/bin/grep -R -n -E -- "$$GLUDD_SEARCH_PATTERN" "$$SEARCH_ROOT" > "$$TMP" || RC=$$?; \
 	fi; \
-	if [ "$$RC" -gt 1 ]; then exit "$$RC"; fi; \
 	if [ -s "$$TMP" ]; then \
+		if [ "$$RC" -gt 1 ]; then printf 'SEARCH-PARTIAL matches_found=true scan_exit=%s complete=false\n' "$$RC" >&2; fi; \
 		while IFS= read -r line; do printf '%s\n' "$$line"; done < "$$TMP"; \
 		/bin/rm -f "$$TMP"; \
 	else \
 		/bin/rm -f "$$TMP"; \
+		if [ "$$RC" -gt 1 ]; then exit "$$RC"; fi; \
 		printf 'No matches for %s in %s\n' "$$GLUDD_SEARCH_PATTERN" "$$SEARCH_ROOT"; \
 		exit 1; \
 	fi

@@ -140,6 +140,27 @@ not in the combined cohort. Routing and roster regressions fail first; neither
 the owner's 90-second runtime/60-second quiet limits nor the exhaustive gate are
 relaxed. A native repair is not an exact hosted resolution or release proof.
 
+### Search diagnostics are not complete-scan proof
+
+The original transient-error and empty-PATH fallback cases fail before the
+correction; all 28 search/audit and literal-transport cases now pass. The existing
+system mktemp is invoked absolutely. Discovered matches remain usable, but
+original stderr is retained and `SEARCH-PARTIAL` explicitly marks incomplete
+scans. Errors without matches (including invalid regex) remain errors, distinct
+from ordinary no match. Both original failure families and the complete audit
+file join the existing early owner without changing its bounds or full-gate
+requirement.
+
+The [2025 operator discussion and maintainer answer][search-partial-discussion]
+confirm that ripgrep can find matches and still return 2 for a scan error. Gludd's
+existing query contract reports match presence, not exhaustive scan success; it
+does not silence diagnostics or manufacture a release verdict. The
+[2019 invocation-error report][search-error-report] is historical evidence for
+keeping error and no-match states distinct, not a claim about today's version.
+
+[search-partial-discussion]: https://github.com/BurntSushi/ripgrep/discussions/2976
+[search-error-report]: https://github.com/BurntSushi/ripgrep/issues/1159
+
 ### Byte-bounded failure context
 
 Exact job context must be bounded in bytes, not only lines. One failed workflow

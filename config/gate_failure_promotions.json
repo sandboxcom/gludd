@@ -502,6 +502,20 @@
       "node_kind": "pytest_node",
       "node": "tests/security/test_ci_workflow.py::TestGateMatrixStructure::test_test_shard_matrix_dimensions",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "make-search-transient-error-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_help_audit.py::test_search_target_succeeds_when_ripgrep_finds_match_before_transient_error",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-search-fallback-runtime-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_help_audit.py::test_search_fallback_succeeds_when_match_precedes_scan_error",
+      "full_gate_phase": "test"
     }
   ]
 }

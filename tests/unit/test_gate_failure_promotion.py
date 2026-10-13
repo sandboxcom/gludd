@@ -936,6 +936,31 @@ def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
     assert payload["full_gate_required"] is True
 
 
+@pytest.mark.parametrize("kind", ["transient-error", "fallback-runtime"])
+def test_search_scan_contract_executes_in_complete_early_cohort(kind: str) -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family_id = f"make-search-{kind}-contract"
+    names = {
+        "transient-error": "test_search_target_succeeds_when_ripgrep_finds_match_before_transient_error",
+        "fallback-runtime": "test_search_fallback_succeeds_when_match_precedes_scan_error",
+    }
+    family = next(f for f in payload["families"] if f["id"] == family_id)
+    node = f"tests/unit/test_make_help_audit.py::{names[kind]}"
+    assert family == {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    assert node in owner
+    combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
+    assert "tests/unit/test_make_help_audit.py" in combined
+    phase = next(phase for phase in payload["runtime_contract"]["phases"]
+                 if phase["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def test_security_workflow_membership_executes_in_complete_early_cohort() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(
@@ -1042,6 +1067,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ci-failure-context-output-byte-bound",
         "make-help-duplicate-admission",
         "security-workflow-shard-membership",
+        "make-search-transient-error-contract",
+        "make-search-fallback-runtime-contract",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1201,6 +1228,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py '
         'tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_task_ledger_validation.py '
         'tests/unit/test_make_readonly_version.py '
+        'tests/unit/test_make_help_audit.py '
         'tests/unit/test_clean_stale_resource_namespaces.py '
         'tests/unit/test_native_temp_artifact_target.py '
         'tests/unit/test_ci_run_summary_script.py '

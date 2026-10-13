@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Literal search rewrite regressed partial matches and empty-PATH fallback
+
+- Build `38325261900`, job `115065438183`, failed three original help-audit cases: workspace match discovery, matches followed by scan errors, and fallback with an empty PATH. The latter two fail natively first (2 failed, 6 passed).
+- Absolute system mktemp restores fallback portability. Existing discovered-match semantics are restored without hiding original stderr; partial scans emit `SEARCH-PARTIAL matches_found=true scan_exit=2 complete=false`. Invalid regex and error-without-match still fail distinctly from ordinary no match. All existing assertions remain, with additional diagnostic-preservation assertions.
+- All 28 audit/literal-transport cases pass in 5.93s; both failure families and the full audit file join the existing early owner. No coverage or exhaustive gate is skipped. Exact hosted successor proof remains required.
+
 ### 2026-10-13 — Security membership assertion conflated scheduling and registry order
 
 - Build `38325261900`, job `115065438257`, failed the original security-workflow ordered comparison after the eight hosted jobs were intentionally scheduled longest-first.
