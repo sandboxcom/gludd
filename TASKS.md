@@ -166,6 +166,26 @@ coverage is 93.4% lines/86.1% branches under unchanged 85/75 floors, with strict
 typing/Ruff/docstrings and unchanged 256-resource ownership green. Source acceptance
 does not close S98.4 or supply full-gate/exact-SHA/deployment evidence.
 
+S98.4 canonical collection-binding scope: `scripts/ansible_runtime_artifacts.py`,
+`config/ansible/requirements.yml`, `config/ansible/collections.lock.json`,
+`config/ansible/runtime-lock.json`,
+`tests/unit/test_ansible_canonical_collection_binding.py`,
+`tests/unit/test_ansible_runtime_artifacts.py`,
+`tests/unit/test_beta4_python_runtime_boundary.py`, and
+`docs/features/MOLECULE_NATIVE_VALIDATION.md`. Two canonical failing-first controls
+expose missing direct requirements and the absent independent lock binding.
+The original six runtime inputs and eight local Gludd artifacts remain required;
+seven reviewed direct roots and their complete eight-artifact native closure are
+bound to the existing runtime manifest. All 116 binding/runtime/boundary cases
+pass on Python 3.11, and all 180 related staging cases pass on Python 3.14 with
+fatal warnings. Native runtime admission passes with seven exact input hashes.
+The expanded 180-case cohort also passes under the bounded watched Python 3.11
+owner in 10.3 seconds. The unchanged four-owner native coverage profile passes
+all 397 cases at 92.0% lines/85.0% branches, with every file above both 75% floors.
+Strict source/test typing, Ruff/docstrings, native 256-resource ownership and task
+registration pass. Native checker/hosted/EE consumption, canonical gate and item
+deployment proof remain required; no release checkbox or completion count changes.
+
 The v0.1.2 milestone is the exact task set S98.1-S98.7. The S97.1-S97.12
 predecessor repairs remain mandatory release evidence and are tracked separately.
 

@@ -180,14 +180,25 @@ def complete_collection_fixture(azure_collection_fixture: Path) -> Path:
     azure_manifest.write_text(json.dumps(azure_metadata), encoding="utf-8")
     collections = [
         ("cloud", "terraform", "4.0.0"),
+        ("community", "crypto", "3.4.0"),
+        ("community", "general", "13.5.0"),
+        ("ansible", "windows", "3.8.0"),
+        ("community", "windows", "3.3.0"),
+        ("ansible", "posix", "2.2.2"),
+        ("community", "library_inventory_filtering_v1", "1.1.5"),
         *(("general_ludd", name, release) for name, release in artifacts._COLLECTION_VERSIONS),
     ]
+    native_dependencies = {
+        "community.general": {"community.library_inventory_filtering_v1": ">=1.0.0"},
+        "community.windows": {"ansible.windows": ">=3.0.0,<4.0.0"},
+    }
     for namespace, name, release in collections:
         collection = azure_collection_fixture / "ansible_collections" / namespace / name
         collection.mkdir(parents=True)
         (collection / "MANIFEST.json").write_text(
             json.dumps({"collection_info": {
-                "namespace": namespace, "name": name, "version": release, "dependencies": {},
+                "namespace": namespace, "name": name, "version": release,
+                "dependencies": native_dependencies.get(f"{namespace}.{name}", {}),
             }}),
             encoding="utf-8",
         )
@@ -535,13 +546,14 @@ def test_real_resolution_derives_tool_identities_from_the_frozen_inputs(
 
 def test_resolve_requirements_rejects_partial_collection_inputs_before_uv(
     tmp_path: Path,
-    azure_collection_fixture: Path,
+    complete_collection_fixture: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """An Azure-only fixture is not the complete execution environment's graph."""
+    """A missing direct collection is not the complete execution environment's graph."""
+    (complete_collection_fixture / "ansible_collections/cloud/terraform/MANIFEST.json").unlink()
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
-    assert artifacts.resolve_requirements(azure_collection_fixture, tmp_path / "resolved.txt", False) == 1
+    assert artifacts.resolve_requirements(complete_collection_fixture, tmp_path / "resolved.txt", False) == 1
     assert "missing staged collection manifest: cloud.terraform" in capsys.readouterr().err
 
 
@@ -1113,6 +1125,11 @@ def test_runtime_stages_native_collections_dependencies_and_pinned_opentofu() ->
     assert collection_versions == {
         "azure.azcollection": "3.21.0",
         "cloud.terraform": "4.0.0",
+        "community.crypto": "3.4.0",
+        "community.general": "13.5.0",
+        "ansible.windows": "3.8.0",
+        "community.windows": "3.3.0",
+        "ansible.posix": "2.2.2",
     }
     assert "collections/general_ludd-azure-0.2.0.tar.gz" in local_artifacts
     assert "collections/general_ludd-ai_ml-0.2.0.tar.gz" in local_artifacts
@@ -1264,7 +1281,9 @@ def test_validate_reports_definition_lock_and_managed_host_drift(
 
 def test_expected_hashes_are_named_and_content_addressed() -> None:
     hashes = artifacts.expected_input_hashes()
-    assert set(hashes) == {"galaxy", "python", "system", "definition", "smoke_settings", "smoke_limiter"}
+    assert set(hashes) == {
+        "galaxy", "python", "system", "definition", "smoke_settings", "smoke_limiter", "collection_lock",
+    }
     assert all(value.startswith("sha256:") and len(value) == 71 for value in hashes.values())
 
 

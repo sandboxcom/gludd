@@ -173,6 +173,7 @@ def test_runtime_manifests_are_versioned_and_content_addressed() -> None:
     assert re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", lock["base_image"])
     input_paths = {
         "galaxy": ROOT / "config/ansible/requirements.yml",
+        "collection_lock": ROOT / "config/ansible/collections.lock.json",
         "python": ROOT / "config/ansible/requirements.txt",
         "system": ROOT / "config/ansible/bindep.txt",
         "definition": ROOT / "config/ansible/execution-environment.yml",

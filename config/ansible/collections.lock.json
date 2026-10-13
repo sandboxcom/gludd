@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "collections": [
+    {
+      "name": "cloud.terraform",
+      "version": "4.0.0",
+      "artifact": "cloud-terraform-4.0.0.tar.gz",
+      "origin": "https://galaxy.ansible.com/",
+      "sha256": "sha256:897e77bf62186b0d0696781e2b08b7cd1b2dcc2f92b0715d5b3af20267fc2c99",
+      "size": 121417
+    },
+    {
+      "name": "azure.azcollection",
+      "version": "3.21.0",
+      "artifact": "azure-azcollection-3.21.0.tar.gz",
+      "origin": "https://galaxy.ansible.com/",
+      "sha256": "sha256:63315587f9ba8f73915c4bd747991efff825c73876b8ce66a93eeb5f7c181887",
+      "size": 1178780
+    },
+    {
+      "name": "ansible.posix",
+      "version": "2.2.2",
+      "artifact": "ansible-posix-2.2.2.tar.gz",
+      "origin": "https://galaxy.ansible.com/",
+      "sha256": "sha256:00a58c5d804c9adc99c3c3dc1b9f2246f4bb5f7337941440e0956f0e31c3b82b",
+      "size": 166545
+    },
+    {
+      "name": "community.crypto",
+      "version": "3.4.0",
+      "artifact": "community-crypto-3.4.0.tar.gz",
+      "origin": "https://galaxy.ansible.com/",
+      "sha256": "sha256:5025c31e448592004076da1d8e09d3060224c56cdf9252f9a740efadbbadac2e",
+      "size": 601275
+    },
+    {
+      "name": "community.windows",
+      "version": "3.3.0",
+      "artifact": "community-windows-3.3.0.tar.gz",
+      "origin": "https://galaxy.ansible.com/",
+      "sha256": "sha256:af9208b73c3cd4d1b56b908cb9ac99ed81bd1498deff08b193dee95a2fa23f0e",
+      "size": 385389
+    },
+    {
+      "name": "ansible.windows",
+      "version": "3.8.0",
+      "artifact": "ansible-windows-3.8.0.tar.gz",
+      "origin": "https://galaxy.ansible.com/",
+      "sha256": "sha256:9e57b57ef052dd93727fe3aa2b633d4f99c8eae38cf84a30d62b382636b2a373",
+      "size": 709827
+    },
+    {
+      "name": "community.general",
+      "version": "13.5.0",
+      "artifact": "community-general-13.5.0.tar.gz",
+      "origin": "https://galaxy.ansible.com/",
+      "sha256": "sha256:54598287e0ea0504aee2d32c884208ddf26f3ac41e0b4e773ff514af210787c4",
+      "size": 2913455
+    },
+    {
+      "name": "community.library_inventory_filtering_v1",
+      "version": "1.1.5",
+      "artifact": "community-library_inventory_filtering_v1-1.1.5.tar.gz",
+      "origin": "https://galaxy.ansible.com/",
+      "sha256": "sha256:cbb9e86c5b1720df21e940cedcd2f3e1226c38262623e090a883712610733851",
+      "size": 36002
+    }
+  ]
+}

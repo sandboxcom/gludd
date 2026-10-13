@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-13 — Canonical runtime omitted verified collection closure inputs
+
+- Two canonical controls first fail because five required direct collections are absent and the runtime manifest binds no collection lock. The real native producer has already acquired and offline-installed the complete eight-artifact closure; availability outside the canonical manifest is not reproducible release input.
+- Canonical requirements now retain all eight local Gludd artifacts and both existing cloud pins while adding the five reviewed roots. The producer's exact lock bytes are copied unchanged; the existing lock updater adds a seventh independent input hash without dropping the original six. Accessors reject changed requirements, changed lock bytes and absent or malformed independent expectations rather than letting a supplied lock certify itself.
+- All 116 binding/runtime/boundary cases pass on Python 3.11 and all 180 related staging cases pass on Python 3.14 with fatal warnings. Existing assembly fixtures include the actual native transitive dependencies; the original missing-cloud and toolchain failure assertions remain. Native runtime admission reports seven locked inputs.
+- The bounded watched Python 3.11 owner passes the expanded 180-case cohort in 10.3 seconds. Native four-owner coverage passes all 397 cases at 92.0% lines/85.0% branches, retaining both 75% per-file floors; strict typing, Ruff/docstrings and unchanged 256-resource ownership pass.
+- This source binding does not complete checker/hosted/EE consumption, canonical gate or deployment acceptance. Installed compat 26.9.0 warns unconditionally on deliberate scan=false; lint 26.9.0 adds cache paths, forces child PYTHONWARNINGS=ignore and discards successful syntax-child diagnostics; core 2.19.14 adds playbook-adjacent collection roots. A parent-only finder or outer log scan cannot provide the required exact-root/fatal-child-diagnostic guarantee. The retained consumer draft remains failing; no warning is suppressed or passing receipt fabricated. Reviewed versioned dependency patches require a user maintenance decision.
+- No source receipt or unit result increments completed backlog items. The feature guide records offline-install and shared-library practitioner findings, immutable rollout and rollback boundaries, and the exact native consumer limitation.
+
 ### 2026-10-13 — Successful historical observations exhausted primary admission
 
 - The real watched five-family repair stops before execution at the 32-command inventory. The producer bounded retained history as a lifetime work quota, so successful source/runtime observations could prevent the next meaningful owner from starting.

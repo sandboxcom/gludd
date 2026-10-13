@@ -511,3 +511,82 @@ Python versions; original documentation entries and Python-source checks remain.
 These audit changes add no daemon or serving-state mutation. Rollback reverts
 the acceptance owners together with their controls. Same-SHA hosted, canonical
 gate and installed/deployment acceptance remain required.
+
+### Canonical requirements and independent lock binding (2026-10-13)
+
+This amendment completes the source-requirements and runtime-lock work identified
+as pending above. Canonical requirements retain Azure 3.21.0, Terraform 4.0.0 and
+all eight local Gludd artifacts. They also require crypto 3.4.0, general 13.5.0,
+Windows 3.8.0, community.windows 3.3.0 and posix 2.2.2. The authentic complete
+closure additionally contains library_inventory_filtering_v1 1.1.5.
+
+`config/ansible/collections.lock.json` preserves the native producer bytes with
+reviewed SHA256
+`sha256:7d176b02362222535077a47b4a4f8191e6e9b4a00be0fbc6d3a1f93d4a7a9588`.
+The existing runtime manifest independently binds this seventh input; its original
+six inputs remain unchanged owners. The existing native lock/dependency validator
+checks this expected digest and exact canonical versions. Canonical accessors
+reject missing/malformed expectations and changed requirements or lock bytes;
+they never turn a supplied lock's computed digest into its own expected identity.
+The native lock updater remains the sole runtime-manifest producer.
+
+Two failing-first source controls expose the missing requirements and binding.
+All 116 binding/runtime/boundary cases pass on Python 3.11; all 180 related staging
+cases pass on Python 3.14. The 17 new controls preserve every original input hash
+and local artifact, reject missing/changed independent bindings, and check the
+complete native transitive closure. Existing assembly fixtures now include that
+closure without removing any original toolchain/dependency failure assertions.
+
+The [2023 offline-install forum](https://forum.ansible.com/t/install-collection-offline-for-ansible-2-9-on-rhel-7/3048)
+identifies missing dependencies as a recurring offline-install pitfall. The
+[shared-library discussion](https://forum.ansible.com/t/place-for-common-shared-code-for-collections/1721)
+explains cross-collection dependency and compatible-version requirements. The
+[official general release notes](https://docs.ansible.com/projects/ansible/latest/collections/community/general/changelog.html)
+document the inventory-filtering dependency. These findings support retaining
+native transitive metadata rather than maintaining a replacement resolver.
+
+Rollout admits the immutable reviewed closure only to new jobs after native
+consumer/EE, full-gate and exact-SHA deployment acceptance. Existing jobs retain
+their selected generation; rollback selects the prior immutable lock/EE after
+validation and drains current jobs. This change alone does not select a serving
+image or close S98.4. Native checker/hosted/EE consumption, full coverage and
+deployment acceptance remain pending; the original 85/75 floors and bounds stand.
+
+Final source acceptance runs the expanded 180 cases on Python 3.11 under the
+existing watched owner in 10.3 seconds. The unchanged four-owner coverage profile
+passes all 397 cases at 92.0% lines/85.0% branches; every measured file exceeds
+both 75% floors. The native report is
+`.gate-logs/coverage-20261013T183923Z.json`, with scoped data in
+`.gate-logs/coverage-canonical-collection-binding.json`. Strict source/test typing,
+Ruff/docstrings and unchanged 256-resource ownership pass. This completes the
+scoped coverage requirement, not consumer or deployment acceptance.
+
+### Retained native consumer limitation
+
+The installed stack cannot currently guarantee exactly admitted collection roots
+and fatal diagnostics in every parent/syntax child through supported configuration
+alone. Compat 26.9.0's `Runtime._patch_collection_paths` emits a warning
+unconditionally when the supported scan-sys-path setting is false. Lint 26.9.0's
+`App._ensure_cache_collections_first` prepends its cache root; its syntax runner
+forces child `PYTHONWARNINGS=ignore` and processes captured output only for nonzero
+child status. Core 2.19.14's finder also prepends playbook-adjacent `collections`
+independently of the scan flag. A parent finder does not govern a fresh syntax
+interpreter, and an outer log scan cannot recover discarded child diagnostics.
+
+The retained fresh-child consumer draft passes 19 of its 20 controls; its real
+native warning refusal remains a valid failure, not release proof. No setting is
+changed to enable ambient discovery, no emitted warning is filtered, and no logger
+or runtime is monkeypatched. A reviewed versioned semantic repair must preserve
+explicit roots in both processes, respect fatal child-warning policy and surface
+successful-child diagnostics. Cold imports, ambient shadow attempts, genuine
+warnings at status zero, malformed metadata and existing native argument cases
+must pass before this consumer can be admitted. Dependency maintenance is a user
+decision, not implied authority to alter a live shared environment.
+
+The [2024 CI practitioner guide](https://forum.ansible.com/t/ansible-ci-pipeline-tips-for-gitlab-ci/11123)
+uses fresh collection paths to expose undeclared dependencies. The
+[2025 permission incident](https://forum.ansible.com/t/ansible-lint-permission-denied/40781)
+shows compat expanding paths and an offline workaround. Neither establishes
+strict-root or fatal-child-diagnostic acceptance; the
+[official configuration reference](https://docs.ansible.com/projects/ansible/latest/reference_appendices/config.html#collections-scan-sys-path)
+defines the scan setting but does not remove those native lifecycle differences.

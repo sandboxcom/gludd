@@ -39,6 +39,7 @@ LOCK = CONFIG_ROOT / "runtime-lock.json"
 MANAGED = CONFIG_ROOT / "managed-host-python.lock.json"
 INPUTS = {
     "galaxy": CONFIG_ROOT / "requirements.yml",
+    "collection_lock": CONFIG_ROOT / "collections.lock.json",
     "python": CONFIG_ROOT / "requirements.txt",
     "system": CONFIG_ROOT / "bindep.txt",
     "definition": DEFINITION,
@@ -166,6 +167,30 @@ def _display_path(path: Path) -> str:
 def expected_input_hashes() -> dict[str, str]:
     """Return content hashes for every immutable EE definition input."""
     return {name: _sha256(path) for name, path in INPUTS.items()}
+
+
+def _reviewed_runtime_input_hash(name: str) -> str:
+    """Read an independent expected identity from the reviewed runtime manifest."""
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    inputs = lock.get("inputs") if isinstance(lock, dict) else None
+    expected = inputs.get(name) if isinstance(inputs, dict) else None
+    if not isinstance(expected, str) or DIGEST_RE.fullmatch(expected) is None:
+        raise ValueError(f"runtime lock must independently bind {name}")
+    return expected
+
+
+def required_collection_versions() -> dict[str, str]:
+    """Return canonical native Galaxy pins only after reviewed-input validation."""
+    if _sha256(INPUTS["galaxy"]) != _reviewed_runtime_input_hash("galaxy"):
+        raise ValueError("canonical collection requirements differ from the reviewed runtime input")
+    return _required_collection_versions(INPUTS["galaxy"])
+
+
+def bound_collection_lock_sha256() -> str:
+    """Admit canonical lock bytes using their independent reviewed expectation."""
+    expected = _reviewed_runtime_input_hash("collection_lock")
+    _collection_lock_entries(INPUTS["collection_lock"], expected, required_collection_versions())
+    return expected
 
 
 def _base_image_from_definition(definition: object) -> str:
@@ -402,6 +427,10 @@ def validate_files() -> list[str]:
         errors.append("runtime lock base image differs from execution environment definition")
     if lock.get("inputs") != expected_input_hashes():
         errors.append("runtime lock input hashes are stale; run make update-ansible-runtime-lock")
+    try:
+        bound_collection_lock_sha256()
+    except (OSError, ValueError) as exc:
+        errors.append(str(exc))
 
     managed = json.loads(MANAGED.read_text(encoding="utf-8"))
     if managed.get("ambient_interpreters_allowed") is not False:
