@@ -9,6 +9,7 @@ All premature-stop incidents and process failures are tracked here.
 - Build run 38336411509 at 6ba81dd5 succeeds in Python 3.11 quality but Python 3.12 times out its known-runtime owner at 90.0s, with passing cases reaching 89% completion. Repeated simple workflow checks show roughly 0.1s between cases; their helpers reparse the full YAML through the Python SafeLoader on every call.
 - Three real-reader routing cases fail first and 45 safety/parity cases pass. Select PyYAML's existing CSafeLoader when available, preserving SafeLoader fallback and fresh mutable results. Mapping checks, bare-on normalization, malformed/missing inputs and rejection of Python tags remain unchanged.
 - All 265 parser/workflow/registry/privacy cases pass in 10.10s. Two mutation-injection seams move from yaml.safe_load to their existing module helper; every original input, case and assertion remains. No timeout increase, skipped case, new cache, dependency or proof authority is introduced. The observed owner and replacement hosted proof remain required.
+- The complete backend guard is promoted after mapping/roster RED (2 failed, 48 passed); all 104 focused cases and 1107 early cases plus the fresh help node pass in 57.5s. All 162 parser/original-workflow cases pass under the existing Python 3.11.14 environment. No new proof environment or relaxed budget is used; the hosted timeout repair still requires successor evidence.
 
 ### 2026-10-13 — The substring-only public inventory check missed detector-span drift
 

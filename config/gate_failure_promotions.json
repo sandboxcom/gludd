@@ -537,6 +537,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_secrets_baseline_compaction.py::test_current_task_inventory_passes_real_readonly_secret_owner",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "workflow-safe-parser-throughput",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_workflow_safe_parser.py::test_each_workflow_reader_uses_selected_safe_backend",
+      "full_gate_phase": "test"
     }
   ]
 }

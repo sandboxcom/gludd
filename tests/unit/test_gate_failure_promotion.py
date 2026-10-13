@@ -986,6 +986,28 @@ def test_current_task_inventory_real_scanner_executes_before_hosted_fanout() -> 
     assert payload["full_gate_required"] is True
 
 
+def test_workflow_safe_parser_contract_executes_before_hosted_fanout() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    node = (
+        "tests/unit/test_workflow_safe_parser.py::"
+        "test_each_workflow_reader_uses_selected_safe_backend"
+    )
+    family = next(f for f in payload["families"] if f["id"] == "workflow-safe-parser-throughput")
+    assert family == {
+        "id": "workflow-safe-parser-throughput",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    assert node in owner
+    combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
+    assert node.split("::", 1)[0] in combined
+    phase = next(p for p in payload["runtime_contract"]["phases"]
+                 if p["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 @pytest.mark.parametrize("kind", ["transient-error", "fallback-runtime"])
 def test_search_scan_contract_executes_in_complete_early_cohort(kind: str) -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -1122,6 +1144,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "automatic-terminal-push-verdict",
         "all-required-ci-verdict",
         "current-task-inventory-real-secret-scan",
+        "workflow-safe-parser-throughput",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1290,6 +1313,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ci_run_summary_target.py '
         'tests/unit/test_ci_workflow_integrity.py '
         'tests/security/test_ci_workflow.py '
+        'tests/unit/test_workflow_safe_parser.py '
         'tests/unit/test_self_improve_private_policy_ci_contract.py '
         'tests/unit/test_ci_shards_log_context.py '
         'tests/unit/test_ci_shards_log_context_bounds.py '

@@ -251,6 +251,11 @@ All 265 parser/workflow/registry/privacy cases then pass in 10.10s. Both old
 matrix-mutation tests inject at their existing workflow helper instead of the
 replaced parser call, preserving all input data, cases and assertions. Actual
 bounded-owner and exact-SHA hosted success still determine throughput acceptance.
+The complete 48-case backend cohort now joins early admission after two routing
+and roster failures reproduce first. All 104 focused routing cases pass, and the
+expanded owner passes 1107 cases plus its fresh help node in 57.5s within the same
+90/60 bound. The existing Python 3.11.14 environment also passes 162 parser and
+original-workflow cases. This is native acceptance, not successor CI success.
 
 [safe-yaml-docs]: https://pyyaml.org/wiki/PyYAMLDocumentation
 [safe-yaml-source]: https://github.com/yaml/pyyaml/blob/main/lib/yaml/__init__.py
