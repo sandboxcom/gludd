@@ -381,9 +381,6 @@ src/general_ludd/feature_flags/engine.py:FlagEngine
 src/general_ludd/git_automation/ci_ops.py:ci_active
 src/general_ludd/git_automation/ci_ops.py:ci_cooldown_status
 src/general_ludd/git_automation/ci_ops.py:ci_verdict_safe
-src/general_ludd/git_automation/feature_branch.py:feature_done
-src/general_ludd/git_automation/feature_branch.py:feature_start
-src/general_ludd/git_automation/feature_branch.py:rebranch_onto
 src/general_ludd/git_automation/git_index.py:index_git_history
 src/general_ludd/git_automation/git_search.py:search_git_history
 src/general_ludd/git_automation/git_stats.py:get_git_stats
@@ -391,7 +388,6 @@ src/general_ludd/git_automation/git_stats.py:git_diff
 src/general_ludd/git_automation/git_stats.py:git_log
 src/general_ludd/git_automation/git_stats.py:git_show
 src/general_ludd/git_automation/locking.py:async_git_repo_lock
-src/general_ludd/git_automation/ship_commit.py:collect_check
 src/general_ludd/git_automation/ship_commit.py:test_and_commit
 src/general_ludd/git_automation/worktree_lease.py:check_worktree_lease
 src/general_ludd/git_automation/worktree_lease.py:cleanup_expired_leases
