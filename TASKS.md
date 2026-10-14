@@ -31,6 +31,24 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
+S98.4 observer startup-readiness repair scope: `scripts/stream_command.py`,
+`tests/unit/test_observed_command.py`, and
+`docs/features/RELEASE_PROOF_THROUGHPUT.md`. Exact candidate ffde15309895edb9675a37095f1878503880ddb1
+fails the original real-process SIGTERM assertion in hosted Build 38590551409,
+unit-3a job 115950094051, with raw -15 instead of 143. Six deterministic
+publication-boundary cases fail first and expose two unclosed-pipe errors.
+The native owner arms both handlers before publishing running and restores them
+on publication failure, terminating/reaping its group and closing pipe/log.
+Original signal assertions, deadlines, fatal I/O errors and cleanup remain.
+All 236 related cases pass on Python 3.11 and 3.14. The unchanged four-owner
+coverage profile passes at 93.1% lines/86.3% branches and every 75% per-file
+floor (.gate-logs/coverage-20261014T160142Z.json). Ruff, strict source/test typing,
+docstrings and all 258 resource owners pass. Native test typing is conformed to
+the owner's existing static module identity without altering runtime imports.
+Long-lived practitioner context and control-plane ZDD rollback are documented.
+Source publication, clean full gate, exact-successor hosted/image/deployment
+proof remain pending; no release task or completed-backlog item is closed.
+
 S98.4 bounded collection-reporting support scope: `make/10-observability-and-tests.mk`,
 `tests/unit/test_single_native_commit_collection.py`, and
 `docs/features/RUNTIME_ADMISSION_THROUGHPUT.md`. Two actual fresh commit collections

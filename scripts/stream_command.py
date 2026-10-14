@@ -399,15 +399,6 @@ def stream_command(
         log_file.close()
         raise RuntimeError("streamed command did not expose stdout")
 
-    if status is not None:
-        status.update(
-            {"state": "running", "child_pid": process.pid, "updated_at": _utc_now()}
-        )
-        if not _publish_or_fail(publisher, status):
-            _terminate_process_group(process, termination_grace_seconds)
-            log_file.close()
-            return OBSERVER_FAILURE
-
     pending_signal: list[int] = []
 
     def handle_signal(signum: int, _frame: FrameType | None) -> None:
@@ -434,6 +425,17 @@ def stream_command(
     state: str | None = None
 
     try:
+        # A published running owner must already be able to handle interruption.
+        if status is not None:
+            status.update(
+                {"state": "running", "child_pid": process.pid, "updated_at": _utc_now()}
+            )
+            if not _publish_or_fail(publisher, status):
+                _terminate_process_group(process, termination_grace_seconds)
+                process.stdout.close()
+                log_file.close()
+                return OBSERVER_FAILURE
+
         while selector.get_map() or process.poll() is None:
             now = time.monotonic()
             if selector.get_map():

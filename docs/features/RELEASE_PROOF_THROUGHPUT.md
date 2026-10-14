@@ -65,6 +65,46 @@ editor action. The existing exact-SHA gate, coverage, deployment acceptance and
 promotion checks remain mandatory. No runtime restart or serving change is
 required for this control-plane addition.
 
+### Observer startup interruption readiness
+
+Build run `38590551409`, candidate
+`ffde15309895edb9675a37095f1878503880ddb1`, exposes a real observer startup
+race in unit-3a: the existing SIGTERM test receives raw exit `-15` instead of
+the required `143`. Publishing `running` before installing signal handlers
+allows a caller to interrupt an owner that cannot yet perform graceful cleanup.
+
+The existing streaming owner now arms its SIGINT/SIGTERM handlers before that
+publication. Publication remains inside the handler-restoration boundary. If
+publication fails, the owner terminates/reaps its process group and closes both
+output pipe and log; genuine status errors still return `125`. No sleep, retry,
+timeout increase, alternate runner, or test-expectation change is introduced.
+Six deterministic boundary regressions fail first, also exposing two unclosed
+pipe warnings. The original real-process interruption test remains unchanged.
+Static test imports follow the owner's existing mypy module coordinate; runtime
+imports and assertions remain unchanged, without type ignores or skipped imports.
+
+All 236 related cases pass on Python 3.11 and 3.14. The unchanged four-owner
+coverage profile passes at 93.1% lines and 86.3% branches, with every file meeting
+both 75% floors (`.gate-logs/coverage-20261014T160142Z.json`). Strict source/test
+typing, Ruff, docstrings and the unchanged 258-resource inventory pass.
+
+The [Python 3.11 signal documentation](https://docs.python.org/3.11/library/signal.html)
+specifies main-thread handler execution and warns about asynchronous exceptions.
+Keep the existing handler's queued request and normal-loop cleanup rather than
+raising a new exception from it. In the
+[March 2025 practitioner discussion](https://discuss.python.org/t/convert-sigterm-to-an-exception-by-default/86283),
+service authors describe default SIGTERM bypassing cleanup and recommend explicit
+graceful shutdown. This long-lived failure class supports the design decision;
+it is not independent proof of this Gludd race or its repair.
+
+This is a control-plane ZDD correction: no serving process is restarted, and an
+already running observer retains its loaded code until it terminates. Future
+invocations use the repaired owner. Rollback restores the prior source through
+the normal branch workflow while retaining failure receipts. Local tests and
+coverage do not supply clean full-gate, exact-successor hosted, installed-image,
+or deployment acceptance; release readiness remains pending. Let all required
+jobs finish so additional failures from this same candidate are not discarded.
+
 ### Research decisions for this pipeline
 
 - DORA recommends limiting simultaneous work and following items across the

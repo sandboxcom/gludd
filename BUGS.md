@@ -4,6 +4,25 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Running status preceded interruption readiness
+
+- Hosted Build 38590551409, exact ffde15309895edb9675a37095f1878503880ddb1,
+  fails the original real-process SIGTERM case in unit-3a with raw -15 instead
+  of 143. The owner publishes running before installing its signal handlers.
+- Six deterministic boundary cases fail first; failed publication additionally
+  reveals two fatal unclosed-output-pipe warnings. Tests retain the original
+  interruption expectations and do not add sleeps, retries or larger bounds.
+- The existing owner arms SIGINT/SIGTERM before publication within its restoration
+  boundary. Publication failure still returns 125 and now closes its output pipe
+  after native process-group termination/reaping, alongside the log.
+- All 236 related cases pass on Python 3.11/3.14. Unchanged four-owner coverage
+  passes at 93.1% lines/86.3% branches and every 75% floor; Ruff, strict typing,
+  docstrings and 258 resource owners pass. Static test imports follow the native
+  mypy coordinate without changing runtime behavior or suppressing diagnostics.
+- RELEASE_PROOF_THROUGHPUT.md records primary documentation, long-lived forum
+  findings and ZDD rollback. Local source acceptance is not clean full-gate,
+  exact-successor hosted, image or deployment proof; S98.4 remains unchecked.
+
 ### 2026-10-14 — Complete collection rendered every node instead of bounded native detail
 
 - Each fresh publication collection writes about 144,000 lines/8.8 MB despite

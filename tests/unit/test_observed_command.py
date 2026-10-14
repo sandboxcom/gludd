@@ -9,10 +9,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
-from scripts import stream_command
+
+if TYPE_CHECKING:
+    import stream_command
+else:
+    from scripts import stream_command
 
 ROOT = Path(__file__).resolve().parents[2]
 STREAM_RUNNER = ROOT / "scripts" / "stream_command.py"
@@ -315,6 +319,87 @@ def test_observer_forwards_signals_and_records_interruption(tmp_path: Path) -> N
     assert status["state"] == "interrupted"
     assert status["exit_code"] == 128 + signal.SIGTERM
     assert status["termination_reason"] == "observer-signal:SIGTERM"
+
+
+@pytest.mark.parametrize("watched_signal", [signal.SIGINT, signal.SIGTERM])
+@pytest.mark.parametrize("publication_fails", [False, True])
+def test_running_publication_requires_armed_and_restored_signal_handlers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    watched_signal: signal.Signals,
+    publication_fails: bool,
+) -> None:
+    previous_handler = signal.getsignal(watched_signal)
+    published_handlers: list[Any] = []
+    published_child_pids: list[int] = []
+    original_publish = stream_command._StatusPublisher.publish
+
+    def record_running(
+        publisher: stream_command._StatusPublisher, payload: dict[str, object]
+    ) -> None:
+        if payload["state"] == "running":
+            published_handlers.append(signal.getsignal(watched_signal))
+            published_child_pids.append(cast(int, payload["child_pid"]))
+            if publication_fails:
+                raise OSError("running publication unavailable")
+        original_publish(publisher, payload)
+
+    monkeypatch.setattr(stream_command._StatusPublisher, "publish", record_running)
+    returncode = stream_command.stream_command(
+        [sys.executable, "-c", "import time; time.sleep(0.05)"],
+        tmp_path / "observed" / "demo" / "run-1.log",
+        observed_root=tmp_path / "observed",
+        label="demo",
+        run_id="run-1",
+        quiet=True,
+    )
+
+    assert signal.getsignal(watched_signal) is previous_handler
+    assert returncode == (125 if publication_fails else 0)
+    assert len(published_child_pids) == 1
+    with pytest.raises(ProcessLookupError):
+        os.kill(published_child_pids[0], 0)
+    assert len(published_handlers) == 1
+    assert callable(published_handlers[0])
+    assert published_handlers[0] is not previous_handler
+
+
+@pytest.mark.parametrize("watched_signal", [signal.SIGINT, signal.SIGTERM])
+def test_signal_received_at_running_publication_is_sealed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    watched_signal: signal.Signals,
+) -> None:
+    previous_handler = signal.getsignal(watched_signal)
+    original_publish = stream_command._StatusPublisher.publish
+
+    def interrupt_running(
+        publisher: stream_command._StatusPublisher, payload: dict[str, object]
+    ) -> None:
+        original_publish(publisher, payload)
+        if payload["state"] == "running":
+            handler = signal.getsignal(watched_signal)
+            if callable(handler) and handler is not previous_handler:
+                handler(watched_signal, None)
+
+    monkeypatch.setattr(stream_command._StatusPublisher, "publish", interrupt_running)
+    returncode = stream_command.stream_command(
+        [sys.executable, "-c", "import time; time.sleep(0.05)"],
+        tmp_path / "observed" / "demo" / "run-1.log",
+        observed_root=tmp_path / "observed",
+        label="demo",
+        run_id="run-1",
+        quiet=True,
+    )
+
+    status = _current_status(tmp_path)
+    assert signal.getsignal(watched_signal) is previous_handler
+    assert returncode == 128 + watched_signal
+    assert status["state"] == "interrupted"
+    assert status["exit_code"] == returncode
+    assert status["termination_reason"] == f"observer-signal:{watched_signal.name}"
+    with pytest.raises(ProcessLookupError):
+        os.kill(status["child_pid"], 0)
 
 
 def test_observer_log_open_failure_is_fail_closed(tmp_path: Path) -> None:
