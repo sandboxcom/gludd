@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "release": "0.1.0-beta.4",
-  "base_image": "quay.io/centos/centos:stream9@sha256:33346f5fe280763eb78e85f968ad52bc2b2013369de85403f67e802db98ed243",
+  "base_image": "quay.io/centos/centos:stream9@sha256:4fdfb367402535024cd7703a67e4549ca3b0a0ee05081e06d89e24dce3a3827a",
   "inputs": {
     "galaxy": "sha256:323e5bf54ec638fcbe05a60c74b26953569b420cf886ed47faa9c6be53749ba9",
     "collection_lock": "sha256:7d176b02362222535077a47b4a4f8191e6e9b4a00be0fbc6d3a1f93d4a7a9588",
     "python": "sha256:ca997eeebc17b00d1558e37773d1a915f8acefedae7841c1afd3651a33b00a30",
     "system": "sha256:64c87891f336f9c13148b3cf13db2d46d503813b5d5b1d890c06fb221e691d39",
-    "definition": "sha256:528e1f63d1b5a02d4129a9ebe53b4fc8a450a77b2dfc517f9803251b4edd5eb9",
+    "definition": "sha256:65adf8eb14dd1a1a4fed17551829c3bb5f37d2c5a62d8bf9b983c61a911f72b8",
     "smoke_settings": "sha256:e908ed79b1443738c54b356cb091ec5341b2055ae19322144920417df0fc3382",
     "smoke_limiter": "sha256:601e1d9c98fb1768a44fb1725a6e0bcb523af79473da65818009aa37c15825ca"
   },

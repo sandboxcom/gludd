@@ -22,7 +22,7 @@ from general_ludd.ansible.isolation import ProcessIsolationConfig
 ROOT = Path(__file__).resolve().parents[2]
 SHA256_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "a" * 64
 CENTOS_STREAM9_INDEX = (
-    "quay.io/centos/centos:stream9@sha256:33346f5fe280763eb78e85f968ad52bc2b2013369de85403f67e802db98ed243"
+    "quay.io/centos/centos:stream9@sha256:4fdfb367402535024cd7703a67e4549ca3b0a0ee05081e06d89e24dce3a3827a"
 )
 
 
