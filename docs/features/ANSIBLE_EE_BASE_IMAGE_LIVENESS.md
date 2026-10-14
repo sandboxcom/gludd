@@ -637,3 +637,27 @@ Ruff, production/test strict typing, docstrings, all 258 resource owners and
 task registration/integrity pass. Native refresh and availability are source-input evidence only:
 the new image still needs independent build, full offline warm, deployment,
 exact-successor CI and full gate proof. No release-ready task is checked off.
+
+### Error-response ownership follow-up
+
+Five additional controls retain real standard-library `HTTPError` objects and
+their file-like bodies instead of allowing garbage collection to hide resource
+lifetime. All five fail first: two show GET starting while the failed HEAD
+response remains open, and three show terminal HEAD/GET errors retaining their
+responses. The checker now explicitly closes failed HEAD responses before GET
+and terminal HTTP error responses before returning the wrapped failure. It
+preserves the original HTTP status, exact reference and no-retry policy.
+All 112 focused cases pass on Python 3.11 and 3.14 with fatal warnings. All 491
+broader cases pass in the original runtime-artifact coverage profile at 92.95%
+lines and 85.93% branches, retaining its two existing exclusions and unchanged
+85/75 floors (`.gate-logs/coverage-20261014T031247Z.json`). Ruff, strict typing,
+docstrings, all 258 resource owners and task registration/integrity pass.
+Publication, exact-SHA hosted/full gate and deployment acceptance remain
+required for this follow-up.
+
+[Python's HTTPError reference](https://docs.python.org/3.11/library/urllib.error.html)
+documents that the exception is also the file-like response returned by the
+client. This is the resource owner to close, not a reason to suppress warnings
+or replace the standard-library client. The practitioner report above remains
+motivation for method-specific coverage, not evidence of a leaked production
+connection or successful deployment.

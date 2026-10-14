@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from email.message import Message
+from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request
@@ -138,6 +139,53 @@ def test_successful_head_does_not_read_manifest_content() -> None:
         _DIGEST, opener=lambda *_args, **_kwargs: response,
     ) == _DIGEST
     assert response.read_sizes == []
+
+
+@pytest.mark.parametrize("status", [404, 405, 503])
+def test_manifest_checker_closes_failed_head_response_before_proceeding(status: int) -> None:
+    body = BytesIO(b"registry error body")
+    calls: list[Request] = []
+    head_error = HTTPError(
+        f"{artifacts.BASE_IMAGE_MANIFEST_ROOT}/{_DIGEST}", status,
+        "registry rejected", Message(), body,
+    )
+
+    def opener(request: Request, *, timeout: int) -> _ManifestResponse:
+        calls.append(request)
+        if request.get_method() == "HEAD":
+            raise head_error
+        assert body.closed, "failed HEAD connection must close before GET"
+        return _ManifestResponse()
+
+    if status == 503:
+        with pytest.raises(RuntimeError, match="HTTP Error 503"):
+            artifacts._registry_manifest_digest(_DIGEST, opener=opener)
+        assert [request.get_method() for request in calls] == ["HEAD"]
+    else:
+        assert artifacts._registry_manifest_digest(_DIGEST, opener=opener) == _DIGEST
+        assert [request.get_method() for request in calls] == ["HEAD", "GET"]
+    assert body.closed
+
+
+@pytest.mark.parametrize("status", [404, 503])
+def test_manifest_checker_closes_failed_get_response_without_retry(status: int) -> None:
+    body = BytesIO(b"registry GET error")
+    error = HTTPError(
+        f"{artifacts.BASE_IMAGE_MANIFEST_ROOT}/{_DIGEST}", status,
+        "GET rejected", Message(), body,
+    )
+    calls: list[Request] = []
+
+    def opener(request: Request, *, timeout: int) -> _ManifestResponse:
+        calls.append(request)
+        if request.get_method() == "HEAD":
+            raise HTTPError(request.full_url, 404, "HEAD rejected", Message(), None)
+        raise error
+
+    with pytest.raises(RuntimeError, match=f"HTTP Error {status}"):
+        artifacts._registry_manifest_digest(_DIGEST, opener=opener)
+    assert body.closed
+    assert [request.get_method() for request in calls] == ["HEAD", "GET"]
 
 
 @pytest.mark.parametrize("reference", ["latest", "../stream9", "sha256:short"])

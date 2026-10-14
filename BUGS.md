@@ -4,6 +4,11 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Failed manifest requests retained their response handles
+
+- Five new ownership controls retain actual urllib HTTPError responses and reproduce five failures. HEAD fallback can start GET before closing the first response, and terminal HEAD/GET errors leave their file-like bodies open. Garbage collection is not deterministic teardown evidence.
+- Failed HEAD responses now close before the same-reference GET; terminal HTTP error responses close before the original status is wrapped and returned. No retry, status masking, warning suppression or success bypass is added. All 112 focused cases pass on Python 3.11 and 3.14 with fatal warnings. The original runtime-artifact profile passes all 491 broader cases at 92.95% lines/85.93% branches, unchanged 85/75 floors and two existing exclusions (.gate-logs/coverage-20261014T031247Z.json). Ruff, strict typing, docstrings, all 258 resource owners and task registration/integrity pass. Publication, exact-SHA hosted/full gate and deployment acceptance remain pending.
+
 ### 2026-10-14 — A previously served immutable Ansible base disappeared
 
 - Exact run 38502390021 verifies the old pin in Python 3.11, then fails Python 3.12 eight minutes later with Quay HTTP 404. Local HEAD and GET both reproduce the missing exact manifest; neither a Python defect nor transient success is inferred.

@@ -243,11 +243,14 @@ def _registry_manifest_digest(reference: str, *, opener: Any | None = None) -> s
         except HTTPError as exc:
             if exc.code not in (404, 405):
                 raise
+            exc.close()
             print(f"ANSIBLE_BASE_IMAGE_MANIFEST_GET reference={reference} head_status={exc.code}", flush=True)
             request = Request(request.full_url, headers={"Accept": MANIFEST_ACCEPT}, method="GET")
             with open_request(request, timeout=30) as response:
                 return _manifest_response_digest(response, verify_content=True)
     except Exception as exc:
+        if isinstance(exc, HTTPError):
+            exc.close()
         raise RuntimeError(
             f"unable to resolve supported Ansible base image: {exc}"
         ) from exc
