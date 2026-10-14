@@ -11,10 +11,13 @@ import sys
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import yaml
 from coverage import CoverageData
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
@@ -221,6 +224,251 @@ def test_default_runner_policy_stops_after_first_ordinary_failure(
 
     assert launched == ["unit-1b:batch-001"]
     assert "later-batches=not-started" in capsys.readouterr().out
+
+
+def test_post_failure_diagnostics_are_explicit_cli_opt_in() -> None:
+    module = _load_runner()
+    parser = module._build_serial_runner_parser(
+        description=None,
+        default_shards=module.DEFAULT_SHARDS,
+        max_files_per_batch=module.MAX_FILES_PER_BATCH,
+        heartbeat_seconds=module.DEFAULT_HEARTBEAT_SECONDS,
+        no_progress_seconds=module.DEFAULT_NO_PROGRESS_SECONDS,
+    )
+    assert parser.parse_args([]).diagnose_after_failure is False
+    assert parser.parse_args(["--diagnose-after-failure"]).diagnose_after_failure is True
+
+
+@pytest.mark.parametrize("outcomes", [[0, 1, 0, 1], [1, 0, 0, 0], [0, 0, 0, 0]])
+def test_post_failure_diagnostics_execute_the_remaining_plan_once(
+    runner: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    outcomes: list[int],
+) -> None:
+    module, _resources = runner
+    plans = {"unit-1b": ["tests/a.py", "tests/b.py"], "unit-1d": ["tests/c.py", "tests/d.py"]}
+    launched = _install_scripted_batches(module, monkeypatch, plans=plans, outcomes=outcomes)
+    summary: dict[str, object] = {}
+    assert module.run(
+        list(plans), [], max_files_per_batch=1, run_isolated=False,
+        aggregate_coverage=False, diagnose_after_failure=True, execution_summary=summary,
+    ) == max(outcomes)
+    _line, failures, phases = _terminal_summary(capsys.readouterr().out)
+    assert launched == ["unit-1b:batch-001", "unit-1b:batch-002", "unit-1d:batch-001", "unit-1d:batch-002"]
+    assert failures == {label: rc for label, rc in zip(launched, outcomes, strict=True) if rc}
+    assert all(phases[f"{label}:cleanup"] == 0 for label in launched)
+    assert summary["diagnostic_only_batches"] == (3 - outcomes.index(1) if 1 in outcomes else 0)
+
+
+@pytest.mark.parametrize("safety_rc", [2, 3, 4, 5, 6, 70, 71, 72, 73, 74, 75, 78, 124, 125, -15, 143])
+def test_post_failure_diagnostics_preserve_terminal_safety_stops(
+    runner: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    safety_rc: int,
+) -> None:
+    module, _resources = runner
+    plans = {"unit-1b": ["tests/a.py", "tests/b.py", "tests/unreached.py"]}
+    launched = _install_scripted_batches(module, monkeypatch, plans=plans, outcomes=[1, safety_rc])
+    assert module.run(
+        list(plans), [], max_files_per_batch=1, run_isolated=False,
+        aggregate_coverage=False, diagnose_after_failure=True,
+    ) == safety_rc
+    _line, failures, _phases = _terminal_summary(capsys.readouterr().out)
+    assert launched == ["unit-1b:batch-001", "unit-1b:batch-002"]
+    assert failures["unit-1b:batch-001"] == 1
+    assert failures["unit-1b:batch-002"] == safety_rc
+
+
+def test_post_failure_diagnostics_do_not_read_or_write_legacy_pass_receipts(
+    runner: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    module, _resources = runner
+    plans = {"unit-1b": ["tests/a.py", "tests/failure.py", "tests/diagnostic.py"]}
+    launched = _install_scripted_batches(module, monkeypatch, plans=plans, outcomes=[0, 1, 0])
+    resumed: list[int] = []
+
+    def miss_receipt(_state: object, _shard: str, index: int, *_args: object) -> bool:
+        resumed.append(index)
+        return False
+
+    monkeypatch.setattr(module, "_resume_skip_batch", miss_receipt)
+    resume_path = tmp_path / "resume.json"
+    assert module.run(
+        list(plans), [], max_files_per_batch=1, run_isolated=False,
+        aggregate_coverage=False, diagnose_after_failure=True, resume_path=resume_path,
+    ) == 1
+    assert len(launched) == 3
+    assert resumed == [1, 2]
+    entries = module._load_resume_state(resume_path)
+    assert set(entries) == {
+        "schema_version", "candidate_sha", "runner",
+        module._batch_key("unit-1b", 1, plans["unit-1b"][:1]),
+    }
+
+
+def test_post_failure_and_general_diagnostics_cannot_be_combined(
+    runner: tuple[Any, Any],
+) -> None:
+    module, _resources = runner
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        module.run(["unit-1b"], [], collect_all_failures=True, diagnose_after_failure=True)
+
+
+def test_post_failure_diagnostics_disable_exact_pass_admission_and_publication(
+    runner: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module, _resources = runner
+    plans = {"unit-1b": ["tests/a.py", "tests/failure.py", "tests/diagnostic.py", "tests/second_failure.py"]}
+    launched = _install_scripted_batches(module, monkeypatch, plans=plans, outcomes=[0, 1, 0, 1])
+    admitted: list[int] = []
+    published: list[int] = []
+    failure_receipts: list[int] = []
+
+    def miss_admission(_session: object, *, batch_index: int, **_kwargs: object) -> tuple[None, str]:
+        admitted.append(batch_index)
+        return None, "no-prior-receipt"
+
+    class RecordingWriter:
+        def publish(self, request: Any) -> SimpleNamespace:
+            published.append(request.action_identity["batch_index"])
+            return SimpleNamespace(published=True, reason="published", path=None, action_digest=None)
+
+    def record_failure(_session: object, *, batch_index: int, **_kwargs: object) -> bool:
+        failure_receipts.append(batch_index)
+        return False
+
+    monkeypatch.setattr(module, "_runtime_admit_exact_batch", miss_admission)
+    monkeypatch.setattr(module, "_publish_shadow_failure_receipt", record_failure)
+    monkeypatch.setattr(module, "normalize_junit_outcomes", lambda _path: {"passed": 1, "failed": 0})
+    session = module.BatchReceiptSession(
+        writer=RecordingWriter(), run_id="run-1", admission_enabled=True,
+        expected_identity=lambda _shard, batch_index, _files: {"batch_index": batch_index},
+        observed_identity=lambda _shard, batch_index, _files: {"batch_index": batch_index},
+    )
+    assert module.run(
+        list(plans), [], max_files_per_batch=1, run_isolated=False,
+        aggregate_coverage=False, diagnose_after_failure=True, receipt_session=session,
+    ) == 1
+    assert len(launched) == 4
+    assert admitted == [1, 2]
+    assert published == [1]
+    assert failure_receipts == [2, 4]
+    assert "reason=post-failure-diagnostic" in capsys.readouterr().out
+
+
+def test_post_failure_diagnostics_real_warning_and_assertion_children_remain_failed(
+    runner: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module, resources = runner
+    suite = tmp_path / "diagnostic-suite"
+    suite.mkdir()
+    sources = {
+        "test_warning.py": (
+            "import warnings\nfrom general_ludd import __version__\n\ndef test_warning():\n"
+            "    assert __version__\n    warnings.warn('must remain fatal', UserWarning)\n"
+        ),
+        "test_passing.py": (
+            "from general_ludd import __version__\n\ndef test_passing():\n    assert __version__\n"
+        ),
+        "test_failure.py": (
+            "from general_ludd import __version__\n\ndef test_failure():\n"
+            "    assert __version__\n    assert False\n"
+        ),
+    }
+    for name, source in sources.items():
+        (suite / name).write_text(source, encoding="utf-8")
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: [str(suite / name) for name in sources])
+    summary: dict[str, object] = {}
+    assert module.run(
+        ["unit-1b"], ["-W", "error"], max_files_per_batch=1, heartbeat_seconds=0.2,
+        no_progress_seconds=30.0, run_isolated=False, aggregate_coverage=False,
+        diagnose_after_failure=True, execution_summary=summary,
+    ) == 1
+    _line, failures, phases = _terminal_summary(capsys.readouterr().out)
+    assert failures == {"unit-1b:batch-001": 1, "unit-1b:batch-003": 1}
+    assert phases["unit-1b:batch-002"] == 0
+    assert summary["executed"] == 3
+    assert summary["diagnostic_only_batches"] == 2
+    assert not resources.coverage_shards.exists()
+    assert not any((resources.root / "workspaces").iterdir())
+
+
+def test_hosted_shards_opt_in_to_same_invocation_post_failure_diagnostics() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8"))
+    step = next(step for step in workflow["jobs"]["test-shard"]["steps"] if step.get("id") == "test-run")
+    assert "--diagnose-after-failure" in step["run"]
+    assert "--require-release-policy" in step["run"]
+    assert "--collect-all-failures" not in step["run"]
+    assert step["timeout-minutes"] == 90
+
+
+def test_post_failure_controls_are_admitted_before_hosted_fanout() -> None:
+    makefile = compose_makefile(ROOT / "Makefile")
+    owner = makefile.split("\n_pytest-runtime-compatibility-admission:", 1)[1].split(
+        "\n_ansible-role-variable-prefix:", 1,
+    )[0]
+    selected = next(line for line in owner.splitlines() if line.strip().startswith("TESTFILES="))
+    assert "tests/unit/test_ci_collect_all_stress.py" in selected.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    for family_id, node in (
+        (
+            "ci-post-failure-diagnostic-receipt-isolation",
+            "test_post_failure_diagnostics_disable_exact_pass_admission_and_publication",
+        ),
+        (
+            "hosted-post-failure-diagnostic-opt-in",
+            "test_hosted_shards_opt_in_to_same_invocation_post_failure_diagnostics",
+        ),
+    ):
+        family = next(family for family in manifest["families"] if family["id"] == family_id)
+        assert family["owner_target"] == "_pytest-runtime-compatibility-admission"
+        assert family["node"] == f"tests/unit/test_ci_collect_all_stress.py::{node}"
+        assert family["full_gate_phase"] == "test"
+
+
+@pytest.mark.parametrize("with_receipt_session", [False, True])
+def test_post_failure_cli_preserves_release_policy_and_failed_attestation(
+    runner: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    with_receipt_session: bool,
+) -> None:
+    module, _resources = runner
+    observed: dict[str, object] = {}
+    session = object() if with_receipt_session else None
+    attestation = tmp_path / "terminal.json"
+
+    def capture_run(*_args: object, **kwargs: Any) -> int:
+        observed.update(kwargs)
+        kwargs["execution_summary"].update(diagnostic_only_batches=2)
+        return 1
+
+    monkeypatch.setattr(module, "run", capture_run)
+    monkeypatch.setattr(module, "_attestation_pairing", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(module, "_configure_shadow_receipts", lambda **_kwargs: session)
+    monkeypatch.setattr(module, "_repository_identity", lambda **_kwargs: {
+        "head_sha": "a" * 40, "expected_sha": "a" * 40, "branch": "feature",
+        "clean": True, "exact_sha": True, "queries_ok": True,
+    })
+    monkeypatch.setattr(module.sys, "argv", [
+        "run_ci_shards_serial.py", "--shards=unit-1b", "--pytest-args=-W error",
+        "--require-release-policy", "--diagnose-after-failure", "--skip-isolated",
+        "--skip-aggregate", f"--attestation-output={attestation}",
+    ])
+    if module.execution_policy(["-W", "error"]) != module.release_execution_policy():
+        assert module.main() == 2
+        assert observed == {}
+        assert not attestation.exists()
+        return
+    assert module.main() == 1
+    assert observed["diagnose_after_failure"] is True
+    assert observed["collect_all_failures"] is False
+    assert observed.get("receipt_session") is session
+    payload = json.loads(attestation.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert payload["returncode"] == 1
+    assert payload["batch_execution"]["diagnostic_only_batches"] == 2
 
 
 def test_collect_all_retains_every_ordinary_failure_in_plan_order(

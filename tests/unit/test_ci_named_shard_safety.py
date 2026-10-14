@@ -1287,6 +1287,7 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
         "execution_summary": {},
         "batch_workers": 1,
         "collect_all_failures": False,
+        "diagnose_after_failure": False,
     }
 
 

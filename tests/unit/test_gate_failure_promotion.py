@@ -1316,6 +1316,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "runtime-admission-initial-path-sibling-collection",
         "makefile-phony-continuation-format",
         "makefile-phony-deep-format",
+        "ci-post-failure-diagnostic-receipt-isolation",
+        "hosted-post-failure-diagnostic-opt-in",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1506,6 +1508,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_mcp_tool_gen.py '
         'tests/unit/test_observed_command.py '
         "tests/unit/test_observer_retention_concurrency.py "
+        "tests/unit/test_ci_collect_all_stress.py "
         "tests/unit/test_admission_cold_start_selection.py::"
         'test_real_admission_filters_only_never_selected_main_siblings"'
         in runtime_compatibility_owner

@@ -281,13 +281,19 @@ def build_serial_runner_parser(
         action="store_true",
         help="defer the 85/75 aggregate coverage gate to a downstream job",
     )
-    parser.add_argument(
+    diagnostic_modes = parser.add_mutually_exclusive_group()
+    diagnostic_modes.add_argument(
         "--collect-all-failures",
         action="store_true",
         help=(
             "diagnostic only: continue after ordinary pytest failures; "
             "safety, cleanup, cancellation, and coverage failures remain terminal"
         ),
+    )
+    diagnostic_modes.add_argument(
+        "--diagnose-after-failure",
+        action="store_true",
+        help="after the first test failure, execute remaining batches without reusable pass receipts",
     )
     parser.add_argument(
         "--coverage-output",

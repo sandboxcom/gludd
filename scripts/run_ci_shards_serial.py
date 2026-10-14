@@ -1429,12 +1429,15 @@ def run(
     execution_summary: dict[str, object] | None = None,
     batch_workers: int = 1,
     collect_all_failures: bool = False,
+    diagnose_after_failure: bool = False,
 ) -> int:
     """Run bounded batches, optionally collecting ordinary pytest failures."""
     if max_files_per_batch < 1:
         raise ValueError("max_files_per_batch must be positive")
     if batch_workers not in {1, 2}:
         raise ValueError("batch_workers must be in 1..2")
+    if collect_all_failures and diagnose_after_failure:
+        raise ValueError("diagnostic modes are mutually exclusive")
     phase_results: dict[str, int | str] = {}
     if not shards:
         print("SERIAL-SHARD-PLAN-EMPTY rc=2", flush=True)
@@ -1449,6 +1452,8 @@ def run(
     executed_batch_count = 0
     resumed_batch_count = 0
     time_saved_seconds = 0.0
+    diagnostic_only = False
+    diagnostic_only_batches = 0
     if watchdog_owned_gate and not _gate_owner_is_alive():
         owner_failures = {"gate-owner": GATE_OWNER_DEATH_EXIT_CODE}
         _record_phase_result(
@@ -1683,6 +1688,7 @@ def run(
                 if (
                     receipt_session is not None
                     and receipt_session.admission_enabled
+                    and not diagnostic_only
                 ):
                     admission_destination = (
                         COVERAGE_SHARDS
@@ -1730,7 +1736,7 @@ def run(
                         flush=True,
                     )
                 if (
-                    not (
+                    not diagnostic_only and not (
                         receipt_session is not None
                         and receipt_session.admission_enabled
                     )
@@ -1756,6 +1762,9 @@ def run(
                     )
                     continue
                 executed_batch_count += 1
+                if diagnostic_only:
+                    diagnostic_only_batches += 1
+                    print(f"SHARD-DIAGNOSTIC shard={shard} batch={batch_index} proof=none", flush=True)
                 batchtemp = workspace / f"batch-{batch_index:03d}"
                 try:
                     batchtemp.mkdir(parents=True)
@@ -1942,7 +1951,7 @@ def run(
                             )
                         except (OSError, ValueError):
                             failure_node_metadata = None
-                if resume_path is not None and rc == 0 and coverage_saved:
+                if resume_path is not None and rc == 0 and coverage_saved and not diagnostic_only:
                     fragment_name = f".coverage.{shard}.batch-{batch_index:03d}"
                     resume_state[_batch_key(shard, batch_index, files)] = {
                         "rc": 0,
@@ -1994,6 +2003,8 @@ def run(
                         refusal_reason = f"outcomes-{outcome_error or 'invalid'}"
                     elif batch_cleanup_rc != 0:
                         refusal_reason = "cleanup-incomplete"
+                    elif diagnostic_only:
+                        refusal_reason = "post-failure-diagnostic"
                     if refusal_reason is not None:
                         if receipt_session.auditor is not None:
                             print(
@@ -2151,7 +2162,13 @@ def run(
                     shard_failed = True
                     break
                 if rc != 0:
-                    if collect_all_failures and _is_collect_all_pytest_returncode(rc):
+                    if diagnose_after_failure and rc == 1:
+                        diagnostic_only = True
+                        print(
+                            f"SHARD-FAIL shard={shard} batch={batch_index} rc=1; "
+                            "later-batches=diagnostic-only", flush=True,
+                        )
+                    elif collect_all_failures and _is_collect_all_pytest_returncode(rc):
                         print(
                             f"SHARD-COLLECTED shard={shard} batch={batch_index} "
                             f"rc={rc}; later-batches=continuing",
@@ -2271,6 +2288,8 @@ def run(
     )
     if execution_summary is not None:
         execution_summary.update(batch_summary)
+        if diagnose_after_failure:
+            execution_summary["diagnostic_only_batches"] = diagnostic_only_batches
     if not batch_summary["reconciled"] and not terminal_rc:
         failures["batch:reconciliation"] = RUNNER_EXCEPTION_EXIT_CODE
         terminal_rc = RUNNER_EXCEPTION_EXIT_CODE
@@ -2383,6 +2402,7 @@ def main() -> int:
                     execution_summary=batch_execution,
                     batch_workers=args.batch_workers,
                     collect_all_failures=args.collect_all_failures,
+                    diagnose_after_failure=args.diagnose_after_failure,
                 )
             else:
                 returncode = run(
@@ -2400,6 +2420,7 @@ def main() -> int:
                     execution_summary=batch_execution,
                     batch_workers=args.batch_workers,
                     collect_all_failures=args.collect_all_failures,
+                    diagnose_after_failure=args.diagnose_after_failure,
                 )
             error = None
             if (

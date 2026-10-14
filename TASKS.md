@@ -31,6 +31,32 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
+S98.4 same-invocation failure-diagnostics enhancement scope:
+`scripts/run_ci_shards_serial.py`, `scripts/ci_shadow_receipt_runtime.py`,
+`tests/unit/test_ci_collect_all_stress.py`, `tests/unit/test_ci_named_shard_safety.py`,
+`.github/workflows/build.yml`, `make/10-observability-and-tests.mk`,
+`config/gate_failure_promotions.json`, `tests/unit/test_gate_failure_promotion.py`,
+`tests/unit/test_runtime_admission_scheduling.py`, and
+`docs/features/CI_FAILURE_LEDGER.md`. Native --diagnose-after-failure runs later
+batches once as non-authoritative diagnostics after an rc1 failure, retaining
+every failure and terminal nonzero status. Later exact/legacy pass-receipt reuse
+and publication are disabled; codes 2-6 and all original safety, cancellation,
+resource, coverage-integrity and cleanup stops remain. The original general
+collect-all/release-policy incompatibility is retained. Twenty-two cases fail
+before the native option; workflow and early-selection controls fail before
+wiring, then three exact pins are conformed additively to the new roster/families.
+All 677 related cases pass on Python 3.11 and 3.14, including real warning-fatal
+children and Python 3.14 release-policy refusal. Unchanged two-owner coverage
+passes at 91.7% lines/89.2% branches with every 75% floor
+(.gate-logs/coverage-20261014T163047Z.json). Ruff, strict typing, docstrings,
+234 contracts, 73 families, Make integrity and all 258 resource owners pass.
+The complete native roster passes 1690 cases plus fresh help in 62.8 observed
+seconds under unchanged 90/60 bounds. The existing repaired registry acceptance
+command passes all three cases, allowing native retirement of its superseded
+successful pointer without deleting its receipt; all failed/live pointers and
+the 32-command bound remain. Publication and exact-successor hosted/full-gate/
+deployment acceptance remain pending, not completed items.
+
 S98.4 observer startup-readiness repair scope: `scripts/stream_command.py`,
 `tests/unit/test_observed_command.py`, and
 `docs/features/RELEASE_PROOF_THROUGHPUT.md`. Exact candidate ffde15309895edb9675a37095f1878503880ddb1

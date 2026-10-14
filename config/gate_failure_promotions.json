@@ -656,6 +656,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_makefile_targets_deep.py::TestDotPhonyFormatting::test_phony_no_tabs",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ci-post-failure-diagnostic-receipt-isolation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_collect_all_stress.py::test_post_failure_diagnostics_disable_exact_pass_admission_and_publication",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "hosted-post-failure-diagnostic-opt-in",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_collect_all_stress.py::test_hosted_shards_opt_in_to_same_invocation_post_failure_diagnostics",
+      "full_gate_phase": "test"
     }
   ]
 }

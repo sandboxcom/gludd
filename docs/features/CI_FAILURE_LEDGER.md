@@ -401,3 +401,104 @@ runner-acquisition recovery, recurrence, repair ancestry, complete blocker
 output, guarded reruns, atomic permissions, CLI wiring, and malformed state.
 `config/coverage_ci_failure_ledger.ini` measures the implementation directly
 under the repository's 85% aggregate and 75% per-file requirements.
+
+## Remaining-batch diagnostics decision (2026-10-14)
+
+Source inspection finds native collect-all support already present:
+`make ci-shards-diagnostic` forwards `--collect-all-failures` to
+`scripts/run_ci_shards_serial.py`. Its classifier continues codes 1, 2, 5 and 6,
+and its existing loop retains every failed batch and returns nonzero. This is
+broader than assertion-only continuation: pytest documents 2 as interruption,
+5 as no collected tests and 6 as an exceeded warning limit; `-W error` can also
+produce an ordinary failed-test result. An exit code alone cannot distinguish
+an assertion from a warning exception.
+[pytest exit codes](https://docs.pytest.org/en/stable/reference/exit-codes.html)
+and [warning errors](https://docs.pytest.org/en/stable/how-to/capture-warnings.html#controlling-warnings).
+
+The hosted command in `.github/workflows/build.yml` requires release policy.
+`main()` explicitly rejects its combination with diagnostic collect-all before
+execution; `test_release_policy_rejects_collect_all_diagnostics` and
+`test_native_diagnostic_and_release_policy_remain_incompatible` pin that
+contract. Keep this rejection. Existing exact-SHA admission reuses passing
+receipts, while failure receipts are `reusable=false`; restarting with resume
+would execute the failed batch again. It cannot satisfy a request to run only
+the previously unstarted remainder.
+
+Proposed decision: add an explicit option to the existing owner that switches
+to diagnostics after its first code-1 batch failure and advances the same plan
+iterator. The original failure remains recorded and the terminal result remains
+nonzero even if every later batch passes. Later results are diagnostic evidence;
+code 1 may include warning failures and must never be described as assertion-only.
+Codes 2 through 6 and all existing cancellation, timeout, worker-death, owner,
+resource, coverage-integrity and cleanup failures stop further execution.
+The failed batch and earlier successful batches are each executed only once.
+The already-finished hosted invocation cannot acquire this behavior retroactively.
+
+Use the existing policy and receipt seams: parser construction in
+`scripts/ci_shadow_receipt_runtime.py`, `run()` and `main()` in
+`scripts/run_ci_shards_serial.py`, `_runtime_admit_exact_batch`, successful
+`session.writer.publish`, `_publish_shadow_failure_receipt`, gate progress and
+`_write_terminal_attestation`. After switching to diagnostics, disable both
+passing-receipt admission and publication; retain non-reusable failure receipts
+and identify the diagnostic scope in existing terminal evidence. No second
+runner, result parser, watcher or proof cache is needed. Ordinary pytest already
+continues after failed tests unless configured to stop with `-x` or `--maxfail`.
+[pytest failure handling](https://docs.pytest.org/en/stable/how-to/failures.html).
+
+Add failing-first controls at these exact existing integration paths:
+
+- `tests/unit/test_ci_collect_all_stress.py`: pass/fail/pass/fail plan order,
+  each batch launched once, every failure retained, final nonzero, real warning
+  failures, collection interruption and a later safety stop; preserve the old
+  diagnostic-mode assertions.
+- `tests/unit/test_ci_named_shard_safety.py`,
+  `tests/unit/test_ci_failure_receipts.py` and
+  `tests/unit/test_ci_named_shard_files.py`: unchanged owned cleanup and deadline
+  authority, no admission/publication after the first failure, retained immutable
+  receipts and terminal failure even when the diagnostic remainder passes.
+- `tests/unit/test_ci_shards_diagnostic_entrypoint.py` and
+  `tests/unit/test_ci_hosted_environment_contract.py`: preserve the existing
+  release rejection and prove explicit native workflow wiring, all eight shards,
+  one worker, 16-file batches, 90-minute step and 120-minute job bounds.
+
+The user report [pytest #1421](https://github.com/pytest-dev/pytest/issues/1421),
+opened February 29, 2016, describes wanting collection/import errors to prevent
+otherwise runnable tests from executing. It supports preserving that stop
+boundary; it is not Gludd acceptance evidence. This decision is a proposal,
+not a measured throughput improvement. Exact-SHA source review, admission,
+complete canonical gate, hosted proof, ZDD and unchanged 85/75 coverage floors
+remain required; diagnostic results cannot close S98.4 or authorize promotion.
+
+### Native adoption and limits
+
+The proposed boundary is now implemented by `--diagnose-after-failure` in the
+same runner and selected explicitly by the existing hosted shard step. A first
+code-1 failure latches the diagnostic scope across the remaining original plan;
+later batches are not replayed or scheduled by another owner. The existing
+terminal attestation stays failed and adds `diagnostic_only_batches` to its
+batch-execution details. Later exact and legacy passing-receipt reuse and
+publication are refused. Failed receipts retain their non-reusable contract.
+General collect-all remains incompatible with release policy. No selector,
+warning handling, coverage floor, worker count or execution deadline is weakened.
+
+Twenty-two native controls fail before the option, with separate failing-first
+workflow/admission controls and additive conformance of three exact roster pins.
+All 677 related cases pass on Python 3.11 and 3.14, including real warning-fatal
+children and Python 3.14's required release-policy refusal. The unchanged
+two-owner coverage profile passes at 91.7% lines/89.2% branches and every 75% floor
+(`.gate-logs/coverage-20261014T163047Z.json`). All existing early selectors remain;
+the full stress file and two native failure families are added to admission.
+The complete native roster passes 1690 cases plus fresh help in 62.8 observed
+seconds under unchanged 90/60 limits. At the full 32-command inventory, the
+existing repaired registry acceptance command passes its three cases first;
+native retention then releases its superseded successful pointer without deleting
+the receipt. Failed/live pointers and the inventory cap are preserved. This is
+actual repaired-input acceptance, not an inventory reset or a status-only task.
+Exact-successor hosted and complete release proof remain pending.
+
+This control-plane change requires no serving restart or deployment mutation.
+Active jobs retain their original loaded code; adoption cannot recover unstarted
+batches from an already finished invocation. Rollback restores the prior source
+and workflow through normal branch review, retaining immutable failure receipts.
+Local tests and diagnostic results do not satisfy full-gate, installed-image or
+deployment acceptance. No completed-backlog item or release task is closed here.

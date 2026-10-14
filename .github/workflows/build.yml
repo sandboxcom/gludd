@@ -689,6 +689,7 @@ jobs:
             --shards "${{ matrix.shard }}" \
             --pytest-args="-W error" \
             --require-release-policy \
+            --diagnose-after-failure \
             --max-files-per-batch 16 \
             --skip-isolated \
             --skip-aggregate \

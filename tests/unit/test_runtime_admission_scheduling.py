@@ -70,6 +70,7 @@ ROSTER = (
     "tests/unit/test_mcp_tool_gen.py",
     "tests/unit/test_observed_command.py",
     "tests/unit/test_observer_retention_concurrency.py",
+    "tests/unit/test_ci_collect_all_stress.py",
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
 )
 

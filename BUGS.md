@@ -4,6 +4,29 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — A failed shard hid its remaining batches until another run
+
+- Exact hosted unit-3a stops after batch004, leaving 36 batches unstarted. The
+  existing broader collect-all option cannot be substituted into release runs:
+  it continues more pytest error classes and remains explicitly incompatible.
+- Twenty-two regressions fail before the new native option. Separate workflow
+  and early-selection regressions fail before wiring; three old exact pins
+  are expanded without deleting original families, selectors or assertions.
+- Native --diagnose-after-failure keeps the same iterator, terminal failure and
+  original receipt history. Later results are non-authoritative: no exact/legacy
+  pass reuse or publication. Real warning failures remain failed; no assertion-only
+  classification, second runner, parser, timeout increase or proof cache is added.
+- All 677 related cases pass on Python 3.11/3.14; native release policy still
+  refuses Python 3.14. Unchanged two-owner coverage meets 91.7% lines/89.2% branches
+  and every 75% floor. Ruff, strict typing, docstrings, 234 contracts, 73 families,
+  Make integrity and unchanged 258 resource owners pass. Complete native admission
+  passes 1690 cases plus fresh help in 62.8 observed seconds under unchanged 90/60
+  bounds. The actual repaired three-case registry command creates the successful
+  receipt used by native bounded-pointer retirement; no failed/live receipt or
+  inventory bound is removed. Exact-successor/full-gate/deployment proof remains pending.
+- CI_FAILURE_LEDGER.md records primary/forum research and ZDD rollback. Already
+  running observers/jobs retain their original code; S98.4 remains unchecked.
+
 ### 2026-10-14 — Running status preceded interruption readiness
 
 - Hosted Build 38590551409, exact ffde15309895edb9675a37095f1878503880ddb1,
