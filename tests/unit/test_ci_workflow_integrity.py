@@ -150,6 +150,7 @@ class TestTestShardStructure:
         assert strategy["max-parallel"] == 3
         assert strategy["matrix"]["python-version"] == ["3.11"]
         assert strategy["matrix"]["shard"] == [
+            "unit-2",
             "other",
             "unit-3a",
             "unit-3b",
@@ -157,7 +158,6 @@ class TestTestShardStructure:
             "unit-1d",
             "unit-1a2",
             "unit-1a1",
-            "unit-2",
         ]
 
     def test_oversized_unit_3_is_partitioned_without_overlap(self) -> None:

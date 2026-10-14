@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Longest successful hosted shard retained a censored low priority
+
+- The earlier scheduling decision placed unit-2 last because its only measured run had failed after 850 seconds. A complete authenticated successor (Build 38483506178, fd5a6d0a46cc4c6991021c9dd226d22e8f7354d1) proves a successful 3,565-second test interval after a 3,364-second queue delay; it finishes last, 6,962 seconds after the gate. The retained native timing observation remains nonzero for three skipped tag/provider jobs and is diagnostic-only.
+- The existing early priority assertion fails first. Only unit-2 moves to the first matrix position; all seven other lanes keep their relative order. Runner cap 3, eight-label membership, local registry/order, Python version, warnings, isolated suites, timeouts, coverage and release dependencies remain. No current run is cancelled and no push guard is bypassed. Primary/practitioner findings and rollback are documented in docs/features/RELEASE_PROOF_THROUGHPUT.md.
+- All 340 related workflow/security/registry/timing cases pass on Python 3.11 and 3.14 in 8.1/13.4 observed seconds; Ruff and strict test typing pass. Two initial invocations selected invalid filenames and ran no tests; those failed diagnostics are not acceptance. The complete native current-source owner passes 1,607 cases plus separate fresh help in 57.1 observed seconds under unchanged 90/60 limits (.gate-logs/v012-ci-longest-lane-admission.log). Publication and exact-SHA hosted timing remain required; no speedup, release acceptance or completed backlog entry is claimed.
+
 ### 2026-10-14 — Pipeline coverage measured fixture copies and lost child source identity
 
 - The two-owner profile's wildcard run includes measure outside-checkout fixture wrappers. Replacing them with relative run includes alone still drops canonical child coverage after cwd changes. These are invalid source boundaries, not permission to lower coverage floors.

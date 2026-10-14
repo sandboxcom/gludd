@@ -427,10 +427,11 @@ Separate unchanged checks still pin canonical local order, hosted creation
 priority and the three-runner cap. No shard, Python version, warning policy or
 coverage database is omitted; exact hosted successor proof remains required.
 
-The hosted scheduling experiment changes only the existing eight-label matrix
-creation order. Known successful long lanes are created first; `unit-2` remains
-explicitly provisional because its failed parent interval is censored, not a
-successful full-shard duration. The local runner's canonical shard membership
+The original hosted scheduling experiment changed only the existing eight-label
+matrix creation order. Known successful long lanes were created first; `unit-2`
+was explicitly provisional because its failed parent interval was censored, not
+a successful full-shard duration. The complete successful interval below now
+supersedes that provisional priority. The local runner's canonical shard membership
 and default order stay unchanged. The three-runner cap, Python 3.11, isolated
 fresh-process suites, worker and batch policy, warning-fatal arguments, timeouts,
 all eight coverage databases and the 85/75 audit remain mandatory.
@@ -453,9 +454,9 @@ original failed evidence.
 | unit-1a1 | 302 | 3 | successful complete interval |
 | unit-2 | 850 | 455 | failed/censored, not a full-success duration |
 
-The matrix follows the seven successful durations in descending order, then
-the explicitly provisional failed lane. This ranks known complete intervals;
-it does not estimate `unit-2`'s successful runtime or prove the experiment helps.
+The original matrix followed the seven successful durations in descending order,
+then the explicitly provisional failed lane. That ranked known complete intervals;
+it did not estimate `unit-2`'s successful runtime or prove the experiment helped.
 
 GitHub documents matrix job creation order and a concurrency cap, not guaranteed
 runner acquisition order. Earlier creation is therefore a reversible experiment,
@@ -537,6 +538,48 @@ owner executes 717 cases in 37.84 test seconds (38.8 observed), retaining all 39
 families, 21 phases, the 2850-second ceiling and 90/60-second phase bounds.
 These are focused acceptance results, not a passing full gate, exhaustive
 coverage proof, hosted optimization result or release completion.
+
+### Complete longest-lane timing supersedes the provisional priority
+
+The existing authenticated timing owner observes Build `38483506178`, exact SHA
+`fd5a6d0a46cc4c6991021c9dd226d22e8f7354d1`, with all eight canonical test shards
+successful. Its longest lane, `unit-2`, runs for 3,565 seconds after a 3,364-second
+delay from the completed gate. It finishes last at `2026-10-14T01:28:11Z`,
+6,962 seconds after the gate at `2026-10-13T23:32:09Z`.
+[Exact source run](https://github.com/sandboxcom/gludd/actions/runs/38483506178)
+and [unit-2 job](https://github.com/sandboxcom/gludd/actions/runs/38483506178/job/115595858058).
+
+The matrix now creates `unit-2` first, preserving the relative order of all seven
+other lanes. The three-runner ceiling, exact eight-label membership, canonical
+local registry/default order, Python version, isolated suites, fail-fast policy,
+warning-fatal arguments, coverage artifacts, timeouts and release dependencies
+are unchanged. No scheduler, runner, worker, dependency, daemon or retry is added.
+The current hosted run is not cancelled or modified. GitHub's creation-order
+semantics and the long-lived ordering/slot-replenishment forum findings above
+still apply: earlier creation is not a guaranteed earlier start or measured gain.
+
+```sh
+make ci-run-summary RUN=38483506178 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=0 CI_RUN_SUMMARY_SHARD_TIMINGS=1
+```
+
+The bounded native observation is retained in
+`.gate-logs/v012-ci-longest-lane-timing.log`. It preserves the run's successful
+conclusion and all source timestamps, but its strict job summary returns nonzero
+for three skipped tag/provider jobs. That nonzero result is retained, not waived:
+the successful shard intervals are diagnostic timing evidence, not release proof.
+
+The existing early-admitted priority assertion fails first before the one-array
+change. All 340 workflow, security/privacy, canonical registry, timing and release
+dependency cases then pass on Python 3.11 and 3.14 (8.1/13.4 observed seconds),
+with fatal warnings. Ruff and strict test typing pass. Invalid initial test-file
+selections collected no tests and are retained as failed diagnostic invocations;
+only the verified eight-file replay supplies source evidence. The complete native
+current-source owner then passes 1,607 cases plus its separate fresh help check in
+57.1 observed seconds, retaining 90/60 limits
+(`.gate-logs/v012-ci-longest-lane-admission.log`). Publication, exact-SHA hosted
+timing, full gate and deployment proof remain required. Rollback restores only
+the prior array and its exact-order
+assertion; no serving component, image, database or traffic is touched (ZDD).
 
 ## Existing tools and practitioner evidence
 

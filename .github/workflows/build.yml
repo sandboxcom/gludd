@@ -616,10 +616,10 @@ jobs:
         # 3.12. Keep each named coverage shard on canonical Python 3.11 so
         # every test has one shard execution lane instead of a duplicate run.
         python-version: ["3.11"]
-        # Create known successful long lanes first (run 38296150696 timings).
-        # Creation order does not guarantee runner start order; unit-2's failed
-        # interval is censored, so its position remains provisional.
-        shard: [other, unit-3a, unit-3b, unit-1b, unit-1d, unit-1a2, unit-1a1, unit-2]
+        # Run 38483506178 proves unit-2 takes 3565s after a 3364s queue delay.
+        # Create it first; preserve every other lane and the three-runner cap.
+        # Creation order does not guarantee runner start order or a speedup.
+        shard: [unit-2, other, unit-3a, unit-3b, unit-1b, unit-1d, unit-1a2, unit-1a1]
         include:
           # scripts/ci_named_shard_files.py is the single source of truth for
           # every shard's paths and exclusions.  Keeping duplicate testpaths or
