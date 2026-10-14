@@ -31,6 +31,18 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
+S98.4 public hook bootstrap support scope: `make/40-cross-version-and-worktrees.mk`,
+`tests/unit/test_precommit_formatting_admission.py`, and
+`docs/features/INTEGRATION_ADMISSION.md`. Actual commit admission inherits an
+expired private Python index and fails native public hook installation before
+collection. Six real Make controls fail first with two fixture controls passing.
+The three existing hook calls now use the public child-local index already
+selected by install-hooks; original argv/order, failure propagation, pinned
+hooks, scanner and frozen-file exclusions stay unchanged. All 81 related cases
+pass on Python 3.11 and 3.14, with strict typing, Ruff, 234 contracts and Make integrity
+green. Publication and exact-SHA full-gate/deployment acceptance remain pending;
+no task closure or deployment-ready backlog entry changes.
+
 S98.4 read-only capacity recheck support scope: `scripts/item_progress.py`,
 `tests/unit/test_item_progress.py`, and
 `docs/features/RELEASE_PROOF_THROUGHPUT.md`. The native retry owner rejects a

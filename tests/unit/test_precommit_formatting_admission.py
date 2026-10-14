@@ -50,18 +50,25 @@ def test_only_exact_frozen_fixture_is_excluded(hook_id: str) -> None:
 
 
 @pytest.mark.parametrize("failing_hook", (None, "trailing-whitespace", "end-of-file-fixer"))
+@pytest.mark.parametrize("inherited_index", (None, "https://private.invalid/simple"))
 def test_existing_guard_routes_formatter_failure_before_later_checks(
-    tmp_path: Path, failing_hook: str | None,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing_hook: str | None,
+    inherited_index: str | None,
 ) -> None:
+    if inherited_index is None:
+        monkeypatch.delenv("PIP_INDEX_URL", raising=False)
+    else:
+        monkeypatch.setenv("PIP_INDEX_URL", inherited_index)
     makefile = SHIPPING_PATH.read_text(encoding="utf-8")
     start = makefile.index("\n_pre-commit-secrets-guard:") + 1
     guard = makefile[start:makefile.index("\n\n", start)]
     trace = tmp_path / "trace.jsonl"
     stub = tmp_path / "native_tool_boundary.py"
     stub.write_text(
-        "import json, pathlib, sys\n"
+        "import json, os, pathlib, sys\n"
         f"trace = pathlib.Path({str(trace)!r})\n"
-        "with trace.open('a') as stream: stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "with trace.open('a') as stream:\n"
+        "    stream.write(json.dumps(dict(argv=sys.argv[1:], index=os.environ.get('PIP_INDEX_URL'))) + '\\n')\n"
         f"raise SystemExit(1 if sys.argv[-1] == {failing_hook!r} else 0)\n",
         encoding="utf-8",
     )
@@ -77,5 +84,6 @@ def test_existing_guard_routes_formatter_failure_before_later_checks(
     calls = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
     hooks = ["trailing-whitespace", "end-of-file-fixer", "detect-secrets-readonly"]
     expected = hooks if failing_hook is None else hooks[:hooks.index(failing_hook) + 1]
-    assert calls == [["run", "pre-commit", "run", hook] for hook in expected]
+    assert [call["argv"] for call in calls] == [["run", "pre-commit", "run", hook] for hook in expected]
+    assert [call["index"] for call in calls] == ["https://pypi.org/simple"] * len(expected)
     assert (result.returncode == 0) is (failing_hook is None)

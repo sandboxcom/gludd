@@ -304,9 +304,9 @@ _commit-lock-acquire: _gate-mutation-guard
 # pre-commit hooks and do not repeat these checks.
 .PHONY: _pre-commit-secrets-guard
 _pre-commit-secrets-guard:
-	@$(UV) run pre-commit run trailing-whitespace
-	@$(UV) run pre-commit run end-of-file-fixer
-	@$(UV) run pre-commit run detect-secrets-readonly
+	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit run trailing-whitespace
+	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit run end-of-file-fixer
+	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit run detect-secrets-readonly
 
 _pre-commit-content-guard: _pre-commit-secrets-guard
 	@$(MAKE) --no-print-directory check-file-line-limits FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)" FILE_LINE_LIMIT_STAGED=1

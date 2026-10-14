@@ -4,6 +4,20 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Staged hook bootstrap inherited unrelated expired index authentication
+
+- Actual commit admission fails native public hook environment creation with
+  HTTP 401 for its build dependency. Install-hooks already pins the public index;
+  the three staged formatter/secrets calls omitted that existing setting.
+- Six real-recipe failures reproduce with two frozen-file controls passing.
+  The guard now selects that same child-local public index on each call. It
+  preserves native argv/order, fatal results, all pinned hooks and scanner policy;
+  user configuration and credentials are neither changed nor copied into source.
+- All 81 formatting/selection/collection/Make cases pass on Python 3.11 and 3.14; strict
+  typing, Ruff, 234 contracts and Make integrity pass. Primary/long-lived user
+  reports and ZDD rollback are documented in INTEGRATION_ADMISSION.md. Source
+  publication, full gate and exact-SHA installed deployment proof remain pending.
+
 ### 2026-10-14 — Read-only capacity preview was trapped behind unchanged-source refusal
 
 - A resumed native watched cleanup preview is refused as unchanged failed input,

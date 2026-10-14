@@ -466,3 +466,35 @@ Rollout is additive: branches may adopt the target before entering the existing
 gate queue. Rollback removes the target, promotion manifest and checker,
 contract record, focused tests, and this document; it requires no service
 restart, data migration, or traffic cutover.
+
+## Public hook bootstrap index
+
+A real development commit fails before collection because native pre-commit
+environment creation inherits an expired private package index and cannot fetch
+its public build dependency. The existing `install-hooks` target already selects
+PyPI; staged formatter/secrets admission now uses that same child-local setting
+for each native hook. It does not change user configuration, credentials,
+application dependency profiles, hook revisions or scanner policy.
+
+Six real-recipe controls fail first with two frozen-fixture controls passing.
+They exercise absent/private inherited indexes and first/second-hook failure,
+retaining exact argv, order, exit propagation and fixture exclusions. The
+81-case formatting/scoped-admission/collection/Make cohort passes on Python 3.11
+and 3.14;
+strict test typing, Ruff, all 234 target contracts and Make integrity pass.
+Local source acceptance is not full-gate, hosted or installed deployment proof.
+
+[Pip's documented precedence](https://pip.pypa.io/en/stable/topics/configuration/#precedence-override-order)
+places environment settings ahead of configuration files. The 2018
+[pre-commit installation discussion](https://github.com/pre-commit/pre-commit/issues/758)
+reports index settings being absent when hook updates install during a commit;
+the 2020 [authenticated-index report](https://github.com/pre-commit/pre-commit/issues/1454)
+records build dependency installation failing with a login-only index. These
+are supporting historical reports, not evidence of a current upstream defect.
+The Gludd change follows its existing public-hook policy rather than adding a
+package resolver, retry, fallback registry or credential refresh mechanism.
+
+ZDD rollout changes only these control-plane child environments; no serving
+process or hook configuration restarts. Rollback reverts the recipe and its
+controls together after admission owners finish, knowingly restoring inherited
+index behavior. Required release and deployment checks remain unchanged.
