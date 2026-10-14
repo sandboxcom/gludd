@@ -27,6 +27,7 @@ from importlib import import_module, metadata
 from importlib.util import find_spec
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypedDict, cast
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
@@ -210,8 +211,23 @@ def _base_image_from_definition(definition: object) -> str:
     return name if isinstance(name, str) else ""
 
 
+def _manifest_response_digest(response: Any, *, verify_content: bool) -> str:
+    """Require a valid header and independently hash any downloaded manifest."""
+    digest = str(response.headers.get("Docker-Content-Digest", ""))
+    if DIGEST_RE.fullmatch(digest) is None:
+        raise RuntimeError("registry response has no valid Docker-Content-Digest header")
+    if verify_content:
+        body = response.read(1024 * 1024 + 1)
+        if not body or len(body) > 1024 * 1024:
+            raise RuntimeError("registry manifest body size must be between 1 byte and 1 MiB")
+        actual = "sha256:" + hashlib.sha256(body).hexdigest()
+        if actual != digest:
+            raise RuntimeError(f"registry manifest content digest mismatch: expected {digest}, received {actual}")
+    return digest
+
+
 def _registry_manifest_digest(reference: str, *, opener: Any | None = None) -> str:
-    """Return a registry-asserted digest for one safe CentOS manifest reference."""
+    """Check one safe reference, using verified GET for unsupported HEAD only."""
     if not (reference == "stream9" or DIGEST_RE.fullmatch(reference)):
         raise ValueError("unsupported CentOS manifest reference")
     request = Request(
@@ -221,17 +237,20 @@ def _registry_manifest_digest(reference: str, *, opener: Any | None = None) -> s
     )
     open_request = urlopen if opener is None else opener
     try:
-        with open_request(request, timeout=30) as response:
-            digest = str(response.headers.get("Docker-Content-Digest", ""))
+        try:
+            with open_request(request, timeout=30) as response:
+                return _manifest_response_digest(response, verify_content=False)
+        except HTTPError as exc:
+            if exc.code not in (404, 405):
+                raise
+            print(f"ANSIBLE_BASE_IMAGE_MANIFEST_GET reference={reference} head_status={exc.code}", flush=True)
+            request = Request(request.full_url, headers={"Accept": MANIFEST_ACCEPT}, method="GET")
+            with open_request(request, timeout=30) as response:
+                return _manifest_response_digest(response, verify_content=True)
     except Exception as exc:
         raise RuntimeError(
             f"unable to resolve supported Ansible base image: {exc}"
         ) from exc
-    if DIGEST_RE.fullmatch(digest) is None:
-        raise RuntimeError(
-            "registry response has no valid Docker-Content-Digest header"
-        )
-    return digest
 
 
 def resolve_base_image_digest(*, opener: Any | None = None) -> str:

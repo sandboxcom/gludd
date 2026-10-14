@@ -598,3 +598,42 @@ owns those handles. Required image build, warning-free full offline warm,
 coverage, exact-SHA hosted/full gate and deployment acceptance remain pending.
 The serving digest, new-job switch, in-flight drain and rollback remain unchanged;
 S98.4 stays open.
+
+## Vanished pinned manifest and bounded method fallback — 2026-10-14
+
+Exact hosted run `38502390021` accepts the previous `33346f5f…` index in its
+Python 3.11 gate at 02:42 UTC, but Quay returns 404 for the same immutable
+reference in the Python 3.12 gate at 02:51 UTC. A native local probe reproduces
+404 for both HEAD and GET. This is evidence that the old manifest is unavailable
+at those checks, not proof of garbage collection, a transient outage or a
+Python-version defect. The existing refresh target resolves and atomically
+records the new supported index
+`sha256:4fdfb367402535024cd7703a67e4549ca3b0a0ee05081e06d89e24dce3a3827a`;
+an independent native exact-digest check succeeds. The release identity test
+retains its exact assertion and adopts that independently resolved pin.
+
+The registry checker also handles method-specific HEAD failures without changing
+the requested reference. A HEAD 404 or 405 permits exactly one GET with the
+same supported URL, Accept header and 30-second request bound. The GET must
+return a valid digest header, at most 1 MiB of nonempty content, and bytes whose
+SHA-256 equals that header. Pinned checks still require the original requested
+digest. Other HTTP failures and failed GETs remain terminal; no retry loop,
+mutable-tag substitution, cache, image download or automatic refresh is added.
+The fallback prints its reference and HEAD status before the request.
+
+This uses the standard-library client already owned by the checker and follows
+the [OCI manifest retrieval and existence-check contract](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests).
+A [January 2023 Docker user forum report](https://forums.docker.com/t/registry-responded-to-head-request-with-404-not-found/134177)
+describes a HEAD 404 with a successful subsequent pull. It motivates testing
+method-specific behavior, but is not evidence that Gludd's current 404 is that
+same defect. Here the fallback correctly rejects the vanished old digest.
+
+The 23 added controls first reproduce 13 failures with ten existing-path
+controls passing. All 486 new and existing EE/release-input cases then pass on
+Python 3.11 and 3.14 with fatal warnings. The unchanged runtime-artifact coverage
+profile passes at 92.94% lines and 85.87% branches, with its two existing
+exclusions and unchanged 85/75 floors (`.gate-logs/coverage-20261014T025853Z.json`).
+Ruff, production/test strict typing, docstrings, all 258 resource owners and
+task registration/integrity pass. Native refresh and availability are source-input evidence only:
+the new image still needs independent build, full offline warm, deployment,
+exact-successor CI and full gate proof. No release-ready task is checked off.
