@@ -316,6 +316,39 @@ def test_post_failure_and_general_diagnostics_cannot_be_combined(
         module.run(["unit-1b"], [], collect_all_failures=True, diagnose_after_failure=True)
 
 
+@pytest.mark.parametrize("cleanup_rc", [0, 74, 130])
+def test_legacy_pass_receipt_is_published_only_after_successful_owned_cleanup(
+    runner: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    cleanup_rc: int,
+) -> None:
+    module, _resources = runner
+    plans = {"unit-1b": ["tests/passing.py"]}
+    _install_scripted_batches(module, monkeypatch, plans=plans, outcomes=[0])
+    real_cleanup = module._cleanup_owned_tmpdir_safely
+    real_save = module._save_resume_state
+    cleanup_completed = False
+    publication_after_cleanup: list[bool] = []
+
+    def cleanup(path: Path, *, context: str) -> int:
+        nonlocal cleanup_completed
+        assert real_cleanup(path, context=context) == 0
+        cleanup_completed = cleanup_rc == 0
+        return cleanup_rc
+
+    def record_publication(path: Path, state: dict[str, object]) -> None:
+        publication_after_cleanup.append(cleanup_completed)
+        real_save(path, state)
+
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir_safely", cleanup)
+    monkeypatch.setattr(module, "_save_resume_state", record_publication)
+    resume_path = tmp_path / "resume.json"
+    assert module.run(
+        list(plans), [], run_isolated=False, aggregate_coverage=False, resume_path=resume_path,
+    ) == cleanup_rc
+    assert publication_after_cleanup == ([True] if cleanup_rc == 0 else [])
+    assert resume_path.exists() is (cleanup_rc == 0)
+
+
 def test_post_failure_diagnostics_disable_exact_pass_admission_and_publication(
     runner: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -421,6 +454,10 @@ def test_post_failure_controls_are_admitted_before_hosted_fanout() -> None:
         (
             "hosted-post-failure-diagnostic-opt-in",
             "test_hosted_shards_opt_in_to_same_invocation_post_failure_diagnostics",
+        ),
+        (
+            "ci-legacy-resume-cleanup-readiness",
+            "test_legacy_pass_receipt_is_published_only_after_successful_owned_cleanup",
         ),
     ):
         family = next(family for family in manifest["families"] if family["id"] == family_id)

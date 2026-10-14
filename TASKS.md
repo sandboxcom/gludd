@@ -31,6 +31,23 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
+S98.4 legacy-resume cleanup-readiness repair scope:
+`scripts/run_ci_shards_serial.py`, `tests/unit/test_ci_collect_all_stress.py`,
+`config/gate_failure_promotions.json`, `make/10-observability-and-tests.mk`,
+`tests/unit/test_gate_failure_promotion.py`, and
+`docs/features/CI_FAILURE_LEDGER.md`. Three cases fail first because legacy pass
+records are saved before owned cleanup, including cleanup failure 74/cancellation 130.
+Publication now follows successful native temporary/workspace cleanup while
+retaining rc0, valid coverage and non-diagnostic requirements. Four registration
+controls expose the required literal annotation before additive conformance.
+All 680 related cases pass on Python 3.11/3.14; unchanged two-owner coverage
+passes 91.7% lines/89.2% branches and every 75% floor
+(.gate-logs/coverage-20261014T170226Z.json). Complete native admission passes
+1693 cases plus fresh help in 60.9 observed seconds under unchanged 90/60 bounds.
+Strict typing, Ruff, docstrings, 234 contracts, 74 families, Make integrity and
+all 258 resource owners pass. Source publication, exact-successor hosted,
+canonical full-gate and installed deployment acceptance remain pending.
+
 S98.4 same-invocation failure-diagnostics enhancement scope:
 `scripts/run_ci_shards_serial.py`, `scripts/ci_shadow_receipt_runtime.py`,
 `tests/unit/test_ci_collect_all_stress.py`, `tests/unit/test_ci_named_shard_safety.py`,

@@ -670,6 +670,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_collect_all_stress.py::test_hosted_shards_opt_in_to_same_invocation_post_failure_diagnostics",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ci-legacy-resume-cleanup-readiness",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_collect_all_stress.py::test_legacy_pass_receipt_is_published_only_after_successful_owned_cleanup",
+      "full_gate_phase": "test"
     }
   ]
 }

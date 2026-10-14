@@ -502,3 +502,33 @@ batches from an already finished invocation. Rollback restores the prior source
 and workflow through normal branch review, retaining immutable failure receipts.
 Local tests and diagnostic results do not satisfy full-gate, installed-image or
 deployment acceptance. No completed-backlog item or release task is closed here.
+
+### Legacy resume publication follows owned cleanup
+
+Legacy resume previously wrote a passing batch entry immediately after rc0 and
+coverage capture, before checking owned temporary/workspace cleanup. Three
+native controls fail first: even ordinary success is published too early, and
+cleanup failure 74 or cancellation 130 leaves a passing entry. The same atomic
+save is moved after successful owned cleanup; valid coverage, rc0, existing
+candidate/runner binding and refusal of diagnostic pass records remain required.
+No existing resume file, receipt or failure history is manually rewritten.
+
+The [pytest safe-teardown guidance](https://docs.pytest.org/en/stable/how-to/fixtures.html#safe-teardowns)
+explains that teardown failures can leave resources behind. The
+[2022 practitioner report](https://github.com/pytest-dev/pytest/issues/9909)
+shows a test-body pass alongside a teardown error, with follow-up reports in
+2023/2024. That is lifecycle/reporting context, not independent proof of this
+Gludd supervisor bug. Reuse existing pytest and native cleanup/atomic-save
+owners; do not build another result parser, cache or cleanup framework.
+
+All 680 related cases pass on Python 3.11/3.14. Unchanged two-owner coverage passes
+91.7% lines/89.2% branches and every 75% floor
+(`.gate-logs/coverage-20261014T170226Z.json`). Complete native admission passes
+1693 cases plus fresh help in 60.9 observed seconds under unchanged 90/60 bounds.
+New-family literal annotation is corrected after four registration failures;
+all original selectors, resource limits and required full-gate phases remain.
+
+This is control-plane ZDD: no serving process is restarted. Future invocations
+use the reordered save, while active jobs keep their loaded code. Rollback uses
+normal branch review and retains immutable evidence. Publication, clean full
+gate, exact-successor hosted and installed deployment proof remain mandatory.

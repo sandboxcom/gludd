@@ -4,6 +4,24 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Legacy passing resume records preceded successful cleanup
+
+- The existing legacy owner saves rc0/coverage records before owned cleanup.
+  Three native regressions fail first: success is published before teardown;
+  cleanup failure 74 and cancellation 130 still leave passing records.
+- The existing atomic save now follows successful owned temporary/workspace
+  cleanup. Valid coverage, rc0, candidate/runner identity and diagnostic refusal
+  remain unchanged; no cache, serializer, cleanup engine or waiver is introduced.
+- All 680 related cases pass on Python 3.11/3.14. Unchanged two-owner coverage
+  meets 91.7% lines/89.2% branches and every 75% floor. Final full native roster
+  passes 1693 cases plus fresh help in 60.9 observed seconds under unchanged 90/60
+  bounds. Strict typing/Ruff/docstrings, 234 contracts, 74 families, Make integrity
+  and 258 resource owners pass. New-family annotation is added after four native
+  registration failures; all original selectors and assertions remain.
+- Research and control-plane ZDD rollback are documented in CI_FAILURE_LEDGER.md.
+  Existing records are not manually rewritten. Publication and exact-successor
+  hosted/full-gate/deployment proof remain pending; no backlog item is closed.
+
 ### 2026-10-14 — A failed shard hid its remaining batches until another run
 
 - Exact hosted unit-3a stops after batch004, leaving 36 batches unstarted. The

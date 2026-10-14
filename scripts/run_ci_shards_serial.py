@@ -1951,13 +1951,6 @@ def run(
                             )
                         except (OSError, ValueError):
                             failure_node_metadata = None
-                if resume_path is not None and rc == 0 and coverage_saved and not diagnostic_only:
-                    fragment_name = f".coverage.{shard}.batch-{batch_index:03d}"
-                    resume_state[_batch_key(shard, batch_index, files)] = {
-                        "rc": 0,
-                        "coverage_fragment": f"coverage-fragments/{fragment_name}",
-                    }
-                    _save_resume_state(resume_path, resume_state)
                 batch_cleanup_rc = _cleanup_owned_tmpdir_safely(
                     owned_tmpdir,
                     context=f"{failure_phase}:cleanup",
@@ -1985,6 +1978,14 @@ def run(
                         batch_workspace_cleanup_rc,
                     )
                 cleanup_rc = max(cleanup_rc, batch_cleanup_rc)
+                if (resume_path is not None and rc == 0 and coverage_saved
+                        and batch_cleanup_rc == 0 and not diagnostic_only):
+                    fragment_name = f".coverage.{shard}.batch-{batch_index:03d}"
+                    resume_state[_batch_key(shard, batch_index, files)] = {
+                        "rc": 0,
+                        "coverage_fragment": f"coverage-fragments/{fragment_name}",
+                    }
+                    _save_resume_state(resume_path, resume_state)
                 if receipt_session is not None:
                     progress_receipt_status: ReceiptStatus = "ineligible"
                     completed_receipt: Path | None = None
