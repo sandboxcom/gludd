@@ -200,6 +200,88 @@ def test_diagnostics_and_external_waits_remain_available(
     assert not (repository / ".gludd/item-progress.json").exists()
 
 
+_DISK_PREVIEW = (
+    "make", "disk-cleanup-preflight", "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0",
+    "DISK_CLEANUP_PREFLIGHT_DRY_RUN=1", "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800",
+)
+
+
+@pytest.mark.parametrize("command", (
+    ("make", "disk-check"),
+    ("make", "--no-print-directory", "disk-check"),
+    _DISK_PREVIEW,
+    ("make", "--no-print-directory", *_DISK_PREVIEW[1:]),
+    ("make", *_DISK_PREVIEW[1:4], "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=3600"),
+))
+def test_read_only_capacity_checks_do_not_require_source_change_or_primary(
+    policy: ModuleType, repository: Path, command: tuple[str, ...],
+) -> None:
+    assert _start(policy, repository, primary="", task="", command=command) is None
+    assert _start(policy, repository, primary="", task="", command=command, run_id="later") is None
+    assert not (repository / ".gludd/item-progress.json").exists()
+
+
+@pytest.mark.parametrize("command", (
+    ("make", "disk-cleanup-preflight"),
+    ("make", *_DISK_PREVIEW[1:3], "DISK_CLEANUP_PREFLIGHT_DRY_RUN=0", _DISK_PREVIEW[4]),
+    ("make", "disk-cleanup-preflight", "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1", *_DISK_PREVIEW[3:]),
+    (*_DISK_PREVIEW, "DISK_CLEANUP_PREFLIGHT_DRY_RUN=0"),
+    (*_DISK_PREVIEW[:4], "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1799"),
+    (*_DISK_PREVIEW[:4], "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=unknown"),
+    (*_DISK_PREVIEW[:4], "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=١٨٠٠"),
+    (*_DISK_PREVIEW[:4], "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=12345678901"),
+    (*_DISK_PREVIEW[:4], "missing-assignment"),
+    (*_DISK_PREVIEW, "SYSTEM_PYTHON=foreign-runner"),
+    (*_DISK_PREVIEW, "SHELL=foreign-shell"),
+    (*_DISK_PREVIEW, "MAKEFILES=foreign.mk"),
+    (*_DISK_PREVIEW, "MAKEFLAGS=--eval=foreign"),
+    (*_DISK_PREVIEW, "another-target"),
+    ("make", "-f", "foreign.mk", *_DISK_PREVIEW[1:]),
+    ("make", "--eval=foreign", *_DISK_PREVIEW[1:]),
+    ("make", "disk-check", "SYSTEM_PYTHON=foreign-runner"),
+    ("make", "disk-check", "disk-cleanup-preflight"),
+))
+def test_mutating_or_overridden_capacity_commands_retain_unchanged_failure_guard(
+    policy: ModuleType, repository: Path, command: tuple[str, ...],
+) -> None:
+    assert _start(policy, repository, command=command) is not None
+    with pytest.raises(ValueError, match="unchanged failed inputs"):
+        _start(policy, repository, command=command, run_id="later")
+
+
+def test_capacity_diagnostic_preserves_failed_release_observation_and_authority(
+    policy: ModuleType, repository: Path,
+) -> None:
+    _start(policy, repository)
+    before = (repository / ".gludd/item-progress.json").read_bytes()
+    assert _start(policy, repository, command=_DISK_PREVIEW) is None
+    assert (repository / ".gludd/item-progress.json").read_bytes() == before
+    with pytest.raises(ValueError, match="unchanged failed inputs"):
+        _start(policy, repository, run_id="later")
+    assert _state(repository)["release_ready"] is False
+    assert _state(repository)["gate_evidence"] is False
+
+
+def test_capacity_diagnostic_can_recheck_retained_legacy_failure_without_erasing_it(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with monkeypatch.context() as legacy:
+        legacy.setattr(policy, "_read_only_capacity_diagnostic", lambda _command: False, raising=False)
+        assert _start(policy, repository, command=_DISK_PREVIEW) is not None
+    before = (repository / ".gludd/item-progress.json").read_bytes()
+    assert _start(policy, repository, command=_DISK_PREVIEW, run_id="later") is None
+    assert (repository / ".gludd/item-progress.json").read_bytes() == before
+    assert _state(repository)["release_ready"] is False
+    assert _state(repository)["gate_evidence"] is False
+
+
+@pytest.mark.parametrize("command", ((), ("alternate-runner", "disk-check")))
+def test_capacity_diagnostic_rejects_empty_or_substituted_entrypoint(
+    policy: ModuleType, command: tuple[str, ...],
+) -> None:
+    assert policy._read_only_capacity_diagnostic(command) is False
+
+
 def test_make_recipe_override_is_not_classified_as_read_only(
     policy: ModuleType, repository: Path,
 ) -> None:

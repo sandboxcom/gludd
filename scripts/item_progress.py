@@ -329,6 +329,27 @@ def _retire_superseded_success(
     return None
 
 
+def _read_only_capacity_diagnostic(command: Sequence[str]) -> bool:
+    """Recognize only fixed read-only disk inspection, never cleanup execution."""
+    if not command or Path(command[0]).name != "make":
+        return False
+    arguments = [arg for arg in command[1:] if arg != "--no-print-directory"]
+    if arguments == ["disk-check"]:
+        return True
+    if len(arguments) != 4 or arguments[0] != "disk-cleanup-preflight":
+        return False
+    if any("=" not in arg for arg in arguments[1:]):
+        return False
+    settings = dict(arg.split("=", 1) for arg in arguments[1:])
+    if (set(settings) != {"DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY", "DISK_CLEANUP_PREFLIGHT_DRY_RUN",
+                         "DISK_CLEANUP_RECEIPT_GRACE_SECONDS"}
+            or settings["DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY"] != "0"
+            or settings["DISK_CLEANUP_PREFLIGHT_DRY_RUN"] != "1"):
+        return False
+    grace = settings["DISK_CLEANUP_RECEIPT_GRACE_SECONDS"]
+    return grace.isascii() and grace.isdecimal() and len(grace) <= 10 and int(grace) >= 1800
+
+
 @contextmanager
 def command_admission(
     root: Path, command: Sequence[str], *, environment: Mapping[str, str],
@@ -338,7 +359,7 @@ def command_admission(
 ) -> Iterator[Admission | None]:
     """Admit scoped execution; diagnostics and external-state waits stay available."""
     targets = [arg for arg in command[1:] if "=" not in arg and arg != "--no-print-directory"]
-    if (command and Path(command[0]).name == "make" and len(targets) == 1
+    if _read_only_capacity_diagnostic(command) or (command and Path(command[0]).name == "make" and len(targets) == 1
             and targets[0] in _DIAGNOSTICS
             and not any(arg.split("=", 1)[0] in {"UV", "PYTHON", "SHELL", "MAKEFILES", "MAKEFLAGS"}
                         for arg in command[1:])

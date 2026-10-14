@@ -934,6 +934,63 @@ the complete gate and original 90/60 bounds. No serving service changes; rollbac
 reverts the native cleanup change and its controls together after owners finish.
 Source acceptance is not a successful push, hosted successor or release proof.
 
+### Read-only capacity previews and unchanged-source admission
+
+Research decision for S98.4: permit a fresh capacity observation through the
+existing diagnostic admission owner even when source, argv and environment match
+a prior failed observation. Disk usage and cleanup eligibility can change outside
+those identities. Admit only the single native `disk-check` target or explicit
+`disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800`
+with the owner's valid grace policy and existing override/argument restrictions.
+The preflight's `VALIDATE_ONLY=1` branch runs tests; its omitted/default dry-run
+setting selects mutation. Neither qualifies merely by being called a preflight.
+
+The maintained [Terraform plan reference](https://developer.hashicorp.com/terraform/cli/commands/plan)
+separates current-state preview from applying changes and requires reviewing the
+final plan because external state can change after a speculative preview. A
+[December 2021 practitioner report](https://discuss.hashicorp.com/t/terraform-show-and-saved-plan-is-stale-while-apply-is-running/33098)
+describes stale-plan refusal while trying to inspect a plan during and after an
+apply. That version-specific report establishes a historical observation problem,
+not a current Terraform defect or proof about Gludd. Applied inference: keep fresh
+inspection available while preserving refusal of unsupported mutation retries.
+
+This exception refreshes diagnostics only. Preserve prior failure receipts,
+nonzero unhealthy/error results, the canonical 90% volume and 100 MB scratch
+limits, ownership checks and observer bounds. It cannot authorize deletion,
+candidate sealing, repeated final proof, task closure or release promotion.
+A fresh passing scheduling check still supplies no gate or release evidence;
+expensive attempts require the actual blocker to clear and fresh owned admission.
+
+ZDD rollout changes only control-plane diagnostic routing through the existing
+owner; serving processes continue without a restart or replacement watcher.
+Rollback reverts that routing and its controls together after active diagnostic
+owners finish, retaining observations and knowingly restoring the preview refusal.
+Required failing-first routing controls, canonical full gate, 85/75 coverage,
+independent review and exact-SHA hosted/deployment proof remain separate work.
+
+The implementation reproduces seven failures first and adds 27 routing controls
+without changing original assertions. All 128 policy/retention/wiring/stop cases
+pass with fatal warnings on Python 3.11 and 3.14. The native coverage profile
+measures 93.77% lines/87.29% branches under unchanged 85/75 floors and four
+existing typing exclusions (`.gate-logs/coverage-20261014T145435Z.json`). The
+initial narrower execution fails coverage; adding the existing retention cohort
+closes that execution gap without changing measurement or thresholds.
+
+The repaired native watched preview executes and still reports failure at 92%
+volume use and 836 MB scratch. Its four proposed removals are dry-run only;
+no retained or unknown data is deleted. This verifies diagnostic routing, not
+release admission, a successful full gate or deployment-ready completion.
+
+The unchanged scanner flags the overlong grace fixture's public argument as
+Base64 entropy during publication. The canonical manager adds one identity and
+removes none; review labels only hash `025e5b8af0f109ad6158df7675c43319861ae61c`
+in the existing capacity test as non-credential data. A failing-first baseline
+control derives the argument from the unchanged AST and pins its exact reviewed
+identity; all 47 baseline cases and actual six-file read-only admission pass.
+Existing finding identities/reviews, plugins, policy and thresholds remain;
+native disposable filename and line metadata refresh normally. No source rewrite
+to evade detection, pragma, exclusion or scanner bypass is used.
+
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
 [observation-api]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository

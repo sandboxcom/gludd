@@ -107,6 +107,31 @@ def test_public_repository_fixture_has_one_exact_reviewed_finding() -> None:
     assert finding["is_verified"] is False
 
 
+def test_public_capacity_grace_argument_has_one_exact_reviewed_finding() -> None:
+    """Retain the overlong-input test and review only its public argument."""
+    filename = "tests/unit/test_item_progress.py"
+    source = (ROOT / filename).read_text(encoding="utf-8")
+    prefix = "DISK_CLEANUP_RECEIPT_GRACE_SECONDS="
+    arguments = {
+        node.value for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        and node.value.startswith(prefix)
+        and node.value[len(prefix):].isascii()
+        and node.value[len(prefix):].isdecimal()
+        and len(node.value[len(prefix):]) == 11
+    }
+    assert len(arguments) == 1
+    payload = json.loads(BASELINE.read_text(encoding="utf-8"))
+    findings = payload["results"].get(filename, [])
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding["filename"] == filename
+    assert finding["type"] == "Base64 High Entropy String"
+    assert finding["hashed_secret"] == hashlib.sha1(arguments.pop().encode()).hexdigest()
+    assert finding["is_secret"] is False
+    assert finding["is_verified"] is False
+
+
 def test_public_task_file_inventory_has_one_exact_reviewed_finding() -> None:
     """Pin the reviewed public file/proof span, not a keyword-wide exemption."""
     source = (ROOT / "TASKS.md").read_text(encoding="utf-8")

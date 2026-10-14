@@ -31,6 +31,28 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
+S98.4 read-only capacity recheck support scope: `scripts/item_progress.py`,
+`tests/unit/test_item_progress.py`, and
+`docs/features/RELEASE_PROOF_THROUGHPUT.md`. The native retry owner rejects a
+cleanup preview after external time/process state changes because its source
+identity is unchanged. Seven failing-first cases reproduce this, with fifteen
+mutation/override controls passing. Only fixed disk inspection and explicit
+non-mutating cleanup preview bypass source-failure admission; apply/test modes,
+overrides, prior failed receipts and release authority remain protected. The
+128-case policy/retention/wiring/stop cohort passes on Python 3.11 and 3.14 with fatal
+warnings. Native coverage passes 93.77% lines/87.29% branches and the unchanged
+85/75 floors (`.gate-logs/coverage-20261014T145435Z.json`). Actual watched preview
+now executes and still exits nonzero for 92% volume usage and 836 MB scratch;
+its four proposed removals are dry-run only. No data is deleted, no gate retries,
+task checkbox changes or new deployment-ready backlog completions are claimed.
+Publication, successor hosted proof and full release acceptance remain pending.
+Canonical baseline .secrets.baseline and
+`tests/unit/test_secrets_baseline_compaction.py` also retain an exact reviewed
+finding for the unchanged public overlong grace fixture. Native refresh adds
+one identity and removes none; only that finding is reviewed as non-credential
+data. Its new control fails first, then all 47 baseline cases and the actual
+six-file read-only scan pass. No scanner, threshold, filter or test weakening.
+
 S98.4 interpreter-specific YAML repair scope: `tests/conftest.py`,
 `tests/unit/conftest.py`, `tests/unit/test_workflow_safe_parser.py`,
 `config/coverage_pytest_worktree_confinement.ini`, and

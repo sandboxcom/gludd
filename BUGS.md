@@ -4,6 +4,34 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Read-only capacity preview was trapped behind unchanged-source refusal
+
+- A resumed native watched cleanup preview is refused as unchanged failed input,
+  even though eligibility depends on elapsed time and live resource owners. The
+  documented diagnostic exception omitted both fixed disk inspection and this
+  explicit dry-run path; changing labels or retrying a gate would not fix it.
+- Seven failures reproduce before repair, with fifteen mutation controls passing.
+  The existing owner now recognizes only the fixed single-target inspection or
+  explicit `VALIDATE_ONLY=0 DRY_RUN=1` preview with valid grace. Duplicate/foreign
+  arguments, apply/test modes, runner overrides and failed proof retries remain
+  guarded; existing failures and false release/gate authority are preserved.
+- All 128 policy/retention/wiring/stop cases pass on Python 3.11 and 3.14. Coverage is
+  93.77% lines/87.29% branches under unchanged 85/75 floors, four existing typing
+  exclusions and no new pragmas. The initial 106-case replay passes tests but
+  fails coverage because retention execution was omitted; that failure remains.
+  Strict source/test typing, Ruff/docstrings and task integrity pass.
+- The real repaired preview executes, proposes four removals without deleting
+  anything, and remains failed at 92% volume use and 836 MB scratch. Broader
+  cleanup needs exact authority. Primary/practitioner research and ZDD rollback
+  are documented in `docs/features/RELEASE_PROOF_THROUGHPUT.md`. Full gate,
+  publication and exact-SHA deployment acceptance remain pending, not complete.
+- Publication's unchanged scanner flags the public overlong-grace fixture as
+  Base64 entropy. The canonical producer adds exactly one finding and removes
+  none; only that exact hash is reviewed as non-credential data. Its new exact
+  identity/review control fails first; all 47 baseline cases and the real six-file
+  read-only scan then pass. The fixture, detector, thresholds and filters stay
+  unchanged. Native disposable baseline filename and line metadata may refresh.
+
 ### 2026-10-14 — Restored backlog entrypoint introduced a late Make formatting failure
 
 - Root's restored backlog-audit .PHONY registration uses a tab instead of spaces. Exact Build 38504428598 / 05f1a93d8c5e4e443e4367c282834e1bb7212258 fails two unchanged formatting assertions in unit-2 batch 035; its other seven test shards pass. Only 35 of 50 unit-2 batches execute, so the remaining 15 are not verified. The earlier 19 entrypoint controls and narrow private-help admission could not cover this whole-file gap.
