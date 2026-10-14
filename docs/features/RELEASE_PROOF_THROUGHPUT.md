@@ -91,6 +91,17 @@ pins both non-credential labels; original scanner settings and existing reviews
 remain. No source string is rewritten to evade detection and no file-wide
 exemption or hook bypass is used.
 
+Source review of `a9738e0` refuses release acceptance: exempt diagnostics yield
+no admission object, and terminal observer cleanup consequently omitted native
+reference protection. Four real-process controls cover both help/finite status
+waits sharing a label with a full failed inventory, and missing/malformed
+progress after a diagnostic starts. Preserve all 32 immutable failure receipts
+and their logs, not mutable `current.json`. The CLI now carries its validated
+focus root separately from execution admission, and the existing reference
+reader supplies retention protection in both routes. Lost or invalid progress
+terminates with native observer failure 125 before pruning; no passing result
+survives. Source review, full gate and exact-successor acceptance remain pending.
+
 This protects execution admission, not the model's internal reasoning or every
 editor action. The existing exact-SHA gate, coverage, deployment acceptance and
 promotion checks remain mandatory. No runtime restart or serving change is

@@ -65,6 +65,25 @@ pins both exact findings after a failing-first case, preserving all prior
 findings/reviews and scanner policy. All 48 baseline controls and six-file native
 read-only admission pass; no pragma, exclusion, scanner bypass or source evasion.
 
+S98.4 observed full release gate at `a9738e0` passes the new disk admission, then
+fails native dead-code baseline parity (zero added, four stale symbols). The
+reviewed native `make dead-code-baseline` removes only those four exemptions in
+`config/dead_code_baseline.txt`; `_dead-code-baseline-refresh` now passes with
+660 entries. No new allowance, unchanged-gate retry or passing gate claim.
+
+S98.1/S98.4 retention-repair scope: `scripts/item_progress.py`,
+`scripts/stream_command.py`, `tests/unit/test_item_progress.py`, and
+`docs/features/RELEASE_PROOF_THROUGHPUT.md`. Independent source-only review of
+`a9738e0` refuses a diagnostic route that can prune referenced failures when
+admission is None. Four real-process cases fail first; the existing reference
+reader now protects receipts independently of an execution slot, and absent or
+malformed progress produces terminal native failure 125 before pruning. Full
+32-failure receipts/logs and substantive retry guards remain. All 176 related
+cases pass on Python 3.14; strict source/test typing and Ruff pass. Native
+four-owner coverage passes all 274 cases and unchanged 85/75 floors
+(.gate-logs/coverage-exempt-retention-20261014.json). The earlier source review
+and full-gate failures remain; exact successor/full gate/deployment is pending.
+
 S98.4 repair-receipt checkout-binding scope: `scripts/ci_failure_ledger.py`,
 `tests/unit/test_ci_failure_ledger.py`, `tests/unit/test_ci_failure_ledger_concurrency.py`,
 `config/gate_failure_promotions.json`, `make/10-observability-and-tests.mk`,

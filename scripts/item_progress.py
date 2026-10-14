@@ -133,6 +133,18 @@ def progress_status(root: Path) -> dict[str, object] | None:
     return state
 
 
+def preserved_run_ids(root: Path, observed_root: Path, label: str) -> frozenset[str]:
+    """Protect canonical references even when diagnostics have no admission slot."""
+    state = progress_status(root)
+    if state is None:
+        raise ValueError("item progress disappeared before retention")
+    observations = cast(dict[str, dict[str, str]], state["observations"])
+    return frozenset(
+        pointer["run_id"] for pointer in observations.values()
+        if pointer["root"] == str(observed_root.resolve()) and pointer["label"] == label
+    )
+
+
 @contextmanager
 def _locked(root: Path) -> Iterator[tuple[Path, dict[str, object] | None]]:
     from filelock import FileLock
@@ -273,14 +285,7 @@ class Admission:
 
     def preserved_run_ids(self, observed_root: Path, label: str) -> frozenset[str]:
         """Protect bounded referenced native runs from ordinary observer pruning."""
-        state = progress_status(self.root)
-        if state is None:
-            raise ValueError("item progress disappeared before retention")
-        observations = cast(dict[str, dict[str, str]], state["observations"])
-        return frozenset(
-            pointer["run_id"] for pointer in observations.values()
-            if pointer["root"] == str(observed_root.resolve()) and pointer["label"] == label
-        )
+        return preserved_run_ids(self.root, observed_root, label)
 
     def record(self, observed_root: Path, label: str, run_id: str) -> None:
         """Remember the existing observer's run, never a caller-provided outcome."""

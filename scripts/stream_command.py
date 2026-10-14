@@ -277,6 +277,7 @@ def stream_command(
     retain_runs: int = DEFAULT_RETAIN_RUNS,
     termination_grace_seconds: float = 0.5,
     progress_admission: _ProgressAdmission | None = None,
+    progress_root: Path | None = None,
     environment: Mapping[str, str] | None = None,
     cwd: Path | str | None = None,
 ) -> int:
@@ -588,15 +589,24 @@ def stream_command(
             return OBSERVER_FAILURE
         assert publisher is not None
         try:
-            if progress_admission is None:
+            if progress_admission is None and progress_root is None:
                 _prune_terminal_runs(publisher.directory, retain_runs=retain_runs)
             else:
                 assert observed_root is not None and effective_label is not None
+                if progress_admission is not None:
+                    preserved = progress_admission.preserved_run_ids(observed_root, effective_label)
+                else:
+                    if TYPE_CHECKING:
+                        from item_progress import preserved_run_ids
+                    else:
+                        from scripts.item_progress import preserved_run_ids
+                    assert progress_root is not None
+                    preserved = preserved_run_ids(progress_root, observed_root, effective_label)
                 _prune_terminal_runs(
                     publisher.directory, retain_runs=retain_runs,
-                    preserve_runs=progress_admission.preserved_run_ids(observed_root, effective_label),
+                    preserve_runs=preserved,
                 )
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             requested_code = OBSERVER_FAILURE
             state = "failed"
             status.update(
@@ -800,6 +810,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if heartbeat is None:
             heartbeat = DEFAULT_HEARTBEAT_SECS if label else 0.0
         context: AbstractContextManager[_ProgressAdmission | None] = nullcontext(None)
+        progress_root: Path | None = None
         if args.item_progress:
             if TYPE_CHECKING:
                 from item_progress import command_admission, progress_status
@@ -810,6 +821,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # Unattended CI keeps its established owner contract. Interactive
             # work enables scope admission through the native focus command.
             if progress_status(Path.cwd()) is not None:
+                progress_root = Path.cwd()
                 context = command_admission(
                     Path.cwd(), args.command, environment=os.environ,
                     quiet_seconds=args.quiet_secs, max_seconds=args.max_secs,
@@ -829,6 +841,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pytest_trace=args.pytest_trace,
                 retain_runs=args.retain_runs,
                 progress_admission=admission,
+                progress_root=progress_root,
             )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"observed-command: {exc}", file=sys.stderr)

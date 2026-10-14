@@ -699,6 +699,66 @@ def test_diagnostic_recipe_overrides_do_not_bypass_scoped_admission(
         _start(policy, repository, primary="", task="", command=("make", "help", override))
 
 
+@pytest.mark.parametrize("target", ["help", "status-heartbeat"])
+def test_exempt_native_observer_retention_keeps_full_failed_history(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, target: str,
+) -> None:
+    _fixed_identity(policy, monkeypatch)
+    (repository / "Makefile").write_text(
+        "help status-heartbeat:\n\t@printf 'native diagnostic complete\\n'\n", encoding="utf-8",
+    )
+    label = "retention"
+    for index in range(policy._MAX_COMMANDS):
+        _start(policy, repository, command=("make", f"failed-proof-{index}"),
+               label=label, run_id=f"failed-{index}")
+        (repository / f".gate-logs/observed/{label}/failed-{index}.log").write_text("failed evidence\n")
+    progress = repository / ".gludd/item-progress.json"
+    before = progress.read_bytes()
+    retained = {path: path.read_bytes() for path in (repository / ".gate-logs/observed").rglob("*")
+                if path.is_file() and path.suffix in {".json", ".log"}
+                and path.name.startswith("failed-")}
+    assert len(retained) == 64
+    script = MODULE.with_name("stream_command.py")
+    result = subprocess.run(
+        [sys.executable, str(script), "--item-progress", "--label", label,
+         "--run-id", "diagnostic", "--root", str(repository / ".gate-logs/observed"),
+         "--retain-runs", "1", "--max-secs", "10", "--", "make", target,
+         "INTERVAL=300", "COUNT=1", "STATUS_HEARTBEAT_VALIDATE_ONLY=0",
+         "STATUS_HEARTBEAT_STOP_ON_TERMINAL=0"],
+        cwd=repository, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert all(path.exists() and path.read_bytes() == content for path, content in retained.items())
+    assert progress.read_bytes() == before
+    assert (repository / "TASKS.md").read_text().count("- [ ]") == 4
+    with pytest.raises(ValueError, match="unchanged"):
+        _start(policy, repository, command=("make", "failed-proof-0"))
+
+
+@pytest.mark.parametrize("loss", ["missing", "malformed"])
+def test_exempt_retention_refuses_lost_native_progress_without_deleting_evidence(
+    policy: ModuleType, repository: Path, loss: str,
+) -> None:
+    _start(policy, repository, label="retention", run_id="failed")
+    protected = repository / ".gate-logs/observed/retention/failed.json"
+    before = protected.read_bytes()
+    mutation = ("rm .gludd/item-progress.json" if loss == "missing"
+                else "printf '{}' > .gludd/item-progress.json")
+    (repository / "Makefile").write_text(f"help:\n\t@{mutation}\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(MODULE.with_name("stream_command.py")), "--item-progress",
+         "--label", "retention", "--run-id", "diagnostic", "--root",
+         str(repository / ".gate-logs/observed"), "--retain-runs", "1", "--max-secs", "10",
+         "--", "make", "help"],
+        cwd=repository, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode == 125, result.stdout + result.stderr
+    assert protected.exists() and protected.read_bytes() == before
+    terminal = json.loads((protected.parent / "diagnostic.json").read_text())
+    assert terminal["state"] == "failed" and terminal["exit_code"] == 125
+    assert terminal["termination_reason"] == "observer-retention-failed"
+
+
 def test_real_retention_preserves_referenced_failed_input_evidence(
     policy: ModuleType, repository: Path,
 ) -> None:

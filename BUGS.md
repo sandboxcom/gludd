@@ -4,6 +4,21 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Diagnostic retention omitted native failed-reference protection
+
+- Independent source review refuses a9738e0: exempt diagnostics have no
+  admission slot, so terminal pruning ignores the canonical failed references.
+- Four real CLI controls fail first. Carry validated native focus separately
+  from execution admission and reuse the original reference reader for pruning.
+  Keep all 32 failure receipts/logs immutable; current.json advances normally.
+  Missing/malformed progress becomes terminal failure 125 before deletion.
+- All 176 related cases pass on Python 3.14; native four-owner coverage passes
+  274 cases under unchanged 85/75 floors. Typing/Ruff pass. Source review and
+  canonical exact-successor/full-gate/deployment acceptance remain pending.
+- The full gate independently exposes four stale dead-code exemptions after
+  healthy disk admission. Native reviewed refresh removes only those entries;
+  parity passes at 660 without adding exemptions or rewriting the failed gate.
+
 ### 2026-10-14 — Finite native status waits consumed substantive inventory
 
 - The real supervised status-heartbeat fails before launch with "primary has
