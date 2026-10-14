@@ -4,6 +4,20 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Explicit temporary disk headroom replaces the capacity hold
+
+- User authorizes raising the disk threshold to 95% to continue release work.
+  Change the one canonical limit, not individual aliases or a cleanup bypass.
+- Twenty-one new volume/preflight/alias/status boundary failures are reproduced
+  first; all 251 related cases and 37 subtests pass on Python 3.11 and 3.14.
+  Above-95%, invalid measurements, cleanup errors and ownership refusals remain.
+  Old over-limit fixtures are conformed to the requested policy, retaining their
+  original failure, cleanup-bound and measurement assertions.
+- Actual native read-only preflight passes at 91.0% under the 95% hard limit,
+  leaving all 836.3 MB of protected/recent scratch intact (zero removals/errors).
+  Two-owner coverage passes unchanged 85/75 floors. This is scheduling admission,
+  not a fresh passing gate or deployment-ready item; those proofs remain pending.
+
 ### 2026-10-14 — Repair receipts accepted an unverified claimed revision
 
 - The repair CLI runs evidence in ROOT but records the caller's descendant SHA

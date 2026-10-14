@@ -346,6 +346,28 @@ def test_shared_playwright_cache_is_observed_but_not_counted_as_scratch(
     ) == 0
 
 
+@pytest.mark.parametrize(
+    ("disk_pct", "expected_rc"),
+    [(91.0, 0), (94.9, 0), (95.0, 0), (95.1, 1), (96.0, 1)],
+)
+def test_user_authorized_95_percent_volume_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    disk_pct: float,
+    expected_rc: int,
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "_gludd_tmp_inspection", lambda: (0.0, []))
+    monkeypatch.setattr(module, "_disk_usage_pct", lambda: disk_pct)
+
+    assert module.main() == expected_rc
+    captured = capsys.readouterr()
+    if expected_rc:
+        assert f"disk usage {disk_pct:.1f}% > 95% limit" in captured.err
+    else:
+        assert f"disk = {disk_pct:.1f}% (<= 95)" in captured.out
+
+
 def test_disk_percentage_limit_remains_fail_closed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -17,6 +17,22 @@ dependency resolver, or proof cache is introduced.
 
 ## Mechanical scheduling admission
 
+### Temporary volume headroom authorized on 2026-10-14
+
+At the user's explicit request, the canonical repository-volume limit is raised
+from 90% to 95% for current release work. `check_disk_usage.DISK_USAGE_PCT_LIMIT`
+is the only policy value: native cleanup, legacy disk aliases, commit/gate
+admission and pipeline snapshots consume it. Usage up to and including 95% is
+admitted; usage above 95% and unavailable or invalid measurements still fail.
+This is a temporary policy change, not an automatic expiry or cleanup waiver;
+restore the canonical value to 90% when the user ends this exception.
+
+The 100 MB scratch policy is unchanged. Native preflight may admit protected or
+recent scratch above that soft cap while the hard volume limit is healthy; it
+still refuses ownership/inspection/cleanup errors. No unknown data is authorized
+for deletion, and coverage, ZDD, exact-SHA and deployment-proof requirements
+remain unchanged. The old failed gate stays failed until a fresh gate succeeds.
+
 ### Real worktree admission
 
 The push entrypoint delegates to the existing path-qualified worktree owner

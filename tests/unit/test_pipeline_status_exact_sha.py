@@ -425,10 +425,10 @@ def _capacity_snapshot_sources(
 @pytest.mark.parametrize(
     ("status", "conclusion", "disk_pct", "scratch_mb", "expected_rc", "action", "blocked"),
     [
-        ("completed", "success", 91.0, 173.0, 0, "clear_hard_capacity_before_local_proofs", True),
-        ("in_progress", "", 91.0, 173.0, 2, "clear_hard_capacity_before_local_proofs", True),
-        ("completed", "failure", 91.0, 173.0, 1, "repair_hosted_failure", True),
-        ("completed", "success", 90.0, 1000.0, 0, "collect_exact_final_proofs", False),
+        ("completed", "success", 96.0, 173.0, 0, "clear_hard_capacity_before_local_proofs", True),
+        ("in_progress", "", 96.0, 173.0, 2, "clear_hard_capacity_before_local_proofs", True),
+        ("completed", "failure", 96.0, 173.0, 1, "repair_hosted_failure", True),
+        ("completed", "success", 95.0, 1000.0, 0, "collect_exact_final_proofs", False),
         ("completed", "success", 80.0, 0.0, 0, "collect_exact_final_proofs", False),
     ],
 )
@@ -454,12 +454,29 @@ def test_pipeline_snapshot_current_capacity_selects_safe_next_action(
     assert record["gate_evidence"] is False
 
 
+def test_user_authorized_95_percent_pipeline_status_does_not_invent_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch)
+    monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage",
+                        lambda: automatic_disk_cleanup.DiskSnapshot(836.3, 91.0))
+
+    assert pipeline_status.main(args) == 0
+    record = json.loads(path.read_text())
+    assert record["evidence"]["capacity"]["disk_limit_pct"] == 95
+    assert record["evidence"]["capacity"]["hard_blocked"] is False
+    assert record["evidence"]["capacity"]["scratch_limit_mb"] == 100
+    assert record["evidence"]["local"]["gate"]["state"] == "FAIL"
+    assert record["release_ready"] is False
+    assert record["gate_evidence"] is False
+
+
 def test_pipeline_snapshot_remeasures_capacity_instead_of_reusing_stale_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path, args = _capacity_snapshot_sources(tmp_path, monkeypatch)
-    measurements = iter([automatic_disk_cleanup.DiskSnapshot(173.0, 91.0),
-                         automatic_disk_cleanup.DiskSnapshot(173.0, 89.0)])
+    measurements = iter([automatic_disk_cleanup.DiskSnapshot(173.0, 96.0),
+                         automatic_disk_cleanup.DiskSnapshot(173.0, 94.0)])
     monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage", lambda: next(measurements))
     for blocked in (True, False):
         assert pipeline_status.main(args) == 0

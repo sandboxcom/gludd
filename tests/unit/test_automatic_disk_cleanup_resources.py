@@ -712,7 +712,7 @@ def test_preflight_is_noop_when_both_thresholds_are_healthy(capsys: pytest.Captu
 def test_preflight_cleans_then_rechecks_both_thresholds(capsys: pytest.CaptureFixture[str]) -> None:
     snapshots = iter(
         (
-            DiskSnapshot(scratch_mb=120.0, disk_pct=91.0),
+            DiskSnapshot(scratch_mb=120.0, disk_pct=96.0),
             DiskSnapshot(scratch_mb=20.0, disk_pct=70.0),
         )
     )
@@ -735,6 +735,32 @@ def test_preflight_cleans_then_rechecks_both_thresholds(capsys: pytest.CaptureFi
     output = capsys.readouterr().out
     assert "phase=cleanup status=starting" in output
     assert "phase=recheck status=healthy" in output
+
+
+@pytest.mark.parametrize(("disk_pct", "expected_rc"), [(91.0, 0), (95.0, 0), (95.1, 1)])
+def test_user_authorized_95_percent_preflight_preserves_protected_scratch(
+    capsys: pytest.CaptureFixture[str], disk_pct: float, expected_rc: int,
+) -> None:
+    snapshot = DiskSnapshot(scratch_mb=836.3, disk_pct=disk_pct)
+    cleanup_calls = 0
+
+    def protected_cleanup() -> automatic_disk_cleanup.CleanupResult:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        return automatic_disk_cleanup.CleanupResult((), ("protected active ownership",), ())
+
+    assert automatic_disk_cleanup.run_preflight(
+        inspect_usage=lambda: snapshot, cleanup=protected_cleanup,
+    ) == expected_rc
+    assert cleanup_calls == 1
+    captured = capsys.readouterr()
+    assert "disk_limit_pct=95" in captured.out
+    assert "scratch_limit_mb=100" in captured.out
+    assert "protected active ownership" in captured.out
+    if expected_rc:
+        assert "reason=no-progress" in captured.err
+    else:
+        assert "reason=protected-or-recent-scratch" in captured.out
 
 
 def test_preflight_allows_active_scratch_over_soft_cap_when_disk_is_healthy(
@@ -772,9 +798,9 @@ def test_preflight_repeats_cleanup_while_usage_improves_until_healthy(
 ) -> None:
     snapshots = iter(
         (
-            DiskSnapshot(scratch_mb=995.5, disk_pct=92.0),
-            DiskSnapshot(scratch_mb=114.5, disk_pct=92.0),
-            DiskSnapshot(scratch_mb=42.0, disk_pct=89.0),
+            DiskSnapshot(scratch_mb=995.5, disk_pct=96.0),
+            DiskSnapshot(scratch_mb=114.5, disk_pct=96.0),
+            DiskSnapshot(scratch_mb=42.0, disk_pct=94.0),
         )
     )
     cleanup_calls = 0
@@ -805,7 +831,7 @@ def test_preflight_repeats_cleanup_while_usage_improves_until_healthy(
 def test_preflight_stops_fail_closed_when_cleanup_makes_no_measurable_progress(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    high = DiskSnapshot(scratch_mb=114.5, disk_pct=92.0)
+    high = DiskSnapshot(scratch_mb=114.5, disk_pct=96.0)
     cleanup_calls = 0
 
     def cleanup() -> automatic_disk_cleanup.CleanupResult:
@@ -831,7 +857,7 @@ def test_preflight_stops_fail_closed_when_cleanup_makes_no_measurable_progress(
 def test_preflight_bounds_repetitive_cleanup_details(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    high = DiskSnapshot(scratch_mb=114.5, disk_pct=92.0)
+    high = DiskSnapshot(scratch_mb=114.5, disk_pct=96.0)
     detail_count = automatic_disk_cleanup.MAX_CLEANUP_DETAILS_PER_KIND + 5
 
     result = automatic_disk_cleanup.run_preflight(
@@ -856,9 +882,9 @@ def test_preflight_stops_at_bounded_cleanup_pass_limit(
 ) -> None:
     snapshots = iter(
         (
-            DiskSnapshot(scratch_mb=140.0, disk_pct=94.0),
-            DiskSnapshot(scratch_mb=130.0, disk_pct=93.0),
-            DiskSnapshot(scratch_mb=120.0, disk_pct=92.0),
+            DiskSnapshot(scratch_mb=140.0, disk_pct=98.0),
+            DiskSnapshot(scratch_mb=130.0, disk_pct=97.0),
+            DiskSnapshot(scratch_mb=120.0, disk_pct=96.0),
         )
     )
     cleanup_calls = 0
@@ -882,7 +908,7 @@ def test_preflight_stops_at_bounded_cleanup_pass_limit(
 def test_preflight_fails_closed_when_hard_disk_threshold_remains_high(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    after = DiskSnapshot(scratch_mb=20.0, disk_pct=91.0)
+    after = DiskSnapshot(scratch_mb=20.0, disk_pct=96.0)
     snapshots = iter((after, after))
 
     result = automatic_disk_cleanup.run_preflight(
@@ -922,7 +948,7 @@ def test_preflight_fails_closed_when_cleanup_raises(
         raise OSError("cleanup unavailable")
 
     result = automatic_disk_cleanup.run_preflight(
-        inspect_usage=lambda: DiskSnapshot(scratch_mb=120.0, disk_pct=91.0),
+        inspect_usage=lambda: DiskSnapshot(scratch_mb=120.0, disk_pct=96.0),
         cleanup=fail_cleanup,
     )
 

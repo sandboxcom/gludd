@@ -31,6 +31,22 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
+S98.4 user-authorized temporary disk headroom, 2026-10-14: raise the single
+canonical volume limit from 90% to 95% in `scripts/check_disk_usage.py`, with
+help in `make/00-foundation.mk` and regression coverage in
+`tests/unit/test_check_disk_usage.py`, `tests/unit/test_disk_alias_admission.py`,
+`tests/unit/test_automatic_disk_cleanup_resources.py`, and
+`tests/unit/test_pipeline_status_exact_sha.py`. Twenty-one new boundary/alias
+checks fail first. The 251 related cases and 37 alias subtests pass on Python
+3.11/3.14; existing failure assertions now use measurements above the explicitly
+authorized limit. Native two-owner coverage meets unchanged 85/75 floors
+(.gate-logs/coverage-user-disk95-20261014.json). Actual observed read-only
+preflight `v012-user-authorized-disk95/v012-disk95-capacity-check-6dbcabc` passes
+at disk 91.0%/limit 95%, scratch 836.3 MB/soft cap 100 MB, zero removals,
+211 protected/skipped entries and zero errors. No gate failure is rewritten,
+unknown-data cleanup authorized or release item completed. Restore 90% when the
+user ends this exception; fresh gate/exact-successor/deployment proof is pending.
+
 S98.4 repair-receipt checkout-binding scope: `scripts/ci_failure_ledger.py`,
 `tests/unit/test_ci_failure_ledger.py`, `tests/unit/test_ci_failure_ledger_concurrency.py`,
 `config/gate_failure_promotions.json`, `make/10-observability-and-tests.mk`,

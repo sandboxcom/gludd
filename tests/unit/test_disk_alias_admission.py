@@ -47,7 +47,7 @@ def measure(*args, **kwargs):
     if mode == "malformed":
         return "df: no measurements\\n"
     header = "Filesystem 1024-blocks Used Available Capacity Mounted on\\n"
-    return header + "fixture 100 91 9 " + str(inputs.get("disk_pct", 91)) + "% /fixture\\n"
+    return header + "fixture 100 96 4 " + str(inputs.get("disk_pct", 96)) + "% /fixture\\n"
 
 def scratch():
     if inputs.get("registry_error"):
@@ -114,7 +114,7 @@ class DiskAliasAdmissionTests(unittest.TestCase):
             'if [ "$GLUDD_DISK_ALIAS_MEASUREMENT" = unavailable ]; then exit 5; fi\n'
             'if [ "$GLUDD_DISK_ALIAS_MEASUREMENT" = malformed ]; then printf "bad\\n"; exit 0; fi\n'
             'printf "Filesystem 1024-blocks Used Available Capacity Mounted on\\n"\n'
-            'printf "fixture 100 91 9 %s%% /fixture\\n" "$GLUDD_DISK_ALIAS_PCT"\n',
+            'printf "fixture 100 96 4 %s%% /fixture\\n" "$GLUDD_DISK_ALIAS_PCT"\n',
             encoding="utf-8",
         )
         (tools / "df").chmod(0o700)
@@ -131,8 +131,8 @@ class DiskAliasAdmissionTests(unittest.TestCase):
             self.environment.pop(option, None)
         self.environment.update(
             GLUDD_DISK_ALIAS_SOURCE_ROOT=str(ROOT),
-            GLUDD_DISK_ALIAS_INPUTS=json.dumps({"disk_pct": 91}),
-            GLUDD_DISK_ALIAS_PCT="91",
+            GLUDD_DISK_ALIAS_INPUTS=json.dumps({"disk_pct": 96}),
+            GLUDD_DISK_ALIAS_PCT="96",
             GLUDD_DISK_ALIAS_MEASUREMENT="valid",
             SYSTEM_PYTHON=sys.executable,
             PATH=str(tools) + os.pathsep + os.environ.get("PATH", ""),
@@ -149,7 +149,7 @@ class DiskAliasAdmissionTests(unittest.TestCase):
         extra: tuple[str, ...] = (),
     ) -> subprocess.CompletedProcess[str]:
         env = dict(self.environment)
-        values = {"disk_pct": 91, **(inputs or {})}
+        values = {"disk_pct": 96, **(inputs or {})}
         env["GLUDD_DISK_ALIAS_INPUTS"] = json.dumps(values)
         env["GLUDD_DISK_ALIAS_PCT"] = str(values["disk_pct"])
         env["GLUDD_DISK_ALIAS_MEASUREMENT"] = str(values.get("measurement", "valid"))
@@ -164,20 +164,31 @@ class DiskAliasAdmissionTests(unittest.TestCase):
         self.assertNotIn("UNSAFE_LEGACY_TOOL_CALLED", result.stdout + result.stderr)
         return result
 
-    def test_disk_check_blocks_91_at_fixed_90_limit(self) -> None:
+    def test_user_authorized_95_percent_limit_is_shared_by_all_aliases(self) -> None:
+        for disk_pct in (91, 95):
+            for mode, target in (("check", ""), ("guard", ""),
+                                 ("check", "disk-check"), ("guard", "disk-guard"),
+                                 ("guard", "check-disk"), ("guard", "disk-reclaim")):
+                with self.subTest(disk_pct=disk_pct, mode=mode, target=target):
+                    result = self._run(mode=mode, target=target, inputs={"disk_pct": disk_pct})
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertNotIn("cleanup_spy=", result.stdout)
+                    self.assertIn("canonical_owner=", result.stdout)
+
+    def test_disk_check_blocks_96_at_authorized_95_limit(self) -> None:
         result = self._run(target="disk-check")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("disk usage 91.0% > 90% limit", result.stderr)
+        self.assertIn("disk usage 96.0% > 95% limit", result.stderr)
 
     def test_shell_check_uses_same_limit(self) -> None:
         result = self._run()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("disk usage 91.0% > 90% limit", result.stderr)
+        self.assertIn("disk usage 96.0% > 95% limit", result.stderr)
 
-    def test_fixed_boundary_90_is_healthy(self) -> None:
-        result = self._run(inputs={"disk_pct": 90})
+    def test_authorized_boundary_95_is_healthy(self) -> None:
+        result = self._run(inputs={"disk_pct": 95})
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("disk = 90.0% (<= 90)", result.stdout)
+        self.assertIn("disk = 95.0% (<= 95)", result.stdout)
 
     def test_read_only_check_also_enforces_scratch_limit(self) -> None:
         result = self._run(inputs={"disk_pct": 80, "scratch_mb": 101})

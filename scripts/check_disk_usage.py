@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import NamedTuple
 
 GLUDD_TMP_LIMIT_MB = 100
-DISK_USAGE_PCT_LIMIT = 90
+# Temporary user-authorized release-work headroom (2026-10-14).
+# All disk admission and status owners import this one policy value.
+DISK_USAGE_PCT_LIMIT = 95
 TMP_ROOT = Path("/tmp")
 WORKTREE_ROOT = TMP_ROOT / "gludd-worktrees"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
