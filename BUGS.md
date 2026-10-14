@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — The backlog CLI documented a nonexistent Make entrypoint
+
+- `scripts/backlog_audit.py` directs operators to `make backlog-audit`, but no recipe, public help or target contract exists. All 19 new native entrypoint controls fail first.
+- The restored target reuses the native observer and auditor, preserves live collection/verdict defaults, rejects invalid boolean flags before execution, propagates audit failures and makes validation-only explicitly non-evidentiary. No runner, parser, daemon or deployment-success field is added.
+- All 19 controls pass with the actual Make recipe and observer; only the auditor boundary is substituted. The documented no-execution example and all 234 target contracts pass. This restores an operational entrypoint, not installed deployment acceptance; full gate and exact-successor CI remain required.
+
 ### 2026-10-14 — Backlog CLI dropped the trusted deployment owner
 
 - The library accepts an item-scoped deployment validator, but the CLI renderer, report and main entrypoint could not forward it. Thirty-three new controls fail first with unsupported-keyword errors; source test success is not deployment acceptance.

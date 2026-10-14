@@ -77,11 +77,34 @@ bullet cannot silently disappear from the audit.
 
 ## Zero-downtime rollback
 
+The supported `make backlog-audit` entrypoint delegates to the existing native
+observer and auditor. Its default live policy keeps collection and task
+verdicts enabled. Invalid boolean flags are rejected before either process
+starts; the child's nonzero audit result is preserved as command failure.
+The observer supplies namespaced status, live output, periodic heartbeats,
+bounded execution and owned teardown rather than a second runner.
+
+The documented non-mutating behavioral example is:
+
+```sh
+make backlog-audit BACKLOG_AUDIT_VALIDATE_ONLY=1 BACKLOG_AUDIT_COLLECT=1 BACKLOG_AUDIT_VERDICTS=1 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=2
+```
+
+Validation-only starts neither the observer nor the auditor and explicitly
+reports `proof=none`, `release_ready=false` and `gate_evidence=false`. Set
+`BACKLOG_AUDIT_VALIDATE_ONLY=0` for an actual audit, choosing the observer's
+documented heartbeat, quiet-time, execution and retention bounds explicitly.
+This standalone command does not configure a deployment owner or authorize
+completion from task-supplied fields.
+
 `--no-backlog-verdicts` disables only the new task-source and pytest execution
 path. The bug-class sweep, guard-coverage report, headings, and final summary
 continue to run. No daemon, schema, listener, background process, or persisted
-state is added, so rollback does not interrupt application traffic or require
-cleanup.
+application state is added, so rollback does not interrupt application traffic
+or require application cleanup. The Make entrypoint retains diagnostics only
+through the existing bounded observer. `BACKLOG_AUDIT_VERDICTS=0` maps to that
+narrow rollback; `BACKLOG_AUDIT_COLLECT=0` maps to `--no-collect` and does not
+disable task verdict execution.
 
 ## Standards and practitioner evidence
 
@@ -134,3 +157,8 @@ retain one deduplicated evidence invocation, exact-boolean acceptance,
 independent item outcomes, owner exceptions, missing source evidence, and
 rejection of self-reported deployment fields without a trusted owner. The
 existing coverage profile still measures all three original adapter owners.
+
+`tests/unit/test_backlog_audit_target.py` executes the actual Make recipe and
+native observer with only the auditor boundary replaced. It covers all section
+flag combinations, exact argv and observer bounds, propagated failures,
+invalid flags, no-execution validation and the registered public contract.

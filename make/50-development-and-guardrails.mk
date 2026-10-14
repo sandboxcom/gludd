@@ -537,6 +537,24 @@ verify-enforcement:
 audit-features:
 	@$(UV) run python scripts/audit_features.py
 
+BACKLOG_AUDIT_VALIDATE_ONLY ?= 0
+BACKLOG_AUDIT_COLLECT ?= 1
+BACKLOG_AUDIT_VERDICTS ?= 1
+backlog-audit:
+	@for value in "$(BACKLOG_AUDIT_VALIDATE_ONLY)" "$(BACKLOG_AUDIT_COLLECT)" "$(BACKLOG_AUDIT_VERDICTS)"; do \
+		case "$$value" in 0|1) ;; *) echo "BACKLOG_AUDIT flags must be 0 or 1"; exit 2 ;; esac; \
+	done
+	@if [ "$(BACKLOG_AUDIT_VALIDATE_ONLY)" = "1" ]; then \
+		echo "BACKLOG-AUDIT VALIDATED proof=none release_ready=false gate_evidence=false"; \
+	else \
+		$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label backlog-audit \
+			--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
+			--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" -- \
+			$(UV) run python scripts/backlog_audit.py --repo-root "$(CURDIR)" \
+			$(if $(filter 0,$(BACKLOG_AUDIT_COLLECT)),--no-collect,) \
+			$(if $(filter 0,$(BACKLOG_AUDIT_VERDICTS)),--no-backlog-verdicts,); \
+	fi
+
 check-readme-status:
 	@$(UV) run python scripts/check_readme_status_current.py $(TAG)
 

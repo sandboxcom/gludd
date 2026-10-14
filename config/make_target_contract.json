@@ -2,6 +2,20 @@
   "version": 1,
   "targets": [
     {
+      "name": "backlog-audit",
+      "make_variables": [
+        "BACKLOG_AUDIT_VALIDATE_ONLY",
+        "BACKLOG_AUDIT_COLLECT",
+        "BACKLOG_AUDIT_VERDICTS",
+        "OBSERVED_ROOT",
+        "OBSERVED_HEARTBEAT_SECS",
+        "OBSERVED_QUIET_SECS",
+        "OBSERVED_MAX_SECS",
+        "OBSERVED_RETAIN_RUNS"
+      ],
+      "behavior": "make backlog-audit BACKLOG_AUDIT_VALIDATE_ONLY=1 BACKLOG_AUDIT_COLLECT=1 BACKLOG_AUDIT_VERDICTS=1 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=2"
+    },
+    {
       "name": "sync-ansible-native-format",
       "make_variables": ["ANSIBLE_FORMAT_SYNC_ENVIRONMENT", "ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY"],
       "behavior": "make sync-ansible-native-format ANSIBLE_FORMAT_SYNC_ENVIRONMENT=.venv ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY=1"

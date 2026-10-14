@@ -321,6 +321,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
+	backlog-audit \
         init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit check-ansible-base-image refresh-ansible-base-image install-pip lint lint-css lint-files lint-markdown lint-docstrings lint-fix check-file-line-limits check-duplicate-code split-makefile-layout test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
@@ -468,6 +469,7 @@ help:
 	@echo "  check-types           Flag Any usage in Python annotations (tight types)"
 	@echo "  check-types-baseline  Same scan, tolerating config/type_any_baseline.txt"
 	@echo "  healthcheck           Verify imports work"
+	@echo "  backlog-audit         Observed checked-task audit (BACKLOG_AUDIT_VALIDATE_ONLY, BACKLOG_AUDIT_COLLECT, BACKLOG_AUDIT_VERDICTS, OBSERVED_*)"
 	@echo "  qa                    Run lint + typecheck + test + healthcheck"
 	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
 	@echo "  add-target            Add a new Makefile target with auto-categorization"
