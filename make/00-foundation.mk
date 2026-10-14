@@ -230,6 +230,27 @@ FILE_LINE_LIMIT_POLICY ?= config/file_line_limits.json
 FILE_LINE_LIMIT_STAGED ?= 0
 DUPLICATE_CODE_CONFIG ?= config/duplicate_code.json
 DUPLICATE_CODE_ENGINE ?= .opencode/node_modules/.bin/jscpd
+# The clone owner forwards this tool as a CLI argument. It is not pytest state.
+# Keep native recursive Make inheritance for owning targets; only pytest
+# consumers omit this exact override record, preserving other overrides/flags.
+unexport DUPLICATE_CODE_ENGINE
+ifeq ($(origin DUPLICATE_CODE_ENGINE),command line)
+_GLUDD_DUPLICATE_CODE_EMPTY :=
+_GLUDD_DUPLICATE_CODE_SPACE := $(_GLUDD_DUPLICATE_CODE_EMPTY) $(_GLUDD_DUPLICATE_CODE_EMPTY)
+_GLUDD_DUPLICATE_CODE_ESCAPED := $(subst $(_GLUDD_DUPLICATE_CODE_SPACE),\$(_GLUDD_DUPLICATE_CODE_SPACE),$(subst \,\\,$(DUPLICATE_CODE_ENGINE)))
+_GLUDD_DUPLICATE_CODE_SPACE_TOKEN := __GLUDD_DUPLICATE_CODE_ESCAPED_SPACE__
+ifneq (,$(findstring $(_GLUDD_DUPLICATE_CODE_SPACE_TOKEN),$(MAKEOVERRIDES)))
+$(error unsupported duplicate-code Make override encoding: reserved space token)
+endif
+# Protect escaped spaces before identifying whole records. Never reconstruct
+# other overrides from whitespace-split words, or remove matching text in them.
+_GLUDD_DUPLICATE_CODE_OVERRIDES := $(subst \$(_GLUDD_DUPLICATE_CODE_SPACE),$(_GLUDD_DUPLICATE_CODE_SPACE_TOKEN),$(MAKEOVERRIDES))
+_GLUDD_DUPLICATE_CODE_RECORD := DUPLICATE_CODE_ENGINE=$(subst \$(_GLUDD_DUPLICATE_CODE_SPACE),$(_GLUDD_DUPLICATE_CODE_SPACE_TOKEN),$(_GLUDD_DUPLICATE_CODE_ESCAPED))
+ifneq ($(filter DUPLICATE_CODE_ENGINE=%,$(_GLUDD_DUPLICATE_CODE_OVERRIDES)),$(_GLUDD_DUPLICATE_CODE_RECORD))
+$(error unsupported duplicate-code Make override encoding: expected one exact engine record)
+endif
+test-count collect-check test-files coverage-files: override MAKEOVERRIDES := $(subst $(_GLUDD_DUPLICATE_CODE_SPACE_TOKEN),\$(_GLUDD_DUPLICATE_CODE_SPACE),$(subst $(_GLUDD_DUPLICATE_CODE_SPACE)$(_GLUDD_DUPLICATE_CODE_RECORD)$(_GLUDD_DUPLICATE_CODE_SPACE),$(_GLUDD_DUPLICATE_CODE_SPACE),$(_GLUDD_DUPLICATE_CODE_SPACE)$(_GLUDD_DUPLICATE_CODE_OVERRIDES)$(_GLUDD_DUPLICATE_CODE_SPACE)))
+endif
 DUPLICATE_CODE_SOURCE ?= staged
 DUPLICATE_CODE_BASE_REF ?= HEAD
 DUPLICATE_CODE_CURRENT_REF ?= HEAD

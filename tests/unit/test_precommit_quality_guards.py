@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import subprocess
+import sys
 from pathlib import Path
 
+import pytest
 import yaml
 from scripts.makefile_layout import compose_makefile
 
@@ -136,3 +141,87 @@ def test_feature_document_records_practitioner_evidence_and_zdd() -> None:
         "rollback",
     ):
         assert phrase in content
+
+
+@pytest.mark.parametrize("recursive", (False, True))
+@pytest.mark.parametrize("engine_name", ("jscpd", "engine with spaces/jscpd"))
+def test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_children(
+    tmp_path: Path, recursive: bool, engine_name: str,
+) -> None:
+    """Keep recursive Make options/overrides while forwarding the real checker CLI."""
+    recorder = tmp_path / "record.py"
+    recorder.write_text(
+        "import json, os, sys\n"
+        "print(json.dumps({'arguments': sys.argv[1:], 'engine': "
+        "os.environ.get('DUPLICATE_CODE_ENGINE'), 'flags': os.environ.get('MAKEFLAGS', ''), "
+        "'level': os.environ.get('MAKELEVEL', '')}))\n",
+    )
+    makefile = tmp_path / "Makefile"
+    makefile.write_text(
+        f'include {ROOT / "make" / "00-foundation.mk"}\n'
+        f'PYTHON := {sys.executable}\n'
+        f'UV := {sys.executable} {recorder} "$(FLAG_CANARY)"\n'
+        "boundary-probe: check-duplicate-code test-count\n"
+        "test-count:\n"
+        "\t@$(UV) unrelated-collection\n"
+        "recursive-probe:\n"
+        f'\t@$(MAKE) --no-print-directory -f "{makefile}" check-duplicate-code '
+        f'\n\t@$(MAKE) --no-print-directory -f "{makefile}" test-count\n',
+    )
+    engine = str(tmp_path / "canonical-main" / engine_name)
+    canary = f"keep  two spaces DUPLICATE_CODE_ENGINE={engine} remain  exact"
+    environment = os.environ.copy()
+    environment.pop("DUPLICATE_CODE_ENGINE", None)
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "--keep-going", "-f", str(makefile),
+            "recursive-probe" if recursive else "boundary-probe",
+            f"DUPLICATE_CODE_ENGINE={engine}", "DUPLICATE_CODE_VALIDATE_ONLY=1",
+            f"FLAG_CANARY={canary}",
+        ],
+        cwd=tmp_path, env=environment, check=False, text=True,
+        capture_output=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    checker, collection = [json.loads(line) for line in result.stdout.splitlines()]
+    arguments = checker["arguments"]
+    assert arguments[0] == canary
+    assert arguments[1:4] == ["run", "python", "scripts/check_duplicate_code.py"]
+    assert arguments[arguments.index("--engine") + 1] == engine
+    assert arguments[-1] == "--validate-only"
+    assert f"DUPLICATE_CODE_ENGINE={engine}" in shlex.split(checker["flags"])
+    assert collection["arguments"] == [canary, "unrelated-collection"]
+    assert not any(
+        item.startswith("DUPLICATE_CODE_ENGINE=") for item in shlex.split(collection["flags"])
+    )
+    for report in (checker, collection):
+        assert report["engine"] is None
+        assert f"FLAG_CANARY={canary}" in shlex.split(report["flags"])
+        assert "-k" in report["flags"] or report["flags"].startswith("k")
+        assert int(report["level"]) >= (2 if recursive else 1)
+
+
+@pytest.mark.parametrize("engine_name", (
+    "__GLUDD_DUPLICATE_CODE_ESCAPED_SPACE__/jscpd", "engine\twith-tab/jscpd",
+))
+def test_native_make_refuses_unsupported_override_encoding_before_any_recipe(
+    tmp_path: Path, engine_name: str,
+) -> None:
+    """Ambiguous encoding must not guess at another override's boundaries."""
+    sentry = tmp_path / "unexpected-recipe"
+    makefile = tmp_path / "Makefile"
+    makefile.write_text(
+        f'include {ROOT / "make" / "00-foundation.mk"}\n'
+        "test-count:\n"
+        f'\t@"{sys.executable}" -c "open(\'{sentry}\', \'w\').close()"\n',
+    )
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "-f", str(makefile), "test-count",
+            f"DUPLICATE_CODE_ENGINE={tmp_path / engine_name}",
+        ],
+        cwd=tmp_path, check=False, text=True, capture_output=True, timeout=30,
+    )
+    assert result.returncode != 0
+    assert "unsupported duplicate-code Make override encoding" in result.stderr
+    assert not sentry.exists()
