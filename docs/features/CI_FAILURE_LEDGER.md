@@ -353,6 +353,46 @@ owner keeps its compiled old banner until it exits; it is not restarted or
 duplicated merely to pick up a display fix. Public proof remains tied to its
 explicit watched SHA, and S98.4 remains open.
 
+## Canonical source identity across child directories (2026-10-14)
+
+The pipeline profile's wildcard run includes also measure same-named scripts
+created outside the checkout by native Make fixtures. An initial relative-only
+repair still measures child fixture copies and loses canonical child coverage
+when their working directory changes. Passing test assertions therefore do not
+establish valid source coverage.
+
+The existing coverage.py profile now uses `source_dirs = scripts` and retains
+the two canonical file paths in report includes. coverage.py binds source
+directories before serializing subprocess configuration; relative run includes
+do not receive that binding. Branch measurement, parallel fragments and
+`patch = subprocess` remain enabled. There are no omit patterns, new exclusion
+pragmas, warning suppressions, runner changes or reduced coverage floors.
+[Official source-directory configuration](https://coverage.readthedocs.io/en/7.16.2/config.html#run-source-dirs)
+and [subprocess measurement](https://coverage.readthedocs.io/en/7.14.1/subprocess.html).
+
+The long-lived [coverage.py practitioner report #914](https://github.com/coveragepy/coveragepy/issues/914),
+opened in January 2020, reproduces changed-directory subprocesses dropping
+canonical tracing under relative includes. It motivates the real child-process
+regression here; it is not a Gludd coverage proof or permission to omit code.
+
+Five native controls fail first in the main checkout, then execute real
+canonical owners and external namesakes in parent and changed-directory Python
+children. They reject external measurement, require child-only canonical body
+lines and preserve empty stderr. Thirty-three additional controls cover existing
+lookup, exact identity, newest-run failure and local liveness branches without
+claiming live hosted results. All eight original owner suites remain intact.
+
+The complete main replay passes 420 cases in 52.2 observed seconds. Its JSON
+contains exactly `scripts/pipeline_status.py` and `scripts/require_ci_green.py`:
+aggregate 96.43% lines/91.67% branches; pipeline owner 95.56%/89.53%; CI owner
+100%/100%. The native 85/75 audit passes with nine unchanged typing/import
+exclusions (`.gate-logs/coverage-20261014T035819Z.json`). Ruff and strict typing
+pass; unrelated entrypoint module-root layouts are typed separately to avoid
+duplicate-module invocation errors. This is source evidence only, not a full
+gate, exact-SHA hosted result or installed deployment acceptance.
+All 38 additive source-boundary/failure controls also pass on Python 3.14 in
+3.8 observed seconds (`.gate-logs/v012-pipeline-source-main-314.log`).
+
 ## Verification
 
 `tests/unit/test_ci_failure_ledger.py` covers all-failure collection,

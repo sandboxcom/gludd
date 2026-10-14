@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Pipeline coverage measured fixture copies and lost child source identity
+
+- The two-owner profile's wildcard run includes measure outside-checkout fixture wrappers. Replacing them with relative run includes alone still drops canonical child coverage after cwd changes. These are invalid source boundaries, not permission to lower coverage floors.
+- Five actual coverage.py parent/changed-directory-child controls fail first in the main checkout. The profile now uses the supported source_dirs binding and keeps both canonical files as report includes. Branch/parallel/subprocess measurement, every original assertion, warning policy and 85/75 floors remain; no omit, new exclusion pragma, runner or suppression is added. Long-lived practitioner and primary-source findings are documented in docs/features/CI_FAILURE_LEDGER.md.
+- Thirty-three additive existing-owner failure/liveness controls expose the previously unmeasured branches. All 420 main cases pass in 52.2 observed seconds, with exactly two canonical source files: aggregate 96.43% lines/91.67% branches, pipeline owner 95.56%/89.53%, CI owner 100%/100% and nine unchanged exclusions (.gate-logs/coverage-20261014T035819Z.json). All 38 additive controls also pass on Python 3.14 in 3.8 observed seconds (.gate-logs/v012-pipeline-source-main-314.log). Ruff, strict test typing and task registration pass. Publication, full gate and exact-SHA installed deployment proof remain pending; no completion checkbox changes.
+
 ### 2026-10-14 — Heartbeat banner mislabeled the candidate under observation
 
 - A running observer correctly pins its JSON snapshot to pushed candidate 05f1a93, but its banner reads the changing local checkout head. That display can make local-only repairs appear to have hosted CI evidence.
