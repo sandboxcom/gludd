@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -772,6 +773,73 @@ def test_exempt_observer_refuses_reusing_native_failure_identity(
     expected_message = "unchanged" if artifact == "receipt" else r"failed\.json"
     with pytest.raises(expected_error, match=expected_message):
         _start(policy, repository, command=("make", "failed-proof"))
+
+
+@pytest.mark.parametrize("route", ["exempt", "scoped"])
+@pytest.mark.parametrize("ordering", ["prune-first", "record-first"])
+def test_native_retention_serializes_new_failed_references_with_pruning(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    route: str, ordering: str,
+) -> None:
+    _start(policy, repository, command=("make", "old-failure"), label="retention", run_id="old")
+    directory = repository / ".gate-logs/observed/retention"
+    published = threading.Event()
+    errors: list[BaseException] = []
+
+    def record_failures() -> None:
+        try:
+            for suffix in ("a", "b"):
+                _start(policy, repository, command=("make", f"new-failure-{suffix}"),
+                       label="retention", run_id=f"new-{suffix}")
+                (directory / f"new-{suffix}.log").write_bytes(b"new native failure evidence\n")
+            published.set()
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=record_failures, name="gludd-retention-reference-test")
+    original_prune = stream_command._prune_terminal_runs
+    published_during_prune: list[bool] = []
+
+    def paused_prune(path: Path, *, retain_runs: int, preserve_runs: frozenset[str] = frozenset()) -> None:
+        if ordering == "prune-first":
+            thread.start()
+            published_during_prune.append(published.wait(0.3))
+        original_prune(path, retain_runs=retain_runs, preserve_runs=preserve_runs)
+
+    if ordering == "record-first":
+        record_failures()
+    monkeypatch.setattr(stream_command, "_prune_terminal_runs", paused_prune)
+    command = [sys.executable, "-c", "pass"]
+    environment = dict(os.environ)
+    try:
+        if route == "scoped":
+            with policy.command_admission(
+                repository, command, primary_task_id="F12.1", task_id="F12.1",
+                environment=environment, quiet_seconds=0, max_seconds=10,
+            ) as admission:
+                result = stream_command.stream_command(
+                    command, directory / "diagnostic.log", observed_root=directory.parent,
+                    label="retention", run_id="diagnostic", retain_runs=1, max_seconds=10,
+                    progress_admission=admission, environment=environment,
+                )
+        else:
+            result = stream_command.stream_command(
+                command, directory / "diagnostic.log", observed_root=directory.parent,
+                label="retention", run_id="diagnostic", retain_runs=1, max_seconds=10,
+                progress_root=repository, environment=environment,
+            )
+    finally:
+        if ordering == "prune-first":
+            thread.join(timeout=5)
+    assert not thread.is_alive() and not errors
+    assert result == 0 and published.is_set()
+    assert (directory / "new-a.json").exists(), "new canonical failure was pruned using a stale reference set"
+    assert not any(published_during_prune), "canonical publication overlapped the protected pruning section"
+    for suffix in ("a", "b"):
+        assert json.loads((directory / f"new-{suffix}.json").read_text())["state"] == "failed"
+        assert (directory / f"new-{suffix}.log").read_bytes() == b"new native failure evidence\n"
+        with pytest.raises(ValueError, match="unchanged"):
+            _start(policy, repository, command=("make", f"new-failure-{suffix}"))
 
 
 @pytest.mark.parametrize("loss", ["missing", "malformed"])

@@ -136,6 +136,13 @@ def progress_status(root: Path) -> dict[str, object] | None:
 def preserved_run_ids(root: Path, observed_root: Path, label: str) -> frozenset[str]:
     """Protect canonical references even when diagnostics have no admission slot."""
     state = progress_status(root)
+    return _referenced_run_ids(state, observed_root, label)
+
+
+def _referenced_run_ids(
+    state: dict[str, object] | None, observed_root: Path, label: str,
+) -> frozenset[str]:
+    """Derive references only from the native owner's validated state."""
     if state is None:
         raise ValueError("item progress disappeared before retention")
     observations = cast(dict[str, dict[str, str]], state["observations"])
@@ -143,6 +150,13 @@ def preserved_run_ids(root: Path, observed_root: Path, label: str) -> frozenset[
         pointer["run_id"] for pointer in observations.values()
         if pointer["root"] == str(observed_root.resolve()) and pointer["label"] == label
     )
+
+
+@contextmanager
+def protected_run_ids(root: Path, observed_root: Path, label: str) -> Iterator[frozenset[str]]:
+    """Serialize a reference read and its bounded retention against record updates."""
+    with _locked(root) as (_path, state):
+        yield _referenced_run_ids(state, observed_root, label)
 
 
 @contextmanager
@@ -286,6 +300,12 @@ class Admission:
     def preserved_run_ids(self, observed_root: Path, label: str) -> frozenset[str]:
         """Protect bounded referenced native runs from ordinary observer pruning."""
         return preserved_run_ids(self.root, observed_root, label)
+
+    @contextmanager
+    def protected_run_ids(self, observed_root: Path, label: str) -> Iterator[frozenset[str]]:
+        """Keep this owner's reference protection stable until retention completes."""
+        with protected_run_ids(self.root, observed_root, label) as preserved:
+            yield preserved
 
     def record(self, observed_root: Path, label: str, run_id: str) -> None:
         """Remember the existing observer's run, never a caller-provided outcome."""

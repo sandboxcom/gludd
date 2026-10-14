@@ -194,6 +194,98 @@ def test_log_created_after_start_check_is_not_truncated(
     assert status["termination_reason"] == "observer-log-open-failed"
 
 
+def test_trace_allocated_after_precheck_preserves_competing_live_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace = tmp_path / "observed/demo/run-1.pytest.jsonl"
+    release = tmp_path / "release-competing-child"
+    marker = tmp_path / "trace-child-executed"
+    competitors: list[subprocess.Popen[bytes]] = []
+    original_write = stream_command._atomic_write_json
+    original_bytes = b"competing live log evidence\n"
+
+    def claim_competing_log(path: Path, payload: Any, *, exclusive: bool = False) -> None:
+        original_write(path, payload, exclusive=exclusive)
+        if not exclusive or path.name != "run-1.json":
+            return
+        child = ("import time; from pathlib import Path; "
+                 "print('competing live log evidence', flush=True)\n"
+                 f"while not Path({str(release)!r}).exists(): time.sleep(0.01)")
+        competitors.append(subprocess.Popen(
+            _command(tmp_path, child, "--log", str(trace), run_id="other"),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ))
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if trace.exists() and trace.read_bytes() == original_bytes:
+                break
+            time.sleep(0.01)
+        assert trace.read_bytes() == original_bytes
+        assert competitors[0].poll() is None
+
+    monkeypatch.setattr(stream_command, "_atomic_write_json", claim_competing_log)
+    child = ("from pathlib import Path; from types import SimpleNamespace; "
+             "from scripts import xdist_trace_plugin; "
+             f"Path({str(marker)!r}).touch(); "
+             "xdist_trace_plugin.pytest_sessionstart(SimpleNamespace(config=None))")
+    try:
+        result = stream_command.stream_command(
+            [sys.executable, "-c", child], tmp_path / "observed/demo/run-1.log",
+            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
+            pytest_trace=True, quiet=True, max_seconds=10,
+        )
+        assert result == 125
+        assert not marker.exists()
+        assert trace.read_bytes() == original_bytes
+        assert _current_status(tmp_path)["termination_reason"] == "observer-trace-open-failed"
+    finally:
+        release.touch()
+        for process in competitors:
+            output = process.communicate(timeout=10)
+            assert process.returncode == 0, output
+
+
+def test_fresh_observed_trace_is_allocated_before_native_handoff_without_reset(tmp_path: Path) -> None:
+    child = ("import os; from pathlib import Path; from types import SimpleNamespace; "
+             "from scripts import xdist_trace_plugin; "
+             "trace = Path(os.environ['GLUDD_XDIST_TRACE_LOG']); "
+             "assert trace.exists() and trace.read_bytes() == b''; "
+             "assert os.environ['GLUDD_XDIST_TRACE_TRUNCATE'] == '0'; "
+             "xdist_trace_plugin.pytest_sessionstart(SimpleNamespace(config=None))")
+    result = subprocess.run(
+        _command(tmp_path, child, "--pytest-trace"), capture_output=True, check=False, timeout=10,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    status = _current_status(tmp_path)
+    event = json.loads(Path(status["trace_path"]).read_text())
+    assert event["event"] == "RUN_START" and event["run_id"] == "run-1"
+
+
+def test_retention_preserves_late_finishing_current_run_and_its_log(tmp_path: Path) -> None:
+    root = tmp_path / "observed"
+    old = stream_command._StatusPublisher(root, "demo", "old")
+    newer = stream_command._StatusPublisher(root, "demo", "newer")
+    status = stream_command._base_status(
+        label="demo", run_id="old", started_at="2026-10-14T00:00:00+00:00",
+        log_path=old.directory / "old.log", trace_path=None,
+    )
+    old.publish(status)
+    other = stream_command._base_status(
+        label="demo", run_id="newer", started_at="2026-10-14T00:00:01+00:00",
+        log_path=newer.directory / "newer.log", trace_path=None,
+    )
+    other.update(state="failed", exit_code=1)
+    newer.publish(other)
+    (newer.directory / "newer.log").write_bytes(b"newer failure\n")
+    status.update(state="failed", exit_code=1)
+    old.publish(status)
+    (old.directory / "old.log").write_bytes(b"late current failure\n")
+    stream_command._prune_terminal_runs(old.directory, retain_runs=1)
+    assert old.run_path.exists(), "current run was pruned because its start time is older"
+    assert (old.directory / "old.log").read_bytes() == b"late current failure\n"
+    assert stream_command.observed_tail(root, "demo", run_id="current", lines=1) == 0
+
+
 def test_atomic_status_writer_fsyncs_then_replaces(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

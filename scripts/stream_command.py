@@ -14,8 +14,8 @@ import tempfile
 import time
 import uuid
 from collections import deque
-from collections.abc import Mapping, Sequence
-from contextlib import AbstractContextManager, nullcontext, suppress
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
@@ -57,6 +57,12 @@ class _ProgressAdmission(Protocol):
 
     def preserved_run_ids(self, observed_root: Path, label: str) -> frozenset[str]:
         """Return bounded native references still needed by admission."""
+        ...
+
+    def protected_run_ids(
+        self, observed_root: Path, label: str,
+    ) -> AbstractContextManager[frozenset[str]]:
+        """Serialize reference protection with the bounded terminal retention."""
         ...
 
 
@@ -107,6 +113,16 @@ def _atomic_write_json(
             temporary.unlink()
 
 
+@contextmanager
+def _observer_metadata_lock(directory: Path) -> Iterator[None]:
+    """Serialize current-pointer publication and pruning within one observed label."""
+    from filelock import FileLock
+
+    directory.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(directory / ".observer.lock"), timeout=2, mode=0o600):
+        yield
+
+
 class _StatusPublisher:
     """Publish both durable per-run state and the atomic current pointer."""
 
@@ -117,8 +133,9 @@ class _StatusPublisher:
 
     def publish(self, payload: Mapping[str, object]) -> None:
         """Write history before advancing the current-run pointer."""
-        _atomic_write_json(self.run_path, payload)
-        _atomic_write_json(self.current_path, payload)
+        with _observer_metadata_lock(self.directory):
+            _atomic_write_json(self.run_path, payload)
+            _atomic_write_json(self.current_path, payload)
 
 
 def _preserved_run_ids(
@@ -137,10 +154,34 @@ def _preserved_run_ids(
     return preserved_run_ids(progress_root, observed_root, label)
 
 
+def _protected_run_ids(
+    admission: _ProgressAdmission | None, progress_root: Path | None,
+    observed_root: Path, label: str,
+) -> AbstractContextManager[frozenset[str]]:
+    """Reuse native progress serialization without holding it during child execution."""
+    if admission is not None:
+        return admission.protected_run_ids(observed_root, label)
+    if progress_root is None:
+        return nullcontext(frozenset())
+    if TYPE_CHECKING:
+        from item_progress import protected_run_ids
+    else:
+        from scripts.item_progress import protected_run_ids
+    return protected_run_ids(progress_root, observed_root, label)
+
+
 def _prune_terminal_runs(
     directory: Path, *, retain_runs: int, preserve_runs: frozenset[str] = frozenset(),
 ) -> None:
     """Prune only superseded terminal runs, never current or active evidence."""
+    with _observer_metadata_lock(directory):
+        _prune_terminal_runs_locked(directory, retain_runs=retain_runs, preserve_runs=preserve_runs)
+
+
+def _prune_terminal_runs_locked(
+    directory: Path, *, retain_runs: int, preserve_runs: frozenset[str],
+) -> None:
+    """Prune against one stable current pointer while the label metadata lock is held."""
     if retain_runs < 1:
         raise ValueError("retain_runs must be at least 1")
     terminal: list[tuple[datetime, str, Path, dict[str, Any]]] = []
@@ -176,9 +217,18 @@ def _prune_terminal_runs(
         terminal.append((parsed_started_at, status_path.name, status_path, value))
     terminal.sort(reverse=True)
     resolved_directory = directory.resolve()
+    current_run_id: str | None = None
+    try:
+        current = json.loads((directory / "current.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
+        current = None
+    if (isinstance(current, dict) and current.get("schema_version") == 1
+            and current.get("kind") == "observed_command" and current.get("label") == directory.name
+            and isinstance(current.get("run_id"), str)):
+        current_run_id = _safe_name(current["run_id"], field="run_id")
     for _started_at, _name, status_path, value in terminal[retain_runs:]:
         run_id = value.get("run_id")
-        if run_id in preserve_runs:
+        if run_id in preserve_runs or run_id == current_run_id:
             continue
         if not isinstance(run_id, str) or status_path.name != f"{run_id}.json":
             continue
@@ -406,9 +456,23 @@ def stream_command(
         return OBSERVER_FAILURE
 
     if trace_path is not None and effective_run_id is not None:
+        try:
+            with trace_path.open("xb"):
+                pass
+        except OSError as exc:
+            log_file.close()
+            assert status is not None
+            status.update(
+                state="failed", updated_at=_utc_now(), exit_code=OBSERVER_FAILURE,
+                elapsed_seconds=round(time.monotonic() - started_mono, 3),
+                termination_reason="observer-trace-open-failed",
+            )
+            _publish_or_fail(publisher, status)
+            print(f"observed-command: trace allocation failed: {exc}", file=sys.stderr, flush=True)
+            return OBSERVER_FAILURE
         child_environment["GLUDD_XDIST_TRACE_LOG"] = str(trace_path)
         child_environment["GLUDD_XDIST_TRACE_RUN_ID"] = effective_run_id
-        child_environment["GLUDD_XDIST_TRACE_TRUNCATE"] = "1"
+        child_environment["GLUDD_XDIST_TRACE_TRUNCATE"] = "0"
 
     child_cwd: _ChildCwdOptions = {"cwd": cwd} if cwd is not None else {}
     try:
@@ -631,17 +695,17 @@ def stream_command(
             return OBSERVER_FAILURE
         assert publisher is not None
         try:
-            if progress_admission is None and progress_root is None:
-                _prune_terminal_runs(publisher.directory, retain_runs=retain_runs)
-            else:
-                assert observed_root is not None and effective_label is not None
-                preserved = _preserved_run_ids(
-                    progress_admission, progress_root, observed_root, effective_label,
-                )
-                _prune_terminal_runs(
-                    publisher.directory, retain_runs=retain_runs,
-                    preserve_runs=preserved,
-                )
+            assert observed_root is not None and effective_label is not None
+            with _protected_run_ids(
+                progress_admission, progress_root, observed_root, effective_label,
+            ) as preserved:
+                if progress_admission is None and progress_root is None:
+                    _prune_terminal_runs(publisher.directory, retain_runs=retain_runs)
+                else:
+                    _prune_terminal_runs(
+                        publisher.directory, retain_runs=retain_runs,
+                        preserve_runs=preserved,
+                    )
         except (OSError, ValueError) as exc:
             requested_code = OBSERVER_FAILURE
             state = "failed"

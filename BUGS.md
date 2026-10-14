@@ -4,6 +4,23 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Trace handoff and concurrent pruning crossed ownership boundaries
+
+- One-pass review refuses 3f7cbaf: a distinct run can claim the unallocated
+  trace as a live log before pytest truncates it; pruning can also delete new
+  canonical failure references recorded after its preservation snapshot.
+- Four actual failures are reproduced first, including the related deletion
+  of a late-finishing current run and its log. Allocate traces exclusively,
+  hand them off without reset, and serialize reference protection/pruning
+  through the existing native progress lock. Use pinned FileLock per label
+  to serialize current publication/pruning and preserve the current run.
+- All 298 observer consumers pass on Python 3.11; all 200 core cases pass on
+  Python 3.14. Native four-owner and progress-owner coverage meet unchanged
+  85/75 floors; strict typing/Ruff/read-only secrets checks pass.
+  Keep existing unattended cleanup call shape and its failure-code test intact;
+  neither short lock spans child execution. Disk95, 32 slots, retry guards,
+  ZDD and release/deployment requirements are unchanged and still pending.
+
 ### 2026-10-14 — Reused observer identity replaced retained failure evidence
 
 - Source re-review refuses 60b8187: a diagnostic can reuse a failed run ID,

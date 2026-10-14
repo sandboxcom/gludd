@@ -128,6 +128,32 @@ unchanged aggregate 85% and per-file 75% floors. Strict typing, Ruff and the
 read-only native secrets admission pass. These are repair checks, not a passing
 full gate or evidence that another backlog item is deployment-ready.
 
+One-pass source review refuses `3f7cbaf` for two remaining concurrency gaps:
+the trace was checked but not allocated before child startup, and the reference
+snapshot could become stale before pruning. Controlled native runs reproduce
+both failures, including destruction of a competing live log and newly recorded
+canonical failure evidence. A related failing control exposes pruning of a
+late-finishing current run solely because its start time is older.
+
+The existing observer now exclusively creates the trace before launching its
+child and hands it to the native plugin without truncation. A competing claim
+fails with observer code 125 before child execution. Standalone trace reset
+semantics remain unchanged. The original progress owner holds its short lock
+across reference validation and pruning; neither ordering can lose new failure
+references. Current-pointer publication and pruning use the already pinned
+FileLock dependency with a per-label, private metadata lock, and current-run
+receipts/logs survive late completion. Neither lock spans child execution.
+Ordinary unattended call shape and failure-code behavior are retained; the
+existing failing-cleanup test is unchanged. Four cases fail first and the
+focused compatibility matrix reports eight passed. Broader verification reports
+298 passed on Python 3.11, 200 passed on Python 3.14, and four-owner coverage
+meets unchanged 85/75 floors (.gate-logs/coverage-20261014T222218Z.json).
+The 200-case progress-owner coverage audit also passes unchanged floors
+(.gate-logs/coverage-20261014T222452Z.json); strict typing and Ruff pass and the
+native secrets admission adds no finding or baseline change.
+The next clean reviewed source still needs its full gate, exact-SHA hosted and
+deployment acceptance; no source-only decision or unit result closes the item.
+
 This protects execution admission, not the model's internal reasoning or every
 editor action. The existing exact-SHA gate, coverage, deployment acceptance and
 promotion checks remain mandatory. No runtime restart or serving change is
