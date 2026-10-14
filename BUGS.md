@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Backlog source checks had no native installed-item acceptance adapter
+
+- Trusted CLI-owner forwarding alone did not execute feature acceptance in an installed runtime. The new controller adapter reuses the existing EE verifier and collection-owned provenance/artifact/JUnit operations for canonical S39/S42 only. It independently binds signer, artifact/lock, source, namespace, platform, canary generation, fixed probe/input and current native invocation before and after execution.
+- Isolated failing-first controls expose installed-lock, source/invocation and substituted-runner gaps. Root review also finds Docker's RepoDigests schema and accepted rc-zero stderr: eleven additional controls fail before those repairs. The adapter reuses the existing container digest normalizer and rejects all captured diagnostics; the original signer/probe assertions and substitution guard remain.
+- The main-checkout integration replay passes all 284 cases on Python 3.11 and the combined 368-case acceptance/watcher replay passes on Python 3.14, with fatal warnings. Canonical adapter coverage passes 78 cases at 96.05% lines/91.43% branches with 18 default typing/protocol exclusions (.gate-logs/coverage-20261014T033132Z.json); the original EE profile passes all 569 cases at 93.05% lines/86.05% branches with seven default exclusions (.gate-logs/coverage-20261014T033211Z.json). Both retain 85/75 floors with no new exclusion pragma. Strict production/test typing, lint, docstrings, all 258 resource owners and task registration/integrity pass. Publication, full gate and exact-SHA CI remain pending. Fixture success does not cover public successful deployment acceptance; the current EE lacks git-release, and trusted signer, sealed installed lock/probes and canary proof remain required. No release-ready checkbox or completed-backlog entry changes.
+
 ### 2026-10-14 — Failed manifest requests retained their response handles
 
 - Five new ownership controls retain actual urllib HTTPError responses and reproduce five failures. HEAD fallback can start GET before closing the first response, and terminal HEAD/GET errors leave their file-like bodies open. Garbage collection is not deterministic teardown evidence.

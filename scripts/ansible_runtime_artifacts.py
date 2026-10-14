@@ -1727,7 +1727,21 @@ def build_environment(
     return status
 
 
-def verify_environment(runtime: str, image: str, validate_only: bool) -> int:
+class InstalledItemOwner(Protocol):
+    """Trusted item owner admitted and executed by the existing native verifier."""
+
+    def admit(self, runtime: str, image: str) -> None:
+        """Verify independent subject, signer, installed and invocation identities."""
+        ...
+
+    def execute(self, runtime: str, image: str) -> bool:
+        """Run a closed installed probe and recheck every admitted identity."""
+        ...
+
+
+def verify_environment(
+    runtime: str, image: str, validate_only: bool, *, item_owner: InstalledItemOwner | None = None,
+) -> int:
     """Verify a digest-addressed EE, OpenTofu CLI, and controller imports."""
     try:
         _require_image(image)
@@ -1745,10 +1759,24 @@ def verify_environment(runtime: str, image: str, validate_only: bool) -> int:
     if shutil.which(runtime) is None:
         print(f"container runtime is unavailable: {runtime}", file=sys.stderr)
         return 2
+    if item_owner is not None:
+        try:
+            item_owner.admit(runtime, image)
+        except Exception as exc:
+            print(f"ANSIBLE_EE_ITEM_INCOMPLETE phase=admission reason={type(exc).__name__}", file=sys.stderr)
+            return 1
     inspect = subprocess.run([runtime, "image", "inspect", image], check=False)
     if inspect.returncode != 0:
         return inspect.returncode
-    return _smoke_environment(runtime, image)
+    status = _smoke_environment(runtime, image)
+    if status != 0 or item_owner is None:
+        return status
+    try:
+        accepted = item_owner.execute(runtime, image)
+    except Exception as exc:
+        print(f"ANSIBLE_EE_ITEM_INCOMPLETE phase=probe reason={type(exc).__name__}", file=sys.stderr)
+        return 1
+    return 0 if accepted is True else 1
 
 
 def main(argv: list[str] | None = None) -> int:

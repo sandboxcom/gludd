@@ -26,6 +26,15 @@ tests alone. This forwarding change does not implement the installed-artifact
 probes or independently verified signer evidence that a native runtime owner
 must obtain before accepting an item.
 
+The controller-owned `scripts.backlog_native_acceptance` factory now supplies
+that native adapter for canonical S39 and S42. It verifies the independently
+signed installed subject and lock, runs fixed collection-native probes against
+one exact canary generation, and rechecks all identities before acceptance.
+Missing installed collections or trusted signer/invocation evidence remain
+`INCOMPLETE`; the current EE lock is unchanged. See
+[Native backlog deployment acceptance](BACKLOG_NATIVE_ACCEPTANCE.md) for the
+closed probe contract, trusted capability boundary and remaining proof limits.
+
 The implementation repairs an API-drift gap in `scripts/backlog_audit.py`. The
 script previously constructed `BacklogAuditor` without its required
 `test_runner` argument and then caught the resulting `TypeError` as an
