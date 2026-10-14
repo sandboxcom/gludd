@@ -532,3 +532,37 @@ This is control-plane ZDD: no serving process is restarted. Future invocations
 use the reordered save, while active jobs keep their loaded code. Rollback uses
 normal branch review and retains immutable evidence. Publication, clean full
 gate, exact-successor hosted and installed deployment proof remain mandatory.
+
+### Repair evidence binds the tested checkout
+
+The repair CLI previously accepted any descendant SHA while executing evidence
+in its current ROOT. A passing child could therefore be attributed to a different
+revision or a dirty checkout. Fourteen boundary controls reproduce that gap.
+The existing native `make worktree-state` owner now verifies exact HEAD, clean
+state and qualified root before and after evidence. Query failure, missing or
+malformed data, source mutation and 15-second query timeout refuse publication;
+two timeout regressions fail before handling, with two I/O controls retained.
+Validation-only remains non-executing and produces no receipt.
+
+All 397 related cases pass on Python 3.11/3.14. The unchanged canonical owner
+profile passes 96.6% lines/93.4% branches and both 75% floors
+(`.gate-logs/coverage-20261014T173231Z.json`). Full native admission passes 1712
+cases plus fresh help in 63.4 observed seconds under unchanged 90/60 limits.
+Existing argument, history and locking assertions are preserved; distinct
+revision concurrency is modeled with separate clean checkouts. The actual dirty
+checkout is also refused before evidence, leaving the real failure open.
+
+[SLSA provenance](https://slsa.dev/spec/v1.2/provenance) treats source revision
+provenance as distinct from build output claims. Reuse the project's existing
+worktree owner and ledger instead of adding an attestation format or claiming
+SLSA compliance. A
+[2022 Actions practitioner discussion](https://github.com/orgs/community/discussions/28474)
+distinguishes a pull request's head revision from its temporary merge checkout;
+that supports explicit identity binding, but is not Gludd acceptance evidence.
+
+These checks cover observed execution boundaries, not an adversarial edit-and-
+restore within the evidence interval. Immutable reviewed-head integration and
+all existing release gates remain required. No serving process is restarted;
+active callers keep their loaded code, and future invocations use the guard.
+Rollback uses normal branch review while preserving receipt history. Local
+repair remains `repaired`, never hosted `resolved` or deployment-ready.

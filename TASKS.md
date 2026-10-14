@@ -31,6 +31,26 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
+S98.4 repair-receipt checkout-binding scope: `scripts/ci_failure_ledger.py`,
+`tests/unit/test_ci_failure_ledger.py`, `tests/unit/test_ci_failure_ledger_concurrency.py`,
+`config/gate_failure_promotions.json`, `make/10-observability-and-tests.mk`,
+`tests/unit/test_gate_failure_promotion.py`, and `docs/features/CI_FAILURE_LEDGER.md`.
+Fourteen cases reproduce receipts being attributed to a claimed SHA without
+checking the actual tested checkout; two timeout cases fail before error handling,
+with two I/O controls passing. The native worktree-state owner now verifies
+clean exact HEAD/root before and after evidence, refusing unverified data without
+ledger mutation. Eighteen boundary controls preserve all old evidence arguments,
+failure history and transactional checks; concurrency fixtures now model distinct
+clean checkouts for distinct revisions without changing original assertions.
+All 397 related cases pass on Python 3.11/3.14. Unchanged canonical owner coverage
+passes 96.6% lines/93.4% branches and both 75% floors
+(.gate-logs/coverage-20261014T173231Z.json). Full native admission passes 1712 cases
+plus fresh help in 63.4 observed seconds under unchanged 90/60 limits. Ruff,
+strict typing, docstrings, 234 contracts, 75 families, Make integrity and all 258
+resource owners pass. The real dirty checkout is refused before evidence; no
+receipt is written. Publication and exact-successor/full-gate/deployment proof
+remain pending, not completed backlog items.
+
 S98.4 legacy-resume cleanup-readiness repair scope:
 `scripts/run_ci_shards_serial.py`, `tests/unit/test_ci_collect_all_stress.py`,
 `config/gate_failure_promotions.json`, `make/10-observability-and-tests.mk`,

@@ -4,6 +4,26 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Repair receipts accepted an unverified claimed revision
+
+- The repair CLI runs evidence in ROOT but records the caller's descendant SHA
+  without checking it matches the clean checkout actually tested. Fourteen
+  native controls reproduce false attribution or mutation during execution.
+- Existing native worktree-state is queried before/after evidence with a bounded
+  15-second query. Wrong HEAD, dirty/foreign roots, missing/malformed data and
+  query failures refuse receipt publication; two timeout failures are repaired
+  with two I/O controls retained. No new Git engine, proof cache or state writer.
+- All 397 related cases pass on Python 3.11/3.14 at unchanged 96.6% lines/93.4%
+  branches and both 75% floors. Native full roster passes 1712 plus fresh help
+  in 63.4 observed seconds under unchanged 90/60 bounds; strict typing, Ruff,
+  docstrings, 234 contracts, 75 families, Make integrity and 258 owners pass.
+- Eight old evidence stubs are conformed to the added native read-only query;
+  concurrent distinct revisions use separate simulated clean checkouts. All
+  original failure, argument, history and locking assertions remain intact.
+- The actual dirty checkout is refused before launching evidence. Research,
+  boundary limits and ZDD rollback are in CI_FAILURE_LEDGER.md. Publication and
+  exact-successor/full-gate/deployment acceptance remain pending; no task closes.
+
 ### 2026-10-14 — Legacy passing resume records preceded successful cleanup
 
 - The existing legacy owner saves rc0/coverage records before owned cleanup.

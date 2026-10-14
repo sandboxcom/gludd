@@ -1241,6 +1241,26 @@ def _command_runner_acquisition_rerun(args: argparse.Namespace) -> int:
     )
 
 
+def _require_repair_checkout(sha: str) -> None:
+    """Bind evidence to the native owner's current clean, exact checkout."""
+    try:
+        result = subprocess.run(
+            ["make", "--no-print-directory", "worktree-state"], cwd=ROOT,
+            check=False, capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise LedgerError("could not verify the native repair checkout") from exc
+    try:
+        state = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise LedgerError("repair checkout state is not valid native JSON") from exc
+    if (result.returncode != 0 or not isinstance(state, dict)
+            or state.get("head") != sha or state.get("is_clean") is not True
+            or type(state.get("dirty_count")) is not int or state["dirty_count"] != 0
+            or state.get("path") != str(ROOT)):
+        raise LedgerError("repair evidence requires the claimed SHA in its clean native checkout")
+
+
 def _command_repair(args: argparse.Namespace) -> int:
     if FULL_SHA.fullmatch(args.sha) is None:
         raise LedgerError("repair SHA must be a full lowercase 40-character hash")
@@ -1257,6 +1277,7 @@ def _command_repair(args: argparse.Namespace) -> int:
     if args.validate_only:
         print("CI_FAILURE_REPAIR_VALIDATE_ONLY_PASS")
         return 0
+    _require_repair_checkout(args.sha)
     ledger = read_ledger(args.ledger)
     families = cast(dict[str, Any], ledger["families"])
     selected = list(args.family)
@@ -1275,6 +1296,7 @@ def _command_repair(args: argparse.Namespace) -> int:
     result = subprocess.run(command, cwd=ROOT, check=False)
     if result.returncode != 0:
         raise LedgerError(f"repair evidence failed with exit {result.returncode}")
+    _require_repair_checkout(args.sha)
     record_repair(
         ledger,
         selected,

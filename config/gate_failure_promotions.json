@@ -677,6 +677,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_collect_all_stress.py::test_legacy_pass_receipt_is_published_only_after_successful_owned_cleanup",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ci-repair-checkout-source-binding",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_failure_ledger.py::test_cli_repair_refuses_evidence_from_a_different_or_unverified_checkout",
+      "full_gate_phase": "test"
     }
   ]
 }

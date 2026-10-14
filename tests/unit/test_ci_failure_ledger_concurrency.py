@@ -66,6 +66,16 @@ def _repair(path: Path, *family_ids: str, all_open: bool = False) -> list[str]:
     ]
 
 
+def _checkout_query(
+    command: list[str], root: Path, sha: str = SHA_REPAIR,
+) -> subprocess.CompletedProcess[str] | None:
+    if command != ["make", "--no-print-directory", "worktree-state"]:
+        return None
+    return subprocess.CompletedProcess(command, 0, json.dumps({
+        "path": str(root), "head": sha, "is_clean": True, "dirty_count": 0,
+    }), "")
+
+
 def _observe(path: Path, run_id: int) -> list[str]:
     return ["observe", "--ledger", str(path), "--run", str(run_id)]
 
@@ -89,6 +99,9 @@ def test_repair_retains_concurrent_run_and_other_family_receipt(
 
     def evidence(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
         nonlocal calls
+        checkout = _checkout_query(command, module.ROOT)
+        if checkout is not None:
+            return checkout
         calls += 1
         if calls == 1:
             started.set()
@@ -166,6 +179,9 @@ def test_all_open_selection_does_not_repair_a_failure_arriving_during_evidence(
     monkeypatch.setattr(module, "fetch_run", lambda _run, _repo: _payload(202, "new"))
 
     def evidence(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        checkout = _checkout_query(command, module.ROOT)
+        if checkout is not None:
+            return checkout
         assert module.main(_observe(path, 202)) == 0
         return subprocess.CompletedProcess(command, 0, "", "")
 
@@ -191,6 +207,7 @@ def test_repair_rejects_changed_selected_family_without_overwriting_evidence(
     family_ids = _seed(module, path)
     calls = 0
     concurrent: dict[str, Any] = {}
+    secondary_root = tmp_path / "secondary-checkout"
     payload = _payload(202, "primary", sha=SHA_OTHER)
     if concurrent_change == "success":
         payload["conclusion"] = "success"
@@ -199,12 +216,20 @@ def test_repair_rejects_changed_selected_family_without_overwriting_evidence(
 
     def evidence(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
         nonlocal calls, concurrent
+        checkout = _checkout_query(
+            command, _kwargs["cwd"], SHA_OTHER if _kwargs["cwd"] == secondary_root else SHA_REPAIR,
+        )
+        if checkout is not None:
+            return checkout
         calls += 1
         if calls == 1:
             if concurrent_change == "repair":
                 secondary = _repair(path, family_ids["primary"])
                 secondary[secondary.index("--sha") + 1] = SHA_OTHER
-                assert module.main(secondary) == 0
+                secondary_module = _load()
+                monkeypatch.setattr(secondary_module, "ROOT", secondary_root)
+                monkeypatch.setattr(secondary_module, "_git_is_ancestor", lambda _old, _new: True)
+                assert secondary_module.main(secondary) == 0
             else:
                 assert module.main(_observe(path, 202)) == 0
             concurrent = module.read_ledger(path)
@@ -232,10 +257,8 @@ def test_every_native_writer_honors_the_same_private_bounded_transaction_lock(
     monkeypatch.setattr(module, "fetch_run_index", lambda _sha, _repo: _index(202))
     monkeypatch.setitem(module.observe_exact_sha.__kwdefaults__, "fetcher", module.fetch_run)
     monkeypatch.setattr(module, "_git_is_ancestor", lambda _old, _new: True)
-    monkeypatch.setattr(
-        module.subprocess, "run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "", ""),
-    )
+    monkeypatch.setattr(module.subprocess, "run", lambda command, **_kwargs:
+                        _checkout_query(command, module.ROOT) or subprocess.CompletedProcess(command, 0, "", ""))
     commands = {
         "observe": _observe(path, 202),
         "observe-sha": ["observe-sha", "--ledger", str(path), "--sha", SHA_FAILED],

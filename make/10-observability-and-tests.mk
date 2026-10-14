@@ -791,6 +791,7 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_ci_collect_all_stress.py::test_post_failure_diagnostics_disable_exact_pass_admission_and_publication
 # tests/unit/test_ci_collect_all_stress.py::test_hosted_shards_opt_in_to_same_invocation_post_failure_diagnostics
 # tests/unit/test_ci_collect_all_stress.py::test_legacy_pass_receipt_is_published_only_after_successful_owned_cleanup
+# tests/unit/test_ci_failure_ledger.py::test_cli_repair_refuses_evidence_from_a_different_or_unverified_checkout
 # Every selector below is an explicit initial file/node; ignore only never-selected
 # sibling collectors. Generic/full-suite selection and the fresh help child stay intact.
 	@$(MAKE) --no-print-directory test-files \

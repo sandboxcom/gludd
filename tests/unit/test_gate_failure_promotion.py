@@ -1319,6 +1319,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ci-post-failure-diagnostic-receipt-isolation",
         "hosted-post-failure-diagnostic-opt-in",
         "ci-legacy-resume-cleanup-readiness",
+        "ci-repair-checkout-source-binding",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (

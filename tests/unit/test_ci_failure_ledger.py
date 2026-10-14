@@ -12,7 +12,7 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from scripts import ci_failure_ledger as _native_owner
@@ -650,6 +650,10 @@ def test_cli_repair_runs_exact_make_evidence_before_writing_receipt(
     calls: list[list[str]] = []
 
     def successful_evidence(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        if command == ["make", "--no-print-directory", "worktree-state"]:
+            return subprocess.CompletedProcess(command, 0, json.dumps({
+                "path": str(ROOT), "head": SHA_REPAIR, "is_clean": True, "dirty_count": 0,
+            }), "")
         calls.append(command)
         return subprocess.CompletedProcess(command, 0, "", "")
 
@@ -709,11 +713,14 @@ def test_cli_repair_rejects_unsafe_or_failed_evidence(
     ledger = module.new_ledger()
     module.observe_payload(ledger, _failed_payload(), observed_at="first")
     module.write_ledger(tmp_path / "ledger.json", ledger)
-    monkeypatch.setattr(
-        module.subprocess,
-        "run",
-        lambda command, **_: subprocess.CompletedProcess(command, 9, "", ""),
-    )
+    def failed_evidence(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        if command == ["make", "--no-print-directory", "worktree-state"]:
+            return subprocess.CompletedProcess(command, 0, json.dumps({
+                "path": str(ROOT), "head": SHA_REPAIR, "is_clean": True, "dirty_count": 0,
+            }), "")
+        return subprocess.CompletedProcess(command, 9, "", "")
+
+    monkeypatch.setattr(module.subprocess, "run", failed_evidence)
     assert module.main([*base, "--all-open", "--evidence-target", "test-count"]) == 2
     assert "evidence failed" in capsys.readouterr().err
 
@@ -757,6 +764,10 @@ def _repair_cli_probe(
     calls: list[list[str]] = []
 
     def successful(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if command == ["make", "--no-print-directory", "worktree-state"]:
+            return subprocess.CompletedProcess(command, 0, json.dumps({
+                "path": str(ROOT), "head": SHA_REPAIR, "is_clean": True, "dirty_count": 0,
+            }), "")
         assert path.read_bytes() == original, "receipt must follow successful evidence"
         assert kwargs["cwd"] == ROOT
         assert kwargs["check"] is False
@@ -771,6 +782,70 @@ def _repair_cli_probe(
         "--evidence-target", "test-files",
     ]
     return module, path, calls, command
+
+
+@pytest.mark.parametrize("phase", ["before", "after"])
+@pytest.mark.parametrize("invalid", [
+    "wrong-head", "dirty", "foreign-root", "missing-clean", "query-failed", "malformed", "not-object",
+    "timeout", "io",
+])
+def test_cli_repair_refuses_evidence_from_a_different_or_unverified_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str, invalid: str,
+) -> None:
+    module, path, calls, command = _repair_cli_probe(tmp_path, monkeypatch)
+    original = path.read_bytes()
+    run = cast(_native_owner.Runner, module.subprocess.run)
+    state_queries = 0
+
+    def current_checkout(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal state_queries
+        if argv != ["make", "--no-print-directory", "worktree-state"]:
+            return run(argv, **kwargs)
+        state_queries += 1
+        state = {"path": str(ROOT), "head": SHA_REPAIR, "is_clean": True, "dirty_count": 0}
+        if state_queries == (1 if phase == "before" else 2):
+            if invalid == "wrong-head":
+                state["head"] = SHA_FAILED
+            elif invalid == "dirty":
+                state.update(is_clean=False, dirty_count=1)
+            elif invalid == "foreign-root":
+                state["path"] = str(tmp_path)
+            elif invalid == "missing-clean":
+                del state["is_clean"]
+            elif invalid == "query-failed":
+                return subprocess.CompletedProcess(argv, 1, json.dumps(state), "state query failed")
+            elif invalid == "malformed":
+                return subprocess.CompletedProcess(argv, 0, "not-json", "")
+            elif invalid == "not-object":
+                return subprocess.CompletedProcess(argv, 0, "[]", "")
+            elif invalid == "timeout":
+                raise subprocess.TimeoutExpired(argv, 15)
+            elif invalid == "io":
+                raise OSError("state process unavailable")
+        assert kwargs == {"cwd": ROOT, "check": False, "capture_output": True, "text": True, "timeout": 15}
+        return subprocess.CompletedProcess(argv, 0, json.dumps(state), "")
+
+    monkeypatch.setattr(module.subprocess, "run", current_checkout)
+    assert module.main(command) == 2
+    assert calls == ([] if phase == "before" else [["make", "test-files"]])
+    assert path.read_bytes() == original
+    assert all(family["status"] == "open" for family in module.read_ledger(path)["families"].values())
+
+
+def test_native_repair_checkout_binding_is_admitted_before_publication() -> None:
+    body = compose_makefile(ROOT / "Makefile").split("\n_pytest-runtime-compatibility-admission:", 1)[1]
+    body = body.split("\n_ansible-role-variable-prefix:", 1)[0]
+    assert "tests/unit/test_ci_failure_ledger.py" in next(
+        line for line in body.splitlines() if line.strip().startswith("TESTFILES=")
+    )
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    family = next(family for family in payload["families"] if family["id"] == "ci-repair-checkout-source-binding")
+    assert family["owner_target"] == "_pytest-runtime-compatibility-admission"
+    assert family["node"] == (
+        "tests/unit/test_ci_failure_ledger.py::"
+        "test_cli_repair_refuses_evidence_from_a_different_or_unverified_checkout"
+    )
+    assert family["full_gate_phase"] == "test"
 
 
 def test_cli_repair_env_preserves_multifile_and_quoted_pytest_arguments(
