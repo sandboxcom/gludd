@@ -4,6 +4,18 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Finite native status waits consumed substantive inventory
+
+- The real supervised status-heartbeat fails before launch with "primary has
+  reached the bounded command inventory". It cannot observe external progress.
+- Three regressions fail first. Recognize only finite, timeout-contained native
+  status waits with documented variables; retain rejection of unbounded waits,
+  duplicate/unknown options, recipe overrides and additional targets.
+- All 116 owner cases pass on Python 3.11/3.14 with fatal warnings, and native
+  owner coverage passes unchanged 85/75 floors. Failed receipts remain byte-for-
+  byte intact, substantive commands remain scoped, the bound stays 32 and no
+  task/readiness state is promoted. Exact release/deployment proof is pending.
+
 ### 2026-10-14 — Explicit temporary disk headroom replaces the capacity hold
 
 - User authorizes raising the disk threshold to 95% to continue release work.

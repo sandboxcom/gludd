@@ -47,6 +47,24 @@ at disk 91.0%/limit 95%, scratch 836.3 MB/soft cap 100 MB, zero removals,
 unknown-data cleanup authorized or release item completed. Restore 90% when the
 user ends this exception; fresh gate/exact-successor/deployment proof is pending.
 
+S98.1 direct support for S98.4: `scripts/item_progress.py`,
+`tests/unit/test_item_progress.py` and `docs/features/RELEASE_PROOF_THROUGHPUT.md`
+repair refusal of finite native status waits at a full command inventory.
+Three cases fail first; all 116 owner cases pass on Python 3.11/3.14, including
+full failed-history preservation, unsupported/unbounded-input refusal and
+unchanged substantive-failure guards. Native owner coverage passes unchanged
+85/75 floors (.gate-logs/coverage-bounded-status-wait-20261014.json); strict owner
+and test typing/Ruff pass. The 32-command bound, prior receipts, current-context
+retention restrictions, task selection and required deployment proofs remain.
+This does not authorize a new substantive command at an all-failed inventory.
+The native scanner flags the public repository argument in the new fixture and
+its exact review test. Native baseline refresh adds two identities and removes
+none; only public hash `7e9d0072485183cb48eb9ab08acac44f7293227e` is reviewed as
+non-credential in those two paths. `tests/unit/test_secrets_baseline_compaction.py`
+pins both exact findings after a failing-first case, preserving all prior
+findings/reviews and scanner policy. All 48 baseline controls and six-file native
+read-only admission pass; no pragma, exclusion, scanner bypass or source evasion.
+
 S98.4 repair-receipt checkout-binding scope: `scripts/ci_failure_ledger.py`,
 `tests/unit/test_ci_failure_ledger.py`, `tests/unit/test_ci_failure_ledger_concurrency.py`,
 `config/gate_failure_promotions.json`, `make/10-observability-and-tests.mk`,

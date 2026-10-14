@@ -76,6 +76,21 @@ entire execution. Selection and publication use short serialized sections;
 the existing observer retains child-process, timeout and cleanup ownership.
 Referenced native evidence must survive ordinary observer retention.
 
+The finite `status-heartbeat` diagnostic remains usable when the 32-command
+inventory is full. Admission requires explicit ASCII `COUNT` in 1..24 and
+`INTERVAL` of at least 300 seconds; the scheduled waits must fit the supervising
+owner's finite positive timeout. Only the documented status variables and
+single Make target qualify. Unbounded waits, recipe/Makefile overrides,
+duplicate or unknown settings and extra targets retain ordinary admission.
+This uses the existing observer: it neither adds a command-history slot nor
+erases failures, grants release authority or increases the 32-command limit.
+The native detector's public repository-argument finding is reviewed at exact
+hash `7e9d0072485183cb48eb9ab08acac44f7293227e` in the fixture and its audit test.
+Native refresh adds those two findings without removing others. The regression
+pins both non-credential labels; original scanner settings and existing reviews
+remain. No source string is rewritten to evade detection and no file-wide
+exemption or hook bypass is used.
+
 This protects execution admission, not the model's internal reasoning or every
 editor action. The existing exact-SHA gate, coverage, deployment acceptance and
 promotion checks remain mandatory. No runtime restart or serving change is

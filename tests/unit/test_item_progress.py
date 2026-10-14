@@ -200,6 +200,82 @@ def test_diagnostics_and_external_waits_remain_available(
     assert not (repository / ".gludd/item-progress.json").exists()
 
 
+_STATUS_WAIT = (
+    "make", "status-heartbeat", "INTERVAL=300", "COUNT=2",
+    "STATUS_HEARTBEAT_VALIDATE_ONLY=0", "STATUS_HEARTBEAT_STOP_ON_TERMINAL=0",
+    "PIPELINE_STATUS_REPO=sandboxcom/gludd", "PIPELINE_STATUS_BRANCH=development",
+    "PIPELINE_STATUS_REMOTE=sandboxcom", "PIPELINE_STATUS_SHA=" + "1" * 40,
+    "PIPELINE_STATUS_FAILURE_LEDGER=.gludd/ci-failure-ledger.json",
+    "PIPELINE_STATUS_VALIDATE_ONLY=0", "PIPELINE_STATUS_OUTPUT=.gludd/release-proof-status.json",
+)
+
+
+@pytest.mark.parametrize("command", (
+    _STATUS_WAIT,
+    ("/usr/bin/make", "--no-print-directory", *_STATUS_WAIT[1:]),
+))
+def test_bounded_status_wait_does_not_require_primary_or_create_progress(
+    policy: ModuleType, repository: Path, command: tuple[str, ...],
+) -> None:
+    assert _start(policy, repository, primary="", task="", command=command, max_seconds=900) is None
+    assert not (repository / ".gludd/item-progress.json").exists()
+
+
+def test_bounded_status_wait_preserves_full_failed_inventory_and_substantive_guards(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def stable_environment(*_args: object, **_kwargs: object) -> str:
+        return "b" * 64
+
+    monkeypatch.setattr(policy, "_environment_identity", stable_environment)
+    for index in range(policy._MAX_COMMANDS):
+        _start(policy, repository,
+               command=("make", "test-files", f"TESTFILES=failed-phase-{index}.py"),
+               run_id=f"failed-phase-{index}")
+    progress = repository / ".gludd/item-progress.json"
+    before = progress.read_bytes()
+    receipts = {path: path.read_bytes() for path in (repository / ".gate-logs").rglob("*.json")}
+    assert len(cast(dict[str, object], _state(repository)["observations"])) == 32
+
+    assert _start(policy, repository, command=_STATUS_WAIT, max_seconds=900) is None
+
+    assert progress.read_bytes() == before
+    assert all(path.read_bytes() == content for path, content in receipts.items())
+    assert "- [ ] F12.1" in (repository / "TASKS.md").read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="bounded command inventory"):
+        _start(policy, repository, command=("make", "test-files", "TESTFILES=new-phase.py"))
+    with pytest.raises(ValueError, match="unchanged"):
+        _start(policy, repository, command=("make", "test-files", "TESTFILES=failed-phase-0.py"))
+
+
+@pytest.mark.parametrize("command, maximum", (
+    (tuple(arg for arg in _STATUS_WAIT if not arg.startswith("COUNT=")), 900),
+    (tuple("COUNT=0" if arg.startswith("COUNT=") else arg for arg in _STATUS_WAIT), 900),
+    (tuple("COUNT=25" if arg.startswith("COUNT=") else arg for arg in _STATUS_WAIT), 10000),
+    (tuple("INTERVAL=299" if arg.startswith("INTERVAL=") else arg for arg in _STATUS_WAIT), 900),
+    (tuple("INTERVAL=٣٠٠" if arg.startswith("INTERVAL=") else arg for arg in _STATUS_WAIT), 900),
+    (tuple("INTERVAL=9999999999999999999999" if arg.startswith("INTERVAL=") else arg
+           for arg in _STATUS_WAIT), 900),
+    ((*_STATUS_WAIT, "COUNT=2"), 900),
+    ((*_STATUS_WAIT, "SHELL=/tmp/foreign-shell"), 900),
+    ((*_STATUS_WAIT, "MAKEFILES=foreign.mk"), 900),
+    ((*_STATUS_WAIT, "UNREGISTERED_OPTION=1"), 900),
+    (("make", "-f", "foreign.mk", *_STATUS_WAIT[1:]), 900),
+    ((*_STATUS_WAIT, "test-files"), 900),
+    (_STATUS_WAIT, 0),
+    (_STATUS_WAIT, 299),
+    (_STATUS_WAIT, float("inf")),
+    (_STATUS_WAIT, float("nan")),
+    (_STATUS_WAIT, True),
+))
+def test_unbounded_or_overridden_status_wait_remains_scoped(
+    policy: ModuleType, repository: Path, command: tuple[str, ...], maximum: float,
+) -> None:
+    with pytest.raises(ValueError, match=r"primary.*active|runtime bounds"):
+        _start(policy, repository, primary="", task="", command=command, max_seconds=maximum)
+    assert not (repository / ".gludd/item-progress.json").exists()
+
+
 _DISK_PREVIEW = (
     "make", "disk-cleanup-preflight", "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0",
     "DISK_CLEANUP_PREFLIGHT_DRY_RUN=1", "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800",

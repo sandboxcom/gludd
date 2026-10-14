@@ -123,13 +123,46 @@ def test_public_capacity_grace_argument_has_one_exact_reviewed_finding() -> None
     assert len(arguments) == 1
     payload = json.loads(BASELINE.read_text(encoding="utf-8"))
     findings = payload["results"].get(filename, [])
-    assert len(findings) == 1
-    finding = findings[0]
+    assert len(findings) == 2
+    digest = hashlib.sha1(arguments.pop().encode()).hexdigest()
+    reviewed = [finding for finding in findings if finding["hashed_secret"] == digest]
+    assert len(reviewed) == 1
+    finding = reviewed[0]
     assert finding["filename"] == filename
     assert finding["type"] == "Base64 High Entropy String"
-    assert finding["hashed_secret"] == hashlib.sha1(arguments.pop().encode()).hexdigest()
+    assert finding["hashed_secret"] == digest
     assert finding["is_secret"] is False
     assert finding["is_verified"] is False
+
+
+def test_public_bounded_status_repository_argument_has_one_exact_reviewed_finding() -> None:
+    """Review only the literal public repository argument, not arbitrary settings."""
+    filename = "tests/unit/test_item_progress.py"
+    source = (ROOT / filename).read_text(encoding="utf-8")
+    arguments = {
+        node.value for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        and node.value.startswith("PIPELINE_STATUS_REPO=")
+    }
+    assert arguments == {"PIPELINE_STATUS_REPO=sandboxcom/gludd"}
+    digest = hashlib.sha1(arguments.pop().encode()).hexdigest()
+    payload = json.loads(BASELINE.read_text(encoding="utf-8"))
+    findings = [finding for finding in payload["results"].get(filename, [])
+                if finding["hashed_secret"] == digest]
+    assert len(findings) == 1
+    assert findings[0]["filename"] == filename
+    assert findings[0]["type"] == "Base64 High Entropy String"
+    assert findings[0]["is_secret"] is False
+    assert findings[0]["is_verified"] is False
+    review_test = "tests/unit/test_secrets_baseline_compaction.py"
+    assert payload["results"][review_test] == [{
+        "filename": review_test,
+        "hashed_secret": digest,
+        "is_secret": False,
+        "is_verified": False,
+        "line_number": payload["results"][review_test][0]["line_number"],
+        "type": "Base64 High Entropy String",
+    }]
 
 
 def test_public_task_file_inventory_has_one_exact_reviewed_finding() -> None:

@@ -34,6 +34,12 @@ _DIAGNOSTICS = frozenset({
     "active-work-status", "observed-status", "observed-tail", "git-status",
     "verify-state", "worktree-state", "pipeline-status", "ci-await", "ci-run-summary",
 })
+_STATUS_WAIT_VARIABLES = frozenset({
+    "INTERVAL", "COUNT", "STATUS_HEARTBEAT_VALIDATE_ONLY", "STATUS_HEARTBEAT_STOP_ON_TERMINAL",
+    "PIPELINE_STATUS_REPO", "PIPELINE_STATUS_BRANCH", "PIPELINE_STATUS_REMOTE",
+    "PIPELINE_STATUS_SHA", "PIPELINE_STATUS_FAILURE_LEDGER", "PIPELINE_STATUS_VALIDATE_ONLY",
+    "PIPELINE_STATUS_OUTPUT",
+})
 _VOLATILE_ENV = frozenset({
     "RUN_ID", "OBSERVED_LABEL", "OBSERVED_ROOT", "LOG", "OBSERVED_HEARTBEAT_SECS",
     "OBSERVED_RETAIN_RUNS", "MAKEFLAGS", "MAKELEVEL", "MFLAGS", "SHLVL", "_",
@@ -350,6 +356,31 @@ def _read_only_capacity_diagnostic(command: Sequence[str]) -> bool:
     return grace.isascii() and grace.isdecimal() and len(grace) <= 10 and int(grace) >= 1800
 
 
+def _bounded_status_wait(command: Sequence[str], max_seconds: float) -> bool:
+    """Exempt only the existing finite, supervised external-state observer."""
+    arguments = [arg for arg in command[1:] if arg != "--no-print-directory"]
+    if not arguments or arguments[0] != "status-heartbeat":
+        return False
+    settings: dict[str, str] = {}
+    for argument in arguments[1:]:
+        key, separator, value = argument.partition("=")
+        if not separator or key not in _STATUS_WAIT_VARIABLES or key in settings:
+            return False
+        settings[key] = value
+    for key in ("INTERVAL", "COUNT"):
+        value = settings.get(key, "")
+        if not value.isascii() or not value.isdecimal() or len(value) > 10:
+            return False
+    if (isinstance(max_seconds, bool) or not math.isfinite(max_seconds) or max_seconds <= 0
+            or any(settings.get(key, "0") not in {"0", "1"} for key in (
+                "STATUS_HEARTBEAT_VALIDATE_ONLY", "STATUS_HEARTBEAT_STOP_ON_TERMINAL",
+                "PIPELINE_STATUS_VALIDATE_ONLY",
+            ))):
+        return False
+    count, interval = int(settings["COUNT"]), int(settings["INTERVAL"])
+    return 1 <= count <= 24 and interval >= 300 and (count - 1) * interval <= max_seconds
+
+
 @contextmanager
 def command_admission(
     root: Path, command: Sequence[str], *, environment: Mapping[str, str],
@@ -360,7 +391,7 @@ def command_admission(
     """Admit scoped execution; diagnostics and external-state waits stay available."""
     targets = [arg for arg in command[1:] if "=" not in arg and arg != "--no-print-directory"]
     if _read_only_capacity_diagnostic(command) or (command and Path(command[0]).name == "make" and len(targets) == 1
-            and targets[0] in _DIAGNOSTICS
+            and (targets[0] in _DIAGNOSTICS or _bounded_status_wait(command, max_seconds))
             and not any(arg.split("=", 1)[0] in {"UV", "PYTHON", "SHELL", "MAKEFILES", "MAKEFLAGS"}
                         for arg in command[1:])
             and all(not arg.startswith("-") or arg == "--no-print-directory" for arg in command[1:])):
