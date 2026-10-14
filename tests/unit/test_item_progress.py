@@ -735,6 +735,45 @@ def test_exempt_native_observer_retention_keeps_full_failed_history(
         _start(policy, repository, command=("make", "failed-proof-0"))
 
 
+@pytest.mark.parametrize("target", ["help", "status-heartbeat"])
+@pytest.mark.parametrize("artifact", ["receipt", "orphan-log", "orphan-trace", "reference-only"])
+def test_exempt_observer_refuses_reusing_native_failure_identity(
+    policy: ModuleType, repository: Path, target: str, artifact: str,
+) -> None:
+    (repository / "Makefile").write_text(
+        "help status-heartbeat:\n\t@printf 'executed' > child-executed\n", encoding="utf-8",
+    )
+    _start(policy, repository, command=("make", "failed-proof"), label="retention", run_id="failed")
+    directory = repository / ".gate-logs/observed/retention"
+    (directory / "failed.log").write_bytes(b"original failed output\n")
+    (directory / "failed.pytest.jsonl").write_bytes(b"original failed trace\n")
+    if artifact != "receipt":
+        (directory / "failed.json").unlink()
+    if artifact in {"orphan-trace", "reference-only"}:
+        (directory / "failed.log").unlink()
+    if artifact == "reference-only":
+        (directory / "failed.pytest.jsonl").unlink()
+    before = {path: path.read_bytes() for path in directory.iterdir() if path.is_file()}
+    progress = repository / ".gludd/item-progress.json"
+    before_progress = progress.read_bytes()
+    result = subprocess.run(
+        [sys.executable, str(MODULE.with_name("stream_command.py")), "--item-progress",
+         "--label", "retention", "--run-id", "failed", "--root",
+         str(repository / ".gate-logs/observed"), "--retain-runs", "1", "--max-secs", "10",
+         "--", "make", target, "INTERVAL=300", "COUNT=1"],
+        cwd=repository, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode == 125, result.stdout + result.stderr
+    assert not (repository / "child-executed").exists()
+    assert {path: path.read_bytes() for path in directory.iterdir() if path.is_file()} == before
+    assert progress.read_bytes() == before_progress
+    assert (repository / "TASKS.md").read_text().count("- [ ]") == 4
+    expected_error = ValueError if artifact == "receipt" else FileNotFoundError
+    expected_message = "unchanged" if artifact == "receipt" else r"failed\.json"
+    with pytest.raises(expected_error, match=expected_message):
+        _start(policy, repository, command=("make", "failed-proof"))
+
+
 @pytest.mark.parametrize("loss", ["missing", "malformed"])
 def test_exempt_retention_refuses_lost_native_progress_without_deleting_evidence(
     policy: ModuleType, repository: Path, loss: str,

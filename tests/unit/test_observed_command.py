@@ -102,6 +102,98 @@ def test_observed_command_publishes_atomic_terminal_status_and_log(
     assert not list(run_status.parent.glob(".*.tmp"))
 
 
+@pytest.mark.parametrize("artifact", ["run-1.json", "run-1.log", "run-1.pytest.jsonl", "custom.log", "dangling"])
+def test_observed_start_refuses_existing_artifacts_before_running_child(
+    tmp_path: Path, artifact: str,
+) -> None:
+    directory = tmp_path / "observed/demo"
+    directory.mkdir(parents=True)
+    current = directory / "current.json"
+    current.write_bytes(b"prior current receipt\n")
+    log_args: tuple[str, ...] = ()
+    if artifact == "custom.log":
+        protected = tmp_path / artifact
+        log_args = ("--log", str(protected))
+    else:
+        protected = directory / ("run-1.json" if artifact == "dangling" else artifact)
+    if artifact == "dangling":
+        protected.symlink_to(directory / "missing.json")
+    else:
+        protected.write_bytes(b"prior evidence\n")
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    marker = tmp_path / "child-executed"
+    result = subprocess.run(
+        _command(tmp_path, f"from pathlib import Path; Path({str(marker)!r}).write_text('executed')", *log_args),
+        capture_output=True, check=False, timeout=10,
+    )
+    assert result.returncode == 125, result.stdout + result.stderr
+    assert not marker.exists()
+    assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == before
+    if artifact == "dangling":
+        assert protected.is_symlink() and not protected.exists()
+
+
+def test_observed_start_rejects_current_alias_as_writable_run_id(tmp_path: Path) -> None:
+    current = tmp_path / "observed/demo/current.json"
+    current.parent.mkdir(parents=True)
+    current.write_bytes(b"prior current receipt\n")
+    result = subprocess.run(
+        _command(tmp_path, "print('must not run')", run_id="current"),
+        capture_output=True, check=False, timeout=10,
+    )
+    assert result.returncode == 125, result.stdout + result.stderr
+    assert current.read_bytes() == b"prior current receipt\n"
+    assert not (current.parent / "current.log").exists()
+
+
+def test_competing_observers_claim_one_run_identity_atomically(tmp_path: Path) -> None:
+    marker = tmp_path / "child-executed"
+    child = (f"from pathlib import Path; import time; "
+             f"Path({str(marker)!r}).open('a').write('executed\\n'); time.sleep(0.2)")
+    processes = [subprocess.Popen(_command(tmp_path, child), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                 for _ in range(2)]
+    outputs = [process.communicate(timeout=10) for process in processes]
+    assert sorted(process.returncode for process in processes) == [0, 125], outputs
+    assert marker.read_text().splitlines() == ["executed"]
+    status = _current_status(tmp_path)
+    assert status["state"] == "passed" and status["exit_code"] == 0
+    assert json.loads((tmp_path / "observed/demo/run-1.json").read_text()) == status
+
+
+def test_exclusive_atomic_status_claim_never_replaces_existing_evidence(tmp_path: Path) -> None:
+    target = tmp_path / "run.json"
+    original = b"immutable old receipt\n"
+    target.write_bytes(original)
+    with pytest.raises(FileExistsError):
+        stream_command._atomic_write_json(target, {"state": "starting"}, exclusive=True)
+    assert target.read_bytes() == original
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_log_created_after_start_check_is_not_truncated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory = tmp_path / "observed/demo"
+    log_path = directory / "run-1.log"
+    original_write = stream_command._atomic_write_json
+
+    def competing_log(path: Path, payload: Any, *, exclusive: bool = False) -> None:
+        original_write(path, payload, exclusive=exclusive)
+        if exclusive:
+            log_path.write_bytes(b"competing log evidence\n")
+
+    monkeypatch.setattr(stream_command, "_atomic_write_json", competing_log)
+    result = stream_command.stream_command(
+        [sys.executable, "-c", "raise RuntimeError('must not run')"], log_path,
+        observed_root=tmp_path / "observed", label="demo", run_id="run-1",
+    )
+    assert result == 125
+    assert log_path.read_bytes() == b"competing log evidence\n"
+    status = _current_status(tmp_path)
+    assert status["state"] == "failed" and status["child_pid"] is None
+    assert status["termination_reason"] == "observer-log-open-failed"
+
+
 def test_atomic_status_writer_fsyncs_then_replaces(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

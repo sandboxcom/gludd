@@ -78,8 +78,10 @@ def _new_run_id() -> str:
     return f"{timestamp}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
-def _atomic_write_json(path: Path, payload: Mapping[str, object]) -> None:
-    """Fsync JSON beside ``path`` and atomically replace the visible file."""
+def _atomic_write_json(
+    path: Path, payload: Mapping[str, object], *, exclusive: bool = False,
+) -> None:
+    """Fsync JSON beside ``path`` and atomically claim or replace the file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
@@ -91,7 +93,10 @@ def _atomic_write_json(path: Path, payload: Mapping[str, object]) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        if exclusive:
+            os.link(temporary, path)
+        else:
+            os.replace(temporary, path)
         directory_descriptor = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(directory_descriptor)
@@ -114,6 +119,22 @@ class _StatusPublisher:
         """Write history before advancing the current-run pointer."""
         _atomic_write_json(self.run_path, payload)
         _atomic_write_json(self.current_path, payload)
+
+
+def _preserved_run_ids(
+    admission: _ProgressAdmission | None, progress_root: Path | None,
+    observed_root: Path, label: str,
+) -> frozenset[str]:
+    """Read the same native references before publication and before retention."""
+    if admission is not None:
+        return admission.preserved_run_ids(observed_root, label)
+    if progress_root is None:
+        return frozenset()
+    if TYPE_CHECKING:
+        from item_progress import preserved_run_ids
+    else:
+        from scripts.item_progress import preserved_run_ids
+    return preserved_run_ids(progress_root, observed_root, label)
 
 
 def _prune_terminal_runs(
@@ -335,6 +356,27 @@ def stream_command(
         )
         if progress_admission is not None:
             status["progress_identity"] = progress_admission.identity
+        try:
+            preserved = _preserved_run_ids(
+                progress_admission, progress_root, observed_root, effective_label,
+            )
+            artifacts = (
+                publisher.run_path, publisher.directory / f"{effective_run_id}.log",
+                publisher.directory / f"{effective_run_id}.pytest.jsonl",
+            )
+            existing_log = any(
+                os.path.lexists(path) and (path.is_symlink() or not path.is_dir())
+                for path in (log_path.absolute(), resolved_log)
+            )
+            if (effective_run_id == "current" or effective_run_id in preserved
+                    or any(os.path.lexists(path) for path in artifacts) or existing_log):
+                raise FileExistsError(f"observed run identity is already reserved: {effective_run_id}")
+            # Link a fully fsynced receipt without replacing an existing name.
+            # Concurrent starters can claim the same identity only once.
+            _atomic_write_json(publisher.run_path, status, exclusive=True)
+        except (OSError, ValueError) as exc:
+            print(f"observed-command: starting identity refused: {exc}", file=sys.stderr, flush=True)
+            return OBSERVER_FAILURE
         if not _publish_or_fail(publisher, status):
             return OBSERVER_FAILURE
         if progress_admission is not None:
@@ -347,7 +389,7 @@ def stream_command(
 
     try:
         resolved_log.parent.mkdir(parents=True, exist_ok=True)
-        log_file = resolved_log.open("wb")
+        log_file = resolved_log.open("xb" if publisher is not None else "wb")
     except OSError as exc:
         if status is not None:
             status.update(
@@ -593,15 +635,9 @@ def stream_command(
                 _prune_terminal_runs(publisher.directory, retain_runs=retain_runs)
             else:
                 assert observed_root is not None and effective_label is not None
-                if progress_admission is not None:
-                    preserved = progress_admission.preserved_run_ids(observed_root, effective_label)
-                else:
-                    if TYPE_CHECKING:
-                        from item_progress import preserved_run_ids
-                    else:
-                        from scripts.item_progress import preserved_run_ids
-                    assert progress_root is not None
-                    preserved = preserved_run_ids(progress_root, observed_root, effective_label)
+                preserved = _preserved_run_ids(
+                    progress_admission, progress_root, observed_root, effective_label,
+                )
                 _prune_terminal_runs(
                     publisher.directory, retain_runs=retain_runs,
                     preserve_runs=preserved,

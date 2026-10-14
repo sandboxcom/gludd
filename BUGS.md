@@ -4,6 +4,23 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Reused observer identity replaced retained failure evidence
+
+- Source re-review refuses 60b8187: a diagnostic can reuse a failed run ID,
+  replacing its initial receipt and truncating its log before terminal retention.
+- Fifteen new real-process controls fail first. Check native references and
+  occupied artifacts before publication; atomically claim a fresh receipt and
+  exclusively create observed logs. Preserve old bytes and reject the child.
+  Cover reference-only/orphaned artifacts, the current alias and simultaneous
+  starters, plus the actual filesystem race boundaries. Existing failure-code,
+  retry, 32-command, timeout, disk95 and completion contracts remain unchanged.
+- Native gate cancellation records ABORTED and survivors none. No failed or
+  aborted result is relabelled as success; exact-successor acceptance is pending.
+- Observer consumers report 291 passed on Python 3.11; core reports 193 passed
+  on Python 3.14. Four-owner and progress-owner native coverage audits meet
+  unchanged 85/75 floors. Ruff, strict typing and read-only secrets admission
+  pass; source review, full gate, hosted and deployment acceptance remain open.
+
 ### 2026-10-14 — Diagnostic retention omitted native failed-reference protection
 
 - Independent source review refuses a9738e0: exempt diagnostics have no

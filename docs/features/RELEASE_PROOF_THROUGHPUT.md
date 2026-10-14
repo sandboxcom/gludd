@@ -102,6 +102,32 @@ reader supplies retention protection in both routes. Lost or invalid progress
 terminates with native observer failure 125 before pruning; no passing result
 survives. Source review, full gate and exact-successor acceptance remain pending.
 
+Re-review of `60b8187` identifies a second boundary: terminal preservation alone
+cannot stop an initial publication from replacing a referenced failure with the
+same run ID. Its owned gate was cancelled with `=== GATE: ABORTED ===` and no
+survivors before changing source; that result remains non-passing evidence.
+
+Fifteen real-process regressions fail first, covering help and finite waits with
+an existing receipt, orphaned log/trace or reference-only identity, unscoped
+artifact collisions, the read-only `current` alias, and competing starters.
+Before initial publication, the native observer checks the same canonical
+references used by retention and refuses occupied artifact identities. An
+atomic exclusive filesystem link claims a fully fsynced receipt exactly once;
+observed logs use exclusive creation rather than truncation. A refused starter
+does not run its child, replace old receipts/logs or advance their current alias.
+Separate controls exercise the actual exclusive-link refusal and a log created
+after the precheck. Mutable status updates within the winning run, read-only
+lookup aliases, ordinary log-open failure evidence, and unattended compatibility
+retain their established contracts. Exact-successor proof remains required.
+
+Verification reports 291 passing observer-consumer cases on Python 3.11 and
+193 passing core cases on Python 3.14. Native coverage audits
+`.gate-logs/coverage-20261014T215945Z.json` (four owners) and
+`.gate-logs/coverage-20261014T220116Z.json` (progress owner, 193 cases) meet
+unchanged aggregate 85% and per-file 75% floors. Strict typing, Ruff and the
+read-only native secrets admission pass. These are repair checks, not a passing
+full gate or evidence that another backlog item is deployment-ready.
+
 This protects execution admission, not the model's internal reasoning or every
 editor action. The existing exact-SHA gate, coverage, deployment acceptance and
 promotion checks remain mandatory. No runtime restart or serving change is
