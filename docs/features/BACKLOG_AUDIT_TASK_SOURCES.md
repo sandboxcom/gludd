@@ -16,6 +16,16 @@ of one item is independent of another item's incomplete work. This item-level
 verdict does not replace the canonical gate, exact-SHA CI, and release promotion
 requirements for shipping the combined release.
 
+The trusted embedding runtime can now pass `deployment_validator` through
+`scripts.backlog_audit.main`, `run_report`, and the verdict renderer to the
+existing `audit_task_ledger` owner. Previously the CLI dropped that connection.
+The callback is a Python capability, not a command, receipt, import path, or
+success flag supplied by `TASKS.md` or CLI arguments. The standalone CLI still
+has no deployment owner and therefore cannot verify completion from source
+tests alone. This forwarding change does not implement the installed-artifact
+probes or independently verified signer evidence that a native runtime owner
+must obtain before accepting an item.
+
 The implementation repairs an API-drift gap in `scripts/backlog_audit.py`. The
 script previously constructed `BacklogAuditor` without its required
 `test_runner` argument and then caught the resulting `TypeError` as an
@@ -94,6 +104,17 @@ cleanup.
 - The official [pytest plugin documentation](https://docs.pytest.org/en/stable/how-to/writing_plugins.html)
   defines public `pytest_` hooks for collection, execution, and reporting. The
   result collector uses those hooks rather than private pytest internals.
+- The [Pods recreation rules practitioner thread](https://discuss.kubernetes.io/t/pods-recreation-rules/27076)
+  began in February 2024 and was revisited in September 2026. It reports a
+  successful CI/CD deployment leaving the old application running with a
+  reused image tag. This supports checking the actual deployed subject, not
+  treating pipeline success as item acceptance; it is not a reproduction of
+  that Kubernetes issue in Gludd.
+- [Docker's image-digest documentation](https://docs.docker.com/dhi/explore/security-concepts/digests/)
+  explains immutable image identity. [SLSA build provenance](https://slsa.dev/spec/v1.2/build-provenance)
+  binds artifacts to their build and source. A deployment owner must apply
+  those independent identity checks and execute the item's native runtime
+  probe; CLI owner forwarding is not itself that proof.
 
 ## Verification
 
@@ -106,3 +127,10 @@ acceptance, and independent verdicts for unrelated items. The completion-policy
 profile is `config/coverage_backlog_deployment_completion.ini`. Adapter coverage
 uses `config/coverage_backlog_audit_task_sources.ini`; the required
 floor is 85% aggregate and 75% for every measured production file.
+
+`tests/unit/test_backlog_cli_deployment_owner.py` exercises all three CLI
+entrypoints against the actual canonical parser and auditor. Its controls
+retain one deduplicated evidence invocation, exact-boolean acceptance,
+independent item outcomes, owner exceptions, missing source evidence, and
+rejection of self-reported deployment fields without a trusted owner. The
+existing coverage profile still measures all three original adapter owners.

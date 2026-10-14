@@ -27,8 +27,12 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from general_ludd.validation.backlog_auditor import DeploymentValidator
 
 # Make both the canonical ``scripts`` parser and application package importable
 # when this file is run directly from outside the checkout (no editable install).
@@ -127,7 +131,12 @@ def _print_guard_gaps(classes: list[BugClass], known_ids: set[str]) -> list[BugC
     return gaps
 
 
-def _print_backlog_verdicts(repo_root: Path, *, enabled: bool) -> bool:
+def _print_backlog_verdicts(
+    repo_root: Path,
+    *,
+    enabled: bool,
+    deployment_validator: DeploymentValidator | None = None,
+) -> bool:
     """Print task verdicts and return whether every checked claim is verified."""
     print("\n" + "=" * 72)
     print("BACKLOG VERDICTS")
@@ -140,7 +149,14 @@ def _print_backlog_verdicts(repo_root: Path, *, enabled: bool) -> bool:
         return True
 
     try:
-        report = audit_task_ledger(repo_root, pytest_main=pytest.main)
+        if deployment_validator is None:
+            report = audit_task_ledger(repo_root, pytest_main=pytest.main)
+        else:
+            report = audit_task_ledger(
+                repo_root,
+                pytest_main=pytest.main,
+                deployment_validator=deployment_validator,
+            )
     except (BacklogSourceError, BacklogExecutionError) as exc:
         print(f"\nBACKLOG AUDIT ERROR: {exc}")
         return False
@@ -170,6 +186,7 @@ def run_report(
     classes: list[BugClass] | None = None,
     known_test_ids: set[str] | None = None,
     backlog_verdicts: bool = True,
+    deployment_validator: DeploymentValidator | None = None,
 ) -> int:
     """Run the full verbose audit. Returns a process exit code.
 
@@ -187,6 +204,10 @@ def run_report(
     backlog_verdicts:
         Execute checked-task evidence. ``False`` is the narrow operational
         rollback and does not disable either existing report section.
+    deployment_validator:
+        Independently trusted item-scoped deployment owner supplied by the
+        embedding runtime. Never constructed from task fields or success flags.
+        Without an owner, otherwise supported claims remain incomplete.
     """
     classes = list(DEFAULT_BUG_CLASSES) if classes is None else list(classes)
     occurrences = sweep(repo_root, classes)
@@ -205,7 +226,11 @@ def run_report(
         )
     gaps = _print_guard_gaps(classes, known_ids)
 
-    backlog_clean = _print_backlog_verdicts(repo_root, enabled=backlog_verdicts)
+    backlog_clean = _print_backlog_verdicts(
+        repo_root,
+        enabled=backlog_verdicts,
+        deployment_validator=deployment_validator,
+    )
 
     print("\n" + "=" * 72)
     print(
@@ -218,7 +243,12 @@ def run_report(
     return 1 if (total_occurrences or gaps or not backlog_clean) else 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    deployment_validator: DeploymentValidator | None = None,
+) -> int:
+    """Run the CLI with an optional trusted embedding-runtime owner."""
     parser = argparse.ArgumentParser(
         description=(
             "System-wide bug-class sweep + guard-coverage + backlog verdicts."
@@ -248,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.repo_root),
         collect=not args.no_collect,
         backlog_verdicts=not args.no_backlog_verdicts,
+        deployment_validator=deployment_validator,
     )
 
 

@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Backlog CLI dropped the trusted deployment owner
+
+- The library accepts an item-scoped deployment validator, but the CLI renderer, report and main entrypoint could not forward it. Thirty-three new controls fail first with unsupported-keyword errors; source test success is not deployment acceptance.
+- The existing owner is now forwarded through all three entrypoints as a trusted Python capability. Missing owners, non-boolean results, exceptions, unavailable test evidence and self-reported deployment flags still fail closed. No task flag, command, receipt JSON or dynamic import path constructs an owner; the default standalone CLI remains incomplete without actual deployment evidence.
+- All 281 related cases pass on Python 3.11 and 3.14, with warnings fatal. The unchanged three-owner coverage profile passes the 85/75 floors (.gate-logs/coverage-20261014T021200Z.json); Ruff, production/test strict typing and docstrings pass. Native signer verification, installed-runtime probes, full gate and exact successor CI remain required; no work-item checkbox or completed-backlog entry is changed. Primary and long-lived practitioner evidence is documented in docs/features/BACKLOG_AUDIT_TASK_SOURCES.md.
+
 ### 2026-10-13 — Passing tests still exhausted hosted admission during collection
 
 - Final native Python 3.14 admission passes all 1605 expanded main cases plus separate fresh help in 68.2 observed seconds, keeping 90/60 limits (.gate-logs/v012-initial-path-current314.log). The new fixture coverage owner first exposes 75% aggregate branches and a no-data warning. An additional opt-in/absent-manager control, with explicit None-return assertions preserved through typed callback interfaces, raises all fixture lines/branches to 100%; all 11 controls pass with no warning (.gate-logs/coverage-20261013T231244Z.json). No coverage exemption or changed floor is used. Publication and exact-successor CI remain pending.
