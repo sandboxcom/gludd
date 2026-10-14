@@ -285,6 +285,51 @@ the prior 300-second outer bound killed the otherwise valid combined run before
 the harness could report success. The doubled bound preserves failure
 containment while accommodating the measured complete matrix.
 
+## Complete Make integrity before hosted fan-out
+
+Build `38504428598` on exact SHA
+`05f1a93d8c5e4e443e4367c282834e1bb7212258` fails in unit-2 batch 035 because
+the restored `backlog-audit` `.PHONY` continuation contains a tab. Both existing
+Make formatting assertions reject it. The native Make entrypoint tests passed,
+but early admission selected only one private-help test from the deep Make
+file, leaving the complete integrity checks late in the shard.
+[Exact failed job](https://github.com/sandboxcom/gludd/actions/runs/38504428598/job/115662357753).
+
+The continuation now uses spaces. Both original failing tests and their entire
+36-case Make integrity cohorts remain unchanged. The existing runtime admission
+owner now executes both full files; the original private-help assertion remains
+inside its full cohort. Two explicit promotion families bind the actual failing
+nodes to that owner and the still-required full-gate test phase. Three new
+mapping/seed cases fail before wiring. Three existing literal-roster checks then
+require additive conformance to the expanded file selection; all their original
+budgets, warning policy, fresh help, topology and ownership checks remain.
+
+All 36 Make cases pass on Python 3.11 and 3.14 (2.9/4.0 observed seconds). The
+complete promotion/scheduling/publication replay passes all 139 cases on both
+versions (30.3/32.6 observed seconds). Actual current-source early admission passes
+1,642 cases plus separate fresh help in 57.3 observed seconds, retaining the
+90/60 limits, two-worker ceiling, 21 phases and 2,850-second total ceiling.
+All 71 promotion families, 234 Make contracts, strict test typing, Ruff and
+Make duplicate/parity/parse checks pass. The documented backlog validation-only
+example still performs no audit and claims no proof.
+
+Evidence is producer-owned in `.gate-logs/v012-native-phony-red.log`,
+`.gate-logs/v012-native-phony-promotion-red.log`,
+`.gate-logs/v012-native-phony-promotion-conforming-green.log` and
+`.gate-logs/v012-native-phony-admission.log`. None is a deployment receipt.
+The hosted failure stopped with 35 of 50 batches executed: the remaining 15
+batches are unverified, not assumed green. The existing collect-all diagnostic
+owner can replay all 786 unit-2 files in 50 bounded 16-file batches with one
+worker; its validate-only plan creates no test proof. Full exact-SHA hosted,
+canonical gate and installed deployment acceptance remain pending.
+
+The long-lived [Merge Queue Feedback discussion][queue-feedback] reports
+repeated checks compounding deployment latency. It supports moving complete,
+cheap integrity feedback earlier, but does not identify this Gludd defect or
+authorize skipping later checks. This configuration/formatting repair changes no
+serving process or traffic (ZDD); rollback restores only its source hunk and
+promotion records without manufacturing a green gate.
+
 ## Why this is separate from the full gate
 
 Practitioner reports show that queue latency compounds when expensive checks

@@ -592,6 +592,45 @@ def test_hosted_timing_contracts_execute_in_complete_early_cohorts(
     assert payload["full_gate_required"] is True
 
 
+@pytest.mark.parametrize(
+    ("family_id", "node", "test_file"),
+    [
+        (
+            "makefile-phony-continuation-format",
+            "tests/unit/test_makefile_syntax.py::test_makefile_no_tabs_in_phony",
+            "tests/unit/test_makefile_syntax.py",
+        ),
+        (
+            "makefile-phony-deep-format",
+            "tests/unit/test_makefile_targets_deep.py::TestDotPhonyFormatting::test_phony_no_tabs",
+            "tests/unit/test_makefile_targets_deep.py",
+        ),
+    ],
+)
+def test_makefile_integrity_executes_in_complete_early_cohorts(
+    family_id: str, node: str, test_file: str,
+) -> None:
+    """The full Make cohorts must catch style and topology defects before fan-out."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(family for family in payload["families"] if family["id"] == family_id)
+    assert family == {
+        "id": family_id, "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    assert node in owner
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    selectors = executable.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    assert test_file in selectors
+    phase = next(phase for phase in payload["runtime_contract"]["phases"]
+                 if phase["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in executable
+    assert payload["full_gate_required"] is True
+
+
 def test_private_help_regression_runs_before_hosted_unit_2() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     node = (
@@ -607,7 +646,10 @@ def test_private_help_regression_runs_before_hosted_unit_2() -> None:
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
-    assert node in executable
+    selectors = executable.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    assert node.split("::", 1)[0] in selectors
+    assert node in owner
+    assert _checker().validate_manifest(payload, repository_root=ROOT) == []
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
@@ -1272,6 +1314,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "mcp-git-composite-choice-closure",
         "observer-terminal-retention-concurrency",
         "runtime-admission-initial-path-sibling-collection",
+        "makefile-phony-continuation-format",
+        "makefile-phony-deep-format",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1448,8 +1492,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_self_improve_private_policy_ci_contract.py '
         'tests/unit/test_ci_shards_log_context.py '
         'tests/unit/test_ci_shards_log_context_bounds.py '
-        'tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::'
-        'test_internal_targets_not_in_help '
+        'tests/unit/test_makefile_syntax.py '
+        'tests/unit/test_makefile_targets_deep.py '
         'tests/unit/test_azure_containerapp_coverage_target.py '
         'tests/unit/test_ee_owned_collection_runtime_metadata.py '
         'tests/unit/test_no_sleep_subagent.py '

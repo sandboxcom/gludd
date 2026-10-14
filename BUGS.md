@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Restored backlog entrypoint introduced a late Make formatting failure
+
+- Root's restored backlog-audit .PHONY registration uses a tab instead of spaces. Exact Build 38504428598 / 05f1a93d8c5e4e443e4367c282834e1bb7212258 fails two unchanged formatting assertions in unit-2 batch 035; its other seven test shards pass. Only 35 of 50 unit-2 batches execute, so the remaining 15 are not verified. The earlier 19 entrypoint controls and narrow private-help admission could not cover this whole-file gap.
+- Both failing assertions reproduce locally with 34 controls passing before the single-indent fix. All 36 original Make cases then pass on Python 3.11 and 3.14. The existing early owner expands its narrow deep-file selector to both complete Make integrity files; two exact failure families and three failing-first mapping/seed cases bind the real nodes without removing any full-gate requirement. Three literal-roster expectations conform to that expanded selection while retaining original budgets, fresh help, warnings and topology/ownership assertions.
+- All 139 promotion/scheduling/publication cases pass on both versions; native early admission passes 1,642 cases plus fresh help in 57.3 observed seconds under unchanged 90/60 limits. All 71 families, 234 contracts, strict test typing, Ruff and Make duplicate/parity/parse checks pass. Primary/practitioner findings and evidence limits are documented in docs/features/INTEGRATION_ADMISSION.md. Publication, all remaining batches, exact-SHA hosted/full gate and installed deployment proof remain pending; no backlog completion is claimed.
+
 ### 2026-10-14 — Longest successful hosted shard retained a censored low priority
 
 - The earlier scheduling decision placed unit-2 last because its only measured run had failed after 850 seconds. A complete authenticated successor (Build 38483506178, fd5a6d0a46cc4c6991021c9dd226d22e8f7354d1) proves a successful 3,565-second test interval after a 3,364-second queue delay; it finishes last, 6,962 seconds after the gate. The retained native timing observation remains nonzero for three skipped tag/provider jobs and is diagnostic-only.

@@ -642,6 +642,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "makefile-phony-continuation-format",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_makefile_syntax.py::test_makefile_no_tabs_in_phony",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "makefile-phony-deep-format",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_makefile_targets_deep.py::TestDotPhonyFormatting::test_phony_no_tabs",
+      "full_gate_phase": "test"
     }
   ]
 }
