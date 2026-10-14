@@ -31,6 +31,19 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
+S98.4 bounded collection-reporting support scope: `make/10-observability-and-tests.mk`,
+`tests/unit/test_single_native_commit_collection.py`, and
+`docs/features/RUNTIME_ADMISSION_THROUGHPUT.md`. Two actual fresh commit collections
+emit about 144,000 lines/8.8 MB each. Two real Make controls fail first; four
+native pytest comparisons retain every selected ID, mark, fixture and parameter
+ID across 240 cases, native totals/deselection, import errors, fatal warnings,
+missing-file errors, trace counts and exit codes. Only the native
+verbosity_test_cases output setting changes. Full tests-directory collection,
+addopts, lock, warning policy, observer, bounds and fresh collection remain.
+All 83 related cases pass on Python 3.11 and 3.14; strict typing, Ruff, 234 contracts and
+Make integrity pass. Actual full collection/log-volume measurement, publication
+and exact-SHA full-gate/deployment proof remain pending, not completed items.
+
 S98.4 public hook bootstrap support scope: `make/40-cross-version-and-worktrees.mk`,
 `tests/unit/test_precommit_formatting_admission.py`, and
 `docs/features/INTEGRATION_ADMISSION.md`. Actual commit admission inherits an

@@ -393,3 +393,47 @@ interfaces; all 11 controls and 100% fixture lines/branches pass again with no
 coverage warning (.gate-logs/coverage-20261013T231244Z.json). Strict typing is
 green on all four changed Python files. This is local source acceptance,
 not successor hosted timing, a complete gate, deployment acceptance or closure.
+
+## Native bounded collection reporting (2026-10-14)
+
+Research selects the maintained `-o verbosity_test_cases=-2` override for the
+existing shared `--co -q` collection invocation. Keep the inherited `-v` and
+every other addopts setting: their global verbosity remains zero. The official
+[fine-grained verbosity documentation](https://docs.pytest.org/en/stable/how-to/output.html#fine-grained-verbosity)
+supports controlling item detail independently. Installed pytest 9.1.1's
+[terminal owner](https://github.com/pytest-dev/pytest/blob/9.1.1/src/_pytest/terminal.py)
+prints sorted per-file selected-item counts when this setting is below -1;
+the initial collected/selected/deselected report and final native count summary
+use the unchanged global verbosity. Collection errors still follow the original
+error-reporting path, traceback policy and nonzero exit. Increasing global
+quietness far enough to obtain file counts instead suppresses the final summary.
+
+The long-lived [February 2022 collect-only user report](https://github.com/pytest-dev/pytest/issues/9704)
+documents the distinction between exact IDs at `-q` and file counts at `-qq`,
+including the summary trailer. It supports using the separate maintained setting
+rather than treating quieter console output as an exact inventory format.
+Compact stdout is not a node-ID artifact: the existing trace records only
+`len(session.items)` at collection finish. Native `verbosity_test_cases=-1`
+provides the exact selected IDs when an inventory diagnostic is required.
+Acceptance must compare the full native selected inventory and preserve count,
+deselection, warning/error and failure-exit behavior; file counts alone cannot
+prove inventory equivalence. These are verified source semantics, not completed
+behavioral acceptance or a measured collection/hosted speed improvement.
+
+The change needs no collector, reporter, cache, environment, installer or daemon.
+Keep the collection lock, full tests-directory selection, plugin loading,
+observer limits, warning policy, and 85% aggregate/75% per-file coverage floors.
+Serving processes and ZDD authority are unchanged. Rollback removes only this
+shared invocation's output override and its associated controls; preserve all
+historical logs. Full gate and exact-SHA hosted proof remain required for closure.
+
+Two actual-Make routing controls fail first. Four native pytest comparisons
+verify all 240 selected IDs, marks, fixture dependencies and parameter identities
+byte-equivalently, plus native totals/deselection, import errors, fatal warnings,
+missing-file errors, exit codes and existing trace counts. On the success
+fixture, compact stdout is less than one third of the original output. These
+test-owned snapshots are diagnostic assertions, not a production inventory or
+proof cache. All 83 related cases pass on Python 3.11 and 3.14; typing, Ruff, 234 target
+contracts and Make integrity pass. Whole-repository log-volume measurement and
+successor hosted/full-gate/deployment proof remain pending; no speed gain is
+inferred from the output reduction.

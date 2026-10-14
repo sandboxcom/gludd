@@ -203,7 +203,7 @@ define _collection-admission
 	ANSIBLE_LOCAL_TEMP="$$ANSIBLE_TMP" $(UV) run $(2) python scripts/stream_command.py --root "$(3)" --label $(1) \
 		--heartbeat-secs "$(4)" --quiet-secs "$(5)" \
 		--max-secs "$(6)" --retain-runs "$(7)" --quiet --pytest-trace -- \
-		$(UV) run $(2) python scripts/collection_lock.py --run $(UV) run $(2) python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
+		$(UV) run $(2) python scripts/collection_lock.py --run $(UV) run $(2) python -m pytest tests/ --co -q -o verbosity_test_cases=-2 -p scripts.xdist_trace_plugin; RC=$$?; \
 	if [ "$$RC" -ne 0 ]; then \
 		echo "COLLECTION ERRORS DETECTED (rc=$$RC; bounded tail follows)"; \
 		$(UV) run $(2) python scripts/stream_command.py --tail "$(8)" --root "$(3)" --label $(1) || true; \

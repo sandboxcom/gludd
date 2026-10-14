@@ -154,7 +154,9 @@ def _collection_contract(event: CaptureEvent, tmp_path: Path, label: str) -> Non
     lock = args.index("scripts/collection_lock.py")
     assert args[lock + 1] == "--run"
     pytest_at = args.index("pytest")
-    assert args[pytest_at + 1:] == ["tests/", "--co", "-q", "-p", "scripts.xdist_trace_plugin"]
+    assert args[pytest_at + 1:] == [
+        "tests/", "--co", "-q", "-o", "verbosity_test_cases=-2", "-p", "scripts.xdist_trace_plugin",
+    ]
     if label == "test-count":
         assert args.count("--no-sync") == 3
     temp = Path(str(event["ansible_tmp"]))
@@ -188,6 +190,114 @@ def _success_contract(
 def test_ship_commit_owns_one_fresh_native_count_and_all_admission_guards(tmp_path: Path) -> None:
     result, events = _run(tmp_path)
     _success_contract(result, events, tmp_path)
+
+
+@pytest.mark.parametrize("target", ["test-count", "collect-check"])
+def test_collection_console_uses_native_file_counts_without_global_quiet_override(
+    tmp_path: Path, target: str,
+) -> None:
+    result, events = _run(tmp_path, target=target)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(_observes(events)) == 1
+    args = _observes(events)[0]["args"]
+    pytest_args = args[args.index("pytest") + 1:]
+    assert pytest_args == [
+        "tests/", "--co", "-q", "-o", "verbosity_test_cases=-2", "-p", "scripts.xdist_trace_plugin",
+    ]
+    assert "--no-summary" not in pytest_args
+    assert "-qq" not in pytest_args and "-qqq" not in pytest_args
+    assert "Collection OK" in result.stdout
+    if target == "test-count":
+        assert "123537 tests collected" in result.stdout
+
+
+@pytest.mark.parametrize("condition", ["success", "import-error", "warning-error", "missing-file"])
+def test_native_pytest_compact_collection_preserves_inventory_and_failure_diagnostics(
+    tmp_path: Path, condition: str,
+) -> None:
+    project = tmp_path / "collection-fixture"
+    tests = project / "tests"
+    tests.mkdir(parents=True)
+    snapshot = project / "snapshot.json"
+    (project / "pytest.ini").write_text(
+        '[pytest]\naddopts = -v --tb=short -m "not excluded"\nmarkers =\n    excluded: fixture selection\n',
+        encoding="utf-8",
+    )
+    (project / "conftest.py").write_text(
+        "import json\nfrom pathlib import Path\nimport pytest\n"
+        f"SNAPSHOT = Path({str(snapshot)!r})\n"
+        "@pytest.fixture\ndef fixture_marker():\n    raise AssertionError('collection executed fixture')\n"
+        "def pytest_collection_finish(session):\n"
+        "    rows = [(item.nodeid, sorted(mark.name for mark in item.iter_markers()),\n"
+        "             sorted(item.fixturenames), item.callspec.id if hasattr(item, 'callspec') else None)\n"
+        "            for item in session.items]\n"
+        "    SNAPSHOT.write_text(json.dumps(rows), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    (tests / "test_inventory.py").write_text(
+        "import pytest\n"
+        "@pytest.mark.parametrize('index', range(240), ids=lambda value: f'case-{value}')\n"
+        "def test_native_inventory(index, fixture_marker):\n"
+        "    raise AssertionError('collection executed test')\n"
+        "@pytest.mark.excluded\ndef test_excluded():\n    raise AssertionError('excluded test executed')\n",
+        encoding="utf-8",
+    )
+    if condition in {"import-error", "warning-error"}:
+        body = (
+            "raise RuntimeError('native collection import refusal')\n" if condition == "import-error"
+            else "import warnings\nwarnings.warn('native collection warning refusal', UserWarning)\n"
+        )
+        (tests / "test_refusal.py").write_text(body, encoding="utf-8")
+    selections = ["tests/missing.py"] if condition == "missing-file" else ["tests/"]
+    snapshots: list[object] = []
+    results: list[subprocess.CompletedProcess[str]] = []
+    traces: list[list[dict[str, object]]] = []
+    for compact in (False, True):
+        snapshot.unlink(missing_ok=True)
+        trace = project / f"trace-{compact}.jsonl"
+        env = dict(os.environ)
+        env.pop("PYTEST_ADDOPTS", None)
+        env.update({
+            "PYTHONPATH": str(ROOT), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            "GLUDD_XDIST_TRACE_LOG": str(trace), "GLUDD_XDIST_TRACE_RUN_ID": f"collection-{compact}",
+            "GLUDD_XDIST_TRACE_TRUNCATE": "1",
+        })
+        command = [sys.executable, "-m", "pytest", *selections, "--co", "-q", "-W", "error"]
+        if compact:
+            command.extend(["-o", "verbosity_test_cases=-2"])
+        command.extend(["-p", "scripts.xdist_trace_plugin"])
+        results.append(subprocess.run(
+            command, cwd=project, env=env, capture_output=True, text=True, check=False, timeout=20,
+        ))
+        snapshots.append(json.loads(snapshot.read_text(encoding="utf-8")) if snapshot.exists() else None)
+        traces.append([json.loads(line) for line in trace.read_text().splitlines()] if trace.exists() else [])
+    original, compact_result = results
+    assert snapshots[0] == snapshots[1], "exact node IDs, marks, fixtures and parameter IDs must match"
+    assert original.returncode == compact_result.returncode
+    for events in traces:
+        finishes = [event for event in events if event["event"] == "RUN_FINISH"]
+        assert len(finishes) == 1 and finishes[0]["exitstatus"] == original.returncode
+        if condition != "missing-file":
+            collected = [event for event in events if event["event"] == "COLLECTION_FINISH"]
+            assert len(collected) == 1 and collected[0]["collected"] == 240
+    if condition == "success":
+        assert original.returncode == 0
+        assert isinstance(snapshots[0], list) and len(snapshots[0]) == 240
+        assert len({row[0] for row in snapshots[0]}) == 240
+        assert "tests/test_inventory.py: 240" in compact_result.stdout
+        for result in results:
+            assert "240/241 tests collected (1 deselected)" in result.stdout
+        assert len(compact_result.stdout.encode()) < len(original.stdout.encode()) / 3
+    else:
+        diagnostic = {
+            "import-error": "RuntimeError: native collection import refusal",
+            "warning-error": "UserWarning: native collection warning refusal",
+            "missing-file": "file or directory not found",
+        }[condition]
+        assert original.returncode == (4 if condition == "missing-file" else 2)
+        for result in results:
+            assert diagnostic in result.stdout + result.stderr
+            assert "no tests collected" in result.stdout if condition == "missing-file" else "1 error" in result.stdout
 
 
 @pytest.mark.parametrize("rc", [2, 3, 5, 124])

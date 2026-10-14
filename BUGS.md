@@ -4,6 +4,23 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Complete collection rendered every node instead of bounded native detail
+
+- Each fresh publication collection writes about 144,000 lines/8.8 MB despite
+  needing native totals and complete error visibility. Global addopts -v cancels
+  the existing -q; increasing global quietness would suppress required summaries.
+- Two actual-Make routing controls fail first. The shared owner changes only
+  pytest's maintained item-detail override, retaining global verbosity, full
+  selection, lock/plugin, observer limits, count summary and failure propagation.
+- Four real pytest comparisons preserve all 240 selected IDs, marks, fixture and
+  parameter identities plus native selection totals, warnings/errors, missing
+  input refusal, exit and trace counts. Compact output is not a node-ID artifact;
+  no custom collector, reporter or proof cache is introduced.
+- All 83 related cases pass on Python 3.11 and 3.14; typing, Ruff, 234 contracts and Make
+  integrity pass. Research, limitations and ZDD rollback are documented in
+  RUNTIME_ADMISSION_THROUGHPUT.md. Actual whole-repository log measurement and
+  full release/deployment acceptance remain pending; no speed gain is claimed.
+
 ### 2026-10-14 — Staged hook bootstrap inherited unrelated expired index authentication
 
 - Actual commit admission fails native public hook environment creation with
