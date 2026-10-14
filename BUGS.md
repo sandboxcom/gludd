@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Heartbeat banner mislabeled the candidate under observation
+
+- A running observer correctly pins its JSON snapshot to pushed candidate 05f1a93, but its banner reads the changing local checkout head. That display can make local-only repairs appear to have hosted CI evidence.
+- The banner now separates the explicitly requested candidate SHA from local_sha. An unpinned observer says remote-head until the native producer resolves the remote candidate; it never substitutes local HEAD. Existing observers retain their original recipe until they end, without spawning a second writer.
+- Two native Make controls fail first and then pass, including a local checkout advanced beyond the observed candidate. All 84 related controls pass on Python 3.11, and the combined 368-case replay passes on Python 3.14 with fatal warnings. The 420-case pipeline-owner replay passes in 52.2 observed seconds; canonical two-owner coverage is 96.43% lines/91.67% branches, with unchanged 85/75 floors and nine existing exclusions (.gate-logs/coverage-20261014T035819Z.json). All 234 Make contracts, strict test typing/Ruff and the documented validation-only example pass. Publication, full gate and exact-SHA deployment evidence remain pending; no release-ready field changes.
+
 ### 2026-10-14 — Backlog source checks had no native installed-item acceptance adapter
 
 - Trusted CLI-owner forwarding alone did not execute feature acceptance in an installed runtime. The new controller adapter reuses the existing EE verifier and collection-owned provenance/artifact/JUnit operations for canonical S39/S42 only. It independently binds signer, artifact/lock, source, namespace, platform, canary generation, fixed probe/input and current native invocation before and after execution.

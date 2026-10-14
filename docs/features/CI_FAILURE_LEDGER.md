@@ -329,6 +329,30 @@ The real Python 3.12 timeout remains open; this repair supplies no release proof
 Rollback restores the owner and additive tests together; retain original
 receipts and their validated optional details rather than deleting evidence.
 
+## Observed candidate versus local checkout banner (2026-10-14)
+
+A bounded owner tracking published `05f1a93d8c5e4e443e4367c282834e1bb7212258`
+retains that correct snapshot identity after local development advances. Its
+heartbeat banner nevertheless labels the newer local HEAD as the watched SHA.
+Two new native controls reproduce this mismatch for a pinned and an automatic
+remote-head observation. The banner now distinguishes the requested SHA
+(or `remote-head` while the producer resolves it) from `local_sha`. Snapshot
+identity, terminal-stop authority and all release-proof requirements are
+unchanged; no extra query, writer or watcher is added.
+
+All 84 related controls pass on Python 3.11 and the combined 368-case native
+acceptance/watcher replay passes on Python 3.14. All 234 Make contracts and the
+documented no-execution example pass; that plan output is not gate evidence.
+The complete 420-case pipeline-owner replay passes in 52.2 observed seconds;
+canonical two-owner coverage is 96.43% lines and 91.67% branches, with unchanged
+85/75 floors (`.gate-logs/coverage-20261014T035819Z.json`). Its nine existing
+typing/import exclusions are unchanged. This is source evidence only.
+The current producer owns the exact snapshot, not the banner, as reinforced by
+the immutable-source practitioner and API findings above. The already-running
+owner keeps its compiled old banner until it exits; it is not restarted or
+duplicated merely to pick up a display fix. Public proof remains tied to its
+explicit watched SHA, and S98.4 remains open.
+
 ## Verification
 
 `tests/unit/test_ci_failure_ledger.py` covers all-failure collection,

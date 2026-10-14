@@ -266,6 +266,24 @@ def test_terminal_opt_in_retains_five_minute_floor(tmp_path: Path) -> None:
     assert not (tmp_path / "calls").exists()
 
 
+@pytest.mark.parametrize("pin", [SHA, ""])
+def test_banner_distinguishes_observed_candidate_from_advanced_local_head(
+    tmp_path: Path, pin: str,
+) -> None:
+    command, env = _fixture(tmp_path, "success", count=1, pin=pin)
+    git = tmp_path / "bin/git"
+    git.write_text(f"#!{sys.executable}\nprint({OTHER_SHA!r})\n", encoding="utf-8")
+    result = _execute(tmp_path, command, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    banner = next(line for line in result.stdout.splitlines() if line.startswith("=== PIPELINE HEARTBEAT"))
+    assert f" sha={pin or 'remote-head'} " in banner
+    assert f" local_sha={OTHER_SHA} " in banner
+    current = json.loads((tmp_path / "current.json").read_text())
+    assert current["identity"]["sha"] == SHA
+    assert current["release_ready"] is False
+    assert current["gate_evidence"] is False
+
+
 def test_opt_in_pipeline_output_streams_before_detail_observation_completes(tmp_path: Path) -> None:
     command, env = _fixture(tmp_path, "streaming", count=0)
     with subprocess.Popen(command, cwd=tmp_path, env=env, stdout=subprocess.PIPE,

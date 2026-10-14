@@ -664,8 +664,8 @@ status-heartbeat:
 		$(MAKE) --no-print-directory pipeline-status PIPELINE_STATUS_REPO="$(PIPELINE_STATUS_REPO)" PIPELINE_STATUS_BRANCH="$(PIPELINE_STATUS_BRANCH)" PIPELINE_STATUS_REMOTE="$(PIPELINE_STATUS_REMOTE)" PIPELINE_STATUS_SHA="$(PIPELINE_STATUS_SHA)" PIPELINE_STATUS_FAILURE_LEDGER="$(PIPELINE_STATUS_FAILURE_LEDGER)" PIPELINE_STATUS_VALIDATE_ONLY="$(PIPELINE_STATUS_VALIDATE_ONLY)" PIPELINE_STATUS_OUTPUT="$(PIPELINE_STATUS_OUTPUT)"; \
 	}; \
 	i=0; while [ "$$COUNT_VALUE" -eq 0 ] || [ "$$i" -lt "$$COUNT_VALUE" ]; do \
-		timestamp="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; sha="$$(git rev-parse HEAD 2>/dev/null || echo unknown)"; \
-		echo "=== PIPELINE HEARTBEAT $$timestamp sha=$$sha ===" | tee -a "$$LOG"; \
+		timestamp="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; local_sha="$$(git rev-parse HEAD 2>/dev/null || echo unknown)"; sha="$(or $(PIPELINE_STATUS_SHA),remote-head)"; \
+		echo "=== PIPELINE HEARTBEAT $$timestamp sha=$$sha local_sha=$$local_sha ===" | tee -a "$$LOG"; \
 		$(MAKE) --no-print-directory gate-status 2>&1 | tee -a "$$LOG" || true; \
 		TERMINAL_OUTCOME=""; \
 		if [ -n "$$TERMINAL_MARKER_FILE" ]; then \
