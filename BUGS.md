@@ -4,6 +4,28 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Collection builds reused immutable observer output
+
+- Hosted Build 38645159173 at 3f7cbaf reports one failure and 1506 passes:
+  the second real native Galaxy build reuses galaxy.log and is refused with 125.
+  Keep the observer's refusal; repair the caller's ownership instead.
+- Each invocation now has a fresh immutable log, validated before an atomic
+  diagnostic-alias refresh. Retain failed/warning output, reject alias races,
+  and preserve both evidence and the old complete alias on failed copy/publication.
+  Twelve new controls and the real offline-build/install cohort pass 119 cases;
+  fatal warnings, Ruff and strict typing remain enabled.
+- Add the new file to the complete native Azure coverage roster without dropping
+  any of its 55 existing files or changing 85/75 floors or its 300-second bound.
+  Four roster controls fail first. The reviewed atomic temporary acquisition is
+  generated into the native 259-resource inventory, not manually waived.
+- Main checkout's native owner verifies retained checkpoint 4cb3c9ef. Its foreign
+  ownership blocks an agent-worktree commit by design; import only the reviewed
+  three-file deliverable into development and preserve the checkpoint unchanged.
+  Reuse existing locked jscpd by its supported explicit engine path, not an install
+  or bypass. Full gate, exact-successor hosted and deployment proofs remain open.
+- Integrated development verification reports 124 passed with fatal warnings;
+  strict typing and Ruff pass on all four changed Python files.
+
 ### 2026-10-14 — Trace handoff and concurrent pruning crossed ownership boundaries
 
 - One-pass review refuses 3f7cbaf: a distinct run can claim the unallocated

@@ -159,6 +159,45 @@ editor action. The existing exact-SHA gate, coverage, deployment acceptance and
 promotion checks remain mandatory. No runtime restart or serving change is
 required for this control-plane addition.
 
+### Native Galaxy invocation log ownership
+
+Build and Release run `38645159173` at `3f7cbaf` fails the existing real offline
+collection build/install case: the second native build reuses `galaxy.log`, and
+the observer correctly refuses to overwrite the first invocation's evidence
+with code 125. The failure is not a timeout or a reason to relax that refusal.
+
+The existing collection caller now selects a fresh native-ID log for each
+invocation and validates that exact immutable output. Only then does an atomic,
+fsynced copy refresh the replaceable `galaxy.log` diagnostic alias. Nonzero and
+warning output remains visible and retained; concurrent alias updates cannot
+change another invocation's acceptance. Copy/publication failure leaves the
+old complete alias and immutable receipt/log intact, removes its own temporary
+file, and fails visibly. Replacing an alias symlink never writes to its target.
+The explicit-path/int-return runner contract and observer collision refusal
+remain unchanged; the staged collection owner retains cleanup responsibility.
+
+Twelve added controls cover real repeated children, failures and warnings,
+alias races, symlinks, failed atomic I/O cleanup and direct-run compatibility.
+The existing child-isolation test now requires trace reset flag zero because
+the parent already exclusively allocated its fresh trace; every environment,
+cwd and parent-isolation assertion remains intact. The isolated focused cohort
+reports 119 passed on Python 3.11 with fatal warnings, Ruff and strict typing.
+Integrated development verification reports 124 passed, including all five
+native roster cases, with four-file Ruff and strict typing success.
+Four failing-first native roster controls require the new file alongside all
+55 existing Azure coverage selections, with unchanged 85/75 floors and a
+300-second bound. The native ownership writer admits the reviewed atomic
+temporary acquisition, bringing the inventory to 259 resources.
+
+Isolated worktrees reuse the existing locked clone engine through explicit
+`DUPLICATE_CODE_ENGINE=/Users/shawnwilson/gludd/.opencode/node_modules/.bin/jscpd`;
+they do not install another toolchain. The native checkpoint owner verifies
+`4cb3c9ef` in the main checkout but intentionally refuses that foreign owner in
+the agent worktree. Integrate only the three reviewed files through `wt-import`
+into clean development and use its normal commit guards. The retained checkpoint
+is never popped, dropped, rewritten or bypassed. Source review, full gate,
+exact-successor hosted results and deployment acceptance still remain required.
+
 ### Observer startup interruption readiness
 
 Build run `38590551409`, candidate

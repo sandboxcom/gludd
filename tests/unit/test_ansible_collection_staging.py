@@ -533,8 +533,9 @@ def test_existing_observer_keeps_explicit_environment_cwd_and_trace_in_the_child
     assert not thread.is_alive()
     assert observed == [(initial_environment, initial_cwd)]
     assert log.read_text().splitlines() == ["gludd-public-child", str(child_cwd)]
+    # The observer already owns the exclusively allocated fresh trace; the child must append.
     assert (tmp_path / "observed/gludd-collection-lifecycle/gludd-private-child.pytest.jsonl").read_text() == (
-        "gludd-private-child 1"
+        "gludd-private-child 0"
     )
     assert child_environment == before
     assert hashlib.sha256(json.dumps(sorted(os.environ.items())).encode()).hexdigest() == initial_environment

@@ -70,6 +70,7 @@ RUNTIME_CLOSURE_TESTFILES = (
     "tests/unit/test_ee_owned_collection_runtime_metadata.py",
     "tests/unit/test_ansible_ee_locked_consumer_admission.py",
     "tests/unit/test_ansible_ee_locked_consumer_coverage.py",
+    "tests/unit/test_ansible_collection_log_ownership.py",
 )
 OWNER_POLICY = {
     "COVERAGE_CONFIG": "config/coverage_azure_containerapp.ini",
