@@ -496,9 +496,9 @@ def test_main_names_largest_counted_roots(
 def test_disk_checks_use_portable_system_tools_without_project_venv() -> None:
     guard_source = DISK_GUARD_SCRIPT.read_text()
     make_source = compose_makefile(MAKEFILE)
-    no_uv_goals = make_source.split("_NO_UV_SYNC_GOALS :=", 1)[1].split(
-        "ifneq", 1
-    )[0]
+    assert "override UV_NO_SYNC := 1" in make_source
+    assert "export UV_NO_SYNC" in make_source
+    assert "override UV := echo" not in make_source
     lightweight_targets = {
         "disk-cleanup-preflight",
         "disk-check",
@@ -519,7 +519,7 @@ def test_disk_checks_use_portable_system_tools_without_project_venv() -> None:
     checker_source = SCRIPT.read_text()
     assert 'subprocess.check_output(["df", "-Pk", str(target)]' in checker_source
     assert 'exec "${SYSTEM_PYTHON:-python3}" "$GLUDD_ROOT/scripts/check_disk_usage.py"' in guard_source
-    assert lightweight_targets <= set(no_uv_goals.split())
+    assert all(f"\n{target}:" in make_source for target in lightweight_targets)
     assert "disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0" in (
         check_disk_recipe
     )

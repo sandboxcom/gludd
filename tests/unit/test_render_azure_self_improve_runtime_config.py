@@ -305,12 +305,9 @@ def test_make_target_runs_real_benchmark_with_one_temporary_config() -> None:
 
 def test_live_proof_target_never_replaces_its_python_phases_with_echo() -> None:
     makefile = compose_makefile(Path("Makefile"))
-    no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split(
-        "ifneq (,$(filter $(_NO_UV_SYNC_GOALS)",
-        1,
-    )[0]
-
-    assert "azure-self-improve-live-proof" not in no_uv_goals
+    assert "override UV_NO_SYNC := 1" in makefile
+    assert "export UV_NO_SYNC" in makefile
+    assert "override UV := echo" not in makefile
 
 
 def test_operational_renderer_contains_no_named_model_default() -> None:
