@@ -320,8 +320,9 @@ def test_worktree_cache_cleanup_reaches_nested_feature_branches() -> None:
 def test_read_only_resource_targets_do_not_bootstrap_uv() -> None:
     project_root = Path(__file__).resolve().parents[2]
     makefile = compose_makefile(project_root / "Makefile")
-    no_sync = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]
-    no_sync_targets = set(no_sync.replace("\\", "").split())
+    assert "override UV_NO_SYNC := 1" in makefile
+    assert "export UV_NO_SYNC" in makefile
+    assert "override UV := echo" not in makefile
 
     for target in (
         "grep",
@@ -336,7 +337,7 @@ def test_read_only_resource_targets_do_not_bootstrap_uv() -> None:
         "agent-worktree",
         "agent-worktree-base",
     ):
-        assert target in no_sync_targets
+        assert f"\n{target}:" in makefile
 
 
 def test_measurement_failure_is_bounded_and_classified(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
