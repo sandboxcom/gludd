@@ -705,6 +705,41 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_precommit_quality_guards.py::test_real_project_make_refuses_engine_expression_before_parse_or_export_execution",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "reviewed-focus-environment-naming",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_env_var_audit_deep.py::TestGLUDDNamingConvention::test_no_trailing_underscore",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "reviewed-focus-environment-documentation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_live_vars",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "reviewed-focus-required-run-identity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_consistent",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "backlog-public-help-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_backlog_audit_target.py::test_backlog_target_is_public_registered_and_documented",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "local-release-post-failure-opt-in",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_failures_in_one_invocation",
+      "full_gate_phase": "test"
     }
   ]
 }

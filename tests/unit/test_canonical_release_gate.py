@@ -256,6 +256,40 @@ def test_producer_pins_one_worker_and_keeps_watchdog_owner() -> None:
     assert "@set -e;" in producer
 
 
+def test_recent_release_failures_are_checked_before_full_proof() -> None:
+    source = compose_makefile(ROOT / "Makefile")
+    owner = source.split("\n_pytest-runtime-compatibility-admission:", 1)[1].split(
+        "\n_ansible-role-variable-prefix:", 1,
+    )[0]
+    selected = next(line for line in owner.splitlines() if line.strip().startswith("TESTFILES="))
+    selectors = selected.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    required = {
+        "reviewed-focus-environment-naming": (
+            "tests/unit/test_env_var_audit_deep.py::TestGLUDDNamingConvention::test_no_trailing_underscore"
+        ),
+        "reviewed-focus-environment-documentation": (
+            "tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_live_vars"
+        ),
+        "reviewed-focus-required-run-identity": (
+            "tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_consistent"
+        ),
+        "backlog-public-help-contract": (
+            "tests/unit/test_backlog_audit_target.py::test_backlog_target_is_public_registered_and_documented"
+        ),
+        "local-release-post-failure-opt-in": (
+            "tests/unit/test_canonical_release_gate.py::"
+            "test_actual_local_release_recipe_collects_later_failures_in_one_invocation"
+        ),
+    }
+    families = {family["id"]: family for family in manifest["families"]}
+    for family_id, node in required.items():
+        assert node in selectors or node.split("::", 1)[0] in selectors
+        assert families[family_id]["node"] == node
+        assert families[family_id]["owner_target"] == "_pytest-runtime-compatibility-admission"
+        assert families[family_id]["full_gate_phase"] == "test"
+
+
 @pytest.mark.parametrize("returncode", [0, 143])
 def test_actual_make_recipe_executes_release_driver_and_preserves_cancellation(
     release_repo: tuple[Path, dict[str, str], Path], returncode: int,
@@ -340,14 +374,54 @@ def test_actual_producer_recipe_aborts_before_runner_when_locked_sync_fails(
     recipe_file = resource_dir / "producer.mk"
     recipe_file.write_text(
         f"UV := {fake_uv}\nPYTHON := {sys.executable}\n"
-        "DUAL_TRACK_LOCAL_VALIDATE_ONLY := 1\nDUAL_TRACK_RESUME := 0\nMAX_FILES_PER_BATCH := 16\n"
-        "test-ci-dual-track-local:" + producer
+        "DUAL_TRACK_LOCAL_VALIDATE_ONLY := 0\nDUAL_TRACK_RESUME := 0\nMAX_FILES_PER_BATCH := 16\n"
+        "_ci-replica-clean-tree:\n\t@:\ntest-ci-dual-track-local:" + producer
     )
     result = _make("-f", str(recipe_file), "test-ci-dual-track-local", cwd=root, env=environment)
     assert result.returncode == 2, result.stdout + result.stderr
     arguments = json.loads((resource_dir / "uv-call.json").read_text())
     assert "scripts/dependency_profiles.py" in arguments
     assert "scripts/run_ci_shards_serial.py" not in arguments
+
+
+@pytest.mark.parametrize("validate_only", [False, True])
+def test_actual_local_release_recipe_collects_later_failures_in_one_invocation(
+    release_repo: tuple[Path, dict[str, str], Path], validate_only: bool,
+) -> None:
+    root, environment, _ = release_repo
+    resource_dir = Path(environment["FAKE_RESOURCE_DIR"])
+    calls = resource_dir / "uv-calls.jsonl"
+    fake_uv = resource_dir / "bin" / "uv"
+    fake_uv.write_text(
+        f"#!{sys.executable}\nimport json, pathlib, sys\n"
+        f"with pathlib.Path({str(calls)!r}).open('a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+    )
+    source = compose_makefile(ROOT / "Makefile")
+    producer = source.split("\ntest-ci-dual-track-local:", 1)[1].split("\ntest-ci-shard:", 1)[0]
+    recipe_file = resource_dir / "producer.mk"
+    recipe_file.write_text(
+        f"UV := {fake_uv}\nPYTHON := {sys.executable}\n"
+        f"DUAL_TRACK_LOCAL_VALIDATE_ONLY := {int(validate_only)}\n"
+        "DUAL_TRACK_RESUME := 0\nMAX_FILES_PER_BATCH := 16\n"
+        "_ci-replica-clean-tree:\n\t@:\n"
+        "DUAL_TRACK_WATCHDOG_OWNED_GATE := 1\ntest-ci-dual-track-local:" + producer
+    )
+    result = _make("-f", str(recipe_file), "test-ci-dual-track-local", cwd=root, env=environment)
+    assert result.returncode == 0, result.stdout + result.stderr
+    invocations = [json.loads(line) for line in calls.read_text().splitlines()]
+    assert len(invocations) == (1 if validate_only else 2)
+    if not validate_only:
+        assert "scripts/dependency_profiles.py" in invocations[0]
+    arguments = invocations[-1]
+    assert arguments.count("scripts/run_ci_shards_serial.py") == 1
+    assert arguments.count("--diagnose-after-failure") == 1
+    assert arguments.count("--require-release-policy") == 1
+    assert "--collect-all-failures" not in arguments
+    assert "--watchdog-owned-gate" in arguments
+    assert ("--validate-only" in arguments) is validate_only
+    assert arguments[arguments.index("--batch-workers") + 1] == "1"
+    assert "--pytest-args=-W error " in arguments
 
 
 def test_actual_background_recipe_forwards_the_selected_policy_without_launching(
