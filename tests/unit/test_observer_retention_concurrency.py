@@ -61,3 +61,34 @@ def test_native_retention_distinguishes_concurrent_removal_from_io_failure(
             stream_command._prune_terminal_runs(directory, retain_runs=1)
     for path, payload in protected.items():
         assert path.read_bytes() == payload
+
+
+@pytest.mark.parametrize(("state", "code"), [("failed", 1), ("timed_out", 124), ("interrupted", 130)])
+def test_native_unsuccessful_evidence_survives_without_an_active_capacity_pointer(
+    tmp_path: Path, state: str, code: int,
+) -> None:
+    directory = tmp_path / "observed" / "retention"
+    old = stream_command._StatusPublisher(directory.parent, directory.name, "old-native")
+    log = directory / "old-native.log"
+    trace = directory / "old-native.pytest.jsonl"
+    native = stream_command._base_status(
+        label=directory.name, run_id="old-native", started_at="2026-10-13T00:00:00+00:00",
+        log_path=log, trace_path=trace,
+    )
+    native.update(state=state, exit_code=code, progress_identity={
+        "root": str(tmp_path), "command": ["make", "old-proof"], "source": "a" * 64,
+        "environment": "b" * 64, "limits": [30, 120],
+    })
+    old.publish(native)
+    log.write_bytes(b"native unsuccessful output\n")
+    trace.write_bytes(b"native unsuccessful trace\n")
+    protected = {path: path.read_bytes() for path in (old.run_path, log, trace)}
+    newer = stream_command._StatusPublisher(directory.parent, directory.name, "new-pass")
+    passed = stream_command._base_status(
+        label=directory.name, run_id="new-pass", started_at="2026-10-13T00:00:01+00:00",
+        log_path=directory / "new-pass.log", trace_path=None,
+    )
+    passed.update(state="passed", exit_code=0)
+    newer.publish(passed)
+    stream_command._prune_terminal_runs(directory, retain_runs=1)
+    assert all(path.exists() and path.read_bytes() == content for path, content in protected.items())

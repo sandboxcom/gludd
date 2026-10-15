@@ -228,7 +228,9 @@ def _prune_terminal_runs_locked(
         current_run_id = _safe_name(current["run_id"], field="run_id")
     for _started_at, _name, status_path, value in terminal[retain_runs:]:
         run_id = value.get("run_id")
-        if run_id in preserve_runs or run_id == current_run_id:
+        if (run_id in preserve_runs or run_id == current_run_id
+                or ("progress_identity" in value and value.get("state") != "passed")):
+            # A capacity pointer is not cleanup authority for native failure evidence.
             continue
         if not isinstance(run_id, str) or status_path.name != f"{run_id}.json":
             continue

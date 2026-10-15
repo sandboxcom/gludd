@@ -4,6 +4,28 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-14 — Historical native failures exhausted command capacity
+
+- S98.4's 32-pointer owner refused a distinct locked-artifact acquisition before
+  execution. Historical failed/timed-out receipts need source-aware capacity
+  retirement, not a larger cap or a diagnostic/cleanup exemption.
+- Five cases fail first: real source change still cannot admit at full failure
+  capacity, and ordinary retention can delete unreferenced native unsuccessful
+  receipts/logs/traces. Protect that evidence in the existing retention scan
+  before retiring an inactive, authenticated source-superseded failure pointer.
+- Preserve all original tests and failure assertions. Current-source, env-only,
+  bookkeeping-only, empty-commit, live/unknown/reserved/malformed and atomic-write
+  controls stay closed; scoped/exempt retention-one and old-run reuse are checked. Source review finds an unnecessary retirement at 31 observations plus dead incoming R; two failed/timed-out cases fail first while four overlap/new-key controls pass. The same-lock occupancy correction counts the incoming key before comparison; all six focused cases then pass without losing pointers, evidence or token ownership.
+- Focused verification passes 231 consumer cases; Ruff and strict typing pass.
+  Progress-owner coverage passes 181 cases at 95% combined coverage. An initial
+  150-case observer roster fails aggregate branch coverage at 84.7%; retain
+  that failure. The complete native 331-case cohort passes unchanged 85/75
+  audit floors at 93.06% lines/86.88% branches. Reports and exact commands are
+  in `docs/features/GATE_RESOURCE_LIFECYCLE.md`. The bounded reservation correction passes 185 complete native progress/retention cases at 95% coverage under unchanged 85/75 floors (`.gate-logs/coverage-20261015T065732Z.json`); two-file Ruff and strict typing pass. Source re-review remains pending before the next normal commit.
+- Source review, integration, full gate and exact-SHA release proofs remain
+  pending; no task checkbox or completion authority changes. Read-only scratch
+  inspection still fails at 937.7 MB; no preserved artifacts were deleted.
+
 ### 2026-10-15 — Evidence convenience must not substitute for native ownership
 
 - Source-only review refuses checkpoint source 45e98fc before integration:
