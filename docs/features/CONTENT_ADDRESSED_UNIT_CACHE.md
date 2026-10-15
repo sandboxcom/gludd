@@ -174,3 +174,38 @@ must have explicit source and fixture ownership, no live network/service/time
 input, no unresolved or dynamic import, deterministic branch coverage, a
 warning-fatal focused test, and a nightly cached-versus-fresh equivalence record.
 The exact-head gate remains the final release-ready evidence after expansion.
+
+## Exact-gate fixture identity (2026-10-14)
+
+The release gate exports `GLUDD_CANDIDATE_SHA` to bind native evidence to its
+actual clean candidate. A unit fixture that mocks Git HEAD must explicitly set
+that variable to the mocked checkout's SHA, using scoped `monkeypatch.setenv`.
+This corrects fixture ownership, not production acceptance: all original
+assertions remain, and wrong, empty and malformed expected identities still
+produce `exact_sha=false` and a release-ineligible receipt. Additional controls
+also verify the outer gate's environment is restored after the fixture.
+
+The original failure occurred in local release run
+`20261014T225556Z-fd250208` after 40 passing batches. A focused invocation with
+the real outer candidate reproduces it; the new controls reproduce three more
+fixture failures with seven passing production/ownership controls. The failed
+run and its receipts remain failures. Focused success does not replace a fresh
+exact-candidate gate, hosted results or required deployment acceptance.
+
+The corrected 74-case cohort passes with the actual outer candidate exported;
+the unchanged two-owner coverage profile passes all 100 launcher/lane cases at
+93% combined coverage with unchanged 85/75 floors. Native coverage receipt:
+`.gate-logs/coverage-20261014T233632Z.json`. Ruff and strict scoped typing pass.
+Fixture typing now follows the native script import identities and argparse
+contract; malformed negative inputs and every original value assertion remain.
+Worktree confinement correctly refuses using the main checkout's Python 3.14
+environment from this isolated branch; that replay must occur after normal
+source integration, not through an override or an unrelated environment copy.
+
+The longstanding [pytest environment-isolation report #4226 (2018)](https://github.com/pytest-dev/pytest/issues/4226)
+describes dependence on calling environments and explains why replacing all of
+`os.environ` is unsafe. The [native pytest monkeypatch guidance](https://docs.pytest.org/en/stable/how-to/monkeypatch.html)
+provides scoped environment changes with automatic restoration. No plugin,
+global environment stripping, cache exclusion or release-identity bypass is
+introduced. This test-only repair changes no serving process or deployment
+route; ZDD and rollback behavior remain unchanged.

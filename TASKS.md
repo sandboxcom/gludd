@@ -1,5 +1,46 @@
 # TASKS.md — Evidence Ledger
 
+S98.4 observation, 2026-10-14: exact local release run
+`20261014T225556Z-fd250208` fails after 40 passing batches because a mocked
+checkout inherits `GLUDD_CANDIDATE_SHA` from the real outer gate. The focused
+reproduction fails once and ten added controls fail three times before the
+fixture owns its expected SHA through scoped pytest monkeypatch. Preserve all
+original assertions, production mismatch refusals and the outer gate environment.
+Supporting files are `tests/unit/test_content_addressed_unit_lane.py` and
+`docs/features/CONTENT_ADDRESSED_UNIT_CACHE.md`. The failed gate and its receipts
+remain red; source integration, fresh exact-SHA gate/hosted and deployment
+acceptance remain pending. No completed backlog entry or task checkbox changes.
+Corrected focused verification reports 74 passed under the actual outer
+candidate, Ruff and strict typing success. The unchanged launcher/lane profile
+passes all 100 cases at 93% combined coverage with native 85/75 audit receipt
+`.gate-logs/coverage-20261014T233632Z.json`. Python 3.14 remains an integrated
+main-checkout replay because strict worktree confinement rejects its main-owned
+environment; no confinement override or proof transition is used.
+
+S98.4 supporting source, 2026-10-15: checkpoint branch records
+`45e98fc9fc8477969ec6ace0491d1eb14ab1b523` and corrective successor
+`36f62e87a8560079f601a22f09c6a9452efb643a`. Read-only peer admission preserves
+strict original-owner restore. Normal worktree commits retain checkpoint 4cb;
+native Make scopes the duplicate-code engine away from unrelated pytest
+consumers while preserving actual checker arguments and other overrides.
+Source review refuses the first implementation for premature Make/shell
+expansion; nine owned sentries reproduce it. The correction passes 111 combined
+cases, 27 native quality controls and one integrated fresh collection with
+124462 selected tests and zero errors. Exact source review accepts the successor.
+The fixture worktree uses a native scoped checkpoint, real dependency merge and
+exact original-owner restore; both backups remain retained. Main integration and
+release proof remain required; source commits do not complete S98.4.
+
+The same item's native evidence-producer support is in
+`scripts/reviewed_head_inputs.py`, `tests/unit/test_reviewed_head_inputs.py`,
+`tests/unit/test_build_reviewed_head_integration_receipt.py` and
+`docs/features/NATIVE_REVIEWED_HEAD_INPUTS.md`. Its initial 119-case replay and
+88.59% coverage do not establish acceptance: independent source review finds
+cross-bundle unchanged-failure retries and producer-versus-child runtime
+identity substitution. Repair both with existing canonical owners before
+recording source approval, integrating or running final proof. All release,
+deployment and exact-SHA requirements remain open; no completion entry changes.
+
 **Last audited: 2026-10-12 on `development`. Session 98 resumed from `bc9fd78f1483df05f628d9f3c8f2fed62ab30a68` and verified that hosted runs `38189779986` and `38189779992` for remote `43814531ba0e1bb40d14936280ddd506d45381eb` failed with seven owned families. The preceding gate-refresh PASS is historical, not exact-candidate release evidence. S98 records the readiness, portability, coverage-index, frozen-image, warning-graph, and promotion repairs below. S97 implementation is committed but its required final proof remains open. Fresh clean local gate, canonical release-policy attestation, same-SHA hosted results, and the reviewed-head integration receipt remain mandatory before promotion. No v0.1.2 tag or release was published.**
 
 S98.4 observation, 2026-10-13: exact pushed source 768eaf6e759215c4bf7735930b917f69e9ab484c passes Molecule and Pages, while Build and Release fails its 90-second Python 3.12 admission despite all 1566 main cases passing in 86.61 seconds. Deployment acceptance, clean local gate and exact-successor hosted proof remain pending. Three native controls reproduce late terminal step enrichment being rejected; the repaired ledger preserves original receipts and failure history. All 293 consumers pass on Python 3.11 and 3.14; unchanged coverage passes 193 cases at 96.53% lines/93.39% branches (.gate-logs/coverage-20261013T225503Z.json). Live native observation returns failure, no lookup errors and release_ready=false, then stops nonzero automatically. No task checkbox or completed-backlog entry changes.
