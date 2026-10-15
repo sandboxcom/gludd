@@ -720,6 +720,9 @@ check-gate-failure-promotions:
 	@$(UV) run python -m scripts.check_gate_failure_promotions \
 		--manifest "$(GATE_FAILURE_PROMOTION_MANIFEST)" \
 		--repository-root "$(CURDIR)"
+	@$(MAKE) --no-print-directory test-files \
+		TESTFILES="tests/unit/test_gate_failure_promotion.py::test_repository_manifest_seeds_each_promoted_failure_family tests/unit/test_gate_failure_promotion.py::test_make_wiring_and_target_contract_are_explicit" \
+		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 0 --maxprocesses 1 --timeout=30"
 
 _project-dispatch-integration:
 	@$(MAKE) --no-print-directory test-files \
