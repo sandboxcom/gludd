@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -101,6 +103,7 @@ def test_run_gate_rejects_unbounded_batch_size_before_test_execution(
     marker = "S47_TEST_MUST_NOT_RUN"
     environment = {
         **os.environ,
+        "GATE_TEST_PROFILE": "native",
         "GLUDD_GATE_MAX_FILES_PER_BATCH": "33",
         "PYTEST_CMD": f'python3 -c "print(\"{marker}\")"',
         "GATE_LOCK_FILE": str(tmp_path / "gate.lock"),
@@ -129,6 +132,7 @@ def test_run_gate_rejects_more_than_two_workers_before_test_execution(
     marker = "S47_WORKER_TEST_MUST_NOT_RUN"
     environment = {
         **os.environ,
+        "GATE_TEST_PROFILE": "native",
         "GLUDD_GATE_BATCH_WORKERS": "3",
         "PYTEST_CMD": f'python3 -c "print(\"{marker}\")"',
         "GATE_LOCK_FILE": str(tmp_path / "gate.lock"),
@@ -149,6 +153,76 @@ def test_run_gate_rejects_more_than_two_workers_before_test_execution(
     assert result.returncode != 0
     assert marker not in result.stdout + result.stderr
     assert "1..2" in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("parent_profile", [None, "release", "", "hostile-profile"])
+@pytest.mark.parametrize(
+    "admission",
+    [
+        pytest.param(test_run_gate_rejects_unbounded_batch_size_before_test_execution, id="batch"),
+        pytest.param(test_run_gate_rejects_more_than_two_workers_before_test_execution, id="workers"),
+    ],
+)
+def test_diagnostic_fixtures_own_native_profile_without_mutating_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    parent_profile: str | None,
+    admission: Callable[[Path], None],
+) -> None:
+    if parent_profile is None:
+        monkeypatch.delenv("GATE_TEST_PROFILE", raising=False)
+    else:
+        monkeypatch.setenv("GATE_TEST_PROFILE", parent_profile)
+    resources = tmp_path / "resources-must-not-be-acquired"
+    monkeypatch.setenv("GLUDD_RESOURCE_ROOT", str(resources))
+    parent_environment = dict(os.environ)
+
+    admission(tmp_path)
+
+    assert dict(os.environ) == parent_environment
+    assert not resources.exists()
+    for name in ("gate.lock", "gate.status", "gate.failed"):
+        assert not (tmp_path / name).exists()
+
+
+def test_real_release_profile_still_refuses_test_command_before_resources(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "test-command-must-not-run"
+    resources = tmp_path / "resources-must-not-be-acquired"
+    parent_environment = dict(os.environ)
+    environment = {
+        **os.environ,
+        "GATE_TEST_PROFILE": "release",
+        "PYTEST_CMD": shlex.join([
+            sys.executable, "-c", f"from pathlib import Path; Path({str(marker)!r}).touch()",
+        ]),
+        "PYTEST_ARGS": "",
+        "PYTEST_ADDOPTS": "",
+        "ALLOW_DIRTY_CI_REPLICA": "0",
+        "ALLOW_DIRTY_FOCUSED_REPRO": "0",
+        "DUAL_TRACK_LOCAL_VALIDATE_ONLY": "0",
+        "GLUDD_GATE_EXACT_SHA_RESUME": "0",
+        "GLUDD_GATE_MAX_FILES_PER_BATCH": "16",
+        "GLUDD_GATE_BATCH_WORKERS": "1",
+        "GLUDD_RESOURCE_ROOT": str(resources),
+        "GATE_LOCK_FILE": str(tmp_path / "gate.lock"),
+        "GATE_STATUS_FILE": str(tmp_path / "gate.status"),
+        "GATE_FAILED_FILE": str(tmp_path / "gate.failed"),
+    }
+
+    result = subprocess.run(
+        ["bash", str(RUN_GATE)], cwd=tmp_path, env=environment,
+        capture_output=True, text=True, check=False, timeout=10,
+    )
+
+    assert result.returncode == 2
+    assert "release profile rejects diagnostic" in result.stdout + result.stderr
+    assert not marker.exists()
+    assert not resources.exists()
+    for name in ("gate.lock", "gate.status", "gate.failed"):
+        assert not (tmp_path / name).exists()
+    assert dict(os.environ) == parent_environment
 
 
 def test_batch_summary_measures_resume_savings_under_two_worker_ceiling(

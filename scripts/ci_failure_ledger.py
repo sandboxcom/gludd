@@ -46,6 +46,13 @@ RUN_METADATA_FIELDS = RUN_FIELDS.removesuffix(",jobs")
 RUNNER_ACQUISITION_MESSAGE = (
     "The job was not acquired by Runner of type hosted even after multiple attempts"
 )
+MAKE_RECURSION_ENV_VARS = (
+    "MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "GNUMAKEFLAGS",
+)
+REPAIR_OWNER_ENV_VARS = (
+    "CI_FAILURE_LEDGER", "CI_FAILURE_FAMILIES", "CI_FAILURE_VALIDATE_ONLY",
+    "CI_REPAIR_ALL_OPEN", "CI_REPAIR_SHA", "CI_REPAIR_EVIDENCE_TARGET", "CI_REPAIR_EVIDENCE_VARS",
+)
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 AncestorCheck = Callable[[str, str], bool]
@@ -1343,6 +1350,14 @@ def _require_repair_checkout(sha: str) -> None:
         raise LedgerError("repair evidence requires the claimed SHA in its clean native checkout")
 
 
+def _repair_evidence_environment(inherited: dict[str, str]) -> dict[str, str]:
+    """Detach evidence from Make recursion and ambient repair-owner inputs."""
+    child = inherited.copy()
+    for name in (*MAKE_RECURSION_ENV_VARS, *REPAIR_OWNER_ENV_VARS):
+        child.pop(name, None)
+    return child
+
+
 def _command_repair(args: argparse.Namespace) -> int:
     if FULL_SHA.fullmatch(args.sha) is None:
         raise LedgerError("repair SHA must be a full lowercase 40-character hash")
@@ -1378,7 +1393,9 @@ def _command_repair(args: argparse.Namespace) -> int:
         family_id: _digest(families.get(family_id)) for family_id in selected
     }
     print(f"CI_FAILURE_REPAIR_EVIDENCE command={shlex.join(command)}", flush=True)
-    result = subprocess.run(command, cwd=ROOT, check=False)
+    result = subprocess.run(
+        command, cwd=ROOT, check=False, env=_repair_evidence_environment(dict(os.environ)),
+    )
     if result.returncode != 0:
         raise LedgerError(f"repair evidence failed with exit {result.returncode}")
     _require_repair_checkout(args.sha)

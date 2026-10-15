@@ -139,7 +139,8 @@ def test_async_canonical_profile_contract_fails_in_compatibility_admission_first
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert "tests/unit/test_gate_async.py" in owner
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in owner
     assert manifest["full_gate_required"] is True
 
@@ -182,7 +183,8 @@ def test_session_metadata_failures_are_executed_before_hosted_shards(
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert executable_input in executable
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     assert manifest["full_gate_required"] is True
     assert ("pytest-runtime-compatibility", family["owner_target"], "fast", 90, 60) in (
@@ -209,7 +211,8 @@ def test_timeout_teardown_failures_execute_in_early_admission(test_name: str) ->
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert "tests/unit/test_start_gate_background.py" in executable
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     assert manifest["full_gate_required"] is True
 
@@ -412,7 +415,8 @@ def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     assert payload["full_gate_required"] is True
 
@@ -471,7 +475,8 @@ def test_ee_metadata_contracts_execute_before_hosted_image_construction(
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     assert payload["full_gate_required"] is True
 
@@ -508,7 +513,8 @@ def test_admission_plan_contracts_execute_before_hosted_shards(
     assert node in owner
     assert "tests/unit/test_integration_admission_target.py" in executable
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     phase = next(
         phase for phase in payload["runtime_contract"]["phases"]
@@ -541,7 +547,8 @@ def test_ci_ledger_concurrent_evidence_executes_in_complete_early_cohort() -> No
     assert node in owner
     assert "tests/unit/test_ci_failure_ledger_concurrency.py" in executable
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     phase = next(
         phase for phase in payload["runtime_contract"]["phases"]
@@ -574,7 +581,8 @@ def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> No
     assert node in owner
     assert "tests/unit/test_ci_failure_ledger.py" in executable
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     phase = next(
         phase for phase in payload["runtime_contract"]["phases"]
@@ -619,7 +627,8 @@ def test_automatic_observation_contracts_execute_in_complete_early_cohorts(
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     assert payload["full_gate_required"] is True
 
@@ -659,7 +668,8 @@ def test_hosted_timing_contracts_execute_in_complete_early_cohorts(
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     assert payload["full_gate_required"] is True
 
@@ -698,7 +708,8 @@ def test_makefile_integrity_executes_in_complete_early_cohorts(
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     assert payload["full_gate_required"] is True
 
@@ -726,7 +737,8 @@ def test_private_help_regression_runs_before_hosted_unit_2() -> None:
                  if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     assert payload["full_gate_required"] is True
 
@@ -758,7 +770,8 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert file in executable
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     phase = next(item for item in payload["runtime_contract"]["phases"]
                  if item["target"] == family["owner_target"])
@@ -804,7 +817,8 @@ def test_repaired_failures_execute_as_exact_nodes_before_fanout(
     assert selectors.count(node) == 1
     assert node.split("::", 1)[0] not in selectors
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in recipes[1]
     phase = next(item for item in payload["runtime_contract"]["phases"]
                  if item["target"] == family["owner_target"])
@@ -1092,7 +1106,8 @@ def test_full_ee_acceptance_executes_before_hosted_fanout(
     assert node in owner
     assert node.split("::", 1)[0] in executable
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
@@ -1121,7 +1136,8 @@ def test_byte_bounded_ci_context_executes_in_complete_early_cohort() -> None:
     for path in ("tests/unit/test_ci_shards_log_context.py", node.split("::", 1)[0]):
         assert path in executable
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])
@@ -1149,7 +1165,8 @@ def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
     assert node in owner
     assert node.split("::", 1)[0] in executable
     assert (
-        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
     ) in executable
     phase = next(phase for phase in payload["runtime_contract"]["phases"]
                  if phase["target"] == family["owner_target"])

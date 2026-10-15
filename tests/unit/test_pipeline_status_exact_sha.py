@@ -252,7 +252,7 @@ def test_remote_head_surfaces_transport_failure(mode: str) -> None:
         )
 
 
-def test_local_gate_reports_missing_dead_and_stalled_states(
+def test_local_gate_reports_missing_dead_and_aged_marker_states(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -273,7 +273,11 @@ def test_local_gate_reports_missing_dead_and_stalled_states(
     monkeypatch.setattr(pipeline_status.time, "time", lambda: 500)
     monkeypatch.setattr(pipeline_status.os, "kill", lambda _pid, _signal: None)
     pipeline_status.local_gate()
-    assert "STALLED" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "marker_age_seconds=499" in output
+    assert "pid=42 pid_probe=exists" in output
+    assert "gate_identity=unverified progress=unknown" in output
+    assert "STALLED" not in output
 
 
 def test_local_gate_tolerates_missing_empty_and_fresh_pid_evidence(
@@ -301,6 +305,56 @@ def test_local_gate_tolerates_missing_empty_and_fresh_pid_evidence(
     output = capsys.readouterr().out
     assert "STALLED" not in output
     assert "DEAD" not in output
+
+
+@pytest.mark.parametrize("marker", ["RUNNING", "PASS", "FAIL"])
+def test_old_gate_marker_reports_age_and_pid_probe_without_claiming_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], marker: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    gate = tmp_path / ".gate-status"
+    pid_file = tmp_path / ".gate-background.pid"
+    gate.write_text(f"{marker}\n", encoding="utf-8")
+    pid_file.write_text("42", encoding="utf-8")
+    os.utime(gate, (1, 1))
+    monkeypatch.setattr(pipeline_status.time, "time", lambda: 500)
+    probes: list[tuple[int, int]] = []
+    monkeypatch.setattr(pipeline_status.os, "kill", lambda pid, signal: probes.append((pid, signal)))
+    before = (gate.read_bytes(), pid_file.read_bytes(), gate.stat().st_mtime)
+
+    pipeline_status.local_gate()
+
+    output = capsys.readouterr().out
+    assert f"{marker}\n" in output
+    assert "marker_age_seconds=499" in output
+    assert "pid=42 pid_probe=exists" in output
+    assert "gate_identity=unverified progress=unknown" in output
+    assert "STALLED" not in output
+    assert "DEAD" not in output
+    assert probes == [(42, 0)]
+    assert (gate.read_bytes(), pid_file.read_bytes(), gate.stat().st_mtime) == before
+
+
+def test_old_gate_marker_still_reports_an_actual_missing_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".gate-status").write_text("RUNNING\n", encoding="utf-8")
+    (tmp_path / ".gate-background.pid").write_text("42", encoding="utf-8")
+    os.utime(tmp_path / ".gate-status", (1, 1))
+    monkeypatch.setattr(pipeline_status.time, "time", lambda: 500)
+
+    def missing(pid: int, signal: int) -> None:
+        assert (pid, signal) == (42, 0)
+        raise ProcessLookupError("fixture PID no longer exists")
+
+    monkeypatch.setattr(pipeline_status.os, "kill", missing)
+    pipeline_status.local_gate()
+    output = capsys.readouterr().out
+    assert "RUNNING\n" in output
+    assert "DEAD: pid=42 no longer running" in output
+    assert "pid_probe=exists" not in output
+    assert "STALLED" not in output
 
 
 def test_validate_only_exercises_aggregate_without_network(capsys: pytest.CaptureFixture[str]) -> None:
@@ -420,6 +474,38 @@ def _capacity_snapshot_sources(
                         lambda *_a, **_k: pytest.fail("observation must not clean"))
     return path, ["--remote-only", "--sha", SHA, "--snapshot-output", str(path),
                   "--failure-ledger", str(tmp_path / "absent-ledger.json")]
+
+
+@pytest.mark.parametrize(("status", "conclusion", "expected_code", "expected_state"), [
+    ("completed", "success", 0, "success"),
+    ("completed", "failure", 1, "failure"),
+    ("in_progress", "", 2, "pending"),
+])
+def test_old_local_marker_diagnostic_preserves_current_exact_sha_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    status: str, conclusion: str, expected_code: int, expected_state: str,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch, status, conclusion)
+    args.remove("--remote-only")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".gate-status").write_text("RUNNING\n", encoding="utf-8")
+    (tmp_path / ".gate-background.pid").write_text("42", encoding="utf-8")
+    os.utime(tmp_path / ".gate-status", (1, 1))
+    monkeypatch.setattr(pipeline_status.time, "time", lambda: 500)
+    monkeypatch.setattr(pipeline_status.os, "kill", lambda _pid, _signal: None)
+
+    assert pipeline_status.main(args) == expected_code
+
+    output = capsys.readouterr().out
+    assert "marker_age_seconds=499" in output
+    assert "progress=unknown" in output
+    assert "STALLED" not in output
+    current = json.loads(path.read_text())
+    assert current["identity"] == {"repo": "sandboxcom/gludd", "branch": "development", "sha": SHA}
+    assert current["state"] == expected_state
+    assert current["release_ready"] is False
+    assert current["gate_evidence"] is False
+    assert current["evidence"]["local"]["gate"] == {"state": "FAIL", "status_file": ".gate-status"}
 
 
 @pytest.mark.parametrize("clean", [True, False])

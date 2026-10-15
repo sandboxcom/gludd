@@ -78,6 +78,7 @@ def _run_gate(
     unique_lock = lock_file or tempfile.mktemp(prefix="gludd-gate-test-lock-", dir="/tmp")
     env = {
         **os.environ,
+        "GATE_TEST_PROFILE": "native",
         "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
         "GATE_LOCK_FILE": unique_lock,
         "GATE_STATUS_FILE": str(workdir / ".gate-status"),
@@ -97,6 +98,47 @@ def _run_gate(
 
 
 class TestRunGateScript:
+    @pytest.mark.parametrize("parent_profile", [None, "release", "", "hostile-profile"])
+    @pytest.mark.parametrize("requested_profile", [None, "release"])
+    def test_stub_helper_owns_native_profile_but_preserves_explicit_override(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        parent_profile: str | None,
+        requested_profile: str | None,
+    ) -> None:
+        if parent_profile is None:
+            monkeypatch.delenv("GATE_TEST_PROFILE", raising=False)
+        else:
+            monkeypatch.setenv("GATE_TEST_PROFILE", parent_profile)
+        parent_environment = dict(os.environ)
+        lock = tmp_path / "private-gate.lock"
+        calls: list[dict[str, str]] = []
+
+        def run(
+            command: list[str], *, capture_output: bool, text: bool,
+            cwd: str, env: dict[str, str], timeout: int,
+        ) -> subprocess.CompletedProcess[str]:
+            assert command == ["bash", str(SCRIPT)]
+            assert cwd == str(tmp_path)
+            assert capture_output and text and timeout == 10
+            assert env["GATE_TEST_PROFILE"] == (requested_profile or "native")
+            assert env["PYTEST_CMD"] == 'python3 -c "import sys; sys.exit(0)"'
+            assert env["GATE_LOCK_FILE"] == str(lock)
+            assert env["GATE_STATUS_FILE"] == str(tmp_path / ".gate-status")
+            assert env["GATE_FAILED_FILE"] == str(tmp_path / ".gate-failed")
+            calls.append(env)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        monkeypatch.setattr(subprocess, "run", run)
+        overrides = {"GATE_TEST_PROFILE": requested_profile} if requested_profile is not None else None
+        result = _run_gate(overrides, cwd=tmp_path, timeout=10, lock_file=str(lock))
+
+        assert result.returncode == 0
+        assert len(calls) == 1
+        assert dict(os.environ) == parent_environment
+        assert not lock.exists()
+
     def test_script_exists(self) -> None:
         assert SCRIPT.exists(), f"scripts/run_gate.sh must exist at {SCRIPT}"
         assert SCRIPT.stat().st_size > 0, "run_gate.sh must not be empty"
@@ -304,6 +346,7 @@ class TestRunGateScript:
 
             env = {
                 **os.environ,
+                "GATE_TEST_PROFILE": "native",
                 "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
                 # Point the script at our unique lock file (same one the holder holds).
                 "GATE_LOCK_FILE": unique_lock,
@@ -375,6 +418,7 @@ class TestRunGateScript:
         marker = "STUB_PYTEST_MARKER_12345"
         env = {
             **os.environ,
+            "GATE_TEST_PROFILE": "native",
             "PYTEST_CMD": f'python3 -c "print(\\"{marker}\\")"',
             # Unique lock so concurrent xdist workers don't race on the default lock.
             "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-marker-lock-", dir="/tmp"),
@@ -420,6 +464,7 @@ class TestRunGateScript:
 
         env = {
             **os.environ,
+            "GATE_TEST_PROFILE": "native",
             "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
             "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-subagent-lock-", dir="/tmp"),
             "CLAUDE_AGENT_ID": "test-agent-abc123",
@@ -460,6 +505,7 @@ class TestRunGateScript:
 
         env = {
             **os.environ,
+            "GATE_TEST_PROFILE": "native",
             "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
             "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-subagent-lock-", dir="/tmp"),
             "GLUDD_SUBAGENT": "1",
@@ -516,6 +562,7 @@ class TestRunGateScript:
 
         env = {
             **os.environ,
+            "GATE_TEST_PROFILE": "native",
             "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
             "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-main-lock-", dir="/tmp"),
             "GATE_STATUS_FILE": str(workdir / ".gate-status"),

@@ -394,6 +394,33 @@ owner keeps its compiled old banner until it exits; it is not restarted or
 duplicated merely to pick up a display fix. Public proof remains tied to its
 explicit watched SHA, and S98.4 remains open.
 
+## Lifecycle-marker age and local gate diagnostics (2026-10-15)
+
+The canonical gate publishes `RUNNING` to `.gate-status` at startup and writes
+phase results to `.gate-status.next` until terminal publication. A long-running
+gate can therefore advance through test batches while `.gate-status` retains
+its original modification time. That lifecycle-marker age cannot establish a
+stalled gate.
+
+The existing `pipeline_status.local_gate` diagnostic now reports marker age
+and a successful signal-0 PID probe separately. It states
+`gate_identity=unverified progress=unknown`: finding a PID does not establish
+that it still belongs to the gate or that its work is progressing. Existing
+missing/invalid PID diagnostics and terminal marker text remain. Progress
+inspection uses the existing bounded gate log and active-work owners; this
+display change adds no scanner, heartbeat writer, retry, or cleanup authority.
+Snapshot identity, current CI verdict, gate evidence and `release_ready=false`
+are unaffected.
+
+Practitioner context: a [Jenkins community thread opened in March 2023](https://community.jenkins.io/t/error-jenkins-48300/6533)
+and revisited in June 2024 reports recurring file-heartbeat failures under load.
+Those reports concern Jenkins and do not establish Gludd's cause or justify
+changing its timeouts. Here, the gate's own publication path and failing-first
+local controls establish the distinction between lifecycle markers, PID
+liveness, and progress. Controls retain RUNNING/PASS/FAIL text, real missing-PID
+detection, and unchanged success/failure/pending snapshot verdicts. They do not
+establish live process ownership or full-gate completion.
+
 ## Canonical source identity across child directories (2026-10-14)
 
 The pipeline profile's wildcard run includes also measure same-named scripts
@@ -607,3 +634,60 @@ all existing release gates remain required. No serving process is restarted;
 active callers keep their loaded code, and future invocations use the guard.
 Rollback uses normal branch review while preserving receipt history. Local
 repair remains `repaired`, never hosted `resolved` or deployment-ready.
+
+### Evidence children do not inherit repair-owner authority
+
+An isolated repair checkout can legitimately use the owner's explicit Main
+ledger. Previously, the evidence subprocess inherited that ledger path and the
+other owner controls through both ordinary environment variables and Make's
+encoded recursion state. A pytest child then correctly refused the Main path
+under the unchanged worktree-confinement guard. No repair receipt was produced.
+
+Only the existing evidence subprocess now receives a copied environment with
+these exact entries removed:
+
+- Make recursion transport: `MAKEFLAGS`, `MFLAGS`, `MAKELEVEL`, `MAKEOVERRIDES`,
+  `GNUMAKEFLAGS`.
+- Ambient owner inputs: `CI_FAILURE_LEDGER`, `CI_FAILURE_FAMILIES`,
+  `CI_FAILURE_VALIDATE_ONLY`, `CI_REPAIR_ALL_OPEN`, `CI_REPAIR_SHA`,
+  `CI_REPAIR_EVIDENCE_TARGET`, `CI_REPAIR_EVIDENCE_VARS`.
+
+This reuses the serial runner's small standard-library copy/pop pattern without
+importing that runner, parsing Make's escaped values, or creating another owner.
+The parent's `os.environ` and `args.ledger` authority are unchanged. The repair
+owner still validates selection before evidence, binds the exact clean checkout
+before and after successful evidence, and compares fingerprints under its
+existing private ledger lock before writing the selected receipts.
+
+Evidence variables are parsed and validated before isolation. The existing
+argument vector is unchanged, including quoted multifile selectors, warning
+options and intentional explicit child-scoped overrides. Every other environment
+entry survives, including `PATH`, `UV_PROJECT_ENVIRONMENT`, `VIRTUAL_ENV`,
+`UV_NO_SYNC`, `UV_PYTHON_DOWNLOADS`, `NPROC`, `GLUDD_XDIST_WORKERS`,
+`PYTEST_ADDOPTS`, `PYTHONWARNINGS` and coverage instrumentation. Dropping Make's
+recursion transport intentionally detaches the evidence Make from inherited
+switches and jobserver state; explicit evidence arguments and existing serial
+resource policy remain authoritative.
+
+[GNU Make variable inheritance](https://www.gnu.org/software/make/manual/html_node/Variables_002fRecursion.html)
+documents the separate environment and command-line override paths. Python's
+[subprocess environment contract](https://docs.python.org/3.11/library/subprocess.html#subprocess.run)
+lets the owner replace only its child's environment. The
+[June 2013 practitioner discussion](https://stackoverflow.com/questions/17050611/how-to-prevent-make-from-communicating-any-variable-to-a-submake)
+also demonstrates why clearing only Make overrides leaves ordinary exported
+variables behind, and why splitting escaped override strings is unsafe for
+whitespace. Those observations support handling both channels; Gludd does not
+adopt the discussion's shell reconstruction or blank-environment alternatives.
+
+The additive native Make/environment controls live separately in
+`tests/unit/test_ci_repair_child_environment.py`, outside early-admission
+selection. They cover owner-environment nonmutation, every removed key,
+canonical-owner path exclusion, exact explicit arguments, inherited runtime
+policy, nested Make, successful selected-only publication, invalid-selection
+refusal and failed-child nonpublication. The canonical ledger coverage profile
+and its 85% aggregate/75% per-file floors remain unchanged.
+
+This is a control-plane ZDD change: serving processes are not restarted and
+active owners retain their loaded code. Normal source rollback retains failure
+history. Focused acceptance provides no full-gate, hosted, deployment or release
+authority and does not establish a throughput improvement.
