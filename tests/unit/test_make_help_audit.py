@@ -16,12 +16,28 @@ from tests.unit import test_makefile_audit_deep as deep_audit
 
 def _native_help_fixture(
     tmp_path: Path, *, index_status: int = 0, literal: str | None = None, target: str = "help",
-    edit_section: str | None = None,
+    edit_section: str | None = None, recipe_shape: str = "complete",
+    edit_name: str = "help-roundtrip", edit_refused: bool = False,
 ) -> tuple[subprocess.CompletedProcess[bytes], list[str]]:
     """Execute the real help recipe with a bounded index/shell observation seam."""
     root = Path(__file__).resolve().parents[2]
     source = (root / "make/00-foundation.mk").read_text()
     recipe = source.split("\nhelp:\n", 1)[1].split("\nsdd-constitution:", 1)[0]
+    index_call = "\t$(PYTHON) -m scripts.check_make_help --print-index"
+    if recipe_shape == "missing-footer":
+        recipe = recipe.split(index_call, 1)[0] + index_call + "\n"
+    elif recipe_shape == "final-header":
+        recipe = (
+            "\t@printf '%s\\n' \\\n\t\t\"Usage: make [target]\" && \\\n"
+            + index_call + " && \\\n\tprintf '%s\\n' \\\n\t\t\"  --- Setup ---\"\n"
+        )
+    elif recipe_shape == "operator-header":
+        recipe = (
+            "\t@printf '%s\\n' \\\n\t\t\"Usage: make [target]\" \\\n"
+            '\t\t"  --- Setup ---" && \\\n' + index_call + "\n"
+        )
+    else:
+        assert recipe_shape == "complete"
     if literal is not None:
         recipe = recipe.replace('"Usage: make [target]"', shlex.quote(literal).replace("$", "$$"), 1)
     index = tmp_path / "native-index"
@@ -48,24 +64,33 @@ def _native_help_fixture(
     for name in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"):
         environment.pop(name, None)
     if edit_section is not None:
+        original = makefile.read_bytes()
         edited = subprocess.run(
             [
                 sys.executable, "-c",
                 "import sys; from pathlib import Path; "
                 "from scripts import edit_makefile_target as editor; "
                 "editor.MAKEFILE_PATH = Path(sys.argv[1]); "
-                "sys.argv = ['edit-makefile-target', 'add', '--name', 'help-roundtrip', "
+                "sys.argv = ['edit-makefile-target', 'add', '--name', sys.argv[3], "
                 "'--description', 'Retained native editor', '--section', sys.argv[2]]; "
                 "raise SystemExit(editor.main())",
-                str(makefile), edit_section,
+                str(makefile), edit_section, edit_name,
             ],
             cwd=root, env=environment, capture_output=True, check=False, timeout=15,
         )
-        assert edited.returncode == 0, edited.stdout + edited.stderr
+        if edit_refused:
+            assert edited.returncode != 0
+            assert b"Original Makefile unchanged" in edited.stdout + edited.stderr
+            assert makefile.read_bytes() == original
+            assert list(tmp_path.glob("Makefile.*.tmp")) == []
+        else:
+            assert edited.returncode == 0, edited.stdout + edited.stderr
+    admitted = makefile.read_bytes()
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", str(makefile), target], cwd=tmp_path,
         env=environment, capture_output=True, check=False, timeout=15,
     )
+    assert makefile.read_bytes() == admitted
     return result, trace.read_text().splitlines()
 
 
@@ -120,6 +145,74 @@ def test_native_help_editor_roundtrip_keeps_continuation_and_index_failure(
         assert result.returncode == 0, result.stderr
         assert b"  help-roundtrip          Retained native editor\n" in result.stdout
         assert result.stdout.endswith(b"  foo-test                Test\n\n\n")
+
+
+@pytest.mark.parametrize("section", ["Setup", "Uncatalogued"])
+@pytest.mark.parametrize("index_status", [0, 17])
+def test_native_help_editor_appends_missing_footer_after_index_without_extra_argv(
+    tmp_path: Path, section: str, index_status: int,
+) -> None:
+    result, calls = _native_help_fixture(
+        tmp_path, edit_section=section, index_status=index_status, recipe_shape="missing-footer",
+    )
+    assert calls == ["invocation"]
+    assert result.stdout.startswith(b"Usage: make [target]\n\n  --- Setup ---\n")
+    assert b"  native-index-contract available\n" in result.stdout
+    entry = b"  help-roundtrip          Retained native editor\n"
+    if index_status:
+        assert result.returncode != 0
+        assert b"Error 17" in result.stderr
+        assert (entry in result.stdout) == (section == "Setup")
+        assert b"  --- New Targets ---\n" not in result.stdout
+    else:
+        assert result.returncode == 0 and result.stderr == b""
+        assert entry in result.stdout
+        if section == "Setup":
+            assert result.stdout.endswith(b"  native-index-contract available\n")
+        else:
+            assert result.stdout.endswith(b"  --- New Targets ---\n\n" + entry + b"\n")
+
+
+@pytest.mark.parametrize("recipe_shape", ["final-header", "operator-header"])
+@pytest.mark.parametrize("index_status", [0, 17])
+def test_native_help_editor_transfers_final_argument_and_header_operator(
+    tmp_path: Path, recipe_shape: str, index_status: int,
+) -> None:
+    result, calls = _native_help_fixture(
+        tmp_path, edit_section="Setup", index_status=index_status, recipe_shape=recipe_shape,
+    )
+    assert calls == ["invocation"]
+    assert result.stdout.startswith(b"Usage: make [target]\n")
+    assert b"  native-index-contract available\n" in result.stdout
+    entry = b"  help-roundtrip          Retained native editor\n"
+    if index_status:
+        assert result.returncode != 0
+        assert b"Error 17" in result.stderr
+        assert (entry in result.stdout) == (recipe_shape == "operator-header")
+    else:
+        assert result.returncode == 0 and result.stderr == b""
+        assert result.stdout.count(entry) == 1
+        if recipe_shape == "final-header":
+            assert result.stdout.endswith(b"  --- Setup ---\n" + entry)
+        else:
+            assert result.stdout.endswith(entry + b"  native-index-contract available\n")
+
+
+@pytest.mark.parametrize("index_status", [0, 17])
+def test_missing_footer_native_editor_validation_refusal_preserves_original(
+    tmp_path: Path, index_status: int,
+) -> None:
+    result, calls = _native_help_fixture(
+        tmp_path, edit_section="Uncatalogued", index_status=index_status,
+        recipe_shape="missing-footer", edit_name="invalid:target", edit_refused=True,
+    )
+    assert calls == ["invocation"]
+    assert result.stdout.endswith(b"  native-index-contract available\n")
+    assert b"help-roundtrip" not in result.stdout and b"  --- New Targets ---\n" not in result.stdout
+    if index_status:
+        assert result.returncode != 0 and b"Error 17" in result.stderr
+    else:
+        assert result.returncode == 0 and result.stderr == b""
 
 
 @pytest.mark.parametrize("style", ["echo", "printf"])

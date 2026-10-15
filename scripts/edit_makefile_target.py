@@ -160,8 +160,9 @@ def _update_help_lines(lines: list[str], name: str, description: str, section: s
                 '\t@echo ""',
             ]
             if printf_help:
-                lines[before_idx] += " \\"
+                lines[before_idx] += " && \\"
                 new_help = [
+                    "\tprintf '%s\\n' \\",
                     '\t\t"  --- New Targets ---" \\',
                     '\t\t"" \\',
                     desc_line,
@@ -170,6 +171,14 @@ def _update_help_lines(lines: list[str], name: str, description: str, section: s
             for j, hl in enumerate(new_help):
                 lines.insert(insert_at + j, hl)
     else:
+        if printf_help:
+            header = lines[section_line_idx]
+            if header.endswith(" && \\"):
+                lines[section_line_idx] = header.removesuffix(" && \\") + " \\"
+                desc_line = desc_line.removesuffix(" \\") + " && \\"
+            elif not header.endswith(" \\"):
+                lines[section_line_idx] += " \\"
+                desc_line = desc_line.removesuffix(" \\")
         lines.insert(section_line_idx + 1, desc_line)
     return lines
 
