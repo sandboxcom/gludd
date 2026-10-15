@@ -118,6 +118,12 @@ REVIEWED_HEAD_GATE_ATTESTATION ?=
 REVIEWED_HEAD_RECEIPT_OUTPUT ?=
 REVIEWED_HEAD_RECEIPT_REPO_ROOT ?= .
 REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY ?= 0
+REVIEWED_HEAD_INPUTS_ACTION ?= admit
+REVIEWED_HEAD_INPUTS_INTENT ?=
+REVIEWED_HEAD_INPUTS_OUTPUT ?=
+REVIEWED_HEAD_INPUTS_REPO_ROOT ?= .
+REVIEWED_HEAD_INPUTS_GATE_ATTESTATION ?=
+REVIEWED_HEAD_INPUTS_VALIDATE_ONLY ?= 1
 RELEASE_CANDIDATE_SHA ?=
 RELEASE_FAILURE_LEDGER ?= docs/releases/beta-release-failures.json
 SELF_IMPROVE_MODEL_PATH ?=
@@ -764,6 +770,7 @@ help:
 	@echo "  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings"
 	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
 	@echo "  require-dual-track-green Require exact-SHA local + hosted CI attestations (SHA, DUAL_TRACK_CI_VALIDATE_ONLY)"
+	@echo "  reviewed-head-inputs   Native review inputs: admit|record|focus|finalize (REVIEWED_HEAD_INPUTS_*, dry-plan by default; no release authority)"
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
 	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
 	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"

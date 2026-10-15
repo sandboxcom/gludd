@@ -485,6 +485,19 @@
       "behavior": "make pipeline-status PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANCH=development PIPELINE_STATUS_REMOTE=sandboxcom PIPELINE_STATUS_SHA= PIPELINE_STATUS_FAILURE_LEDGER=.gludd/ci-failure-ledger.json PIPELINE_STATUS_VALIDATE_ONLY=1 PIPELINE_STATUS_OUTPUT=/tmp/gludd-contract-pipeline-status.json"
     },
     {
+      "name": "reviewed-head-inputs",
+      "make_variables": [
+        "REVIEWED_HEAD_INPUTS_ACTION",
+        "REVIEWED_HEAD_INPUTS_INTENT",
+        "REVIEWED_HEAD_INPUTS_OUTPUT",
+        "REVIEWED_HEAD_INPUTS_REPO_ROOT",
+        "REVIEWED_HEAD_INPUTS_GATE_ATTESTATION",
+        "REVIEWED_HEAD_INPUTS_VALIDATE_ONLY",
+        "WORK_ITEM_ID"
+      ],
+      "behavior": "make reviewed-head-inputs REVIEWED_HEAD_INPUTS_ACTION=record REVIEWED_HEAD_INPUTS_INTENT=/tmp/gludd-native-review-intent-absent.json REVIEWED_HEAD_INPUTS_OUTPUT=/tmp/gludd-native-reviewed-inputs-absent REVIEWED_HEAD_INPUTS_REPO_ROOT=. REVIEWED_HEAD_INPUTS_GATE_ATTESTATION=/tmp/gludd-native-gate-attestation-absent.json REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=1 WORK_ITEM_ID=''"
+    },
+    {
       "name": "reviewed-head-receipt",
       "make_variables": [
         "REVIEWED_HEAD_RECEIPT_MANIFEST",

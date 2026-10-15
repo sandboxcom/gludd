@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def _git(repo: Path, *args: str) -> str:
     completed = subprocess.run(
         ["git", "-C", str(repo), *args],
+        cwd=repo.resolve(),
         check=True,
         capture_output=True,
         text=True,
