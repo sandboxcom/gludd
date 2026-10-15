@@ -23,7 +23,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 from filelock import FileLock, Timeout
 
@@ -53,6 +53,18 @@ AncestorCheck = Callable[[str, str], bool]
 
 class LedgerError(RuntimeError):
     """Signal missing, contradictory, or unsafe CI ownership evidence."""
+
+
+class RepairGuidance(TypedDict):
+    """Parameterized first-run guidance without inferred family coverage."""
+
+    family_ids: list[str]
+    failed_sha: str | None
+    candidate_sha: str | None
+    argv: None
+    argv_template: list[str]
+    required_parameters: list[str]
+    reason: str
 
 
 def _now() -> str:
@@ -568,16 +580,15 @@ def guard_runner_acquisition_rerun(
     return blockers
 
 
-def record_repair(
+def validate_repair_selection(
     ledger: dict[str, Any],
     family_ids: Sequence[str],
     *,
     repair_sha: str,
     evidence: str,
-    recorded_at: str,
     is_ancestor: AncestorCheck,
-) -> None:
-    """Attach one verified local-evidence receipt to selected open families."""
+) -> list[dict[str, Any]]:
+    """Admit every selected family without modifying any receipt or ledger."""
     validate_ledger(ledger)
     if FULL_SHA.fullmatch(repair_sha) is None:
         raise LedgerError("repair SHA must be a full lowercase 40-character hash")
@@ -606,6 +617,22 @@ def record_repair(
         selected.append(family)
     if errors:
         raise LedgerError("; ".join(errors))
+    return selected
+
+
+def record_repair(
+    ledger: dict[str, Any],
+    family_ids: Sequence[str],
+    *,
+    repair_sha: str,
+    evidence: str,
+    recorded_at: str,
+    is_ancestor: AncestorCheck,
+) -> None:
+    """Attach one verified local-evidence receipt to selected open families."""
+    selected = validate_repair_selection(
+        ledger, family_ids, repair_sha=repair_sha, evidence=evidence, is_ancestor=is_ancestor,
+    )
     for family in selected:
         family["status"] = "repaired"
         family["repair"] = {
@@ -614,6 +641,61 @@ def record_repair(
             "recorded_at": recorded_at,
         }
     validate_ledger(ledger)
+
+
+def build_repair_guidance(
+    ledger: dict[str, Any],
+    *,
+    ledger_path: Path,
+    branch: str,
+    repair_sha: str,
+    checkout_clean: bool,
+) -> list[RepairGuidance]:
+    """Require an explicit evidence owner for each independently selected family."""
+    validate_ledger(ledger)
+    families = cast(dict[str, Any], ledger["families"])
+    scoped = {key: family for key, family in families.items() if family.get("branch") == branch}
+    selected: list[tuple[str | None, dict[str, Any] | None]] = [
+        (key, family) for key, family in sorted(scoped.items()) if family["status"] == "open"
+    ]
+    if not selected:
+        if any(family["status"] == "repaired" for family in scoped.values()):
+            return []
+        selected = [(None, None)]
+    guidance: list[RepairGuidance] = []
+    for family_id, family in selected:
+        failed_sha = _latest_failed_sha(family) if family is not None else None
+        candidate = (
+            repair_sha if checkout_clean is True and FULL_SHA.fullmatch(repair_sha)
+            and repair_sha != failed_sha else None
+        )
+        required = ["CI_REPAIR_EVIDENCE_TARGET", "CI_REPAIR_EVIDENCE_VARS"]
+        if family_id is None:
+            required.insert(0, "CI_FAILURE_FAMILIES")
+        if candidate is None:
+            required.append("CI_REPAIR_SHA")
+        guidance.append({
+            "family_ids": [family_id] if family_id is not None else [],
+            "failed_sha": failed_sha,
+            "candidate_sha": candidate,
+            "argv": None,
+            "argv_template": [
+                "make", "ci-failure-repair", f"CI_FAILURE_LEDGER={ledger_path}",
+                f"CI_FAILURE_FAMILIES={family_id or '<explicit-family-id>'}",
+                "CI_REPAIR_ALL_OPEN=0",
+                f"CI_REPAIR_SHA={candidate or '<clean-descendant-repair-sha>'}",
+                "CI_REPAIR_EVIDENCE_TARGET=<explicit-evidence-target>",
+                "CI_REPAIR_EVIDENCE_VARS=<explicit-evidence-variables>",
+                "CI_FAILURE_VALIDATE_ONLY=0",
+            ],
+            "required_parameters": required,
+            "reason": (
+                "Select evidence that covers only the explicit family selection. Run its first evidence execution "
+                "through ci-failure-repair; the owner verifies the exact clean descendant checkout before execution. "
+                "No family-to-target coverage mapping has been established."
+            ),
+        })
+    return guidance
 
 
 def guard_push(
@@ -1288,10 +1370,13 @@ def _command_repair(args: argparse.Namespace) -> int:
             if family["status"] == "open"
         )
     selected = sorted(set(selected))
+    command = ["make", args.evidence_target, *evidence_vars]
+    validate_repair_selection(
+        ledger, selected, repair_sha=args.sha, evidence=shlex.join(command), is_ancestor=_git_is_ancestor,
+    )
     selected_fingerprints = {
         family_id: _digest(families.get(family_id)) for family_id in selected
     }
-    command = ["make", args.evidence_target, *evidence_vars]
     print(f"CI_FAILURE_REPAIR_EVIDENCE command={shlex.join(command)}", flush=True)
     result = subprocess.run(command, cwd=ROOT, check=False)
     if result.returncode != 0:

@@ -31,9 +31,14 @@ import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from run_ci_shards_serial import canonical_json_sha256, release_execution_policy
+
+if TYPE_CHECKING:
+    from scripts import ci_failure_ledger
+else:
+    import ci_failure_ledger
 
 from general_ludd.git_release.reviewed_head_integration import (
     ReviewedHeadIntegrationReceiptError,
@@ -148,6 +153,8 @@ class Readiness:
     ci_head_sha: str = ""
     ci_verdict: str = "UNKNOWN"
     ci_head_matches: bool = False
+    ci_failure_ledger_path: str = ""
+    ci_repair_guidance: list[ci_failure_ledger.RepairGuidance] = field(default_factory=list)
     dirty_count: int = 0
     detached_worktrees: list[dict[str, str]] = field(default_factory=list)
     unintegrated_worktrees: list[dict[str, object]] = field(default_factory=list)
@@ -227,6 +234,7 @@ class RemediationStep:
     requires_owner_confirmation: bool
     resolution: str
     safety: str
+    argv_template: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -245,6 +253,22 @@ def build_remediation_plan(
 ) -> RemediationPlan:
     """Return validate-first operator actions without changing release state."""
     steps: list[RemediationStep] = []
+    for guidance in result.ci_repair_guidance:
+        steps.append(RemediationStep(
+            code="ci_failure_repair",
+            blockers=tuple(guidance["family_ids"]) or ("explicit failure family selection required",),
+            validate_argv=(
+                "make", "ci-failure-status", f"CI_FAILURE_LEDGER={result.ci_failure_ledger_path}",
+                "CI_FAILURE_VALIDATE_ONLY=0",
+            ),
+            owner_release_argv=(), apply_argv=None, requires_owner_confirmation=True,
+            resolution=guidance["reason"],
+            safety=(
+                "The template requires an explicit evidence target and variables; it grants no coverage "
+                "to unrelated families and records no receipt until the native repair owner succeeds."
+            ),
+            argv_template=tuple(guidance["argv_template"]),
+        ))
     prunable: list[dict[str, object]] = []
     for entry in result.unintegrated_worktrees:
         raw_reasons = entry.get("reasons")
@@ -705,6 +729,14 @@ def assess(
 
         verdict, _ci_detail = _ci_verdict(state.head, result.ci_source_branch, run)
         result.ci_verdict = verdict
+        if verdict == "RED":
+            failure_ledger_path = root / ".gludd" / "ci-failure-ledger.json"
+            result.ci_failure_ledger_path = str(failure_ledger_path)
+            failure_ledger = ci_failure_ledger.read_ledger(failure_ledger_path)
+            result.ci_repair_guidance = ci_failure_ledger.build_repair_guidance(
+                failure_ledger, ledger_path=failure_ledger_path, branch=result.ci_source_branch,
+                repair_sha=state.head, checkout_clean=state.dirty_count == 0,
+            )
         if not result.ci_head_matches or verdict != "GREEN":
             result.errors.append(
                 f"CI evidence is not a successful run for HEAD {state.head} "

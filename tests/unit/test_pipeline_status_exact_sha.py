@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     import active_work_status
     import automatic_disk_cleanup
     import check_disk_usage
-    import ci_failure_ledger
+    from scripts import ci_failure_ledger
 else:
     from scripts import active_work_status, automatic_disk_cleanup, check_disk_usage, ci_failure_ledger
 
@@ -420,6 +420,83 @@ def _capacity_snapshot_sources(
                         lambda *_a, **_k: pytest.fail("observation must not clean"))
     return path, ["--remote-only", "--sha", SHA, "--snapshot-output", str(path),
                   "--failure-ledger", str(tmp_path / "absent-ledger.json")]
+
+
+@pytest.mark.parametrize("clean", [True, False])
+def test_pipeline_failed_family_guidance_uses_the_receipt_owner_on_first_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean: bool,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch, "completed", "failure")
+    ledger_path = tmp_path / "absent-ledger.json"
+    ledger = ci_failure_ledger.new_ledger()
+    ci_failure_ledger.observe_payload(ledger, {
+        **_run("Build and Release", 200, sha=OTHER_SHA, conclusion="failure"),
+        "jobs": [
+            {"name": "unit-2", "status": "completed", "conclusion": "failure", "steps": []},
+            {"name": "other", "status": "completed", "conclusion": "failure", "steps": []},
+        ],
+    }, observed_at="first")
+    ci_failure_ledger.write_ledger(ledger_path, ledger)
+    before = ledger_path.read_bytes()
+    probes: list[str] = []
+
+    def checkout(sha: str) -> None:
+        probes.append(sha)
+        if not clean:
+            raise ci_failure_ledger.LedgerError("candidate checkout is dirty")
+
+    monkeypatch.setattr(ci_failure_ledger, "_require_repair_checkout", checkout)
+    assert pipeline_status.main(args) == 1
+    record = json.loads(path.read_text())
+    guidance = record["evidence"]["repair_guidance"]
+
+    assert probes == [SHA]
+    assert len(guidance) == 2
+    assert {tuple(item["family_ids"]) for item in guidance} == {(key,) for key in ledger["families"]}
+    for item in guidance:
+        assert item["candidate_sha"] == (SHA if clean else None)
+        assert item["argv"] is None
+        assert item["argv_template"][:2] == ["make", "ci-failure-repair"]
+        assert "CI_REPAIR_ALL_OPEN=0" in item["argv_template"]
+        assert "CI_REPAIR_EVIDENCE_TARGET=<explicit-evidence-target>" in item["argv_template"]
+    assert ledger_path.read_bytes() == before
+    assert record["release_ready"] is False
+
+
+def test_pipeline_failure_without_observed_families_requests_explicit_selection_and_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch, "completed", "failure")
+    assert pipeline_status.main(args) == 1
+    guidance = json.loads(path.read_text())["evidence"]["repair_guidance"]
+
+    assert len(guidance) == 1
+    assert guidance[0]["family_ids"] == []
+    assert guidance[0]["argv"] is None
+    assert "CI_FAILURE_FAMILIES" in guidance[0]["required_parameters"]
+    assert "CI_REPAIR_EVIDENCE_TARGET" in guidance[0]["required_parameters"]
+
+
+def test_pipeline_guidance_lookup_error_invalidates_previous_current_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch)
+    assert pipeline_status.main(args) == 0
+    assert json.loads(path.read_text())["state"] == "success"
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch, "completed", "failure")
+
+    def malformed_guidance(*_args: object, **_kwargs: object) -> object:
+        raise ci_failure_ledger.LedgerError("family evidence cannot be read")
+
+    monkeypatch.setattr(ci_failure_ledger, "build_repair_guidance", malformed_guidance)
+    assert pipeline_status.main(args) == 2
+    record = json.loads(path.read_text())
+    assert record["state"] == "lookup_error"
+    assert record["evidence"]["repair_guidance"] == []
+    assert "family evidence cannot be read" in " ".join(record["evidence"]["errors"])
+    assert {item["next_action"] for item in record["evidence"]["missing_proofs"].values()} == {
+        "resolve_observation_error",
+    }
 
 
 @pytest.mark.parametrize(

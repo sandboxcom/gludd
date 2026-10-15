@@ -721,6 +721,7 @@ def test_cli_repair_rejects_unsafe_or_failed_evidence(
         return subprocess.CompletedProcess(command, 9, "", "")
 
     monkeypatch.setattr(module.subprocess, "run", failed_evidence)
+    monkeypatch.setattr(module, "_git_is_ancestor", lambda _old, _new: True)
     assert module.main([*base, "--all-open", "--evidence-target", "test-count"]) == 2
     assert "evidence failed" in capsys.readouterr().err
 
@@ -782,6 +783,113 @@ def _repair_cli_probe(
         "--evidence-target", "test-files",
     ]
     return module, path, calls, command
+
+
+@pytest.mark.parametrize("invalid", [
+    "unknown", "resolved", "empty", "empty-all-open", "same-sha", "non-descendant", "mixed",
+])
+def test_cli_repair_selection_is_admitted_before_any_evidence_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any, invalid: str,
+) -> None:
+    module = _load()
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, _failed_payload(), observed_at="first")
+    family_id = sorted(ledger["families"])[0]
+    selection = ["--family", family_id]
+    sha = SHA_FAILED if invalid == "same-sha" else SHA_REPAIR
+    if invalid == "resolved":
+        ledger["families"][family_id]["status"] = "resolved"
+    elif invalid == "unknown":
+        selection = ["--family", "f" * 64]
+    elif invalid == "mixed":
+        selection.extend(["--family", "f" * 64])
+    elif invalid == "empty":
+        selection = []
+    elif invalid == "empty-all-open":
+        for family in ledger["families"].values():
+            family["status"] = "resolved"
+        selection = ["--all-open"]
+    path = tmp_path / "ledger.json"
+    module.write_ledger(path, ledger)
+    before = path.read_bytes()
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if command == ["make", "--no-print-directory", "worktree-state"]:
+            return subprocess.CompletedProcess(command, 0, json.dumps({
+                "path": str(ROOT), "head": sha, "is_clean": True, "dirty_count": 0,
+            }), "")
+        assert path.read_bytes() == before
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(module, "_git_is_ancestor", lambda _old, _new: invalid != "non-descendant")
+    assert module.main([
+        "repair", "--ledger", str(path), "--sha", sha,
+        "--evidence-target", "test-files", *selection,
+    ]) == 2
+    assert calls == [], "an ineligible selection must launch zero evidence children"
+    assert path.read_bytes() == before
+    assert capsys.readouterr().err
+
+
+@pytest.mark.parametrize("clean,sha,expected", [
+    (True, SHA_REPAIR, SHA_REPAIR), (False, SHA_REPAIR, None),
+    (True, SHA_FAILED, None), (True, "short", None),
+])
+def test_repair_guidance_is_per_family_and_requires_explicit_evidence_coverage(
+    tmp_path: Path, clean: bool, sha: str, expected: str | None,
+) -> None:
+    module = _load()
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, _failed_payload(), observed_at="first")
+    original = deepcopy(ledger)
+    guidance = module.build_repair_guidance(
+        ledger, ledger_path=tmp_path / "ledger.json", branch="development",
+        repair_sha=sha, checkout_clean=clean,
+    )
+
+    assert len(guidance) == 3
+    assert {tuple(item["family_ids"]) for item in guidance} == {(key,) for key in ledger["families"]}
+    for item in guidance:
+        assert item["candidate_sha"] == expected
+        assert item["argv"] is None
+        assert item["argv_template"][:2] == ["make", "ci-failure-repair"]
+        assert "CI_REPAIR_ALL_OPEN=0" in item["argv_template"]
+        assert "CI_REPAIR_EVIDENCE_TARGET=<explicit-evidence-target>" in item["argv_template"]
+        assert "CI_REPAIR_EVIDENCE_TARGET" in item["required_parameters"]
+        assert "CI_REPAIR_EVIDENCE_VARS" in item["required_parameters"]
+        assert "release-proof-admission" not in " ".join(item["argv_template"])
+        assert ("CI_REPAIR_SHA" in item["required_parameters"]) is (expected is None)
+    assert ledger == original
+
+
+def test_first_selected_repair_execution_records_only_its_single_evidence_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module, path, calls, _command = _repair_cli_probe(tmp_path, monkeypatch)
+    ledger = module.read_ledger(path)
+    family_id = sorted(ledger["families"])[0]
+    guidance = module.build_repair_guidance(
+        ledger, ledger_path=path, branch="development", repair_sha=SHA_REPAIR, checkout_clean=True,
+    )
+    selected = next(item for item in guidance if item["family_ids"] == [family_id])
+    values = dict(argument.split("=", 1) for argument in selected["argv_template"][2:])
+    values["CI_REPAIR_EVIDENCE_TARGET"] = "test-files"
+    values["CI_REPAIR_EVIDENCE_VARS"] = "TESTFILES=tests/unit/test_ci_failure_ledger.py PYTEST_ARGS=-q"
+    monkeypatch.setenv("CI_REPAIR_EVIDENCE_VARS", values["CI_REPAIR_EVIDENCE_VARS"])
+
+    assert module.main([
+        "repair", "--ledger", values["CI_FAILURE_LEDGER"],
+        "--family", values["CI_FAILURE_FAMILIES"], "--sha", values["CI_REPAIR_SHA"],
+        "--evidence-target", values["CI_REPAIR_EVIDENCE_TARGET"], "--evidence-vars-from-env",
+    ]) == 0
+
+    assert calls == [["make", "test-files", "TESTFILES=tests/unit/test_ci_failure_ledger.py", "PYTEST_ARGS=-q"]]
+    persisted = module.read_ledger(path)
+    assert persisted["families"][family_id]["status"] == "repaired"
+    assert all(family["status"] == "open" for key, family in persisted["families"].items() if key != family_id)
 
 
 @pytest.mark.parametrize("phase", ["before", "after"])
