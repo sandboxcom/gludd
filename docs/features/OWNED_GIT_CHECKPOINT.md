@@ -37,13 +37,32 @@ global transaction against arbitrary simultaneous Git writers.
 Commit and pre-commit stash guards distinguish verified retained checkpoints
 from unknown hook stashes using the same native owner. Verification reads every
 stash's worktree identity, literal scope, parent/index topology and captured
-regular-file modes; a matching label alone is insufficient. Unknown, foreign or
+regular-file modes; a matching label alone is insufficient. Unknown, foreign-repository or
 malformed entries remain blocking. Redirected Git state fails closed even when
 the visible stash count is zero. The inspection prints exact checkpoint SHAs
 and never applies, pops, drops or deletes saved work. Known checkpoints no longer
 produce instructions to pop an unrelated stash.
 An unknown-stash refusal receipt uses Git's worktree-local path, preventing
 this guard's regression tests or another checkout from clobbering shared state.
+
+Git shares `refs/stash` across linked worktrees. Inventory admission therefore
+resolves checkpoint identities against native `worktree list --porcelain -z`
+registration. A peer must have an existing canonical root, the same actual Git
+common directory, and a matching native administration backlink. Removed,
+prunable, symlinked, redirected and foreign-repository registrations cannot
+authorize a checkpoint. Inventory messages must match the immutable stash
+commit's ownership message as well as its actual captured files and modes.
+Duplicate labels remain unknown leaks. Stash and worktree inventories are read
+again before the final count; a competing inventory change refuses admission
+without a count receipt. This detects observed changes, not a transaction or
+lock against arbitrary concurrent Git writers.
+
+Read-only peer admission permits an independent source-branch commit while
+preserving all saved checkpoint objects, parents, reflogs and worktree indexes.
+It grants no restore authority: restore still requires the original canonical
+root, exact top SHA, label and explicit files. A peer cannot apply another
+worktree's checkpoint through this owner. Moving or removing an owner root
+does not transfer its original checkpoint identity.
 
 The installed Git rejects scoped already-staged deletions. One stdin-pathspec
 experiment also created a stash before returning an error. The owner therefore
@@ -69,6 +88,14 @@ index. The historical
 also shows why successful native untracked round-trip acceptance is required;
 historical Git bugs are not dismissed on the basis of command syntax alone.
 
+The [July 2024 worktree forum discussion](https://stackoverflow.com/questions/78751157/how-to-move-changes-to-new-worktree)
+distinguishes shared stashes from each checkout's uncommitted files. The
+[official worktree documentation](https://git-scm.com/docs/git-worktree#_refs)
+provides the authoritative shared-ref rules and native common-directory,
+registration and backlink semantics. The new temporary-Git controls reproduce
+shared stash visibility, admit valid peer ownership, and refuse foreign restore
+without importing the forum's cross-worktree apply workflow into this owner.
+
 ## Focused evidence
 
 The artifact's initial missing-owner implementation produced 17 failures and two passes,
@@ -92,3 +119,52 @@ every native Git assertion: all 40 pass in both Python 3.14 and Python 3.11.
 Repository coverage passes the actual 85/75 audit at 93% combined coverage.
 The real nonroot invocation also exposed a relative-owner diagnostic gap;
 the Make fragment now anchors its script path before the native cwd check.
+
+The shared-worktree admission enhancement first produced 11 failing tests and
+six passing controls on CPython 3.11 with warnings as errors and one worker.
+The repaired coverage replay passed all 85 existing and new tests. The native
+85/75 coverage auditor passed for the single measured owner: 212/226 lines
+(93.81%), 105/118 branches (88.98%), and 92.15% combined coverage. Ruff and
+strict Mypy passed for the script and both test files. The real
+source-worktree native guard verified retained checkpoint
+`4cb3c9ef1eb2016acd4328918bf7a9ee3133ad46` without force. These are focused
+source acceptance receipts, not full-gate or exact-SHA hosted CI evidence.
+The initial fresh repository collection passed with 124,441 selected tests and
+zero errors. The subsequent normal source-commit attempt reached its mandatory
+collection but failed with rc=3: a command-line `DUPLICATE_CODE_ENGINE` pointing
+into the canonical main checkout leaked through the native Make environment.
+The strict pytest confinement refusal is retained as failed evidence.
+
+The prerequisite repair uses native `unexport` and target-specific Make
+ownership for pytest consumers. The actual clone owner still receives its
+engine explicitly, and recursive owning Make targets retain that override.
+Only pytest consumers omit the exact engine override record; unrelated
+overrides and option flags remain intact. Escaped spaces are protected during
+whole-record matching so an unrelated value containing the engine-record text
+is preserved byte-for-byte. Unsupported encoding is refused before a recipe
+runs. No child environment is stripped, no tool alias or second installation is
+created, and pytest confinement and candidate controls are unchanged.
+The final combined replay passed 97 tests with the actual canonical-main engine
+parameter supplied, warnings as errors and one worker. The Make target contract
+(234 targets), documented clone-checker plan, Make validation, Ruff and strict
+Mypy also passed. The normal source-commit owner still requires its own fresh
+zero-error repository collection; focused acceptance cannot replace it.
+
+Independent source review blocked the initial source commit `45e98fc`: its
+immediate engine expansion could evaluate a Make shell expression before the
+unsupported-record refusal, and its shell double quotes admitted backtick or
+quote-breakout execution in the clone handoff. Nine failing native controls
+created owned temporary sentries or reached an unexpected recipe while all
+12 existing controls passed. This failed candidate remains historical evidence.
+
+The repair captures the engine through
+[GNU Make's raw `value` function](https://www.gnu.org/s/make/manual/html_node/Value-Function.html)
+before derived metadata or recipe use. Dollar, backtick, double-quote and
+backslash inputs are refused without interpretation. The clone owner receives
+the validated raw path through POSIX literal argument quoting; embedded
+apostrophes and operator text remain data. Spaces, unrelated override bytes,
+owning recursion and strict pytest confinement retain their original controls.
+The combined replay passed 111 tests, followed by all 27 native quality
+controls, including an actual project `make help` hostile-input refusal. That
+real entrypoint control checks earlier parsing and automatic exports with an
+owned sentry and passes the input solely as subprocess argv data.
