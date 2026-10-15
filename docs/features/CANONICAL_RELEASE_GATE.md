@@ -141,6 +141,19 @@ existing full-gate tests remain mandatory. The failure-promotion manifest and a
 regression pin both the selectors and their existing owner; no new runner or
 admission phase is introduced, and the 90-second owner budget is unchanged.
 
+The existing `check-gate-failure-promotions` phase also executes the two native
+repository manifest/Make-wiring contract tests after its manifest validator
+succeeds. This closes the integration gap where newly promoted selectors passed
+schema checks but left a stale explicit test roster undiscovered until a longer
+combined replay. The old ordered roster assertions remain mandatory; the five
+new entries are explicit expectations, not copied from the implementation at
+runtime. A real-Make regression verifies validator-before-tests ordering, exact
+selection of both contracts, and propagation of either contract's failure.
+The child is serial, warning-fatal and bounded by a 30-second per-test timeout;
+the existing admission phase budget remains unchanged. This is early refusal,
+not a replacement for combined focused proof, the full gate, hosted CI or
+deployment acceptance.
+
 The documented `test-ci-dual-track-local DUAL_TRACK_LOCAL_VALIDATE_ONLY=1`
 example now uses the already-selected CPython 3.11 environment with
 `--no-sync`; it does not synchronize Python profiles or Node dependencies,

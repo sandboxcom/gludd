@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 from textwrap import dedent
@@ -18,6 +19,10 @@ ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
 FEATURE_DOC = ROOT / "docs" / "features" / "INTEGRATION_ADMISSION.md"
+STRUCTURAL_PROMOTION_NODES = (
+    "tests/unit/test_gate_failure_promotion.py::test_repository_manifest_seeds_each_promoted_failure_family",
+    "tests/unit/test_gate_failure_promotion.py::test_make_wiring_and_target_contract_are_explicit",
+)
 
 EXPECTED_RUNTIME_PHASES = [
     ("worktree-guard", "worktree-guard", "fast", 90, 60),
@@ -211,6 +216,73 @@ def test_timeout_teardown_failures_execute_in_early_admission(test_name: str) ->
 
 def _target_stanza(makefile: str, target: str) -> str:
     return makefile.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
+
+
+@pytest.mark.parametrize(
+    "failed_owner",
+    ("", *STRUCTURAL_PROMOTION_NODES, "validator"),
+    ids=("success", "manifest-pin-fails", "wiring-pin-fails", "validator-fails"),
+)
+def test_promotion_checker_executes_both_structural_pins_only_after_valid_manifest(
+    tmp_path: Path, failed_owner: str,
+) -> None:
+    """Run the actual Make stanza, replacing only its validator and test child."""
+    record = tmp_path / "calls.jsonl"
+    probe = tmp_path / "record.py"
+    probe.write_text(
+        "import json, sys\nfrom pathlib import Path\n"
+        f"record = Path({str(record)!r})\nfailed_owner = {failed_owner!r}\n"
+        "phase = sys.argv[1]\nrow = dict(phase=phase)\n"
+        "if phase == 'validator':\n    row['args'] = sys.argv[2:]\n"
+        "elif phase == 'tests':\n"
+        "    row.update(files=sys.argv[2].split(), flags=sys.argv[3], nproc=sys.argv[4], workers=sys.argv[5])\n"
+        "with record.open('a', encoding='utf-8') as stream: stream.write(json.dumps(row) + '\\n')\n"
+        "raise SystemExit(7 if phase == 'validator' and failed_owner == 'validator' else\n"
+        "                 5 if phase == 'tests' and failed_owner in row['files'] else 0)\n",
+        encoding="utf-8",
+    )
+    child = tmp_path / "child.mk"
+    child.write_text(
+        ".PHONY: test-files\ntest-files:\n"
+        f'\t@"{sys.executable}" "{probe}" tests "$(TESTFILES)" "$(PYTEST_ARGS)" '
+        '"$(NPROC)" "$(GLUDD_XDIST_WORKERS)"\n',
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "literal manifest.json"
+    manifest.write_text("{}\n", encoding="utf-8")
+    stanza = _target_stanza(compose_makefile(ROOT / "Makefile"), "check-gate-failure-promotions")
+    owner = tmp_path / "owner.mk"
+    owner.write_text(
+        f'UV := "{sys.executable}" "{probe}" validator\n'
+        f"MAKE := make --no-print-directory -f {child}\n"
+        f"GATE_FAILURE_PROMOTION_MANIFEST := {manifest}\n"
+        ".PHONY: check-gate-failure-promotions\n"
+        f"check-gate-failure-promotions:{stanza}\n"
+        f'\t@"{sys.executable}" "{probe}" after\n',
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-f", str(owner), "check-gate-failure-promotions"],
+        cwd=ROOT, capture_output=True, text=True, timeout=10,
+    )
+    rows = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()]
+    expected_phases = ["validator"] if failed_owner == "validator" else ["validator", "tests"]
+    if not failed_owner:
+        expected_phases.append("after")
+    assert [row["phase"] for row in rows] == expected_phases
+    assert rows[0]["args"] == [
+        "run", "python", "-m", "scripts.check_gate_failure_promotions",
+        "--manifest", str(manifest), "--repository-root", str(ROOT),
+    ]
+    if failed_owner != "validator":
+        assert rows[1]["files"] == list(STRUCTURAL_PROMOTION_NODES)
+        assert rows[1]["flags"] == "-W error -q -n 0 --maxprocesses 1 --timeout=30"
+        assert (rows[1]["nproc"], rows[1]["workers"]) == ("1", "1")
+    if failed_owner:
+        assert result.returncode != 0
+        assert f"Error {7 if failed_owner == 'validator' else 5}" in result.stderr
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_gate_lock_prerequisite_failure_runs_in_whole_file_early_admission() -> None:
@@ -1369,6 +1441,11 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "unit-evidence-atomic-json-native-ownership",
         "owned-checkpoint-peer-native-admission",
         "precommit-guard-engine-expression-transport",
+        "reviewed-focus-environment-naming",
+        "reviewed-focus-environment-documentation",
+        "reviewed-focus-required-run-identity",
+        "backlog-public-help-contract",
+        "local-release-post-failure-opt-in",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1510,7 +1587,17 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert 'PYTEST_ARGS="-W error -q -n 0"' in cloud_iam_owner
     assert "$(MAKE) --no-print-directory test-files" in runtime_compatibility_owner
     assert (
-        'TESTFILES="tests/unit/test_content_addressed_unit_lane.py::'
+        'TESTFILES="tests/unit/test_env_var_audit_deep.py::'
+        'TestGLUDDNamingConvention::test_no_trailing_underscore '
+        'tests/unit/test_env_var_audit_deep.py::'
+        'TestGLUDDDocumentation::test_config_reference_documents_live_vars '
+        'tests/unit/test_env_var_audit_deep.py::'
+        'TestGLUDDDefaultConsistency::test_default_values_consistent '
+        'tests/unit/test_backlog_audit_target.py::'
+        'test_backlog_target_is_public_registered_and_documented '
+        'tests/unit/test_canonical_release_gate.py::'
+        'test_actual_local_release_recipe_collects_later_failures_in_one_invocation '
+        'tests/unit/test_content_addressed_unit_lane.py::'
         'test_atomic_json_candidate_and_control_evidence '
         'tests/unit/test_owned_checkpoint_shared_worktree_admission.py::'
         'test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact '
@@ -1611,6 +1698,7 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "2 passed" in result.stdout
     # The exact family roster is pinned above; the CLI must report that roster,
     # including newly mandated early regressions, without hard-coding an old size.
     family_count = len(json.loads(MANIFEST.read_text(encoding="utf-8"))["families"])
