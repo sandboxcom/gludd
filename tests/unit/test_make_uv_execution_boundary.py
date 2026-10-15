@@ -26,8 +26,8 @@ class NativeMake:
     def run(self, *arguments: str, without_runtime: bool = False) -> subprocess.CompletedProcess[str]:
         environment = dict(self.environment)
         if without_runtime:
-            environment.pop("VIRTUAL_ENV", None)
-            environment.pop("UV_PROJECT_ENVIRONMENT", None)
+            for name in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "UV_PYTHON"):
+                environment.pop(name, None)
         return subprocess.run(
             ["make", "--no-print-directory", *arguments], cwd=self.root, env=environment,
             capture_output=True, text=True, timeout=30, check=False,
@@ -45,8 +45,7 @@ class NativeMake:
         return result
 
 
-@pytest.fixture
-def native_make(tmp_path: Path) -> NativeMake:
+def _native_make(tmp_path: Path, ambient: dict[str, str]) -> NativeMake:
     git = shutil.which("git")
     assert git is not None and shutil.which("uv") is not None
     names = subprocess.run(
@@ -54,11 +53,12 @@ def native_make(tmp_path: Path) -> NativeMake:
         capture_output=True, text=True, check=True, timeout=5,
     ).stdout.split()
     assert names and all(name.startswith("GIT_") and name.isascii() and name.isidentifier() for name in names)
-    environment = dict(os.environ)
+    environment = dict(ambient)
     for key in (*names, "MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "PYTEST_ADDOPTS"):
         environment.pop(key, None)
     environment.update({
         "UV_OFFLINE": "1", "UV_PYTHON_DOWNLOADS": "never", "PYTHONDONTWRITEBYTECODE": "1",
+        "UV_PROJECT_ENVIRONMENT": sys.prefix, "VIRTUAL_ENV": sys.prefix, "UV_PYTHON": sys.executable,
         "GLUDD_PROJECT_ROOT": str(tmp_path), "PYTHONPATH": str(tmp_path / "src"),
     })
     fixture = NativeMake(tmp_path, environment, git)
@@ -85,6 +85,11 @@ def native_make(tmp_path: Path) -> NativeMake:
         )
         assert result.returncode == 0, result.stderr
     return fixture
+
+
+@pytest.fixture
+def native_make(tmp_path: Path) -> NativeMake:
+    return _native_make(tmp_path, dict(os.environ))
 
 
 @pytest.mark.parametrize("state_first", [True, False])
@@ -234,3 +239,53 @@ def test_checkout_first_multi_goal_refusal_still_precedes_all_bodies(native_make
     result = native_make.run("git-checkout", "worktree-state", "MSG=fixture-target")
     assert result.returncode != 0 and "Quote multi-word variable values for git-checkout" in result.stderr
     assert not event.exists() and native_make.authority() == before
+
+
+@pytest.mark.parametrize("ambient_state", ["missing", "foreign"])
+def test_native_fixture_selects_existing_runtime_independent_of_ambient_environment(
+    tmp_path: Path, ambient_state: str,
+) -> None:
+    ambient = dict(os.environ)
+    for name in ("UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "UV_PYTHON"):
+        ambient.pop(name, None)
+    foreign = tmp_path / "foreign-runtime"
+    foreign.mkdir()
+    sentinel = foreign / "owned.txt"
+    sentinel.write_text("unrelated runtime state\n", encoding="utf-8")
+    if ambient_state == "foreign":
+        ambient.update({
+            "UV_PROJECT_ENVIRONMENT": str(foreign), "VIRTUAL_ENV": str(foreign),
+            "UV_PYTHON": str(foreign / "unavailable-python"),
+        })
+    before = dict(ambient)
+    fixture = _native_make(tmp_path, ambient)
+    assert fixture.environment["UV_PROJECT_ENVIRONMENT"] == sys.prefix
+    assert fixture.environment["VIRTUAL_ENV"] == sys.prefix
+    assert fixture.environment["UV_PYTHON"] == sys.executable
+    assert ambient == before
+    test_mixed_read_only_and_register_runs_real_owner_exactly_once(fixture, True)
+    assert sentinel.read_text(encoding="utf-8") == "unrelated runtime state\n"
+    assert list(foreign.iterdir()) == [sentinel]
+
+
+def test_native_runtime_fixture_failure_is_selected_by_existing_admission_owner(tmp_path: Path) -> None:
+    from tests.unit.test_runtime_admission_scheduling import _capture_owner
+
+    selector = "tests/unit/test_make_uv_execution_boundary.py"
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    selected = rows[0]["files"]
+    assert isinstance(selected, list) and selected.count(selector) == 1
+    assert len(rows) == 2 and rows[1]["phase"] == "help"
+    manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    assert {
+        "id": "native-make-existing-runtime-selection",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": selector + "::test_native_fixture_selects_existing_runtime_independent_of_ambient_environment",
+        "full_gate_phase": "test",
+    } in manifest["families"]
+    phase = next(item for item in manifest["runtime_contract"]["phases"]
+                 if item["target"] == "_pytest-runtime-compatibility-admission")
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert manifest["full_gate_required"] is True

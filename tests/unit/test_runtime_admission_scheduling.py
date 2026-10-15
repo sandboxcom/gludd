@@ -27,6 +27,7 @@ APPROVED_PROMOTION_SELECTORS = (
     "tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_failures_in_one_invocation",
     "tests/unit/test_collection_hook_environment.py::"
     "test_real_pre_push_collection_isolates_only_native_git_local_environment",
+    "tests/unit/test_make_uv_execution_boundary.py",
 )
 ROSTER = (
     *APPROVED_PROMOTION_SELECTORS,

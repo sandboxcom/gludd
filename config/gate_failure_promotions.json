@@ -747,6 +747,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_failures_in_one_invocation",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "native-make-existing-runtime-selection",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_uv_execution_boundary.py::test_native_fixture_selects_existing_runtime_independent_of_ambient_environment",
+      "full_gate_phase": "test"
     }
   ]
 }
