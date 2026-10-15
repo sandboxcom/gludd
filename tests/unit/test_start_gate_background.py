@@ -11,6 +11,8 @@ import sys
 import time
 from dataclasses import replace
 from pathlib import Path
+from typing import BinaryIO
+from unittest.mock import Mock
 
 import psutil
 import pytest
@@ -851,6 +853,191 @@ def test_stale_pid_is_replaced_and_early_exit_fails_cleanly(
         )
 
 
+@pytest.mark.parametrize("startup", ["native", "delayed", "term-ignoring"])
+def test_capture_failure_aborts_and_reaps_only_its_unpublished_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, startup: str
+) -> None:
+    paths = GatePaths.for_root(tmp_path)
+    paths.log_dir.mkdir()
+    previous_state = b'{"run_id": "previous-run", "state": "finished"}\n'
+    paths.state_file.write_bytes(previous_state)
+    application_marker = tmp_path / "application-ran"
+    release_startup = tmp_path / "release-startup"
+    native_popen = subprocess.Popen
+    children: list[subprocess.Popen[bytes]] = []
+    actions: list[str] = []
+    waits: list[float | None] = []
+    logs: list[Path] = []
+
+    class RecordedChild(subprocess.Popen[bytes]):
+        def terminate(self) -> None:
+            actions.append("terminate")
+            assert paths.state_file.read_bytes() == previous_state
+            assert not paths.pid_file.exists()
+            super().terminate()
+
+        def kill(self) -> None:
+            actions.append("kill")
+            super().kill()
+
+        def wait(self, timeout: float | None = None) -> int:
+            actions.append("wait")
+            waits.append(timeout)
+            return super().wait(timeout=timeout)
+
+    def spawn(
+        arguments: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        stdout: BinaryIO,
+        stderr: int,
+        start_new_session: bool,
+    ) -> subprocess.Popen[bytes]:
+        logs.append(Path(stdout.name))
+        if startup != "native":
+            bootstrap = (
+                "import os, signal, sys, time\n"
+                + (
+                    "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                    if startup == "term-ignoring"
+                    else ""
+                )
+                + "print('unpublished-startup-held', flush=True)\n"
+                "while not os.path.exists(sys.argv[1]):\n"
+                "    time.sleep(0.005)\n"
+                "os.execv(sys.argv[2], sys.argv[2:])\n"
+            )
+            arguments = [
+                sys.executable,
+                "-c",
+                bootstrap,
+                str(release_startup),
+                *arguments,
+            ]
+        child = RecordedChild(
+            arguments,
+            cwd=cwd,
+            env=env,
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=start_new_session,
+        )
+        children.append(child)
+        return child
+
+    def missing_identity(_pid: int, _run_id: str) -> None:
+        if startup != "native":
+            _wait_for_log_text(logs[0], "unpublished-startup-held")
+
+    group_signal = Mock(side_effect=AssertionError("unverified group signal"))
+    monkeypatch.setattr(subprocess, "Popen", spawn)
+    monkeypatch.setattr(launcher, "_capture_identity", missing_identity)
+    monkeypatch.setattr(os, "killpg", group_signal)
+    try:
+        with pytest.raises(RuntimeError, match="before its process identity"):
+            launch_gate(
+                tmp_path,
+                [
+                    sys.executable,
+                    "-c",
+                    f"from pathlib import Path; Path({str(application_marker)!r}).touch()",
+                ],
+                timeout_seconds=30,
+            )
+
+        assert len(children) == 1
+        child = children[0]
+        expected_signal = signal.SIGKILL if startup == "term-ignoring" else signal.SIGTERM
+        assert child.returncode == -expected_signal
+        assert actions == (
+            ["terminate", "wait", "kill", "wait"]
+            if startup == "term-ignoring"
+            else ["terminate", "wait"]
+        )
+        assert all(timeout is not None and 0 < timeout <= 1 for timeout in waits)
+        with pytest.raises(ChildProcessError):
+            os.waitpid(child.pid, os.WNOHANG)
+        assert paths.state_file.read_bytes() == previous_state
+        assert not paths.pid_file.exists()
+        assert not paths.status_file.exists()
+        assert not application_marker.exists()
+        assert not release_startup.exists()
+        assert len(logs) == 1
+        log = logs[0].read_text(encoding="utf-8")
+        assert "reason=identity-capture-failed" in log
+        assert f"pid={child.pid}" in log
+        group_signal.assert_not_called()
+    finally:
+        for child in children:
+            if child.poll() is None:
+                native_popen.kill(child)
+            native_popen.wait(child, timeout=5)
+
+
+@pytest.mark.parametrize(
+    ("terminate_error", "wait_results", "kill_error", "cleanup_failed"),
+    [
+        (ProcessLookupError("already exited"), [0], None, False),
+        (PermissionError("TERM refused"), [subprocess.TimeoutExpired("gate", 0.5), 0], None, False),
+        (None, [OSError("wait unavailable"), 0], None, False),
+        (None, [subprocess.TimeoutExpired("gate", 0.5), 0], ProcessLookupError("exit race"), False),
+        (
+            None,
+            [subprocess.TimeoutExpired("gate", 0.5), subprocess.TimeoutExpired("gate", 0.5)],
+            PermissionError("KILL refused"),
+            True,
+        ),
+        (
+            None,
+            [subprocess.TimeoutExpired("gate", 0.5), OSError("reap unavailable")],
+            None,
+            True,
+        ),
+    ],
+    ids=["term-exit-race", "term-denied", "wait-error", "kill-exit-race", "kill-denied", "reap-error"],
+)
+def test_capture_failure_cleanup_errors_remain_bounded_and_unpublished(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    terminate_error: OSError | None,
+    wait_results: list[int | Exception],
+    kill_error: OSError | None,
+    cleanup_failed: bool,
+) -> None:
+    child = Mock(spec=subprocess.Popen)
+    child.pid = 42000
+    child.poll.return_value = None
+    child.terminate.side_effect = terminate_error
+    child.kill.side_effect = kill_error
+    child.wait.side_effect = wait_results
+    monkeypatch.setattr(subprocess, "Popen", Mock(return_value=child))
+    monkeypatch.setattr(launcher, "_capture_identity", lambda *_args: None)
+    group_signal = Mock(side_effect=AssertionError("unverified group signal"))
+    monkeypatch.setattr(os, "killpg", group_signal)
+
+    with pytest.raises(RuntimeError, match="before its process identity") as failure:
+        launch_gate(tmp_path, _sleep_command(), timeout_seconds=30)
+
+    actions = [entry[0] for entry in child.method_calls if entry[0] != "poll"]
+    assert actions == (
+        ["terminate", "wait"]
+        if len(wait_results) == 1
+        else ["terminate", "wait", "kill", "wait"]
+    )
+    assert ("cleanup failed" in str(failure.value)) is cleanup_failed
+    for call in child.wait.call_args_list:
+        assert 0 < call.kwargs["timeout"] <= 1
+    paths = GatePaths.for_root(tmp_path)
+    assert not paths.pid_file.exists()
+    assert not paths.state_file.exists()
+    assert not paths.status_file.exists()
+    log = next(paths.log_dir.glob("gate-*.log")).read_text(encoding="utf-8")
+    assert "reason=identity-capture-failed" in log
+    assert ("cleanup failed" in log) is cleanup_failed
+    group_signal.assert_not_called()
+
+
 def test_finished_gate_state_is_not_overwritten_by_old_watcher(tmp_path: Path) -> None:
     result = launch_gate(
         tmp_path,
@@ -1113,6 +1300,24 @@ def test_exec_gate_after_publication_fails_closed(
         launcher._exec_gate_after_publication([str(mismatched), "run-3", "gate"])
         == 126
     )
+
+
+def test_healthy_wrapper_keeps_full_publication_allowance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ticks = iter((0.0, 4.99, 4.999))
+    receipts = iter((None, {"run_id": "healthy-run"}))
+    exec_gate = Mock()
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(time, "sleep", Mock())
+    monkeypatch.setattr(launcher, "_read_json", lambda _path: next(receipts))
+    monkeypatch.setattr(os, "execvpe", exec_gate)
+
+    launcher._exec_gate_after_publication(
+        [str(tmp_path / "published.json"), "healthy-run", "gate", "--flag"]
+    )
+
+    exec_gate.assert_called_once_with("gate", ["gate", "--flag"], os.environ.copy())
 
 
 def test_private_exec_dispatch_bypasses_public_parser(
