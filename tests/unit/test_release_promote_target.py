@@ -10,8 +10,10 @@ import subprocess
 import sys
 from pathlib import Path
 from textwrap import dedent
+from typing import TypedDict, Unpack
 
 import pytest
+from scripts.check_make_help import HELP_TARGET_RE
 from scripts.check_make_target_contract import _stanzas
 from scripts.makefile_layout import compose_makefile
 
@@ -109,7 +111,11 @@ def test_public_help_and_make_contract_include_safe_behavior() -> None:
     entries = {entry["name"]: entry for entry in payload["targets"]}
 
     assert "release-promote TAG=.. MSG=.." in makefile
-    assert makefile.count('@echo "  release-promote') == 1
+    help_names = [
+        match.group(1) for line in makefile.splitlines()
+        if (match := HELP_TARGET_RE.match(line)) is not None
+    ]
+    assert help_names.count("release-promote") == 1
     assert "release-promote" in entries
     variables = entries["release-promote"]["make_variables"]
     assert variables.count("RELEASE_PROMOTE_PUBLISH") == 1
@@ -309,12 +315,32 @@ else:
 '''
 
 
+class _OwnerEvent(TypedDict):
+    tool: str
+    args: list[str]
+    canonical: bool
+    branch: str
+
+
+class _StateOverrides(TypedDict, total=False):
+    fail: str
+    checkout_noop: bool
+    merged_sha: str
+    drift_branch: bool
+    advance_master: bool
+    milestone: str
+    ci_source: str
+    ci_sha: str
+    branch: str
+    readiness_ci_source: str
+
+
 def _run_isolated_recipe(
     tmp_path: Path, target: str = "release-promote", *, validate: bool = False,
     tag: str = "v0.1.2", receipt: str = "valid", namespace: bool = True,
     contract_example: bool = False, publish: str | None = None,
-    **state_overrides: object,
-) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
+    **state_overrides: Unpack[_StateOverrides],
+) -> tuple[subprocess.CompletedProcess[str], list[_OwnerEvent]]:
     """Run the actual recipe, mapping only its canonical path to harmless owners."""
     real_make = shutil.which("make")
     assert real_make is not None
@@ -387,14 +413,14 @@ def _run_isolated_recipe(
         [real_make, "--no-print-directory", target, *variables],
         cwd=tmp_path, env=env, check=False, capture_output=True, text=True, timeout=10,
     )
-    events = (
+    events: list[_OwnerEvent] = (
         [json.loads(line) for line in events_file.read_text().splitlines()]
         if events_file.is_file() else []
     )
     return result, events
 
 
-def _make_targets(events: list[dict[str, object]]) -> list[str]:
+def _make_targets(events: list[_OwnerEvent]) -> list[str]:
     targets = []
     for event in events:
         if event["tool"] == "make":
@@ -408,7 +434,7 @@ def _make_targets(events: list[dict[str, object]]) -> list[str]:
     return targets
 
 
-def _git_mutations(events: list[dict[str, object]]) -> list[dict[str, object]]:
+def _git_mutations(events: list[_OwnerEvent]) -> list[_OwnerEvent]:
     return [
         event for event in events if event["tool"] == "git"
         and any(item in event["args"] for item in ("checkout", "merge", "push", "tag"))
@@ -509,7 +535,7 @@ def test_promotion_git_namespace_and_publication_failures_propagate(
     {"drift_branch": True}, {"advance_master": True},
 ])
 def test_promotion_verifies_master_identity_before_publication(
-    tmp_path: Path, override: dict[str, object],
+    tmp_path: Path, override: _StateOverrides,
 ) -> None:
     result, events = _run_isolated_recipe(tmp_path, **override)
     assert result.returncode != 0
@@ -590,7 +616,7 @@ def test_stable_cut_valid_receipt_cannot_bypass_required_milestone(
 @pytest.mark.parametrize("tag", ["v0.1.1", "v0.1.2"])
 @pytest.mark.parametrize("identity", [{"ci_source": "other"}, {"ci_sha": "c" * 40}])
 def test_stable_cut_rejects_wrong_ci_source_or_sha_before_publication(
-    tmp_path: Path, tag: str, identity: dict[str, object],
+    tmp_path: Path, tag: str, identity: _StateOverrides,
 ) -> None:
     result, events = _run_isolated_recipe(tmp_path, "release-cut", tag=tag, **identity)
     assert result.returncode != 0

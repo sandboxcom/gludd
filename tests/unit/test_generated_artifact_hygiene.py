@@ -12,6 +12,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from scripts.check_make_help import HELP_TARGET_RE
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -403,10 +404,13 @@ def test_make_target_is_public_and_delegates_to_the_single_checker() -> None:
     recipe = [line.strip() for line in stanza.splitlines() if line.startswith("\t")]
 
     assert recipe == ["@$(UV) run python scripts/check_generated_artifact_hygiene.py"]
-    assert (
-        '@echo "  check-generated-artifact-hygiene  '
+    expected_help = (
+        '"  check-generated-artifact-hygiene  '
         'Validate tracked generated Markdown/JSON/YAML postconditions"'
-    ) in makefile
+    )
+    assert any(
+        expected_help in line for line in makefile.splitlines() if HELP_TARGET_RE.match(line)
+    )
     phony_region = makefile.split("help:", 1)[0]
     assert "check-generated-artifact-hygiene" in phony_region
 
