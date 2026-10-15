@@ -871,6 +871,67 @@ class TestTerraformAssetsRoot:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.parametrize("deploy_type,engine", [
+    ("vm", InferenceEngine.VLLM),
+    ("vm", InferenceEngine.LLAMACPP),
+    ("containerapp", InferenceEngine.VLLM),
+])
+def test_materialization_does_not_clone_generated_provider_trees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    deploy_type: str, engine: InferenceEngine,
+) -> None:
+    from general_ludd.infra import terraform
+
+    assets = tmp_path / "assets"
+    stack_name = "azure-container-app-vllm" if deploy_type == "containerapp" else (
+        "azure-llamacpp" if engine == InferenceEngine.LLAMACPP else "azure-vllm"
+    )
+    stack = assets / "stacks" / stack_name
+    sources = [stack, *(assets / "modules" / name for name in terraform._AZURE_CONTAINER_APP_MODULES)]
+    for source in sources:
+        source.mkdir(parents=True)
+        for filename in ("main.tf", "variables.tf", "outputs.tf", ".terraform.lock.hcl"):
+            (source / filename).write_text("# reviewed input\n", encoding="utf-8")
+        for generated in (".terraform", ".plugin-cache"):
+            cache = source / generated
+            cache.mkdir()
+            provider = cache / "provider"
+            provider.write_bytes(b"generated provider")
+            (cache / "provider-link").symlink_to(provider)
+    if deploy_type == "containerapp":
+        (stack / "main.tf").write_text(
+            (_terraform_assets_root() / "stacks" / stack_name / "main.tf").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(terraform, "_terraform_assets_root", lambda: assets)
+    destination = tmp_path / "destination"
+    preserved = destination / "modules" / terraform._AZURE_CONTAINER_APP_MODULES[0] / ".terraform"
+    preserved.mkdir(parents=True)
+    (preserved / "owned-state").write_bytes(b"destination state")
+
+    TerraformGenerator().materialize(
+        _config(provider=ComputeProvider.AZURE, deploy_type=deploy_type, engine=engine),
+        destination, deployment_name="test-dep",
+    )
+
+    for source in sources[1:]:
+        copied = destination / "modules" / source.name
+        assert (copied / "main.tf").read_text() == "# reviewed input\n"
+        assert (copied / ".terraform.lock.hcl").read_text() == "# reviewed input\n"
+        assert not (copied / ".plugin-cache").exists()
+        assert not (copied / ".terraform" / "provider").exists()
+    if deploy_type == "vm":
+        copied_stack = destination / "stacks" / stack_name
+        assert (copied_stack / "main.tf").read_text() == "# reviewed input\n"
+        assert (copied_stack / ".terraform.lock.hcl").read_text() == "# reviewed input\n"
+        assert not (copied_stack / ".terraform").exists()
+        assert not (copied_stack / ".plugin-cache").exists()
+    assert (preserved / "owned-state").read_bytes() == b"destination state"
+    for source in sources:
+        assert (source / ".plugin-cache" / "provider").read_bytes() == b"generated provider"
+        assert (source / ".terraform" / "provider-link").is_symlink()
+
+
 class TestMaterializeAzureContainerApp:
     def test_materialize_writes_variables_and_outputs(self) -> None:
         gen = TerraformGenerator()

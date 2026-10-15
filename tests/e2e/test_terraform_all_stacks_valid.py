@@ -12,7 +12,6 @@ stack's init fails (network, provider credentials, unsupported platform).
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import shutil
 import subprocess
@@ -24,6 +23,7 @@ import pytest
 from tests.terraform_test_support import (
     is_known_external_terraform_provider_failure,
     skip_external_terraform_dependency,
+    terraform_test_environment,
 )
 
 STACKS_DIR = Path("infra/terraform/stacks")
@@ -134,6 +134,7 @@ def _copy_terraform_tree(destination: Path) -> Path:
         copied_root,
         ignore=shutil.ignore_patterns(
             ".terraform",
+            ".plugin-cache",
             ".terraform.lock.hcl",
             "terraform.auto.tfvars",
             "*.tfstate",
@@ -195,9 +196,7 @@ def _synthetic_default(var_name: str, var_type: str) -> str:
 def _run_infra(
     binary: str, args: list[str], cwd: Path, timeout: int = 120,
 ) -> subprocess.CompletedProcess[str]:
-    TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
-    terraform_env = os.environ.copy()
-    terraform_env["TF_PLUGIN_CACHE_DIR"] = str(TF_PLUGIN_CACHE.resolve())
+    terraform_env = terraform_test_environment(TF_PLUGIN_CACHE)
     terraform_env["TF_IN_AUTOMATION"] = "true"
     return subprocess.run(
         [binary, *args],

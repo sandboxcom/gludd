@@ -12,7 +12,6 @@ Validates AWS, Azure, and GCP onboarding IAM modules for:
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -21,7 +20,7 @@ from typing import Any, cast
 
 import pytest
 
-from tests.terraform_test_support import skip_external_terraform_dependency
+from tests.terraform_test_support import skip_external_terraform_dependency, terraform_test_environment
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULES = REPO_ROOT / "infra" / "terraform" / "modules"
@@ -307,9 +306,7 @@ class TestTerraformValidate:
                 f"terraform fmt -check failed for {module_dir.name}:\nstdout:\n{fmt.stdout}\nstderr:\n{fmt.stderr}"
             )
 
-            TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
-            terraform_env = os.environ.copy()
-            terraform_env["TF_PLUGIN_CACHE_DIR"] = str(TF_PLUGIN_CACHE)
+            terraform_env = terraform_test_environment(TF_PLUGIN_CACHE)
             try:
                 init = subprocess.run(
                     [

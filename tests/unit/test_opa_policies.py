@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -20,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from tests.terraform_test_support import skip_external_terraform_dependency
+from tests.terraform_test_support import skip_external_terraform_dependency, terraform_test_environment
 
 _PROJECT = Path(__file__).resolve().parent.parent.parent
 _POLICIES = _PROJECT / "infra" / "terraform" / "policies"
@@ -171,9 +170,7 @@ def test_core_policies_do_not_block_compliant_stack(tmp_path: Path) -> None:
 
     stack = _VSPHERE_STACK
     (stack / "testing.auto.tfvars").write_text(_DUMMY_TFVARS, encoding="utf-8")
-    _TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
-    terraform_env = os.environ.copy()
-    terraform_env["TF_PLUGIN_CACHE_DIR"] = str(_TF_PLUGIN_CACHE)
+    terraform_env = terraform_test_environment(_TF_PLUGIN_CACHE)
     try:
         try:
             init = subprocess.run(

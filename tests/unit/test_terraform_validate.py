@@ -20,7 +20,6 @@ common case and the suite must remain green in that state.
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import tempfile
@@ -31,7 +30,7 @@ import pytest
 
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
 from general_ludd.infra.terraform import TerraformGenerator
-from tests.terraform_test_support import skip_external_terraform_dependency
+from tests.terraform_test_support import skip_external_terraform_dependency, terraform_test_environment
 
 _TF_PLUGIN_CACHE = Path(__file__).resolve().parents[2] / "infra" / "terraform" / ".plugin-cache"
 
@@ -125,9 +124,7 @@ def test_aws_hcl_passes_validate() -> None:
         )
         assert fmt.returncode == 0, f"fmt failed to parse: {fmt.stderr}\n{hcl}"
 
-        _TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
-        terraform_env = os.environ.copy()
-        terraform_env["TF_PLUGIN_CACHE_DIR"] = str(_TF_PLUGIN_CACHE)
+        terraform_env = terraform_test_environment(_TF_PLUGIN_CACHE)
         try:
             init = subprocess.run(
                 [

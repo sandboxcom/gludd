@@ -79,3 +79,40 @@ Revert the focused runner commit. This restores the previous batch-lifetime
 temporary ownership but invalidates beta 4 release evidence because the
 ENOSPC regression will become RED. No schema, provider lock, state, or deployed
 resource migration is required.
+
+## 2026-10-15: honor the cache owner through every consumer
+
+The retained `e914eeeb646d919e79fff4d6fdd30d6905bda479` gate's `other`
+batch 24 used `/tmp/gludd-e6fc-j_vy7c9v/pytest`. During that batch, native
+inventory measured its parent at 7.2 GiB and the volume rose from 95% to 99%.
+This is a batch-level observation, not attribution of every byte to one test.
+
+The all-stacks fixture copied the populated `.plugin-cache` along with source
+inputs, and six Terraform test consumers replaced the runner's cache selection
+with the checkout cache. The shared `terraform_test_environment` boundary now
+preserves a nonempty inherited `TF_PLUGIN_CACHE_DIR`, creates only that selected
+directory, and copies rather than mutates the parent environment. Outside the
+runner, the existing checkout fallback remains when the variable is absent or
+empty. A temporary write probe checks the selected directory's actual access
+before Terraform runs and removes only its own file. Invalid, unwritable or full
+selected caches fail; they are not silently replaced or treated as offline skips.
+
+The E2E source copy excludes `.plugin-cache` as well as its existing generated
+file exclusions. Production Azure VM and Container App materialization excludes
+only `.terraform` and `.plugin-cache` entries from copied module/stack inputs.
+Canonical HCL, production lock files, source trees and destination-owned
+Terraform state remain intact. No serving resource is restarted or deleted.
+
+The new small-fixture regressions first failed on cache duplication, consumer
+wiring and generated-provider copying. The combined focused suite then passed
+228 cases; the dedicated coverage profile measured 94% combined coverage with
+both measured files above 75%. This is source acceptance, not complete gate,
+exact-SHA hosted, deployment acceptance or an observed peak-disk reduction.
+All real init, validate and plan checks and their existing assertions remain.
+
+The [March 2023 practitioner report](https://discuss.hashicorp.com/t/how-to-set-a-common-terraform-folder-instead-of-individual-ones/50881)
+describes provider duplication exceeding 30 GB. The [concurrent cache issue](https://github.com/hashicorp/terraform/issues/31964)
+and [official cache documentation](https://developer.hashicorp.com/terraform/cli/config/config-file#provider-plugin-cache)
+support retaining per-shard ownership rather than introducing a global writable
+cache. No provider mirror, lock-file bypass, alternate scanner or new runner
+is added. Existing batch and shard cleanup owners remain responsible for release.

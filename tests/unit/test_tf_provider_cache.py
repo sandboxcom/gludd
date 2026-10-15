@@ -10,15 +10,102 @@ the contract.
 
 from __future__ import annotations
 
+import ast
 import importlib
+import os
+import subprocess
 from pathlib import Path
 
+import pytest
 from scripts.makefile_layout import compose_makefile
 
 checker = importlib.import_module("check_tf_provider_versions")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TF_ROOT = REPO_ROOT / "infra" / "terraform"
+
+
+@pytest.mark.parametrize("relative_path", [
+    "tests/e2e/test_terraform_all_stacks_valid.py",
+    "tests/e2e/test_iam_smoke.py",
+    "tests/unit/test_terraform_validate.py",
+    "tests/unit/test_terraform_modules.py",
+    "tests/unit/test_opa_policies.py",
+    "tests/unit/test_onboard_aws.py",
+])
+def test_provider_consumers_reuse_the_owned_environment_boundary(relative_path: str) -> None:
+    tree = ast.parse((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    assert sum(isinstance(call.func, ast.Name) and call.func.id == "terraform_test_environment"
+               for call in calls) == 1
+
+
+def test_e2e_terraform_copy_omits_provider_materializations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.e2e import test_terraform_all_stacks_valid as e2e
+
+    source = tmp_path / "source"
+    stack = source / "stacks" / "example"
+    module = source / "modules" / "example"
+    for directory in (stack, module):
+        directory.mkdir(parents=True)
+        (directory / "main.tf").write_text("# source input\n", encoding="utf-8")
+        initialized = directory / ".terraform"
+        initialized.mkdir()
+        (initialized / "provider").write_bytes(b"generated provider")
+    cache = source / ".plugin-cache"
+    cache.mkdir()
+    provider = cache / "provider"
+    provider.write_bytes(b"cached provider")
+    (cache / "provider-link").symlink_to(provider)
+    monkeypatch.setattr(e2e, "STACKS_DIR", source / "stacks")
+
+    result = e2e._copy_terraform_tree(tmp_path / "copy")
+
+    assert result == tmp_path / "copy" / "terraform" / "stacks"
+    assert (result / "example" / "main.tf").read_text() == "# source input\n"
+    assert (result.parent / "modules" / "example" / "main.tf").read_text() == "# source input\n"
+    assert not (result.parent / ".plugin-cache").exists()
+    assert not list(result.parent.rglob(".terraform"))
+    assert provider.read_bytes() == b"cached provider"
+    assert (cache / "provider-link").is_symlink()
+
+
+def test_e2e_infra_command_keeps_owned_cache_and_native_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.e2e import test_terraform_all_stacks_valid as e2e
+
+    owned = tmp_path / "owned-cache"
+    fallback = tmp_path / "checkout-cache"
+    monkeypatch.setenv("TF_PLUGIN_CACHE_DIR", str(owned))
+    monkeypatch.setattr(e2e, "TF_PLUGIN_CACHE", fallback)
+    before = dict(os.environ)
+    captured: dict[str, object] = {}
+    expected = subprocess.CompletedProcess(["terraform", "validate", "-json"], 7, "out", "err")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.update(command=command, **kwargs)
+        return expected
+
+    monkeypatch.setattr(subprocess, "run", run)
+    result = e2e._run_infra("terraform", ["validate", "-json"], tmp_path, timeout=17)
+
+    assert result is expected
+    environment = captured.pop("env")
+    assert captured == {
+        "command": ["terraform", "validate", "-json"],
+        "capture_output": True, "text": True, "cwd": str(tmp_path), "timeout": 17,
+    }
+    assert isinstance(environment, dict)
+    assert environment["TF_PLUGIN_CACHE_DIR"] == str(owned)
+    assert environment["TF_IN_AUTOMATION"] == "true"
+    assert all(environment[key] == value for key, value in before.items()
+               if key not in {"TF_PLUGIN_CACHE_DIR", "TF_IN_AUTOMATION"})
+    assert owned.is_dir()
+    assert not fallback.exists()
+    assert dict(os.environ) == before
 
 
 def test_tf_clean_preserves_tracked_cache_sentinel() -> None:
