@@ -884,6 +884,68 @@ def _publish_collection_generation(
         _rename_collection_generation_no_replace(prepared, destination)
 
 
+def _acquire_reviewed_collections(
+    lock_file: Path, artifact_root: Path, *, required_versions: Mapping[str, str],
+    origin: str, expected_lock_sha256: str, timeout_seconds: int,
+) -> int:
+    """Acquire exact native candidates only inside the existing observed child."""
+    from ansible.galaxy.api import GalaxyAPI
+    from ansible.galaxy.collection.concrete_artifact_manager import ConcreteArtifactsManager
+    from ansible.galaxy.dependency_resolution.dataclasses import Candidate
+    from ansible.galaxy.token import GalaxyToken
+
+    try:
+        if type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 120:
+            raise ValueError("collection timeout must be an integer from 1 through 120")
+        required, source = _collection_versions(required_versions), _collection_origin(origin)
+        entries = _collection_lock_entries(lock_file, expected_lock_sha256, required)
+        if any(entry["origin"] != source for entry in entries):
+            raise ValueError("reviewed artifact origin differs from the explicit Galaxy source")
+        if artifact_root.is_symlink() or not artifact_root.is_dir() or any(artifact_root.iterdir()):
+            raise ValueError("native acquisition requires an empty private artifact directory")
+        api = GalaxyAPI(None, "reviewed", source, token=GalaxyToken(), validate_certs=True,
+                        no_cache=True, timeout=min(timeout_seconds, 30))
+        inventory: dict[str, tuple[str, dict[str, str]]] = {}
+        with ConcreteArtifactsManager.under_tmpdir(str(artifact_root.parent)) as manager:
+            candidates = []
+            for entry in sorted(entries, key=lambda item: item["name"]):
+                namespace, name = entry["name"].split(".")
+                print(f"ANSIBLE_COLLECTION_METADATA name={entry['name']} version={entry['version']}", flush=True)
+                metadata = api.get_collection_version_metadata(namespace, name, entry["version"])
+                if (metadata.namespace != namespace or metadata.name != name
+                        or metadata.version != entry["version"]):
+                    raise ValueError(f"native Galaxy metadata identity differs: {entry['name']}")
+                if metadata.artifact_sha256 != entry["sha256"][7:]:
+                    raise ValueError(f"native Galaxy metadata checksum differs: {entry['name']}")
+                url = urlsplit(metadata.download_url)
+                if (url.scheme != "https" or not url.hostname or url.username is not None
+                        or url.password is not None or url.fragment):
+                    raise ValueError(f"native Galaxy artifact URL must be credential-free HTTPS: {entry['name']}")
+                dependencies = metadata.dependencies
+                if not isinstance(dependencies, dict) or any(
+                    not isinstance(dependency, str) or not isinstance(constraint, str)
+                    for dependency, constraint in dependencies.items()
+                ):
+                    raise ValueError(f"native Galaxy dependency metadata is invalid: {entry['name']}")
+                inventory[entry["name"]] = (entry["version"], dependencies)
+                candidate = Candidate(entry["name"], entry["version"], api, "galaxy", None)
+                manager.save_collection_source(candidate, metadata, api)
+                candidates.append((entry, candidate))
+            _validate_collection_dependencies(inventory, {entry["name"]: entry["version"] for entry in entries})
+            for entry, candidate in candidates:
+                print(f"ANSIBLE_COLLECTION_DOWNLOAD name={entry['name']} version={entry['version']}", flush=True)
+                # The native manager retains the API's URL, expected checksum,
+                # token and TLS policy, and owns transfer retries and cleanup.
+                artifact = Path(os.fsdecode(manager.get_galaxy_artifact_path(candidate)))
+                if artifact.stat().st_size != entry["size"]:
+                    raise ValueError(f"native Galaxy artifact size differs: {entry['name']}")
+                shutil.copyfile(artifact, artifact_root / entry["artifact"])
+        return 0
+    except Exception as exc:
+        print(f"ANSIBLE_COLLECTION_ACQUIRE_FAILED: {exc} proof=none", file=sys.stderr, flush=True)
+        return 1
+
+
 def prepare_collection_artifacts(
     mode: str, lock_file: Path, artifact_root: Path, *, required_versions: Mapping[str, str],
     origin: str, expected_lock_sha256: str = "", timeout_seconds: int = 120, validate_only: bool = False,
@@ -932,7 +994,23 @@ def prepare_collection_artifacts(
                        "--requirements-file", str(requirements), "--download-path", str(downloaded),
                        "--server", source, "--timeout", str(min(timeout_seconds, 30))]
             if reviewed is not None:
-                command.append("--no-deps")
+                # Only the public staging owner may dispatch this private worker.
+                # Keep code literal, arguments as JSON data, and imports bound to
+                # this checkout rather than the private cwd or ambient PYTHONPATH.
+                worker = (
+                    "import json, sys; from pathlib import Path; "
+                    "sys.path.insert(0, sys.argv[1]); "
+                    "from scripts.ansible_runtime_artifacts import _acquire_reviewed_collections; "
+                    "parameters=json.loads(sys.argv[2]); "
+                    "parameters['lock_file']=Path(parameters['lock_file']); "
+                    "parameters['artifact_root']=Path(parameters['artifact_root']); "
+                    "sys.exit(_acquire_reviewed_collections(**parameters))"
+                )
+                command = [sys.executable, "-c", worker, str(ROOT), json.dumps({
+                    "lock_file": str(lock_file), "artifact_root": str(downloaded),
+                    "required_versions": requested, "origin": source,
+                    "expected_lock_sha256": expected_lock_sha256, "timeout_seconds": timeout_seconds,
+                }, sort_keys=True)]
             _checked_collection_command(command, state, timeout_seconds, environment=private, cwd=state)
             entries = (reviewed if reviewed is not None else
                        _downloaded_collection_entries(state, downloaded, source))

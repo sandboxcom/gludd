@@ -11,6 +11,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 from typing import cast
+from urllib.parse import urlsplit
 
 import pytest
 from scripts import manage_secrets_baseline as subject
@@ -162,6 +163,39 @@ def test_public_bounded_status_repository_argument_has_one_exact_reviewed_findin
         "is_verified": False,
         "line_number": payload["results"][review_test][0]["line_number"],
         "type": "Base64 High Entropy String",
+    }, {
+        "filename": review_test,
+        "hashed_secret": hashlib.sha1(b"secret").hexdigest(),
+        "is_secret": False,
+        "is_verified": False,
+        "line_number": payload["results"][review_test][1]["line_number"],
+        "type": "Secret Keyword",
+    }]
+
+
+def test_native_acquire_invalid_url_has_one_exact_reviewed_finding() -> None:
+    """Retain the credential-bearing negative case without excluding its file."""
+    filename = "tests/unit/test_ansible_collection_staging.py"
+    source = (ROOT / filename).read_text(encoding="utf-8")
+    urls = {
+        node.value for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        and node.value.startswith("https://") and "@artifacts.fixture.invalid/" in node.value
+    }
+    assert len(urls) == 2
+    parsed = [urlsplit(url) for url in urls]
+    assert {url.path for url in parsed} == {"/unsafe", "/file.tar.gz"}
+    assert all(url.username == "user" and url.password == "secret" for url in parsed)
+    assert all(url.hostname == "artifacts.fixture.invalid" for url in parsed)
+    digest = hashlib.sha1(b"secret").hexdigest()
+    payload = json.loads(BASELINE.read_text(encoding="utf-8"))
+    assert payload["results"].get(filename) == [{
+        "filename": filename,
+        "hashed_secret": digest,
+        "is_secret": False,
+        "is_verified": False,
+        "line_number": payload["results"][filename][0]["line_number"],
+        "type": "Basic Auth Credentials",
     }]
 
 

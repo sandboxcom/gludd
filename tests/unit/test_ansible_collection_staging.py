@@ -36,6 +36,13 @@ class _CollectionLock(TypedDict):
     collections: list[owner.CollectionArtifactEntry]
 
 
+class _NativeAcquireHTTP(TypedDict):
+    output: Path
+    metadata: dict[str, object]
+    suffix: bytes
+    requests: list[tuple[str, dict[str, object]]]
+
+
 class _StageOverrides(TypedDict, total=False):
     timeout_seconds: int
 
@@ -73,6 +80,15 @@ class _CollectionRequirements(TypedDict):
     collections: list[_CollectionRequirement]
 
 
+class _CollectionAcquireArguments(TypedDict):
+    lock_file: str
+    artifact_root: str
+    required_versions: dict[str, str]
+    origin: str
+    expected_lock_sha256: str
+    timeout_seconds: int
+
+
 class _TerminalObservedStatus(TypedDict):
     state: str
     termination_reason: str
@@ -85,6 +101,18 @@ class _AdmissionObservedStatus(TypedDict):
 
 def digest(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def acquire_arguments(command: list[str]) -> _CollectionAcquireArguments:
+    assert len(command) == 5 and command[:2] == [sys.executable, "-c"]
+    assert command[3] == str(owner.ROOT)
+    return cast(_CollectionAcquireArguments, json.loads(command[4]))
+
+
+def download_path(command: list[str]) -> Path:
+    if command[1] == "-c":
+        return Path(acquire_arguments(command)["artifact_root"])
+    return Path(command[command.index("--download-path") + 1])
 
 
 def package(
@@ -282,17 +310,27 @@ def test_native_acquisition_is_exact_bounded_atomic_and_owned(
     working: list[Path] = []
 
     def downloader(command: list[str], log: Path, **arguments: Unpack[_CollectionCommandArguments]) -> int:
-        assert command[:5] == [sys.executable, "-m", "ansible.cli.galaxy", "collection", "download"]
-        assert "--offline" not in command and "--no-cache" in command
-        assert ("--no-deps" in command) == (mode == "acquire")
+        if mode == "acquire":
+            inputs = acquire_arguments(command)
+            assert inputs == {
+                "lock_file": str(lock.absolute()), "artifact_root": str(download_path(command)),
+                "required_versions": {"fixture.main": "1.0.0", "fixture.dependency": "1.0.0"},
+                "origin": "https://galaxy.ansible.com/", "expected_lock_sha256": expected, "timeout_seconds": 120,
+            }
+            assert str(lock) not in command[2] and inputs["origin"] not in command[2]
+        else:
+            assert command[:5] == [sys.executable, "-m", "ansible.cli.galaxy", "collection", "download"]
+            assert "--no-cache" in command and "--no-deps" not in command
+            assert command[command.index("--server") + 1] == "https://galaxy.ansible.com/"
+            requests = cast(_CollectionRequirements, json.loads(
+                Path(command[command.index("--requirements-file") + 1]).read_text(),
+            ))
+            assert all(entry["version"] == "1.0.0" and entry["type"] == "galaxy"
+                       for entry in requests["collections"])
+            assert {entry["name"] for entry in requests["collections"]} == {"fixture.main"}
+        assert "--offline" not in command
         assert arguments["max_seconds"] == 120
-        assert command[command.index("--server") + 1] == "https://galaxy.ansible.com/"
-        requests = cast(
-            _CollectionRequirements, json.loads(Path(command[command.index("--requirements-file") + 1]).read_text()),
-        )
-        assert all(entry["version"] == "1.0.0" and entry["type"] == "galaxy"
-                   for entry in requests["collections"])
-        downloaded = Path(command[command.index("--download-path") + 1])
+        downloaded = download_path(command)
         working.append(downloaded.parent)
         entries = cast(_CollectionLock, json.loads(lock.read_text()))["collections"]
         for entry in entries:
@@ -316,6 +354,417 @@ def test_native_acquisition_is_exact_bounded_atomic_and_owned(
     assert all((root / entry["artifact"]).is_file() for entry in published["collections"])
 
 
+@pytest.fixture
+def native_acquire_http(
+    supplied: tuple[Path, Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, Path]:
+    """Keep real Galaxy metadata/artifact owners in their observed child; stub HTTP only."""
+    lock, artifacts, _expected = supplied
+    configuration = tmp_path / "gludd-galaxy-http.json"
+    trace = tmp_path / "gludd-galaxy-http.jsonl"
+    configuration.write_text(json.dumps({
+        "entries": json.loads(lock.read_text())["collections"], "artifacts": str(artifacts),
+        "trace": str(trace), "failure": "", "parent_pid": os.getpid(),
+    }))
+    injection = tmp_path / "gludd-galaxy-http"
+    injection.mkdir()
+    (injection / "sitecustomize.py").write_text(
+        "import io, json, os, ssl, sys, time\n"
+        "from pathlib import Path\n"
+        "from urllib.error import HTTPError\n"
+        "from ansible.galaxy import api\n"
+        "from ansible.galaxy.collection import concrete_artifact_manager as artifacts\n"
+        "settings = json.loads(Path(os.environ['GLUDD_GALAXY_HTTP_FIXTURE']).read_text())\n"
+        "def record(kind, **values):\n"
+        "    with Path(settings['trace']).open('a') as output:\n"
+        "        output.write(json.dumps(dict(kind=kind, pid=os.getpid(), "
+        "pgid=os.getpgid(0), sid=os.getsid(0), **values)) + '\\n')\n"
+        "def refuse_network(event, arguments):\n"
+        "    if event.startswith('socket.'):\n"
+        "        raise AssertionError('live network is forbidden in Galaxy fixture')\n"
+        "sys.addaudithook(refuse_network)\n"
+        "def refuse_versions(*args, **kwargs):\n"
+        "    record('version-enumeration')\n"
+        "    raise AssertionError('version enumeration forbidden for reviewed acquisition')\n"
+        "api.GalaxyAPI.get_collection_versions = refuse_versions\n"
+        "def http(url, *args, **kwargs):\n"
+        "    record('http', url=url, headers=kwargs.get('headers'), "
+        "validate_certs=kwargs.get('validate_certs'), timeout=kwargs.get('timeout'))\n"
+        "    if settings['failure'] == 'warning': print('[WARNING]: fixture native diagnostic', file=sys.stderr)\n"
+        "    if settings['failure'] == 'auth': raise HTTPError(url, 403, 'fixture auth refused', {}, None)\n"
+        "    if settings['failure'] == 'tls': raise ssl.SSLError('fixture TLS certificate rejected')\n"
+        "    for entry in settings['entries']:\n"
+        "        namespace, name = entry['name'].split('.')\n"
+        "        source = 'https://artifacts.fixture.invalid/canonical/' + entry['artifact'] + '?reviewed=1'\n"
+        "        if url == source:\n"
+        "            content = (Path(settings['artifacts']) / entry['artifact']).read_bytes()\n"
+        "            if settings['failure'] == 'content': content += b'changed'\n"
+        "            return io.BytesIO(content)\n"
+        "        if url.endswith('/collections/' + namespace + '/' + name + '/versions/' + entry['version'] + '/'):\n"
+        "            if settings['failure'] == 'timeout': time.sleep(30)\n"
+        "            data = dict(namespace=dict(name=namespace), collection=dict(name=name), "
+        "version=entry['version'], download_url=source, artifact=dict(sha256=entry['sha256'][7:]), "
+        "metadata=dict(dependencies={}), href=url, signatures=[])\n"
+        "            if name == 'main': data['metadata']['dependencies'] = {'fixture.dependency': '>=1.0.0'}\n"
+        "            if settings['failure'] == 'identity': data['version'] = '9.0.0'\n"
+        "            if settings['failure'] == 'hash': data['artifact']['sha256'] = 'f' * 64\n"
+        "            if settings['failure'] == 'url': data['download_url'] = settings['url_override']\n"
+        "            if settings['failure'] == 'dependency':\n"
+        "                data['metadata']['dependencies'] = {'fixture.missing': '*'}\n"
+        "            if settings['failure'] == 'dependency-type': data['metadata']['dependencies'] = None\n"
+        "            record('metadata', name=entry['name'], version=entry['version'])\n"
+        "            return io.BytesIO(json.dumps(data).encode())\n"
+        "    if url in {entry['origin'] for entry in settings['entries']} or url.endswith('/api/'):\n"
+        "        return io.BytesIO(json.dumps(dict(available_versions=dict(v3='v3/'))).encode())\n"
+        "    raise AssertionError('unexpected native Galaxy URL: ' + url)\n"
+        "api.open_url = http\n"
+        "artifacts.open_url = http\n"
+    )
+    monkeypatch.setenv("PYTHONPATH", str(injection))
+    monkeypatch.setenv("GLUDD_GALAXY_HTTP_FIXTURE", str(configuration))
+    return configuration, trace
+
+
+@pytest.mark.parametrize("origin", ["https://galaxy.ansible.com/", "https://private.fixture.invalid/custom/hub/"])
+def test_reviewed_acquire_uses_native_exact_metadata_without_version_enumeration(
+    supplied: tuple[Path, Path, str], native_acquire_http: tuple[Path, Path],
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, origin: str,
+) -> None:
+    """Exercise the actual pinned core (2.19/2.21) in the real bounded observed child."""
+    lock, _artifacts, expected = supplied
+    configuration, trace = native_acquire_http
+    document = cast(_CollectionLock, json.loads(lock.read_text()))
+    for entry in document["collections"]:
+        entry["origin"] = origin
+    lock.write_text(json.dumps(document))
+    expected = digest(lock)
+    settings = json.loads(configuration.read_text())
+    settings["entries"] = document["collections"]
+    configuration.write_text(json.dumps(settings))
+    destination = tmp_path / "gludd-exact-native-generation"
+    previous = lock.read_bytes()
+    calls: list[tuple[list[str], int]] = []
+    logs: list[str] = []
+    run = owner._run_collection_command
+
+    def observed(command: list[str], log: Path, **arguments: Unpack[_CollectionCommandArguments]) -> int:
+        calls.append((command, arguments["max_seconds"]))
+        token = Path(arguments["environment"]["ANSIBLE_HOME"]) / "galaxy_token"
+        token.write_text("token: gludd-owned-fixture-token\n")
+        result = run(command, log, **arguments)
+        logs.append(log.read_text())
+        return result
+
+    monkeypatch.setattr(owner, "_run_collection_command", observed)
+    assert owner.prepare_collection_artifacts(
+        "acquire", lock, destination, required_versions={"fixture.main": "1.0.0"},
+        origin=origin, expected_lock_sha256=expected,
+    ) == 0, logs
+    events = [json.loads(line) for line in trace.read_text().splitlines()]
+    assert not any(event["kind"] == "version-enumeration" for event in events)
+    assert sorted(event["name"] for event in events if event["kind"] == "metadata") == [
+        "fixture.dependency", "fixture.main",
+    ]
+    transfers = [event for event in events if event["kind"] == "http"
+                 and event["url"].startswith("https://artifacts.fixture.invalid/")]
+    assert len(transfers) == 2
+    assert all(event["validate_certs"] is True for event in transfers)
+    assert all(event["headers"] == {"Authorization": "Token gludd-owned-fixture-token"} for event in transfers)
+    assert all(event["pid"] != os.getpid() and event["pid"] == event["pgid"] == event["sid"] for event in events)
+    assert len(calls) == 1 and calls[0][1] == 120
+    assert lock.read_bytes() == previous == (destination / "collections.lock.json").read_bytes()
+
+
+@pytest.mark.parametrize("failure, message", [
+    ("identity", "metadata identity differs"), ("hash", "metadata checksum differs"),
+    ("dependency", "missing staged collection manifest"),
+    ("dependency-type", "dependency metadata is invalid"),
+    ("content", "Mismatch artifact hash with downloaded file"),
+    ("size", "artifact size differs"), ("manifest-dependency", "missing staged collection manifest"),
+    ("auth", "fixture auth refused"), ("tls", "fixture TLS certificate rejected"),
+    ("warning", "fixture native diagnostic"),
+])
+def test_native_reviewed_acquire_rejects_metadata_transfer_and_manifest_failures(
+    supplied: tuple[Path, Path, str], native_acquire_http: tuple[Path, Path],
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str, message: str,
+) -> None:
+    lock, artifacts, expected = supplied
+    configuration, trace = native_acquire_http
+    settings = json.loads(configuration.read_text())
+    settings["failure"] = failure
+    if failure in {"size", "manifest-dependency"}:
+        document = cast(_CollectionLock, json.loads(lock.read_text()))
+        if failure == "size":
+            document["collections"][0]["size"] += 1
+        else:
+            document["collections"][0] = package(artifacts, "fixture.main", {"fixture.missing": ">=1.0.0"})
+        lock.write_text(json.dumps(document))
+        settings["entries"] = document["collections"]
+        expected = digest(lock)
+    configuration.write_text(json.dumps(settings))
+    previous, destination = lock.read_bytes(), tmp_path / "gludd-failed-native-generation"
+    logs: list[str] = []
+    states: list[Path] = []
+    run = owner._run_collection_command
+
+    def observed(command: list[str], log: Path, **arguments: Unpack[_CollectionCommandArguments]) -> int:
+        states.append(log.parent)
+        result = run(command, log, **arguments)
+        logs.append(log.read_text())
+        return result
+
+    monkeypatch.setattr(owner, "_run_collection_command", observed)
+    assert owner.prepare_collection_artifacts(
+        "acquire", lock, destination, required_versions={"fixture.main": "1.0.0"},
+        origin="https://galaxy.ansible.com/", expected_lock_sha256=expected,
+    ) != 0
+    if failure != "manifest-dependency":
+        assert message in "".join(logs)
+    assert lock.read_bytes() == previous and not destination.exists()
+    assert states and all(not state.exists() for state in states)
+    events = [json.loads(line) for line in trace.read_text().splitlines()]
+    assert not any(event["kind"] == "version-enumeration" for event in events)
+    if failure in {"identity", "hash", "dependency", "dependency-type", "auth", "tls"}:
+        assert not any(event["kind"] == "http" and "artifacts.fixture.invalid" in event["url"] for event in events)
+
+
+@pytest.mark.parametrize("url", [
+    "http://artifacts.fixture.invalid/unsafe", "https://user:secret@artifacts.fixture.invalid/unsafe",
+    "https://artifacts.fixture.invalid/unsafe#fragment", "file:///fixture.tar.gz",
+])
+def test_native_acquire_rejects_unsafe_canonical_artifact_urls(
+    supplied: tuple[Path, Path, str], native_acquire_http: tuple[Path, Path], tmp_path: Path, url: str,
+) -> None:
+    lock, _artifacts, expected = supplied
+    configuration, trace = native_acquire_http
+    settings = json.loads(configuration.read_text())
+    settings.update(failure="url", url_override=url)
+    configuration.write_text(json.dumps(settings))
+    destination = tmp_path / "gludd-unsafe-native-url"
+    assert owner.prepare_collection_artifacts(
+        "acquire", lock, destination, required_versions={"fixture.main": "1.0.0"},
+        origin="https://galaxy.ansible.com/", expected_lock_sha256=expected,
+    ) != 0
+    assert not destination.exists()
+    events = [json.loads(line) for line in trace.read_text().splitlines()]
+    assert not any(event["kind"] == "http" and event["url"] == url for event in events)
+
+
+def test_native_acquire_network_uses_the_single_observed_deadline_and_teardown(
+    supplied: tuple[Path, Path, str], native_acquire_http: tuple[Path, Path],
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock, _artifacts, expected = supplied
+    configuration, _trace = native_acquire_http
+    settings = json.loads(configuration.read_text())
+    settings["failure"] = "timeout"
+    configuration.write_text(json.dumps(settings))
+    outcomes: list[tuple[int, int, str]] = []
+    states: list[Path] = []
+    run = owner._run_collection_command
+
+    def observed(command: list[str], log: Path, **arguments: Unpack[_CollectionCommandArguments]) -> int:
+        states.append(log.parent)
+        result = run(command, log, **arguments)
+        status = json.loads((log.parent / "observed/gludd-collection-stage/current.json").read_text())
+        outcomes.append((result, arguments["max_seconds"], status["termination_reason"]))
+        assert "ANSIBLE_COLLECTION_METADATA" in log.read_text()
+        return result
+
+    monkeypatch.setattr(owner, "_run_collection_command", observed)
+    destination = tmp_path / "gludd-timed-out-native-acquire"
+    assert owner.prepare_collection_artifacts(
+        "acquire", lock, destination, required_versions={"fixture.main": "1.0.0"},
+        origin="https://galaxy.ansible.com/", expected_lock_sha256=expected, timeout_seconds=1,
+    ) != 0
+    assert outcomes == [(124, 1, "max-runtime-timeout")]
+    assert not destination.exists() and all(not state.exists() for state in states)
+
+
+@pytest.fixture
+def in_process_acquire_http(
+    supplied: tuple[Path, Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> _NativeAcquireHTTP:
+    """Measure the worker itself while retaining real native API, token and transfer checks."""
+    import ansible.constants as constants
+    from ansible.galaxy import api
+    from ansible.galaxy.collection import concrete_artifact_manager
+
+    lock, artifacts, _expected = supplied
+    state = tmp_path / "gludd-in-process-native-acquire"
+    output = state / "artifacts"
+    output.mkdir(parents=True)
+    token = state / "galaxy_token"
+    token.write_text("token: gludd-owned-in-process-token\n")
+    monkeypatch.setattr(constants, "GALAXY_TOKEN_PATH", str(token))
+    monkeypatch.setattr(constants, "GALAXY_CACHE_DIR", str(state / "response-cache"))
+    fixture: _NativeAcquireHTTP = {"output": output, "metadata": {}, "suffix": b"", "requests": []}
+
+    def refuse_versions(*_args: object, **_options: object) -> None:
+        pytest.fail("reviewed native worker enumerated versions")
+
+    def http(url: str, **options: object) -> io.BytesIO:
+        fixture["requests"].append((url, options))
+        entries = cast(_CollectionLock, json.loads(lock.read_text()))["collections"]
+        for entry in entries:
+            namespace, name = entry["name"].split(".")
+            source = f"https://artifacts.fixture.invalid/native/{entry['artifact']}?reviewed=1"
+            if url == source:
+                return io.BytesIO((artifacts / entry["artifact"]).read_bytes() + fixture["suffix"])
+            if url.endswith(f"/collections/{namespace}/{name}/versions/{entry['version']}/"):
+                dependencies = {"fixture.dependency": ">=1.0.0"} if name == "main" else {}
+                metadata: dict[str, object] = {
+                    "namespace": {"name": namespace}, "collection": {"name": name}, "version": entry["version"],
+                    "download_url": source, "artifact": {"sha256": entry["sha256"][7:]},
+                    "metadata": {"dependencies": dependencies}, "href": url, "signatures": [],
+                }
+                metadata.update(fixture["metadata"])
+                return io.BytesIO(json.dumps(metadata).encode())
+        if url in {entry["origin"] for entry in entries} or url.endswith("/api/"):
+            return io.BytesIO(b'{"available_versions": {"v3": "v3/"}}')
+        pytest.fail(f"unexpected native HTTP request: {url}")
+
+    monkeypatch.setattr(api.GalaxyAPI, "get_collection_versions", refuse_versions)
+    monkeypatch.setattr(api, "open_url", http)
+    monkeypatch.setattr(concrete_artifact_manager, "open_url", http)
+    return fixture
+
+
+def test_exact_worker_in_process_retains_native_api_auth_integrity_and_cleanup(
+    supplied: tuple[Path, Path, str], in_process_acquire_http: _NativeAcquireHTTP,
+) -> None:
+    lock, _artifacts, expected = supplied
+    previous = lock.read_bytes()
+    output = in_process_acquire_http["output"]
+    assert owner._acquire_reviewed_collections(
+        lock, output, required_versions={"fixture.main": "1.0.0"}, origin="https://galaxy.ansible.com/",
+        expected_lock_sha256=expected, timeout_seconds=120,
+    ) == 0
+    requests = in_process_acquire_http["requests"]
+    assert len([url for url, _options in requests if "/versions/1.0.0/" in url]) == 2
+    transfers = [options for url, options in requests if "artifacts.fixture.invalid" in url]
+    assert len(transfers) == 2
+    assert all(options["validate_certs"] is True for options in transfers)
+    assert all(options["headers"] == {"Authorization": "Token gludd-owned-in-process-token"} for options in transfers)
+    entries = cast(_CollectionLock, json.loads(lock.read_text()))["collections"]
+    assert {path.name for path in output.iterdir()} == {entry["artifact"] for entry in entries}
+    assert all(digest(output / entry["artifact"]) == entry["sha256"] for entry in entries)
+    assert lock.read_bytes() == previous
+    assert {path.name for path in output.parent.iterdir()} == {"artifacts", "response-cache", "galaxy_token"}
+
+
+@pytest.mark.parametrize("field, value, message", [
+    ("namespace", {"name": "unreviewed"}, "metadata identity differs"),
+    ("collection", {"name": "unreviewed"}, "metadata identity differs"),
+    ("version", "9.0.0", "metadata identity differs"),
+    ("artifact", {"sha256": "f" * 64}, "metadata checksum differs"),
+    ("download_url", "http://artifacts.fixture.invalid/file.tar.gz", "credential-free HTTPS"),
+    ("download_url", "https://user:secret@artifacts.fixture.invalid/file.tar.gz", "credential-free HTTPS"),
+    ("download_url", "https://artifacts.fixture.invalid/file.tar.gz#fragment", "credential-free HTTPS"),
+    ("metadata", {"dependencies": None}, "dependency metadata is invalid"),
+    ("metadata", {"dependencies": {"fixture.main": 1}}, "dependency metadata is invalid"),
+    ("metadata", {"dependencies": {"fixture.missing": "*"}}, "missing staged collection manifest"),
+    ("metadata", {"dependencies": {"fixture.main": ">=9.0.0"}}, "staged collection dependency mismatch"),
+])
+def test_exact_worker_in_process_rejects_unreviewed_native_metadata_before_transfer(
+    supplied: tuple[Path, Path, str], in_process_acquire_http: _NativeAcquireHTTP,
+    capsys: pytest.CaptureFixture[str], field: str, value: object, message: str,
+) -> None:
+    lock, _artifacts, expected = supplied
+    in_process_acquire_http["metadata"][field] = value
+    assert owner._acquire_reviewed_collections(
+        lock, in_process_acquire_http["output"], required_versions={"fixture.main": "1.0.0"},
+        origin="https://galaxy.ansible.com/", expected_lock_sha256=expected, timeout_seconds=120,
+    ) == 1
+    assert message in capsys.readouterr().err
+    assert not any("artifacts.fixture.invalid" in url for url, _options in in_process_acquire_http["requests"])
+    assert not list(in_process_acquire_http["output"].iterdir())
+    assert digest(lock) == expected
+
+
+@pytest.mark.parametrize("failure, message", [
+    ("content", "Mismatch artifact hash with downloaded file"), ("size", "artifact size differs"),
+])
+def test_exact_worker_in_process_retains_native_checksum_and_reviewed_size(
+    supplied: tuple[Path, Path, str], in_process_acquire_http: _NativeAcquireHTTP,
+    capsys: pytest.CaptureFixture[str], failure: str, message: str,
+) -> None:
+    lock, _artifacts, expected = supplied
+    if failure == "content":
+        in_process_acquire_http["suffix"] = b"changed"
+    else:
+        document = cast(_CollectionLock, json.loads(lock.read_text()))
+        for entry in document["collections"]:
+            entry["size"] += 1
+        lock.write_text(json.dumps(document))
+        expected = digest(lock)
+    assert owner._acquire_reviewed_collections(
+        lock, in_process_acquire_http["output"], required_versions={"fixture.main": "1.0.0"},
+        origin="https://galaxy.ansible.com/", expected_lock_sha256=expected, timeout_seconds=120,
+    ) == 1
+    assert message in capsys.readouterr().err
+    assert not list(in_process_acquire_http["output"].iterdir())
+    assert digest(lock) == expected
+
+
+@pytest.mark.parametrize("failure", ["timeout", "origin", "digest", "missing", "populated", "symlink"])
+def test_exact_worker_rejects_unsafe_admission_before_any_native_http(
+    supplied: tuple[Path, Path, str], in_process_acquire_http: _NativeAcquireHTTP,
+    tmp_path: Path, failure: str,
+) -> None:
+    lock, _artifacts, expected = supplied
+    output, origin, timeout = in_process_acquire_http["output"], "https://galaxy.ansible.com/", 120
+    if failure == "timeout":
+        timeout = 0
+    elif failure == "origin":
+        origin = "https://unreviewed.fixture.invalid/"
+    elif failure == "digest":
+        expected = "sha256:" + "0" * 64
+    elif failure == "missing":
+        output = tmp_path / "absent-output"
+    elif failure == "populated":
+        (output / "another-owner").write_text("retain")
+    else:
+        link = tmp_path / "gludd-output-link"
+        link.symlink_to(output, target_is_directory=True)
+        output = link
+    assert owner._acquire_reviewed_collections(
+        lock, output, required_versions={"fixture.main": "1.0.0"}, origin=origin,
+        expected_lock_sha256=expected, timeout_seconds=timeout,
+    ) == 1
+    assert not in_process_acquire_http["requests"]
+    if failure == "populated":
+        assert (output / "another-owner").read_text() == "retain"
+
+
+@pytest.mark.parametrize("validate_only", [False, True])
+def test_native_acquire_is_not_a_public_cli_transport_escape(
+    supplied: tuple[Path, Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], validate_only: bool,
+) -> None:
+    """Only the existing bounded stage owner may enter the private acquisition worker."""
+    lock, _artifacts, expected = supplied
+    previous = lock.read_bytes()
+    requirements = tmp_path / "gludd-cli-reviewed-requirements.json"
+    requirements.write_text(json.dumps({"collections": [{"name": "fixture.main", "version": "1.0.0"}]}))
+    output = tmp_path / "gludd-plan-only-output"
+    monkeypatch.setattr(owner, "_acquire_reviewed_collections",
+                        lambda *_args, **_options: pytest.fail("public CLI entered private native transport"))
+    monkeypatch.setattr(owner, "_run_collection_command",
+                        lambda *_args, **_options: pytest.fail("rejected CLI started a child"))
+    command = [
+        "native-acquire-collections", "--collection-lock", str(lock), "--artifact-root", str(output),
+        "--collection-lock-sha256", expected, "--collection-requirements", str(requirements),
+    ]
+    if validate_only:
+        command.append("--validate-only")
+    with pytest.raises(SystemExit) as rejected:
+        owner.main(command)
+    assert rejected.value.code == 2
+    assert "invalid choice: 'native-acquire-collections'" in capsys.readouterr().err
+    assert not output.exists() and lock.read_bytes() == previous
+
+
 @pytest.mark.parametrize("failure", ["timeout", "tamper", "missing-dependency"])
 def test_failed_acquisition_never_publishes_or_changes_reviewed_lock(
     supplied: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str,
@@ -326,7 +775,7 @@ def test_failed_acquisition_never_publishes_or_changes_reviewed_lock(
     working: list[Path] = []
 
     def downloader(command: list[str], log: Path, **arguments: Unpack[_CollectionCommandArguments]) -> int:
-        downloaded = Path(command[command.index("--download-path") + 1])
+        downloaded = download_path(command)
         working.append(downloaded.parent)
         entries = cast(_CollectionLock, json.loads(lock.read_text()))["collections"]
         for entry in entries if failure != "missing-dependency" else entries[:1]:
@@ -369,18 +818,22 @@ def test_existing_warning_owner_rejects_native_galaxy_diagnostic_forms(tmp_path:
     assert guard.validate_native_lint_diagnostics(log) is False
 
 
+@pytest.mark.parametrize("mode", ["offline", "acquire", "refresh"])
 def test_stage_cli_plan_has_explicit_inputs_and_no_acquisition(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str], mode: str,
 ) -> None:
     requirements = tmp_path / "required.yml"
     requirements.write_text(json.dumps({"collections": [{"name": "fixture.main", "version": "1.0.0"}]}))
     monkeypatch.setattr(owner, "_run_collection_command", lambda *args, **kwargs: pytest.fail("plan executed"))
+    monkeypatch.setattr(owner, "_acquire_reviewed_collections",
+                        lambda *_args, **_options: pytest.fail("plan entered native worker"))
     assert owner.main([
-        "stage-collections", "--collection-stage-mode", "offline", "--collection-lock", str(tmp_path / "lock.json"),
+        "stage-collections", "--collection-stage-mode", mode, "--collection-lock", str(tmp_path / "lock.json"),
         "--artifact-root", str(tmp_path / "artifacts"), "--collection-requirements", str(requirements),
         "--collection-timeout-seconds", "120", "--galaxy-origin", "https://galaxy.ansible.com/", "--validate-only",
     ]) == 0
     assert "proof=none" in capsys.readouterr().out
+    assert not (tmp_path / "lock.json").exists() and not (tmp_path / "artifacts").exists()
 
 
 def test_acquisition_retains_independent_lock_binding_during_native_command(
@@ -389,7 +842,7 @@ def test_acquisition_retains_independent_lock_binding_during_native_command(
     lock, root, expected = supplied
 
     def downloader(command: list[str], log: Path, **arguments: Unpack[_CollectionCommandArguments]) -> int:
-        downloaded = Path(command[command.index("--download-path") + 1])
+        downloaded = download_path(command)
         for entry in cast(_CollectionLock, json.loads(lock.read_text()))["collections"]:
             (downloaded / entry["artifact"]).write_bytes((root / entry["artifact"]).read_bytes())
         lock.write_text(lock.read_text() + " ")
@@ -467,7 +920,7 @@ def test_native_command_never_changes_another_threads_environment_or_cwd(
                 target.mkdir(parents=True)
                 (target / "MANIFEST.json").write_text(json.dumps(metadata))
         else:
-            downloaded = Path(command[command.index("--download-path") + 1])
+            downloaded = download_path(command)
             for entry in entries:
                 (downloaded / entry["artifact"]).write_bytes((artifacts / entry["artifact"]).read_bytes())
             (downloaded / "requirements.yml").write_text(json.dumps({"collections": [

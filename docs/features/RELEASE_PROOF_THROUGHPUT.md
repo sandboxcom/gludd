@@ -244,6 +244,72 @@ tests in 55.17 seconds and its 85/75 audit for all 70 measured files
 also pass. Clean full gate, exact-successor hosted proof and deployment acceptance
 are still required; no S98 completion follows here.
 
+### Exact-pin acquisition without version enumeration
+
+Acquisition already has a reviewed, complete collection lock. Native Galaxy's
+CLI still enumerates all available versions before selecting those exact pins;
+that extra work is unnecessary for acquisition, though refresh still needs its
+resolver. A failing-first real-native regression forbids version enumeration
+and exposes the old path before the acquire-only change.
+
+The existing observed child now asks native `GalaxyAPI` for each exact version
+and hands its native candidate and metadata to `ConcreteArtifactsManager`.
+Metadata identity, checksum and dependency closure must match the reviewed lock
+before transfers. The native manager retains the server-returned HTTPS URL,
+token, certificate verification, checksum validation and retry behavior. The
+parent still independently verifies sizes, hashes, archive metadata, core
+compatibility and dependencies before atomically publishing a new generation.
+Refresh and offline replay retain their existing native paths.
+
+Discovery, metadata, retries and downloads all share the same existing total
+120-second observed-child deadline; this is not a per-artifact timeout reset.
+Progress markers identify metadata and transfer work. There is no new download
+client, persistent cache, resolver, pin update or deployment authority.
+The dated Galaxy reports linked above motivate reducing unnecessary requests,
+but neither establish the hosted timeout's cause nor prove a speedup.
+
+Source review also exposes an unsafe new public worker entry point: it ignores
+validate-only and can escape the supervising timeout. Three failing-first
+controls pin that defect. Remove the public worker mode entirely; the existing
+staging owner dispatches one private function with literal Python child code,
+an explicit checkout import root and JSON argument data. The normal staging
+validate-only paths do not invoke transport, and both former worker CLI forms
+are rejected. No token protocol, second observer or alternate timer is added.
+
+The read-only commit guard also flags the intentionally invalid credential URL
+used by both child and in-process rejection cases, then the audit test's literal
+password assertion. Native baseline refresh adds exactly those two findings and
+removes none of the existing 1,141 findings. Review only those exact fake-password
+fingerprints as non-secret; the audit regressions pin both `.invalid` URL paths
+and the precise reviewed findings in their respective files.
+Keep the negative tests, detector configuration, existing audit labels and
+file scanning intact: no string obfuscation, inline suppression or file-wide
+exclusion is introduced.
+
+These are upstream internal Python interfaces, not a supported public Python
+API. Tests exercise the installed core 2.19.14 with real native objects and
+HTTP-boundary fixtures, including custom origins, credentials, TLS, tampering
+and timeout teardown. Core 2.21.5 source inspection is not runtime acceptance:
+its main-owned environment is refused by strict worktree confinement, so that
+runtime check remains pending without an isolation override or duplicate install.
+All 98 focused staging cases pass after the entry-point correction (14.55 seconds).
+The first canonical run passes 1,538 tests but fails aggregate branch coverage
+at 84.6% (`.gate-logs/coverage-20261015T223103Z.json`); all 70 individual files
+meet 75%. Preserve that failure while adding genuine coverage under the unchanged
+85/75 policy. The subsequent run `20261015T223610Z-77401-56ab9983` loses its
+observer during a server restart at 95% and has no terminal coverage result;
+native status confirms its owner is inactive/orphaned. Retain that incomplete
+record and recover once through the original coverage owner, not a forged
+success or a duplicate live run. The recovered run passes all 1,562 tests in
+58.07 seconds and the original 85/75 audit for all 70 measured files
+(`.gate-logs/coverage-20261015T223912Z.json`). Both changed Python files pass Ruff
+and strict typing. The next resource check reports 96% volume use, exceeding the
+user-authorized 95% hard limit; native cleanup inspection must precede further
+expensive proof attempts. The native cleanup owner then removes only eligible
+reproducible worktree caches/bytecode and rechecks at 95%, retaining source,
+historical evidence and protected/recent scratch. Full gate, exact-successor hosted build and deployment
+acceptance remain required; this change does not complete a backlog item.
+
 ### Observer startup interruption readiness
 
 Build run `38590551409`, candidate

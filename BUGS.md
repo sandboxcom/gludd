@@ -4,6 +4,27 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-15 — Reviewed exact pins still incurred version enumeration
+
+- Native Galaxy enumerates versions before filtering the complete reviewed lock.
+  A real-native failing-first test rejects that unnecessary acquisition work.
+  The acquire-only child now uses exact native metadata and artifact candidates;
+  refresh retains the resolver and all network work keeps the same 120-second
+  owner. Checksums, origins, credentials, TLS and final closure validation remain.
+- Source review additionally catches a worker CLI that ignores validate-only and
+  escapes total-deadline ownership. Three failing-first controls require removal
+  of that public mode; the existing owner now dispatches the private function
+  through literal child code, explicit checkout imports and JSON argument data.
+- Core 2.19.14 passes all 98 focused cases after correction. The first canonical
+  1,538-case run passes tests but fails aggregate branch coverage at 84.6%; that
+  failure is retained, not waived. Twenty added in-process native controls close
+  the worker branches. After preserving a server-interrupted run, the recovered
+  canonical run passes all 1,562 tests and unchanged 85/75 audit across 70 files
+  (`.gate-logs/coverage-20261015T223912Z.json`). Core 2.21.5 remains pending because its
+  main-owned environment is correctly refused by worktree confinement.
+- See `docs/features/RELEASE_PROOF_THROUGHPUT.md` for research and evidence.
+  No hosted recovery, measured speedup or new backlog completion is claimed.
+
 ### 2026-10-15 — Buffered Galaxy output hid acquisition progress
 
 - Build run 38812181930 fails the execution-environment collection-acquisition
