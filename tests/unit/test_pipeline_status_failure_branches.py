@@ -158,7 +158,7 @@ def test_local_marker_observes_real_process_and_stale_timestamp(
     age: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Signal-zero inspection of this process distinguishes fresh from stale markers."""
+    """An arbitrary live PID and marker age cannot establish gate identity or a stall."""
     monkeypatch.chdir(tmp_path)
     gate = tmp_path / ".gate-status"
     gate.write_text("GATE PENDING\n", encoding="utf-8")
@@ -169,7 +169,35 @@ def test_local_marker_observes_real_process_and_stale_timestamp(
     output = capsys.readouterr().out
     assert "GATE PENDING" in output
     assert "DEAD" not in output
-    assert ("STALLED" in output) is (age > 120)
+    assert "STALLED" not in output
+    if age > 120:
+        assert "GATE-MARKER: marker_age_seconds=" in output
+        assert f"pid={os.getpid()} pid_probe=exists gate_identity=unverified progress=unknown" in output
+        assert "lifecycle marker, not a progress heartbeat" in output
+    else:
+        assert output == "=== LOCAL GATE ===\nGATE PENDING\n"
+    assert gate.read_text() == "GATE PENDING\n"
+    assert (tmp_path / ".gate-background.pid").read_text() == str(os.getpid())
+
+
+@pytest.mark.parametrize("marker", [
+    "=== GATE: PASSED ===", "=== GATE: FAILED ===", "GATE_TIMEOUT", "=== GATE: ABORTED (timeout) ===",
+])
+def test_old_terminal_marker_is_preserved_without_inventing_live_progress(
+    marker: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Explicit terminal evidence survives an unrelated live PID and old marker."""
+    monkeypatch.chdir(tmp_path)
+    gate = tmp_path / ".gate-status"
+    gate.write_text(marker + "\n")
+    (tmp_path / ".gate-background.pid").write_text(str(os.getpid()))
+    marker_time = time.time() - 181
+    os.utime(gate, (marker_time, marker_time))
+    status.local_gate()
+    output = capsys.readouterr().out
+    assert marker in output and gate.read_text() == marker + "\n"
+    assert "gate_identity=unverified progress=unknown" in output
+    assert "STALLED" not in output and "DEAD" not in output
 
 
 def test_local_marker_malformed_pid_is_dead_not_live(
