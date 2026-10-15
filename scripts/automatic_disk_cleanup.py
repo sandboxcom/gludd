@@ -29,6 +29,8 @@ from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from scripts import automatic_disk_cleanup_bytecode as bytecode_cleanup
+
 if TYPE_CHECKING:
     import check_disk_usage
     import clean_ci_shard_scratch
@@ -1262,6 +1264,7 @@ def clean_inactive_worktree_caches(
     protected_paths: frozenset[Path],
     active_branches: ActiveBranches,
     refresh_records: RefreshRecords,
+    repository_root: Path | None = None,
     active_workstream_leases: ActiveWorkstreamLeases | None = None,
     lifecycle_proof: LifecycleProof | None = None,
     active_process_pids: ActiveProcessPids = clean_ci_shard_scratch._active_process_pids,
@@ -1275,6 +1278,7 @@ def clean_inactive_worktree_caches(
     skipped: list[str] = []
     errors: list[str] = []
     materialization_attempts = 0
+    bytecode_budget = bytecode_cleanup.Budget()
     try:
         initial_active = active_branches()
         initial_leases = (
@@ -1306,6 +1310,7 @@ def clean_inactive_worktree_caches(
     for record in sorted(records, key=lambda item: str(item.path)):
         path = record.path
         completion_lease: WorkstreamLease | None = None
+        bytecode_lease: WorkstreamLease | None = None
         cache_only_lease: WorkstreamLease | None = None
         if not _inside_approved_root(path, approved_roots):
             skipped.append(f"{path}:outside approved namespace")
@@ -1329,6 +1334,8 @@ def clean_inactive_worktree_caches(
             if lifecycle.error:
                 errors.append(f"{path}:{lifecycle.reason}")
                 continue
+            if lifecycle.reclaimable:
+                bytecode_lease = initial_leases.get(record.branch)
             if not lifecycle.reclaimable or lifecycle.cache_only:
                 cache_only_lease = initial_leases.get(record.branch)
             else:
@@ -1504,6 +1511,42 @@ def clean_inactive_worktree_caches(
                 flush=True,
             )
 
+        def bytecode_revalidate(
+            candidate: prune_worktrees_safe.WorktreeRecord = record,
+            candidate_path: Path = path,
+            required_lease: WorkstreamLease | None = bytecode_lease,
+            seen_active: frozenset[str] = initial_active | refreshed_active,
+        ) -> str | None:
+            try:
+                current_record = _matching_refreshed_record(candidate, refresh_records())
+                current_active = active_branches()
+                leases = dict(active_workstream_leases()) if active_workstream_leases else {}
+                if current_record is None or not _inside_approved_root(candidate_path, approved_roots):
+                    return "registration changed"
+                if required_lease is not None:
+                    if candidate.branch not in current_active or leases.get(candidate.branch) != required_lease:
+                        return "completion lease changed"
+                    proof = lifecycle_decision(current_record, leases)
+                    if proof.error or not proof.reclaimable:
+                        return "completion proof changed"
+                elif candidate.branch in seen_active or candidate.branch in current_active:
+                    return "active logical workstream"
+                if active_process_pids(candidate_path):
+                    return "active processes appeared"
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+                raise ProcessInspectionError("bytecode ownership/process revalidation failed") from exc
+            return None
+
+        bytecode = bytecode_cleanup.reclaim(
+            path, repository_root=repository_root, budget=bytecode_budget, revalidate=bytecode_revalidate,
+            parent_is_safe=_invoking_cache_is_safe, dry_run=dry_run,
+        )
+        if bytecode.removed_files:
+            removed.append(f"{path}:bytecode files={bytecode.removed_files} bytes={bytecode.removed_bytes}")
+        skipped.extend(bytecode.skipped)
+        errors.extend(bytecode.errors)
+        if bytecode.blocked:
+            continue
         if remove_materialization is None:
             continue
         if materialization_attempts >= max_materializations:
@@ -2173,6 +2216,7 @@ def _automatic_cleanup(
             active_workstream_leases=leases,
             lifecycle_proof=lifecycle,
             refresh_records=_registered_worktrees,
+            repository_root=main,
             remove_materialization=lambda record, is_dry_run: (
                 _remove_worktree_materialization(
                     record,
