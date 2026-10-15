@@ -225,3 +225,102 @@ def test_native_make_refuses_unsupported_override_encoding_before_any_recipe(
     assert result.returncode != 0
     assert "unsupported duplicate-code Make override encoding" in result.stderr
     assert not sentry.exists()
+
+
+@pytest.mark.parametrize("action", ("test-count", "check-duplicate-code", "recursive-check"))
+@pytest.mark.parametrize("syntax", (
+    "make-expression", "backtick", "quote-breakout", "backslash",
+))
+def test_engine_literal_refusal_never_evaluates_make_or_shell_text(
+    tmp_path: Path, action: str, syntax: str,
+) -> None:
+    """Unsupported tool inputs cannot execute before either owner can refuse."""
+    sentry = tmp_path / "unexpected-input-execution"
+    recipe = tmp_path / "unexpected-recipe"
+    if syntax == "make-expression":
+        engine = f"$(shell touch {sentry})/jscpd"
+    elif syntax == "backtick":
+        engine = f"{tmp_path}/`touch {sentry}`/jscpd"
+    elif syntax == "quote-breakout":
+        engine = f'{tmp_path}/"; touch {sentry}; printf "/jscpd'
+    else:
+        engine = f"{tmp_path}/engine\\with-backslash/jscpd"
+    recorder = tmp_path / "record.py"
+    recorder.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(recipe)!r}).write_text('unexpected recipe')\n",
+    )
+    makefile = tmp_path / "Makefile"
+    makefile.write_text(
+        f'include {ROOT / "make" / "00-foundation.mk"}\n'
+        f'PYTHON := {sys.executable}\n'
+        f'UV := {sys.executable} {recorder}\n'
+        "test-count:\n"
+        "\t@$(UV)\n"
+        "recursive-check:\n"
+        f'\t@$(MAKE) --no-print-directory -f "{makefile}" check-duplicate-code '
+        'DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)"\n',
+    )
+    environment = os.environ.copy()
+    environment.pop("DUPLICATE_CODE_ENGINE", None)
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "-f", str(makefile), action,
+            f"DUPLICATE_CODE_ENGINE={engine}", "DUPLICATE_CODE_VALIDATE_ONLY=1",
+        ],
+        cwd=tmp_path, env=environment, check=False, text=True,
+        capture_output=True, timeout=30,
+    )
+    assert not sentry.exists(), result.stdout + result.stderr
+    assert not recipe.exists(), result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "unsupported duplicate-code" in result.stderr
+
+
+@pytest.mark.parametrize("recursive", (False, True))
+def test_verified_apostrophes_and_shell_operator_text_remain_literal_engine_data(
+    tmp_path: Path, recursive: bool,
+) -> None:
+    """Safe path characters must stay opaque through direct and recursive owners."""
+    sentry = tmp_path / "unexpected-input-execution"
+    engine = f"{tmp_path}/engine'; touch {sentry}; printf 'file/jscpd"
+    recorder = tmp_path / "record.py"
+    recorder.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]))\n")
+    makefile = tmp_path / "Makefile"
+    makefile.write_text(
+        f'include {ROOT / "make" / "00-foundation.mk"}\n'
+        f'UV := {sys.executable} {recorder}\n'
+        "recursive-check:\n"
+        f'\t@$(MAKE) --no-print-directory -f "{makefile}" check-duplicate-code '
+        'DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)"\n',
+    )
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "-f", str(makefile),
+            "recursive-check" if recursive else "check-duplicate-code",
+            f"DUPLICATE_CODE_ENGINE={engine}", "DUPLICATE_CODE_VALIDATE_ONLY=1",
+        ],
+        cwd=tmp_path, check=False, text=True, capture_output=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    arguments = json.loads(result.stdout)
+    assert arguments[arguments.index("--engine") + 1] == engine
+    assert not sentry.exists()
+
+
+def test_real_project_make_refuses_engine_expression_before_parse_or_export_execution(
+    tmp_path: Path,
+) -> None:
+    """The actual Make entrypoint must refuse before evaluating any engine input."""
+    sentry = tmp_path / "unexpected-real-entrypoint-execution"
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "help",
+            f"DUPLICATE_CODE_ENGINE=$(shell touch {sentry})/jscpd",
+        ],
+        cwd=ROOT, check=False, text=True, capture_output=True, timeout=30,
+    )
+    assert not sentry.exists(), result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "unsupported duplicate-code engine literal: dollar-bearing input" in result.stderr
+    assert "Usage: make [target]" not in result.stdout

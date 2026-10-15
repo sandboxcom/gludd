@@ -234,10 +234,26 @@ DUPLICATE_CODE_ENGINE ?= .opencode/node_modules/.bin/jscpd
 # Keep native recursive Make inheritance for owning targets; only pytest
 # consumers omit this exact override record, preserving other overrides/flags.
 unexport DUPLICATE_CODE_ENGINE
+override _GLUDD_DUPLICATE_CODE_ENGINE_RAW := $(value DUPLICATE_CODE_ENGINE)
+ifneq (,$(findstring $$,$(_GLUDD_DUPLICATE_CODE_ENGINE_RAW)))
+$(error unsupported duplicate-code engine literal: dollar-bearing input)
+endif
+ifneq (,$(findstring `,$(_GLUDD_DUPLICATE_CODE_ENGINE_RAW)))
+$(error unsupported duplicate-code engine literal: backtick-bearing input)
+endif
+ifneq (,$(findstring ",$(_GLUDD_DUPLICATE_CODE_ENGINE_RAW)))
+$(error unsupported duplicate-code engine literal: double-quote-bearing input)
+endif
+ifneq (,$(findstring \,$(_GLUDD_DUPLICATE_CODE_ENGINE_RAW)))
+$(error unsupported duplicate-code engine literal: backslash-bearing input)
+endif
+# Single-quote the verified raw path; Make and the recipe shell must not
+# reinterpret it. Embedded apostrophes are data through the native POSIX form.
+override _GLUDD_DUPLICATE_CODE_ENGINE_ARG := $(subst ','"'"',$(_GLUDD_DUPLICATE_CODE_ENGINE_RAW))
 ifeq ($(origin DUPLICATE_CODE_ENGINE),command line)
 _GLUDD_DUPLICATE_CODE_EMPTY :=
 _GLUDD_DUPLICATE_CODE_SPACE := $(_GLUDD_DUPLICATE_CODE_EMPTY) $(_GLUDD_DUPLICATE_CODE_EMPTY)
-_GLUDD_DUPLICATE_CODE_ESCAPED := $(subst $(_GLUDD_DUPLICATE_CODE_SPACE),\$(_GLUDD_DUPLICATE_CODE_SPACE),$(subst \,\\,$(DUPLICATE_CODE_ENGINE)))
+_GLUDD_DUPLICATE_CODE_ESCAPED := $(subst $(_GLUDD_DUPLICATE_CODE_SPACE),\$(_GLUDD_DUPLICATE_CODE_SPACE),$(_GLUDD_DUPLICATE_CODE_ENGINE_RAW))
 _GLUDD_DUPLICATE_CODE_SPACE_TOKEN := __GLUDD_DUPLICATE_CODE_ESCAPED_SPACE__
 ifneq (,$(findstring $(_GLUDD_DUPLICATE_CODE_SPACE_TOKEN),$(MAKEOVERRIDES)))
 $(error unsupported duplicate-code Make override encoding: reserved space token)
@@ -1343,13 +1359,13 @@ check-duplicate-code:
 	@case "$(DUPLICATE_CODE_SOURCE)" in staged|committed) ;; *) echo "DUPLICATE_CODE_SOURCE must be staged or committed"; exit 2;; esac
 	@case "$(DUPLICATE_CODE_VALIDATE_ONLY)" in 0|1) ;; *) echo "DUPLICATE_CODE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@test -n "$(strip $(DUPLICATE_CODE_CONFIG))" || { echo "DUPLICATE_CODE_CONFIG is required"; exit 2; }
-	@test -n "$(strip $(DUPLICATE_CODE_ENGINE))" || { echo "DUPLICATE_CODE_ENGINE is required"; exit 2; }
+	@test -n '$(strip $(_GLUDD_DUPLICATE_CODE_ENGINE_ARG))' || { echo "DUPLICATE_CODE_ENGINE is required"; exit 2; }
 	@test -n "$(strip $(DUPLICATE_CODE_BASE_REF))" || { echo "DUPLICATE_CODE_BASE_REF is required"; exit 2; }
 	@test -n "$(strip $(DUPLICATE_CODE_CURRENT_REF))" || { echo "DUPLICATE_CODE_CURRENT_REF is required"; exit 2; }
 	@$(UV) run python scripts/check_duplicate_code.py \
 		--root "$(CURDIR)" \
 		--config "$(DUPLICATE_CODE_CONFIG)" \
-		--engine "$(DUPLICATE_CODE_ENGINE)" \
+		--engine '$(_GLUDD_DUPLICATE_CODE_ENGINE_ARG)' \
 		--source "$(DUPLICATE_CODE_SOURCE)" \
 		--base-ref "$(DUPLICATE_CODE_BASE_REF)" \
 		--current-ref "$(DUPLICATE_CODE_CURRENT_REF)" \

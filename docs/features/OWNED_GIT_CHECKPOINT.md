@@ -149,3 +149,22 @@ parameter supplied, warnings as errors and one worker. The Make target contract
 (234 targets), documented clone-checker plan, Make validation, Ruff and strict
 Mypy also passed. The normal source-commit owner still requires its own fresh
 zero-error repository collection; focused acceptance cannot replace it.
+
+Independent source review blocked the initial source commit `45e98fc`: its
+immediate engine expansion could evaluate a Make shell expression before the
+unsupported-record refusal, and its shell double quotes admitted backtick or
+quote-breakout execution in the clone handoff. Nine failing native controls
+created owned temporary sentries or reached an unexpected recipe while all
+12 existing controls passed. This failed candidate remains historical evidence.
+
+The repair captures the engine through
+[GNU Make's raw `value` function](https://www.gnu.org/s/make/manual/html_node/Value-Function.html)
+before derived metadata or recipe use. Dollar, backtick, double-quote and
+backslash inputs are refused without interpretation. The clone owner receives
+the validated raw path through POSIX literal argument quoting; embedded
+apostrophes and operator text remain data. Spaces, unrelated override bytes,
+owning recursion and strict pytest confinement retain their original controls.
+The combined replay passed 111 tests, followed by all 27 native quality
+controls, including an actual project `make help` hostile-input refusal. That
+real entrypoint control checks earlier parsing and automatic exports with an
+owned sentry and passes the input solely as subprocess argv data.
