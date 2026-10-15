@@ -53,7 +53,7 @@ migration.
 ### Lightweight diagnostics
 
 `make active-work-status` is dependency-free and runs with
-`/usr/bin/python3`. It is listed in `_NO_UV_SYNC_GOALS` and must not invoke
+`/usr/bin/python3`. Its dependency-free recipe must not invoke
 `uv run`, resolve dependencies, create `.venv`, or mutate the lockfile. Targets
 that need application dependencies continue to use the locked uv environment;
 this exception is deliberately narrow rather than a project-wide bypass.
@@ -64,6 +64,55 @@ The long-running upstream discussion also records practitioners being surprised
 when `uv run <nested-script>` creates the root `.venv`:
 [uv project environments](https://docs.astral.sh/uv/concepts/projects/layout/)
 and [uv issue 11302](https://github.com/astral-sh/uv/issues/11302).
+
+### Bounded observable cache inventory
+
+The existing `cache-resource-inventory` owner previously measured every child
+with an independent 30-second native `du` timeout. Its output limit bounded
+display rows, not total work, so a large temporary root could remain silent for
+minutes while reporting no progress.
+
+The same owner now shares one 30-second monotonic deadline and a 1,000-child
+measurement cap. Native `scandir` streams immediate entries without first
+materializing the entire directory; at most one extra entry detects overflow.
+There is no recursive Python walker. Each fixed `/usr/bin/du -sk` invocation
+receives the lesser of its original 30-second timeout and the remaining global
+time. Expired validation, iteration or measurement starts no later child.
+Directory iteration closes on success, capacity exhaustion and scan failure.
+
+Flushed stderr announces the root and bounds before measurement, the current
+child with remaining time, throttled progress between measurements at five
+seconds, and terminal accounting. A blocked native call remains subject to its
+remaining-time timeout; no heartbeat daemon, thread, runner or library is added.
+OS process creation and filesystem system calls are not independently
+interruptible, so the deadline is checked on both sides of enumeration and
+before every child rather than claiming an absolute kernel-I/O guarantee.
+
+Complete scans preserve the existing `list[CacheEntry]` API, error-first and
+largest-first ordering, output limit and JSON-line schema. Bounds or scan
+failure raise a `CacheResourceError` subtype carrying bounded sorted partial
+rows. The CLI emits those rows with `status: incomplete` and returns 2; measured
+child errors also produce an incomplete/nonzero terminal result. Partial rows
+are not the largest entries of the unvisited remainder and never claim a
+complete inventory. The successful terminal object remains unchanged.
+
+All root/depth allowlists, symlink checks, validate-only behavior and exact-child
+removal code remain unchanged. A temporary-root inventory grants no deletion
+authority. Native Make acceptance uses two tiny owned files under the pinned
+system Python; separate small controls prove deadline/entry stops, partial rows,
+closed iterators and timeout child reaping. No real cache is removed or scanned
+by focused acceptance, and the canonical coverage profile retains 85/75 floors.
+
+The [monotonic clock](https://docs.python.org/3.11/library/time.html#time.monotonic),
+[context-managed iterator](https://docs.python.org/3.11/library/os.html#os.scandir)
+and [subprocess timeout contract](https://docs.python.org/3.11/library/subprocess.html#subprocess.run)
+provide the existing standard-library primitives. A
+[March 2021 operator report](https://unix.stackexchange.com/questions/636965/size-of-directory-with-millions-of-sub-directories-without-du)
+describes a multi-million-entry `du` taking 17 hours; it motivates bounding and
+honest incompleteness, not replacing Gludd's scanner or claiming the same host
+cause. This is control-plane ZDD with no service restart or data migration.
+Rollback restores this owner/test/documentation change together through normal
+review; full-gate, exact-SHA hosted and release proof remain independent.
 
 ### Cross-worktree process census
 
