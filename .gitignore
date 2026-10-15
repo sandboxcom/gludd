@@ -39,6 +39,8 @@ dist/gludd-*setup*.exe
 dist/gludd-*setup*.exe.sha256
 dist/*.tar.gz
 dist/*.tar.gz.sha256
+# Generated native collection archives; keep dist/ source and config inputs visible.
+/dist/collections/general_ludd-*-[0-9]*.tar.gz
 dist/SHA256SUMS
 dist/sbom-test.json
 dist/*.json
