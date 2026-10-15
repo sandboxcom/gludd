@@ -561,6 +561,7 @@ help:
 		"  mkdir-p               Create an allowed workspace or /tmp/gludd-* directory" \
 		"  replace-lines         Replace an allowed file line range from NEW_FILE" \
 		"  worktree-state        Emit path-qualified current git worktree state as JSON" \
+		"  verify-state          Read working tree, HEAD, remote and exact-SHA CI with the selected project runtime; does not install dependencies" \
 		"  all-worktree-state    Emit path-qualified state for every registered worktree" \
 		"  main-worktree-state   Emit canonical main checkout state as JSON" \
 		"  worktree-guard        Fail if the current worktree is dirty" \
