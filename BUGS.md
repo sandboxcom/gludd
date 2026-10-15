@@ -4,6 +4,38 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-15 — Evidence convenience must not substitute for native ownership
+
+- Source-only review refuses checkpoint source 45e98fc before integration:
+  derived Make metadata expands an untrusted engine before refusal, and clone
+  recipes interpret accepted backticks/quotes. Nine owned sentries reproduce
+  these defects; corrective source 36f62e8 passes 111 combined tests, 27 native
+  controls and normal once-per-commit collection with zero errors.
+- The native review-input producer's initial focused green result also fails
+  source acceptance: switching external bundles can retry unchanged failed
+  focus, and producer-process fingerprints cannot describe an independently
+  selected test child. Reuse canonical observation/admission and actual child
+  runtime owners, not a new cache/runner or invented provenance.
+- Preserve strict confinement, original-owner restore, captured failures and
+  actual source refs. No integration or deployment-completion claim follows
+  from these focused tests, committed corrections or a Markdown verdict.
+
+### 2026-10-14 — Mocked checkout inherited the release gate's candidate identity
+
+- Native full gate at fc27b23 retained 40 passing batch receipts, then correctly
+  failed the atomic candidate/control fixture: mocked Git HEAD was `a` repeated
+  40 times while `GLUDD_CANDIDATE_SHA` named the actual release candidate.
+- Focused reproduction fails once; ten added ownership/negative controls fail
+  three times first, with seven passing controls. Bind only the mocked fixture's
+  expected identity through pytest's scoped environment owner. Keep every
+  original assertion and production SHA enforcement unchanged.
+- New controls preserve real mismatched/empty/malformed identity refusals and
+  restore the outer environment. The original failed gate remains red; fresh
+  collection, source-branch integration and exact release proof are still required.
+- The corrected cohort passes 74 cases with the real candidate exported; the
+  unchanged launcher/lane profile passes 100 cases at 93% combined coverage and
+  both native 85/75 floors. Ruff and strict fixture typing pass without waivers.
+
 ### 2026-10-14 — Collection builds reused immutable observer output
 
 - Hosted Build 38645159173 at 3f7cbaf reports one failure and 1506 passes:

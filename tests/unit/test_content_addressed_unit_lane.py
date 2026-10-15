@@ -2,21 +2,42 @@
 
 from __future__ import annotations
 
+import argparse
 import copy
 import json
+import os
 import subprocess
+import sys
+import time
+from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import pytest
-from scripts import content_addressed_unit_lane as lane
-from scripts.ci_receipt_auth import (
-    ReceiptSigner,
-    ReceiptTrustPolicy,
-    authenticate_receipt_envelope,
-)
+
+if TYPE_CHECKING:
+    import content_addressed_unit_lane as lane
+    from ci_receipt_auth import (
+        ReceiptSigner,
+        ReceiptTrustPolicy,
+        authenticate_receipt_envelope,
+    )
+else:
+    from scripts import content_addressed_unit_lane as lane
+    from scripts.ci_receipt_auth import (
+        ReceiptSigner,
+        ReceiptTrustPolicy,
+        authenticate_receipt_envelope,
+    )
 
 SHA = "a" * 40
+
+
+class _RequestChanges(TypedDict, total=False):
+    graph_status: lane.GraphStatus
+    dynamic_inputs: tuple[str, ...]
+    external_inputs: tuple[str, ...]
 
 
 def _manifest_payload() -> dict[str, object]:
@@ -169,7 +190,7 @@ def test_every_relevant_pants_process_input_mutation_changes_execution_identity(
     ),
 )
 def test_ambiguous_unowned_dynamic_and_external_inputs_force_fresh(
-    changes: dict[str, object],
+    changes: _RequestChanges,
     reason: str,
 ) -> None:
     request = lane.ExecutionRequest(mode="cached", hosted_ci=False, **changes)
@@ -266,7 +287,9 @@ def test_candidate_sha_is_only_final_provenance_not_cache_execution_identity() -
     )
 
     assert SHA not in json.dumps(receipt["execution_identity"], sort_keys=True)
-    assert receipt["candidate_provenance"]["candidate_sha"] == SHA
+    provenance = receipt["candidate_provenance"]
+    assert isinstance(provenance, dict)
+    assert provenance["candidate_sha"] == SHA
     assert receipt["release_eligible"] is True
 
 
@@ -302,7 +325,9 @@ def test_authenticated_receipt_binds_candidate_and_execution_result() -> None:
 
     assert authentication.verified is True
     tampered = copy.deepcopy(payload)
-    tampered["candidate_provenance"]["candidate_sha"] = "d" * 40
+    provenance = tampered["candidate_provenance"]
+    assert isinstance(provenance, dict)
+    provenance["candidate_sha"] = "d" * 40
     assert lane.canonical_sha256(tampered) != content_digest
 
 
@@ -433,8 +458,8 @@ def _lane_manifest(
     )
 
 
-def _runtime_args(tmp_path: Path, *, mode: str, validate_only: bool) -> SimpleNamespace:
-    return SimpleNamespace(
+def _runtime_args(tmp_path: Path, *, mode: str, validate_only: bool) -> argparse.Namespace:
+    return argparse.Namespace(
         manifest=tmp_path / "manifest.json",
         pants_bin="pants",
         mode=mode,
@@ -485,7 +510,8 @@ def test_pants_process_identity_rejects_unbounded_or_malformed_inputs(
     inputs: dict[str, object],
 ) -> None:
     with pytest.raises(ValueError, match="Pants process"):
-        lane.pants_process_identity(inputs)
+        # Deliberately malformed runtime inputs must reach the native validator.
+        lane.pants_process_identity(cast(Mapping[str, bytes], inputs))
 
 
 @pytest.mark.parametrize(
@@ -494,7 +520,9 @@ def test_pants_process_identity_rejects_unbounded_or_malformed_inputs(
         (lane.ExecutionRequest(mode="cached", hosted_ci=False), 3, 1, "worker"),
         (lane.ExecutionRequest(mode="cached", hosted_ci=False), 2, 2, "worker"),
         (
-            lane.ExecutionRequest(mode="unsupported", hosted_ci=False),
+            lane.ExecutionRequest(
+                mode=cast(lane.ExecutionMode, "unsupported"), hosted_ci=False
+            ),
             2,
             1,
             "mode",
@@ -503,7 +531,7 @@ def test_pants_process_identity_rejects_unbounded_or_malformed_inputs(
             lane.ExecutionRequest(
                 mode="cached",
                 hosted_ci=False,
-                graph_status="unknown",
+                graph_status=cast(lane.GraphStatus, "unknown"),
             ),
             2,
             1,
@@ -534,6 +562,8 @@ def test_atomic_json_candidate_and_control_evidence(
     assert json.loads(destination.read_text(encoding="ascii")) == {"a": 1, "b": 2}
 
     outputs = iter(((0, SHA), (0, "")))
+    # The mocked Git checkout owns its identity; the outer release gate does not.
+    monkeypatch.setenv("GLUDD_CANDIDATE_SHA", SHA)
     monkeypatch.setattr(lane, "_git_output", lambda *_args: next(outputs))
     monkeypatch.setattr(
         lane,
@@ -571,6 +601,47 @@ def test_atomic_json_candidate_and_control_evidence(
         lane._control_input_evidence(_lane_manifest(), graph_output="graph")
 
 
+@pytest.mark.parametrize("outer_sha", (None, SHA, "b" * 40, "", "not-a-sha"))
+def test_unit_candidate_fixture_owns_identity_without_changing_outer_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    outer_sha: str | None,
+) -> None:
+    if outer_sha is None:
+        monkeypatch.delenv("GLUDD_CANDIDATE_SHA", raising=False)
+    else:
+        monkeypatch.setenv("GLUDD_CANDIDATE_SHA", outer_sha)
+    with pytest.MonkeyPatch.context() as fixture_patch:
+        test_atomic_json_candidate_and_control_evidence(tmp_path, fixture_patch)
+    assert os.environ.get("GLUDD_CANDIDATE_SHA") == outer_sha
+
+
+@pytest.mark.parametrize("expected_sha", (None, SHA, "b" * 40, "", "not-a-sha"))
+def test_candidate_provenance_preserves_explicit_release_identity_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+    expected_sha: str | None,
+) -> None:
+    if expected_sha is None:
+        monkeypatch.delenv("GLUDD_CANDIDATE_SHA", raising=False)
+    else:
+        monkeypatch.setenv("GLUDD_CANDIDATE_SHA", expected_sha)
+    outputs = iter(((0, SHA), (0, "")))
+    monkeypatch.setattr(lane, "_git_output", lambda *_args: next(outputs))
+    monkeypatch.setattr(lane, "repository_state_id", lambda *_args, **_kwargs: "c" * 64)
+    candidate = lane._candidate_provenance()
+    matching = expected_sha in (None, SHA)
+    assert candidate["expected_sha"] == (SHA if expected_sha is None else expected_sha)
+    assert candidate["exact_sha"] is matching
+    receipt = lane.build_receipt_payload(
+        candidate=candidate,
+        execution=lane.pants_process_identity({"source": b"one"}),
+        result={"returncode": 0, "manifest_sha256": "d" * 64},
+        mode="cached",
+        comparison=None,
+    )
+    assert receipt["release_eligible"] is matching
+
+
 def test_git_output_and_owned_command_helpers(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -581,12 +652,12 @@ def test_git_output_and_owned_command_helpers(
         git_calls.append(command)
         return subprocess.CompletedProcess(command, 0, " value \n", "")
 
-    monkeypatch.setattr(lane.subprocess, "run", fake_git)
+    monkeypatch.setattr(subprocess, "run", fake_git)
     assert lane._git_output("rev-parse", "HEAD") == (0, "value")
     assert git_calls == [["git", "rev-parse", "HEAD"]]
 
     times = iter((10.0, 10.25))
-    monkeypatch.setattr(lane.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(time, "monotonic", lambda: next(times))
     seen_environment: list[str] = []
 
     def fake_command(
@@ -601,7 +672,7 @@ def test_git_output_and_owned_command_helpers(
         seen_environment.append(env["GLUDD_PANTS_UNIT_POLICY"])
         return subprocess.CompletedProcess(command, 7)
 
-    monkeypatch.setattr(lane.subprocess, "run", fake_command)
+    monkeypatch.setattr(subprocess, "run", fake_command)
     result = lane._run_command(["pants", "test"], policy_environment="v3")
     assert result == lane.CommandResult(returncode=7, elapsed_seconds=0.25)
     assert seen_environment == ["v3"]
@@ -643,7 +714,7 @@ def test_graph_probe_classifies_fail_closed(
     expected: str,
 ) -> None:
     monkeypatch.setattr(
-        lane.subprocess,
+        subprocess,
         "run",
         lambda *_args, **_kwargs: subprocess.CompletedProcess(
             [],
@@ -683,7 +754,9 @@ def test_report_helpers_find_exact_files_and_enforce_floors(tmp_path: Path) -> N
         encoding="utf-8",
     )
     result = lane._result_manifest(report_root, manifest=_lane_manifest())
-    assert result["coverage"]["floors_satisfied"] is True
+    coverage_evidence = result["coverage"]
+    assert isinstance(coverage_evidence, dict)
+    assert coverage_evidence["floors_satisfied"] is True
     assert lane._find_one(report_root, "coverage.json") == coverage
 
     coverage.write_text(
@@ -770,10 +843,15 @@ def _patch_runtime(
             lambda *_args, **_kwargs: copy.deepcopy(resolved_manifest),
         )
     receipts: list[dict[str, object]] = []
+
+    def collect_receipt(_root: Path, *, payload: Mapping[str, object]) -> Path:
+        receipts.append(dict(payload))
+        return tmp_path
+
     monkeypatch.setattr(
         lane,
         "_write_terminal_receipt",
-        lambda _root, *, payload: receipts.append(dict(payload)) or tmp_path,
+        collect_receipt,
     )
     return receipts
 
@@ -860,7 +938,7 @@ def test_parser_main_and_receipt_validation_fail_closed(
     )
     assert parsed.mode == "fresh" and parsed.hosted_ci == 1
 
-    monkeypatch.setattr(lane.sys, "argv", ["lane", "--validate-only", "1"])
+    monkeypatch.setattr(sys, "argv", ["lane", "--validate-only", "1"])
     monkeypatch.setattr(lane, "_run_lane", lambda args: 9 if args.validate_only else 8)
     assert lane.main() == 9
 
