@@ -17,6 +17,11 @@ ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 HELP = "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries"
 ROSTER = (
+    "tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence",
+    "tests/unit/test_owned_checkpoint_shared_worktree_admission.py::"
+    "test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact",
+    "tests/unit/test_precommit_quality_guards.py::"
+    "test_real_project_make_refuses_engine_expression_before_parse_or_export_execution",
     "tests/unit/test_session_start_crash_recovery.py",
     "tests/unit/test_hook_runtime_split_compat.py",
     "tests/unit/test_gate_async.py",

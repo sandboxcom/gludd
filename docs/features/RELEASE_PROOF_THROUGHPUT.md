@@ -456,6 +456,47 @@ dependency installation and before required shard/platform fan-out, retaining
 workflow acceptance fails first on absent routing and pins every prerequisite
 edge without skipping authoritative downstream checks.
 
+Three repaired native failures now run as exact initial selectors in that same
+compatibility owner: atomic candidate/control JSON evidence, admission of a
+verified main-worktree checkpoint from a registered peer, and refusal of a
+dollar-bearing duplicate-code engine before Make parsing or export execution.
+Their manifest families retain the original downstream tests and required full
+gate. Selecting only those three nodes adds no unrelated sibling collection;
+every existing early selector and the separate fresh-process help check remain.
+
+The three executable-routing cases and the additive manifest roster first fail
+before implementation. The complete promotion/workflow slice plus the three
+original failure nodes then passes all 109 cases with fatal warnings on canonical
+Python 3.11. The exact inventory pin grows by the same three selectors; its
+existing entries and assertions stay intact. The manifest validates 78 families,
+21 phases and the unchanged 2850-second ceiling, including the early owner's
+90-second runtime and 60-second quiet limits. Ruff, strict test typing and the
+234-target Make contract also pass. These are focused acceptance results; final
+canonical gate, coverage, exact-SHA hosted and deployment proof remain required.
+
+The actual 90/60-bounded owner replay from the isolated
+`agent-early-release-admission-20261014` worktree retains its failed result in
+`.gate-logs/early-release-admission-20261014.log`: 1710 cases pass, one shared-roster
+pin fails and 18 SearXNG fixture setups are refused, in 70.0 observed seconds.
+Those fixture Git helpers omit an explicit subprocess working directory; the
+worktree confinement guard refuses their checkout and remains unchanged. This
+invalid-context replay supplies no passing native admission or release evidence.
+
+The shared scheduling `ROSTER` gains the same three exact initial nodes, retaining
+every original entry and assertion. The complete promotion/workflow, scheduling,
+cold-start selection and three original failure-node replay then passes all 120
+cases in 18.97 test seconds with fatal warnings. Ruff and strict typing pass for
+both changed test files. Required next proof is the existing 90/60-bounded owner
+from the canonical checkout after integration; the failed worktree invocation is
+not repeated or relabelled as green.
+
+The long-lived [matrix ordering report][hosted-ordering-report] and
+[corrected slot-replenishment report][hosted-slot-report] below still motivate
+measuring actual source timestamps. They neither guarantee a particular runner
+start order nor prove a current GitHub service defect. This additive early routing
+does not measure a hosted speedup. It starts no serving process, listener or
+migration, and preserves checkpoint restore authority and the existing ZDD gates.
+
 ## Hosted shard scheduling and automatic timing
 
 ### Fresh-process help admission

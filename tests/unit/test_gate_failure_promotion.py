@@ -694,6 +694,52 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
     assert payload["full_gate_required"] is True
 
 
+@pytest.mark.parametrize(
+    ("family_id", "node"),
+    [
+        (
+            "unit-evidence-atomic-json-native-ownership",
+            "tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence",
+        ),
+        (
+            "owned-checkpoint-peer-native-admission",
+            "tests/unit/test_owned_checkpoint_shared_worktree_admission.py::"
+            "test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact",
+        ),
+        (
+            "precommit-guard-engine-expression-transport",
+            "tests/unit/test_precommit_quality_guards.py::"
+            "test_real_project_make_refuses_engine_expression_before_parse_or_export_execution",
+        ),
+    ],
+)
+def test_repaired_failures_execute_as_exact_nodes_before_fanout(
+    family_id: str, node: str,
+) -> None:
+    """Promote the original failure without collecting unrelated file siblings."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next((item for item in payload["families"] if item["id"] == family_id), None)
+    assert family == {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
+    assert len(recipes) == 3
+    selectors = recipes[1].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    assert selectors.count(node) == 1
+    assert node.split("::", 1)[0] not in selectors
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/*"'
+    ) in recipes[1]
+    phase = next(item for item in payload["runtime_contract"]["phases"]
+                 if item["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True
+
+
 def _synthetic_repository(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     tests_dir = tmp_path / "tests"
     tests_dir.mkdir()
@@ -1320,6 +1366,9 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "hosted-post-failure-diagnostic-opt-in",
         "ci-legacy-resume-cleanup-readiness",
         "ci-repair-checkout-source-binding",
+        "unit-evidence-atomic-json-native-ownership",
+        "owned-checkpoint-peer-native-admission",
+        "precommit-guard-engine-expression-transport",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1461,7 +1510,13 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert 'PYTEST_ARGS="-W error -q -n 0"' in cloud_iam_owner
     assert "$(MAKE) --no-print-directory test-files" in runtime_compatibility_owner
     assert (
-        'TESTFILES="tests/unit/test_session_start_crash_recovery.py '
+        'TESTFILES="tests/unit/test_content_addressed_unit_lane.py::'
+        'test_atomic_json_candidate_and_control_evidence '
+        'tests/unit/test_owned_checkpoint_shared_worktree_admission.py::'
+        'test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact '
+        'tests/unit/test_precommit_quality_guards.py::'
+        'test_real_project_make_refuses_engine_expression_before_parse_or_export_execution '
+        'tests/unit/test_session_start_crash_recovery.py '
         'tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py '
         'tests/unit/test_session_persistence_integration.py '
         'tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::'
