@@ -401,6 +401,22 @@ check-release-failure-ledger:
 	@[ -n "$(RELEASE_FAILURE_LEDGER)" ] || { echo "Usage: make check-release-failure-ledger RELEASE_FAILURE_LEDGER=docs/releases/beta-release-failures.json"; exit 2; }
 	@$(UV) run python scripts/check_release_failure_ledger.py --ledger "$(RELEASE_FAILURE_LEDGER)" --repository-root .
 
+# Export literal caller values without interpolating them into shell syntax.
+export GLUDD_REVIEWED_HEAD_INPUTS_ACTION := $(value REVIEWED_HEAD_INPUTS_ACTION)
+export GLUDD_REVIEWED_HEAD_INPUTS_INTENT := $(value REVIEWED_HEAD_INPUTS_INTENT)
+export GLUDD_REVIEWED_HEAD_INPUTS_OUTPUT := $(value REVIEWED_HEAD_INPUTS_OUTPUT)
+export GLUDD_REVIEWED_HEAD_INPUTS_REPO_ROOT := $(value REVIEWED_HEAD_INPUTS_REPO_ROOT)
+export GLUDD_REVIEWED_HEAD_INPUTS_GATE_ATTESTATION := $(value REVIEWED_HEAD_INPUTS_GATE_ATTESTATION)
+export GLUDD_REVIEWED_HEAD_INPUTS_VALIDATE_ONLY := $(value REVIEWED_HEAD_INPUTS_VALIDATE_ONLY)
+unexport REVIEWED_HEAD_INPUTS_ACTION REVIEWED_HEAD_INPUTS_INTENT REVIEWED_HEAD_INPUTS_OUTPUT REVIEWED_HEAD_INPUTS_REPO_ROOT REVIEWED_HEAD_INPUTS_GATE_ATTESTATION REVIEWED_HEAD_INPUTS_VALIDATE_ONLY
+.PHONY: reviewed-head-inputs
+reviewed-head-inputs:
+	@# Literal exports: REVIEWED_HEAD_INPUTS_ACTION, REVIEWED_HEAD_INPUTS_INTENT,
+	@# REVIEWED_HEAD_INPUTS_OUTPUT, REVIEWED_HEAD_INPUTS_REPO_ROOT,
+	@# REVIEWED_HEAD_INPUTS_GATE_ATTESTATION, REVIEWED_HEAD_INPUTS_VALIDATE_ONLY.
+	@# Existing native progress admission: WORK_ITEM_ID, or its selected primary.
+	@$(UV) run python scripts/reviewed_head_inputs.py
+
 .PHONY: reviewed-head-receipt
 reviewed-head-receipt:
 	@[ -n "$(REVIEWED_HEAD_RECEIPT_MANIFEST)" ] || { echo "Usage: make reviewed-head-receipt REVIEWED_HEAD_RECEIPT_MANIFEST=path REVIEWED_HEAD_GATE_ATTESTATION=path REVIEWED_HEAD_RECEIPT_OUTPUT=path REVIEWED_HEAD_RECEIPT_REPO_ROOT=. REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY=0|1"; exit 2; }
