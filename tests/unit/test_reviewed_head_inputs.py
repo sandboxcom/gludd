@@ -143,18 +143,43 @@ def _gate(root: Path, tmp_path: Path, focus_completed: str) -> Path:
                       "=== GATE: PASSED ===\n", encoding="utf-8")
     gate_owner.sign_status(status, state_id=gate_owner.repository_state_id(root), key=KEY)
     final = _git(root, "rev-parse", "HEAD")
+    pairing = shard_owner._attestation_pairing(list(SHARDS), pytest_args=list(shard_owner.RELEASE_PYTEST_ARGS))
+    # Model the external canonical release gate, not this fixture inspector's runtime.
+    policy = shard_owner.release_execution_policy()
+    pairing["execution_policy"] = policy
+    pairing["execution_policy_sha256"] = shard_owner.canonical_json_sha256(policy)
     attestation = {
         "schema_version": 3, "lane": "local", "status": "pass", "returncode": 0,
         "runner": "scripts/run_ci_shards_serial.py", "shards": list(SHARDS),
         "identity": {"head_sha": final, "expected_sha": final, "clean": True,
                      "exact_sha": True, "queries_ok": True},
         "started_at": started_text, "completed_at": completed_text,
-        **shard_owner._attestation_pairing(list(SHARDS), pytest_args=["-W", "error"]),
+        **pairing,
     }
     path = inputs.resource_owner.resource_root(root) / "ci-shards/attestation.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(attestation), encoding="utf-8")
     return path
+
+
+@pytest.mark.parametrize("inspector_python", ["3.11", "3.14"])
+def test_gate_fixture_binds_release_policy_independent_of_inspector_python(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inspector_python: str,
+) -> None:
+    root, _ = _fixture(tmp_path)
+    observed_policy = shard_owner.execution_policy(list(shard_owner.RELEASE_PYTEST_ARGS))
+    observed_policy["python_version"] = inspector_python
+    monkeypatch.setattr(shard_owner, "execution_policy", lambda _args: dict(observed_policy))
+    attestation = _gate(root, tmp_path, datetime.now(UTC).isoformat())
+    gate = json.loads(attestation.read_text(encoding="utf-8"))
+    shards, _, errors = inputs.shard_owner._validate_attestation(
+        attestation, gate, sha=_git(root, "rev-parse", "HEAD"), lane="local",
+    )
+    assert errors == [], errors
+    assert shards == set(SHARDS)
+    policy = shard_owner.release_execution_policy()
+    assert gate["execution_policy"] == policy
+    assert gate["execution_policy_sha256"] == shard_owner.canonical_json_sha256(policy)
 
 
 @pytest.mark.parametrize("mode", ["cherry_pick", "merge_two_parent"])
@@ -457,6 +482,7 @@ def test_final_manifest_binds_actual_terminal_gate_and_existing_builder(tmp_path
 
 @pytest.mark.parametrize("mutation", [
     "running", "failed", "wrong-sha", "partial", "unsigned", "reordered", "signed-time", "path",
+    "nonrelease-runtime",
 ])
 def test_gate_fact_substitution_and_partial_focus_never_grant_release_proof(
     tmp_path: Path, mutation: str,
@@ -488,6 +514,13 @@ def test_gate_fact_substitution_and_partial_focus_never_grant_release_proof(
         state["finished_at"] = (future + timedelta(seconds=1)).isoformat()
         data["started_at"] = state["started_at"]
         data["completed_at"] = (future + timedelta(microseconds=1)).isoformat()
+    elif mutation == "nonrelease-runtime":
+        data["execution_policy"]["python_version"] = "3.14"
+        data["execution_policy_sha256"] = shard_owner.canonical_json_sha256(data["execution_policy"])
+        _, _, errors = inputs.shard_owner._validate_attestation(
+            attestation, data, sha=_git(root, "rev-parse", "HEAD"), lane="local",
+        )
+        assert len(errors) == 1 and "does not use the release execution policy" in errors[0]
     else:
         attestation = tmp_path / "substituted-gate-path.json"
     attestation.write_text(json.dumps(data), encoding="utf-8")
