@@ -54,11 +54,66 @@ def _fixture(name: str) -> Path:
 
 
 def _git(root: Path, *arguments: str) -> str:
+    """Bind the subprocess's audited cwd to its fixture repository."""
     result = subprocess.run(
         ["git", "-C", str(root), *arguments],
-        check=True, capture_output=True, text=True, timeout=10,
+        cwd=root, check=True, capture_output=True, text=True, timeout=10,
     )
     return result.stdout.strip()
+
+
+def test_git_helper_preserves_argv_and_uses_explicit_repository_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path.resolve()
+    arguments = ("checkout", "--quiet", "--detach", "a" * 40)
+
+    def run(command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        assert command == ["git", "-C", str(root), *arguments]
+        assert options == {
+            "cwd": root, "check": True, "capture_output": True,
+            "text": True, "timeout": 10,
+        }
+        return subprocess.CompletedProcess(command, 0, "  fixture output\n", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert _git(root, *arguments) == "fixture output"
+
+
+def test_git_helper_keeps_real_frozen_checkout_outside_active_repository(
+    tmp_path: Path, request: pytest.FixtureRequest,
+) -> None:
+    protected_root = artifacts.ROOT.resolve()
+    git_dir = Path(_git(protected_root, "rev-parse", "--absolute-git-dir"))
+
+    def protected_state() -> tuple[bytes, bytes, str, str, str]:
+        return (
+            (git_dir / "HEAD").read_bytes(),
+            (git_dir / "index").read_bytes(),
+            _git(protected_root, "rev-parse", "HEAD"),
+            _git(
+                protected_root, "--no-optional-locks", "status", "--porcelain=v1",
+                "--untracked-files=all",
+            ),
+            _git(
+                protected_root, "--no-optional-locks", "diff", "--no-ext-diff",
+                "--no-textconv", "HEAD", "--",
+            ),
+        )
+
+    before = protected_state()
+    try:
+        source = cast(FrozenSource, request.getfixturevalue("frozen_source"))
+        assert source.root == source.root.resolve(strict=True)
+        assert source.root.is_relative_to(tmp_path.resolve())
+        assert not source.root.is_relative_to(protected_root)
+        assert (source.root / ".git").is_dir()
+        assert not (source.root / ".git").is_symlink()
+        assert _git(source.root, "rev-parse", "--show-toplevel") == str(source.root)
+        assert _git(source.root, "rev-parse", "HEAD") == source.commit
+        assert _git(source.root, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD"
+    finally:
+        assert protected_state() == before
 
 
 def test_pinned_fixture_owner_cannot_be_shadowed_by_adjacent_files(
