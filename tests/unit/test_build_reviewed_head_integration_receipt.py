@@ -538,6 +538,37 @@ def test_write_receipt_rejects_symbolic_link_output(tmp_path: Path) -> None:
     assert destination.read_text(encoding="utf-8") == "preserve\n"
 
 
+def test_default_receipt_refuses_symlink_arriving_during_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, manifest, gate = _merge_fixture(tmp_path)
+    receipt = builder.build_receipt_from_manifest(
+        manifest, manifest_dir=repo.parent, gate_attestation=gate, repo_root=repo,
+    )
+    output, foreign = tmp_path / "receipt.json", tmp_path / "foreign.json"
+    foreign.write_bytes(b"preserve foreign owner\n")
+    metadata = foreign.stat()
+    original_resolve = Path.resolve
+    resolutions: list[Path] = []
+
+    def resolve_with_arrival(path: Path, strict: bool = False) -> Path:
+        if path == output and not resolutions:
+            resolutions.append(path)
+            output.symlink_to(foreign)
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_with_arrival)
+    with pytest.raises(ValueError, match="symbolic link"):
+        builder.write_receipt(output, receipt)
+    assert resolutions == [output]
+    assert output.is_symlink()
+    assert output.readlink() == foreign
+    assert foreign.read_bytes() == b"preserve foreign owner\n"
+    assert foreign.stat().st_ino == metadata.st_ino
+    assert foreign.stat().st_mtime_ns == metadata.st_mtime_ns
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
 def test_exclusive_receipt_reuses_identical_bytes_without_replacement(tmp_path: Path) -> None:
     repo, manifest, gate = _merge_fixture(tmp_path)
     receipt = builder.build_receipt_from_manifest(

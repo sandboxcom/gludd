@@ -384,6 +384,8 @@ def write_receipt(
         raise ValueError("receipt output must not be a symbolic link")
     destination = path.absolute() if exclusive else path.resolve(strict=False)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise ValueError("receipt output must not be a symbolic link")
     encoded = encode_reviewed_head_integration_receipt(receipt)
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
