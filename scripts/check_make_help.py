@@ -12,7 +12,7 @@ from pathlib import Path
 from scripts.makefile_layout import compose_makefile
 
 TARGET_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]*):(?:\s|$)")
-HELP_TARGET_RE = re.compile(r'^\s*@echo\s+"  ([A-Za-z0-9][A-Za-z0-9_.-]*)\s+')
+HELP_TARGET_RE = re.compile(r'^\s*(?:@echo\s+)?"  ([A-Za-z0-9][A-Za-z0-9_.-]*)\s+')
 INTERNAL_PREFIXES = ("_", ".")
 INTERNAL_TARGETS = {
     "commit-bootstrap",

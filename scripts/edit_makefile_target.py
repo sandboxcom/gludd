@@ -6,11 +6,17 @@ All writes are ATOMIC: modifications go to a temp file first, get validated
 via make -f <tempfile>, and only then replace the real Makefile via os.replace().
 """
 from __future__ import annotations
-import re, subprocess, sys, os, tempfile
+
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 
-def _repo_root():
+def _repo_root() -> Path:
     script_dir = Path(__file__).resolve().parent
     repo = script_dir.parent
     if not (repo / "Makefile").exists():
@@ -31,9 +37,15 @@ HELP_SECTION_ORDER = [
 
 SECTION_KEYWORDS = {
     "Setup": ["init", "sync", "bootstrap", "install", "setup", "dir"],
-    "Quality": ["lint", "typecheck", "mypy", "ruff", "check-type", "gate", "qa", "validate", "health", "collect", "preflight", "coverage"],
+    "Quality": [
+        "lint", "typecheck", "mypy", "ruff", "check-type", "gate", "qa", "validate", "health",
+        "collect", "preflight", "coverage",
+    ],
     "Terraform": ["tf", "terraform"],
-    "Git": ["git", "branch", "commit", "merge", "push", "pull", "rebase", "stash", "reset", "tag", "worktree", "submodule", "feature", "development", "agent"],
+    "Git": [
+        "git", "branch", "commit", "merge", "push", "pull", "rebase", "stash", "reset", "tag",
+        "worktree", "submodule", "feature", "development", "agent",
+    ],
     "Secrets + Security": ["secret", "security", "sast", "sbom", "audit", "scan", "scrub"],
     "Release": ["release", "version", "bump", "deploy"],
     "Build + Deploy": ["build", "dist", "container", "executable", "package", "deb", "vm", "sandbox"],
@@ -46,8 +58,8 @@ SECTION_KEYWORDS = {
 }
 
 
-def categorize_section(name, description):
-    combined = "{} {}".format(name, description).lower()
+def categorize_section(name: str, description: str) -> str:
+    combined = f"{name} {description}".lower()
     for section in HELP_SECTION_ORDER:
         for kw in SECTION_KEYWORDS.get(section, []):
             if kw.lower() in combined:
@@ -55,10 +67,10 @@ def categorize_section(name, description):
     return "New Targets"
 
 
-def extract_target_definition(makefile_path, target_name):
+def extract_target_definition(makefile_path: Path | None, target_name: str) -> str | None:
     path = makefile_path or MAKEFILE_PATH
     lines = path.read_text(encoding="utf-8").splitlines()
-    target_re = re.compile(r"^{}:\s*$".format(re.escape(target_name)))
+    target_re = re.compile(rf"^{re.escape(target_name)}:\s*$")
     for i, line in enumerate(lines):
         if target_re.match(line):
             start = i
@@ -70,9 +82,8 @@ def extract_target_definition(makefile_path, target_name):
                 if (nxt.startswith("\t") or nxt.startswith("\t@")
                     or nxt.startswith("if") or nxt.startswith("else")
                     or nxt.startswith("endif") or nxt.strip() == ""):
-                    if nxt.strip() == "" and end > i + 1:
-                        if end + 1 < len(lines) and lines[end + 1].strip() == "":
-                            break
+                    if nxt.strip() == "" and end > i + 1 and end + 1 < len(lines) and lines[end + 1].strip() == "":
+                        break
                     end += 1
                 else:
                     break
@@ -80,15 +91,15 @@ def extract_target_definition(makefile_path, target_name):
     return None
 
 
-def make_echo_cmd(name, description):
-    return '@echo "{}: {}"'.format(name, description)
+def make_echo_cmd(name: str, description: str) -> str:
+    return f'@echo "{name}: {description}"'
 
 
-def make_new_block(name, description):
-    return "# {}\n{}:\n\t{}\n".format(description, name, make_echo_cmd(name, description))
+def make_new_block(name: str, description: str) -> str:
+    return f"# {description}\n{name}:\n\t{make_echo_cmd(name, description)}\n"
 
 
-def _find_section_insert_idx(lines, section):
+def _find_section_insert_idx(lines: list[str], section: str) -> int | None:
     escaped_section = re.escape(section.lower())
     section_re = re.compile(r"\b" + escaped_section + r"\b")
     for i, ln in enumerate(lines):
@@ -105,7 +116,7 @@ def _find_section_insert_idx(lines, section):
     return None
 
 
-def _update_help_lines(lines, name, description, section):
+def _update_help_lines(lines: list[str], name: str, description: str, section: str) -> list[str]:
     help_start = None
     help_end = None
     in_help = False
@@ -124,17 +135,22 @@ def _update_help_lines(lines, name, description, section):
                 help_end = i + 1
     if help_start is None or help_end is None:
         return lines
-    section_str = "  --- {} ---".format(section)
+    section_str = f"  --- {section} ---"
     section_line_idx = None
     for i in range(help_start, help_end):
         if section_str in lines[i]:
             section_line_idx = i
             break
-    desc_line = '\t@echo "  {:<24s}{}"'.format(name, description)
+    desc_line = f'\t@echo "  {name:<24s}{description}"'
+    printf_help = lines[help_start + 1].lstrip().startswith("@printf ")
+    if printf_help:
+        desc_line = f'\t\t"  {name:<24s}{description}" \\'
     if section_line_idx is None:
         if section == "New Targets":
             before_idx = help_end - 1
-            while before_idx > help_start and (lines[before_idx].strip() == "" or "Complete Target Index" in lines[before_idx]):
+            while before_idx > help_start and (
+                lines[before_idx].strip() == "" or "Complete Target Index" in lines[before_idx]
+            ):
                 before_idx -= 1
             insert_at = before_idx + 1
             new_help = [
@@ -143,6 +159,14 @@ def _update_help_lines(lines, name, description, section):
                 desc_line,
                 '\t@echo ""',
             ]
+            if printf_help:
+                lines[before_idx] += " \\"
+                new_help = [
+                    '\t\t"  --- New Targets ---" \\',
+                    '\t\t"" \\',
+                    desc_line,
+                    '\t\t""',
+                ]
             for j, hl in enumerate(new_help):
                 lines.insert(insert_at + j, hl)
     else:
@@ -150,7 +174,7 @@ def _update_help_lines(lines, name, description, section):
     return lines
 
 
-def _validate_tempfile(temp_path, target_name):
+def _validate_tempfile(temp_path: Path, target_name: str | None) -> bool:
     ok = True
     make_dir = temp_path.parent
     if target_name:
@@ -159,18 +183,18 @@ def _validate_tempfile(temp_path, target_name):
             capture_output=True, text=True, cwd=str(make_dir),
         )
         if result.returncode != 0:
-            print("VALIDATE FAIL: make -n -f {} {}".format(temp_path, target_name), file=sys.stderr)
+            print(f"VALIDATE FAIL: make -n -f {temp_path} {target_name}", file=sys.stderr)
             print(result.stderr.strip(), file=sys.stderr)
             ok = False
         else:
-            print("VALIDATE OK: make -n -f {} {}".format(temp_path, target_name))
+            print(f"VALIDATE OK: make -n -f {temp_path} {target_name}")
     dup_script = str(REPO_ROOT / "scripts" / "check_duplicate_targets.py")
     dup_result = subprocess.run(
         [sys.executable, dup_script, str(temp_path)],
         capture_output=True, text=True, cwd=str(make_dir),
     )
     if dup_result.returncode != 0:
-        print("VALIDATE FAIL: check-duplicate-targets {}".format(temp_path), file=sys.stderr)
+        print(f"VALIDATE FAIL: check-duplicate-targets {temp_path}", file=sys.stderr)
         print(dup_result.stderr.strip(), file=sys.stderr)
         ok = False
     else:
@@ -179,9 +203,9 @@ def _validate_tempfile(temp_path, target_name):
 
 
 
-def validate_makefile(makefile_path, target_name):
+def validate_makefile(makefile_path: Path | None, target_name: str | None) -> bool:
     return _validate_tempfile(makefile_path or MAKEFILE_PATH, target_name)
-def _atomic_write(makefile_path, new_content, target_name):
+def _atomic_write(makefile_path: Path, new_content: str, target_name: str | None) -> bool:
     tmp_fd, tmp_path = tempfile.mkstemp(
         suffix=".tmp", prefix="Makefile.", dir=str(makefile_path.parent)
     )
@@ -199,18 +223,16 @@ def _atomic_write(makefile_path, new_content, target_name):
             os.close(tmp_fd)
         tmp = Path(tmp_path)
         if tmp.exists() and str(tmp) != str(makefile_path):
-            try:
+            with suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass
 
 
-def insert_target(makefile_path, name, description, section):
+def insert_target(makefile_path: Path | None, name: str, description: str, section: str) -> bool:
     path = makefile_path or MAKEFILE_PATH
     return _atomic_write(path, _build_insert_content(path, name, description, section), name)
 
 
-def _build_insert_content(path, name, description, section):
+def _build_insert_content(path: Path, name: str, description: str, section: str) -> str:
     content = path.read_text(encoding="utf-8")
     if section == "New Targets" or section not in HELP_SECTION_ORDER:
         return _build_end_content(content, name, description)
@@ -225,7 +247,7 @@ def _build_insert_content(path, name, description, section):
     return "\n".join(lines) + "\n"
 
 
-def _build_end_content(content, name, description):
+def _build_end_content(content: str, name: str, description: str) -> str:
     header = "# --- New Targets (auto-categorized add-target) ---"
     block = make_new_block(name, description)
     if header in content:
@@ -239,7 +261,7 @@ def _build_end_content(content, name, description):
     return "\n".join(lines) + "\n"
 
 
-def main():
+def main() -> int:
     import argparse
     p = argparse.ArgumentParser(description="Add or edit Makefile targets")
     sp = p.add_subparsers(dest="mode", required=True)
@@ -258,20 +280,20 @@ def main():
     if args.mode == "add":
         section = args.section or categorize_section(args.name, args.description)
         if extract_target_definition(None, args.name) is not None:
-            print("ERROR: Target {!r} already exists in Makefile.".format(args.name), file=sys.stderr)
+            print(f"ERROR: Target {args.name!r} already exists in Makefile.", file=sys.stderr)
             return 1
-        print("Adding target {!r} to section {!r}...".format(args.name, section))
+        print(f"Adding target {args.name!r} to section {section!r}...")
         if insert_target(None, args.name, args.description, section):
-            print("Target {!r} added and validated.".format(args.name))
+            print(f"Target {args.name!r} added and validated.")
             return 0
-        print("ERROR: Failed to add target {!r}. Original Makefile unchanged.".format(args.name), file=sys.stderr)
+        print(f"ERROR: Failed to add target {args.name!r}. Original Makefile unchanged.", file=sys.stderr)
         return 1
     elif args.mode == "extract":
         definition = extract_target_definition(None, args.name)
         if definition:
             print(definition)
             return 0
-        print("Target {!r} not found in Makefile.".format(args.name), file=sys.stderr)
+        print(f"Target {args.name!r} not found in Makefile.", file=sys.stderr)
         return 1
     elif args.mode == "validate":
         return 0 if _validate_tempfile(MAKEFILE_PATH, args.name) else 1
@@ -279,17 +301,17 @@ def main():
         new_def = Path(args.file).read_text(encoding="utf-8")
         old_def = extract_target_definition(None, args.name)
         if old_def is None:
-            print("Target {!r} not found.".format(args.name), file=sys.stderr)
+            print(f"Target {args.name!r} not found.", file=sys.stderr)
             return 1
         content = MAKEFILE_PATH.read_text(encoding="utf-8")
         if old_def.strip() not in content:
-            print("Could not locate current definition of {!r}.".format(args.name), file=sys.stderr)
+            print(f"Could not locate current definition of {args.name!r}.", file=sys.stderr)
             return 1
         new_content = content.replace(old_def.strip(), new_def.strip(), 1)
         if _atomic_write(MAKEFILE_PATH, new_content, args.name):
-            print("Target {!r} replaced and validated.".format(args.name))
+            print(f"Target {args.name!r} replaced and validated.")
             return 0
-        print("ERROR: Failed to replace target {!r}. Original Makefile unchanged.".format(args.name), file=sys.stderr)
+        print(f"ERROR: Failed to replace target {args.name!r}. Original Makefile unchanged.", file=sys.stderr)
         return 1
     return 1
 
