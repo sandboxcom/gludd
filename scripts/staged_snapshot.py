@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import math
 import os
+import selectors
 import subprocess
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -17,12 +20,85 @@ class SnapshotError(RuntimeError):
     """Raised when Git cannot prove or materialize an exact snapshot."""
 
 
-@dataclass(frozen=True, slots=True)
+class SnapshotLimitError(SnapshotError):
+    """Raised when an opt-in Git transport exhausts output or time capacity."""
+
+
+def _bounded_git_result(
+    command: list[str], environment: dict[str, str], input_data: bytes | None,
+    max_output_bytes: int, timeout_seconds: float,
+    on_output_bytes: Callable[[int], None] | None,
+) -> subprocess.CompletedProcess[bytes]:
+    """Bound both native Git pipes before accumulating output and always reap it."""
+    deadline = time.monotonic() + timeout_seconds
+    output = bytearray()
+    errors = bytearray()
+    pending = memoryview(input_data or b"")
+    process = subprocess.Popen(
+        command, stdin=subprocess.PIPE if input_data is not None else None,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment, shell=False,
+    )
+    try:
+        assert process.stdout is not None and process.stderr is not None
+        with selectors.DefaultSelector() as selector:
+            for stream in (process.stdout, process.stderr):
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ)
+            if process.stdin is not None:
+                os.set_blocking(process.stdin.fileno(), False)
+                selector.register(process.stdin, selectors.EVENT_WRITE)
+            while selector.get_map() or process.poll() is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SnapshotLimitError("Git command timed out at remaining deadline")
+                for key, event in selector.select(timeout=min(remaining, 0.05)):
+                    if event & selectors.EVENT_WRITE:
+                        if pending:
+                            try:
+                                pending = pending[os.write(key.fd, pending[:4096]):]
+                            except BrokenPipeError:
+                                pending = pending[len(pending):]
+                        else:
+                            selector.unregister(key.fd)
+                            assert process.stdin is not None
+                            process.stdin.close()
+                        continue
+                    available = max_output_bytes - len(output) - len(errors)
+                    chunk = os.read(key.fd, min(64 * 1024, available + 1))
+                    if chunk and on_output_bytes is not None:
+                        on_output_bytes(len(chunk))
+                    if not chunk:
+                        selector.unregister(key.fd)
+                    elif len(chunk) > available:
+                        raise SnapshotLimitError("Git combined stdout/stderr output cap exceeded")
+                    elif key.fileobj is process.stdout:
+                        output.extend(chunk)
+                    else:
+                        errors.extend(chunk)
+            return subprocess.CompletedProcess(command, process.wait(), bytes(output), bytes(errors))
+    finally:
+        for closing_stream in (process.stdin, process.stdout, process.stderr):
+            if closing_stream is not None:
+                closing_stream.close()
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+
+
+@dataclass(frozen=True)
 class IndexBlob:
     """One stage-zero Git index entry and its exact blob bytes."""
 
+    __slots__ = ("data", "mode")
     mode: str
     data: bytes
+
+    def __getstate__(self) -> list[object]:
+        return [self.mode, self.data]
+
+    def __setstate__(self, state: Sequence[object]) -> None:
+        object.__setattr__(self, "mode", state[0])
+        object.__setattr__(self, "data", state[1])
 
 
 def _safe_path(raw: str, *, source: str) -> str:
@@ -43,21 +119,29 @@ def _git(
     *,
     input_data: bytes | None = None,
     index_file: Path | None = None,
+    max_output_bytes: int | None = None,
+    timeout_seconds: float | None = None,
+    on_output_bytes: Callable[[int], None] | None = None,
 ) -> bytes:
+    timeout = GIT_TIMEOUT_SECONDS if timeout_seconds is None else min(timeout_seconds, GIT_TIMEOUT_SECONDS)
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise SnapshotLimitError("Git command remaining deadline must be positive and finite")
+    if max_output_bytes is not None and (type(max_output_bytes) is not int or max_output_bytes < 0):
+        raise SnapshotLimitError("Git output cap must be a nonnegative integer")
     environment = os.environ.copy()
     if index_file is not None:
         environment["GIT_INDEX_FILE"] = str(index_file)
     command = ["git", "-C", str(root), *arguments]
     try:
-        result = subprocess.run(
-            command,
-            input=input_data,
-            capture_output=True,
-            check=False,
-            env=environment,
-            shell=False,
-            timeout=GIT_TIMEOUT_SECONDS,
-        )
+        if max_output_bytes is None:
+            result = subprocess.run(
+                command, input=input_data, capture_output=True, check=False,
+                env=environment, shell=False, timeout=timeout,
+            )
+            if on_output_bytes is not None:
+                on_output_bytes(len(result.stdout) + len(result.stderr))
+        else:
+            result = _bounded_git_result(command, environment, input_data, max_output_bytes, timeout, on_output_bytes)
     except subprocess.TimeoutExpired as exc:
         raise SnapshotError(
             f"Git command timed out after {GIT_TIMEOUT_SECONDS}s: {arguments[0]}"
