@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from scripts import check_make_target_contract, makefile_layout
+from scripts import check_make_help, check_make_target_contract, makefile_layout
 
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 FRAGMENT = ROOT / "make/50-development-and-guardrails.mk"
@@ -81,7 +81,14 @@ def test_backlog_target_is_public_registered_and_documented() -> None:
     assert "BACKLOG_AUDIT_VALIDATE_ONLY=1" in matches[0]["behavior"]
     assert check_make_target_contract.validate_contract(ROOT / "Makefile", contract) == []
     source = makefile_layout.compose_makefile(ROOT / "Makefile")
-    assert 'echo "  backlog-audit ' in source
+    entries = [
+        line for line in source.splitlines()
+        if (match := check_make_help.HELP_TARGET_RE.match(line)) is not None
+        and match.group(1) == "backlog-audit"
+    ]
+    assert len(entries) == 1
+    assert "Observed checked-task audit" in entries[0]
+    assert "BACKLOG_AUDIT_VALIDATE_ONLY, BACKLOG_AUDIT_COLLECT, BACKLOG_AUDIT_VERDICTS, OBSERVED_*" in entries[0]
     assert "backlog-audit" in source.split(".PHONY:", 1)[1].split("\n\n", 1)[0]
 
 
