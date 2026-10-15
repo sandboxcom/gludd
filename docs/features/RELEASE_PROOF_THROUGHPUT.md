@@ -198,6 +198,52 @@ into clean development and use its normal commit guards. The retained checkpoint
 is never popped, dropped, rewritten or bypassed. Source review, full gate,
 exact-successor hosted results and deployment acceptance still remain required.
 
+### Native Galaxy progress visibility
+
+Build run `38812181930` on candidate
+`1ff095f19720a6b3f501238fbc92015f2b99dfe3` reaches the existing 120-second
+collection-acquisition deadline with zero child bytes. The observer continues
+heartbeats, but those heartbeats cannot identify the operation holding up Galaxy.
+Python block-buffers piped stdout, and the pinned Ansible Display implementation
+writes progress without flushing. Killing the child can therefore lose useful
+diagnostics. The existing private collection environment now sets
+`PYTHONUNBUFFERED=1`; it preserves stderr, fatal warnings, all exact inputs and
+the original observer/process-group deadline and teardown.
+
+The regression runs a real unflushed stdout/stderr child with a TERM-resistant
+descendant and an explicitly buffered caller. It requires the progress bytes
+while the native receipt is still running, then retains timeout code 124, both
+process-death assertions and the unchanged parent environment. The stdout case
+fails before the change while the stderr control passes. No assertion or timeout
+is relaxed, and no runner, retry loop or persistent cache is added.
+
+The unchanged-source diagnostic with native unbuffering obtains all eight locked
+artifacts in 55.7 seconds (56.7 seconds including its outer owner), retaining lock
+`7d176b02362222535077a47b4a4f8191e6e9b4a00be0fbc6d3a1f93d4a7a9588`.
+It spends approximately 31 seconds in dependency-map preparation. A separate
+native context-only run then builds all eight project collections and admits the
+complete context in 4.8 seconds. This is artifact/context evidence only; it does
+not explain the hosted slowdown or prove an installed image or live deployment.
+
+[Python documents piped stdout buffering and native unbuffering](https://docs.python.org/3.11/library/sys.html#sys.stdout).
+Ansible's pinned 2.19.14 implementation enumerates collection versions before
+filtering an exact pin even with `--no-deps`; the same behavior is present in the
+inspected 2.21.5 owner. [A June 2025 user report](https://forum.ansible.com/t/ansible-galaxy-https-galaxy-ansible-com-taking-very-long-to-respond/43406)
+describes slow Galaxy responses, and [a September 2026 discussion](https://forum.ansible.com/t/timeouts-when-installing-collections-from-ansible-galaxy-https-galaxy-ansible-com/46301)
+describes recurring CI timeouts around paginated/version APIs. These reports
+support measuring unnecessary lookups; they do not establish this run's cause.
+Any exact-metadata/native-artifact optimization is separate work and must keep
+all network calls inside the existing total deadline, authentic native
+checksum/token/TLS behavior and the final independent lock/metadata checks.
+
+No serving workload is changed: existing warm, route, drain and rollback owners
+remain intact. Reverting the unbuffering setting only restores the prior output
+behavior. The unchanged canonical Azure/runtime coverage target passes 1,521
+tests in 55.17 seconds and its 85/75 audit for all 70 measured files
+(`.gate-logs/coverage-20261015T221733Z.json`); 78 focused cases and Markdown lint
+also pass. Clean full gate, exact-successor hosted proof and deployment acceptance
+are still required; no S98 completion follows here.
+
 ### Observer startup interruption readiness
 
 Build run `38590551409`, candidate

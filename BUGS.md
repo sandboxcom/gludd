@@ -4,6 +4,25 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-15 — Buffered Galaxy output hid acquisition progress
+
+- Build run 38812181930 fails the execution-environment collection-acquisition
+  step after 120 seconds with zero child bytes. That evidence alone cannot
+  identify which network operation consumed the deadline.
+- A real stdout child reproduces lost progress while the stderr control passes;
+  both retain timeout code 124 and verified leader/descendant teardown. The
+  existing private child environment now sets PYTHONUNBUFFERED=1, overriding a
+  buffered caller without mutating its environment or replacing the native owner.
+- The diagnostic replay on unchanged source and lock obtains all eight reviewed
+  artifacts in 55.7 seconds; native context preparation then builds all eight
+  project collections and passes in 4.8 seconds. These are local artifact/context
+  results, not a repaired hosted verdict, image build or deployment acceptance.
+- The feature guide documents native buffering, unnecessary exact-pin version
+  enumeration and dated Galaxy user reports. The unchanged canonical coverage
+  target passes 1,521 tests and its 85/75 audit for all 70 measured files
+  (`.gate-logs/coverage-20261015T221733Z.json`). Source review, integration and
+  exact-successor hosted proof remain required.
+
 ### 2026-10-14 — Historical native failures exhausted command capacity
 
 - S98.4's 32-pointer owner refused a distinct locked-artifact acquisition before

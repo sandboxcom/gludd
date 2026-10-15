@@ -656,6 +656,7 @@ def _collection_environment(state: Path) -> dict[str, str]:
         ANSIBLE_LIBRARY=str(state / "plugins"), ANSIBLE_ACTION_PLUGINS=str(state / "plugins"),
         ANSIBLE_FILTER_PLUGINS=str(state / "plugins"), ANSIBLE_ROLES_PATH=str(state / "roles"),
         ANSIBLE_NOCOLOR="true", PYTHONWARNINGS="error", PYTHON_CPU_COUNT="1", TMPDIR=str(state / "tmp"),
+        PYTHONUNBUFFERED="1",
     )
     return private
 

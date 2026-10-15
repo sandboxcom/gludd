@@ -692,6 +692,63 @@ def test_explicit_child_context_keeps_native_timeout_and_owned_descendant_cleanu
                 os.kill(int(ready.read_text()), signal.SIGKILL)
 
 
+@pytest.mark.parametrize("channel", ["stdout", "stderr"])
+def test_native_collection_progress_is_retained_before_timeout_with_buffered_caller(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, channel: str,
+) -> None:
+    import psutil
+
+    for variable in ("ANSIBLE_COLLECTIONS_PATH", "ANSIBLE_COLLECTIONS_SCAN_SYS_PATH", "ANSIBLE_CONFIG"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("PYTHONUNBUFFERED", "0")
+    caller_environment = dict(os.environ)
+    state = tmp_path / "gludd-native-collection-buffering"
+    state.mkdir()
+    environment = owner._collection_environment(state)
+    ready = state / "gludd-owned-descendant.pid"
+    log = state / "native-progress.log"
+    receipt = state / "observed/gludd-collection-stage/current.json"
+    retained_while_running: list[bytes] = []
+    original_write = stream._write_chunk
+
+    def write_chunk(chunk: bytes, log_file: BinaryIO, *, quiet: bool) -> None:
+        original_write(chunk, log_file, quiet=quiet)
+        status = cast(_TerminalObservedStatus, json.loads(receipt.read_text()))
+        if status["state"] == "running":
+            retained_while_running.append(log.read_bytes())
+
+    monkeypatch.setattr(stream, "_write_chunk", write_chunk)
+    descendant = (
+        "import os, signal, sys, time; from pathlib import Path; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)"
+    )
+    leader = (
+        "import subprocess, sys, time; from pathlib import Path; "
+        f"descendant = subprocess.Popen([sys.executable, '-c', {descendant!r}, sys.argv[1]]); "
+        "\nwhile not Path(sys.argv[1]).exists(): time.sleep(0.01)\n"
+        f"print('native collection progress', file=sys.{channel})\n"
+        "time.sleep(30)\n"
+    )
+    try:
+        result = owner._run_collection_command(
+            [sys.executable, "-c", leader, str(ready)], log,
+            max_seconds=2, environment=environment, cwd=state,
+        )
+        status = cast(_TerminalObservedStatus, json.loads(receipt.read_text()))
+        assert result == stream.TIMEOUT_FAILURE
+        assert status["state"] == "timed_out" and status["termination_reason"] == "max-runtime-timeout"
+        assert not psutil.pid_exists(status["child_pid"])
+        assert not psutil.pid_exists(int(ready.read_text()))
+        assert b"native collection progress\n" in retained_while_running
+        assert log.read_bytes() == b"native collection progress\n"
+        assert dict(os.environ) == caller_environment
+    finally:
+        if ready.exists():
+            with suppress(ProcessLookupError):
+                os.kill(int(ready.read_text()), signal.SIGKILL)
+
+
 @pytest.mark.parametrize("platform", ["darwin", "linux"])
 def test_publication_refuses_a_missing_native_no_clobber_primitive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str,
