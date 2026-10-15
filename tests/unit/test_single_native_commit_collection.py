@@ -63,7 +63,9 @@ if kind == "tail":
 if kind == "uv":
     hook = args[-1]
     raise SystemExit(1 if hook == os.environ.get("FAIL_GUARD") else 0)
-if args == ["diff", "--cached", "--name-only"]:
+if args == ["rev-parse", "--local-env-vars"]:
+    print("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_PARAMETERS", sep=chr(10))
+elif args == ["diff", "--cached", "--name-only"]:
     print(os.environ.get("STAGED_FILES", "src/feature.py\ntests/unit/test_feature.py"))
 elif args == ["write-tree"]:
     counter = Path(os.environ["CAPTURE_LOG"] + ".trees")

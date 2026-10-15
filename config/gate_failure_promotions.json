@@ -707,6 +707,13 @@
       "full_gate_phase": "test"
     },
     {
+      "id": "prepush-collection-git-local-environment",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_collection_hook_environment.py::test_real_pre_push_collection_isolates_only_native_git_local_environment",
+      "full_gate_phase": "test"
+    },
+    {
       "id": "reviewed-focus-environment-naming",
       "owner_target": "_pytest-runtime-compatibility-admission",
       "node_kind": "pytest_node",

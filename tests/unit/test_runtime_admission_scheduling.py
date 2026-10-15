@@ -25,6 +25,8 @@ APPROVED_PROMOTION_SELECTORS = (
     "tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_consistent",
     "tests/unit/test_backlog_audit_target.py::test_backlog_target_is_public_registered_and_documented",
     "tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_failures_in_one_invocation",
+    "tests/unit/test_collection_hook_environment.py::"
+    "test_real_pre_push_collection_isolates_only_native_git_local_environment",
 )
 ROSTER = (
     *APPROVED_PROMOTION_SELECTORS,

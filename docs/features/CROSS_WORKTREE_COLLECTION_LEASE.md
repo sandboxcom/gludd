@@ -99,3 +99,55 @@ at 90% combined coverage and passes unchanged aggregate/per-file line-and-branch
 floors. No lease, process ownership, cleanup authority or runtime service changes.
 Rollback reverts typing and acceptance together. Full-gate, exact-SHA hosted and
 deployment proofs remain pending.
+
+## Git-hook collection environment
+
+A real linked-worktree pre-push reproduction identified `GIT_DIR` as the leaked
+canonical-checkout reference: the hook exported its private Git directory under
+Main, and pytest's unchanged confinement guard correctly rejected a plugin's
+subprocess environment. Standalone collection had no such hook-local input.
+
+Both public collection entry points now query `git rev-parse --local-env-vars`
+and check its status before starting the observer. The recipe requires a
+nonempty inventory of at most 64 valid `GIT_*` shell names and 8,192 characters,
+then unsets exactly those names inside its own shell. It evaluates no values,
+does not clear the parent hook, and does not change cwd. The existing lock owner
+rediscovers the same shared Git directory from the active worktree's `.git`.
+Discovery, identity and confinement failures still refuse collection.
+
+Full `tests/` inventory, fresh collection, warning policy, selected toolchain,
+observer heartbeats/tails, exit codes and canonical lease remain unchanged.
+Ordinary Git config files, `GIT_EDITOR`, `GIT_OPTIONAL_LOCKS` and unrelated caller
+inputs survive. Temporary staged-index context remains intact in the parent
+and all commit/content/index-drift guards; only full-worktree collection removes
+the native-listed override. No runner, proof cache or receipt admission is added.
+
+This is not a blanket `GIT_*` or Makeflags sanitizer. Residual numbered
+`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` values and explicit Make CLI Git overrides
+can still carry canonical paths; unchanged confinement rejects those contexts.
+Do not pass repository-routing variables as collection Make assignments. If
+transient command-scope configuration was required for Git identity, collection
+fails closed rather than substituting another lease or bypassing Git safety.
+
+[Git's hook contract](https://git-scm.com/docs/githooks#_description) recommends
+child-local clearing for other-worktree operations, using the maintained
+[name-only native inventory](https://git-scm.com/docs/git-rev-parse#Documentation/git-rev-parse.txt---local-env-vars).
+The long-lived [pre-commit issue #1849](https://github.com/pre-commit/pre-commit/issues/1849),
+opened in March 2021, records child Git operations contaminating the original
+index with inherited `GIT_INDEX_FILE`; it supports preserving parent ownership,
+not globally clearing hook state.
+
+Native local-bare-remote tests exercise the real pre-push hook, shared Make
+macro, observer, lease and pytest with an isolated three-node inventory and the
+existing confinement guard. They assert key names only, exact parent/index
+preservation, both targets, repeated fresh collection and failure propagation.
+Before its first setup mutation, the fixture separately discovers native local
+names with a checked read-only, minimal-environment probe and removes them only
+from its copied setup environment. Owned-sentinel regressions preserve exact
+HEAD/index/config/ref bytes under inherited `GIT_DIR` and `GIT_INDEX_FILE`; the
+subsequent real pre-push still introduces its genuine `GIT_DIR`.
+The parameterized hook regression is promoted into the existing mandatory
+runtime owner under unchanged 90/60-second budgets, alongside mutation controls.
+Delivery remains zero-downtime; rollback reverts the recipe and its admission
+binding together. Focused fixtures do not replace full inventory, full gate,
+normal guarded publication or exact-SHA hosted evidence.
