@@ -1458,6 +1458,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "unit-evidence-atomic-json-native-ownership",
         "owned-checkpoint-peer-native-admission",
         "precommit-guard-engine-expression-transport",
+        "prepush-collection-git-local-environment",
         "reviewed-focus-environment-naming",
         "reviewed-focus-environment-documentation",
         "reviewed-focus-required-run-identity",
@@ -1614,6 +1615,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'test_backlog_target_is_public_registered_and_documented '
         'tests/unit/test_canonical_release_gate.py::'
         'test_actual_local_release_recipe_collects_later_failures_in_one_invocation '
+        'tests/unit/test_collection_hook_environment.py::'
+        'test_real_pre_push_collection_isolates_only_native_git_local_environment '
         'tests/unit/test_content_addressed_unit_lane.py::'
         'test_atomic_json_candidate_and_control_evidence '
         'tests/unit/test_owned_checkpoint_shared_worktree_admission.py::'
