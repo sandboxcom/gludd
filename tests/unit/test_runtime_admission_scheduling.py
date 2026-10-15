@@ -16,7 +16,15 @@ from scripts import makefile_layout
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 HELP = "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries"
+APPROVED_PROMOTION_SELECTORS = (
+    "tests/unit/test_env_var_audit_deep.py::TestGLUDDNamingConvention::test_no_trailing_underscore",
+    "tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_live_vars",
+    "tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_consistent",
+    "tests/unit/test_backlog_audit_target.py::test_backlog_target_is_public_registered_and_documented",
+    "tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_failures_in_one_invocation",
+)
 ROSTER = (
+    *APPROVED_PROMOTION_SELECTORS,
     "tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence",
     "tests/unit/test_owned_checkpoint_shared_worktree_admission.py::"
     "test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact",
@@ -81,7 +89,7 @@ ROSTER = (
 
 
 def _stanza(target: str) -> str:
-    composed = makefile_layout.compose_makefile(ROOT / "Makefile")
+    composed: str = makefile_layout.compose_makefile(ROOT / "Makefile")
     return composed.split(f"\n{target}:\n", 1)[1].split("\n\n", 1)[0]
 
 

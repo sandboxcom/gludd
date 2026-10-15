@@ -14,7 +14,15 @@ from typing import cast
 import pytest
 
 from tests.fixtures.admission_cold_start import snapshot_plugin
-from tests.unit.test_runtime_admission_scheduling import HELP, ROOT, ROSTER, _capture_owner, _stanza
+from tests.unit import test_runtime_admission_scheduling as scheduling
+from tests.unit.test_runtime_admission_scheduling import (
+    APPROVED_PROMOTION_SELECTORS,
+    HELP,
+    ROOT,
+    ROSTER,
+    _capture_owner,
+    _stanza,
+)
 
 FIXTURE_PLUGIN = ROOT / "tests/fixtures/admission_cold_start/snapshot_plugin.py"
 STRUCTURAL_NODE = (
@@ -66,6 +74,46 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
         if row["target"] == "_pytest-runtime-compatibility-admission"
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+
+
+@pytest.mark.parametrize("promoted_selector", APPROVED_PROMOTION_SELECTORS)
+@pytest.mark.parametrize("mutation", ("omission", "duplication", "widening"))
+@pytest.mark.parametrize(
+    "guard",
+    (
+        scheduling.test_runtime_admission_retains_entire_roster_and_fresh_help,
+        test_real_admission_filters_only_never_selected_main_siblings,
+    ),
+    ids=("scheduling", "cold-start"),
+)
+def test_admission_contracts_reject_mutated_promoted_selectors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    promoted_selector: str,
+    mutation: str,
+    guard: Callable[[Path], None],
+) -> None:
+    """Exercise both unchanged guards through the real Make argument-capture harness."""
+    original_stanza = scheduling._stanza
+    owner_stanza = original_stanza(scheduling.OWNER)
+    selected = promoted_selector + " "
+    assert owner_stanza.count(selected) == 1
+    if mutation == "omission":
+        replacement = ""
+    elif mutation == "duplication":
+        replacement = selected * 2
+    else:
+        assert mutation == "widening"
+        replacement = promoted_selector.split("::", 1)[0] + " "
+    mutated_stanza = owner_stanza.replace(selected, replacement, 1)
+    assert mutated_stanza != owner_stanza
+    monkeypatch.setattr(
+        scheduling,
+        "_stanza",
+        lambda target: mutated_stanza if target == scheduling.OWNER else original_stanza(target),
+    )
+    with pytest.raises(AssertionError):
+        guard(tmp_path)
 
 
 def _fixture_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
