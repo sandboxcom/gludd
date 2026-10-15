@@ -598,6 +598,37 @@ the receipt to live OS identity; a reused PID is never treated as the old gate.
 An old watcher may update state or remove the PID pointer only while both the
 `run_id` and exact PID identity still match.
 
+Before publication, the launcher still owns the exact `Popen` child and the
+wrapper cannot execute the gate application. If bounded identity capture fails,
+waiting for that wrapper's publication deadline cannot help: only this parent
+could publish its matching receipt. The launcher now aborts that direct child
+with `Popen.terminate()`, waits at most 0.5 seconds, and escalates to
+`Popen.kill()` plus one final 0.5-second reap attempt if needed. No process-table
+search or unverified process-group signal is permitted. Signal/exit races still
+attempt reaping; an unsuccessful final reap raises an explicit cleanup failure
+instead of leaking a raw `TimeoutExpired` or claiming successful cleanup.
+The original log retains an fsynced `identity-capture-failed` diagnostic, no new
+PID/state/status receipt is published, and any prior state receipt is unchanged.
+Healthy wrappers retain the full five-second publication allowance; watcher
+ownership and all published-session timeout policies are unchanged.
+
+This uses the existing standard-library lifecycle rather than another runner.
+[Python's `Popen.wait()` documentation](https://docs.python.org/3.11/library/subprocess.html#subprocess.Popen.wait)
+distinguishes a wait timeout from killing the child and permits a subsequent
+wait. The long-lived 2015 practitioner report
+[Understanding subprocess.TimeoutExpired](https://stackoverflow.com/questions/28131659/understanding-subprocess-timeoutexpired-want-to-kill-a-child-process-after-a-ti)
+likewise reproduces a live child after its parent's timed wait expires. These
+findings support explicit termination and reaping of the already-owned child,
+not a shorter healthy-publication budget or broader cleanup authority.
+Failing-first controls reproduce the real native wrapper's passive exit and
+delayed wrappers' leaked timeout, then require exact-child TERM/KILL/reap,
+preserved prior receipts/logs, no application execution, signal-error handling,
+and acceptance of healthy publication near the original five-second deadline.
+The unchanged branch-and-subprocess coverage profile and 85%/75% floors remain
+the acceptance boundary. This startup-only repair opens no listener and changes
+no application service or schema; rollback waits for owned runs to finish and
+reverts the launcher without adopting or stopping an existing session.
+
 The timeout watcher is also session-isolated, but unlike the former
 `sleep 3600` sidecar it polls the exact identity and exits as soon as the gate
 does. At the deadline it revalidates the current receipt, sends bounded

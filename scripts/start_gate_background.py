@@ -22,6 +22,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,6 +48,7 @@ STATE_KIND = "gludd_gate_background"
 STATE_SCHEMA_VERSION = 1
 _EXEC_AFTER_PUBLICATION_FLAG = "--exec-gate-after-publication"
 _PUBLICATION_WAIT_SECONDS = 5.0
+_UNPUBLISHED_ABORT_WAIT_SECONDS = 0.5
 
 
 @dataclass(frozen=True)
@@ -686,6 +688,29 @@ def _start_watcher(
     )
 
 
+def _abort_unpublished_gate(process: subprocess.Popen[bytes]) -> None:
+    """Stop and reap our direct child before it has authority to exec the gate.
+
+    Publication is still withheld, so only the launcher wrapper can be running.
+    The owning Popen handle can safely signal that child without inventing a
+    process identity or adopting an unverified process group.
+    """
+    last_error: OSError | subprocess.TimeoutExpired | None = None
+    for stop in (process.terminate, process.kill):
+        # Even a failed signal or an exit race must be followed by a reap
+        # attempt. If it is still live, escalate only this same owned child.
+        with suppress(OSError):
+            stop()
+        try:
+            process.wait(timeout=_UNPUBLISHED_ABORT_WAIT_SECONDS)
+            return
+        except (OSError, subprocess.TimeoutExpired) as error:
+            last_error = error
+    raise RuntimeError(
+        f"unpublished gate child cleanup failed (pid={process.pid})"
+    ) from last_error
+
+
 def launch_gate(
     project_root: Path | str,
     gate_command: Sequence[str],
@@ -763,8 +788,20 @@ def launch_gate(
                     break
                 time.sleep(0.005)
             if identity is None:
-                process.wait(timeout=5)
-                raise RuntimeError("gate exited before its process identity was captured")
+                failure = "gate failed before its process identity was captured"
+                try:
+                    _abort_unpublished_gate(process)
+                except RuntimeError as error:
+                    failure = f"{failure}; {error}"
+                    raise RuntimeError(failure) from error
+                finally:
+                    log_file.write(
+                        f"[gate-background] launch_failed pid={process.pid} "
+                        f"reason=identity-capture-failed: {failure}\n".encode()
+                    )
+                    log_file.flush()
+                    os.fsync(log_file.fileno())
+                raise RuntimeError(failure)
 
             _atomic_write(paths.pid_file, f"{identity.pid}\n")
             _atomic_write_json(
