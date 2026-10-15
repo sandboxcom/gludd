@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from scripts.check_make_help import help_targets_from_makefile
 
 ROOT = Path(os.environ.get("GLUDD_FORMAT_FACADE_ROOT", Path(__file__).resolve().parents[2]))
 TARGET = "sync-ansible-native-format"
@@ -119,8 +120,7 @@ def test_native_tool_failure_and_output_remain_visible(work: Path) -> None:
 
 
 def test_facade_has_explicit_safe_plan_contract_and_help() -> None:
-    foundation = (ROOT / "make/00-foundation.mk").read_text()
-    assert '@echo "  sync-ansible-native-format' in foundation
+    assert TARGET in help_targets_from_makefile(ROOT / "Makefile")
     contract = cast(dict[str, object], json.loads((ROOT / "config/make_target_contract.json").read_text()))
     rows = cast(list[dict[str, object]], contract["targets"])
     entries = [row for row in rows if row["name"] == TARGET]

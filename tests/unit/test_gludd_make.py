@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from scripts.check_make_help import HELP_TARGET_RE
 from scripts.makefile_layout import compose_makefile
 
 MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
@@ -54,7 +55,7 @@ def test_git_cherry_pick_target_help_mentions_target() -> None:
             pass
         if "make help" in line or line.startswith("help:"):
             continue
-        if line.startswith("\t@echo") and "git-cherry-pick" in line:
+        if HELP_TARGET_RE.match(line) and "git-cherry-pick" in line:
             found = True
     # Not all targets need help entries; skip if the help section isn't exhaustive
     # Just ensure the target is in PHONY

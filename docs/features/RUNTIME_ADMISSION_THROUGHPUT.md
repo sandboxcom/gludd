@@ -490,3 +490,30 @@ run correctly refused the editor's previously untested CLI paths at 72%; additiv
 legacy-exit/atomic-refusal controls close that gap without excluding code. Ruff,
 strict typing, all 235 native target contracts, duplicate-target and Make parity
 checks pass. Receipts are diagnostic focused acceptance, not a full gate.
+
+## Preserve the original admission boundary (2026-10-15)
+
+The frozen f0a38e7 combined admission reports three failures and 1780 passes in
+74.29 seconds: two original target-help audits and the native-format safe-plan
+help assertion still assumed echo source syntax. Their representation-only
+conformance reuses the existing inventory reader, retains descriptions/internal
+entry detection, and changes neither the 70% canary nor orphan allowances or the
+native-format contract. All three failures are reproduced before repair.
+
+One expanded native all-failure batch covers 1024 cases across the retained
+consumer inventory: 1021 pass and three additional echo-only help assertions fail
+in 201.45 seconds. Their representation-only conformance preserves the Git
+PHONY fallback, exactly-one promotion help entry and complete hygiene description
+and delegation checks. The two pure TUI helpers run; actual persistent TUI/LLM
+sessions are outside this source-regression batch, with no release-policy change.
+
+Native collection identifies 49 help-audit cases: eight original cases plus 41
+new exhaustive controls, correcting an inferred count of 42 new cases. Keep the
+original eight-case audit byte-identical to the retained pre-H Q worktree and
+move only those 41 new controls into `tests/unit/test_make_help_throughput.py`.
+Every assertion stays mandatory in full-suite/focused acceptance; the original
+admission selector, fresh help child, nodes, warning/plugins/workers and 90/60/2850
+limits are unchanged. The new path is added inline to the existing S98.4 scope.
+No production code, runner, cache, admission roster or promotion manifest changes.
+This is a test-boundary/conformance repair, not a measured speed improvement or
+full-gate/hosted/deployment acceptance; Root must measure the actual combined owner.

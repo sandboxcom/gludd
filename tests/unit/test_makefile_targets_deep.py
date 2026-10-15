@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from scripts.check_make_help import HELP_TARGET_RE
 from scripts.makefile_layout import compose_makefile
 
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
@@ -160,14 +161,18 @@ def _extract_help_mapping(content: str) -> dict[str, str]:
             in_help = True
             continue
         if in_help:
-            if line.startswith("\t@echo"):
-                m = re.match(r'\t@echo\s+"\s{2,}(\S[^"]*?)"', line)
-                if m:
-                    text = m.group(1)
-                    parts = text.split(None, 1)
-                    if len(parts) >= 1 and re.match(r"^[-a-zA-Z_][-a-zA-Z0-9_.]*$", parts[0]):
-                        mapping[parts[0]] = parts[1] if len(parts) > 1 else ""
-            elif not line.startswith("\t") and line.strip() != "":
+            match = HELP_TARGET_RE.match(line)
+            if match is not None:
+                text = line[match.start(1):].split('"', 1)[0]
+            else:
+                # Retain the legacy heading/internal-name policy as well as public entries.
+                candidate = "\t@echo " + line.lstrip() if line.lstrip().startswith('"') else line
+                legacy = re.match(r'\t@echo\s+"\s{2,}(\S[^"]*?)"', candidate)
+                text = legacy.group(1) if legacy is not None else ""
+            parts = text.split(None, 1)
+            if len(parts) >= 1 and re.match(r"^[-a-zA-Z_][-a-zA-Z0-9_.]*$", parts[0]):
+                mapping[parts[0]] = parts[1] if len(parts) > 1 else ""
+            if not line.startswith("\t") and line.strip() != "":
                 break
     return mapping
 
