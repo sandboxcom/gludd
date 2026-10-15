@@ -444,508 +444,509 @@ git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-te
          build-llamacpp-tools
 
 help:
-	@echo "Usage: make [target]"
-	@echo ""
-	@echo "  --- Setup ---"
-	@echo "  init                  Set up project (dirs + deps)"
-	@echo "  sync                  Atomically sync an explicit locked dependency profile set (DEPENDENCY_PROFILE_*)"
-	@echo "  sync-ansible-native-format Native locked/inexact dev tooling sync (ANSIBLE_FORMAT_SYNC_*, dry-plan by default)"
-	@echo "  uv-cache-path         Print the sandbox-writable Gludd uv cache path"
-	@echo "  migrate-up            Upgrade an explicit database URL to a revision (MIGRATE_DATABASE_URL, MIGRATE_REVISION)"
-	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
-	@echo "  test-local-model-inference  Locked optional-runtime smoke (LOCAL_MODEL_INFERENCE_MODEL_PATH, LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0|1)"
-	@echo "  clean-e2e-small-model       Remove only the reproducible /tmp GGUF materialization (E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=0|1)"
-	@echo "  clean-hf-cache             Diagnose/reclaim Gludd-owned unleased models (CLEAN_HF_CACHE_ROOT, CLEAN_HF_CACHE_REQUIRED_BYTES, CLEAN_HF_CACHE_VALIDATE_ONLY=0|1)"
-	@echo "  validate-ansible-runtime-boundary  Validate split core/controller/managed-host artifacts"
-	@echo "  build-ansible-execution-environment  Build the locked controller EE (ANSIBLE_EE_*)"
-	@echo "  prepare-ansible-execution-environment-context Prepare one reviewed native context without image build (ANSIBLE_EE_*)"
-	@echo "  verify-ansible-execution-environment Verify one digest-addressed controller EE (ANSIBLE_EE_*)"
-	@echo "  check-collection-python-boundary Enforce exact/strict-zero collection migration inventory"
-	@echo "  check-resource-ownership Enforce exact application acquisition-to-teardown evidence (RESOURCE_OWNERSHIP_*)"
-	@echo "  update-ansible-runtime-lock Refresh deterministic EE input hashes"
-	@echo "  stage-ansible-runtime-collections Prepare/replay explicit native Galaxy artifacts (ANSIBLE_COLLECTION_STAGE_*, validate-only by default)"
-	@echo "  resolve-ansible-runtime-requirements Compile complete staged EE inputs (ANSIBLE_EE_COLLECTION_ROOT, ANSIBLE_EE_RESOLUTION_OUTPUT, ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1)"
-	@echo "  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)"
-	@echo "  inspect-ansible-searxng-source Read eleven exact frozen source/default-build inputs (ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0|1)"
-	@echo "  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)"
-	@echo "  update-collection-python-boundary-inventory Refresh exact legacy migration inventory"
-	@echo "  deps-audit            Fail-closed Python dependency truth audit"
-	@echo "  core-dependency-ownership-refresh  Reconcile direct-core ownership (CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY=0|1)"
-	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
-	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
-	@echo "  node-deps-audit       Audit locked Node deps (NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
-	@echo "  freellmapi-upstream-admission  Validate/refresh the non-runnable upstream candidate (FREELLMAPI_ADMISSION_TAG, FREELLMAPI_ADMISSION_COMMIT, FREELLMAPI_ADMISSION_LIVE=0|1, FREELLMAPI_ADMISSION_OUTPUT)"
-	@echo "  freellmapi-upstream-build  Validate/run the exact-source upstream suite (FREELLMAPI_BUILD_LIVE=0|1, FREELLMAPI_BUILD_CANDIDATE, FREELLMAPI_BUILD_PLAN, FREELLMAPI_BUILD_REPORT)"
-	@echo "  freellmapi-three-arm-replay  Build/validate/replay exact v0.11.1 without promotion (FREELLMAPI_THREE_ARM_MODE, FREELLMAPI_THREE_ARM_CANDIDATE, FREELLMAPI_THREE_ARM_PLAN, FREELLMAPI_THREE_ARM_CORPUS, FREELLMAPI_THREE_ARM_REPORT)"
-	@echo "  bootstrap             init + lint + test + healthcheck"
-	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
-	@echo "  install-workflow-hook Validate/install the tracked GitHub workflow YAML hook (INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)"
-	@echo "  install-bats          Install bats-core via Homebrew"
-	@echo ""
-	@echo "  --- Quality ---"
-	@echo "  gate-all                full CI-matching gate: all unit + integration + e2e + molecule tests"
-	@echo "  gate-full               full gate matching CI: gate-refresh + integration + e2e + molecule"
-	@echo "  gate-release-phases     bounded integration + e2e + molecule release phases (GATE_RELEASE_*)"
-	@echo "  test-atomic-validate    verify atomic target creation with tempfile validation"
-	@echo "  gate-check              Run gate check"
-	@echo "  lint                  Run ruff linter"
-	@echo "  lint-css              Run locked Stylelint with the hosted CSS gate inputs"
-	@echo "  lint-python           Run the canonical Python Ruff gate (application + tests)"
-	@echo "  lint-make             Run duplicate-target, parity, and Make dry-run validation"
-	@echo "  lint-files            Run ruff linter on FILES only"
-	@echo "  check-molecule-yaml   Complete native inputs (MOLECULE_YAML_LINT_TIMEOUT_SECONDS=1..120, MOLECULE_YAML_VALIDATE_ONLY=0|1)"
-	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
-	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
-	@echo "  check-file-line-limits  Enforce <2500 lines on tracked or staged content (FILE_LINE_LIMIT_POLICY, FILE_LINE_LIMIT_STAGED=0|1)"
-	@echo "  check-duplicate-code  Reject new staged/committed production clones with locked jscpd (DUPLICATE_CODE_*)"
-	@echo "  split-makefile-layout  Validate/apply the ordered make/*.mk layout (MAKEFILE_SPLIT_APPLY=0|1)"
-	@echo "  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)"
-	@echo "  presentation-browser-install Check/install pinned Chromium + WebKit (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)"
-	@echo "  presentation-browser-install-deps Validate/install Playwright browser system libraries (PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0|1)"
-	@echo "  presentation-browser-test   Validate/run bounded Chromium + WebKit acceptance (PRESENTATION_BROWSER_VALIDATE_ONLY=0|1)"
-	@echo "  presentation-safari-test    Validate/run bounded native Safari smoke (PRESENTATION_SAFARI_VALIDATE_ONLY=0|1)"
-	@echo "  presentation-pages-probe    Compare the public Pages artifact with an expected exact SHA"
-	@echo "  lint-fix              Run ruff with auto-fix"
-	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
-	@echo "  typecheck             Run mypy"
-	@echo "  typecheck-scope       Run strict mypy on explicit FILES without unrelated override noise"
-	@echo "  check-types           Flag Any usage in Python annotations (tight types)"
-	@echo "  check-types-baseline  Same scan, tolerating config/type_any_baseline.txt"
-	@echo "  healthcheck           Verify imports work"
-	@echo "  backlog-audit         Observed checked-task audit (BACKLOG_AUDIT_VALIDATE_ONLY, BACKLOG_AUDIT_COLLECT, BACKLOG_AUDIT_VERDICTS, OBSERVED_*)"
-	@echo "  qa                    Run lint + typecheck + test + healthcheck"
-	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
-	@echo "  add-target            Add a new Makefile target with auto-categorization"
-	@echo "  edit-target           Edit an existing Makefile target recipe"
-	@echo "  edit-makefile-target  Edit a Makefile target definition via a file"
-	@echo "  validate-makefile     Validate Makefile targets for duplicates"
-	@echo "  gate                  Full gate: GATE_TEST_PROFILE=native|release (release uses canonical CPython3.11/-W error/one-worker evidence); GATE_EXACT_SHA_RESUME=0|1, GATE_MAX_FILES_PER_BATCH=1..32, GATE_BATCH_WORKERS=1..2; unchanged 85/75 floors"
-	@echo "  gate-admission-config Safely validate GATE_TEST_PROFILE=native|release and bounded resume/batch/worker policy without running a gate"
-	@echo "  pants-launcher-bootstrap Acquire/verify the exact project-local Pants launcher (PANTS_LAUNCHER_*)"
-	@echo "  pants-unit-cache-lane Pants hermetic cross-commit pure-unit lane (PANTS_UNIT_CACHE_*)"
-	@echo "  pants-unit-cache-nightly Compare cached and forced-fresh nodes/outcomes/coverage (PANTS_UNIT_CACHE_*)"
-	@echo "  gate-background           Launch one identity-tracked gate in an isolated session (forwards GATE_TEST_PROFILE and GATE_* policy)"
-	@echo "  gate-background-observed  Launch the selected gate profile and keep its automation owner alive while polling"
-	@echo "  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)"
-	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
-	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
-	@echo "  coverage-files        Observable targeted coverage (COVERAGE_* plus OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_QUIET_SECS, OBSERVED_MAX_SECS, OBSERVED_RETAIN_RUNS)"
-	@echo "  observed-status       Print current/exact retained command status (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)"
-	@echo "  observed-tail         Print bounded current/exact retained log tail (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)"
-	@echo "  run-watched           Observe one bounded command with quoted child arguments (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)"
-	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
-	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
-	@echo "  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)"
-	@echo "  gate-lite-tail        Print a bounded latest gate-lite-log snapshot (GATE_TAIL_LINES=80)"
-	@echo "  triage-failures       Incrementally group streamed failures (LOG, TRIAGE_STATE, TRIAGE_FORMAT)"
-	@echo "  collect-check         Fast collection-error gate"
-	@echo "  pre-commit-check      Fast lint + collection + typecheck commit preflight"
-	@echo "  check-gate-failure-promotions  Validate owned fast-admission failure nodes"
-	@echo "  integration-admission  Fail-fast feature-branch checks before the full gate"
-	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
-	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace (LOG, TESTPATH, PYTEST_ARGS, RUN_ID)"
-	@echo "  test-xdist-trace-summary  Summarize one durable trace/run (LOG, RUN_ID)"
-	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
-	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
-	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
-	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
-	@echo "  codex-system-skill-read  Print a codex system skill's SKILL.md (SKILL=name [CODEX_SKILLS_ROOT=path])"
-	@echo "  fix-init-drift        Fix __init__.py drift: docstrings, empty namespace inits, unsorted __all__"
-	@echo "  fix-docs-drift        Fix mechanical markdown drift: whitespace, fences, stale audit links"
-	@echo "  report-docs-drift     Enumerate hand-fixable markdown issues (tables, tabs, headers, links)"
-	@echo "  feature-spec-inventory  Inventory all Gludd feature specs + OpenCode behavioral specs (FORMAT=human|json)"
-	@echo "  migrate-test-env-writes  Rewrite test environment mutations to the guarded helper"
-	@echo "  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss"
-	@echo "  replace-text-b64      Exact old/new base64 replacement via scripts/replace_text.py"
-	@echo "  mkdir-p               Create an allowed workspace or /tmp/gludd-* directory"
-	@echo "  replace-lines         Replace an allowed file line range from NEW_FILE"
-	@echo "  worktree-state        Emit path-qualified current git worktree state as JSON"
-	@echo "  all-worktree-state    Emit path-qualified state for every registered worktree"
-	@echo "  main-worktree-state   Emit canonical main checkout state as JSON"
-	@echo "  worktree-guard        Fail if the current worktree is dirty"
-	@echo "  main-worktree-guard   Fail if /Users/shawnwilson/gludd is dirty"
-	@echo "  release-worktree-guard  Emit release evidence only when current and main worktrees are clean"
-	@echo "  status-claim-guard    Emit clean tokens only when current and main worktrees are clean"
-	@echo "  workflow-state        Emit local/remote/GHA git state-machine evidence as JSON"
-	@echo "  workflow-gate         Fail if local workflow state is unsafe for release evidence"
-	@echo "  commit-ready          Fail if current work is not clean enough to be committed/tested"
-	@echo "  gha-ready             Fail if remote CI would not run the current committed HEAD"
-	@echo "  merge-ready           Fail if development cannot merge to master without topology repair"
-	@echo "  codemod-lean-enforcement-plugins  Slim counted enforcement plugin entrypoints"
-	@echo "  sast                  Run bandit SAST"
-	@echo "  sbom                  Generate CycloneDX SBOM"
-	@echo "  pip-audit             Audit dependencies for vulnerabilities"
-	@echo "  pip-audit-gate        Fail on every non-adjudicated Python advisory"
-	@echo "  security              Full security: sast + sbom + Python/Node dependency audits"
-	@echo "  test-unit             Unit tests only"
-	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
-	@echo "  test-ci-dual-track-local  Canonical local all-shard evidence (DUAL_TRACK_LOCAL_VALIDATE_ONLY, PYTEST_ARGS, MAX_FILES_PER_BATCH, DUAL_TRACK_RESUME, DUAL_TRACK_WATCHDOG_OWNED_GATE)"
-	@echo "  test-integration      Integration tests"
-	@echo "  integration-health   Run the observable integration gate with isolated temp paths"
-	@echo "  test-e2e              End-to-end tests"
-	@echo "  test-e2e-azure        Azure E2E — env-pointer (CI-friendly)"
-	@echo "  test-e2e-azure-provision  Azure full-provision E2E (opt-in, costly)"
-	@echo "  test-e2e-azure-provision-sourced  Source AZURE_E2E_ENV_FILE, then provision (AZURE_E2E_VALIDATE_ONLY=0|1)"
-	@echo "  test-e2e-aws          AWS E2E — env-pointer (CI-friendly)"
-	@echo "  test-e2e-gcp          GCP E2E — env-pointer (CI-friendly)"
-	@echo "  test-e2e-runpod       RunPod E2E — env-pointer (CI-friendly)"
-	@echo "  test-e2e-providers    All E2E provider tests"
-	@echo "  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)"
-	@echo "  test-e2e-games-local  Game unit tests only — video compare, game gen, no Azure needed"
-	@echo "  test-e2e-games-local-model  Hermetic/managed/external game E2E (LOCAL_MODEL_E2E_MODE, LOCAL_MODEL_PATH, LOCAL_MODEL_BASE_URL, LOCAL_MODEL_NAME, LOCAL_MODEL_KEY, LOCAL_MODEL_GAME, PYTEST_ARGS)"
-	@echo "  test-e2e-game-pipeline  Full game-dev pipeline — all 24 models × 4 games (CI_SAFE=1 for CI-safe subset)"
-	@echo "  game-reference-preflight  Acquire/verify approved FPS clips before Azure provisioning"
-	@echo "  test-e2e-games-provision  Source AZURE_E2E_ENV_FILE; Azure game E2E (GAME_E2E_TIMEOUT_SECS>=3600)"
-	@echo "  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status"
-	@echo "  e2e-latest-log      Show exit code and error summary for latest E2E run"
-	@echo "  azure-cleanup-e2e   Delete gludd-gpu* groups and visibly verify absence"
-	@echo "  test-e2e-postgres-multiworker  Live Postgres 16 + two-worker Gunicorn acceptance"
-	@echo "  podman-project-up   Start an explicit project Podman machine and wait for readiness"
-	@echo "  podman-project-recreate  Recreate one gludd-namespaced Podman test machine"
-	@echo "  podman-project-delete  Delete one gludd-namespaced Podman machine with bounded progress"
-	@echo "  test-multi-model-pipeline  All multi-model pipeline E2E + integration tests"
-	@echo "  test-local-model-pipeline  Local model pipeline E2E tests"
-	@echo "  test-project-type-pipeline E2E: test_project_type_pipeline.py"
-	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
-	@echo "  test-opencode-e2e-hour  1-hour E2E spawner test (TIMEOUT=3600)"
-	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
-	@echo "  test-specific-pyver   Single test under explicit Python (TESTFILE, PYTHON_VERSION)"
-	@echo "  test-files            Multiple tests (TESTFILES, PYTEST_ARGS, UV_PROJECT_ENVIRONMENT); explicit environments route nested UV consistently"
-	@echo "  grep                  Repository text search (Q=regex SEARCH_PATH=path)"
-	@echo "  ci-shards-diagnostic Serial collect-all diagnostics (CI_SHARDS_DIAGNOSTIC_SHARDS, CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY=0|1; default 1)"
-	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
-	@echo "  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)"
-	@echo "  test-count            Count collected tests"
-	@echo "  test-failures         Show bounded cached failures (TEST_FAILURES_CACHE, TEST_FAILURES_LIMIT)"
-	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
-	@echo "  local-accelerator-inventory  Discover local GPU/TPU resources without provisioning"
-	@echo "  mac-unified-memory-smoke  Local Apple unified-memory smoke (LIVE=1 BACKEND=mps ARGS=...)"
-	@echo "  gpu-hardware-smoke        Local AMD/NVIDIA GPU smoke (LIVE=1 BACKEND=cuda|rocm ARGS=...)"
-	@echo "  provider-harness      Validate Azure/RunPod credentials, billing bounds, and optional Gludd telemetry"
-	@echo "  azure-harness         Azure provider harness (LIVE=1 for read-only credential check)"
-	@echo "  azure-cleanup-inspect Read-only provisioning states for Gludd Azure E2E resource groups"
-	@echo "  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)"
-	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
-	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
-	@echo "  check-generated-artifact-hygiene  Validate tracked generated Markdown/JSON/YAML postconditions"
-	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
-	@echo "  ps                    Report repository-owned test, audit, and supervisor processes"
-	@echo "  list-plugins          Report the active enforcement plugin roster"
-	@echo "  terminate-project-process-tree  Identity-check and preview/apply one project process tree"
-	@echo "  kill-worktree-e2e    Stop one verified local E2E tree (PID=; validate with KILL_WORKTREE_E2E_VALIDATE_ONLY=1)"
-	@echo "  status-snapshot       Rewrite SESSION.md gate evidence (STATUS_SNAPSHOT_VALIDATE_ONLY=1 for read-only validation)"
-	@echo "  work-item             Administrative focus/support/status; WORK_ITEM_ACTION, WORK_ITEM_ID, WORK_ITEM_REASON, WORK_ITEM_VALIDATE_ONLY"
-	@echo "  codex-stop-guard      Fail closed when tracked work remains; emit a Codex stop challenge token"
-	@echo "  codex-stop-confirm    Confirm a previously issued token before recording a valid stop"
-	@echo "  iam-headless-smoke    Validate least-privilege provider manifests without credentials"
-	@echo "  check-task-integrity  Require changed files to map to registered tasks"
-	@echo "  validate-task-ledger  Validate TASKS.md metadata and completion evidence"
-	@echo "  check-dispatch-dedup Validate the persistent content-addressed dispatch ledger"
-	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
-	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
-	@echo "  test-live-zai         Live GLM model test (requires API key)"
-	@echo "  test-guardrails       Test guardrail infrastructure"
-	@echo "  test-install          Run install.sh bats tests"
-	@echo "  test-language-expert  Language collection E2E: schema + unit + integration + coverage (>=85%)"
-	@echo ""
-	@echo "  --- Terraform ---"
-	@echo "  tf-cache-warm         Download all providers ONCE into the shared plugin cache"
-	@echo "  tf-init STACK=s/n     Init a stack using the shared cache (no re-download)"
-	@echo "  tf-init-local         State-free Azure stack init (STACK, TF_INIT_LOCAL_VALIDATE_ONLY)"
-	@echo "  tf-validate STACK=s/n Validate a stack against the shared cache"
-	@echo "  tf-versions-check     Enforce stacks match infra/terraform/versions.tf"
-	@echo "  tf-clean              Remove the shared plugin cache"
-	@echo ""
-	@echo "  --- Git ---"
-	@echo "  ci-cancel               cancel a CI run by id — use for zombie runs blocking push"
-	@echo "  (Single-source policy: features land on development first, then merge to master)"
-	@echo "  git-status            Show git status"
-	@echo "  git-owned-checkpoint-push     Checkpoint explicit owned files (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_VALIDATE_ONLY)"
-	@echo "  git-owned-checkpoint-restore  Restore exact top checkpoint, retaining evidence (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_VALIDATE_ONLY)"
-	@echo "  git-diff              Show diff stats"
-	@echo "  git-staged            Show staged changes"
-	@echo "  git-log               Show recent commits"
-	@echo "  git-show-commit C=<sha>  Show hash, parents, committer time, subject, and files"
-	@echo "  git-show-full SHA=<sha>  Show a host-independent canonical patch"
-	@echo "  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity"
-	@echo "  branches-unmerged-development  List every local branch tip not reachable from development"
-	@echo "  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON"
-	@echo "  branch-reconciliation-summary RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_DETAILS=0|1 RECONCILE_CURRENT_ONLY=0|1 RECONCILE_QUIET_PROGRESS=0|1 RECONCILE_HEAD_SEMANTICS=0|1  Exhaustively classify and optionally summarize deduplicated heads"
-	@echo "  git-add FILES='...'   Stage specific files"
-	@echo "  git-add-all           Stage all changes"
-	@echo "  git-commit MSG='...'  Commit staged changes"
-	@echo "  commit-and-ship MSG='...'  Lint-fix, stage, and commit through the guarded shipping target"
-	@echo "  commit-and-ship-push MSG='...'  Commit, push development, and request the guarded CI verdict"
-	@echo "  rm-files FILES='...'  Remove only explicitly named workspace paths"
-	@echo "  git-reset FILES='...' Reset to ref (soft by default)"
-	@echo "  git-uncommit-last CONFIRM=1  Uncommit local HEAD while preserving all files"
-	@echo "  git-branch MSG='...'  Create branch"
-	@echo "  git-checkout MSG='...' Switch branch"
-	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
-	@echo "  resolve-development-conflicts MERGE_SOURCE=<branch> APPLY=0|1  Preserve development on conflicts"
-	@echo "  git-rebase-abort      Abort an in-progress rebase"
-	@echo "  git-rebase-continue   Continue after resolving rebase conflicts"
-	@echo "  git-rebase-skip       Skip duplicate/current rebase commit"
-	@echo "  git-cherry-pick SHA=<commit> Cherry-pick a specific commit"
-	@echo "  git-cherry-pick-list SHAS='a b ...' Cherry-pick commits in order"
-	@echo "  feature-start MSG='...' Create and switch to feature branch"
-	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
-	@echo "  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)"
-	@echo "  agent-worktree-base BRANCH=<name> BASE=<ref>  Isolated worktree from an explicit base ref"
-	@echo "  workstream-register BRANCH=<name> WORKTREE=<path>  Protect an active logical workstream"
-	@echo "  workstream-unregister BRANCH=<name>  Release a completed logical workstream"
-	@echo "  wt-prune-safe         Prune clean worktrees except registered active workstreams (ACTIVE_WORKSTREAM_REGISTRY, WT_PRUNE_VALIDATE_ONLY)"
-	@echo "  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)"
-	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
-	@echo "  agent-worktree-list           List active git worktrees"
-	@echo "  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)"
-	@echo "  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command"
-	@echo "  azure-self-improve-live-proof  Discover, select, deploy, evaluate, and tear down one bounded Azure candidate"
-	@echo "  azure-accelerator-role-apply Apply/validate the exact GPU role through Microsoft SDKs (AZURE_ACCELERATOR_*)"
-	@echo "  azure-accelerator-role-args  Deprecated compatibility argv for Azure CLI role creation"
-	@echo "  azure-accelerator-role-update-args  Emit validated NUL arguments to narrow an existing GPU role"
-	@echo "  azure-accelerator-auth-args  Emit validated NUL arguments for its Azure SP credential command"
-	@echo "  azure-containerapp-environment-bootstrap-args  Emit one operator-owned shared GPU environment deployment"
-	@echo "  azure-accelerator-auth-check Secret-safe validation of Azure CLI --json-auth output"
-	@echo "  azure-accelerator-auth-store Preserve stdin/source JSON as immutable protected generations"
-	@echo "  azure-containerapp-preflight Traced read-only named-environment GPU sizing and quota proof"
-	@echo "  azure-containerapp-terraform-phase  Owned app-only Terraform phase (AZURE_CONTAINERAPP_TF_*)"
-	@echo "  azure-containerapp-environment-guard  Read-only protected GitHub Environment admission"
-	@echo "  azure-containerapp-live-proof  Hermetic/live bounded deploy-infer-destroy proof (AZURE_CONTAINERAPP_LIVE_PROOF_*)"
-	@echo "  test-azure-containerapp-coverage  Hermetic Azure Container Apps tests with 85/75 coverage gates"
-	@echo "  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)"
-	@echo "  test-self-improve-catalog-truth  Replay pinned catalog fixture (SELF_IMPROVE_CATALOG_LIVE=0|1)"
-	@echo "  test-self-improve-multifile      Replay pinned multi-file fixture (SELF_IMPROVE_MULTIFILE_LIVE=0|1)"
-	@echo "  test-self-improve-failure-corpus Replay typed local failures offline (SELF_IMPROVE_FAILURE_CORPUS_FILE)"
-	@echo "  test-self-improve-acceptance-matrix Validate/run the serial ten-shape contract (SELF_IMPROVE_ACCEPTANCE_MATRIX_*)"
-	@echo "  test-self-improve-private-policy  Run hermetic fake-local/fake-Azure project privacy E2E coverage"
-	@echo "  test-self-improve-all            Deprecated alias for one explicit Codex-reference benchmark"
-	@echo "  self-improve-promotion-marker    Verify an exact promotion marker on development (SELF_IMPROVE_PROMOTION_* variables)"
-	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
-	@echo "  git-search Q='...'           Search indexed git history"
-	@echo "  git-stats                    Show git history index statistics"
-	@echo "  agent-report                 Agent activity dashboard (reads /tmp/gludd-agent-results.jsonl)"
-	@echo "  check-duplicate-targets           Detect Makefile targets declared on parallel branches"
-	@echo "  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch"
-	@echo "  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development"
-	@echo "  development-push             Push the development branch to remote"
-	@echo "  development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1  Transactional reconciliation into development (dry-run default)"
-	@echo "  development-merge-forward-batch SOURCES='<refs>' APPLY=0|1  Atomic ancestry-only reconciliation for multiple superseded refs"
-	@echo "  development-fast-forward SOURCE=<ref> EXPECTED_BEFORE_SHA=<sha> EXPECTED_AFTER_SHA=<sha> APPLY=0|1  Guarded development fast-forward (default 0; APPLY=1 requires full 40-character SHAs)"
-	@echo "  development-merge-to-master  Merge development into master (release prep; CI-green required)"
-	@echo "  development-start            Create development branch from master if it doesn't exist"
-	@echo "  development-status           Show commits on development not yet on master"
-	@echo "  git-tag-push TAG=<t> [COMMIT=<sha>] [MSG='...']  Create annotated tag + push to sandboxcom"
-	@echo "  git-tag-rm TAG=<t>           Delete tag locally and on sandboxcom"
-	@echo "  git-tag-delete TAG=<t>       Alias for git-tag-rm"
-	@echo "  git-tag-move TAG=<t> MSG='..'  Delete old tag + create new at HEAD + push"
-	@echo "  submodule-init        Initialize submodules or validate configuration (SUBMODULE_INIT_VALIDATE_ONLY=0|1)"
-	@echo "  submodule-update      Update submodules to latest remote (--merge)"
-	@echo "  submodule-status      Show status of each submodule"
-	@echo "  submodule-pin REPO=.. TAG=..  Pin a submodule to a tag/commit"
-	@echo ""
-	@echo "  --- Secrets + Security ---"
-	@echo "  secrets-scan          Scan for secrets against baseline (read-only)"
-	@echo "  secrets-scrub         Interactive secret audit + scrub"
-	@echo "  secrets-baseline      Refresh and verify canonical .secrets.baseline"
-	@echo "  secrets-baseline-check Verify canonical .secrets.baseline without mutation (SECRETS_BASELINE_FILE, POLICY, REPO_ROOT, EXECUTABLE)"
-	@echo "  check-secrets-files   Native read-only hook on explicit files (SECRETS_FILES, SECRETS_BASELINE_FILE)"
-	@echo "  git-unstage-files     Remove explicit files from index, preserving content (FILES)"
-	@echo "  scan-secrets          Alias for secrets-scan"
-	@echo "  scan-secrets-baseline Alias for secrets-baseline"
-	@echo "  sast-summary          Summarize Bandit JSON by severity/rule/file with baseline deltas (SAST_REPORT, SAST_SUMMARY, SAST_BASELINE)"
-	@echo "  security-audit        Observable secrets/SAST/dependency/backlog audit (SECURITY_AUDIT_HEARTBEAT_SECS, SECURITY_AUDIT_PHASE_TIMEOUT_SECS, SECURITY_AUDIT_VALIDATE_ONLY, SECURITY_AUDIT_SUMMARY)"
-	@echo "  clean-artifacts       Clean build artifacts, caches, temp files (replaces direct rm)"
-	@echo "  health-check          Verify imports and basic system health"
-	@echo "  clean-untracked       Remove reinvention-of-wheel files"
-	@echo "  clean-hooks           Remove legacy hook scripts"
-	@echo "  clean-plugins         No-op (false-done merged into enforce-stop.ts)"
-	@echo ""
-	@echo "  --- Release ---"
-	@echo "  release-list          List all GitHub releases"
-	@echo "  reviewed-head-receipt ...  Build exact-topology integration evidence after the final gate"
-	@echo "  release-readiness TAG=..  Fail-closed blockers + exact reviewed-head receipt for v0.1.2"
-	@echo "  release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0|1  Cheap read-only scheduling admission; never release proof"
-	@echo "  release-page-notes TAG=..  Build/validate bounded ledger-backed GitHub release-page notes"
-	@echo "  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings"
-	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
-	@echo "  require-dual-track-green Require exact-SHA local + hosted CI attestations (SHA, DUAL_TRACK_CI_VALIDATE_ONLY)"
-	@echo "  reviewed-head-inputs   Native review inputs: admit|record|focus|finalize (REVIEWED_HEAD_INPUTS_*, dry-plan by default; no release authority)"
-	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
-	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
-	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
-	@echo "  release-cut TAG=.. MSG=.. REVIEWED_HEAD_INTEGRATION_RECEIPT=..  The single release command (6 fail-closed steps; exact-run wait up to 90m)"
-	@echo "  release-promote TAG=.. MSG=.. REVIEWED_HEAD_INTEGRATION_RECEIPT=..  Exact-SHA ff-only development promotion; RELEASE_PROMOTE_PUBLISH=0|1 (default 1; 0 prepares guarded merge only; validate-only supported)"
-	@echo "  release-recut TAG=..  Re-trigger and await the exact tag release workflow"
-	@echo "  release-deploy TAG=.. MSG=..  Auto-deploy: merge dev->master, push, tag, wait for CI"
-	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
-	@echo "  verify-release-artifact       TAG=..  Confirm a release has published assets (exit 0 = shipped)"
-	@echo "  verify-release-completeness   TAG=..  Verify all 28 categories / 30 beta4 assets present"
-	@echo ""
-	@echo "  --- Build + Deploy ---"
-	@echo "  dist                  Build distribution tarball"
-	@echo "  build-executable      Build standalone executable (pyinstaller)"
-	@echo "  audit-linux-pyinstaller-warnings  Validate/replay the Linux PyInstaller warning policy"
-	@echo "  compare-linux-pyinstaller-warnings  Emit an exact old/new warning-graph review receipt"
-	@echo "  check-pyinstaller-warning-reviews  Require an exact receipt for every newly accepted graph"
-	@echo "  build-linux-binary-image  Build the digest-pinned Python/uv artifact environment (LINUX_BINARY_*, DOCKER_BUILDX_*, LIMA_*)"
-	@echo "  lima-docker-ensure    Provision/reuse a namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_TEMPLATE, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
-	@echo "  lima-docker-start     Start an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
-	@echo "  lima-docker-stop      Gracefully stop an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_STOP_TIMEOUT_SECS, LIMA_DOCKER_STOP_KILL_AFTER_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
-	@echo "  lima-docker-delete    Delete one stopped, exactly confirmed namespaced Lima VM (LIMA_INSTANCE, LIMA_DOCKER_DELETE_CONFIRM, LIMA_DOCKER_DELETE_KILL_AFTER_SECS, LIMA_DOCKER_DELETE_TIMEOUT_SECS, LIMA_DOCKER_DELETE_VALIDATE_ONLY)"
-	@echo "  lima-docker-status    Inspect the namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
-	@echo "  lima-docker-pull      Pull one image into namespaced Lima Docker (LIMA_INSTANCE, LIMA_IMAGE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
-	@echo "  podman-legacy-default-delete  Remove only a stopped legacy default VM (PODMAN_LEGACY_MACHINE, PODMAN_LEGACY_DELETE_TIMEOUT_SECS, PODMAN_LEGACY_DELETE_VALIDATE_ONLY)"
-	@echo "  container-build       Build container image"
-	@echo "  container-run         Run container locally"
-	@echo "  container-push        Push container image"
-	@echo "  deb-package           Build .deb package from dist/gludd binary"
-	@echo "  deb-install-deps      apt-get install dependencies from debian/control"
-	@echo "  build-sandbox-image       Build Firecracker rootfs image (Alpine + gludd deps)"
-	@echo "  vm-image-build            Build VM sandbox images (Firecracker + gVisor)"
-	@echo "  vm-image-list             List cached VM sandbox images"
-	@echo "  vm-image-clean            Remove all cached VM sandbox images"
-	@echo "  verify-sandbox-image      Integrity check on cached sandbox rootfs"
-	@echo "  clean-sandbox-images      Remove cached sandbox images"
-	@echo "  sandbox-state-dir         Print sandbox runtime-state directory"
-	@echo "  sandbox-state-list        List sandbox runtime-state contents"
-	@echo "  sandbox-state-clean       Clean sandbox runtime-state for current project"
-	@echo "  compute-model-hashes      Recompute the tracked model-artifact hash inventory"
-	@echo "  download-1.5b-model       Download the namespaced Qwen 1.5B test model"
-	@echo "  download-deepseek-1.3b    Download the namespaced DeepSeek 1.3B test model"
-	@echo "  benchmark-codegen-quality Compare local code-generation model quality"
-	@echo "  benchmark-local-model    Benchmark the configured local model"
-	@echo "  benchmark-models         Compare all configured local models"
-	@echo "  run-game-gen-1.5b        Run game generation with the namespaced Qwen 1.5B model"
-	@echo "  compare-models           Compare local and hosted model quality"
-	@echo ""
-	@echo "  --- Governance ---"
-	@echo "  test-governance       Run governance collection unit tests"
-	@echo "  governance-syntax     Validate governance role YAML syntax"
-	@echo "  governance-health     Check governance module_utils imports"
-	@echo ""
-	@echo "  --- Ansible ---"
-	@echo "  ansible-syntax        Validate playbook syntax"
-	@echo "  playbook-list         List registered playbooks"
-	@echo "  molecule-test SCENARIO=<name>   Run one canonical Molecule scenario"
-	@echo "  molecule-reset SCENARIO=<name>  Clear one scenario's Molecule-owned state"
-	@echo ""
-	@echo "  --- CI ---"
-	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
-	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN, BEFORE, AFTER, MAX_MATCHES)"
-	@echo "  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)"
-	@echo "  ci-artifact-context     bounded context from one downloaded exact-run artifact (RUN, ARTIFACT, CI_ARTIFACT_FILE, PATTERN, BEFORE, AFTER, MAX_MATCHES, CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)"
-	@echo "  ci-pyinstaller-warning-audit replay the complete warning graph from one exact-run artifact (RUN, ARTIFACT, PYINSTALLER_WARNING_*, CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)"
-	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
-	@echo "  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)"
-	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1 CI_RUN_SUMMARY_SHARD_TIMINGS=0|1"
-	@echo "  ci-failure-status        Show every durable hosted failure family"
-	@echo "  ci-failure-repair        Run make-based evidence and receipt selected repairs"
-	@echo "  ci-failure-push-guard    Block pushes with open or non-ancestral repairs"
-	@echo "  ci-await BRANCH=<ref> TIMEOUT=<s> [SHA=.. CI_AWAIT_*]  Await one exact CI identity"
-	@echo "  ci-verdict-safe        Exact all-workflow check (SHA, CI_BRANCH, legacy BRANCH, CI_CHECK_COOLDOWN_SEC, CI_VERDICT_VALIDATE_ONLY=0|1); validation never queries or records"
-	@echo "  ci-dashboard           One-shot compact CI run listing"
-	@echo "  ci-diagnose            Fetch CI failure annotations and group by root cause"
-	@echo "  ci-cooldown-status     Show remaining cooldown seconds"
-	@echo "  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)"
-	@echo "  ci-rerun RUN=<id>      Guard and rerun one observed immutable CI run"
-	@echo "  ci-recover-runner-acquisition RUN=<id>  Retry attempt 1 only when every failure is hosted-runner acquisition"
-	@echo "  ci-active              List active/in-flight CI runs"
-	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
-	@echo "  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL"
-	@echo "  ci-record-verdict      Record a known CI verdict directly, bypassing cooldown (VERDICT=success|failure|pending, SHA=<sha>)"
-	@echo "  deploy-and-forget      Single guarded push + cooldown record (BRANCH, DEPLOY_AND_FORGET_VALIDATE_ONLY=0|1)"
-	@echo ""
-	@echo "  --- Git Remote ---"
-	@echo "  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key"
-	@echo "  git-push-sandboxcom   Guarded mirror push (PUSH_REMOTE, SSH_KEY; dry-run is not remote evidence)"
-	@echo "  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd"
-	@echo "  git-fetch-sandboxcom  Fetch from sandboxcom/gludd"
-	@echo "  ship-async REF=<hash> [TARGET=master]  Run gate in background job; ff-only merge on green"
-	@echo ""
-	@echo "  --- SearXNG Research Backend ---"
-	@echo "  searx-up              Admit the controller-native SearXNG runtime"
-	@echo "  searx-down            Release controller-native SearXNG resources"
-	@echo "  searx-test            Run the native runtime/action/index contract suite"
-	@echo "  searx-molecule        Validate/run delegated setup role (SEARX_MOLECULE_VALIDATE_ONLY=0|1)"
-	@echo ""
-	@echo "  --- Disk ---"
-	@echo "  fix-hooks-tmp           temp fix target"
-	@echo "  disk-guard            Canonical disk preflight + ownership-checked cleanup (95% hard volume limit)"
-	@echo "  disk-check            Read-only canonical volume and scratch check (95% / 100 MB)"
-	@echo "  disk-cleanup-preflight  Auto-reclaim proven-idle Gludd storage, then recheck thresholds (DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0|1, DISK_CLEANUP_PREFLIGHT_DRY_RUN=0|1, DISK_CLEANUP_RECEIPT_GRACE_SECONDS>=1800)"
-	@echo "  clean-stale-resource-namespaces  Inventory/reclaim proven-inactive Gludd namespaces (STALE_RESOURCE_NAMESPACE_*; PYTHON selects an existing trusted runtime); never bypass unknown-owner or link refusal"
-	@echo "  check-disk            Pre-commit automatic cleanup guard (CHECK_DISK_VALIDATE_ONLY=0; set 1 for deterministic contract test)"
-	@echo "  check-disk-classification  Bounded JSON-lines proof of counted vs exempt /tmp/gludd-* roots"
-	@echo "  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)"
-	@echo "  disk                  Print disk usage + gludd footprint"
-	@echo "  disk-reclaim          Run bounded, heartbeat-emitting cache cleanup"
-	@echo "  git-object-store-reclaim  Inventory or conservatively reclaim Git objects (GIT_OBJECT_STORE_*)"
-	@echo "  cache-disk            Show bounded user-cache directory sizes"
-	@echo "  cache-clean           Remove the explicitly enumerated tool caches"
-	@echo "  disk-user-caches      Show accessible user-cache and data-root sizes"
-	@echo "  cache-resource-inventory  List largest children of one allowlisted cache root"
-	@echo "  cache-resource-remove     Validate or remove one exact allowlisted cache child"
-	@echo "  native-temp-artifact-inspect  Read-only exact native-cache identity (NATIVE_TEMP_ARTIFACT_PATH, NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY=0|1); no cleanup authority"
-	@echo "  uv-cache-prune-status List uv cache-prune PID, parent, age, and command"
-	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
-	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"
-	@echo "  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs"
-	@echo "  tmp-gludd-clean-ci-shards-now  Remove inactive CI/gate shard roots (TMP_GLUDD_CLEAN_VALIDATE_ONLY=0; set 1 for contract test)"
-	@echo "  tmp-gludd-clean-orphan-worktrees-now  Validate or remove proven orphan roots (TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1; use 0 only after merge)"
-	@echo "  clean-worktree-venvs  Preserve invoking/active worktrees; reclaim inactive registered venvs (CLEAN_WORKTREE_VENVS_VALIDATE_ONLY=0|1)"
-	@echo "  clean-worktree-caches  Remove generated venv/test/tool caches from worktrees"
-	@echo ""
-	@echo "  --- OpenCode Database Maintenance ---"
-	@echo "  opencode-disk         Bounded data usage using the authoritative OpenCode DB path"
-	@echo "  opencode-clean        Offline bounded DB/cache cleanup; refuses while OpenCode runs"
-	@echo "  opencode-clean-hard   Offline aggressive cache/log cleanup; refuses while OpenCode runs"
-	@echo "  opencode-db-stats     Bounded read-only table counts"
-	@echo "  opencode-db-schema    Bounded read-only schema report"
-	@echo "  opencode-db-sample    Bounded read-only timestamp sample"
-	@echo "  opencode-db-prune     Offline bounded recursive session/event prune"
-	@echo "  opencode-db-vacuum-incremental  Safe PRAGMA incremental_vacuum (online)"
-	@echo "  opencode-db-vacuum-full        Full VACUUM (needs OPENCODE_MAINTENANCE_FORCE=1 while online)"
-	@echo "  opencode-db-compact     Aggressive prune then compact via sqlite3 backup API (OPENCODE_RETENTION_DAYS, OPENCODE_MAINTENANCE_FORCE)"
-	@echo ""
-	@echo "  --- Recovery ---"
-	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
-	@echo "  reap-stale-collection-locks  Reap only old project-owned collection/gate-refresh locks (APPLY=1)"
-	@echo "  replay-codex-file-changes  Atomically validate/replay a bounded Codex file-change range"
-	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
-	@echo "  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)"
-	@echo "  restore-opencode      Restore .opencode/ (backup then git fallback) + clear cache"
-	@echo "  verify-opencode-backup Verify .opencode.orig/ is current (files + shared.ts exports)"
-	@echo ""
-	@echo "  --- Other ---"
-	@echo "  smoke                 Quick daemon boot health check"
-	@echo "  clean                 Remove ignored build artifacts while preserving tracked templates (CLEAN_VALIDATE_ONLY=0|1)"
-	@echo "  dist-clean            Remove distribution artifacts"
-	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
-	@echo ""
-	@echo "  --- Complete Target Index ---"
-	@$(PYTHON) -m scripts.check_make_help --print-index
-	@echo "  --- New Targets ---"
-
-	@echo "  normalize-task-integrityNormalize legacy TASKS metadata and reopen unsupported completions"
-	@echo "  install-opa             install opa via brew"
-	@echo "  gate-local              fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
-	@echo "  bump-version            bump version in all files (pyproject.toml, __init__.py, README) at once"
-	@echo "  check-version-consistencyverify version matches across pyproject.toml, __init__.py, and README"
-	@echo "  check-gate-fresh        validate .gate-status is fresh and all phases pass — replaces broken _gate-fresh-check inline shell"
-	@echo "  pipeline-health         verify both local and remote pipelines are actually running (not stalled/zombie)"
-	@echo "  pipeline-status         exact pushed-SHA local/all-workflow status and automatic JSON handoff (PIPELINE_STATUS_*)"
-	@echo "  status-heartbeat         Refresh producer-owned proof state (INTERVAL, COUNT, STATUS_HEARTBEAT_VALIDATE_ONLY, STATUS_HEARTBEAT_STOP_ON_TERMINAL=0|1, PIPELINE_STATUS_*)"
-	@echo "  gate-all-background     run gate-all in background, poll with gate-status-check"
-	@echo "  target-two              Second test target"
-	@echo "  target-one              First test target"
-	@echo "  my-target               Duplicate target"
-	@echo "  my-secret-scanner       Scan for secrets"
-	@echo "  zzyx-test               A test target with no keyword match"
-	@echo "  debug-test-target       Debug test"
-	@echo "  foo-test                Test"
-	@echo ""
-	@echo ""
+	@printf '%s\n' \
+		"Usage: make [target]" \
+		"" \
+		"  --- Setup ---" \
+		"  init                  Set up project (dirs + deps)" \
+		"  sync                  Atomically sync an explicit locked dependency profile set (DEPENDENCY_PROFILE_*)" \
+		"  sync-ansible-native-format Native locked/inexact dev tooling sync (ANSIBLE_FORMAT_SYNC_*, dry-plan by default)" \
+		"  uv-cache-path         Print the sandbox-writable Gludd uv cache path" \
+		"  migrate-up            Upgrade an explicit database URL to a revision (MIGRATE_DATABASE_URL, MIGRATE_REVISION)" \
+		"  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)" \
+		"  test-local-model-inference  Locked optional-runtime smoke (LOCAL_MODEL_INFERENCE_MODEL_PATH, LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0|1)" \
+		"  clean-e2e-small-model       Remove only the reproducible /tmp GGUF materialization (E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=0|1)" \
+		"  clean-hf-cache             Diagnose/reclaim Gludd-owned unleased models (CLEAN_HF_CACHE_ROOT, CLEAN_HF_CACHE_REQUIRED_BYTES, CLEAN_HF_CACHE_VALIDATE_ONLY=0|1)" \
+		"  validate-ansible-runtime-boundary  Validate split core/controller/managed-host artifacts" \
+		"  build-ansible-execution-environment  Build the locked controller EE (ANSIBLE_EE_*)" \
+		"  prepare-ansible-execution-environment-context Prepare one reviewed native context without image build (ANSIBLE_EE_*)" \
+		"  verify-ansible-execution-environment Verify one digest-addressed controller EE (ANSIBLE_EE_*)" \
+		"  check-collection-python-boundary Enforce exact/strict-zero collection migration inventory" \
+		"  check-resource-ownership Enforce exact application acquisition-to-teardown evidence (RESOURCE_OWNERSHIP_*)" \
+		"  update-ansible-runtime-lock Refresh deterministic EE input hashes" \
+		"  stage-ansible-runtime-collections Prepare/replay explicit native Galaxy artifacts (ANSIBLE_COLLECTION_STAGE_*, validate-only by default)" \
+		"  resolve-ansible-runtime-requirements Compile complete staged EE inputs (ANSIBLE_EE_COLLECTION_ROOT, ANSIBLE_EE_RESOLUTION_OUTPUT, ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1)" \
+		"  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)" \
+		"  inspect-ansible-searxng-source Read eleven exact frozen source/default-build inputs (ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0|1)" \
+		"  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)" \
+		"  update-collection-python-boundary-inventory Refresh exact legacy migration inventory" \
+		"  deps-audit            Fail-closed Python dependency truth audit" \
+		"  core-dependency-ownership-refresh  Reconcile direct-core ownership (CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY=0|1)" \
+		"  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)" \
+		"  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)" \
+		"  node-deps-audit       Audit locked Node deps (NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)" \
+		"  freellmapi-upstream-admission  Validate/refresh the non-runnable upstream candidate (FREELLMAPI_ADMISSION_TAG, FREELLMAPI_ADMISSION_COMMIT, FREELLMAPI_ADMISSION_LIVE=0|1, FREELLMAPI_ADMISSION_OUTPUT)" \
+		"  freellmapi-upstream-build  Validate/run the exact-source upstream suite (FREELLMAPI_BUILD_LIVE=0|1, FREELLMAPI_BUILD_CANDIDATE, FREELLMAPI_BUILD_PLAN, FREELLMAPI_BUILD_REPORT)" \
+		"  freellmapi-three-arm-replay  Build/validate/replay exact v0.11.1 without promotion (FREELLMAPI_THREE_ARM_MODE, FREELLMAPI_THREE_ARM_CANDIDATE, FREELLMAPI_THREE_ARM_PLAN, FREELLMAPI_THREE_ARM_CORPUS, FREELLMAPI_THREE_ARM_REPORT)" \
+		"  bootstrap             init + lint + test + healthcheck" \
+		"  install-hooks         Install pre-commit hooks (secrets, lint, collect)" \
+		"  install-workflow-hook Validate/install the tracked GitHub workflow YAML hook (INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)" \
+		"  install-bats          Install bats-core via Homebrew" \
+		"" \
+		"  --- Quality ---" \
+		"  gate-all                full CI-matching gate: all unit + integration + e2e + molecule tests" \
+		"  gate-full               full gate matching CI: gate-refresh + integration + e2e + molecule" \
+		"  gate-release-phases     bounded integration + e2e + molecule release phases (GATE_RELEASE_*)" \
+		"  test-atomic-validate    verify atomic target creation with tempfile validation" \
+		"  gate-check              Run gate check" \
+		"  lint                  Run ruff linter" \
+		"  lint-css              Run locked Stylelint with the hosted CSS gate inputs" \
+		"  lint-python           Run the canonical Python Ruff gate (application + tests)" \
+		"  lint-make             Run duplicate-target, parity, and Make dry-run validation" \
+		"  lint-files            Run ruff linter on FILES only" \
+		"  check-molecule-yaml   Complete native inputs (MOLECULE_YAML_LINT_TIMEOUT_SECONDS=1..120, MOLECULE_YAML_VALIDATE_ONLY=0|1)" \
+		"  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)" \
+		"  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES" \
+		"  check-file-line-limits  Enforce <2500 lines on tracked or staged content (FILE_LINE_LIMIT_POLICY, FILE_LINE_LIMIT_STAGED=0|1)" \
+		"  check-duplicate-code  Reject new staged/committed production clones with locked jscpd (DUPLICATE_CODE_*)" \
+		"  split-makefile-layout  Validate/apply the ordered make/*.mk layout (MAKEFILE_SPLIT_APPLY=0|1)" \
+		"  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)" \
+		"  presentation-browser-install Check/install pinned Chromium + WebKit (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)" \
+		"  presentation-browser-install-deps Validate/install Playwright browser system libraries (PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0|1)" \
+		"  presentation-browser-test   Validate/run bounded Chromium + WebKit acceptance (PRESENTATION_BROWSER_VALIDATE_ONLY=0|1)" \
+		"  presentation-safari-test    Validate/run bounded native Safari smoke (PRESENTATION_SAFARI_VALIDATE_ONLY=0|1)" \
+		"  presentation-pages-probe    Compare the public Pages artifact with an expected exact SHA" \
+		"  lint-fix              Run ruff with auto-fix" \
+		"  lint-fix-files        Run ruff auto-fix on FILES only" \
+		"  typecheck             Run mypy" \
+		"  typecheck-scope       Run strict mypy on explicit FILES without unrelated override noise" \
+		"  check-types           Flag Any usage in Python annotations (tight types)" \
+		"  check-types-baseline  Same scan, tolerating config/type_any_baseline.txt" \
+		"  healthcheck           Verify imports work" \
+		"  backlog-audit         Observed checked-task audit (BACKLOG_AUDIT_VALIDATE_ONLY, BACKLOG_AUDIT_COLLECT, BACKLOG_AUDIT_VERDICTS, OBSERVED_*)" \
+		"  qa                    Run lint + typecheck + test + healthcheck" \
+		"  validate              Full validation (lint + typecheck + test + ansible + healthcheck)" \
+		"  add-target            Add a new Makefile target with auto-categorization" \
+		"  edit-target           Edit an existing Makefile target recipe" \
+		"  edit-makefile-target  Edit a Makefile target definition via a file" \
+		"  validate-makefile     Validate Makefile targets for duplicates" \
+		"  gate                  Full gate: GATE_TEST_PROFILE=native|release (release uses canonical CPython3.11/-W error/one-worker evidence); GATE_EXACT_SHA_RESUME=0|1, GATE_MAX_FILES_PER_BATCH=1..32, GATE_BATCH_WORKERS=1..2; unchanged 85/75 floors" \
+		"  gate-admission-config Safely validate GATE_TEST_PROFILE=native|release and bounded resume/batch/worker policy without running a gate" \
+		"  pants-launcher-bootstrap Acquire/verify the exact project-local Pants launcher (PANTS_LAUNCHER_*)" \
+		"  pants-unit-cache-lane Pants hermetic cross-commit pure-unit lane (PANTS_UNIT_CACHE_*)" \
+		"  pants-unit-cache-nightly Compare cached and forced-fresh nodes/outcomes/coverage (PANTS_UNIT_CACHE_*)" \
+		"  gate-background           Launch one identity-tracked gate in an isolated session (forwards GATE_TEST_PROFILE and GATE_* policy)" \
+		"  gate-background-observed  Launch the selected gate profile and keep its automation owner alive while polling" \
+		"  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)" \
+		"  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM" \
+		"  gate-audit            Gate + coverage audit (85% per-file threshold)" \
+		"  coverage-files        Observable targeted coverage (COVERAGE_* plus OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_QUIET_SECS, OBSERVED_MAX_SECS, OBSERVED_RETAIN_RUNS)" \
+		"  observed-status       Print current/exact retained command status (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)" \
+		"  observed-tail         Print bounded current/exact retained log tail (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)" \
+		"  run-watched           Observe one bounded command with quoted child arguments (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)" \
+		"  gate-async            Launch gate detached (non-blocking); writes .gate-status" \
+		"  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)" \
+		"  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)" \
+		"  gate-lite-tail        Print a bounded latest gate-lite-log snapshot (GATE_TAIL_LINES=80)" \
+		"  triage-failures       Incrementally group streamed failures (LOG, TRIAGE_STATE, TRIAGE_FORMAT)" \
+		"  collect-check         Fast collection-error gate" \
+		"  pre-commit-check      Fast lint + collection + typecheck commit preflight" \
+		"  check-gate-failure-promotions  Validate owned fast-admission failure nodes" \
+		"  integration-admission  Fail-fast feature-branch checks before the full gate" \
+		"  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)" \
+		"  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace (LOG, TESTPATH, PYTEST_ARGS, RUN_ID)" \
+		"  test-xdist-trace-summary  Summarize one durable trace/run (LOG, RUN_ID)" \
+		"  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)" \
+		"  check-make-help       Verify every public Makefile target is listed by make help" \
+		"  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints" \
+		"  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow" \
+		"  codex-system-skill-read  Print a codex system skill's SKILL.md (SKILL=name [CODEX_SKILLS_ROOT=path])" \
+		"  fix-init-drift        Fix __init__.py drift: docstrings, empty namespace inits, unsorted __all__" \
+		"  fix-docs-drift        Fix mechanical markdown drift: whitespace, fences, stale audit links" \
+		"  report-docs-drift     Enumerate hand-fixable markdown issues (tables, tabs, headers, links)" \
+		"  feature-spec-inventory  Inventory all Gludd feature specs + OpenCode behavioral specs (FORMAT=human|json)" \
+		"  migrate-test-env-writes  Rewrite test environment mutations to the guarded helper" \
+		"  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss" \
+		"  replace-text-b64      Exact old/new base64 replacement via scripts/replace_text.py" \
+		"  mkdir-p               Create an allowed workspace or /tmp/gludd-* directory" \
+		"  replace-lines         Replace an allowed file line range from NEW_FILE" \
+		"  worktree-state        Emit path-qualified current git worktree state as JSON" \
+		"  all-worktree-state    Emit path-qualified state for every registered worktree" \
+		"  main-worktree-state   Emit canonical main checkout state as JSON" \
+		"  worktree-guard        Fail if the current worktree is dirty" \
+		"  main-worktree-guard   Fail if /Users/shawnwilson/gludd is dirty" \
+		"  release-worktree-guard  Emit release evidence only when current and main worktrees are clean" \
+		"  status-claim-guard    Emit clean tokens only when current and main worktrees are clean" \
+		"  workflow-state        Emit local/remote/GHA git state-machine evidence as JSON" \
+		"  workflow-gate         Fail if local workflow state is unsafe for release evidence" \
+		"  commit-ready          Fail if current work is not clean enough to be committed/tested" \
+		"  gha-ready             Fail if remote CI would not run the current committed HEAD" \
+		"  merge-ready           Fail if development cannot merge to master without topology repair" \
+		"  codemod-lean-enforcement-plugins  Slim counted enforcement plugin entrypoints" \
+		"  sast                  Run bandit SAST" \
+		"  sbom                  Generate CycloneDX SBOM" \
+		"  pip-audit             Audit dependencies for vulnerabilities" \
+		"  pip-audit-gate        Fail on every non-adjudicated Python advisory" \
+		"  security              Full security: sast + sbom + Python/Node dependency audits" \
+		"  test-unit             Unit tests only" \
+		"  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)" \
+		"  test-ci-dual-track-local  Canonical local all-shard evidence (DUAL_TRACK_LOCAL_VALIDATE_ONLY, PYTEST_ARGS, MAX_FILES_PER_BATCH, DUAL_TRACK_RESUME, DUAL_TRACK_WATCHDOG_OWNED_GATE)" \
+		"  test-integration      Integration tests" \
+		"  integration-health   Run the observable integration gate with isolated temp paths" \
+		"  test-e2e              End-to-end tests" \
+		"  test-e2e-azure        Azure E2E — env-pointer (CI-friendly)" \
+		"  test-e2e-azure-provision  Azure full-provision E2E (opt-in, costly)" \
+		"  test-e2e-azure-provision-sourced  Source AZURE_E2E_ENV_FILE, then provision (AZURE_E2E_VALIDATE_ONLY=0|1)" \
+		"  test-e2e-aws          AWS E2E — env-pointer (CI-friendly)" \
+		"  test-e2e-gcp          GCP E2E — env-pointer (CI-friendly)" \
+		"  test-e2e-runpod       RunPod E2E — env-pointer (CI-friendly)" \
+		"  test-e2e-providers    All E2E provider tests" \
+		"  test-e2e-games        Game generation E2E — AI generates games, compares frames (no Azure provision)" \
+		"  test-e2e-games-local  Game unit tests only — video compare, game gen, no Azure needed" \
+		"  test-e2e-games-local-model  Hermetic/managed/external game E2E (LOCAL_MODEL_E2E_MODE, LOCAL_MODEL_PATH, LOCAL_MODEL_BASE_URL, LOCAL_MODEL_NAME, LOCAL_MODEL_KEY, LOCAL_MODEL_GAME, PYTEST_ARGS)" \
+		"  test-e2e-game-pipeline  Full game-dev pipeline — all 24 models × 4 games (CI_SAFE=1 for CI-safe subset)" \
+		"  game-reference-preflight  Acquire/verify approved FPS clips before Azure provisioning" \
+		"  test-e2e-games-provision  Source AZURE_E2E_ENV_FILE; Azure game E2E (GAME_E2E_TIMEOUT_SECS>=3600)" \
+		"  e2e-audit-azure     List all E2E runs with PASS/FAIL/RUNNING status" \
+		"  e2e-latest-log      Show exit code and error summary for latest E2E run" \
+		"  azure-cleanup-e2e   Delete gludd-gpu* groups and visibly verify absence" \
+		"  test-e2e-postgres-multiworker  Live Postgres 16 + two-worker Gunicorn acceptance" \
+		"  podman-project-up   Start an explicit project Podman machine and wait for readiness" \
+		"  podman-project-recreate  Recreate one gludd-namespaced Podman test machine" \
+		"  podman-project-delete  Delete one gludd-namespaced Podman machine with bounded progress" \
+		"  test-multi-model-pipeline  All multi-model pipeline E2E + integration tests" \
+		"  test-local-model-pipeline  Local model pipeline E2E tests" \
+		"  test-project-type-pipeline E2E: test_project_type_pipeline.py" \
+		"  test-opencode-e2e     .opencode/ plugin load+invocation tests" \
+		"  test-opencode-e2e-hour  1-hour E2E spawner test (TIMEOUT=3600)" \
+		"  test-specific         Single test (TESTFILE=path::TestClass::test_name)" \
+		"  test-specific-pyver   Single test under explicit Python (TESTFILE, PYTHON_VERSION)" \
+		"  test-files            Multiple tests (TESTFILES, PYTEST_ARGS, UV_PROJECT_ENVIRONMENT); explicit environments route nested UV consistently" \
+		"  grep                  Repository text search (Q=regex SEARCH_PATH=path)" \
+		"  ci-shards-diagnostic Serial collect-all diagnostics (CI_SHARDS_DIAGNOSTIC_SHARDS, CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY=0|1; default 1)" \
+		"  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)" \
+		"  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)" \
+		"  test-count            Count collected tests" \
+		"  test-failures         Show bounded cached failures (TEST_FAILURES_CACHE, TEST_FAILURES_LIMIT)" \
+		"provider-smoke Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json" \
+		"  local-accelerator-inventory  Discover local GPU/TPU resources without provisioning" \
+		"  mac-unified-memory-smoke  Local Apple unified-memory smoke (LIVE=1 BACKEND=mps ARGS=...)" \
+		"  gpu-hardware-smoke        Local AMD/NVIDIA GPU smoke (LIVE=1 BACKEND=cuda|rocm ARGS=...)" \
+		"  provider-harness      Validate Azure/RunPod credentials, billing bounds, and optional Gludd telemetry" \
+		"  azure-harness         Azure provider harness (LIVE=1 for read-only credential check)" \
+		"  azure-cleanup-inspect Read-only provisioning states for Gludd Azure E2E resource groups" \
+		"  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)" \
+		"  test-opa-policies     Execute Rego policy tests when opa is installed" \
+		"  check-make-target-contract  Validate target variables, help, and behavioral examples" \
+		"  check-generated-artifact-hygiene  Validate tracked generated Markdown/JSON/YAML postconditions" \
+		"  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks" \
+		"  ps                    Report repository-owned test, audit, and supervisor processes" \
+		"  list-plugins          Report the active enforcement plugin roster" \
+		"  terminate-project-process-tree  Identity-check and preview/apply one project process tree" \
+		"  kill-worktree-e2e    Stop one verified local E2E tree (PID=; validate with KILL_WORKTREE_E2E_VALIDATE_ONLY=1)" \
+		"  status-snapshot       Rewrite SESSION.md gate evidence (STATUS_SNAPSHOT_VALIDATE_ONLY=1 for read-only validation)" \
+		"  work-item             Administrative focus/support/status; WORK_ITEM_ACTION, WORK_ITEM_ID, WORK_ITEM_REASON, WORK_ITEM_VALIDATE_ONLY" \
+		"  codex-stop-guard      Fail closed when tracked work remains; emit a Codex stop challenge token" \
+		"  codex-stop-confirm    Confirm a previously issued token before recording a valid stop" \
+		"  iam-headless-smoke    Validate least-privilege provider manifests without credentials" \
+		"  check-task-integrity  Require changed files to map to registered tasks" \
+		"  validate-task-ledger  Validate TASKS.md metadata and completion evidence" \
+		"  check-dispatch-dedup Validate the persistent content-addressed dispatch ledger" \
+		"  test-and-commit       Run tests then commit if green (MSG='msg')" \
+		"  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check" \
+		"  test-live-zai         Live GLM model test (requires API key)" \
+		"  test-guardrails       Test guardrail infrastructure" \
+		"  test-install          Run install.sh bats tests" \
+		"  test-language-expert  Language collection E2E: schema + unit + integration + coverage (>=85%)" \
+		"" \
+		"  --- Terraform ---" \
+		"  tf-cache-warm         Download all providers ONCE into the shared plugin cache" \
+		"  tf-init STACK=s/n     Init a stack using the shared cache (no re-download)" \
+		"  tf-init-local         State-free Azure stack init (STACK, TF_INIT_LOCAL_VALIDATE_ONLY)" \
+		"  tf-validate STACK=s/n Validate a stack against the shared cache" \
+		"  tf-versions-check     Enforce stacks match infra/terraform/versions.tf" \
+		"  tf-clean              Remove the shared plugin cache" \
+		"" \
+		"  --- Git ---" \
+		"  ci-cancel               cancel a CI run by id — use for zombie runs blocking push" \
+		"  (Single-source policy: features land on development first, then merge to master)" \
+		"  git-status            Show git status" \
+		"  git-owned-checkpoint-push     Checkpoint explicit owned files (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_VALIDATE_ONLY)" \
+		"  git-owned-checkpoint-restore  Restore exact top checkpoint, retaining evidence (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_VALIDATE_ONLY)" \
+		"  git-diff              Show diff stats" \
+		"  git-staged            Show staged changes" \
+		"  git-log               Show recent commits" \
+		"  git-show-commit C=<sha>  Show hash, parents, committer time, subject, and files" \
+		"  git-show-full SHA=<sha>  Show a host-independent canonical patch" \
+		"  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity" \
+		"  branches-unmerged-development  List every local branch tip not reachable from development" \
+		"  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON" \
+		"  branch-reconciliation-summary RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_DETAILS=0|1 RECONCILE_CURRENT_ONLY=0|1 RECONCILE_QUIET_PROGRESS=0|1 RECONCILE_HEAD_SEMANTICS=0|1  Exhaustively classify and optionally summarize deduplicated heads" \
+		"  git-add FILES='...'   Stage specific files" \
+		"  git-add-all           Stage all changes" \
+		"  git-commit MSG='...'  Commit staged changes" \
+		"  commit-and-ship MSG='...'  Lint-fix, stage, and commit through the guarded shipping target" \
+		"  commit-and-ship-push MSG='...'  Commit, push development, and request the guarded CI verdict" \
+		"  rm-files FILES='...'  Remove only explicitly named workspace paths" \
+		"  git-reset FILES='...' Reset to ref (soft by default)" \
+		"  git-uncommit-last CONFIRM=1  Uncommit local HEAD while preserving all files" \
+		"  git-branch MSG='...'  Create branch" \
+		"  git-checkout MSG='...' Switch branch" \
+		"  git-merge MSG='...'   Merge branch with --no-ff" \
+		"  resolve-development-conflicts MERGE_SOURCE=<branch> APPLY=0|1  Preserve development on conflicts" \
+		"  git-rebase-abort      Abort an in-progress rebase" \
+		"  git-rebase-continue   Continue after resolving rebase conflicts" \
+		"  git-rebase-skip       Skip duplicate/current rebase commit" \
+		"  git-cherry-pick SHA=<commit> Cherry-pick a specific commit" \
+		"  git-cherry-pick-list SHAS='a b ...' Cherry-pick commits in order" \
+		"  feature-start MSG='...' Create and switch to feature branch" \
+		"  feature-done MSG='...' Test, merge to master with --no-ff" \
+		"  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)" \
+		"  agent-worktree-base BRANCH=<name> BASE=<ref>  Isolated worktree from an explicit base ref" \
+		"  workstream-register BRANCH=<name> WORKTREE=<path>  Protect an active logical workstream" \
+		"  workstream-unregister BRANCH=<name>  Release a completed logical workstream" \
+		"  wt-prune-safe         Prune clean worktrees except registered active workstreams (ACTIVE_WORKSTREAM_REGISTRY, WT_PRUNE_VALIDATE_ONLY)" \
+		"  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)" \
+		"  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge" \
+		"  agent-worktree-list           List active git worktrees" \
+		"  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)" \
+		"  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command" \
+		"  azure-self-improve-live-proof  Discover, select, deploy, evaluate, and tear down one bounded Azure candidate" \
+		"  azure-accelerator-role-apply Apply/validate the exact GPU role through Microsoft SDKs (AZURE_ACCELERATOR_*)" \
+		"  azure-accelerator-role-args  Deprecated compatibility argv for Azure CLI role creation" \
+		"  azure-accelerator-role-update-args  Emit validated NUL arguments to narrow an existing GPU role" \
+		"  azure-accelerator-auth-args  Emit validated NUL arguments for its Azure SP credential command" \
+		"  azure-containerapp-environment-bootstrap-args  Emit one operator-owned shared GPU environment deployment" \
+		"  azure-accelerator-auth-check Secret-safe validation of Azure CLI --json-auth output" \
+		"  azure-accelerator-auth-store Preserve stdin/source JSON as immutable protected generations" \
+		"  azure-containerapp-preflight Traced read-only named-environment GPU sizing and quota proof" \
+		"  azure-containerapp-terraform-phase  Owned app-only Terraform phase (AZURE_CONTAINERAPP_TF_*)" \
+		"  azure-containerapp-environment-guard  Read-only protected GitHub Environment admission" \
+		"  azure-containerapp-live-proof  Hermetic/live bounded deploy-infer-destroy proof (AZURE_CONTAINERAPP_LIVE_PROOF_*)" \
+		"  test-azure-containerapp-coverage  Hermetic Azure Container Apps tests with 85/75 coverage gates" \
+		"  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)" \
+		"  test-self-improve-catalog-truth  Replay pinned catalog fixture (SELF_IMPROVE_CATALOG_LIVE=0|1)" \
+		"  test-self-improve-multifile      Replay pinned multi-file fixture (SELF_IMPROVE_MULTIFILE_LIVE=0|1)" \
+		"  test-self-improve-failure-corpus Replay typed local failures offline (SELF_IMPROVE_FAILURE_CORPUS_FILE)" \
+		"  test-self-improve-acceptance-matrix Validate/run the serial ten-shape contract (SELF_IMPROVE_ACCEPTANCE_MATRIX_*)" \
+		"  test-self-improve-private-policy  Run hermetic fake-local/fake-Azure project privacy E2E coverage" \
+		"  test-self-improve-all            Deprecated alias for one explicit Codex-reference benchmark" \
+		"  self-improve-promotion-marker    Verify an exact promotion marker on development (SELF_IMPROVE_PROMOTION_* variables)" \
+		"  git-index                    Index git log into SQLite (.gludd/git_history.db)" \
+		"  git-search Q='...'           Search indexed git history" \
+		"  git-stats                    Show git history index statistics" \
+		"  agent-report                 Agent activity dashboard (reads /tmp/gludd-agent-results.jsonl)" \
+		"  check-duplicate-targets           Detect Makefile targets declared on parallel branches" \
+		"  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch" \
+		"  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development" \
+		"  development-push             Push the development branch to remote" \
+		"  development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1  Transactional reconciliation into development (dry-run default)" \
+		"  development-merge-forward-batch SOURCES='<refs>' APPLY=0|1  Atomic ancestry-only reconciliation for multiple superseded refs" \
+		"  development-fast-forward SOURCE=<ref> EXPECTED_BEFORE_SHA=<sha> EXPECTED_AFTER_SHA=<sha> APPLY=0|1  Guarded development fast-forward (default 0; APPLY=1 requires full 40-character SHAs)" \
+		"  development-merge-to-master  Merge development into master (release prep; CI-green required)" \
+		"  development-start            Create development branch from master if it doesn't exist" \
+		"  development-status           Show commits on development not yet on master" \
+		"  git-tag-push TAG=<t> [COMMIT=<sha>] [MSG='...']  Create annotated tag + push to sandboxcom" \
+		"  git-tag-rm TAG=<t>           Delete tag locally and on sandboxcom" \
+		"  git-tag-delete TAG=<t>       Alias for git-tag-rm" \
+		"  git-tag-move TAG=<t> MSG='..'  Delete old tag + create new at HEAD + push" \
+		"  submodule-init        Initialize submodules or validate configuration (SUBMODULE_INIT_VALIDATE_ONLY=0|1)" \
+		"  submodule-update      Update submodules to latest remote (--merge)" \
+		"  submodule-status      Show status of each submodule" \
+		"  submodule-pin REPO=.. TAG=..  Pin a submodule to a tag/commit" \
+		"" \
+		"  --- Secrets + Security ---" \
+		"  secrets-scan          Scan for secrets against baseline (read-only)" \
+		"  secrets-scrub         Interactive secret audit + scrub" \
+		"  secrets-baseline      Refresh and verify canonical .secrets.baseline" \
+		"  secrets-baseline-check Verify canonical .secrets.baseline without mutation (SECRETS_BASELINE_FILE, POLICY, REPO_ROOT, EXECUTABLE)" \
+		"  check-secrets-files   Native read-only hook on explicit files (SECRETS_FILES, SECRETS_BASELINE_FILE)" \
+		"  git-unstage-files     Remove explicit files from index, preserving content (FILES)" \
+		"  scan-secrets          Alias for secrets-scan" \
+		"  scan-secrets-baseline Alias for secrets-baseline" \
+		"  sast-summary          Summarize Bandit JSON by severity/rule/file with baseline deltas (SAST_REPORT, SAST_SUMMARY, SAST_BASELINE)" \
+		"  security-audit        Observable secrets/SAST/dependency/backlog audit (SECURITY_AUDIT_HEARTBEAT_SECS, SECURITY_AUDIT_PHASE_TIMEOUT_SECS, SECURITY_AUDIT_VALIDATE_ONLY, SECURITY_AUDIT_SUMMARY)" \
+		"  clean-artifacts       Clean build artifacts, caches, temp files (replaces direct rm)" \
+		"  health-check          Verify imports and basic system health" \
+		"  clean-untracked       Remove reinvention-of-wheel files" \
+		"  clean-hooks           Remove legacy hook scripts" \
+		"  clean-plugins         No-op (false-done merged into enforce-stop.ts)" \
+		"" \
+		"  --- Release ---" \
+		"  release-list          List all GitHub releases" \
+		"  reviewed-head-receipt ...  Build exact-topology integration evidence after the final gate" \
+		"  release-readiness TAG=..  Fail-closed blockers + exact reviewed-head receipt for v0.1.2" \
+		"  release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0|1  Cheap read-only scheduling admission; never release proof" \
+		"  release-page-notes TAG=..  Build/validate bounded ledger-backed GitHub release-page notes" \
+		"  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings" \
+		"  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)" \
+		"  require-dual-track-green Require exact-SHA local + hosted CI attestations (SHA, DUAL_TRACK_CI_VALIDATE_ONLY)" \
+		"  reviewed-head-inputs   Native review inputs: admit|record|focus|finalize (REVIEWED_HEAD_INPUTS_*, dry-plan by default; no release authority)" \
+		"  release-view TAG=..   Show a published GitHub Release + its assets" \
+		"  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)" \
+		"  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)" \
+		"  release-cut TAG=.. MSG=.. REVIEWED_HEAD_INTEGRATION_RECEIPT=..  The single release command (6 fail-closed steps; exact-run wait up to 90m)" \
+		"  release-promote TAG=.. MSG=.. REVIEWED_HEAD_INTEGRATION_RECEIPT=..  Exact-SHA ff-only development promotion; RELEASE_PROMOTE_PUBLISH=0|1 (default 1; 0 prepares guarded merge only; validate-only supported)" \
+		"  release-recut TAG=..  Re-trigger and await the exact tag release workflow" \
+		"  release-deploy TAG=.. MSG=..  Auto-deploy: merge dev->master, push, tag, wait for CI" \
+		"  release-delete TAG=.. Delete GitHub Release + local + remote git tags" \
+		"  verify-release-artifact       TAG=..  Confirm a release has published assets (exit 0 = shipped)" \
+		"  verify-release-completeness   TAG=..  Verify all 28 categories / 30 beta4 assets present" \
+		"" \
+		"  --- Build + Deploy ---" \
+		"  dist                  Build distribution tarball" \
+		"  build-executable      Build standalone executable (pyinstaller)" \
+		"  audit-linux-pyinstaller-warnings  Validate/replay the Linux PyInstaller warning policy" \
+		"  compare-linux-pyinstaller-warnings  Emit an exact old/new warning-graph review receipt" \
+		"  check-pyinstaller-warning-reviews  Require an exact receipt for every newly accepted graph" \
+		"  build-linux-binary-image  Build the digest-pinned Python/uv artifact environment (LINUX_BINARY_*, DOCKER_BUILDX_*, LIMA_*)" \
+		"  lima-docker-ensure    Provision/reuse a namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_TEMPLATE, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)" \
+		"  lima-docker-start     Start an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)" \
+		"  lima-docker-stop      Gracefully stop an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_STOP_TIMEOUT_SECS, LIMA_DOCKER_STOP_KILL_AFTER_SECS, LIMA_DOCKER_VALIDATE_ONLY)" \
+		"  lima-docker-delete    Delete one stopped, exactly confirmed namespaced Lima VM (LIMA_INSTANCE, LIMA_DOCKER_DELETE_CONFIRM, LIMA_DOCKER_DELETE_KILL_AFTER_SECS, LIMA_DOCKER_DELETE_TIMEOUT_SECS, LIMA_DOCKER_DELETE_VALIDATE_ONLY)" \
+		"  lima-docker-status    Inspect the namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)" \
+		"  lima-docker-pull      Pull one image into namespaced Lima Docker (LIMA_INSTANCE, LIMA_IMAGE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)" \
+		"  podman-legacy-default-delete  Remove only a stopped legacy default VM (PODMAN_LEGACY_MACHINE, PODMAN_LEGACY_DELETE_TIMEOUT_SECS, PODMAN_LEGACY_DELETE_VALIDATE_ONLY)" \
+		"  container-build       Build container image" \
+		"  container-run         Run container locally" \
+		"  container-push        Push container image" \
+		"  deb-package           Build .deb package from dist/gludd binary" \
+		"  deb-install-deps      apt-get install dependencies from debian/control" \
+		"  build-sandbox-image       Build Firecracker rootfs image (Alpine + gludd deps)" \
+		"  vm-image-build            Build VM sandbox images (Firecracker + gVisor)" \
+		"  vm-image-list             List cached VM sandbox images" \
+		"  vm-image-clean            Remove all cached VM sandbox images" \
+		"  verify-sandbox-image      Integrity check on cached sandbox rootfs" \
+		"  clean-sandbox-images      Remove cached sandbox images" \
+		"  sandbox-state-dir         Print sandbox runtime-state directory" \
+		"  sandbox-state-list        List sandbox runtime-state contents" \
+		"  sandbox-state-clean       Clean sandbox runtime-state for current project" \
+		"  compute-model-hashes      Recompute the tracked model-artifact hash inventory" \
+		"  download-1.5b-model       Download the namespaced Qwen 1.5B test model" \
+		"  download-deepseek-1.3b    Download the namespaced DeepSeek 1.3B test model" \
+		"  benchmark-codegen-quality Compare local code-generation model quality" \
+		"  benchmark-local-model    Benchmark the configured local model" \
+		"  benchmark-models         Compare all configured local models" \
+		"  run-game-gen-1.5b        Run game generation with the namespaced Qwen 1.5B model" \
+		"  compare-models           Compare local and hosted model quality" \
+		"" \
+		"  --- Governance ---" \
+		"  test-governance       Run governance collection unit tests" \
+		"  governance-syntax     Validate governance role YAML syntax" \
+		"  governance-health     Check governance module_utils imports" \
+		"" \
+		"  --- Ansible ---" \
+		"  ansible-syntax        Validate playbook syntax" \
+		"  playbook-list         List registered playbooks" \
+		"  molecule-test SCENARIO=<name>   Run one canonical Molecule scenario" \
+		"  molecule-reset SCENARIO=<name>  Clear one scenario's Molecule-owned state" \
+		"" \
+		"  --- CI ---" \
+		"  ci-kill-zombie          cancel a CI run via gh run cancel" \
+		"  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN, BEFORE, AFTER, MAX_MATCHES)" \
+		"  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" \
+		"  ci-artifact-context     bounded context from one downloaded exact-run artifact (RUN, ARTIFACT, CI_ARTIFACT_FILE, PATTERN, BEFORE, AFTER, MAX_MATCHES, CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)" \
+		"  ci-pyinstaller-warning-audit replay the complete warning graph from one exact-run artifact (RUN, ARTIFACT, PYINSTALLER_WARNING_*, CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" \
+		"  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)" \
+		"  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)" \
+		"  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1 CI_RUN_SUMMARY_SHARD_TIMINGS=0|1" \
+		"  ci-failure-status        Show every durable hosted failure family" \
+		"  ci-failure-repair        Run make-based evidence and receipt selected repairs" \
+		"  ci-failure-push-guard    Block pushes with open or non-ancestral repairs" \
+		"  ci-await BRANCH=<ref> TIMEOUT=<s> [SHA=.. CI_AWAIT_*]  Await one exact CI identity" \
+		"  ci-verdict-safe        Exact all-workflow check (SHA, CI_BRANCH, legacy BRANCH, CI_CHECK_COOLDOWN_SEC, CI_VERDICT_VALIDATE_ONLY=0|1); validation never queries or records" \
+		"  ci-dashboard           One-shot compact CI run listing" \
+		"  ci-diagnose            Fetch CI failure annotations and group by root cause" \
+		"  ci-cooldown-status     Show remaining cooldown seconds" \
+		"  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)" \
+		"  ci-rerun RUN=<id>      Guard and rerun one observed immutable CI run" \
+		"  ci-recover-runner-acquisition RUN=<id>  Retry attempt 1 only when every failure is hosted-runner acquisition" \
+		"  ci-active              List active/in-flight CI runs" \
+		"  ci-greenness           CI reliability ratio (green / total completed)" \
+		"  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL" \
+		"  ci-record-verdict      Record a known CI verdict directly, bypassing cooldown (VERDICT=success|failure|pending, SHA=<sha>)" \
+		"  deploy-and-forget      Single guarded push + cooldown record (BRANCH, DEPLOY_AND_FORGET_VALIDATE_ONLY=0|1)" \
+		"" \
+		"  --- Git Remote ---" \
+		"  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key" \
+		"  git-push-sandboxcom   Guarded mirror push (PUSH_REMOTE, SSH_KEY; dry-run is not remote evidence)" \
+		"  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd" \
+		"  git-fetch-sandboxcom  Fetch from sandboxcom/gludd" \
+		"  ship-async REF=<hash> [TARGET=master]  Run gate in background job; ff-only merge on green" \
+		"" \
+		"  --- SearXNG Research Backend ---" \
+		"  searx-up              Admit the controller-native SearXNG runtime" \
+		"  searx-down            Release controller-native SearXNG resources" \
+		"  searx-test            Run the native runtime/action/index contract suite" \
+		"  searx-molecule        Validate/run delegated setup role (SEARX_MOLECULE_VALIDATE_ONLY=0|1)" \
+		"" \
+		"  --- Disk ---" \
+		"  fix-hooks-tmp           temp fix target" \
+		"  disk-guard            Canonical disk preflight + ownership-checked cleanup (95% hard volume limit)" \
+		"  disk-check            Read-only canonical volume and scratch check (95% / 100 MB)" \
+		"  disk-cleanup-preflight  Auto-reclaim proven-idle Gludd storage, then recheck thresholds (DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0|1, DISK_CLEANUP_PREFLIGHT_DRY_RUN=0|1, DISK_CLEANUP_RECEIPT_GRACE_SECONDS>=1800)" \
+		"  clean-stale-resource-namespaces  Inventory/reclaim proven-inactive Gludd namespaces (STALE_RESOURCE_NAMESPACE_*; PYTHON selects an existing trusted runtime); never bypass unknown-owner or link refusal" \
+		"  check-disk            Pre-commit automatic cleanup guard (CHECK_DISK_VALIDATE_ONLY=0; set 1 for deterministic contract test)" \
+		"  check-disk-classification  Bounded JSON-lines proof of counted vs exempt /tmp/gludd-* roots" \
+		"  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)" \
+		"  disk                  Print disk usage + gludd footprint" \
+		"  disk-reclaim          Run bounded, heartbeat-emitting cache cleanup" \
+		"  git-object-store-reclaim  Inventory or conservatively reclaim Git objects (GIT_OBJECT_STORE_*)" \
+		"  cache-disk            Show bounded user-cache directory sizes" \
+		"  cache-clean           Remove the explicitly enumerated tool caches" \
+		"  disk-user-caches      Show accessible user-cache and data-root sizes" \
+		"  cache-resource-inventory  List largest children of one allowlisted cache root" \
+		"  cache-resource-remove     Validate or remove one exact allowlisted cache child" \
+		"  native-temp-artifact-inspect  Read-only exact native-cache identity (NATIVE_TEMP_ARTIFACT_PATH, NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY=0|1); no cleanup authority" \
+		"  uv-cache-prune-status List uv cache-prune PID, parent, age, and command" \
+		"  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size" \
+		"  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees" \
+		"  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs" \
+		"  tmp-gludd-clean-ci-shards-now  Remove inactive CI/gate shard roots (TMP_GLUDD_CLEAN_VALIDATE_ONLY=0; set 1 for contract test)" \
+		"  tmp-gludd-clean-orphan-worktrees-now  Validate or remove proven orphan roots (TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1; use 0 only after merge)" \
+		"  clean-worktree-venvs  Preserve invoking/active worktrees; reclaim inactive registered venvs (CLEAN_WORKTREE_VENVS_VALIDATE_ONLY=0|1)" \
+		"  clean-worktree-caches  Remove generated venv/test/tool caches from worktrees" \
+		"" \
+		"  --- OpenCode Database Maintenance ---" \
+		"  opencode-disk         Bounded data usage using the authoritative OpenCode DB path" \
+		"  opencode-clean        Offline bounded DB/cache cleanup; refuses while OpenCode runs" \
+		"  opencode-clean-hard   Offline aggressive cache/log cleanup; refuses while OpenCode runs" \
+		"  opencode-db-stats     Bounded read-only table counts" \
+		"  opencode-db-schema    Bounded read-only schema report" \
+		"  opencode-db-sample    Bounded read-only timestamp sample" \
+		"  opencode-db-prune     Offline bounded recursive session/event prune" \
+		"  opencode-db-vacuum-incremental  Safe PRAGMA incremental_vacuum (online)" \
+		"  opencode-db-vacuum-full        Full VACUUM (needs OPENCODE_MAINTENANCE_FORCE=1 while online)" \
+		"  opencode-db-compact     Aggressive prune then compact via sqlite3 backup API (OPENCODE_RETENTION_DAYS, OPENCODE_MAINTENANCE_FORCE)" \
+		"" \
+		"  --- Recovery ---" \
+		"  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)" \
+		"  reap-stale-collection-locks  Reap only old project-owned collection/gate-refresh locks (APPLY=1)" \
+		"  replay-codex-file-changes  Atomically validate/replay a bounded Codex file-change range" \
+		"  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)" \
+		"  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)" \
+		"  restore-opencode      Restore .opencode/ (backup then git fallback) + clear cache" \
+		"  verify-opencode-backup Verify .opencode.orig/ is current (files + shared.ts exports)" \
+		"" \
+		"  --- Other ---" \
+		"  smoke                 Quick daemon boot health check" \
+		"  clean                 Remove ignored build artifacts while preserving tracked templates (CLEAN_VALIDATE_ONLY=0|1)" \
+		"  dist-clean            Remove distribution artifacts" \
+		"  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)" \
+		"" \
+		"  --- Complete Target Index ---" && \
+	$(PYTHON) -m scripts.check_make_help --print-index && \
+	printf '%s\n' \
+		"  --- New Targets ---" \
+		"  normalize-task-integrityNormalize legacy TASKS metadata and reopen unsupported completions" \
+		"  install-opa             install opa via brew" \
+		"  gate-local              fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests" \
+		"  bump-version            bump version in all files (pyproject.toml, __init__.py, README) at once" \
+		"  check-version-consistencyverify version matches across pyproject.toml, __init__.py, and README" \
+		"  check-gate-fresh        validate .gate-status is fresh and all phases pass — replaces broken _gate-fresh-check inline shell" \
+		"  pipeline-health         verify both local and remote pipelines are actually running (not stalled/zombie)" \
+		"  pipeline-status         exact pushed-SHA local/all-workflow status and automatic JSON handoff (PIPELINE_STATUS_*)" \
+		"  status-heartbeat         Refresh producer-owned proof state (INTERVAL, COUNT, STATUS_HEARTBEAT_VALIDATE_ONLY, STATUS_HEARTBEAT_STOP_ON_TERMINAL=0|1, PIPELINE_STATUS_*)" \
+		"  gate-all-background     run gate-all in background, poll with gate-status-check" \
+		"  target-two              Second test target" \
+		"  target-one              First test target" \
+		"  my-target               Duplicate target" \
+		"  my-secret-scanner       Scan for secrets" \
+		"  zzyx-test               A test target with no keyword match" \
+		"  debug-test-target       Debug test" \
+		"  foo-test                Test" \
+		"" \
+		""
 
 sdd-constitution:
 	@test -f AGENTS.md || touch AGENTS.md

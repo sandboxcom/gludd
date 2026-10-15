@@ -5,6 +5,7 @@ Verifies: no duplicate targets, prerequisite target resolution, script existence
 """
 
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -149,6 +150,7 @@ def _help_target_names() -> tuple[set[str], str]:
     """Extract target names from `make -n help` output. Matches:
     - @echo "  target-name      desc"
     - @echo "  target-name VAR=val  desc"
+    - quoted arguments in help's continued printf recipe
     """
     r = subprocess.run(
         ["make", "-n", "-f", str(MAKEFILE), "help"],
@@ -158,7 +160,7 @@ def _help_target_names() -> tuple[set[str], str]:
     )
     targets: set[str] = set()
     for line in r.stdout.split("\n"):
-        m = re.match(r'^\s*@?echo\s+"\s{2}([a-zA-Z_][a-zA-Z0-9_-]*)\s', line)
+        m = re.match(r'^\s*(?:@?echo\s+)?"\s{2}([a-zA-Z_][a-zA-Z0-9_-]*)\s', line)
         if m:
             targets.add(m.group(1))
     return targets, r.stdout
@@ -487,14 +489,27 @@ class TestHelpNoDupTargets:
             text=True,
             timeout=30,
         )
+        assert r.returncode == 0, r.stderr
         lines: list[str] = []
-        for line in r.stdout.split("\n"):
-            m = re.match(r'^\s*@?echo\s+"(\s{2}[a-zA-Z_][a-zA-Z0-9_-]*\s.*)"$', line)
-            if m:
-                inner = m.group(1)
-                tm = re.match(r"^\s{2}([a-zA-Z_][a-zA-Z0-9_-]*)", inner)
-                if tm:
-                    lines.append(tm.group(1))
+        words = shlex.split(r.stdout.replace("\\\n", " "))
+        index = 0
+        while index < len(words):
+            values: list[str] = []
+            if words[index] in {"echo", "@echo"} and index + 1 < len(words):
+                values.append(words[index + 1])
+                index += 2
+            elif words[index:index + 2] in (["printf", "%s\\n"], ["@printf", "%s\\n"]):
+                index += 2
+                while index < len(words) and words[index] not in {"&&", ";"}:
+                    values.append(words[index])
+                    index += 1
+            else:
+                index += 1
+            for value in values:
+                match = re.match(r"^\s{2}([a-zA-Z_][a-zA-Z0-9_-]*)\s", value)
+                if match:
+                    lines.append(match.group(1))
+        assert lines, "native help dry-run returned no static help entries"
         return lines
 
     def test_no_duplicate_help_entries(self) -> None:

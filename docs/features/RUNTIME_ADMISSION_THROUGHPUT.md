@@ -437,3 +437,56 @@ proof cache. All 83 related cases pass on Python 3.11 and 3.14; typing, Ruff, 23
 contracts and Make integrity pass. Whole-repository log-volume measurement and
 successor hosted/full-gate/deployment proof remain pending; no speed gain is
 inferred from the output reduction.
+
+## One native shell for help text (2026-10-15)
+
+The 6d79fcf hosted Python 3.12 admission passes its main cohort in 82.91 seconds
+but reaches the unchanged 90.6-second observed deadline during the separate fresh
+help invocation. Native Python 3.14 duration attribution identifies a 1.67-second
+real help audit in the main cohort; the separate fresh dry-run call is 0.03 seconds.
+Optimize that real help recipe, not the fresh-process isolation policy.
+
+GNU Make documents a normally separate
+[subshell for each recipe line](https://www.gnu.org/software/make/manual/html_node/Execution.html).
+Use one help-local continued command: literal `printf '%s\n'` arguments before
+and after the unchanged native index invocation, joined with `&&`. Do not enable
+global [`.ONESHELL`](https://www.gnu.org/software/make/manual/html_node/One-Shell.html)
+or expand `$(info)` during Make evaluation. A long-lived
+[2017 echo-versus-info practitioner discussion](https://stackoverflow.com/questions/47367589/printing-in-makefiles-echo-vs-info)
+also distinguishes shell execution from Make expansion and their output ordering.
+The native index retains its exact argv, partial stdout and nonzero failure;
+a failure cannot print the footer or become success through another printf.
+
+Failing-first tests observe 501 original recipe-shell invocations. The replacement
+uses one, retains all 500 static output lines, and handles percent signs, quotes,
+Unicode and shell/Make metacharacters as literal fixture data. Independent native
+`cmp` succeeds for all 88,323 bytes and 1,566 ordered output lines against the
+retained original c478f186 help output, including provider-smoke's original
+unindented, collapsed whitespace. All 470 original static inventory names match.
+The help audit, target-contract reader and atomic target editor understand both
+legacy echo and continued printf representations. Old/new duplicate checks remain
+nonvacuous; native editor round-trips retain continuation and index-failure behavior.
+Legacy editor assertions, atomic replacement/refusal and cleanup behavior remain;
+its pre-existing Ruff/type diagnostics receive mechanical fixes without ignores.
+
+Same-owner local Python 3.11 observation, one run per variant: original 1.448
+seconds, replacement 0.086 seconds, a 1.362-second reduction for this help call.
+Raw logs and immutable observer receipts are retained under
+`/tmp/gludd-v012-help-c478-{before-1792050627537,after-1792051159088}*`;
+the complete native inventory fixture and unchanged-floor coverage inputs are
+`/tmp/gludd-v012-native-help-throughput-{inventory.py,coverage.ini}`.
+This is not a whole-admission or hosted speed measurement: the additional regression
+controls have their own execution cost. Fresh child selection, native Make argv,
+30-second dry-run timeout, plugins, warning-fatal behavior, workers, 90/60/2850
+bounds, 85/75 coverage and ZDD are unchanged. Root owns combined source review,
+canonical gate and exact-successor-SHA hosted proof. Rollback reverts this isolated
+recipe/consumer/test/documentation slice together, retaining historical receipts.
+
+The complete existing help/deep-audit/editor/contract suites plus additive controls
+pass 101 cases on the locked Python 3.11 environment. Native subprocess/branch
+coverage measures 93% combined: help reader 100%, contract checker 97%, atomic
+editor 89%; all three pass unchanged 85/75 admission. The first expanded coverage
+run correctly refused the editor's previously untested CLI paths at 72%; additive
+legacy-exit/atomic-refusal controls close that gap without excluding code. Ruff,
+strict typing, all 235 native target contracts, duplicate-target and Make parity
+checks pass. Receipts are diagnostic focused acceptance, not a full gate.
