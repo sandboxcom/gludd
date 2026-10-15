@@ -455,7 +455,7 @@ release-proof-admission:
 			rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase"; exit "$$rc"; \
 		fi; \
 	}; \
-	run_owner disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800; \
+	run_owner disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800; \
 	run_owner gate-admission-config GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1; \
 	run_owner check-task-registration; \
 	run_owner check-task-integrity; \

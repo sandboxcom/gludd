@@ -25,11 +25,16 @@ def _recipe() -> str:
 
 def _run(
     tmp_path: Path, *, mode: str = "0", failed_phase: str = "",
-    claimed_head: str = "a" * 40,
+    claimed_head: str = "a" * 40, cleanup_overrides: tuple[str, ...] = (),
 ) -> subprocess.CompletedProcess[str]:
     targets = "".join(
         f"{phase}:\n\t@printf '%s\\n' '{phase}' >> phases.log\n"
-        f"\t@test '{phase}' != '$(FAILED_PHASE)'\n"
+        + (
+            "\t@printf '%s\\n' '$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY) "
+            "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN) $(DISK_CLEANUP_RECEIPT_GRACE_SECONDS)' >> cleanup-policy.log\n"
+            if phase == PHASES[0] else ""
+        )
+        + f"\t@test '{phase}' != '$(FAILED_PHASE)'\n"
         for phase in PHASES
     )
     (tmp_path / "Makefile").write_text(
@@ -40,7 +45,7 @@ def _run(
     return subprocess.run(
         ["make", "--no-print-directory", "release-proof-admission",
          f"RELEASE_PROOF_ADMISSION_VALIDATE_ONLY={mode}",
-         f"FAILED_PHASE={failed_phase}", f"CLAIMED_HEAD={claimed_head}"],
+         f"FAILED_PHASE={failed_phase}", f"CLAIMED_HEAD={claimed_head}", *cleanup_overrides],
         cwd=tmp_path, capture_output=True, text=True, check=False, timeout=30,
     )
 
@@ -91,12 +96,61 @@ def test_pass_runs_all_owners_in_order_but_is_not_release_proof(tmp_path: Path) 
     assert not (tmp_path / "attestation.json").exists()
 
 
-def test_real_owner_keeps_live_capacity_read_only_and_release_policy_fixed() -> None:
+def test_real_owner_keeps_safe_cleanup_and_release_policy_fixed() -> None:
     owner = _recipe()
     assert "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0" in owner
-    assert "DISK_CLEANUP_PREFLIGHT_DRY_RUN=1" in owner
+    assert "DISK_CLEANUP_PREFLIGHT_DRY_RUN=0" in owner
     assert "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800" in owner
     assert "GATE_TEST_PROFILE=release" in owner
     assert "GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1" in owner
     assert "RESOURCE_OWNERSHIP_WRITE=0" in owner
     assert "release-promote" not in owner and "git " not in owner
+
+
+@pytest.mark.parametrize("cleanup_overrides", [
+    (),
+    ("DISK_CLEANUP_PREFLIGHT_DRY_RUN=1",),
+    ("DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1",),
+    ("DISK_CLEANUP_RECEIPT_GRACE_SECONDS=0",),
+    ("DISK_CLEANUP_RECEIPT_GRACE_SECONDS=3600",),
+    (
+        "DISK_CLEANUP_PREFLIGHT_DRY_RUN=1", "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1",
+        "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=0",
+    ),
+])
+def test_real_mode_applies_fixed_cleanup_once_before_all_other_owners(
+    tmp_path: Path, cleanup_overrides: tuple[str, ...],
+) -> None:
+    result = _run(tmp_path, cleanup_overrides=cleanup_overrides)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "cleanup-policy.log").read_text().splitlines() == ["0 0 1800"]
+    assert (tmp_path / "phases.log").read_text().splitlines() == list(PHASES)
+    assert "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false" in result.stdout
+    assert not (tmp_path / ".gate-status").exists()
+    assert not (tmp_path / "attestation.json").exists()
+
+
+def test_cleanup_failure_with_caller_override_blocks_later_phases(tmp_path: Path) -> None:
+    result = _run(
+        tmp_path, failed_phase=PHASES[0],
+        cleanup_overrides=("DISK_CLEANUP_PREFLIGHT_DRY_RUN=1", "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1"),
+    )
+    assert result.returncode != 0
+    assert (tmp_path / "cleanup-policy.log").read_text().splitlines() == ["0 0 1800"]
+    assert (tmp_path / "phases.log").read_text().splitlines() == [PHASES[0]]
+    assert "PROOF-ADMISSION-BLOCKED phase=disk-cleanup-preflight" in result.stdout
+    assert "PROOF-ADMISSION-PASS" not in result.stdout
+    assert not (tmp_path / ".gate-status").exists()
+    assert not (tmp_path / "attestation.json").exists()
+
+
+@pytest.mark.parametrize("mode", ["1", "invalid"])
+def test_nonexecuting_modes_run_no_owners_despite_cleanup_overrides(tmp_path: Path, mode: str) -> None:
+    result = _run(tmp_path, mode=mode, cleanup_overrides=(
+        "DISK_CLEANUP_PREFLIGHT_DRY_RUN=0", "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0",
+        "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=0",
+    ))
+    assert (result.returncode == 0) is (mode == "1")
+    assert not (tmp_path / "phases.log").exists()
+    assert not (tmp_path / "cleanup-policy.log").exists()
+    assert "PROOF-ADMISSION-PASS" not in result.stdout

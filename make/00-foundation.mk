@@ -751,7 +751,7 @@ help:
 		"  release-list          List all GitHub releases" \
 		"  reviewed-head-receipt ...  Build exact-topology integration evidence after the final gate" \
 		"  release-readiness TAG=..  Fail-closed blockers + exact reviewed-head receipt for v0.1.2" \
-		"  release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0|1  Cheap read-only scheduling admission; never release proof" \
+		"  release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0|1  Safe cleanup and scheduling admission; never release proof" \
 		"  release-page-notes TAG=..  Build/validate bounded ledger-backed GitHub release-page notes" \
 		"  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings" \
 		"  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)" \

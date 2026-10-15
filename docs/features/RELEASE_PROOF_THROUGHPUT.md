@@ -464,23 +464,40 @@ gate:
 make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0
 ```
 
-This serial facade stops on the first nonzero existing owner:
+This serial facade runs seven existing owners, stopping on the first nonzero exit:
 
-1. `disk-cleanup-preflight` uses live inspection with dry-run cleanup. It cannot
-   delete caches, history, worktrees, environments, or application state.
+1. `disk-cleanup-preflight` runs once in apply mode before later owners, with
+   `DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0`, `DISK_CLEANUP_PREFLIGHT_DRY_RUN=0`
+   and `DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800`. Caller cleanup overrides cannot
+   replace these fixed arguments. The existing cleaner alone decides which
+   proven-idle, regenerable artifacts may be reclaimed and rechecks capacity.
+   Its ownership, lease, process, path/link and grace checks remain unchanged;
+   the 95% volume cap is not relaxed. Cleanup failure or remaining pressure
+   stops admission before every later owner.
 2. `gate-admission-config` fixes the release profile, fresh proof, 16-file
    batches, and one worker. It does not allocate another proof environment.
 3. `check-task-registration` and `check-task-integrity` reject unowned work.
 4. `check-gate-failure-promotions` verifies executable early-failure ownership.
 5. `check-resource-ownership` checks the existing inventory without rewriting it.
 6. `_pytest-runtime-compatibility-admission` executes the existing warning-fatal
-   fixture, AST, async/background-launcher, and handoff tests with one worker.
+   fixture, AST, async/background-launcher, and handoff tests with its existing
+   bounded worker policy.
 
 Each owner emits a start and terminal phase marker. Failure emits
 `PROOF-ADMISSION-BLOCKED phase=<owner>` and prevents later owners from running.
 All owners passing emits `admitted_for_proof=true release_ready=false
 gate_evidence=false`: permission to spend work collecting proof, never proof
 itself. The facade writes no gate attestation and changes no Git refs.
+
+This is automatic safe cleanup at proof execution, not a new cleaner, runner,
+cache or daemon. Status/pipeline snapshots and explicit diagnostic dry-run
+inspection remain read-only. The distinction does not add `check-disk` to bounded
+repair commits: focused failing-first repairs and their normal guarded commits
+remain permitted while final proof is blocked. Neither a repair commit nor a
+successful scheduling admission proves the complete gate, exact-SHA hosted CI,
+85% aggregate / 75% per-file coverage, ZDD or release readiness. If owned cleanup
+leaves capacity unchanged at 96%, final proof remains blocked; do not repeat the
+same expensive attempt merely because HEAD changed.
 
 The safe contract example is:
 
@@ -492,6 +509,33 @@ It prints `PROOF-ADMISSION-PLAN`, executes no owner, and cannot claim admission.
 Behavioral tests inject failure into each real recipe phase, verify ordered
 short-circuiting, and prove that changing a claimed SHA cannot clear an
 unchanged capacity failure. Invalid plan modes fail before any owner runs.
+
+The native routing fixture also captures the cleanup child's arguments and
+requires exactly one apply-mode invocation before all other owners. Missing,
+dry-run, validation-only and shorter/longer grace caller inputs retain the fixed
+policy; cleanup failure blocks every later phase. Plan and invalid admission
+modes invoke no owner even when cleanup overrides request execution. The
+failing-first run reports eight failures selecting dry-run cleanup and thirteen
+passing controls. These fixtures execute the actual facade recipe with harmless
+owner doubles; they do not apply cleanup to the host or establish final capacity.
+
+After the single-argument repair, all 57 admission/cleanup-routing/threshold cases
+and all 26 native disk-alias cases (37 additional subtests) pass with warnings
+fatal. Ruff, strict typing, all 236 target contracts, Make duplicate/parity checks,
+Markdown validation and the documented plan-only example pass. Actual host
+cleanup, full admission and final gate are not rerun against unchanged capacity.
+
+The official [Git commit reference](https://git-scm.com/docs/git-commit) documents
+that `--no-verify` skips pre-commit and commit-message hooks, and the
+[Git hooks FAQ](https://git-scm.com/docs/gitfaq#_hooks) explains why local hooks
+cannot be the sole enforcement point. A long-lived
+[Lazygit user discussion](https://github.com/jesseduffield/lazygit/discussions/2961),
+opened in August 2023 with replies through July 2025, describes explicit
+hook-skipping commit paths. That unrelated product workflow is context, not
+proof of this repository's root cause or a recommendation to bypass its guards.
+Here the native Make recipe and failing-first controls prove the omitted apply
+step; the existing cleaner is reused at proof execution without changing any
+commit gate, cleanup authority or release requirement.
 
 ## Missing-proof record and work order
 
