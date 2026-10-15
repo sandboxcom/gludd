@@ -76,9 +76,9 @@ def _fixture(
         + f"owner.remote_head = lambda **kwargs: {SHA!r}\n"
         + "active_work_status.collect_status = lambda: {'open_task_ids': [], 'git': {'head': 'fixture'}}\n"
         + "automatic_disk_cleanup.inspect_usage = lambda: automatic_disk_cleanup.DiskSnapshot(0.0, 80.0)\n"
-        + "ci_failure_ledger.read_ledger = lambda path: {'runs': {}, 'families': {}}\n"
         + "ci_failure_ledger.fetch_run = detail\n"
         + "ci_check_cooldown.load_history = lambda: {}\n"
+        + "if case == 'guidance-error': ci_failure_ledger.build_repair_guidance = unavailable\n"
         + "if case == 'history-error': ci_check_cooldown.load_history = unavailable\n"
         + "if case == 'writer-error': owner.write_snapshot = unavailable\n"
         + "sys.exit(owner.main(sys.argv[1:]))\n", encoding="utf-8",
@@ -115,6 +115,8 @@ def _fixture(
         runs[0]["conclusion"] = "failure" if case == "failure" else case
     elif case == "sibling-failure":
         runs[-1]["conclusion"] = "failure"
+    elif case == "guidance-error":
+        runs[0]["conclusion"] = "failure"
     elif case in {"pending", "failure-pending"}:
         runs[1].update(status="in_progress", conclusion="")
         if case == "failure-pending":
@@ -130,6 +132,8 @@ def _fixture(
             run["headSha" if case == "foreign-sha" else "headBranch"] = (
                 OTHER_SHA if case == "foreign-sha" else "master"
             )
+    if case == "malformed-ledger":
+        (tmp_path / "ledger.json").write_text(json.dumps({"runs": {}, "families": {}}), encoding="utf-8")
     env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                PYTHONPATH=f"{ROOT}{os.pathsep}{ROOT / 'src'}", PYTHONDONTWRITEBYTECODE="1",
                GLUDD_PROJECT_NAMESPACE="gludd-heartbeat-native-fixture",
@@ -165,18 +169,30 @@ def test_opted_in_continuous_heartbeat_stops_after_exact_complete_terminal_resul
     expected = "success" if case == "success" else "failure"
     assert result.returncode == (0 if expected == "success" else 2), result.stdout + result.stderr
     assert (tmp_path / "calls").read_text().splitlines() == ["pipeline-status"]
-    assert not (tmp_path / "sleeps").exists()
+    assert not (tmp_path / "sleeps").exists(), result.stdout + result.stderr
     assert f"STATUS-HEARTBEAT-STOP sha={SHA} outcome={expected} release_ready=false" in result.stdout
     current = json.loads((tmp_path / "current.json").read_text())
     assert current["state"] == expected
     assert current["release_ready"] is False
     assert current["gate_evidence"] is False
+    assert current["evidence"]["errors"] == []
+    guidance = current["evidence"]["repair_guidance"]
+    if expected == "failure":
+        assert len(guidance) == 1
+        assert guidance[0]["family_ids"] == []
+        assert guidance[0]["argv"] is None
+        assert "CI_FAILURE_FAMILIES" in guidance[0]["required_parameters"]
+        assert "CI_REPAIR_EVIDENCE_TARGET" in guidance[0]["required_parameters"]
+        assert "CI_REPAIR_EVIDENCE_VARS" in guidance[0]["required_parameters"]
+    else:
+        assert guidance == []
     assert not list((tmp_path / "resources").rglob("status-heartbeat-terminal.*"))
 
 
 @pytest.mark.parametrize("case", [
     "pending", "failure-pending", "missing", "empty", "foreign-sha", "foreign-branch",
     "detail-pending", "detail-identity", "ledger-error", "lookup-error", "writer-error", "history-error",
+    "malformed-ledger", "guidance-error",
 ])
 def test_incomplete_or_error_current_observation_cannot_end_heartbeat(tmp_path: Path, case: str) -> None:
     command, env = _fixture(tmp_path, case, count=2)
@@ -187,9 +203,17 @@ def test_incomplete_or_error_current_observation_cannot_end_heartbeat(tmp_path: 
     assert "STATUS-HEARTBEAT-STOP" not in result.stdout
     assert "PIPELINE-TERMINAL-OBSERVED" not in result.stdout
     assert not list((tmp_path / "resources").rglob("status-heartbeat-terminal.*"))
+    if case in {"malformed-ledger", "guidance-error"}:
+        current = json.loads((tmp_path / "current.json").read_text())
+        assert current["state"] == "lookup_error"
+        assert current["evidence"]["repair_guidance"] == []
+        error = "unsupported ledger version" if case == "malformed-ledger" else "fixture observation unavailable"
+        assert error in current["evidence"]["errors"]
+        assert current["release_ready"] is False
+        assert current["gate_evidence"] is False
 
 
-@pytest.mark.parametrize("case", ["lookup-error", "ledger-error", "writer-error"])
+@pytest.mark.parametrize("case", ["lookup-error", "ledger-error", "writer-error", "malformed-ledger", "guidance-error"])
 def test_prior_same_sha_snapshot_and_marker_cannot_stop_failed_current_tick(tmp_path: Path, case: str) -> None:
     from scripts.proof_observations import write_snapshot
 
@@ -205,6 +229,12 @@ def test_prior_same_sha_snapshot_and_marker_cannot_stop_failed_current_tick(tmp_
     assert "STATUS-HEARTBEAT-STOP" not in result.stdout
     assert "PIPELINE-TERMINAL-OBSERVED" not in result.stdout
     assert not list((tmp_path / "resources").rglob("status-heartbeat-terminal.*"))
+    if case in {"malformed-ledger", "guidance-error"}:
+        current = json.loads((tmp_path / "current.json").read_text())
+        assert current["state"] == "lookup_error"
+        assert current["evidence"]["repair_guidance"] == []
+        assert current["release_ready"] is False
+        assert current["gate_evidence"] is False
 
 
 @pytest.mark.parametrize("stop", [None, "0"])
