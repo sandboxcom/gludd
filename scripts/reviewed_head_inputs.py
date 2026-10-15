@@ -64,7 +64,9 @@ from general_ludd.git_release.reviewed_head_integration import (
     PrerequisiteAncestor,
     PrerequisiteResolution,
     ReviewedHead,
+    ReviewedHeadIntegrationReceipt,
     build_reviewed_head_integration_plan,
+    encode_reviewed_head_integration_receipt,
 )
 
 
@@ -136,6 +138,7 @@ _LABEL = "reviewed-head-focus"
 _OWNER_KIND = "gludd_native_reviewed_head_inputs"
 _FOCUS_KIND = "gludd_native_reviewed_head_focus"
 _KEY_VARIABLE = "GLUDD_GATE_KEY_PATH"
+_FINAL_RECEIPT_NAME = "reviewed-head-receipt.json"
 
 
 def _encoded(value: object) -> bytes:
@@ -321,18 +324,25 @@ def _external_bundle(bundle: Path, repo_root: Path) -> Path:
     return resolved
 
 
-def _publish(path: Path, payload: Mapping[str, object]) -> None:
-    """Reuse the native fsynced no-overwrite writer, accepting exact owner retries."""
+def _publish(path: Path, payload: Mapping[str, object] | ReviewedHeadIntegrationReceipt) -> None:
+    """Reuse native fsynced no-overwrite writers, accepting exact owner retries."""
+    expected = (
+        encode_reviewed_head_integration_receipt(payload).encode("utf-8")
+        if isinstance(payload, ReviewedHeadIntegrationReceipt) else _encoded(payload)
+    )
     if path.is_symlink():
         raise ValueError("native artifact output must not be a symbolic link")
     if path.exists():
-        if not path.is_file() or path.read_bytes() != _encoded(payload):
+        if not path.is_file() or path.read_bytes() != expected:
             raise ValueError("native artifact already belongs to another input or owner")
         return
     try:
-        observed_owner._atomic_write_json(path, payload, exclusive=True)
+        if isinstance(payload, ReviewedHeadIntegrationReceipt):
+            receipt_owner.write_receipt(path, payload, exclusive=True)
+        else:
+            observed_owner._atomic_write_json(path, payload, exclusive=True)
     except FileExistsError:
-        if path.is_symlink() or path.read_bytes() != _encoded(payload):
+        if path.is_symlink() or path.read_bytes() != expected:
             raise ValueError("native artifact publication lost its immutable owner claim") from None
 
 
@@ -352,6 +362,7 @@ def record_inputs(prepared: Mapping[str, object], bundle: Path, *, repo_root: Pa
             raise ValueError("native bundle already belongs to another reviewer or candidate")
         allowed = expected | {
             "observed", "focused.json", "focused-auth.json", "focused-junit.xml", "manifest.json", "gate-binding.json",
+            _FINAL_RECEIPT_NAME,
         }
         if any(path.name not in allowed for path in destination.iterdir()):
             raise ValueError("native bundle contains an unowned artifact")
@@ -680,7 +691,9 @@ def finalize_inputs(
         ], "command_ids": recorded["focused_validation_ids"],
             "run_count": focused["run_count"], "passed": focused["passed"]},
     }
-    receipt_owner.build_receipt_from_manifest(manifest, manifest_dir=destination, gate_attestation=gate, repo_root=root)
+    receipt = receipt_owner.build_receipt_from_manifest(
+        manifest, manifest_dir=destination, gate_attestation=gate, repo_root=root,
+    )
     binding: dict[str, object] = {
         "schema_version": 1, "candidate_sha": sha, "gate_id": manifest["exact_gate_id"],
         "native_gate_attestation_file": str(gate_attestation.resolve()),
@@ -692,6 +705,7 @@ def finalize_inputs(
     }
     if not validate_only:
         _publish(destination / "gate-binding.json", binding)
+        _publish(destination / _FINAL_RECEIPT_NAME, receipt)
         _publish(destination / "manifest.json", manifest)
     return manifest
 
@@ -731,9 +745,25 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 if not args.gate_attestation:
                     raise ValueError("native exact gate attestation path is required")
-                finalize_inputs(
+                manifest = finalize_inputs(
                     repo_root=root, bundle=bundle, gate_attestation=Path(args.gate_attestation), key_path=key,
                 )
+                candidate = receipt_owner._string(
+                    receipt_owner._mapping(manifest["focused_validation"], "focused validation")["tip_sha"],
+                    "native candidate SHA",
+                )
+                receipt_path = str(bundle.resolve() / _FINAL_RECEIPT_NAME)
+                print("REVIEWED-HEAD-INPUTS-HANDOFF " + json.dumps({
+                    "candidate_sha": candidate, "receipt_path": receipt_path,
+                    "release_ready": False, "gate_evidence": False,
+                    "next_argv": [
+                        "make", "--no-print-directory", "-C", str(root.resolve()), "release-readiness",
+                        "TAG=v0.1.2", "RELEASE_READINESS_VALIDATE_ONLY=1",
+                        "RELEASE_COMPLETED_STAGES=", "RELEASE_OBSERVATIONS=",
+                        "REVIEWED_HEAD_INTEGRATION_RECEIPT=" + receipt_path,
+                        "RELEASE_CANDIDATE_SHA=" + candidate, "RELEASE_READINESS_CI_BRANCH=",
+                    ],
+                }, sort_keys=True))
         print("REVIEWED-HEAD-INPUTS-VALID action=" + args.action + " release_ready=false gate_evidence=false")
         return 0
     except (OSError, RuntimeError, TypeError, ValueError):

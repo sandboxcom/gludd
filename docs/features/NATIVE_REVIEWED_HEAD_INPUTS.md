@@ -72,12 +72,13 @@ variables set to genuine paths and validation policy `0`, the actions mean:
 | `admit` | Read-only clean-SHA, original-ref, patch, topology and approval admission; no artifacts or gate evidence. |
 | `record` | Repeat admission; atomically publish schema-1 per-source review JSON and `inputs.json` outside the candidate repository. |
 | `focus` | Run the stable union of reviewed test files once through the existing `make test-files` and observed-command owner; bind native results. |
-| `finalize` | Require final-tip focused evidence, native terminal all-shard policy evidence and separately authenticated completed outer full gate; publish `manifest.json` last. |
+| `finalize` | Require final-tip focused evidence, native terminal all-shard policy evidence and separately authenticated completed outer full gate; publish the canonical `reviewed-head-receipt.json`, then `manifest.json` last. |
 
 Run `make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0` before
 candidate sealing, final replay or the expensive full gate. This producer does
-not run that gate or hosted CI. Its final manifest feeds the existing receipt
-builder; release-readiness, 85% aggregate/75% per-file coverage, warnings, ZDD,
+not run that gate or hosted CI. Finalization retains the existing builder's typed
+receipt instead of discarding it or requiring a second builder invocation;
+release-readiness, 85% aggregate/75% per-file coverage, warnings, ZDD,
 exact-SHA hosted CI and branch/promotion gates retain their separate authority.
 
 `REVIEWED_HEAD_INPUTS_INTENT` selects the explicit review intent for `admit` and
@@ -140,8 +141,13 @@ produce a final manifest.
 
 Each JSON publication reuses the native fsynced exclusive-link writer. Existing
 bytes are accepted only for an identical owner retry; divergent or symlink outputs
-are never overwritten. Per-source reviews precede the admission owner marker;
-the gate binding precedes `manifest.json`. An interrupted unrecorded directory is
+are never overwritten. Canonical receipt serialization remains owned by
+`build_reviewed_head_integration_receipt.write_receipt`; its additive
+`exclusive=True` mode uses a no-overwrite atomic link, while existing callers keep
+the legacy atomic-replacement default. Identical concurrent receipt bytes may be
+reused; a foreign or symlink arrival is refused without changing that entry.
+Per-source reviews precede the admission owner marker; the gate binding and
+canonical receipt precede `manifest.json`. An interrupted unrecorded directory is
 refused and preserved. All source refs, checkout files, historical gate evidence
 and generated operational handoffs remain owned by their existing producers.
 
@@ -152,6 +158,18 @@ references their retained status, log, trace and JUnit bytes. Existing item-prog
 APIs own admission and failure state. There are no background processes added by
 this feature. The existing observer owns child/process-group cleanup, timing bounds
 and its one-run namespace.
+
+Successful finalization keeps the existing manifest return API and prints one
+`REVIEWED-HEAD-INPUTS-HANDOFF` JSON record containing the exact receipt path,
+candidate SHA and explicit `make release-readiness` safe-plan argument list.
+The guidance is data, not another subprocess; it does not rerun focus, gate or
+the builder. Its `release_ready` and `gate_evidence` fields remain false. The
+suggested validate-only consumer checks the receipt for that candidate; actual
+hosted CI, incomplete tasks, deployment, full-gate and release/promotion evidence
+retain their independent authority. No task is ticked. A repeated authentic
+finalization preserves the existing receipt bytes/inode, and `record` recognizes
+the owned final artifact; changed authentication, source or proof remains refused.
+Both API validate-only and the default CLI plan publish no receipt or handoff.
 
 ## Long-lived user reports and design choices
 
@@ -172,6 +190,13 @@ identity, native shard identity and outer gate authority separate. The primary
 [Git cherry-pick documentation](https://www.kernel.org/pub/software/scm/git/docs/git-cherry-pick.html)
 also describes why merge commits need an explicit mainline; unsupported shapes
 here remain refused rather than being inferred from a convenient ref label.
+
+The long-lived [atomic file-creation discussion](https://stackoverflow.com/questions/2333872/how-to-make-file-creation-an-atomic-operation)
+distinguishes replacement from an exclusive claim. The maintained
+[Python OS API](https://docs.python.org/3.11/library/os.html#os.replace) documents
+replacement behavior. The producer therefore uses the canonical writer's native
+exclusive mode instead of an existence-check followed by an overwriting replace;
+tests reproduce foreign and identical concurrent arrivals before claiming reuse.
 
 ## Validation
 

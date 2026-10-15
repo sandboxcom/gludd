@@ -15,6 +15,7 @@ from typing import cast
 
 import pytest
 from scripts import gate_status_attestation as gate_owner
+from scripts import release_readiness as readiness
 from scripts import reviewed_head_inputs as inputs
 from scripts import run_ci_shards_serial as shard_owner
 from scripts.ci_named_shard_files import SHARDS
@@ -486,21 +487,133 @@ def test_runtime_probe_refuses_producer_process_as_native_child(
         inputs.pytest_sessionfinish(request.session, 0)
 
 
-def test_final_manifest_binds_actual_terminal_gate_and_existing_builder(tmp_path: Path) -> None:
-    root, spec = _fixture(tmp_path)
+def test_final_manifest_binds_actual_terminal_gate_and_existing_builder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, spec = _fixture(tmp_path, native_child_probe=True)
     bundle = _record(root, spec, tmp_path)
     key = _key(tmp_path)
     focus = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
     attestation = _gate(root, tmp_path, focus["completed_at"])
+    calls: list[str] = []
+    native_builder = inputs.receipt_owner.build_receipt_from_manifest
+    native_writer = inputs.receipt_owner.write_receipt
+
+    def counted_builder(*args: object, **kwargs: object) -> object:
+        calls.append("build")
+        result: object = native_builder(*args, **kwargs)
+        return result
+
+    def counted_writer(*args: object, **kwargs: object) -> None:
+        calls.append("write")
+        native_writer(*args, **kwargs)
+
+    monkeypatch.setattr(inputs.receipt_owner, "build_receipt_from_manifest", counted_builder)
+    monkeypatch.setattr(inputs.receipt_owner, "write_receipt", counted_writer)
     manifest = inputs.finalize_inputs(repo_root=root, bundle=bundle,
                                      gate_attestation=attestation, key_path=key)
+    assert calls == ["build", "write"]
     assert manifest["exact_gate_id"] == "gate:20261014T120000Z-native-test"
     assert manifest["focused_validation"]["passed"] is True
     assert manifest["focused_validation"]["run_count"] == 1
     assert (bundle / "manifest.json").exists()
+    output = bundle / "reviewed-head-receipt.json"
+    original = output.read_bytes()
+    metadata = output.stat()
+    candidate = _git(root, "rev-parse", "HEAD")
+    monkeypatch.delenv("RELEASE_ALLOW_INVALID_RECEIPT", raising=False)
+    valid, detail, final_sha = readiness._reviewed_head_receipt_check(output, expected_final_sha=candidate)
+    assert valid, detail
+    assert final_sha == candidate
+    wrong, _, _ = readiness._reviewed_head_receipt_check(output, expected_final_sha="f" * 40)
+    assert not wrong
+    assert set(manifest) == {"schema_version", "base_sha", "heads", "exact_gate_id", "focused_validation"}
+    tasks_before = (root / "TASKS.md").read_bytes()
     assert inputs.finalize_inputs(repo_root=root, bundle=bundle,
                                   gate_attestation=attestation, key_path=key) == manifest
+    assert output.read_bytes() == original
+    assert output.stat().st_ino == metadata.st_ino
+    assert output.stat().st_mtime_ns == metadata.st_mtime_ns
+    assert calls == ["build", "write", "build"]
+    inputs.record_inputs(inputs.prepare_inputs(spec, repo_root=root), bundle, repo_root=root)
+    assert output.read_bytes() == original
+    assert (tmp_path / "native-child-count").read_text(encoding="utf-8") == "1"
+    assert (root / "TASKS.md").read_bytes() == tasks_before
+    state = readiness.Readiness(
+        branch="development", head=candidate, ci_head_matches=True,
+        ci_verdict="PENDING", version_consistent=True, ledger_valid=True,
+        release_policy_compatible=True, reviewed_head_receipt_required=True,
+        reviewed_head_receipt_valid=valid, reviewed_head_receipt_final_sha=final_sha,
+        incomplete_release_tasks=["S98.4"],
+    )
+    assert not state.ready
+    assert readiness._exit_code(state) == readiness.EXIT_CI
+    state.ci_verdict = "GREEN"
+    state.errors.append("release-critical TASKS.md items are incomplete: S98.4")
+    assert not state.ready
+    assert readiness._exit_code(state) == readiness.EXIT_TASKS
     assert _git(root, "status", "--porcelain", "--untracked-files=all") == ""
+
+
+@pytest.mark.parametrize("output_state", ["divergent", "symlink", "directory"])
+def test_final_receipt_refuses_foreign_output_without_overwriting(
+    tmp_path: Path, output_state: str,
+) -> None:
+    root, spec = _fixture(tmp_path)
+    bundle = _record(root, spec, tmp_path)
+    key = _key(tmp_path)
+    focus = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    gate = _gate(root, tmp_path, focus["completed_at"])
+    output = bundle / "reviewed-head-receipt.json"
+    foreign = tmp_path / "foreign.json"
+    foreign.write_bytes(b"foreign immutable bytes\n")
+    if output_state == "symlink":
+        output.symlink_to(foreign)
+    elif output_state == "directory":
+        output.mkdir()
+    else:
+        output.write_bytes(foreign.read_bytes())
+    with pytest.raises(ValueError, match=r"artifact|output|symbolic|owner"):
+        inputs.finalize_inputs(repo_root=root, bundle=bundle, gate_attestation=gate, key_path=key)
+    assert foreign.read_bytes() == b"foreign immutable bytes\n"
+    if output_state == "symlink":
+        assert output.is_symlink()
+    elif output_state == "directory":
+        assert output.is_dir()
+    else:
+        assert output.read_bytes() == foreign.read_bytes()
+    assert not (bundle / "manifest.json").exists()
+
+
+def test_final_receipt_revalidates_revocation_expiry_and_partial_focus_before_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, spec = _fixture(tmp_path, native_child_probe=True)
+    bundle = _record(root, spec, tmp_path)
+    key = _key(tmp_path)
+    focus = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    gate = _gate(root, tmp_path, focus["completed_at"])
+    signer_id = inputs._auth_context(key).signer.signer_id
+    future = int(time.time()) + 10**9
+    focused_path = bundle / "focused.json"
+    original = focused_path.read_bytes()
+    for state in ("revoked", "expired", "partial"):
+        with monkeypatch.context() as patch:
+            if state == "revoked":
+                patch.setenv("GLUDD_RECEIPT_REVOKED_SIGNERS", signer_id)
+            elif state == "expired":
+                patch.setattr(inputs.time, "time", lambda: float(future))
+            else:
+                incomplete = json.loads(original)
+                incomplete["command_ids"] = []
+                focused_path.write_text(json.dumps(incomplete), encoding="utf-8")
+            with pytest.raises(ValueError):
+                inputs.finalize_inputs(repo_root=root, bundle=bundle, gate_attestation=gate, key_path=key)
+        focused_path.write_bytes(original)
+        assert not any((bundle / name).exists() for name in (
+            "reviewed-head-receipt.json", "gate-binding.json", "manifest.json",
+        ))
+        assert (tmp_path / "native-child-count").read_text(encoding="utf-8") == "1"
 
 
 @pytest.mark.parametrize("mutation", [
@@ -552,6 +665,7 @@ def test_gate_fact_substitution_and_partial_focus_never_grant_release_proof(
         inputs.finalize_inputs(repo_root=root, bundle=bundle,
                                gate_attestation=attestation, key_path=key)
     assert not (bundle / "manifest.json").exists()
+    assert not (bundle / "reviewed-head-receipt.json").exists()
 
 
 def test_json_duplicate_keys_and_schema_rejection_are_content_free(tmp_path: Path) -> None:
@@ -574,7 +688,7 @@ def test_cli_dry_plan_does_not_read_missing_inputs_or_write(tmp_path: Path, caps
 
 
 def test_cli_native_sequence_preserves_admission_and_gate_authority(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
     root, spec = _fixture(tmp_path)
     intent = tmp_path / "intent.json"
@@ -591,8 +705,28 @@ def test_cli_native_sequence_preserves_admission_and_gate_authority(
     gate = _gate(root, tmp_path, focus["completed_at"])
     inputs.finalize_inputs(repo_root=root, bundle=bundle, gate_attestation=gate, key_path=key, validate_only=True)
     assert not (bundle / "manifest.json").exists()
+    assert not (bundle / "gate-binding.json").exists()
+    assert not (bundle / "reviewed-head-receipt.json").exists()
+    capsys.readouterr()
     assert inputs.main(["--action", "finalize", "--gate-attestation", str(gate), *common]) == 0
     assert (bundle / "manifest.json").exists()
+    handoff_line = next(
+        line for line in capsys.readouterr().out.splitlines()
+        if line.startswith("REVIEWED-HEAD-INPUTS-HANDOFF ")
+    )
+    handoff = json.loads(handoff_line.split(" ", 1)[1])
+    candidate = _git(root, "rev-parse", "HEAD")
+    assert handoff["candidate_sha"] == candidate
+    assert handoff["receipt_path"] == str(bundle / "reviewed-head-receipt.json")
+    assert handoff["release_ready"] is False
+    assert handoff["gate_evidence"] is False
+    assert handoff["next_argv"] == [
+        "make", "--no-print-directory", "-C", str(root), "release-readiness",
+        "TAG=v0.1.2", "RELEASE_READINESS_VALIDATE_ONLY=1",
+        "RELEASE_COMPLETED_STAGES=", "RELEASE_OBSERVATIONS=",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT=" + handoff["receipt_path"],
+        "RELEASE_CANDIDATE_SHA=" + candidate, "RELEASE_READINESS_CI_BRANCH=",
+    ]
 
 
 @pytest.mark.parametrize("arguments", [

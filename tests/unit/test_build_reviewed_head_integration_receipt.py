@@ -538,6 +538,98 @@ def test_write_receipt_rejects_symbolic_link_output(tmp_path: Path) -> None:
     assert destination.read_text(encoding="utf-8") == "preserve\n"
 
 
+def test_exclusive_receipt_reuses_identical_bytes_without_replacement(tmp_path: Path) -> None:
+    repo, manifest, gate = _merge_fixture(tmp_path)
+    receipt = builder.build_receipt_from_manifest(
+        manifest, manifest_dir=repo.parent, gate_attestation=gate, repo_root=repo,
+    )
+    output = tmp_path / "receipt.json"
+    builder.write_receipt(output, receipt, exclusive=True)
+    original, metadata = output.read_bytes(), output.stat()
+    builder.write_receipt(output, receipt, exclusive=True)
+    assert output.read_bytes() == original
+    assert output.stat().st_ino == metadata.st_ino
+    assert output.stat().st_mtime_ns == metadata.st_mtime_ns
+    assert not list(tmp_path.glob(".receipt.json.*.tmp"))
+
+
+@pytest.mark.parametrize("state", ["divergent", "symlink", "directory"])
+def test_exclusive_receipt_refuses_foreign_existing_outputs(tmp_path: Path, state: str) -> None:
+    repo, manifest, gate = _merge_fixture(tmp_path)
+    receipt = builder.build_receipt_from_manifest(
+        manifest, manifest_dir=repo.parent, gate_attestation=gate, repo_root=repo,
+    )
+    output, foreign = tmp_path / "receipt.json", tmp_path / "foreign.json"
+    foreign.write_bytes(b"preserve foreign owner\n")
+    if state == "symlink":
+        output.symlink_to(foreign)
+    elif state == "directory":
+        output.mkdir()
+    else:
+        output.write_bytes(foreign.read_bytes())
+    with pytest.raises(ValueError, match=r"symbolic|owner|output"):
+        builder.write_receipt(output, receipt, exclusive=True)
+    assert foreign.read_bytes() == b"preserve foreign owner\n"
+    if state == "symlink":
+        assert output.is_symlink()
+    elif state == "directory":
+        assert output.is_dir()
+    else:
+        assert output.read_bytes() == foreign.read_bytes()
+    assert not list(tmp_path.glob(".receipt.json.*.tmp"))
+
+
+@pytest.mark.parametrize("state", ["same", "divergent", "symlink"])
+def test_exclusive_receipt_admits_only_identical_concurrent_arrival(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: str,
+) -> None:
+    repo, manifest, gate = _merge_fixture(tmp_path)
+    receipt = builder.build_receipt_from_manifest(
+        manifest, manifest_dir=repo.parent, gate_attestation=gate, repo_root=repo,
+    )
+    expected = builder.encode_reviewed_head_integration_receipt(receipt).encode("utf-8")
+    output, foreign = tmp_path / "receipt.json", tmp_path / "foreign.json"
+    foreign.write_bytes(b"preserve concurrent owner\n")
+    real_link = builder.os.link
+    arrivals: list[tuple[int, int]] = []
+
+    def arrive(source: Path, destination: Path) -> None:
+        assert destination == output
+        if state == "symlink":
+            destination.symlink_to(foreign)
+        else:
+            destination.write_bytes(expected if state == "same" else foreign.read_bytes())
+        metadata = destination.lstat()
+        arrivals.append((metadata.st_ino, metadata.st_mtime_ns))
+        real_link(source, destination)
+
+    monkeypatch.setattr(builder.os, "link", arrive)
+    if state == "same":
+        builder.write_receipt(output, receipt, exclusive=True)
+        assert output.read_bytes() == expected
+    else:
+        with pytest.raises(ValueError, match=r"symbolic|owner|output"):
+            builder.write_receipt(output, receipt, exclusive=True)
+        assert output.read_bytes() == foreign.read_bytes()
+    assert len(arrivals) == 1
+    metadata = output.lstat()
+    assert arrivals == [(metadata.st_ino, metadata.st_mtime_ns)]
+    assert output.is_symlink() is (state == "symlink")
+    assert foreign.read_bytes() == b"preserve concurrent owner\n"
+    assert not list(tmp_path.glob(".receipt.json.*.tmp"))
+
+
+def test_default_receipt_writer_retains_legacy_atomic_replacement(tmp_path: Path) -> None:
+    repo, manifest, gate = _merge_fixture(tmp_path)
+    receipt = builder.build_receipt_from_manifest(
+        manifest, manifest_dir=repo.parent, gate_attestation=gate, repo_root=repo,
+    )
+    output = tmp_path / "receipt.json"
+    output.write_bytes(b"legacy caller may replace\n")
+    builder.write_receipt(output, receipt)
+    assert output.read_text(encoding="utf-8") == builder.encode_reviewed_head_integration_receipt(receipt)
+
+
 def test_review_receipt_path_cannot_escape_manifest_directory(tmp_path: Path) -> None:
     repo, manifest, attestation = _merge_fixture(tmp_path)
     head = manifest["heads"][0]  # type: ignore[index]

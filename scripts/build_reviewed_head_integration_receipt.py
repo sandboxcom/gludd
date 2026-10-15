@@ -376,22 +376,33 @@ def build_receipt_from_manifest(
     return receipt
 
 
-def write_receipt(path: Path, receipt: ReviewedHeadIntegrationReceipt) -> None:
-    """Atomically write one canonical receipt without following output symlinks."""
-    destination = path.resolve(strict=False)
-    destination.parent.mkdir(parents=True, exist_ok=True)
+def write_receipt(
+    path: Path, receipt: ReviewedHeadIntegrationReceipt, *, exclusive: bool = False,
+) -> None:
+    """Atomically replace a receipt, or exclusively publish identical owner bytes."""
     if path.is_symlink():
         raise ValueError("receipt output must not be a symbolic link")
+    destination = path.absolute() if exclusive else path.resolve(strict=False)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    encoded = encode_reviewed_head_integration_receipt(receipt)
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
     )
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(encode_reviewed_head_integration_receipt(receipt))
+            handle.write(encoded)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, destination)
+        if exclusive:
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                if (path.is_symlink() or not path.is_file()
+                        or path.read_bytes() != encoded.encode("utf-8")):
+                    raise ValueError("receipt output already belongs to another input or owner") from None
+        else:
+            os.replace(temporary, destination)
     finally:
         temporary.unlink(missing_ok=True)
 
