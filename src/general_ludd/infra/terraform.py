@@ -706,6 +706,7 @@ class TerraformGenerator:
                     module_source,
                     destination_path / "modules" / module_name,
                     dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns(".terraform", ".plugin-cache"),
                 )
             return destination_path
 
@@ -721,11 +722,15 @@ class TerraformGenerator:
         )
         modules_dir = destination_path / "modules"
         stack_dir = destination_path / "stacks" / stack_name
-        shutil.copytree(assets / "modules", modules_dir, dirs_exist_ok=True)
+        shutil.copytree(
+            assets / "modules", modules_dir, dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns(".terraform", ".plugin-cache"),
+        )
         shutil.copytree(
             assets / "stacks" / stack_name,
             stack_dir,
             dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns(".terraform", ".plugin-cache"),
         )
 
         accelerator = resolve_accelerator(config.gpu_type, config.gpu_count)

@@ -3,11 +3,29 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+from pathlib import Path
 from typing import NoReturn
 
 import pytest
 
 _MAX_SKIP_REASON_CHARS = 512
+
+
+def terraform_test_environment(fallback_cache: Path) -> dict[str, str]:
+    """Reuse the caller-owned cache without mutating its environment."""
+    environment = os.environ.copy()
+    selected = environment.get("TF_PLUGIN_CACHE_DIR")
+    cache = (Path(selected) if selected else fallback_cache).resolve()
+    cache.mkdir(parents=True, exist_ok=True)
+    # Fail locally before init's external-dependency skip boundary. Probe actual
+    # access (including ACLs/read-only mounts), then remove only our own file.
+    with tempfile.TemporaryFile(dir=cache, prefix=".gludd-tf-cache-probe-") as probe:
+        probe.write(b"\0")
+        probe.flush()
+    environment["TF_PLUGIN_CACHE_DIR"] = str(cache)
+    return environment
 
 _RUNPOD_PROVIDER_SCHEMA_FAILURE_MARKERS = (
     "Failed to obtain provider schema",

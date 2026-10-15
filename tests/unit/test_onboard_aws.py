@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -34,7 +33,7 @@ from general_ludd.onboard.aws import (
     _probe_is_authorized,
     load_policy_document,
 )
-from tests.terraform_test_support import skip_external_terraform_dependency
+from tests.terraform_test_support import skip_external_terraform_dependency, terraform_test_environment
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_DIR = REPO_ROOT / "infra" / "terraform" / "modules" / "onboard-iam"
@@ -433,9 +432,7 @@ class TestIAMPolicyDocument:
             )
 
             provider_cache = REPO_ROOT / "infra" / "terraform" / ".plugin-cache"
-            provider_cache.mkdir(parents=True, exist_ok=True)
-            terraform_env = os.environ.copy()
-            terraform_env["TF_PLUGIN_CACHE_DIR"] = str(provider_cache)
+            terraform_env = terraform_test_environment(provider_cache)
             try:
                 init = subprocess.run(
                     [

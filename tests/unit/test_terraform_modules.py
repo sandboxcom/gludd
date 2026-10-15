@@ -13,7 +13,6 @@ Scope:
 from __future__ import annotations
 
 import importlib
-import os
 import re
 import shutil
 import subprocess
@@ -23,7 +22,7 @@ from typing import Any, cast
 
 import pytest
 
-from tests.terraform_test_support import skip_external_terraform_dependency
+from tests.terraform_test_support import skip_external_terraform_dependency, terraform_test_environment
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULES_DIR = REPO_ROOT / "infra" / "terraform" / "modules"
@@ -216,9 +215,7 @@ class TestTerraformBinaryValidate:
         # Provider-backed modules share the repository cache. A cold/offline
         # registry is an environmental skip, while syntax remains mandatory
         # through the parser and fmt checks above.
-        TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
-        terraform_env = os.environ.copy()
-        terraform_env["TF_PLUGIN_CACHE_DIR"] = str(TF_PLUGIN_CACHE)
+        terraform_env = terraform_test_environment(TF_PLUGIN_CACHE)
         try:
             init = subprocess.run(
                 [
