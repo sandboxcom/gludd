@@ -1176,6 +1176,18 @@ and pointer changes share the existing atomic write; its diagnostic follows
 successful persistence. The 32-pointer/128-KiB limits and primary/support rules
 remain unchanged.
 
+Source review exposed an unnecessary retirement with 31 observations plus an
+abandoned incoming reservation. Admission now compares the union of observations,
+reservations and the incoming key against 32, so replacing an already-counted
+reservation needs no retirement. Failed/timed-out exited-owner regressions retain
+all pointers and receipt/log/trace bytes, require a fresh token, and emit no
+retention-release diagnostic; overlap and genuinely new-key controls remain.
+The bounded correction reproduces two failures with four passing controls first,
+then passes all six focused and all 185 native progress/retention cases. Ruff and
+strict typing pass; unchanged 85/75 coverage remains 95%, with retained native
+audit `.gate-logs/coverage-20261015T065732Z.json`. Source re-review and the next
+normal commit remain pending; this does not replace any earlier failed evidence.
+
 Pointer retirement is not permission to delete its evidence. The existing
 per-label retention scan, under its existing metadata lock, preserves every
 unsuccessful record carrying native progress identity, together with its log

@@ -470,7 +470,7 @@ def command_admission(
             if native["state"] in {"starting", "running"} and _pid_alive(native.get("owner_pid")):
                 raise ValueError("prior native command still has an active owner")
         retired: list[tuple[str, str]] = []
-        while key not in observations and len(set(observations) | set(reservations)) >= _MAX_COMMANDS:
+        while len(set(observations) | set(reservations) | {key}) > _MAX_COMMANDS:
             obsolete = _retire_superseded_observation(root, observations, reservations, identity)
             if obsolete is None:
                 raise ValueError("primary has reached the bounded command inventory")

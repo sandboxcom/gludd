@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -180,13 +181,16 @@ def test_retirement_admission_write_failure_preserves_history_and_receipts(
 
 def _historical_failures(
     policy: ModuleType, root: Path, monkeypatch: pytest.MonkeyPatch, state: str,
+    *, count: int = 32,
 ) -> dict[str, object]:
     """Keep real source hashing while isolating runtime and ended-owner checks."""
     def environment_identity(environment: Mapping[str, str], cwd: Path | str | None = None) -> str:
         return str(policy._command_key(dict(environment)))
 
     monkeypatch.setattr(policy, "_environment_identity", environment_identity)
-    before = _fill(policy, root, state=state)
+    for index in range(count):
+        _start(policy, root, command=("make", f"proof-{index}"), run_id=f"proof-{index}", state=state)
+    before = _state(root)
     native_owner = os.getpid()
     original_alive = policy._pid_alive
     monkeypatch.setattr(policy, "_pid_alive", lambda owner: owner != native_owner and original_alive(owner))
@@ -212,6 +216,71 @@ def test_actual_source_change_releases_one_historical_failed_slot(
     assert (repository / "TASKS.md").read_text().count("- [ ]") == 4
     assert all(path.read_bytes() == content for path, content in files.items())
     assert "reason=superseded-native-failure-source" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("overlap", [False, True])
+@pytest.mark.parametrize("state", ["failed", "timed_out"])
+def test_full_bound_dead_incoming_reservation_replacement_does_not_retire_history(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], overlap: bool, state: str,
+) -> None:
+    count = 32 if overlap else 31
+    before = _historical_failures(policy, repository, monkeypatch, state, count=count)
+    observations = cast(dict[str, dict[str, str]], before["observations"])
+    files = _native_files(repository, before)
+    for receipt in list(files):
+        native = json.loads(files[receipt])
+        log, trace = Path(native["log_path"]), receipt.with_suffix(".pytest.jsonl")
+        native["trace_path"] = str(trace)
+        receipt.write_text(json.dumps(native), encoding="utf-8")
+        for artifact in (log, trace):
+            artifact.write_bytes(b"retained native failure evidence\n")
+            files[artifact] = artifact.read_bytes()
+        files[receipt] = receipt.read_bytes()
+    command = ("make", "proof-0" if overlap else "incoming-acquisition")
+    implementation = repository / "implementation.py"
+    if overlap:
+        implementation.write_text("result = True\n", encoding="utf-8")
+    code = (
+        "import os, sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(Path(__file__).resolve().parents[2])!r})\n"
+        "from scripts.item_progress import command_admission\n"
+        f"owner = command_admission(Path({str(repository)!r}), {command!r}, "
+        "primary_task_id='F12.1', environment={'PYTHONHASHSEED': '0'}, "
+        "quiet_seconds=30, max_seconds=120)\n"
+        "owner.__enter__()\nos._exit(0)\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code], cwd=repository, text=True, capture_output=True,
+        check=False, timeout=30,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    abandoned = _state(repository)
+    incoming_key = str(policy._command_key(list(command)))
+    reservations = cast(dict[str, dict[str, object]], abandoned["reservations"])
+    previous = reservations[incoming_key]
+    assert not policy._pid_alive(previous["owner_pid"])
+    assert abandoned["observations"] == observations
+    assert len(set(observations) | set(reservations)) == policy._MAX_COMMANDS == 32
+    implementation.write_text("result = 'source-repair'\n", encoding="utf-8")
+    capsys.readouterr()
+    with policy.command_admission(
+        repository, command, primary_task_id="F12.1", environment={"PYTHONHASHSEED": "0"},
+        quiet_seconds=30, max_seconds=120,
+    ):
+        during = _state(repository)
+        current_observations = cast(dict[str, object], during["observations"])
+        current_reservations = cast(dict[str, dict[str, object]], during["reservations"])
+        assert current_observations == observations and len(current_observations) == count
+        assert len(set(current_observations) | set(current_reservations)) == 32
+        assert current_reservations[incoming_key]["token"] != previous["token"]
+        assert current_reservations[incoming_key]["owner_pid"] == os.getpid()
+        assert during["release_ready"] is False and during["gate_evidence"] is False
+        assert all(path.read_bytes() == content for path, content in files.items())
+    assert _state(repository)["observations"] == observations
+    assert _state(repository)["reservations"] == {}
+    assert all(path.read_bytes() == content for path, content in files.items())
+    assert "ITEM_PROGRESS_RETENTION_RELEASED" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("route", ["scoped", "exempt"])

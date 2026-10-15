@@ -15,13 +15,13 @@ All premature-stop incidents and process failures are tracked here.
   before retiring an inactive, authenticated source-superseded failure pointer.
 - Preserve all original tests and failure assertions. Current-source, env-only,
   bookkeeping-only, empty-commit, live/unknown/reserved/malformed and atomic-write
-  controls stay closed; scoped/exempt retention-one and old-run reuse are checked.
+  controls stay closed; scoped/exempt retention-one and old-run reuse are checked. Source review finds an unnecessary retirement at 31 observations plus dead incoming R; two failed/timed-out cases fail first while four overlap/new-key controls pass. The same-lock occupancy correction counts the incoming key before comparison; all six focused cases then pass without losing pointers, evidence or token ownership.
 - Focused verification passes 231 consumer cases; Ruff and strict typing pass.
   Progress-owner coverage passes 181 cases at 95% combined coverage. An initial
   150-case observer roster fails aggregate branch coverage at 84.7%; retain
   that failure. The complete native 331-case cohort passes unchanged 85/75
   audit floors at 93.06% lines/86.88% branches. Reports and exact commands are
-  in `docs/features/GATE_RESOURCE_LIFECYCLE.md`.
+  in `docs/features/GATE_RESOURCE_LIFECYCLE.md`. The bounded reservation correction passes 185 complete native progress/retention cases at 95% coverage under unchanged 85/75 floors (`.gate-logs/coverage-20261015T065732Z.json`); two-file Ruff and strict typing pass. Source re-review remains pending before the next normal commit.
 - Source review, integration, full gate and exact-SHA release proofs remain
   pending; no task checkbox or completion authority changes. Read-only scratch
   inspection still fails at 937.7 MB; no preserved artifacts were deleted.
