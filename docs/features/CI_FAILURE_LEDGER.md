@@ -394,6 +394,33 @@ owner keeps its compiled old banner until it exits; it is not restarted or
 duplicated merely to pick up a display fix. Public proof remains tied to its
 explicit watched SHA, and S98.4 remains open.
 
+## Lifecycle-marker age and local gate diagnostics (2026-10-15)
+
+The canonical gate publishes `RUNNING` to `.gate-status` at startup and writes
+phase results to `.gate-status.next` until terminal publication. A long-running
+gate can therefore advance through test batches while `.gate-status` retains
+its original modification time. That lifecycle-marker age cannot establish a
+stalled gate.
+
+The existing `pipeline_status.local_gate` diagnostic now reports marker age
+and a successful signal-0 PID probe separately. It states
+`gate_identity=unverified progress=unknown`: finding a PID does not establish
+that it still belongs to the gate or that its work is progressing. Existing
+missing/invalid PID diagnostics and terminal marker text remain. Progress
+inspection uses the existing bounded gate log and active-work owners; this
+display change adds no scanner, heartbeat writer, retry, or cleanup authority.
+Snapshot identity, current CI verdict, gate evidence and `release_ready=false`
+are unaffected.
+
+Practitioner context: a [Jenkins community thread opened in March 2023](https://community.jenkins.io/t/error-jenkins-48300/6533)
+and revisited in June 2024 reports recurring file-heartbeat failures under load.
+Those reports concern Jenkins and do not establish Gludd's cause or justify
+changing its timeouts. Here, the gate's own publication path and failing-first
+local controls establish the distinction between lifecycle markers, PID
+liveness, and progress. Controls retain RUNNING/PASS/FAIL text, real missing-PID
+detection, and unchanged success/failure/pending snapshot verdicts. They do not
+establish live process ownership or full-gate completion.
+
 ## Canonical source identity across child directories (2026-10-14)
 
 The pipeline profile's wildcard run includes also measure same-named scripts
