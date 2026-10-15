@@ -199,3 +199,15 @@ that disabled plugin autoload only in the child exposed the producer-process
 runtime substitution. The repaired binding equals a separately captured actual
 child plugin manager/interpreter record, with exactly one execution. Both controls
 retain genuine native make/pytest, source identity and authentication checks.
+
+The subsequent Main CPython 3.14 replay retained 121 passing controls but exposed
+two positive finalization failures. The gate fixture used the inspecting process's
+`execution_policy()` through native shard pairing, so it claimed a 3.14 gate even
+though the consumer correctly requires the canonical 3.11 release policy. A
+narrow failing-first control reproduces the exact native rejection under locked
+3.11 by explicitly supplying a 3.14 inspector contract. The fixture now models
+the external gate with the native `release_execution_policy()` and canonical
+policy digest, retaining native shard plans and all original positive assertions.
+A self-consistent 3.14 policy with a recomputed valid digest remains rejected.
+Production policy, runtime/source proof, signatures and all other refusals are
+unchanged; these fixtures are not evidence of a real full gate or a 3.14 replay.
