@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from collections import Counter
@@ -12,6 +13,8 @@ from pathlib import Path
 
 import pytest
 from scripts import makefile_layout
+
+from tests.unit.test_observed_command import _command, _current_status
 
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
@@ -134,6 +137,8 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help"]
     assert len({row["pid"] for row in rows}) == 2
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1")]
+    assert "-o verbosity_test_cases=-2" in str(rows[0]["flags"])
+    assert "verbosity_test_cases" not in str(rows[1]["flags"])
     for row, workers, limit in zip(rows, (2, 0), (2, 1), strict=True):
         flags = str(row["flags"])
         assert "-W error" in flags
@@ -144,6 +149,7 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert '--basetemp="$$BT"' in test_files
     assert 'ANSIBLE_LOCAL_TEMP="$$BT/ansible-local"' in test_files
     assert 'export VIRTUAL_ENV="$$UV_PROJECT_ENVIRONMENT"' in test_files
+    assert "verbosity_test_cases" not in test_files
     assert "--dist loadgroup" in makefile_layout.compose_makefile(ROOT / "Makefile")
 
 
@@ -159,13 +165,17 @@ def test_runtime_admission_propagates_each_owner_failure_without_replay(
 
 def _native_test_files(
     paths: list[Path], workers: int, *, environment: dict[str, str] | None = None,
+    extra_pytest_args: str = "",
 ) -> subprocess.CompletedProcess[str]:
+    flags = f"-W error -q -n {workers} --maxprocesses {workers}"
+    if extra_pytest_args:
+        flags += " " + extra_pytest_args
     return subprocess.run(
         [
             "make", "--no-print-directory", "test-files",
             "TESTFILES=" + " ".join(str(path) for path in paths),
             f"NPROC={workers}", f"GLUDD_XDIST_WORKERS={workers}",
-            f"PYTEST_ARGS=-W error -q -n {workers} --maxprocesses {workers}",
+            "PYTEST_ARGS=" + flags,
             "UV_PROJECT_ENVIRONMENT=" + os.environ.get("VIRTUAL_ENV", str(ROOT / ".venv")),
         ],
         cwd=ROOT, text=True, capture_output=True, timeout=45, env=environment,
@@ -229,3 +239,147 @@ def test_two_worker_native_admission_keeps_warnings_fatal(tmp_path: Path) -> Non
     assert "FAILED" in result.stdout and "test_original_warning" in result.stdout
     assert "UserWarning: runtime-admission-warning" in result.stdout
     assert re.search(r"\b1 failed\b", result.stdout)
+
+
+@pytest.mark.parametrize("mode", ("success", "assertion", "warning", "setup", "import", "missing"))
+def test_compact_native_reporting_preserves_inventory_failures_and_terminal_totals(tmp_path: Path, mode: str) -> None:
+    """Change only native per-case verbosity in otherwise identical two-worker children."""
+    (tmp_path / "conftest.py").write_text(
+        "import os\nimport pytest\nfrom tests.conftest import pytest_collection_modifyitems\n"
+        "def pytest_configure(config):\n"
+        "    if not hasattr(config, 'workerinput'):\n"
+        "        assert config.get_verbosity() == 1\n"
+        "        expected = -2 if os.environ['GLUDD_COMPACT_REPORT_VARIANT'] == 'compact' else 1\n"
+        "        assert config.get_verbosity(pytest.Config.VERBOSITY_TEST_CASES) == expected\n"
+        "@pytest.fixture(scope='module')\ndef compact_parent():\n"
+        "    if os.environ['GLUDD_COMPACT_REPORT_MODE'] == 'setup':\n"
+        "        raise RuntimeError('compact-native-setup')\n"
+        "    return 'fixture-loaded'\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "test_reporting.py"
+    probe.write_text(
+        "import os\nimport warnings\nimport pytest\n"
+        "if os.environ['GLUDD_COMPACT_REPORT_MODE'] == 'import':\n"
+        "    raise RuntimeError('compact-native-import')\n"
+        "pytestmark = pytest.mark.xdist_group('compact-reporting-controls')\n"
+        "@pytest.mark.parametrize('case', range(24))\n"
+        "def test_original_success(case, compact_parent, worker_id, base_url):\n"
+        "    assert 0 <= case < 24\n    assert compact_parent == 'fixture-loaded'\n"
+        "    assert worker_id.startswith('gw')\n"
+        "    assert base_url is None or isinstance(base_url, str)\n"
+        "def test_original_outcome(compact_parent):\n"
+        "    assert compact_parent == 'fixture-loaded'\n"
+        "    mode = os.environ['GLUDD_COMPACT_REPORT_MODE']\n"
+        "    if mode == 'assertion':\n        assert 1 == 2, 'compact-native-assertion'\n"
+        "    if mode == 'warning':\n        warnings.warn('compact-native-warning', UserWarning)\n",
+        encoding="utf-8",
+    )
+    paths = [probe]
+    if mode in {"setup", "missing"}:
+        node = "test_original_outcome" if mode == "setup" else "test_missing_node"
+        paths = [Path(str(probe) + "::" + node)]
+    expected_nodes = 0 if mode in {"import", "missing"} else 1 if mode == "setup" else 25
+    expected_footer = (
+        "no tests ran" if mode == "missing" else "2 errors" if mode == "import" else "1 error" if mode == "setup"
+        else "25 passed" if mode == "success" else "1 failed, 24 passed"
+    )
+    outputs: list[subprocess.CompletedProcess[str]] = []
+    snapshots_by_variant: list[list[dict[str, object]]] = []
+    node_orders: list[list[str]] = []
+    failure_reports: list[Counter[tuple[str, str, str]]] = []
+    plugins = ",".join(dict.fromkeys(filter(None, (
+        *os.environ.get("PYTEST_PLUGINS", "").split(","),
+        "scripts.xdist_trace_plugin", "tests.fixtures.admission_cold_start.snapshot_plugin",
+    ))))
+    for variant in ("ordinary", "compact"):
+        trace = tmp_path / f"{variant}.jsonl"
+        snapshots = tmp_path / f"snapshots-{variant}"
+        environment = {
+            **os.environ, "UV_NO_SYNC": "1", "UV_PYTHON_DOWNLOADS": "never",
+            "PYTHONDONTWRITEBYTECODE": "1", "PYTEST_PLUGINS": plugins,
+            "GLUDD_COMPACT_REPORT_MODE": mode, "GLUDD_XDIST_TRACE_LOG": str(trace),
+            "GLUDD_COMPACT_REPORT_VARIANT": variant,
+            "GLUDD_XDIST_TRACE_RUN_ID": variant, "COLD_START_SNAPSHOT_ROOT": str(snapshots),
+        }
+        options = ["-c", str(ROOT / "pyproject.toml")]
+        if variant == "compact":
+            options.extend(("-o", "verbosity_test_cases=-2"))
+        result = _native_test_files(
+            paths, 2, environment=environment,
+            extra_pytest_args=shlex.join(options),
+        )
+        outputs.append(result)
+        assert (result.returncode == 0) == (mode == "success"), result.stdout + result.stderr
+        assert expected_footer in result.stdout, result.stdout + result.stderr
+        events: list[dict[str, object]] = [json.loads(line) for line in trace.read_text().splitlines()]
+        assert {event["run_id"] for event in events} == {variant}
+        assert {
+            event["worker"] for event in events if event["event"] == "RUN_START" and event["role"] == "worker"
+        } == {"gw0", "gw1"}
+        started = [str(event["nodeid"]) for event in events if event["event"] == "START"]
+        finished = [str(event["nodeid"]) for event in events if event["event"] == "FINISH"]
+        assert started == finished and len(started) == expected_nodes
+        assert set(Counter(started).values()) <= {1}
+        assert len({event["worker"] for event in events if event["event"] == "START"}) == (
+            1 if expected_nodes else 0
+        )
+        node_orders.append(started)
+        failure_reports.append(Counter(
+            (str(event["nodeid"]), str(event["when"]), str(event["outcome"]))
+            for event in events if event["event"] == "REPORT"
+        ))
+        captured: list[dict[str, object]] = [
+            json.loads(path.read_text()) for path in sorted(snapshots.glob("gw*.json"))
+        ]
+        assert len(captured) == 2
+        snapshots_by_variant.append(captured)
+    assert outputs[0].returncode == outputs[1].returncode
+    assert node_orders[0] == node_orders[1]
+    assert failure_reports[0] == failure_reports[1]
+    for before, after in zip(*snapshots_by_variant, strict=True):
+        for field in ("nodes", "plugins", "conftests", "fixtures"):
+            assert before[field] == after[field], field
+    if mode == "success":
+        assert not failure_reports[0]
+        assert "::test_original_success" in outputs[0].stdout
+        assert "::test_original_success" not in outputs[1].stdout
+        assert len(outputs[1].stdout.encode()) < len(outputs[0].stdout.encode()) / 2
+    elif mode in {"assertion", "warning", "setup"}:
+        assert failure_reports[0]
+        detail = {
+            "assertion": "AssertionError: compact-native-assertion",
+            "warning": "UserWarning: compact-native-warning",
+            "setup": "RuntimeError: compact-native-setup",
+        }[mode]
+        for result in outputs:
+            assert detail in result.stdout and "test_original_outcome" in result.stdout
+            if mode == "assertion":
+                assert "assert 1 == 2" in result.stdout
+    elif mode == "import":
+        assert all("RuntimeError: compact-native-import" in result.stdout for result in outputs)
+    print(
+        f"native-reporting mode={mode} nodes={expected_nodes} "
+        f"stdout_bytes={len(outputs[0].stdout.encode())}->{len(outputs[1].stdout.encode())}"
+    )
+
+
+def test_compact_dot_bytes_keep_existing_observer_live_without_newlines(tmp_path: Path) -> None:
+    """Flushed partial-line progress must refresh the real observer's quiet clock."""
+    completed = subprocess.run(
+        _command(
+            tmp_path,
+            "import sys,time\nfor _ in range(20):\n    sys.stdout.write('.')\n"
+            "    sys.stdout.flush()\n    time.sleep(0.06)\n",
+            "--heartbeat-secs", "0.05", "--quiet-secs", "0.4", "--max-secs", "4",
+            run_id="compact-dot-progress",
+        ),
+        capture_output=True, check=False, timeout=6,
+    )
+    status = _current_status(tmp_path)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert status["state"] == "passed" and status["exit_code"] == 0
+    assert status["termination_reason"] is None
+    assert status["elapsed_seconds"] > 0.4
+    assert status["bytes_written"] == 20 and status["lines_written"] == 0
+    assert Path(status["log_path"]).read_bytes() == b"." * 20

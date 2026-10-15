@@ -517,3 +517,43 @@ limits are unchanged. The new path is added inline to the existing S98.4 scope.
 No production code, runner, cache, admission roster or promotion manifest changes.
 This is a test-boundary/conformance repair, not a measured speed improvement or
 full-gate/hosted/deployment acceptance; Root must measure the actual combined owner.
+
+## Keep execution detail without redundant per-case reporting (2026-10-15)
+
+Build 38775452145 on `e914eeeb646d919e79fff4d6fdd30d6905bda479`
+passes Python 3.11 admission but times out on Python 3.12 at 90.5 seconds. Its
+last test-call reports PASS at 100%; the terminal summary and separate fresh-help
+child never finish. Call-phase progress is not a completed admission result.
+The test configuration and `test-files` each add `-v`; admission's single `-q`
+therefore still emits verbose per-node start and result lines.
+
+Apply pytest's native `-o verbosity_test_cases=-2` only to the main admission
+cohort. The [fine-grained verbosity option](https://docs.pytest.org/en/stable/how-to/output.html#fine-grained-verbosity)
+separates execution progress from assertion detail. The pinned
+[pytest 9.1.1 terminal implementation](https://github.com/pytest-dev/pytest/blob/9.1.1/src/_pytest/terminal.py)
+uses compact result characters while retaining the unchanged global verbosity,
+failure diagnostics and final summary. Do not replace `-q` with `-qq`, change
+generic `test-files` output, or apply the override to the fresh-help child.
+
+The longstanding [2022 output/inventory discussion](https://github.com/pytest-dev/pytest/issues/9704)
+supports keeping console presentation separate from exact test identity; it does
+not establish a runtime speedup. Existing xdist trace START/FINISH/REPORT events
+remain the node-level diagnostic source. The existing observer counts output
+bytes, including result characters without newlines, as activity.
+
+Keep the complete ordered selector roster, real plugins and fixtures, two-worker
+loadgroup ownership, isolated help process, fatal warnings, 90-second total and
+60-second quiet limits. No runner, cache, environment, daemon, coverage exemption
+or release authority is added. ZDD and 85/75 coverage remain unchanged. Rollback
+removes only this cohort's output override and corresponding controls; retain
+historical failure evidence. Native behavioral acceptance and complete hosted
+timing, not reduced output volume alone, determine whether this clears the budget.
+
+The actual-Make flag requirement fails before the change. Native old/new fixture
+comparisons explicitly load the project configuration and retain global verbosity
+1. Success output falls from 4,225 to 1,031 bytes; exact expanded nodes, marks,
+plugins, fixture signatures and trace outcomes match. Assertion, warning, setup,
+import and missing-node cases retain their native nonzero exits and diagnostics.
+A separate real observer control retains all 20 flushed, newline-free bytes over
+1.2 seconds without tripping its 0.4-second quiet limit. These are behavioral and
+output-volume results, not a measured whole-admission or hosted speedup.
