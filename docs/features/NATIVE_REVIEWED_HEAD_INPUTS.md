@@ -211,3 +211,17 @@ policy digest, retaining native shard plans and all original positive assertions
 A self-consistent 3.14 policy with a recomputed valid digest remains rejected.
 Production policy, runtime/source proof, signatures and all other refusals are
 unchanged; these fixtures are not evidence of a real full gate or a 3.14 replay.
+
+A later combined native focus retained 531 passing cases and two missing-input
+CLI fixture failures. The native Make wrapper legitimately exported actual
+`GLUDD_REVIEWED_HEAD_INPUTS_*` defaults, so those cases inherited sufficient intent,
+output and repository inputs to perform a valid `record` instead of refusing.
+The missing-input fixture now removes only its six CLI-default variables inside
+its own `monkeypatch.context()`, preserving every original argument and assertion.
+Two failing-first controls use genuine temporary Git review inputs and configured
+defaults, with a publication tripwire preventing unintended writes. They require
+the exact defaults to be restored afterward, then exercise a real native record
+through those restored defaults. There is no global/autouse environment scrub or
+change to production defaults, source/runtime identity, approval or gate policy.
+The original failed focus observation and unintended external input bundle remain
+retained; this scoped repair does not rerun or relabel that combined focus.

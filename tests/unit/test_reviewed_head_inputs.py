@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
 import sys
 import time
@@ -578,8 +579,52 @@ def test_cli_native_sequence_preserves_admission_and_gate_authority(
     ["--action", "record", "--output", "/tmp/gludd-no-intent", "--validate-only", "0"],
     ["--action", "finalize", "--output", "/tmp/gludd-no-gate", "--validate-only", "0"],
 ])
-def test_cli_refuses_unowned_policy_or_missing_inputs_without_writing(arguments: list[str]) -> None:
-    assert inputs.main(arguments) == 2
+def test_cli_refuses_unowned_policy_or_missing_inputs_without_writing(
+    arguments: list[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with monkeypatch.context() as missing_inputs:
+        for name in ("ACTION", "INTENT", "OUTPUT", "REPO_ROOT", "GATE_ATTESTATION", "VALIDATE_ONLY"):
+            missing_inputs.delenv("GLUDD_REVIEWED_HEAD_INPUTS_" + name, raising=False)
+        assert inputs.main(arguments) == 2
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--action", "record", "--validate-only", "0"],
+    ["--action", "record", "--output", "/tmp/gludd-no-intent", "--validate-only", "0"],
+])
+def test_missing_cli_fixture_isolates_and_restores_genuine_configured_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: list[str],
+) -> None:
+    root, spec = _fixture(tmp_path)
+    intent = tmp_path / "intent.json"
+    intent.write_text(json.dumps(spec), encoding="utf-8")
+    bundle = tmp_path / "configured-inputs"
+    configured = {
+        "GLUDD_REVIEWED_HEAD_INPUTS_ACTION": "record",
+        "GLUDD_REVIEWED_HEAD_INPUTS_INTENT": str(intent),
+        "GLUDD_REVIEWED_HEAD_INPUTS_OUTPUT": str(bundle),
+        "GLUDD_REVIEWED_HEAD_INPUTS_REPO_ROOT": str(root),
+        "GLUDD_REVIEWED_HEAD_INPUTS_GATE_ATTESTATION": str(tmp_path / "future-gate.json"),
+        "GLUDD_REVIEWED_HEAD_INPUTS_VALIDATE_ONLY": "0",
+    }
+    for name, value in configured.items():
+        monkeypatch.setenv(name, value)
+    assert inputs.main(["--action", "admit"]) == 0
+    assert not bundle.exists()
+
+    def unexpected_record(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("missing-input fixture attempted native record publication from inherited defaults")
+
+    with monkeypatch.context() as guarded:
+        guarded.setattr(inputs, "record_inputs", unexpected_record)
+        test_cli_refuses_unowned_policy_or_missing_inputs_without_writing(arguments, guarded)
+    assert {name: os.environ.get(name) for name in configured} == configured
+    assert not bundle.exists()
+    # Restored defaults still drive a genuine native publication into this test's owned output.
+    assert inputs.main([]) == 0
+    recorded = json.loads((bundle / "inputs.json").read_text(encoding="utf-8"))
+    assert recorded["candidate_sha"] == _git(root, "rev-parse", "HEAD")
+    assert recorded["intent"] == spec
 
 
 def test_missing_key_and_substituted_execution_owner_cannot_claim_pass(
