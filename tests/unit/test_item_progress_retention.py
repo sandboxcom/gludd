@@ -3,19 +3,28 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from tests.unit.test_item_progress import (
     _fixed_identity,
+    _git,
     _start,
     _state,
 )
 from tests.unit.test_item_progress import policy as policy
 from tests.unit.test_item_progress import repository as repository
+
+if TYPE_CHECKING:
+    import stream_command
+else:
+    from scripts import stream_command
 
 
 def _fill(policy: ModuleType, root: Path, state: str = "passed", *, passed_last: bool = False) -> dict[str, object]:
@@ -167,3 +176,226 @@ def test_retirement_admission_write_failure_preserves_history_and_receipts(
     assert (repository / ".gludd/item-progress.json").read_bytes() == progress_bytes
     assert all(path.read_bytes() == content for path, content in files.items())
     assert "ITEM_PROGRESS_RETENTION_RELEASED" not in capsys.readouterr().out
+
+
+def _historical_failures(
+    policy: ModuleType, root: Path, monkeypatch: pytest.MonkeyPatch, state: str,
+) -> dict[str, object]:
+    """Keep real source hashing while isolating runtime and ended-owner checks."""
+    def environment_identity(environment: Mapping[str, str], cwd: Path | str | None = None) -> str:
+        return str(policy._command_key(dict(environment)))
+
+    monkeypatch.setattr(policy, "_environment_identity", environment_identity)
+    before = _fill(policy, root, state=state)
+    native_owner = os.getpid()
+    original_alive = policy._pid_alive
+    monkeypatch.setattr(policy, "_pid_alive", lambda owner: owner != native_owner and original_alive(owner))
+    return before
+
+
+@pytest.mark.parametrize("state", ["failed", "timed_out"])
+def test_actual_source_change_releases_one_historical_failed_slot(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], state: str,
+) -> None:
+    before = _historical_failures(policy, repository, monkeypatch, state)
+    files = _native_files(repository, before)
+    (repository / "implementation.py").write_text("result = True\n", encoding="utf-8")
+    _start(policy, repository, command=("make", "new-acquisition"), run_id="acquisition", state="passed")
+    after = _state(repository)
+    old_keys = set(cast(dict[str, object], before["observations"]))
+    new_keys = set(cast(dict[str, object], after["observations"]))
+    assert len(old_keys - new_keys) == 1 and len(new_keys - old_keys) == 1
+    assert len(new_keys) == policy._MAX_COMMANDS == 32
+    assert after["reservations"] == {}
+    assert after["release_ready"] is False and after["gate_evidence"] is False
+    assert (repository / "TASKS.md").read_text().count("- [ ]") == 4
+    assert all(path.read_bytes() == content for path, content in files.items())
+    assert "reason=superseded-native-failure-source" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("route", ["scoped", "exempt"])
+@pytest.mark.parametrize("state", ["failed", "timed_out"])
+def test_retired_failure_survives_real_retention_and_refuses_run_identity_reuse(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, route: str, state: str,
+) -> None:
+    before = _historical_failures(policy, repository, monkeypatch, state)
+    pointers = cast(dict[str, dict[str, str]], before["observations"])
+    artifacts: dict[Path, bytes] = {}
+    for pointer in pointers.values():
+        directory = Path(pointer["root"]) / pointer["label"]
+        receipt = directory / f"{pointer['run_id']}.json"
+        native = json.loads(receipt.read_text())
+        trace = directory / f"{pointer['run_id']}.pytest.jsonl"
+        native["trace_path"] = str(trace)
+        receipt.write_text(json.dumps(native), encoding="utf-8")
+        Path(native["log_path"]).write_bytes(b"original failed output\n")
+        trace.write_bytes(b"original failed trace\n")
+        for path in (receipt, Path(native["log_path"]), trace):
+            artifacts[path] = path.read_bytes()
+    (repository / "implementation.py").write_text("result = True\n", encoding="utf-8")
+    _start(policy, repository, command=("make", "new-acquisition"), run_id="acquisition", state="passed")
+    retired = set(pointers) - set(cast(dict[str, object], _state(repository)["observations"]))
+    assert len(retired) == 1
+    pointer = pointers[retired.pop()]
+    directory = Path(pointer["root"]) / pointer["label"]
+    command = [sys.executable, "-c", "print('retention probe')"]
+    environment = dict(os.environ)
+    if route == "scoped":
+        with policy.command_admission(
+            repository, command, primary_task_id="F12.1", environment=environment,
+            quiet_seconds=0, max_seconds=10,
+        ) as admission:
+            result = stream_command.stream_command(
+                command, directory / "probe.log", observed_root=directory.parent,
+                label=pointer["label"], run_id="probe", retain_runs=1, max_seconds=10,
+                progress_admission=admission, environment=environment,
+            )
+    else:
+        result = stream_command.stream_command(
+            command, directory / "probe.log", observed_root=directory.parent,
+            label=pointer["label"], run_id="probe", retain_runs=1, max_seconds=10,
+            progress_root=repository, environment=environment,
+        )
+    assert result == 0
+    assert all(path.exists() and path.read_bytes() == content for path, content in artifacts.items())
+    marker = repository / "reuse-executed"
+    result = stream_command.stream_command(
+        [sys.executable, "-c", f"from pathlib import Path; Path({str(marker)!r}).touch()"],
+        directory / "reuse-attempt.log", observed_root=directory.parent,
+        label=pointer["label"], run_id=pointer["run_id"], retain_runs=1, max_seconds=10,
+        progress_root=repository, environment=environment,
+    )
+    assert result == 125 and not marker.exists()
+    assert all(path.read_bytes() == content for path, content in artifacts.items())
+
+
+@pytest.mark.parametrize("change", ["none", "environment", "bookkeeping", "empty-commit"])
+def test_failed_slots_require_actual_source_change(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, change: str,
+) -> None:
+    _historical_failures(policy, repository, monkeypatch, "failed")
+    environment = {"PYTHONHASHSEED": "0"}
+    if change == "environment":
+        environment["PYTHONHASHSEED"] = "1"
+    elif change == "bookkeeping":
+        for name in ("TASKS.md", "BUGS.md", "SESSION.md"):
+            path = repository / name
+            path.write_text(path.read_text() + "\nUpdated notes\n", encoding="utf-8")
+    elif change == "empty-commit":
+        _git(repository, "commit", "--quiet", "--allow-empty", "-m", "unchanged source")
+    before = (repository / ".gludd/item-progress.json").read_bytes()
+    with pytest.raises(ValueError, match="bounded command inventory"):
+        _start(policy, repository, command=("make", "new-acquisition"), environment=environment)
+    assert (repository / ".gludd/item-progress.json").read_bytes() == before
+
+
+def test_retiring_old_source_failure_preserves_current_source_refusal_and_reservation(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _historical_failures(policy, repository, monkeypatch, "failed")
+    (repository / "implementation.py").write_text("result = True\n", encoding="utf-8")
+    _start(policy, repository, command=("make", "proof-0"), run_id="current-failure")
+    with policy.command_admission(
+        repository, ("make", "new-acquisition"), primary_task_id="F12.1",
+        environment={"PYTHONHASHSEED": "0"}, quiet_seconds=30, max_seconds=120,
+    ):
+        during = _state(repository)
+        assert len(cast(dict[str, object], during["observations"])) == 31
+        assert len(cast(dict[str, object], during["reservations"])) == 1
+        with pytest.raises(ValueError, match="unchanged failed"):
+            _start(policy, repository, command=("make", "proof-0"), run_id="retry", max_seconds=240)
+    assert _state(repository)["reservations"] == {}
+
+
+def test_failed_slot_retirement_write_failure_keeps_every_native_record(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    before = _historical_failures(policy, repository, monkeypatch, "failed")
+    files = _native_files(repository, before)
+    progress = repository / ".gludd/item-progress.json"
+    original = progress.read_bytes()
+    (repository / "implementation.py").write_text("result = True\n", encoding="utf-8")
+
+    def fail_write(_path: Path, _value: object) -> None:
+        raise OSError("fixture native admission write refused")
+
+    monkeypatch.setattr(policy, "_atomic_write_json", fail_write)
+    with pytest.raises(OSError, match="native admission write refused"):
+        _start(policy, repository, command=("make", "new-acquisition"))
+    assert progress.read_bytes() == original
+    assert all(path.read_bytes() == content for path, content in files.items())
+    assert "ITEM_PROGRESS_RETENTION_RELEASED" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("unsafe", [
+    "current-source", "environment-only", "live-owner", "unknown-owner", "boolean-owner", "zero-owner",
+    "reserved", "wrong-command", "wrong-root", "invalid-source", "missing", "malformed", "symlink",
+    "invalid-exit", "interrupted", "running", "starting",
+])
+def test_one_source_obsolete_failure_cannot_bypass_native_safety_boundaries(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, unsafe: str,
+) -> None:
+    _fixed_identity(policy, monkeypatch)
+    before = _fill(policy, repository, state="failed")
+    observations = cast(dict[str, dict[str, str]], before["observations"])
+    key, pointer = next(iter(observations.items()))
+    path = Path(pointer["root"]) / pointer["label"] / f"{pointer['run_id']}.json"
+    native = json.loads(path.read_text())
+    native["progress_identity"]["source"] = "c" * 64
+    monkeypatch.setattr(policy, "_pid_alive", lambda _owner: unsafe == "live-owner")
+    if unsafe in {"current-source", "environment-only"}:
+        native["progress_identity"]["source"] = "a" * 64
+        if unsafe == "environment-only":
+            native["progress_identity"]["environment"] = "c" * 64
+    elif unsafe in {"unknown-owner", "boolean-owner", "zero-owner"}:
+        native["owner_pid"] = {"unknown-owner": None, "boolean-owner": True, "zero-owner": 0}[unsafe]
+    elif unsafe == "reserved":
+        before["reservations"] = {key: {"owner_pid": os.getpid(), "token": "f" * 32}}
+        (repository / ".gludd/item-progress.json").write_text(json.dumps(before), encoding="utf-8")
+    elif unsafe == "wrong-command":
+        native["progress_identity"]["command"] = ["make", "forged-command"]
+    elif unsafe == "wrong-root":
+        native["progress_identity"]["root"] = "/foreign-project"
+    elif unsafe == "invalid-source":
+        native["progress_identity"]["source"] = "manual"
+    elif unsafe == "invalid-exit":
+        native["exit_code"] = True
+    elif unsafe in {"interrupted", "running", "starting"}:
+        native["state"] = unsafe
+        native["exit_code"] = 130 if unsafe == "interrupted" else None
+    path.write_text(json.dumps(native), encoding="utf-8")
+    if unsafe == "missing":
+        path.unlink()
+    elif unsafe == "malformed":
+        path.write_text("not-json", encoding="utf-8")
+    elif unsafe == "symlink":
+        original = path.with_suffix(".retained")
+        path.rename(original)
+        path.symlink_to(original)
+    progress = repository / ".gludd/item-progress.json"
+    progress_before = progress.read_bytes()
+    with pytest.raises(ValueError, match="bounded command inventory"):
+        _start(policy, repository, command=("make", "new-acquisition"))
+    assert progress.read_bytes() == progress_before
+
+
+def test_failed_slot_retirement_keeps_latest_context_not_all_historical_source_deduplication(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before = _historical_failures(policy, repository, monkeypatch, "failed")
+    pointers = cast(dict[str, dict[str, str]], before["observations"])
+    original_files = _native_files(repository, before)
+    implementation = repository / "implementation.py"
+    implementation.write_text("result = True\n", encoding="utf-8")
+    _start(policy, repository, command=("make", "new-acquisition"), run_id="source-b", state="passed")
+    retired = set(pointers) - set(cast(dict[str, object], _state(repository)["observations"]))
+    assert len(retired) == 1
+    pointer = pointers[retired.pop()]
+    previous = json.loads((Path(pointer["root"]) / pointer["label"] / f"{pointer['run_id']}.json").read_text())
+    command = tuple(previous["progress_identity"]["command"])
+    implementation.write_text("result = False\n", encoding="utf-8")
+    _start(policy, repository, command=command, run_id="source-a-return")
+    assert all(path.read_bytes() == content for path, content in original_files.items())
+    with pytest.raises(ValueError, match="unchanged failed"):
+        _start(policy, repository, command=command, run_id="source-a-repeat")

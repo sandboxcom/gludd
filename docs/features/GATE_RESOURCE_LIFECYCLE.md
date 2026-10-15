@@ -1157,3 +1157,85 @@ Evidence reviewed 2026-10-08:
 - A long-lived practitioner report reproduces the same `No data to combine`
   failure when combine is asked to consume a serial base file:
   <https://stackoverflow.com/questions/26214055/combine-python-coverage-files/26231950>.
+
+## Source-superseded command capacity and retained failure evidence
+
+The selected S98.4 native owner exhausted its 32 command pointers with historical
+failed and timed-out invocations. A distinct locked-artifact acquisition was
+refused before execution, even though its implementation source had changed.
+Changing a label, run ID, timeout, notes or commit identity is not a repaired input.
+
+The existing item-progress admission may retire only the obsolete slots needed
+for its new reservation. Successful pointers retain their existing source or
+runtime supersession rule. A failed or timed-out pointer additionally requires
+a different actual source digest, matching native root/command identity, no
+reservation, and a valid owner PID that is demonstrably inactive. Environment
+changes alone cannot retire failures. Live, unknown, interrupted, missing,
+malformed, symlinked and forged observations remain protected. The reservation
+and pointer changes share the existing atomic write; its diagnostic follows
+successful persistence. The 32-pointer/128-KiB limits and primary/support rules
+remain unchanged.
+
+Pointer retirement is not permission to delete its evidence. The existing
+per-label retention scan, under its existing metadata lock, preserves every
+unsuccessful record carrying native progress identity, together with its log
+and trace, even after the active pointer is retired. Unknown progress identity
+also cannot grant cleanup authority. Existing immutable run-name checks still
+refuse reusing these artifacts. Ordinary unscoped retention and the existing
+current-run/reference protections keep their original behavior.
+
+Admission protects the latest selected context, as its existing same-command
+replacement already does. Source A to B and back to A can admit a retired A
+command; this is not an all-history failure-deduplication ledger. Once that
+command fails in the current context, unchanged replay is refused again.
+No second runner, cache, scheduler, inventory, automatic retry or waiver is added.
+The existing scan still visits per-label receipts; protecting native failure
+history can retain additional disk bytes. That history is not bounded by the
+32 active pointers and needs the existing independently authorized cleanup
+policy, rather than silent deletion or a larger admission cap.
+
+Five failing-first cases reproduce full failed/timed-out inventory refusal after
+a real source edit and deletion of unreferenced native unsuccessful artifacts.
+Tests include actual exited native owners, both scoped and exempt observers at
+retention one, byte-for-byte receipt/log/trace preservation, immutable run-name
+reuse refusal, unchanged-input controls and atomic-write failure. Existing
+record/prune orderings retain their shared lock coverage. These are focused
+acceptance checks; full gate, exact-SHA hosted and release evidence remain open.
+
+The focused consumer replay passes 231 cases with fatal warnings. Progress-owner
+coverage passes 181 cases at 96.33% lines/91.04% branches; its native 85/75 audit
+is `.gate-logs/coverage-20261015T003341Z.json`. The initial four-owner observer
+roster passes 150 cases but fails aggregate branch coverage at 84.7%; retain
+that failed audit, `.gate-logs/coverage-20261015T003437Z.json`. Including the
+existing complete progress/retention cohort passes 331 cases at 93.06% aggregate
+lines/86.88% branches, with every measured file above 75% in both dimensions;
+the unchanged native audit is `.gate-logs/coverage-20261015T003738Z.json`.
+Ruff and strict typing pass across all five Python files. These are neither
+exact-candidate release proofs nor permission to ignore the retained scratch
+diagnostic failure or delete its contents.
+
+The exact invocations below append the same preexisting-toolchain Make variables
+(no install or environment creation):
+
+```text
+UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON_DOWNLOADS=never NPROC=1 GLUDD_XDIST_WORKERS=1
+```
+
+```text
+make test-files TESTFILES='tests/unit/test_item_progress_retention.py tests/unit/test_observer_retention_concurrency.py' PYTEST_ARGS='-q -W error -n 0 -k "actual_source_change_releases_one_historical_failed_slot or native_unsuccessful_evidence_survives_without_an_active_capacity_pointer"'
+make test-files TESTFILES='tests/unit/test_item_progress.py tests/unit/test_item_progress_retention.py tests/unit/test_observer_retention_concurrency.py tests/unit/test_observed_command.py' PYTEST_ARGS='-q -W error -n 0'
+make lint-files FILES='scripts/item_progress.py scripts/stream_command.py tests/unit/test_item_progress_retention.py tests/unit/test_observer_retention_concurrency.py tests/unit/test_item_progress.py'
+make typecheck-scope FILES='scripts/item_progress.py scripts/stream_command.py tests/unit/test_item_progress_retention.py tests/unit/test_observer_retention_concurrency.py tests/unit/test_item_progress.py'
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_item_progress.py tests/unit/test_item_progress_retention.py' COVERAGE_CONFIG=config/coverage_item_progress.ini COVERAGE_REPORT=.gate-logs/coverage-native-command-capacity-progress.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_observed_command.py tests/unit/test_xdist_trace_diagnostics.py tests/unit/test_gate_refresh_streaming.py tests/unit/test_observability_guardrails.py tests/unit/test_active_work_status.py tests/unit/test_active_work_resource_observability.py tests/unit/test_observer_retention_concurrency.py tests/unit/test_item_progress.py tests/unit/test_item_progress_retention.py' COVERAGE_CONFIG=config/coverage_observed_command.ini COVERAGE_REPORT=.gate-logs/coverage-native-command-capacity-observer-complete.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
+```
+
+Practitioner reports about repeated Stop feedback describe nonproductive model
+continuations when external inputs remain unchanged:
+<https://github.com/openai/codex/issues/37937> and
+<https://github.com/openai/codex/issues/34477>. They motivate preserving the actual
+failure identity and changing an input before substantive retry; they do not
+prove this Gludd inventory defect or authorize cleanup. This control-plane
+change touches no serving process, listener, deployment or database and preserves
+ZDD. Rollback restores the earlier admission/retention logic through normal
+development flow while retaining failed evidence and all release requirements.

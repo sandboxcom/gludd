@@ -1,5 +1,10 @@
 # TASKS.md — Evidence Ledger
 
+S98.4 pending native capacity support, 2026-10-14: the existing 32-command owner refused a new locked-artifact acquisition because retained historical failures filled its active pointers. Five failing-first cases reproduce source-change refusal and retention deletion of unreferenced native unsuccessful evidence.
+The repair first protects native failed/timed-out/interrupted artifacts in the existing observer scan, then admits only source-superseded failed/timed-out pointers with matching native identity and inactive owners. All original tests, 32/128-KiB limits, current-source refusal, primary/support rules and cleanup authority remain. Focused consumers pass 231 cases; Ruff and strict typing pass.
+Progress-owner coverage passes 181 cases at 95%; the complete four-owner cohort passes 331 cases at 93.06% lines/86.88% branches with native 85/75 audits `.gate-logs/coverage-20261015T003341Z.json` and `.gate-logs/coverage-20261015T003738Z.json`. Preserve the initial 84.7% branch failure and scratch diagnostic failure.
+Source review, integration, full gate, hosted exact-SHA and deployment acceptance remain pending. No task or completed-backlog checkbox changes.
+
 S98.4 observation, 2026-10-14: exact local release run
 `20261014T225556Z-fd250208` fails after 40 passing batches because a mocked
 checkout inherits `GLUDD_CANDIDATE_SHA` from the real outer gate. The focused

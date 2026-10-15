@@ -948,3 +948,41 @@ def test_native_control_entrypoint_plan_does_not_create_state(repository: Path) 
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout)["kind"] == "work_item_plan"
     assert not (repository / ".gludd/item-progress.json").exists()
+
+
+@pytest.mark.parametrize("state", ["failed", "timed_out"])
+def test_real_exited_native_owner_releases_only_a_source_superseded_capacity_slot(
+    policy: ModuleType, repository: Path, state: str,
+) -> None:
+    code = (
+        "import sys\nfrom pathlib import Path\n"
+        f"sys.path.insert(0, {str(MODULE.parents[1])!r})\n"
+        "from scripts import item_progress\n"
+        "from tests.unit.test_item_progress import _start\n"
+        f"root = Path({str(repository)!r})\n"
+        "for index in range(32):\n"
+        "    _start(item_progress, root, command=('make', f'old-proof-{index}'), "
+        f"run_id=f'old-{{index}}', state={state!r})\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code], cwd=repository, text=True, capture_output=True,
+        check=False, timeout=60,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    before = _state(repository)
+    observations = cast(dict[str, dict[str, str]], before["observations"])
+    receipts = {
+        Path(pointer["root"]) / pointer["label"] / f"{pointer['run_id']}.json"
+        for pointer in observations.values()
+    }
+    original = {path: path.read_bytes() for path in receipts}
+    assert len(original) == policy._MAX_COMMANDS == 32
+    assert all(not policy._pid_alive(json.loads(content)["owner_pid"]) for content in original.values())
+    (repository / "implementation.py").write_text("result = True\n", encoding="utf-8")
+    _start(policy, repository, command=("make", "new-acquisition"), run_id="new-source", state="passed")
+    after = _state(repository)
+    current_keys = set(cast(dict[str, object], after["observations"]))
+    assert len(current_keys) == 32 and len(set(observations) - current_keys) == 1
+    assert after["reservations"] == {}
+    assert after["release_ready"] is False and after["gate_evidence"] is False
+    assert all(path.read_bytes() == content for path, content in original.items())

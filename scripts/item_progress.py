@@ -339,11 +339,11 @@ def _release(root: Path, key: str, token: str) -> None:
             _atomic_write_json(path, state)
 
 
-def _retire_superseded_success(
+def _retire_superseded_observation(
     root: Path, observations: dict[str, object], reservations: Mapping[str, object],
     identity: Mapping[str, object],
-) -> str | None:
-    """Release one obsolete successful pointer, never a receipt or unsafe owner."""
+) -> tuple[str, str] | None:
+    """Release one obsolete pointer without granting failure cleanup authority."""
     for key, value in sorted(observations.items()):
         if key in reservations:
             continue
@@ -353,10 +353,21 @@ def _retire_superseded_success(
             # Missing, malformed or inaccessible evidence cannot authorize retirement.
             continue
         previous = cast(dict[str, object], native["progress_identity"])
-        if (native["state"] == "passed" and _command_key(previous["command"]) == key
+        owner_pid = native.get("owner_pid")
+        if _command_key(previous["command"]) != key:
+            continue
+        if (native["state"] == "passed"
                 and any(previous[field] != identity[field] for field in ("source", "environment"))):
-            del observations[key]
-            return key
+            reason = "superseded-native-success"
+        elif (native["state"] in {"failed", "timed_out"}
+                and previous["source"] != identity["source"]
+                and type(owner_pid) is int and owner_pid > 0
+                and not _pid_alive(owner_pid)):
+            reason = "superseded-native-failure-source"
+        else:
+            continue
+        del observations[key]
+        return key, reason
     return None
 
 
@@ -458,16 +469,16 @@ def command_admission(
                 )
             if native["state"] in {"starting", "running"} and _pid_alive(native.get("owner_pid")):
                 raise ValueError("prior native command still has an active owner")
-        retired: list[str] = []
+        retired: list[tuple[str, str]] = []
         while key not in observations and len(set(observations) | set(reservations)) >= _MAX_COMMANDS:
-            obsolete = _retire_superseded_success(root, observations, reservations, identity)
+            obsolete = _retire_superseded_observation(root, observations, reservations, identity)
             if obsolete is None:
                 raise ValueError("primary has reached the bounded command inventory")
             retired.append(obsolete)
         reservations[key] = {"owner_pid": os.getpid(), "token": token}
         _atomic_write_json(path, state)
-        for obsolete in retired:
-            print(f"ITEM_PROGRESS_RETENTION_RELEASED command={obsolete} reason=superseded-native-success "
+        for retired_key, reason in retired:
+            print(f"ITEM_PROGRESS_RETENTION_RELEASED command={retired_key} reason={reason} "
                   "receipt_deleted=false release_ready=false gate_evidence=false", flush=True)
         admission = Admission(root, path, state, identity, token)
     try:
