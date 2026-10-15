@@ -438,12 +438,13 @@ def retained_objects(repo: Path, sha: str) -> dict[str, str]:
 
 def assert_retained_count(repo: Path, *, retained: int, unowned: int) -> subprocess.CompletedProcess[str]:
     before = snapshot(repo)
-    index = (repo / ".git" / "index").read_bytes()
+    index_path = repo / git(repo, "rev-parse", "--git-path", "index").stdout.strip()
+    index = index_path.read_bytes()
     result = retained_inventory(repo)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout == f"{unowned}\n"
     assert f"OWNED-CHECKPOINT-COUNT retained={retained} unowned={unowned}" in result.stderr
-    assert (repo / ".git" / "index").read_bytes() == index
+    assert index_path.read_bytes() == index
     assert snapshot(repo) == before
     return result
 

@@ -106,10 +106,57 @@ def checkpoint_paths(root: Path, sha: str) -> set[str]:
     return result
 
 
+def registered_roots(inventory: str) -> dict[str, tuple[Path, bool]]:
+    """Resolve identities only from Git's NUL-delimited live worktree registry."""
+    if not inventory.endswith("\0\0"):
+        raise Refused("malformed native worktree inventory; no checkpoints changed")
+    roots: dict[str, tuple[Path, bool]] = {}
+    seen: set[Path] = set()
+    for position, record in enumerate(inventory[:-2].split("\0\0")):
+        fields = record.split("\0")
+        if not fields[0].startswith("worktree ") or not fields[0][9:]:
+            raise Refused("malformed native worktree inventory; no checkpoints changed")
+        path = Path(fields[0][9:])
+        if not path.is_absolute() or path in seen:
+            raise Refused("nonliteral or duplicate native worktree registration")
+        seen.add(path)
+        if any(field == "prunable" or field.startswith("prunable ") for field in fields[1:]):
+            continue
+        try:
+            if (path.resolve(strict=True) != path or not path.is_dir()
+                    or (path / ".git").is_symlink()):
+                continue
+        except (OSError, RuntimeError):
+            continue
+        identity = hashlib.sha256(os.fsencode(path)).hexdigest()
+        roots[identity] = path, position == 0
+    return roots
+
+
+def verify_registered_root(owner: Path, *, main: bool, common: Path) -> None:
+    """Require the registered root's actual common directory and native backlink."""
+    if (Path(git(owner, "rev-parse", "--show-toplevel").strip()) != owner
+            or Path(git(owner, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()) != common):
+        raise Refused("registered checkpoint owner belongs to another repository")
+    directory = Path(git(owner, "rev-parse", "--absolute-git-dir").strip())
+    if directory.resolve(strict=True) != directory:
+        raise Refused("symlinked native owner administration directory")
+    if main:
+        if directory != common:
+            raise Refused("registered main checkpoint owner has a foreign native directory")
+    elif (directory.parent != common / "worktrees"
+            or any((directory / name).is_symlink() for name in ("gitdir", "commondir"))
+            or Path((directory / "gitdir").read_text().removesuffix("\n")) != owner / ".git"):
+        raise Refused("registered checkpoint owner has a stale or foreign native backlink")
+
+
 def count_leaks(root: Path) -> int:
     """Count unknown stashes while verifying retained checkpoints without mutation."""
     retained = unowned = 0
     labels: set[str] = set()
+    worktrees = git(root, "worktree", "list", "--porcelain", "-z")
+    owners = registered_roots(worktrees)
+    common = Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
     records = git(root, "stash", "list", "--format=%H%x00%s%x00")
     for record in records.splitlines():
         fields = record.split("\0")
@@ -121,15 +168,21 @@ def count_leaks(root: Path) -> int:
         if not match:
             unowned += 1
             continue
-        label, _identity, scope = match.groups()
+        label, identity, scope = match.groups()
         files = scope.split(",")
         try:
+            if identity not in owners:
+                raise Refused("checkpoint owner is not a live registered worktree")
+            owner, is_main = owners[identity]
             if (files != sorted(set(files)) or label in labels
                     or any(not re.fullmatch(r"[A-Za-z0-9_./+@-]+", name)
                            or any(part in {"", ".", "..", ".git"} for part in name.split("/"))
                            for name in files)
-                    or metadata(root, files, label) != message):
+                    or metadata(owner, files, label) != message):
                 raise Refused("foreign or nonliteral owned checkpoint metadata")
+            verify_registered_root(owner, main=is_main, common=common)
+            if git(root, "show", "-s", "--format=%s", sha).strip().split(": ", 1)[-1] != message:
+                raise Refused("native stash commit differs from its inventory ownership claim")
             parents = git(root, "rev-list", "--parents", "-n", "1", sha).split()
             if len(parents) not in {3, 4}:
                 raise Refused("owned checkpoint has no native stash parent topology")
@@ -152,6 +205,9 @@ def count_leaks(root: Path) -> int:
         labels.add(label)
         retained += 1
         print(f"OWNED-CHECKPOINT-VERIFIED checkpoint_sha={sha}", file=sys.stderr, flush=True)
+    if (git(root, "stash", "list", "--format=%H%x00%s%x00") != records
+            or git(root, "worktree", "list", "--porcelain", "-z") != worktrees):
+        raise Refused("native checkpoint inventory changed during inspection; retry after writers finish")
     print(f"OWNED-CHECKPOINT-COUNT retained={retained} unowned={unowned}", file=sys.stderr, flush=True)
     return unowned
 
