@@ -9,7 +9,13 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from os import scandir
 from pathlib import Path
+from time import monotonic
+
+INVENTORY_MAX_SECONDS = 30.0
+INVENTORY_MAX_ENTRIES = 1000
+INVENTORY_PROGRESS_SECONDS = 5.0
 
 
 class CacheResourceError(ValueError):
@@ -30,6 +36,14 @@ class CacheEntry:
         payload = asdict(self)
         payload["path"] = str(self.path)
         return json.dumps(payload, sort_keys=True)
+
+
+class CacheInventoryIncomplete(CacheResourceError):
+    """Retain bounded partial rows without claiming a complete inventory."""
+
+    def __init__(self, reason: str, rows: list[CacheEntry]) -> None:
+        super().__init__(reason)
+        self.rows = rows
 
 
 def _project_gate_logs_root() -> Path:
@@ -76,14 +90,14 @@ def _validate_root(root: Path, *, removal: bool = False) -> Path:
     return canonical
 
 
-def _allocated_bytes(path: Path) -> int:
+def _allocated_bytes(path: Path, *, timeout: float = 30.0) -> int:
     try:
         result = subprocess.run(
             ["/usr/bin/du", "-sk", str(path)],
             check=True,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=min(30.0, timeout),
         )
         kibibytes = int(result.stdout.split(maxsplit=1)[0])
     except (OSError, subprocess.SubprocessError, ValueError, IndexError) as exc:
@@ -95,20 +109,74 @@ def inventory_cache_children(root: Path, *, limit: int) -> list[CacheEntry]:
     """Return the largest immediate children of one allowlisted cache root."""
     if not 1 <= limit <= 100:
         raise CacheResourceError("limit must be between 1 and 100")
+    started = monotonic()
     canonical = _validate_root(root)
+    deadline = started + INVENTORY_MAX_SECONDS
     rows: list[CacheEntry] = []
-    for child in canonical.iterdir():
-        try:
-            rows.append(CacheEntry(path=child, allocated_bytes=_allocated_bytes(child)))
-        except CacheResourceError as exc:
-            rows.append(
-                CacheEntry(
-                    path=child,
-                    allocated_bytes=0,
-                    status="error",
-                    error=str(exc),
-                )
-            )
+    last_progress = started
+
+    def incomplete(reason: str) -> CacheInventoryIncomplete:
+        message = (
+            f"cache inventory incomplete: {reason}; inspected={len(rows)} "
+            f"elapsed={monotonic() - started:.3f}s root={str(canonical)!r}"
+        )
+        print(message, file=sys.stderr, flush=True)
+        return CacheInventoryIncomplete(message, _largest_entries(rows, limit))
+
+    def remaining() -> float:
+        available = deadline - monotonic()
+        if available <= 0:
+            raise incomplete("global deadline exhausted")
+        return available
+
+    print(
+        f"cache inventory start root={str(canonical)!r} "
+        f"max_seconds={INVENTORY_MAX_SECONDS:g} max_entries={INVENTORY_MAX_ENTRIES}",
+        file=sys.stderr, flush=True,
+    )
+    try:
+        remaining()
+        with scandir(canonical) as children:
+            while True:
+                remaining()
+                try:
+                    entry = next(children)
+                except StopIteration:
+                    break
+                remaining()
+                if len(rows) >= INVENTORY_MAX_ENTRIES:
+                    raise incomplete("entry bound exhausted")
+                child = Path(entry.path)
+                now = monotonic()
+                if not rows or now - last_progress >= INVENTORY_PROGRESS_SECONDS:
+                    print(
+                        f"cache inventory measuring entry={len(rows) + 1} "
+                        f"remaining={remaining():.3f}s path={str(child)!r}",
+                        file=sys.stderr, flush=True,
+                    )
+                    last_progress = now
+                timeout = remaining()
+                try:
+                    rows.append(CacheEntry(path=child, allocated_bytes=_allocated_bytes(child, timeout=timeout)))
+                except CacheResourceError as exc:
+                    rows.append(
+                        CacheEntry(path=child, allocated_bytes=0, status="error", error=str(exc))
+                    )
+    except OSError as exc:
+        raise incomplete(f"directory inspection failed: {exc}") from exc
+    selected = _largest_entries(rows, limit)
+    remaining()
+    errors = sum(row.status == "error" for row in rows)
+    print(
+        f"cache inventory {'incomplete' if errors else 'complete'} "
+        f"inspected={len(rows)} errors={errors} elapsed={monotonic() - started:.3f}s",
+        file=sys.stderr, flush=True,
+    )
+    return selected
+
+
+def _largest_entries(rows: list[CacheEntry], limit: int) -> list[CacheEntry]:
+    """Keep the existing error-first, largest-first ordering for bounded rows."""
     rows.sort(
         key=lambda row: (
             row.status != "error",
@@ -117,6 +185,16 @@ def inventory_cache_children(root: Path, *, limit: int) -> list[CacheEntry]:
         )
     )
     return rows[:limit]
+
+
+def _print_inventory(rows: list[CacheEntry], *, complete: bool) -> int:
+    """Emit compatible JSON lines with a truthful terminal status."""
+    for row in rows:
+        print(row.to_json())
+    print(json.dumps({"entries": len(rows), "status": "complete" if complete else "incomplete"}))
+    if not complete:
+        print("ERROR: cache inventory incomplete: bounds or measurement errors", file=sys.stderr, flush=True)
+    return 0 if complete else 2
 
 
 def remove_cache_child(root: Path, candidate: Path, *, apply: bool) -> bool:
@@ -158,10 +236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "inventory":
             rows = inventory_cache_children(args.root, limit=args.limit)
-            for row in rows:
-                print(row.to_json())
-            print(json.dumps({"entries": len(rows), "status": "complete"}))
-            return 0
+            return _print_inventory(rows, complete=all(row.status != "error" for row in rows))
         removed = remove_cache_child(args.root, args.candidate, apply=args.apply)
         print(
             json.dumps(
@@ -174,6 +249,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 0
+    except CacheInventoryIncomplete as exc:
+        return _print_inventory(exc.rows, complete=False)
     except CacheResourceError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

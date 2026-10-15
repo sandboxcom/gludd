@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 
 import pytest
@@ -131,10 +135,10 @@ def test_inventory_reports_unreadable_child_without_hiding_other_rows(
     (measured / "payload.bin").write_bytes(b"x" * 4096)
     real_measure = cache_manager._allocated_bytes
 
-    def measure(path: Path) -> int:
+    def measure(path: Path, *, timeout: float = 30.0) -> int:
         if path == broken:
             raise CacheResourceError("permission denied")
-        return real_measure(path)
+        return real_measure(path, timeout=timeout)
 
     monkeypatch.setattr(cache_manager, "_allocated_bytes", measure)
 
@@ -378,7 +382,7 @@ def test_main_inventory_emits_json_lines(
     root = _cache_root(tmp_path, monkeypatch)
     child = root / "tool"
     child.mkdir()
-    monkeypatch.setattr(cache_manager, "_allocated_bytes", lambda _path: 4096)
+    monkeypatch.setattr(cache_manager, "_allocated_bytes", lambda _path, **_kwargs: 4096)
 
     assert cache_manager.main(["inventory", "--root", str(root), "--limit", "1"]) == 0
 
@@ -414,3 +418,215 @@ def test_main_reports_fail_closed_error(tmp_path: Path, capsys: pytest.CaptureFi
 
     assert cache_manager.main(["inventory", "--root", str(root)]) == 2
     assert "ERROR: root is not allowlisted" in capsys.readouterr().err
+
+
+def test_inventory_entry_budget_is_incomplete_and_starts_no_extra_measurements(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _cache_root(tmp_path, monkeypatch)
+    for index in range(3):
+        (root / str(index)).mkdir()
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "4\tfixture\n", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(cache_manager, "INVENTORY_MAX_ENTRIES", 2, raising=False)
+    assert cache_manager.main(["inventory", "--root", str(root), "--limit", "2"]) == 2
+    captured = capsys.readouterr()
+    rows = [json.loads(line) for line in captured.out.splitlines()]
+    assert len(calls) == 2
+    assert rows[-1] == {"entries": 2, "status": "incomplete"}
+    assert all(row["status"] == "measured" for row in rows[:-1])
+    assert "entry bound" in captured.err
+    assert all(child.is_dir() for child in root.iterdir())
+
+
+def test_inventory_global_deadline_stops_before_another_child_and_announces_work_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _cache_root(tmp_path, monkeypatch)
+    for index in range(3):
+        (root / str(index)).mkdir()
+    clock = [0.0]
+    timeouts: list[object] = []
+    progress: list[str] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        progress.append(capsys.readouterr().err)
+        timeouts.append(kwargs["timeout"])
+        clock[0] = 1.0
+        return subprocess.CompletedProcess(command, 0, "4\tfixture\n", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(cache_manager, "monotonic", lambda: clock[0], raising=False)
+    monkeypatch.setattr(cache_manager, "INVENTORY_MAX_SECONDS", 1.0, raising=False)
+    assert cache_manager.main(["inventory", "--root", str(root)]) == 2
+    captured = capsys.readouterr()
+    assert timeouts == [1.0]
+    assert "cache inventory start" in progress[0]
+    assert "deadline" in captured.err
+    assert json.loads(captured.out.splitlines()[-1]) == {"entries": 1, "status": "incomplete"}
+
+
+def test_inventory_passes_only_remaining_global_time_to_each_native_du(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _cache_root(tmp_path, monkeypatch)
+    for index in range(2):
+        (root / str(index)).mkdir()
+    clock = [0.0]
+    timeouts: list[object] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert command[:2] == ["/usr/bin/du", "-sk"]
+        timeouts.append(kwargs["timeout"])
+        clock[0] += 0.4
+        return subprocess.CompletedProcess(command, 0, "4\tfixture\n", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(cache_manager, "monotonic", lambda: clock[0], raising=False)
+    monkeypatch.setattr(cache_manager, "INVENTORY_MAX_SECONDS", 1.0, raising=False)
+    assert len(inventory_cache_children(root, limit=2)) == 2
+    assert timeouts == pytest.approx([1.0, 0.6])
+
+
+def test_inventory_measurement_failure_never_reports_successful_complete_inventory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _cache_root(tmp_path, monkeypatch)
+    (root / "unreadable").mkdir()
+
+    def denied(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(1, command, stderr="owned fixture denial")
+
+    monkeypatch.setattr(subprocess, "run", denied)
+    assert cache_manager.main(["inventory", "--root", str(root)]) == 2
+    captured = capsys.readouterr()
+    rows = [json.loads(line) for line in captured.out.splitlines()]
+    assert rows[0]["status"] == "error" and "could not measure" in rows[0]["error"]
+    assert rows[-1] == {"entries": 1, "status": "incomplete"}
+    assert "measurement errors" in captured.err
+
+
+def test_inventory_expired_validation_opens_no_directory_iterator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _cache_root(tmp_path, monkeypatch)
+    clock = [0.0]
+    opened: list[Path] = []
+    real_validate = cache_manager._validate_root
+    real_scandir = os.scandir
+
+    def validate(path: Path) -> Path:
+        result = real_validate(path)
+        clock[0] = 1.0
+        return result
+
+    def scan(path: Path) -> AbstractContextManager[Iterator[os.DirEntry[str]]]:
+        opened.append(path)
+        return real_scandir(path)
+
+    monkeypatch.setattr(cache_manager, "_validate_root", validate)
+    monkeypatch.setattr(cache_manager, "scandir", scan)
+    monkeypatch.setattr(cache_manager, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(cache_manager, "INVENTORY_MAX_SECONDS", 1.0)
+    with pytest.raises(CacheResourceError, match="deadline"):
+        inventory_cache_children(root, limit=1)
+    assert opened == []
+
+
+def test_exact_entry_budget_can_finish_and_progress_is_not_one_line_per_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _cache_root(tmp_path, monkeypatch)
+    for index in range(8):
+        (root / str(index)).mkdir()
+    monkeypatch.setattr(cache_manager, "INVENTORY_MAX_ENTRIES", 8)
+    monkeypatch.setattr(cache_manager, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(cache_manager, "_allocated_bytes", lambda _path, **_kwargs: 4096)
+    assert cache_manager.main(["inventory", "--root", str(root), "--limit", "2"]) == 0
+    captured = capsys.readouterr()
+    assert len(captured.err.splitlines()) == 3
+    assert "inspected=8 errors=0" in captured.err
+    assert json.loads(captured.out.splitlines()[-1]) == {"entries": 2, "status": "complete"}
+
+
+def test_late_scan_error_closes_iterator_and_keeps_partial_rows_explicitly_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _cache_root(tmp_path, monkeypatch)
+    (root / "first").mkdir()
+    real_scandir = os.scandir
+    closed: list[bool] = []
+
+    @contextmanager
+    def scan(path: Path) -> Iterator[Iterator[os.DirEntry[str]]]:
+        with real_scandir(path) as source:
+            def fail_later() -> Iterator[os.DirEntry[str]]:
+                yield next(source)
+                raise PermissionError("owned fixture scan refusal")
+
+            try:
+                yield fail_later()
+            finally:
+                closed.append(True)
+
+    monkeypatch.setattr(cache_manager, "scandir", scan)
+    monkeypatch.setattr(cache_manager, "_allocated_bytes", lambda _path, **_kwargs: 4096)
+    assert cache_manager.main(["inventory", "--root", str(root)]) == 2
+    captured = capsys.readouterr()
+    rows = [json.loads(line) for line in captured.out.splitlines()]
+    assert closed == [True] and rows[0]["path"] == str(root / "first")
+    assert rows[-1] == {"entries": 1, "status": "incomplete"}
+    assert "directory inspection failed" in captured.err
+
+
+def test_native_timeout_kills_and_reaps_owned_measurement_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _cache_root(tmp_path, monkeypatch)
+    (root / "slow").mkdir()
+    pid_file = tmp_path / "measurement.pid"
+    real_run = subprocess.run
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert command[:2] == ["/usr/bin/du", "-sk"]
+        timeout = kwargs["timeout"]
+        assert isinstance(timeout, (int, float)) and 0 < timeout <= 1.0
+        return real_run([
+            sys.executable, "-c", "import os,time\nfrom pathlib import Path\n"
+            f"Path({str(pid_file)!r}).write_text(str(os.getpid()))\ntime.sleep(60)\n",
+        ], check=True, capture_output=True, text=True, timeout=timeout)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(cache_manager, "INVENTORY_MAX_SECONDS", 1.0)
+    assert cache_manager.main(["inventory", "--root", str(root)]) == 2
+    captured = capsys.readouterr()
+    rows = [json.loads(line) for line in captured.out.splitlines()]
+    assert rows[0]["status"] == "error" and rows[-1]["status"] == "incomplete"
+    assert "deadline" in captured.err
+    with pytest.raises(ChildProcessError):
+        os.waitpid(int(pid_file.read_text()), os.WNOHANG)
+
+
+def test_native_make_inventory_keeps_system_python_and_stdout_json_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    root = tmp_path / ".cache"
+    root.mkdir()
+    for name in ("first", "second"):
+        (root / name).write_bytes(b"owned fixture")
+    result = subprocess.run([
+        "make", "--no-print-directory", "cache-resource-inventory", f"CACHE_RESOURCE_ROOT={root}",
+        "CACHE_RESOURCE_LIMIT=2", "CACHE_RESOURCE_VALIDATE_ONLY=1",
+    ], cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True, check=False, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    rows = [json.loads(line) for line in result.stdout.splitlines()]
+    assert rows[-1] == {"entries": 2, "status": "complete"}
+    assert all(row["status"] == "measured" for row in rows[:-1])
+    assert "cache inventory start" in result.stderr and "inspected=2 errors=0" in result.stderr
+    assert all((root / name).read_bytes() == b"owned fixture" for name in ("first", "second"))
