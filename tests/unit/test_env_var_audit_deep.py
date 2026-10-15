@@ -7,8 +7,10 @@ module scans the source tree at import time so it always reflects the live code.
 
 from __future__ import annotations
 
+import ast
 import re
 import shlex
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import NamedTuple
@@ -63,6 +65,29 @@ class EnvUsage(NamedTuple):
 _SCANNED: list[EnvUsage] = []
 
 
+def _namespace_prefix_spans(text: str) -> set[tuple[int, int, int]]:
+    """Identify namespace literals, not complete environment key reads."""
+    if not any(match.group(1).endswith("_") for match in _GLUDD_ENV_VAR_RE.finditer(text)):
+        return set()
+    prefixes: set[tuple[int, int, int]] = set()
+    for node in ast.walk(ast.parse(text)):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "startswith" and node.args):
+            argument = node.args[0]
+            values = argument.elts if isinstance(argument, ast.Tuple) else [argument]
+        elif (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add)
+              and not isinstance(node.right, ast.Constant)):
+            values = [node.left]
+        else:
+            continue
+        for value in values:
+            if (isinstance(value, ast.Constant) and isinstance(value.value, str)
+                    and value.value.startswith("GLUDD_") and value.value.endswith("_")
+                    and value.end_lineno == value.lineno and value.end_col_offset is not None):
+                prefixes.add((value.lineno, value.col_offset + 1, value.end_col_offset - 1))
+    return prefixes
+
+
 def _scan() -> None:
     if _SCANNED:
         return
@@ -75,9 +100,14 @@ def _scan() -> None:
                 text = py_file.read_text()
             except Exception:
                 continue
+            namespace_spans = _namespace_prefix_spans(text)
             for lineno, line in enumerate(text.split("\n"), start=1):
                 for pat in _PATTERNS:
                     for m in pat.finditer(line):
+                        if (
+                            lineno, len(line[:m.start(1)].encode("utf-8")), len(line[:m.end(1)].encode("utf-8")),
+                        ) in namespace_spans:
+                            continue
                         name = m.group(1)
                         if name in (
                             "PATH",
@@ -166,6 +196,38 @@ def _make_environment_usages(makefile: Path) -> list[EnvUsage]:
                     if name in exported:
                         usages.append(EnvUsage(name, str(path), lineno, line))
     return usages
+
+
+@pytest.mark.parametrize("namespace_expression", [
+    'name.startswith("GLUDD_NAMESPACE_")',
+    'name.startswith(("GLUDD_NAMESPACE_", "NATIVE_"))',
+    '"é" + name if name.startswith(\n    "GLUDD_NAMESPACE_"\n) else name',
+    'os.environ.get("GLUDD_NAMESPACE_" + name.upper())',
+])
+def test_python_environment_scan_distinguishes_namespace_prefixes_from_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, namespace_expression: str,
+) -> None:
+    source, scripts = tmp_path / "src", tmp_path / "scripts"
+    source.mkdir()
+    scripts.mkdir()
+    path = source / "environment.py"
+    path.write_text(
+        "import os\n"
+        f"namespace = {namespace_expression}\n"
+        'actual = os.environ.get("GLUDD_PRESENT_SETTING", "")\n'
+        'invalid = name.startswith("GLUDD_REJECTED_") or os.environ.get("GLUDD_REJECTED_", "")\n',
+        encoding="utf-8",
+    )
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "_SRC", source)
+    monkeypatch.setattr(module, "_SCRIPTS", scripts)
+    monkeypatch.setattr(module, "_SCANNED", [])
+    _scan()
+    assert {usage.var_name for usage in _SCANNED} == {"GLUDD_PRESENT_SETTING", "GLUDD_REJECTED_"}
+    rejected = [usage for usage in _SCANNED if usage.var_name == "GLUDD_REJECTED_"]
+    assert len(rejected) == 1
+    assert rejected[0].is_get
+    assert rejected[0].file_path == str(path)
 
 
 def test_make_environment_documentation_requires_exported_recipe_consumption(tmp_path: Path) -> None:

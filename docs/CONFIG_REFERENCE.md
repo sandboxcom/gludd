@@ -271,6 +271,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_RELEASE_COMPLETENESS_FILE` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:45` |
 | `GLUDD_RELEASE_DEADLINE_ENFORCE` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:3435` |
 | `GLUDD_RECEIPT_REVOKED_SIGNERS` | Comma-separated, duplicate-free lowercase SHA-256 fingerprints denied by local shadow-receipt authentication (maximum 32). Use `""` or reviewed signer fingerprints only; these are identifiers, not keys or secrets, and affect only shadow receipt trust—not the executed gate result. | `""` (none revoked) | optional | `scripts/ci_shadow_receipt_runtime.py:317` |
+| `GLUDD_REVIEWED_HEAD_FOCUS_ROOT` | Absolute candidate root injected by the native reviewed-head producer into its focused pytest child. Hooks run only when the child's current directory matches this root; an explicit observer-owned `focus-<64 lowercase hex>` trace run ID and owned trace/status remain required. This variable does not grant review, gate or release authority. | unset (hooks inactive) | producer-injected for focused child | `scripts/reviewed_head_inputs.py:_execution_environment`, `scripts/reviewed_head_inputs.py:_runtime_event` |
 | `GLUDD_RESOURCE_NAMESPACE` | Auto-indexed (see source) | — | optional | `scripts/audit_coverage.py:315` |
 | `GLUDD_RESOURCE_ROOT` | Auto-indexed (see source) | — | optional | `scripts/resource_arbiter.py:64` |
 | `GLUDD_RUNTIME_TEST_STATE_DIR` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:78` |
@@ -371,9 +372,17 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_WORKTREE_ENFORCE` | Auto-indexed (see source) | — | optional | `scripts/verify_enforcement.py:107` |
 | `GLUDD_XAI_API_KEY` | Auto-indexed (see source) | — | optional | `src/general_ludd/ansible/credential_proxy.py:403` |
 | `GLUDD_XDIST_TRACE_LOG` | Auto-indexed (see source) | — | optional | `scripts/run_xdist_trace.py:35` |
-| `GLUDD_XDIST_TRACE_RUN_ID` | Correlation identity written into append-only xdist progress events. The retained-command observer injects its authenticated exact run ID; direct plugin use falls back to `legacy`. | observer run ID or `legacy` | optional | `scripts/stream_command.py:307`, `scripts/xdist_trace_plugin.py:29` |
+| `GLUDD_XDIST_TRACE_RUN_ID` | Correlation identity written into append-only xdist progress events. The retained-command observer injects its authenticated exact run ID; direct trace-plugin use falls back to `legacy`. Reviewed-head focused hooks instead require an explicit owned `focus-<64 lowercase hex>` ID and reject missing, empty, legacy or malformed IDs before reading status. | observer run ID; `legacy` for direct trace-plugin use only | required for reviewed-head focus; otherwise optional | `scripts/stream_command.py`, `scripts/xdist_trace_plugin.py:_configured_run_id`, `scripts/reviewed_head_inputs.py:_runtime_event` |
 | `GLUDD_XDIST_TRACE_TRUNCATE` | Auto-indexed (see source) | — | optional | `scripts/run_xdist_trace.py:36` |
 | `GLUDD_XDIST_WORKERS` | Auto-indexed (see source) | — | optional | `scripts/adaptive_test.py:117` |
+
+`GLUDD_REVIEWED_HEAD_INPUTS_` and `REVIEWED_HEAD_INPUTS_` are namespace filters,
+not configurable environment keys. The audit uses native Python AST literal
+spans to distinguish `startswith` prefixes and dynamic-name fragments; actual malformed key
+reads remain naming violations. [Python's AST documentation](https://docs.python.org/3.11/library/ast.html)
+defines those spans as UTF-8 byte offsets. The long-lived [AST/source-preservation
+discussion](https://stackoverflow.com/questions/7456933/python-ast-with-preserved-comments)
+also distinguishes semantic nodes from formatting; this audit never rewrites source.
 
 ### 1.1a Reserved trace event identifiers
 

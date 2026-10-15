@@ -11,6 +11,7 @@ import time
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 from scripts import gate_status_attestation as gate_owner
@@ -157,7 +158,7 @@ def _gate(root: Path, tmp_path: Path, focus_completed: str) -> Path:
         "started_at": started_text, "completed_at": completed_text,
         **pairing,
     }
-    path = inputs.resource_owner.resource_root(root) / "ci-shards/attestation.json"
+    path = cast(Path, inputs.resource_owner.resource_root(root)) / "ci-shards/attestation.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(attestation), encoding="utf-8")
     return path
@@ -208,7 +209,7 @@ def test_refuses_inferred_approval_unowned_fields_and_absent_sources(
     tmp_path: Path, field: str, value: object,
 ) -> None:
     root, spec = _fixture(tmp_path)
-    spec["heads"][0][field] = value
+    cast(list[dict[str, object]], spec["heads"])[0][field] = value
     with pytest.raises(ValueError):
         inputs.prepare_inputs(spec, repo_root=root)
 
@@ -253,7 +254,7 @@ def test_admission_never_requests_native_git_object_publication(
 
     def read_only_git(repo: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
         assert "--write-tree" not in arguments, "read-only admission cannot publish native Git objects"
-        return original(repo, *arguments, input_bytes=input_bytes)
+        return cast(bytes, original(repo, *arguments, input_bytes=input_bytes))
 
     monkeypatch.setattr(inputs.receipt_owner, "_git", read_only_git)
     inputs.prepare_inputs(spec, repo_root=root)
@@ -277,7 +278,7 @@ def test_native_order_resolves_a_named_earlier_source_prerequisite(tmp_path: Pat
     _commit(root, "second.txt", "second source\n")
     _git(root, "switch", "development")
     _git(root, "cherry-pick", "reviewed/two")
-    spec["heads"].append({
+    cast(list[dict[str, object]], spec["heads"]).append({
         "source_ref": "refs/heads/reviewed/two", "reviewed_base_ref": "refs/heads/reviewed/one",
         "reviewer": "second-trusted-review", "verdict": "approved",
         "focused_test_files": ["tests/unit/test_native.py"],
@@ -433,6 +434,27 @@ def test_native_runtime_trace_refuses_substituted_executor_facts(tmp_path: Path)
     with pytest.raises(ValueError, match="unsafe"):
         inputs._native_runtimes(linked, status, recorded)
     assert Path(focused["trace_file"]).read_bytes() == original
+
+
+@pytest.mark.parametrize("hook", ["collection", "session"])
+@pytest.mark.parametrize("run_id", [None, "", "legacy", "focus-invalid", " focus-" + "a" * 64])
+def test_focus_runtime_requires_an_explicit_owned_run_identity_before_reading_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest,
+    hook: str, run_id: str | None,
+) -> None:
+    monkeypatch.setenv("GLUDD_REVIEWED_HEAD_FOCUS_ROOT", str(tmp_path.resolve()))
+    monkeypatch.chdir(tmp_path)
+    if run_id is None:
+        monkeypatch.delenv("GLUDD_XDIST_TRACE_RUN_ID", raising=False)
+    else:
+        monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", run_id)
+    expected = "run identity is required" if run_id is None else "run identity is invalid"
+    with pytest.raises(ValueError, match=expected):
+        if hook == "collection":
+            inputs.pytest_collection_finish(request.session)
+        else:
+            inputs.pytest_sessionfinish(request.session, 0)
+    assert not (tmp_path / ".gate-logs").exists()
 
 
 def test_runtime_probe_refuses_producer_process_as_native_child(

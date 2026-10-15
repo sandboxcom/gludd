@@ -431,7 +431,9 @@ def _runtime_event(session: pytest.Session, event: str) -> None:
     if not configured_root or Path.cwd().resolve() != Path(configured_root).resolve():
         return
     root = Path(configured_root).resolve()
-    run_id = os.environ.get("GLUDD_XDIST_TRACE_RUN_ID", "")
+    run_id = os.environ.get("GLUDD_XDIST_TRACE_RUN_ID")
+    if run_id is None:
+        raise ValueError("focused native run identity is required")
     status_path, _, trace_path, _ = _focus_paths(root, run_id)
     if os.environ.get("GLUDD_XDIST_TRACE_LOG") != str(trace_path):
         raise ValueError("focused pytest child has no native trace ownership")
