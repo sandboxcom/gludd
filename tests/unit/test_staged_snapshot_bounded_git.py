@@ -22,7 +22,10 @@ def native_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "if mode in ('stdout', 'stderr'):\n"
         "    stream = 1 if mode == 'stdout' else 2\n"
         "    for index in range(100000):\n"
-        "        (root / 'chunks').write_text(str(index))\n"
+        # The cap can kill this writer between truncate and write. Keep the
+        # previous complete counter observable until its replacement is ready.
+        "        (root / 'chunks.pending').write_text(str(index))\n"
+        "        (root / 'chunks.pending').replace(root / 'chunks')\n"
         "        os.write(stream, b'x' * 1024)\n"
         "elif mode == 'timeout':\n"
         "    time.sleep(60)\n"
@@ -44,6 +47,26 @@ def _assert_reaped(root: Path) -> None:
     pid = int((root / "pid").read_text(encoding="utf-8"))
     with pytest.raises(ChildProcessError):
         os.waitpid(pid, os.WNOHANG)
+
+
+def test_native_git_progress_survives_exit_during_next_counter_write(native_git: Path) -> None:
+    """Abrupt termination must not erase the last fully published counter."""
+    executable = native_git / "git"
+    interrupted_writer = (
+        "original_write_text = Path.write_text\n"
+        "def interrupted_write_text(path, data, *args, **kwargs):\n"
+        "    if path.name in ('chunks', 'chunks.pending') and data == '1':\n"
+        "        with path.open('w'):\n"
+        "            os._exit(0)\n"
+        "    return original_write_text(path, data, *args, **kwargs)\n"
+        "Path.write_text = interrupted_write_text\n"
+    )
+    executable.write_text(
+        executable.read_text().replace("root = Path(sys.argv[2])", interrupted_writer + "root = Path(sys.argv[2])"),
+    )
+    assert staged_snapshot._git(native_git, ["stdout"], max_output_bytes=1024, timeout_seconds=5) == b"x" * 1024
+    assert (native_git / "chunks").read_text() == "0"
+    _assert_reaped(native_git)
 
 
 @pytest.mark.parametrize("stream", ["stdout", "stderr"])
