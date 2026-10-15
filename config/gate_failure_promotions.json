@@ -684,6 +684,27 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_failure_ledger.py::test_cli_repair_refuses_evidence_from_a_different_or_unverified_checkout",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "unit-evidence-atomic-json-native-ownership",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "owned-checkpoint-peer-native-admission",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_owned_checkpoint_shared_worktree_admission.py::test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "precommit-guard-engine-expression-transport",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_precommit_quality_guards.py::test_real_project_make_refuses_engine_expression_before_parse_or_export_execution",
+      "full_gate_phase": "test"
     }
   ]
 }
