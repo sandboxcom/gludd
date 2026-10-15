@@ -39,8 +39,8 @@ reader. It passes no replacement value or bump option, does not import
 `general_ludd`, and does not need an installed application or a Python
 interpreter. The native shell's Python 3.9 therefore does not need an added
 TOML dependency. This is an existing tool interface, not a new version loader.
-The metadata operation does not depend on the runtime `UV` shim used by other
-read-only targets, and introduces no new `UV` override.
+The metadata operation does not depend on recipe-local `UV` values used by
+dependency-free diagnostics, and introduces no new `UV` override.
 
 The reader binds its project explicitly to the current checkout, so an ambient
 `UV_PROJECT` setting cannot substitute another project's version.
@@ -89,6 +89,51 @@ weaken missing-metadata rejection. Duplicate-owner tests retain the live PID;
 dry-run tests compare directory contents, and both retain unchanged metadata
 without allocating an environment. The second sealed integration's two absent
 fixture-metadata failures remain recorded rather than treated as gate success.
+
+## Real owner execution with mixed Make goals
+
+A goal-dependent global `override UV := echo` previously silenced every UV
+recipe whenever any listed goal appeared. A mixed `worktree-state` and
+`workstream-register` invocation could report success without registering an
+owner, in either order. Standalone `git-checkout` also printed rather than ran
+its required gate-mutation guard, allowing its body past a live gate lease.
+
+The foundation now keeps the existing real `UV := uv` default for all goals and
+prerequisites. Its existing exported `override UV_NO_SYNC := 1` prevents implicit
+environment synchronization without replacing execution. Native command-line
+UV selection, shared writable cache, chosen runtime, warning policy and every
+resource/CI/release guard stay unchanged. There is no new runner or fallback.
+Missing tools and failed owner children must fail visibly.
+
+Recipe-local `UV=echo $(SYSTEM_PYTHON)` remains intentional for dependency-free
+diagnostics only. The system interpreter remains pinned to `/usr/bin/python3`;
+read-only source-version laziness and metadata-free inspection are unchanged.
+The safe public cache-path example is:
+
+```sh
+make uv-cache-path GLUDD_UV_CACHE_DIR=/tmp/gludd-uv-cache-public-v2
+```
+
+Native fixtures first reproduced nine failures while four standalone read
+controls passed. They exercise both mixed registration orders, actual owner
+failure, active/idle gate guards before harmless checkout capture, selected UV
+failure and no-runtime reads. They preserve exact owned source/index/ref bytes
+and caller environment. An additional real-UV delegation control verifies the
+global no-sync export defeats an explicit `UV_NO_SYNC=0` while retaining the
+chosen toolchain; the original checkout-first multi-goal refusal remains intact.
+Legacy list-membership tests retain every named target and their original
+dependency-free recipe assertions while checking the global no-sync contract.
+
+[GNU Make goals][make-goals] distinguishes explicit goals from prerequisites,
+and its [override rules][make-override] explain the invocation-wide assignment.
+The maintained [uv no-sync option][uv-no-sync] preserves command execution.
+A [2016 multi-goal user report][make-multi-goal-forum] demonstrates both recipes
+receiving a global `MAKECMDGOALS`-derived value; it is practitioner context, not
+authority for suppressing guards. This change is control-plane zero-downtime:
+no service restart, installed package change, gate/CI execution or release
+authority. Rollback restores source through normal review and would restore the
+known silent-owner defect. Focused proof never substitutes for the full gate,
+exact-SHA hosted proof or unchanged 85/75 coverage floors.
 
 ## Literal search inputs and error propagation
 
@@ -237,3 +282,7 @@ the full suite or a gate.
 [rg-manual]: https://github.com/BurntSushi/ripgrep/blob/master/crates/core/flags/doc/template.rg.1
 [search-forum]: https://stackoverflow.com/questions/29906576/safely-pass-make-variable-to-shell-commands
 [private-target-forum]: https://stackoverflow.com/questions/26063839/how-can-i-make-a-target-private-in-gnu-make-for-internal-use-only-or-how-to
+[make-goals]: https://www.gnu.org/software/make/manual/html_node/Goals.html
+[make-override]: https://www.gnu.org/s/make/manual/html_node/Override-Directive.html
+[uv-no-sync]: https://docs.astral.sh/uv/reference/cli/#uv-run--no-sync
+[make-multi-goal-forum]: https://stackoverflow.com/questions/36174028/makefile-set-variable-in-target

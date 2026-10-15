@@ -327,25 +327,9 @@ endif
 
 PYTHON := python3
 override SYSTEM_PYTHON := /usr/bin/python3
-_NO_UV_SYNC_GOALS := \
-    worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
-    release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready \
-    git-where git-show-file-to repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote git-patch-equivalence \
-    git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-uncommit-last \
-    git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
-    ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
-    git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
-    grep search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 rm-files \
-    disk-cleanup-preflight clean-stale-resource-namespaces check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
-    cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
-    tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
-    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args \
-    development-merge-forward development-merge-forward-batch uv-cache-path
-ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
-override UV := echo
-else
+# Execution stays real for every explicit goal and prerequisite. UV_NO_SYNC
+# above prevents implicit environment changes without silencing owners/guards.
 UV := uv
-endif
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 # Export xdist worker-count overrides so command-line NPROC=/GLUDD_XDIST_WORKERS= reach

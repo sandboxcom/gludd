@@ -344,7 +344,9 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
     )
     assert "$(UV) run" not in version_line
     assert "$(error Cannot read [project].version from pyproject.toml)" in version_line
-    no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]
+    assert "override UV_NO_SYNC := 1" in makefile
+    assert "export UV_NO_SYNC" in makefile
+    assert "override UV := echo" not in makefile
     for goal in [
         *guard_targets,
         "git-where",
@@ -393,7 +395,7 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         "clean-worktree-venvs",
         "clean-worktree-caches",
     ]:
-        assert goal in no_uv_goals
+        assert _target_line(goal).startswith(f"{goal}:")
     for target in guard_targets:
         block = _target_block(target)
 
@@ -406,10 +408,12 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
 def test_lightweight_status_target_never_bootstraps_project_venv() -> None:
     """A read-only resource snapshot must use the dependency-free interpreter."""
     makefile = _makefile()
-    no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]
+    assert "override UV_NO_SYNC := 1" in makefile
+    assert "export UV_NO_SYNC" in makefile
+    assert "override UV := echo" not in makefile
     block = _target_block("active-work-status")
 
-    assert "active-work-status" in no_uv_goals
+    assert _target_line("active-work-status").startswith("active-work-status:")
     assert "$(UV) run" not in block
     assert "$(SYSTEM_PYTHON) scripts/active_work_status.py" in block
 
