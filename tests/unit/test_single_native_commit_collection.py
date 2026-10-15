@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import py_compile
 import re
 import shlex
 import subprocess
@@ -381,3 +382,117 @@ def test_capture_contract_detects_owner_and_guard_mutations(tmp_path: Path, old:
     result, events = _run(tmp_path, text=text.replace(old, new))
     with pytest.raises((AssertionError, ValueError)):
         _success_contract(result, events, tmp_path)
+
+
+def _bytecode_collection(
+    project: Path, python_args: list[str], condition: str,
+) -> tuple[subprocess.CompletedProcess[str], dict[str, object], list[str]]:
+    tests = project / "tests"
+    tests.mkdir(parents=True)
+    snapshot = project / "snapshot.json"
+    (project / "pytest.ini").write_text(
+        '[pytest]\naddopts = -v --tb=short -m "not excluded"\nfilterwarnings = error\n'
+        "markers =\n    excluded: fixture selection\n", encoding="utf-8",
+    )
+    (project / "fresh_import.py").write_text("VALUE = 17\n", encoding="utf-8")
+    cached = project / "cached_import.py"
+    cached.write_text("VALUE = 23\n", encoding="utf-8")
+    compiled = py_compile.compile(str(cached), doraise=True)
+    assert compiled is not None
+    cached_pyc = Path(compiled)
+    cached_bytes = cached_pyc.read_bytes()
+    cached_mtime = cached_pyc.stat().st_mtime_ns
+    (project / "conftest.py").write_text(
+        "import json\nimport sys\nfrom pathlib import Path\nimport pytest\n"
+        "compiled = []\n"
+        "def audit(event, args):\n"
+        "    if event == 'compile' and isinstance(args[1], str):\n"
+        "        compiled.append(Path(args[1]).name)\n"
+        "sys.addaudithook(audit)\n"
+        "@pytest.fixture\ndef collection_only():\n"
+        "    raise AssertionError('collection executed fixture')\n"
+        "def pytest_collection_finish(session):\n"
+        "    import fresh_import, cached_import\n"
+        "    rows = [(item.nodeid, sorted(mark.name for mark in item.iter_markers()),\n"
+        "             sorted(item.fixturenames), item.callspec.id if hasattr(item, 'callspec') else None)\n"
+        "            for item in session.items]\n"
+        "    data = dict(items=rows, compiled=compiled, values=[fresh_import.VALUE, cached_import.VALUE],\n"
+        "                executable=sys.executable, version=list(sys.version_info[:3]),\n"
+        "                dont_write_bytecode=sys.dont_write_bytecode)\n"
+        f"    Path({str(snapshot)!r}).write_text(json.dumps(data), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    (tests / "test_inventory.py").write_text(
+        "import pytest\nimport fresh_import\nimport cached_import\n"
+        "@pytest.mark.parametrize('value', [fresh_import.VALUE, cached_import.VALUE], ids=['fresh', 'cached'])\n"
+        "def test_imported(value, collection_only):\n    raise AssertionError('collection executed test')\n"
+        "@pytest.mark.excluded\ndef test_excluded():\n    raise AssertionError('excluded test executed')\n",
+        encoding="utf-8",
+    )
+    if condition != "success":
+        body = (
+            "raise RuntimeError('bytecode collection import refusal')\n" if condition == "import-error"
+            else "import warnings\nwarnings.warn('bytecode collection warning refusal', UserWarning)\n"
+        )
+        (tests / "test_refusal.py").write_text(body, encoding="utf-8")
+    env = dict(os.environ)
+    for name in ("PYTEST_ADDOPTS", "PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX"):
+        env.pop(name, None)
+    env.update({"PYTHONPATH": str(ROOT), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"})
+    result = subprocess.run(
+        [sys.executable, *python_args], cwd=project, env=env,
+        capture_output=True, text=True, check=False, timeout=20,
+    )
+    data: dict[str, object] = json.loads(snapshot.read_text(encoding="utf-8"))
+    assert cached_pyc.read_bytes() == cached_bytes
+    assert cached_pyc.stat().st_mtime_ns == cached_mtime
+    new_pycs = sorted(str(path.relative_to(project)) for path in project.rglob("*.pyc") if path != cached_pyc)
+    return result, data, new_pycs
+
+
+@pytest.mark.parametrize("target", ["test-count", "collect-check"])
+@pytest.mark.parametrize("condition", ["success", "import-error", "warning-error"])
+def test_native_collection_child_preserves_imports_without_regenerating_bytecode(
+    tmp_path: Path, target: str, condition: str,
+) -> None:
+    captured, events = _run(tmp_path / "capture", target=target)
+    assert captured.returncode == 0, captured.stdout + captured.stderr
+    args = _observes(events)[0]["args"]
+    python_at = max(index for index, arg in enumerate(args) if arg == "python")
+    python_args = args[python_at + 1:]
+    original, before, original_pycs = _bytecode_collection(
+        tmp_path / "original", [arg for arg in python_args if arg != "-B"], condition,
+    )
+    candidate, after, candidate_pycs = _bytecode_collection(tmp_path / "candidate", python_args, condition)
+    assert any(path.endswith(".pyc") and "fresh_import" in path for path in original_pycs)
+    assert any("test_inventory" in path and "pytest" in path for path in original_pycs)
+    assert original.returncode == candidate.returncode == (0 if condition == "success" else 2)
+    for key in ("items", "values", "executable", "version"):
+        assert before[key] == after[key], f"collection changed {key}"
+    assert after["values"] == [17, 23]
+    assert after["executable"] == sys.executable
+    assert after["version"] == list(sys.version_info[:3])
+    for data in (before, after):
+        compiled = data["compiled"]
+        assert isinstance(compiled, list)
+        assert "fresh_import.py" in compiled
+        assert "cached_import.py" not in compiled, "valid existing bytecode must remain readable"
+        items = data["items"]
+        assert isinstance(items, list) and len(items) == 2
+    if condition == "success":
+        for result in (original, candidate):
+            assert "tests/test_inventory.py: 2" in result.stdout
+            assert "2/3 tests collected (1 deselected)" in result.stdout
+    else:
+        diagnostic = (
+            "RuntimeError: bytecode collection import refusal" if condition == "import-error"
+            else "UserWarning: bytecode collection warning refusal"
+        )
+        for result in (original, candidate):
+            assert diagnostic in result.stdout + result.stderr
+            assert "1 error" in result.stdout
+    assert not candidate_pycs, f"collection regenerated disposable bytecode: {candidate_pycs}"
+    assert before["dont_write_bytecode"] is False
+    assert after["dont_write_bytecode"] is True
+    assert python_args[:3] == ["-B", "-m", "pytest"]
+    assert "-B" not in args[:python_at], "observation and collection lease keep their interpreter policy"

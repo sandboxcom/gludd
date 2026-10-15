@@ -557,3 +557,51 @@ import and missing-node cases retain their native nonzero exits and diagnostics.
 A separate real observer control retains all 20 flushed, newline-free bytes over
 1.2 seconds without tripping its 0.4-second quiet limit. These are behavioral and
 output-volume results, not a measured whole-admission or hosted speedup.
+
+## Collection without disposable bytecode writes (2026-10-15)
+
+The required commit collection can rebuild discarded Python bytecode immediately
+after the existing ownership-checked cleanup. Both public collection targets
+already share `_collection-admission`; only its final pytest child now uses
+Python's native `-B` option. Fresh full `tests/` collection still runs for every
+commit, and valid existing bytecode remains readable. The observer, lease,
+ordinary test execution and serving runtimes retain their interpreter policy.
+No environment-wide bytecode setting, additional runner or cache is introduced.
+
+The [Python 3.11 command-line contract](https://docs.python.org/3.11/using/cmdline.html#cmdoption-B)
+defines `-B` as suppressing bytecode writes on import. The maintained
+[pytest assertion-cache documentation](https://docs.pytest.org/en/stable/how-to/assert.html#assertion-rewriting-caches-files-on-disk)
+confirms that disabling those writes preserves assertion introspection. The
+long-lived [pytest cache-assumption report](https://github.com/pytest-dev/pytest/issues/5664)
+describes a test failing because bytecode suppression left no cache directory to
+remove. This motivates confining the option to collection, with real import and
+failure controls; it does not establish Gludd performance or release readiness.
+
+Six failing-first cases execute the pytest arguments captured from both actual
+Make recipes against disposable source fixtures. The original commands write
+conftest, imported-helper and rewritten-test bytecode; the candidate writes none.
+An audit hook proves a precompiled helper is still loaded without recompilation,
+and its cache bytes and timestamp remain unchanged. Exact expanded nodes, marks,
+fixture names, parameter IDs, imported values, interpreter identity and test
+counts match. Import-error and warning-as-error cases preserve nonzero exits
+and native diagnostics. Fixtures and test bodies are never executed.
+
+The focused behavioral example is
+`make test-files TESTFILES='tests/unit/test_single_native_commit_collection.py
+tests/unit/test_collection_lock_coverage.py tests/unit/test_gate_lock_decoupling.py'
+PYTEST_ARGS='-q -n 0 -W error'`, using the existing locked interpreter with
+`UV_NO_SYNC=1` and `UV_PYTHON_DOWNLOADS=never`. The six new cases fail first;
+the complete collection, repository-lease and gate-lock cohort then passes
+55 cases on Python 3.11.14. Ruff, strict typing and all 236 Make target contracts
+pass, as do all 20 native hook-environment controls and Make duplicate/parity
+checks. Full-inventory collection remains the normal once-per-commit guard;
+these bounded fixtures are not substituted for it.
+
+Complete inventory, original warning configuration, installed plugins, Git-local
+environment isolation, Ansible temporary paths, lock and timeout ownership,
+failure propagation and observation policy are unchanged. This control-plane
+change does not restart a service or alter ZDD, cleanup authority, 85/75 coverage,
+the complete gate, exact-SHA CI or promotion. Rollback reverts the single child
+flag and its additive tests/documentation together. Cold imports may compile
+again in memory on subsequent collections; no hosted speedup or repository-wide
+disk reduction is claimed from the fixture measurements.
