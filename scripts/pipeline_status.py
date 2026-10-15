@@ -24,10 +24,9 @@ if TYPE_CHECKING:
     import active_work_status
     import automatic_disk_cleanup
     import check_disk_usage
-    import ci_failure_ledger
     from proof_observations import write_snapshot
 
-    from scripts import ci_check_cooldown
+    from scripts import ci_check_cooldown, ci_failure_ledger
 else:
     if __package__ in {None, ""}:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -363,6 +362,7 @@ def _publish_snapshot(
     local: dict[str, object] | None = None
     capacity: dict[str, object] | None = None
     ledger_status: dict[str, object] | None = None
+    ledger: dict[str, Any] | None = None
     hosted: dict[str, Any] | None = asdict(summary) if summary is not None else None
     hosted_failures: list[dict[str, object]] = []
     terminal_observed = False
@@ -435,6 +435,28 @@ def _publish_snapshot(
              "failure" if hosted_failures or (summary is not None and summary.exit_code == 1) else "pending")
     local_git = local.get("git") if local is not None else None
     implementation_sha = local_git.get("head") if isinstance(local_git, dict) else None
+    repair_guidance: list[ci_failure_ledger.RepairGuidance] = []
+    try:
+        if state == "failure" and ledger is not None:
+            clean_candidate = False
+            candidate = implementation_sha if isinstance(implementation_sha, str) else ""
+            if any(
+                family.get("branch") == args.branch and family.get("status") == "open"
+                for family in ledger["families"].values()
+            ):
+                try:
+                    ci_failure_ledger._require_repair_checkout(candidate)
+                except ci_failure_ledger.LedgerError:
+                    pass
+                else:
+                    clean_candidate = True
+            repair_guidance = ci_failure_ledger.build_repair_guidance(
+                ledger, ledger_path=args.failure_ledger, branch=args.branch,
+                repair_sha=candidate, checkout_clean=clean_candidate,
+            )
+    except (OSError, ValueError, KeyError, ci_failure_ledger.LedgerError) as exc:
+        errors.append(str(exc))
+        state = "lookup_error"
     open_tasks = local.get("open_task_ids", []) if local is not None else []
     next_action = ("resolve_observation_error" if errors else
                    "repair_hosted_failure" if state == "failure" else
@@ -457,7 +479,7 @@ def _publish_snapshot(
                 identity={"repo": args.repo, "branch": args.branch, "sha": sha}, state=state,
                 evidence={"local": local, "hosted": hosted, "failure_ledger": ledger_status,
                            "missing_proofs": missing_proofs, "hosted_failures": hosted_failures,
-                           "capacity": capacity, "errors": errors},
+                            "capacity": capacity, "errors": errors, "repair_guidance": repair_guidance},
             )
         except (OSError, ValueError) as exc:
             print(f"PIPELINE-SNAPSHOT-BLOCKED error={exc}", flush=True)
@@ -478,6 +500,7 @@ def _publish_snapshot(
         except (OSError, ValueError) as exc:
             errors.append(str(exc))
             state = "lookup_error"
+            repair_guidance = []
             for missing in missing_proofs.values():
                 missing["hosted_status"] = state
                 missing["next_action"] = "resolve_observation_error"

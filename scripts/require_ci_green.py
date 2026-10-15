@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from scripts import pipeline_status
+    from scripts import pipeline_status as pipeline_status
 else:
     try:
         import pipeline_status

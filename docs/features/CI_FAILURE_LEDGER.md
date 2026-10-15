@@ -73,13 +73,14 @@ that CI is green.
 
 ## Repair workflow
 
-Use a narrowly scoped evidence target after landing the repair locally:
+After committing the repair in its exact clean checkout, run the first evidence
+execution through the repair owner with explicitly selected families:
 
 ```console
 make ci-failure-repair \
   CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json \
-  CI_FAILURE_FAMILIES='<family hashes, or leave empty>' \
-  CI_REPAIR_ALL_OPEN=1 \
+  CI_FAILURE_FAMILIES='<selected full family ID(s)>' \
+  CI_REPAIR_ALL_OPEN=0 \
   CI_REPAIR_SHA=<full repair commit SHA> \
   CI_REPAIR_EVIDENCE_TARGET=test-files \
   CI_REPAIR_EVIDENCE_VARS='TESTFILES=tests/unit/test_ci_failure_ledger.py PYTEST_ARGS=-q' \
@@ -90,6 +91,46 @@ The ledger invokes the evidence as an argument-vector `make` command, streams
 its output, and writes receipts only after exit zero. Shell snippets and
 lowercase/unstructured variable names are rejected. The repair SHA must differ
 from and descend from the most recent failed SHA for every selected family.
+
+Selection admission now precedes the evidence child. Unknown or resolved
+families, an empty selection, the failed SHA itself, and a non-descendant repair
+SHA all refuse execution without launching evidence or changing the ledger.
+Mixed valid and invalid selections fail together. After a successful child,
+the owner still rechecks the exact clean checkout, revalidates the selection,
+and compares the original selected-family fingerprints under the existing
+private ledger lock before publishing receipts. Concurrent sibling observations
+and receipts remain intact.
+
+Do not run an expensive admission first and then repeat it to obtain its repair
+receipt. Select that admission as `CI_REPAIR_EVIDENCE_TARGET` for the first
+repair-owned execution only when its declared checks cover the selected failure.
+`release-proof-admission` is not a default evidence target for unrelated failure
+families. Standalone admission, read-only status, and validate-only observations
+do not create a repair receipt.
+
+The existing pipeline snapshot and release-readiness output expose
+`repair_guidance` and `ci_repair_guidance`, respectively. Each known open family
+gets its own full family ID and a clean exact candidate when that checkout is
+verified. Dirty, malformed, or unchanged failed candidates require a new clean
+descendant SHA. The guidance keeps `argv` null and publishes an `argv_template`
+with required evidence-target and evidence-variable parameters: the ledger has
+no authoritative family-to-target coverage mapping. An unobserved family also
+requires explicit family selection. Fill those parameters from the actual
+failure's owning checks; the template never silently selects all open families
+or claims that one family's repair covers another task or family.
+
+Practitioner context: [pytest discussion #7793](https://github.com/pytest-dev/pytest/discussions/7793)
+(September 2020) reports different direct and hook-driven results; maintainers
+identified changed positional file arguments and multiple invocations. The
+[pre-commit hook contract](https://pre-commit.com/#new-hooks) documents those
+argument and serialization controls. This is context for explicit evidence argv
+and one repair-owned execution, not the cause of Gludd's selection-order bug or
+a reason to change its existing runner or hooks.
+
+This control-plane change restarts no serving process and creates no new proof
+authority. Rollback uses normal branch review while retaining immutable failure
+history; focused repair evidence remains distinct from full-gate, exact-SHA
+hosted and installed-deployment proof.
 
 Useful read-only commands are:
 

@@ -819,6 +819,52 @@ def test_nonprunable_worktree_never_receives_cleanup_instructions() -> None:
     assert rr.build_remediation_plan(result, tag=rr.DEFAULT_RELEASE_TAG).steps == ()
 
 
+@pytest.mark.parametrize("dirty_count", [0, 1])
+def test_readiness_ci_repair_guidance_requires_explicit_target_for_exact_family(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dirty_count: int,
+) -> None:
+    import workflow_state_guard
+    from scripts import ci_failure_ledger
+
+    candidate, failed = "b" * 40, "a" * 40
+    path = tmp_path / ".gludd/ci-failure-ledger.json"
+    ledger = ci_failure_ledger.new_ledger()
+    ci_failure_ledger.observe_payload(ledger, {
+        "databaseId": 101, "headSha": failed, "headBranch": "development",
+        "status": "completed", "conclusion": "failure", "workflowName": "Build and Release",
+        "jobs": [{"name": "unit-2", "status": "completed", "conclusion": "failure", "steps": []}],
+    }, observed_at="first")
+    ci_failure_ledger.write_ledger(path, ledger)
+    before = path.read_bytes()
+    state = SimpleNamespace(
+        branch="development", head=candidate, dirty_count=dirty_count,
+        unintegrated_worktrees=[], unintegrated_branches=[],
+    )
+    monkeypatch.setattr(rr, "_release_policy_preflight", lambda *_: (True, "canonical"))
+    monkeypatch.setattr(workflow_state_guard, "collect_state", lambda **_: state)
+    monkeypatch.setattr(rr, "_tasks_tick_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_detached_worktrees", lambda *_: [])
+    monkeypatch.setattr(rr, "_ci_verdict", lambda *_: ("RED", "CI RED"))
+    monkeypatch.setattr(rr, "_unmanaged_local_inference_processes", lambda *_: [])
+    monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_incomplete_tasks", lambda *_: [])
+    monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+
+    result = rr.assess(root=tmp_path, run=lambda *_: _completed([]))
+    assert not result.ready
+    guidance = result.ci_repair_guidance
+    assert len(guidance) == 1
+    assert guidance[0]["family_ids"] == list(ledger["families"])
+    assert guidance[0]["candidate_sha"] == (candidate if dirty_count == 0 else None)
+    plan = rr.build_remediation_plan(result, tag=rr.DEFAULT_RELEASE_TAG)
+    step = next(item for item in plan.steps if item.code == "ci_failure_repair")
+    assert step.apply_argv is None
+    assert step.argv_template[:2] == ("make", "ci-failure-repair")
+    assert "CI_REPAIR_EVIDENCE_TARGET=<explicit-evidence-target>" in step.argv_template
+    assert "first evidence execution" in step.resolution
+    assert path.read_bytes() == before
+
+
 def test_coverage_gap_reader_fails_closed_on_missing_or_invalid_shapes(
     tmp_path: Path,
 ) -> None:
