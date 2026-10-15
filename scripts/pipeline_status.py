@@ -286,7 +286,7 @@ def remote_head(
 
 
 def local_gate() -> None:
-    """Print the current local gate marker and stale/dead diagnostics."""
+    """Print lifecycle-marker age and PID liveness without inferring progress."""
     gate = Path(".gate-status")
     pid_file = Path(".gate-background.pid")
     print("=== LOCAL GATE ===")
@@ -303,7 +303,10 @@ def local_gate() -> None:
         os.kill(int(pid), 0)
         age = int(time.time()) - int(gate.stat().st_mtime)
         if age > 120:
-            print(f"  STALLED: .gate-status not updated for {age} seconds")
+            print(
+                f"  GATE-MARKER: marker_age_seconds={age} pid={pid} pid_probe=exists "
+                "gate_identity=unverified progress=unknown (lifecycle marker, not a progress heartbeat)"
+            )
     except (OSError, ValueError):
         print(f"  DEAD: pid={pid} no longer running")
 
