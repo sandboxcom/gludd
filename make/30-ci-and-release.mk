@@ -253,6 +253,7 @@ ci-failure-push-guard:
 # (SYNCED/DIVERGED/UNREACHABLE with unpushed commits), recent commits, and the
 # CI verdict for HEAD. Fail-soft: network calls fall back to UNREACHABLE / NO
 # RUN rather than erroring. Always exits 0.
+.PHONY: verify-state
 verify-state:
 	@echo "=== GLUDD STATE REPORT $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 	@echo ""
@@ -278,7 +279,7 @@ verify-state:
 	@echo ""
 	@echo "--- CI ---"
 	@SHA=$$(git rev-parse HEAD); BRANCH=$$(git branch --show-current); \
-	$(PYTHON) scripts/pipeline_status.py status --remote-only --repo sandboxcom/gludd \
+	$(UV) run --no-sync python scripts/pipeline_status.py status --remote-only --repo sandboxcom/gludd \
 		--remote sandboxcom --branch "$$BRANCH" --sha "$$SHA" || true
 	@echo ""
 	@echo "=== END STATE REPORT ==="

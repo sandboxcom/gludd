@@ -2,6 +2,11 @@
   "version": 1,
   "targets": [
     {
+      "name": "verify-state",
+      "make_variables": [],
+      "behavior": "make verify-state"
+    },
+    {
       "name": "backlog-audit",
       "make_variables": [
         "BACKLOG_AUDIT_VALIDATE_ONLY",

@@ -75,6 +75,17 @@ owns it. A failed locked dependency sync stops before any test runner executes.
 
 ## Evidence and failure ownership
 
+`make verify-state` reports local identity, remote synchronization and the
+exact-SHA hosted verdict using the selected project environment. Its native
+Python entry point uses `uv run --no-sync`; reporting cannot synchronize or
+install dependencies and no longer falls back to an incompatible system Python.
+The report remains fail-soft for unavailable networks or a non-green verdict.
+Its exit code is not release approval: use the required signed gate and hosted
+evidence, and use `make worktree-state` when only local identity is needed.
+Behavioral checks execute the actual CI recipe with a broken legacy Python and
+both successful and failed native status children; they require the exact
+candidate, branch and read-only runtime arguments without contacting a network.
+
 Make captures `GATE_CANDIDATE_SHA` at admission and retains that expected commit
 across recursive commands. The release driver checks a clean exact identity
 before allocating test resources and again after the producer completes. The
