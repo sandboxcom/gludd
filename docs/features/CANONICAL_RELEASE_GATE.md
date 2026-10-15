@@ -99,6 +99,54 @@ never upgrades failure to pass, and uses the existing cancellation finalizer to
 write a signed terminal failure and release its locks and temporary directory.
 Direct child cancellation codes retain the same cleanup path.
 
+### Find remaining failures without replaying a failed gate
+
+The local canonical producer now enables the same existing
+`--diagnose-after-failure` mode as hosted CI. After an ordinary test failure,
+the original invocation continues its remaining safe batches and shards once,
+retaining every failing batch in the terminal summary. The gate stays failed.
+Later diagnostic passes cannot read or publish reusable pass receipts or become
+release evidence. Cancellation, owner loss, cleanup failures, resource admission,
+interpreter errors, and other safety stops still terminate the run. The separate
+`--collect-all-failures` diagnostic mode is not substituted for release policy.
+
+This closes an observed wiring gap: candidate `a8fdfbdf5fb9` stopped after
+51 of 255 planned local batches, leaving 204 untested, while hosted run
+38710175381 found a second failing shard. No concurrency or timeout increase is
+needed to reuse the established continuation owner. One worker, all canonical
+selectors, warning-fatal execution, and coverage floors remain unchanged.
+
+A failing-first behavioral regression executes the actual local Make recipe
+with bounded subprocess fixtures and requires exactly one canonical runner
+invocation with both release policy and post-failure diagnosis enabled. Existing
+runner tests cover pass/fail/pass/fail sequences, every terminal safety code,
+real warning/assertion children, receipt isolation, and failed attestations.
+These tests verify the workflow change, not the readiness of a release candidate.
+
+The four failures observed in that run (environment naming, environment
+documentation, required run-ID semantics, and public backlog help) plus the
+local continuation control are now explicit early-admission selectors. Their
+existing full-gate tests remain mandatory. The failure-promotion manifest and a
+regression pin both the selectors and their existing owner; no new runner or
+admission phase is introduced, and the 90-second owner budget is unchanged.
+
+The documented `test-ci-dual-track-local DUAL_TRACK_LOCAL_VALIDATE_ONLY=1`
+example now uses the already-selected CPython 3.11 environment with
+`--no-sync`; it does not synchronize Python profiles or Node dependencies,
+launch tests, or publish evidence. Select an existing locked CI environment
+with `UV_PROJECT_ENVIRONMENT` when the development environment uses another
+interpreter. Real execution still synchronizes and verifies every locked
+profile before its first test, and aborts if that synchronization fails.
+
+The [pytest exit-code contract][pytest-exit-codes] distinguishes test failures
+from interruption, internal errors, usage errors, and empty collection. The
+[2020 practitioner discussion][pytest-failure-forum] illustrates the longstanding
+need to keep collecting assertion failures while respecting unsafe execution
+states. Its proposed hooks are not adopted: Gludd already has the bounded
+runner and cleanup owner needed for this distinction. Fixture setup failures
+are not automatically equivalent to a fatal runner error; the native runner's
+explicit terminal-code and cleanup rules remain authoritative.
+
 ## Reviewed fixture finding in the secrets baseline
 
 The public `GATE_PREFLIGHT_TARGETS` rejection fixture triggered the pinned
@@ -229,3 +277,5 @@ commit; ordinary native development gates retain their prior test policy.
 [secrets-design]: https://github.com/Yelp/detect-secrets/blob/v1.5.0/docs/design.md
 [secrets-forum]: https://github.com/Yelp/detect-secrets/issues/629
 [secrets-keyword]: https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/plugins/keyword.py
+[pytest-exit-codes]: https://docs.pytest.org/en/stable/reference/exit-codes.html
+[pytest-failure-forum]: https://stackoverflow.com/questions/63248262/stop-pytest-on-errors-but-not-on-fails

@@ -5,3 +5,8 @@ explicit_package_bases = true
 warn_unused_configs = true
 mypy_path = "src"
 follow_imports = "skip"
+
+# Keep pytest's typed decorators/fixtures while isolating application imports.
+[[tool.mypy.overrides]]
+module = ["pytest", "pytest.*", "_pytest", "_pytest.*"]
+follow_imports = "normal"
