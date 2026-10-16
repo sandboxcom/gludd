@@ -15,6 +15,7 @@ import fcntl
 import json
 import os
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -31,7 +32,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 import psutil
 
 if TYPE_CHECKING:
-    from scripts.resource_arbiter import project_namespace
+    from resource_arbiter import project_namespace
 else:
     if __package__:
         from scripts.resource_arbiter import project_namespace
@@ -888,6 +889,50 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def gate_command(make_command: str, makefile: Path) -> list[str]:
+    """Build the background producer's exact argv, including explicit Make prefixes."""
+    prefix = shlex.split(make_command)
+    if not prefix or not makefile.is_file():
+        raise ValueError("make command and Makefile are required")
+    return [*prefix, "-f", str(makefile.resolve()), "--no-print-directory", "gate", "gludd_watchdog_owned_gate=1"]
+
+
+def _native_make_executable() -> Path:
+    """Resolve the native Make selected by the same host used by the producer."""
+    located = shutil.which("make")
+    if located is None:
+        raise ValueError("native Make executable is unavailable")
+    executable = Path(located).resolve(strict=True)
+    if sys.platform == "darwin" and executable == Path("/usr/bin/make"):
+        # Apple's /usr/bin/make shim executes the active developer-tool Make.
+        # Ask the native selector; never trust an arbitrary path ending in make.
+        selected = subprocess.run(
+            ["/usr/bin/xcrun", "--find", "make"], check=False, capture_output=True, text=True, timeout=5,
+        )
+        if selected.returncode != 0 or len(selected.stdout) > 4096:
+            raise ValueError("native Make executable is unavailable")
+        executable = Path(selected.stdout.strip())
+        if not executable.is_absolute():
+            raise ValueError("native Make executable is unavailable")
+        executable = executable.resolve(strict=True)
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise ValueError("native Make executable is unavailable")
+    return executable
+
+
+def is_canonical_gate_command(command: Sequence[str], project_root: Path) -> bool:
+    """Bind terminal argv to this producer's native executable and candidate Makefile."""
+    if not command or (command[0] != "make" and not Path(command[0]).is_absolute()):
+        return False
+    try:
+        native = _native_make_executable()
+        executable = native if command[0] == "make" else Path(command[0]).resolve(strict=True)
+        expected = gate_command(shlex.quote(str(native)), project_root.resolve() / "Makefile")
+        return executable == native and list(command[1:]) == expected[1:]
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return False
+
+
 def _watch_from_state(args: argparse.Namespace, paths: GatePaths) -> int:
     payload = _read_json(paths.state_file)
     identity = _identity_from_state(payload or {})
@@ -936,34 +981,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     makefile = (args.makefile or paths.project_root / "Makefile").resolve()
     try:
-        make_command = shlex.split(args.make_command)
+        command = gate_command(args.make_command, makefile)
     except ValueError as exc:
         print(f"gate-background: invalid make command: {exc}", file=sys.stderr)
         return 2
-    if not make_command or not makefile.is_file():
-        print("gate-background: make command and Makefile are required", file=sys.stderr)
-        return 2
-    gate_command = [
-        *make_command,
-        "-f",
-        str(makefile),
-        "--no-print-directory",
-        "gate",
-        "gludd_watchdog_owned_gate=1",
-    ]
     namespace = project_namespace(paths.project_root)
     if args.validate_only == "1":
         print(
             f"gate-background: VALIDATE timeout={_format_seconds(args.timeout_seconds)}s "
             f"namespace={namespace} root={paths.project_root} "
-            f"command={shlex.join(gate_command)}",
+            f"command={shlex.join(command)}",
             flush=True,
         )
         return 0
     try:
         launch_gate(
             paths.project_root,
-            gate_command,
+            command,
             timeout_seconds=args.timeout_seconds,
             watcher_poll_seconds=args.watcher_poll_seconds,
             termination_grace_seconds=args.termination_grace_seconds,

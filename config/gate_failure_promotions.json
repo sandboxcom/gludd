@@ -308,6 +308,20 @@
       "full_gate_phase": "test"
     },
     {
+      "id": "reviewed-head-historical-candidate-adapters",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "reviewed-head-native-gate-command",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command",
+      "full_gate_phase": "test"
+    },
+    {
       "id": "gate-lock-prerequisite-order",
       "owner_target": "_pytest-runtime-compatibility-admission",
       "node_kind": "pytest_node",

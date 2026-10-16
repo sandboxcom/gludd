@@ -756,6 +756,8 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_start_gate_background.py::test_timeout_terminates_exact_session_and_removes_owned_pid
 # tests/unit/test_start_gate_background.py::test_timeout_escalates_to_sigkill_for_term_ignoring_gate
 # tests/unit/test_start_gate_background.py::test_timeout_never_removes_a_replaced_pid_receipt
+# tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files
+# tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command
 # tests/unit/test_gate_run_lock.py::test_gate_and_refresh_acquire_before_running_phases
 # tests/unit/test_bulkhead_deep.py::TestThreadPoolSubmit::test_submit_rejects_when_queue_full_nonblocking
 # tests/unit/test_bulkhead_admission.py::test_admission_reserves_workers_before_backlog
@@ -824,6 +826,11 @@ _pytest-runtime-compatibility-admission:
 	@$(MAKE) --no-print-directory test-files \
 		TESTFILES="tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries" \
 		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 0 --maxprocesses 1"
+# Keep the native reviewed-head controls separate from the established roster.
+# They still share this owner's unchanged 90-second/60-second outer budget.
+	@$(MAKE) --no-print-directory test-files \
+		TESTFILES="tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command" \
+		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 0 --maxprocesses 1 --ignore-glob=tests/*"
 
 _ansible-role-variable-prefix:
 	@$(MAKE) --no-print-directory test-specific \

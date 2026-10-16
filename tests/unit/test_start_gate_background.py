@@ -5,27 +5,28 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
+import shutil
 import signal
 import subprocess
 import sys
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import BinaryIO
+from typing import TYPE_CHECKING, BinaryIO
 from unittest.mock import Mock
 
 import psutil
 import pytest
-from scripts import start_gate_background as launcher
-from scripts.resource_arbiter import project_namespace
-from scripts.start_gate_background import (
-    GateIdentity,
-    GatePaths,
-    launch_gate,
-    main,
-    process_matches,
-    watch_gate,
-)
+
+if TYPE_CHECKING:
+    import start_gate_background as launcher
+    from resource_arbiter import project_namespace
+    from start_gate_background import GateIdentity, GatePaths, launch_gate, main, process_matches, watch_gate
+else:
+    from scripts import start_gate_background as launcher
+    from scripts.resource_arbiter import project_namespace
+    from scripts.start_gate_background import GateIdentity, GatePaths, launch_gate, main, process_matches, watch_gate
 
 ROOT = Path(__file__).parent.parent.parent
 
@@ -566,6 +567,108 @@ def test_validate_only_is_side_effect_free(tmp_path: Path, capsys: pytest.Captur
     assert not paths.pid_file.exists()
     assert not paths.state_file.exists()
     assert not paths.log_dir.exists()
+
+
+def test_canonical_command_uses_actual_producer_native_make_identity(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    makefile = tmp_path / "Makefile"
+    makefile.write_text("gate:\n\t@true\n", encoding="utf-8")
+    native = subprocess.run(
+        ["make", "--no-print-directory", "-f", "-"], cwd=tmp_path,
+        input="native-make-identity:\n\t@printf '%s\\n' '$(MAKE)'\n",
+        check=True, capture_output=True, text=True, timeout=10,
+    ).stdout.strip()
+    assert main(["--project-root", str(tmp_path), "--make-command", native, "--validate-only", "1"]) == 0
+    command = shlex.split(capsys.readouterr().out.split("command=", 1)[1])
+    assert launcher.is_canonical_gate_command(command, tmp_path)
+    assert launcher.is_canonical_gate_command(["make", *command[1:]], tmp_path)
+    assert not GatePaths.for_root(tmp_path).log_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "mutation", ["relative", "fake", "missing", "makefile", "target", "ownership", "extra", "empty"],
+)
+def test_canonical_command_refuses_unowned_executable_or_argv(tmp_path: Path, mutation: str) -> None:
+    makefile = tmp_path / "Makefile"
+    makefile.write_text("gate:\n\t@true\n", encoding="utf-8")
+    command = launcher.gate_command("make", makefile)
+    if mutation in {"relative", "fake", "missing"}:
+        fake = tmp_path / "make"
+        if mutation != "missing":
+            fake.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake.chmod(0o755)
+        command[0] = "./make" if mutation == "relative" else str(fake)
+    elif mutation == "makefile":
+        command[2] = str(tmp_path / "other.mk")
+    elif mutation == "target":
+        command[-2] = "gate-lite"
+    elif mutation == "ownership":
+        command[-1] = "gludd_watchdog_owned_gate=0"
+    elif mutation == "extra":
+        command.append("gate-lite")
+    else:
+        command = []
+    assert not launcher.is_canonical_gate_command(command, tmp_path)
+
+
+def test_canonical_command_preserves_native_make_path_with_spaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    native = tmp_path / "native toolchain" / "make"
+    native.parent.mkdir()
+    shutil.copyfile(launcher._native_make_executable(), native)
+    native.chmod(0o755)
+    monkeypatch.setenv("PATH", str(native.parent) + os.pathsep + os.environ["PATH"])
+    (tmp_path / "Makefile").write_text("gate:\n\t@true\n", encoding="utf-8")
+    assert subprocess.run([str(native), "--version"], check=True, capture_output=True, timeout=10).returncode == 0
+    assert main(["--project-root", str(tmp_path), "--make-command", shlex.quote(str(native)),
+                 "--validate-only", "1"]) == 0
+    command = shlex.split(capsys.readouterr().out.split("command=", 1)[1])
+    assert command[0] == str(native)
+    assert launcher.is_canonical_gate_command(command, tmp_path)
+
+
+def test_producer_retains_explicit_make_prefix_and_quoted_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    makefile = tmp_path / "custom makefile.mk"
+    makefile.write_text("gate:\n\t@true\n", encoding="utf-8")
+    prefix = "'/custom tool/make' -j1"
+    assert main(["--project-root", str(tmp_path), "--make-command", prefix,
+                 "--makefile", str(makefile), "--validate-only", "1"]) == 0
+    command = shlex.split(capsys.readouterr().out.split("command=", 1)[1])
+    assert command == ["/custom tool/make", "-j1", "-f", str(makefile),
+                       "--no-print-directory", "gate", "gludd_watchdog_owned_gate=1"]
+    assert not launcher.is_canonical_gate_command(command, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "selection",
+    ["missing", "directory", "not-executable", "xcrun-failed", "xcrun-large", "xcrun-relative", "xcrun-timeout"],
+)
+def test_canonical_command_refuses_unavailable_native_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selection: str,
+) -> None:
+    makefile = tmp_path / "Makefile"
+    makefile.write_text("gate:\n\t@true\n", encoding="utf-8")
+    candidate = tmp_path / "native-make"
+    if selection == "directory":
+        candidate.mkdir()
+    else:
+        candidate.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    monkeypatch.setattr(shutil, "which", lambda _name: None if selection == "missing" else str(candidate))
+    if selection.startswith("xcrun-"):
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/make")
+        def select(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            assert kwargs["timeout"] == 5
+            if selection == "xcrun-timeout":
+                raise subprocess.TimeoutExpired("xcrun", 5)
+            output = "x" * 4097 if selection == "xcrun-large" else "relative-make"
+            return subprocess.CompletedProcess(["xcrun"], 1 if selection == "xcrun-failed" else 0, output, "")
+        monkeypatch.setattr(subprocess, "run", select)
+    assert not launcher.is_canonical_gate_command(launcher.gate_command("make", makefile), tmp_path)
 
 
 def test_invalid_timeout_fails_without_side_effects(tmp_path: Path) -> None:

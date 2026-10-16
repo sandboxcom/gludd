@@ -217,6 +217,35 @@ def test_timeout_teardown_failures_execute_in_early_admission(test_name: str) ->
     assert manifest["full_gate_required"] is True
 
 
+@pytest.mark.parametrize(
+    "test_name",
+    [
+        "test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files",
+        "test_finalization_accepts_actual_native_background_producer_command",
+    ],
+)
+def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_name: str) -> None:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    node = f"tests/unit/test_reviewed_head_inputs.py::{test_name}"
+    family = next((family for family in manifest["families"] if family["node"] == node), None)
+    assert family is not None
+    assert family["owner_target"] == "_pytest-runtime-compatibility-admission"
+    assert family["full_gate_phase"] == "test"
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in executable
+    assert "tests/unit/test_reviewed_head_inputs.py\"" not in executable
+    recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
+    assert len(recipes) == 4
+    selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    assert len(selectors) == 2 and selectors.count(node) == 1
+    assert node not in recipes[1] and node not in recipes[2]
+    phase = next(item for item in manifest["runtime_contract"]["phases"]
+                 if item["target"] == family["owner_target"])
+    assert (phase["budget_class"], phase["max_seconds"], phase["quiet_seconds"]) == ("fast", 90, 60)
+    assert manifest["full_gate_required"] is True
+
+
 def _target_stanza(makefile: str, target: str) -> str:
     return makefile.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
 
@@ -812,7 +841,7 @@ def test_repaired_failures_execute_as_exact_nodes_before_fanout(
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
-    assert len(recipes) == 3
+    assert len(recipes) == 4
     selectors = recipes[1].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert selectors.count(node) == 1
     assert node.split("::", 1)[0] not in selectors
@@ -1365,7 +1394,7 @@ def test_duplicate_help_failure_runs_in_a_fresh_early_process() -> None:
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     recipes = owner.split("\t@$(MAKE) --no-print-directory test-files")
-    assert len(recipes) == 3
+    assert len(recipes) == 4
     assert "tests/unit/test_makefile_audit_deep.py" not in recipes[1]
     assert f'TESTFILES="{node}"' in recipes[2]
     assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 0 --maxprocesses 1"' in recipes[2]
@@ -1401,6 +1430,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "gate-timeout-owned-zombie",
         "gate-timeout-term-escalation-zombie",
         "gate-timeout-replaced-receipt-zombie",
+        "reviewed-head-historical-candidate-adapters",
+        "reviewed-head-native-gate-command",
         "gate-lock-prerequisite-order",
         "threadpool-bulkhead-nonblocking-admission",
         "threadpool-bulkhead-worker-reservations",
