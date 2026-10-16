@@ -3,26 +3,57 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
 from collections.abc import Mapping
+from contextlib import redirect_stdout
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import pytest
-from scripts import gate_status_attestation as gate_owner
-from scripts import release_readiness as readiness
-from scripts import reviewed_head_inputs as inputs
-from scripts import run_ci_shards_serial as shard_owner
-from scripts.ci_named_shard_files import SHARDS
 from scripts.makefile_layout import compose_makefile
+
+from general_ludd.git_release.reviewed_head_integration import ReviewedHeadIntegrationReceipt
+
+if TYPE_CHECKING:
+    import build_reviewed_head_integration_receipt as receipt_owner
+    import gate_status_attestation as gate_owner
+    import release_readiness as readiness
+    import reviewed_head_inputs as inputs
+    import run_ci_shards_serial as shard_owner
+    import start_gate_background as background_owner
+    import stream_command as observed_owner
+    from ci_named_shard_files import SHARDS
+else:
+    from scripts import build_reviewed_head_integration_receipt as receipt_owner
+    from scripts import gate_status_attestation as gate_owner
+    from scripts import release_readiness as readiness
+    from scripts import reviewed_head_inputs as inputs
+    from scripts import run_ci_shards_serial as shard_owner
+    from scripts import start_gate_background as background_owner
+    from scripts import stream_command as observed_owner
+    from scripts.ci_named_shard_files import SHARDS
 
 ROOT = Path(__file__).resolve().parents[2]
 KEY = bytes(range(32))
+
+
+class _Focused(TypedDict):
+    candidate_sha: str
+    run_count: int
+    passed: bool
+    native_status: Mapping[str, object]
+    runtime: Mapping[str, object]
+    log_file: str
+    trace_file: str
+    completed_at: str
+    run_id: str
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +65,7 @@ def _isolated_native_resources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", "-C", str(root), *args], cwd=root.resolve(), check=True, capture_output=True, text=True,
+        ["git", "-C", str(root), *args], cwd=root.resolve(), check=True, capture_output=True, text=True, timeout=10,
     ).stdout.strip()
 
 
@@ -69,6 +100,8 @@ def _fixture(
         recipe += "\t@touch unreviewed-native-mutation\n"
     _commit(root, "Makefile", recipe)
     _commit(root, "TASKS.md", "- [ ] F12.1 — native focused proof | status: pending\n")
+    for adapter in ("reviewed_head_inputs.py", "stream_command.py"):
+        _commit(root, "scripts/" + adapter, (ROOT / "scripts" / adapter).read_text(encoding="utf-8"))
     if native_child_probe:
         _commit(root, "conftest.py", (
             "import hashlib, json, sys\nfrom pathlib import Path\n"
@@ -124,6 +157,21 @@ def _record(root: Path, spec: dict[str, object], tmp_path: Path) -> Path:
     return bundle
 
 
+def _producer_gate_command(root: Path) -> list[str]:
+    """Ask native Make and the real background producer for their actual argv."""
+    make_identity = subprocess.run(
+        ["make", "--no-print-directory", "-f", "-"], cwd=root, check=True,
+        capture_output=True, text=True, timeout=10,
+        input="gludd-reviewed-make-identity:\n\t@printf '%s\\n' '$(MAKE)'\n",
+    ).stdout.strip()
+    output = io.StringIO()
+    with redirect_stdout(output):
+        assert background_owner.main([
+            "--project-root", str(root), "--make-command", make_identity, "--validate-only", "1",
+        ]) == 0
+    return shlex.split(output.getvalue().split("command=", 1)[1].strip())
+
+
 def _gate(root: Path, tmp_path: Path, focus_completed: str) -> Path:
     started = datetime.fromisoformat(focus_completed) + timedelta(microseconds=1)
     completed = started + timedelta(microseconds=1)
@@ -136,7 +184,7 @@ def _gate(root: Path, tmp_path: Path, focus_completed: str) -> Path:
     state = {
         "schema_version": 1, "kind": "gludd_gate_background", "state": "finished",
         "run_id": run_id, "project_root": str(root.resolve()),
-        "command": ["make", "--no-print-directory", "gate"],
+        "command": _producer_gate_command(root),
         "started_at": started_text, "finished_at": completed_text,
         "termination_reason": "gate-exited",
     }
@@ -159,7 +207,7 @@ def _gate(root: Path, tmp_path: Path, focus_completed: str) -> Path:
         "started_at": started_text, "completed_at": completed_text,
         **pairing,
     }
-    path = cast(Path, inputs.resource_owner.resource_root(root)) / "ci-shards/attestation.json"
+    path = inputs.resource_owner.resource_root(root) / "ci-shards/attestation.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(attestation), encoding="utf-8")
     return path
@@ -190,13 +238,14 @@ def test_derives_review_metadata_and_application_from_real_git(tmp_path: Path, m
     root, spec = _fixture(tmp_path, mode)
     prepared = inputs.prepare_inputs(spec, repo_root=root)
     assert prepared["candidate_sha"] == _git(root, "rev-parse", "HEAD")
-    assert prepared["heads"][0]["application_mode"] == mode
-    review = prepared["reviews"][0]
+    assert cast(list[dict[str, object]], prepared["heads"])[0]["application_mode"] == mode
+    review = cast(list[dict[str, object]], prepared["reviews"])[0]
     assert review["verdict"] == "approved" and review["reviewer"] == "trusted-source-review"
-    assert review["native"]["changed_files"] == ["source.txt"]
-    assert len(review["native"]["diff_sha256"]) == 64
+    native = cast(Mapping[str, object], review["native"])
+    assert native["changed_files"] == ["source.txt"]
+    assert len(cast(str, native["diff_sha256"])) == 64
     assert review["source_sha"] == _git(root, "rev-parse", "reviewed/one")
-    assert prepared["focused_command"][0:3] == ["make", "--no-print-directory", "test-files"]
+    assert cast(list[str], prepared["focused_command"])[0:3] == ["make", "--no-print-directory", "test-files"]
 
 
 @pytest.mark.parametrize("field,value", [
@@ -251,13 +300,13 @@ def test_admission_never_requests_native_git_object_publication(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root, spec = _fixture(tmp_path, "merge_two_parent")
-    original = inputs.receipt_owner._git
+    original = receipt_owner._git
 
     def read_only_git(repo: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
         assert "--write-tree" not in arguments, "read-only admission cannot publish native Git objects"
-        return cast(bytes, original(repo, *arguments, input_bytes=input_bytes))
+        return original(repo, *arguments, input_bytes=input_bytes)
 
-    monkeypatch.setattr(inputs.receipt_owner, "_git", read_only_git)
+    monkeypatch.setattr(receipt_owner, "_git", read_only_git)
     inputs.prepare_inputs(spec, repo_root=root)
 
 
@@ -285,7 +334,7 @@ def test_native_order_resolves_a_named_earlier_source_prerequisite(tmp_path: Pat
         "focused_test_files": ["tests/unit/test_native.py"],
     })
     prepared = inputs.prepare_inputs(spec, repo_root=root)
-    assert prepared["heads"][1]["prerequisite_ancestry"] == [{
+    assert cast(list[dict[str, object]], prepared["heads"])[1]["prerequisite_ancestry"] == [{
         "ancestor_sha": _git(root, "rev-parse", "reviewed/one"), "resolution": "required_head",
     }]
     assert prepared["focused_test_files"] == ["tests/unit/test_native.py"]
@@ -303,7 +352,8 @@ def test_admission_is_read_only_and_record_is_owned_idempotent(tmp_path: Path) -
     assert "manifest.json" not in before
     assert _git(root, "status", "--porcelain", "--untracked-files=all") == ""
     damaged = copy.deepcopy(prepared)
-    damaged["intent"]["heads"][0]["reviewer"] = "substitute"
+    damaged_intent = cast(dict[str, object], damaged["intent"])
+    cast(list[dict[str, object]], damaged_intent["heads"])[0]["reviewer"] = "substitute"
     with pytest.raises(ValueError):
         inputs.record_inputs(damaged, bundle, repo_root=root)
 
@@ -326,7 +376,7 @@ def test_captures_one_native_focus_and_reuses_only_authenticated_binding(tmp_pat
     root, spec = _fixture(tmp_path)
     bundle = _record(root, spec, tmp_path)
     key = _key(tmp_path)
-    focused = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    focused = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
     assert focused["candidate_sha"] == _git(root, "rev-parse", "HEAD")
     assert focused["run_count"] == 1 and focused["passed"] is True
     assert focused["native_status"]["state"] == "passed"
@@ -341,7 +391,7 @@ def test_focus_detects_changed_native_artifact_and_unsigned_refusal(tmp_path: Pa
     root, spec = _fixture(tmp_path)
     bundle = _record(root, spec, tmp_path)
     key = _key(tmp_path)
-    focused = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    focused = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
     log = bundle / focused["log_file"]
     log.write_text("forged pass\n", encoding="utf-8")
     with pytest.raises(ValueError, match="focused"):
@@ -389,7 +439,9 @@ def test_failed_candidate_cannot_retry_through_a_second_bundle(
 
 def test_focus_runtime_matches_actual_child_plugin_manager(tmp_path: Path) -> None:
     root, spec = _fixture(tmp_path, child_plugin_autoload=False, native_child_probe=True)
-    focused = inputs.capture_focused(repo_root=root, bundle=_record(root, spec, tmp_path), key_path=_key(tmp_path))
+    focused = cast(_Focused, inputs.capture_focused(
+        repo_root=root, bundle=_record(root, spec, tmp_path), key_path=_key(tmp_path),
+    ))
     child = json.loads((tmp_path / "native-child-runtime.json").read_text(encoding="utf-8"))
     assert focused["runtime"]["python"] == child["python"]
     assert focused["runtime"]["executable_sha256"] == child["executable_sha256"]
@@ -397,10 +449,116 @@ def test_focus_runtime_matches_actual_child_plugin_manager(tmp_path: Path) -> No
     assert (tmp_path / "native-child-count").read_text(encoding="utf-8") == "1"
 
 
+def test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, spec = _fixture(tmp_path, native_child_probe=True)
+    bundle, key = _record(root, spec, tmp_path), _key(tmp_path)
+    focused = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
+    retained = {path: path.read_bytes() for path in (
+        bundle / "focused.json", bundle / "focused-auth.json", Path(focused["trace_file"]),
+    )}
+    consumer = tmp_path / "updated-consumer" / "reviewed_head_inputs.py"
+    consumer.parent.mkdir()
+    consumer.write_text("# Independently updated inspector, not the tested candidate.\n", encoding="utf-8")
+    monkeypatch.setattr(inputs, "__file__", str(consumer))
+    assert inputs.validate_focused(repo_root=root, bundle=bundle, key_path=key) == focused
+    assert inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key) == focused
+    assert all(path.read_bytes() == content for path, content in retained.items())
+    assert (tmp_path / "native-child-count").read_text(encoding="utf-8") == "1"
+
+
+def test_finalization_accepts_actual_native_background_producer_command(tmp_path: Path) -> None:
+    root, spec = _fixture(tmp_path)
+    bundle, key = _record(root, spec, tmp_path), _key(tmp_path)
+    focused = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
+    gate = _gate(root, tmp_path, focused["completed_at"])
+    state_path = root / ".gate-logs/gate-background-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["command"] == _producer_gate_command(root)
+    manifest = inputs.finalize_inputs(repo_root=root, bundle=bundle, gate_attestation=gate, key_path=key)
+    assert cast(Mapping[str, object], manifest["focused_validation"])["tip_sha"] == _git(root, "rev-parse", "HEAD")
+    assert (bundle / "reviewed-head-receipt.json").is_file()
+
+
+@pytest.mark.parametrize("adapter", ["reviewed_head_inputs.py", "stream_command.py"])
+@pytest.mark.parametrize("mutation", ["missing", "symlink", "directory", "empty", "oversized"])
+def test_candidate_adapter_binding_requires_real_ordinary_git_blobs(
+    tmp_path: Path, adapter: str, mutation: str,
+) -> None:
+    root, _spec = _fixture(tmp_path)
+    path = root / "scripts" / adapter
+    path.unlink()
+    if mutation == "symlink":
+        path.symlink_to(ROOT / "scripts" / adapter)
+    elif mutation == "directory":
+        path.mkdir()
+        (path / "member.py").write_text("# Not an ordinary adapter blob.\n", encoding="utf-8")
+    elif mutation in {"empty", "oversized"}:
+        path.write_bytes(b"" if mutation == "empty" else b"#" * 1_048_577)
+    _git(root, "add", "--all")
+    _git(root, "commit", "-m", "invalid candidate adapter fixture")
+    with pytest.raises(ValueError, match="candidate provenance adapter blob"):
+        inputs._candidate_adapter_hashes(root, _git(root, "rev-parse", "HEAD"))
+
+
+@pytest.mark.parametrize("sha", ["HEAD", "-h", "a" * 39, "A" * 40, "0" * 40])
+def test_candidate_adapter_binding_refuses_nonexact_or_unavailable_objects(tmp_path: Path, sha: str) -> None:
+    root, _spec = _fixture(tmp_path)
+    with pytest.raises(ValueError, match="candidate provenance adapter blob"):
+        inputs._candidate_adapter_hashes(root, sha)
+
+
+def test_new_focus_refuses_inspector_bytes_different_from_candidate_before_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, spec = _fixture(tmp_path, native_child_probe=True)
+    bundle, key = _record(root, spec, tmp_path), _key(tmp_path)
+    inspector = tmp_path / "updated-consumer" / "reviewed_head_inputs.py"
+    inspector.parent.mkdir()
+    inspector.write_text("# Inspector is not the exact tested source.\n", encoding="utf-8")
+    monkeypatch.setattr(inputs, "__file__", str(inspector))
+    with pytest.raises(ValueError, match="provenance adapter implementation changed"):
+        inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    assert not (tmp_path / "native-child-count").exists()
+    assert not (bundle / "focused.json").exists()
+
+
+@pytest.mark.parametrize("mutation", ["fake-make", "makefile", "extra-target", "ownership", "empty"])
+def test_finalization_refuses_noncanonical_producer_command_without_publication(
+    tmp_path: Path, mutation: str,
+) -> None:
+    root, spec = _fixture(tmp_path)
+    bundle, key = _record(root, spec, tmp_path), _key(tmp_path)
+    focused = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
+    gate = _gate(root, tmp_path, focused["completed_at"])
+    state_path = root / ".gate-logs/gate-background-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    if mutation == "fake-make":
+        fake = tmp_path / "make"
+        fake.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        fake.chmod(0o755)
+        state["command"][0] = str(fake)
+    elif mutation == "makefile":
+        state["command"][2] = str(tmp_path / "Makefile")
+    elif mutation == "extra-target":
+        state["command"].append("gate-lite")
+    elif mutation == "ownership":
+        state["command"][-1] = "gludd_watchdog_owned_gate=0"
+    else:
+        state["command"] = []
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    with pytest.raises(ValueError, match="native outer gate command"):
+        inputs.finalize_inputs(repo_root=root, bundle=bundle, gate_attestation=gate, key_path=key)
+    assert not any((bundle / name).exists() for name in (
+        "manifest.json", "gate-binding.json", "reviewed-head-receipt.json",
+    ))
+
+
 def test_native_runtime_trace_refuses_substituted_executor_facts(tmp_path: Path) -> None:
     root, spec = _fixture(tmp_path)
     bundle = _record(root, spec, tmp_path)
-    focused = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=_key(tmp_path))
+    focused = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=_key(tmp_path)))
     status = focused["native_status"]
     recorded = json.loads((bundle / "inputs.json").read_text(encoding="utf-8"))
     original = Path(focused["trace_file"]).read_bytes()
@@ -408,7 +566,7 @@ def test_native_runtime_trace_refuses_substituted_executor_facts(tmp_path: Path)
     for mutation, expected in (
         ("run", "another invocation"), ("executor", "actual test executor"),
         ("terminal", "completed actual executor"), ("source", "source or executing child"),
-        ("adapter", "implementation changed"),
+        ("adapter", "implementation changed"), ("observer-adapter", "implementation changed"),
     ):
         events = [json.loads(line) for line in original.splitlines()]
         if mutation == "run":
@@ -422,18 +580,20 @@ def test_native_runtime_trace_refuses_substituted_executor_facts(tmp_path: Path)
                 if event["event"].startswith("FOCUS_RUNTIME"):
                     if mutation == "source":
                         event["candidate_sha"] = "f" * 40
-                    else:
+                    elif mutation == "adapter":
                         event["runtime"]["producer_sha256"] = "f" * 64
+                    else:
+                        event["runtime"]["observer_sha256"] = "f" * 64
         trace.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
         with pytest.raises(ValueError, match=expected):
-            inputs._native_runtimes(trace, status, recorded)
+            inputs._native_runtimes(trace, status, recorded, repo_root=root)
     trace.write_text("x" * 1_048_577 + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="event exceeds"):
-        inputs._native_runtimes(trace, status, recorded)
+        inputs._native_runtimes(trace, status, recorded, repo_root=root)
     linked = tmp_path / "linked-runtime.jsonl"
     linked.symlink_to(trace)
     with pytest.raises(ValueError, match="unsafe"):
-        inputs._native_runtimes(linked, status, recorded)
+        inputs._native_runtimes(linked, status, recorded, repo_root=root)
     assert Path(focused["trace_file"]).read_bytes() == original
 
 
@@ -462,7 +622,9 @@ def test_runtime_probe_refuses_producer_process_as_native_child(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest,
 ) -> None:
     root, spec = _fixture(tmp_path)
-    focused = inputs.capture_focused(repo_root=root, bundle=_record(root, spec, tmp_path), key_path=_key(tmp_path))
+    focused = cast(_Focused, inputs.capture_focused(
+        repo_root=root, bundle=_record(root, spec, tmp_path), key_path=_key(tmp_path),
+    ))
     runtime = inputs._focus_runtime(request.config.pluginmanager)
     assert runtime["python"] == sys.version
     assert runtime["loaded_plugins"] == sorted(
@@ -493,29 +655,31 @@ def test_final_manifest_binds_actual_terminal_gate_and_existing_builder(
     root, spec = _fixture(tmp_path, native_child_probe=True)
     bundle = _record(root, spec, tmp_path)
     key = _key(tmp_path)
-    focus = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    focus = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
     attestation = _gate(root, tmp_path, focus["completed_at"])
     calls: list[str] = []
-    native_builder = inputs.receipt_owner.build_receipt_from_manifest
-    native_writer = inputs.receipt_owner.write_receipt
+    native_builder = receipt_owner.build_receipt_from_manifest
+    native_writer = receipt_owner.write_receipt
 
-    def counted_builder(*args: object, **kwargs: object) -> object:
+    def counted_builder(
+        raw_manifest: object, *, manifest_dir: Path, gate_attestation: object, repo_root: Path,
+    ) -> ReviewedHeadIntegrationReceipt:
         calls.append("build")
-        result: object = native_builder(*args, **kwargs)
-        return result
+        return native_builder(raw_manifest, manifest_dir=manifest_dir,
+                              gate_attestation=gate_attestation, repo_root=repo_root)
 
-    def counted_writer(*args: object, **kwargs: object) -> None:
+    def counted_writer(path: Path, receipt: ReviewedHeadIntegrationReceipt, *, exclusive: bool = False) -> None:
         calls.append("write")
-        native_writer(*args, **kwargs)
+        native_writer(path, receipt, exclusive=exclusive)
 
-    monkeypatch.setattr(inputs.receipt_owner, "build_receipt_from_manifest", counted_builder)
-    monkeypatch.setattr(inputs.receipt_owner, "write_receipt", counted_writer)
+    monkeypatch.setattr(receipt_owner, "build_receipt_from_manifest", counted_builder)
+    monkeypatch.setattr(receipt_owner, "write_receipt", counted_writer)
     manifest = inputs.finalize_inputs(repo_root=root, bundle=bundle,
                                      gate_attestation=attestation, key_path=key)
     assert calls == ["build", "write"]
     assert manifest["exact_gate_id"] == "gate:20261014T120000Z-native-test"
-    assert manifest["focused_validation"]["passed"] is True
-    assert manifest["focused_validation"]["run_count"] == 1
+    assert cast(Mapping[str, object], manifest["focused_validation"])["passed"] is True
+    assert cast(Mapping[str, object], manifest["focused_validation"])["run_count"] == 1
     assert (bundle / "manifest.json").exists()
     output = bundle / "reviewed-head-receipt.json"
     original = output.read_bytes()
@@ -562,7 +726,7 @@ def test_final_receipt_refuses_foreign_output_without_overwriting(
     root, spec = _fixture(tmp_path)
     bundle = _record(root, spec, tmp_path)
     key = _key(tmp_path)
-    focus = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    focus = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
     gate = _gate(root, tmp_path, focus["completed_at"])
     output = bundle / "reviewed-head-receipt.json"
     foreign = tmp_path / "foreign.json"
@@ -591,7 +755,7 @@ def test_final_receipt_revalidates_revocation_expiry_and_partial_focus_before_pu
     root, spec = _fixture(tmp_path, native_child_probe=True)
     bundle = _record(root, spec, tmp_path)
     key = _key(tmp_path)
-    focus = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    focus = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
     gate = _gate(root, tmp_path, focus["completed_at"])
     signer_id = inputs._auth_context(key).signer.signer_id
     future = int(time.time()) + 10**9
@@ -602,7 +766,7 @@ def test_final_receipt_revalidates_revocation_expiry_and_partial_focus_before_pu
             if state == "revoked":
                 patch.setenv("GLUDD_RECEIPT_REVOKED_SIGNERS", signer_id)
             elif state == "expired":
-                patch.setattr(inputs.time, "time", lambda: float(future))
+                patch.setattr(time, "time", lambda: float(future))
             else:
                 incomplete = json.loads(original)
                 incomplete["command_ids"] = []
@@ -626,7 +790,7 @@ def test_gate_fact_substitution_and_partial_focus_never_grant_release_proof(
     root, spec = _fixture(tmp_path)
     bundle = _record(root, spec, tmp_path)
     key = _key(tmp_path)
-    focus = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    focus = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
     attestation = _gate(root, tmp_path, focus["completed_at"])
     data = json.loads(attestation.read_text(encoding="utf-8"))
     state_path = root / ".gate-logs/gate-background-state.json"
@@ -685,6 +849,31 @@ def test_cli_dry_plan_does_not_read_missing_inputs_or_write(tmp_path: Path, caps
                         "--output", str(output), "--validate-only", "1"]) == 0
     assert "REVIEWED-HEAD-INPUTS-PLAN" in capsys.readouterr().out
     assert not output.exists()
+
+
+@pytest.mark.parametrize("message, reason", [
+    ("native outer gate command differs from the canonical producer", "outer-gate-command"),
+    ("focused child provenance adapter implementation changed", "focused-adapter-identity"),
+    ("candidate provenance adapter blob is unavailable or ineligible", "candidate-adapter-blob"),
+    ("DO_NOT_PRINT_THIS /private/token?key=hidden", "native-provenance"),
+])
+def test_cli_refusal_classification_is_bounded_and_content_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    message: str, reason: str,
+) -> None:
+    def refused(**_arguments: object) -> dict[str, object]:
+        raise ValueError(message)
+
+    monkeypatch.setattr(inputs, "finalize_inputs", refused)
+    assert inputs.main([
+        "--action", "finalize", "--repo-root", str(tmp_path), "--output", str(tmp_path / "bundle"),
+        "--gate-attestation", str(tmp_path / "gate.json"), "--validate-only", "0",
+    ]) == 2
+    captured = capsys.readouterr()
+    assert "reason=" + reason in captured.err
+    assert "DO_NOT_PRINT_THIS" not in captured.err and "hidden" not in captured.err
+    assert len(captured.err) < 240 and not captured.out
+    assert not (tmp_path / "bundle").exists()
 
 
 def test_cli_native_sequence_preserves_admission_and_gate_authority(
@@ -791,7 +980,7 @@ def test_missing_key_and_substituted_execution_owner_cannot_claim_pass(
     with pytest.raises(ValueError, match="authentication"):
         inputs.capture_focused(repo_root=root, bundle=bundle, key_path=tmp_path / "missing-key")
     assert not (tmp_path / "missing-key").exists()
-    monkeypatch.setattr(inputs.observed_owner, "stream_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(observed_owner, "stream_command", lambda *_args, **_kwargs: 0)
     with pytest.raises(ValueError, match="substituted"):
         inputs.capture_focused(repo_root=root, bundle=bundle, key_path=_key(tmp_path))
     assert not (bundle / "focused.json").exists()
@@ -830,7 +1019,7 @@ def test_observer_symlink_cannot_write_into_another_owner(tmp_path: Path) -> Non
 def test_native_publication_race_preserves_the_exclusive_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, equivalent: bool,
 ) -> None:
-    original = inputs.observed_owner._atomic_write_json
+    original = observed_owner._atomic_write_json
     payload = {"owner": "native-review"}
     competitor = payload if equivalent else {"owner": "foreign"}
     path = tmp_path / "immutable.json"
@@ -839,7 +1028,7 @@ def test_native_publication_race_preserves_the_exclusive_owner(
         original(path, competitor, exclusive=exclusive)
         raise FileExistsError("native exclusive claim raced")
 
-    monkeypatch.setattr(inputs.observed_owner, "_atomic_write_json", competing_publication)
+    monkeypatch.setattr(observed_owner, "_atomic_write_json", competing_publication)
     if equivalent:
         inputs._publish(path, payload)
     else:
@@ -867,7 +1056,7 @@ def test_authenticated_focus_refuses_runtime_drift_without_reexecution(
     root, spec = _fixture(tmp_path, native_child_probe=True)
     bundle = _record(root, spec, tmp_path)
     key = _key(tmp_path)
-    focused = inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key)
+    focused = cast(_Focused, inputs.capture_focused(repo_root=root, bundle=bundle, key_path=key))
     trace = Path(focused["trace_file"])
     events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
     next(event for event in events if event["event"] == "FOCUS_RUNTIME")["runtime"]["python"] = "changed-runtime"

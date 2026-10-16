@@ -27,6 +27,7 @@ import pytest
 if TYPE_CHECKING:
     import build_reviewed_head_integration_receipt as receipt_owner
     import gate_status_attestation as gate_owner
+    import start_gate_background as background_owner
     import stream_command as observed_owner
     from ci_receipt_auth import (
         ReceiptAuthContext,
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 elif __package__:
     from scripts import build_reviewed_head_integration_receipt as receipt_owner
     from scripts import gate_status_attestation as gate_owner
+    from scripts import start_gate_background as background_owner
     from scripts import stream_command as observed_owner
     from scripts.ci_receipt_auth import (
         ReceiptAuthContext,
@@ -49,6 +51,7 @@ elif __package__:
 else:
     import build_reviewed_head_integration_receipt as receipt_owner
     import gate_status_attestation as gate_owner
+    import start_gate_background as background_owner
     import stream_command as observed_owner
     from ci_receipt_auth import (
         ReceiptAuthContext,
@@ -139,6 +142,15 @@ _OWNER_KIND = "gludd_native_reviewed_head_inputs"
 _FOCUS_KIND = "gludd_native_reviewed_head_focus"
 _KEY_VARIABLE = "GLUDD_GATE_KEY_PATH"
 _FINAL_RECEIPT_NAME = "reviewed-head-receipt.json"
+_ADAPTER_PATHS = {
+    "scripts/reviewed_head_inputs.py": "producer_sha256",
+    "scripts/stream_command.py": "observer_sha256",
+}
+_REFUSAL_REASONS = {
+    "native outer gate command differs from the canonical producer": "outer-gate-command",
+    "focused child provenance adapter implementation changed": "focused-adapter-identity",
+    "candidate provenance adapter blob is unavailable or ineligible": "candidate-adapter-blob",
+}
 
 
 def _encoded(value: object) -> bytes:
@@ -472,8 +484,37 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     _runtime_event(session, "FOCUS_RUNTIME_FINISH")
 
 
+def _candidate_adapter_hashes(root: Path, sha: str) -> dict[str, str]:
+    """Hash only the two ordinary Git blobs belonging to the tested candidate."""
+    failure = "candidate provenance adapter blob is unavailable or ineligible"
+    try:
+        if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+            raise ValueError(failure)
+        tree = receipt_owner._git(root, "ls-tree", "-z", sha, "--", *_ADAPTER_PATHS)
+        hashes: dict[str, str] = {}
+        for entry in tree.split(b"\0"):
+            if not entry:
+                continue
+            metadata, raw_path = entry.split(b"\t", 1)
+            mode, kind, identity = metadata.split()
+            path = raw_path.decode("ascii")
+            if (mode not in {b"100644", b"100755"} or kind != b"blob" or path not in _ADAPTER_PATHS
+                    or _ADAPTER_PATHS[path] in hashes):
+                raise ValueError(failure)
+            blob = identity.decode("ascii")
+            size = int(receipt_owner._git(root, "cat-file", "-s", blob))
+            if not 0 < size <= 1_048_576:
+                raise ValueError(failure)
+            hashes[_ADAPTER_PATHS[path]] = _digest(receipt_owner._git(root, "cat-file", "blob", blob))
+        if set(hashes) != set(_ADAPTER_PATHS.values()):
+            raise ValueError(failure)
+        return hashes
+    except (OSError, UnicodeError, ValueError):
+        raise ValueError(failure) from None
+
+
 def _native_runtimes(
-    trace_path: Path, status: Mapping[str, object], recorded: Mapping[str, object],
+    trace_path: Path, status: Mapping[str, object], recorded: Mapping[str, object], *, repo_root: Path,
 ) -> list[dict[str, object]]:
     if trace_path.is_symlink() or trace_path.stat().st_size > 64 * 1024 * 1024:
         raise ValueError("focused native runtime trace is unsafe or exceeds its bound")
@@ -490,6 +531,9 @@ def _native_runtimes(
     executors = {event.get("pid") for event in events if event.get("event") == "START"}
     if not executors or any(type(pid) is not int for pid in executors):
         raise ValueError("focused native runtime trace has no actual test executor")
+    expected_adapters = _candidate_adapter_hashes(
+        repo_root, receipt_owner._string(recorded["candidate_sha"], "focused candidate SHA"),
+    )
     result: list[dict[str, object]] = []
     for pid in sorted(cast(set[int], executors)):
         starts = [event for event in events if event.get("pid") == pid and event.get("event") == "FOCUS_RUNTIME"]
@@ -506,9 +550,7 @@ def _native_runtimes(
         if starts[0].get("runtime") != finishes[0].get("runtime"):
             raise ValueError("focused executing child runtime or enabled plugins changed")
         runtime = receipt_owner._mapping(finishes[0].get("runtime"), "focused executing runtime")
-        if (runtime.get("producer_sha256") != runtime_owner.file_sha256(Path(__file__))
-                or runtime.get("observer_sha256") != runtime_owner.file_sha256(
-                    Path(__file__).with_name("stream_command.py"))):
+        if any(runtime.get(name) != expected for name, expected in expected_adapters.items()):
             raise ValueError("focused child provenance adapter implementation changed")
         result.append({"pid": pid, "worker": finishes[0].get("worker"), "runtime": dict(runtime)})
     return result
@@ -544,7 +586,7 @@ def validate_focused(
     run_id = receipt_owner._string(focused.get("run_id"), "focused native run ID")
     status_path, log_path, trace_path, junit_path = _focus_paths(repo_root, run_id)
     status = _read(status_path, "focused native status")
-    runtimes = _native_runtimes(trace_path, status, recorded)
+    runtimes = _native_runtimes(trace_path, status, recorded, repo_root=repo_root)
     if (focused.get("schema_version") != 1 or focused.get("kind") != _FOCUS_KIND
             or focused.get("candidate_sha") != recorded["candidate_sha"]
             or focused.get("repository_state_id") != recorded["repository_state_id"]
@@ -573,6 +615,13 @@ def capture_focused(*, repo_root: Path, bundle: Path, key_path: Path) -> Mapping
     destination, recorded = _load_inputs(repo_root, bundle)
     if (destination / "focused.json").exists():
         return validate_focused(repo_root=repo_root, bundle=bundle, key_path=key_path)
+    expected_adapters = _candidate_adapter_hashes(
+        repo_root, receipt_owner._string(recorded["candidate_sha"], "focused candidate SHA"),
+    )
+    if (expected_adapters["producer_sha256"] != runtime_owner.file_sha256(Path(__file__))
+            or expected_adapters["observer_sha256"] != runtime_owner.file_sha256(
+                Path(__file__).with_name("stream_command.py"))):
+        raise ValueError("focused child provenance adapter implementation changed")
     if observed_owner.stream_command is not _NATIVE_EXECUTION:
         raise ValueError("substituted focused execution owner cannot produce native evidence")
     context = _auth_context(key_path)
@@ -607,7 +656,7 @@ def capture_focused(*, repo_root: Path, bundle: Path, key_path: Path) -> Mapping
     if status.get("state") != "passed" or status.get("exit_code") != 0:
         raise ValueError("focused native owner did not publish terminal success")
     outcomes = _outcomes(junit_path)
-    runtimes = _native_runtimes(trace_path, status, recorded)
+    runtimes = _native_runtimes(trace_path, status, recorded, repo_root=repo_root)
     focused: dict[str, object] = {
         "schema_version": 1, "kind": _FOCUS_KIND, "candidate_sha": recorded["candidate_sha"],
         "repository_state_id": recorded["repository_state_id"], "command": list(command),
@@ -658,9 +707,11 @@ def finalize_inputs(
     state_path = root / ".gate-logs/gate-background-state.json"
     state = _read(state_path, "native outer gate lifecycle")
     command = receipt_owner._strings(state.get("command"), "native outer gate command")
+    if not background_owner.is_canonical_gate_command(command, root):
+        raise ValueError("native outer gate command differs from the canonical producer")
     if (state.get("schema_version") != 1 or state.get("kind") != "gludd_gate_background"
             or state.get("state") != "finished" or state.get("termination_reason") != "gate-exited"
-            or state.get("project_root") != str(root) or command[0] != "make" or "gate" not in command):
+            or state.get("project_root") != str(root)):
         raise ValueError("native outer gate is not the terminal canonical gate")
     run_id = receipt_owner._string(state.get("run_id"), "native gate run ID")
     focused_completed = _timestamp(focused.get("completed_at"))
@@ -766,8 +817,10 @@ def main(argv: list[str] | None = None) -> int:
                 }, sort_keys=True))
         print("REVIEWED-HEAD-INPUTS-VALID action=" + args.action + " release_ready=false gate_evidence=false")
         return 0
-    except (OSError, RuntimeError, TypeError, ValueError):
-        print("reviewed-head native inputs refused; required native provenance is unavailable or mismatched",
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        reason = _REFUSAL_REASONS.get(str(exc), "native-provenance")
+        print("reviewed-head native inputs refused; reason=" + reason
+              + "; required native provenance is unavailable or mismatched",
               file=sys.stderr)
         return 2
 

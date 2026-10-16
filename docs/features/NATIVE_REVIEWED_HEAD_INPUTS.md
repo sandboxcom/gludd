@@ -137,6 +137,28 @@ outer status timestamp. Schema-3 shard evidence alone, partial focus,
 caller-supplied gate IDs, pending state and unauthenticated outer results cannot
 produce a final manifest.
 
+The outer command is validated by the existing background producer's shared argv
+builder and native executable selector. Literal `make` and its host-selected
+absolute executable are eligible only with the exact candidate Makefile, `gate`
+target and watchdog-ownership argument. On Darwin the system shim is resolved by
+the native `xcrun --find make` selector, bounded to five seconds. An arbitrary
+same-basename binary, different Makefile, additional target or missing ownership
+argument is refused. Explicit custom Make prefixes remain supported by the
+background CLI but do not acquire canonical release authority from that support.
+
+A newer inspector may verify an unchanged historical focus only by comparing its
+authenticated child adapter hashes to the two fixed ordinary Git blobs at the
+exact tested candidate: `scripts/reviewed_head_inputs.py` and
+`scripts/stream_command.py`. Missing, symlink, tree, empty or oversized blobs fail
+closed. Inspecting-process bytes never replace those tested bytes. Fresh focus
+also requires the executing adapters to match that candidate before launching;
+retained focus is authenticated without rerunning or rewriting it. Every existing
+source, signature, runtime, timing and shard requirement remains mandatory.
+
+CLI refusals expose only bounded reason categories (`outer-gate-command`,
+`focused-adapter-identity`, `candidate-adapter-blob` or `native-provenance`), never
+raw exception text, commands or paths. They do not publish a successful handoff.
+
 ## Artifact ownership
 
 Each JSON publication reuses the native fsynced exclusive-link writer. Existing
@@ -173,6 +195,13 @@ Both API validate-only and the default CLI plan publish no receipt or handoff.
 
 ## Long-lived user reports and design choices
 
+A 2022 [Monterey user report](https://stackoverflow.com/questions/73395378/cant-use-make-on-mac-os-monterey)
+shows both `/usr/bin/make` and the Command Line Tools absolute Make path within
+one native build. The report is operational context, not executable identity or
+release proof. Apple's primary [command-line tools FAQ](https://developer.apple.com/library/archive/technotes/tn2339/_index.html)
+documents the system shims and native `xcrun` tool selection. The producer uses
+that selector rather than trusting a filename or hard-coding a developer folder.
+
 In a 2023 [GitHub Community discussion about identical changesets represented by
 different commits](https://github.com/orgs/community/discussions/74385), a user
 reported SHA churn and duplicate changeset tracking after rebases. This is user
@@ -208,6 +237,18 @@ unreviewed merge changes, dirty/stale content, failed/no-repeat focus, artifact 
 authentication, partial shards, pending gates and unsigned outer-gate refusals.
 Tests, scoped lint/typing, target contract and the documented no-write behavior
 are required before this deliverable is frozen for independent source review.
+
+The native finalization repair began with two failing controls: actual producer
+argv was rejected for its Darwin absolute Make path, and an updated inspecting
+file invalidated otherwise authenticated historical adapter facts. The fixtures
+now commit genuine adapter blobs and obtain argv from the real background
+producer's no-write plan. Negative controls preserve same-basename executable,
+wrong argv, substituted adapter and unsafe Git-mode refusals. Their two positive
+regression nodes are promoted through the existing compatibility admission owner
+with unchanged 90-second maximum and 60-second quiet bounds; the full-gate test
+phase remains required. The existing producer coverage profile includes both
+changed owners with the unchanged 85% aggregate and 75% per-file floors. These
+controls and source approval are not exact-SHA release completion.
 
 The combined replay exposed two genuine RED controls in the existing receipt
 builder's merge/cherry fixtures: their Git helper omitted `cwd`, so native branch

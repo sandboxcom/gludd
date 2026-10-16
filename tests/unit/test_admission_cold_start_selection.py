@@ -18,6 +18,7 @@ from tests.unit import test_runtime_admission_scheduling as scheduling
 from tests.unit.test_runtime_admission_scheduling import (
     APPROVED_PROMOTION_SELECTORS,
     HELP,
+    REVIEWED_FINALIZATION,
     ROOT,
     ROSTER,
     _capture_owner,
@@ -34,17 +35,19 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
     """Reuse the existing exact roster and actual Make argument-capture owner."""
     result, rows = _capture_owner(tmp_path, "")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert [row["files"] for row in rows] == [list(ROSTER), [HELP]]
+    assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     assert ROSTER.count(STRUCTURAL_NODE) == 1
     assert not any(
         node.split("::", 1)[0] == STRUCTURAL_NODE.split("::", 1)[0] and node != STRUCTURAL_NODE for node in ROSTER
     )
-    assert all((ROOT / node.split("::", 1)[0]).is_file() for node in (*ROSTER, HELP))
+    assert all((ROOT / node.split("::", 1)[0]).is_file() for node in (*ROSTER, HELP, *REVIEWED_FINALIZATION))
     flags = [str(row["flags"]) for row in rows]
     assert "--ignore-glob=tests/*" in flags[0]
     assert "--ignore" not in flags[1]
     assert "-W error" in flags[0] and "-n 2 --maxprocesses 2" in flags[0]
     assert "-W error" in flags[1] and "-n 0 --maxprocesses 1" in flags[1]
+    assert "--ignore-glob=tests/*" in flags[2]
+    assert "-W error" in flags[2] and "-n 0 --maxprocesses 1" in flags[2]
     assert "--ignore-glob" not in _stanza("test-files")
     for flag in flags:
         assert not any(
@@ -76,7 +79,7 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
 
 
-@pytest.mark.parametrize("promoted_selector", APPROVED_PROMOTION_SELECTORS)
+@pytest.mark.parametrize("promoted_selector", (*APPROVED_PROMOTION_SELECTORS, *REVIEWED_FINALIZATION))
 @pytest.mark.parametrize("mutation", ("omission", "duplication", "widening"))
 @pytest.mark.parametrize(
     "guard",
@@ -96,15 +99,16 @@ def test_admission_contracts_reject_mutated_promoted_selectors(
     """Exercise both unchanged guards through the real Make argument-capture harness."""
     original_stanza = scheduling._stanza
     owner_stanza = original_stanza(scheduling.OWNER)
-    selected = promoted_selector + " "
+    suffix = '"' if promoted_selector == REVIEWED_FINALIZATION[-1] else " "
+    selected = promoted_selector + suffix
     assert owner_stanza.count(selected) == 1
     if mutation == "omission":
-        replacement = ""
+        replacement = suffix
     elif mutation == "duplication":
-        replacement = selected * 2
+        replacement = promoted_selector + " " + selected
     else:
         assert mutation == "widening"
-        replacement = promoted_selector.split("::", 1)[0] + " "
+        replacement = promoted_selector.split("::", 1)[0] + suffix
     mutated_stanza = owner_stanza.replace(selected, replacement, 1)
     assert mutated_stanza != owner_stanza
     monkeypatch.setattr(

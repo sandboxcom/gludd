@@ -93,6 +93,12 @@ ROSTER = (
 )
 
 
+REVIEWED_FINALIZATION = (
+    "tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files",
+    "tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command",
+)
+
+
 def _stanza(target: str) -> str:
     composed: str = makefile_layout.compose_makefile(ROOT / "Makefile")
     return composed.split(f"\n{target}:\n", 1)[1].split("\n\n", 1)[0]
@@ -106,7 +112,8 @@ def _capture_owner(tmp_path: Path, fail_phase: str) -> tuple[subprocess.Complete
         "import json, os, sys\n"
         "from pathlib import Path\n"
         "files, nproc, workers, flags = sys.argv[1:]\n"
-        f"phase = 'help' if files == {HELP!r} else 'full'\n"
+        f"phase = 'help' if files == {HELP!r} else (\n"
+        f"    'reviewed' if files.split() == {list(REVIEWED_FINALIZATION)!r} else 'full')\n"
         "row = dict(files=files.split(), nproc=nproc, workers=workers, flags=flags, phase=phase, pid=os.getpid())\n"
         f"with Path({str(record)!r}).open('a') as stream: stream.write(json.dumps(row) + '\\n')\n"
         f"raise SystemExit(1 if phase == {fail_phase!r} else 0)\n",
@@ -135,13 +142,13 @@ def _capture_owner(tmp_path: Path, fail_phase: str) -> tuple[subprocess.Complete
 def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) -> None:
     result, rows = _capture_owner(tmp_path, "")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert [row["files"] for row in rows] == [list(ROSTER), [HELP]]
-    assert [row["phase"] for row in rows] == ["full", "help"]
-    assert len({row["pid"] for row in rows}) == 2
-    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1")]
+    assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
+    assert len({row["pid"] for row in rows}) == 3
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     assert "-o verbosity_test_cases=-2" in str(rows[0]["flags"])
     assert "verbosity_test_cases" not in str(rows[1]["flags"])
-    for row, workers, limit in zip(rows, (2, 0), (2, 1), strict=True):
+    for row, workers, limit in zip(rows, (2, 0, 0), (2, 1, 1), strict=True):
         flags = str(row["flags"])
         assert "-W error" in flags
         assert f"-n {workers}" in flags
@@ -155,7 +162,10 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert "--dist loadgroup" in makefile_layout.compose_makefile(ROOT / "Makefile")
 
 
-@pytest.mark.parametrize(("fail_phase", "expected_phases"), [("full", ["full"]), ("help", ["full", "help"])])
+@pytest.mark.parametrize(
+    ("fail_phase", "expected_phases"),
+    [("full", ["full"]), ("help", ["full", "help"]), ("reviewed", ["full", "help", "reviewed"])],
+)
 def test_runtime_admission_propagates_each_owner_failure_without_replay(
     tmp_path: Path, fail_phase: str, expected_phases: list[str],
 ) -> None:
