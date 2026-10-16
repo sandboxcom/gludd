@@ -670,6 +670,24 @@ def _run_collection_command(
                             environment=environment, cwd=cwd))
 
 
+def _publish_collection_diagnostics(log: Path, diagnostic: Path) -> None:
+    """Atomically refresh the visible alias without changing invocation evidence."""
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=diagnostic.parent, prefix=f".{diagnostic.name}.", delete=False,
+        ) as output:
+            temporary = Path(output.name)
+            with log.open("rb") as source:
+                shutil.copyfileobj(source, output)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, diagnostic)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _checked_collection_command(
     command: list[str], state: Path, timeout: int, *, environment: Mapping[str, str], cwd: Path,
 ) -> None:
@@ -679,9 +697,15 @@ def _checked_collection_command(
     else:
         from scripts.check_molecule_yaml import validate_native_lint_diagnostics
 
-    log = state / "galaxy.log"
+    # The shared diagnostic alias is replaceable; every observer receipt must
+    # instead reference its own immutable output, including failed invocations.
+    run_id = import_module("scripts.stream_command")._new_run_id()
+    log = state / f"galaxy-{run_id}.log"
     result = _run_collection_command(command, log, max_seconds=timeout, environment=environment, cwd=cwd)
-    if result != 0 or not validate_native_lint_diagnostics(log):
+    accepted = result == 0 and validate_native_lint_diagnostics(log)
+    if log.is_file():
+        _publish_collection_diagnostics(log, state / "galaxy.log")
+    if not accepted:
         raise ValueError(f"native Galaxy collection command failed: rc={result}")
 
 
