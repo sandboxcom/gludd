@@ -95,9 +95,7 @@ class TestGetWorktreesExcludesMainCheckout:
         with patch("check_worktree_health.run", return_value=(0, porcelain.strip(), "")):
             wts = cwh.get_worktrees()
         paths = [w["worktree"] for w in wts]
-        expected_agent_path = str(
-            Path("/tmp/gludd-worktrees/agent-foo").resolve()
-        )
+        expected_agent_path = str(Path("/tmp/gludd-worktrees/agent-foo").resolve())
         assert cwh.MAIN_CHECKOUT not in paths, "main checkout must be excluded"
         assert expected_agent_path in paths
 
@@ -226,9 +224,7 @@ class TestMainPass:
         with patch.object(cwh, "get_worktrees", return_value=[]):
             assert cwh.main() == 0, "no worktrees = PASS (exit 0)"
 
-    def test_merged_worktree_under_24h_passes(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_merged_worktree_under_24h_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-fresh", "agent-fresh")
         with (
             patch.object(cwh, "get_worktrees", return_value=[wt]),
@@ -243,9 +239,7 @@ class TestMainPass:
 class TestMainFailViolations:
     """main() returns 1 on violations."""
 
-    def test_stale_unmerged_violation(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_stale_unmerged_violation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-stale", "agent-stale")
         stale_age = cwh.MAX_AGE_SECONDS + 3600
         with (
@@ -258,9 +252,7 @@ class TestMainFailViolations:
             exit_code = cwh.main()
         assert exit_code == 1, "stale + unmerged = exit 1"
 
-    def test_prunable_violation(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_prunable_violation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-prune", "agent-prune", prunable="reason")
         with (
             patch.object(cwh, "get_worktrees", return_value=[wt]),
@@ -271,9 +263,7 @@ class TestMainFailViolations:
             exit_code = cwh.main()
         assert exit_code == 1, "prunable worktree = exit 1"
 
-    def test_remote_missing_violation(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_remote_missing_violation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-orphan", "agent-orphan")
         with (
             patch.object(cwh, "get_worktrees", return_value=[wt]),
@@ -288,9 +278,7 @@ class TestMainFailViolations:
 class TestMainDetachedWorktree:
     """Detached HEAD worktrees have no branch — some checks skip."""
 
-    def test_detached_passes_if_not_stale(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_detached_passes_if_not_stale(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-detached", "", detached=True)
         with (
             patch.object(cwh, "get_worktrees", return_value=[wt]),
@@ -383,9 +371,7 @@ class TestMergeAllBehavior:
     def test_merge_branch_conflict(self) -> None:
         call_count = 0
 
-        def _side_effect(
-            cmd: list[str], **kwargs: Any
-        ) -> tuple[int, str, str]:
+        def _side_effect(cmd: list[str], **kwargs: Any) -> tuple[int, str, str]:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -445,6 +431,7 @@ class TestMergeAllBehavior:
         ]
         with (
             patch.object(self.wma, "get_worktrees", return_value=wts),
+            patch.object(self.wma, "has_uncommitted_changes", return_value=False),
             patch.object(self.wma, "is_merged", return_value=False),
             patch.object(self.wma, "merge_branch", side_effect=[True, False]),
             patch.object(self.wma, "cleanup_branch", return_value=True),
@@ -463,6 +450,7 @@ class TestMergeAllBehavior:
         ]
         with (
             patch.object(self.wma, "get_worktrees", return_value=wts),
+            patch.object(self.wma, "has_uncommitted_changes", return_value=False),
             patch.object(self.wma, "is_merged", return_value=False),
             patch.object(self.wma, "merge_branch", return_value=True),
             patch.object(self.wma, "cleanup_branch", return_value=True),
@@ -481,6 +469,7 @@ class TestMergeAllBehavior:
         ]
         with (
             patch.object(self.wma, "get_worktrees", return_value=wts),
+            patch.object(self.wma, "has_uncommitted_changes", return_value=False),
             patch.object(self.wma, "is_merged", return_value=True),
             patch.object(self.wma, "merge_branch") as mock_merge,
             patch.object(self.wma, "cleanup_branch", return_value=True),
@@ -489,3 +478,82 @@ class TestMergeAllBehavior:
             exit_code = self.wma.main()
         mock_merge.assert_not_called()
         assert exit_code == 0
+
+    def test_has_uncommitted_changes_true(self) -> None:
+        with patch(
+            "worktree_merge_all.run",
+            return_value=(0, " M scripts/foo.py", ""),
+        ) as mock_run:
+            assert self.wma.has_uncommitted_changes("/tmp/gludd-worktrees/w1")
+        mock_run.assert_called_once_with(["git", "status", "--porcelain"], cwd="/tmp/gludd-worktrees/w1")
+
+    def test_has_uncommitted_changes_false(self) -> None:
+        with patch(
+            "worktree_merge_all.run",
+            return_value=(0, "", ""),
+        ) as mock_run:
+            assert not self.wma.has_uncommitted_changes("/tmp/gludd-worktrees/w1")
+        mock_run.assert_called_once_with(["git", "status", "--porcelain"], cwd="/tmp/gludd-worktrees/w1")
+
+    def test_commit_changes_success(self) -> None:
+        with patch(
+            "worktree_merge_all.run",
+            return_value=(0, "commit ok", ""),
+        ) as mock_run:
+            assert self.wma.commit_changes("/tmp/gludd-worktrees/w1", "agent-1")
+        assert mock_run.call_count == 2
+        add_cmd = mock_run.call_args_list[0][0][0]
+        commit_cmd = mock_run.call_args_list[1][0][0]
+        assert add_cmd == ["git", "add", "-A"]
+        assert commit_cmd[:2] == ["git", "commit"]
+        assert "agent-1" in commit_cmd[-1]
+
+    def test_commit_changes_failure(self) -> None:
+        with patch(
+            "worktree_merge_all.run",
+            return_value=(1, "", "nothing to commit"),
+        ) as mock_run:
+            assert not self.wma.commit_changes("/tmp/gludd-worktrees/w1", "agent-1")
+        assert mock_run.call_count == 1
+
+    def test_main_commits_clean_changes_then_merges(self) -> None:
+        wts = [
+            {
+                "worktree": "/tmp/gludd-worktrees/w1",
+                "branch": "refs/heads/w1",
+                "head": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            },
+        ]
+        with (
+            patch.object(self.wma, "get_worktrees", return_value=wts),
+            patch.object(self.wma, "is_merged", return_value=False),
+            patch.object(self.wma, "has_uncommitted_changes", return_value=True),
+            patch.object(self.wma, "commit_changes", return_value=True),
+            patch.object(self.wma, "merge_branch", return_value=True),
+            patch.object(self.wma, "cleanup_branch", return_value=True),
+            patch.object(self.wma, "prune_worktrees"),
+        ):
+            exit_code = self.wma.main()
+        assert exit_code == 0
+
+    def test_main_dirty_not_ready_skips_and_reports(self) -> None:
+        wts = [
+            {
+                "worktree": "/tmp/gludd-worktrees/w1",
+                "branch": "refs/heads/w1",
+                "head": "ffffffffffffffffffffffffffffffffffffffff",
+            },
+        ]
+        with (
+            patch.object(self.wma, "get_worktrees", return_value=wts),
+            patch.object(self.wma, "is_merged", return_value=False),
+            patch.object(self.wma, "has_uncommitted_changes", return_value=True),
+            patch.object(self.wma, "commit_changes", return_value=False),
+            patch.object(self.wma, "merge_branch") as mock_merge,
+            patch.object(self.wma, "cleanup_branch") as mock_cleanup,
+            patch.object(self.wma, "prune_worktrees"),
+        ):
+            exit_code = self.wma.main()
+        mock_merge.assert_not_called()
+        mock_cleanup.assert_not_called()
+        assert exit_code == 1

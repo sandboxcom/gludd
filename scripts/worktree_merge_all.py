@@ -57,6 +57,37 @@ def is_merged(branch: str, target: str = "development") -> bool:
     return exit_code == 0
 
 
+def has_uncommitted_changes(worktree_path: str) -> bool:
+    """Return True if the worktree has any uncommitted changes."""
+    exit_code, stdout, _stderr = run(
+        ["git", "status", "--porcelain"],
+        cwd=worktree_path,
+    )
+    if exit_code != 0:
+        return True  # fail-safe: treat status failure as dirty
+    return bool(stdout.strip())
+
+
+def commit_changes(worktree_path: str, branch: str) -> bool:
+    """Stage and commit all uncommitted changes in a worktree."""
+    exit_code, _stdout, _stderr = run(
+        ["git", "add", "-A"],
+        cwd=worktree_path,
+    )
+    if exit_code != 0:
+        return False
+    exit_code, _stdout, _stderr = run(
+        [
+            "git",
+            "commit",
+            "-m",
+            f"chore(worktree): auto-commit pending changes on {branch}",
+        ],
+        cwd=worktree_path,
+    )
+    return exit_code == 0
+
+
 def merge_branch(branch: str) -> bool:
     """Attempt to merge branch into development --no-ff. Returns True on success."""
     exit_code, stdout, stderr = run(
@@ -99,6 +130,7 @@ def main() -> int:
     total = len(worktrees)
     merged_count = 0
     conflict_count = 0
+    dirty_count = 0
 
     for i, wt in enumerate(worktrees, 1):
         path = wt.get("worktree", "?")
@@ -110,6 +142,16 @@ def main() -> int:
             continue
 
         print(f"--- [{i}/{total}] {branch} ({path}) ---")
+
+        if has_uncommitted_changes(path):
+            print(f"  Uncommitted changes detected — attempting auto-commit")
+            if not commit_changes(path, branch):
+                print(
+                    f"  DIRTY-NOT-READY: {branch} — uncommitted changes could not be committed; leaving worktree active"
+                )
+                dirty_count += 1
+                continue
+            print(f"  Committed pending changes on {branch}")
 
         if is_merged(branch):
             print(f"  Already merged into development — cleaning up")
@@ -134,9 +176,11 @@ def main() -> int:
     prune_worktrees()
 
     print()
-    print(f"=== Worktree merge complete: {total} total, {merged_count} merged/cleaned, {conflict_count} conflicts ===")
+    print(
+        f"=== Worktree merge complete: {total} total, {merged_count} merged/cleaned, {conflict_count} conflicts, {dirty_count} dirty-not-ready ==="
+    )
 
-    if conflict_count > 0:
+    if conflict_count > 0 or dirty_count > 0:
         return 1
     return 0
 
