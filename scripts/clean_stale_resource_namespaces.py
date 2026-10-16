@@ -9,19 +9,25 @@ fails closed.  The default CLI mode is a non-mutating inventory.
 from __future__ import annotations
 
 import argparse
+import ast
+import csv
 import fcntl
 import hashlib
 import json
+import marshal
 import os
 import re
 import shutil
 import stat
 import subprocess
 import time
+from base64 import urlsafe_b64encode
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass
+from importlib.metadata import Distribution, PackagePath
+from importlib.util import MAGIC_NUMBER, cache_from_source, source_from_cache, source_hash
 from pathlib import Path
 from typing import Literal
 
@@ -34,6 +40,8 @@ _NAMESPACE = re.compile(
 )
 _MARKER_TOKEN = re.compile(r"(?:^|[._-])(lease|lock|owner|pid)(?:$|[._-])")
 _MAX_MARKER_BYTES = 4_096
+_MAX_INSTALLED_SOURCE_BYTES = 1_048_576
+_MAX_INSTALLED_BYTECODE_BYTES = 4_194_304
 _MAX_GRACE_SECONDS = 30 * 24 * 60 * 60
 _MAX_OUTPUT_DECISIONS = 100
 
@@ -201,10 +209,140 @@ def _marker_owner(path: Path) -> tuple[int, str | None] | None:
     return pid, started
 
 
+def _recorded_python_source_bytes(marker: Path, namespace_root: Path) -> bytes | None:
+    """Prove installed module bytes without trusting a suffix or package path."""
+    if marker.suffix.lower() != ".py":
+        return None
+    site_packages = next(
+        (
+            parent
+            for parent in marker.parents
+            if parent.name == "site-packages" and parent.is_relative_to(namespace_root)
+        ),
+        None,
+    )
+    if site_packages is None:
+        return None
+    try:
+        with marker.open("rb") as source_file:
+            source = source_file.read(_MAX_INSTALLED_SOURCE_BYTES + 1)
+        if len(source) > _MAX_INSTALLED_SOURCE_BYTES:
+            return None
+        module = ast.parse(source)
+        source_statements = (
+            ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+        )
+        if not any(isinstance(statement, source_statements) for statement in module.body):
+            return None
+        relative = marker.relative_to(site_packages).as_posix()
+        records: list[PackagePath] = []
+        for metadata in sorted(site_packages.glob("*.dist-info")):
+            record_path = metadata / "RECORD"
+            if metadata.is_symlink() or record_path.is_symlink():
+                return None
+            if not record_path.is_file():
+                continue
+            records.extend(
+                entry
+                for entry in Distribution.at(metadata).files or ()
+                if entry.as_posix() == relative
+            )
+        if len(records) != 1:
+            return None
+        recorded = records[0]
+        recorded_hash = recorded.hash
+        digest = urlsafe_b64encode(hashlib.sha256(source).digest()).decode("ascii").rstrip("=")
+        verified = (
+            recorded_hash is not None
+            and recorded_hash.mode == "sha256"
+            and recorded_hash.value == digest
+            and recorded.size == len(source)
+        )
+        return source if verified else None
+    except (OSError, SyntaxError, ValueError, TypeError, csv.Error):
+        return None
+
+
+def _is_recorded_python_source(marker: Path, namespace_root: Path) -> bool:
+    """Return whether this exact module has independently verified RECORD bytes."""
+    return _recorded_python_source_bytes(marker, namespace_root) is not None
+
+
+def _is_verified_python_bytecode(marker: Path, namespace_root: Path) -> bool:
+    """Prove current-runtime cache headers and payload without loading code.
+
+    PEP 552 headers prove freshness, not payload identity. Compare cache payload
+    bytes to a local compilation of the RECORD-verified source; never deserialize
+    cache data or execute source. Foreign compiler or filename drift is refused.
+    """
+    if marker.suffix.lower() != ".pyc":
+        return False
+    try:
+        source_path = Path(source_from_cache(str(marker)))
+        if not source_path.is_relative_to(namespace_root):
+            return False
+        optimization = next(
+            (
+                level for level, tag in ((0, ""), (1, "1"), (2, "2"))
+                if Path(cache_from_source(str(source_path), optimization=tag)) == marker
+            ),
+            None,
+        )
+        if optimization is None:
+            return False
+        cache_identity = marker.lstat()
+        if (
+            not stat.S_ISREG(cache_identity.st_mode)
+            or cache_identity.st_uid != os.getuid()
+            or cache_identity.st_nlink != 1
+        ):
+            return False
+        with marker.open("rb") as cache_file:
+            cache = cache_file.read(_MAX_INSTALLED_BYTECODE_BYTES + 1)
+        if not 16 < len(cache) <= _MAX_INSTALLED_BYTECODE_BYTES or cache[:4] != MAGIC_NUMBER:
+            return False
+        flags = int.from_bytes(cache[4:8], "little")
+        if flags not in {0, 1, 3}:
+            return False
+        before = source_path.lstat()
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.getuid()
+            or before.st_nlink != 1
+        ):
+            return False
+        source = _recorded_python_source_bytes(source_path, namespace_root)
+        if source is None:
+            return False
+        after = source_path.lstat()
+        if (
+            before.st_dev, before.st_ino, before.st_mode, before.st_uid,
+            before.st_nlink, before.st_size, before.st_mtime_ns,
+        ) != (
+            after.st_dev, after.st_ino, after.st_mode, after.st_uid,
+            after.st_nlink, after.st_size, after.st_mtime_ns,
+        ):
+            return False
+        if flags & 1:
+            if cache[8:16] != source_hash(source):
+                return False
+        elif (
+            int.from_bytes(cache[8:12], "little") != (int(after.st_mtime) & 0xFFFFFFFF)
+            or int.from_bytes(cache[12:16], "little") != len(source)
+        ):
+            return False
+        source_filename = str(source_path)
+        code = compile(source, source_filename, "exec", dont_inherit=True, optimize=optimization)
+        return cache[16:] == marshal.dumps(code)
+    except (OSError, SyntaxError, ValueError, TypeError, NotImplementedError, RecursionError):
+        return False
+
+
 def _owner_reason(
     marker: Path,
     processes: Mapping[int, ProcessIdentity],
     lease: LeaseInspection | None,
+    namespace_root: Path,
 ) -> str | None:
     if lease is not None:
         if lease.state == "held":
@@ -221,6 +359,11 @@ def _owner_reason(
     else:
         owner = _marker_owner(marker)
         if owner is None:
+            if (
+                _is_recorded_python_source(marker, namespace_root)
+                or _is_verified_python_bytecode(marker, namespace_root)
+            ):
+                return None
             return "ambiguous-lease-owner"
     pid, recorded_start = owner
     current = processes.get(pid)
@@ -283,7 +426,7 @@ def _scan_candidate(
                 pending.append(child)
             elif _is_marker(child):
                 lease = inspect_lease(child) if child.name.lower().endswith(".lock") else None
-                if reason := _owner_reason(child, processes, lease):
+                if reason := _owner_reason(child, processes, lease, path):
                     return _Scan(None, reason, child)
     return _Scan(
         PathFingerprint(path, top.st_dev, top.st_ino, digest.hexdigest(), newest, size_bytes),

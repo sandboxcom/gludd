@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+import marshal
 import os
+import py_compile
 import shutil
 import subprocess
 import time
+from base64 import urlsafe_b64encode
 from collections.abc import Mapping
+from hashlib import sha256
+from importlib.util import cache_from_source
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal
@@ -304,6 +309,307 @@ def test_marker_parsing_accepts_bounded_formats_and_rejects_ambiguity(
     assert cleanup._marker_owner(marker) is None
     marker.unlink()
     assert cleanup._marker_owner(marker) is None
+
+
+def _recorded_package_file(
+    candidate: Path,
+    filename: str = "virtualenv/util/lock.py",
+    content: bytes = b"import threading\n\nclass PackageLock:\n    pass\n",
+) -> tuple[Path, Path]:
+    site_packages = candidate / "ci-shards/python-3.11/lib/python3.11/site-packages"
+    installed = site_packages / filename
+    installed.parent.mkdir(parents=True)
+    installed.write_bytes(content)
+    metadata = site_packages / "fixture_distribution-1.0.dist-info"
+    metadata.mkdir(exist_ok=True)
+    (metadata / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: fixture-distribution\nVersion: 1.0\n",
+        encoding="utf-8",
+    )
+    digest = urlsafe_b64encode(sha256(content).digest()).decode("ascii").rstrip("=")
+    record = metadata / "RECORD"
+    record.write_text(
+        f"{filename},sha256={digest},{len(content)}\n"
+        "fixture_distribution-1.0.dist-info/RECORD,,\n",
+        encoding="utf-8",
+    )
+    for path in (candidate, *candidate.rglob("*")):
+        os.utime(path, (OLD, OLD))
+    return installed, record
+
+
+@pytest.mark.parametrize("module_name", ("lock.py", "lease.py", "owner.py", "pid.py"))
+def test_recorded_installed_module_is_not_a_runtime_lease_marker(
+    tmp_path: Path, module_name: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "installed", toolchain=True)
+    module, record = _recorded_package_file(candidate, f"virtualenv/util/{module_name}")
+    original_module = module.read_bytes()
+    original_record = record.read_bytes()
+    receipt = tmp_path / "receipts"
+
+    decision = plan_cleanup(_config(root, receipt), set(), {}).decisions[0]
+
+    assert decision.action == "reclaim"
+    assert decision.reason == "stale-and-proven-inactive"
+    assert decision.blocking_marker is None
+    assert module.read_bytes() == original_module
+    assert record.read_bytes() == original_record
+    assert not receipt.exists()
+
+
+@pytest.mark.parametrize(
+    "invalid_record", ("missing", "hashless", "wrong-hash", "wrong-size", "duplicate"),
+)
+def test_unverified_installed_module_retains_unknown_owner_refusal(
+    tmp_path: Path, invalid_record: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "unverified", toolchain=True)
+    module, record = _recorded_package_file(candidate)
+    original = record.read_text(encoding="utf-8")
+    if invalid_record == "missing":
+        record.unlink()
+    elif invalid_record == "hashless":
+        record.write_text("virtualenv/util/lock.py,,\n", encoding="utf-8")
+    elif invalid_record == "wrong-hash":
+        module.write_bytes(b"import threading\n\nclass AlteredLock:\n    pass\n")
+    elif invalid_record == "wrong-size":
+        filename, digest, _size = original.splitlines()[0].split(",")
+        record.write_text(f"{filename},{digest},1\n", encoding="utf-8")
+    else:
+        record.write_text(original + original.splitlines()[0] + "\n", encoding="utf-8")
+
+    decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert decision.action == "preserve"
+    assert decision.reason == "ambiguous-lease-owner"
+    assert decision.blocking_marker == module
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b"321\n",
+        b"pid=321\n",
+        b'{"pid": 321, "pid_started_at": "live-start"}\n',
+        b'{"unknown_owner": 321}\n',
+        b"opaque-owner-record-secret\n",
+    ),
+)
+def test_recorded_python_named_owner_payload_is_not_exempted_as_source(
+    tmp_path: Path, payload: bytes,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "owner-record", toolchain=True)
+    marker, _record = _recorded_package_file(candidate, content=payload)
+
+    decision = plan_cleanup(
+        _config(root, tmp_path / "receipts"), set(), {321: ProcessIdentity(321, "live-start")},
+    ).decisions[0]
+
+    assert decision.action == "preserve"
+    assert decision.reason in {"live-lease-owner", "ambiguous-lease-owner"}
+    assert decision.blocking_marker == marker
+
+
+@pytest.mark.parametrize(
+    "marker_name", ("worker.pid", "worker.owner", "worker.lease", "gate-session-owner.json"),
+)
+def test_installed_source_identity_never_exempts_adjacent_runtime_owner_records(
+    tmp_path: Path, marker_name: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "adjacent-owner", toolchain=True)
+    module, _record = _recorded_package_file(candidate)
+    marker = module.parent / marker_name
+    marker.write_text(
+        json.dumps({"pid": 321, "pid_started_at": "live-start"}), encoding="utf-8",
+    )
+
+    decision = plan_cleanup(
+        _config(root, tmp_path / "receipts"), set(), {321: ProcessIdentity(321, "live-start")},
+    ).decisions[0]
+
+    assert decision.action == "preserve"
+    assert decision.reason == "live-lease-owner"
+    assert decision.blocking_marker == marker
+
+
+@pytest.mark.parametrize("state", ("held", "unavailable"))
+def test_installed_source_identity_never_exempts_a_kernel_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: Literal["held", "unavailable"],
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "adjacent-lock", toolchain=True)
+    module, _record = _recorded_package_file(candidate)
+    marker = module.parent / "worker.lock"
+    marker.write_text("pid=321\nacquired_unix_ns=1\n", encoding="utf-8")
+    monkeypatch.setattr(cleanup, "inspect_lease", lambda _path: LeaseInspection(state, None))
+
+    decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert decision.action == "preserve"
+    assert decision.reason == f"lease-{state}"
+    assert decision.blocking_marker == marker
+
+
+def _cached_package_file(
+    candidate: Path,
+    invalidation_mode: py_compile.PycInvalidationMode = py_compile.PycInvalidationMode.TIMESTAMP,
+    optimize: int = 0,
+) -> tuple[Path, Path, Path]:
+    source = b'"""Generated cache fixture."""\nimport threading\nassert threading is not None\n'
+    module, record = _recorded_package_file(candidate, "filelock/_lease.py", source)
+    cache = Path(cache_from_source(str(module), optimization="" if optimize == 0 else str(optimize)))
+    py_compile.compile(
+        str(module), cfile=str(cache), doraise=True,
+        invalidation_mode=invalidation_mode, optimize=optimize,
+    )
+    for path in (candidate, *candidate.rglob("*")):
+        os.utime(path, (OLD, OLD))
+    return module, record, cache
+
+
+@pytest.mark.parametrize("invalidation_mode", tuple(py_compile.PycInvalidationMode))
+@pytest.mark.parametrize("optimize", (0, 1, 2))
+def test_verified_generated_bytecode_is_not_a_runtime_lease_marker(
+    tmp_path: Path, invalidation_mode: py_compile.PycInvalidationMode, optimize: int,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "generated-cache", toolchain=True)
+    module, record, cache = _cached_package_file(candidate, invalidation_mode, optimize)
+    original = {path: path.read_bytes() for path in (module, record, cache)}
+    receipt = tmp_path / "receipts"
+
+    decision = plan_cleanup(_config(root, receipt), set(), {}).decisions[0]
+
+    assert decision.action == "reclaim"
+    assert decision.reason == "stale-and-proven-inactive"
+    assert decision.blocking_marker is None
+    assert all(path.read_bytes() == content for path, content in original.items())
+    assert not receipt.exists()
+
+
+@pytest.mark.parametrize(
+    "damage",
+    (
+        "truncated", "header-only", "foreign-magic", "unknown-flags", "invalid-flags",
+        "wrong-timestamp", "wrong-size", "wrong-source-hash", "opaque-payload",
+        "unrelated-code", "filename-drift", "foreign-tag", "unsupported-opt", "noncanonical-path",
+    ),
+)
+def test_unverified_bytecode_retains_unknown_owner_refusal(
+    tmp_path: Path, damage: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "unverified-cache", toolchain=True)
+    module, _record, cache = _cached_package_file(candidate)
+    content = bytearray(cache.read_bytes())
+    if damage == "truncated":
+        content = content[:12]
+    elif damage == "header-only":
+        content = content[:16]
+    elif damage == "foreign-magic":
+        content[:4] = b"\x00\x00\x00\x00"
+    elif damage in {"unknown-flags", "invalid-flags"}:
+        content[4:8] = (4 if damage == "unknown-flags" else 2).to_bytes(4, "little")
+    elif damage == "wrong-timestamp":
+        content[8:12] = (int(OLD) + 1).to_bytes(4, "little")
+    elif damage == "wrong-size":
+        content[12:16] = (1).to_bytes(4, "little")
+    elif damage == "wrong-source-hash":
+        content[4:8] = (3).to_bytes(4, "little")
+        content[8:16] = b"bad-hash"
+    elif damage == "opaque-payload":
+        content[16:] = b"opaque-owner-record-secret"
+    elif damage == "unrelated-code":
+        content[16:] = marshal.dumps(compile("import os\n", str(module), "exec"))
+    elif damage == "filename-drift":
+        py_compile.compile(str(module), cfile=str(cache), dfile="foreign-build-source.py", doraise=True)
+        content = bytearray(cache.read_bytes())
+    elif damage == "foreign-tag":
+        renamed = cache.with_name("_lease.cpython-foreign.pyc")
+        cache.rename(renamed)
+        cache = renamed
+    elif damage == "unsupported-opt":
+        renamed = cache.with_name(cache.name.removesuffix(".pyc") + ".opt-9.pyc")
+        cache.rename(renamed)
+        cache = renamed
+    else:
+        renamed = module.with_suffix(".pyc")
+        cache.rename(renamed)
+        cache = renamed
+    cache.write_bytes(content)
+
+    decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert decision.action == "preserve"
+    assert decision.reason == "ambiguous-lease-owner"
+    assert decision.blocking_marker == cache
+
+
+@pytest.mark.parametrize("missing_proof", ("source", "record", "modified-source"))
+def test_generated_cache_requires_independent_source_record_proof(
+    tmp_path: Path, missing_proof: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "orphan-cache", toolchain=True)
+    module, record, cache = _cached_package_file(candidate)
+    if missing_proof == "source":
+        module.unlink()
+    elif missing_proof == "record":
+        record.unlink()
+    else:
+        module.write_bytes(b"import threading\n")
+
+    assert cleanup._owner_reason(cache, {}, None, candidate) == "ambiguous-lease-owner"
+
+
+def test_cache_named_runtime_owner_record_keeps_owner_precedence(tmp_path: Path) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "cache-owner", toolchain=True)
+    _module, _record, cache = _cached_package_file(candidate)
+    cache.write_text(json.dumps({"pid": 321, "pid_started_at": "live-start"}), encoding="utf-8")
+
+    decision = plan_cleanup(
+        _config(root, tmp_path / "receipts"), set(), {321: ProcessIdentity(321, "live-start")},
+    ).decisions[0]
+
+    assert decision.action == "preserve"
+    assert decision.reason == "live-lease-owner"
+    assert decision.blocking_marker == cache
+
+
+def test_verified_cache_classification_never_deserializes_or_executes_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "inert-cache", toolchain=True)
+    trigger = tmp_path / "must-not-be-created"
+    source = (
+        "from pathlib import Path\n"
+        f"Path({str(trigger)!r}).write_text('executed')\n"
+    ).encode()
+    module, _record = _recorded_package_file(candidate, "filelock/_lease.py", source)
+    cache = Path(cache_from_source(str(module), optimization=""))
+    py_compile.compile(str(module), cfile=str(cache), doraise=True, optimize=0)
+
+    def forbidden_loads(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("cache payload must never be deserialized")
+
+    monkeypatch.setattr(marshal, "loads", forbidden_loads)
+    decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert decision.action == "reclaim"
+    assert not trigger.exists()
 
 
 def test_available_kernel_lock_uses_record_and_empty_lock_is_inactive(
