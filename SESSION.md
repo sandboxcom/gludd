@@ -90,12 +90,13 @@
 
 ### Current Gate Status
 <!-- gate:begin -->
-- HEAD `1fd825260...` on `development`. Working tree has uncommitted UV fix (`make/40-cross-version-and-worktrees.mk`, `tests/unit/test_make_uv_execution_boundary.py`, `TASKS.md`).
-- Remote `sandboxcom/development` at `1fd825260...` (local is at same SHA, but working tree is dirty).
-- CI: no recent push from current dirty tree; last relevant hosted failure was Build and Release run `38812181930` on ancestor.
-- Local gate: **RUNNING** (pid `23193`, log `.gate-logs/gate-20261016021301-5e59b695.log`), currently in `unit-2` shard (5/8, 25 batches). Preflights and integration health (3465 passed, 13 skipped) completed successfully; `unit-1a`, `unit-1b`, `unit-1d` passed.
-- Disk: scratch ~993 MB; disk guard reports pressure just below the temporary 95% authorized ceiling.
-- v0.1.2 release: blocked until the running full gate passes, the UV fix is committed, remaining worktrees are merged, and hosted CI is green.
+- HEAD `4ac61be82...` on `development`. Working tree is clean.
+- Remote `sandboxcom/development` at `1fd825260...` (local ahead by 8 commits).
+- Merged worktrees into development: `agent-native-galaxy-logs-20261014`, `agent-reviewed-finalization-native-command-20261016`, `agent-ee-searx-typer-migration-20261016`, `codex-v012-lease-marker-classification`; `agent-v012-reviewed-acquire-319c80a` was already an ancestor. Remaining active worktree: `agent-uv-boundary-fix` (protected, redundant, uncommitted).
+- Added helper targets: `merge-commit`, `worktree-commit-changes`, `git-stash-list`, `git-stash-show`, `git-stash-drop`.
+- Local gate: **RUNNING** (pid `81850`, log `.gate-logs/gate-20261016235438-10f5067d.log`). `make collect-check` and `make lint` pass on the merged tree.
+- Disk: scratch ~968 MB; disk guard reports pressure at the temporary 95% authorized ceiling.
+- v0.1.2 release: blocked until the running full gate passes and hosted CI is green for the exact pushed SHA.
 <!-- gate:end -->
 
 ---
