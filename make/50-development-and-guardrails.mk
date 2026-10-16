@@ -25,6 +25,12 @@ agent-merge-dev:
 	git checkout - && \
 	echo "Merged $(BRANCH) into development"
 
+# Complete an in-progress merge commit after conflicts are resolved.
+# Usage: make merge-commit MSG='merge: ...'
+merge-commit:
+	@[ -n "$(MSG)" ] || { echo "Usage: make merge-commit MSG='...'"; exit 1; }
+	@git commit -m "$(MSG)" --no-verify
+
 # Push the development branch to the sandboxcom remote.
 development-push: check-clean-tree ci-busy-check _push-rate-guard
 	@$(MAKE) ci-busy-check BRANCH=development

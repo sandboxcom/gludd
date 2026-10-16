@@ -361,7 +361,7 @@ PYTEST_VERBOSITY ?= -v
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
-        agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
+        agent-worktree agent-worktree-base agent-merge agent-merge-dev agent-cleanup agent-worktree-list worktree-commit-changes merge-commit \
         agent-worktree-dev agent-merge-dev \
         self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-accelerator-auth-store azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-environment-guard azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
