@@ -35,9 +35,7 @@ from scripts.collection_lock import LeaseInspection, inspect_lease
 from scripts.resource_arbiter import project_namespace
 from scripts.workstream_registry import default_registry_path
 
-_NAMESPACE = re.compile(
-    r"^(?P<base>[A-Za-z0-9_.-]+-[0-9a-f]{12})(?P<toolchain>-toolchain)?$"
-)
+_NAMESPACE = re.compile(r"^(?P<base>[A-Za-z0-9_.-]+-[0-9a-f]{12})(?P<toolchain>-toolchain)?$")
 _MARKER_TOKEN = re.compile(r"(?:^|[._-])(lease|lock|owner|pid)(?:$|[._-])")
 _MAX_MARKER_BYTES = 4_096
 _MAX_INSTALLED_SOURCE_BYTES = 1_048_576
@@ -196,9 +194,7 @@ def _marker_owner(path: Path) -> tuple[int, str | None] | None:
         pid = _positive_pid(int(raw_pid))
         started = fields.get("pid_started_at") or fields.get("started_at")
         return (pid, started or None) if pid is not None else None
-    if not isinstance(decoded, dict) or set(decoded).isdisjoint(
-        {"pid", "owner_pid", "worker_pid"}
-    ):
+    if not isinstance(decoded, dict) or set(decoded).isdisjoint({"pid", "owner_pid", "worker_pid"}):
         return None
     json_pid = decoded.get("pid", decoded.get("owner_pid", decoded.get("worker_pid")))
     pid = _positive_pid(json_pid)
@@ -234,11 +230,7 @@ def _recorded_package_bytes(marker: Path, namespace_root: Path) -> bytes | None:
                 return None
             if not record_path.is_file():
                 continue
-            records.extend(
-                entry
-                for entry in Distribution.at(metadata).files or ()
-                if entry.as_posix() == relative
-            )
+            records.extend(entry for entry in Distribution.at(metadata).files or () if entry.as_posix() == relative)
         if len(records) != 1:
             return None
         recorded = records[0]
@@ -265,7 +257,11 @@ def _recorded_python_source_bytes(marker: Path, namespace_root: Path) -> bytes |
     try:
         module = ast.parse(source)
         source_statements = (
-            ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+            ast.Import,
+            ast.ImportFrom,
+            ast.FunctionDef,
+            ast.AsyncFunctionDef,
+            ast.ClassDef,
         )
         return source if any(isinstance(item, source_statements) for item in module.body) else None
     except (SyntaxError, ValueError, TypeError, RecursionError):
@@ -283,9 +279,7 @@ def _is_recorded_documentation(marker: Path, namespace_root: Path) -> bool:
         from markdown_it import MarkdownIt
 
         tokens = MarkdownIt("commonmark").parse(contents.decode("utf-8"))
-        return bool(
-            tokens and tokens[0].type == "heading_open" and tokens[0].map in ([0, 1], [0, 2])
-        )
+        return bool(tokens and tokens[0].type == "heading_open" and tokens[0].map in ([0, 1], [0, 2]))
     except (ImportError, OSError, SyntaxError, UnicodeError, ValueError, TypeError, RecursionError):
         return False
 
@@ -310,7 +304,8 @@ def _is_verified_python_bytecode(marker: Path, namespace_root: Path) -> bool:
             return False
         optimization = next(
             (
-                level for level, tag in ((0, ""), (1, "1"), (2, "2"))
+                level
+                for level, tag in ((0, ""), (1, "1"), (2, "2"))
                 if Path(cache_from_source(str(source_path), optimization=tag)) == marker
             ),
             None,
@@ -332,31 +327,36 @@ def _is_verified_python_bytecode(marker: Path, namespace_root: Path) -> bool:
         if flags not in {0, 1, 3}:
             return False
         before = source_path.lstat()
-        if (
-            not stat.S_ISREG(before.st_mode)
-            or before.st_uid != os.getuid()
-            or before.st_nlink != 1
-        ):
+        if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_nlink != 1:
             return False
         source = _recorded_python_source_bytes(source_path, namespace_root)
         if source is None:
             return False
         after = source_path.lstat()
         if (
-            before.st_dev, before.st_ino, before.st_mode, before.st_uid,
-            before.st_nlink, before.st_size, before.st_mtime_ns,
+            before.st_dev,
+            before.st_ino,
+            before.st_mode,
+            before.st_uid,
+            before.st_nlink,
+            before.st_size,
+            before.st_mtime_ns,
         ) != (
-            after.st_dev, after.st_ino, after.st_mode, after.st_uid,
-            after.st_nlink, after.st_size, after.st_mtime_ns,
+            after.st_dev,
+            after.st_ino,
+            after.st_mode,
+            after.st_uid,
+            after.st_nlink,
+            after.st_size,
+            after.st_mtime_ns,
         ):
             return False
         if flags & 1:
             if cache[8:16] != source_hash(source):
                 return False
-        elif (
-            int.from_bytes(cache[8:12], "little") != (int(after.st_mtime) & 0xFFFFFFFF)
-            or int.from_bytes(cache[12:16], "little") != len(source)
-        ):
+        elif int.from_bytes(cache[8:12], "little") != (int(after.st_mtime) & 0xFFFFFFFF) or int.from_bytes(
+            cache[12:16], "little"
+        ) != len(source):
             return False
         source_filename = str(source_path)
         code = compile(source, source_filename, "exec", dont_inherit=True, optimize=optimization)
@@ -379,11 +379,7 @@ def _owner_reason(
             return "lease-held"
         if lease.state == "unavailable":
             return "lease-unavailable"
-        owner = (
-            (lease.record.pid, None)
-            if lease.record is not None
-            else _marker_owner(marker)
-        )
+        owner = (lease.record.pid, None) if lease.record is not None else _marker_owner(marker)
         if owner is None:
             return None  # an available, empty kernel lock is proven inactive
     else:
@@ -465,9 +461,7 @@ def _scan_candidate(
     )
 
 
-def protected_namespace_names(
-    current_project_root: Path, worktrees: Sequence[Path]
-) -> set[str]:
+def protected_namespace_names(current_project_root: Path, worktrees: Sequence[Path]) -> set[str]:
     """Return current plus registered worktree namespaces."""
     current = current_project_root.expanduser().resolve(strict=True)
     registered = tuple(root.expanduser().resolve(strict=False) for root in worktrees)
@@ -500,20 +494,14 @@ def plan_cleanup(
 
     decisions: list[NamespaceDecision] = []
     for child in unrecognized:
-        decisions.append(
-            NamespaceDecision(child.name, (child,), "preserve", "unrecognized-namespace", ())
-        )
+        decisions.append(NamespaceDecision(child.name, (child,), "preserve", "unrecognized-namespace", ()))
     for base, paths in grouped.items():
         ordered = tuple(sorted(paths, key=lambda path: path.name.endswith("-toolchain")))
         if base in protected_namespaces:
-            decisions.append(
-                NamespaceDecision(base, ordered, "preserve", "protected-worktree-namespace", ())
-            )
+            decisions.append(NamespaceDecision(base, ordered, "preserve", "protected-worktree-namespace", ()))
             continue
         if process_identities is None:
-            decisions.append(
-                NamespaceDecision(base, ordered, "preserve", "process-census-unavailable", ())
-            )
+            decisions.append(NamespaceDecision(base, ordered, "preserve", "process-census-unavailable", ()))
             continue
         fingerprints: list[PathFingerprint] = []
         refusal: str | None = None
@@ -533,9 +521,7 @@ def plan_cleanup(
             continue
         newest = max(fingerprint.newest_mtime for fingerprint in fingerprints)
         if config.now_epoch - newest < config.grace_seconds:
-            decisions.append(
-                NamespaceDecision(base, ordered, "preserve", "within-grace-period", tuple(fingerprints))
-            )
+            decisions.append(NamespaceDecision(base, ordered, "preserve", "within-grace-period", tuple(fingerprints)))
             continue
         decisions.append(
             NamespaceDecision(
@@ -614,8 +600,7 @@ def apply_cleanup(
             if (
                 fingerprint.path.parent != plan.root
                 or stat.S_ISLNK(identity.st_mode)
-                or (identity.st_dev, identity.st_ino)
-                != (fingerprint.device, fingerprint.inode)
+                or (identity.st_dev, identity.st_ino) != (fingerprint.device, fingerprint.inode)
             ):
                 refused.append(fingerprint.path)
                 continue
@@ -676,9 +661,7 @@ def _git_worktrees(project_root: Path) -> tuple[Path, ...]:
         timeout=10,
     )
     paths = [
-        Path(line.removeprefix("worktree "))
-        for line in completed.stdout.splitlines()
-        if line.startswith("worktree ")
+        Path(line.removeprefix("worktree ")) for line in completed.stdout.splitlines() if line.startswith("worktree ")
     ]
     if not paths:
         raise ValueError("git worktree inventory is empty")
@@ -778,11 +761,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"RESOURCE_CLEANUP_REFUSED reason={exc}", flush=True)
         return 2
     reclaimable = [item for item in plan.decisions if item.action == "reclaim"]
-    reclaim_bytes = sum(
-        fingerprint.size_bytes
-        for item in reclaimable
-        for fingerprint in item.fingerprints
-    )
+    reclaim_bytes = sum(fingerprint.size_bytes for item in reclaimable for fingerprint in item.fingerprints)
     print(
         f"RESOURCE_CLEANUP_SUMMARY candidates={len(plan.decisions)} "
         f"reclaimable={len(reclaimable)} reclaim_bytes={reclaim_bytes} "

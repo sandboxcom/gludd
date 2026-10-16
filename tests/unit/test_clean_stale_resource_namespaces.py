@@ -329,8 +329,7 @@ def _recorded_package_file(
     digest = urlsafe_b64encode(sha256(content).digest()).decode("ascii").rstrip("=")
     record = metadata / "RECORD"
     record.write_text(
-        f"{filename},sha256={digest},{len(content)}\n"
-        "fixture_distribution-1.0.dist-info/RECORD,,\n",
+        f"{filename},sha256={digest},{len(content)}\nfixture_distribution-1.0.dist-info/RECORD,,\n",
         encoding="utf-8",
     )
     for path in (candidate, *candidate.rglob("*")):
@@ -340,7 +339,8 @@ def _recorded_package_file(
 
 @pytest.mark.parametrize("module_name", ("lock.py", "lease.py", "owner.py", "pid.py"))
 def test_recorded_installed_module_is_not_a_runtime_lease_marker(
-    tmp_path: Path, module_name: str,
+    tmp_path: Path,
+    module_name: str,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -368,7 +368,8 @@ def test_recorded_installed_module_is_not_a_runtime_lease_marker(
     ],
 )
 def test_recorded_installed_documentation_is_not_a_runtime_owner(
-    tmp_path: Path, content: bytes,
+    tmp_path: Path,
+    content: bytes,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -385,7 +386,8 @@ def test_recorded_installed_documentation_is_not_a_runtime_owner(
 
 @pytest.mark.parametrize("content", [b'{"unknown_owner": 321}\n', b"opaque-owner-record-secret\n"])
 def test_record_membership_does_not_exempt_opaque_markdown_owner_records(
-    tmp_path: Path, content: bytes,
+    tmp_path: Path,
+    content: bytes,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -414,10 +416,12 @@ def test_modified_packaged_documentation_is_still_unknown_owner(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
-    "invalid_record", ("missing", "hashless", "wrong-hash", "wrong-size", "duplicate"),
+    "invalid_record",
+    ("missing", "hashless", "wrong-hash", "wrong-size", "duplicate"),
 )
 def test_unverified_installed_module_retains_unknown_owner_refusal(
-    tmp_path: Path, invalid_record: str,
+    tmp_path: Path,
+    invalid_record: str,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -453,7 +457,8 @@ def test_unverified_installed_module_retains_unknown_owner_refusal(
     ),
 )
 def test_recorded_python_named_owner_payload_is_not_exempted_as_source(
-    tmp_path: Path, payload: bytes,
+    tmp_path: Path,
+    payload: bytes,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -461,7 +466,9 @@ def test_recorded_python_named_owner_payload_is_not_exempted_as_source(
     marker, _record = _recorded_package_file(candidate, content=payload)
 
     decision = plan_cleanup(
-        _config(root, tmp_path / "receipts"), set(), {321: ProcessIdentity(321, "live-start")},
+        _config(root, tmp_path / "receipts"),
+        set(),
+        {321: ProcessIdentity(321, "live-start")},
     ).decisions[0]
 
     assert decision.action == "preserve"
@@ -470,10 +477,12 @@ def test_recorded_python_named_owner_payload_is_not_exempted_as_source(
 
 
 @pytest.mark.parametrize(
-    "marker_name", ("worker.pid", "worker.owner", "worker.lease", "gate-session-owner.json"),
+    "marker_name",
+    ("worker.pid", "worker.owner", "worker.lease", "gate-session-owner.json"),
 )
 def test_installed_source_identity_never_exempts_adjacent_runtime_owner_records(
-    tmp_path: Path, marker_name: str,
+    tmp_path: Path,
+    marker_name: str,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -481,11 +490,14 @@ def test_installed_source_identity_never_exempts_adjacent_runtime_owner_records(
     module, _record = _recorded_package_file(candidate)
     marker = module.parent / marker_name
     marker.write_text(
-        json.dumps({"pid": 321, "pid_started_at": "live-start"}), encoding="utf-8",
+        json.dumps({"pid": 321, "pid_started_at": "live-start"}),
+        encoding="utf-8",
     )
 
     decision = plan_cleanup(
-        _config(root, tmp_path / "receipts"), set(), {321: ProcessIdentity(321, "live-start")},
+        _config(root, tmp_path / "receipts"),
+        set(),
+        {321: ProcessIdentity(321, "live-start")},
     ).decisions[0]
 
     assert decision.action == "preserve"
@@ -495,7 +507,9 @@ def test_installed_source_identity_never_exempts_adjacent_runtime_owner_records(
 
 @pytest.mark.parametrize("state", ("held", "unavailable"))
 def test_installed_source_identity_never_exempts_a_kernel_lease(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: Literal["held", "unavailable"],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state: Literal["held", "unavailable"],
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -520,8 +534,11 @@ def _cached_package_file(
     module, record = _recorded_package_file(candidate, "filelock/_lease.py", source)
     cache = Path(cache_from_source(str(module), optimization="" if optimize == 0 else str(optimize)))
     py_compile.compile(
-        str(module), cfile=str(cache), doraise=True,
-        invalidation_mode=invalidation_mode, optimize=optimize,
+        str(module),
+        cfile=str(cache),
+        doraise=True,
+        invalidation_mode=invalidation_mode,
+        optimize=optimize,
     )
     for path in (candidate, *candidate.rglob("*")):
         os.utime(path, (OLD, OLD))
@@ -531,7 +548,9 @@ def _cached_package_file(
 @pytest.mark.parametrize("invalidation_mode", tuple(py_compile.PycInvalidationMode))
 @pytest.mark.parametrize("optimize", (0, 1, 2))
 def test_verified_generated_bytecode_is_not_a_runtime_lease_marker(
-    tmp_path: Path, invalidation_mode: py_compile.PycInvalidationMode, optimize: int,
+    tmp_path: Path,
+    invalidation_mode: py_compile.PycInvalidationMode,
+    optimize: int,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -552,13 +571,25 @@ def test_verified_generated_bytecode_is_not_a_runtime_lease_marker(
 @pytest.mark.parametrize(
     "damage",
     (
-        "truncated", "header-only", "foreign-magic", "unknown-flags", "invalid-flags",
-        "wrong-timestamp", "wrong-size", "wrong-source-hash", "opaque-payload",
-        "unrelated-code", "filename-drift", "foreign-tag", "unsupported-opt", "noncanonical-path",
+        "truncated",
+        "header-only",
+        "foreign-magic",
+        "unknown-flags",
+        "invalid-flags",
+        "wrong-timestamp",
+        "wrong-size",
+        "wrong-source-hash",
+        "opaque-payload",
+        "unrelated-code",
+        "filename-drift",
+        "foreign-tag",
+        "unsupported-opt",
+        "noncanonical-path",
     ),
 )
 def test_unverified_bytecode_retains_unknown_owner_refusal(
-    tmp_path: Path, damage: str,
+    tmp_path: Path,
+    damage: str,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -609,7 +640,8 @@ def test_unverified_bytecode_retains_unknown_owner_refusal(
 
 @pytest.mark.parametrize("missing_proof", ("source", "record", "modified-source"))
 def test_generated_cache_requires_independent_source_record_proof(
-    tmp_path: Path, missing_proof: str,
+    tmp_path: Path,
+    missing_proof: str,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -633,7 +665,9 @@ def test_cache_named_runtime_owner_record_keeps_owner_precedence(tmp_path: Path)
     cache.write_text(json.dumps({"pid": 321, "pid_started_at": "live-start"}), encoding="utf-8")
 
     decision = plan_cleanup(
-        _config(root, tmp_path / "receipts"), set(), {321: ProcessIdentity(321, "live-start")},
+        _config(root, tmp_path / "receipts"),
+        set(),
+        {321: ProcessIdentity(321, "live-start")},
     ).decisions[0]
 
     assert decision.action == "preserve"
@@ -642,16 +676,14 @@ def test_cache_named_runtime_owner_record_keeps_owner_precedence(tmp_path: Path)
 
 
 def test_verified_cache_classification_never_deserializes_or_executes_source(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
     candidate = _namespace(root, "inert-cache", toolchain=True)
     trigger = tmp_path / "must-not-be-created"
-    source = (
-        "from pathlib import Path\n"
-        f"Path({str(trigger)!r}).write_text('executed')\n"
-    ).encode()
+    source = (f"from pathlib import Path\nPath({str(trigger)!r}).write_text('executed')\n").encode()
     module, _record = _recorded_package_file(candidate, "filelock/_lease.py", source)
     cache = Path(cache_from_source(str(module), optimization=""))
     py_compile.compile(str(module), cfile=str(cache), doraise=True, optimize=0)
@@ -698,7 +730,8 @@ def test_available_kernel_lock_uses_record_and_empty_lock_is_inactive(
 
 
 def test_first_nested_blocking_marker_is_reported_without_rescanning_or_mutating(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "gludd-resources"
     root.mkdir()
@@ -717,7 +750,9 @@ def test_first_nested_blocking_marker_is_reported_without_rescanning_or_mutating
     original_scan = cleanup._scan_candidate
 
     def scan_once(
-        path: Path, config: CleanupConfig, processes: Mapping[int, ProcessIdentity],
+        path: Path,
+        config: CleanupConfig,
+        processes: Mapping[int, ProcessIdentity],
     ) -> cleanup._Scan:
         inspected.append(path)
         return original_scan(path, config, processes)
@@ -890,8 +925,10 @@ def test_main_validate_only_inventory_and_refusal_paths(
 
 @pytest.mark.parametrize("marker_name", ["worker.owner", "owner\nrecord.pid"])
 def test_read_only_json_reports_exact_blocking_marker_without_owner_payload(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str], marker_name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    marker_name: str,
 ) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -912,12 +949,27 @@ def test_read_only_json_reports_exact_blocking_marker_without_owner_payload(
     monkeypatch.setattr(cleanup, "_process_identities", lambda: {})
     monkeypatch.setattr(time, "time", lambda: NOW)
 
-    result = cleanup.main([
-        "--root", str(root), "--project-root", str(project),
-        "--registry", str(tmp_path / "registry"), "--receipt", str(receipt),
-        "--grace-seconds", "3600", "--max-candidates", "50",
-        "--max-entries", "100", "--heartbeat-seconds", "1", "--validate-only",
-    ])
+    result = cleanup.main(
+        [
+            "--root",
+            str(root),
+            "--project-root",
+            str(project),
+            "--registry",
+            str(tmp_path / "registry"),
+            "--receipt",
+            str(receipt),
+            "--grace-seconds",
+            "3600",
+            "--max-candidates",
+            "50",
+            "--max-entries",
+            "100",
+            "--heartbeat-seconds",
+            "1",
+            "--validate-only",
+        ]
+    )
     output = capsys.readouterr().out
     rows = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
     by_namespace = {row["namespace"]: row for row in rows}
