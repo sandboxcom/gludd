@@ -492,7 +492,6 @@ def _interpreter_is_unchanged(
     return False
 
 
-
 def _receipt_base_identity(
     *,
     repository_identity: Mapping[str, object],
@@ -719,9 +718,7 @@ def _defer_termination_signals() -> Iterator[list[int]]:
             signal.signal(watched_signal, previous_handler)
 
 
-def _isolated_pytest_command(
-    pytest_args: list[str], *, watchdog_owned_gate: bool = False
-) -> list[str]:
+def _isolated_pytest_command(pytest_args: list[str], *, watchdog_owned_gate: bool = False) -> list[str]:
     """Run process-heavy tests outside the long-lived coverage workers."""
     command = [
         sys.executable,
@@ -993,8 +990,7 @@ def _run_owned_pytest(
             if forced_returncode is None and not _gate_owner_is_alive(env):
                 forced_returncode = GATE_OWNER_DEATH_EXIT_CODE
                 print(
-                    f"GATE-OWNER-DEATH label={label} "
-                    f"rc={GATE_OWNER_DEATH_EXIT_CODE} cleanup=TERM->KILL",
+                    f"GATE-OWNER-DEATH label={label} rc={GATE_OWNER_DEATH_EXIT_CODE} cleanup=TERM->KILL",
                     flush=True,
                 )
                 _terminate_owned_process(process)
@@ -1462,8 +1458,7 @@ def run(
             GATE_OWNER_DEATH_EXIT_CODE,
         )
         print(
-            f"GATE-OWNER-DEATH phase=admission rc={GATE_OWNER_DEATH_EXIT_CODE}; "
-            "all-batches=not-started",
+            f"GATE-OWNER-DEATH phase=admission rc={GATE_OWNER_DEATH_EXIT_CODE}; all-batches=not-started",
             flush=True,
         )
         batch_summary = _print_batch_execution_summary(
@@ -1566,9 +1561,7 @@ def run(
     terminal_rc = 0
     if run_isolated:
         isolated_rc = _run_owned_pytest(
-            _isolated_pytest_command(
-                pytest_args, watchdog_owned_gate=watchdog_owned_gate
-            ),
+            _isolated_pytest_command(pytest_args, watchdog_owned_gate=watchdog_owned_gate),
             env=_owned_test_environment(os.environ.copy()),
             label="isolated",
             heartbeat_seconds=heartbeat_seconds,
@@ -1579,8 +1572,7 @@ def run(
             failures["isolated"] = isolated_rc
             continuation = (
                 "later-shards=continuing"
-                if collect_all_failures
-                and _is_collect_all_pytest_returncode(isolated_rc)
+                if collect_all_failures and _is_collect_all_pytest_returncode(isolated_rc)
                 else "later-shards=not-started"
             )
             print(
@@ -1590,10 +1582,7 @@ def run(
         else:
             print("ISOLATED-TESTS-PASS rc=0", flush=True)
 
-    if failures and (
-        not collect_all_failures
-        or not _is_collect_all_pytest_returncode(failures["isolated"])
-    ):
+    if failures and (not collect_all_failures or not _is_collect_all_pytest_returncode(failures["isolated"])):
         print(
             f"SERIAL-ISOLATED-FAILED rc={failures['isolated']}; later-shards=not-started",
             flush=True,
@@ -1685,15 +1674,8 @@ def run(
                 batch_name = f"{shard}-batch-{batch_index:03d}"
                 failure_phase = f"{shard}:batch-{batch_index:03d}"
                 batch_setup_phase = f"{failure_phase}:setup"
-                if (
-                    receipt_session is not None
-                    and receipt_session.admission_enabled
-                    and not diagnostic_only
-                ):
-                    admission_destination = (
-                        COVERAGE_SHARDS
-                        / f".coverage.{shard}.batch-{batch_index:03d}"
-                    )
+                if receipt_session is not None and receipt_session.admission_enabled and not diagnostic_only:
+                    admission_destination = COVERAGE_SHARDS / f".coverage.{shard}.batch-{batch_index:03d}"
                     admission, admission_reason = _runtime_admit_exact_batch(
                         receipt_session,
                         shard=shard,
@@ -1736,18 +1718,16 @@ def run(
                         flush=True,
                     )
                 if (
-                    not diagnostic_only and not (
-                        receipt_session is not None
-                        and receipt_session.admission_enabled
-                    )
+                    not diagnostic_only
+                    and not (receipt_session is not None and receipt_session.admission_enabled)
                     and resume_path is not None
                     and _resume_skip_batch(
-                    resume_state,
-                    shard,
-                    batch_index,
-                    files,
-                    COVERAGE_SHARDS,
-                    _RESOURCE_PATHS.root,
+                        resume_state,
+                        shard,
+                        batch_index,
+                        files,
+                        COVERAGE_SHARDS,
+                        _RESOURCE_PATHS.root,
                     )
                 ):
                     resumed_batch_count += 1
@@ -1867,11 +1847,7 @@ def run(
                 owned_tmpdirs.append(owned_entry)
                 env["TMPDIR"] = str(owned_tmpdir)
                 env["COVERAGE_FILE"] = str(batchtemp / ".coverage")
-                junit_xml = (
-                    batchtemp / "junit.xml"
-                    if receipt_session is not None
-                    else None
-                )
+                junit_xml = batchtemp / "junit.xml" if receipt_session is not None else None
                 print(
                     f"SHARD-BATCH shard={shard} batch={batch_index}/{len(batches)} "
                     f"files={len(files)} basetemp={owned_tmpdir / 'pytest'}",
@@ -1940,15 +1916,12 @@ def run(
                     except (OSError, ValueError) as exc:
                         outcome_error = type(exc).__name__
                         print(
-                            f"BATCH-RECEIPT-REFUSED shard={shard} "
-                            f"batch={batch_index} reason=outcomes-{outcome_error}",
+                            f"BATCH-RECEIPT-REFUSED shard={shard} batch={batch_index} reason=outcomes-{outcome_error}",
                             flush=True,
                         )
                     if rc != 0:
                         try:
-                            failure_node_metadata = normalize_junit_failure_metadata(
-                                junit_xml
-                            )
+                            failure_node_metadata = normalize_junit_failure_metadata(junit_xml)
                         except (OSError, ValueError):
                             failure_node_metadata = None
                 batch_cleanup_rc = _cleanup_owned_tmpdir_safely(
@@ -1978,8 +1951,13 @@ def run(
                         batch_workspace_cleanup_rc,
                     )
                 cleanup_rc = max(cleanup_rc, batch_cleanup_rc)
-                if (resume_path is not None and rc == 0 and coverage_saved
-                        and batch_cleanup_rc == 0 and not diagnostic_only):
+                if (
+                    resume_path is not None
+                    and rc == 0
+                    and coverage_saved
+                    and batch_cleanup_rc == 0
+                    and not diagnostic_only
+                ):
                     fragment_name = f".coverage.{shard}.batch-{batch_index:03d}"
                     resume_state[_batch_key(shard, batch_index, files)] = {
                         "rc": 0,
@@ -1989,12 +1967,7 @@ def run(
                 if receipt_session is not None:
                     progress_receipt_status: ReceiptStatus = "ineligible"
                     completed_receipt: Path | None = None
-                    batch_passed = (
-                        rc == 0
-                        and coverage_saved
-                        and outcome_manifest is not None
-                        and batch_cleanup_rc == 0
-                    )
+                    batch_passed = rc == 0 and coverage_saved and outcome_manifest is not None and batch_cleanup_rc == 0
                     refusal_reason: str | None = None
                     if rc != 0:
                         refusal_reason = "batch-not-passing"
@@ -2033,10 +2006,7 @@ def run(
                         ):
                             progress_receipt_status = "failure"
                     else:
-                        fragment = (
-                            COVERAGE_SHARDS
-                            / f".coverage.{shard}.batch-{batch_index:03d}"
-                        )
+                        fragment = COVERAGE_SHARDS / f".coverage.{shard}.batch-{batch_index:03d}"
                         try:
                             action_identity = receipt_session.expected_identity(
                                 shard,
@@ -2166,19 +2136,17 @@ def run(
                     if diagnose_after_failure and rc == 1:
                         diagnostic_only = True
                         print(
-                            f"SHARD-FAIL shard={shard} batch={batch_index} rc=1; "
-                            "later-batches=diagnostic-only", flush=True,
+                            f"SHARD-FAIL shard={shard} batch={batch_index} rc=1; later-batches=diagnostic-only",
+                            flush=True,
                         )
                     elif collect_all_failures and _is_collect_all_pytest_returncode(rc):
                         print(
-                            f"SHARD-COLLECTED shard={shard} batch={batch_index} "
-                            f"rc={rc}; later-batches=continuing",
+                            f"SHARD-COLLECTED shard={shard} batch={batch_index} rc={rc}; later-batches=continuing",
                             flush=True,
                         )
                     else:
                         print(
-                            f"SHARD-FAIL shard={shard} batch={batch_index} "
-                            f"rc={rc}; later-batches=not-started",
+                            f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; later-batches=not-started",
                             flush=True,
                         )
                         shard_failed = True
@@ -2314,12 +2282,6 @@ def main() -> int:
             flush=True,
         )
         return 2
-    if args.exact_sha_resume and args.resume:
-        print(
-            "SERIAL-SHARD-POLICY-REJECTED exact-SHA receipt resume and legacy resume are mutually exclusive",
-            flush=True,
-        )
-        return 2
     if args.allow_dirty_worktree and args.require_release_policy:
         print(
             "SERIAL-SHARD-POLICY-REJECTED dirty worktrees cannot produce release evidence",
@@ -2378,9 +2340,7 @@ def main() -> int:
                 replay_audit_enabled=not args.no_shadow_replay_audit,
                 progress_enabled=not args.no_shadow_gate_progress,
                 failure_receipts_enabled=not args.no_shadow_failure_receipts,
-                receipt_authentication_enabled=(
-                    not args.no_shadow_receipt_authentication
-                ),
+                receipt_authentication_enabled=(not args.no_shadow_receipt_authentication),
                 receipt_admission_enabled=args.exact_sha_resume,
                 batch_workers=args.batch_workers,
             )

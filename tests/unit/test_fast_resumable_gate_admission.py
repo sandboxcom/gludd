@@ -85,11 +85,12 @@ def test_serial_runner_cli_wires_explicit_receipt_admission_mode(
 def test_run_gate_defaults_to_exact_resume_and_two_bounded_isolated_workers() -> None:
     source = RUN_GATE.read_text(encoding="utf-8")
 
-    assert 'GLUDD_GATE_EXACT_SHA_RESUME:-1' in source
-    assert 'GLUDD_GATE_MAX_FILES_PER_BATCH:-32' in source
-    assert 'GLUDD_GATE_BATCH_WORKERS:-2' in source
+    assert "GLUDD_GATE_EXACT_SHA_RESUME:-1" in source
+    assert "GLUDD_GATE_MAX_FILES_PER_BATCH:-32" in source
+    assert "GLUDD_GATE_BATCH_WORKERS:-2" in source
     assert "--exact-sha-resume" in source
     assert "--no-exact-sha-resume" in source
+    assert "--resume" in source
     assert "--max-files-per-batch" in source
     assert "--max-files-per-batch 32" not in source
     assert "scripts/run_ci_shards_serial.py" in source
@@ -105,7 +106,7 @@ def test_run_gate_rejects_unbounded_batch_size_before_test_execution(
         **os.environ,
         "GATE_TEST_PROFILE": "native",
         "GLUDD_GATE_MAX_FILES_PER_BATCH": "33",
-        "PYTEST_CMD": f'python3 -c "print(\"{marker}\")"',
+        "PYTEST_CMD": f'python3 -c "print("{marker}")"',
         "GATE_LOCK_FILE": str(tmp_path / "gate.lock"),
         "GATE_STATUS_FILE": str(tmp_path / "gate.status"),
         "GATE_FAILED_FILE": str(tmp_path / "gate.failed"),
@@ -134,7 +135,7 @@ def test_run_gate_rejects_more_than_two_workers_before_test_execution(
         **os.environ,
         "GATE_TEST_PROFILE": "native",
         "GLUDD_GATE_BATCH_WORKERS": "3",
-        "PYTEST_CMD": f'python3 -c "print(\"{marker}\")"',
+        "PYTEST_CMD": f'python3 -c "print("{marker}")"',
         "GATE_LOCK_FILE": str(tmp_path / "gate.lock"),
         "GATE_STATUS_FILE": str(tmp_path / "gate.status"),
         "GATE_FAILED_FILE": str(tmp_path / "gate.failed"),
@@ -194,9 +195,13 @@ def test_real_release_profile_still_refuses_test_command_before_resources(
     environment = {
         **os.environ,
         "GATE_TEST_PROFILE": "release",
-        "PYTEST_CMD": shlex.join([
-            sys.executable, "-c", f"from pathlib import Path; Path({str(marker)!r}).touch()",
-        ]),
+        "PYTEST_CMD": shlex.join(
+            [
+                sys.executable,
+                "-c",
+                f"from pathlib import Path; Path({str(marker)!r}).touch()",
+            ]
+        ),
         "PYTEST_ARGS": "",
         "PYTEST_ADDOPTS": "",
         "ALLOW_DIRTY_CI_REPLICA": "0",
@@ -212,8 +217,13 @@ def test_real_release_profile_still_refuses_test_command_before_resources(
     }
 
     result = subprocess.run(
-        ["bash", str(RUN_GATE)], cwd=tmp_path, env=environment,
-        capture_output=True, text=True, check=False, timeout=10,
+        ["bash", str(RUN_GATE)],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
     )
 
     assert result.returncode == 2
@@ -223,6 +233,66 @@ def test_real_release_profile_still_refuses_test_command_before_resources(
     for name in ("gate.lock", "gate.status", "gate.failed"):
         assert not (tmp_path / name).exists()
     assert dict(os.environ) == parent_environment
+
+
+def test_exact_sha_resume_and_legacy_resume_can_coexist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both authenticated admission and legacy resume.json may be requested.
+
+    When the worktree is clean, exact-SHA admission takes precedence.  When the
+    worktree is dirty, the legacy resume.json path is still available so a local
+    repair run can skip previously-passing batches.
+    """
+    identity = {
+        "head_sha": SHA,
+        "expected_sha": SHA,
+        "branch": "feature",
+        "clean": True,
+        "exact_sha": True,
+        "queries_ok": True,
+    }
+    session = object()
+
+    def create_session(**kwargs: object) -> object:
+        assert kwargs["receipt_admission_enabled"] is True
+        return session
+
+    monkeypatch.setattr(serial_runner, "_repository_identity", lambda **_kwargs: identity)
+    monkeypatch.setattr(serial_runner, "_attestation_pairing", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(serial_runner, "_create_shadow_receipt_session", create_session)
+    monkeypatch.setattr(serial_runner, "run", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        serial_runner,
+        "_write_terminal_attestation",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        serial_runner,
+        "_resource_paths",
+        lambda: serial_runner.ResourcePaths(
+            root=tmp_path,
+            coverage_shards=tmp_path / "coverage-fragments",
+            coverage_json=tmp_path / "coverage.json",
+            coverage_audit=tmp_path / "coverage-audit.json",
+            attestation=tmp_path / "attestation.json",
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-1a1",
+            "--skip-isolated",
+            "--skip-aggregate",
+            "--exact-sha-resume",
+            "--resume",
+        ],
+    )
+
+    assert serial_runner.main() == 0
 
 
 def test_batch_summary_measures_resume_savings_under_two_worker_ceiling(

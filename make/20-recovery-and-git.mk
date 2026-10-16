@@ -649,6 +649,15 @@ git-stash:
 	@git stash push -m "gludd-auto-stash-$$(date +%s)" || echo "Nothing to stash"
 	@echo "Stashed. Run 'make git-stash-pop' to restore."
 
+git-stash-list:
+	@git stash list || echo "No stashes"
+
+git-stash-show:
+	@git stash show -p $(STASH) || echo "No stash $(STASH)"
+
+git-stash-drop:
+	@git stash drop $(STASH) || echo "No stash $(STASH)"
+
 git-stash-pop:
 	@git stash pop || echo "No stash to pop"
 

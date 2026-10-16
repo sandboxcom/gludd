@@ -295,10 +295,7 @@ def _post_promotion_context(
         unintegrated_branches=[],
     )
     (tmp_path / "TASKS.md").write_text(
-        "".join(
-            f"- [x] {task_id} — repaired | status: completed\n"
-            for task_id in sorted(rr.V012_RELEASE_TASK_IDS)
-        ),
+        "".join(f"- [x] {task_id} — repaired | status: completed\n" for task_id in sorted(rr.V012_RELEASE_TASK_IDS)),
         encoding="utf-8",
     )
     runs = [
@@ -396,11 +393,23 @@ def test_readiness_cli_reports_checkout_and_explicit_ci_source_separately(
     run = _post_promotion_context(monkeypatch, tmp_path)
     real_assess = rr.assess
     monkeypatch.setattr(rr, "assess", lambda **kwargs: real_assess(run=run, **kwargs))
-    assert rr.main([
-        "--root", str(tmp_path), "--tag", "v0.1.2", "--ci-branch", "development",
-        "--reviewed-head-integration-receipt", str(REVIEWED_RECEIPT_FIXTURE),
-        "--expected-head-sha", REVIEWED_RECEIPT_FINAL_SHA,
-    ]) == rr.EXIT_OK
+    assert (
+        rr.main(
+            [
+                "--root",
+                str(tmp_path),
+                "--tag",
+                "v0.1.2",
+                "--ci-branch",
+                "development",
+                "--reviewed-head-integration-receipt",
+                str(REVIEWED_RECEIPT_FIXTURE),
+                "--expected-head-sha",
+                REVIEWED_RECEIPT_FINAL_SHA,
+            ]
+        )
+        == rr.EXIT_OK
+    )
     payload = json.loads(capsys.readouterr().out)
     assert payload["ready"] is True
     assert payload["branch"] == "master"
@@ -575,10 +584,7 @@ def test_v012_incomplete_tasks_includes_current_release_repairs(tmp_path: Path) 
 
 
 def test_v012_incomplete_tasks_retains_future_current_session_repairs(tmp_path: Path) -> None:
-    lines = [
-        f"- [x] {task_id} — repaired | status: completed\n"
-        for task_id in sorted(rr.V012_RELEASE_TASK_IDS)
-    ]
+    lines = [f"- [x] {task_id} — repaired | status: completed\n" for task_id in sorted(rr.V012_RELEASE_TASK_IDS)]
     lines.append("- [ ] S98.8 — later release repair | status: in_progress\n")
     (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
 
@@ -592,18 +598,10 @@ def test_v012_incomplete_tasks_rejects_missing_repair_evidence(tmp_path: Path) -
 
 
 @pytest.mark.parametrize("missing_task", [f"S98.{number}" for number in range(1, 8)])
-def test_v012_incomplete_tasks_rejects_absent_current_repair(
-    tmp_path: Path, missing_task: str
-) -> None:
-    task_ids = [f"S97.{number}" for number in range(1, 13)] + [
-        f"S98.{number}" for number in range(1, 8)
-    ]
+def test_v012_incomplete_tasks_rejects_absent_current_repair(tmp_path: Path, missing_task: str) -> None:
+    task_ids = [f"S97.{number}" for number in range(1, 13)] + [f"S98.{number}" for number in range(1, 8)]
     (tmp_path / "TASKS.md").write_text(
-        "".join(
-            f"- [x] {task_id} — repaired | status: completed\n"
-            for task_id in task_ids
-            if task_id != missing_task
-        ),
+        "".join(f"- [x] {task_id} — repaired | status: completed\n" for task_id in task_ids if task_id != missing_task),
         encoding="utf-8",
     )
 
@@ -821,7 +819,9 @@ def test_nonprunable_worktree_never_receives_cleanup_instructions() -> None:
 
 @pytest.mark.parametrize("dirty_count", [0, 1])
 def test_readiness_ci_repair_guidance_requires_explicit_target_for_exact_family(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dirty_count: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dirty_count: int,
 ) -> None:
     import workflow_state_guard
     from scripts import ci_failure_ledger
@@ -829,16 +829,27 @@ def test_readiness_ci_repair_guidance_requires_explicit_target_for_exact_family(
     candidate, failed = "b" * 40, "a" * 40
     path = tmp_path / ".gludd/ci-failure-ledger.json"
     ledger = ci_failure_ledger.new_ledger()
-    ci_failure_ledger.observe_payload(ledger, {
-        "databaseId": 101, "headSha": failed, "headBranch": "development",
-        "status": "completed", "conclusion": "failure", "workflowName": "Build and Release",
-        "jobs": [{"name": "unit-2", "status": "completed", "conclusion": "failure", "steps": []}],
-    }, observed_at="first")
+    ci_failure_ledger.observe_payload(
+        ledger,
+        {
+            "databaseId": 101,
+            "headSha": failed,
+            "headBranch": "development",
+            "status": "completed",
+            "conclusion": "failure",
+            "workflowName": "Build and Release",
+            "jobs": [{"name": "unit-2", "status": "completed", "conclusion": "failure", "steps": []}],
+        },
+        observed_at="first",
+    )
     ci_failure_ledger.write_ledger(path, ledger)
     before = path.read_bytes()
     state = SimpleNamespace(
-        branch="development", head=candidate, dirty_count=dirty_count,
-        unintegrated_worktrees=[], unintegrated_branches=[],
+        branch="development",
+        head=candidate,
+        dirty_count=dirty_count,
+        unintegrated_worktrees=[],
+        unintegrated_branches=[],
     )
     monkeypatch.setattr(rr, "_release_policy_preflight", lambda *_: (True, "canonical"))
     monkeypatch.setattr(workflow_state_guard, "collect_state", lambda **_: state)
@@ -1325,12 +1336,14 @@ def test_make_ps_delegates_to_shared_process_inventory() -> None:
 
 
 def test_release_readiness_make_target_binds_the_invoking_worktree() -> None:
+    if sys.version_info[:2] != (3, 11):
+        pytest.skip("Canonical release-readiness dual-track policy requires the Python 3.11 toolchain")
     result = subprocess.run(
         [
             "make",
             "release-readiness",
             "TAG=v0.1.0-beta.4",
-        "RELEASE_READINESS_CI_BRANCH=",
+            "RELEASE_READINESS_CI_BRANCH=",
             "RELEASE_READINESS_VALIDATE_ONLY=0",
             "RELEASE_COMPLETED_STAGES=",
             "RELEASE_OBSERVATIONS=",

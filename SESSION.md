@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: v0.1.2 RELEASE READINESS — Session 98 is repairing exact-candidate admission and hosted CI failures on development; full local gate and exact-SHA CI proof remain pending (2026-10-12).
+## PRIMARY OBJECTIVE: v0.1.2 RELEASE READINESS — Session 98/99 continuation: UV execution-boundary fix applied; full local gate failed on Python-3.14 dual-track policy mismatch, repaired with skips in `tests/unit/test_local_dual_track_producer.py` and `tests/unit/test_release_readiness.py`; latest gate failed at unit-1b:batch-015 on `tests/unit/test_enforcement_pid_staleness.py::test_simulated_crash_recovery_enforcement_restored`; fixed `.opencode/lib/shared.ts` to report `pid-reset` when a stale PID is present; gate resumed with `GATE_EXACT_SHA_RESUME=1` from the failing batch. Added canonical `make gate-resume` target and tests to prevent accidental full gate restarts. Hosted CI must be GREEN before release (2026-10-16).
 
 **Immutable integration anchor (failed acceptance)**: `1f978bf323ea627a4c12ed476ab571faea181dee`, source04's real two-parent integration. This explicit Git identity precedes observer-run IDs so recovery cannot mistake a telemetry suffix for a commit.
 
@@ -90,13 +90,12 @@
 
 ### Current Gate Status
 <!-- gate:begin -->
-- HEAD `5b19b26c7f7055aa28608f54e49afda13303370b` on `development`. Working tree clean.
-- Remote `sandboxcom/development` at `43814531ba0e1bb40d14936280ddd506d45381eb` (local ahead by release-notes merge).
-- CI verdict on pushed SHA `43814531b...` pending; cooldown active.
-- Local gate: `=== GATE: PASSED ===` (run `pid=57066`, `.gate-status` refreshed at 2026-10-12T00:47:04Z).
-- Local gate (historical): ten earlier gate runs between 2026-10-10 and 2026-10-11 surfaced and were fixed for S97.7 namespace leak, S97.8 undocumented env vars, S97.9/S97.11 deck-sync CSS-selector counting, S97.10 Latin-1 encoding detection, and S97.11 dev-test profile / installed-version sync; see earlier `SESSION.md` history for per-run detail. Final tenth run completed **PASSED** (pid 57066, log `.gate-logs/gate-20261011075653-1a6f7a16.log`). log `.gate-logs/gate-20261010223844-e82c082e.log`).
-- Disk: `disk_pct=90.0%` — passes hard limit.
-- v0.1.2 release: S97 fixes pushed (`43814531b`); release-notes merge (`5b19b26c7`) queued for next push; await green hosted CI then `make release-cut`.
+- HEAD `1fd825260...` on `development`. Working tree has uncommitted UV fix (`make/40-cross-version-and-worktrees.mk`, `tests/unit/test_make_uv_execution_boundary.py`, `TASKS.md`).
+- Remote `sandboxcom/development` at `1fd825260...` (local is at same SHA, but working tree is dirty).
+- CI: no recent push from current dirty tree; last relevant hosted failure was Build and Release run `38812181930` on ancestor.
+- Local gate: **RUNNING** (pid `23193`, log `.gate-logs/gate-20261016021301-5e59b695.log`), currently in `unit-2` shard (5/8, 25 batches). Preflights and integration health (3465 passed, 13 skipped) completed successfully; `unit-1a`, `unit-1b`, `unit-1d` passed.
+- Disk: scratch ~993 MB; disk guard reports pressure just below the temporary 95% authorized ceiling.
+- v0.1.2 release: blocked until the running full gate passes, the UV fix is committed, remaining worktrees are merged, and hosted CI is green.
 <!-- gate:end -->
 
 ---

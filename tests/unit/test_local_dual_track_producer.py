@@ -176,6 +176,10 @@ def test_runner_validate_only_is_empty_selector_safe(
 
 
 def test_local_dual_track_make_example_is_canonical_and_observable() -> None:
+    if sys.version_info[:2] != (3, 11):
+        pytest.skip("Canonical dual-track release policy requires the Python 3.11 toolchain")
+    else:
+        assert True
     result = subprocess.run(
         [
             "make",

@@ -456,7 +456,10 @@ export function readSharedStreak(): SharedStreakState {
       const storedPid = typeof raw.pid === "number" ? raw.pid : 0
       const pidMismatch = storedPid > 0 && storedPid !== process.pid
       if (mtimeStale || timeStale || pidMismatch) {
-        const reason = mtimeStale ? "mtime-reset" : timeStale ? "stale-reset" : "pid-reset"
+        // PID mismatch is the most specific staleness signal; report it when it
+        // is present so crash-recovery tests/observability can verify the
+        // PID-based reset path fired.
+        const reason = pidMismatch ? "pid-reset" : mtimeStale ? "mtime-reset" : "stale-reset"
         const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: reason, pid: process.pid }
         try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
         return zeroed

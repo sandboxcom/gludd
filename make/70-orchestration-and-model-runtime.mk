@@ -45,6 +45,28 @@ gate-background: gate-admission-config
 		--timeout-seconds "$(GATE_TIMEOUT)" \
 		--validate-only "$(GATE_BACKGROUND_VALIDATE_ONLY)"
 
+# Canonical path to resume a failed gate. Refuses to start if there is no
+# failed gate state to resume from, preventing accidental full restarts.
+# This enforces the AGENTS.md rule: never re-run from zero on the same SHA.
+.PHONY: gate-resume
+gate-resume: gate-admission-config
+	@if [ ! -f .gate-status ]; then \
+		echo "ERROR: gate-resume requires an existing .gate-status file"; \
+		exit 1; \
+	fi; \
+	if ! grep -q '^=== GATE: FAILED ===' .gate-status; then \
+		STATUS=$$(head -1 .gate-status); \
+		echo "ERROR: gate-resume requires a failed gate; current .gate-status: $$STATUS"; \
+		exit 1; \
+	fi; \
+	LATEST=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
+	if [ -z "$$LATEST" ]; then \
+		echo "ERROR: gate-resume requires a prior gate log in .gate-logs/"; \
+		exit 1; \
+	fi; \
+	echo "gate-resume: resuming from failed gate log $$LATEST"; \
+	$(_GATE_MAKE) -I "$(_GATE_REPOSITORY_ROOT)" -f "$(_GATE_ENTRY_MAKEFILE)" --no-print-directory gate-background GATE_EXACT_SHA_RESUME=1 GATE_TEST_PROFILE="$(GATE_TEST_PROFILE)" GATE_MAX_FILES_PER_BATCH="$(GATE_MAX_FILES_PER_BATCH)" GATE_BATCH_WORKERS="$(GATE_BATCH_WORKERS)" GATE_CANDIDATE_SHA="$(GATE_CANDIDATE_SHA)" GATE_TIMEOUT="$(GATE_TIMEOUT)"
+
 # Managed command runners may reap detached descendants as soon as their root
 # command exits. Keep that root Make invocation alive while the ordinary
 # non-blocking launcher owns the gate; gate-wait streams bounded phase

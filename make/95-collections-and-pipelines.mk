@@ -612,6 +612,13 @@ worktree-health-check:
 worktree-merge-all:
 	@$(UV) run python scripts/worktree_merge_all.py
 
+# Remove worktrees whose branches are fully merged into development,
+# while protecting the canonical ``agent-uv-boundary-fix`` workstream.
+# Worktrees with uncommitted changes or non-ancestor branches are skipped.
+# Usage: make worktree-cleanup-merged
+worktree-cleanup-merged:
+	@PYTHONPATH=scripts $(UV) run python scripts/cleanup_merged_worktrees.py
+
 PIPELINE_STATUS_REPO ?= sandboxcom/gludd
 PIPELINE_STATUS_BRANCH ?= development
 PIPELINE_STATUS_REMOTE ?= sandboxcom

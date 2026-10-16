@@ -2074,6 +2074,16 @@
       "behavior": "make gate-background GATE_TIMEOUT=3600 GATE_BACKGROUND_VALIDATE_ONLY=1 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
     },
     {
+      "name": "gate-resume",
+      "make_variables": [
+        "GATE_TIMEOUT",
+        "GATE_TEST_PROFILE",
+        "GATE_MAX_FILES_PER_BATCH",
+        "GATE_BATCH_WORKERS"
+      ],
+      "behavior": "make gate-resume GATE_TIMEOUT=3600 GATE_TEST_PROFILE=release GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
+    },
+    {
       "name": "gate-background-observed",
       "make_variables": [
         "GATE_TIMEOUT",

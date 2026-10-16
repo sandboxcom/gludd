@@ -356,7 +356,7 @@ PYTEST_VERBOSITY ?= -v
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
-        git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
+        git-branch git-checkout git-merge git-staged git-stash git-stash-list git-stash-show git-stash-drop git-stash-pop \
         git-merge-abort resolve-development-conflicts git-rebase-abort git-rebase-continue git-rebase-skip git-uncommit-last git-reset-hard git-cherry-pick git-cherry-pick-list \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
@@ -510,6 +510,7 @@ help:
 		"  pants-unit-cache-lane Pants hermetic cross-commit pure-unit lane (PANTS_UNIT_CACHE_*)" \
 		"  pants-unit-cache-nightly Compare cached and forced-fresh nodes/outcomes/coverage (PANTS_UNIT_CACHE_*)" \
 		"  gate-background           Launch one identity-tracked gate in an isolated session (forwards GATE_TEST_PROFILE and GATE_* policy)" \
+		"  gate-resume             Resume a failed gate from its last failing batch; refuses if no failed gate state exists" \
 		"  gate-background-observed  Launch the selected gate profile and keep its automation owner alive while polling" \
 		"  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)" \
 		"  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM" \

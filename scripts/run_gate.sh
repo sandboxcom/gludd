@@ -385,7 +385,7 @@ else
     # release floors are enforced.
     ( set +e; python3 scripts/heavy_sem.py "${HEAVY_MAX_PAR:-3}" gludd-heavy -- \
         uv run python scripts/run_ci_shards_serial.py --watchdog-owned-gate --pytest-args=-q --allow-dirty-worktree \
-        "${GATE_RESUME_ARGUMENT}" --max-files-per-batch "${GATE_MAX_FILES_PER_BATCH}" \
+        --resume "${GATE_RESUME_ARGUMENT}" --max-files-per-batch "${GATE_MAX_FILES_PER_BATCH}" \
         --batch-workers "${GATE_BATCH_WORKERS}"; \
       echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
 fi

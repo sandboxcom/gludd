@@ -29,17 +29,25 @@ class NativeMake:
             environment.pop("VIRTUAL_ENV", None)
             environment.pop("UV_PROJECT_ENVIRONMENT", None)
         return subprocess.run(
-            ["make", "--no-print-directory", *arguments], cwd=self.root, env=environment,
-            capture_output=True, text=True, timeout=30, check=False,
+            ["make", "--no-print-directory", *arguments],
+            cwd=self.root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
         )
 
     def authority(self) -> dict[str, bytes]:
         metadata = self.root / ".git"
         result = {name: (metadata / name).read_bytes() for name in ("HEAD", "index", "config")}
-        result.update({
-            str(path.relative_to(metadata)): path.read_bytes()
-            for path in (metadata / "refs").rglob("*") if path.is_file()
-        })
+        result.update(
+            {
+                str(path.relative_to(metadata)): path.read_bytes()
+                for path in (metadata / "refs").rglob("*")
+                if path.is_file()
+            }
+        )
         result["pyproject.toml"] = (self.root / "pyproject.toml").read_bytes()
         result["input.txt"] = (self.root / "input.txt").read_bytes()
         return result
@@ -50,17 +58,29 @@ def native_make(tmp_path: Path) -> NativeMake:
     git = shutil.which("git")
     assert git is not None and shutil.which("uv") is not None
     names = subprocess.run(
-        [git, "rev-parse", "--local-env-vars"], cwd=tmp_path, env={"PATH": os.defpath},
-        capture_output=True, text=True, check=True, timeout=5,
+        [git, "rev-parse", "--local-env-vars"],
+        cwd=tmp_path,
+        env={"PATH": os.defpath},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
     ).stdout.split()
     assert names and all(name.startswith("GIT_") and name.isascii() and name.isidentifier() for name in names)
     environment = dict(os.environ)
     for key in (*names, "MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "PYTEST_ADDOPTS"):
         environment.pop(key, None)
-    environment.update({
-        "UV_OFFLINE": "1", "UV_PYTHON_DOWNLOADS": "never", "PYTHONDONTWRITEBYTECODE": "1",
-        "GLUDD_PROJECT_ROOT": str(tmp_path), "PYTHONPATH": str(tmp_path / "src"),
-    })
+    environment.update(
+        {
+            "UV_OFFLINE": "1",
+            "UV_PYTHON_DOWNLOADS": "never",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "GLUDD_PROJECT_ROOT": str(tmp_path),
+            "PYTHONPATH": str(tmp_path / "src"),
+        }
+    )
+    if "VIRTUAL_ENV" in environment and "UV_PROJECT_ENVIRONMENT" not in environment:
+        environment["UV_PROJECT_ENVIRONMENT"] = environment["VIRTUAL_ENV"]
     fixture = NativeMake(tmp_path, environment, git)
     _search_fixture(tmp_path)
     (tmp_path / "scripts").symlink_to(ROOT / "scripts", target_is_directory=True)
@@ -80,8 +100,13 @@ def native_make(tmp_path: Path) -> NativeMake:
         ("-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "native fixture"),
     ):
         result = subprocess.run(
-            [git, *arguments], cwd=tmp_path, env=environment,
-            capture_output=True, text=True, check=False, timeout=10,
+            [git, *arguments],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
         )
         assert result.returncode == 0, result.stderr
     return fixture
@@ -94,7 +119,10 @@ def test_mixed_read_only_and_register_runs_real_owner_exactly_once(native_make: 
     before = native_make.authority()
     parent = dict(os.environ)
     result = native_make.run(
-        *goals, "BRANCH=agent-owned", f"WORKTREE={native_make.root}", f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
+        *goals,
+        "BRANCH=agent-owned",
+        f"WORKTREE={native_make.root}",
+        f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert registry.is_file(), "successful owner execution must persist its actual owned registration"
@@ -113,7 +141,10 @@ def test_mixed_read_only_preserves_real_owner_failure(native_make: NativeMake, s
     goals = ("worktree-state", "workstream-register") if state_first else ("workstream-register", "worktree-state")
     before = native_make.authority()
     result = native_make.run(
-        *goals, "BRANCH=invalid..branch", f"WORKTREE={native_make.root}", f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
+        *goals,
+        "BRANCH=invalid..branch",
+        f"WORKTREE={native_make.root}",
+        f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
     )
     assert result.returncode != 0, "a printed owner command is not successful owner execution"
     assert "invalid workstream branch" in result.stdout + result.stderr
@@ -141,14 +172,21 @@ def _capture_checkout(fixture: NativeMake) -> Path:
 @pytest.mark.parametrize("state_first", [False, True])
 @pytest.mark.parametrize("active", [True, False])
 def test_native_checkout_executes_gate_guard_before_harmless_body(
-    native_make: NativeMake, state_first: bool, active: bool,
+    native_make: NativeMake,
+    state_first: bool,
+    active: bool,
 ) -> None:
     event = _capture_checkout(native_make)
     lock = native_make.root / "gate.lock"
     if active:
         acquired = subprocess.run(
             [sys.executable, str(ROOT / "scripts/gate_run_lock.py"), "acquire", str(lock), str(os.getpid())],
-            cwd=native_make.root, env=native_make.environment, capture_output=True, text=True, check=False, timeout=10,
+            cwd=native_make.root,
+            env=native_make.environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
         )
         assert acquired.returncode == 0, acquired.stderr
     before = native_make.authority()
@@ -177,8 +215,11 @@ def test_native_lightweight_reads_need_no_uv_or_environment(native_make: NativeM
     uv.chmod(0o700)
     native_make.environment["PATH"] = f"{binary}{os.pathsep}{native_make.environment['PATH']}"
     arguments = (
-        ("PATTERN=native", "SEARCH_PATH=input.txt") if target == "search"
-        else ("FILE=input.txt",) if target == "cat-file" else ()
+        ("PATTERN=native", "SEARCH_PATH=input.txt")
+        if target == "search"
+        else ("FILE=input.txt",)
+        if target == "cat-file"
+        else ()
     )
     before = native_make.authority()
     result = native_make.run(target, *arguments, without_runtime=True)
@@ -190,12 +231,16 @@ def test_native_lightweight_reads_need_no_uv_or_environment(native_make: NativeM
 
 def test_mixed_owner_preserves_explicit_uv_failure_instead_of_echo_success(native_make: NativeMake) -> None:
     uv = native_make.root / "unavailable-uv"
-    uv.write_text("#!/bin/sh\nprintf 'selected uv unavailable\\n' >&2\nexit 73\n", encoding="utf-8")
+    uv.write_text("#!/bin/sh\nprintf 'selected uv unavailable\n' >&2\nexit 73\n", encoding="utf-8")
     uv.chmod(0o700)
     registry = native_make.root / "active.json"
     result = native_make.run(
-        "worktree-state", "workstream-register", f"UV={uv}", "BRANCH=agent-owned",
-        f"WORKTREE={native_make.root}", f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
+        "worktree-state",
+        "workstream-register",
+        f"UV={uv}",
+        "BRANCH=agent-owned",
+        f"WORKTREE={native_make.root}",
+        f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
     )
     assert result.returncode != 0 and "selected uv unavailable" in result.stderr
     assert "Error 73" in result.stderr and not registry.exists()
@@ -216,13 +261,19 @@ def test_real_owner_keeps_global_no_sync_and_selected_toolchain(native_make: Nat
     selected.chmod(0o700)
     registry = native_make.root / "active.json"
     result = native_make.run(
-        "worktree-state", "workstream-register", f"UV={selected}", "UV_NO_SYNC=0",
-        "BRANCH=agent-owned", f"WORKTREE={native_make.root}", f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
+        "worktree-state",
+        "workstream-register",
+        f"UV={selected}",
+        "UV_NO_SYNC=0",
+        "BRANCH=agent-owned",
+        f"WORKTREE={native_make.root}",
+        f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
     )
     assert result.returncode == 0 and registry.is_file(), result.stdout + result.stderr
     observed = json.loads(policy.read_text(encoding="utf-8"))
     assert observed == {
-        "UV_NO_SYNC": "1", "UV_PYTHON_DOWNLOADS": "never",
+        "UV_NO_SYNC": "1",
+        "UV_PYTHON_DOWNLOADS": "never",
         "UV_PROJECT_ENVIRONMENT": native_make.environment["UV_PROJECT_ENVIRONMENT"],
         "VIRTUAL_ENV": native_make.environment["VIRTUAL_ENV"],
     }
