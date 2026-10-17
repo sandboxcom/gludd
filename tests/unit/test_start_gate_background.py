@@ -71,9 +71,7 @@ def _stop(result: object) -> None:
         watchdog.wait(timeout=5)
 
 
-def test_launch_publishes_exact_session_pid_state_and_log(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_launch_publishes_exact_session_pid_state_and_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GLUDD_PROJECT_NAMESPACE", raising=False)
     result = launch_gate(
         tmp_path,
@@ -156,11 +154,7 @@ def test_duplicate_refuses_when_live_identity_observation_is_unavailable(
     monkeypatch.setattr(
         launcher,
         "_probe_pid_started_at",
-        lambda pid: (
-            ("unknown", None)
-            if pid == first.identity.pid
-            else original_probe(pid)
-        ),
+        lambda pid: ("unknown", None) if pid == first.identity.pid else original_probe(pid),
     )
     try:
         duplicate = launch_gate(
@@ -227,9 +221,7 @@ def test_timeout_terminates_exact_session_and_removes_owned_pid(tmp_path: Path) 
     assert not process_matches(result.identity)
     assert not paths.pid_file.exists()
     assert "GATE_TIMEOUT" in paths.status_file.read_text(encoding="utf-8")
-    assert "=== GATE: ABORTED (timeout 0.03s) ===" in result.log_path.read_text(
-        encoding="utf-8"
-    )
+    assert "=== GATE: ABORTED (timeout 0.03s) ===" in result.log_path.read_text(encoding="utf-8")
     state = json.loads(paths.state_file.read_text(encoding="utf-8"))
     assert state["state"] == "timed_out"
     assert state["termination_reason"] == "gate-timeout"
@@ -264,9 +256,7 @@ def test_timeout_retains_ownership_when_session_cannot_be_terminated(
         assert outcome == "termination_failed"
         assert process_matches(result.identity)
         assert paths.pid_file.read_text(encoding="utf-8") == f"{result.identity.pid}\n"
-        assert "GATE_TIMEOUT_TERMINATION_FAILED" in paths.status_file.read_text(
-            encoding="utf-8"
-        )
+        assert "GATE_TIMEOUT_TERMINATION_FAILED" in paths.status_file.read_text(encoding="utf-8")
         trigger.write_text("release\n", encoding="utf-8")
         assert result.process.wait(timeout=5) == 0
         log_text = result.log_path.read_text(encoding="utf-8")
@@ -347,9 +337,7 @@ def _mock_process_statuses(
                 raise value
             return value
 
-    monkeypatch.setattr(
-        launcher, "_probe_pid_started_at", lambda _pid: ("present", "stable-token")
-    )
+    monkeypatch.setattr(launcher, "_probe_pid_started_at", lambda _pid: ("present", "stable-token"))
     monkeypatch.setattr(os, "getpgid", lambda _pid: identity.process_group_id)
     monkeypatch.setattr(os, "getsid", lambda _pid: identity.session_id)
     monkeypatch.setattr(psutil, "Process", StatusProcess)
@@ -357,9 +345,7 @@ def _mock_process_statuses(
     return identity
 
 
-@pytest.mark.parametrize(
-    "terminal_status", (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD, psutil.ZombieProcess(4242))
-)
+@pytest.mark.parametrize("terminal_status", (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD, psutil.ZombieProcess(4242)))
 def test_unreaped_exact_gate_is_terminal_without_reaping(
     monkeypatch: pytest.MonkeyPatch, terminal_status: str | Exception
 ) -> None:
@@ -375,19 +361,13 @@ def test_unreaped_exact_gate_is_terminal_without_reaping(
 
 
 @pytest.mark.parametrize("peer_status", (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED))
-def test_unreaped_leader_keeps_live_group_descendant_owned(
-    monkeypatch: pytest.MonkeyPatch, peer_status: str
-) -> None:
-    identity = _mock_process_statuses(
-        monkeypatch, {4242: psutil.STATUS_ZOMBIE, 4243: peer_status}
-    )
+def test_unreaped_leader_keeps_live_group_descendant_owned(monkeypatch: pytest.MonkeyPatch, peer_status: str) -> None:
+    identity = _mock_process_statuses(monkeypatch, {4242: psutil.STATUS_ZOMBIE, 4243: peer_status})
     assert launcher._process_state(identity) == "owned"
     assert launcher._identity_may_be_live(identity)
 
 
-@pytest.mark.parametrize(
-    "failure", (psutil.AccessDenied(4242), OSError("status unavailable"), "?")
-)
+@pytest.mark.parametrize("failure", (psutil.AccessDenied(4242), OSError("status unavailable"), "?"))
 @pytest.mark.parametrize("unavailable_pid", (4242, 4243))
 def test_unavailable_gate_or_descendant_status_retains_uncertain_ownership(
     monkeypatch: pytest.MonkeyPatch, failure: str | Exception, unavailable_pid: int
@@ -404,9 +384,7 @@ def test_unavailable_gate_or_descendant_status_retains_uncertain_ownership(
 
 
 @pytest.mark.parametrize("mismatch", ("pid_started_at", "process_group_id", "session_id"))
-def test_zombie_status_never_overrides_exact_identity_mismatch(
-    monkeypatch: pytest.MonkeyPatch, mismatch: str
-) -> None:
+def test_zombie_status_never_overrides_exact_identity_mismatch(monkeypatch: pytest.MonkeyPatch, mismatch: str) -> None:
     identity = _mock_process_statuses(monkeypatch, {4242: psutil.STATUS_ZOMBIE})
     if mismatch == "pid_started_at":
         mismatched = replace(identity, pid_started_at="reused-token")
@@ -463,9 +441,7 @@ def test_zombie_leader_does_not_hide_term_ignoring_descendant(
 def test_terminal_gate_never_adopts_a_foreign_group_or_session_peer(
     monkeypatch: pytest.MonkeyPatch, foreign_identity: str
 ) -> None:
-    identity = _mock_process_statuses(
-        monkeypatch, {4242: psutil.STATUS_ZOMBIE, 4243: psutil.STATUS_SLEEPING}
-    )
+    identity = _mock_process_statuses(monkeypatch, {4242: psutil.STATUS_ZOMBIE, 4243: psutil.STATUS_SLEEPING})
     if foreign_identity == "group":
         monkeypatch.setattr(os, "getpgid", lambda pid: 4244 if pid == 4243 else 4242)
     else:
@@ -476,9 +452,7 @@ def test_terminal_gate_never_adopts_a_foreign_group_or_session_peer(
 def test_terminal_leader_retains_ownership_when_group_membership_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    identity = _mock_process_statuses(
-        monkeypatch, {4242: psutil.STATUS_ZOMBIE, 4243: psutil.STATUS_SLEEPING}
-    )
+    identity = _mock_process_statuses(monkeypatch, {4242: psutil.STATUS_ZOMBIE, 4243: psutil.STATUS_SLEEPING})
 
     def group_id(pid: int) -> int:
         if pid == 4243:
@@ -519,9 +493,7 @@ def test_terminal_leader_requires_a_complete_process_snapshot(
 
 
 def test_real_unreaped_gate_is_terminal_before_parent_waits(tmp_path: Path) -> None:
-    result = launch_gate(
-        tmp_path, _sleep_command(), timeout_seconds=30, start_watcher=False
-    )
+    result = launch_gate(tmp_path, _sleep_command(), timeout_seconds=30, start_watcher=False)
     assert result.identity is not None
     assert result.process is not None
     try:
@@ -570,14 +542,19 @@ def test_validate_only_is_side_effect_free(tmp_path: Path, capsys: pytest.Captur
 
 
 def test_canonical_command_uses_actual_producer_native_make_identity(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     makefile = tmp_path / "Makefile"
     makefile.write_text("gate:\n\t@true\n", encoding="utf-8")
     native = subprocess.run(
-        ["make", "--no-print-directory", "-f", "-"], cwd=tmp_path,
+        ["make", "--no-print-directory", "-f", "-"],
+        cwd=tmp_path,
         input="native-make-identity:\n\t@printf '%s\\n' '$(MAKE)'\n",
-        check=True, capture_output=True, text=True, timeout=10,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     ).stdout.strip()
     assert main(["--project-root", str(tmp_path), "--make-command", native, "--validate-only", "1"]) == 0
     command = shlex.split(capsys.readouterr().out.split("command=", 1)[1])
@@ -587,7 +564,8 @@ def test_canonical_command_uses_actual_producer_native_make_identity(
 
 
 @pytest.mark.parametrize(
-    "mutation", ["relative", "fake", "missing", "makefile", "target", "ownership", "extra", "empty"],
+    "mutation",
+    ["relative", "fake", "missing", "makefile", "target", "ownership", "extra", "empty"],
 )
 def test_canonical_command_refuses_unowned_executable_or_argv(tmp_path: Path, mutation: str) -> None:
     makefile = tmp_path / "Makefile"
@@ -613,7 +591,9 @@ def test_canonical_command_refuses_unowned_executable_or_argv(tmp_path: Path, mu
 
 
 def test_canonical_command_preserves_native_make_path_with_spaces(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     native = tmp_path / "native toolchain" / "make"
     native.parent.mkdir()
@@ -622,24 +602,46 @@ def test_canonical_command_preserves_native_make_path_with_spaces(
     monkeypatch.setenv("PATH", str(native.parent) + os.pathsep + os.environ["PATH"])
     (tmp_path / "Makefile").write_text("gate:\n\t@true\n", encoding="utf-8")
     assert subprocess.run([str(native), "--version"], check=True, capture_output=True, timeout=10).returncode == 0
-    assert main(["--project-root", str(tmp_path), "--make-command", shlex.quote(str(native)),
-                 "--validate-only", "1"]) == 0
+    assert (
+        main(["--project-root", str(tmp_path), "--make-command", shlex.quote(str(native)), "--validate-only", "1"]) == 0
+    )
     command = shlex.split(capsys.readouterr().out.split("command=", 1)[1])
     assert command[0] == str(native)
     assert launcher.is_canonical_gate_command(command, tmp_path)
 
 
 def test_producer_retains_explicit_make_prefix_and_quoted_path(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     makefile = tmp_path / "custom makefile.mk"
     makefile.write_text("gate:\n\t@true\n", encoding="utf-8")
     prefix = "'/custom tool/make' -j1"
-    assert main(["--project-root", str(tmp_path), "--make-command", prefix,
-                 "--makefile", str(makefile), "--validate-only", "1"]) == 0
+    assert (
+        main(
+            [
+                "--project-root",
+                str(tmp_path),
+                "--make-command",
+                prefix,
+                "--makefile",
+                str(makefile),
+                "--validate-only",
+                "1",
+            ]
+        )
+        == 0
+    )
     command = shlex.split(capsys.readouterr().out.split("command=", 1)[1])
-    assert command == ["/custom tool/make", "-j1", "-f", str(makefile),
-                       "--no-print-directory", "gate", "gludd_watchdog_owned_gate=1"]
+    assert command == [
+        "/custom tool/make",
+        "-j1",
+        "-f",
+        str(makefile),
+        "--no-print-directory",
+        "gate",
+        "gludd_watchdog_owned_gate=1",
+    ]
     assert not launcher.is_canonical_gate_command(command, tmp_path)
 
 
@@ -648,7 +650,9 @@ def test_producer_retains_explicit_make_prefix_and_quoted_path(
     ["missing", "directory", "not-executable", "xcrun-failed", "xcrun-large", "xcrun-relative", "xcrun-timeout"],
 )
 def test_canonical_command_refuses_unavailable_native_selection(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selection: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selection: str,
 ) -> None:
     makefile = tmp_path / "Makefile"
     makefile.write_text("gate:\n\t@true\n", encoding="utf-8")
@@ -661,12 +665,14 @@ def test_canonical_command_refuses_unavailable_native_selection(
     if selection.startswith("xcrun-"):
         monkeypatch.setattr(sys, "platform", "darwin")
         monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/make")
+
         def select(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
             assert kwargs["timeout"] == 5
             if selection == "xcrun-timeout":
                 raise subprocess.TimeoutExpired("xcrun", 5)
             output = "x" * 4097 if selection == "xcrun-large" else "relative-make"
             return subprocess.CompletedProcess(["xcrun"], 1 if selection == "xcrun-failed" else 0, output, "")
+
         monkeypatch.setattr(subprocess, "run", select)
     assert not launcher.is_canonical_gate_command(launcher.gate_command("make", makefile), tmp_path)
 
@@ -695,9 +701,7 @@ def test_invalid_timeout_fails_without_side_effects(tmp_path: Path) -> None:
     assert not GatePaths.for_root(tmp_path).log_dir.exists()
 
 
-def test_malformed_receipts_and_process_identities_fail_closed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_malformed_receipts_and_process_identities_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     paths = GatePaths.for_root(tmp_path)
     assert launcher._read_json(paths.state_file) is None
     paths.log_dir.mkdir(parents=True)
@@ -729,9 +733,7 @@ def test_malformed_receipts_and_process_identities_fail_closed(
 
     current = launcher._capture_identity(os.getpid(), "self")
     assert current is not None
-    assert launcher._process_state(
-        replace(current, process_group_id=current.process_group_id + 1)
-    ) == "reused"
+    assert launcher._process_state(replace(current, process_group_id=current.process_group_id + 1)) == "reused"
 
     def fail_ps(*_args: object, **_kwargs: object) -> object:
         raise OSError("ps unavailable")
@@ -763,9 +765,7 @@ def test_process_probe_and_capture_fail_closed_on_unavailable_os_evidence(
     assert launcher._capture_identity(os.getpid(), "run") is None
 
 
-def test_stale_receipt_helpers_never_mutate_or_signal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_stale_receipt_helpers_never_mutate_or_signal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     paths = GatePaths.for_root(tmp_path)
     identity = GateIdentity("run", 42, "token", 42, 42)
 
@@ -802,14 +802,10 @@ def test_stale_receipt_helpers_never_mutate_or_signal(
     assert launcher._signal_session(identity, signal.SIGTERM) is False
 
     monkeypatch.setattr(launcher, "_state_is_current", lambda *_args: True)
-    monkeypatch.setattr(
-        launcher, "_watch_outcome_when_not_owned", lambda _identity: "superseded"
-    )
+    monkeypatch.setattr(launcher, "_watch_outcome_when_not_owned", lambda _identity: "superseded")
     assert launcher._retire_finished_gate(paths, identity) == "superseded"
 
-    monkeypatch.setattr(
-        launcher, "_watch_outcome_when_not_owned", lambda _identity: "finished"
-    )
+    monkeypatch.setattr(launcher, "_watch_outcome_when_not_owned", lambda _identity: "finished")
     monkeypatch.setattr(launcher, "_merge_state", lambda *_args: False)
     assert launcher._retire_finished_gate(paths, identity) == "finished"
 
@@ -929,9 +925,7 @@ def test_timeout_escalates_to_sigkill_for_term_ignoring_gate(tmp_path: Path) -> 
         _stop(result)
 
 
-def test_stale_pid_is_replaced_and_early_exit_fails_cleanly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_stale_pid_is_replaced_and_early_exit_fails_cleanly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     paths = GatePaths.for_root(tmp_path)
     paths.pid_file.write_text("999999\n", encoding="utf-8")
     result = launch_gate(
@@ -1001,11 +995,7 @@ def test_capture_failure_aborts_and_reaps_only_its_unpublished_child(
         if startup != "native":
             bootstrap = (
                 "import os, signal, sys, time\n"
-                + (
-                    "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-                    if startup == "term-ignoring"
-                    else ""
-                )
+                + ("signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if startup == "term-ignoring" else "")
                 + "print('unpublished-startup-held', flush=True)\n"
                 "while not os.path.exists(sys.argv[1]):\n"
                 "    time.sleep(0.005)\n"
@@ -1054,9 +1044,7 @@ def test_capture_failure_aborts_and_reaps_only_its_unpublished_child(
         expected_signal = signal.SIGKILL if startup == "term-ignoring" else signal.SIGTERM
         assert child.returncode == -expected_signal
         assert actions == (
-            ["terminate", "wait", "kill", "wait"]
-            if startup == "term-ignoring"
-            else ["terminate", "wait"]
+            ["terminate", "wait", "kill", "wait"] if startup == "term-ignoring" else ["terminate", "wait"]
         )
         assert all(timeout is not None and 0 < timeout <= 1 for timeout in waits)
         with pytest.raises(ChildProcessError):
@@ -1123,11 +1111,7 @@ def test_capture_failure_cleanup_errors_remain_bounded_and_unpublished(
         launch_gate(tmp_path, _sleep_command(), timeout_seconds=30)
 
     actions = [entry[0] for entry in child.method_calls if entry[0] != "poll"]
-    assert actions == (
-        ["terminate", "wait"]
-        if len(wait_results) == 1
-        else ["terminate", "wait", "kill", "wait"]
-    )
+    assert actions == (["terminate", "wait"] if len(wait_results) == 1 else ["terminate", "wait", "kill", "wait"])
     assert ("cleanup failed" in str(failure.value)) is cleanup_failed
     for call in child.wait.call_args_list:
         assert 0 < call.kwargs["timeout"] <= 1
@@ -1287,9 +1271,7 @@ def test_timeout_never_removes_a_replaced_pid_receipt(tmp_path: Path) -> None:
     assert paths.pid_file.read_text(encoding="utf-8") == "999999\n"
 
 
-def test_cli_watch_and_launch_error_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cli_watch_and_launch_error_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     makefile = tmp_path / "Makefile"
     makefile.write_text("gate:\n\t@/bin/sleep 0.05\n", encoding="utf-8")
     assert (
@@ -1369,9 +1351,7 @@ def test_cli_watch_and_launch_error_paths(
     )
 
 
-def test_exec_gate_after_publication_fails_closed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_exec_gate_after_publication_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert launcher._exec_gate_after_publication([]) == 126
 
     published = tmp_path / "published.json"
@@ -1381,33 +1361,20 @@ def test_exec_gate_after_publication_fails_closed(
         raise OSError("exec unavailable")
 
     monkeypatch.setattr(os, "execvpe", fail_exec)
-    assert (
-        launcher._exec_gate_after_publication([str(published), "run-1", "gate"])
-        == 126
-    )
+    assert launcher._exec_gate_after_publication([str(published), "run-1", "gate"]) == 126
 
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     ticks = iter((0.0, 1.0, 6.0))
     monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
-    assert (
-        launcher._exec_gate_after_publication(
-            [str(tmp_path / "missing.json"), "run-2", "gate"]
-        )
-        == 126
-    )
+    assert launcher._exec_gate_after_publication([str(tmp_path / "missing.json"), "run-2", "gate"]) == 126
 
     mismatched = tmp_path / "mismatched.json"
     mismatched.write_text(json.dumps({"run_id": "other-run"}), encoding="utf-8")
     ticks = iter((0.0, 1.0, 6.0))
-    assert (
-        launcher._exec_gate_after_publication([str(mismatched), "run-3", "gate"])
-        == 126
-    )
+    assert launcher._exec_gate_after_publication([str(mismatched), "run-3", "gate"]) == 126
 
 
-def test_healthy_wrapper_keeps_full_publication_allowance(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_healthy_wrapper_keeps_full_publication_allowance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ticks = iter((0.0, 4.99, 4.999))
     receipts = iter((None, {"run_id": "healthy-run"}))
     exec_gate = Mock()
@@ -1416,9 +1383,7 @@ def test_healthy_wrapper_keeps_full_publication_allowance(
     monkeypatch.setattr(launcher, "_read_json", lambda _path: next(receipts))
     monkeypatch.setattr(os, "execvpe", exec_gate)
 
-    launcher._exec_gate_after_publication(
-        [str(tmp_path / "published.json"), "healthy-run", "gate", "--flag"]
-    )
+    launcher._exec_gate_after_publication([str(tmp_path / "published.json"), "healthy-run", "gate", "--flag"])
 
     exec_gate.assert_called_once_with("gate", ["gate", "--flag"], os.environ.copy())
 
@@ -1433,10 +1398,7 @@ def test_private_exec_dispatch_bypasses_public_parser(
         return 23
 
     monkeypatch.setattr(launcher, "_exec_gate_after_publication", private_exec)
-    assert (
-        main(["--exec-gate-after-publication", "state", "run", "gate", "--flag"])
-        == 23
-    )
+    assert main(["--exec-gate-after-publication", "state", "run", "gate", "--flag"]) == 23
     assert captured == ["state", "run", "gate", "--flag"]
 
 
@@ -1500,3 +1462,8 @@ def test_cli_watch_mode_reports_unverified_termination_as_infrastructure_failure
         )
     finally:
         _stop(result)
+
+
+def test_module_identity_is_scripts_start_gate_background() -> None:
+    """TDD registration: ensure the test file is linked to scripts.start_gate_background."""
+    assert launcher.__name__ == "scripts.start_gate_background"

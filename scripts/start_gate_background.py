@@ -107,9 +107,7 @@ def _utc_now() -> str:
 def _atomic_write(path: Path, content: str) -> None:
     """Fsync one replacement before making it visible."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
-    )
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
@@ -278,10 +276,7 @@ def _process_state(identity: GateIdentity) -> str:
         return "gone"
     except OSError:
         return "unknown"
-    if (
-        process_group_id != identity.process_group_id
-        or session_id != identity.session_id
-    ):
+    if process_group_id != identity.process_group_id or session_id != identity.session_id:
         return "reused"
     terminal = _process_is_terminal(identity.pid)
     if terminal is None:
@@ -311,15 +306,9 @@ def _identity_from_state(payload: Mapping[str, object]) -> GateIdentity | None:
     started_at_value = payload.get("pid_started_at")
     process_group_value = payload.get("process_group_id")
     session_value = payload.get("session_id")
-    if (
-        not isinstance(run_id_value, str)
-        or not isinstance(started_at_value, str)
-    ):
+    if not isinstance(run_id_value, str) or not isinstance(started_at_value, str):
         return None
-    if (
-        payload.get("schema_version") != STATE_SCHEMA_VERSION
-        or payload.get("kind") != STATE_KIND
-    ):
+    if payload.get("schema_version") != STATE_SCHEMA_VERSION or payload.get("kind") != STATE_KIND:
         return None
     pid = _json_int(pid_value)
     process_group_id = _json_int(process_group_value)
@@ -343,9 +332,7 @@ def _state_is_current(paths: GatePaths, identity: GateIdentity) -> bool:
     return current == identity
 
 
-def _merge_state(
-    paths: GatePaths, identity: GateIdentity, updates: Mapping[str, object]
-) -> bool:
+def _merge_state(paths: GatePaths, identity: GateIdentity, updates: Mapping[str, object]) -> bool:
     """Update only the still-current run; an old watcher cannot clobber a new run."""
     payload = _read_json(paths.state_file)
     if payload is None or _identity_from_state(payload) != identity:
@@ -381,11 +368,7 @@ def _current_log_path(paths: GatePaths, identity: GateIdentity) -> Path | None:
     if not isinstance(raw_path, str) or not raw_path:
         return None
     log_path = Path(raw_path).resolve()
-    if (
-        log_path.parent != paths.log_dir.resolve()
-        or not log_path.name.startswith("gate-")
-        or log_path.suffix != ".log"
-    ):
+    if log_path.parent != paths.log_dir.resolve() or not log_path.name.startswith("gate-") or log_path.suffix != ".log":
         return None
     return log_path
 
@@ -408,8 +391,7 @@ def _terminate_session(
 ) -> bool:
     """TERM then KILL the exact session and report verified terminal state."""
     print(
-        f"[gate-background-watch] phase=terminate-term pid={identity.pid} "
-        f"grace={_format_seconds(grace_seconds)}s",
+        f"[gate-background-watch] phase=terminate-term pid={identity.pid} grace={_format_seconds(grace_seconds)}s",
         flush=True,
     )
     _signal_session(identity, signal.SIGTERM)
@@ -431,14 +413,9 @@ def _terminate_session(
             flush=True,
         )
         _signal_session(identity, signal.SIGKILL)
-        kill_deadline = time.monotonic() + max(
-            poll_seconds, min(grace_seconds, 1.0)
-        )
+        kill_deadline = time.monotonic() + max(poll_seconds, min(grace_seconds, 1.0))
         next_heartbeat = time.monotonic()
-        while (
-            _process_state(identity) == "owned"
-            and time.monotonic() < kill_deadline
-        ):
+        while _process_state(identity) == "owned" and time.monotonic() < kill_deadline:
             now = time.monotonic()
             if now >= next_heartbeat:
                 print(
@@ -457,8 +434,7 @@ def _terminate_session(
     terminated = final_state in {"gone", "reused"}
     if not terminated:
         print(
-            f"[gate-background-watch] phase=termination-failed "
-            f"pid={identity.pid} state={final_state}",
+            f"[gate-background-watch] phase=termination-failed pid={identity.pid} state={final_state}",
             flush=True,
         )
     return terminated
@@ -555,9 +531,7 @@ def watch_gate(
             return "superseded"
 
         timeout_text = _format_seconds(timeout_seconds)
-        terminated = _terminate_session(
-            identity, grace_seconds=grace_seconds, poll_seconds=poll_seconds
-        )
+        terminated = _terminate_session(identity, grace_seconds=grace_seconds, poll_seconds=poll_seconds)
         if terminated:
             _append_log(
                 log_path,
@@ -588,8 +562,7 @@ def watch_gate(
         )
         _atomic_write(
             paths.status_file,
-            "GATE_TIMEOUT_TERMINATION_FAILED\n"
-            f"=== GATE: TERMINATION FAILED (timeout {timeout_text}s) ===\n",
+            f"GATE_TIMEOUT_TERMINATION_FAILED\n=== GATE: TERMINATION FAILED (timeout {timeout_text}s) ===\n",
         )
         _merge_state(
             paths,
@@ -707,9 +680,7 @@ def _abort_unpublished_gate(process: subprocess.Popen[bytes]) -> None:
             return
         except (OSError, subprocess.TimeoutExpired) as error:
             last_error = error
-    raise RuntimeError(
-        f"unpublished gate child cleanup failed (pid={process.pid})"
-    ) from last_error
+    raise RuntimeError(f"unpublished gate child cleanup failed (pid={process.pid})") from last_error
 
 
 def launch_gate(
@@ -854,7 +825,7 @@ def launch_gate(
             f"state={paths.state_file}",
             flush=True,
         )
-        print("Poll with: make gate-status-check", flush=True)
+        print("Poll with: make gate-progress", flush=True)
         return GateLaunch(True, identity, log_path, process, watchdog)
 
 
@@ -873,14 +844,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-root", type=Path, default=Path.cwd())
     parser.add_argument("--make-command", default="make")
     parser.add_argument("--makefile", type=Path)
-    parser.add_argument(
-        "--timeout-seconds", type=_positive_float, default=DEFAULT_TIMEOUT_SECONDS
-    )
+    parser.add_argument("--timeout-seconds", type=_positive_float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--validate-only", choices=("0", "1"), default="0")
     parser.add_argument("--watch-run-id")
-    parser.add_argument(
-        "--watcher-poll-seconds", type=_positive_float, default=DEFAULT_POLL_SECONDS
-    )
+    parser.add_argument("--watcher-poll-seconds", type=_positive_float, default=DEFAULT_POLL_SECONDS)
     parser.add_argument(
         "--termination-grace-seconds",
         type=_positive_float,
@@ -907,7 +874,11 @@ def _native_make_executable() -> Path:
         # Apple's /usr/bin/make shim executes the active developer-tool Make.
         # Ask the native selector; never trust an arbitrary path ending in make.
         selected = subprocess.run(
-            ["/usr/bin/xcrun", "--find", "make"], check=False, capture_output=True, text=True, timeout=5,
+            ["/usr/bin/xcrun", "--find", "make"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if selected.returncode != 0 or len(selected.stdout) > 4096:
             raise ValueError("native Make executable is unavailable")
@@ -951,8 +922,7 @@ def _watch_from_state(args: argparse.Namespace, paths: GatePaths) -> int:
         grace_seconds=args.termination_grace_seconds,
     )
     print(
-        f"[gate-background-watch] outcome={outcome} pid={identity.pid} "
-        f"run_id={identity.run_id}",
+        f"[gate-background-watch] outcome={outcome} pid={identity.pid} run_id={identity.run_id}",
         flush=True,
     )
     if outcome == "timed_out":

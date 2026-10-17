@@ -693,8 +693,30 @@ def _gate_status_is_red() -> bool:
         return False
 
 
+def _gate_background_running() -> bool:
+    """Return True when a background gate process is alive.
+
+    A running gate is real pending work: the agent must poll at the next
+    allowed interval or do useful work — never end the session idle.
+    """
+    try:
+        if not GATE_PID_FILE.exists():
+            return False
+        pid_str = GATE_PID_FILE.read_text(encoding="utf-8").strip()
+        if not pid_str:
+            return False
+        os.kill(int(pid_str), 0)
+        return True
+    except (ValueError, ProcessLookupError, PermissionError):
+        return False
+    except Exception:
+        return False
+
+
 def _pending_work_exists() -> bool:
-    return _tasks_md_has_unchecked() or _ratchet_has_entries() > 0 or _gate_status_is_red()
+    return (
+        _tasks_md_has_unchecked() or _ratchet_has_entries() > 0 or _gate_status_is_red() or _gate_background_running()
+    )
 
 
 def _ci_is_pending_or_red() -> tuple[bool, str | None]:
@@ -1701,6 +1723,7 @@ def _write_continue_directive(
     ci_run_id: str | None = None,
     work_hint: str = "",
     extra_message: str = "",
+    gate_running: bool = False,
 ) -> None:
     """Write the continue directive to BOTH JSON (for plugins) and plain-text (for visibility)."""
     return _watchdog_enforcement._write_continue_directive(
@@ -1714,6 +1737,7 @@ def _write_continue_directive(
         ci_run_id,
         work_hint,
         extra_message,
+        gate_running=gate_running,
     )
 
 
@@ -1727,6 +1751,7 @@ def _build_continue_directive(
     ci_run_id: str | None = None,
     work_hint: str = "",
     extra_message: str = "",
+    gate_running: bool = False,
 ) -> ContinueDirective:
     return _watchdog_enforcement._build_continue_directive(
         _WATCHDOG_RUNTIME,
@@ -1739,6 +1764,7 @@ def _build_continue_directive(
         ci_run_id,
         work_hint,
         extra_message,
+        gate_running=gate_running,
     )
 
 

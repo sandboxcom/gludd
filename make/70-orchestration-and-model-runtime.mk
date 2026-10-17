@@ -64,6 +64,9 @@ gate-resume: gate-admission-config
 		echo "ERROR: gate-resume requires a prior gate log in .gate-logs/"; \
 		exit 1; \
 	fi; \
+	mkdir -p .gate-logs; \
+	cp .gate-status ".gate-logs/gate-resume-prior-$(GATE_CANDIDATE_SHA).status"; \
+	echo "GATE-PREFLIGHT-RESUME captured prior preflight pass for $(GATE_CANDIDATE_SHA)"; \
 	echo "gate-resume: resuming from failed gate log $$LATEST"; \
 	$(_GATE_MAKE) -I "$(_GATE_REPOSITORY_ROOT)" -f "$(_GATE_ENTRY_MAKEFILE)" --no-print-directory gate-background GATE_EXACT_SHA_RESUME=1 GATE_TEST_PROFILE="$(GATE_TEST_PROFILE)" GATE_MAX_FILES_PER_BATCH="$(GATE_MAX_FILES_PER_BATCH)" GATE_BATCH_WORKERS="$(GATE_BATCH_WORKERS)" GATE_CANDIDATE_SHA="$(GATE_CANDIDATE_SHA)" GATE_TIMEOUT="$(GATE_TIMEOUT)"
 
@@ -151,8 +154,20 @@ gate-status-check:
 
 # Poll the background gate every GATE_POLL_INTERVAL seconds until it terminates.
 # Emits a timestamped heartbeat each cycle. Exits 0 on PASSED, 1 on FAILED/aborted.
+# A hard wall-clock ceiling prevents infinite waits even when FORCE=1 or a huge
+# GATE_WAIT_TIMEOUT is supplied.
 gate-wait:
-	@while true; do \
+	@HARD_MAX_WAIT=21600; \
+	GATE_WAIT_TIMEOUT_VAL=$${GATE_WAIT_TIMEOUT:-$(GATE_TIMEOUT)}; \
+	if [ -z "$$GATE_WAIT_TIMEOUT_VAL" ] || [ "$$GATE_WAIT_TIMEOUT_VAL" -le 0 ] 2>/dev/null; then \
+		GATE_WAIT_TIMEOUT_VAL=$$HARD_MAX_WAIT; \
+	fi; \
+	if [ "$$GATE_WAIT_TIMEOUT_VAL" -gt "$$HARD_MAX_WAIT" ] 2>/dev/null; then \
+		GATE_WAIT_TIMEOUT_VAL=$$HARD_MAX_WAIT; \
+	fi; \
+	START_EPOCH=$$(date +%s); \
+	END_EPOCH=$$((START_EPOCH + GATE_WAIT_TIMEOUT_VAL)); \
+	while [ $$(date +%s) -lt $$END_EPOCH ]; do \
 		OUT=$$( $(MAKE) --no-print-directory gate-status-check GATE_EXPECTED_PID="$(GATE_EXPECTED_PID)" 2>&1 ); \
 		TS=$$(date +%H:%M:%S); \
 		if echo "$$OUT" | grep -q '=== GATE: PASSED ==='; then \
@@ -167,7 +182,10 @@ gate-wait:
 			echo "[$$TS] still running... $$PHASE"; \
 			sleep $(GATE_POLL_INTERVAL); \
 		fi; \
-	done
+	done; \
+	TS=$$(date +%H:%M:%S); \
+	echo "[$$TS] gate-wait TIMEOUT after $$GATE_WAIT_TIMEOUT_VAL seconds (hard ceiling $$HARD_MAX_WAIT)"; \
+	exit 1
 
 # Return immediately with gate status (no polling).
 gate-wait-report:
@@ -235,6 +253,18 @@ gate-logs:
 			echo "$$MTIME  $$STATUS  $$f"; \
 		fi; \
 	done
+
+# Estimate gate completion percentage and ETA from historical gate logs.
+# Polls are rate-limited: a second poll within GATE_PROGRESS_COOLDOWN_SECS
+# (default 120) is refused unless GATE_PROGRESS_FORCE=1.
+GATE_PROGRESS_MAX_HISTORICAL ?= 20
+GATE_PROGRESS_COOLDOWN_SECS ?= 120
+GATE_PROGRESS_FORCE ?= 0
+GATE_PROGRESS_ARGS ?=
+GATE_PROGRESS_SLEEP ?= 0
+gate-progress:
+	@mkdir -p .gate-logs
+	@.venv/bin/python3 scripts/gate_progress.py --max-historical $(GATE_PROGRESS_MAX_HISTORICAL) --cooldown-secs $(GATE_PROGRESS_COOLDOWN_SECS) --sleep $(GATE_PROGRESS_SLEEP) $(if $(filter 1,$(GATE_PROGRESS_FORCE)),--force) $(GATE_PROGRESS_ARGS)
 
 # Force-kill one identity-verified gate tree: descendants first, bounded TERM,
 # then KILL. The Python owner writes terminal status/evidence and releases only

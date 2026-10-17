@@ -987,7 +987,8 @@ test-hang-debug:
 lint-all:
 	@$(UV) run ruff check src tests collections scripts alembic tools molecule
 typecheck-all:
-	@$(UV) run mypy -p general_ludd scripts tools
+	@$(UV) run mypy -p general_ludd
+	@$(UV) run mypy --explicit-package-bases tools
 
 # Scoped mypy on explicit files (bypasses tree-wide blockers like graylog.py).
 # Mirrors pyproject.toml [tool.mypy] strict config (picked up automatically).

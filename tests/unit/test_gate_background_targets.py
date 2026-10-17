@@ -163,6 +163,51 @@ def test_observed_gate_waits_for_the_exact_launched_pid() -> None:
     assert 'PID="$(GATE_EXPECTED_PID)"' in status_block
 
 
+def test_gate_wait_has_a_hard_timeout_ceiling() -> None:
+    """gate-wait must carry an internal deadline that no env var can exceed."""
+    content = _content()
+    start = content.index("gate-wait:")
+    end = content.index("# Return immediately", start)
+    recipe_block = content[start:end]
+
+    assert re.search(r"HARD_MAX_WAIT\s*[:=]", recipe_block), "missing HARD_MAX_WAIT ceiling"
+    assert "date +%s" in recipe_block, "missing wall-clock deadline tracking"
+    assert "exit 1" in recipe_block, "missing timeout failure exit"
+
+
+def test_gate_wait_exits_after_timeout_when_no_terminal_status(tmp_path: Path) -> None:
+    """If gate-status-check never emits a terminal marker, gate-wait must still return."""
+    metadata = (ROOT / "pyproject.toml").read_bytes()
+    project_file = tmp_path / "pyproject.toml"
+    project_file.write_bytes(metadata)
+
+    override = tmp_path / "Makefile"
+    override.write_text(
+        f'include {MAKEFILE}\n\ngate-status-check:\n\t@echo "RUNNING (pid=99999)"\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "make",
+            "-I",
+            str(ROOT),
+            "-f",
+            str(override),
+            "gate-wait",
+            "GATE_POLL_INTERVAL=1",
+            "GATE_WAIT_TIMEOUT=3",
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "TIMEOUT" in result.stdout or "timeout" in result.stdout.lower(), result.stdout
+
+
 def test_gate_background_duplicate_does_not_replace_live_pid(
     tmp_path: Path,
 ) -> None:
@@ -346,3 +391,32 @@ def test_gate_resume_validates_launch_with_failed_state(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "resuming from failed gate log" in result.stdout
+
+
+def test_gate_resume_captures_sha_stamped_preflight_receipt() -> None:
+    """gate-resume must preserve the prior .gate-status under the candidate SHA so
+    _gate-preflights can skip preflights on exact-SHA resume.
+    """
+    content = _content()
+    idx = content.find("gate-resume:")
+    assert idx != -1
+    next_target = re.search(r"\n[a-zA-Z_-][a-zA-Z0-9_-]*:", content[idx:])
+    end = idx + next_target.start() if next_target else len(content)
+    recipe_block = content[idx:end]
+    assert "cp .gate-status" in recipe_block
+    assert "gate-resume-prior-$(GATE_CANDIDATE_SHA).status" in recipe_block
+
+
+def test_gate_preflights_skip_when_resume_receipt_exists() -> None:
+    """_gate-preflights must re-run the resume-always subset when an exact-SHA resume receipt exists."""
+    content = _content()
+    idx = content.find("_gate-preflights:")
+    assert idx != -1
+    next_target = re.search(r"\n[a-zA-Z_-][a-zA-Z0-9_-]*:", content[idx:])
+    end = idx + next_target.start() if next_target else len(content)
+    recipe_block = content[idx:end]
+    assert "GATE_EXACT_SHA_RESUME" in recipe_block
+    assert "GATE_PREFLIGHT_RESUME_RECEIPT" in recipe_block
+    assert "GATE_PREFLIGHT_RESUME_ALWAYS" in recipe_block
+    assert "PREFLIGHT-RESUME: re-ran" in recipe_block
+    assert "exit 0" in recipe_block

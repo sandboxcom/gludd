@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from scripts.run_ci_shards_serial import (
+    ResourcePaths,
     _batch_key,
     _load_resume_state,
     _preserve_coverage_fragments_for_resume,
     _resume_skip_batch,
     _save_resume_state,
+    run,
 )
 
 
@@ -119,3 +122,78 @@ def test_do_not_preserve_fragments_when_resume_disabled() -> None:
 
 def test_do_not_preserve_fragments_when_run_succeeded() -> None:
     assert _preserve_coverage_fragments_for_resume(Path("/tmp/resume.json"), 0) is False
+
+
+def test_run_resumes_from_failed_batch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock three batches; fail the second, then resume and continue from it."""
+    root = tmp_path / "ci-shards"
+    coverage_shards = root / "coverage-fragments"
+    coverage_json = root / "coverage.json"
+    coverage_audit = root / "coverage-audit.json"
+    attestation = root / "attestation.json"
+    resume_file = root / "resume.json"
+
+    module = "scripts.run_ci_shards_serial"
+    resource_paths = ResourcePaths(
+        root=root,
+        coverage_shards=coverage_shards,
+        coverage_json=coverage_json,
+        coverage_audit=coverage_audit,
+        attestation=attestation,
+        resume=resume_file,
+    )
+    monkeypatch.setattr(f"{module}._RESOURCE_PATHS", resource_paths)
+    monkeypatch.setattr(f"{module}.COVERAGE_SHARDS", coverage_shards)
+    monkeypatch.setattr(f"{module}.COVERAGE_JSON", coverage_json)
+    monkeypatch.setattr(f"{module}.COVERAGE_AUDIT", coverage_audit)
+    monkeypatch.setattr(f"{module}._git_output", lambda *_a, **_k: (0, "deadbeef1122"))
+    monkeypatch.setattr(f"{module}._interpreter_identity", lambda: {"version": "3.14.0"})
+    monkeypatch.setattr(f"{module}._interpreter_is_unchanged", lambda *_a, **_k: True)
+    monkeypatch.setattr(f"{module}._read_disk_usage", lambda _p: type("U", (), {"free": 10**12})())
+    monkeypatch.setattr(f"{module}._cleanup_owned_tmpdir_safely", lambda *_a, **_k: 0)
+
+    def _save_shard_coverage(shard: str, batch_index: int, *_args: object, **_kwargs: object) -> bool:
+        fragment = coverage_shards / f".coverage.{shard}.batch-{batch_index:03d}"
+        fragment.parent.mkdir(parents=True, exist_ok=True)
+        fragment.write_bytes(b"coverage")
+        return True
+
+    monkeypatch.setattr(f"{module}._save_shard_coverage", _save_shard_coverage)
+    monkeypatch.setattr(f"{module}._aggregate_coverage", lambda: 0)
+
+    plan = [("unit-mock", [["tests/unit/test_a.py"], ["tests/unit/test_b.py"], ["tests/unit/test_c.py"]])]
+    monkeypatch.setattr(f"{module}._plan_shards", lambda *_a, **_k: plan)
+
+    executed_labels: list[str] = []
+
+    def _run_owned_pytest(command: list[str], *, env: dict[str, str], label: str, **kwargs: object) -> int:
+        executed_labels.append(label)
+        if label == "unit-mock:batch-002":
+            return 1
+        return 0
+
+    monkeypatch.setattr(f"{module}._run_owned_pytest", _run_owned_pytest)
+
+    rc_first = run(["unit-mock"], [], resume_path=resume_file, aggregate_coverage=False)
+    assert rc_first != 0
+    state_first = _load_resume_state(resume_file)
+    assert any(k.startswith("unit-mock:batch-001:") for k in state_first)
+    assert not any(k.startswith("unit-mock:batch-002:") for k in state_first)
+    assert not any(k.startswith("unit-mock:batch-003:") for k in state_first)
+
+    def _run_owned_pytest_resume(command: list[str], *, env: dict[str, str], label: str, **kwargs: object) -> int:
+        executed_labels.append(label)
+        return 0
+
+    monkeypatch.setattr(f"{module}._run_owned_pytest", _run_owned_pytest_resume)
+
+    rc_second = run(["unit-mock"], [], resume_path=resume_file, aggregate_coverage=False)
+    assert rc_second == 0
+    # Batch 001 was already recorded; it must not be re-executed.
+    assert "unit-mock:batch-001" not in executed_labels[-3:]
+    assert "unit-mock:batch-002" in executed_labels
+    assert "unit-mock:batch-003" in executed_labels
+    state_second = _load_resume_state(resume_file)
+    assert any(k.startswith("unit-mock:batch-001:") for k in state_second)
+    assert any(k.startswith("unit-mock:batch-002:") for k in state_second)
+    assert any(k.startswith("unit-mock:batch-003:") for k in state_second)

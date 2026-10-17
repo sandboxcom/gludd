@@ -5,6 +5,7 @@ After 3 consecutive waves with exactly 1 dispatch, inject
 Batch wider — 2+ dispatches per message."
 Reset counter when a wave has 2+ dispatches.
 """
+
 from __future__ import annotations
 
 import re
@@ -40,24 +41,17 @@ class TestMessageShapeEscalationStructure:
         src = _plugin_source()
         # The IIFE init block must reset to 0
         assert src.count("singleDispatchWaves = 0") >= 2, (
-            "singleDispatchWaves must be reset to 0 in both freshState() "
-            "AND the _state init block"
+            "singleDispatchWaves must be reset to 0 in both freshState() AND the _state init block"
         )
 
     def test_escalation_message_in_source(self):
         src = _plugin_source()
-        assert "MESSAGE SHAPE VIOLATION" in src, (
-            "MESSAGE SHAPE VIOLATION escalation message missing"
-        )
+        assert "MESSAGE SHAPE VIOLATION" in src, "MESSAGE SHAPE VIOLATION escalation message missing"
         assert "3 consecutive single-dispatch waves" in src, (
             "escalation message must reference '3 consecutive single-dispatch waves'"
         )
-        assert "Batch wider" in src, (
-            "escalation message must say 'Batch wider'"
-        )
-        assert "2+ dispatches per message" in src, (
-            "escalation message must say '2+ dispatches per message'"
-        )
+        assert "Batch wider" in src, "escalation message must say 'Batch wider'"
+        assert "2+ dispatches per message" in src, "escalation message must say '2+ dispatches per message'"
 
     def test_handle_message_boundary_increments_single_dispatch(self):
         src = _plugin_source()
@@ -81,9 +75,7 @@ class TestMessageShapeEscalationStructure:
 
     def test_escalation_fires_at_3(self):
         src = _plugin_source()
-        assert re.search(r"singleDispatchWaves\s*>=\s*3", src), (
-            "Escalation must fire when singleDispatchWaves >= 3"
-        )
+        assert re.search(r"singleDispatchWaves\s*>=\s*3", src), "Escalation must fire when singleDispatchWaves >= 3"
 
     def test_proxy_delegates_escalation_to_hot_or_default_impl(self):
         src = _plugin_source()
@@ -92,10 +84,8 @@ class TestMessageShapeEscalationStructure:
         default_section = src.split("defaultImpl")[1].split("PROXY PLUGIN")[0]
         proxy_section = src.split("PROXY PLUGIN")[1]
 
-        assert "MESSAGE SHAPE VIOLATION" in default_section, (
-            "MT.2 escalation missing from defaultImpl"
-        )
-        assert 'loadHotModule("multitask", defaultImpl)' in proxy_section
+        assert "MESSAGE SHAPE VIOLATION" in default_section, "MT.2 escalation missing from defaultImpl"
+        assert 'loadHotModule("enforce-multitask", defaultImpl)' in proxy_section
         assert 'impl["experimental.text.complete"]' in proxy_section
 
     def test_escalation_appears_in_thin_wave_block_and_post_boundary(self):
@@ -105,9 +95,7 @@ class TestMessageShapeEscalationStructure:
         # post-boundary warning. The proxy delegates instead of duplicating it.
         count = src.count("MESSAGE SHAPE VIOLATION")
         assert count >= 2, (
-            "MESSAGE SHAPE VIOLATION must appear in both behavior paths "
-            "(thin-wave + post-boundary), "
-            f"found {count}"
+            f"MESSAGE SHAPE VIOLATION must appear in both behavior paths (thin-wave + post-boundary), found {count}"
         )
 
     def test_single_dispatch_waves_not_incremented_on_zero(self):
@@ -126,6 +114,4 @@ class TestMessageShapeEscalationStructure:
             r"prevMessageDispatches\s*===\s*0[^}]*singleDispatchWaves\s*\+\+",
             handle_body,
         )
-        assert not zero_inc, (
-            "singleDispatchWaves must NOT be incremented when prev === 0"
-        )
+        assert not zero_inc, "singleDispatchWaves must NOT be incremented when prev === 0"

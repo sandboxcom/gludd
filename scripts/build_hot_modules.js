@@ -45,6 +45,7 @@ const PLUGINS = [
   "enforce-task-tracking",
   "enforce-worktree",
   "enforce-no-ci-poll",
+  "enforce-no-idle-monitoring",
   "enforce-release-deadline",
 ];
 

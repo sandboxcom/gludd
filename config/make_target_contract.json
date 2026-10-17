@@ -1199,6 +1199,16 @@
       "behavior": "make gate-tail GATE_TAIL_LINES=5"
     },
     {
+      "name": "gate-progress",
+      "make_variables": [
+        "GATE_PROGRESS_MAX_HISTORICAL",
+        "GATE_PROGRESS_COOLDOWN_SECS",
+        "GATE_PROGRESS_FORCE",
+        "GATE_PROGRESS_ARGS"
+      ],
+      "behavior": "make gate-progress GATE_PROGRESS_MAX_HISTORICAL=20 GATE_PROGRESS_COOLDOWN_SECS=0 GATE_PROGRESS_FORCE=1 GATE_PROGRESS_ARGS=--debug"
+    },
+    {
       "name": "gate-lite-tail",
       "make_variables": [
         "GATE_TAIL_LINES"
@@ -2215,6 +2225,21 @@
         "CI_VERDICT_VALIDATE_ONLY"
       ],
       "behavior": "make ci-verdict-safe SHA=0000000000000000000000000000000000000000 CI_BRANCH=development BRANCH= CI_CHECK_COOLDOWN_SEC=600 CI_VERDICT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "merge-commit-nv",
+      "make_variables": ["MSG"],
+      "behavior": "make merge-commit-nv MSG='merge branch'"
+    },
+    {
+      "name": "worktree-commit-changes",
+      "make_variables": ["MSG"],
+      "behavior": "make worktree-commit-changes MSG='worktree commit'"
+    },
+    {
+      "name": "worktree-cleanup-merged",
+      "make_variables": [],
+      "behavior": "make worktree-cleanup-merged"
     }
   ]
 }

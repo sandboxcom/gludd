@@ -25,13 +25,20 @@ HELP = "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_du
 
 def _target(source: str, name: str) -> str:
     start = source.index(f"\n{name}:") + 1
-    return source[start:source.index("\n\n", start)]
+    return source[start : source.index("\n\n", start)]
 
 
 def _publish(
-    tmp_path: Path, *, failure: str = "", forced: bool = False,
-    count: int = 5, threshold: int = 5, push_status: int = 0,
-    goal: str = "batch-push", validate_only: int = 0, runtime_state: str = "valid",
+    tmp_path: Path,
+    *,
+    failure: str = "",
+    forced: bool = False,
+    count: int = 5,
+    threshold: int = 5,
+    push_status: int = 0,
+    goal: str = "batch-push",
+    validate_only: int = 0,
+    runtime_state: str = "valid",
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]], Path]:
     """Run actual Make recipes and observer, replacing only native test/Git boundaries."""
     trace = tmp_path / "trace.jsonl"
@@ -93,18 +100,29 @@ def _publish(
     source = makefile_layout.compose_makefile(ROOT / "Makefile")
     recovery = RECOVERY_PATH.read_text(encoding="utf-8")
     publication = [
-        _target(recovery, name) for name in (
-            "batch-push", "force-batch-push", "force-push", "batch-push-nv", "master-force-push",
-            "git-push-sandboxcom", "git-push-sandboxcom-nv", "push-dev-nv",
-            "git-push-current-head-nv", "git-push-current-head-to-master-nv",
+        _target(recovery, name)
+        for name in (
+            "batch-push",
+            "force-batch-push",
+            "force-push",
+            "batch-push-nv",
+            "master-force-push",
+            "git-push-sandboxcom",
+            "git-push-sandboxcom-nv",
+            "push-dev-nv",
+            "git-push-current-head-nv",
+            "git-push-current-head-to-master-nv",
         )
     ]
     publication.append(_target(PIPELINES_PATH.read_text(encoding="utf-8"), "git-push-committed-head-nv"))
     publication.append(_target(GUARDRAILS_PATH.read_text(encoding="utf-8"), "development-force-push"))
-    prerequisites = sorted({
-        "require-sandboxcom-ssh-key", "ci-busy-check",
-        *(name for block in publication for name in block.splitlines()[0].partition(":")[2].split()),
-    })
+    prerequisites = sorted(
+        {
+            "require-sandboxcom-ssh-key",
+            "ci-busy-check",
+            *(name for block in publication for name in block.splitlines()[0].partition(":")[2].split()),
+        }
+    )
     publish_owner = _target(recovery, PUBLISH_OWNER) if f"\n{PUBLISH_OWNER}:" in recovery else ""
     recipe = tmp_path / "Makefile"
     quoted_runner = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
@@ -117,37 +135,54 @@ def _publish(
         f".PHONY: batch-push run-watched {OWNER} {PUBLISH_OWNER} test-files _record-push-verdict "
         f"{' '.join(prerequisites)}\n"
         + "".join(f"{name}:\n\t@true\n\n" for name in prerequisites)
-        + "\n\n".join(publication) + "\n\n" + publish_owner + "\n\n"
-        + _target(source, "run-watched") + "\n\n"
-        + _target(source, OWNER) + "\n\n"
-        + f"test-files:\n\t@{quoted_runner} test-files \"$(TESTFILES)\" \"$(NPROC)\" "
-        + '\"$(GLUDD_XDIST_WORKERS)\" \"$(PYTEST_ARGS)\"\n\n'
+        + "\n\n".join(publication)
+        + "\n\n"
+        + publish_owner
+        + "\n\n"
+        + _target(source, "run-watched")
+        + "\n\n"
+        + _target(source, OWNER)
+        + "\n\n"
+        + f'test-files:\n\t@{quoted_runner} test-files "$(TESTFILES)" "$(NPROC)" '
+        + '"$(GLUDD_XDIST_WORKERS)" "$(PYTEST_ARGS)"\n\n'
         + f"_record-push-verdict:\n\t@{quoted_runner} record-verdict\n\n"
         + f"verify-remote:\n\t@{quoted_runner} verify-remote\n",
         encoding="utf-8",
     )
     environment = {
-        **os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
-        "COMMIT_THRESHOLD": str(threshold), "GLUDD_FORCE_PUSH": "1" if forced else "0",
-        "FORCE": "1" if forced else "0", "MAKEFLAGS": "", "MFLAGS": "", "MAKELEVEL": "0",
-        "COUNT": str(count), "THRESHOLD": str(threshold),
+        **os.environ,
+        "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
+        "COMMIT_THRESHOLD": str(threshold),
+        "GLUDD_FORCE_PUSH": "1" if forced else "0",
+        "FORCE": "1" if forced else "0",
+        "MAKEFLAGS": "",
+        "MFLAGS": "",
+        "MAKELEVEL": "0",
+        "COUNT": str(count),
+        "THRESHOLD": str(threshold),
     }
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", str(recipe), goal, "UV_PROJECT_ENVIRONMENT=.venv"],
-        cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=15,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
     )
     rows = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()] if trace.exists() else []
     return result, rows, tmp_path / "observed"
 
 
-def _assert_owned_once(rows: list[dict[str, object]], phases: list[str]) -> None:
+def _assert_owned_once(rows: list[dict[str, object]], phases: list[tuple[str, str]]) -> None:
     observers = [row for row in rows if row["kind"] == "observer"]
     assert len(observers) == 1
     arguments = observers[0]["args"]
     assert isinstance(arguments, list)
     for name, value in (
-        ("--label", "batch-push-runtime-admission"), ("--quiet-secs", "60"),
-        ("--max-secs", "90"), ("--heartbeat-secs", "10"),
+        ("--label", "batch-push-runtime-admission"),
+        ("--quiet-secs", "60"),
+        ("--max-secs", "90"),
+        ("--heartbeat-secs", "10"),
     ):
         assert arguments[arguments.index(name) + 1] == value
     assert arguments[-1] == OWNER
@@ -156,9 +191,9 @@ def _assert_owned_once(rows: list[dict[str, object]], phases: list[str]) -> None
     assert "sys.version_info[:2] == (3, 11)" in str(identity[0]["args"])
     assert "pytest_playwright" in str(identity[0]["args"])
     runtime = [row for row in rows if row["kind"] == "runtime"]
-    assert [row["phase"] for row in runtime] == phases
+    assert [(row["phase"], row["workers"]) for row in runtime] == phases
     for row in runtime:
-        workers = "2" if row["phase"] == "full" else "1"
+        workers = row["workers"]
         assert (row["nproc"], row["workers"]) == (workers, workers)
         assert "-W error" in str(row["flags"])
         assert f"--maxprocesses {workers}" in str(row["flags"])
@@ -169,11 +204,16 @@ def _assert_owned_once(rows: list[dict[str, object]], phases: list[str]) -> None
 @pytest.mark.parametrize("failure", ("full", "help"))
 @pytest.mark.parametrize("forced", (False, True))
 def test_red_runtime_owner_blocks_transport_even_when_forced(
-    tmp_path: Path, failure: str, forced: bool,
+    tmp_path: Path,
+    failure: str,
+    forced: bool,
 ) -> None:
     result, rows, observed = _publish(tmp_path, failure=failure, forced=forced)
     assert result.returncode != 0, result.stdout + result.stderr
-    _assert_owned_once(rows, ["full"] if failure == "full" else ["full", "help"])
+    _assert_owned_once(
+        rows,
+        [("full", "2")] if failure == "full" else [("full", "2"), ("help", "1")],
+    )
     assert not any(row["kind"] in {"transport", "verdict"} for row in rows)
     assert "Runtime publication admission failed" in result.stdout + result.stderr
     assert list(observed.rglob("*.json")), "existing observer must retain failure evidence"
@@ -183,9 +223,15 @@ def test_red_runtime_owner_blocks_transport_even_when_forced(
 def test_green_runtime_owner_runs_once_before_normal_transport(tmp_path: Path, forced: bool) -> None:
     result, rows, observed = _publish(tmp_path, forced=forced, count=1 if forced else 5)
     assert result.returncode == 0, result.stdout + result.stderr
-    _assert_owned_once(rows, ["full", "help"])
+    _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
     assert [row["kind"] for row in rows] == [
-        "runtime-identity", "observer", "runtime", "runtime", "transport", "verdict",
+        "runtime-identity",
+        "observer",
+        "runtime",
+        "runtime",
+        "runtime",
+        "transport",
+        "verdict",
     ]
     transport = next(row for row in rows if row["kind"] == "transport")
     transport_args = transport["args"]
@@ -196,7 +242,10 @@ def test_green_runtime_owner_runs_once_before_normal_transport(tmp_path: Path, f
 
 @pytest.mark.parametrize(("count", "threshold", "successful"), ((1, 5, True), (5, 1, False)))
 def test_nonpublication_does_not_run_runtime_or_transport(
-    tmp_path: Path, count: int, threshold: int, successful: bool,
+    tmp_path: Path,
+    count: int,
+    threshold: int,
+    successful: bool,
 ) -> None:
     result, rows, _ = _publish(tmp_path, count=count, threshold=threshold)
     assert (result.returncode == 0) is successful
@@ -206,22 +255,45 @@ def test_nonpublication_does_not_run_runtime_or_transport(
 def test_transport_failure_after_green_admission_never_records_success(tmp_path: Path) -> None:
     result, rows, _ = _publish(tmp_path, push_status=43)
     assert result.returncode != 0
-    _assert_owned_once(rows, ["full", "help"])
-    assert [row["kind"] for row in rows] == ["runtime-identity", "observer", "runtime", "runtime", "transport"]
+    _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
+    assert [row["kind"] for row in rows] == [
+        "runtime-identity",
+        "observer",
+        "runtime",
+        "runtime",
+        "runtime",
+        "transport",
+    ]
     assert "success was not recorded" in result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("goal", (
-    "force-batch-push", "force-push", "batch-push-nv", "master-force-push", "git-push-sandboxcom",
-    "git-push-sandboxcom-nv", "push-dev-nv", "git-push-current-head-nv",
-    "git-push-current-head-to-master-nv", "git-push-committed-head-nv", "development-force-push",
-))
+@pytest.mark.parametrize(
+    "goal",
+    (
+        "force-batch-push",
+        "force-push",
+        "batch-push-nv",
+        "master-force-push",
+        "git-push-sandboxcom",
+        "git-push-sandboxcom-nv",
+        "push-dev-nv",
+        "git-push-current-head-nv",
+        "git-push-current-head-to-master-nv",
+        "git-push-committed-head-nv",
+        "development-force-push",
+    ),
+)
 @pytest.mark.parametrize("failure", ("full", ""))
 def test_legacy_and_forced_publication_cannot_skip_or_duplicate_runtime(
-    tmp_path: Path, goal: str, failure: str,
+    tmp_path: Path,
+    goal: str,
+    failure: str,
 ) -> None:
     result, rows, _ = _publish(tmp_path, goal=goal, failure=failure, forced=True, validate_only=1)
-    _assert_owned_once(rows, ["full"] if failure else ["full", "help"])
+    _assert_owned_once(
+        rows,
+        [("full", "2")] if failure else [("full", "2"), ("help", "1"), ("full", "1")],
+    )
     assert (result.returncode == 0) is (not failure), result.stdout + result.stderr
     transports = [row for row in rows if row["kind"] == "transport"]
     assert len(transports) == (0 if failure else 1)
@@ -229,7 +301,8 @@ def test_legacy_and_forced_publication_cannot_skip_or_duplicate_runtime(
 
 @pytest.mark.parametrize("runtime_state", ("missing", "wrong-version-or-plugin"))
 def test_runtime_identity_failure_blocks_transport_without_environment_creation(
-    tmp_path: Path, runtime_state: str,
+    tmp_path: Path,
+    runtime_state: str,
 ) -> None:
     result, rows, _ = _publish(tmp_path, forced=True, runtime_state=runtime_state)
     assert result.returncode != 0
@@ -254,6 +327,7 @@ def test_runtime_publish_owner_has_documented_mutation_free_contract(tmp_path: P
     assert f"RUNTIME_PUBLISH_ENVIRONMENT={absent_environment}" in entry["behavior"]
     standalone = tmp_path / "Makefile"
     standalone.write_text(
-        _target(RECOVERY_PATH.read_text(encoding="utf-8"), PUBLISH_OWNER) + "\n", encoding="utf-8",
+        _target(RECOVERY_PATH.read_text(encoding="utf-8"), PUBLISH_OWNER) + "\n",
+        encoding="utf-8",
     )
     assert validate_contract(standalone, {"targets": [entry]}) == []

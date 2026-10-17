@@ -690,7 +690,7 @@ export default (({ }) => {
     "tool.execute.before": async (input: { tool?: string }) => {
       // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return
-      const impl = loadHotModule("multitask", defaultImpl)
+      const impl = loadHotModule("enforce-multitask", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input) : undefined
   },
@@ -701,7 +701,7 @@ export default (({ }) => {
   // in the proxy's returned Hooks object.
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
-    const impl = loadHotModule("multitask", defaultImpl)
+    const impl = loadHotModule("enforce-multitask", defaultImpl)
     const fn = impl["experimental.text.complete"] ?? impl["text.complete"]
     return fn ? await fn(_input, output) : undefined
   },

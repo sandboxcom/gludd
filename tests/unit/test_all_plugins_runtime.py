@@ -35,6 +35,7 @@ PLUGIN_TO_TEST = {
     "enforce-floor-v2": ["test_extended_enforcement_plugins_runtime.py"],
     "enforce-make": ["test_enforce_make_plugin.py", "test_enforce_make_subagent.py"],
     "enforce-multitask": ["test_multitask_plugin.py"],
+    "enforce-no-idle-monitoring": ["test_no_idle_monitoring_plugin.py"],
     "enforce-no-suppressions": ["test_no_suppression_comments_plugin.py"],
     "enforce-no-wait": ["test_no_wait_plugin.py"],
     "enforce-pipeline-kickoff": ["test_pipeline_parallel_kickoff.py"],

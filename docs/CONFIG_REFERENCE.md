@@ -190,6 +190,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_HF_DOWNLOAD_TIMEOUT` | Auto-indexed (see source) | `30` | optional | `src/general_ludd/small_models/download.py:26` |
 | `GLUDD_HOT_MODULE_PREFIX` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:180` |
 | `GLUDD_HOT_OUT_DIR` | Auto-indexed (see source) | `/tmp` | optional | `scripts/check_hot_reload_fresh.py:33` |
+| `GLUDD_IDLE_MONITORING_STATE_FILE` | Override the persistent state file used by the idle-monitoring guardrail to count consecutive read-only monitoring tool calls. | `/tmp/gludd-idle-monitoring.json` | optional | `.opencode/plugin/enforce-no-idle-monitoring.ts:23` |
 | `GLUDD_INGEST_TOKEN` | Auto-indexed (see source) | — | optional | `src/general_ludd/receiver/router.py:110` |
 | `GLUDD_INGEST_URL` | Auto-indexed (see source) | — | optional | `scripts/provider_smoke_harness.py:145` |
 | `GLUDD_INTEGRATION_HEALTH_WORKERS` | Set the pytest-xdist worker count used by the integration-health audit. The conservative default avoids oversubscribing local release gates; increase it only when the host has verified capacity. | `1` | optional | `scripts/check_integration_health.py:163` |

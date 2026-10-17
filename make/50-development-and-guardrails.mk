@@ -26,10 +26,16 @@ agent-merge-dev:
 	echo "Merged $(BRANCH) into development"
 
 # Complete an in-progress merge commit after conflicts are resolved.
-# Usage: make merge-commit MSG='merge: ...'
-merge-commit:
-	@[ -n "$(MSG)" ] || { echo "Usage: make merge-commit MSG='...'"; exit 1; }
+# Usage: make merge-commit-nv MSG='merge: ...'
+merge-commit-nv: _gate-fresh-check _commit-lint-guard
+	@[ -n "$(MSG)" ] || { echo "Usage: make merge-commit-nv MSG='merge: ...'"; exit 1; }
 	@git commit -m "$(MSG)" --no-verify
+
+# Commit all changes in the current worktree (typically an agent worktree).
+# Usage: make worktree-commit-changes MSG='...'
+worktree-commit-changes: _gate-fresh-check _commit-lint-guard
+	@[ -n "$(MSG)" ] || { echo "Usage: make worktree-commit-changes MSG='...'"; exit 1; }
+	@git add -A && git commit -m "$(MSG)"
 
 # Push the development branch to the sandboxcom remote.
 development-push: check-clean-tree ci-busy-check _push-rate-guard

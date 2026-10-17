@@ -53,6 +53,7 @@ def test_gate_preflight_runner_does_not_execute_later_checks_after_failure(
     status_path = tmp_path / "preflights.status"
     gate_status_path = tmp_path / "gate.status"
     failed_path = tmp_path / "gate.failed"
+    resume_receipt_path = tmp_path / "resume-receipt.status"
 
     result = subprocess.run(
         [
@@ -64,6 +65,8 @@ def test_gate_preflight_runner_does_not_execute_later_checks_after_failure(
             f"GATE_PREFLIGHT_STATUS={status_path}",
             f"GATE_PREFLIGHT_GATE_STATUS={gate_status_path}",
             f"GATE_PREFLIGHT_FAILED_FILE={failed_path}",
+            f"GATE_PREFLIGHT_RESUME_RECEIPT={resume_receipt_path}",
+            "GATE_EXACT_SHA_RESUME=0",
         ],
         cwd=_MAKEFILE.parent,
         check=False,
@@ -76,11 +79,73 @@ def test_gate_preflight_runner_does_not_execute_later_checks_after_failure(
         "_gate-preflight-fixture-pass-one PASS",
         "_gate-preflight-fixture-fail FAIL 2",
     ]
-    assert gate_status_path.read_text(encoding="utf-8").strip().startswith(
-        "FAIL 1 first=_gate-preflight-fixture-fail"
-    )
+    assert gate_status_path.read_text(encoding="utf-8").strip().startswith("FAIL 1 first=_gate-preflight-fixture-fail")
     assert failed_path.is_file()
     assert "terminating admission immediately" in result.stdout
+
+
+def test_gate_preflights_resume_reruns_working_tree_subset(tmp_path: Path) -> None:
+    status_path = tmp_path / "preflights.status"
+    gate_status_path = tmp_path / "gate.status"
+    failed_path = tmp_path / "gate.failed"
+    receipt = tmp_path / "resume-receipt.status"
+    receipt.write_text("preflights PASS 35\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "make",
+            "--no-print-directory",
+            "_gate-preflights",
+            f"GATE_PREFLIGHT_STATUS={status_path}",
+            f"GATE_PREFLIGHT_GATE_STATUS={gate_status_path}",
+            f"GATE_PREFLIGHT_FAILED_FILE={failed_path}",
+            f"GATE_PREFLIGHT_RESUME_RECEIPT={receipt}",
+            "GATE_EXACT_SHA_RESUME=1",
+            "GATE_PREFLIGHT_RESUME_ALWAYS=_gate-preflight-fixture-pass-one _gate-preflight-fixture-pass-two",
+        ],
+        cwd=_MAKEFILE.parent,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    status = status_path.read_text(encoding="utf-8")
+    assert "_gate-preflight-fixture-pass-one PASS" in status
+    assert "_gate-preflight-fixture-pass-two PASS" in status
+    assert "PREFLIGHT-RESUME: re-ran" in result.stdout
+    assert gate_status_path.read_text(encoding="utf-8").strip() == "PASS 2"
+
+
+def test_gate_preflights_resume_working_tree_subset_fails_closed(tmp_path: Path) -> None:
+    status_path = tmp_path / "preflights.status"
+    gate_status_path = tmp_path / "gate.status"
+    failed_path = tmp_path / "gate.failed"
+    receipt = tmp_path / "resume-receipt.status"
+    receipt.write_text("preflights PASS 35\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "make",
+            "--no-print-directory",
+            "_gate-preflights",
+            f"GATE_PREFLIGHT_STATUS={status_path}",
+            f"GATE_PREFLIGHT_GATE_STATUS={gate_status_path}",
+            f"GATE_PREFLIGHT_FAILED_FILE={failed_path}",
+            f"GATE_PREFLIGHT_RESUME_RECEIPT={receipt}",
+            "GATE_EXACT_SHA_RESUME=1",
+            "GATE_PREFLIGHT_RESUME_ALWAYS=_gate-preflight-fixture-pass-one _gate-preflight-fixture-fail",
+        ],
+        cwd=_MAKEFILE.parent,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "_gate-preflight-fixture-pass-one PASS" in status_path.read_text(encoding="utf-8")
+    assert "FAIL 1 first=_gate-preflight-fixture-fail" in gate_status_path.read_text(encoding="utf-8")
+    assert failed_path.is_file()
 
 
 def test_validation_failure_is_authenticated_before_test_admission(

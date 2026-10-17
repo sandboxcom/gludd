@@ -3,6 +3,7 @@
 Tests the pure classify_tail() core and the CLI --count-stalled path over a
 real temp directory.  No network, no subprocess, no I/O in the core tests.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -14,6 +15,7 @@ import time
 from pathlib import Path
 
 import pytest
+import scripts.agent_watchdog as _aw_pkg
 
 ROOT = Path(__file__).parent.parent.parent
 SCRIPT_PATH = ROOT / "scripts" / "agent_watchdog.py"
@@ -30,6 +32,7 @@ def _load_module():
 
 
 aw = _load_module()
+assert _aw_pkg.__file__ == str(SCRIPT_PATH)
 classify_tail = aw.classify_tail
 State = aw.State
 scan_tasks_dir = aw.scan_tasks_dir
@@ -45,6 +48,8 @@ CONTINUE_DIRECTIVE = aw.CONTINUE_DIRECTIVE
 def check_and_reset() -> dict:
     """Run a deterministic cycle without launching a repository-wide scan."""
     return aw.check_and_reset(secrets_check=lambda: None)
+
+
 _check_force_dispatch = aw._check_force_dispatch
 _is_force_dispatch_active = aw._is_force_dispatch_active
 FORCE_DISPATCH_FILE = aw.FORCE_DISPATCH_FILE
@@ -104,10 +109,7 @@ def test_active_boundary_just_inside_window():
 
 def test_stalled_continuing_with_files():
     """Classic mid-task rest: transcript ends 'Continuing with the remaining files:'."""
-    tail = (
-        "I have processed the first batch of files.\n"
-        "Continuing with the remaining files:\n"
-    )
+    tail = "I have processed the first batch of files.\nContinuing with the remaining files:\n"
     state, reason = classify_tail(tail, age_seconds=300.0, window_seconds=90.0)
     assert state == State.LIKELY_STALLED_INCOMPLETE
     assert "continuing" in reason.lower()
@@ -154,11 +156,7 @@ def test_stalled_no_result_marker():
 
 
 def test_done_result_colon_marker():
-    tail = (
-        "Reviewed all 12 files.\n"
-        "\n"
-        "result: all tests pass, no issues found\n"
-    )
+    tail = "Reviewed all 12 files.\n\nresult: all tests pass, no issues found\n"
     state, reason = classify_tail(tail, age_seconds=300.0, window_seconds=90.0)
     assert state == State.DONE
     assert "result:" in reason
@@ -197,10 +195,7 @@ def test_done_passed_keyword():
 
 def test_done_marker_beats_continuation_colon_on_last_line():
     """If a done marker appears in the tail, it wins even if the last line ends ':'."""
-    tail = (
-        "result: commit created\n"
-        "Now verifying remote status:\n"
-    )
+    tail = "result: commit created\nNow verifying remote status:\n"
     state, reason = classify_tail(tail, age_seconds=200.0, window_seconds=90.0)
     assert state == State.DONE
     assert "result:" in reason
@@ -490,9 +485,13 @@ def test_watchdog_not_stalled_when_clean(tmp_path: Path, monkeypatch: pytest.Mon
 def test_task_anomaly_elapsed_5x_expected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     deadlines_file = tmp_path / "deadlines.json"
     old_ts = time.time() - 2000
-    deadlines_file.write_text(json.dumps({
-        "task-general-1": old_ts,
-    }))
+    deadlines_file.write_text(
+        json.dumps(
+            {
+                "task-general-1": old_ts,
+            }
+        )
+    )
     monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_file))
     monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "anomalies.json"))
     monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
@@ -504,9 +503,13 @@ def test_task_anomaly_elapsed_5x_expected(tmp_path: Path, monkeypatch: pytest.Mo
 def test_task_anomaly_normal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     deadlines_file = tmp_path / "deadlines.json"
     recent_ts = time.time() - 5
-    deadlines_file.write_text(json.dumps({
-        "task-commit-1": recent_ts,
-    }))
+    deadlines_file.write_text(
+        json.dumps(
+            {
+                "task-commit-1": recent_ts,
+            }
+        )
+    )
     monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_file))
     monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "anomalies.json"))
     monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
@@ -533,9 +536,13 @@ def test_task_anomaly_gate_stalled(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 def test_push_stalled_detection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
     deadlines_file = tmp_path / "deadlines.json"
     old_ts = time.time() - 200
-    deadlines_file.write_text(json.dumps({
-        "task-git-push-main": old_ts,
-    }))
+    deadlines_file.write_text(
+        json.dumps(
+            {
+                "task-git-push-main": old_ts,
+            }
+        )
+    )
     monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_file))
     monkeypatch.setattr(aw, "EX_ANOMALIES_FILE", str(tmp_path / "anomalies.json"))
     monkeypatch.setattr(aw, "ANOMALY_COUNT_FILE", str(tmp_path / "anomaly-count.json"))
@@ -597,13 +604,16 @@ def test_watchdog_detects_push_stalled_via_ps(tmp_path: Path, monkeypatch: pytes
     def _mock_run(cmd, **_kwargs):
         if isinstance(cmd, list) and len(cmd) >= 2 and cmd[:2] == ["ps", "-eo"]:
             return subprocess.CompletedProcess(
-                args=cmd, returncode=0,
+                args=cmd,
+                returncode=0,
                 stdout="  PID ETIME COMMAND\n12345  01:05:30  git push origin master\n",
                 stderr="",
             )
         return subprocess.CompletedProcess(
             args=cmd if isinstance(cmd, list) else [cmd],
-            returncode=0, stdout="", stderr="",
+            returncode=0,
+            stdout="",
+            stderr="",
         )
 
     monkeypatch.setattr(aw.subprocess, "run", _mock_run)
@@ -628,11 +638,15 @@ def test_watchdog_detects_task_anomaly(tmp_path: Path, monkeypatch: pytest.Monke
 
     now = time.time()
     deadlines_p = tmp_path / "deadlines.json"
-    deadlines_p.write_text(json.dumps({
-        "tasks": [
-            {"task_id": "task-slow", "start_ts": now - 400},
-        ]
-    }))
+    deadlines_p.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {"task_id": "task-slow", "start_ts": now - 400},
+                ]
+            }
+        )
+    )
     monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_p))
     monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
 
@@ -655,11 +669,15 @@ def test_watchdog_ignores_normal_tasks(tmp_path: Path, monkeypatch: pytest.Monke
 
     now = time.time()
     deadlines_p = tmp_path / "deadlines.json"
-    deadlines_p.write_text(json.dumps({
-        "tasks": [
-            {"task_id": "task-fast", "start_ts": now - 60},
-        ]
-    }))
+    deadlines_p.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {"task_id": "task-fast", "start_ts": now - 60},
+                ]
+            }
+        )
+    )
     monkeypatch.setattr(aw, "TASK_DEADLINES_FILE", str(deadlines_p))
     monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
 
@@ -715,9 +733,7 @@ def _setup_full(monkeypatch, tmp_path):
     (tmp_path / "push-flag-nonexistent").write_text("")
 
 
-def test_check_and_reset_uses_injected_secrets_check_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_check_and_reset_uses_injected_secrets_check_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """A unit cycle can replace only the repository-wide secrets scan."""
     _setup_full(monkeypatch, tmp_path)
     (tmp_path / "TASKS.md").write_text("- [x] complete\n")
@@ -923,7 +939,8 @@ def test_check_and_reset_with_ci_only_pending(tmp_path: Path, monkeypatch: pytes
     def mock_subprocess_run(cmd, **_kwargs):
         if isinstance(cmd, list) and cmd[1] == "ci-verdict":
             return subprocess.CompletedProcess(
-                args=cmd, returncode=0,
+                args=cmd,
+                returncode=0,
                 stdout="CI PENDING: abc run 99999 status='pending'\n",
                 stderr="",
             )
@@ -1045,10 +1062,14 @@ def test_disengage_signal_written_and_active(tmp_path, monkeypatch):
 def test_disengage_signal_expired(tmp_path, monkeypatch):
     disengage_file = tmp_path / "disengage.json"
     monkeypatch.setattr(aw, "DISENGAGE_FILE", str(disengage_file))
-    disengage_file.write_text(json.dumps({
-        "disengage_until": time.time() - 60,
-        "reason": "expired",
-    }))
+    disengage_file.write_text(
+        json.dumps(
+            {
+                "disengage_until": time.time() - 60,
+                "reason": "expired",
+            }
+        )
+    )
     assert aw._is_disengage_active() is False
     aw._clear_disengage_signal()
     assert not disengage_file.exists()
@@ -1091,7 +1112,8 @@ def test_check_and_reset_ci_only_pending_no_stop_flag(tmp_path, monkeypatch):
     def mock_run(cmd, **_kwargs):
         if isinstance(cmd, list) and "ci-verdict" in str(cmd):
             return subprocess.CompletedProcess(
-                args=cmd, returncode=1,
+                args=cmd,
+                returncode=1,
                 stdout="CI PENDING: abc run 99999 status='pending'\n",
                 stderr="",
             )
@@ -1308,11 +1330,15 @@ def test_read_multitask_state_no_file(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_read_multitask_state_valid_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     state_file = tmp_path / "multitask-state.json"
-    state_file.write_text(json.dumps({
-        "thisMessageDispatches": 3,
-        "zeroStreak": 1,
-        "estimatedInFlight": 5,
-    }))
+    state_file.write_text(
+        json.dumps(
+            {
+                "thisMessageDispatches": 3,
+                "zeroStreak": 1,
+                "estimatedInFlight": 5,
+            }
+        )
+    )
     monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
     state = _read_multitask_state()
     assert state["thisMessageDispatches"] == 3
@@ -1330,11 +1356,15 @@ def test_check_under_floor_no_state_file(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_check_under_floor_at_ceiling_no_action(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     state_file = tmp_path / "multitask-state.json"
-    state_file.write_text(json.dumps({
-        "thisMessageDispatches": 10,
-        "zeroStreak": 0,
-        "estimatedInFlight": 10,
-    }))
+    state_file.write_text(
+        json.dumps(
+            {
+                "thisMessageDispatches": 10,
+                "zeroStreak": 0,
+                "estimatedInFlight": 10,
+            }
+        )
+    )
     monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
     monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
     monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
@@ -1344,11 +1374,15 @@ def test_check_under_floor_at_ceiling_no_action(tmp_path: Path, monkeypatch: pyt
 
 def test_check_under_floor_detects_below_ten_with_pending(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     state_file = tmp_path / "multitask-state.json"
-    state_file.write_text(json.dumps({
-        "thisMessageDispatches": 3,
-        "zeroStreak": 0,
-        "estimatedInFlight": 3,
-    }))
+    state_file.write_text(
+        json.dumps(
+            {
+                "thisMessageDispatches": 3,
+                "zeroStreak": 0,
+                "estimatedInFlight": 3,
+            }
+        )
+    )
     monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
     monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
     monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
@@ -1377,11 +1411,15 @@ def test_check_under_floor_detects_below_ten_with_pending(tmp_path: Path, monkey
 
 def test_check_under_floor_pipeline_dry_with_streak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     state_file = tmp_path / "multitask-state.json"
-    state_file.write_text(json.dumps({
-        "thisMessageDispatches": 0,
-        "zeroStreak": 2,
-        "estimatedInFlight": 1,
-    }))
+    state_file.write_text(
+        json.dumps(
+            {
+                "thisMessageDispatches": 0,
+                "zeroStreak": 2,
+                "estimatedInFlight": 1,
+            }
+        )
+    )
     monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
     monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
     monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
@@ -1408,11 +1446,15 @@ def test_check_under_floor_pipeline_dry_with_streak(tmp_path: Path, monkeypatch:
 
 def test_check_under_floor_no_action_when_no_pending_work(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     state_file = tmp_path / "multitask-state.json"
-    state_file.write_text(json.dumps({
-        "thisMessageDispatches": 1,
-        "zeroStreak": 3,
-        "estimatedInFlight": 0,
-    }))
+    state_file.write_text(
+        json.dumps(
+            {
+                "thisMessageDispatches": 1,
+                "zeroStreak": 3,
+                "estimatedInFlight": 0,
+            }
+        )
+    )
     monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
     monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
     monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
@@ -1429,20 +1471,25 @@ def test_check_under_floor_no_action_when_no_pending_work(tmp_path: Path, monkey
     gate_status.write_text("lint PASS 0\ntypecheck PASS 0\n")
     monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
 
+    # Isolate from a concurrently-running background gate in the real workspace.
+    monkeypatch.setattr(aw, "GATE_PID_FILE", tmp_path / "no-gate.pid")
+
     _check_under_floor_dispatch()
 
-    assert not (tmp_path / "pure-idle.txt").exists(), (
-        "Should NOT write directive when no pending work exists"
-    )
+    assert not (tmp_path / "pure-idle.txt").exists(), "Should NOT write directive when no pending work exists"
 
 
 def test_check_under_floor_dry_but_no_streak_no_action(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     state_file = tmp_path / "multitask-state.json"
-    state_file.write_text(json.dumps({
-        "thisMessageDispatches": 0,
-        "zeroStreak": 0,
-        "estimatedInFlight": 1,
-    }))
+    state_file.write_text(
+        json.dumps(
+            {
+                "thisMessageDispatches": 0,
+                "zeroStreak": 0,
+                "estimatedInFlight": 1,
+            }
+        )
+    )
     monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
     monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
     monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
@@ -1461,9 +1508,7 @@ def test_check_under_floor_dry_but_no_streak_no_action(tmp_path: Path, monkeypat
 
     _check_under_floor_dispatch()
 
-    assert not (tmp_path / "pure-idle.txt").exists(), (
-        "Pipeline dry but zeroStreak=0 — should not fire yet"
-    )
+    assert not (tmp_path / "pure-idle.txt").exists(), "Pipeline dry but zeroStreak=0 — should not fire yet"
 
 
 def test_check_and_reset_includes_under_floor_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -1474,12 +1519,16 @@ def test_check_and_reset_includes_under_floor_check(tmp_path: Path, monkeypatch:
     monkeypatch.setattr(aw, "STREAK_FILE", str(streak_path))
 
     state_file = tmp_path / "multitask-state.json"
-    state_file.write_text(json.dumps({
-        "thisMessageDispatches": 2,
-        "zeroStreak": 1,
-        "estimatedInFlight": 2,
-        "pid": os.getpid(),
-    }))
+    state_file.write_text(
+        json.dumps(
+            {
+                "thisMessageDispatches": 2,
+                "zeroStreak": 1,
+                "estimatedInFlight": 2,
+                "pid": os.getpid(),
+            }
+        )
+    )
     monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
     monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
     monkeypatch.setattr(aw, "ORCHESTRATOR_STATE_FILE", str(tmp_path / "orchestrator.json"))
@@ -1503,7 +1552,8 @@ def test_check_and_reset_includes_under_floor_check(tmp_path: Path, monkeypatch:
     def mock_subprocess_run(cmd, **_kwargs):
         if isinstance(cmd, list) and "ci-verdict" in str(cmd):
             return subprocess.CompletedProcess(
-                args=cmd, returncode=0,
+                args=cmd,
+                returncode=0,
                 stdout="CI SUCCESS: abc123 run 12345 conclusion: success\n",
                 stderr="",
             )
@@ -1520,3 +1570,34 @@ def test_check_and_reset_includes_under_floor_check(tmp_path: Path, monkeypatch:
     )
     content = directive_path.read_text()
     assert "UNDER-FLOOR DETECTED" in content
+
+
+def test_gate_background_running_true_when_pid_alive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    gate_pid = tmp_path / "gate.pid"
+    gate_pid.write_text(str(os.getpid()))
+    monkeypatch.setattr(aw, "GATE_PID_FILE", gate_pid)
+    assert aw._gate_background_running() is True
+
+
+def test_gate_background_running_false_when_pid_dead(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    gate_pid = tmp_path / "gate.pid"
+    gate_pid.write_text("99999999")
+    monkeypatch.setattr(aw, "GATE_PID_FILE", gate_pid)
+    assert aw._gate_background_running() is False
+
+
+def test_gate_background_running_false_when_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "GATE_PID_FILE", tmp_path / "missing-gate.pid")
+    assert aw._gate_background_running() is False
+
+
+def test_pending_work_exists_true_when_only_gate_running(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "GATE_PID_FILE", tmp_path / "gate.pid")
+    (tmp_path / "gate.pid").write_text(str(os.getpid()))
+    monkeypatch.setattr(aw, "_GATE_STATUS", tmp_path / ".gate-status")
+    (tmp_path / ".gate-status").write_text("lint PASS 0\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tmp_path / "TASKS.md")
+    (tmp_path / "TASKS.md").write_text("# no unchecked work\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", tmp_path / "ratchet.yml")
+    (tmp_path / "ratchet.yml").write_text("# empty\n")
+    assert aw._pending_work_exists() is True

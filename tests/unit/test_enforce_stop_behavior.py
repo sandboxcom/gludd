@@ -32,6 +32,7 @@ from __future__ import annotations
 import contextlib
 import json
 import time as _time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -243,6 +244,76 @@ def test_binary_latch_all_clear_allows(hook_plugin_env: HookEnv):
     assert pb is None or pb.get("blocked") is not True, (
         f"All-clear: text with no pending work MUST NOT be blocked. persist_block={pb}"
     )
+
+
+def test_gate_running_blocks_text_only(hook_plugin_env: HookEnv) -> None:
+    """A running background gate (gate-background-state.json state=running)
+    is pending work; text-only responses are blocked until it finishes."""
+    _clean_leaked_state_files()
+
+    state_dir = hook_plugin_env.cwd / ".gate-logs"
+    state_dir.mkdir(exist_ok=True)
+    (state_dir / "gate-background-state.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "gludd_gate_background",
+                "state": "running",
+                "run_id": "test-run-id",
+                "pid": 12345,
+                "pid_started_at": "2026-10-17T00:00:00Z",
+                "process_group_id": 12345,
+                "session_id": 12345,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        )
+    )
+
+    parsed, raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "Gate is running. I'll wait for it to finish.",
+    )
+    assert rc == 0, stderr
+
+    if parsed is None:
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is not None, f"Gate-running: text-only MUST be blocked. persist_block={pb}, raw={raw}"
+        assert pb.get("blocked") is True, f"Got: {pb}"
+    else:
+        block_text = parsed.get("text", "")
+        assert "BLOCKED" in block_text.upper(), f"Gate-running: text must be blanked. raw={raw[:300]}"
+
+
+def test_finished_gate_does_not_block_text_only(hook_plugin_env: HookEnv) -> None:
+    """A finished background gate must not be treated as pending work."""
+    _clean_leaked_state_files()
+
+    state_dir = hook_plugin_env.cwd / ".gate-logs"
+    state_dir.mkdir(exist_ok=True)
+    (state_dir / "gate-background-state.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "gludd_gate_background",
+                "state": "finished",
+                "run_id": "test-run-id",
+                "pid": 12345,
+                "pid_started_at": "2026-10-17T00:00:00Z",
+                "process_group_id": 12345,
+                "session_id": 12345,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        )
+    )
+
+    _parsed, _raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "commit abc12345 — 42 tests passed. CI GREEN. === GATE: PASSED ===. Collection OK.",
+    )
+    assert rc == 0, stderr
+
+    pb = _read_persist_block(hook_plugin_env)
+    assert pb is None or pb.get("blocked") is not True, f"Finished gate: text MUST NOT be blocked. persist_block={pb}"
 
 
 def test_foreign_gate_lite_log_does_not_latch_clean_project(
@@ -1016,8 +1087,7 @@ def test_release_shipping_without_valid_scope_fails_safe(hook_plugin_env: HookEn
     """Malformed milestone metadata falls back to repository-wide blocking."""
     _clean_leaked_state_files()
     (hook_plugin_env.cwd / "TASKS.md").write_text(
-        "v0.1.1 milestone includes selected release work\n\n"
-        "- [ ] S83.169 Unscoped pending task\n"
+        "v0.1.1 milestone includes selected release work\n\n- [ ] S83.169 Unscoped pending task\n"
     )
     _seed_ci_cache("SUCCESS")
 

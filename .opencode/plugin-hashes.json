@@ -8,7 +8,7 @@
   "enforce-commit-lock.ts": "ae0a04e466d994bb9a39e61cac2c9aa1825030107af5a6e6956e768a47267461",
   "enforce-context.ts": "092e7373c49b25fdc6f5b12336b1f96e12bffa21a1b8f42675869d7bcefa0184",
   "enforce-deadline.ts": "1189a017f66ed0f1e4af6b5de5aba848f7d7b57333fd2e054944d56c951e2bea",
-  "enforce-delegate.ts": "f5bd6c116a8967a399430cc97e3412a1f51acb18605e05be0ecbade92a19b5c9",
+  "enforce-delegate.ts": "71825803db3cb81510cbff59bfa67be6abdbead2ba0a9e5b8fa04469dfa7b8d5",
   "enforce-deletion-gate.ts": "d68a0fca6a26c35c27daef7941d7cf585a631f556de09957fa0d98f2d8eedc01",
   "enforce-deliverable.ts": "94cdfe343fa806be1fcf544650324459c3a629d08cc4cafabe49f985d7ba5a3a",
   "enforce-depth.ts": "591b8a5ccdd5fbe438a73241ffdd7a035a124ebfce2f89411636300d73c16a16",
@@ -17,11 +17,12 @@
   "enforce-floor-v2.ts": "59995f6a3b2f8decacd2d42863fdce3e2724c57f8e86e6f448e31ac4641653f5",
   "enforce-floor.ts": "46f3f683ae2b2bf6ac2637eaa60edc2448631544cb459e48f06f8b90906b8912",
   "enforce-make.ts": "1b243c83e1874711dc17113d30ee60026872f2bf338e74f23213e660008e1e75",
-  "enforce-multitask.ts": "7e44d22c966157ed24cf9985929b722fa3d4e78790940565bd97366419e80b0e",
+  "enforce-multitask.ts": "96b4f7c6cd23639699307b4ea0c47de62c91e1c81f79ee0caec3cb6130a1af4c",
   "enforce-no-ci-poll.ts": "6cd8416c59ba16c972b6a7cf14b4f8369a325350e4b1121c8d632633cd9f5d57",
+  "enforce-no-idle-monitoring.ts": "16d226276797f229830f8fd5da9e0dc90908f3edeca0a38ac94441c5899b4391",
   "enforce-no-suppressions.ts": "7a68b8ee8b205c87a25e2700c5ae818444e55b246b50cbde8a0b5a3ec16afb58",
   "enforce-no-wait.ts": "45f4555b70394fcb48face37def1c53a71f98bb656f1a02a21a1fc838567e65f",
-  "enforce-objective.ts": "a013a57729176761f9dda59be10920aa3b5b6f93e8b813be7250a27de3ca7e1a",
+  "enforce-objective.ts": "52c62ea68c54d67b2e2a1fa487fe3befc943af983f316cb33b3aea46e43c1883",
   "enforce-pipeline-kickoff.ts": "56ed5de6a1e061fab54d4bcb30284da7ba5f2321647627834b61623011d7b9cb",
   "enforce-release-deadline.ts": "875949fd123c15a000a357d1d30fccef64991f55a13476009050568583f87f5e",
   "enforce-session-start.ts": "e9411892de46becbb2008b101ce25d1ad3d812e8dfad8d1dd7504ff035be7a27",
@@ -31,5 +32,5 @@
   "enforce-test-integrity.ts": "ea0b728330f5c2daa3dc24f962a19c0a0580a50be350350e41aa21b866dce7dc",
   "enforce-verified-claims.ts": "8e76f60e9ea90db078a1e6910bfe4061720e026ca9ebb01360841af1a9a9c1f9",
   "enforce-worktree.ts": "d56225a528f4f336075d1a5d43c7ba1cd080a85f80446bd4248d5d18d4c2cfab",
-  "plugins/watchdog.ts": "e341126841c8015491b9862094a703e9370869ace83f9f01f151bc43c8915ade"
+  "plugins/watchdog.ts": "16fc9a5176c14b76074cf6681eb5136b18541660f4aa82a229289bb212fc92a1"
 }

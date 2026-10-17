@@ -197,6 +197,7 @@ def _write_continue_directive(
     ci_run_id: str | None = None,
     work_hint: str = "",
     extra_message: str = "",
+    gate_running: bool = False,
 ) -> None:
     """Write the continue directive to BOTH JSON (for plugins) and plain-text (for visibility)."""
     directive = runtime._build_continue_directive(
@@ -209,6 +210,7 @@ def _write_continue_directive(
         ci_run_id=ci_run_id,
         work_hint=work_hint,
         extra_message=extra_message,
+        gate_running=gate_running,
     )
     try:
         runtime.Path(runtime.CONTINUE_DIRECTIVE).write_text(runtime.json.dumps(directive, indent=2))
@@ -454,6 +456,7 @@ def _build_continue_directive(
     ci_run_id: str | None = None,
     work_hint: str = "",
     extra_message: str = "",
+    gate_running: bool = False,
 ) -> ContinueDirective:
     pending_items: list[str] = []
     if tasks_unchecked:
@@ -462,6 +465,8 @@ def _build_continue_directive(
         pending_items.append(f"{ratchet_count} ratchet entries")
     if gate_red:
         pending_items.append(".gate-status is red")
+    if gate_running:
+        pending_items.append("background gate RUNNING")
     if ci_pending:
         suffix = f" (run {ci_run_id})" if ci_run_id else ""
         pending_items.append(f"CI pending{suffix}")
@@ -501,6 +506,16 @@ def _build_continue_directive(
                 "task_item": "gate: red — fix failures",
                 "tool": "task",
                 "command": "dispatch subagent to investigate and fix red gate",
+            }
+        )
+        task_index += 1
+    if gate_running:
+        dispatch_commands.append(
+            {
+                "index": task_index,
+                "task_item": "gate: RUNNING — do not go idle",
+                "tool": "bash",
+                "command": "make gate-progress (at the next allowed interval) or do useful work",
             }
         )
         task_index += 1
@@ -620,8 +635,9 @@ def check_and_reset(runtime: Any, *, secrets_check: SecretsCheck | None = None) 
     tasks_unchecked = runtime._tasks_md_has_unchecked()
     ratchet_count = runtime._ratchet_has_entries()
     gate_red = runtime._gate_status_is_red()
+    gate_running = runtime._gate_background_running()
     ci_pending, ci_run_id = runtime._ci_is_pending_or_red()
-    has_pending_work = tasks_unchecked or ratchet_count > 0 or gate_red or ci_pending
+    has_pending_work = tasks_unchecked or ratchet_count > 0 or gate_red or ci_pending or gate_running
     has_any_work = has_pending_work or ci_pending
     if ci_pending and ci_run_id is not None:
         try:
@@ -663,7 +679,11 @@ def check_and_reset(runtime: Any, *, secrets_check: SecretsCheck | None = None) 
         )
     if mtime_age is not None and mtime_age < runtime.PURE_IDLE_SECS:
         runtime._write_watchdog_activity()
-    idle_threshold = runtime.FORCE_DISPATCH_IDLE_SECS if runtime._is_force_dispatch_active() else runtime.STOP_IDLE_SECS
+    idle_threshold = (
+        runtime.FORCE_DISPATCH_IDLE_SECS
+        if (runtime._is_force_dispatch_active() or gate_running)
+        else runtime.STOP_IDLE_SECS
+    )
     if runtime.HEARTBEAT_VERBOSE and has_any_work:
         sources = []
         if tasks_unchecked:
@@ -672,6 +692,8 @@ def check_and_reset(runtime: Any, *, secrets_check: SecretsCheck | None = None) 
             sources.append("ratchet")
         if gate_red:
             sources.append("gate")
+        if gate_running:
+            sources.append("gate-running")
         if ci_pending:
             sources.append(f"CI(run={ci_run_id})")
         runtime._log(
@@ -684,6 +706,8 @@ def check_and_reset(runtime: Any, *, secrets_check: SecretsCheck | None = None) 
         work_sources = []
         if has_pending_work:
             work_sources.append("local")
+        if gate_running:
+            work_sources.append("gate-running")
         if ci_pending:
             work_sources.append(f"CI (run {ci_run_id})")
         reason = (
@@ -698,7 +722,13 @@ def check_and_reset(runtime: Any, *, secrets_check: SecretsCheck | None = None) 
         if stop_count >= runtime.STOP_ESCALATE_THRESHOLD:
             extra_message = f"REPEATED STOP DETECTED ({stop_count}x) — WORK OR FACE RESTART"
         work_hint = ""
-        if ci_pending and (not has_pending_work):
+        if gate_running and not gate_red:
+            work_hint = (
+                "Gate RUNNING — poll `make gate-progress` at the next allowed "
+                "interval or do useful work. NEVER end a turn text-only while "
+                "the gate runs."
+            )
+        elif ci_pending and (not has_pending_work):
             ci_minutes = runtime._ci_pending_for_too_long_minutes()
             if ci_minutes and ci_minutes > 10:
                 work_hint = (
@@ -719,6 +749,7 @@ def check_and_reset(runtime: Any, *, secrets_check: SecretsCheck | None = None) 
             ci_run_id=ci_run_id,
             work_hint=work_hint,
             extra_message=extra_message,
+            gate_running=gate_running,
         )
         sp = runtime.Path(runtime.STOP_STATE)
         if sp.exists():

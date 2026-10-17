@@ -1057,6 +1057,8 @@ GATE_PREFLIGHT_TARGETS := \
 GATE_PREFLIGHT_STATUS ?= .gate-logs/gate-preflights.status
 GATE_PREFLIGHT_GATE_STATUS ?= .gate-status.next
 GATE_PREFLIGHT_FAILED_FILE ?= .gate-failed
+GATE_PREFLIGHT_RESUME_RECEIPT ?= .gate-logs/gate-resume-prior-$(GATE_CANDIDATE_SHA).status
+GATE_PREFLIGHT_RESUME_ALWAYS ?= check-task-registration check-file-line-limits _dead-code-baseline-refresh
 
 .PHONY: _gate-preflights _gate-validation-admission _gate-preflight-fixture-pass-one _gate-preflight-fixture-fail _gate-preflight-fixture-pass-two
 
@@ -1067,9 +1069,37 @@ _gate-preflight-fixture-fail:
 	@exit 7
 
 _gate-preflights:
-	@mkdir -p "$(dir $(GATE_PREFLIGHT_STATUS))" "$(dir $(GATE_PREFLIGHT_GATE_STATUS))" "$(dir $(GATE_PREFLIGHT_FAILED_FILE))"
-	@: > "$(GATE_PREFLIGHT_STATUS)"
-	@PREFLIGHT_TOTAL=0; \
+	@mkdir -p "$(dir $(GATE_PREFLIGHT_STATUS))" "$(dir $(GATE_PREFLIGHT_GATE_STATUS))" "$(dir $(GATE_PREFLIGHT_FAILED_FILE))"; \
+	: > "$(GATE_PREFLIGHT_STATUS)"; \
+	RECEIPT="$(GATE_PREFLIGHT_RESUME_RECEIPT)"; \
+	if [ "$(GATE_EXACT_SHA_RESUME)" = "1" ] && [ -f "$$RECEIPT" ]; then \
+		PRIOR=$$(grep '^preflights PASS' "$$RECEIPT" 2>/dev/null || true); \
+		if [ -n "$$PRIOR" ]; then \
+			PREFLIGHT_TOTAL=0; \
+			for target in $(GATE_PREFLIGHT_RESUME_ALWAYS); do \
+				PREFLIGHT_TOTAL=$$((PREFLIGHT_TOTAL + 1)); \
+				echo "=== GATE PREFLIGHT (resume-always): $$target ==="; \
+				if $(MAKE) --no-print-directory "$$target"; then \
+					RESULT="$$target PASS"; \
+				else \
+					RC=$$?; \
+					RESULT="$$target FAIL $$RC"; \
+					touch "$(GATE_PREFLIGHT_FAILED_FILE)"; \
+					echo "$$RESULT"; \
+					echo "$$RESULT" >> "$(GATE_PREFLIGHT_STATUS)"; \
+					echo "FAIL 1 first=$$target log=$(GATE_PREFLIGHT_STATUS)" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
+					echo "[gate] preflight $$target failed; terminating admission immediately"; \
+					exit "$$RC"; \
+				fi; \
+				echo "$$RESULT"; \
+				echo "$$RESULT" >> "$(GATE_PREFLIGHT_STATUS)"; \
+			done; \
+			echo "PREFLIGHT-RESUME: re-ran $$PREFLIGHT_TOTAL working-tree preflights ($$PRIOR)"; \
+			echo "PASS $$PREFLIGHT_TOTAL" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
+			exit 0; \
+		fi; \
+	fi; \
+	PREFLIGHT_TOTAL=0; \
 	for target in $(GATE_PREFLIGHT_TARGETS); do \
 		PREFLIGHT_TOTAL=$$((PREFLIGHT_TOTAL + 1)); \
 		echo "=== GATE PREFLIGHT: $$target ==="; \

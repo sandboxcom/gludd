@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import scripts.check_tdd_compliance as _tdd_checker
 from scripts.gate_status_attestation import repository_state_id, sign_status
 
 CHECKER = Path(__file__).resolve().parent.parent.parent / "scripts" / "check_tdd_compliance.py"
@@ -29,9 +30,80 @@ def _run_checker(
     )
 
 
+def test_scripts_source_must_have_test_file(scratch_repo: Path):
+    """Changes to scripts/*.py require a tests/unit/ file that imports scripts.<name>."""
+    r = scratch_repo
+
+    scripts_dir = r / "scripts"
+    scripts_dir.mkdir()
+    src_file = scripts_dir / "gate_progress.py"
+    test_file = r / "tests" / "unit" / "test_gate_progress.py"
+
+    src_file.write_text("def foo():\n    return 1\n")
+    test_file.write_text("from scripts.gate_progress import foo\n\ndef test_foo():\n    assert foo() == 1\n")
+    _stage_all(r)
+    subprocess.run(["git", "commit", "-m", "base"], cwd=str(r), capture_output=True, check=True)
+
+    src_file.write_text("def foo():\n    return 2\n")
+    test_file.write_text("from scripts.gate_progress import foo\n\ndef test_foo():\n    assert foo() == 2\n")
+    subprocess.run(
+        ["git", "add", str(src_file), str(test_file)],
+        cwd=str(r),
+        capture_output=True,
+        check=True,
+    )
+
+    proc = _run_checker(r)
+    assert proc.returncode == 0, f"expected pass, got {proc.returncode}\n{proc.stdout}\n{proc.stderr}"
+
+
+def test_scripts_source_missing_test_is_blocked(scratch_repo: Path):
+    """A scripts/*.py change without a corresponding test is blocked."""
+    r = scratch_repo
+
+    scripts_dir = r / "scripts"
+    scripts_dir.mkdir()
+    src_file = scripts_dir / "helper.py"
+    src_file.write_text("def helper():\n    pass\n")
+    _stage_all(r)
+
+    proc = _run_checker(r)
+    assert proc.returncode == 1, f"expected violation, got {proc.returncode}\n{proc.stdout}\n{proc.stderr}"
+    assert "scripts/helper.py: missing test file" in proc.stdout
+
+
+def test_scripts_source_test_not_staged_is_blocked(scratch_repo: Path):
+    """A scripts/*.py change whose test exists but is not staged is blocked."""
+    r = scratch_repo
+
+    scripts_dir = r / "scripts"
+    scripts_dir.mkdir()
+    src_file = scripts_dir / "helper.py"
+    test_file = r / "tests" / "unit" / "test_helper.py"
+
+    src_file.write_text("def helper():\n    return 1\n")
+    test_file.write_text("from scripts.helper import helper\n\ndef test_helper():\n    assert helper() == 1\n")
+    _stage_all(r)
+    subprocess.run(["git", "commit", "-m", "base"], cwd=str(r), capture_output=True, check=True)
+
+    src_file.write_text("def helper():\n    return 2\n")
+    test_file.write_text("from scripts.helper import helper\n\ndef test_helper():\n    assert helper() == 2\n")
+    subprocess.run(["git", "add", str(src_file)], cwd=str(r), capture_output=True, check=True)
+
+    proc = _run_checker(r)
+    assert proc.returncode == 1, f"expected violation, got {proc.returncode}\n{proc.stdout}\n{proc.stderr}"
+    assert "was NOT modified alongside source file" in proc.stdout
+
+
+def test_checker_module_is_importable() -> None:
+    """TDD registration: the test file imports the compliance checker module."""
+    assert _tdd_checker.ALLOWLIST
+
+
 # ---------------------------------------------------------------------------
 # Fixture: disposable git repo under tests/unit/scratch/
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def scratch_repo(tmp_path: Path):
@@ -45,11 +117,15 @@ def scratch_repo(tmp_path: Path):
     subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
     subprocess.run(
         ["git", "config", "user.email", "test@test.com"],
-        cwd=str(repo), capture_output=True, check=True,
+        cwd=str(repo),
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test"],
-        cwd=str(repo), capture_output=True, check=True,
+        cwd=str(repo),
+        capture_output=True,
+        check=True,
     )
 
     # Initial commit so we can diff against HEAD
@@ -116,14 +192,7 @@ def _sign_gate_for_current_tree(repo: Path, key_path: Path) -> None:
     key = b"m" * 32
     key_path.write_text(f"{key.hex()}\n")
     status = repo / ".gate-status"
-    status.write_text(
-        "=== GATE: PASSED ===\n"
-        "lint PASS 0\n"
-        "typecheck PASS 0\n"
-        "collect PASS 0\n"
-        "test PASS 0\n"
-        "smoke PASS\n"
-    )
+    status.write_text("=== GATE: PASSED ===\nlint PASS 0\ntypecheck PASS 0\ncollect PASS 0\ntest PASS 0\nsmoke PASS\n")
     sign_status(status, state_id=repository_state_id(repo), key=key)
 
 
@@ -157,6 +226,7 @@ def test_exact_staged_merge_with_fresh_signed_gate_is_accepted(
 # Enhancement 1 — test file must also be modified
 # ---------------------------------------------------------------------------
 
+
 def test_source_modified_test_not_staged_is_violation(scratch_repo: Path):
     """When a source file is staged but its test file is NOT, the checker
     should report a violation."""
@@ -166,9 +236,7 @@ def test_source_modified_test_not_staged_is_violation(scratch_repo: Path):
     test_file = r / "tests" / "unit" / "test_widgets.py"
 
     src_file.write_text("def foo():\n    return 42\n")
-    test_file.write_text(
-        "from general_ludd.widgets import foo\n\ndef test_foo():\n    assert foo() == 42\n"
-    )
+    test_file.write_text("from general_ludd.widgets import foo\n\ndef test_foo():\n    assert foo() == 42\n")
     _stage_all(r)
     subprocess.run(["git", "commit", "-m", "base"], cwd=str(r), capture_output=True, check=True)
 
@@ -190,9 +258,7 @@ def test_source_and_test_both_staged_is_ok(scratch_repo: Path):
     test_file = r / "tests" / "unit" / "test_gadgets.py"
 
     src_file.write_text("def bar():\n    return 7\n")
-    test_file.write_text(
-        "from general_ludd.gadgets import bar\n\ndef test_bar():\n    assert bar() == 7\n"
-    )
+    test_file.write_text("from general_ludd.gadgets import bar\n\ndef test_bar():\n    assert bar() == 7\n")
     _stage_all(r)
     subprocess.run(["git", "commit", "-m", "base"], cwd=str(r), capture_output=True, check=True)
 
@@ -219,8 +285,7 @@ def test_connector_prefix_test_name_is_recognized(scratch_repo: Path):
 
     src_file.write_text("def value():\n    return 1\n")
     test_file.write_text(
-        "from general_ludd.connectors.widget import value\n\n"
-        "def test_value():\n    assert value() == 1\n"
+        "from general_ludd.connectors.widget import value\n\ndef test_value():\n    assert value() == 1\n"
     )
     _stage_all(r)
     subprocess.run(
@@ -245,14 +310,14 @@ def test_connector_prefix_test_name_is_recognized(scratch_repo: Path):
 
     proc = _run_checker(r)
     assert proc.returncode == 0, (
-        f"expected connector-prefixed test to pass, got "
-        f"{proc.returncode}\n{proc.stdout}\n{proc.stderr}"
+        f"expected connector-prefixed test to pass, got {proc.returncode}\n{proc.stdout}\n{proc.stderr}"
     )
 
 
 # ---------------------------------------------------------------------------
 # Enhancement 2 — import-only stub detection
 # ---------------------------------------------------------------------------
+
 
 def test_imported_but_never_used_is_violation(scratch_repo: Path):
     """A test that imports a name but never actually references it is flagged."""
@@ -263,9 +328,7 @@ def test_imported_but_never_used_is_violation(scratch_repo: Path):
 
     src_file.write_text("def spam():\n    return 1\n\ndef eggs():\n    return 2\n")
     # Import spam but never use it in a test function body
-    test_file.write_text(
-        "from general_ludd.stuff import spam, eggs\n\ndef test_eggs():\n    assert eggs() == 2\n"
-    )
+    test_file.write_text("from general_ludd.stuff import spam, eggs\n\ndef test_eggs():\n    assert eggs() == 2\n")
     _stage_all(r)
     subprocess.run(["git", "commit", "-m", "base"], cwd=str(r), capture_output=True, check=True)
 

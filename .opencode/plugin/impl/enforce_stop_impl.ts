@@ -473,6 +473,7 @@ function incrementTextCompleteCount(): void {
 interface PendingWorkSignals {
   gateStatusRed: boolean
   gateStale: boolean
+  gateRunning: boolean
   ciVerdictPendingOrRed: boolean
   ciVerdictUnknown: boolean
   tasksMdUnchecked: boolean
@@ -512,6 +513,7 @@ interface WorkState {
   gateStatusMissing: boolean
   gateStale: boolean
   gateStatusRed: boolean
+  gateRunning: boolean
   coverageIncomplete: boolean
   fullE2eIncomplete: boolean
   ciVerdictPendingOrRed: boolean
@@ -591,6 +593,7 @@ function hasRealPendingWork(): WorkState {
   let gateStatusMissing = false
   let gateStale = false
   let gateStatusRed = false
+  let gateRunning = false
   let coverageIncomplete = false
   let fullE2eIncomplete = false
 
@@ -636,6 +639,23 @@ function hasRealPendingWork(): WorkState {
           gateStatusRed = true
           fullE2eIncomplete = true
           break
+        }
+      }
+    }
+  } catch {}
+
+  // ── gateRunning: a background gate process is active ───────────────────────
+  // A running gate is real pending work: the agent must interleave status
+  // checks with productive deliverables rather than stop and wait.
+  try {
+    const gateBgStatePath = path.join(root, ".gate-logs", "gate-background-state.json")
+    if (fs.existsSync(gateBgStatePath)) {
+      const bgState = JSON.parse(fs.readFileSync(gateBgStatePath, "utf8")) as any
+      if (bgState?.state === "running") {
+        // Guard against a stale crashed-gate receipt: require a recent update.
+        const updatedAt = new Date(bgState?.updated_at || 0).getTime()
+        if (Number.isFinite(updatedAt) && now - updatedAt < 1_800_000) {
+          gateRunning = true
         }
       }
     }
@@ -809,7 +829,7 @@ function hasRealPendingWork(): WorkState {
   // session from ever going idle (pinned by tests/e2e/test_enforce_stop_live.py
   // test_empty_tasks_md_is_no_pending_work). It stays in the reported state.
   const signals: PendingWorkSignals = {
-    gateStatusRed, gateStale, ciVerdictPendingOrRed, ciVerdictUnknown,
+    gateStatusRed, gateStale, gateRunning, ciVerdictPendingOrRed, ciVerdictUnknown,
     tasksMdUnchecked, bugsOpen, repoPending, multitaskingBacklogOpen, underFloor,
     coverageIncomplete, fullE2eIncomplete,
     pushBlocked, gateLiteTestFailed, ciNeverRunOnHead, uncommittedChanges,
@@ -820,7 +840,7 @@ function hasRealPendingWork(): WorkState {
 
   const state: WorkState = {
     tasksMdUnchecked, tasksMdUncheckedCount, ratchetEntries, bugsOpen,
-    gateStatusMissing, gateStale, gateStatusRed,
+    gateStatusMissing, gateStale, gateStatusRed, gateRunning,
     ciVerdictPendingOrRed, ciVerdictUnknown, releaseIncomplete, testFailures, repoPending,
     multitaskingBacklogOpen, backlogOpen: multitaskingBacklogOpen, backlogItems, underFloor,
     coverageIncomplete, fullE2eIncomplete,

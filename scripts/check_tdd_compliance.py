@@ -9,13 +9,16 @@ Rules:
      test file staged alongside them.
   2. Modified .py files in src/general_ludd/ must have a corresponding test
      file that imports the module AND contains at least one test_* function.
-  3. The corresponding test file MUST also be modified when the source file
+  3. Modified .py files in scripts/ must have a corresponding test file in
+     tests/unit/ that imports the script module (as ``scripts.<name>``) and
+     contains at least one test_* function.  Test file must also be staged.
+  4. The corresponding test file MUST also be modified when the source file
      is modified (staged alongside).
-  4. Test files that import from a source module must actually USE at least
+  5. Test files that import from a source module must actually USE at least
      one imported name — import-only stubs are blocked.
-  5. Allowlist: __init__.py, type stubs, and explicitly listed paths are
+  6. Allowlist: __init__.py, type stubs, and explicitly listed paths are
      exempt from the test requirement.
-  6. An uncommitted merge may use exact-tree, fresh, signed gate evidence in
+  7. An uncommitted merge may use exact-tree, fresh, signed gate evidence in
      place of per-file staging checks; ordinary commits cannot use this path.
 
 Usage:
@@ -41,12 +44,11 @@ except ImportError:
     yaml = None
 
 _DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_GATE_ATTESTATION_SCRIPT = Path(__file__).resolve().with_name(
-    "gate_status_attestation.py"
-)
+_GATE_ATTESTATION_SCRIPT = Path(__file__).resolve().with_name("gate_status_attestation.py")
 # Mutable globals set in main() after parsing --root
 PROJECT_ROOT = _DEFAULT_PROJECT_ROOT
 SRC_DIR = PROJECT_ROOT / "src" / "general_ludd"
+SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 TESTS_DIR = PROJECT_ROOT / "tests"
 
 ALLOWLIST = (
@@ -82,7 +84,7 @@ def _load_allowlist_config() -> list[re.Pattern[str]]:
 
 
 def _git_changed_source_files() -> list[Path]:
-    """Return .py files under src/general_ludd/ that are staged or modified."""
+    """Return .py files under src/general_ludd/ or scripts/ that are staged or modified."""
     files: list[Path] = []
     try:
         result = subprocess.run(
@@ -93,7 +95,9 @@ def _git_changed_source_files() -> list[Path]:
         )
         for line in result.stdout.strip().splitlines():
             p = Path(line)
-            if p.suffix == ".py" and str(p).startswith("src/general_ludd/"):
+            if p.suffix != ".py":
+                continue
+            if str(p).startswith("src/general_ludd/") or str(p).startswith("scripts/"):
                 files.append(p)
     except Exception:
         pass
@@ -184,14 +188,29 @@ def _module_path(src_file: Path) -> str:
     return ".".join(parts)
 
 
+def _is_script(src_file: Path) -> bool:
+    rel = src_file.relative_to(PROJECT_ROOT) if src_file.is_absolute() else src_file
+    return len(rel.parts) >= 1 and rel.parts[0] == "scripts"
+
+
 def _candidate_test_paths(src_file: Path) -> list[Path]:
-    """Map ``src/general_ludd/X.py`` to ``tests/unit/test_X.py`` candidates."""
-    rel = src_file.relative_to(SRC_DIR.parent.parent) if src_file.is_absolute() else src_file
+    """Map a source file to candidate ``tests/unit/test_*.py`` paths."""
+    rel = src_file.relative_to(PROJECT_ROOT) if src_file.is_absolute() else src_file
     parts = list(rel.parts)
-    if parts[0] == "src":
-        parts = parts[1:]
     if parts[-1].endswith(".py"):
         parts[-1] = parts[-1][:-3]
+
+    # scripts/foo.py -> test_scripts_foo.py (preferred) and test_foo.py
+    if parts[0] == "scripts":
+        leaf = parts[-1]
+        return [
+            TESTS_DIR / "unit" / f"test_scripts_{leaf}.py",
+            TESTS_DIR / "unit" / f"test_{leaf}.py",
+        ]
+
+    # src/general_ludd/X.py
+    if parts[0] == "src":
+        parts = parts[1:]
     stem = "_".join(parts)
     candidates: list[Path] = []
     candidates.append(TESTS_DIR / "unit" / f"test_{stem}.py")
@@ -229,10 +248,7 @@ def _test_has_functions(test_file: Path) -> bool:
     except Exception:
         return False
     tree = ast.parse(source)
-    return any(
-        isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
-        for node in ast.walk(tree)
-    )
+    return any(isinstance(node, ast.FunctionDef) and node.name.startswith("test_") for node in ast.walk(tree))
 
 
 def _find_unused_import_names(test_file: Path, module_path: str) -> list[str]:
@@ -273,11 +289,7 @@ def _find_unused_import_names(test_file: Path, module_path: str) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.lineno not in import_lines:
             used.add(node.id)
-        if (
-            isinstance(node, ast.Attribute)
-            and node.lineno not in import_lines
-            and isinstance(node.value, ast.Name)
-        ):
+        if isinstance(node, ast.Attribute) and node.lineno not in import_lines and isinstance(node.value, ast.Name):
             used.add(node.value.id)
 
     return [name for name in scoped_names if name not in used]
@@ -319,10 +331,11 @@ def _parse_root(argv: list[str]) -> Path:
 
 def main(argv: list[str]) -> int:
     """Validate staged production files beneath the selected project root."""
-    global PROJECT_ROOT, SRC_DIR, TESTS_DIR
+    global PROJECT_ROOT, SRC_DIR, SCRIPTS_DIR, TESTS_DIR
     root = _parse_root(argv)
     PROJECT_ROOT = root
     SRC_DIR = root / "src" / "general_ludd"
+    SCRIPTS_DIR = root / "scripts"
     TESTS_DIR = root / "tests"
 
     src_files = _git_changed_source_files()

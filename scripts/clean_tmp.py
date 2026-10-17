@@ -12,6 +12,7 @@ TMP_GLOBS = (
     "gludd-winfix*-gate.log",
     "gludd-test-gate.txt",
     "gludd-stop-state.json",
+    ".*.dylib",
 )
 
 
@@ -34,8 +35,11 @@ def _within_allowed_root(path: Path) -> bool:
 
 def _candidates() -> list[Path]:
     found: list[Path] = []
-    for pattern in TMP_GLOBS:
-        found.extend(Path("/tmp").glob(pattern))
+    for root in _allowed_roots():
+        if not root.exists():
+            continue
+        for pattern in TMP_GLOBS:
+            found.extend(root.glob(pattern))
     return found
 
 

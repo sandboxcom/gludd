@@ -361,7 +361,7 @@ PYTEST_VERBOSITY ?= -v
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
-        agent-worktree agent-worktree-base agent-merge agent-merge-dev agent-cleanup agent-worktree-list worktree-commit-changes merge-commit \
+        agent-worktree agent-worktree-base agent-merge agent-merge-dev agent-cleanup agent-worktree-list worktree-commit-changes worktree-cleanup-merged merge-commit-nv \
         agent-worktree-dev agent-merge-dev \
         self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-accelerator-auth-store azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-environment-guard azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
@@ -523,6 +523,7 @@ help:
 		"  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)" \
 		"  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)" \
 		"  gate-lite-tail        Print a bounded latest gate-lite-log snapshot (GATE_TAIL_LINES=80)" \
+		"  gate-progress         Estimate gate completion percent and ETA from historical logs (GATE_PROGRESS_MAX_HISTORICAL=10)" \
 		"  triage-failures       Incrementally group streamed failures (LOG, TRIAGE_STATE, TRIAGE_FORMAT)" \
 		"  collect-check         Fast collection-error gate" \
 		"  pre-commit-check      Fast lint + collection + typecheck commit preflight" \
@@ -685,6 +686,9 @@ help:
 		"  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)" \
 		"  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge" \
 		"  agent-worktree-list           List active git worktrees" \
+		"  worktree-commit-changes MSG='...'  Commit all changes in the current worktree" \
+		"  worktree-cleanup-merged       Remove worktrees whose branches are merged into development" \
+		"  merge-commit-nv MSG='...'     Complete an in-progress merge commit without pre-commit hooks" \
 		"  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)" \
 		"  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command" \
 		"  azure-self-improve-live-proof  Discover, select, deploy, evaluate, and tear down one bounded Azure candidate" \

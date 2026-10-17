@@ -251,6 +251,7 @@ UTILITY_PACKAGES: frozenset[str] = frozenset(
         "general_ludd.encoding_converter",
         "general_ludd.experiments",
         "general_ludd.fsm",
+        "general_ludd.gate",
         "general_ludd.hash_table",
         "general_ludd.health",
         "general_ludd.load_balancer",

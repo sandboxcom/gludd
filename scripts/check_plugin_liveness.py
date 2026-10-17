@@ -21,14 +21,13 @@ to /tmp/gludd-plugin-liveness.json for observability.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-import re
-import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 try:
     from scripts import gludd_env_defaults as gludd_env_defaults
@@ -67,17 +66,12 @@ class LivenessResult(TypedDict):
 
 REQUIRED_HOOK_REGISTRATIONS: dict[str, str] = {
     '"experimental.text.complete"': (
-        "experimental.text.complete hook registration — the stop-pattern "
-        "detection guardrail is dead without it"
+        "experimental.text.complete hook registration — the stop-pattern detection guardrail is dead without it"
     ),
     '"tool.execute.before"': (
-        "tool.execute.before hook registration — question-deny + commit-block "
-        "are dead without it"
+        "tool.execute.before hook registration — question-deny + commit-block are dead without it"
     ),
-    '"session.idle"': (
-        "session.idle event handler — state-file refresh at session start "
-        "is dead without it"
-    ),
+    '"session.idle"': ("session.idle event handler — state-file refresh at session start is dead without it"),
     '"experimental.chat.system.transform"': (
         "experimental.chat.system.transform hook registration — "
         "orchestration injection at session start is dead without it"
@@ -86,124 +80,105 @@ REQUIRED_HOOK_REGISTRATIONS: dict[str, str] = {
 
 REQUIRED_FUNCTIONS: dict[str, str] = {
     "function responseLooksTerminal": (
-        "responseLooksTerminal function — the state-based terminal-response "
-        "detector (BUGS.md structural fix) is gone"
+        "responseLooksTerminal function — the state-based terminal-response detector (BUGS.md structural fix) is gone"
     ),
     "function tasksMdHasUnchecked": (
-        "tasksMdHasUnchecked function — TASKS.md unchecked-work detection "
-        "(2026-06-30 incident fix) is gone"
+        "tasksMdHasUnchecked function — TASKS.md unchecked-work detection (2026-06-30 incident fix) is gone"
     ),
-    "function ratchetHasEntries": (
-        "ratchetHasEntries function — ratchet.yml entry count is gone"
-    ),
-    "function gateStatusIsRed": (
-        "gateStatusIsRed function — .gate-status red detection is gone"
-    ),
+    "function ratchetHasEntries": ("ratchetHasEntries function — ratchet.yml entry count is gone"),
+    "function gateStatusIsRed": ("gateStatusIsRed function — .gate-status red detection is gone"),
     "function repoHasPendingWork": (
-        "repoHasPendingWork function — git-state pending-work detection "
-        "(2026-06-28 incident fix) is gone"
+        "repoHasPendingWork function — git-state pending-work detection (2026-06-28 incident fix) is gone"
     ),
-    "function ciIsPendingOrRed": (
-        "ciIsPendingOrRed function — CI verdict query is gone"
-    ),
-    "function computeHealthScore": (
-        "computeHealthScore function — health scoring is gone"
-    ),
+    "function ciIsPendingOrRed": ("ciIsPendingOrRed function — CI verdict query is gone"),
+    "function computeHealthScore": ("computeHealthScore function — health scoring is gone"),
 }
 
 REQUIRED_CONSTANTS: dict[str, str] = {
-    "STOP_ENFORCE": (
-        "STOP_ENFORCE constant — the enforcement gate is gone; plugin "
-        "may be advisory-only"
-    ),
-    "COMPLETION_VERBATIM": (
-        "COMPLETION_VERBATIM constant — the strongest stop-signal regex "
-        "is gone"
-    ),
-    "STOP_LIKE_TARGETS_RE": (
-        "STOP_LIKE_TARGETS_RE constant — commit-block regex is gone"
-    ),
-    "QUESTION_DENY_REASON": (
-        "QUESTION_DENY_REASON constant — question-deny message is gone"
-    ),
+    "STOP_ENFORCE": ("STOP_ENFORCE constant — the enforcement gate is gone; plugin may be advisory-only"),
+    "COMPLETION_VERBATIM": ("COMPLETION_VERBATIM constant — the strongest stop-signal regex is gone"),
+    "STOP_LIKE_TARGETS_RE": ("STOP_LIKE_TARGETS_RE constant — commit-block regex is gone"),
+    "QUESTION_DENY_REASON": ("QUESTION_DENY_REASON constant — question-deny message is gone"),
 }
 
 REQUIRED_KEYWORDS: dict[str, str] = {
     "HARD STOP": (
-        "HARD STOP block text — the state-based block message is gone; "
-        "the stop detector may be advisory-only"
+        "HARD STOP block text — the state-based block message is gone; the stop detector may be advisory-only"
     ),
     "/tmp/gludd-plugin-alive.json": (
-        "plugin-alive.json side-effect — the alive heartbeat that "
-        "proves the plugin loaded is gone"
+        "plugin-alive.json side-effect — the alive heartbeat that proves the plugin loaded is gone"
     ),
-    "throw new Error": (
-        "throw/block path — no blocking mechanism found; all enforcement "
-        "may be advisory-only"
-    ),
+    "throw new Error": ("throw/block path — no blocking mechanism found; all enforcement may be advisory-only"),
 }
 
 
 def _read_plugin_src() -> str:
-    if not PLUGIN_FILE.exists():
-        return ""
-    return PLUGIN_FILE.read_text(encoding="utf-8")
+    """Read the plugin entrypoint plus its impl/ module(s).
+
+    The entrypoint is a thin loader; load-bearing symbols live in
+    .opencode/plugin/impl/*.ts. Structural checks must see both.
+    """
+    parts: list[str] = []
+    if PLUGIN_FILE.exists():
+        parts.append(PLUGIN_FILE.read_text(encoding="utf-8"))
+    impl_dir = PLUGIN_DIR / "impl"
+    if impl_dir.is_dir():
+        for impl_file in sorted(impl_dir.glob("*.ts")):
+            parts.append(impl_file.read_text(encoding="utf-8"))
+    return "\n".join(parts)
 
 
 def _run_structural_checks(src: str) -> list[HookCheck]:
     checks: list[HookCheck] = []
-    now = time.time()
 
     # Check hooks
     for hook, description in REQUIRED_HOOK_REGISTRATIONS.items():
         if hook in src:
-            checks.append({"name": hook.strip('"'), "status": "OK",
-                           "detail": "found in plugin source"})
+            checks.append({"name": hook.strip('"'), "status": "OK", "detail": "found in plugin source"})
         else:
-            checks.append({"name": hook.strip('"'), "status": "MISSING",
-                           "detail": f"MISSING: {description}"})
+            checks.append({"name": hook.strip('"'), "status": "MISSING", "detail": f"MISSING: {description}"})
 
     # Check functions
     for func, description in REQUIRED_FUNCTIONS.items():
         if func in src:
-            checks.append({"name": func.replace("function ", ""), "status": "OK",
-                           "detail": "found in plugin source"})
+            checks.append({"name": func.replace("function ", ""), "status": "OK", "detail": "found in plugin source"})
         else:
-            checks.append({"name": func.replace("function ", ""), "status": "MISSING",
-                           "detail": f"MISSING: {description}"})
+            checks.append(
+                {"name": func.replace("function ", ""), "status": "MISSING", "detail": f"MISSING: {description}"}
+            )
 
     # Check constants
     for const, description in REQUIRED_CONSTANTS.items():
         if const in src:
-            checks.append({"name": const, "status": "OK",
-                           "detail": "found in plugin source"})
+            checks.append({"name": const, "status": "OK", "detail": "found in plugin source"})
         else:
-            checks.append({"name": const, "status": "MISSING",
-                           "detail": f"MISSING: {description}"})
+            checks.append({"name": const, "status": "MISSING", "detail": f"MISSING: {description}"})
 
     # Check keywords
     for keyword, description in REQUIRED_KEYWORDS.items():
         if keyword in src:
-            checks.append({"name": keyword[:50], "status": "OK",
-                           "detail": "found in plugin source"})
+            checks.append({"name": keyword[:50], "status": "OK", "detail": "found in plugin source"})
         else:
-            checks.append({"name": keyword[:50], "status": "MISSING",
-                           "detail": f"MISSING: {description}"})
+            checks.append({"name": keyword[:50], "status": "MISSING", "detail": f"MISSING: {description}"})
 
     # Check plugin registration
     if "export default" in src:
-        checks.append({"name": "export_default", "status": "OK",
-                       "detail": "plugin exports default"})
+        checks.append({"name": "export_default", "status": "OK", "detail": "plugin exports default"})
     else:
-        checks.append({"name": "export_default", "status": "MISSING",
-                       "detail": "MISSING: no default export — plugin won't register"})
+        checks.append(
+            {
+                "name": "export_default",
+                "status": "MISSING",
+                "detail": "MISSING: no default export — plugin won't register",
+            }
+        )
 
     if "@opencode-ai/plugin" in src:
-        checks.append({"name": "import_plugin_type", "status": "OK",
-                       "detail": "imports @opencode-ai/plugin type"})
+        checks.append({"name": "import_plugin_type", "status": "OK", "detail": "imports @opencode-ai/plugin type"})
     else:
-        checks.append({"name": "import_plugin_type", "status": "MISSING",
-                       "detail": "MISSING: no @opencode-ai/plugin import"})
+        checks.append(
+            {"name": "import_plugin_type", "status": "MISSING", "detail": "MISSING: no @opencode-ai/plugin import"}
+        )
 
     return checks
 
@@ -211,13 +186,50 @@ def _run_structural_checks(src: str) -> list[HookCheck]:
 # ── PASSIVE CHECKS ──────────────────────────────────────────────────────────
 
 
-def _read_json_file(path: Path) -> Optional[dict]:
+def _read_json_file(path: Path) -> dict | None:
     try:
         if not path.exists():
             return None
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def _age(now: float, ts: float) -> float:
+    """Return seconds since ts, handling both epoch-seconds and epoch-ms."""
+    return now - (ts / 1000.0) if ts > 1e11 else now - ts
+
+
+def _append_age_check(
+    checks: list[HookCheck],
+    name: str,
+    age: float,
+    max_age: float,
+    stale_detail: str,
+    ok_detail: str,
+) -> None:
+    if age > max_age:
+        checks.append({"name": name, "status": "STALE", "detail": stale_detail})
+    else:
+        checks.append({"name": name, "status": "OK", "detail": ok_detail})
+
+
+def _append_age_or_condition_check(
+    checks: list[HookCheck],
+    name: str,
+    age: float,
+    max_age: float,
+    stale_age_detail: str,
+    condition: bool,
+    condition_detail: str,
+    ok_detail: str,
+) -> None:
+    if age > max_age:
+        checks.append({"name": name, "status": "STALE", "detail": stale_age_detail})
+    elif condition:
+        checks.append({"name": name, "status": "STALE", "detail": condition_detail})
+    else:
+        checks.append({"name": name, "status": "OK", "detail": ok_detail})
 
 
 def _run_passive_checks() -> list[HookCheck]:
@@ -227,68 +239,82 @@ def _run_passive_checks() -> list[HookCheck]:
     # Check plugin-alive.json
     alive = _read_json_file(ALIVE_FILE)
     if alive is None:
-        checks.append({"name": "plugin_alive_file", "status": "MISSING",
-                       "detail": "MISSING: /tmp/gludd-plugin-alive.json not found — "
-                       "plugin may not have loaded"})
+        checks.append(
+            {
+                "name": "plugin_alive_file",
+                "status": "MISSING",
+                "detail": "MISSING: /tmp/gludd-plugin-alive.json not found — plugin may not have loaded",
+            }
+        )
     else:
         enforce_stop = alive.get("enforce-stop", {})
         if not enforce_stop:
-            checks.append({"name": "plugin_alive_enforce_stop", "status": "MISSING",
-                           "detail": "MISSING: enforce-stop entry not in alive.json"})
+            checks.append(
+                {
+                    "name": "plugin_alive_enforce_stop",
+                    "status": "MISSING",
+                    "detail": "MISSING: enforce-stop entry not in alive.json",
+                }
+            )
         else:
-            loaded_ts = enforce_stop.get("ts", 0)
-            age = now - (loaded_ts / 1000.0) if loaded_ts > 1e11 else now - loaded_ts
-            if age > MAX_AGE_SECS * 2:
-                checks.append({"name": "plugin_alive_enforce_stop", "status": "STALE",
-                               "detail": f"last loaded {age:.0f}s ago (> {MAX_AGE_SECS * 2}s) — "
-                               "plugin may not be running"})
-            else:
-                checks.append({"name": "plugin_alive_enforce_stop", "status": "OK",
-                               "detail": f"plugin loaded {age:.0f}s ago"})
+            age = _age(now, enforce_stop.get("ts", 0))
+            _append_age_check(
+                checks,
+                "plugin_alive_enforce_stop",
+                age,
+                MAX_AGE_SECS * 2,
+                f"last loaded {age:.0f}s ago (> {MAX_AGE_SECS * 2}s) — plugin may not be running",
+                f"plugin loaded {age:.0f}s ago",
+            )
 
     # Check text.complete counter
     tc = _read_json_file(TEXT_COMPLETE_COUNTER)
     if tc is None:
-        checks.append({"name": "text_complete_counter", "status": "MISSING",
-                       "detail": "MISSING: text.complete counter file not found — "
-                       "hook may never have fired"})
+        checks.append(
+            {
+                "name": "text_complete_counter",
+                "status": "MISSING",
+                "detail": "MISSING: text.complete counter file not found — hook may never have fired",
+            }
+        )
     else:
         count = tc.get("count", 0)
-        last_ts = tc.get("ts", 0)
-        age = now - (last_ts / 1000.0) if last_ts > 1e11 else now - last_ts
-        if age > MAX_AGE_SECS:
-            checks.append({"name": "text_complete_counter", "status": "STALE",
-                           "detail": f"last fired {age:.0f}s ago (> {MAX_AGE_SECS}s), "
-                           f"count={count} — hook may have stopped firing"})
-        elif count == 0:
-            checks.append({"name": "text_complete_counter", "status": "STALE",
-                           "detail": f"count={count} — hook exists but has never incremented"})
-        else:
-            checks.append({"name": "text_complete_counter", "status": "OK",
-                           "detail": f"count={count}, last fired {age:.0f}s ago"})
+        age = _age(now, tc.get("ts", 0))
+        _append_age_or_condition_check(
+            checks,
+            "text_complete_counter",
+            age,
+            MAX_AGE_SECS,
+            f"last fired {age:.0f}s ago (> {MAX_AGE_SECS}s), count={count} — hook may have stopped firing",
+            count == 0,
+            f"count={count} — hook exists but has never incremented",
+            f"count={count}, last fired {age:.0f}s ago",
+        )
 
     # Check tool.execute.before counter
     tool = _read_json_file(TOOL_COUNTER)
     if tool is None:
-        checks.append({"name": "tool_execute_before_counter", "status": "MISSING",
-                       "detail": "MISSING: tool.execute.before counter not found"})
+        checks.append(
+            {
+                "name": "tool_execute_before_counter",
+                "status": "MISSING",
+                "detail": "MISSING: tool.execute.before counter not found",
+            }
+        )
     else:
         allowed = tool.get("allowed", 0)
         blocked = tool.get("blocked", 0)
-        last_ts = tool.get("ts", 0)
-        age = now - (last_ts / 1000.0) if last_ts > 1e11 else now - last_ts
-        if age > MAX_AGE_SECS:
-            checks.append({"name": "tool_execute_before_counter", "status": "STALE",
-                           "detail": f"last fired {age:.0f}s ago (> {MAX_AGE_SECS}s), "
-                           f"allowed={allowed} blocked={blocked}"})
-        elif allowed == 0 and blocked == 0:
-            checks.append({"name": "tool_execute_before_counter", "status": "STALE",
-                           "detail": f"allowed={allowed} blocked={blocked} — "
-                           "hook exists but has never processed a tool"})
-        else:
-            checks.append({"name": "tool_execute_before_counter", "status": "OK",
-                           "detail": f"allowed={allowed} blocked={blocked}, "
-                           f"last fired {age:.0f}s ago"})
+        age = _age(now, tool.get("ts", 0))
+        _append_age_or_condition_check(
+            checks,
+            "tool_execute_before_counter",
+            age,
+            MAX_AGE_SECS,
+            f"last fired {age:.0f}s ago (> {MAX_AGE_SECS}s), allowed={allowed} blocked={blocked}",
+            allowed == 0 and blocked == 0,
+            f"allowed={allowed} blocked={blocked} — hook exists but has never processed a tool",
+            f"allowed={allowed} blocked={blocked}, last fired {age:.0f}s ago",
+        )
 
     return checks
 
@@ -307,25 +333,39 @@ def _run_active_checks() -> list[HookCheck]:
 
     alive = _read_json_file(ALIVE_FILE)
     if alive is None:
-        checks.append({"name": "active_alive_json", "status": "MISSING",
-                       "detail": "Cannot verify — alive.json missing. "
-                       "Plugin may not have loaded at all."})
+        checks.append(
+            {
+                "name": "active_alive_json",
+                "status": "MISSING",
+                "detail": "Cannot verify — alive.json missing. Plugin may not have loaded at all.",
+            }
+        )
     else:
         enforce_stop = alive.get("enforce-stop", {})
         loaded = enforce_stop.get("loaded", "")
         if loaded:
-            checks.append({"name": "active_alive_json", "status": "OK",
-                           "detail": f"plugin reports loaded at {loaded}"})
+            checks.append({"name": "active_alive_json", "status": "OK", "detail": f"plugin reports loaded at {loaded}"})
         else:
-            checks.append({"name": "active_alive_json", "status": "MISSING",
-                           "detail": "alive.json exists but enforce-stop entry has no 'loaded' field"})
+            checks.append(
+                {
+                    "name": "active_alive_json",
+                    "status": "MISSING",
+                    "detail": "alive.json exists but enforce-stop entry has no 'loaded' field",
+                }
+            )
 
     if PLUGIN_FILE.exists():
-        checks.append({"name": "active_plugin_exists", "status": "OK",
-                       "detail": f"plugin file exists ({PLUGIN_FILE.stat().st_size} bytes)"})
+        checks.append(
+            {
+                "name": "active_plugin_exists",
+                "status": "OK",
+                "detail": f"plugin file exists ({PLUGIN_FILE.stat().st_size} bytes)",
+            }
+        )
     else:
-        checks.append({"name": "active_plugin_exists", "status": "MISSING",
-                       "detail": f"plugin file not found: {PLUGIN_FILE}"})
+        checks.append(
+            {"name": "active_plugin_exists", "status": "MISSING", "detail": f"plugin file not found: {PLUGIN_FILE}"}
+        )
 
     return checks
 
@@ -346,19 +386,17 @@ def run_check() -> LivenessResult:
     }
 
     if not PLUGIN_FILE.exists():
-        result["structural"].append({
-            "name": "plugin_file", "status": "MISSING",
-            "detail": f"Plugin file not found: {PLUGIN_FILE}"
-        })
+        result["structural"].append(
+            {"name": "plugin_file", "status": "MISSING", "detail": f"Plugin file not found: {PLUGIN_FILE}"}
+        )
         result["overall"] = "FAIL"
         return result
 
     src = _read_plugin_src()
     if not src.strip():
-        result["structural"].append({
-            "name": "plugin_file", "status": "MISSING",
-            "detail": f"Plugin file is empty: {PLUGIN_FILE}"
-        })
+        result["structural"].append(
+            {"name": "plugin_file", "status": "MISSING", "detail": f"Plugin file is empty: {PLUGIN_FILE}"}
+        )
         result["overall"] = "FAIL"
         return result
 
@@ -378,10 +416,8 @@ def run_check() -> LivenessResult:
 def main() -> int:
     result = run_check()
 
-    try:
+    with contextlib.suppress(Exception):
         RESULT_FILE.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    except Exception:
-        pass
 
     print("=== Plugin Liveness Check ===")
     print(f"Plugin: {result['plugin_file']}")

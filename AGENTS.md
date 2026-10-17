@@ -2019,17 +2019,17 @@ Subagents fail when they try to run long operations. To maximize success rate:
 `make gate` is a ~40-minute operation that MUST NEVER run on the main thread (it blocks ALL subagent dispatch — see "Main-thread command restriction" above). The canonical replacement is the background-gate target family:
 
 - `make gate-background` — launches `make gate` via `nohup` in the background, redirects output to `.gate-logs/gate-<timestamp>.log`, writes the PID to `.gate-background.pid`, and returns in <1 second.
-- `make gate-status-check` — non-blocking probe: prints whether the background gate is still running, the current phase (greps the log for `=== GATE PHASE: <name> ===` markers), the terminal marker (`=== GATE: PASSED ===` / `=== GATE: FAILED ===`), the last 20 log lines, and `.gate-status`.
+- `make gate-progress` — **PREFERRED one-line poll**: RUNNING (pid)/FINISHED/IDLE, total % of gate complete, elapsed, ETA (based on recorded heartbeat timings from prior gate runs), and segment counts. Use this instead of `gate-status-check` for routine polling — one line instead of ~20.
+- `make gate-status-check` — non-blocking probe: prints whether the background gate is still running, the current phase (greps the log for `=== GATE PHASE: <name> ===` markers), the terminal marker (`=== GATE: PASSED ===` / `=== GATE: FAILED ===`), the last 20 log lines, and `.gate-status`. Use only when you need the raw log tail to diagnose a failure.
 - `make gate-tail` — live tail of the latest gate log (Ctrl-C to stop).
 - `make gate-logs` — lists every `.gate-logs/*.log` with mtime + PASS/FAIL/incomplete.
 - `make gate-kill` — SIGTERM then SIGKILL after 5s; removes `.gate-background.pid`.
-
 **Pattern:**
 1. Launch `make gate-background` (foreground is fine — it returns in <1s) or dispatch it via a subagent.
 2. Continue useful independent work in parallel, up to the three-agent ceiling.
-3. Check `make gate-status-check` once at a natural break; never dedicate an agent to polling.
-4. When the terminal marker appears, ingest the log + act on the result.
-
+3. Poll `make gate-progress` at a natural break (one line: run state + % complete + ETA); never dedicate an agent to polling. Use `gate-status-check` only for the log-tail diagnosis.
+4. **Pace the polls: at most one `gate-progress` call per ~2 minutes.** The target mechanically enforces this: a poll within `GATE_PROGRESS_COOLDOWN_SECS` (default 120) still prints the full one-line status but appends `COOLDOWN: Ns remaining` and the hint states `next poll in ~Ns`. Gate heartbeats update every 30s and batches take minutes, so faster polls return stale numbers and burn tokens. Between polls, do useful work; when no useful work exists, end the turn and poll again later. Use `GATE_PROGRESS_FORCE=1` only when an immediate verdict is genuinely needed.
+5. When the terminal marker appears, ingest the log + act on the result (the `next:` suffix on the gate-progress line states the exact next action).
 **NEVER** `make gate` on the main thread. **NEVER** `make gate-background` on the main thread either if it would block — but `gate-background` returns in
 <1s, so it is allowed on the main thread.
 
@@ -2134,6 +2134,11 @@ The CI-poll anti-pattern above is now blocked by a **machine-enforced cooldown**
 **CI-COOLDOWN ≠ PENDING (cooldown masking).** When `ci-verdict-safe` returns exit 3, CI state is UNKNOWN, not PENDING. The cooldown message (`CI-COOLDOWN: NmMs remaining`) means the check was REFUSED — it says nothing about the actual CI run, which may already be GREEN or RED. Never report CI as PENDING based on a cooldown block. Use `FORCE=1` to check actual state if the cooldown is >5 min old.
 
 **Plugin layer (dispatch-time block):** `.opencode/plugin/enforce-no-wait.ts` exports a `CI_POLL_DISPATCH_PATTERNS` list and a matcher that DENIES Task/agent/workflow dispatches whose prompt contains anti-pattern phrases ("poll CI until terminal", "wait for CI green", "loop on make ci-verdict", "every 60 seconds ... up to N iterations", "until conclusion success"). This blocks the dispatch intent at the source, complementing the runtime cooldown on the `make` side. Fail-open on any error.
+
+## CRITICAL: No Idle Monitoring While Work Remains
+
+**A running background operation is never an excuse to stop doing useful work.** When the gate, CI, a long test, or any other background pipeline is in flight, interleave status checks with **concrete, independent deliverables** (worktree fix, test, doc, cleanup); repeated read-only monitoring calls with no productive action between them are a stop pattern. **Forbidden:** three+ consecutive status-only checks (`make gate-status-check`, `make ci-status`, `make git-status`, etc.) with no edit/write/mutating-make-target/subagent-dispatch between them; using "the gate is running" or "I'll check again" as a substitute for work.
+**While a background gate is RUNNING (`.gate-background.pid` alive), the session must NOT stop or go idle.** Every turn must contain a tool call: productive work, a `make gate-progress` poll at the next allowed interval (≤1 per ~2 min; the one-line status includes `next poll in ~Ns`), or a dispatch. When it finishes: `FINISHED: PASSED` → commit/push/verify; `FINISHED: FAILED` → fix the named test/phase then `make gate-resume`. Never end a turn text-only while a gate runs. Enforced by: `scripts/agent_watchdog.py` `_gate_background_running()`/`_pending_work_exists()`, `scripts/watchdog_components/enforcement.py` (gate-running source, 5s idle threshold, CONTINUE directive), `.opencode/plugin/enforce-no-idle-monitoring.ts` (consecutive-monitoring counter), `.opencode/plugin/impl/enforce_stop_impl.ts` (`gateRunning` signal, text-only block), and tests `tests/unit/test_agent_watchdog.py` (97), `test_no_idle_monitoring_plugin.py`, `test_enforce_stop_behavior.py`, watchdog-component tests (37).
 
 ## CRITICAL: Long-Running Operations MUST Be Backgrounded
 
