@@ -1078,6 +1078,14 @@ def _coverage_data_error(path: Path) -> str | None:
     return None
 
 
+def _preserve_coverage_fragments_for_resume(
+    resume_path: Path | None,
+    terminal_rc: int,
+) -> bool:
+    """Return True when failed-run coverage fragments must be kept for a resume."""
+    return resume_path is not None and terminal_rc != 0
+
+
 def _resume_skip_batch(
     resume_state: dict[str, object],
     shard: str,
@@ -2234,10 +2242,17 @@ def run(
         coverage_rc = 0
     if coverage_rc:
         failures["coverage"] = coverage_rc
-    fragments_cleanup_rc = _cleanup_owned_tree(
-        COVERAGE_SHARDS,
-        context="coverage:fragments-cleanup",
-    )
+    if _preserve_coverage_fragments_for_resume(resume_path, terminal_rc):
+        fragments_cleanup_rc = 0
+        print(
+            f"RESUME-PRESERVE-FRAGMENTS path={COVERAGE_SHARDS} terminal_rc={terminal_rc}",
+            flush=True,
+        )
+    else:
+        fragments_cleanup_rc = _cleanup_owned_tree(
+            COVERAGE_SHARDS,
+            context="coverage:fragments-cleanup",
+        )
     _record_phase_result(
         phase_results,
         "coverage:fragments-cleanup",

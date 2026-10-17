@@ -7,6 +7,7 @@ from pathlib import Path
 from scripts.run_ci_shards_serial import (
     _batch_key,
     _load_resume_state,
+    _preserve_coverage_fragments_for_resume,
     _resume_skip_batch,
     _save_resume_state,
 )
@@ -102,3 +103,19 @@ def test_resume_state_corrupt_file_returns_empty(tmp_path: Path) -> None:
     path = tmp_path / "resume.json"
     path.write_text("not-json{", encoding="utf-8")
     assert _load_resume_state(path) == {}
+
+
+def test_preserve_fragments_when_resume_enabled_and_run_failed() -> None:
+    assert _preserve_coverage_fragments_for_resume(Path("/tmp/resume.json"), 1) is True
+
+
+def test_preserve_fragments_when_resume_enabled_and_run_cancelled() -> None:
+    assert _preserve_coverage_fragments_for_resume(Path("/tmp/resume.json"), 130) is True
+
+
+def test_do_not_preserve_fragments_when_resume_disabled() -> None:
+    assert _preserve_coverage_fragments_for_resume(None, 1) is False
+
+
+def test_do_not_preserve_fragments_when_run_succeeded() -> None:
+    assert _preserve_coverage_fragments_for_resume(Path("/tmp/resume.json"), 0) is False
