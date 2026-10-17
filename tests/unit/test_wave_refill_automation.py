@@ -5,6 +5,7 @@ when an explicitly configured dispatch minimum remains underfilled for more
 than 30 seconds.  The project-wide hard ceiling is tested separately from this
 opt-in minimum.
 """
+
 from __future__ import annotations
 
 import re
@@ -41,9 +42,7 @@ class TestRefillConstant:
 
     def test_constant_exists(self):
         src = _plugin_source()
-        assert "RESULT_ARRIVAL_REFRESH_INTERVAL_MS" in src, (
-            "RESULT_ARRIVAL_REFRESH_INTERVAL_MS constant missing"
-        )
+        assert "RESULT_ARRIVAL_REFRESH_INTERVAL_MS" in src, "RESULT_ARRIVAL_REFRESH_INTERVAL_MS constant missing"
 
     def test_constant_env_override(self):
         src = _plugin_source()
@@ -67,17 +66,13 @@ class TestMultitaskStateShape:
     def test_last_dispatch_ts_in_fresh_state(self):
         src = _plugin_source()
         # Should appear in freshState's return object
-        assert re.search(r"lastDispatchTs\s*:\s*0", src), (
-            "lastDispatchTs: 0 missing from freshState()"
-        )
+        assert re.search(r"lastDispatchTs\s*:\s*0", src), "lastDispatchTs: 0 missing from freshState()"
 
     def test_last_dispatch_ts_initialized_in_boot_block(self):
         src = _plugin_source()
         # The _state initializer also sets it
         counts = len(re.findall(r"s\.lastDispatchTs\s*=\s*0", src))
-        assert counts >= 1, (
-            "s.lastDispatchTs = 0 not found in _state initialization block"
-        )
+        assert counts >= 1, "s.lastDispatchTs = 0 not found in _state initialization block"
 
 
 class TestDispatchTimestampTracking:
@@ -96,9 +91,7 @@ class TestDispatchTimestampTracking:
         idx_ts = src.find("_state.lastDispatchTs = now")
         assert idx_inc >= 0, "estimatedInFlight++ not found"
         assert idx_ts >= 0, "lastDispatchTs = now not found"
-        assert idx_ts > idx_inc, (
-            "lastDispatchTs must be set AFTER estimatedInFlight++ for correct ordering"
-        )
+        assert idx_ts > idx_inc, "lastDispatchTs must be set AFTER estimatedInFlight++ for correct ordering"
 
 
 class TestRefillLogicInDefaultImpl:
@@ -106,46 +99,36 @@ class TestRefillLogicInDefaultImpl:
 
     def test_refill_condition_checks_last_dispatch_ts_gt_0(self):
         src = _plugin_source()
-        assert "_state.lastDispatchTs > 0" in src, (
-            "lastDispatchTs > 0 guard missing from refill check"
-        )
+        assert "_state.lastDispatchTs > 0" in src, "lastDispatchTs > 0 guard missing from refill check"
 
     def test_refill_condition_uses_configured_minimum(self):
         src = _plugin_source()
-        assert "REQUIRED_DISPATCHES > 0" in src, (
-            "refill must remain disabled when no minimum is configured"
-        )
+        assert "REQUIRED_DISPATCHES > 0" in src, "refill must remain disabled when no minimum is configured"
         assert "_state.estimatedInFlight < REQUIRED_DISPATCHES" in src, (
             "refill must compare in-flight work with the configured minimum"
         )
 
     def test_refill_condition_checks_elapsed_time(self):
         src = _plugin_source()
-        assert "Date.now() - _state.lastDispatchTs" in src, (
-            "elapsed-time check missing from refill logic"
-        )
+        assert "Date.now() - _state.lastDispatchTs" in src, "elapsed-time check missing from refill logic"
 
     def test_refill_warning_text_exists(self):
         src = _plugin_source()
-        assert "FLOOR LOW" in src, (
-            "FLOOR LOW warning message not found in source"
-        )
-        assert "Dispatch replacements now" in src, (
-            "Dispatch replacements now message not found in source"
-        )
+        assert "FLOOR LOW" in src, "FLOOR LOW warning message not found in source"
+        assert "Dispatch replacements now" in src, "Dispatch replacements now message not found in source"
 
     def test_refill_warning_includes_agent_count(self):
         src = _plugin_source()
         # Check that the message includes _state.estimatedInFlight in the string
         assert re.search(
-            r'\bString\s*\(\s*_state\.estimatedInFlight\s*\)',
+            r"\bString\s*\(\s*_state\.estimatedInFlight\s*\)",
             src,
         ), "Agent count not included in FLOOR LOW message"
 
     def test_refill_warning_shows_seconds_since_last_dispatch(self):
         src = _plugin_source()
         assert re.search(
-            r'Math\.round\s*\(\s*\(\s*Date\.now\(\s*\)\s*-\s*_state\.lastDispatchTs\s*\)\s*/\s*1000\s*\)',
+            r"Math\.round\s*\(\s*\(\s*Date\.now\(\s*\)\s*-\s*_state\.lastDispatchTs\s*\)\s*/\s*1000\s*\)",
             src,
         ), "Time-since-last-dispatch not computed in FLOOR LOW message"
 
@@ -162,11 +145,8 @@ class TestRefillLogicInProxy:
 
     def test_proxy_delegates_refill_check_to_effective_impl(self):
         src = _plugin_source()
-        assert 'loadHotModule("multitask", defaultImpl)' in src
-        assert (
-            'impl["experimental.text.complete"] ?? impl["text.complete"]'
-            in src
-        )
+        assert 'loadHotModule("enforce-multitask", defaultImpl)' in src
+        assert 'impl["experimental.text.complete"] ?? impl["text.complete"]' in src
 
     def test_refill_logic_has_single_source(self):
         src = _plugin_source()
@@ -188,9 +168,7 @@ class TestRefillDoesNotFireAtConfiguredFloor:
 
     def test_refill_requires_last_dispatch_ts_nonzero(self):
         src = _plugin_source()
-        assert "_state.lastDispatchTs > 0" in src, (
-            "Should guard on lastDispatchTs > 0 (never dispatched → no refill)"
-        )
+        assert "_state.lastDispatchTs > 0" in src, "Should guard on lastDispatchTs > 0 (never dispatched → no refill)"
 
     def test_refill_requires_elapsed_greater_than_interval(self):
         src = _plugin_source()

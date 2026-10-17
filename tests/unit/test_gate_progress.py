@@ -119,18 +119,18 @@ def test_script_main_prints_status_and_next_action(tmp_path: Path, capsys: pytes
 
 
 def test_script_main_sleep_after_report(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    import os as _os
     import time
 
     from scripts.gate_progress import main
 
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
+    (tmp_path / ".gate-background.pid").write_text(str(_os.getpid()), encoding="utf-8")
     current = _write_log(
         log_dir,
         "gate-20261017000000-00000000.log",
-        "[gate-background] launcher run_id=20261017T000000Z-00000000 namespace=gludd\n"
-        "=== GATE PHASE: preflights ===\n"
-        "=== GATE: PASSED ===\n",
+        "[gate-background] launcher run_id=20261017T000000Z-00000000 namespace=gludd\n=== GATE PHASE: preflights ===\n",
     )
     state = tmp_path / "state.json"
     argv = [
@@ -149,7 +149,7 @@ def test_script_main_sleep_after_report(tmp_path: Path, capsys: pytest.CaptureFi
     assert main(argv) == 0
     elapsed = time.monotonic() - start
     captured = capsys.readouterr()
-    assert "gate: FINISHED: PASSED" in captured.out
+    assert "gate: RUNNING" in captured.out
     assert elapsed >= 0.15
 
 
@@ -447,8 +447,11 @@ def test_estimate_progress_resume_aware_percent(tmp_path: Path) -> None:
     now = datetime(2026, 10, 17, 1, 0, 10, tzinfo=UTC).timestamp()
     plain = estimate_progress(current_plain, [historical], now=now)
     resumed = estimate_progress(current_resume, [historical], now=now)
-    assert resumed.estimated_remaining_seconds < plain.estimated_remaining_seconds
+    # Resuming skips already-completed batches; those batches count toward the
+    # pipeline-wide percent without inflating the total pipeline projection.
     assert resumed.percent_complete > plain.percent_complete
+    assert resumed.estimated_total_seconds == pytest.approx(plain.estimated_total_seconds)
+    assert resumed.estimated_remaining_seconds == pytest.approx(plain.estimated_remaining_seconds)
 
 
 def test_parse_gate_log_extracts_phases_and_batches(tmp_path: Path) -> None:
@@ -522,7 +525,8 @@ def test_render_progress_includes_status_prefix() -> None:
         remaining_known=True,
     )
     plain = render_progress(report)
-    assert plain.startswith("gate: unit-1a1:batch-002 | 25.0% of gate complete |")
+    assert plain.startswith("gate: unit-1a1:batch-002 | 25.0% of gate complete")
+    assert "(0.0% of segment)" in plain
     with_status = render_progress(report, status="RUNNING (pid=123)")
     assert with_status.startswith("gate: RUNNING (pid=123) | unit-1a1:batch-002 |")
     assert "25.0% of gate complete" in with_status
@@ -793,3 +797,137 @@ def test_estimate_progress_wall_time_beats_stale_heartbeat(tmp_path: Path) -> No
     )
     assert report.elapsed_seconds == pytest.approx(600.0)
     assert 0 < report.percent_complete < 100
+
+
+def test_script_main_prints_status_before_sleep(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Positive: status line must be emitted before the sleep delay while RUNNING."""
+    import os as _os
+
+    from scripts.gate_progress import main
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (tmp_path / ".gate-background.pid").write_text(str(_os.getpid()), encoding="utf-8")
+    _write_log(
+        log_dir,
+        "gate-20261017000000-00000000.log",
+        "[gate-background] launcher run_id=20261017T000000Z-00000000 namespace=gludd\n=== GATE PHASE: preflights ===\n",
+    )
+    sleep_calls: list[float] = []
+    output_before_sleep: str | None = None
+
+    def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        nonlocal output_before_sleep
+        if output_before_sleep is None:
+            output_before_sleep = capsys.readouterr().out
+
+    monkeypatch.setattr("scripts.gate_progress.time.sleep", fake_sleep)
+    argv = [
+        "--log-dir",
+        str(log_dir),
+        "--state-file",
+        str(tmp_path / "state.json"),
+        "--cooldown-secs",
+        "0",
+        "--sleep",
+        "5",
+    ]
+    assert main(argv) == 0
+    assert sleep_calls == [5.0]
+    assert output_before_sleep is not None
+    assert "gate: RUNNING" in output_before_sleep
+
+
+def test_script_main_finished_returns_immediately_despite_sleep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative: sleep must be skipped when the gate is not RUNNING."""
+    from scripts.gate_progress import main
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    _write_log(
+        log_dir,
+        "gate-20261017000000-00000000.log",
+        "[gate-background] launcher run_id=20261017T000000Z-00000000 namespace=gludd\n"
+        "=== GATE PHASE: preflights ===\n"
+        "=== GATE: PASSED ===\n",
+    )
+    sleep_calls: list[float] = []
+    monkeypatch.setattr("scripts.gate_progress.time.sleep", lambda s: sleep_calls.append(s))
+    argv = [
+        "--log-dir",
+        str(log_dir),
+        "--state-file",
+        str(tmp_path / "state.json"),
+        "--cooldown-secs",
+        "0",
+        "--sleep",
+        "5",
+    ]
+    assert main(argv) == 0
+    assert sleep_calls == []
+
+
+def test_script_main_zero_sleep_does_not_sleep(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Negative: a zero sleep argument must not invoke time.sleep at all."""
+    from scripts.gate_progress import main
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    _write_log(
+        log_dir,
+        "gate-20261017000000-00000000.log",
+        "[gate-background] launcher run_id=20261017T000000Z-00000000 namespace=gludd\n"
+        "=== GATE PHASE: preflights ===\n"
+        "=== GATE: PASSED ===\n",
+    )
+    sleep_calls: list[float] = []
+    monkeypatch.setattr("scripts.gate_progress.time.sleep", lambda s: sleep_calls.append(s))
+    argv = [
+        "--log-dir",
+        str(log_dir),
+        "--state-file",
+        str(tmp_path / "state.json"),
+        "--cooldown-secs",
+        "0",
+        "--sleep",
+        "0",
+    ]
+    assert main(argv) == 0
+    assert sleep_calls == []
+
+
+def test_script_main_sleep_help_text_says_after_printing(capsys: pytest.CaptureFixture[str]) -> None:
+    """The --sleep help text must describe the post-print behavior."""
+    from scripts.gate_progress import main
+
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    out = capsys.readouterr().out
+    assert "Sleep this many seconds after printing status" in out
+    assert "before printing status" not in out
+
+
+def test_render_progress_includes_segment_eta_and_percent() -> None:
+    """Positive: render output exposes both segment and total ETAs/percent."""
+    report = ProgressReport(
+        current_label="unit-1a1:batch-002",
+        elapsed_seconds=30.0,
+        estimated_total_seconds=120.0,
+        estimated_remaining_seconds=90.0,
+        percent_complete=25.0,
+        completed_segments=3,
+        total_segments=12,
+        remaining_known=True,
+        segment_remaining_seconds=10.0,
+        segment_percent_complete=50.0,
+    )
+    line = render_progress(report, status="RUNNING (pid=1)", next_poll_secs=120.0)
+    assert "50.0% of segment" in line
+    assert "segment ETA 10s" in line
+    assert "total ~2m 0s" in line
+    assert "25.0% of gate complete" in line

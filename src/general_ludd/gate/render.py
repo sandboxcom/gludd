@@ -77,12 +77,14 @@ def render_progress(
     label = report.current_label or "finished"
     eta = "unknown" if not report.remaining_known else _format_eta(report.estimated_remaining_seconds)
     total = _format_eta(report.estimated_total_seconds)
+    segment_eta = _format_eta(report.segment_remaining_seconds)
     prefix = f"gate: {status} | " if status else "gate: "
     next_step = _next_action(status, failure or "", next_poll_secs)
     next_suffix = f" | {next_step}" if next_step else ""
     return (
-        f"{prefix}{label} | {report.percent_complete:.1f}% of gate complete | "
+        f"{prefix}{label} | {report.percent_complete:.1f}% of gate complete"
+        f" ({report.segment_percent_complete:.1f}% of segment) | "
         f"elapsed {_format_eta(report.elapsed_seconds)} | "
-        f"ETA {eta} (total ~{total}) | "
+        f"ETA {eta} (segment ETA {segment_eta}; total ~{total}) | "
         f"segments {report.completed_segments}/{report.total_segments}{next_suffix}"
     )

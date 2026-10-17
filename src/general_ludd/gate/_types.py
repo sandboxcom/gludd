@@ -60,3 +60,5 @@ class ProgressReport:
     completed_segments: int
     total_segments: int
     remaining_known: bool = True
+    segment_remaining_seconds: float = 0.0
+    segment_percent_complete: float = 0.0

@@ -11,6 +11,8 @@ from statistics import mean
 from general_ludd.gate._types import GateEvent, GateRun, ProgressReport
 from general_ludd.gate.parsing import elapsed_at_line, parse_gate_log
 
+MIN_SEGMENT_SECONDS = 30.0
+
 
 def _event_duration(run: GateRun, event: GateEvent) -> float:
     """Estimate event duration from recorded or interpolated wall time."""
@@ -31,6 +33,24 @@ def _average_durations(runs: Iterable[GateRun]) -> dict[str, float]:
     for label, values in samples.items():
         averages[label] = mean(values) if values else 0.0
     return averages
+
+
+def _average_segment_seconds(runs: Iterable[GateRun]) -> float:
+    """Average duration per segment across all historical runs.
+
+    A minimum floor prevents wildly optimistic total ETAs when historical runs
+    are partial or unusually fast; it keeps the full-pipeline projection honest.
+    """
+    durations: list[float] = []
+    for run in runs:
+        if run.duration and run.duration > 0:
+            for event in run.events:
+                duration = _event_duration(run, event)
+                if duration > 0:
+                    durations.append(duration)
+    if durations:
+        return max(MIN_SEGMENT_SECONDS, mean(durations))
+    return MIN_SEGMENT_SECONDS
 
 
 def _template_sequence(runs: Iterable[GateRun]) -> list[str]:
@@ -192,22 +212,34 @@ def estimate_progress(
         averages.get(label) or _fallback_average(label, averages) for label in remaining_labels
     )
 
-    remaining_known = remaining_seconds > 0 and (bool(template) or active_avg > 0)
-    estimated_total = elapsed + remaining_seconds
-    if remaining_known and estimated_total > 0:
-        percent = min(100.0, elapsed / estimated_total * 100.0)
-    else:
-        known_total = len(completed_events) + 1
-        percent = min(100.0, len(completed_events) / known_total * 100.0)
-
     completed_display = len(completed_events) + skipped_segments
+    total_segments = completed_display + 1 + len(remaining_labels)
+
+    avg_segment_seconds = _average_segment_seconds(historical)
+    # The total pipeline projection is based on the full declared segment count,
+    # not just the work remaining in this run, so early/mid estimates never
+    # collapse to an unrealistically low number.
+    full_pipeline_total = total_segments * avg_segment_seconds
+    known_total = elapsed + remaining_seconds
+    estimated_total = max(known_total, full_pipeline_total)
+    estimated_remaining = max(0.0, estimated_total - elapsed)
+
+    remaining_known = estimated_remaining > 0 and (bool(template) or active_avg > 0)
+    percent = min(100.0, completed_display / total_segments * 100.0) if total_segments > 0 else 0.0
+
+    segment_percent = 0.0
+    if active_avg > 0:
+        segment_percent = min(100.0, elapsed_in_active / active_avg * 100.0)
+
     return ProgressReport(
         current_label=active.label,
         elapsed_seconds=elapsed,
         estimated_total_seconds=estimated_total,
-        estimated_remaining_seconds=remaining_seconds,
+        estimated_remaining_seconds=estimated_remaining,
         percent_complete=percent,
         completed_segments=completed_display,
-        total_segments=completed_display + 1 + len(remaining_labels),
+        total_segments=total_segments,
         remaining_known=remaining_known,
+        segment_remaining_seconds=active_remaining,
+        segment_percent_complete=segment_percent,
     )

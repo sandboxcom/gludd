@@ -49,6 +49,7 @@ PLUGIN_REGISTRATION_ORDER = [
     "enforce-verified-claims.ts",
     "enforce-no-suppressions.ts",
     "enforce-no-wait.ts",
+    "enforce-no-idle-monitoring.ts",
     "enforce-pipeline-kickoff.ts",
     "enforce-deletion-gate.ts",
     "enforce-batch-push.ts",
@@ -139,9 +140,10 @@ def _enforce_make_check(tool: str, command: str = "") -> dict | None:
         return None
     if not command.startswith("make ") and not command.startswith("make\t"):
         return {"permissionDecision": "deny", "message": "BLOCKED: non-make bash command"}
-    SHELL_META_CHARS_REGEX = r'[|;&(){}$`\\!]'
+    SHELL_META_CHARS_REGEX = r"[|;&(){}$`\\!]"
     import re
-    if re.search(SHELL_META_CHARS_REGEX, command[len("make "):]):
+
+    if re.search(SHELL_META_CHARS_REGEX, command[len("make ") :]):
         return {"permissionDecision": "deny", "message": "BLOCKED: shell metacharacters in make command"}
     return None
 
@@ -168,11 +170,16 @@ def _enforce_floor_check(tool: str, tasks_path: str) -> dict | None:
         edit_streak += 1
     streak += 1
 
-    _write_json(state_path("gludd-tool-streak.json"), {
-        "streak": streak, "readStreak": read_streak,
-        "editStreak": edit_streak, "lastUpdateTs": int(time.time() * 1000),
-        "lastWriter": "enforce-floor",
-    })
+    _write_json(
+        state_path("gludd-tool-streak.json"),
+        {
+            "streak": streak,
+            "readStreak": read_streak,
+            "editStreak": edit_streak,
+            "lastUpdateTs": int(time.time() * 1000),
+            "lastWriter": "enforce-floor",
+        },
+    )
 
     if is_read_tool:
         return None
@@ -236,14 +243,32 @@ def _enforce_enhancement_text_check(text: str) -> str | None:
 
 def _enforce_verified_claims_check(text: str) -> str | None:
     """enforce-verified-claims.ts: blocks done-words without evidence."""
-    DONE_WORDS = ["committed", "pushed", "fixed", "passing", "shipped", "done",
-                  "complete", "green", "resolved", "deployed", "landed", "verified",
-                  "passed", "working"]
+    DONE_WORDS = [
+        "committed",
+        "pushed",
+        "fixed",
+        "passing",
+        "shipped",
+        "done",
+        "complete",
+        "green",
+        "resolved",
+        "deployed",
+        "landed",
+        "verified",
+        "passed",
+        "working",
+    ]
     EVIDENCE_PATTERNS = [
-        r"commit [0-9a-f]{7,40}", r"VERIFIED \S+@\w+", r"CI GREEN",
-        r"\d+ passed", r"=== GATE: PASSED ===", r"Collection OK",
+        r"commit [0-9a-f]{7,40}",
+        r"VERIFIED \S+@\w+",
+        r"CI GREEN",
+        r"\d+ passed",
+        r"=== GATE: PASSED ===",
+        r"Collection OK",
     ]
     import re
+
     text_lower = text.lower()
     has_done_word = any(dw in text_lower for dw in DONE_WORDS)
     if not has_done_word:
@@ -303,8 +328,12 @@ class HookChain:
         if _is_subagent(self.env):
             return text
         result = text
-        for fn in [_enforce_stop_text_check, _enforce_multitask_text_check,
-                   _enforce_enhancement_text_check, _enforce_verified_claims_check]:
+        for fn in [
+            _enforce_stop_text_check,
+            _enforce_multitask_text_check,
+            _enforce_enhancement_text_check,
+            _enforce_verified_claims_check,
+        ]:
             override = fn(result)
             if override:
                 result = override
@@ -312,18 +341,29 @@ class HookChain:
 
     def reset_dispatch(self):
         """Simulate a dispatch wave: reset all streaks."""
-        _write_json(state_path("gludd-tool-streak.json"), {
-            "streak": 0, "readStreak": 0, "editStreak": 0,
-            "lastDispatchTs": int(time.time() * 1000), "lastWriter": "enforce-floor",
-        })
+        _write_json(
+            state_path("gludd-tool-streak.json"),
+            {
+                "streak": 0,
+                "readStreak": 0,
+                "editStreak": 0,
+                "lastDispatchTs": int(time.time() * 1000),
+                "lastWriter": "enforce-floor",
+            },
+        )
         _write_json(
             state_path("gludd-mainthread-streak.json"),
             {"count": 0, "ts": int(time.time() * 1000)},
         )
-        _write_json(state_path("gludd-multitask-state.json"), {
-            "thisMessageDispatches": 5, "zeroStreak": 0,
-            "estimatedInFlight": 5, "lastTs": int(time.time() * 1000),
-        })
+        _write_json(
+            state_path("gludd-multitask-state.json"),
+            {
+                "thisMessageDispatches": 5,
+                "zeroStreak": 0,
+                "estimatedInFlight": 5,
+                "lastTs": int(time.time() * 1000),
+            },
+        )
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
@@ -403,14 +443,14 @@ class TestFullEnforcementChain:
         chain.reset_dispatch()
         for _ in range(10):
             r = chain.execute_before("read")
-            assert r.get("allowed") or r.get("permissionDecision") != "deny", \
-                f"Read tool should never be denied: {r}"
+            assert r.get("allowed") or r.get("permissionDecision") != "deny", f"Read tool should never be denied: {r}"
 
     def test_dispatch_tools_always_allowed(self, chain):
         for tool in ("task", "agent", "workflow"):
             r = chain.execute_before(tool)
-            assert r.get("allowed") or r.get("permissionDecision") != "deny", \
+            assert r.get("allowed") or r.get("permissionDecision") != "deny", (
                 f"Dispatch tool {tool} should be allowed: {r}"
+            )
 
 
 class TestSubagentContext:
@@ -437,9 +477,14 @@ class TestSubagentContext:
 
     def test_subagent_text_passes_through(self, tasks_md):
         chain = HookChain(tasks_path=tasks_md, env={"OPENCODE_SUBAGENT": "1"})
-        _write_json(state_path("gludd-stop-state.json"), {
-            "hasLocalWork": True, "hasPendingWork": True, "tasksMdUnchecked": True,
-        })
+        _write_json(
+            state_path("gludd-stop-state.json"),
+            {
+                "hasLocalWork": True,
+                "hasPendingWork": True,
+                "tasksMdUnchecked": True,
+            },
+        )
         text = "Done. All tasks complete."
         assert chain.text_complete(text) == text
 
@@ -456,9 +501,12 @@ class TestDisengageBypass:
             state_path("gludd-tool-streak.json"),
             {"streak": 10, "readStreak": 0, "editStreak": 10},
         )
-        _write_json(state_path("gludd-watchdog-disengage.json"), {
-            "disengage_until": int(time.time() * 1000) + 600_000,
-        })
+        _write_json(
+            state_path("gludd-watchdog-disengage.json"),
+            {
+                "disengage_until": int(time.time() * 1000) + 600_000,
+            },
+        )
         chain = HookChain(tasks_path=tasks_md)
         r = chain.execute_before("edit")
         assert r.get("allowed")
@@ -472,18 +520,24 @@ class TestDisengageBypass:
             state_path("gludd-tool-streak.json"),
             {"streak": 10, "readStreak": 0, "editStreak": 10},
         )
-        _write_json(state_path("gludd-watchdog-disengage.json"), {
-            "disengage_until": int(time.time() * 1000) - 600_000,
-        })
+        _write_json(
+            state_path("gludd-watchdog-disengage.json"),
+            {
+                "disengage_until": int(time.time() * 1000) - 600_000,
+            },
+        )
         chain = HookChain(tasks_path=tasks_md)
         r = chain.execute_before("edit")
         assert r.get("permissionDecision") == "deny" or not r.get("allowed")
 
     def test_disengage_removed_enforces(self, tasks_md):
         """Removing disengage re-enables enforcement."""
-        _write_json(state_path("gludd-watchdog-disengage.json"), {
-            "disengage_until": int(time.time() * 1000) + 600_000,
-        })
+        _write_json(
+            state_path("gludd-watchdog-disengage.json"),
+            {
+                "disengage_until": int(time.time() * 1000) + 600_000,
+            },
+        )
         chain1 = HookChain(tasks_path=tasks_md)
         assert chain1.execute_before("bash", "ls")["allowed"]
         # Remove disengage
@@ -497,10 +551,15 @@ class TestTextCompleteChain:
     """Multiple text.complete handlers chain without conflicts."""
 
     def test_text_blocked_when_work_exists(self, tasks_md):
-        _write_json(state_path("gludd-stop-state.json"), {
-            "hasLocalWork": True, "hasPendingWork": True,
-            "tasksMdUnchecked": True, "healthScore": 30,
-        })
+        _write_json(
+            state_path("gludd-stop-state.json"),
+            {
+                "hasLocalWork": True,
+                "hasPendingWork": True,
+                "tasksMdUnchecked": True,
+                "healthScore": 30,
+            },
+        )
         _write_json(state_path("gludd-multitask-state.json"), {"zeroStreak": 0})
         chain = HookChain(tasks_path=tasks_md)
         result = chain.text_complete("Done. All tasks complete.")
@@ -508,37 +567,57 @@ class TestTextCompleteChain:
         assert "HARD STOP" in result, f"Expected stop message: {result}"
 
     def test_text_passes_through_when_no_work(self, tasks_md):
-        _write_json(state_path("gludd-stop-state.json"), {
-            "hasLocalWork": False, "hasPendingWork": False,
-            "tasksMdUnchecked": False, "healthScore": 100,
-        })
+        _write_json(
+            state_path("gludd-stop-state.json"),
+            {
+                "hasLocalWork": False,
+                "hasPendingWork": False,
+                "tasksMdUnchecked": False,
+                "healthScore": 100,
+            },
+        )
         chain = HookChain(tasks_path=tasks_md)
         assert chain.text_complete("All good.") == "All good."
 
     def test_done_claim_without_evidence_blocked(self, tasks_md):
-        _write_json(state_path("gludd-stop-state.json"), {
-            "hasLocalWork": False, "hasPendingWork": False,
-            "tasksMdUnchecked": False, "healthScore": 100,
-        })
+        _write_json(
+            state_path("gludd-stop-state.json"),
+            {
+                "hasLocalWork": False,
+                "hasPendingWork": False,
+                "tasksMdUnchecked": False,
+                "healthScore": 100,
+            },
+        )
         chain = HookChain(tasks_path=tasks_md)
         result = chain.text_complete("Everything is committed and pushed.")
         assert "evidence" in result.lower(), f"Done claim should be blocked: {result}"
 
     def test_done_claim_with_evidence_allowed(self, tasks_md):
-        _write_json(state_path("gludd-stop-state.json"), {
-            "hasLocalWork": False, "hasPendingWork": False,
-            "tasksMdUnchecked": False, "healthScore": 100,
-        })
+        _write_json(
+            state_path("gludd-stop-state.json"),
+            {
+                "hasLocalWork": False,
+                "hasPendingWork": False,
+                "tasksMdUnchecked": False,
+                "healthScore": 100,
+            },
+        )
         chain = HookChain(tasks_path=tasks_md)
         result = chain.text_complete("Tests passed: 10 passed, commit abc12345, === GATE: PASSED ===")
         assert result == "Tests passed: 10 passed, commit abc12345, === GATE: PASSED ==="
 
     def test_text_chain_no_duplicate_blocks(self, tasks_md):
         """Multiple plugins should not produce duplicate blocking messages."""
-        _write_json(state_path("gludd-stop-state.json"), {
-            "hasLocalWork": True, "hasPendingWork": True,
-            "tasksMdUnchecked": True, "healthScore": 30,
-        })
+        _write_json(
+            state_path("gludd-stop-state.json"),
+            {
+                "hasLocalWork": True,
+                "hasPendingWork": True,
+                "tasksMdUnchecked": True,
+                "healthScore": 30,
+            },
+        )
         _write_json(state_path("gludd-multitask-state.json"), {"zeroStreak": 2})
         chain = HookChain(tasks_path=tasks_md)
         result = chain.text_complete("Done.")
@@ -590,35 +669,44 @@ class TestEnhancementRatioEnforcement:
     """Enforce at least 50% enhancement dispatches in each wave."""
 
     def test_fix_heavy_wave_triggers_violation(self):
-        _write_json(state_path("gludd-enhancement-ratio.json"), {
-            "wave": [
-                {"type": "fix", "prompt_head": "fix A", "ts": int(time.time() * 1000)},
-                {"type": "fix", "prompt_head": "fix B", "ts": int(time.time() * 1000)},
-                {"type": "fix", "prompt_head": "fix C", "ts": int(time.time() * 1000)},
-                {"type": "enhancement", "prompt_head": "add tests", "ts": int(time.time() * 1000)},
-            ],
-        })
+        _write_json(
+            state_path("gludd-enhancement-ratio.json"),
+            {
+                "wave": [
+                    {"type": "fix", "prompt_head": "fix A", "ts": int(time.time() * 1000)},
+                    {"type": "fix", "prompt_head": "fix B", "ts": int(time.time() * 1000)},
+                    {"type": "fix", "prompt_head": "fix C", "ts": int(time.time() * 1000)},
+                    {"type": "enhancement", "prompt_head": "add tests", "ts": int(time.time() * 1000)},
+                ],
+            },
+        )
         chain = HookChain(tasks_path=str(state_path("gludd-test-tasks-e2e.md")))
         result = chain.text_complete("All dispatches complete.")
         assert "RATIO VIOLATION" in result, f"Expected ratio violation: {result}"
 
     def test_balanced_wave_no_violation(self):
-        _write_json(state_path("gludd-enhancement-ratio.json"), {
-            "wave": [
-                {"type": "enhancement", "prompt_head": "add test A", "ts": int(time.time() * 1000)},
-                {"type": "enhancement", "prompt_head": "add test B", "ts": int(time.time() * 1000)},
-                {"type": "fix", "prompt_head": "fix A", "ts": int(time.time() * 1000)},
-            ],
-        })
+        _write_json(
+            state_path("gludd-enhancement-ratio.json"),
+            {
+                "wave": [
+                    {"type": "enhancement", "prompt_head": "add test A", "ts": int(time.time() * 1000)},
+                    {"type": "enhancement", "prompt_head": "add test B", "ts": int(time.time() * 1000)},
+                    {"type": "fix", "prompt_head": "fix A", "ts": int(time.time() * 1000)},
+                ],
+            },
+        )
         chain = HookChain(tasks_path=str(state_path("gludd-test-tasks-e2e.md")))
         result = chain.text_complete("Balanced wave dispatched.")
         assert "VIOLATION" not in result
 
     def test_wave_too_small_no_check(self):
         """Waves with <2 dispatches are not checked."""
-        _write_json(state_path("gludd-enhancement-ratio.json"), {
-            "wave": [{"type": "fix", "prompt_head": "fix A", "ts": int(time.time() * 1000)}],
-        })
+        _write_json(
+            state_path("gludd-enhancement-ratio.json"),
+            {
+                "wave": [{"type": "fix", "prompt_head": "fix A", "ts": int(time.time() * 1000)}],
+            },
+        )
         chain = HookChain(tasks_path=str(state_path("gludd-test-tasks-e2e.md")))
         result = chain.text_complete("Single dispatch.")
         assert "VIOLATION" not in result
@@ -676,10 +764,15 @@ class TestFullSessionCycleSimulation:
         chain.reset_dispatch()
 
         # 7. Verify clean text passes through (no pending work)
-        _write_json(state_path("gludd-stop-state.json"), {
-            "hasLocalWork": False, "hasPendingWork": False,
-            "tasksMdUnchecked": False, "healthScore": 100,
-        })
+        _write_json(
+            state_path("gludd-stop-state.json"),
+            {
+                "hasLocalWork": False,
+                "hasPendingWork": False,
+                "tasksMdUnchecked": False,
+                "healthScore": 100,
+            },
+        )
         result = chain.text_complete("All work done. commit abc12345. 42 passed.")
         assert "HARD STOP" not in result
         assert "BLOCKED" not in result

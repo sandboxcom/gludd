@@ -1256,9 +1256,7 @@ console.log(JSON.stringify({{
     assert result["r4_denied"] is False, f"Call 4 (write) must be allowed (counter=2 < 3). Got: {result}"
     # With no configured minimum, all inline mutation remains available.
     assert result["r5_denied"] is False, f"Call 5 (bash) must remain allowed at floor zero. Got: {result}"
-    assert result["r5_hasStreak"] is False, (
-        f"A zero floor must not emit CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
-    )
+    assert result["r5_hasStreak"] is False, f"A zero floor must not emit CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
     _clean_state_files(state_file)
 
 
@@ -1374,4 +1372,40 @@ console.log(JSON.stringify({{
     assert result is not None, "Expected blocked text, got None"
     assert result["wave1Blocked"] is True, f"Wave 1 (1 dispatch) must be blocked as thin wave. Got: {result}"
     assert result["wave2ZeroBlocked"] is True, f"Wave 2 (0 dispatches) must be blocked. Got: {result}"
+    _clean_state_files(state_file)
+
+
+# enforce-no-idle-monitoring.ts  —  blocks repeated read-only monitoring
+# ---------------------------------------------------------------------------
+
+
+def test_no_idle_monitoring_allows_productive_tool() -> None:
+    """Productive tools reset the idle-monitoring counter and pass through."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-idle-monitoring.ts')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{path: 'TASKS.md'}}}}, undefined)
+console.log(JSON.stringify({{allowed: result === undefined}}))
+"""
+    result = _run_ts(code)
+    assert result["allowed"] is True
+
+
+def test_no_idle_monitoring_blocks_repeated_status_checks() -> None:
+    """Three consecutive monitoring bash calls trigger a deny."""
+    state_file = _runtime_state_path("no-idle-monitoring")
+    code = f"""\
+const fs = await import('node:fs')
+const stateFile = process.env.GLUDD_IDLE_MONITORING_STATE_FILE || '/tmp/gludd-idle-monitoring.json'
+try {{ fs.unlinkSync(stateFile) }} catch {{}}
+const mod = await import('{PLUGIN_DIR}/enforce-no-idle-monitoring.ts')
+const plugin = await mod.default({{}})
+const input = {{tool: 'bash', args: {{command: 'make gate-status-check'}}}}
+await plugin['tool.execute.before'](input, undefined)
+await plugin['tool.execute.before'](input, undefined)
+const block = await plugin['tool.execute.before'](input, undefined)
+console.log(JSON.stringify({{blocked: block?.permissionDecision === 'deny'}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_IDLE_MONITORING_STATE_FILE": state_file})
+    assert result["blocked"] is True
     _clean_state_files(state_file)

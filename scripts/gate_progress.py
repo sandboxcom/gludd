@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         "--sleep",
         type=float,
         default=0.0,
-        help="Sleep this many seconds before printing status (default: 0)",
+        help="Sleep this many seconds after printing status (default: 0)",
     )
     args = parser.parse_args(argv)
 
@@ -160,10 +160,11 @@ def main(argv: list[str] | None = None) -> int:
             failure=failure,
             next_poll_secs=next_poll_secs,
         )
-        + cooldown_note
+        + cooldown_note,
+        flush=True,
     )
 
-    if args.sleep > 0:
+    if args.sleep > 0 and status.startswith("RUNNING"):
         time.sleep(args.sleep)
 
     return 0

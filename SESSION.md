@@ -1,3 +1,36 @@
+## Session 99 continuation update (2026-10-17 19:55 UTC)
+
+Total tests: 125,130 collected, 1 deselected, 0 collection errors.
+
+- HEAD: `d4702ce2ce994a1c6e105b067e28f450248f0b08` on `development` (dirty working tree: gate-progress + estimation coverage + agent_watchdog test fix; S99.3 still in progress).
+- Fixed the gate's per-file coverage failure on `src/general_ludd/gate/estimation.py` (was 65.7% line / 25% branch) by adding direct and integration tests covering `_fallback_average`, `_average_segment_seconds`, `_average_durations`, `_template_sequence`, `_elapsed_seconds`, `_terminal_report`, `_starting_report`, and the no-history / active-phase / starting-run branches of `estimate_progress`. `make test TESTFILE=tests/unit/test_gate_estimation.py PYTEST_ARGS='--cov=general_ludd.gate.estimation --cov-branch --cov-report=term-missing'` reports 92% line+branch coverage, above the 85/75 floors.
+- Fixed `tests/unit/test_agent_watchdog.py::test_check_under_floor_no_action_when_no_pending_work` flakiness under a running background gate: it now monkeypatches `aw.GATE_PID_FILE` to a non-existent temp path so `_gate_background_running()` does not falsely report pending work during the gate itself.
+- Fixed gate test-phase failure `tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_live_vars`: added `GLUDD_IDLE_MONITORING_STATE_FILE` to `docs/CONFIG_REFERENCE.md` and made `.opencode/lib/idle_monitoring.ts` executable so `tests/unit/test_enforcement_executable_modes.py` passes.
+- Fixed gate test-phase failure `tests/unit/test_framework_plugin_properties.py::test_fw5_plugin_has_env_var_disable[enforce-no-idle-monitoring.ts]` and `test_fw6_plugin_calls_reportAlive[enforce-no-idle-monitoring.ts]`: added `GLUDD_NO_IDLE_MONITORING_ENFORCE=0` disable flag and `reportAlive("enforce-no-idle-monitoring")` calls to `.opencode/plugin/enforce-no-idle-monitoring.ts`.
+- `make lint`, `make typecheck`, `make check-plugin-hook-invoke`, and `make check-node-v26-compat` pass after the plugin updates.
+- Full gate resumed at `2026-10-17T19:53:42Z` (`pid=49474`, log `.gate-logs/gate-20261017195342-460fd3dd.log`). Preflights re-running; currently at 0% of gate complete, ETA ~1h 11m.
+- `development` remains 12 commits ahead of `sandboxcom/development`; commit/push/release remain blocked until the gate reports `FINISHED: PASSED`.
+
+## Session 99 continuation update (2026-10-17 19:50 UTC)
+
+Total tests: 125,130 collected, 1 deselected, 0 collection errors.
+
+## Session 99 continuation update (2026-10-17 16:50 UTC)
+
+Total tests: 125,129 / 125,130 collected, 1 deselected, 0 collection errors.
+
+- HEAD: `d4702ce2ce994a1c6e105b067e28f450248f0b08` on `development` (52 modified files, S99.3 in progress).
+- Test collection: **125,129 / 125,130 tests collected, 1 deselected, 0 collection errors** (`make test-count`, 2026-10-17T16:49Z).
+- Fixed gate failures discovered during the resumed full gate:
+  - `tests/unit/test_module_graph_deep.py::test_all_subpackages_classified`: added `general_ludd.gate` to the utility-layer classification list.
+  - Plugin line-count overhead (`tests/unit/test_process_overhead.py::test_anti_stop_plugins_are_lean`): refactored `enforce-no-idle-monitoring.ts` to delegate state/logic to `.opencode/lib/idle_monitoring.ts`, keeping the plugin file under the 6000-line total threshold.
+  - False-done block cross-test pollution (`tests/unit/test_process_overhead.py::test_false_done_state_file_tracks_block_count`): rewrote the test to drive the hook inside the isolated `hook_plugin_env` fixture and read the redirected `GLUDD_FALSE_DONE_BLOCKS_FILE`.
+  - Added `GLUDD_FALSE_DONE_BLOCKS_FILE` and `GLUDD_IDLE_MONITORING_STATE_FILE` to `tests/unit/_hook_fixtures.py` state-file redirection list.
+  - Added runtime hook coverage for `enforce-no-idle-monitoring.ts` in `scripts/hook_runtime/cases_scheduling.py` so `tests/unit/test_runtime_test_coverage.py` passes.
+- Fixed gate preflight failure `check-plugin-hooks`: removed the named `export` from `MONITORING_PATTERNS` in `.opencode/plugin/enforce-no-idle-monitoring.ts` because named exports crash the legacy plugin loader. Verified `check-plugin-hooks`, `test_no_idle_monitoring_plugin.py` (25 passed), `check-plugin-hook-invoke`, and `check-node-v26-compat` pass.
+- Fixed `gate-progress` estimation/render and SLEEP ordering: `src/general_ludd/gate/estimation.py` now projects total pipeline ETA using a per-segment floor (30s) on remaining segments, reports segment ETA/percent separately, and `render.py` displays both; `scripts/gate_progress.py` help text corrected to "after printing status" and tests verify status prints before sleep. Added positive/negative tests in `tests/unit/test_gate_progress.py` (4 new) and `tests/unit/test_gate_estimation.py` (4 new). `make lint`, `make typecheck`, `tests/unit/test_gate_progress.py` (28 passed), `tests/unit/test_gate_estimation.py` (5 passed), `tests/unit/test_gate_render.py` (1 passed) all green.
+- Current full gate resumed from lint failure: `pid=49034`, log `.gate-logs/gate-20261017183846-df0e4bb3.log`, running `coverage-gaps` at 2.5% complete, ETA ~57m.
+
 ## Session 99 update (2026-10-17 11:30 UTC)
 
 - Implemented `make gate-progress` (ETA + total-% feature): new module `src/general_ludd/gate/progress.py`, CLI `scripts/gate_progress.py`, make target `gate-progress` (`GATE_PROGRESS_MAX_HISTORICAL=20`, `GATE_PROGRESS_COOLDOWN_SECS=120`, `GATE_PROGRESS_FORCE`, `GATE_PROGRESS_ARGS`), tests `tests/unit/test_gate_progress.py` (17 passed), contract + `make help` entries. One line shows RUNNING (pid)/FINISHED/IDLE, total % of gate complete, elapsed, ETA, segment counts, and a `next:` action hint — FAILED extracts the failing test ids + error line from the log and directs `fix <test> (<error>) then make gate-resume` (no poll hint after an error); PASSED directs commit/push/verify. It parses phases/batches/shard declarations/heartbeats from `gate-*.log`, uses recorded heartbeat `elapsed=` samples with wall-clock fallback (stale heartbeats can't freeze the display), builds the remaining-work template from the most complete historical runs, synthesizes batches beyond the observed template from shard batch counts with per-shard fallback averages. Baselines 3 new tooling symbols in `config/dead_code_baseline.txt` (660→663). Steering codified in AGENTS.md: prefer `gate-progress` for polling; pace polls ≤1 per ~2 minutes (mechanically enforced by the cooldown, exit 3); `gate-status-check` only for log-tail diagnosis. Script-level tests cover cooldown refusal, FORCE bypass, status+next-action output, and the make-recipe knobs (`--state-file` isolation). `enforce-no-idle-monitoring.ts` now also counts `make gate-progress` as a monitoring call (tests 25 passed). Fixed pre-existing `typecheck-all` (invalid `mypy -p X files` invocation) to `-p general_ludd` + `--explicit-package-bases tools`.
@@ -105,16 +138,13 @@
 
 ### Current Gate Status
 <!-- gate:begin -->
-- HEAD `aa6f9c97f...` on `development`. Working tree dirty: `SESSION.md`, `make/00-foundation.mk`, `make/10-observability-and-tests.mk`, `make/50-development-and-guardrails.mk`, `make/70-orchestration-and-model-runtime.mk`, `tests/unit/test_gate_background_targets.py`, `tests/unit/test_runtime_publish_admission.py`.
-- Remote `sandboxcom/development` at `1ff095f19...` (local ahead by 10 commits).
-- Merged worktrees into development: `agent-native-galaxy-logs-20261014`, `agent-reviewed-finalization-native-command-20261016`, `agent-ee-searx-typer-migration-20261016`, `codex-v012-lease-marker-classification`; `agent-v012-reviewed-acquire-319c80a` was already an ancestor. Remaining active worktree: `agent-uv-boundary-fix` (protected, redundant, uncommitted; will remove with `make clean-stale-worktrees` after gate).
-- Added helper targets: `merge-commit-nv`, `worktree-commit-changes`, `worktree-cleanup-merged`, `git-stash-list`, `git-stash-show`, `git-stash-drop`.
-- Makefile fixes: `merge-commit-nv` and `worktree-commit-changes` now require `_gate-fresh-check _commit-lint-guard`; `worktree-cleanup-merged` is wired into `.PHONY` and `help:`.
-- Preflight resume fix: `gate-resume` now captures the prior `.gate-status` under the candidate SHA, and `_gate-preflights` skips the preflight loop when that receipt exists and `GATE_EXACT_SHA_RESUME=1`. Two structural tests in `tests/unit/test_gate_background_targets.py` pin the behavior.
-- Local gate: **RUNNING** (pid `48590`, log `.gate-logs/gate-20261017080124-a470623c.log`). Fresh start after prior run was mistakenly killed; currently in `_integration-health-watchdog-owned-gate` preflight (~10% of integration tests). The next `make gate-resume` after this run will skip preflight if it already passed.
-- Disk: volume at 95%; `make check-disk` passes (soft cap due to protected/recent scratch).
+- HEAD `d4702ce2ce994a1c6e105b067e28f450248f0b08` on `development`. Working tree dirty: gate-progress estimation/render fixes, coverage test additions, `SESSION.md` update.
+- Remote `sandboxcom/development` at `1ff095f19...` (local ahead by 12 commits).
+- Active worktrees: none (`make worktree-health-check` PASS).
+- Latest resumed gate: **RUNNING** (pid `39388`, log `.gate-logs/gate-20261017194526-6e2a7565.log`, started `2026-10-17T19:45:26Z`). Preflights re-ran and passed; currently in the `collect` phase. Previous failure was per-file coverage on `src/general_ludd/gate/estimation.py`; that is now covered above the 75% floor.
+- `make check-disk` PASS (soft cap due to protected/recent scratch; hard limit 95%).
 - README status table is current for `v0.1.2` (`make check-readme-status TAG=v0.1.2` OK).
-- v0.1.2 release: blocked until the running full gate passes and hosted CI is green for the exact pushed SHA.
+- v0.1.2 release: blocked until the running full gate reports `FINISHED: PASSED`, changes are committed/pushed, and hosted CI is green for the exact pushed SHA.
 <!-- gate:end -->
 
 ---

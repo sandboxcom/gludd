@@ -73,9 +73,7 @@ def _probe_node() -> tuple[int, int, int] | None:
     if not node_bin:
         return None
     try:
-        proc = subprocess.run(
-            [node_bin, "--version"], capture_output=True, text=True, timeout=5
-        )
+        proc = subprocess.run([node_bin, "--version"], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if proc.returncode != 0:
@@ -161,6 +159,8 @@ STATE_FILE_ENV_VARS = [
     "GLUDD_WATCHDOG_CI_FILE",
     "GLUDD_STOP_TOOL_COUNTS_FILE",
     "GLUDD_WATCHDOG_PID_FILE",
+    "GLUDD_FALSE_DONE_BLOCKS_FILE",
+    "GLUDD_IDLE_MONITORING_STATE_FILE",
 ]
 
 # Absolute /tmp paths hardcoded in plugin source with NO env-var override.
@@ -173,10 +173,10 @@ HARDCODED_TMP_PATHS = [
     # back by tests and raced under xdist when a sibling worker's _restore()
     # unlinked the shared /tmp file mid-test (CI run 29110591188 unit-2 and
     # 29123726253 unit-2 FileNotFoundError on /tmp/gludd-watchdog.pid).
-    "/tmp/gludd-blanked-responses.json",     # enforce-stop.ts BLANKED_RESPONSE_FILE
-    "/tmp/gludd-force-dispatch.json",        # enforce-stop.ts / enforce-delegate.ts
-    "/tmp/gludd-false-done-blocks.json",     # enforce-stop.ts FALSE_DONE_BLOCKS_FILE
-    "/tmp/gludd-plugin-alive.json",          # _reportAlive() shared across plugins
+    "/tmp/gludd-blanked-responses.json",  # enforce-stop.ts BLANKED_RESPONSE_FILE
+    "/tmp/gludd-force-dispatch.json",  # enforce-stop.ts / enforce-delegate.ts
+    "/tmp/gludd-false-done-blocks.json",  # enforce-stop.ts FALSE_DONE_BLOCKS_FILE
+    "/tmp/gludd-plugin-alive.json",  # _reportAlive() shared across plugins
     "/tmp/gludd-plugin-heartbeat-enforce-stop.json",
     "/tmp/gludd-plugin-heartbeat-enforce-delegate.json",
     "/tmp/gludd-plugin-heartbeat-enforce-session-start.json",
@@ -196,8 +196,7 @@ def _clean_base_env() -> dict[str, str]:
     return {
         k: v
         for k, v in os.environ.items()
-        if not any(k.startswith(p) for p in _STRIP_ENV_PREFIXES)
-        and k not in _STRIP_ENV_EXACT
+        if not any(k.startswith(p) for p in _STRIP_ENV_PREFIXES) and k not in _STRIP_ENV_EXACT
     }
 
 
@@ -457,15 +456,19 @@ def invoke_text_complete_and_confirm_increment(
     counter = Path(counter_path)
     for _ in range(attempts):
         r1 = hook_plugin_env.invoke(
-            plugin, "experimental.text.complete",
-            input={}, output={"text": "first in-progress response"},
+            plugin,
+            "experimental.text.complete",
+            input={},
+            output={"text": "first in-progress response"},
         )
         assert r1.returncode == 0, r1.stderr
         count1 = json.loads(counter.read_text()).get("count", 0)
 
         r2 = hook_plugin_env.invoke(
-            plugin, "experimental.text.complete",
-            input={}, output={"text": "second in-progress response"},
+            plugin,
+            "experimental.text.complete",
+            input={},
+            output={"text": "second in-progress response"},
         )
         assert r2.returncode == 0, r2.stderr
         count2 = json.loads(counter.read_text()).get("count", 0)
