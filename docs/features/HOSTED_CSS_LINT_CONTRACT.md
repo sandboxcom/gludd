@@ -104,6 +104,28 @@ CSS/Markdown examples, 241 Make contracts and duplicate-target/parity checks
 pass. These are focused integration results; a clean exact-SHA full gate,
 coverage audit and replacement hosted CI remain required before release.
 
+## Complete declaration hex admission (2026-10-18)
+
+Independent review of `df403ad7c7377e39295b9881914a49bd7cf9fd3d`
+requests a further parity repair: the built-in invalid-property rule skips
+custom properties and at-rule descriptor blocks. Four native cases reproduce
+the omission for direct, gradient and variable-fallback custom values and a
+font-palette descriptor. The original source-only review remains failed.
+
+The same installed [ESLint CSS-tree library](https://github.com/eslint/csstree)
+is now a direct exact 4.1.2 dependency. One ESLint declaration visitor uses its
+native tokenizer and `lexer.matchType("hex-color", value)` for hash tokens in
+every declaration value. It adds no handwritten hex classifier or separate
+scanner. Native tokenization preserves strings, quoted/unquoted URL fragments
+and balanced custom-property token streams, while grammar matching owns valid
+hex lengths and digits. The prior parser, property and duplicate rules remain.
+
+All 43 focused lint, integration, native clone and dependency-floor cases pass,
+including all four failures and positive controls for short/long hex with and
+without alpha, nested fallback colors, strings, URL fragments and raw custom
+values. The exact combined source still requires independent signoff, fresh
+release admission, canonical coverage/full gate and exact-SHA hosted results.
+
 ## Verification
 
 `tests/unit/test_css_lint_target.py` exercises all three required checks, the

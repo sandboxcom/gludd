@@ -1,5 +1,6 @@
 import { defineConfig } from "../.opencode/node_modules/eslint/lib/config-api.js";
 import css from "../.opencode/node_modules/@eslint/css/dist/index.js";
+import { lexer, tokenize, tokenTypes } from "../.opencode/node_modules/@eslint/css-tree/lib/index.js";
 
 const noDuplicateProperties = {
   meta: {
@@ -40,6 +41,38 @@ const noDuplicateProperties = {
   },
 };
 
+const noInvalidHexColors = {
+  meta: {
+    type: "problem",
+    languages: ["css/css"],
+    schema: [],
+    messages: {
+      invalidHexColor: "Invalid hex color '{{color}}'.",
+    },
+  },
+  create(context) {
+    const sourceCode = context.sourceCode;
+    return {
+      Declaration(node) {
+        const value = sourceCode.getText(node.value);
+        tokenize(value, (type, start, end) => {
+          if (type !== tokenTypes.Hash) {
+            return;
+          }
+          const color = value.slice(start, end);
+          if (!lexer.matchType("hex-color", color).matched) {
+            context.report({
+              loc: node.loc,
+              messageId: "invalidHexColor",
+              data: { color },
+            });
+          }
+        });
+      },
+    };
+  },
+};
+
 export default defineConfig([
   {
     ignores: [".venv/**", ".opencode/node_modules/**"],
@@ -56,7 +89,10 @@ export default defineConfig([
     plugins: {
       css,
       "gludd-css": {
-        rules: { "no-duplicate-properties": noDuplicateProperties },
+        rules: {
+          "no-duplicate-properties": noDuplicateProperties,
+          "no-invalid-hex-colors": noInvalidHexColors,
+        },
       },
     },
     rules: {
@@ -66,6 +102,7 @@ export default defineConfig([
         { allowUnknownVariables: true },
       ],
       "gludd-css/no-duplicate-properties": "error",
+      "gludd-css/no-invalid-hex-colors": "error",
     },
   },
 ]);

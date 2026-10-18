@@ -15,6 +15,7 @@ CSS_FILE = "docs/presentation/deck/presentation.css"
 ESLINT_CONFIG = "config/eslint-css.config.mjs"
 ESLINT_VERSION = "10.11.0"
 ESLINT_CSS_VERSION = "2.0.0"
+CSS_TREE_VERSION = "4.1.2"
 
 
 def _run_make(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -109,11 +110,53 @@ def test_lint_css_allows_valid_hex_and_browser_fallback() -> None:
         assert result.returncode == 0, output
 
 
+@pytest.mark.parametrize("source", [
+    ":root { --brand: #12; }\n",
+    ":root { --brand: linear-gradient(#12, #fff); }\n",
+    ":root { --brand: var(--fallback, #12); }\n",
+    "@font-palette-values --theme { font-family: Example; override-colors: 0 #12; }\n",
+])
+def test_lint_css_rejects_invalid_hex_in_every_declaration_context(source: str) -> None:
+    """Custom properties, nested values and at-rule descriptors retain hex admission."""
+    with TemporaryDirectory(prefix=".css-lint-test-", dir=ROOT) as directory:
+        css_file = Path(directory) / "invalid-hex.css"
+        css_file.write_text(source)
+        result = _run_make(
+            "lint-css",
+            f"CSS_FILES={css_file}",
+            f"ESLINT_CSS_CONFIG={ESLINT_CONFIG}",
+        )
+        output = result.stdout + result.stderr
+        assert result.returncode != 0, output
+        assert "gludd-css/no-invalid-hex-colors" in output, output
+
+
+def test_lint_css_allows_custom_hex_forms_urls_and_strings() -> None:
+    """Tokens in strings and URLs are not colors; all four native hex lengths pass."""
+    source = (
+        ':root { --short: #aBc; --alpha: #AbCd; --long: #aabbcc; --long-alpha: #AABBCCDD; '
+        '--fallback: var(--brand, #abc); --label: "#12"; --link: url("#12"); '
+        '--raw-link: url(#12); --tokens: { color: #abc; }; }\n'
+        '@font-palette-values --theme { font-family: Example; override-colors: 0 #abcd; }\n'
+    )
+    with TemporaryDirectory(prefix=".css-lint-test-", dir=ROOT) as directory:
+        css_file = Path(directory) / "valid.css"
+        css_file.write_text(source)
+        result = _run_make(
+            "lint-css",
+            f"CSS_FILES={css_file}",
+            f"ESLINT_CSS_CONFIG={ESLINT_CONFIG}",
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_lint_css_dependency_config_and_contract_are_exactly_pinned() -> None:
     package = json.loads((ROOT / ".opencode" / "package.json").read_text())
     lock = json.loads((ROOT / ".opencode" / "package-lock.json").read_text())
     dependencies = package["devDependencies"]
     assert dependencies["@eslint/css"] == ESLINT_CSS_VERSION
+    assert dependencies["@eslint/css-tree"] == CSS_TREE_VERSION
+    assert lock["packages"]["node_modules/@eslint/css-tree"]["version"] == CSS_TREE_VERSION
     assert dependencies["eslint"] == ESLINT_VERSION
     assert "@biomejs/biome" not in dependencies
     assert "stylelint" not in dependencies
