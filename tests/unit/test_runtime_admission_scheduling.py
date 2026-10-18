@@ -429,7 +429,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 101
+    assert len(families) == 102
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -444,9 +444,9 @@ def _assert_native_git_metadata_query_count_route(
         ("2", "2"), ("1", "1"), ("1", "1"),
     ]
     assert [row["flags"] for row in rows] == [
-        "-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/* -o verbosity_test_cases=-2",
+        f"-W error -q -n 2 --maxprocesses 2 --ignore-glob={ROOT / 'tests' / '*'} -o verbosity_test_cases=-2",
         "-W error -q -n 0 --maxprocesses 1",
-        "-W error -q -n 0 --maxprocesses 1 --ignore-glob=tests/*",
+        f"-W error -q -n 0 --maxprocesses 1 --ignore-glob={ROOT / 'tests' / '*'}",
     ]
     runtime = payload["runtime_contract"]
     assert isinstance(runtime, dict)

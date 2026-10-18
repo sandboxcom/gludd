@@ -866,6 +866,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_pytest_param_fixture_collisions.py::test_source_audit_restores_exact_gc_state_after_native_work",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "hosted-managed-python312-patch",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_workflow_integrity.py::test_gate312_guard_is_promoted_before_fanout",
+      "full_gate_phase": "test"
     }
   ]
 }

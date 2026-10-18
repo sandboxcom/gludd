@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
+from copy import deepcopy
 from typing import Any
 
+import pytest
 import yaml
 
 WORKFLOW_PATH = pathlib.Path(__file__).parent.parent.parent / ".github" / "workflows" / "build.yml"
@@ -542,3 +545,110 @@ class TestPlatformJobArtifactNames:
         ]
         names = {u.get("with", {}).get("name", "") for u in uploads}
         assert "gludd-linux-aarch64" in names, f"Expected gludd-linux-aarch64 artifact, got {names}"
+
+
+def _assert_managed_gate_patch(workflow: Workflow) -> None:
+    gate = workflow["jobs"]["gate"]
+    assert gate["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
+    steps = gate["steps"]
+    action = "astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39"
+    setups = [step for step in steps if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")]
+    assert len(setups) == 2
+    by_condition = {step.get("if"): step for step in setups}
+    assert set(by_condition) == {"matrix.python-version == '3.11'", "matrix.python-version == '3.12'"}
+    assert by_condition["matrix.python-version == '3.11'"] == {
+        "uses": action, "if": "matrix.python-version == '3.11'",
+    }
+    assert by_condition["matrix.python-version == '3.12'"] == {
+        "uses": action, "if": "matrix.python-version == '3.12'",
+        "with": {"version": "0.13.1", "python-version": "3.12.15", "activate-environment": False},
+    }
+    legacy = [step for step in steps if step.get("name") == "Install deps"]
+    managed = [step for step in steps if step.get("name") == "Install managed Python 3.12 deps"]
+    assert len(legacy) == len(managed) == 1
+    assert legacy[0]["if"] == "matrix.python-version == '3.11'"
+    assert managed[0]["if"] == "matrix.python-version == '3.12'"
+    assert managed[0]["env"] == {"UV_PYTHON_PREFERENCE": "only-managed"}
+    for step, request in ((legacy[0], "${{ matrix.python-version }}"), (managed[0], "3.12.15")):
+        command = " ".join(str(step["run"]).replace("\\", "").split())
+        assert f"python scripts/dependency_profiles.py sync --set ci --environment .venv --python {request}" in command
+    assert workflow["env"]["UV_NO_SYNC"] == "1"
+    for environment in (workflow.get("env", {}), gate.get("env", {}), managed[0]["env"]):
+        assert environment.get("UV_PYTHON_DOWNLOADS") != "never"
+        assert str(environment.get("UV_OFFLINE", "")).lower() not in {"1", "true"}
+
+
+def test_gate312_uses_exact_current_managed_profile() -> None:
+    _assert_managed_gate_patch(_load_workflow())
+
+
+@pytest.mark.parametrize("mutation", (
+    "uv-floating", "uv-old", "python-major-only", "python-system-old",
+    "profile-major-only", "system-fallback", "extra-activation", "both-branches", "profile-bypass",
+    "downloads-disabled", "offline-acquisition",
+))
+def test_managed_gate_patch_refuses_runtime_selection_drift(mutation: str) -> None:
+    workflow = deepcopy(_load_workflow())
+    _assert_managed_gate_patch(workflow)
+    steps = workflow["jobs"]["gate"]["steps"]
+    setup = next(
+        step for step in steps
+        if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")
+        and step.get("if") == "matrix.python-version == '3.12'"
+    )
+    install = next(step for step in steps if step.get("name") == "Install managed Python 3.12 deps")
+    if mutation == "uv-floating":
+        setup["with"]["version"] = "latest"
+    elif mutation == "uv-old":
+        setup["with"]["version"] = "0.11.17"
+    elif mutation == "python-major-only":
+        setup["with"]["python-version"] = "3.12"
+    elif mutation == "python-system-old":
+        setup["with"]["python-version"] = "3.12.3"
+    elif mutation == "profile-major-only":
+        install["run"] = str(install["run"]).replace("--python 3.12.15", "--python 3.12")
+    elif mutation == "system-fallback":
+        install["env"]["UV_PYTHON_PREFERENCE"] = "managed"
+    elif mutation == "extra-activation":
+        setup["with"]["activate-environment"] = True
+    elif mutation == "both-branches":
+        setup["if"] = "matrix.python-version == '3.11'"
+    elif mutation == "downloads-disabled":
+        workflow["env"]["UV_PYTHON_DOWNLOADS"] = "never"
+    elif mutation == "offline-acquisition":
+        workflow["env"]["UV_OFFLINE"] = "1"
+    else:
+        assert mutation == "profile-bypass"
+        install["run"] = "uv sync --python 3.12.15"
+    with pytest.raises(AssertionError):
+        _assert_managed_gate_patch(workflow)
+
+
+def test_gate312_guard_is_promoted_before_fanout(tmp_path: pathlib.Path) -> None:
+    from tests.unit.test_runtime_admission_scheduling import _capture_owner
+
+    _assert_managed_gate_patch(_load_workflow())
+    root = WORKFLOW_PATH.parents[2]
+    payload = json.loads((root / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    node = "tests/unit/test_ci_workflow_integrity.py::test_gate312_guard_is_promoted_before_fanout"
+    assert {
+        "id": "hosted-managed-python312-patch",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    } in payload["families"]
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    main_files = rows[0]["files"]
+    assert isinstance(main_files, list)
+    assert main_files.count("tests/unit/test_ci_workflow_integrity.py") == 1
+    for row in rows[1:]:
+        later_files = row["files"]
+        assert isinstance(later_files, list)
+        assert "tests/unit/test_ci_workflow_integrity.py" not in later_files
+    assert payload["full_gate_target"] == "gate"
+    assert payload["full_gate_required"] is True
+    phase = next(
+        item for item in payload["runtime_contract"]["phases"]
+        if item["target"] == "_pytest-runtime-compatibility-admission"
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
