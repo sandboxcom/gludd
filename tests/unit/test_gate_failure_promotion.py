@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
 import json
 import subprocess
@@ -825,6 +826,37 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
             "tests/unit/test_precommit_quality_guards.py::"
             "test_real_project_make_refuses_engine_expression_before_parse_or_export_execution",
         ),
+        (
+            "plugin-hook-registration-uniqueness",
+            "tests/unit/test_plugin_manifest_deep.py::"
+            "TestHookValidity::test_no_duplicate_hooks_within_single_plugin",
+        ),
+        (
+            "plugin-session-start-read-isolation",
+            "tests/unit/test_plugin_session_start_deadlock.py::"
+            "TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start",
+        ),
+        (
+            "plugin-enforcement-source-budget",
+            "tests/unit/test_process_overhead.py::"
+            "TestProcessTokenOverhead::test_anti_stop_plugins_are_lean",
+        ),
+        (
+            "plugin-enforcement-runtime-executable-mode",
+            "tests/unit/test_enforcement_executable_modes.py::"
+            "test_enforcement_runtime_surfaces_have_executable_git_mode",
+        ),
+        (
+            "v011-exact-gate-plugin-budget",
+            "tests/unit/test_v011_exact_gate_repair_contract.py::"
+            "test_all_six_exact_gate_repairs_remain_green_together",
+        ),
+        pytest.param(
+            "css-lint-exact-pin-contract",
+            "tests/unit/test_css_lint_target.py::"
+            "test_lint_css_dependency_config_and_contract_are_exactly_pinned",
+            id="css-lint-exact-pin-contract",
+        ),
     ],
 )
 def test_repaired_failures_execute_as_exact_nodes_before_fanout(
@@ -845,6 +877,7 @@ def test_repaired_failures_execute_as_exact_nodes_before_fanout(
     selectors = recipes[1].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert selectors.count(node) == 1
     assert node.split("::", 1)[0] not in selectors
+    assert all(node not in recipe for recipe in recipes[2:])
     assert (
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
         '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
@@ -852,6 +885,10 @@ def test_repaired_failures_execute_as_exact_nodes_before_fanout(
     phase = next(item for item in payload["runtime_contract"]["phases"]
                  if item["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    phases = payload["runtime_contract"]["phases"]
+    assert len(phases) == 21
+    assert sum(item["max_seconds"] for item in phases) == 2850
+    assert payload["full_gate_target"] == "gate"
     assert payload["full_gate_required"] is True
 
 
@@ -1404,6 +1441,107 @@ def test_duplicate_help_failure_runs_in_a_fresh_early_process() -> None:
     assert payload["full_gate_required"] is True
 
 
+@pytest.mark.parametrize(
+    ("family_id", "test_name"),
+    [
+        (
+            "css-lint-hosted-native-engine-contract",
+            "test_css_lint_uses_pinned_native_engine_with_a_real_config_file",
+        ),
+        (
+            "css-lint-local-hosted-command-parity",
+            "test_local_css_lint_target_matches_the_hosted_command",
+        ),
+        (
+            "css-lint-vendor-policy-boundary",
+            "test_css_lint_config_keeps_the_hosted_rules_enabled",
+        ),
+    ],
+)
+def test_css_lint_contract_failures_execute_in_complete_early_cohort(
+    family_id: str, test_name: str,
+) -> None:
+    """Keep engine, Make-owner and vendor-policy failures in one early cohort."""
+    _assert_complete_early_runtime_cohort(
+        family_id,
+        "tests/unit/test_ci_stylelint_workflow.py",
+        test_name,
+        {
+            "test_css_lint_uses_pinned_native_engine_with_a_real_config_file",
+            "test_local_css_lint_target_matches_the_hosted_command",
+            "test_css_lint_config_keeps_the_hosted_rules_enabled",
+        },
+    )
+
+
+def test_native_secret_scan_budget_executes_in_complete_early_cohort() -> None:
+    """Keep native budget, refusal, status, cleanup and routing cases together."""
+    _assert_complete_early_runtime_cohort(
+        "native-secrets-scan-worker-budget",
+        "tests/unit/test_secrets_scan_resources.py",
+        "test_native_scanner_argv_respects_host_and_project_budget",
+        {
+            "test_native_scanner_argv_respects_host_and_project_budget",
+            "test_insufficient_project_budget_refuses_before_native_scanner",
+            "test_native_scan_preserves_failure_status_and_disposable_cleanup",
+            "test_security_audit_retains_existing_native_scan_owner_and_all_phases",
+            "test_native_secret_budget_has_make_contract_help_and_documentation",
+        },
+    )
+
+
+def _assert_complete_early_runtime_cohort(
+    family_id: str, test_file: str, test_name: str, required_cases: set[str],
+) -> None:
+    """Require one complete file in the original bounded first cohort."""
+    node = f"{test_file}::{test_name}"
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(
+        (item for item in payload["families"] if item["id"] == family_id), None,
+    )
+    assert family == {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+
+    owner = _target_stanza(
+        compose_makefile(ROOT / "Makefile"),
+        "_pytest-runtime-compatibility-admission",
+    )
+    assert node in owner
+    executable = "\n".join(
+        line for line in owner.splitlines() if not line.startswith("#")
+    )
+    recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
+    assert len(recipes) == 4
+    selectors = recipes[1].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    assert selectors.count(test_file) == 1
+    assert not any(selector.startswith(f"{test_file}::") for selector in selectors)
+    assert all(test_file not in recipe for recipe in recipes[2:])
+    assert (
+        'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
+        '--ignore-glob=tests/* -o verbosity_test_cases=-2"'
+    ) in recipes[1]
+
+    tree = ast.parse((ROOT / test_file).read_text(encoding="utf-8"))
+    cases = [
+        item.name for item in tree.body
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and item.name.startswith("test_")
+    ]
+    assert required_cases <= set(cases)
+    phases = payload["runtime_contract"]["phases"]
+    phase = next(item for item in phases if item["target"] == family["owner_target"])
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(phases) == 21
+    assert sum(item["max_seconds"] for item in phases) == 2850
+    assert payload["full_gate_target"] == "gate"
+    assert payload["full_gate_required"] is True
+
+
 def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
@@ -1495,6 +1633,16 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "reviewed-focus-required-run-identity",
         "backlog-public-help-contract",
         "local-release-post-failure-opt-in",
+        "css-lint-hosted-native-engine-contract",
+        "css-lint-local-hosted-command-parity",
+        "css-lint-vendor-policy-boundary",
+        "plugin-hook-registration-uniqueness",
+        "plugin-session-start-read-isolation",
+        "plugin-enforcement-source-budget",
+        "plugin-enforcement-runtime-executable-mode",
+        "v011-exact-gate-plugin-budget",
+        "native-secrets-scan-worker-budget",
+        "css-lint-exact-pin-contract",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1684,6 +1832,20 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ci_run_summary_script.py '
         'tests/unit/test_ci_run_summary_target.py '
         'tests/unit/test_ci_workflow_integrity.py '
+        'tests/unit/test_plugin_manifest_deep.py::'
+        'TestHookValidity::test_no_duplicate_hooks_within_single_plugin '
+        'tests/unit/test_plugin_session_start_deadlock.py::'
+        'TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start '
+        'tests/unit/test_process_overhead.py::'
+        'TestProcessTokenOverhead::test_anti_stop_plugins_are_lean '
+        'tests/unit/test_enforcement_executable_modes.py::'
+        'test_enforcement_runtime_surfaces_have_executable_git_mode '
+        'tests/unit/test_v011_exact_gate_repair_contract.py::'
+        'test_all_six_exact_gate_repairs_remain_green_together '
+        'tests/unit/test_secrets_scan_resources.py '
+        'tests/unit/test_css_lint_target.py::'
+        'test_lint_css_dependency_config_and_contract_are_exactly_pinned '
+        'tests/unit/test_ci_stylelint_workflow.py '
         'tests/security/test_ci_workflow.py '
         'tests/unit/test_workflow_safe_parser.py '
         'tests/unit/test_self_improve_private_policy_ci_contract.py '

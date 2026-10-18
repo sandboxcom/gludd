@@ -497,6 +497,46 @@ start order nor prove a current GitHub service defect. This additive early routi
 does not measure a hosted speedup. It starts no serving process, listener or
 migration, and preserves checkpoint restore authority and the existing ZDD gates.
 
+### Frozen-candidate repair admission (2026-10-18)
+
+Candidate `31b2b66be80fb96cdbb2fcb6a8e03a775e5cd0a6` has terminal
+[Build and Release failure](https://github.com/sandboxcom/gludd/actions/runs/39084793178):
+unit-1b rejects retired CSS contracts and helper Git mode, unit-3a rejects
+duplicate hook/read boundaries and the original plugin budget, and unit-3b
+rejects the same budget through its unchanged six-repair contract. All other
+shards, both quality legs, Molecule and Pages pass for that historical SHA.
+The local diagnostic gate is explicitly ABORTED after owned termination with
+no survivors; its log `.gate-logs/gate-20261018010048-53f46f80.log` and native
+`gate-kill-evidence.json` remain failed/non-passing evidence.
+
+The existing first compatibility cohort gains the complete three-case CSS
+workflow file, five exact plugin/mode/budget nodes, the unchanged native CSS
+config pin and the complete 15-case native scanner resource file. The manifest
+grows from 86 to 96 families.
+The scanner family captures the separately reproduced native CPU fan-out
+defect; it does not invent another hosted failure. No original family,
+selector, child invocation, fatal-warning flag or downstream assertion is
+removed. The 21 phases, 2850-second ceiling and 90/60-second owner bounds remain.
+
+Failing-first repair acceptance records 22 failures and 99 passes before
+implementation; the scanner resource controls separately record 14 failures
+and two passes. The scanner's new whole-file admission control fails against
+the 94-family owner before its routing is added; the native CSS pin's exact-node
+control separately fails against 95 before its selector is added. The latter
+preserves the unchanged original dependency-ignore assertion while restoring
+the existing vendor boundary. After implementation, the
+combined repair cohort passes 234 cases, the explicit resource bindings pass
+62, and the final promotion/resource files pass 90. These overlapping focused
+runs are not full-gate proof. Native manifest validation reports 96 families
+and Make-contract validation reports 243 targets.
+
+The terminal hosted timing report is produced by the existing
+`ci-run-summary` owner with `CI_RUN_SUMMARY_SHARD_TIMINGS=1`, retaining exact
+run/SHA identity and all eight shards. Failed shard intervals remain censored.
+No scheduling improvement is claimed before measuring the successor's hosted
+SHA. Independent source review, actual native admission, canonical coverage/
+full gate and matching hosted/deployment acceptance remain required.
+
 ## Hosted shard scheduling and automatic timing
 
 ### Fresh-process help admission
