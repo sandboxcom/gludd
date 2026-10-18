@@ -57,6 +57,12 @@ else:
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_unit_watchdog_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep in-process diagnostics local without changing child environments."""
+    monkeypatch.setattr(watchdog, "WATCHDOG_LOG", str(tmp_path / "watchdog.log"))
+
+
 def test_direct_script_execution_has_process_cleanup_import_fallback() -> None:
     """The Makefile launches the file path, so imports must work outside package mode."""
     source = Path(__file__).resolve().parents[2] / "scripts" / "task_watchdog.py"
@@ -1921,3 +1927,35 @@ def test_interrupted_creator_cannot_leave_an_adoptable_unacknowledged_child(
                 assert watchdog._terminate_verified(identity, (root,)) is True
     assert (root / "killed").read_text(encoding="utf-8") == "[]"
     assert not (root / ".venv").exists() and not (root / "uv.lock").exists()
+
+
+def test_unit_watchdog_fault_logs_belong_to_the_test_namespace(tmp_path: Path) -> None:
+    """Check ownership before deliberate failures can emit any real log line."""
+    local_log = tmp_path / "watchdog.log"
+    assert Path(watchdog.WATCHDOG_LOG).resolve() == local_log.resolve()
+    assert not local_log.exists()
+    deadlines = tmp_path / "deadlines.json"
+    deadlines.write_text(json.dumps({"stale-task": time.time() * 1000 - 400_000}), encoding="utf-8")
+    killed = tmp_path / "killed.json"
+    arguments = (str(deadlines), str(tmp_path / "stale.json"), str(killed))
+    with (
+        patch("scripts.task_watchdog._repository_roots", side_effect=OSError("git unavailable")),
+        patch("scripts.task_watchdog.find_hung_processes") as scan,
+        patch("scripts.task_watchdog.os.kill") as send,
+    ):
+        assert watchdog.run_once(*arguments, timeout_ms=300_000) == {"stale": 0, "killed": 0}
+    scan.assert_not_called()
+    send.assert_not_called()
+    with (
+        patch("scripts.task_watchdog.load_deadlines", side_effect=RuntimeError("unexpected read failure")),
+        patch("scripts.task_watchdog.find_hung_processes") as scan,
+        patch("scripts.task_watchdog.os.kill") as send,
+    ):
+        assert watchdog.run_once(*arguments, timeout_ms=300_000) == {"stale": 0, "killed": 0}
+    scan.assert_not_called()
+    send.assert_not_called()
+    text = local_log.read_text(encoding="utf-8")
+    assert text.count("git unavailable") == 1
+    assert text.count("unexpected read failure") == 1
+    assert "POLL ERROR: git unavailable" in text and "POLL ERROR: unexpected read failure" in text
+    assert not killed.exists()
