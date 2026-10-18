@@ -42,6 +42,7 @@ import shutil
 import subprocess
 from collections.abc import Generator, Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -311,9 +312,10 @@ def _restore(snap: dict[str, bytes | None]) -> None:
             pass  # best-effort restore — never fail test teardown
 
 
+@lru_cache(maxsize=1)
 def _probe_harness() -> str | None:
-    """Actually EXERCISE scripts/hook_plugin_harness.mjs once, session-scoped
-    (module import time), against a known-good plugin/hook
+    """Actually EXERCISE scripts/hook_plugin_harness.mjs once at runtime fixture
+    setup, against a known-good plugin/hook
     (enforce-stop.ts's `event` handler on `session.idle`) rather than merely
     checking the node version. Returns None when the harness genuinely works
     end-to-end; otherwise a human-readable reason string suitable for
@@ -372,17 +374,9 @@ def _probe_harness() -> str | None:
     return None
 
 
-# Session-scoped (module import time, like NODE_OK above): every
-# harness-driven test skips together via HOOK_LIVE_SKIP_REASON when the
-# harness can't actually run the real plugin sources in this environment —
-# e.g. CI's Node 22 passes the version probe but its `--experimental-strip-
-# types` is strip-only (no transpile) and throws on TS constructs the plugin
-# sources use. On a working local environment this stays None so the tests
-# keep running for real (not skipping) and the local coverage isn't lost.
-_HARNESS_PROBE_FAILURE = _probe_harness()
-HARNESS_OK = _HARNESS_PROBE_FAILURE is None
-if _HARNESS_PROBE_FAILURE is not None:
-    HOOK_LIVE_SKIP_REASON = _HARNESS_PROBE_FAILURE
+# Keep the existing once-per-session capability result lazy: collection may
+# execute only the exact node --version query. The real harness probe belongs
+# to fixture setup, under the existing shared-state grouping and restoration.
 
 
 def hook_plugin_env_impl(tmp_path: Path) -> Generator[HookEnv, None, None]:
@@ -402,14 +396,15 @@ def hook_plugin_env_impl(tmp_path: Path) -> Generator[HookEnv, None, None]:
 
     Skips (does not fail) when node is missing/too old for
     `--experimental-strip-types`, OR when the session-scoped harness probe
-    (`_probe_harness`, see `HARNESS_OK` / `HOOK_LIVE_SKIP_REASON` above) found
+    (`_probe_harness`, first called here during fixture setup) found
     that a real invocation against a known-good plugin/hook errors out (e.g.
     a Node whose `--experimental-strip-types` can't handle this repo's TS
     constructs) — so every harness-driven test skips together with a clear
     reason instead of erroring out individually.
     """
-    if not HARNESS_OK:
-        pytest.skip(f"hook harness unavailable in this environment: {HOOK_LIVE_SKIP_REASON}")
+    probe_failure = _probe_harness()
+    if probe_failure is not None:
+        pytest.skip(f"hook harness unavailable in this environment: {probe_failure}")
 
     snap = _snapshot(HARDCODED_TMP_PATHS)
 

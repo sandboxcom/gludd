@@ -2050,3 +2050,38 @@ pass. All112 families/fields, original selectors/plugins/three2-1-1 children,
 90/60 and21/2850 remain unchanged. Normal guarded commit collection and exact
 independent child review remain separate receipts; no source approval, actual
 cleanup/capacity retry, runtime/proof/CI replay, push or task closure is claimed.
+
+## S98.4 hook capability probe runtime child (2026-10-18)
+
+Subsequent exact1329 independent source review approved the root-route child.
+Root then used the reviewed native cleanup owner to remove four retired
+namespaces with four receipts; the native hard disk guard passed95.0/95.
+Historical failures and immutable refs remain. Capacity evidence is
+/tmp/gludd-v012-capacity-repair-1329a87/README.md.
+
+The single real private312 assertion diagnostic failedrc2/71.97s, not timeout:
+firstchild36failed/1910passed/1skip in69.18s; the remaining children never ran.
+Its raw child log and native status remain in
+/tmp/gludd-v012-312-execution-attribution-1329a87/. The one skip was the required
+fallback guard: the helper's import-time harness invocation encountered the
+unchanged collection confinement and permanently cached the refusal.
+
+This small test-helper repair defers that unchanged real capability probe to
+first fixture setup, retaining its existing15s bound, error/unsupported skip
+classification, state restoration and exact Node version-only import probe.
+The original plugin assertions and confinement policy are untouched. The new
+actual pytest-child regression observes collection/setup, rejects non-version
+collection subprocesses and runs the original supported fallback without skip.
+Retain fixture-only import/observation intermediates separately from the genuine
+sticky-skip RED1/2.81s and exact collection-argv RED1/3.98s. FocusedGREEN1/4.12s,
+normal strict2files/Ruff pass. The complete no-idle/shared-state/confinement
+owners pass86/6.91s on canonical311 and86/8.33s on private3.12.15, zero skips,
+fatal warnings. Production coverage floors and all112 admission families,
+selectors, plugins, child/worker/bounds remain unchanged.
+
+Feature history records firsthand pytest lifecycle reports and the official
+deferred-resource example, with limited applicability. Normal guarded
+collection/pin and final cumulative source review remain separate; the
+authorized cleanup RECORD snapshot repair follows as another small commit.
+No broad replay, hosted margin, promotion, restart, task closure or release
+completion is claimed.
