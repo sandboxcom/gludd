@@ -1114,3 +1114,82 @@ release proofs remain missing. Raw RED/GREEN XML, proposal, scheduling console
 tail and normal guarded collection are retained under
 /tmp/gludd-v012-gate-async-fixture-sync-evidence; its manifest identifies the
 commit and source cohort. No task is closed.
+
+## 2026-10-18: own the miniature gate fixture profile
+
+Exact integrated source 48f0177c50bee4d90e663cdcd63d12fcc847bff3 passes
+the native 90/60 compatibility owner in 73.5 seconds with all 1887 main cases,
+fresh help1 and tail10, zero skips. Root's existing ledger marks both original
+hosted timing families natively REPAIRED at that source. This is historical
+native repair evidence; it is not a complete release gate or successor hosted
+success. The later actual release-profile scheduling admission fails two
+original gate_run_lock native-profile ordering cases (1885 pass, two fail in
+58.65 seconds). Raw actual output remains in
+/tmp/gludd-v012-48f0177-release-profile-failure/actual-admission-stdout.txt.
+The failed profile is the blocker input, not a reason to remove release policy.
+
+The miniature fixture writes GATE_TEST_PROFILE := native or release into its
+temporary Makefile, but the original child argv omitted that value. An enclosing
+command-line release profile travels through MAKEFLAGS/MAKEOVERRIDES and wins
+over that ordinary file assignment. Production correctly puts admission,
+release-state check, lock acquisition and phases in that order. The sole branch
+agent-v012-gate-profile-fixture-isolation repairs the fixture using the existing
+test_canonical_release_gate native pattern: pass the fixture's requested
+GATE_TEST_PROFILE=value explicitly on the existing child Make argv.
+The actual composed production header, file assignment, -j2, .NOTPARALLEL,
+15-second subprocess limit, failure injection and every original assertion stay.
+
+All seven original matrix rows remain, including four release rows. They prove
+release-state refusal stops before lock/phases and lock refusal stops before
+phases. Ten additive cases exercise opposite ambient native/release values via
+ordinary environment, environment-overrides (-e), and recursive command-line
+transport. A separate fixture-local profile receipt checks Make's effective
+value and command-line origin. Omitted/opposite argv mutations must fail the
+same real event assertions and record the actual wrong-profile sequence.
+These are temporary test artifacts, with no new proof cache or authority.
+
+The controls reuse run_ci_shards_serial._owned_test_environment for the existing
+five-key child-dictionary isolation, then deliberately seed each transport.
+Every other inherited environment value is compared unchanged, including
+canonical Python/UV, PATH, worker and warning inputs. The parent mapping and
+subprocess monkeypatch are verified restored. No production environment,
+policy, Make target, runner, gate prerequisite or sanitizer changes.
+
+Failing-first exact original selectors reproduce two failures in 1.78 seconds
+under an actual enclosing release Make invocation. Additive controls then show
+six expected failures/four mutation passes in 1.51 seconds before the argv fix.
+Final whole-owner acceptance passes all 31 cases under enclosing release in
+2.34 seconds and enclosing native in 1.84 seconds, warning-fatal, one worker,
+zero skips. Ruff and strict typing pass after one receipt-line wrap.
+The real PID/start/lock/refusal tests pass with native process visibility.
+Root separately retains the earlier sandbox /bin/ps/psutil EPERM history;
+that environmental refusal is not assigned a source cause or bypassed here.
+
+The whole test_gate_run_lock file is already selected. All original 1887 main
+cases, help1/tail10, 110 families, three sequential children, workers2/1/1,
+90/60, 21 phases/2850, warning policy, 85/75 coverage, ZDD, native authentication
+and cleanup/promotion authority remain unchanged. The ten new cases are
+additive; no admission routing or count assertion is weakened. No further
+unbounded full-roster run is used for this fixture repair. Root owns the actual
+post-review integrated release-profile scheduling and bounded 90/60 replay,
+then all canonical gate and exact-SHA hosted proofs before sealing/promotion.
+No task checkbox/status is closed.
+
+The [GNU Make manual](https://www.gnu.org/software/make/manual/make.html#Options_002fRecursion)
+documents command-line assignments carried recursively through MAKEFLAGS and
+MAKEOVERRIDES; its
+[override rules](https://www.gnu.org/software/make/manual/make.html#Overriding)
+explain why an ordinary file assignment loses. First-hand longstanding context
+is the September 2021
+[GNU help-make origin/-e discussion](https://lists.gnu.org/archive/html/help-make/2021-09/msg00010.html):
+the author records a recursive FOO example and effective origins, including how
+-e changes inherited environment handling. This supports testing real transport
+and origin rather than assuming file precedence. It does not establish a GNU
+Make defect in Gludd or justify stripping the production release-state check.
+The researcher's initial archive-fetch limits remain honestly recorded in
+/tmp/gludd-v012-release-profile-fixture-isolation-proposal.md; the 2021 indexed
+post content and official manual were subsequently available for this feature.
+
+Raw RED/GREEN XML, research proposal, source scope and normal required
+collection are retained in /tmp/gludd-v012-gate-profile-fixture-isolation-evidence.
+Its manifest identifies exact source/ref/cohort and preserves proof boundaries.

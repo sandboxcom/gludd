@@ -195,14 +195,19 @@ def test_real_gate_prerequisites_admit_before_lock_and_lock_before_phases(
         f"GATE_TEST_PROFILE := {profile}\n.NOTPARALLEL: gate gate-refresh\n"
         f"{header}\n\t@printf 'phase\\n' >> events\n"
         + "\n".join(
-            f"{target}:\n\t@printf '{target}\\n' >> events\n"
+            f"{target}:\n"
+            + (
+                "\t@printf '%s\\n' '$(GATE_TEST_PROFILE)' '$(origin GATE_TEST_PROFILE)' > profile\n"
+                if target == targets[0] else ""
+            )
+            + f"\t@printf '{target}\\n' >> events\n"
             + ("\t@exit 9\n" if target == failed_check else "")
             for target in targets
         ),
         encoding="utf-8",
     )
     result = subprocess.run(
-        ["make", "--no-print-directory", "-j2", "-f", str(fixture), "gate"],
+        ["make", "--no-print-directory", "-j2", "-f", str(fixture), f"GATE_TEST_PROFILE={profile}", "gate"],
         cwd=tmp_path, capture_output=True, text=True, timeout=15, check=False,
     )
     expected = [targets[0], *([targets[1]] if profile == "release" else []), targets[2]]
@@ -332,3 +337,77 @@ def test_main_dispatches_actions_and_rejects_invalid_input(
         )
         == 13
     )
+
+
+@pytest.mark.parametrize("profile", ["native", "release"])
+@pytest.mark.parametrize(
+    ("transport", "mutation"),
+    [
+        ("environment", "owned"),
+        ("environment-overrides", "owned"),
+        ("recursive", "owned"),
+        ("recursive", "omitted"),
+        ("recursive", "opposite"),
+    ],
+)
+def test_miniature_gate_profile_owns_conflicting_recursive_make_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    profile: str, transport: str, mutation: str,
+) -> None:
+    """Real Make must use the fixture profile; lost/opposite bindings must fail."""
+    from scripts.run_ci_shards_serial import MAKE_RECURSION_ENV_VARS, _owned_test_environment
+
+    inherited = os.environ.copy()
+    environment = _owned_test_environment(inherited)
+    ambient = "release" if profile == "native" else "native"
+    environment["GATE_TEST_PROFILE"] = ambient
+    if transport == "environment-overrides":
+        environment["MAKEFLAGS"] = "e"
+    elif transport == "recursive":
+        environment.update({
+            "MAKEFLAGS": f" -- GATE_TEST_PROFILE={ambient}",
+            "MAKEOVERRIDES": f"GATE_TEST_PROFILE={ambient}",
+            "MAKELEVEL": "1",
+        })
+    managed = {*MAKE_RECURSION_ENV_VARS, "GATE_TEST_PROFILE"}
+    assert {key: value for key, value in environment.items() if key not in managed} == {
+        key: value for key, value in inherited.items() if key not in managed
+    }
+    native_run = subprocess.run
+    invocations: list[list[str]] = []
+
+    def execute(
+        arguments: list[str], *, cwd: Path, capture_output: bool, text: bool,
+        timeout: int, check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        assert capture_output and text and not check and timeout == 15
+        command = arguments.copy()
+        binding = f"GATE_TEST_PROFILE={profile}"
+        if mutation == "omitted":
+            command = [argument for argument in command if argument != binding]
+        elif mutation == "opposite":
+            command = [argument for argument in command if argument != binding]
+            command.append(f"GATE_TEST_PROFILE={ambient}")
+        invocations.append(command)
+        return native_run(
+            command, cwd=cwd, capture_output=True, text=True, timeout=15,
+            check=False, env=environment,
+        )
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(subprocess, "run", execute)
+        if mutation == "owned":
+            test_real_gate_prerequisites_admit_before_lock_and_lock_before_phases(tmp_path, profile, None)
+        else:
+            with pytest.raises(AssertionError):
+                test_real_gate_prerequisites_admit_before_lock_and_lock_before_phases(tmp_path, profile, None)
+    assert len(invocations) == 1 and "-j2" in invocations[0]
+    actual_profile = profile if mutation == "owned" else ambient
+    assert (tmp_path / "profile").read_text(encoding="utf-8").splitlines() == [actual_profile, "command line"]
+    assert (tmp_path / "events").read_text(encoding="utf-8").splitlines() == [
+        "gate-admission-config",
+        *(["_gate-release-state-check"] if actual_profile == "release" else []),
+        "_gate-run-lock-acquire", "phase",
+    ]
+    assert subprocess.run is native_run
+    assert os.environ == inherited
