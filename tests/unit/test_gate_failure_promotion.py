@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import re
 import subprocess
 import sys
 from copy import deepcopy
@@ -1700,6 +1701,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "watchdog-native-start-serialized-acknowledgement",
         "watchdog-unit-log-namespace",
         "selected-profile-jsonpointer-composition",
+        "ordinary-descendant-symlink-unlink",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2053,7 +2055,33 @@ def test_profile_composition_failure_has_one_exact_native_admission_family() -> 
         "full_gate_phase": "test",
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
-    assert payload["families"][-1] == expected
-    assert len(payload["families"]) == 111
+    assert payload["families"][110] == expected
+    assert len(payload["families"]) == 112
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     assert owner.count(expected["node"]) == 1
+
+
+def test_ordinary_descendant_links_have_one_exact_native_admission_family() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    expected = {
+        "id": "ordinary-descendant-symlink-unlink",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": (
+            "tests/unit/test_clean_stale_resource_namespaces.py::"
+            "test_ordinary_descendant_symlink_unlinks_without_following_target"
+        ),
+        "full_gate_phase": "test",
+    }
+    assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
+    assert payload["families"][-1] == expected
+    assert len(payload["families"]) == 112
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
+    first_files = owner.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    assert first_files.count("tests/unit/test_clean_stale_resource_namespaces.py") == 1
+    assert owner.count(expected["node"]) == 1, "the family documents its exact whole-owner node"
+    arguments = re.findall(r'TESTFILES="([^"]*)"', owner)
+    assert len(arguments) == 3
+    assert all(expected["node"] not in value.split() for value in arguments), (
+        "whole-owner admission must not duplicate the exact node"
+    )

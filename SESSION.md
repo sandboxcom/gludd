@@ -1967,3 +1967,51 @@ The feature records firsthand CPython BPO 3002/issue #47252 context and its limi
 All earlier SESSION bytes, the 94055fe pin, actual f634 report/archive/replay,
 failed source/runtime observations and root clarification remain unchanged.
 No historical reanalysis or performance/proof replay occurred.
+
+
+### 2026-10-18 S98.4: ordinary descendant-link cleanup (M16)
+
+Same sole source branch, immutable parent 6ade745; main and all previous refs,
+source reviews, historical diagnostics and capacity failures remain untouched.
+User clarification permits unlinking owned ordinary interior link entries,
+without following targets. Root/candidate and marker links remain refused.
+The existing scanner now anchors traversal and marker/installed-artifact reads
+to no-follow directory descriptors, fingerprints link-object metadata/text and
+candidate metadata, revalidates identities, and closes descriptors on every
+exit. The existing lease API gains only checked dir-fd/expected-identity input.
+The mature fd-safe rmtree owner, kernel ownership, paired namespaces,
+worktree/registry protections, grace, census/PID/authenticity/hardlink checks,
+bounds, receipts and heartbeats remain authoritative.
+
+Retain initial RED113: 24 failures/89 passes/2.25s, including seven fixture
+missing-import failures. Corrected lease/routing RED has nine intended
+failures/1.26s. Additional lease-identity RED has three failures/1.28s;
+candidate-directory metadata RED has one failure/1.09s, demonstrating actual
+fixture deletion before the fingerprint correction. Initial implementation
+122/2 failed in 2.75s is retained (hardlink/overflow precedence and toolchain
+pair-key fixture); subsequent 127/3.33s and extended 134/2.49s pass.
+Real injected directory and marker swaps reproduce baseline target access;
+the repaired scanner rejects those races. A real native-deleter late-swap
+fixture preserves outside data and actual partial failure without a receipt.
+
+Family112 appends the exact ordinary-link control while retaining all111
+earlier family entries and non-family fields. The original first-child whole
+cleanup-owner selector already executes it, so no third-child or Make recipe
+change duplicates that node. All children/order/plugins/workers2/1/1,
+90/60,21/2850 and full authoritative replay stay unchanged. Strict typing
+retains actual module-identity/implicit-export/JSON diagnostics rather than
+weakening flags, casts, Any or suppressions. Retain the 307-pass/24-failure
+41.79s coverage attempt: all24 share the old routing helper's111-family count.
+The single count now conforms to112; original mutation checks remain.
+Final seven-whole-owner acceptance passes331/40.75s, warnings fatal, serial;
+observer20261018T165353Z-79605-a5127f91 passes42.608s. Native85/75 line/branch
+audit passes all3 files, aggregate92.1% line/86.4% branch. Separate normal
+strict checks pass every changed production/whole test owner; Ruff,250-target
+contracts,112-family native guard,261-resource inventory, task and line guards
+pass. The only Make change documents the new whole-owner node for the native
+manifest validator; no recipe or selection changes. All runtime import branches
+remain unchanged; TYPE-only exports/import coherence and real JSON narrowing
+retain original values and every inventory element. Required normal collection
+and independent source review remain separate receipts, pending commit here.
+No real cleanup, provisioning, diagnostic/admission/gate/CI replay, push,
+release-readiness claim or task closure is authorized by these source fixtures.

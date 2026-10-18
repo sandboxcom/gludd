@@ -22,18 +22,24 @@ import stat
 import subprocess
 import time
 from base64 import urlsafe_b64encode
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from importlib.metadata import Distribution, PackagePath
 from importlib.util import MAGIC_NUMBER, cache_from_source, source_from_cache, source_hash
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from scripts.collection_lock import LeaseInspection, inspect_lease
-from scripts.resource_arbiter import project_namespace
-from scripts.workstream_registry import default_registry_path
+if TYPE_CHECKING:
+    from collection_lock import LeaseInspection, inspect_lease
+    from resource_arbiter import project_namespace
+    from workstream_registry import default_registry_path
+else:
+    from scripts.collection_lock import LeaseInspection, inspect_lease
+    from scripts.resource_arbiter import project_namespace
+    from scripts.workstream_registry import default_registry_path
 
 _NAMESPACE = re.compile(r"^(?P<base>[A-Za-z0-9_.-]+-[0-9a-f]{12})(?P<toolchain>-toolchain)?$")
 _MARKER_TOKEN = re.compile(r"(?:^|[._-])(lease|lock|owner|pid)(?:$|[._-])")
@@ -115,6 +121,185 @@ class _Scan:
     blocking_marker: Path | None = None
 
 
+
+_DIRECTORY_RELATIVE_SUPPORTED = (
+    {os.open, os.stat, os.readlink} <= os.supports_dir_fd
+    and os.scandir in os.supports_fd
+    and os.stat in os.supports_follow_symlinks
+)
+
+
+def _same_entry(left: os.stat_result, right: os.stat_result) -> bool:
+    return (
+        left.st_dev, left.st_ino, left.st_mode, left.st_uid, left.st_gid,
+        left.st_nlink, left.st_size, left.st_mtime_ns, left.st_ctime_ns,
+    ) == (
+        right.st_dev, right.st_ino, right.st_mode, right.st_uid, right.st_gid,
+        right.st_nlink, right.st_size, right.st_mtime_ns, right.st_ctime_ns,
+    )
+
+
+def _directory_flags() -> int:
+    if not _DIRECTORY_RELATIVE_SUPPORTED or not all(
+        hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
+    ):
+        raise OSError("safe directory-relative namespace inspection unavailable")
+    return os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK
+
+
+@contextmanager
+def _directory_anchor(path: Path) -> Iterator[int]:
+    """Pin each lexical component without resolving or following a link."""
+    flags = _directory_flags()
+    absolute = path.absolute()
+    if ".." in absolute.parts:
+        raise OSError("namespace path contains traversal")
+    with ExitStack() as stack:
+        descriptor = os.open(absolute.anchor, flags)
+        stack.callback(os.close, descriptor)
+        route: list[tuple[int, str, os.stat_result]] = []
+        for component in absolute.parts[1:]:
+            before = os.stat(component, dir_fd=descriptor, follow_symlinks=False)
+            child = os.open(component, flags, dir_fd=descriptor)
+            stack.callback(os.close, child)
+            opened = os.fstat(child)
+            if not stat.S_ISDIR(before.st_mode) or (
+                before.st_dev, before.st_ino, before.st_mode, before.st_uid, before.st_gid,
+            ) != (
+                opened.st_dev, opened.st_ino, opened.st_mode, opened.st_uid, opened.st_gid,
+            ):
+                raise OSError("namespace ancestor identity changed")
+            route.append((descriptor, component, before))
+            descriptor = child
+        try:
+            yield descriptor
+        finally:
+            for parent, name, before in reversed(route):
+                after = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                if (before.st_dev, before.st_ino, before.st_mode, before.st_uid, before.st_gid) != (
+                    after.st_dev, after.st_ino, after.st_mode, after.st_uid, after.st_gid,
+                ):
+                    raise OSError("namespace ancestor identity changed")
+
+
+class _NamespaceIO:
+    """One scan's pinned namespace and exact directory/leaf identities."""
+
+    def __init__(self, path: Path, descriptor: int, *, limit: int = 100_000) -> None:
+        self.path = path
+        self.descriptor = descriptor
+        self.limit = limit
+        self.stamps: dict[Path, os.stat_result] = {Path("."): os.fstat(descriptor)}
+
+    def remember(self, relative: Path, metadata: os.stat_result) -> None:
+        previous = self.stamps.setdefault(relative, metadata)
+        if not _same_entry(previous, metadata):
+            raise OSError("namespace entry identity changed")
+
+    @contextmanager
+    def directory(self, relative: Path) -> Iterator[int]:
+        if relative.is_absolute() or ".." in relative.parts:
+            raise OSError("namespace reader path escapes its anchor")
+        if not _same_entry(self.stamps[Path(".")], os.fstat(self.descriptor)):
+            raise OSError("namespace directory identity changed")
+        with ExitStack() as stack:
+            descriptor = self.descriptor
+            route: list[tuple[int, str, os.stat_result]] = []
+            walked = Path(".")
+            for component in relative.parts:
+                walked /= component
+                before = os.stat(component, dir_fd=descriptor, follow_symlinks=False)
+                if not stat.S_ISDIR(before.st_mode) or before.st_uid != os.getuid():
+                    raise OSError("namespace parent is not an owned directory")
+                self.remember(walked, before)
+                child = os.open(component, _directory_flags(), dir_fd=descriptor)
+                stack.callback(os.close, child)
+                if not _same_entry(before, os.fstat(child)):
+                    raise OSError("namespace directory identity changed")
+                route.append((descriptor, component, before))
+                descriptor = child
+            try:
+                yield descriptor
+            finally:
+                for parent, name, before in reversed(route):
+                    after = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                    if not _same_entry(before, after):
+                        raise OSError("namespace directory identity changed")
+
+    def stamp(self, path: Path) -> os.stat_result:
+        relative = path.relative_to(self.path)
+        if relative == Path("."):
+            metadata = os.fstat(self.descriptor)
+        else:
+            with self.directory(relative.parent) as descriptor:
+                metadata = os.stat(relative.name, dir_fd=descriptor, follow_symlinks=False)
+        self.remember(relative, metadata)
+        return metadata
+
+    def names(self, path: Path, *, scan_budget: bool = False) -> list[str]:
+        with self.directory(path.relative_to(self.path)) as descriptor, os.scandir(descriptor) as entries:
+            names: list[str] = []
+            for entry in entries:
+                if len(names) >= self.limit and not scan_budget:
+                    raise OSError("namespace entry limit exceeded")
+                names.append(entry.name)
+                if scan_budget and len(names) > self.limit:
+                    break
+            return sorted(names)
+
+    def read(self, path: Path, limit: int) -> bytes:
+        relative = path.relative_to(self.path)
+        with self.directory(relative.parent) as parent:
+            before = os.stat(relative.name, dir_fd=parent, follow_symlinks=False)
+            self.remember(relative, before)
+            if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_nlink != 1:
+                raise OSError("namespace content is not an owned single-link regular file")
+            descriptor = os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            try:
+                if not _same_entry(before, os.fstat(descriptor)):
+                    raise OSError("namespace content identity changed")
+                chunks: list[bytes] = []
+                remaining = limit + 1
+                while remaining:
+                    chunk = os.read(descriptor, min(65_536, remaining))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                after = os.stat(relative.name, dir_fd=parent, follow_symlinks=False)
+                if not _same_entry(before, after) or not _same_entry(before, os.fstat(descriptor)):
+                    raise OSError("namespace content identity changed")
+                return b"".join(chunks)
+            finally:
+                os.close(descriptor)
+
+    def verify(self) -> None:
+        for relative, expected in tuple(self.stamps.items()):
+            if not _same_entry(expected, self.stamp(self.path / relative)):
+                raise OSError("namespace entry identity changed")
+
+
+def _file_bytes(path: Path, limit: int, view: _NamespaceIO | None) -> bytes:
+    if view is not None:
+        return view.read(path, limit)
+    with _directory_anchor(path.parent) as descriptor:
+        return _NamespaceIO(path.parent, descriptor).read(path, limit)
+
+
+class _RecordedDistribution(Distribution):
+    """Let the existing metadata parser consume one bounded RECORD snapshot."""
+
+    def __init__(self, metadata: Path, record: str) -> None:
+        self.metadata_path = metadata
+        self.record_text = record
+
+    def read_text(self, filename: str) -> str | None:
+        return self.record_text if filename == "RECORD" else None
+
+    def locate_file(self, path: str | os.PathLike[str]) -> Path:
+        return self.metadata_path / path
+
+
 def _normalize_start(value: str) -> str:
     return " ".join(value.split())
 
@@ -163,9 +348,9 @@ def _positive_pid(value: object) -> int | None:
     return value if 1 < value <= 2**31 - 1 else None
 
 
-def _marker_owner(path: Path) -> tuple[int, str | None] | None:
+def _marker_owner(path: Path, view: _NamespaceIO | None = None) -> tuple[int, str | None] | None:
     try:
-        payload = path.read_bytes()
+        payload = _file_bytes(path, _MAX_MARKER_BYTES, view)
     except OSError:
         return None
     if len(payload) > _MAX_MARKER_BYTES:
@@ -205,32 +390,48 @@ def _marker_owner(path: Path) -> tuple[int, str | None] | None:
     return pid, started
 
 
-def _recorded_package_bytes(marker: Path, namespace_root: Path) -> bytes | None:
+def _recorded_package_bytes(
+    marker: Path, namespace_root: Path, view: _NamespaceIO | None = None,
+) -> bytes | None:
     """Match exact installed bytes to one distribution RECORD entry."""
+    if view is None:
+        try:
+            with _directory_anchor(namespace_root) as descriptor:
+                return _recorded_package_bytes(marker, namespace_root, _NamespaceIO(namespace_root, descriptor))
+        except OSError:
+            return None
     site_packages = next(
-        (
-            parent
-            for parent in marker.parents
-            if parent.name == "site-packages" and parent.is_relative_to(namespace_root)
-        ),
-        None,
+        (parent for parent in marker.parents
+         if parent.name == "site-packages" and parent.is_relative_to(namespace_root)), None,
     )
     if site_packages is None:
         return None
     try:
-        with marker.open("rb") as source_file:
-            source = source_file.read(_MAX_INSTALLED_SOURCE_BYTES + 1)
+        source = view.read(marker, _MAX_INSTALLED_SOURCE_BYTES)
         if len(source) > _MAX_INSTALLED_SOURCE_BYTES:
             return None
         relative = marker.relative_to(site_packages).as_posix()
         records: list[PackagePath] = []
-        for metadata in sorted(site_packages.glob("*.dist-info")):
-            record_path = metadata / "RECORD"
-            if metadata.is_symlink() or record_path.is_symlink():
-                return None
-            if not record_path.is_file():
+        for name in view.names(site_packages):
+            if not name.endswith(".dist-info"):
                 continue
-            records.extend(entry for entry in Distribution.at(metadata).files or () if entry.as_posix() == relative)
+            metadata = site_packages / name
+            if not stat.S_ISDIR(view.stamp(metadata).st_mode):
+                return None
+            record_path = metadata / "RECORD"
+            try:
+                identity = view.stamp(record_path)
+            except FileNotFoundError:
+                continue
+            if stat.S_ISLNK(identity.st_mode):
+                return None
+            if not stat.S_ISREG(identity.st_mode):
+                continue
+            record = view.read(record_path, _MAX_INSTALLED_SOURCE_BYTES)
+            if len(record) > _MAX_INSTALLED_SOURCE_BYTES:
+                return None
+            distribution = _RecordedDistribution(metadata, record.decode("utf-8"))
+            records.extend(entry for entry in distribution.files or () if entry.as_posix() == relative)
         if len(records) != 1:
             return None
         recorded = records[0]
@@ -247,11 +448,13 @@ def _recorded_package_bytes(marker: Path, namespace_root: Path) -> bytes | None:
         return None
 
 
-def _recorded_python_source_bytes(marker: Path, namespace_root: Path) -> bytes | None:
+def _recorded_python_source_bytes(
+    marker: Path, namespace_root: Path, view: _NamespaceIO | None = None,
+) -> bytes | None:
     """Require verified RECORD bytes and module syntax, never suffix alone."""
     if marker.suffix.lower() != ".py":
         return None
-    source = _recorded_package_bytes(marker, namespace_root)
+    source = _recorded_package_bytes(marker, namespace_root, view)
     if source is None:
         return None
     try:
@@ -268,11 +471,13 @@ def _recorded_python_source_bytes(marker: Path, namespace_root: Path) -> bytes |
         return None
 
 
-def _is_recorded_documentation(marker: Path, namespace_root: Path) -> bool:
+def _is_recorded_documentation(
+    marker: Path, namespace_root: Path, view: _NamespaceIO | None = None,
+) -> bool:
     """Recognize verified packaged Markdown without exempting owner payloads."""
     if marker.suffix.lower() != ".md":
         return False
-    contents = _recorded_package_bytes(marker, namespace_root)
+    contents = _recorded_package_bytes(marker, namespace_root, view)
     if contents is None:
         return False
     try:
@@ -284,12 +489,16 @@ def _is_recorded_documentation(marker: Path, namespace_root: Path) -> bool:
         return False
 
 
-def _is_recorded_python_source(marker: Path, namespace_root: Path) -> bool:
+def _is_recorded_python_source(
+    marker: Path, namespace_root: Path, view: _NamespaceIO | None = None,
+) -> bool:
     """Return whether this exact module has independently verified RECORD bytes."""
-    return _recorded_python_source_bytes(marker, namespace_root) is not None
+    return _recorded_python_source_bytes(marker, namespace_root, view) is not None
 
 
-def _is_verified_python_bytecode(marker: Path, namespace_root: Path) -> bool:
+def _is_verified_python_bytecode(
+    marker: Path, namespace_root: Path, view: _NamespaceIO | None = None,
+) -> bool:
     """Prove current-runtime cache headers and payload without loading code.
 
     PEP 552 headers prove freshness, not payload identity. Compare cache payload
@@ -312,27 +521,26 @@ def _is_verified_python_bytecode(marker: Path, namespace_root: Path) -> bool:
         )
         if optimization is None:
             return False
-        cache_identity = marker.lstat()
+        cache_identity = view.stamp(marker) if view is not None else marker.lstat()
         if (
             not stat.S_ISREG(cache_identity.st_mode)
             or cache_identity.st_uid != os.getuid()
             or cache_identity.st_nlink != 1
         ):
             return False
-        with marker.open("rb") as cache_file:
-            cache = cache_file.read(_MAX_INSTALLED_BYTECODE_BYTES + 1)
+        cache = _file_bytes(marker, _MAX_INSTALLED_BYTECODE_BYTES, view)
         if not 16 < len(cache) <= _MAX_INSTALLED_BYTECODE_BYTES or cache[:4] != MAGIC_NUMBER:
             return False
         flags = int.from_bytes(cache[4:8], "little")
         if flags not in {0, 1, 3}:
             return False
-        before = source_path.lstat()
+        before = view.stamp(source_path) if view is not None else source_path.lstat()
         if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_nlink != 1:
             return False
-        source = _recorded_python_source_bytes(source_path, namespace_root)
+        source = _recorded_python_source_bytes(source_path, namespace_root, view)
         if source is None:
             return False
-        after = source_path.lstat()
+        after = view.stamp(source_path) if view is not None else source_path.lstat()
         if (
             before.st_dev,
             before.st_ino,
@@ -373,22 +581,23 @@ def _owner_reason(
     processes: Mapping[int, ProcessIdentity],
     lease: LeaseInspection | None,
     namespace_root: Path,
+    view: _NamespaceIO | None = None,
 ) -> str | None:
     if lease is not None:
         if lease.state == "held":
             return "lease-held"
         if lease.state == "unavailable":
             return "lease-unavailable"
-        owner = (lease.record.pid, None) if lease.record is not None else _marker_owner(marker)
+        owner = (lease.record.pid, None) if lease.record is not None else _marker_owner(marker, view)
         if owner is None:
             return None  # an available, empty kernel lock is proven inactive
     else:
-        owner = _marker_owner(marker)
+        owner = _marker_owner(marker, view)
         if owner is None:
             if (
-                _is_recorded_python_source(marker, namespace_root)
-                or _is_verified_python_bytecode(marker, namespace_root)
-                or _is_recorded_documentation(marker, namespace_root)
+                _is_recorded_python_source(marker, namespace_root, view)
+                or _is_verified_python_bytecode(marker, namespace_root, view)
+                or _is_recorded_documentation(marker, namespace_root, view)
             ):
                 return None
             return "ambiguous-lease-owner"
@@ -418,43 +627,66 @@ def _scan_candidate(
         return _Scan(None, "candidate-not-owned-directory")
 
     digest = hashlib.sha256()
+    digest.update(repr((top.st_mode, top.st_uid, top.st_gid, top.st_nlink,
+                        top.st_mtime_ns, top.st_ctime_ns)).encode("ascii"))
     newest = top.st_mtime
     size_bytes = top.st_size
     entries = 0
-    pending = [path]
-    while pending:
-        directory = pending.pop()
-        try:
-            children = sorted(directory.iterdir(), key=lambda child: child.name)
-        except OSError:
-            return _Scan(None, "candidate-unreadable")
-        for child in children:
-            entries += 1
-            if entries > config.max_entries_per_namespace:
-                return _Scan(None, "namespace-entry-limit")
-            try:
-                identity = child.lstat()
-            except OSError:
-                return _Scan(None, "candidate-unreadable")
-            if stat.S_ISLNK(identity.st_mode):
-                return _Scan(None, "descendant-symlink")
-            if identity.st_uid != os.getuid():
-                return _Scan(None, "foreign-owner")
-            if stat.S_ISREG(identity.st_mode) and identity.st_nlink != 1:
-                return _Scan(None, "descendant-hardlink")
-            relative = child.relative_to(path).as_posix()
-            digest.update(
-                f"{relative}\0{identity.st_dev}\0{identity.st_ino}\0"
-                f"{identity.st_mode}\0{identity.st_size}\0{identity.st_mtime_ns}\n".encode()
-            )
-            newest = max(newest, identity.st_mtime)
-            size_bytes += identity.st_size
-            if stat.S_ISDIR(identity.st_mode):
-                pending.append(child)
-            elif _is_marker(child):
-                lease = inspect_lease(child) if child.name.lower().endswith(".lock") else None
-                if reason := _owner_reason(child, processes, lease, path):
-                    return _Scan(None, reason, child)
+    try:
+        with _directory_anchor(path) as root_descriptor:
+            if not _same_entry(top, os.fstat(root_descriptor)):
+                return _Scan(None, "candidate-identity-changed")
+            view = _NamespaceIO(path, root_descriptor, limit=config.max_entries_per_namespace)
+            pending = [Path(".")]
+            while pending:
+                relative_parent = pending.pop()
+                parent = path / relative_parent
+                try:
+                    names = view.names(parent, scan_budget=True)
+                except OSError as exc:
+                    return _Scan(None, "namespace-entry-limit" if "entry limit" in str(exc) else "candidate-unreadable")
+                with view.directory(relative_parent) as descriptor:
+                    for name in names:
+                        entries += 1
+                        if entries > config.max_entries_per_namespace:
+                            return _Scan(None, "namespace-entry-limit")
+                        relative = relative_parent / name
+                        child = path / relative
+                        identity = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                        view.remember(relative, identity)
+                        if identity.st_uid != os.getuid():
+                            return _Scan(None, "foreign-owner")
+                        if (
+                            stat.S_ISREG(identity.st_mode) or stat.S_ISLNK(identity.st_mode)
+                        ) and identity.st_nlink != 1:
+                            return _Scan(None, "descendant-hardlink")
+                        stamp = (
+                            relative.as_posix(), identity.st_dev, identity.st_ino, identity.st_mode,
+                            identity.st_uid, identity.st_gid, identity.st_nlink, identity.st_size,
+                            identity.st_mtime_ns, identity.st_ctime_ns,
+                        )
+                        digest.update(repr(stamp).encode("utf-8", "surrogateescape"))
+                        newest = max(newest, identity.st_mtime)
+                        size_bytes += identity.st_size
+                        if stat.S_ISLNK(identity.st_mode):
+                            if _is_marker(child):
+                                return _Scan(None, "marker-symlink", child)
+                            target = os.fsencode(os.readlink(name, dir_fd=descriptor))
+                            if not _same_entry(identity, os.stat(name, dir_fd=descriptor, follow_symlinks=False)):
+                                return _Scan(None, "candidate-identity-changed")
+                            digest.update(len(target).to_bytes(8, "big") + target)
+                        elif stat.S_ISDIR(identity.st_mode):
+                            pending.append(relative)
+                        elif _is_marker(child):
+                            lease = (
+                                inspect_lease(name, dir_fd=descriptor, expected_identity=identity)
+                                if child.name.lower().endswith(".lock") else None
+                            )
+                            if reason := _owner_reason(child, processes, lease, path, view):
+                                return _Scan(None, reason, child)
+            view.verify()
+    except (OSError, ValueError):
+        return _Scan(None, "candidate-unreadable")
     return _Scan(
         PathFingerprint(path, top.st_dev, top.st_ino, digest.hexdigest(), newest, size_bytes),
         None,

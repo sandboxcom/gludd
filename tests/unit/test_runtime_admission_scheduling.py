@@ -442,7 +442,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 111
+    assert len(families) == 112
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -660,7 +660,7 @@ def test_watchdog_handoff_exit_control_is_routed_once_in_third_child(tmp_path: P
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 111
+    assert len(payload["families"]) == 112
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -677,7 +677,7 @@ def test_native_watchdog_start_control_is_routed_once_in_third_child(tmp_path: P
         "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 111
+    assert len(payload["families"]) == 112
 
 
 def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(tmp_path: Path) -> None:
@@ -694,7 +694,7 @@ def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(
         "full_gate_phase": "test",
     }
     assert payload["families"][108] == expected
-    assert len(payload["families"]) == 111
+    assert len(payload["families"]) == 112
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -719,7 +719,7 @@ def test_watchdog_unit_log_namespace_guard_is_the_exact_new_third_child_node(tmp
         "id": "watchdog-unit-log-namespace", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(manifest["families"]) == 111
+    assert len(manifest["families"]) == 112
 
 
 def test_profile_composition_guard_is_once_in_third_child_with_original_bounds(tmp_path: Path) -> None:
@@ -744,3 +744,28 @@ def test_profile_composition_guard_is_once_in_third_child_with_original_bounds(t
     phase = next(item for item in manifest["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert manifest["full_gate_required"] is True
+
+
+def test_descendant_symlink_cleanup_is_selected_once_by_original_whole_owner(tmp_path: Path) -> None:
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    node = (
+        "tests/unit/test_clean_stale_resource_namespaces.py::"
+        "test_ordinary_descendant_symlink_unlinks_without_following_target"
+    )
+    selections = [row["files"] for row in rows]
+    assert sum(
+        selection == node or node.startswith(selection + "::")
+        for files in selections if isinstance(files, list) for selection in files
+    ) == 1
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    assert payload["families"][-1] == {
+        "id": "ordinary-descendant-symlink-unlink", "owner_target": OWNER,
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    assert len(payload["families"]) == 112
+    phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True

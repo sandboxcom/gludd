@@ -8,6 +8,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
 from scripts.active_work_status import _resource_observability
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,7 +26,13 @@ def _status(*, namespace: str) -> dict[str, object]:
         timeout=30,
         check=True,
     )
-    return json.loads(result.stdout)
+    value: object = json.loads(result.stdout)
+    assert isinstance(value, dict)
+    payload: dict[str, object] = {}
+    for key, item in value.items():
+        assert isinstance(key, str)
+        payload[key] = item
+    return payload
 
 
 def test_active_status_reports_project_and_lease_identity() -> None:
@@ -78,6 +85,7 @@ def test_concurrent_project_resource_leases_are_unique_and_bounded() -> None:
         payloads = list(pool.map(lambda name: _status(namespace=name), namespaces))
 
     observed_pairs: set[tuple[str, str]] = set()
+    inventory_count = 0
     for payload in payloads:
         evidence = payload["resource_observability"]
         assert isinstance(evidence, dict)
@@ -92,6 +100,7 @@ def test_concurrent_project_resource_leases_are_unique_and_bounded() -> None:
         assert isinstance(root, str)
         assert isinstance(owner, str)
         assert isinstance(inventory, list)
+        inventory_count += len(inventory)
         assert isinstance(worker_count, int)
         assert isinstance(worker_limit, int)
         assert worker_count <= worker_limit
@@ -113,13 +122,10 @@ def test_concurrent_project_resource_leases_are_unique_and_bounded() -> None:
         assert {"project", "model", "searx", "terraform"}.issubset(resources)
         assert len(resources) == len(set(resources))
 
-    assert len(observed_pairs) == sum(
-        len(payload["resource_observability"]["lease_inventory"])
-        for payload in payloads
-    )
+    assert len(observed_pairs) == inventory_count
 
 
-def test_worker_accounting_separates_leases_from_descendant_processes(monkeypatch) -> None:
+def test_worker_accounting_separates_leases_from_descendant_processes(monkeypatch: pytest.MonkeyPatch) -> None:
     """A gate parent and its pytest children count as one leased worker."""
 
     monkeypatch.setattr(
@@ -146,7 +152,7 @@ def test_worker_accounting_separates_leases_from_descendant_processes(monkeypatc
 
 
 def test_worker_accounting_reclaims_stale_gate_refresh_owners(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Stale gate roots are removed when the lock identifies one live owner."""
 

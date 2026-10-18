@@ -15,19 +15,32 @@ from hashlib import sha256
 from importlib.util import cache_from_source
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Literal
+from typing import IO, TYPE_CHECKING, Literal, Never
 
 import pytest
-from scripts import clean_stale_resource_namespaces as cleanup
-from scripts.clean_stale_resource_namespaces import (
-    CleanupConfig,
-    ProcessIdentity,
-    apply_cleanup,
-    plan_cleanup,
-    protected_namespace_names,
-)
-from scripts.collection_lock import LeaseInspection, LeaseRecord
-from scripts.resource_arbiter import project_namespace
+
+if TYPE_CHECKING:
+    import clean_stale_resource_namespaces as cleanup
+    from clean_stale_resource_namespaces import (
+        CleanupConfig,
+        ProcessIdentity,
+        apply_cleanup,
+        plan_cleanup,
+        protected_namespace_names,
+    )
+    from collection_lock import LeaseInspection, LeaseRecord
+    from resource_arbiter import project_namespace
+else:
+    from scripts import clean_stale_resource_namespaces as cleanup
+    from scripts.clean_stale_resource_namespaces import (
+        CleanupConfig,
+        ProcessIdentity,
+        apply_cleanup,
+        plan_cleanup,
+        protected_namespace_names,
+    )
+    from scripts.collection_lock import LeaseInspection, LeaseRecord
+    from scripts.resource_arbiter import project_namespace
 
 NOW = 2_000_000_000.0
 OLD = NOW - 86_400.0
@@ -170,7 +183,7 @@ def test_held_or_uninspectable_kernel_lease_preserves_pair(
     os.utime(lock, (OLD, OLD))
     monkeypatch.setattr(
         "scripts.clean_stale_resource_namespaces.inspect_lease",
-        lambda _path: LeaseInspection(state=state, record=LeaseRecord(123, 1)),
+        lambda _path, **_options: LeaseInspection(state=state, record=LeaseRecord(123, 1)),
     )
 
     plan = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {})
@@ -238,7 +251,8 @@ def test_symlink_root_candidate_and_descendant_are_never_reclaimed(tmp_path: Pat
     plan = plan_cleanup(_config(real, tmp_path / "receipts"), set(), {})
     reasons = {decision.base_name: decision.reason for decision in plan.decisions}
     assert reasons[candidate.name] == "candidate-symlink"
-    assert reasons[nested.name] == "descendant-symlink"
+    assert reasons[nested.name] == "stale-and-proven-inactive"
+    assert candidate.is_symlink() and candidate_target.is_dir()
 
 
 def test_apply_refuses_path_identity_change_between_plan_and_delete(tmp_path: Path) -> None:
@@ -517,7 +531,7 @@ def test_installed_source_identity_never_exempts_a_kernel_lease(
     module, _record = _recorded_package_file(candidate)
     marker = module.parent / "worker.lock"
     marker.write_text("pid=321\nacquired_unix_ns=1\n", encoding="utf-8")
-    monkeypatch.setattr(cleanup, "inspect_lease", lambda _path: LeaseInspection(state, None))
+    monkeypatch.setattr(cleanup, "inspect_lease", lambda _path, **_options: LeaseInspection(state, None))
 
     decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
     assert decision.action == "preserve"
@@ -709,7 +723,7 @@ def test_available_kernel_lock_uses_record_and_empty_lock_is_inactive(
     monkeypatch.setattr(
         cleanup,
         "inspect_lease",
-        lambda _path: LeaseInspection("available", LeaseRecord(555, 1)),
+        lambda _path, **_options: LeaseInspection("available", LeaseRecord(555, 1)),
     )
     plan = plan_cleanup(
         _config(root, tmp_path / "receipts"),
@@ -722,7 +736,7 @@ def test_available_kernel_lock_uses_record_and_empty_lock_is_inactive(
     monkeypatch.setattr(
         cleanup,
         "inspect_lease",
-        lambda _path: LeaseInspection("available", None),
+        lambda _path, **_options: LeaseInspection("available", None),
     )
     inactive = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
     assert inactive.action == "reclaim"
@@ -1052,3 +1066,473 @@ def test_receipt_location_and_slow_delete_guardrails(
     monkeypatch.setattr(shutil, "rmtree", SlowDelete())
     cleanup._delete_with_heartbeats(candidate, 0.001)
     assert "RESOURCE_CLEANUP_HEARTBEAT" in capsys.readouterr().out
+
+
+def test_ordinary_descendant_symlink_unlinks_without_following_target(tmp_path: Path) -> None:
+    """Interior links are entries; a protected target's data is not cleanup input."""
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "unlink", toolchain=True)
+    protected = _namespace(root, "serving")
+    sentinel = protected / "payload.bin"
+    os.utime(sentinel, (NOW, NOW))
+    before = sentinel.read_bytes(), sentinel.stat()
+    links = {
+        "outside-file": sentinel,
+        "outside-directory": protected,
+        "dangling": tmp_path / "never-created",
+        "loop": candidate / "loop",
+    }
+    for name, target in links.items():
+        link = candidate / name
+        link.symlink_to(target)
+        os.utime(link, (OLD, OLD), follow_symlinks=False)
+    os.utime(candidate, (OLD, OLD))
+    receipt = tmp_path / "receipts.jsonl"
+    config = _config(root, receipt, validate_only=False)
+
+    plan = plan_cleanup(config, {protected.name}, {})
+    decisions = {item.base_name: item for item in plan.decisions}
+    assert decisions[candidate.name.removesuffix("-toolchain")].action == "reclaim"
+    assert decisions[protected.name].reason == "protected-worktree-namespace"
+    assert apply_cleanup(plan, config, {protected.name}, {}).deleted == (candidate,)
+    assert not candidate.exists()
+    assert sentinel.read_bytes() == before[0]
+    assert sentinel.stat() == before[1]
+    assert protected.is_dir()
+    assert not links["dangling"].exists()
+    records = [json.loads(line) for line in receipt.read_text().splitlines()]
+    assert [item["path"] for item in records] == [str(candidate)]
+    assert records[0]["size_bytes"] < 4096
+
+
+@pytest.mark.parametrize(
+    "name", ("worker.pid", "collection.lock", "worker.owner", "lease-data", "lock.py", "_lease.pyc"),
+)
+@pytest.mark.parametrize("target_kind", ("live", "dangling", "loop"))
+def test_marker_symlink_refuses_pair_without_reading_target(
+    tmp_path: Path, name: str, target_kind: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    base = _namespace(root, "marked")
+    toolchain = _namespace(root, "marked", toolchain=True)
+    target = tmp_path / "outside-owner"
+    target.write_text('{"pid":321,"pid_started_at":"live-start"}')
+    before = target.read_bytes(), target.stat()
+    marker = toolchain / name
+    link_target = target if target_kind == "live" else tmp_path / "missing" if target_kind == "dangling" else marker
+    marker.symlink_to(link_target)
+    os.utime(marker, (OLD, OLD), follow_symlinks=False)
+    os.utime(toolchain, (OLD, OLD))
+    config = _config(root, tmp_path / "receipts", validate_only=False)
+
+    decision = plan_cleanup(config, set(), {321: ProcessIdentity(321, "live-start")}).decisions[0]
+    assert decision.reason == "marker-symlink"
+    assert decision.blocking_marker == marker
+    assert decision.paths == (base, toolchain)
+    assert decision.fingerprints == ()
+    assert apply_cleanup(plan_cleanup(config, set(), {}), config, set(), {}).deleted == ()
+    assert base.exists() and toolchain.exists() and marker.is_symlink()
+    assert target.read_bytes() == before[0] and target.stat() == before[1]
+    assert not config.receipt_path.exists()
+
+
+@pytest.mark.parametrize("change", ("text", "file", "directory"))
+def test_changed_ordinary_link_refuses_fresh_apply(tmp_path: Path, change: str) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "changed")
+    link = candidate / "ordinary"
+    link.symlink_to("first")
+    os.utime(link, (OLD, OLD), follow_symlinks=False)
+    os.utime(candidate, (OLD, OLD))
+    config = _config(root, tmp_path / "receipts", validate_only=False)
+    plan = plan_cleanup(config, set(), {})
+    assert plan.decisions[0].action == "reclaim"
+    link.unlink()
+    if change == "text":
+        link.symlink_to("other")
+    elif change == "file":
+        link.write_bytes(b"first")
+    else:
+        link.mkdir()
+    os.utime(link, (OLD, OLD), follow_symlinks=False)
+    os.utime(candidate, (OLD, OLD))
+
+    result = apply_cleanup(plan, config, set(), {})
+    assert result.deleted == () and result.refused == (candidate,)
+    assert candidate.is_dir()
+    assert not config.receipt_path.exists()
+
+
+def test_fresh_link_age_uses_entry_not_target(tmp_path: Path) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "fresh-link")
+    outside = tmp_path / "old-target"
+    outside.write_bytes(b"outside")
+    os.utime(outside, (OLD, OLD))
+    link = candidate / "ordinary"
+    link.symlink_to(outside)
+    os.utime(link, (NOW, NOW), follow_symlinks=False)
+    os.utime(candidate, (OLD, OLD))
+
+    decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert decision.reason == "within-grace-period"
+    assert outside.stat().st_mtime == OLD
+    assert link.is_symlink()
+
+
+def test_directory_to_link_scan_race_never_traverses_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "directory-race")
+    directory = candidate / "nested"
+    directory.mkdir()
+    (directory / "original").write_bytes(b"owned")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel").write_bytes(b"untouched")
+    original_stat = os.stat
+    original_listdir = os.listdir
+    changed = False
+    traversed: list[object] = []
+
+    def replace_after_stat(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes] | int,
+        *, dir_fd: int | None = None, follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        nonlocal changed
+        metadata = original_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+        if not changed and Path(str(path)).name == "nested" and follow_symlinks is False:
+            changed = True
+            directory.rename(candidate / "saved")
+            directory.symlink_to(outside, target_is_directory=True)
+        return metadata
+
+    def guarded_listdir(path: str | os.PathLike[str] | int = ".") -> list[str]:
+        if str(path) == str(directory):
+            traversed.append(path)
+        return original_listdir(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "stat", replace_after_stat)
+        patch.setattr(os, "listdir", guarded_listdir)
+        decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert changed, "the real no-follow metadata boundary must be exercised"
+    assert traversed == []
+    assert decision.action == "preserve" and decision.fingerprints == ()
+    assert (outside / "sentinel").read_bytes() == b"untouched"
+
+
+def test_marker_leaf_swap_never_opens_link_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "marker-race")
+    marker = candidate / "worker.pid"
+    marker.write_text("321")
+    outside = tmp_path / "outside"
+    outside.write_text('{"pid":321,"pid_started_at":"live-start"}')
+    original_stat = os.stat
+    original_open = Path.open
+    changed = False
+    followed: list[Path] = []
+
+    def replace_after_stat(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes] | int,
+        *, dir_fd: int | None = None, follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        nonlocal changed
+        metadata = original_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+        if not changed and Path(str(path)).name == marker.name and follow_symlinks is False:
+            changed = True
+            marker.unlink()
+            marker.symlink_to(outside)
+        return metadata
+
+    def guarded_open(
+        path: Path, mode: str = "r", buffering: int = -1, encoding: str | None = None,
+        errors: str | None = None, newline: str | None = None,
+    ) -> IO[str] | IO[bytes]:
+        if path == marker and changed:
+            followed.append(path)
+        return original_open(path, mode, buffering, encoding, errors, newline)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "stat", replace_after_stat)
+        patch.setattr(Path, "open", guarded_open)
+        decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert changed
+    assert followed == []
+    assert decision.action == "preserve"
+    assert outside.read_text() == '{"pid":321,"pid_started_at":"live-start"}'
+
+
+@pytest.mark.parametrize("failure", ("none", "readlink", "read", "scandir", "overflow", "unsupported"))
+def test_cleanup_scan_descriptors_close_on_every_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "close")
+    link = candidate / "ordinary"
+    link.symlink_to("missing")
+    os.utime(link, (OLD, OLD), follow_symlinks=False)
+    os.utime(candidate, (OLD, OLD))
+    opened: list[int] = []
+    remaining: set[int] = set()
+    original_open = os.open
+    original_close = os.close
+
+    def tracked_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
+        *, dir_fd: int | None = None,
+    ) -> int:
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        opened.append(descriptor)
+        remaining.add(descriptor)
+        return descriptor
+
+    def tracked_close(descriptor: int) -> None:
+        remaining.discard(descriptor)
+        original_close(descriptor)
+
+    def unavailable_readlink(*_args: object, **_kwargs: object) -> str:
+        raise OSError("fixture readlink unavailable")
+
+    def unavailable_read(*_args: object, **_kwargs: object) -> Never:
+        raise OSError("fixture read unavailable")
+
+    if failure == "read":
+        (candidate / "worker.pid").write_text("321")
+    config = _config(root, tmp_path / "receipts")
+    if failure == "overflow":
+        config = CleanupConfig(**{**config.__dict__, "max_entries_per_namespace": 1})
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", tracked_open)
+        patch.setattr(os, "close", tracked_close)
+        if failure == "readlink":
+            patch.setattr(os, "readlink", unavailable_readlink)
+        if failure == "read":
+            patch.setattr(os, "read", unavailable_read)
+        if failure == "scandir":
+            patch.setattr(os, "scandir", unavailable_read)
+        if failure == "unsupported":
+            patch.delattr(os, "O_NOFOLLOW")
+        decision = plan_cleanup(config, set(), {}).decisions[0]
+    assert remaining == set()
+    if failure == "unsupported":
+        assert decision.action == "preserve"
+    else:
+        assert opened, "the scanner must use its native descriptor boundary"
+        assert (decision.action == "reclaim") is (failure == "none")
+    assert link.is_symlink() and not config.receipt_path.exists()
+
+
+def test_candidate_metadata_change_refuses_apply(tmp_path: Path) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "metadata")
+    config = _config(root, tmp_path / "receipts", validate_only=False)
+    plan = plan_cleanup(config, set(), {})
+    candidate.chmod(candidate.stat().st_mode ^ 0o010)
+    os.utime(candidate, (OLD, OLD))
+    result = apply_cleanup(plan, config, set(), {})
+    assert result.deleted == () and result.refused == (candidate,)
+    assert candidate.is_dir() and not config.receipt_path.exists()
+
+
+def test_scanner_never_stats_or_opens_ordinary_link_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "no-follow")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel").write_bytes(b"outside")
+    link = candidate / "ordinary"
+    link.symlink_to(outside, target_is_directory=True)
+    os.utime(link, (OLD, OLD), follow_symlinks=False)
+    os.utime(candidate, (OLD, OLD))
+    original_stat, original_open = os.stat, os.open
+    nofollow_stamps: list[str] = []
+
+    def guard_stat(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes] | int,
+        *, dir_fd: int | None = None, follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        if not isinstance(path, int):
+            name = os.fsdecode(path)
+            assert name != str(outside), "a target is not namespace inventory"
+            if Path(name).name == link.name:
+                assert follow_symlinks is False
+                nofollow_stamps.append(name)
+        return original_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+
+    def guard_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
+        *, dir_fd: int | None = None,
+    ) -> int:
+        assert os.fsdecode(path) not in {link.name, str(link), str(outside)}
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "stat", guard_stat)
+        patch.setattr(os, "open", guard_open)
+        decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert decision.action == "reclaim"
+    assert nofollow_stamps
+    assert (outside / "sentinel").read_bytes() == b"outside"
+
+
+@pytest.mark.parametrize("damage", ("foreign", "hardlink"))
+def test_ordinary_link_object_requires_owned_single_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, damage: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "link-ownership")
+    link = candidate / "ordinary"
+    link.symlink_to("missing")
+    original_stat = os.stat
+
+    def changed_stat(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes] | int,
+        *, dir_fd: int | None = None, follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        result = original_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+        if not isinstance(path, int) and Path(os.fsdecode(path)).name == link.name:
+            values = list(result)
+            values[4 if damage == "foreign" else 3] += 1
+            return os.stat_result(values)
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "stat", changed_stat)
+        decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert decision.reason == ("foreign-owner" if damage == "foreign" else "descendant-hardlink")
+    assert link.is_symlink()
+
+
+def test_record_metadata_ancestor_swap_never_reads_outside_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "record-race", toolchain=True)
+    _module, record = _recorded_package_file(candidate)
+    metadata = record.parent
+    outside = tmp_path / "outside-metadata"
+    outside.mkdir()
+    original_record = record.read_bytes()
+    (outside / "RECORD").write_bytes(original_record)
+    original_stat, original_open = os.stat, os.open
+    changed = False
+    outside_opens: list[str] = []
+
+    def replace_metadata(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes] | int,
+        *, dir_fd: int | None = None, follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        nonlocal changed
+        result = original_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+        if not changed and not isinstance(path, int) and Path(os.fsdecode(path)).name == metadata.name:
+            changed = True
+            metadata.rename(metadata.with_name("saved-metadata"))
+            metadata.symlink_to(outside, target_is_directory=True)
+        return result
+
+    def guard_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
+        *, dir_fd: int | None = None,
+    ) -> int:
+        if os.fsdecode(path) == str(outside):
+            outside_opens.append(str(path))
+        if changed and Path(os.fsdecode(path)).name == metadata.name:
+            assert flags & os.O_NOFOLLOW
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "stat", replace_metadata)
+        patch.setattr(os, "open", guard_open)
+        decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert changed
+    assert outside_opens == []
+    assert decision.action == "preserve"
+    assert (outside / "RECORD").read_bytes() == original_record
+
+
+def test_link_replacement_during_readlink_refuses_scan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "readlink-race")
+    link = candidate / "ordinary"
+    link.symlink_to("first")
+    original_readlink = os.readlink
+    changed = False
+
+    def replace_link(
+        path: str | os.PathLike[str], *, dir_fd: int | None = None,
+    ) -> str:
+        nonlocal changed
+        target = original_readlink(path, dir_fd=dir_fd)
+        if not changed:
+            changed = True
+            link.unlink()
+            link.symlink_to("other")
+        return target
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "readlink", replace_link)
+        decision = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {}).decisions[0]
+    assert changed
+    assert decision.action == "preserve" and decision.fingerprints == ()
+    assert link.readlink() == Path("other")
+
+
+def test_native_deleter_late_directory_link_swap_preserves_outside_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "delete-race")
+    directory = candidate / "nested"
+    directory.mkdir()
+    (directory / "owned").write_bytes(b"owned")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel").write_bytes(b"outside")
+    for path in (directory / "owned", directory, candidate):
+        os.utime(path, (OLD, OLD))
+    config = _config(root, tmp_path / "receipts", validate_only=False)
+    plan = plan_cleanup(config, set(), {})
+    assert plan.decisions[0].action == "reclaim"
+    original_delete = cleanup._delete_with_heartbeats
+    original_open = os.open
+    changed = False
+
+    def replace_before_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
+        *, dir_fd: int | None = None,
+    ) -> int:
+        nonlocal changed
+        if not changed and os.fsdecode(path) == directory.name:
+            changed = True
+            directory.rename(candidate / "saved")
+            directory.symlink_to(outside, target_is_directory=True)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    def inject_late_swap(path: Path, heartbeat_seconds: float) -> None:
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "open", replace_before_open)
+            original_delete(path, heartbeat_seconds)
+
+    monkeypatch.setattr(cleanup, "_delete_with_heartbeats", inject_late_swap)
+    with pytest.raises(OSError):
+        apply_cleanup(plan, config, set(), {})
+    assert changed
+    assert (outside / "sentinel").read_bytes() == b"outside"
+    assert candidate.is_dir() and directory.is_symlink()
+    assert not config.receipt_path.exists()

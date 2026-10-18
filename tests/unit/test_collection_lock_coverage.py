@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
+import fcntl
+import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-import scripts.collection_lock as locks
+
+if TYPE_CHECKING:
+    import collection_lock as locks
+else:
+    import scripts.collection_lock as locks
 
 ROOT = Path(__file__).parents[2]
 
 
 def _git_common_dir_result(
     common_dirs: dict[Path, Path],
-):
+) -> Callable[..., subprocess.CompletedProcess[str]]:
     def run(
         args: list[str],
         *,
@@ -290,3 +298,113 @@ def test_main_validates_arguments_and_maps_busy_lock_to_temporary_failure(
     monkeypatch.setattr(locks, "run_locked", unidentified)
     assert locks.main(["--run", "tool"]) == 75
     assert "collection lock unavailable" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("damage", ("none", "missing", "replaced", "symlink", "absolute", "traversal"))
+def test_directory_relative_lease_uses_exact_nonfollowing_identity(
+    tmp_path: Path, damage: str,
+) -> None:
+    parent = tmp_path / "leases"
+    parent.mkdir()
+    lock = parent / "collection.lock"
+    lock.write_text("pid=123\nacquired_unix_ns=1\n")
+    expected = lock.lstat()
+    outside = tmp_path / "outside"
+    outside.write_text("pid=456\n")
+    before = outside.read_bytes(), outside.stat()
+    name = lock.name
+    if damage == "missing":
+        lock.unlink()
+    elif damage == "replaced":
+        lock.unlink()
+        lock.write_text("pid=456\n")
+    elif damage == "symlink":
+        lock.unlink()
+        lock.symlink_to(outside)
+    elif damage == "absolute":
+        name = str(lock)
+    elif damage == "traversal":
+        name = "../outside"
+    descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        result = locks.inspect_lease(name, dir_fd=descriptor, expected_identity=expected)
+        assert os.fstat(descriptor).st_ino == parent.stat().st_ino
+    finally:
+        os.close(descriptor)
+    assert result.state == ("available" if damage == "none" else "unavailable")
+    assert result.record == (locks.LeaseRecord(123, 1) if damage == "none" else None)
+    assert outside.read_bytes() == before[0] and outside.stat() == before[1]
+    if damage == "missing":
+        assert not lock.exists()
+
+
+def test_directory_relative_lease_preserves_real_held_kernel_lock(tmp_path: Path) -> None:
+    path = tmp_path / "held.lock"
+    path.write_text("pid=123\n")
+    descriptor = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        with path.open("r+") as held:
+            fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            result = locks.inspect_lease(path.name, dir_fd=descriptor, expected_identity=path.lstat())
+            assert result.state == "held"
+            assert result.record == locks.LeaseRecord(123, None)
+            fcntl.flock(held.fileno(), fcntl.LOCK_UN)
+        assert os.fstat(descriptor).st_ino == tmp_path.stat().st_ino
+    finally:
+        os.close(descriptor)
+
+
+@pytest.mark.parametrize("damage", ("foreign", "hardlink"))
+def test_directory_relative_lease_refuses_foreign_or_hardlinked_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, damage: str,
+) -> None:
+    path = tmp_path / "record.lock"
+    path.write_text("pid=123\n")
+    if damage == "hardlink":
+        os.link(path, tmp_path / "second")
+    descriptor = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        with monkeypatch.context() as patch:
+            if damage == "foreign":
+                current_uid = os.getuid()
+                patch.setattr(os, "getuid", lambda: current_uid + 1)
+            result = locks.inspect_lease(path.name, dir_fd=descriptor, expected_identity=path.lstat())
+        assert result.state == "unavailable" and result.record is None
+    finally:
+        os.close(descriptor)
+    assert path.read_text() == "pid=123\n"
+
+
+def test_directory_relative_lease_checks_opened_metadata_before_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "record.lock"
+    path.write_text("pid=123\n")
+    expected = path.lstat()
+    parent = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    original_open = os.open
+    original_flock = fcntl.flock
+    probes: list[int] = []
+
+    def change_after_open(
+        filename: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
+        *, dir_fd: int | None = None,
+    ) -> int:
+        descriptor = original_open(filename, flags, mode, dir_fd=dir_fd)
+        if os.fsdecode(filename) == path.name:
+            path.write_text("pid=123\nacquired_unix_ns=1\n")
+        return descriptor
+
+    def record_probe(descriptor: int, operation: int) -> None:
+        probes.append(descriptor)
+        original_flock(descriptor, operation)
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "open", change_after_open)
+            patch.setattr(fcntl, "flock", record_probe)
+            result = locks.inspect_lease(path.name, dir_fd=parent, expected_identity=expected)
+        assert result.state == "unavailable"
+        assert probes == []
+    finally:
+        os.close(parent)

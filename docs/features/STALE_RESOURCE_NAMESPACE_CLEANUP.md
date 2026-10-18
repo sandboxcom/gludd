@@ -14,7 +14,9 @@ conditions before deletion:
 
 - the root is an exact, owned, non-symlink directory named `gludd-resources`;
 - the candidate is a canonical direct child with a 12-hex checkout digest;
-- every descendant is owned, readable, non-symlink, and not a hard link;
+- every descendant is owned and readable; ordinary symlinks are treated only as
+  entries, while namespace roots, namespace candidates and marker-looking links
+  remain refused; regular hard links and multiply linked symlinks are refused;
 - the newest descendant is older than the bounded grace period;
 - kernel lock inspection proves that no lock is held;
 - every PID marker is dead or has a start identity proving PID reuse; and
@@ -93,8 +95,9 @@ already-locked MarkdownIt implementation. A `.md` suffix, opaque owner text,
 modified bytes or an unavailable parser is insufficient. Python 3.14's borrowed
 arguments can change marshal's reference flag; retaining compiler ownership
 reproduces the standard writer without normalizing cache bytes or accepting
-another serialization. Real inventory then reaches descendant-symlink refusal;
-that tree remains protected and no reclaimed-capacity credit is reported.
+another serialization. Historical inventory reached the blanket descendant-symlink refusal;
+that retained failure remains valid for its original source, and no recovered
+capacity is inferred from it.
 
 ## Long-lived operator reports considered
 
@@ -128,3 +131,81 @@ that tree remains protected and no reclaimed-capacity credit is reported.
 The reports span several cleanup implementations and years, so the feature
 encodes their recurring failure modes as tests rather than relying on operator
 judgment during disk pressure.
+
+
+## Ordinary interior links and descriptor-bound inspection (M16)
+
+The 2026-10-18 user clarification permits unlinking ordinary symlink entries
+without following their targets. The earlier blanket refusal at immutable
+6ade745 preserved retired toolchains even when their interior links were normal
+interpreter links. That inventory did not report the actual first link path;
+it establishes the blanket refusal, not target danger or reclaimable capacity.
+
+The existing scanner now obtains names through directory descriptors and uses
+no-follow metadata and O_DIRECTORY/O_NOFOLLOW opens for every traversed
+component. Ordinary links contribute their own uid, inode, link count,
+timestamps, byte size and readlink text to the fingerprint. Their target
+existence, ownership, age and bytes are irrelevant. Replacing a link, changing
+the candidate directory metadata, or swapping an ancestor rejects the scan or
+fresh apply comparison. Every owned descriptor closes on refusal and error.
+
+Marker-looking links retain explicit marker-symlink refusal and blocking_marker.
+The existing marker, packaged RECORD/source/bytecode and documentation checks
+read through the same pinned namespace. Bounded captured RECORD bytes feed the
+existing distribution parser; no candidate code or entrypoint is loaded.
+The existing lease owner accepts a narrowly checked directory-relative identity
+for cleanup, preserving bounded record parsing and the actual noncreating
+kernel-lock probe. Missing or changed guarded records are unavailable.
+
+Root/candidate links, foreign owners, hard links, current and registered
+worktrees, namespace/toolchain pairing, native grace/census/PID/lease checks,
+fresh fingerprints and exclusive receipt authority remain required. No
+force option, alternate deleter, scanner, runner, cache or threshold is added.
+Unsupported no-follow primitives preserve the namespace.
+
+Actual deletion still uses the existing fd-safe shutil.rmtree with
+avoids_symlink_attacks required. Ordinary interior links are unlinked.
+A late raced directory replacement can cause the stdlib to open/fstat a
+directory before rejecting descent; its guarantee is resistance to destructive
+symlink traversal, not zero transient opens under every adversarial race.
+The scanner and classification reader enforce the stronger no-target-open
+boundary. A real fixture retains the native late-error/partial directory state,
+writes no success receipt, and proves outside data survives.
+
+The firsthand [CPython issue4489](https://bugs.python.org/issue4489),
+[migrated issue48739](https://github.com/python/cpython/issues/48739), spans
+2008-2012 and is resolved. It records ancestor-replacement races and a regression
+in deleting directories containing symlinks, followed by fd/inode checks and
+regression fixes. This supports distinguishing ordinary interior unlink from
+top-level link refusal. It is not a current stdlib vulnerability finding or
+proof of exploitation here. Current
+[rmtree documentation](https://docs.python.org/3.11/library/shutil.html#shutil.rmtree)
+and [fwalk documentation](https://docs.python.org/3.11/library/os.html#os.fwalk)
+describe the mature descriptor facilities. CPython's
+[3.11 fwalk implementation](https://github.com/python/cpython/blob/v3.11.14/Lib/os.py#L438)
+also explains why the stricter scanner uses explicit no-follow opens.
+
+Source acceptance and actual capacity recovery are separate. Retain
+/tmp/gludd-v012-capacity-repair-6ade745 and its failed 96/95 native guard,
+11 empty-directory receipts and unrelated UV-launcher refusal. No real cleanup
+apply or unchanged hard-guard retry is evidence from the M16 fixtures.
+
+
+Source acceptance on canonical Python 3.11.14 completed 331 tests across all seven
+whole owners in 40.75s, with warnings fatal and one serial worker. Observer
+20261018T165353Z-79605-a5127f91 passed in 42.608s. Native coverage measured
+92.1% line and 86.4% branch overall; every measured file passed unchanged
+85/75 line/branch policy. The preceding 307-pass/24-failure run is retained:
+all failures were the old routing helper's111-family count after family112
+was appended. Its count now conforms to112; every original mutation check
+and expected selector remains.
+
+Separate normal strict checks cover all three production modules and all seven
+test owners. TYPE_CHECKING import/export coherence follows the existing bare
+module convention; production package/direct-script branches are unchanged.
+The resource-observability test narrows its decoded JSON and counts every
+inventory element without filtering. Ruff, native Make validation,250 target
+contracts,112 promotion families,261 resource records, task/line guards pass.
+Normal guarded commit collection and independent source review remain separate
+receipts. These source checks recover no disk capacity and authorize no live
+cleanup, unchanged hard-guard retry or release completion.
