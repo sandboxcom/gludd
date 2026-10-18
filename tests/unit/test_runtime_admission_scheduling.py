@@ -119,6 +119,7 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files",
     "tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command",
     "tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership",
+    "tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_ownership",
 )
 
 
@@ -436,7 +437,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 105
+    assert len(families) == 106
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]

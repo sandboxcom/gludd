@@ -1331,3 +1331,71 @@ prove this Gludd inventory defect or authorize cleanup. This control-plane
 change touches no serving process, listener, deployment or database and preserves
 ZDD. Rollback restores the earlier admission/retention logic through normal
 development flow while retaining failed evidence and all release requirements.
+
+
+## 2026-10-18: task cleanup requires verified checkout ownership
+
+The host-global task deadline remains audit context. Its oldest stale task never
+supplies OS process authority. The legacy elapsed/name filter remains diagnostic;
+the destructive boundary requires a fresh native PID/start/command record and a
+live cwd equal to a registered checkout. Foreign, prefix-lookalike, unknown and
+incomplete identities receive no signal. A proposed tree is refused if any
+required child is unknown or newly attached.
+
+The watchdog reuses the existing native observer inventory and process snapshot.
+It protects the observer owner, child, descendants and upstream Make/UV wrappers.
+A status/process display cap or live native observer absent from that inventory
+refuses cleanup; display omission never grants authority. Native gate protections,
+M2 focus markers, observer quiet/max limits and post-observer authentication remain
+unchanged. Terminal pointers without a live owner do not disable ordinary owned
+stale cleanup.
+
+Each TERM/KILL rechecks start, command, cwd and protection through the existing
+gate cleanup owner. Child-first TERM retains the five-second grace and bounded
+KILL verification. A TERM-ignoring child remains owned after our own parent TERM
+and confirmed parent exit reparent it; its original identity and cwd must still
+match. Unrelated ancestry or newly attached children refuse cleanup. Userspace
+checks reduce races; they do not make signalling atomic.
+
+The already loaded daemon needs a native handoff. Preserve its original log,
+PID/deadline/stale/kill evidence first. Run the existing stop owner in plan mode:
+
+~~~text
+make task-watchdog-stop TASK_WATCHDOG_VALIDATE_ONLY=1
+~~~
+
+This verifies the exact relative-argv Python daemon and matching UV launcher with
+registered cwd and fresh start identities, without signals or writes. Root may
+then apply the same owner with TASK_WATCHDOG_VALIDATE_ONLY=0. Refusal retains the
+PID pointer and cannot claim successful handoff. Successful apply proves the old
+tree fully drained before removing its unchanged pointer. Only afterward may root
+use the existing task-watchdog-start owner once. No replacement launcher, daemon,
+cache or enforcement disengagement is introduced. Fresh startup records
+ownership_policy=registered-cwd-start-identity-observer-protection-v1.
+
+Native failing-first artifacts retain five ownership/lifecycle failures and the
+separate reparenting failure. The historical 67-case warning-fatal watchdog replay
+passes at 91% branch-aware coverage. Seven further failures reproduce fresh or
+malformed start identities and unavailable native inventories; one missing-start
+control already refuses cleanup. Native start age must corroborate the unchanged
+timeout, and subprocess inventory failures now return refusal without retries.
+The final 76-case warning-fatal watchdog replay also passes at 91%, above unchanged
+85% aggregate/75% per-file floors. Its separate report is
+.gate-logs/coverage-task-watchdog-owned-cleanup-final.json.
+
+The intermediate routing replay remains failed evidence: 207 passed and three
+stale three-selector assertions failed. The additive repair keeps all 105 prior
+families and exact selectors in order, adds one ownership family and one selector
+to the third compatibility child, and retains three sequential children,
+workers 2/1/1, 90/60 bounds, 21 phases/2850 seconds and authoritative full replay.
+Final source acceptance passes all 405 cases in 57.28 seconds, including complete
+gate cleanup, active-work, routing and cold-start controls; its receipt is
+/tmp/gludd-v012-watchdog-owned-final-combined.xml. Exact-candidate full gate, hosted
+CI and release promotion remain required.
+
+The existing long-lived reports [pytest-timeout issue 159](https://github.com/pytest-dev/pytest-timeout/issues/159)
+(2023) describe orphaned descendants after timeout; [psutil issue 2335](https://github.com/giampaolo/psutil/issues/2335)
+(2023) explains why command text alone cannot identify a process. They support
+retaining native tree ownership and fresh identity checks. They do not identify
+Gludd's signal sender or authorize host-wide command-name cleanup. The preserved
+native watchdog SIGTERM records remain the local incident evidence.

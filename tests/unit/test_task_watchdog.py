@@ -13,28 +13,49 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
+import pytest
 from scripts.makefile_layout import compose_makefile
-from scripts.process_cleanup import ProcessInfo
-from scripts.task_watchdog import (
-    _parse_etime,
-    _read_gate_run_lock_pid,
-    find_hung_processes,
-    find_stale_tasks,
-    kill_process,
-    load_deadlines,
-    load_stale_ids,
-    record_kill,
-    run_once,
-)
+
+if TYPE_CHECKING:
+    import active_work_status as inventory_owner
+    import kill_owned_gate as cleanup_owner
+    import task_watchdog as watchdog
+    from task_watchdog import (
+        _parse_etime,
+        _read_gate_run_lock_pid,
+        find_hung_processes,
+        find_stale_tasks,
+        kill_process,
+        load_deadlines,
+        load_stale_ids,
+        record_kill,
+        run_once,
+    )
+else:
+    from scripts import active_work_status as inventory_owner
+    from scripts import kill_owned_gate as cleanup_owner
+    from scripts import task_watchdog as watchdog
+    from scripts.task_watchdog import (
+        _parse_etime,
+        _read_gate_run_lock_pid,
+        find_hung_processes,
+        find_stale_tasks,
+        kill_process,
+        load_deadlines,
+        load_stale_ids,
+        record_kill,
+        run_once,
+    )
 
 
 def test_direct_script_execution_has_process_cleanup_import_fallback() -> None:
     """The Makefile launches the file path, so imports must work outside package mode."""
     source = Path(__file__).resolve().parents[2] / "scripts" / "task_watchdog.py"
     source_text = source.read_text()
-    assert "from process_cleanup import descendant_processes, snapshot_processes" in source_text
+    assert "import kill_owned_gate as cleanup_owner" in source_text
     assert "from active_work_status import _repository_roots" in source_text
 
 # ---------------------------------------------------------------------------
@@ -218,19 +239,22 @@ class TestRecordKill:
 # ---------------------------------------------------------------------------
 
 class TestKillProcess:
-    def test_verified_process_tree_terminates_descendants_before_parent(self) -> None:
+    def test_verified_process_tree_terminates_descendants_before_parent(self, _owned_poll: OwnedPoll) -> None:
         """An owned task tree is drained child-first for TERM and KILL."""
-        parent = ProcessInfo(9100, 1, 600.0, "pytest worker")
-        child = ProcessInfo(9101, 9100, 590.0, "python child")
-        table = {parent.pid: parent, child.pid: child}
+        root, records, cwds, _deadlines, _sent = _owned_poll
+        parent = cleanup_owner.ProcessRecord(9100, 1, 600, "pytest worker", started_at="parent-start")
+        child = cleanup_owner.ProcessRecord(9101, 9100, 590, "python child", started_at="child-start")
+        records[:] = [parent, child]
+        cwds.update({parent.pid: root, child.pid: root})
 
-        with (
-            patch("scripts.task_watchdog.snapshot_processes", return_value=table),
-            patch("scripts.task_watchdog.os.kill") as mock_kill,
-            patch("scripts.task_watchdog.time.sleep"),
-        ):
-            assert kill_process(parent.pid, expected_command=parent.command) is True
+        def survive_term(pid: int, signum: signal.Signals) -> None:
+            if signum == signal.SIGKILL:
+                records[:] = [record for record in records if record.pid != pid]
 
+        with patch("scripts.task_watchdog.os.kill", side_effect=survive_term) as mock_kill:
+            assert kill_process(
+                parent.pid, expected_command=parent.command, expected_record=parent, repository_roots=(root,),
+            ) is True
         calls = [(call.args[0], call.args[1]) for call in mock_kill.call_args_list]
         assert calls == [
             (child.pid, signal.SIGTERM),
@@ -239,46 +263,53 @@ class TestKillProcess:
             (parent.pid, signal.SIGKILL),
         ]
 
-    def test_sigterm_then_sigkill_called(self) -> None:
+    def test_sigterm_then_sigkill_called(self, _owned_poll: OwnedPoll) -> None:
         """kill_process must try SIGTERM first, wait, then SIGKILL."""
-        with patch("scripts.task_watchdog.os.kill") as mock_kill, \
-             patch("scripts.task_watchdog.time.sleep"):
-            kill_process(99999)
-            # At least 2 calls: SIGTERM + SIGKILL
+        root, records, _cwds, _deadlines, _sent = _owned_poll
+        record = records[0]
+
+        def survive_term(_pid: int, signum: signal.Signals) -> None:
+            if signum == signal.SIGKILL:
+                records.clear()
+
+        with patch("scripts.task_watchdog.os.kill", side_effect=survive_term) as mock_kill:
+            kill_process(record.pid, expected_record=record, repository_roots=(root,))
             assert mock_kill.call_count >= 2
             signals_sent = [call.args[1] for call in mock_kill.call_args_list]
             assert signal.SIGTERM in signals_sent
 
-    def test_returns_true_when_process_exists(self) -> None:
-        """Should return True (killed) when the process existed."""
-        with patch("scripts.task_watchdog.os.kill") as mock_kill, \
-             patch("scripts.task_watchdog.time.sleep"):
-            mock_kill.side_effect = None  # process exists
-            result = kill_process(99999)
+    def test_returns_true_when_process_exists(self, _owned_poll: OwnedPoll) -> None:
+        """Should return True (killed) when the verified process actually exits."""
+        root, records, _cwds, _deadlines, _sent = _owned_poll
+        record = records[0]
+        owned_sender = os.kill
+        with patch("scripts.task_watchdog.os.kill", side_effect=owned_sender):
+            result = kill_process(record.pid, expected_record=record, repository_roots=(root,))
             assert result is True
 
-    def test_returns_false_when_process_gone(self) -> None:
+    def test_returns_false_when_process_gone(self, _owned_poll: OwnedPoll) -> None:
         """Should return False when process already exited (ProcessLookupError)."""
-        with patch("scripts.task_watchdog.os.kill", side_effect=ProcessLookupError), \
-             patch("scripts.task_watchdog.time.sleep"):
-            result = kill_process(99999)
+        root, records, _cwds, _deadlines, _sent = _owned_poll
+        record = records[0]
+        with patch("scripts.task_watchdog.os.kill", side_effect=ProcessLookupError):
+            result = kill_process(record.pid, expected_record=record, repository_roots=(root,))
             assert result is False
 
-    def test_handles_permission_error(self) -> None:
-        """PermissionError must not crash (fail-open)."""
-        with patch("scripts.task_watchdog.os.kill", side_effect=PermissionError), \
-             patch("scripts.task_watchdog.time.sleep"):
-            result = kill_process(99999)
+    def test_handles_permission_error(self, _owned_poll: OwnedPoll) -> None:
+        """PermissionError must not crash or claim a successful cleanup."""
+        root, records, _cwds, _deadlines, _sent = _owned_poll
+        record = records[0]
+        with patch("scripts.task_watchdog.os.kill", side_effect=PermissionError):
+            result = kill_process(record.pid, expected_record=record, repository_roots=(root,))
             assert result is False
 
-    def test_identity_change_prevents_pid_reuse_kill(self) -> None:
+    def test_identity_change_prevents_pid_reuse_kill(self, _owned_poll: OwnedPoll) -> None:
         """A reused PID with a different command must never be signalled."""
-        process = ProcessInfo(99999, 1, 600.0, "unrelated service")
-        with (
-            patch("scripts.task_watchdog.snapshot_processes", return_value={99999: process}),
-            patch("scripts.task_watchdog.os.kill") as mock_kill,
-        ):
-            assert kill_process(99999, expected_command="make gate") is False
+        root, records, _cwds, _deadlines, _sent = _owned_poll
+        process = cleanup_owner.ProcessRecord(88888, 1, 600, "unrelated service", started_at="new-start")
+        records[:] = [process]
+        with patch("scripts.task_watchdog.os.kill") as mock_kill:
+            assert kill_process(process.pid, expected_command="make gate", repository_roots=(root,)) is False
         mock_kill.assert_not_called()
 
 
@@ -472,6 +503,44 @@ class TestFindHungProcesses:
 # run_once (integration of the above)
 # ---------------------------------------------------------------------------
 
+OwnedPoll = tuple[
+    Path, list[cleanup_owner.ProcessRecord], dict[int, Path | None], Path, list[tuple[int, signal.Signals]],
+]
+
+
+@pytest.fixture
+def _owned_poll(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> OwnedPoll:
+    root = tmp_path / "owned"
+    root.mkdir()
+    (root / "scripts").mkdir()
+    (root / "scripts/stream_command.py").write_text("# native observer fixture\n", encoding="utf-8")
+    old_start = time.strftime("%a %b %d %H:%M:%S %Y", time.localtime(time.time() - 400))
+    records = [cleanup_owner.ProcessRecord(88888, 1, 400, "make test-unit", started_at=old_start)]
+    cwds: dict[int, Path | None] = {88888: root}
+    sent: list[tuple[int, signal.Signals]] = []
+    deadlines = tmp_path / "owned-deadlines.json"
+    deadlines.write_text(json.dumps({"stale-task": time.time() * 1000 - 400_000}), encoding="utf-8")
+    monkeypatch.setattr(watchdog, "_repository_roots", lambda: (root,))
+    monkeypatch.setattr(cleanup_owner, "_records", lambda _root: list(records))
+    monkeypatch.setattr(cleanup_owner, "_process_cwd", lambda pid: cwds.get(pid))
+    monkeypatch.setattr(watchdog, "WATCHDOG_LOG", str(tmp_path / "watchdog.log"))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    def candidates(**_kwargs: object) -> list[watchdog.HungProcess]:
+        return [{"pid": record.pid, "etime_secs": 400, "command": record.command} for record in records]
+
+    def send(pid: int, signum: signal.Signals) -> None:
+        current = next((record for record in records if record.pid == pid), None)
+        if current is None:
+            raise ProcessLookupError(pid)
+        sent.append((pid, signum))
+        records.remove(current)
+
+    monkeypatch.setattr(watchdog, "find_hung_processes", candidates)
+    monkeypatch.setattr(os, "kill", send)
+    return root, records, cwds, deadlines, sent
+
+
 class TestRunOnce:
     def test_no_deadlines_file_is_noop(self, tmp_path: Path) -> None:
         """When no deadlines file exists, run_once returns zeros (fail-open)."""
@@ -483,7 +552,7 @@ class TestRunOnce:
         assert result["stale"] == 0
         assert result["killed"] == 0
 
-    def test_stale_task_triggers_kill_and_record(self, tmp_path: Path) -> None:
+    def test_stale_task_triggers_kill_and_record(self, tmp_path: Path, _owned_poll: OwnedPoll) -> None:
         """End-to-end: stale task in deadlines → process killed → recorded."""
         now_ms = time.time() * 1000
         deadlines_file = tmp_path / "deadlines.json"
@@ -581,7 +650,7 @@ class TestRunOnce:
         assert result == {"stale": 0, "killed": 0}
         mock_find.assert_not_called()
 
-    def test_plugin_stale_id_and_failed_kill_are_nonfatal(self, tmp_path: Path) -> None:
+    def test_plugin_stale_id_and_failed_kill_are_nonfatal(self, tmp_path: Path, _owned_poll: OwnedPoll) -> None:
         """Plugin corroboration is logged, but failed identity checks stay safe."""
         now_ms = time.time() * 1000
         deadlines_file = tmp_path / "deadlines.json"
@@ -617,3 +686,325 @@ class TestRunOnce:
             )
         assert result["stale"] == 0
         assert result["killed"] == 0
+
+
+
+def test_watchdog_destructive_boundary_requires_registered_ownership(
+    tmp_path: Path, _owned_poll: OwnedPoll,
+) -> None:
+    """A host-wide elapsed/name match never authorizes a foreign or unknown PID."""
+    root, records, cwds, deadlines, sent = _owned_poll
+    records[:] = [
+        cleanup_owner.ProcessRecord(pid, 1, 400, "python -m pytest tests/unit", started_at=records[0].started_at)
+        for pid in (51000, 51001, 51002, 51003)
+    ]
+    cwds.update({
+        51000: root, 51001: tmp_path / "foreign", 51002: tmp_path / "owned-lookalike", 51003: None,
+    })
+    result = run_once(
+        deadlines_file=str(deadlines), stale_file=str(tmp_path / "missing-stale"),
+        killed_file=str(tmp_path / "kills.json"),
+    )
+    assert result == {"stale": 1, "killed": 1}
+    assert sent == [(51000, signal.SIGTERM)]
+    assert {record.pid for record in records} == {51001, 51002, 51003}
+    audit = json.loads((tmp_path / "kills.json").read_text(encoding="utf-8"))
+    assert [entry["pid"] for entry in audit] == [51000]
+
+
+@pytest.mark.parametrize("state", ["starting", "running"])
+def test_live_native_observer_protects_children_and_upstream_make_uv(
+    tmp_path: Path, _owned_poll: OwnedPoll, state: str,
+) -> None:
+    root, records, cwds, deadlines, sent = _owned_poll
+    observer_command = (
+        "python scripts/stream_command.py --label native-owned --max-secs 3600 "
+        "--quiet-secs 600 -- make test-files"
+    )
+    records[:] = [
+        cleanup_owner.ProcessRecord(52000, 1, 400, "make test-files", started_at="make-start"),
+        cleanup_owner.ProcessRecord(52001, 52000, 400, "uv run " + observer_command, started_at="uv-start"),
+        cleanup_owner.ProcessRecord(52002, 52001, 400, observer_command, started_at="observer-start"),
+        cleanup_owner.ProcessRecord(52003, 52002, 400, "make test-files", started_at="child-start"),
+        cleanup_owner.ProcessRecord(52004, 52003, 400, "python -m pytest tests/unit", started_at="worker-start"),
+        cleanup_owner.ProcessRecord(52005, 1, 400, "make test-unit", started_at=records[0].started_at),
+    ]
+    cwds.update({record.pid: root for record in records})
+    pointer = root / ".gate-logs/observed/native-owned/current.json"
+    pointer.parent.mkdir(parents=True)
+    pointer.write_text(json.dumps({
+        "schema_version": 1, "kind": "observed_command", "label": "native-owned",
+        "state": state, "owner_pid": 52002, "child_pid": 52003 if state == "running" else None,
+    }), encoding="utf-8")
+    result = run_once(
+        deadlines_file=str(deadlines), stale_file=str(tmp_path / "missing-stale"),
+        killed_file=str(tmp_path / "kills.json"),
+    )
+    assert result == {"stale": 1, "killed": 1}
+    assert sent == [(52005, signal.SIGTERM)]
+    assert {record.pid for record in records} == {52000, 52001, 52002, 52003, 52004}
+
+
+@pytest.mark.parametrize("uncertainty", ["status-cap", "process-cap", "missing-status", "bad-status"])
+def test_observer_inventory_omission_never_authorizes_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _owned_poll: OwnedPoll, uncertainty: str,
+) -> None:
+    root, records, cwds, deadlines, sent = _owned_poll
+    records.append(cleanup_owner.ProcessRecord(
+        53000, 1, 400, "python scripts/stream_command.py --label live --max-secs 3600 --quiet-secs 600",
+        started_at="observer-start",
+    ))
+    cwds[53000] = root
+    pointer = root / ".gate-logs/observed/live/current.json"
+    pointer.parent.mkdir(parents=True)
+    if uncertainty != "missing-status":
+        pointer.write_text(json.dumps({
+            "schema_version": 1, "kind": "observed_command", "label": "live",
+            "state": "starting", "owner_pid": 53000, "child_pid": None,
+        }) if uncertainty != "bad-status" else "{broken", encoding="utf-8")
+    if uncertainty == "status-cap":
+        monkeypatch.setattr(inventory_owner, "_OBSERVER_STATUS_LIMIT", 1)
+    if uncertainty == "process-cap":
+        monkeypatch.setattr(inventory_owner, "_OBSERVER_PROCESS_LIMIT", 1)
+    result = run_once(
+        deadlines_file=str(deadlines), stale_file=str(tmp_path / "missing-stale"),
+        killed_file=str(tmp_path / "kills.json"),
+    )
+    assert result["killed"] == 0
+    assert sent == [] and len(records) == 2
+    assert not (tmp_path / "kills.json").exists()
+
+
+def test_owned_tree_refuses_unknown_child_and_reused_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _owned_poll: OwnedPoll,
+) -> None:
+    root, records, cwds, deadlines, sent = _owned_poll
+    records.append(cleanup_owner.ProcessRecord(88889, 88888, 400, "python child", started_at="child-start"))
+    cwds[88889] = None
+    result = run_once(
+        deadlines_file=str(deadlines), stale_file=str(tmp_path / "missing-stale"),
+        killed_file=str(tmp_path / "kills.json"),
+    )
+    assert result["killed"] == 0 and sent == []
+    cwds[88889] = root
+    original = list(records)
+    reads = 0
+
+    def replaced(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+        nonlocal reads
+        reads += 1
+        return original if reads == 1 else [
+            cleanup_owner.ProcessRecord(record.pid, record.ppid, 400, record.command, started_at="replacement")
+            for record in original
+        ]
+
+    monkeypatch.setattr(cleanup_owner, "_records", replaced)
+    result = run_once(
+        deadlines_file=str(deadlines), stale_file=str(tmp_path / "missing-stale"),
+        killed_file=str(tmp_path / "kills.json"),
+    )
+    assert result["killed"] == 0 and sent == []
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_verified_stop_drains_relative_argv_daemon_and_uv_before_handoff(
+    tmp_path: Path, _owned_poll: OwnedPoll, apply: bool,
+) -> None:
+    root, records, cwds, _deadlines, sent = _owned_poll
+    (root / "scripts").mkdir(exist_ok=True)
+    (root / "scripts/task_watchdog.py").write_text("# owned daemon fixture\n", encoding="utf-8")
+    records[:] = [
+        cleanup_owner.ProcessRecord(54000, 1, 400, "uv run python3 scripts/task_watchdog.py", started_at="uv-start"),
+        cleanup_owner.ProcessRecord(54001, 54000, 400, "python3 scripts/task_watchdog.py", started_at="daemon-start"),
+    ]
+    cwds.update({54000: root, 54001: root})
+    marker = root / ".gate-logs/task-watchdog.pid"
+    marker.parent.mkdir()
+    marker.write_text("54001", encoding="utf-8")
+    before = marker.read_bytes()
+    assert watchdog.stop_owned_watchdog(root, apply=apply) is True
+    if apply:
+        assert sent == [(54001, signal.SIGTERM), (54000, signal.SIGTERM)]
+        assert records == [] and not marker.exists()
+    else:
+        assert sent == [] and len(records) == 2 and marker.read_bytes() == before
+
+
+@pytest.mark.parametrize("defect", ["foreign", "unknown", "lookalike", "missing-start", "unknown-child", "reused"])
+def test_verified_stop_refuses_unowned_or_replaced_pidfile_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _owned_poll: OwnedPoll, defect: str,
+) -> None:
+    root, records, cwds, _deadlines, sent = _owned_poll
+    (root / "scripts").mkdir(exist_ok=True)
+    (root / "scripts/task_watchdog.py").write_text("# owned daemon fixture\n", encoding="utf-8")
+    records[:] = [cleanup_owner.ProcessRecord(
+        55000, 1, 400, "python3 scripts/task_watchdog.py" + (".other" if defect == "lookalike" else ""),
+        started_at="" if defect == "missing-start" else "daemon-start",
+    )]
+    cwds[55000] = tmp_path / "foreign" if defect == "foreign" else (None if defect == "unknown" else root)
+    marker = root / ".gate-logs/task-watchdog.pid"
+    marker.parent.mkdir()
+    marker.write_text("55000", encoding="utf-8")
+    if defect == "unknown-child":
+        records.append(cleanup_owner.ProcessRecord(55001, 55000, 400, "python child", started_at="child-start"))
+    if defect == "reused":
+        original = records[0]
+        reads = 0
+
+        def replaced(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+            nonlocal reads
+            reads += 1
+            return [original] if reads == 1 else [
+                cleanup_owner.ProcessRecord(55000, 1, 400, original.command, started_at="replacement")
+            ]
+
+        monkeypatch.setattr(cleanup_owner, "_records", replaced)
+    assert watchdog.stop_owned_watchdog(root, apply=True) is False
+    assert sent == [] and marker.read_text(encoding="utf-8") == "55000"
+
+
+
+def test_owned_term_ignoring_child_reparented_after_parent_term_still_drains(
+    monkeypatch: pytest.MonkeyPatch, _owned_poll: OwnedPoll,
+) -> None:
+    root, records, cwds, _deadlines, sent = _owned_poll
+    parent = records[0]
+    child = cleanup_owner.ProcessRecord(88889, parent.pid, 400, "python child", started_at="child-start")
+    records.append(child)
+    cwds[child.pid] = root
+
+    def parent_exits(pid: int, signum: signal.Signals) -> None:
+        sent.append((pid, signum))
+        if (pid, signum) == (parent.pid, signal.SIGTERM):
+            records[:] = [cleanup_owner.ProcessRecord(
+                child.pid, 1, 400, child.command, started_at=child.started_at,
+            )]
+        elif (pid, signum) == (child.pid, signal.SIGKILL):
+            records.clear()
+
+    monkeypatch.setattr(os, "kill", parent_exits)
+    assert kill_process(parent.pid, expected_record=parent, repository_roots=(root,)) is True
+    assert sent == [(child.pid, signal.SIGTERM), (parent.pid, signal.SIGTERM), (child.pid, signal.SIGKILL)]
+    assert records == []
+
+
+@pytest.mark.parametrize("mutation", ["cwd", "start", "command", "new-child", "gate"])
+def test_owned_cleanup_revalidates_before_escalation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _owned_poll: OwnedPoll, mutation: str,
+) -> None:
+    root, records, cwds, _deadlines, sent = _owned_poll
+    expected = records[0]
+
+    def mutate_after_term(pid: int, signum: signal.Signals) -> None:
+        sent.append((pid, signum))
+        assert signum == signal.SIGTERM
+        if mutation == "cwd":
+            cwds[pid] = tmp_path / "foreign"
+        elif mutation in {"start", "command"}:
+            records[:] = [cleanup_owner.ProcessRecord(
+                pid, 1, 400, "foreign command" if mutation == "command" else expected.command,
+                started_at="reused-start" if mutation == "start" else expected.started_at,
+            )]
+        elif mutation == "new-child":
+            records.append(cleanup_owner.ProcessRecord(88889, pid, 400, "python child", started_at="new-child"))
+        else:
+            lock = root / ".gate-logs/gate-run.lock"
+            lock.parent.mkdir()
+            lock.write_text(json.dumps({"pid": pid}), encoding="utf-8")
+
+    monkeypatch.setattr(os, "kill", mutate_after_term)
+    assert kill_process(expected.pid, expected_record=expected, repository_roots=(root,)) is False
+    assert sent == [(expected.pid, signal.SIGTERM)]
+
+
+def test_terminal_observer_without_live_owner_does_not_disable_owned_cleanup(
+    tmp_path: Path, _owned_poll: OwnedPoll,
+) -> None:
+    root, _records, _cwds, deadlines, sent = _owned_poll
+    pointer = root / ".gate-logs/observed/old/current.json"
+    pointer.parent.mkdir(parents=True)
+    pointer.write_text(json.dumps({
+        "schema_version": 1, "kind": "observed_command", "label": "old",
+        "state": "passed", "owner_pid": 99999, "child_pid": 99998,
+    }), encoding="utf-8")
+    assert run_once(
+        deadlines_file=str(deadlines), stale_file=str(tmp_path / "missing-stale"),
+        killed_file=str(tmp_path / "kills.json"),
+    ) == {"stale": 1, "killed": 1}
+    assert sent == [(88888, signal.SIGTERM)]
+
+
+def test_daemon_startup_names_policy_and_preserves_replaced_pid_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    marker = tmp_path / "daemon.pid"
+    monkeypatch.setattr(watchdog, "WATCHDOG_PID_FILE", str(marker))
+    monkeypatch.setattr(watchdog, "WATCHDOG_LOG", str(tmp_path / "daemon.log"))
+
+    def interrupted() -> watchdog.PollResult:
+        marker.write_text("99998", encoding="utf-8")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(watchdog, "run_once", interrupted)
+    assert watchdog.main([]) == 0
+    assert "ownership_policy=registered-cwd-start-identity-observer-protection-v1" in capsys.readouterr().out
+    assert marker.read_text(encoding="utf-8") == "99998"
+
+
+
+def test_stop_make_policy_preserves_literal_values_without_writes(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    tripwire = tmp_path / "make-policy-tripwire"
+    literal = "$(shell touch " + str(tripwire) + ")"
+    for policy, expected in (("0", "0"), ("1", "1"), (literal, "invalid"), ("0 1", "invalid"), ("", "invalid")):
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-n", "task-watchdog-stop",
+             "TASK_WATCHDOG_VALIDATE_ONLY=" + policy], cwd=root, check=True,
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.stdout.splitlines()[-1].endswith("--stop --validate-only " + expected)
+    assert not tripwire.exists()
+
+
+
+@pytest.mark.parametrize("identity", ["fresh", "future", "missing", "malformed"])
+def test_legacy_elapsed_match_cannot_kill_a_fresh_or_unknown_native_start(
+    tmp_path: Path, _owned_poll: OwnedPoll, identity: str,
+) -> None:
+    _root, records, _cwds, deadlines, sent = _owned_poll
+    original = records[0]
+    stamp = time.strftime("%a %b %d %H:%M:%S %Y", time.localtime(time.time() + (3600 if identity == "future" else 0)))
+    if identity in {"missing", "malformed"}:
+        stamp = "" if identity == "missing" else "unavailable-start"
+    records[:] = [cleanup_owner.ProcessRecord(original.pid, 1, 400, original.command, started_at=stamp)]
+    assert run_once(
+        deadlines_file=str(deadlines), stale_file=str(tmp_path / "missing-stale"),
+        killed_file=str(tmp_path / "kills.json"),
+    ) == {"stale": 1, "killed": 0}
+    assert sent == [] and not (tmp_path / "kills.json").exists()
+
+
+@pytest.mark.parametrize("operation", ["kill", "stop"])
+@pytest.mark.parametrize("exception", [
+    subprocess.CalledProcessError(1, ["ps"]), subprocess.TimeoutExpired(["ps"], 1),
+])
+def test_unavailable_native_inventory_refuses_both_cleanup_apis(
+    monkeypatch: pytest.MonkeyPatch, _owned_poll: OwnedPoll, operation: str,
+    exception: subprocess.SubprocessError,
+) -> None:
+    root, records, _cwds, _deadlines, sent = _owned_poll
+    expected = records[0]
+    (root / "scripts/task_watchdog.py").write_text("# owned daemon fixture\n", encoding="utf-8")
+    marker = root / ".gate-logs/task-watchdog.pid"
+    marker.parent.mkdir()
+    marker.write_text(str(expected.pid), encoding="utf-8")
+
+    def unavailable(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+        raise exception
+
+    monkeypatch.setattr(cleanup_owner, "_records", unavailable)
+    if operation == "kill":
+        result = kill_process(expected.pid, expected_record=expected, repository_roots=(root,))
+    else:
+        result = watchdog.stop_owned_watchdog(root, apply=True)
+    assert result is False and sent == [] and marker.read_text(encoding="utf-8") == str(expected.pid)

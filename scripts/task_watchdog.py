@@ -27,16 +27,18 @@ USAGE
 ::
 
     make task-watchdog-start   # launch in background (nohup, PID tracked)
-    make task-watchdog-stop    # kill background watchdog
+    make task-watchdog-stop    # plan; TASK_WATCHDOG_VALIDATE_ONLY=0 applies verified cleanup
     make task-watchdog-status  # show PID + last log lines
     make watchdog-auto         # also starts this watchdog alongside agent_watchdog
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import tempfile
@@ -46,27 +48,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
-    from scripts.process_cleanup import descendant_processes, snapshot_processes
-else:
-    # ``make task-watchdog-start`` executes this file by path, where the
-    # repository root is not on ``sys.path`` and the package import fails.
-    try:
-        from scripts.process_cleanup import descendant_processes, snapshot_processes
-    except ModuleNotFoundError:  # pragma: no cover - exercised by direct launch
-        from process_cleanup import descendant_processes, snapshot_processes
-
-if TYPE_CHECKING:
+    import active_work_status as inventory_owner
+    import gludd_env_defaults as gludd_env_defaults
+    import kill_owned_gate as cleanup_owner
+    from active_work_status import _repository_roots
+elif __package__:
+    from scripts import active_work_status as inventory_owner
     from scripts import gludd_env_defaults as gludd_env_defaults
-else:
-    try:
-        from scripts import gludd_env_defaults as gludd_env_defaults
-    except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
-        import gludd_env_defaults
-
-if TYPE_CHECKING or __package__:
+    from scripts import kill_owned_gate as cleanup_owner
     from scripts.active_work_status import _repository_roots
 else:  # pragma: no cover - direct script execution
+    import active_work_status as inventory_owner
+    import gludd_env_defaults as gludd_env_defaults
+    import kill_owned_gate as cleanup_owner
     from active_work_status import _repository_roots
+
+_OWNERSHIP_POLICY = "registered-cwd-start-identity-observer-protection-v1"
 
 DEADLINES_FILE = os.environ.get(
     "GLUDD_TASK_DEADLINE_STATE", "/tmp/gludd-task-deadlines.json"
@@ -126,7 +123,7 @@ class StaleTask(TypedDict):
 
 
 class HungProcess(TypedDict):
-    """One verified task-like process that exceeded its timeout."""
+    """One diagnostic elapsed/name candidate, without destructive authority."""
 
     pid: int
     etime_secs: float
@@ -375,61 +372,218 @@ def find_hung_processes(
 # Kill
 # ---------------------------------------------------------------------------
 
-def kill_process(pid: int, expected_command: str | None = None) -> bool:
-    """Terminate a verified process tree, falling back to a direct PID.
-
-    ``expected_command`` closes the PID-reuse race: a stale task record cannot
-    kill a different project's process that inherited the same numeric PID.
-    When a process snapshot is available, descendants are terminated first so
-    pytest/uv workers cannot outlive their parent.
-    """
-    table = snapshot_processes()
-    root = table.get(pid)
-    if expected_command is not None and (root is None or root.command != expected_command):
-        _log(f"TASK KILL SKIP: pid={pid} identity changed")
-        return False
-
-    candidates = [*descendant_processes(table, pid), root] if root else []
-    if candidates:
-        signalled = False
-        for process in candidates:
-            try:
-                os.kill(process.pid, signal.SIGTERM)
-                signalled = True
-                _log(f"TASK KILL: SIGTERM → pid={process.pid}")
-            except (ProcessLookupError, PermissionError):
-                continue
-        time.sleep(5)
-        for process in candidates:
-            try:
-                os.kill(process.pid, signal.SIGKILL)
-                _log(f"TASK KILL: SIGKILL → pid={process.pid}")
-            except (ProcessLookupError, PermissionError):
-                continue
-        return signalled
-
-    # Keep fail-open behavior for a process that exited between discovery and
-    # cleanup, and for the small unit-test fake that has no ps row.
+def _native_start_is_stale(record: cleanup_owner.ProcessRecord, *, now_seconds: float, timeout_seconds: float) -> bool:
+    """Corroborate elapsed diagnostics with the fresh native start timestamp."""
     try:
-        os.kill(pid, signal.SIGTERM)
-        _log(f"TASK KILL: SIGTERM → pid={pid}")
-    except ProcessLookupError:
+        started = time.mktime(time.strptime(record.started_at, "%a %b %d %H:%M:%S %Y"))
+    except (OverflowError, ValueError):
         return False
-    except PermissionError:
-        _log(f"TASK KILL: permission denied pid={pid}")
-        return False
+    return now_seconds - started >= timeout_seconds
 
-    time.sleep(5)
 
+def _owned_cwd(record: cleanup_owner.ProcessRecord, roots: tuple[Path, ...]) -> Path | None:
+    """Require a live cwd equal to a native registered checkout, never a prefix."""
+    cwd = cleanup_owner._process_cwd(record.pid)
+    if cwd is None:
+        return None
+    resolved = cwd.resolve()
+    return resolved if resolved in {root.resolve() for root in roots} else None
+
+
+def _script_role(record: cleanup_owner.ProcessRecord, root: Path, name: str, *, uv: bool = False) -> bool:
+    """Recognize the exact native Python script, including legacy relative argv."""
     try:
-        os.kill(pid, signal.SIGKILL)
-        _log(f"TASK KILL: SIGKILL → pid={pid}")
-    except ProcessLookupError:
-        pass  # SIGTERM worked — process already gone
-    except PermissionError:
-        pass
+        tokens = shlex.split(record.command)
+    except ValueError:
+        return False
+    if uv:
+        if len(tokens) < 4 or Path(tokens[0]).name != "uv" or tokens[1] != "run":
+            return False
+        tokens = tokens[2:]
+    if len(tokens) < 2 or re.fullmatch(r"python(?:[0-9]+(?:\.[0-9]+)*)?", Path(tokens[0]).name) is None:
+        return False
+    expected = root / "scripts" / name
+    if expected.is_symlink() or not expected.is_file():
+        return False
+    return (root / tokens[1]).resolve() == expected.resolve()
 
-    return True
+
+def _protected_pids(records: list[cleanup_owner.ProcessRecord], roots: tuple[Path, ...]) -> set[int]:
+    """Use native observer metadata conservatively; display absence grants nothing."""
+    paths = inventory_owner._observer_status_paths(roots)
+    if len(paths) >= inventory_owner._OBSERVER_STATUS_LIMIT:
+        raise ValueError("native observer status inventory reached its display cap")
+    output = "\n".join(f"{record.pid} {record.ppid} {record.command}" for record in records)
+    observed = inventory_owner._observer_owned_processes_from_output(output, repository_roots=roots)
+    if len(observed) >= inventory_owner._OBSERVER_PROCESS_LIMIT:
+        raise ValueError("native observer process inventory reached its display cap")
+    owners = {int(row["pid"]) for row in observed if row["observer_role"] == "owner"}
+    for record in records:
+        # This is deny-only discovery. A live native observer omitted by damaged,
+        # missing or capped status cannot turn an ordinary candidate into authority.
+        if "stream_command.py" not in record.command:
+            continue
+        cwd = _owned_cwd(record, roots)
+        if cwd is not None and _script_role(record, cwd, "stream_command.py") and record.pid not in owners:
+            raise ValueError("live native observer is absent from protection inventory")
+    by_pid = {record.pid: record for record in records}
+    protected: set[int] = set()
+    for root in roots:
+        owners.update(pid for pid in (
+            _read_gate_pid(str(root / ".gate-background.pid")),
+            _read_gate_run_lock_pid(str(root / ".gate-logs/gate-run.lock")),
+        ) if pid in by_pid)
+    for pid in owners:
+        owner = by_pid[pid]
+        protected.update(target.record.pid for target in cleanup_owner._tree_targets(records, owner))
+        parent = owner.ppid
+        seen: set[int] = set()
+        while parent in by_pid and parent not in seen:
+            seen.add(parent)
+            ancestor = by_pid[parent]
+            try:
+                tokens = shlex.split(ancestor.command)
+            except ValueError:
+                raise ValueError("native observer ancestor command is unreadable") from None
+            if tokens and Path(tokens[0]).name in {"make", "gmake", "uv"}:
+                protected.add(parent)
+            parent = ancestor.ppid
+    return protected
+
+
+def _terminate_verified(
+    expected: cleanup_owner.ProcessRecord, roots: tuple[Path, ...], *, apply: bool = True,
+) -> bool:
+    """Reuse the native tree terminator with fresh ownership before every signal."""
+    if not roots or not all(root.is_absolute() and root.is_dir() for root in roots):
+        raise ValueError("registered checkout inventory is incomplete")
+    records = cleanup_owner._records(roots[0])
+    current = next((record for record in records if record.pid == expected.pid), None)
+    if current is None or not cleanup_owner._same_identity(expected, current):
+        raise ValueError("task process start identity changed")
+    targets = cleanup_owner._tree_targets(records, current)
+    expected_by_pid = {target.record.pid: target.record for target in targets}
+    terminated_parents: set[int] = set()
+
+    def reader() -> list[cleanup_owner.ProcessRecord]:
+        fresh = cleanup_owner._records(roots[0])
+        protected = _protected_pids(fresh, roots)
+        live_owner = next((record for record in fresh if record.pid == expected.pid), None)
+        if live_owner is not None and any(
+            target.record.pid not in expected_by_pid for target in cleanup_owner._tree_targets(fresh, live_owner)
+        ):
+            raise ValueError("task tree acquired an unverified child")
+        for record in fresh:
+            original = expected_by_pid.get(record.pid)
+            if original is None:
+                continue
+            reparented_by_cleanup = (
+                original.ppid in terminated_parents
+                and all(parent.pid != original.ppid for parent in fresh)
+            )
+            if (not cleanup_owner._same_identity(original, record)
+                    or (original.ppid != record.ppid and not reparented_by_cleanup)
+                    or _owned_cwd(record, roots) is None or record.pid in protected):
+                raise ValueError("task tree ownership or native protection changed")
+        return fresh
+
+    # Validate the complete tree, including children, before the first signal.
+    reader()
+    if not apply:
+        return True
+
+    def sender(pid: int, signum: signal.Signals) -> None:
+        # _signal_targets rechecks start/command identity; refresh cwd/protection
+        # once more at the actual signal boundary, including escalation.
+        fresh = reader()
+        record = next((record for record in fresh if record.pid == pid), None)
+        if record is None:
+            raise ProcessLookupError(pid)
+        os.kill(pid, signum)
+        if signum == signal.SIGTERM:
+            terminated_parents.add(pid)
+
+    term_pids, skipped = cleanup_owner._signal_targets(
+        targets, signal.SIGTERM, records_reader=reader, signal_sender=sender,
+    )
+    survivors = cleanup_owner._wait_for_exit(
+        targets, timeout=5, poll_seconds=0.1, records_reader=reader,
+        monotonic=time.monotonic, sleep=time.sleep,
+    )
+    if survivors:
+        _killed, kill_skipped = cleanup_owner._signal_targets(
+            survivors, signal.SIGKILL, records_reader=reader, signal_sender=sender,
+        )
+        skipped.extend(kill_skipped)
+        survivors = cleanup_owner._wait_for_exit(
+            survivors, timeout=1, poll_seconds=0.1, records_reader=reader,
+            monotonic=time.monotonic, sleep=time.sleep,
+        )
+    return bool(term_pids) and not skipped and not survivors
+
+
+def kill_process(
+    pid: int, expected_command: str | None = None, *,
+    expected_record: cleanup_owner.ProcessRecord | None = None,
+    repository_roots: tuple[Path, ...] | None = None,
+) -> bool:
+    """Terminate only a fresh, positively owned identity; never fall back to a PID."""
+    try:
+        roots = _repository_roots() if repository_roots is None else repository_roots
+        records = cleanup_owner._records(roots[0]) if roots else []
+        record = next((record for record in records if record.pid == pid), None)
+        if record is None or (expected_command is not None and record.command != expected_command):
+            return False
+        expected = expected_record or record
+        return _terminate_verified(expected, roots)
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        _log(f"TASK KILL SKIP: pid={pid} ownership refused: {exc}")
+        return False
+
+
+def stop_owned_watchdog(project_root: Path, *, apply: bool) -> bool:
+    """Plan or drain one exact old daemon and matching UV launcher, without restart."""
+    root = project_root.resolve()
+    marker = root / ".gate-logs/task-watchdog.pid"
+    if not marker.exists() and not marker.is_symlink():
+        print("TASK-WATCHDOG-STOP absent writes=false signals=false", flush=True)
+        return True
+    try:
+        if marker.is_symlink() or not marker.is_file() or root not in {
+            path.resolve() for path in _repository_roots()
+        }:
+            raise ValueError("watchdog PID pointer is not checkout-owned")
+        recorded_pid = marker.read_text(encoding="utf-8")
+        pid = int(recorded_pid.strip())
+        records = cleanup_owner._records(root)
+        daemon = next((record for record in records if record.pid == pid), None)
+        if (daemon is None or not daemon.started_at or _owned_cwd(daemon, (root,)) != root
+                or not _script_role(daemon, root, "task_watchdog.py")):
+            raise ValueError("watchdog PID pointer has no verified native daemon")
+        if len(shlex.split(daemon.command)) != 2:
+            raise ValueError("watchdog daemon command is not the native singleton")
+        parent = next((record for record in records if record.pid == daemon.ppid), None)
+        owner = daemon
+        if parent is not None and _script_role(parent, root, "task_watchdog.py", uv=True):
+            if (not parent.started_at or _owned_cwd(parent, (root,)) != root
+                    or len(shlex.split(parent.command)) != 4):
+                raise ValueError("watchdog UV launcher ownership is incomplete")
+            owner = parent
+        if marker.read_text(encoding="utf-8") != recorded_pid:
+            raise ValueError("watchdog PID pointer changed before cleanup")
+        if not _terminate_verified(owner, (root,), apply=apply):
+            raise ValueError("watchdog lifecycle did not fully drain")
+        # The old daemon must be fully gone before the existing start owner
+        # can create a replacement and its new PID pointer.
+        if apply and marker.exists():
+            if marker.read_text(encoding="utf-8") != recorded_pid:
+                raise ValueError("watchdog PID pointer was replaced during cleanup")
+            marker.unlink()
+        print(f"TASK-WATCHDOG-STOP verified apply={apply} old_tree_drained={apply}", flush=True)
+        return True
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        print(f"TASK-WATCHDOG-STOP refused: {exc}", flush=True)
+        return False
 
 
 def record_kill(
@@ -526,9 +680,20 @@ def run_once(
             repository_roots=repository_roots,
         )
         killed = 0
+        records = cleanup_owner._records(repository_roots[0]) if hung and repository_roots else []
+        by_pid = {record.pid: record for record in records}
+        protected = _protected_pids(records, repository_roots) if hung else set()
 
         for proc in hung:
-            killed_pid = kill_process(proc["pid"], expected_command=proc.get("command"))
+            record = by_pid.get(proc["pid"])
+            if (record is None or record.command != proc["command"]
+                    or not _native_start_is_stale(record, now_seconds=now_ms / 1000, timeout_seconds=timeout_ms / 1000)
+                    or _owned_cwd(record, repository_roots) is None or record.pid in protected):
+                continue
+            killed_pid = kill_process(
+                proc["pid"], expected_command=proc["command"], expected_record=record,
+                repository_roots=repository_roots,
+            )
             if killed_pid:
                 killed += 1
                 # Attribute to the oldest stale task (best-effort mapping)
@@ -557,10 +722,17 @@ def run_once(
 # Daemon loop
 # ---------------------------------------------------------------------------
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
+    """Run the existing daemon or plan/drain its verified checkout-owned tree."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--stop", action="store_true")
+    parser.add_argument("--validate-only", choices=("0", "1"), default="1")
+    args = parser.parse_args(argv)
+    if args.stop:
+        return 0 if stop_owned_watchdog(Path(__file__).resolve().parents[1], apply=args.validate_only == "0") else 1
     _log(
         f"task_watchdog started: timeout={TIMEOUT_SECS:.0f}s "
-        f"poll={POLL_SECS}s state={DEADLINES_FILE}"
+        f"poll={POLL_SECS}s state={DEADLINES_FILE} ownership_policy={_OWNERSHIP_POLICY}"
     )
     _write_pid()
     try:
@@ -571,7 +743,9 @@ def main() -> None:
         _log("task_watchdog stopped (interrupted)")
     finally:
         with suppress(Exception):
-            Path(WATCHDOG_PID_FILE).unlink(missing_ok=True)
+            if _read_gate_pid(WATCHDOG_PID_FILE) == _SELF_PID:
+                Path(WATCHDOG_PID_FILE).unlink(missing_ok=True)
+    return 0
 
 
 def _write_pid() -> None:
@@ -580,4 +754,4 @@ def _write_pid() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

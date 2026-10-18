@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from scripts.resource_arbiter import project_namespace, resource_root
+    from resource_arbiter import project_namespace, resource_root
 else:
     from resource_arbiter import project_namespace, resource_root
 

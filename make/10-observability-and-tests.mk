@@ -751,6 +751,7 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files
 # tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command
 # tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership
+# tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_ownership
 # tests/unit/test_gate_run_lock.py::test_gate_and_refresh_acquire_before_running_phases
 # tests/unit/test_bulkhead_deep.py::TestThreadPoolSubmit::test_submit_rejects_when_queue_full_nonblocking
 # tests/unit/test_bulkhead_admission.py::test_admission_reserves_workers_before_backlog
@@ -840,7 +841,7 @@ _pytest-runtime-compatibility-admission:
 # Keep the native reviewed-head controls separate from the established roster.
 # They still share this owner's unchanged 90-second/60-second outer budget.
 	@$(MAKE) --no-print-directory test-files \
-		TESTFILES="tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership" \
+		TESTFILES="tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_ownership" \
 		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 0 --maxprocesses 1 --ignore-glob=$(CURDIR)/tests/*"
 
 _ansible-role-variable-prefix:
