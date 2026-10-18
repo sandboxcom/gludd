@@ -1,3 +1,52 @@
+## v0.1.2 hosted admission repair in progress (2026-10-18)
+
+Candidate `51669b0eaa4ce138ead678dd0f0d28584abf1077` is pushed normally.
+Source review, 1330-case combined focus (two existing skips), local bounded
+admission and the 76.4-second publisher admission pass. Required Build
+39097125106 fails its unchanged 90/60 admission on both Python versions:
+1838 main cases pass in 78.32/84.16 seconds, then remaining children time out.
+Molecule 39097125202 and presentation 39097125234 pass. The exact candidate's
+local canonical gate is stopped through verified ownership with no survivors;
+its log and failed hosted evidence remain immutable. Master is not promoted.
+
+A diagnostic whole cohort takes 90.8 seconds under a non-authoritative
+180-second cap; a separate cProfile run takes 106.4 seconds under a diagnostic
+240-second cap. Neither clears the actual prerequisite. The measured shared
+Makefile reader repair closes an independent validated-bytes/use gap with
+invocation-local path/text pairs. Failing-first result is two failures and one
+passing control; complete 19-case acceptance, 95% native coverage and both strict
+typing scopes pass. Current source profiling shows the reader is a small cost;
+further measured repair is required before another final proof attempt.
+
+The native MCP writer now sizes independent built-in, alias-free topics once
+per entry, then serializes complete shards with its original SafeDumper.
+Shared/cyclic/custom values and YAML customizations keep the original complete
+candidate path. Eight call-budget cases fail first; 137 complete coverage cases
+then pass at 91% aggregate and 96% for the writer, with every file above 75%.
+All 100 manifest/generator cases pass on 3.14; strict typing passes. Exact-byte
+and live-generator controls retain the same artifacts, aliases and bounds.
+This focused repair is not a successful whole-admission or hosted proof.
+
+The source audit now bounds cyclic-GC suspension to one native source on ordinary
+GIL CPython and restores the exact entry state. Seven controls fail first; all 49
+cases pass on both runtimes with 96% native coverage. Independent complete-inventory
+processes have identical canonical findings, zero retained tracked AST nodes and
+zero deferred garbage; total local audit/cleanup is 5.6044 versus 3.8116 seconds,
+with 103.33 versus 103.48 MB peak RSS. This is local evidence only.
+
+All 171 routing/scheduling/cold-start controls pass after five failing-first pins
+and an additive correction to the second literal roster. The manifest has 101
+families with unchanged phase/process/time/coverage policy. Correctly scoped native
+90/60 admission passes all 1865 + 1 + 2 cases in 74.5 observed seconds; the retained
+stricter preflight-plus-runtime wrapper timeout is separate failed diagnostic
+evidence. Next: direct public proof admission, independent source review, one
+frozen successor, combined focus and exact-SHA gate/hosted proof.
+
+See `docs/features/RUNTIME_ADMISSION_THROUGHPUT.md` for retained logs and
+upstream practitioner context. All S98 tasks remain unchecked. Do not finalize
+the old receipt, replay the gate, retry hosted CI unchanged, publish a tag or
+claim release readiness. Preserve every earlier ref, bundle and checkpoint.
+
 ## v0.1.2 bounded publication admission blocked (2026-10-18)
 
 The clean reviewed integration candidate is

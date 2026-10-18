@@ -682,3 +682,192 @@ mutations rejecting missing, partial, widened, duplicate, misplaced, wrongly
 owned or over-budget routing. All 243 target contracts, duplicate/parity/help
 checks, strict test typing and Ruff pass. These are focused routing results;
 the complete bounded behavioral example and final release proof remain pending.
+
+## Preserve validated Makefile bytes during composition (2026-10-18)
+
+The reviewed candidate 51669b0 passes normal publication admission in 76.4
+observed seconds and its 36-file focus passes 1330 cases with two existing skips.
+Required Build 39097125106 nevertheless times out at the unchanged 90-second
+boundary on both hosted Python versions. Its 1838-case main children pass in
+78.32 seconds on 3.11 and 84.16 seconds on 3.12; the remaining children do not
+finish. Molecule 39097125202 and presentation 39097125234 pass. These successful
+workflows do not clear the Build failure. The owned local canonical gate is
+stopped, with no survivors, before source repair; retain its interrupted log
+`.gate-logs/gate-20261018042952-72c496e1.log` and all immutable candidate refs.
+
+A complete diagnostic takes 90.8 seconds under an explicitly diagnostic-only
+180-second cap. A separate standard-library cProfile run takes 106.4 seconds
+under a diagnostic-only 240-second cap and retains all 1838 + 1 + 2 passes.
+Neither clears the original 90/60 prerequisite. The latter run is retained in
+`.gate-logs/observed/v012-cohort-cprofile/runtime-cprofile-nativepath-51669-layout-20261018.log`.
+Worker profiles show repeated collection and native MCP topic sizing cost.
+They measure the repaired Makefile reader at only 0.356 and 0.404 cumulative
+seconds across 82 and 92 calls, respectively; its repair alone cannot establish
+the required admission margin.
+
+The existing Makefile reader validates each fragment, then rereads it while
+composing. A real mutation after the validated read reproduces emission of an
+unvalidated nested include. Retain each validated path/text pair only for that
+public call and emit those same bytes. Both public readers open and validate
+current files again on every invocation. Ordered includes, UTF-8/newline errors,
+duplicate/nested include refusal and unsplit Makefiles keep their original
+semantics. This is a per-file validated view, not an atomic snapshot of
+independently changing sources. No persistent cache or new scanner is added.
+
+Two new cases fail first and a path-reader control already passes. All 19
+complete reader tests then pass, with native branch coverage at 95% under the
+unchanged 85/75 floors. Both strict typing scopes pass. Every original assertion
+is retained. The read-count contract reduces composition from 25 to 13 source
+reads per call for the current twelve-fragment layout; no hosted timing benefit
+is inferred from that count.
+
+The long-lived [pytest collection discussion from 2017](https://github.com/pytest-dev/pytest/issues/2206)
+and [package collection design discussion from 2020](https://github.com/pytest-dev/pytest/issues/7777)
+describe costs and boundaries around filesystem hooks and package traversal.
+The [native pytest 9.1.1 collection source](https://github.com/pytest-dev/pytest/blob/9.1.1/src/_pytest/main.py)
+is the implementation reference. These are practitioner and upstream context,
+not Gludd proof or permission to replace collection, suppress plugins, narrow
+the roster or raise deadlines. Fresh bounded admission, independent source
+review, the complete canonical gate and exact-SHA hosted evidence remain
+required; all release tasks and promotion remain open.
+
+## Size independent MCP topics with the native serializer (2026-10-18)
+
+Whole-cohort worker profiling attributes 9.113 cumulative instrumented seconds
+to two native MCP topic writes, including 170 topic dumps and 8.718 seconds in
+chunk sizing. The original sizing algorithm serializes the growing mapping
+repeatedly. Keep PyYAML 6.0.3 and the same SafeDumper, formatting options and
+final per-shard serialization. Separate-document dump APIs do not implement
+the required one-mapping-per-shard format.
+
+Within the existing writer, exact built-in dict/list/scalar trees with no
+shared containers can use additive native entry sizes. Inspect the value
+graph once per invocation, using one container-identity set across all topics.
+For this restricted subset, invoke the existing singleton topic dump once,
+sum its existing splitlines count and fill the same greedy shard boundaries.
+Serialize each final shard through the original unchanged native function.
+No dump, size, AST, source or proof result is retained across calls.
+
+Shared or recursive containers, custom mappings/types, altered native
+representers or alias policy, and custom YAML path resolvers retain the
+original complete-candidate algorithm. Native aliases remain enabled.
+The [native representer source](https://github.com/yaml/pyyaml/blob/6.0.3/lib/yaml/representer.py)
+explains its object-identity alias handling. The long-lived
+[PyYAML user discussion opened in November 2017](https://github.com/yaml/pyyaml/issues/103)
+documents requests and workarounds for suppressing aliases. Preserve those
+semantics here through the native fallback. The discussion supplies context,
+not evidence of an upstream defect causing Gludd timing.
+
+Eight deterministic native call-budget controls fail before implementation;
+46 original/parity/fallback controls already pass. After repair, all 137 cases
+in the existing six-source coverage cohort pass. Aggregate native branch
+coverage is 91%, the changed writer is 96%, and every measured file meets the
+unchanged 85/75 floors. The complete 100 manifest/generator cases also pass
+on installed Python 3.14, with warnings fatal; both strict typing scopes pass.
+All original assertions remain. Additive controls compare exact shard and
+manifest bytes, digests, boundaries, alias-sensitive packing, recursive values,
+custom types/representers/mappings, fresh mutations and the actual live
+generator corpus. No generated artifact is regenerated in the checkout.
+
+For n independent topics and k output shards, the native topic-dump count is
+n for planning and n+k for publication, with no growing private dict copies.
+The focused generator writes take 0.38 and 0.23 seconds in the local repaired
+run; the earlier two-worker diagnostic recorded 2.28 and 1.98 seconds.
+Those different local invocations are not a controlled hosted comparison.
+The unchanged bounded admission and exact-SHA hosted lanes remain necessary
+before claiming that the original timeout prerequisite is repaired.
+
+## Bound cyclic collection to each native source audit (2026-10-18)
+
+A native diagnostic identifies repeated automatic cyclic-GC scans during the
+complete source audit. With the same 4106 sources and 41 external fixture names,
+the original observation takes 6.2775 seconds versus 3.8071 with per-source
+suspension. Extending suspension across the entire inventory saves only another
+0.0609 seconds and is rejected. Those same-process RSS peaks are not independent
+memory measurements and do not establish memory parity.
+
+The existing owner now reads each source before entering a small guarded helper.
+Only ordinary GIL CPython suspends cyclic collection while native parsing,
+declaration traversal and compact findings extraction run for that one source.
+Its helper frame releases AST references before the wrapper restores the exact
+entry enabled state in finally, including errors and BaseException cancellation.
+Collection can resume between files. Other interpreters and free-threaded builds
+retain the original behavior. No threshold, freeze, explicit collection, parent
+links, result retention, inventory, plugin discovery or fixture ownership changes.
+
+The [Python GC contract](https://docs.python.org/3.11/library/gc.html) distinguishes
+cyclic collection from reference counting, and the
+[standard-library timeit implementation](https://github.com/python/cpython/blob/3.11/Lib/timeit.py)
+uses entry-state restoration. The long-lived
+[temporary-GC context discussion](https://github.com/python/cpython/issues/75537)
+and [nested disable/enable discussion](https://github.com/python/cpython/issues/85717)
+motivate explicit state restoration; they do not prove this optimization safe or
+fast for Gludd. The [free-threaded build documentation](https://docs.python.org/3.14/howto/free-threading-python.html)
+documents Py_GIL_DISABLED and its different memory model, supporting the fallback.
+The flag is interpreter-wide; the guarded region contains native static parsing
+and extraction, not plugin execution or a whole pytest worker lifetime.
+
+Seven new controls fail first with one passing disabled-input syntax control.
+All 49 original/additive cases then pass on installed Python 3.11 and 3.14.
+The existing native coverage profile measures 96% with unchanged 85/75 floors;
+both strict typing scopes and Ruff pass. Controls preserve both findings and
+fresh parsing, read errors outside the guard, exact True/False cleanup after
+body mutation, SyntaxError, RuntimeError and KeyboardInterrupt. Real per-file
+Module/ClassDef/FunctionDef weak references are dead before the next parse
+without explicit collection; deliberate retention proves that check detects
+a leak. The complete original assertions remain.
+
+An additional independent-process diagnostic addresses the unresolved memory
+question, using the actual complete inventory and tracking file-owned AST nodes.
+Its sorted canonical finding and path digests match in both processes. Original
+and guarded total audit-plus-cleanup times are 5.6044 and 3.8116 seconds; Darwin
+peak RSS is 103333888 and 103481344 bytes. Both final AST reference counts and
+diagnostic cleanup garbage counts are zero. Automatic collection counts change
+from 13243/1203/102 to 5/0/0. These are bounded local observations, not a universal
+memory guarantee or hosted throughput proof. An earlier diagnostic digest used
+unordered frozenset repr; the retained canonical observations fix that diagnostic
+serialization without changing audit output. Evidence is
+/tmp/gludd-v012-ast-gc-memory-baseline-canonical.xml and
+/tmp/gludd-v012-ast-gc-memory-guarded-canonical.xml.
+
+The original 90/60 admission, full gate, exact-SHA hosted lanes, source review,
+85/75 coverage, ZDD and promotion requirements remain. Rollback reverts this
+isolated helper and its additive controls; it does not restore old observations.
+
+## Add the cheap native repair guards to admission (2026-10-18)
+
+The existing first compatibility cohort gains three exact selectors: both new
+Makefile reader guards (three cases total) and the independent MCP topic dump
+budget (eight cases). The already selected complete source-audit file owns all
+sixteen GC controls without another selector. Four new manifest families record
+those owners, preserving every prior selector and all 97 prior families in order.
+The manifest now has 101 families, the same 21 phases and 2850-second ceiling.
+The three child invocations, worker limits 2/1/1, fresh help/review context,
+fatal warnings, 90/60 bounds and mandatory complete gate remain unchanged.
+
+Five routing pins fail first. A complete replay additionally exposes the second
+literal roster expectation; its update adds the same selectors and retains every
+original assertion. All 171 promotion/scheduling/cold-start cases then pass,
+including twelve new mutation controls for omitted, widened, partial, duplicate,
+misplaced or wrongly owned selectors and changed budgets. Both strict test
+typing scopes, Ruff, all 243 target contracts, duplicate/parity/help validation
+and the native public promotion-check behavior pass.
+
+A first observer incorrectly applies the runtime's 90-second cap to preflight
+plus runtime together. It retains 1865 main passes in 71.64 seconds, then times
+out before the remaining children. This stricter wrapper result is not a failure
+of the canonical runtime-only budget and is not relabelled as success. Retain
+.gate-logs/observed/v012-support-admission/support-routing-cb311da-20261018.log.
+
+The correctly scoped native runtime observer then passes all 1865 main cases,
+one fresh help case and both final review controls in 74.5 observed seconds
+under the original 90/60 bounds. Pytest child times are 62.68, 0.88 and 7.21
+seconds. Standard native duration reporting is enabled for attribution; no
+selection, plugin, fixture, assertion or warning policy is changed. The source
+inventory setup is 5.06 seconds and both final controls take about 3.1 seconds.
+Retain .gate-logs/observed/v012-native-runtime-admission/native-runtime-support-cb311da-20261018.log.
+
+This is bounded local acceptance. The direct public proof-admission producer,
+independent source review, frozen combined focus, complete canonical gate and
+exact-SHA hosted proof remain required. No release task is closed, no failed
+candidate evidence is replaced and no promotion or publication follows yet.

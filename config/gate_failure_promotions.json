@@ -838,6 +838,34 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_gate_status_attestation.py::test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "makefile-validated-source-read-budget",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "makefile-validated-byte-composition",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_invocation",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "mcp-independent-topic-native-dump-budget",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "pytest-source-native-gc-restoration",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_pytest_param_fixture_collisions.py::test_source_audit_restores_exact_gc_state_after_native_work",
+      "full_gate_phase": "test"
     }
   ]
 }

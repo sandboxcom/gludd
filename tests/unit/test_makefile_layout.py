@@ -281,3 +281,51 @@ with open(os.path.join(PROJECT_ROOT, "Makefile")) as stream:
     assert _logical_makefile_read_violations(Path("fixture.py"), source) == [
         "fixture.py:3",
     ]
+
+@pytest.mark.parametrize("reader", ["compose_makefile", "makefile_sources"])
+def test_each_invocation_reads_each_validated_source_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reader: str,
+) -> None:
+    layout = _load_layout()
+    entrypoint = _write(
+        tmp_path / "Makefile", "include make/00.mk\ninclude make/10.mk\n",
+    )
+    first = _write(tmp_path / "make/00.mk", "VALUE := first\n")
+    second = _write(tmp_path / "make/10.mk", "all:\n\t@echo $(VALUE)\n")
+    native_read = layout._read_text
+    reads: list[Path] = []
+
+    def tracked_read(path: Path) -> str:
+        reads.append(path)
+        return str(native_read(path))
+
+    monkeypatch.setattr(layout, "_read_text", tracked_read)
+    getattr(layout, reader)(entrypoint)
+    assert reads == [entrypoint, first, second]
+
+
+def test_composition_emits_validated_bytes_and_revalidates_next_invocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    layout = _load_layout()
+    entrypoint = _write(tmp_path / "Makefile", "include make/00.mk\n")
+    fragment = _write(tmp_path / "make/00.mk", "VALUE := validated\n")
+    native_read = layout._read_text
+    mutate = True
+
+    def replace_after_read(path: Path) -> str:
+        nonlocal mutate
+        text = str(native_read(path))
+        if path == fragment and mutate:
+            mutate = False
+            fragment.write_text("include make/unvalidated.mk\n", encoding="utf-8")
+        return text
+
+    monkeypatch.setattr(layout, "_read_text", replace_after_read)
+    assert layout.compose_makefile(entrypoint) == "VALUE := validated\n"
+    with pytest.raises(layout.MakefileLayoutError, match="nested"):
+        layout.compose_makefile(entrypoint)
+    with pytest.raises(layout.MakefileLayoutError, match="nested"):
+        layout.makefile_sources(entrypoint)
+    fragment.write_text("VALUE := fresh\n", encoding="utf-8")
+    assert layout.compose_makefile(entrypoint) == "VALUE := fresh\n"

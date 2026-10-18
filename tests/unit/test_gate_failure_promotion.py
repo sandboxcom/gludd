@@ -420,6 +420,12 @@ def test_hosted_fanout_requires_executed_runtime_admission() -> None:
             "tests/unit/test_pytest_param_fixture_collisions.py::test_repository_class_scoped_fixtures_use_supported_binding",
             "tests/unit/test_pytest_param_fixture_collisions.py",
         ),
+        (
+            "pytest-source-native-gc-restoration",
+            "tests/unit/test_pytest_param_fixture_collisions.py::"
+            "test_source_audit_restores_exact_gc_state_after_native_work",
+            "tests/unit/test_pytest_param_fixture_collisions.py",
+        ),
     ],
 )
 def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
@@ -862,6 +868,23 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
             "tests/unit/test_gate_status_attestation.py::"
             "test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests",
             id="native-git-metadata-query-count",
+        ),
+        pytest.param(
+            "makefile-validated-source-read-budget",
+            "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once",
+            id="makefile-validated-source-read-budget",
+        ),
+        pytest.param(
+            "makefile-validated-byte-composition",
+            "tests/unit/test_makefile_layout.py::"
+            "test_composition_emits_validated_bytes_and_revalidates_next_invocation",
+            id="makefile-validated-byte-composition",
+        ),
+        pytest.param(
+            "mcp-independent-topic-native-dump-budget",
+            "tests/unit/test_mcp_topics_manifest.py::"
+            "test_independent_topic_sizing_has_one_native_dump_per_topic",
+            id="mcp-independent-topic-native-dump-budget",
         ),
     ],
 )
@@ -1650,6 +1673,10 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "native-secrets-scan-worker-budget",
         "css-lint-exact-pin-contract",
         "native-git-metadata-query-count",
+        "makefile-validated-source-read-budget",
+        "makefile-validated-byte-composition",
+        "mcp-independent-topic-native-dump-budget",
+        "pytest-source-native-gc-restoration",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1861,6 +1888,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ci_shards_log_context.py '
         'tests/unit/test_ci_shards_log_context_bounds.py '
         'tests/unit/test_makefile_syntax.py '
+        'tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once '
+        'tests/unit/test_makefile_layout.py::'
+        'test_composition_emits_validated_bytes_and_revalidates_next_invocation '
         'tests/unit/test_makefile_targets_deep.py '
         'tests/unit/test_azure_containerapp_coverage_target.py '
         'tests/unit/test_ee_owned_collection_runtime_metadata.py '
@@ -1871,6 +1901,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_ansible_ee_locked_consumer_admission.py '
         'tests/unit/test_release_asset_matrix.py '
         'tests/unit/test_release_ee_collection_closure.py '
+        'tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic '
         'tests/unit/test_mcp_tool_gen.py '
         'tests/unit/test_observed_command.py '
         "tests/unit/test_observer_retention_concurrency.py "

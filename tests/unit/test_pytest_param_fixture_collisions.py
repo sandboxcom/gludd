@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import gc
 import weakref
 from pathlib import Path
 from textwrap import dedent
@@ -676,3 +677,205 @@ def test_declarations_preserve_every_statement_container_order_and_owner(
     assert [(item.class_name, item.name) for item in report.bindings] == [
         (f"Test_{label}", f"public_{label}") for label, _depth in statement_slots
     ]
+
+
+@pytest.mark.parametrize("initial_enabled", [True, False])
+@pytest.mark.parametrize("outcome", ["return", "runtime-error", "interrupt", "syntax-error"])
+def test_source_audit_restores_exact_gc_state_after_native_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, initial_enabled: bool, outcome: str,
+) -> None:
+    path = tmp_path / "test_gc_scope.py"
+    path.write_text(
+        "def invalid(:\n" if outcome == "syntax-error" else (
+            'import pytest\n'
+            'class TestExample:\n'
+            '    @pytest.fixture(scope="class")\n'
+            '    def shared(self): pass\n'
+            '@pytest.mark.parametrize("base_url", [1])\n'
+            'def test_case(base_url): pass\n'
+        ),
+        encoding="utf-8",
+    )
+    original_parse = ast.parse
+    original_read = Path.read_text
+    original_declarations = fixture_audit._source_declarations
+    read_states: list[bool] = []
+    parse_states: list[bool] = []
+    declaration_states: list[bool] = []
+    expected_errors: dict[str, type[BaseException]] = {
+        "runtime-error": RuntimeError, "interrupt": KeyboardInterrupt, "syntax-error": SyntaxError,
+    }
+
+    def tracked_read(source_path: Path, *args: object, **kwargs: object) -> str:
+        if source_path == path:
+            read_states.append(gc.isenabled())
+        return original_read(source_path, encoding="utf-8")
+
+    def tracked_parse(source: str, *, filename: str) -> ast.Module:
+        parse_states.append(gc.isenabled())
+        assert not gc.isenabled()
+        assert filename == str(path)
+        return original_parse(source, filename=filename)
+
+    def tracked_declarations(tree: ast.Module) -> fixture_audit._SourceDeclarations:
+        declaration_states.append(gc.isenabled())
+        assert not gc.isenabled()
+        declarations = original_declarations(tree)
+        # Make restoration of an initially disabled state a real cleanup obligation.
+        gc.enable()
+        if outcome in {"runtime-error", "interrupt"}:
+            raise expected_errors[outcome]("guarded body failure")
+        return declarations
+
+    monkeypatch.setattr(fixture_audit, "_BOUND_SOURCE_GC", True, raising=False)
+    monkeypatch.setattr(Path, "read_text", tracked_read)
+    monkeypatch.setattr(fixture_audit, "ast", SimpleNamespace(**{**vars(ast), "parse": tracked_parse}))
+    monkeypatch.setattr(fixture_audit, "_source_declarations", tracked_declarations)
+    process_enabled = gc.isenabled()
+    thresholds = gc.get_threshold()
+    try:
+        (gc.enable if initial_enabled else gc.disable)()
+        if outcome == "return":
+            report = fixture_audit.audit_pytest_sources([path], external_fixture_names={"base_url"})
+            assert [(item.path, item.name) for item in report.collisions] == [(path, "base_url")]
+            assert [(item.class_name, item.name) for item in report.bindings] == [
+                ("TestExample", "shared"),
+            ]
+        else:
+            with pytest.raises(expected_errors[outcome]):
+                fixture_audit.audit_pytest_sources([path], external_fixture_names={"base_url"})
+        assert gc.isenabled() is initial_enabled
+        assert gc.get_threshold() == thresholds
+        assert read_states == [initial_enabled]
+        assert parse_states == [False]
+        assert declaration_states == ([] if outcome == "syntax-error" else [False])
+    finally:
+        (gc.enable if process_enabled else gc.disable)()
+
+
+@pytest.mark.parametrize("initial_enabled", [True, False])
+def test_source_audit_preserves_gc_behavior_on_unsupported_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, initial_enabled: bool,
+) -> None:
+    path = tmp_path / "test_fallback.py"
+    path.write_text(
+        'import pytest\n@pytest.mark.parametrize("base_url", [1])\n'
+        'def test_case(base_url): pass\n', encoding="utf-8",
+    )
+    original_parse = ast.parse
+    parsed: list[str] = []
+    policy_calls: list[str] = []
+
+    def tracked_parse(source: str, *, filename: str) -> ast.Module:
+        assert gc.isenabled() is initial_enabled
+        parsed.append(filename)
+        return original_parse(source, filename=filename)
+
+    monkeypatch.setattr(fixture_audit, "_BOUND_SOURCE_GC", False, raising=False)
+    monkeypatch.setattr(
+        fixture_audit, "gc", SimpleNamespace(
+            isenabled=gc.isenabled,
+            disable=lambda: policy_calls.append("disable"),
+            enable=lambda: policy_calls.append("enable"),
+        ), raising=False,
+    )
+    monkeypatch.setattr(fixture_audit, "ast", SimpleNamespace(**{**vars(ast), "parse": tracked_parse}))
+    process_enabled = gc.isenabled()
+    try:
+        (gc.enable if initial_enabled else gc.disable)()
+        report = fixture_audit.audit_pytest_sources([path], external_fixture_names={"base_url"})
+        assert [(item.path, item.name) for item in report.collisions] == [(path, "base_url")]
+        assert parsed == [str(path)]
+        assert policy_calls == []
+        assert gc.isenabled() is initial_enabled
+    finally:
+        (gc.enable if process_enabled else gc.disable)()
+
+
+@pytest.mark.parametrize("initial_enabled", [True, False])
+@pytest.mark.parametrize("bad_source", ["missing", "invalid-utf8"])
+def test_source_audit_reads_before_changing_gc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, initial_enabled: bool, bad_source: str,
+) -> None:
+    path = tmp_path / "test_unreadable.py"
+    if bad_source == "invalid-utf8":
+        path.write_bytes(b"\xff")
+    policy_calls: list[str] = []
+    monkeypatch.setattr(fixture_audit, "_BOUND_SOURCE_GC", True, raising=False)
+    monkeypatch.setattr(
+        fixture_audit, "gc", SimpleNamespace(
+            isenabled=gc.isenabled,
+            disable=lambda: policy_calls.append("disable"),
+            enable=lambda: policy_calls.append("enable"),
+        ), raising=False,
+    )
+    process_enabled = gc.isenabled()
+    try:
+        (gc.enable if initial_enabled else gc.disable)()
+        expected_error = FileNotFoundError if bad_source == "missing" else UnicodeDecodeError
+        with pytest.raises(expected_error):
+            fixture_audit.audit_pytest_sources([path], external_fixture_names=set())
+        assert policy_calls == []
+        assert gc.isenabled() is initial_enabled
+    finally:
+        (gc.enable if process_enabled else gc.disable)()
+
+
+@pytest.mark.parametrize("retain_first_tree", [False, True])
+def test_source_audit_releases_file_owned_nodes_with_retention_negative_witness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retain_first_tree: bool,
+) -> None:
+    paths = [tmp_path / "test_a.py", tmp_path / "test_b.py"]
+    for path in paths:
+        path.write_text(
+            'import pytest\n'
+            'class TestExample:\n'
+            '    @pytest.fixture(scope="class")\n'
+            '    def shared(self): pass\n'
+            '@pytest.mark.parametrize("base_url", [1])\n'
+            'def test_case(base_url): pass\n', encoding="utf-8",
+        )
+    original_parse = ast.parse
+    previous: list[weakref.ReferenceType[ast.AST]] = []
+    retained: list[ast.Module] = []
+    parsed: list[str] = []
+
+    def tracked_parse(source: str, *, filename: str) -> ast.Module:
+        assert not gc.isenabled()
+        assert all(reference() is None for reference in previous), "previous source retained"
+        tree = original_parse(source, filename=filename)
+        previous.extend(
+            weakref.ref(node) for node in ast.walk(tree)
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef))
+        )
+        parsed.append(filename)
+        if retain_first_tree and len(parsed) == 1:
+            retained.append(tree)
+        return tree
+
+    monkeypatch.setattr(fixture_audit, "_BOUND_SOURCE_GC", True, raising=False)
+    monkeypatch.setattr(fixture_audit, "ast", SimpleNamespace(**{**vars(ast), "parse": tracked_parse}))
+    process_enabled = gc.isenabled()
+    thresholds = gc.get_threshold()
+    try:
+        gc.enable()
+        if retain_first_tree:
+            with pytest.raises(AssertionError, match="previous source retained"):
+                fixture_audit.audit_pytest_sources(paths, external_fixture_names={"base_url"})
+            assert parsed == [str(paths[0])]
+            assert any(reference() is not None for reference in previous)
+        else:
+            report = fixture_audit.audit_pytest_sources(paths, external_fixture_names={"base_url"})
+            assert parsed == [str(path) for path in paths]
+            assert all(reference() is None for reference in previous)
+            assert [(item.path, item.name) for item in report.collisions] == [
+                (path, "base_url") for path in paths
+            ]
+            assert [(item.path, item.class_name, item.name) for item in report.bindings] == [
+                (path, "TestExample", "shared") for path in paths
+            ]
+        assert gc.isenabled()
+        assert gc.get_threshold() == thresholds
+    finally:
+        retained.clear()
+        (gc.enable if process_enabled else gc.disable)()
