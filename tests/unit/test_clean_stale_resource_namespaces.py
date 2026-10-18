@@ -10,10 +10,13 @@ import shutil
 import subprocess
 import time
 from base64 import urlsafe_b64encode
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, suppress
 from hashlib import sha256
 from importlib.util import cache_from_source
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 from typing import IO, TYPE_CHECKING, Literal, Never
 
@@ -767,9 +770,10 @@ def test_first_nested_blocking_marker_is_reported_without_rescanning_or_mutating
         path: Path,
         config: CleanupConfig,
         processes: Mapping[int, ProcessIdentity],
+        *, parent_descriptor: int | None = None,
     ) -> cleanup._Scan:
         inspected.append(path)
-        return original_scan(path, config, processes)
+        return original_scan(path, config, processes, parent_descriptor=parent_descriptor)
 
     monkeypatch.setattr(cleanup, "_scan_candidate", scan_once)
     receipt = tmp_path / "receipt.jsonl"
@@ -1059,12 +1063,13 @@ def test_receipt_location_and_slow_delete_guardrails(
     class SlowDelete:
         avoids_symlink_attacks = True
 
-        def __call__(self, path: Path) -> None:
+        def __call__(self, path: str, *, dir_fd: int) -> None:
             time.sleep(0.02)
-            original(path)
+            original(path, dir_fd=dir_fd)
 
     monkeypatch.setattr(shutil, "rmtree", SlowDelete())
-    cleanup._delete_with_heartbeats(candidate, 0.001)
+    with cleanup._directory_anchor(root) as descriptor:
+        cleanup._delete_with_heartbeats(candidate, 0.001, dir_fd=descriptor)
     assert "RESOURCE_CLEANUP_HEARTBEAT" in capsys.readouterr().out
 
 
@@ -1316,10 +1321,21 @@ def test_cleanup_scan_descriptors_close_on_every_exit(
             patch.setattr(os, "readlink", unavailable_readlink)
         if failure == "read":
             patch.setattr(os, "read", unavailable_read)
-        if failure == "scandir":
-            patch.setattr(os, "scandir", unavailable_read)
-        if failure == "unsupported":
-            patch.delattr(os, "O_NOFOLLOW")
+        if failure in {"scandir", "unsupported"}:
+            original_scan = cleanup._scan_candidate
+
+            def candidate_fault(
+                path: Path, config: CleanupConfig, processes: Mapping[int, ProcessIdentity],
+                *, parent_descriptor: int | None = None,
+            ) -> cleanup._Scan:
+                with monkeypatch.context() as candidate_patch:
+                    if failure == "scandir":
+                        candidate_patch.setattr(os, "scandir", unavailable_read)
+                    else:
+                        candidate_patch.delattr(os, "O_NOFOLLOW")
+                    return original_scan(path, config, processes, parent_descriptor=parent_descriptor)
+
+            patch.setattr(cleanup, "_scan_candidate", candidate_fault)
         decision = plan_cleanup(config, set(), {}).decisions[0]
     assert remaining == set()
     if failure == "unsupported":
@@ -1524,10 +1540,10 @@ def test_native_deleter_late_directory_link_swap_preserves_outside_data(
             directory.symlink_to(outside, target_is_directory=True)
         return original_open(path, flags, mode, dir_fd=dir_fd)
 
-    def inject_late_swap(path: Path, heartbeat_seconds: float) -> None:
+    def inject_late_swap(path: Path, heartbeat_seconds: float, *, dir_fd: int) -> None:
         with monkeypatch.context() as patch:
             patch.setattr(os, "open", replace_before_open)
-            original_delete(path, heartbeat_seconds)
+            original_delete(path, heartbeat_seconds, dir_fd=dir_fd)
 
     monkeypatch.setattr(cleanup, "_delete_with_heartbeats", inject_late_swap)
     with pytest.raises(OSError):
@@ -1535,4 +1551,301 @@ def test_native_deleter_late_directory_link_swap_preserves_outside_data(
     assert changed
     assert (outside / "sentinel").read_bytes() == b"outside"
     assert candidate.is_dir() and directory.is_symlink()
+    assert not config.receipt_path.exists()
+
+
+@pytest.mark.parametrize("component", ("root", "ancestor"))
+@pytest.mark.parametrize("moment", ("validated", "enumerating"))
+def test_root_discovery_never_follows_replaced_caller_route(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, component: str, moment: str,
+) -> None:
+    route = tmp_path / "route"
+    route.mkdir()
+    root = route / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "discovery")
+    outside_route = tmp_path / "outside-route"
+    outside_route.mkdir()
+    outside = outside_route / "gludd-resources"
+    outside.mkdir()
+    outside_candidate = _namespace(outside, "discovery")
+    sentinel = outside_candidate / "payload.bin"
+    sentinel.write_bytes(b"outside-discovery-sentinel")
+    before = sentinel.read_bytes(), sentinel.stat()
+    outside_identity = outside.stat()
+    original_validate = cleanup._validate_root
+    original_stat, original_listdir, original_scandir = os.stat, os.listdir, os.scandir
+    changed = False
+    outside_enumerations: list[object] = []
+    outside_metadata: list[str] = []
+
+    def swap_route() -> None:
+        nonlocal changed
+        assert not changed
+        changed = True
+        replaced = root if component == "root" else route
+        replaced.rename(replaced.with_name(replaced.name + "-saved"))
+        replaced.symlink_to(outside if component == "root" else outside_route, target_is_directory=True)
+
+    def validate_then_swap(path: Path) -> tuple[Path, os.stat_result] | None:
+        result = original_validate(path)
+        assert result is not None
+        if moment == "validated":
+            swap_route()
+        return result
+
+    def classify_enumeration(path: str | bytes | os.PathLike[str] | os.PathLike[bytes] | int) -> None:
+        if not changed and moment == "enumerating":
+            swap_route()
+        identity = os.fstat(path) if isinstance(path, int) else original_stat(path)
+        if (identity.st_dev, identity.st_ino) == (outside_identity.st_dev, outside_identity.st_ino):
+            outside_enumerations.append(path)
+
+    def inspect_listdir(path: str | os.PathLike[str] | int = ".") -> list[str]:
+        classify_enumeration(path)
+        return original_listdir(path)
+
+    @contextmanager
+    def inspect_scandir(
+        path: str | os.PathLike[str] | int = ".",
+    ) -> Iterator[Iterator[os.DirEntry[str]]]:
+        classify_enumeration(path)
+        with original_scandir(path) as entries:
+            yield entries
+
+    def inspect_stat(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes] | int,
+        *, dir_fd: int | None = None, follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        if changed and dir_fd is None and not isinstance(path, int):
+            name = os.fsdecode(path)
+            if name.startswith(str(root) + os.sep):
+                outside_metadata.append(name)
+        return original_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+
+    plan: cleanup.CleanupPlan | None = None
+    with monkeypatch.context() as patch:
+        patch.setattr(cleanup, "_validate_root", validate_then_swap)
+        patch.setattr(os, "listdir", inspect_listdir)
+        patch.setattr(os, "scandir", inspect_scandir)
+        patch.setattr(os, "stat", inspect_stat)
+        with suppress(OSError, ValueError):
+            plan = plan_cleanup(_config(root, tmp_path / "receipts"), set(), {})
+    assert changed, "exercise the real root discovery boundary"
+    assert outside_enumerations == []
+    assert outside_metadata == []
+    assert plan is None or all(decision.action == "preserve" for decision in plan.decisions)
+    assert sentinel.read_bytes() == before[0] and sentinel.stat() == before[1]
+    assert not (tmp_path / "receipts").exists()
+    assert candidate.name == outside_candidate.name
+
+
+@pytest.mark.parametrize("component", ("root", "ancestor"))
+def test_native_deleter_root_route_swap_cannot_select_outside_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, component: str,
+) -> None:
+    route = tmp_path / "route"
+    route.mkdir()
+    root = route / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "handoff")
+    root_identity = root.stat()
+    outside_route = tmp_path / "outside-route"
+    outside_route.mkdir()
+    outside = outside_route / "gludd-resources"
+    outside.mkdir()
+    outside_candidate = _namespace(outside, "handoff")
+    sentinel = outside_candidate / "payload.bin"
+    sentinel.write_bytes(b"outside-handoff-sentinel")
+    before = sentinel.read_bytes(), sentinel.stat(), outside_candidate.stat()
+    config = _config(root, tmp_path / "receipts", validate_only=False)
+    plan = plan_cleanup(config, set(), {})
+    assert plan.decisions[0].action == "reclaim"
+    original_rmtree = shutil.rmtree
+    calls: list[tuple[str | Path, int | None]] = []
+
+    class SwapAtNativeHandoff:
+        avoids_symlink_attacks = True
+
+        def __call__(self, path: str | Path, *, dir_fd: int | None = None) -> None:
+            calls.append((path, dir_fd))
+            replaced = root if component == "root" else route
+            replaced.rename(replaced.with_name(replaced.name + "-saved"))
+            replaced.symlink_to(outside if component == "root" else outside_route, target_is_directory=True)
+            original_rmtree(path, dir_fd=dir_fd)
+
+    error: OSError | None = None
+    with monkeypatch.context() as patch:
+        patch.setattr(shutil, "rmtree", SwapAtNativeHandoff())
+        try:
+            apply_cleanup(plan, config, set(), {})
+        except OSError as caught:
+            error = caught
+    assert len(calls) == 1
+    path, descriptor = calls[0]
+    assert sentinel.exists(), "the native deleter must not select the outside candidate"
+    assert sentinel.read_bytes() == before[0] and sentinel.stat() == before[1]
+    assert error is not None and "ancestor identity changed" in str(error)
+    assert outside_candidate.stat() == before[2]
+    assert Path(path) == Path(candidate.name) and not Path(path).is_absolute()
+    assert descriptor is not None
+    with pytest.raises(OSError):
+        os.fstat(descriptor)
+    saved_root = (
+        root.with_name(root.name + "-saved") if component == "root" else route.with_name("route-saved") / root.name
+    )
+    assert (saved_root.stat().st_dev, saved_root.stat().st_ino) == (root_identity.st_dev, root_identity.st_ino)
+    assert not (saved_root / candidate.name).exists()
+    assert not config.receipt_path.exists()
+
+
+@pytest.mark.parametrize("failure", (False, True), ids=("success", "worker-error"))
+def test_cleanup_root_descriptor_lives_through_heartbeat_worker_and_closes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: bool,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "worker")
+    root_identity = root.stat()
+    config = _config(root, tmp_path / "receipts", validate_only=False)
+    config = CleanupConfig(**{**config.__dict__, "heartbeat_seconds": 0.1})
+    plan = plan_cleanup(config, set(), {})
+    entered, heartbeat, release = Event(), Event(), Event()
+    calls: list[tuple[str | Path, int | None]] = []
+    remaining: set[int] = set()
+    original_open, original_close = os.open, os.close
+    original_rmtree, original_print = shutil.rmtree, print
+
+    def tracked_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
+        *, dir_fd: int | None = None,
+    ) -> int:
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        remaining.add(descriptor)
+        return descriptor
+
+    def tracked_close(descriptor: int) -> None:
+        remaining.discard(descriptor)
+        original_close(descriptor)
+
+    def observe_print(message: str, *, flush: bool = False) -> None:
+        original_print(message, flush=flush)
+        if message.startswith("RESOURCE_CLEANUP_HEARTBEAT"):
+            heartbeat.set()
+
+    class HeldNativeDelete:
+        avoids_symlink_attacks = True
+
+        def __call__(self, path: str | Path, *, dir_fd: int | None = None) -> None:
+            calls.append((path, dir_fd))
+            entered.set()
+            if not release.wait(5):
+                raise RuntimeError("fixture release was not delivered")
+            if failure:
+                raise OSError("fixture native worker failure")
+            original_rmtree(path, dir_fd=dir_fd)
+
+    with monkeypatch.context() as patch, ThreadPoolExecutor(max_workers=1) as caller:
+        patch.setattr(os, "open", tracked_open)
+        patch.setattr(os, "close", tracked_close)
+        patch.setattr(cleanup, "print", observe_print, raising=False)
+        patch.setattr(shutil, "rmtree", HeldNativeDelete())
+        future = caller.submit(apply_cleanup, plan, config, set(), {})
+        try:
+            assert entered.wait(5)
+            assert heartbeat.wait(5)
+            assert len(calls) == 1
+            path, descriptor = calls[0]
+            assert Path(path) == Path(candidate.name) and not Path(path).is_absolute()
+            assert descriptor is not None and descriptor in remaining
+            identity = os.fstat(descriptor)
+            assert (identity.st_dev, identity.st_ino) == (root_identity.st_dev, root_identity.st_ino)
+        finally:
+            release.set()
+        if failure:
+            with pytest.raises(OSError, match="fixture native worker failure"):
+                future.result(timeout=5)
+        else:
+            assert future.result(timeout=5).deleted == (candidate,)
+    assert remaining == set()
+    if failure:
+        assert candidate.is_dir() and not config.receipt_path.exists()
+    else:
+        assert not candidate.exists()
+        assert json.loads(config.receipt_path.read_text())["outcome"] == "deleted"
+
+
+@pytest.mark.parametrize("capability", ("safe-rmtree", "dir-fd"))
+def test_native_cleanup_capability_refusal_never_falls_back_to_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "unsupported")
+    config = _config(root, tmp_path / "receipts", validate_only=False)
+    plan = plan_cleanup(config, set(), {})
+    calls: list[tuple[str | Path, int | None]] = []
+
+    class UnsupportedDelete:
+        avoids_symlink_attacks = capability != "safe-rmtree"
+
+        def __call__(self, path: str | Path, *, dir_fd: int | None = None) -> None:
+            calls.append((path, dir_fd))
+            if dir_fd is None:
+                raise AssertionError("a path fallback is forbidden")
+            raise NotImplementedError("fixture native dir_fd unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(shutil, "rmtree", UnsupportedDelete())
+        if capability == "safe-rmtree":
+            with pytest.raises(RuntimeError, match="symlink-safe"):
+                apply_cleanup(plan, config, set(), {})
+            assert calls == []
+        else:
+            with pytest.raises(NotImplementedError, match="native dir_fd unavailable"):
+                apply_cleanup(plan, config, set(), {})
+            assert len(calls) == 1
+            path, descriptor = calls[0]
+            assert Path(path) == Path(candidate.name) and descriptor is not None
+            with pytest.raises(OSError):
+                os.fstat(descriptor)
+    assert candidate.is_dir() and (candidate / "payload.bin").read_bytes() == b"payload"
+    assert not config.receipt_path.exists()
+
+
+@pytest.mark.parametrize("failure", ("scandir", "unsupported"))
+def test_cleanup_root_discovery_failure_closes_anchors_without_path_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "root-refusal")
+    config = _config(root, tmp_path / "receipts")
+    opened: list[int] = []
+    original_open = os.open
+
+    def tracked_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
+        *, dir_fd: int | None = None,
+    ) -> int:
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        opened.append(descriptor)
+        return descriptor
+
+    def unavailable_enumeration(*_args: object, **_kwargs: object) -> Never:
+        raise OSError("fixture root enumeration unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", tracked_open)
+        if failure == "scandir":
+            patch.setattr(os, "scandir", unavailable_enumeration)
+        else:
+            patch.delattr(os, "O_NOFOLLOW")
+        with pytest.raises(OSError, match=r"root enumeration|directory-relative"):
+            plan_cleanup(config, set(), {})
+        for descriptor in opened:
+            with pytest.raises(OSError):
+                os.fstat(descriptor)
+    assert bool(opened) is (failure == "scandir")
+    assert candidate.is_dir() and (candidate / "payload.bin").read_bytes() == b"payload"
     assert not config.receipt_path.exists()

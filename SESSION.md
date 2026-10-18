@@ -2015,3 +2015,38 @@ retain original values and every inventory element. Required normal collection
 and independent source review remain separate receipts, pending commit here.
 No real cleanup, provisioning, diagnostic/admission/gate/CI replay, push,
 release-readiness claim or task closure is authorized by these source fixtures.
+
+
+### S98.4 M17 root-route repair of913 changes_requested
+
+Keep913ff57 and refs/heads/reviewed-v012-source-913ff57 immutable. Independent
+source review found a real root discovery/path reopening and native deletion
+handoff window. This separate child changes only the existing cleanup runtime
+owner and its whole test owner, plus feature/history text. No other production,
+Make/configuration/routing source is changed.
+
+Initial native RED: eight failures/1.54s. Four real root/ancestor discovery
+swaps enumerated the outside fixture; both native deletion handoffs reported
+success after root replacement; both heartbeat controls lacked the pinned fd.
+Stronger native RED: three failures/one pass/1.36s, directly observing loss of
+the outside sentinel in both caller-route cases. All operations are isolated
+tmp_path fixtures, not real resources.
+
+The scanner uses descriptor-relative root discovery and candidate opens. Apply
+holds the verified root through the immediate no-follow leaf check and complete
+native worker drain, submits only candidate.name with dir_fd, then verifies the
+anchor before success publication. Outside data stays unchanged under the same
+real races; a late root change retains partial/error state and no false receipt.
+Existing stdlib deletion/interior-race semantics and every ownership bound remain.
+
+Retain126-pass/two-failure/2.06s implementation intermediate. Candidate-only
+fault seams preserve all original assertions; new root failure controls prove
+global no-follow/scandir refusal and descriptor closure. Whole cleanup owner
+passes130/2.05s. Final seven whole owners pass343/39.84s, fatal warnings, serial;
+observer20261018T170759Z-86373-b9830c7f passes41.422s. Native unchanged three-file
+85/75 line/branch audit passes92.4% line/86.3% branch. Changed source/test normal
+strict scopes and Ruff pass; native contracts250/resources261/Make/line guards
+pass. All112 families/fields, original selectors/plugins/three2-1-1 children,
+90/60 and21/2850 remain unchanged. Normal guarded commit collection and exact
+independent child review remain separate receipts; no source approval, actual
+cleanup/capacity retry, runtime/proof/CI replay, push or task closure is claimed.

@@ -616,24 +616,26 @@ def _scan_candidate(
     path: Path,
     config: CleanupConfig,
     processes: Mapping[int, ProcessIdentity],
+    *,
+    parent_descriptor: int | None = None,
 ) -> _Scan:
     try:
-        top = path.lstat()
-    except OSError:
-        return _Scan(None, "candidate-unreadable")
-    if stat.S_ISLNK(top.st_mode):
-        return _Scan(None, "candidate-symlink")
-    if not stat.S_ISDIR(top.st_mode) or top.st_uid != os.getuid():
-        return _Scan(None, "candidate-not-owned-directory")
-
-    digest = hashlib.sha256()
-    digest.update(repr((top.st_mode, top.st_uid, top.st_gid, top.st_nlink,
-                        top.st_mtime_ns, top.st_ctime_ns)).encode("ascii"))
-    newest = top.st_mtime
-    size_bytes = top.st_size
-    entries = 0
-    try:
-        with _directory_anchor(path) as root_descriptor:
+        with ExitStack() as anchors:
+            if parent_descriptor is None:
+                parent_descriptor = anchors.enter_context(_directory_anchor(path.parent))
+            top = os.stat(path.name, dir_fd=parent_descriptor, follow_symlinks=False)
+            if stat.S_ISLNK(top.st_mode):
+                return _Scan(None, "candidate-symlink")
+            if not stat.S_ISDIR(top.st_mode) or top.st_uid != os.getuid():
+                return _Scan(None, "candidate-not-owned-directory")
+            root_descriptor = os.open(path.name, _directory_flags(), dir_fd=parent_descriptor)
+            anchors.callback(os.close, root_descriptor)
+            digest = hashlib.sha256()
+            digest.update(repr((top.st_mode, top.st_uid, top.st_gid, top.st_nlink,
+                                top.st_mtime_ns, top.st_ctime_ns)).encode("ascii"))
+            newest = top.st_mtime
+            size_bytes = top.st_size
+            entries = 0
             if not _same_entry(top, os.fstat(root_descriptor)):
                 return _Scan(None, "candidate-identity-changed")
             view = _NamespaceIO(path, root_descriptor, limit=config.max_entries_per_namespace)
@@ -711,61 +713,67 @@ def plan_cleanup(
     if validated is None:
         return CleanupPlan(config.root.expanduser().absolute(), 0, 0, ())
     root, root_identity = validated
-    children = sorted(root.iterdir(), key=lambda child: child.name)
-    if len(children) > config.max_candidates:
-        raise ValueError("candidate limit exceeded")
+    with _directory_anchor(root) as root_descriptor:
+        if not _same_entry(root_identity, os.fstat(root_descriptor)):
+            raise OSError("cleanup root identity changed")
+        names = _NamespaceIO(root, root_descriptor, limit=config.max_candidates).names(root, scan_budget=True)
+        children = [root / name for name in names]
+        if len(children) > config.max_candidates:
+            raise ValueError("candidate limit exceeded")
 
-    grouped: dict[str, list[Path]] = {}
-    unrecognized: list[Path] = []
-    for child in children:
-        base = _namespace_base(child.name)
-        if base is None:
-            unrecognized.append(child)
-        else:
-            grouped.setdefault(base, []).append(child)
+        grouped: dict[str, list[Path]] = {}
+        unrecognized: list[Path] = []
+        for child in children:
+            base = _namespace_base(child.name)
+            if base is None:
+                unrecognized.append(child)
+            else:
+                grouped.setdefault(base, []).append(child)
 
-    decisions: list[NamespaceDecision] = []
-    for child in unrecognized:
-        decisions.append(NamespaceDecision(child.name, (child,), "preserve", "unrecognized-namespace", ()))
-    for base, paths in grouped.items():
-        ordered = tuple(sorted(paths, key=lambda path: path.name.endswith("-toolchain")))
-        if base in protected_namespaces:
-            decisions.append(NamespaceDecision(base, ordered, "preserve", "protected-worktree-namespace", ()))
-            continue
-        if process_identities is None:
-            decisions.append(NamespaceDecision(base, ordered, "preserve", "process-census-unavailable", ()))
-            continue
-        fingerprints: list[PathFingerprint] = []
-        refusal: str | None = None
-        blocking_marker: Path | None = None
-        for path in ordered:
-            scan = _scan_candidate(path, config, process_identities)
-            if scan.reason is not None:
-                refusal = scan.reason
-                blocking_marker = scan.blocking_marker
-                break
-            if scan.fingerprint is None:  # defensive fail-closed invariant
-                refusal = "candidate-unreadable"
-                break
-            fingerprints.append(scan.fingerprint)
-        if refusal is not None:
-            decisions.append(NamespaceDecision(base, ordered, "preserve", refusal, (), blocking_marker))
-            continue
-        newest = max(fingerprint.newest_mtime for fingerprint in fingerprints)
-        if config.now_epoch - newest < config.grace_seconds:
-            decisions.append(NamespaceDecision(base, ordered, "preserve", "within-grace-period", tuple(fingerprints)))
-            continue
-        decisions.append(
-            NamespaceDecision(
-                base,
-                ordered,
-                "reclaim",
-                "stale-and-proven-inactive",
-                tuple(fingerprints),
+        decisions: list[NamespaceDecision] = []
+        for child in unrecognized:
+            decisions.append(NamespaceDecision(child.name, (child,), "preserve", "unrecognized-namespace", ()))
+        for base, paths in grouped.items():
+            ordered = tuple(sorted(paths, key=lambda path: path.name.endswith("-toolchain")))
+            if base in protected_namespaces:
+                decisions.append(NamespaceDecision(base, ordered, "preserve", "protected-worktree-namespace", ()))
+                continue
+            if process_identities is None:
+                decisions.append(NamespaceDecision(base, ordered, "preserve", "process-census-unavailable", ()))
+                continue
+            fingerprints: list[PathFingerprint] = []
+            refusal: str | None = None
+            blocking_marker: Path | None = None
+            for path in ordered:
+                scan = _scan_candidate(path, config, process_identities, parent_descriptor=root_descriptor)
+                if scan.reason is not None:
+                    refusal = scan.reason
+                    blocking_marker = scan.blocking_marker
+                    break
+                if scan.fingerprint is None:  # defensive fail-closed invariant
+                    refusal = "candidate-unreadable"
+                    break
+                fingerprints.append(scan.fingerprint)
+            if refusal is not None:
+                decisions.append(NamespaceDecision(base, ordered, "preserve", refusal, (), blocking_marker))
+                continue
+            newest = max(fingerprint.newest_mtime for fingerprint in fingerprints)
+            if config.now_epoch - newest < config.grace_seconds:
+                decisions.append(
+                    NamespaceDecision(base, ordered, "preserve", "within-grace-period", tuple(fingerprints))
+                )
+                continue
+            decisions.append(
+                NamespaceDecision(
+                    base,
+                    ordered,
+                    "reclaim",
+                    "stale-and-proven-inactive",
+                    tuple(fingerprints),
+                )
             )
-        )
-    decisions.sort(key=lambda decision: decision.base_name)
-    return CleanupPlan(root, root_identity.st_dev, root_identity.st_ino, tuple(decisions))
+        decisions.sort(key=lambda decision: decision.base_name)
+        return CleanupPlan(root, root_identity.st_dev, root_identity.st_ino, tuple(decisions))
 
 
 def _append_receipt(path: Path, record: dict[str, object], root: Path) -> None:
@@ -783,11 +791,11 @@ def _append_receipt(path: Path, record: dict[str, object], root: Path) -> None:
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def _delete_with_heartbeats(path: Path, heartbeat_seconds: float) -> None:
+def _delete_with_heartbeats(path: Path, heartbeat_seconds: float, *, dir_fd: int) -> None:
     if not shutil.rmtree.avoids_symlink_attacks:
         raise RuntimeError("platform lacks symlink-safe recursive deletion")
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="gludd-resource-cleanup") as pool:
-        future = pool.submit(shutil.rmtree, path)
+        future = pool.submit(shutil.rmtree, path.name, dir_fd=dir_fd)
         while True:
             try:
                 future.result(timeout=heartbeat_seconds)
@@ -824,20 +832,33 @@ def apply_cleanup(
             refused.extend(decision.paths)
             continue
         for fingerprint in decision.fingerprints:
+            started = False
             try:
-                identity = fingerprint.path.lstat()
+                with _directory_anchor(plan.root) as root_descriptor:
+                    root_identity = os.fstat(root_descriptor)
+                    if (
+                        root_identity.st_uid != os.getuid()
+                        or (root_identity.st_dev, root_identity.st_ino) != (plan.root_device, plan.root_inode)
+                        or fingerprint.path.parent != plan.root
+                    ):
+                        raise OSError("cleanup root identity changed")
+                    identity = os.stat(fingerprint.path.name, dir_fd=root_descriptor, follow_symlinks=False)
+                    if (
+                        not stat.S_ISDIR(identity.st_mode)
+                        or identity.st_uid != os.getuid()
+                        or (identity.st_dev, identity.st_ino) != (fingerprint.device, fingerprint.inode)
+                    ):
+                        raise OSError("cleanup candidate identity changed")
+                    print(f"RESOURCE_CLEANUP_DELETE_BEGIN path={fingerprint.path}", flush=True)
+                    started = True
+                    _delete_with_heartbeats(
+                        fingerprint.path, config.heartbeat_seconds, dir_fd=root_descriptor,
+                    )
             except OSError:
+                if started:
+                    raise
                 refused.append(fingerprint.path)
                 continue
-            if (
-                fingerprint.path.parent != plan.root
-                or stat.S_ISLNK(identity.st_mode)
-                or (identity.st_dev, identity.st_ino) != (fingerprint.device, fingerprint.inode)
-            ):
-                refused.append(fingerprint.path)
-                continue
-            print(f"RESOURCE_CLEANUP_DELETE_BEGIN path={fingerprint.path}", flush=True)
-            _delete_with_heartbeats(fingerprint.path, config.heartbeat_seconds)
             _append_receipt(
                 config.receipt_path,
                 {

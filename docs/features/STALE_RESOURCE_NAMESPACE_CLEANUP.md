@@ -209,3 +209,50 @@ contracts,112 promotion families,261 resource records, task/line guards pass.
 Normal guarded commit collection and independent source review remain separate
 receipts. These source checks recover no disk capacity and authorize no live
 cleanup, unchanged hard-guard retry or release completion.
+
+
+## Root-route binding through native deletion (M17)
+
+Independent review of immutable913ff57 withheld source approval: root discovery
+reopened the validated path, and the heartbeat worker passed an absolute path
+to rmtree after the scanner's root anchors had closed. A caller-root or ancestor
+replacement could therefore select a different same-basename outside directory.
+
+The separate child keeps the existing no-follow root anchor open for bounded
+fd-scandir discovery and passes that descriptor into candidate classification.
+Apply opens and checks the planned root, performs the immediate no-follow leaf
+identity/uid check relative to it, and borrows the same descriptor through the
+existing worker's completion or error. Native rmtree receives only candidate.name
+and dir_fd; there is no path fallback. The anchor revalidates the root route
+before the existing success receipt is published. A late route change can leave
+truthful partial deletion of the original owned fixture, raises an error and
+writes no false receipt; the replacement/outside tree is never selected.
+
+The historical [CPython discussion](https://bugs.python.org/issue4489) above
+motivated fd/inode checks and distinguishes top-level link refusal from interior
+unlink. Current [rmtree's dir_fd contract](https://docs.python.org/3.11/library/shutil.html#shutil.rmtree)
+and its [CPython3.11.14 entry path](https://github.com/python/cpython/blob/v3.11.14/Lib/shutil.py#L663-L740)
+explain this caller obligation: the library first chooses the supplied root.
+The repaired caller binds that choice to its already approved parent descriptor.
+This resolved historical report is not a present stdlib defect or evidence of
+exploitation in Gludd. The accepted native interior transient-open semantics
+and the existing late-interior-race fixture remain unchanged.
+
+Actual RED has eight failures/1.54s. A strengthened separate native handoff RED
+has three failures/one pass/1.36s and directly proves loss of both outside fixture
+sentinels on913. Retain the first implementation's126 passes/two failures/2.06s;
+its old candidate fault injection reached the newly guarded root first. The
+faults now remain at their original candidate boundary with all prior assertions,
+and new root-level refusal/closure controls cover the higher boundary.
+The cleanup whole owner passes130/2.05s. Final seven complete owners pass343
+in39.84s, warnings fatal and serial; observer20261018T170759Z-86373-b9830c7f
+passes41.422s. Native unchanged85/75 audit passes all three files at aggregate
+92.4% line/86.3% branch. Changed source/test strict checks and Ruff pass.
+
+All112 manifest objects, Make recipes, selectors/order/plugins, workers2/1/1,
+90/60,21/2850, current/registered/paired/grace/census/lease/authenticity/hardlink,
+fingerprint, receipt and heartbeat duties remain. No live cleanup, hard-capacity
+retry, runtime diagnostic, proof/gate/CI replay, merge or push is claimed.
+913 review/history and all old refs/archives remain immutable. Required normal
+guarded collection, exact independent child review and actual capacity recovery
+are separate prerequisites.
