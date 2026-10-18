@@ -833,3 +833,41 @@ serialization without changing audit output. Evidence is
 The original 90/60 admission, full gate, exact-SHA hosted lanes, source review,
 85/75 coverage, ZDD and promotion requirements remain. Rollback reverts this
 isolated helper and its additive controls; it does not restore old observations.
+
+## Add the cheap native repair guards to admission (2026-10-18)
+
+The existing first compatibility cohort gains three exact selectors: both new
+Makefile reader guards (three cases total) and the independent MCP topic dump
+budget (eight cases). The already selected complete source-audit file owns all
+sixteen GC controls without another selector. Four new manifest families record
+those owners, preserving every prior selector and all 97 prior families in order.
+The manifest now has 101 families, the same 21 phases and 2850-second ceiling.
+The three child invocations, worker limits 2/1/1, fresh help/review context,
+fatal warnings, 90/60 bounds and mandatory complete gate remain unchanged.
+
+Five routing pins fail first. A complete replay additionally exposes the second
+literal roster expectation; its update adds the same selectors and retains every
+original assertion. All 171 promotion/scheduling/cold-start cases then pass,
+including twelve new mutation controls for omitted, widened, partial, duplicate,
+misplaced or wrongly owned selectors and changed budgets. Both strict test
+typing scopes, Ruff, all 243 target contracts, duplicate/parity/help validation
+and the native public promotion-check behavior pass.
+
+A first observer incorrectly applies the runtime's 90-second cap to preflight
+plus runtime together. It retains 1865 main passes in 71.64 seconds, then times
+out before the remaining children. This stricter wrapper result is not a failure
+of the canonical runtime-only budget and is not relabelled as success. Retain
+.gate-logs/observed/v012-support-admission/support-routing-cb311da-20261018.log.
+
+The correctly scoped native runtime observer then passes all 1865 main cases,
+one fresh help case and both final review controls in 74.5 observed seconds
+under the original 90/60 bounds. Pytest child times are 62.68, 0.88 and 7.21
+seconds. Standard native duration reporting is enabled for attribution; no
+selection, plugin, fixture, assertion or warning policy is changed. The source
+inventory setup is 5.06 seconds and both final controls take about 3.1 seconds.
+Retain .gate-logs/observed/v012-native-runtime-admission/native-runtime-support-cb311da-20261018.log.
+
+This is bounded local acceptance. The direct public proof-admission producer,
+independent source review, frozen combined focus, complete canonical gate and
+exact-SHA hosted proof remain required. No release task is closed, no failed
+candidate evidence is replaced and no promotion or publication follows yet.

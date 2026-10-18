@@ -87,6 +87,9 @@ ROSTER = (
     "tests/unit/test_ci_shards_log_context.py",
     "tests/unit/test_ci_shards_log_context_bounds.py",
     "tests/unit/test_makefile_syntax.py",
+    "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once",
+    "tests/unit/test_makefile_layout.py::"
+    "test_composition_emits_validated_bytes_and_revalidates_next_invocation",
     "tests/unit/test_makefile_targets_deep.py",
     "tests/unit/test_azure_containerapp_coverage_target.py",
     "tests/unit/test_ee_owned_collection_runtime_metadata.py",
@@ -97,6 +100,7 @@ ROSTER = (
     "tests/unit/test_ansible_ee_locked_consumer_admission.py",
     "tests/unit/test_release_asset_matrix.py",
     "tests/unit/test_release_ee_collection_closure.py",
+    "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic",
     "tests/unit/test_mcp_tool_gen.py",
     "tests/unit/test_observed_command.py",
     "tests/unit/test_observer_retention_concurrency.py",
@@ -425,7 +429,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 97
+    assert len(families) == 101
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -514,3 +518,116 @@ def test_native_git_metadata_query_count_routing_rejects_contract_mutations(
         phase["max_seconds"] = 91
     with pytest.raises(AssertionError):
         _assert_native_git_metadata_query_count_route(payload, rows)
+
+
+_ADMISSION_SUPPORT_ROUTES = (
+    (
+        "makefile-validated-source-read-budget",
+        "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once",
+        "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once",
+    ),
+    (
+        "makefile-validated-byte-composition",
+        "tests/unit/test_makefile_layout.py::"
+        "test_composition_emits_validated_bytes_and_revalidates_next_invocation",
+        "tests/unit/test_makefile_layout.py::"
+        "test_composition_emits_validated_bytes_and_revalidates_next_invocation",
+    ),
+    (
+        "mcp-independent-topic-native-dump-budget",
+        "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic",
+        "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic",
+    ),
+    (
+        "pytest-source-native-gc-restoration",
+        "tests/unit/test_pytest_param_fixture_collisions.py::"
+        "test_source_audit_restores_exact_gc_state_after_native_work",
+        "tests/unit/test_pytest_param_fixture_collisions.py",
+    ),
+)
+
+
+def _assert_admission_support_routes(
+    payload: dict[str, object], rows: list[dict[str, object]],
+) -> None:
+    families = payload["families"]
+    assert isinstance(families, list)
+    selectors = rows[0]["files"]
+    assert isinstance(selectors, list)
+    for family_id, node, _selector in _ADMISSION_SUPPORT_ROUTES:
+        assert [family for family in families if family["id"] == family_id] == [{
+            "id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
+            "node": node, "full_gate_phase": "test",
+        }]
+    for file in {node.split("::", 1)[0] for _, node, _ in _ADMISSION_SUPPORT_ROUTES}:
+        expected = [selector for _, _, selector in _ADMISSION_SUPPORT_ROUTES
+                    if selector.split("::", 1)[0] == file]
+        assert [selector for selector in selectors if selector.split("::", 1)[0] == file] == expected
+        for row in rows[1:]:
+            later = row["files"]
+            assert isinstance(later, list)
+            assert not any(selector.split("::", 1)[0] == file for selector in later)
+    assert selectors == list(ROSTER)
+    # Preserve the prior exact-node guard and all shared process/budget contracts.
+    _assert_native_git_metadata_query_count_route(payload, rows)
+
+
+def test_new_admission_support_guards_execute_without_widening_files(tmp_path: Path) -> None:
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    _assert_admission_support_routes(payload, rows)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "missing", "whole-file", "partial-case", "duplicate", "later-only",
+        "later-duplicate", "missing-family", "wrong-owner", "wrong-node", "budget",
+        "missing-reader", "duplicate-gc",
+    ),
+)
+def test_admission_support_routing_rejects_contract_mutations(
+    tmp_path: Path, mutation: str,
+) -> None:
+    result, captured = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    original = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    _assert_admission_support_routes(original, captured)
+    payload = deepcopy(original)
+    rows = deepcopy(captured)
+    family_id, node, _ = _ADMISSION_SUPPORT_ROUTES[2]
+    selectors = rows[0]["files"]
+    assert isinstance(selectors, list)
+    families = payload["families"]
+    family = next(item for item in families if item["id"] == family_id)
+    if mutation == "missing":
+        selectors.remove(node)
+    elif mutation == "whole-file":
+        selectors[selectors.index(node)] = node.split("::", 1)[0]
+    elif mutation == "partial-case":
+        selectors[selectors.index(node)] = f"{node}[one-case]"
+    elif mutation == "duplicate":
+        selectors.append(node)
+    elif mutation in {"later-only", "later-duplicate"}:
+        if mutation == "later-only":
+            selectors.remove(node)
+        later = rows[2]["files"]
+        assert isinstance(later, list)
+        later.append(node)
+    elif mutation == "missing-family":
+        families.remove(family)
+    elif mutation == "wrong-owner":
+        family["owner_target"] = "_different-admission-owner"
+    elif mutation == "wrong-node":
+        family["node"] = f"{node}[one-case]"
+    elif mutation == "missing-reader":
+        selectors.remove(_ADMISSION_SUPPORT_ROUTES[0][2])
+    elif mutation == "duplicate-gc":
+        selectors.append(_ADMISSION_SUPPORT_ROUTES[3][1])
+    else:
+        assert mutation == "budget"
+        phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
+        phase["max_seconds"] = 91
+    with pytest.raises(AssertionError):
+        _assert_admission_support_routes(payload, rows)

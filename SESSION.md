@@ -32,8 +32,15 @@ GIL CPython and restores the exact entry state. Seven controls fail first; all 4
 cases pass on both runtimes with 96% native coverage. Independent complete-inventory
 processes have identical canonical findings, zero retained tracked AST nodes and
 zero deferred garbage; total local audit/cleanup is 5.6044 versus 3.8116 seconds,
-with 103.33 versus 103.48 MB peak RSS. This is local evidence only. Next: route the
-cheap new guards, run actual bounded admission, then review one frozen successor.
+with 103.33 versus 103.48 MB peak RSS. This is local evidence only.
+
+All 171 routing/scheduling/cold-start controls pass after five failing-first pins
+and an additive correction to the second literal roster. The manifest has 101
+families with unchanged phase/process/time/coverage policy. Correctly scoped native
+90/60 admission passes all 1865 + 1 + 2 cases in 74.5 observed seconds; the retained
+stricter preflight-plus-runtime wrapper timeout is separate failed diagnostic
+evidence. Next: direct public proof admission, independent source review, one
+frozen successor, combined focus and exact-SHA gate/hosted proof.
 
 See `docs/features/RUNTIME_ADMISSION_THROUGHPUT.md` for retained logs and
 upstream practitioner context. All S98 tasks remain unchecked. Do not finalize
