@@ -37,8 +37,8 @@ release proof remain required; source commits do not complete S98.4.
 
 The same item's native evidence-producer support is in
 `scripts/reviewed_head_inputs.py`, `tests/unit/test_reviewed_head_inputs.py`,
-`tests/unit/test_build_reviewed_head_integration_receipt.py` and
-`docs/features/NATIVE_REVIEWED_HEAD_INPUTS.md`. Its initial 119-case replay and
+`tests/unit/test_build_reviewed_head_integration_receipt.py`,
+`docs/features/NATIVE_REVIEWED_HEAD_INPUTS.md`, `make/30-ci-and-release.mk`, `make/10-observability-and-tests.mk`, `config/gate_failure_promotions.json`, `tests/unit/test_gate_failure_promotion.py` and `tests/unit/test_runtime_admission_scheduling.py`. Its initial 119-case replay and
 88.59% coverage do not establish acceptance: independent source review finds
 cross-bundle unchanged-failure retries and producer-versus-child runtime
 identity substitution. Repair both with existing canonical owners before

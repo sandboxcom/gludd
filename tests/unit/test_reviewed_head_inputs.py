@@ -13,6 +13,7 @@ import time
 from collections.abc import Mapping
 from contextlib import redirect_stdout
 from datetime import UTC, datetime, timedelta
+from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, cast
 
@@ -1105,3 +1106,169 @@ def test_focused_signature_expiry_refuses_replay(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="focused"):
         inputs.validate_focused(repo_root=root, bundle=bundle, key_path=key,
                                 verification_epoch=int(time.time()) + 10**9)
+
+
+def test_native_focus_commands_preserve_watchdog_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inspect native Make's real recipes against the unchanged legacy filter."""
+    watchdog_owner = import_module("scripts.task_watchdog")
+    marker = "--watchdog-owned-reviewed-head-focus"
+    cache_option = (
+        "--override-ini=cache_dir=.gate-logs/observed/reviewed-head-focus/"
+        "watchdog-owned-reviewed-head-focus/pytest-cache"
+    )
+
+    def producer_command(action: str, validate_only: str) -> list[str]:
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-n", "reviewed-head-inputs",
+             "REVIEWED_HEAD_INPUTS_ACTION=" + action,
+             "REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=" + validate_only],
+            cwd=ROOT, check=True, capture_output=True, text=True, timeout=10,
+        )
+        line = next(line for line in result.stdout.splitlines() if "scripts/reviewed_head_inputs.py" in line)
+        return shlex.split(line)
+
+    producer = producer_command("focus", "0")
+    assert producer[-1] == marker
+    tripwire = tmp_path / "make-expansion-tripwire"
+    literal_function = "$(shell touch " + shlex.quote(str(tripwire)) + ")"
+    for action, validate_only in (
+        ("admit", "0"), ("record", "0"), ("finalize", "0"),
+        ("admit", "1"), ("record", "1"), ("focus", "1"), ("finalize", "1"),
+        ("focus extra", "0"), ("focus", "0 extra"),
+        ("focus" + literal_function, "0"), ("focus", "0" + literal_function),
+        (literal_function, "0"), ("focus", literal_function),
+    ):
+        assert marker not in producer_command(action, validate_only)
+    assert not tripwire.exists()
+
+    root, spec = _fixture(tmp_path)
+    prepared = inputs.prepare_inputs(spec, repo_root=root)
+    command = receipt_owner._strings(prepared["focused_command"], "focused test command")
+    assert command[:3] == ("make", "--no-print-directory", "test-files")
+    assert command[-2:] == ("NPROC=1", "GLUDD_XDIST_WORKERS=1")
+    pytest_args = next(argument.removeprefix("PYTEST_ARGS=") for argument in command
+                       if argument.startswith("PYTEST_ARGS="))
+    assert shlex.split(pytest_args) == [
+        "-W", "error", '--junitxml=$${OBSERVED_JUNIT_PATH}',
+        "-p", "scripts.xdist_trace_plugin", "-p", "scripts.reviewed_head_inputs", cache_option,
+    ]
+    child = subprocess.run(
+        [*command[:2], "-n", *command[2:]], cwd=ROOT, check=True,
+        capture_output=True, text=True, timeout=10,
+    )
+    recipe = next(line for line in child.stdout.splitlines() if " -m pytest " in line)
+    recipe_argv = shlex.split(recipe)
+    uv_child = recipe_argv[recipe_argv.index("uv"):]
+    assert uv_child[:5] == ["uv", "run", "python", "-m", "pytest"]
+    assert cache_option in uv_child
+    commands = [
+        shlex.join(["make", "reviewed-head-inputs", "REVIEWED_HEAD_INPUTS_ACTION=focus",
+                    "REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=0"]),
+        shlex.join(["/bin/sh", "-c", shlex.join(producer)]),
+        shlex.join(producer), shlex.join(producer[producer.index("python"):]),
+        shlex.join(command), shlex.join(["/bin/sh", "-c", recipe]),
+        shlex.join(uv_child), shlex.join(uv_child[2:]),
+    ]
+    # Ordinary stale work, including a separate project, must remain killable.
+    ordinary = [
+        "uv run python scripts/reviewed_head_inputs.py",
+        "make test-files TESTFILES=tests/unit/test_native.py",
+        "python -m pytest tests/unit/test_native.py",
+        "uv run python -m pytest /tmp/another-project/tests/test_native.py",
+    ]
+    rows = [
+        f"{50000 + number} 1 10:00 {command_line}"
+        for number, command_line in enumerate([*commands, *ordinary])
+    ]
+    snapshot = subprocess.CompletedProcess(
+        ["ps", "-eo", "pid,ppid,etime,command"], 0,
+        stdout="PID PPID ELAPSED COMMAND\n" + "\n".join(rows) + "\n", stderr="",
+    )
+
+    def native_ps(_command: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return snapshot
+
+    with monkeypatch.context() as legacy:
+        legacy.setattr(subprocess, "run", native_ps)
+        candidates = watchdog_owner.find_hung_processes(
+            timeout_secs=300, gate_pid_file=str(tmp_path / "missing.pid"),
+            gate_run_lock_file=str(tmp_path / "missing.lock"), repository_roots=(),
+        )
+    assert [candidate["command"] for candidate in candidates] == ordinary
+
+
+@pytest.mark.parametrize(("action", "validate_only"), [
+    ("admit", "0"), ("record", "0"), ("finalize", "0"), ("focus", "1"),
+])
+def test_cli_watchdog_marker_refuses_ordinary_actions_and_plans(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], action: str, validate_only: str,
+) -> None:
+    output = tmp_path / "must-not-be-written"
+    assert inputs.main([
+        "--action", action, "--validate-only", validate_only, "--output", str(output),
+        "--watchdog-owned-reviewed-head-focus",
+    ]) == 2
+    captured = capsys.readouterr()
+    assert "required native provenance is unavailable or mismatched" in captured.err
+    assert not captured.out and not output.exists()
+
+
+def test_owned_focus_finishes_native_authentication_after_observer_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, spec = _fixture(tmp_path, native_child_probe=True)
+    bundle = _record(root, spec, tmp_path)
+    key = _key(tmp_path)
+    monkeypatch.setenv("GLUDD_GATE_KEY_PATH", str(key))
+    original_publish = inputs._publish
+    published: list[str] = []
+
+    def publish_after_native_exit(path: Path, payload: Mapping[str, object]) -> None:
+        statuses = list((root / ".gate-logs/observed/reviewed-head-focus").glob("focus-*.json"))
+        assert len(statuses) == 1
+        status = json.loads(statuses[0].read_text(encoding="utf-8"))
+        assert status["state"] == "passed" and status["exit_code"] == 0
+        assert (root / ".gate-logs/observed/reviewed-head-focus/"
+                "watchdog-owned-reviewed-head-focus/pytest-cache").is_dir()
+        assert (tmp_path / "native-child-count").read_text(encoding="utf-8") == "1"
+        published.append(path.name)
+        original_publish(path, payload)
+
+    monkeypatch.setattr(inputs, "_publish", publish_after_native_exit)
+    arguments = [
+        "--action", "focus", "--validate-only", "0", "--repo-root", str(root),
+        "--output", str(bundle), "--watchdog-owned-reviewed-head-focus",
+    ]
+    assert inputs.main(arguments) == 0
+    assert published == ["focused-auth.json", "focused.json"]
+    first = {name: (bundle / name).read_bytes() for name in published}
+    assert inputs.main(arguments) == 0
+    assert published == ["focused-auth.json", "focused.json"]
+    assert {name: (bundle / name).read_bytes() for name in first} == first
+    assert (tmp_path / "native-child-count").read_text(encoding="utf-8") == "1"
+    assert (root / ".gate-logs/observed/reviewed-head-focus/"
+            "watchdog-owned-reviewed-head-focus/pytest-cache").is_dir()
+    assert not (root / ".pytest_cache").exists()
+
+
+@pytest.mark.parametrize("relative", [
+    "watchdog-owned-reviewed-head-focus", "watchdog-owned-reviewed-head-focus/pytest-cache",
+])
+def test_focus_cache_symlink_refuses_foreign_owner_before_child(
+    tmp_path: Path, relative: str,
+) -> None:
+    root, spec = _fixture(tmp_path, native_child_probe=True)
+    bundle = _record(root, spec, tmp_path)
+    foreign = tmp_path / "foreign-cache"
+    foreign.mkdir()
+    cache = root / ".gate-logs/observed/reviewed-head-focus" / relative
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.symlink_to(foreign, target_is_directory=True)
+    with pytest.raises(ValueError, match="owned"):
+        inputs.capture_focused(repo_root=root, bundle=bundle, key_path=_key(tmp_path))
+    assert not (tmp_path / "native-child-count").exists()
+    assert list(foreign.iterdir()) == []
+    assert not (bundle / "focused.json").exists()
+    assert not (bundle / "focused-auth.json").exists()
