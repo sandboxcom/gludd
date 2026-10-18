@@ -1027,3 +1027,90 @@ authority and do not establish a general throughput improvement.
 | unit-3a | 117608539112 | 3 | 2916 | success | no |
 | unit-3b | 117608539128 | 2558 | 2536 | failed | yes |
 | other | 117608539099 | 2 | 2509 | success | no |
+
+## 2026-10-18: deterministic readiness for async gate fixtures
+
+Hosted Build 39123504366 on exact development source
+58c267d0631cfb5f1df9385486252583e497c13e fails the existing known-runtime
+admission at its unchanged 90-second maximum. Python 3.11 passes all 1880 main
+cases in 76.93 seconds and fresh help in 1.78 seconds before the tail is censored
+by the 90.6-second outer timeout. Python 3.12 passes all 1880 main cases in
+73.57 seconds, fresh help in 1.88 seconds and all ten tail cases in 8.36 seconds;
+the outer owner still times out at 90.5 seconds. These pytest intervals are not
+an additive observer-authoritative total. The failed source, immutable review
+ref, native aborted local gate, lookup refusals and raw hosted timing remain in
+/tmp/gludd-v012-failed-58c267d. No complete gate or exact-successor hosted proof
+is inferred from that history.
+
+The one native duration diagnostic reports the two gate_async fixture calls
+at 3.12 and 2.14 seconds. Source confirms literal three-second and two-second
+dummy commands plus a half-second launch pause. The repair is confined to
+tests/unit/test_gate_async.py on the sole branch
+agent-v012-gate-async-fixture-sync. Existing _isolated_gate_env keeps status,
+lock, checkout and resource roots local. A stdlib pipe/select barrier now
+acknowledges actual dummy-child entry, records the status seen by that child,
+and blocks on an explicit parent release. Readiness shares one monotonic
+five-second deadline; normal cleanup retains ten seconds and the dummy child's
+own select remains bounded at fifteen seconds. All descriptors close and the
+owned session drains in finally, including when a status assertion fails.
+Existing emergency cleanup is bounded and confined to the recorded fixture
+session. This changes no production owner, timeout or daemon.
+
+Every original RUNNING/epoch/PID/refusal/unchanged-status/final-PASS assertion
+remains. The entry snapshot additionally proves RUNNING was visible inside the
+gate command; refusal is checked while the first wrapper is still live. Two
+failing-first controls inject an assertion only after actual live RUNNING and
+show the original cases leave the wrapper alive (2 failed in 6.77 seconds).
+Their outer fixture safely drains both failures. The seven additive controls
+cover those two assertion paths, held-live lock/PID/entry ownership, two fast
+exits without readiness, and deliberate missing-RUNNING/early-lock-release
+mutations rejected by the original assertions. Negative controls use immediate
+child exit or a fixture-local immediate status reader, with real bounded drain;
+they add no fixed five/ten/fifteen-second failure wait or speed assertion.
+Initial whole-file acceptance reports all 24 cases passed in 3.00 seconds,
+fatal warnings and one worker. Strict typing and Ruff pass after import/context
+style conformance. Final scheduling admission and commit receipts follow below.
+
+The complete gate_async file was already selected by the first compatibility
+child. The 1880 existing main cases remain, with seven additive cases; fresh help
+and all ten tail cases retain their separate child invocations. No routing,
+manifest, Make target or contract changes. All 110 families, workers 2/1/1,
+90/60 bounds, 21 phases/2850-second ceiling, fatal warnings, native receipt
+authority, full replay, ZDD, 85/75 coverage and promotion gates remain unchanged.
+Removing fixture delays does not establish hosted headroom: overlap can reduce
+wall savings and the original Python 3.11 tail is unknown. A reviewed successor
+still needs exact-SHA hosted measurement and the complete canonical proofs.
+
+First-hand upstream context is longstanding. In
+[pytest-xdist issue 271](https://github.com/pytest-dev/pytest-xdist/issues/271),
+opened January 2018, users describe repeated expensive per-worker fixture setup;
+maintainers explain that mutable resources in separate workers need explicit
+coordination. In
+[issue 981](https://github.com/pytest-dev/pytest-xdist/issues/981), opened in 2023,
+the discussion confirms that a loadgroup intentionally stays on one worker.
+These support explicit fixture ownership and retaining the existing scheduling
+boundary. They do not diagnose this two-worker hosted timeout or justify a new
+fixture server, collection cache, scheduler, runner or weaker isolation.
+
+Final whole-file warning-fatal acceptance reports 24 passed in 4.84 seconds
+(/tmp/gludd-v012-gate-async-fixture-final-green.xml). The actual native
+release-proof-admission scheduling owner passes capacity/configuration,
+registration/integrity, all 110-family checks and the 261-resource inventory,
+then runs all three unchanged compatibility children: 1886 passed and one skip
+in 64.60 seconds; fresh help passes in 0.93 seconds; all ten tail cases pass in
+12.80 seconds. The owner does not print the skip reason. Source preserves all
+17 original gate_async cases and every original assertion; its seven new cases
+introduce no skip or deselection. Ruff, strict typing, 245 target contracts,
+file limits and the 188-checked/139-unchecked ledger pass. The dry-run native
+disk preflight retains protected/recent scratch and passes at 94%/95%.
+
+This public scheduling owner delegates directly and has no outer 90/60
+observer. Its success and those pytest intervals are not bounded admission
+or hosted-margin authority. No second worktree replay is performed. After
+independent review and genuine integration, root will use existing run-watched
+with the unchanged 90/60 bounds and all three children for native repair
+evidence before sealing a successor. Complete exact-SHA hosted and canonical
+release proofs remain missing. Raw RED/GREEN XML, proposal, scheduling console
+tail and normal guarded collection are retained under
+/tmp/gludd-v012-gate-async-fixture-sync-evidence; its manifest identifies the
+commit and source cohort. No task is closed.
