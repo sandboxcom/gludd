@@ -667,3 +667,18 @@ and `review-tail-profile-batched-20261018.log` beneath
 `.gate-logs/observed/v012-review-tail-cprofile/`. Actual bounded admission,
 source review, complete canonical gate and exact-SHA hosted evidence remain
 required before promotion. ZDD, cleanup authority and all release gates remain.
+
+The cheap native query-count guard is promoted additively into the existing
+first compatibility cohort. Its one exact selector expands all four native
+SHA-1/SHA-256 worktree/index cases once; the full 34-case file is not added to
+that bounded cohort. All 72 prior selectors and 96 prior families remain.
+The native manifest now has 97 families with the same 21 phases, 2850-second
+ceiling, 90/60 owner bounds and full-gate requirement. The shared literal roster
+receives the identical selector at the same position.
+
+Twelve new routing controls fail before that wiring. All 154 complete promotion,
+scheduling and cold-start controls then pass with warnings fatal, including ten
+mutations rejecting missing, partial, widened, duplicate, misplaced, wrongly
+owned or over-budget routing. All 243 target contracts, duplicate/parity/help
+checks, strict test typing and Ruff pass. These are focused routing results;
+the complete bounded behavioral example and final release proof remain pending.

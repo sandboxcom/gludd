@@ -37,8 +37,17 @@ native count cases. Same-instrumentation tail profiling observes 699 to 573
 subprocess calls and 7.860 to 6.749 seconds, retaining all 63 state checks,
 30 cleanliness checks and 13 preparations. This is local diagnostic evidence;
 the actual 90/60 bounded owner must pass before a successor is sealed.
-The statement repair is committed separately at `2a1f3d4`; metadata repair,
-fresh collection and independent final source review remain next.
+The statement repair is committed separately at `2a1f3d4` and metadata repair
+at `0088b7170c8298b9ed33b8426ab588a1a8b84940`. Both native per-commit
+collections pass; latest is 125256/125257, one deselected, zero errors.
+The four-case metadata count guard now joins the existing first admission
+cohort as one exact selector. Twelve routing controls fail first, then all
+154 promotion/scheduling/cold-start cases pass. All prior selectors/families,
+three children and every limit remain; manifest now has 97 families.
+Next: commit that routing with fresh collection, obtain independent final source
+review, run actual release-proof scheduling and unchanged bounded 90/60 admission,
+then seal only after the hard timing prerequisite clears. No full-gate or hosted
+successor evidence exists yet, and no task or master promotion is complete.
 
 The native repair ledger has zero open, six repaired and 43 resolved families;
 the six repairs still require actual hosted successor resolution.
