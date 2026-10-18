@@ -78,6 +78,9 @@ export default defineConfig([
     ignores: [".venv/**", ".opencode/node_modules/**"],
   },
   {
+    ignores: ["docs/presentation/deck/vendor/**"],
+  },
+  {
     files: ["**/*.{css,scss,less}"],
     language: "css/css",
     languageOptions: {
