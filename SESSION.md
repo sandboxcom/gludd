@@ -1,3 +1,57 @@
+## v0.1.2 bounded publication admission blocked (2026-10-18)
+
+The clean reviewed integration candidate is
+`33fd37fc929e66f3873b2a277faf3044309cb4f5` on development, combining source
+`cdb9a7a9d8ee4732c312fc42ff1d9a8de23206a4` with retained base
+`31b2b66be80fb96cdbb2fcb6a8e03a775e5cd0a6`. Independent source review and
+native combined focus pass: 1108 passed, two existing skips in 119.52 seconds.
+Those receipts do not supply a canonical full gate or hosted release proof.
+
+Normal guarded publication fails its unchanged 90-second admission at 90.5
+seconds. The main child passes 1824 cases in 79.81 seconds; fresh help passes;
+the second final review control is interrupted. Git transport is not attempted,
+and remote development remains the retained base. Preserve
+`.gate-logs/observed/batch-push-runtime-admission/batch-push-runtime-admission-37974.log`.
+
+A diagnostic profile passes in 84.0 observed seconds with an explicitly
+non-authoritative 180-second diagnostic cap. Its main child takes 70.98 seconds,
+including 9.08 seconds setting up the repository source inventory; the two
+unchanged review controls take 8.03 seconds together. A faster diagnostic does
+not clear the actual failed prerequisite. No full gate, new hosted run, master
+promotion, task closure, tag or publication follows these results.
+
+Next: identify and repair measured repeated work in the existing owners while
+preserving all selectors, assertions, plugin and fixture context, three child
+invocations, worker bounds, fatal warnings, 90/60 bounds and 85/75 coverage.
+Then obtain fresh source review and native bounded admission before sealing a
+successor. Retain all earlier failures, immutable refs, bundles and checkpoints.
+The source-audit repair now traverses statement-bearing fields only. One
+work-bound test fails first, nine existing-semantics controls pass before the
+change, and the complete 33 cases pass at 96% unchanged-floor coverage. The
+same local cProfile measurement falls from 10.280 to 7.675 seconds, retaining
+all 4106 sources, 12 plugin modules and 41 fixture names. This is an owner
+diagnostic, not a bounded admission or hosted speed result. The separate native Git repair
+batches three adjacent metadata queries only. All 177 attestation/provenance/
+receipt cases pass with 95% unchanged-floor coverage after four failing-first
+native count cases. Same-instrumentation tail profiling observes 699 to 573
+subprocess calls and 7.860 to 6.749 seconds, retaining all 63 state checks,
+30 cleanliness checks and 13 preparations. This is local diagnostic evidence;
+the actual 90/60 bounded owner must pass before a successor is sealed.
+The statement repair is committed separately at `2a1f3d4` and metadata repair
+at `0088b7170c8298b9ed33b8426ab588a1a8b84940`. Both native per-commit
+collections pass; latest is 125256/125257, one deselected, zero errors.
+The four-case metadata count guard now joins the existing first admission
+cohort as one exact selector. Twelve routing controls fail first, then all
+154 promotion/scheduling/cold-start cases pass. All prior selectors/families,
+three children and every limit remain; manifest now has 97 families.
+Next: commit that routing with fresh collection, obtain independent final source
+review, run actual release-proof scheduling and unchanged bounded 90/60 admission,
+then seal only after the hard timing prerequisite clears. No full-gate or hosted
+successor evidence exists yet, and no task or master promotion is complete.
+
+The native repair ledger has zero open, six repaired and 43 resolved families;
+the six repairs still require actual hosted successor resolution.
+
 ## v0.1.2 early-admission roster repair (2026-10-18)
 
 Primary objective: complete hosted CI and the canonical gate, then merge verified

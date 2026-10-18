@@ -831,6 +831,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_pinned",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "native-git-metadata-query-count",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_gate_status_attestation.py::test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests",
+      "full_gate_phase": "test"
     }
   ]
 }

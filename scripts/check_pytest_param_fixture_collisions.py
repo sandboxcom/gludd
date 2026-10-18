@@ -61,15 +61,10 @@ def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
     ] = []
     plugin_values: list[ast.expr] = []
     pending: list[
-        tuple[ast.AST, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef]
+        tuple[ast.Module | ast.stmt, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef]
     ] = [(tree, tree)]
     while pending:
         node, owner = pending.pop()
-        # Python expressions cannot contain import or function/class declarations.
-        # Keep decorator/value nodes on their declarations, without walking large
-        # parameter tables or retaining a whole-tree child-to-parent dictionary.
-        if isinstance(node, ast.expr):
-            continue
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             imports.append(node)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -82,7 +77,22 @@ def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
                 plugin_values.append(node.value)
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             owner = node
-        pending.extend((child, owner) for child in ast.iter_child_nodes(node))
+        # Only statement lists can hold declarations. Non-statement wrappers
+        # (exception handlers and match cases) expose their statements as body.
+        # Preserve native field/list order for the existing LIFO traversal.
+        for _field, value in ast.iter_fields(node):
+            if not isinstance(value, list):
+                continue
+            for child in value:
+                if isinstance(child, ast.stmt):
+                    pending.append((child, owner))
+                else:
+                    body = getattr(child, "body", None)
+                    if isinstance(body, list):
+                        pending.extend(
+                            (statement, owner) for statement in body
+                            if isinstance(statement, ast.stmt)
+                        )
     return _SourceDeclarations(tuple(imports), tuple(functions), tuple(plugin_values))
 
 

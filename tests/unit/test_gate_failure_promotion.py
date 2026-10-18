@@ -857,6 +857,12 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
             "test_lint_css_dependency_config_and_contract_are_exactly_pinned",
             id="css-lint-exact-pin-contract",
         ),
+        pytest.param(
+            "native-git-metadata-query-count",
+            "tests/unit/test_gate_status_attestation.py::"
+            "test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests",
+            id="native-git-metadata-query-count",
+        ),
     ],
 )
 def test_repaired_failures_execute_as_exact_nodes_before_fanout(
@@ -1643,6 +1649,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "v011-exact-gate-plugin-budget",
         "native-secrets-scan-worker-budget",
         "css-lint-exact-pin-contract",
+        "native-git-metadata-query-count",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1845,6 +1852,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'tests/unit/test_secrets_scan_resources.py '
         'tests/unit/test_css_lint_target.py::'
         'test_lint_css_dependency_config_and_contract_are_exactly_pinned '
+        'tests/unit/test_gate_status_attestation.py::'
+        'test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests '
         'tests/unit/test_ci_stylelint_workflow.py '
         'tests/security/test_ci_workflow.py '
         'tests/unit/test_workflow_safe_parser.py '

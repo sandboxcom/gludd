@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -427,3 +428,187 @@ def test_git_helpers_reject_command_and_merge_stage_failures(
     )
     with pytest.raises(RuntimeError, match="unresolved merge"):
         attestation._index_entries(tmp_path)
+
+
+@pytest.fixture(params=("sha1", "sha256"))
+def native_metadata_repository(
+    tmp_path: Path, request: pytest.FixtureRequest,
+) -> tuple[Path, str, str]:
+    """Use actual Git objects in an isolated repository, including a spaced root."""
+    object_format = request.param
+    assert isinstance(object_format, str)
+    repo = tmp_path / "repo with spaces"
+    repo.mkdir()
+    repo = repo.resolve()
+    for arguments in (
+        ("init", "-q", f"--object-format={object_format}"),
+        ("config", "user.email", "gate-test@example.invalid"),
+        ("config", "user.name", "Gate Test"),
+    ):
+        attestation._run_git(repo, *arguments)
+    (repo / "tracked.txt").write_bytes(b"one\n")
+    (repo / "SESSION.md").write_bytes(b"bookkeeping\n")
+    attestation._run_git(repo, "add", "tracked.txt", "SESSION.md")
+    attestation._run_git(repo, "commit", "-q", "-m", "initial")
+    head = attestation._run_git(repo, "rev-parse", "HEAD").decode("ascii").strip()
+    return repo, object_format, head
+
+
+@pytest.mark.parametrize("source", ("worktree", "index"))
+def test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests(
+    native_metadata_repository: tuple[Path, str, str],
+    source: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """All content reads remain, while three adjacent metadata queries become one."""
+    repo, object_format, head = native_metadata_repository
+    nested = repo / "nested"
+    nested.mkdir()
+    real_run_git = attestation._run_git
+    calls: list[tuple[Path, tuple[str, ...]]] = []
+
+    def counted_git(root: Path, *arguments: str) -> bytes:
+        calls.append((root, arguments))
+        return real_run_git(root, *arguments)
+
+    monkeypatch.setattr(attestation, "_run_git", counted_git)
+    for include_head in (True, False):
+        for exclude_bookkeeping in (False, True):
+            entries = {
+                path: ("100644", attestation._git_blob_id(data, object_format))
+                for path, data in (
+                    ("tracked.txt", b"one\n"),
+                    ("SESSION.md", b"bookkeeping\n"),
+                )
+                if not exclude_bookkeeping or path != "SESSION.md"
+            }
+            expected = attestation._state_digest(
+                head if include_head else "", entries, object_format=object_format,
+            )
+            calls.clear()
+            actual = attestation.repository_state_id(
+                nested, source=source, include_head=include_head,
+                exclude_bookkeeping=exclude_bookkeeping,
+            )
+            assert actual == expected
+            assert len(calls) == (3 if source == "worktree" else 2), calls
+            assert calls[0] == (
+                nested,
+                ("rev-parse", "--show-toplevel", "--show-object-format", "HEAD"),
+            )
+            assert calls[1] == (repo, ("ls-files", "--stage", "-z"))
+            if source == "worktree":
+                assert calls[2] == (
+                    repo,
+                    ("ls-files", "--cached", "--others", "--exclude-standard", "-z"),
+                )
+
+
+def test_batched_metadata_does_not_survive_content_index_or_head_mutations(
+    native_metadata_repository: tuple[Path, str, str],
+) -> None:
+    """Independent source/check boundaries must always obtain current identities."""
+    repo, _object_format, _head = native_metadata_repository
+    before = repository_state_id(repo)
+    assert before == repository_state_id(repo, source="index")
+    tracked = repo / "tracked.txt"
+    tracked.write_bytes(b"changed\n")
+    assert repository_state_id(repo) != before
+    assert repository_state_id(repo, source="index") == before
+
+    attestation._run_git(repo, "add", "tracked.txt")
+    staged = repository_state_id(repo)
+    assert staged == repository_state_id(repo, source="index")
+    assert staged != before
+    attestation._run_git(repo, "commit", "-q", "-m", "changed")
+    committed = repository_state_id(repo)
+    assert committed == repository_state_id(repo, source="index")
+    assert committed != staged
+
+    without_head = repository_state_id(repo, include_head=False)
+    attestation._run_git(repo, "commit", "--allow-empty", "-q", "-m", "head only")
+    current = repository_state_id(repo)
+    assert current != committed
+    assert repository_state_id(repo, include_head=False) == without_head
+    assert repository_state_id(repo, source="index") == current
+
+    tracked.unlink()
+    assert repository_state_id(repo) != current
+    assert repository_state_id(repo, source="index") == current
+    tracked.write_bytes(b"changed\n")
+    assert repository_state_id(repo) == current
+    (repo / "untracked.txt").write_bytes(b"new\n")
+    assert repository_state_id(repo) != current
+    assert repository_state_id(repo, source="index") == current
+
+
+def test_batched_metadata_preserves_newlines_and_unicode_in_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parse the fixed metadata suffix without splitting a valid root pathname."""
+    root = tmp_path / "path with space\nline-\u03bb"
+    head = "a" * 40
+    metadata = os.fsencode(root) + b"\nsha1\n" + head.encode("ascii") + b"\n"
+    calls: list[tuple[Path, tuple[str, ...]]] = []
+
+    def native_git(repo: Path, *arguments: str) -> bytes:
+        calls.append((repo, arguments))
+        if arguments == ("rev-parse", "--show-toplevel", "--show-object-format", "HEAD"):
+            return metadata
+        assert repo == root
+        assert arguments == ("ls-files", "--stage", "-z")
+        return b""
+
+    monkeypatch.setattr(attestation, "_run_git", native_git)
+    assert repository_state_id(tmp_path, source="index") == attestation._state_digest(
+        head, {}, object_format="sha1",
+    )
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "missing-field", "missing-terminator", "extra-tail", "unknown-format",
+        "non-ascii", "wrong-head-width", "nonhex-head", "relative-root",
+    ),
+)
+def test_batched_metadata_refuses_malformed_identity_before_content_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str,
+) -> None:
+    root = os.fsencode(tmp_path)
+    object_format = b"sha1"
+    head = b"a" * 40
+    if mutation == "unknown-format":
+        object_format = b"sha512"
+    elif mutation == "non-ascii":
+        object_format = b"\xff"
+    elif mutation == "wrong-head-width":
+        head = b"a" * 39
+    elif mutation == "nonhex-head":
+        head = b"z" * 40
+    elif mutation == "relative-root":
+        root = b"relative-root"
+    metadata = root + b"\n" + object_format + b"\n" + head + b"\n"
+    if mutation == "missing-field":
+        metadata = root + b"\n" + head + b"\n"
+    elif mutation == "missing-terminator":
+        metadata = metadata[:-1]
+    elif mutation == "extra-tail":
+        metadata += b"unexpected"
+
+    def malformed_git(_repo: Path, *arguments: str) -> bytes:
+        assert arguments == ("rev-parse", "--show-toplevel", "--show-object-format", "HEAD")
+        return metadata
+
+    monkeypatch.setattr(attestation, "_run_git", malformed_git)
+    with pytest.raises(RuntimeError, match="malformed Git repository identity"):
+        repository_state_id(tmp_path, source="index")
+
+
+def test_batched_metadata_keeps_native_git_failure_for_an_unborn_head(tmp_path: Path) -> None:
+    repo = tmp_path / "unborn"
+    repo.mkdir()
+    attestation._run_git(repo, "init", "-q")
+    with pytest.raises(RuntimeError, match=r"git rev-parse .* failed"):
+        repository_state_id(repo, source="index")

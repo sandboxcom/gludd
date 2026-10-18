@@ -9,7 +9,7 @@ import hmac
 import os
 import secrets
 import stat
-import subprocess
+import subprocess as subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -109,13 +109,20 @@ def repository_state_id(
     Non-authoritative execution admission may explicitly omit commit identity
     and the fixed bookkeeping files. Gate callers retain the strict defaults.
     """
-    root = Path(
-        os.fsdecode(_run_git(repo_root, "rev-parse", "--show-toplevel")).strip()
-    )
-    head = _run_git(root, "rev-parse", "HEAD").decode("ascii").strip()
-    object_format = (
-        _run_git(root, "rev-parse", "--show-object-format").decode("ascii").strip()
-    )
+    # Refresh all three metadata facts in one native read for this identity only.
+    try:
+        raw_root, raw_format, raw_head, tail = _run_git(
+            repo_root, "rev-parse", "--show-toplevel", "--show-object-format", "HEAD",
+        ).rsplit(b"\n", 3)
+        root = Path(os.fsdecode(raw_root).strip())
+        object_format = raw_format.decode("ascii").strip()
+        head = raw_head.decode("ascii").strip()
+        if (tail or not root.is_absolute() or object_format not in {"sha1", "sha256"}
+                or len(head) != {"sha1": 40, "sha256": 64}[object_format]
+                or any(character not in "0123456789abcdef" for character in head)):
+            raise ValueError("invalid native metadata")
+    except ValueError:
+        raise RuntimeError("malformed Git repository identity") from None
     index = _index_entries(root)
     if not include_head:
         head = ""

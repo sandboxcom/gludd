@@ -557,3 +557,128 @@ import and missing-node cases retain their native nonzero exits and diagnostics.
 A separate real observer control retains all 20 flushed, newline-free bytes over
 1.2 seconds without tripping its 0.4-second quiet limit. These are behavioral and
 output-volume results, not a measured whole-admission or hosted speedup.
+
+## Preserve a failed bounded admission while profiling (2026-10-18)
+
+Candidate `33fd37fc929e66f3873b2a277faf3044309cb4f5` fails normal guarded
+publication admission at 90.5 seconds. Its canonical Python 3.11 main child
+passes all 1824 cases in 79.81 seconds and fresh help passes, but the second
+separate review control is interrupted. Git transport never starts. Retain
+`.gate-logs/observed/batch-push-runtime-admission/batch-push-runtime-admission-37974.log`;
+a source approval, raw unbounded admission or focused pass cannot clear it.
+
+The existing observer runs one diagnostic with native pytest `--durations=30`.
+Its explicitly non-authoritative 180-second diagnostic cap does not alter the
+actual 90-second publisher or 60-second quiet limit. It completes in 84.0
+observed seconds: main 70.98 seconds, fresh help 0.93, final controls 8.03.
+The largest reported setup is the already shared repository source inventory
+at 9.08 seconds. Each final control spends about 3.6 seconds in its real call.
+Keep the failed proof; a later faster run without a changed failing input is
+not a repair or permission to reseal and retry expensive proof.
+
+User reports provide profiling hypotheses, not a Gludd diagnosis. The
+[longstanding 2019 large-suite discussion](https://github.com/pytest-dev/pytest/issues/5516)
+reports collection costs associated with fixture matching. The
+[August 2026 pytest 9.1.1 regression report](https://github.com/pytest-dev/pytest/issues/14942)
+reproduces a slowdown with many class fixtures sharing names. Its
+[merged September storage repair](https://github.com/pytest-dev/pytest/pull/14984)
+also discusses compatibility with plugins using private fixture structures.
+These reports support measuring actual call stacks before changing dependencies.
+Do not infer that Gludd has that shape, patch pytest internals, suppress plugin
+loading, or discard audit inputs from an upstream report alone.
+
+Use the existing standard-library profiler and native owners to isolate actual
+work. Preserve all selectors, assertions, plugin and fixture context, three
+child invocations, worker bounds, fatal warnings, 90/60/2850 bounds, ZDD and
+85/75 coverage. No new proof cache, runner or release authority is introduced.
+A concrete performance repair, fresh review and bounded native acceptance must
+precede a successor candidate; canonical full-gate and exact-SHA hosted proof
+remain required. Diagnostic log:
+`.gate-logs/observed/v012-admission-diagnostic/admission-durations-33fd37f-20261018.log`.
+
+The fresh standard-library profile attributes 4.872 seconds to parsing and
+4.696 seconds to declaration traversal across all 4106 repository sources and
+12 delegated plugin modules. Entry-point discovery takes 0.043 seconds, so a
+provider cache or dependency change would address the wrong measured input.
+Keep the parser, all source paths and every audit consumer.
+
+The existing declaration owner now visits statement-bearing lists through
+stdlib `ast.iter_fields`, including exception-handler and match-case bodies.
+Arguments, aliases, keywords and patterns cannot contain Python declarations;
+their payloads no longer enter the pending statement walk. Field/list order,
+nested declaration owners, late imports, plugin declarations, source locations,
+freshness and release of each AST stay intact. No separate scanner is added.
+
+One additive work-bound control fails first on the old argument traversal;
+nine compound-statement/order/owner parity controls already pass there.
+The complete 33-case file then passes through the original coverage profile at
+96% combined coverage, with the unchanged 85/75 floors. Strict typing and Ruff
+pass without suppressions. All original assertions remain unchanged.
+
+One same-instrumentation local profile per variant reports declaration work
+4.696 to 2.240 seconds and complete audit work 10.280 to 7.675 seconds.
+The same 4106 source paths, 12 plugin modules and 41 external fixture names
+produce zero collisions and zero unsupported bindings. These are instrumented
+local owner measurements, not whole-admission, hosted or release acceptance.
+Retain both profiles under `v012-inventory-cprofile`, including
+`inventory-profile-33fd37f-20261018.log` and
+`inventory-profile-statements-20261018.log`. The actual bounded publication
+owner, independent successor review, full gate and exact-SHA CI remain pending.
+
+## Batch only adjacent native Git metadata (2026-10-18)
+
+The two unchanged native review controls call `repository_state_id` 63 times
+in the measured tail profile. Preserve all calls and their independent
+authority boundaries. Inside each call only, one native
+`rev-parse --show-toplevel --show-object-format HEAD` replaces three adjacent
+metadata processes. Existing index-stage and complete worktree-content reads
+remain fresh. The digest version, object IDs, bookkeeping options, symlinks,
+deletions, untracked files and submodule behavior remain unchanged.
+
+The existing Git byte reader remains the sole command owner. Right-splitting
+the fixed trailing fields preserves embedded newline/Unicode root paths.
+Malformed or incomplete metadata fails before content reads; native Git failures
+still propagate. No current-state result is cached, and no preparation,
+authenticated source validation or native child boundary is removed.
+
+The [Git manual](https://git-scm.com/docs/git-rev-parse) documents native
+metadata and revision parsing. A
+[2016 practitioner range discussion](https://stackoverflow.com/questions/38357020/get-range-of-commits-in-same-branch-using-git-rev-parse)
+illustrates that revision expressions can expand to multiple object IDs.
+This change accepts only fixed options and literal `HEAD`; named-ref verification
+and untrusted revision handling are unchanged. The forum is context for that
+boundary, not evidence of Gludd timing.
+
+Four native SHA-1/SHA-256 worktree/index query-count cases fail first.
+After the change, all 177 complete attestation, reviewed-input and receipt-builder
+cases pass with warnings fatal. Focused native branch coverage is 95% with
+unchanged 85/75 floors. New controls preserve known-content digest equivalence,
+both bookkeeping/head options, source/index/HEAD mutations, malformed output,
+root delimiters and native unborn-HEAD refusal. Every original assertion remains.
+The standard subprocess import is explicitly re-exported for its existing typed
+test consumer; the new refusal regex is raw without changing its pattern.
+
+One same-instrumentation tail profile per variant observes 699 to 573
+`subprocess.run` calls, with all 63 state checks, 30 cleanliness checks and
+13 input preparations retained. Profiled test-body time changes from 7.860 to
+6.749 seconds; these local diagnostic results are not whole-admission or hosted
+throughput proof. Retain `review-tail-profile-nativepath-33fd37f-20261018.log`
+and `review-tail-profile-batched-20261018.log` beneath
+`.gate-logs/observed/v012-review-tail-cprofile/`. Actual bounded admission,
+source review, complete canonical gate and exact-SHA hosted evidence remain
+required before promotion. ZDD, cleanup authority and all release gates remain.
+
+The cheap native query-count guard is promoted additively into the existing
+first compatibility cohort. Its one exact selector expands all four native
+SHA-1/SHA-256 worktree/index cases once; the full 34-case file is not added to
+that bounded cohort. All 72 prior selectors and 96 prior families remain.
+The native manifest now has 97 families with the same 21 phases, 2850-second
+ceiling, 90/60 owner bounds and full-gate requirement. The shared literal roster
+receives the identical selector at the same position.
+
+Twelve new routing controls fail before that wiring. All 154 complete promotion,
+scheduling and cold-start controls then pass with warnings fatal, including ten
+mutations rejecting missing, partial, widened, duplicate, misplaced, wrongly
+owned or over-budget routing. All 243 target contracts, duplicate/parity/help
+checks, strict test typing and Ruff pass. These are focused routing results;
+the complete bounded behavioral example and final release proof remain pending.

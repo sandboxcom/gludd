@@ -9,6 +9,7 @@ import shlex
 import subprocess
 import sys
 from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -77,6 +78,8 @@ ROSTER = (
     "tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_green_together",
     "tests/unit/test_secrets_scan_resources.py",
     "tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_pinned",
+    "tests/unit/test_gate_status_attestation.py::"
+    "test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests",
     "tests/unit/test_ci_stylelint_workflow.py",
     "tests/security/test_ci_workflow.py",
     "tests/unit/test_workflow_safe_parser.py",
@@ -404,3 +407,110 @@ def test_compact_dot_bytes_keep_existing_observer_live_without_newlines(tmp_path
     assert status["elapsed_seconds"] > 0.4
     assert status["bytes_written"] == 20 and status["lines_written"] == 0
     assert Path(status["log_path"]).read_bytes() == b"." * 20
+
+
+def _assert_native_git_metadata_query_count_route(
+    payload: dict[str, object], rows: list[dict[str, object]],
+) -> None:
+    """Require the whole four-case guard as one exact first-cohort selector."""
+    family_id = "native-git-metadata-query-count"
+    file = "tests/unit/test_gate_status_attestation.py"
+    node = f"{file}::test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests"
+    families = payload["families"]
+    assert isinstance(families, list)
+    assert [family for family in families if family["id"] == family_id] == [{
+        "id": family_id,
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }]
+    assert len(families) == 97
+    assert len(rows) == 3
+    assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
+    selectors = rows[0]["files"]
+    assert isinstance(selectors, list)
+    assert selectors.count(node) == 1
+    assert [selector for selector in selectors if selector.split("::", 1)[0] == file] == [node]
+    for row in rows[1:]:
+        later_selectors = row["files"]
+        assert isinstance(later_selectors, list)
+        assert not any(selector.split("::", 1)[0] == file for selector in later_selectors)
+    assert [(row["nproc"], row["workers"]) for row in rows] == [
+        ("2", "2"), ("1", "1"), ("1", "1"),
+    ]
+    assert [row["flags"] for row in rows] == [
+        "-W error -q -n 2 --maxprocesses 2 --ignore-glob=tests/* -o verbosity_test_cases=-2",
+        "-W error -q -n 0 --maxprocesses 1",
+        "-W error -q -n 0 --maxprocesses 1 --ignore-glob=tests/*",
+    ]
+    runtime = payload["runtime_contract"]
+    assert isinstance(runtime, dict)
+    phases = runtime["phases"]
+    assert isinstance(phases, list)
+    phase = next(item for item in phases if item["target"] == OWNER)
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(phases) == 21
+    assert sum(item["max_seconds"] for item in phases) == 2850
+    assert payload["full_gate_target"] == "gate"
+    assert payload["full_gate_required"] is True
+
+
+def test_native_git_metadata_query_count_executes_once_in_first_cohort(tmp_path: Path) -> None:
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    _assert_native_git_metadata_query_count_route(payload, rows)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "missing", "whole-file", "partial-case", "duplicate", "later-only",
+        "later-duplicate", "missing-family", "wrong-owner", "wrong-node", "budget",
+    ),
+)
+def test_native_git_metadata_query_count_routing_rejects_contract_mutations(
+    tmp_path: Path, mutation: str,
+) -> None:
+    result, captured = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    original = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    _assert_native_git_metadata_query_count_route(original, captured)
+
+    payload = deepcopy(original)
+    rows = deepcopy(captured)
+    node = (
+        "tests/unit/test_gate_status_attestation.py::"
+        "test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests"
+    )
+    selectors = rows[0]["files"]
+    assert isinstance(selectors, list)
+    families = payload["families"]
+    family = next(item for item in families if item["id"] == "native-git-metadata-query-count")
+    if mutation == "missing":
+        selectors.remove(node)
+    elif mutation == "whole-file":
+        selectors[selectors.index(node)] = node.split("::", 1)[0]
+    elif mutation == "partial-case":
+        selectors[selectors.index(node)] = f"{node}[sha1-worktree]"
+    elif mutation == "duplicate":
+        selectors.append(node)
+    elif mutation in {"later-only", "later-duplicate"}:
+        if mutation == "later-only":
+            selectors.remove(node)
+        later = rows[2]["files"]
+        assert isinstance(later, list)
+        later.append(node)
+    elif mutation == "missing-family":
+        families.remove(family)
+    elif mutation == "wrong-owner":
+        family["owner_target"] = "_different-admission-owner"
+    elif mutation == "wrong-node":
+        family["node"] = f"{node}[sha1-worktree]"
+    else:
+        assert mutation == "budget"
+        phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
+        phase["max_seconds"] = 91
+    with pytest.raises(AssertionError):
+        _assert_native_git_metadata_query_count_route(payload, rows)
