@@ -1,3 +1,50 @@
+## v0.1.2 release continuation (2026-10-18 03:17 UTC)
+
+Primary objective: finish hosted CI and the canonical gate, merge verified work
+into master, and obtain exact-SHA release proof for v0.1.2.
+
+- HEAD: `b0affaac5a0d5040cbe756f88d5f79d81ee7f630` on development before
+  this handoff commit. The repair checkout is clean.
+- Separate repair commits retain helper mode (`7237e1f`), plugin admission and
+  typed runtime fixtures (`85193d4`), native scanner worker bounds
+  (`4650d7f8e`), locked CSS/vendor contracts (`1b6d0d1`) and existing early
+  admission routing (`b0affaa`). No feature is independently recreated on master.
+- Latest native collection: 125230/125231 cases, one intentional deselection,
+  zero errors. Each repair commit has its own fresh successful collection.
+- Focused repair evidence: the 234-case combined cohort, 62 resource/binding
+  cases, final 90 promotion/resource cases and 17 native CSS/workflow cases pass.
+  These overlap and are not an aggregate full-gate result. Original assertions,
+  85/75 coverage floors and warning policy remain required.
+- Fresh native hooks: 153 passed and 18 existing skips; all 37 plugin files
+  load and execute. Strict typing passes all six changed test/fixture files.
+  Plugin edits require an OpenCode restart before the running app loads them;
+  the current app continues with its existing runtime.
+- Both real public secrets scans pass. The corrected complete security audit
+  passes all five phases in 88.378 seconds, including a 67.808-second secrets
+  phase; its native summary is `dist/security-audit-summary.json`. The scanner
+  measurement reports six workers against the unchanged limit of eight.
+  The prior invalid-baseline invocation remains failed diagnostic evidence.
+- Native manifest validation passes 96 families under the same 21 phases,
+  2850-second ceiling and 90/60-second compatibility-owner bounds. All 243 Make
+  contracts, help, parity, task registration, lint and scoped Markdown lint pass.
+- Last observed remote development remains
+  `31b2b66be80fb96cdbb2fcb6a8e03a775e5cd0a6`: Build `39084793178` fails
+  three shards on the now-repaired CSS/helper/plugin inputs; five shards and
+  both quality legs pass. Molecule `39084793177` and Pages `39084793245`
+  pass. The native ledger retains three open families awaiting successor proof.
+  The immutable eight-shard timing report is diagnostic only.
+- The local diagnostic gate log
+  `.gate-logs/gate-20261018010048-53f46f80.log` remains ABORTED after native
+  owned termination with no survivors. Retain all failed candidate refs,
+  old review/focus bundles, failure records and the three owned checkpoints.
+- Missing proof and next action: execute the current native early owner and
+  repair receipt on the clean committed SHA; run actual release-proof admission;
+  obtain fresh independent source review; construct one genuine two-parent
+  candidate; collect native combined acceptance, the complete canonical
+  coverage/full gate and all required exact-SHA hosted/deployment proofs.
+  Keep source and refs frozen during final proof. No S98 checkbox is completed,
+  and master promotion, tagging and publication remain blocked.
+
 ## v0.1.2 release continuation (2026-10-18 00:39 UTC)
 
 Primary objective: finish the pipeline and canonical gate, integrate required
