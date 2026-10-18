@@ -30,8 +30,15 @@ work-bound test fails first, nine existing-semantics controls pass before the
 change, and the complete 33 cases pass at 96% unchanged-floor coverage. The
 same local cProfile measurement falls from 10.280 to 7.675 seconds, retaining
 all 4106 sources, 12 plugin modules and 41 fixture names. This is an owner
-diagnostic, not a bounded admission or hosted speed result. Adjacent native Git
-metadata batching is being reviewed separately; no combined proof is claimed.
+diagnostic, not a bounded admission or hosted speed result. The separate native Git repair
+batches three adjacent metadata queries only. All 177 attestation/provenance/
+receipt cases pass with 95% unchanged-floor coverage after four failing-first
+native count cases. Same-instrumentation tail profiling observes 699 to 573
+subprocess calls and 7.860 to 6.749 seconds, retaining all 63 state checks,
+30 cleanliness checks and 13 preparations. This is local diagnostic evidence;
+the actual 90/60 bounded owner must pass before a successor is sealed.
+The statement repair is committed separately at `2a1f3d4`; metadata repair,
+fresh collection and independent final source review remain next.
 
 The native repair ledger has zero open, six repaired and 43 resolved families;
 the six repairs still require actual hosted successor resolution.

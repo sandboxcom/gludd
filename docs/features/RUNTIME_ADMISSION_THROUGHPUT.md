@@ -624,3 +624,46 @@ Retain both profiles under `v012-inventory-cprofile`, including
 `inventory-profile-33fd37f-20261018.log` and
 `inventory-profile-statements-20261018.log`. The actual bounded publication
 owner, independent successor review, full gate and exact-SHA CI remain pending.
+
+## Batch only adjacent native Git metadata (2026-10-18)
+
+The two unchanged native review controls call `repository_state_id` 63 times
+in the measured tail profile. Preserve all calls and their independent
+authority boundaries. Inside each call only, one native
+`rev-parse --show-toplevel --show-object-format HEAD` replaces three adjacent
+metadata processes. Existing index-stage and complete worktree-content reads
+remain fresh. The digest version, object IDs, bookkeeping options, symlinks,
+deletions, untracked files and submodule behavior remain unchanged.
+
+The existing Git byte reader remains the sole command owner. Right-splitting
+the fixed trailing fields preserves embedded newline/Unicode root paths.
+Malformed or incomplete metadata fails before content reads; native Git failures
+still propagate. No current-state result is cached, and no preparation,
+authenticated source validation or native child boundary is removed.
+
+The [Git manual](https://git-scm.com/docs/git-rev-parse) documents native
+metadata and revision parsing. A
+[2016 practitioner range discussion](https://stackoverflow.com/questions/38357020/get-range-of-commits-in-same-branch-using-git-rev-parse)
+illustrates that revision expressions can expand to multiple object IDs.
+This change accepts only fixed options and literal `HEAD`; named-ref verification
+and untrusted revision handling are unchanged. The forum is context for that
+boundary, not evidence of Gludd timing.
+
+Four native SHA-1/SHA-256 worktree/index query-count cases fail first.
+After the change, all 177 complete attestation, reviewed-input and receipt-builder
+cases pass with warnings fatal. Focused native branch coverage is 95% with
+unchanged 85/75 floors. New controls preserve known-content digest equivalence,
+both bookkeeping/head options, source/index/HEAD mutations, malformed output,
+root delimiters and native unborn-HEAD refusal. Every original assertion remains.
+The standard subprocess import is explicitly re-exported for its existing typed
+test consumer; the new refusal regex is raw without changing its pattern.
+
+One same-instrumentation tail profile per variant observes 699 to 573
+`subprocess.run` calls, with all 63 state checks, 30 cleanliness checks and
+13 input preparations retained. Profiled test-body time changes from 7.860 to
+6.749 seconds; these local diagnostic results are not whole-admission or hosted
+throughput proof. Retain `review-tail-profile-nativepath-33fd37f-20261018.log`
+and `review-tail-profile-batched-20261018.log` beneath
+`.gate-logs/observed/v012-review-tail-cprofile/`. Actual bounded admission,
+source review, complete canonical gate and exact-SHA hosted evidence remain
+required before promotion. ZDD, cleanup authority and all release gates remain.
