@@ -18,6 +18,7 @@ import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 
 class ProfileError(RuntimeError):
@@ -475,11 +476,179 @@ def sync_profile_set(
             shutil.rmtree(stage_parent)
 
 
+def runtime_metadata() -> dict[str, object]:
+    """Read the selected interpreter's distribution metadata without loading plugins."""
+    import importlib.metadata
+    import json
+    import platform
+
+    from ci_batch_receipts import _installed_distributions_sha256, _pytest_plugin_identity
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+
+    request = json.load(sys.stdin)
+    requirements = [Requirement(value) for value in request["requirements"]]
+    plugins = tuple(importlib.metadata.entry_points(group="pytest11"))
+    names = {
+        canonicalize_name(requirement.name)
+        for requirement in requirements
+        if requirement.marker is None or requirement.marker.evaluate({"extra": ""})
+    }
+    names.update(canonicalize_name(point.dist.name) for point in plugins if point.dist)
+    versions: dict[str, str] = {}
+    mismatches: list[str] = []
+    for name in sorted(names):
+        try:
+            version = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            mismatches.append(f"{name}: absent")
+            continue
+        versions[name] = version
+        if version not in request["locked_versions"].get(name, []):
+            mismatches.append(f"{name}=={version}: selected lock mismatch")
+    for requirement in requirements:
+        if requirement.marker and not requirement.marker.evaluate({"extra": ""}):
+            continue
+        installed = versions.get(canonicalize_name(requirement.name))
+        if installed is not None and installed not in requirement.specifier:
+            mismatches.append(f"{requirement}: installed {installed} violates profile")
+    return {
+        "version": platform.python_version(), "implementation": platform.python_implementation(),
+        "prefix": sys.prefix, "base_prefix": sys.base_prefix, "executable": sys.executable,
+        "mismatches": mismatches, "versions": versions,
+        "plugins": _pytest_plugin_identity(),
+        "installed_distributions_sha256": _installed_distributions_sha256(),
+    }
+
+
+def inspect_runtime(
+    catalog: ProfileCatalog, *, profile_set: str, environment: Path | None,
+    python: str, validate_only: bool = False,
+) -> dict[str, object]:
+    """Verify one existing registered toolchain slot; never install or modify it."""
+    import json
+    import re
+
+    if TYPE_CHECKING:
+        from active_work_status import _repository_roots
+        from ci_batch_receipts import file_sha256
+        from resource_arbiter import resource_root
+    elif __package__:
+        from ci_batch_receipts import file_sha256
+
+        from scripts.active_work_status import _repository_roots
+        from scripts.resource_arbiter import resource_root
+    else:
+        from active_work_status import _repository_roots
+        from ci_batch_receipts import file_sha256
+        from resource_arbiter import resource_root
+
+    if re.fullmatch(r"3\.(?:11|12|13|14)\.[0-9]+", python) is None:
+        raise ProfileError("inspection requires an exact supported Python patch version")
+    selected = _selected(catalog, profile_set)
+    validate_catalog(catalog)
+    roots = _repository_roots()
+    minor = python.rsplit(".", 1)[0]
+    slots = {
+        root: Path(f"{resource_root(root)}-toolchain") / "ci-shards" / f"python-{minor}"
+        for root in roots
+    }
+    candidate = environment if environment is not None else slots.get(catalog.root)
+    if candidate is None or not candidate.is_absolute() or ".." in candidate.parts or candidate not in slots.values():
+        raise ProfileError("inspection requires an exact registered toolchain environment")
+    result: dict[str, object] = {
+        "state": "plan", "environment": str(candidate), "python": python,
+        "profile_set": profile_set, "gate_evidence": False, "release_ready": False,
+    }
+    if validate_only:
+        return result
+    cfg = candidate / "pyvenv.cfg"
+    for path in (candidate, candidate.parent, candidate.parent.parent, cfg):
+        if path.is_symlink():
+            raise ProfileError("runtime environment and configuration must not be symlinks")
+    executable = _environment_python(candidate)
+    if not cfg.is_file() or cfg.stat().st_size > 16384 or not executable.is_file():
+        raise ProfileError(f"existing runtime environment is unavailable: {candidate}")
+    config = dict(
+        line.split("=", 1) for line in cfg.read_text(encoding="utf-8").splitlines() if "=" in line
+    )
+    if not any(key.strip().lower() == "include-system-site-packages" and value.strip().lower() == "false"
+               for key, value in config.items()):
+        raise ProfileError("runtime must exclude system site-packages")
+    inputs = [catalog.manifest]
+    locked_versions: dict[str, set[str]] = {}
+    for project in (catalog.root, *(profile.project for profile in selected)):
+        inputs.extend((project / "pyproject.toml", project / "uv.lock"))
+        lock = tomllib.loads((project / "uv.lock").read_text(encoding="utf-8"))
+        for value in lock.get("package", []):
+            package = _table(value, "locked runtime package")
+            name, version = package.get("name"), package.get("version")
+            if not isinstance(name, str) or not isinstance(version, str):
+                raise ProfileError("runtime lock package must contain a name and version")
+            locked_versions.setdefault(re.sub(r"[-_.]+", "-", name).lower(), set()).add(version)
+    fingerprint = {str(path.relative_to(catalog.root)): file_sha256(path) for path in inputs}
+    def identities() -> tuple[tuple[int, ...], ...]:
+        values = (path.stat() for path in (candidate, cfg, executable))
+        return tuple(
+            (value.st_dev, value.st_ino, value.st_mode, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+            for value in values
+        )
+
+    original = identities()
+    request = {
+        "requirements": render_requirements(catalog, profile_set).splitlines(),
+        "locked_versions": {name: sorted(versions) for name, versions in locked_versions.items()},
+    }
+    code = (
+        "import json,sys;sys.path.insert(0,sys.argv[1]);"
+        "from dependency_profiles import runtime_metadata;"
+        "print(json.dumps(runtime_metadata(),sort_keys=True))"
+    )
+    try:
+        probe = subprocess.run(
+            [str(executable), "-I", "-B", "-c", code, str(catalog.root / "scripts")],
+            input=json.dumps(request), cwd=catalog.root, capture_output=True, text=True,
+            check=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ProfileError(f"bounded metadata probe failed: {exc}") from exc
+    if len(probe.stdout) > 131072:
+        raise ProfileError("runtime metadata output is oversized")
+    try:
+        metadata: object = json.loads(probe.stdout)
+    except json.JSONDecodeError as exc:
+        raise ProfileError("runtime metadata output is malformed") from exc
+    if not isinstance(metadata, dict):
+        raise ProfileError("runtime metadata must be an object")
+    digest = metadata.get("installed_distributions_sha256")
+    if (
+        metadata.get("version") != python or metadata.get("implementation") != "CPython"
+        or metadata.get("prefix") != str(candidate)
+        or not isinstance(metadata.get("base_prefix"), str)
+        or metadata["base_prefix"] == str(candidate)
+        or metadata.get("executable") != str(executable)
+        or metadata.get("mismatches") != []
+        or not isinstance(metadata.get("plugins"), dict)
+        or not isinstance(digest, str) or re.fullmatch("[0-9a-f]{64}", digest) is None
+    ):
+        raise ProfileError(
+            f"runtime identity/profile/lock mismatch: profile_set={profile_set!r} "
+            f"input_sha256={fingerprint} runtime={metadata}"
+        )
+    if (
+        identities() != original
+        or {str(path.relative_to(catalog.root)): file_sha256(path) for path in inputs} != fingerprint
+    ):
+        raise ProfileError("runtime or profile inputs changed during inspection")
+    result.update(state="verified", runtime=metadata, input_sha256=fingerprint)
+    return result
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
-        choices=("audit", "check", "export", "lock", "locked-version", "sync"),
+        choices=("audit", "check", "export", "inspect", "lock", "locked-version", "sync"),
     )
     parser.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     parser.add_argument("--manifest", default="config/dependency_profiles.toml")
@@ -502,7 +671,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         catalog = load_catalog(args.root, args.manifest)
-        if args.action == "lock":
+        if args.action == "inspect":
+            if not args.profile_set or not args.python:
+                raise ProfileError("inspect requires --set and an exact --python")
+            import json
+
+            try:
+                report = inspect_runtime(
+                    catalog, profile_set=args.profile_set,
+                    environment=None if args.environment == ".venv" else Path(args.environment),
+                    python=args.python, validate_only=args.validate_only,
+                )
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                raise ProfileError(f"runtime inspection failed: {exc}") from exc
+            print(json.dumps(report, sort_keys=True))
+        elif args.action == "lock":
             execute_commands(
                 lock_commands(catalog, profile_set=args.profile_set, check=False, uv=args.uv)
             )

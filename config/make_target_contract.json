@@ -2308,6 +2308,16 @@
         "TASK_WATCHDOG_START_VALIDATE_ONLY"
       ],
       "behavior": "make task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "inspect-dependency-runtime",
+      "make_variables": [
+        "DEPENDENCY_RUNTIME_ENVIRONMENT",
+        "DEPENDENCY_RUNTIME_PYTHON",
+        "DEPENDENCY_RUNTIME_SET",
+        "DEPENDENCY_RUNTIME_VALIDATE_ONLY"
+      ],
+      "behavior": "make inspect-dependency-runtime DEPENDENCY_RUNTIME_ENVIRONMENT= DEPENDENCY_RUNTIME_PYTHON=3.12.15 DEPENDENCY_RUNTIME_SET=ci DEPENDENCY_RUNTIME_VALIDATE_ONLY=1"
     }
   ]
 }

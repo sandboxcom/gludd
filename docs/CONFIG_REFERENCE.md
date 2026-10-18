@@ -423,6 +423,21 @@ worktree protection. A user report opened 2026-05-10 describes
 after abnormal exit. That long-lived failure mode is why Gludd records logical
 lifecycle ownership explicitly instead of guessing it from a process ID.
 
+
+### 1.1c Dependency-runtime inspection Make carriers
+
+These internal values are derived literally from the corresponding documented
+`DEPENDENCY_RUNTIME_*` Make inputs. They are CLI transport for the read-only
+inspection owner, not independent application configuration or installation
+authority. The raw Make variables are unexported to prevent recursive expansion.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT` | empty | Exact existing registered toolchain slot; empty selects this checkout's derived slot. |
+| `GLUDD_DEPENDENCY_RUNTIME_PYTHON` | `3.12.15` | Exact requested CPython patch identity. |
+| `GLUDD_DEPENDENCY_RUNTIME_SET` | `ci` | Selected `ci` or `development` profile inputs. |
+| `GLUDD_DEPENDENCY_RUNTIME_VALIDATE_ONLY` | `1` | Plan by default; `0` permits bounded metadata inspection, never installation. |
+
 ### 1.2 Model-provider credentials
 
 Set **exactly one** provider's key to get a working model. The key name a

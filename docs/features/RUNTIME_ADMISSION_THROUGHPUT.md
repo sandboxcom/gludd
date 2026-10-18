@@ -1193,3 +1193,103 @@ post content and official manual were subsequently available for this feature.
 Raw RED/GREEN XML, research proposal, source scope and normal required
 collection are retained in /tmp/gludd-v012-gate-profile-fixture-isolation-evidence.
 Its manifest identifies exact source/ref/cohort and preserves proof boundaries.
+
+### Native Python 3.12 startup prerequisite inspection (S98.4, 2026-10-18)
+
+Exact candidate `3583000e3b315f67acf0292dec8ba38642317a1c` keeps its failed
+hosted Python 3.12.15 admission: 1897 main passes in 74.42 seconds, isolated
+help in 1.88 seconds, and a censored original tail at the unchanged 90-second
+limit. Its first pytest header appears about 21.6 seconds after observer
+start. That interval has no measured import/collection attribution; it also
+contains possible worker startup and output buffering. The separately retained
+canonical Python 3.11 diagnostic passed in 73.2 seconds. Neither receipt proves
+Python 3.12 headroom or clears the hosted failure.
+
+The existing dependency-profile owner now has a read-only
+`inspect-dependency-runtime` entrypoint. It derives eligible CI toolchain slots
+from the existing native registered-checkout and resource-namespace owners.
+It accepts no arbitrary executable and refuses foreign/traversing paths,
+environment/configuration symlinks, missing virtual environments, system site
+packages, wrong exact CPython patch/prefix/executable, malformed metadata,
+changed inputs, selected-profile/direct-lock disagreements and unavailable
+or timed-out probes. The probe uses the existing selected interpreter with
+`-I -B`, a fixed command and a 20-second subprocess bound. It reuses the native
+receipt distribution/plugin metadata helpers, never imports pytest/plugins
+or loads entrypoints, and never creates, syncs or writes an environment.
+Selected root/profile manifests and locks are fingerprinted before and after
+inspection. The reported lock membership covers selected direct requirements
+and installed pytest entrypoint distributions, not a new dependency resolver
+or a synchronization receipt. All existing sync/audit/install behavior remains.
+
+The four Make inputs are `DEPENDENCY_RUNTIME_ENVIRONMENT` (empty means the
+current checkout's derived slot), `DEPENDENCY_RUNTIME_PYTHON` (exact supported
+patch, default `3.12.15`), `DEPENDENCY_RUNTIME_SET` (`ci` or `development`,
+default `ci`) and `DEPENDENCY_RUNTIME_VALIDATE_ONLY` (default `1` plan).
+Literal derived carriers are documented in the configuration reference.
+The safe registered behavioral example is:
+
+```text
+make inspect-dependency-runtime DEPENDENCY_RUNTIME_ENVIRONMENT= DEPENDENCY_RUNTIME_PYTHON=3.12.15 DEPENDENCY_RUNTIME_SET=ci DEPENDENCY_RUNTIME_VALIDATE_ONLY=1
+```
+
+Actual native inspection confirms the main registered Python 3.12 slot is
+unavailable. This is separate from the earlier correctly refused absolute
+`cat-file` read, which established no filesystem absence. The requested
+current `ci` inspection of the existing canonical 3.11.14 slot refuses
+`ansible-controller`'s direct `jsonpointer==3.2.0` declaration against installed
+`3.1.1`; the latter also occurs in other selected independent locks. This
+requested-profile mismatch is not a diagnosis of canonical-runtime corruption
+or evidence of a completed fresh CI synchronization. Canonical 3.11 and the
+main virtual environment remain unchanged, and successful positive current-CI
+inspection proof is still missing.
+
+After native zero-worker/load/disk admission, the existing hosted `ci` sync
+owner checked all ten source locks successfully, then refused managed
+Python 3.12.15 acquisition with downloads disabled. The separately retained
+downloads-enabled attempt refused the same exact interpreter before any
+download and advised that uv's embedded catalogue needs updating.
+`make check-uv` reports local Homebrew uv 0.11.17; hosted 3.12 pins uv 0.13.1.
+The installed-runtime catalogue exposes 3.12.13, which is not substituted.
+Both staged failures remain failed; no environment was promoted. No global uv
+upgrade, alternate reader spelling, installer, downloader or timing patch was
+introduced. Future acquisition must use a reviewed mature owner with explicit
+project-owned tool/bin/cache/managed-runtime roots.
+
+The initial 27 missing-owner/contract failures precede 33 inspection controls
+passing, including actual temporary executable boundaries, unchanged files
+and environment, metadata-only entrypoint guards and CLI conformance.
+All 80 complete profile/inspection cases pass warning-fatal on canonical
+Python 3.11 at 94% native combined source coverage under unchanged 85/75 floors.
+The default-plan behavior and 246 contracts pass. These are tool/source
+receipts. The proposed original-three-child import-time/collect-only diagnostic
+has not run; no self/cumulative import or collection costs are invented.
+Its next prerequisites are exact namespaced uv/runtime acquisition, successful
+hosted-profile synchronization and positive metadata inspection.
+
+Firsthand [pytest #2206](https://github.com/pytest-dev/pytest/issues/2206)
+includes a 2020 collection/directory-traversal investigation and a 2022
+compile/assertion-rewrite profile. It motivates measuring Gludd's current
+owner, not copying another project's cause or removing selectors.
+Firsthand [uv #9666](https://github.com/astral-sh/uv/issues/9666) reports
+workload-dependent first-interpreter latency on macOS in December 2024; it
+does not explain the hosted Linux failure. Python's
+[import-time documentation](https://docs.python.org/3.12/using/cmdline.html#cmdoption-X)
+distinguishes self from nested cumulative time: cumulative values must not be
+summed. Native
+[xdist 3.8.0 collect-only handling](https://github.com/pytest-dev/pytest-xdist/blob/v3.8.0/src/xdist/plugin.py)
+bypasses distributed sessions, so the future three-child experiment will be a
+serial import/collection diagnostic despite unchanged 2/1/1 command settings,
+never admission or worker-throughput proof.
+
+All 110 admission families, original 1897/help1/tail10 selectors, three children,
+fresh-help isolation, 2/1/1 policy, 90/60 limits, 21/2850 bounds, fatal warnings,
+85/75 coverage, ZDD, cleanup/authentication and promotion authority remain.
+No task is closed. The original hosted failure and every prior reviewed
+source, candidate ref and proof bundle remain retained.
+
+Final parent-bytecode and refusal-provenance controls retain two additional
+one-case RED receipts before repair. The final complete 81-case owner passes
+in 8.56 seconds; native coverage remains 94% (observer10.7s). All 34 inspection
+and four environment-documentation/default controls also pass (38 cases,
+6.07 seconds). Refused CI inspection retains the requested profile identity,
+all selected source lock hashes and actual installed metadata without success.

@@ -437,6 +437,7 @@ help:
 		"  --- Setup ---" \
 		"  init                  Set up project (dirs + deps)" \
 		"  sync                  Atomically sync an explicit locked dependency profile set (DEPENDENCY_PROFILE_*)" \
+		"  inspect-dependency-runtime Read-only registered runtime/profile metadata (DEPENDENCY_RUNTIME_*, plan by default)" \
 		"  sync-ansible-native-format Native locked/inexact dev tooling sync (ANSIBLE_FORMAT_SYNC_*, dry-plan by default)" \
 		"  uv-cache-path         Print the sandbox-writable Gludd uv cache path" \
 		"  migrate-up            Upgrade an explicit database URL to a revision (MIGRATE_DATABASE_URL, MIGRATE_REVISION)" \
@@ -1030,6 +1031,26 @@ init: setup-dirs
 	@command -v $(UV) >/dev/null 2>&1 || { echo "uv is required for locked dependency profiles"; exit 1; }
 	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@$(MAKE) --no-print-directory install-hooks
+
+DEPENDENCY_RUNTIME_ENVIRONMENT ?=
+DEPENDENCY_RUNTIME_PYTHON ?= 3.12.15
+DEPENDENCY_RUNTIME_SET ?= ci
+DEPENDENCY_RUNTIME_VALIDATE_ONLY ?= 1
+export GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT := $(value DEPENDENCY_RUNTIME_ENVIRONMENT)
+export GLUDD_DEPENDENCY_RUNTIME_PYTHON := $(value DEPENDENCY_RUNTIME_PYTHON)
+export GLUDD_DEPENDENCY_RUNTIME_SET := $(value DEPENDENCY_RUNTIME_SET)
+export GLUDD_DEPENDENCY_RUNTIME_VALIDATE_ONLY := $(value DEPENDENCY_RUNTIME_VALIDATE_ONLY)
+unexport DEPENDENCY_RUNTIME_ENVIRONMENT DEPENDENCY_RUNTIME_PYTHON DEPENDENCY_RUNTIME_SET DEPENDENCY_RUNTIME_VALIDATE_ONLY
+
+inspect-dependency-runtime:
+	@case "$$GLUDD_DEPENDENCY_RUNTIME_VALIDATE_ONLY" in 0|1) ;; *) echo 'DEPENDENCY_RUNTIME_VALIDATE_ONLY must be 0 or 1'; exit 2;; esac; \
+	case "$$GLUDD_DEPENDENCY_RUNTIME_PYTHON" in 3.11.[0-9]*|3.12.[0-9]*|3.13.[0-9]*|3.14.[0-9]*) ;; *) echo 'exact supported Python patch is required'; exit 2;; esac; \
+	case "$$GLUDD_DEPENDENCY_RUNTIME_SET" in ci|development) ;; *) echo 'DEPENDENCY_RUNTIME_SET must be ci or development'; exit 2;; esac; \
+	case "$$GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT" in ''|/*) ;; *) echo 'registered absolute runtime environment is required'; exit 2;; esac; \
+	$(UV) run python -B scripts/dependency_profiles.py inspect --root "$(CURDIR)" \
+		--set "$$GLUDD_DEPENDENCY_RUNTIME_SET" --python "$$GLUDD_DEPENDENCY_RUNTIME_PYTHON" \
+		$${GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT:+--environment "$$GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT"} \
+		$$(if [ "$$GLUDD_DEPENDENCY_RUNTIME_VALIDATE_ONLY" = 1 ]; then printf '%s' --validate-only; fi)
 
 DEPENDENCY_PROFILE_SET ?= development
 DEPENDENCY_PROFILE_ENVIRONMENT ?= .venv

@@ -1693,3 +1693,57 @@ Raw source receipts and required normal collection are externally retained
 under /tmp/gludd-v012-gate-profile-fixture-isolation-evidence. Root owns
 independent review, genuine integration, actual release-profile/bounded
 admission and exact-successor gate/hosted proof. No task closure.
+
+### S98.4: bounded registered-runtime inspection; Python 3.12 diagnostic blocked
+
+- Base/source under investigation: `3583000e3b315f67acf0292dec8ba38642317a1c`.
+  Sole source branch `agent-v012-native-312-startup-diagnostic`; main stays
+  unchanged. M9/M10 are complete and not duplicated.
+- Read the native remaining-3.12 proposal and retained hosted failure first.
+  Existing sync/profile, receipt metadata, registered-checkout and resource
+  owners were researched before extending only dependency_profiles.
+- Added read-only `inspect-dependency-runtime` with literal four-variable Make
+  transport, safe default plan and contract. Fixed registered slots and a
+  20-second `-I -B` metadata probe preserve path/identity/current-input authority;
+  no pytest/plugin imports, entrypoint loading, writes, sync or fallback.
+  TYPE_CHECKING-only module identity follows the established script imports;
+  runtime import behavior for existing commands is unchanged.
+- Preserved 27 failing-first missing-owner/contract cases. Final 33 inspection
+  controls pass; all 80 complete dependency-profile/inspection cases pass
+  warning-fatal in 7.20 seconds. Existing native coverage is 94% combined,
+  preserving 85/75 floors. The actual safe plan and 246-target contract pass;
+  the intermediate Make escaping, import typing and Ruff failures are retained.
+- Native resource admission first saw an unrelated secrets scan with six
+  workers/limit eight and held expensive work. Its provenance was not inferred
+  and no signal was sent. It drained naturally. Before provisioning, native
+  ps/status showed zero workers and only existing watchdog29001; load
+  4.28/8 CPUs passed. Native disk-guard rc0 admitted hard disk94%/95 while
+  retaining protected/recent soft scratch311.2MB; no manual cleanup occurred.
+- Actual inspection confirms unavailable main registered3.12 slot. Requested
+  current `ci` inspection of canonical3.11.14 refuses controller direct
+  jsonpointer3.2.0 against installed3.1.1. Other selected locks contain3.1.1;
+  this is a requested-profile mismatch, not proven corruption or completed
+  new bootstrap. Canonical311 and main .venv were never synced or edited.
+- Exact hosted `ci` sync checked all ten locks, then refused unavailable
+  managed3.12.15 under no-download policy. The changed provisioning-child
+  downloads policy produced a separate retained failure before any download:
+  local uv0.11.17 cannot acquire that exact version from its catalogue.
+  Hosted pins uv0.13.1; installed3.12.13 is never substituted.
+  Both staging trees were cleaned by their existing owner; no target promoted.
+- The original three-child90/60 import/collect diagnostic is NOT RUN.
+  No attributed import/collection cost, successful positiveCI inspection,
+  headroom, admission/gate, exact-SHA successor, task or release proof is claimed.
+  Next prerequisite is reviewed namespaced mature uv/runtime acquisition,
+  exact hosted-profile sync and positive inspection; root owns the next step.
+- Feature documentation includes firsthand pytest2206/uv9666 findings and
+  precise applicability. TASKS updates only the existing uncheckedS98.4 row
+  without line, checkbox or status growth. All110 families/rosters/policies,
+  warning and coverage floors, cleanup/ZDD/authentication/promotion gates,
+  historical failures, immutable source refs and full SESSION prefix remain.
+
+Final parent-bytecode and refusal-provenance controls retain two additional
+one-case RED receipts before repair. The final complete 81-case owner passes
+in 8.56 seconds; native coverage remains 94% (observer10.7s). All 34 inspection
+and four environment-documentation/default controls also pass (38 cases,
+6.07 seconds). Refused CI inspection retains the requested profile identity,
+all selected source lock hashes and actual installed metadata without success.
