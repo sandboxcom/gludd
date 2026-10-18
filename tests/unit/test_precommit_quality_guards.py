@@ -89,9 +89,9 @@ def test_jscpd_is_exactly_pinned_in_manifest_and_lock() -> None:
     manifest = json.loads((ROOT / ".opencode/package.json").read_text(encoding="utf-8"))
     lock = json.loads((ROOT / ".opencode/package-lock.json").read_text(encoding="utf-8"))
 
-    assert manifest["devDependencies"]["jscpd"] == "5.4.0"
-    assert lock["packages"][""]["devDependencies"]["jscpd"] == "5.4.0"
-    assert lock["packages"]["node_modules/jscpd"]["version"] == "5.4.0"
+    assert manifest["devDependencies"]["jscpd"] == "5.4.1"
+    assert lock["packages"][""]["devDependencies"]["jscpd"] == "5.4.1"
+    assert lock["packages"]["node_modules/jscpd"]["version"] == "5.4.1"
 
 
 def test_make_contract_has_safe_explicit_guard_examples() -> None:

@@ -629,6 +629,7 @@ PIPELINE_STATUS_OUTPUT ?= .gludd/release-proof-status.json
 pipeline-status:
 	@case "$(PIPELINE_STATUS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PIPELINE_STATUS_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
 	@OBSERVE_RC=0; STATUS_RC=0; \
+	export GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new'; \
 	$(UV) run python scripts/ci_failure_ledger.py observe-sha \
 		--repo "$(PIPELINE_STATUS_REPO)" --branch "$(PIPELINE_STATUS_BRANCH)" \
 		--remote "$(PIPELINE_STATUS_REMOTE)" --ledger "$(PIPELINE_STATUS_FAILURE_LEDGER)" \

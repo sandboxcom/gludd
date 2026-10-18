@@ -1,3 +1,38 @@
+## v0.1.2 release continuation (2026-10-18 00:39 UTC)
+
+Primary objective: finish the pipeline and canonical gate, integrate required
+work into master, and obtain exact-SHA release proof for v0.1.2.
+
+Latest native collection: 125180/125181 cases, one intentional deselection,
+zero collection errors. This is collection evidence, not a passing test gate.
+
+- Development repairs are committed: configured SSH transport at `c2b722b9b`,
+  native changed-file clone reports and one hook registry at `7210a67`, and
+  the existing lint migration integrated with CSS parity repairs at
+  `f6adc97435d02e94c9923d4cb7fd11ec5324ff1e`. The original review requested
+  changes; its two CSS counterexamples failed first and then passed.
+- Focused results: 382 pipeline/ledger/heartbeat cases; 53 SSH/baseline cases;
+  127 clone/snapshot/policy cases; 178 hook cases with 18 existing skips;
+  33 lint/integration/native cases and 114 workflow/security cases pass.
+  The native clone and hook coverage profiles pass at 91% and 90% aggregate,
+  with every measured file above 75%. Full-project coverage is still required.
+- The combined locked Node graph retains jscpd 5.4.1 and passes the native
+  low-threshold audit with zero vulnerabilities. The locked development
+  environment synchronizes atomically and passes compatibility checks.
+  Make contracts, documented lint/admission examples, strict scoped typing,
+  lint and native staged content checks pass.
+- Last observed remote development is
+  `1ff095f19720a6b3f501238fbc92015f2b99dfe3`: Build `38812181930` failed;
+  Molecule `38812181928` and Pages `38812181925` passed. These are historical
+  remote results, not successor proof for the local repairs. Native ledger
+  observation retains five repaired families awaiting hosted resolution.
+- Missing proof: independent review of the final combined source, real static
+  release-proof admission, a clean exact-SHA canonical full gate with unchanged
+  85/75 line/branch floors, matching all-workflow hosted CI and required
+  deployment acceptance. The preceding gate was aborted and is not evidence.
+  Keep the checkout fixed during native checkout-preservation acceptance.
+  Do not mark S98 complete, promote master, tag or publish from focused results.
+
 ## Session 99 continuation update (2026-10-17 19:55 UTC)
 
 Total tests: 125,130 collected, 1 deselected, 0 collection errors.

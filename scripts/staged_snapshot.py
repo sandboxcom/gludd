@@ -122,13 +122,14 @@ def _git(
     max_output_bytes: int | None = None,
     timeout_seconds: float | None = None,
     on_output_bytes: Callable[[int], None] | None = None,
+    git_environment: dict[str, str] | None = None,
 ) -> bytes:
     timeout = GIT_TIMEOUT_SECONDS if timeout_seconds is None else min(timeout_seconds, GIT_TIMEOUT_SECONDS)
     if not math.isfinite(timeout) or timeout <= 0:
         raise SnapshotLimitError("Git command remaining deadline must be positive and finite")
     if max_output_bytes is not None and (type(max_output_bytes) is not int or max_output_bytes < 0):
         raise SnapshotLimitError("Git output cap must be a nonnegative integer")
-    environment = os.environ.copy()
+    environment = os.environ.copy() if git_environment is None else git_environment.copy()
     if index_file is not None:
         environment["GIT_INDEX_FILE"] = str(index_file)
     command = ["git", "-C", str(root), *arguments]
@@ -178,12 +179,13 @@ def _nul_paths(
     return tuple(sorted(paths))
 
 
-def _resolve_commit(root: Path, ref: str) -> str:
+def _resolve_commit(root: Path, ref: str, *, git_environment: dict[str, str] | None = None) -> str:
     if not ref or "\x00" in ref:
         raise SnapshotError("Git ref must be a non-empty string without NUL bytes")
     output = _git(
         root,
         ["rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"],
+        git_environment=git_environment,
     )
     try:
         resolved = output.decode("ascii").strip()
@@ -329,3 +331,29 @@ def materialize_ref(
     finally:
         index_file.unlink(missing_ok=True)
         index_file.with_name(f"{index_file.name}.lock").unlink(missing_ok=True)
+
+
+def prepare_comparison_repository(root: Path, ref: str, destination: Path) -> None:
+    """Give a materialized candidate an isolated native index at the actual base.
+
+    Only private metadata is written. The source object store is an alternate,
+    and hook-exported Git redirects cannot select the source checkout's index.
+    """
+    metadata = destination / ".git"
+    if metadata.exists() or metadata.is_symlink():
+        raise SnapshotError(f"comparison metadata already exists: {metadata}")
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+    commit = _resolve_commit(root, ref, git_environment=environment)
+    objects = os.fsdecode(_git(
+        root, ["rev-parse", "--path-format=absolute", "--git-path", "objects"],
+        git_environment=environment,
+    )).rstrip("\r\n")
+    if not objects or "\n" in objects or "\r" in objects or not Path(objects).is_absolute():
+        raise SnapshotError("source object store must be one absolute native path")
+    destination.mkdir(parents=True, exist_ok=True)
+    _git(destination, ["init", "--quiet", "--template=", "--initial-branch=gludd-duplicate-code"],
+         git_environment=environment)
+    (metadata / "objects/info/alternates").write_bytes(os.fsencode(objects) + b"\n")
+    _git(destination, ["update-ref", "--no-deref", "HEAD", commit], git_environment=environment)
+    _git(destination, ["read-tree", commit], git_environment=environment)

@@ -39,7 +39,7 @@ def _portable_ast_snapshot(snapshot: str) -> str:
 
 
 def _manifest() -> dict[str, Any]:
-    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    payload: dict[str, Any] = json.loads(MANIFEST.read_text(encoding="utf-8"))
     for group in ("cases", "helpers"):
         for record in payload[group]:
             record["arguments_ast"] = _portable_ast_snapshot(record["arguments_ast"])
@@ -179,32 +179,18 @@ def test_helper_signatures_match_pre_split_snapshot() -> None:
 
 
 def test_facade_reexports_every_case_explicitly_in_original_order() -> None:
-    """Explicit aliases preserve historical pytest node names and order."""
-    tree = ast.parse(FACADE.read_text(encoding="utf-8"))
-    assignments = [
-        node.targets[0].id
-        for node in tree.body
-        if isinstance(node, ast.Assign)
-        and len(node.targets) == 1
-        and isinstance(node.targets[0], ast.Name)
-        and node.targets[0].id.startswith("test_")
-    ]
-    expected = [item["name"] for item in _manifest()["cases"]]
-    assert assignments == expected
+    """The shared registry preserves every historical explicit binding and order.
 
-    bridge_tree = ast.parse(
-        (PACKAGE / "facade_exports.py").read_text(encoding="utf-8")
-    )
-    imported_cases = {
-        alias.name
-        for node in bridge_tree.body
-        if isinstance(node, ast.ImportFrom)
-        and node.module is not None
-        and node.module.startswith("cases_")
-        for alias in node.names
-        if alias.name.startswith("test_")
-    }
-    assert imported_cases == set(expected)
+    Inspect the runtime surface rather than requiring a second handwritten list;
+    the duplicate-code policy requires one owner for this compatibility inventory.
+    """
+    facade = importlib.import_module("scripts.test_hook_runtime")
+    bridge = importlib.import_module("hook_runtime.facade_exports")
+    expected = [item["name"] for item in _manifest()["cases"]]
+    assert [name for name in vars(facade) if name.startswith("test_")] == expected
+    assert list(bridge._CASE_EXPORTS) == expected
+    assert set(bridge.__all__) >= set(expected)
+    assert all(getattr(facade, name) is bridge._CASE_EXPORTS[name] for name in expected)
 
 
 def test_facade_case_objects_are_component_identities_with_signature_parity() -> None:

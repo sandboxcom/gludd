@@ -3,14 +3,6 @@ notify-test:
 	@echo "=== Testing notification dispatcher ==="
 	$(UV) run python -c "from general_ludd.notifications import NotificationDispatcher; d = NotificationDispatcher({'enabled': True, 'backends': {'stdout': {}}, 'min_priority': 'high'}); print(d.test())"
 
-# Keep local and hosted CSS validation on the same locked binary, config, and
-# input set. node-deps-sync materializes the exact package-lock dependency.
-lint-css:
-	@test -x .opencode/node_modules/.bin/stylelint || { \
-		echo "lint-css: locked Stylelint is absent; run make node-deps-sync with the documented variables"; \
-		exit 2; \
-	}
-	@.opencode/node_modules/.bin/stylelint "**/*.css" "**/*.scss" "**/*.less" --allow-empty-input --config stylelint.config.mjs
 
 # Unique per-invocation basetemp (like test-iso) so a nested run of this target
 # — spawned by runner.background_test_runner / MakeRunner.run_specific and by
@@ -854,7 +846,8 @@ integration-admission:
 	@test -n "$(strip $(DUPLICATE_CODE_BASE_REF))" || { echo "DUPLICATE_CODE_BASE_REF is required"; exit 2; }
 	@test -n "$(strip $(DUPLICATE_CODE_CURRENT_REF))" || { echo "DUPLICATE_CODE_CURRENT_REF is required"; exit 2; }
 	@test -n "$(strip $(MARKDOWN_FILES))" || { echo "MARKDOWN_FILES is required"; exit 2; }
-	@test -n "$(strip $(MARKDOWNLINT_CONFIG))" || { echo "MARKDOWNLINT_CONFIG is required"; exit 2; }
+	@test -n "$(strip $(RUMDL_CONFIG)$(MARKDOWNLINT_CONFIG))" || { echo "RUMDL_CONFIG or MARKDOWNLINT_CONFIG is required"; exit 2; }
+	@if [ -n "$(strip $(RUMDL_CONFIG))" ] && [ -n "$(strip $(MARKDOWNLINT_CONFIG))" ] && [ "$(strip $(RUMDL_CONFIG))" != "$(strip $(MARKDOWNLINT_CONFIG))" ]; then echo "RUMDL_CONFIG and MARKDOWNLINT_CONFIG disagree"; exit 2; fi
 	@test -n "$(strip $(PRESENTATION_BROWSER_ENGINES))" || { echo "PRESENTATION_BROWSER_ENGINES is required"; exit 2; }
 	@test -n "$(strip $(PRESENTATION_BROWSER_ROOT))" || { echo "PRESENTATION_BROWSER_ROOT is required"; exit 2; }
 	@test -n "$(strip $(PRESENTATION_BROWSER_OUTPUT))" || { echo "PRESENTATION_BROWSER_OUTPUT is required"; exit 2; }
@@ -906,6 +899,7 @@ integration-admission:
 	run_phase "check-generated-artifact-hygiene" "check-generated-artifact-hygiene" "fast" "90" "60" $(MAKE) --no-print-directory check-generated-artifact-hygiene; \
 	run_phase "lint-markdown" "lint-markdown" "fast" "90" "60" $(MAKE) --no-print-directory lint-markdown \
 		MARKDOWN_FILES="$(MARKDOWN_FILES)" \
+		RUMDL_CONFIG="$(RUMDL_CONFIG)" \
 		MARKDOWNLINT_CONFIG="$(MARKDOWNLINT_CONFIG)"; \
 	run_phase "check-make-target-contract" "check-make-target-contract" "fast" "90" "60" $(MAKE) --no-print-directory check-make-target-contract; \
 	run_phase "yaml-lint" "yaml-lint" "standard" "180" "120" $(MAKE) --no-print-directory yaml-lint; \

@@ -20,6 +20,7 @@ if TYPE_CHECKING or __package__:
         discover_staged_paths,
         materialize_index,
         materialize_ref,
+        prepare_comparison_repository,
         read_index_blob,
         read_ref_blob,
     )
@@ -30,6 +31,7 @@ else:
         discover_staged_paths,
         materialize_index,
         materialize_ref,
+        prepare_comparison_repository,
         read_index_blob,
         read_ref_blob,
     )
@@ -229,7 +231,7 @@ def _run_engine(
     if not update:
         if report_dir is None:
             raise DuplicateCodeError("candidate scan requires an explicit report directory")
-        command.extend(("--output", str(report_dir)))
+        command.extend(("--changed", "--output", str(report_dir)))
     phase = "baseline" if update else "candidate"
     print(f"duplicate-code: phase={phase} engine=jscpd source={cwd}", flush=True)
     try:
@@ -417,6 +419,10 @@ def run_guard(
             return result
         if not baseline.is_file() or baseline.stat().st_size == 0:
             raise DuplicateCodeError("jscpd did not create the requested baseline")
+        try:
+            prepare_comparison_repository(root, base_ref, candidate)
+        except SnapshotError as exc:
+            raise DuplicateCodeError(str(exc)) from exc
         report_dir = temporary_root / "report"
         result = _run_engine(
             resolved_engine,
