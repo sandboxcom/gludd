@@ -730,3 +730,49 @@ not Gludd proof or permission to replace collection, suppress plugins, narrow
 the roster or raise deadlines. Fresh bounded admission, independent source
 review, the complete canonical gate and exact-SHA hosted evidence remain
 required; all release tasks and promotion remain open.
+
+## Size independent MCP topics with the native serializer (2026-10-18)
+
+Whole-cohort worker profiling attributes 9.113 cumulative instrumented seconds
+to two native MCP topic writes, including 170 topic dumps and 8.718 seconds in
+chunk sizing. The original sizing algorithm serializes the growing mapping
+repeatedly. Keep PyYAML 6.0.3 and the same SafeDumper, formatting options and
+final per-shard serialization. Separate-document dump APIs do not implement
+the required one-mapping-per-shard format.
+
+Within the existing writer, exact built-in dict/list/scalar trees with no
+shared containers can use additive native entry sizes. Inspect the value
+graph once per invocation, using one container-identity set across all topics.
+For this restricted subset, invoke the existing singleton topic dump once,
+sum its existing splitlines count and fill the same greedy shard boundaries.
+Serialize each final shard through the original unchanged native function.
+No dump, size, AST, source or proof result is retained across calls.
+
+Shared or recursive containers, custom mappings/types, altered native
+representers or alias policy, and custom YAML path resolvers retain the
+original complete-candidate algorithm. Native aliases remain enabled.
+The [native representer source](https://github.com/yaml/pyyaml/blob/6.0.3/lib/yaml/representer.py)
+explains its object-identity alias handling. The long-lived
+[PyYAML user discussion opened in November 2017](https://github.com/yaml/pyyaml/issues/103)
+documents requests and workarounds for suppressing aliases. Preserve those
+semantics here through the native fallback. The discussion supplies context,
+not evidence of an upstream defect causing Gludd timing.
+
+Eight deterministic native call-budget controls fail before implementation;
+46 original/parity/fallback controls already pass. After repair, all 137 cases
+in the existing six-source coverage cohort pass. Aggregate native branch
+coverage is 91%, the changed writer is 96%, and every measured file meets the
+unchanged 85/75 floors. The complete 100 manifest/generator cases also pass
+on installed Python 3.14, with warnings fatal; both strict typing scopes pass.
+All original assertions remain. Additive controls compare exact shard and
+manifest bytes, digests, boundaries, alias-sensitive packing, recursive values,
+custom types/representers/mappings, fresh mutations and the actual live
+generator corpus. No generated artifact is regenerated in the checkout.
+
+For n independent topics and k output shards, the native topic-dump count is
+n for planning and n+k for publication, with no growing private dict copies.
+The focused generator writes take 0.38 and 0.23 seconds in the local repaired
+run; the earlier two-worker diagnostic recorded 2.28 and 1.98 seconds.
+Those different local invocations are not a controlled hosted comparison.
+The unchanged bounded admission and exact-SHA hosted lanes remain necessary
+before claiming that the original timeout prerequisite is repaired.

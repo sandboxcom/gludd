@@ -10,6 +10,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
+from yaml.dumper import SafeDumper
+from yaml.representer import SafeRepresenter
 
 SCHEMA = "gludd.mcp-tool-topics.v1"
 PARTS_DIRECTORY = "mcp-tool-topics"
@@ -38,6 +40,46 @@ def _line_count(text: str) -> int:
     return len(text.splitlines())
 
 
+def _independent_builtin_topics(topics: Mapping[str, Any]) -> bool:
+    """Use additive native block sizes only for uncustomized, alias-free trees."""
+    native_representers = {
+        dict: SafeRepresenter.represent_dict,
+        list: SafeRepresenter.represent_list,
+        str: SafeRepresenter.represent_str,
+        bool: SafeRepresenter.represent_bool,
+        int: SafeRepresenter.represent_int,
+        float: SafeRepresenter.represent_float,
+        type(None): SafeRepresenter.represent_none,
+    }
+    if (
+        type(topics) is not dict
+        or yaml.SafeDumper is not SafeDumper
+        or SafeDumper.ignore_aliases is not SafeRepresenter.ignore_aliases
+        or SafeDumper.yaml_path_resolvers
+        or any(SafeDumper.yaml_representers.get(kind) is not representer
+               for kind, representer in native_representers.items())
+    ):
+        return False
+    pending: list[object] = [topics]
+    seen: set[int] = set()
+    scalar_types = (str, bool, int, float, type(None))
+    while pending:
+        value = pending.pop()
+        kind = type(value)
+        if kind in scalar_types:
+            continue
+        if kind not in (dict, list) or id(value) in seen:
+            return False
+        seen.add(id(value))
+        if isinstance(value, dict):
+            if any(type(key) is not str for key in value):
+                return False
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+    return True
+
+
 def _topic_chunks(
     topics: Mapping[str, Any], *, max_lines: int = DEFAULT_MAX_LINES
 ) -> list[dict[str, Any]]:
@@ -47,20 +89,33 @@ def _topic_chunks(
         )
     chunks: list[dict[str, Any]] = []
     current: dict[str, Any] = {}
+    current_lines = 0
+    independent = _independent_builtin_topics(topics)
     previous = ""
     for name, topic in sorted(topics.items()):
         if not isinstance(name, str) or not name.startswith("general_ludd."):
             raise TopicsManifestError(f"invalid MCP topic name: {name!r}")
         if name <= previous:
             raise TopicsManifestError("MCP topic names must be unique and ordered")
-        candidate = {**current, name: topic}
-        if current and _line_count(_dump_topics(candidate)) > max_lines:
-            chunks.append(current)
-            current = {name: topic}
+        if independent:
+            topic_lines = _line_count(_dump_topics({name: topic}))
+            if topic_lines > max_lines:
+                raise TopicsManifestError(f"single MCP topic exceeds {max_lines} lines: {name}")
+            if current and current_lines + topic_lines > max_lines:
+                chunks.append(current)
+                current = {}
+                current_lines = 0
+            current[name] = topic
+            current_lines += topic_lines
         else:
-            current = candidate
-        if _line_count(_dump_topics(current)) > max_lines:
-            raise TopicsManifestError(f"single MCP topic exceeds {max_lines} lines: {name}")
+            candidate = {**current, name: topic}
+            if current and _line_count(_dump_topics(candidate)) > max_lines:
+                chunks.append(current)
+                current = {name: topic}
+            else:
+                current = candidate
+            if _line_count(_dump_topics(current)) > max_lines:
+                raise TopicsManifestError(f"single MCP topic exceeds {max_lines} lines: {name}")
         previous = name
     if current:
         chunks.append(current)

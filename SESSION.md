@@ -18,6 +18,15 @@ passing control; complete 19-case acceptance, 95% native coverage and both stric
 typing scopes pass. Current source profiling shows the reader is a small cost;
 further measured repair is required before another final proof attempt.
 
+The native MCP writer now sizes independent built-in, alias-free topics once
+per entry, then serializes complete shards with its original SafeDumper.
+Shared/cyclic/custom values and YAML customizations keep the original complete
+candidate path. Eight call-budget cases fail first; 137 complete coverage cases
+then pass at 91% aggregate and 96% for the writer, with every file above 75%.
+All 100 manifest/generator cases pass on 3.14; strict typing passes. Exact-byte
+and live-generator controls retain the same artifacts, aliases and bounds.
+This focused repair is not a successful whole-admission or hosted proof.
+
 See `docs/features/RUNTIME_ADMISSION_THROUGHPUT.md` for retained logs and
 upstream practitioner context. All S98 tasks remain unchecked. Do not finalize
 the old receipt, replay the gate, retry hosted CI unchanged, publish a tag or

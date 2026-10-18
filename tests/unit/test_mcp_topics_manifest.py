@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+from collections import UserDict
+from collections.abc import ItemsView, Mapping
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -294,3 +297,194 @@ def test_loader_rejects_non_integer_topic_counts(
 
     with pytest.raises(mcp_topics.TopicsManifestError, match="count mismatch"):
         mcp_topics.load_topics(manifest)
+
+
+@pytest.mark.parametrize("count", [6, 12])
+@pytest.mark.parametrize("max_lines", [5, 2000])
+@pytest.mark.parametrize("action", ["chunks", "write"])
+def test_independent_topic_sizing_has_one_native_dump_per_topic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    count: int, max_lines: int, action: str,
+) -> None:
+    topics = {f"general_ludd.agent.topic_{index:03d}": {"value": index}
+              for index in reversed(range(count))}
+    native_dump = mcp_topics._dump_topics
+    calls: list[tuple[str, ...]] = []
+
+    def measured_dump(values: Mapping[str, object]) -> str:
+        calls.append(tuple(sorted(values)))
+        return native_dump(values)
+
+    monkeypatch.setattr(mcp_topics, "_dump_topics", measured_dump)
+    expected: list[tuple[str, ...]]
+    if action == "chunks":
+        chunks = mcp_topics._topic_chunks(topics, max_lines=max_lines)
+        expected = [(name,) for name in sorted(topics)]
+    else:
+        paths = mcp_topics.write_topics(
+            tmp_path / "MCP_TOOLS_TOPICS.yml", topics, max_lines=max_lines,
+        )
+        assert mcp_topics.load_topics(paths[0]) == topics
+        chunks = [yaml.safe_load(path.read_text(encoding="utf-8")) for path in paths[1:]]
+        expected = [(name,) for name in sorted(topics)] + [tuple(chunk) for chunk in chunks]
+    assert calls == expected
+    assert [name for chunk in chunks for name in chunk] == sorted(topics)
+    assert all(len(native_dump(chunk).splitlines()) <= max_lines for chunk in chunks)
+
+
+def _native_greedy_topic_bytes(
+    topics: Mapping[str, object], max_lines: int,
+) -> list[bytes]:
+    remaining = sorted(topics.items())
+    payloads: list[bytes] = []
+    while remaining:
+        accepted: dict[str, object] = {}
+        for length in range(1, len(remaining) + 1):
+            trial = dict(remaining[:length])
+            if len(mcp_topics._dump_topics(trial).splitlines()) > max_lines:
+                if not accepted:
+                    raise mcp_topics.TopicsManifestError("single MCP topic exceeds reference bound")
+                break
+            accepted = trial
+        payloads.append(mcp_topics._dump_topics(accepted).encode("utf-8"))
+        remaining = remaining[len(accepted):]
+    return payloads
+
+
+@pytest.mark.parametrize("padding", [0, 1, 8, 1000])
+def test_independent_topic_shards_preserve_native_bytes_and_exact_boundaries(
+    tmp_path: Path, padding: int,
+) -> None:
+    values: list[object] = [
+        {"nested": [{"empty": []}, {"empty": {}}], "scalar": None},
+        {"scalars": [True, False, 0, -7, 2.5, float("inf"), float("nan")]},
+        {"text": "on: [quoted] # punctuation\ntrailing\n"},
+        {"text": "Unicode café 雪\u2028separator\u2029paragraph"},
+        {"text": "wrapped description " * 16},
+        {"text": "", "same": ["repeated", "repeated"]},
+    ]
+    topics = {f"general_ludd.agent.topic_{index}": value
+              for index, value in reversed(list(enumerate(values)))}
+    native = mcp_topics._dump_topics(topics).encode("utf-8")
+    singletons = b"".join(mcp_topics._dump_topics({name: value}).encode("utf-8")
+                          for name, value in sorted(topics.items()))
+    assert native == singletons
+    minimum = max(len(mcp_topics._dump_topics({name: value}).splitlines())
+                  for name, value in topics.items())
+    maximum = min(mcp_topics.HARD_MAX_LINES, minimum + padding)
+    expected = _native_greedy_topic_bytes(topics, maximum)
+    manifest = tmp_path / "MCP_TOOLS_TOPICS.yml"
+    paths = mcp_topics.write_topics(manifest, topics, max_lines=maximum)
+    assert [path.read_bytes() for path in paths[1:]] == expected
+    parts = yaml.safe_load(manifest.read_text(encoding="utf-8"))["parts"]
+    assert [part["sha256"] for part in parts] == [
+        hashlib.sha256(payload).hexdigest() for payload in expected
+    ]
+    assert manifest.read_bytes() == yaml.safe_dump(
+        {"schema": mcp_topics.SCHEMA, "parts": parts},
+        sort_keys=False, allow_unicode=True,
+    ).encode("utf-8")
+
+
+@pytest.mark.parametrize("shape", ["cross", "within", "empty", "cycle"])
+def test_shared_and_recursive_topics_keep_native_alias_sizing(
+    monkeypatch: pytest.MonkeyPatch, shape: str,
+) -> None:
+    shared: list[object] = [] if shape == "empty" else list(range(20))
+    if shape == "cycle":
+        shared.append(shared)
+    if shape == "within":
+        topics: dict[str, object] = {
+            "general_ludd.agent.first": {"a": shared, "b": shared},
+            "general_ludd.agent.second": {"value": 1},
+        }
+    else:
+        topics = {"general_ludd.agent.first": shared, "general_ludd.agent.second": shared}
+    maximum = len(mcp_topics._dump_topics(topics).splitlines())
+    expected = _native_greedy_topic_bytes(topics, maximum)
+    native_dump = mcp_topics._dump_topics
+    calls: list[int] = []
+
+    def measured_dump(values: Mapping[str, object]) -> str:
+        calls.append(len(values))
+        return native_dump(values)
+
+    monkeypatch.setattr(mcp_topics, "_dump_topics", measured_dump)
+    chunks = mcp_topics._topic_chunks(topics, max_lines=maximum)
+    assert [native_dump(chunk).encode("utf-8") for chunk in chunks] == expected
+    assert 2 in calls
+
+
+@pytest.mark.parametrize("value", [(1, 2), b"bytes", {"set"}, {1: "key"}, date(2026, 10, 18), object()])
+def test_nonstandard_topic_values_retain_native_success_or_error(value: object) -> None:
+    topics = {"general_ludd.agent.first": value, "general_ludd.agent.second": {"value": 2}}
+    try:
+        expected = _native_greedy_topic_bytes(topics, 1000)
+    except yaml.representer.RepresenterError as error:
+        with pytest.raises(type(error)) as observed:
+            mcp_topics._topic_chunks(topics, max_lines=1000)
+        assert str(observed.value) == str(error)
+    else:
+        chunks = mcp_topics._topic_chunks(topics, max_lines=1000)
+        assert [mcp_topics._dump_topics(chunk).encode("utf-8") for chunk in chunks] == expected
+
+
+def test_custom_builtin_yaml_representer_keeps_native_sizing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def custom_string(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
+        return dumper.represent_scalar("tag:yaml.org,2002:str", "custom " + value, style="|")
+
+    monkeypatch.setattr(yaml.SafeDumper, "yaml_representers", {
+        **yaml.SafeDumper.yaml_representers, str: custom_string,
+    })
+    topics = {"general_ludd.agent.first": {"value": "one"},
+              "general_ludd.agent.second": {"value": "two"}}
+    expected = _native_greedy_topic_bytes(topics, 1000)
+    native_dump = mcp_topics._dump_topics
+    calls: list[int] = []
+
+    def measured_dump(values: Mapping[str, object]) -> str:
+        calls.append(len(values))
+        return native_dump(values)
+
+    monkeypatch.setattr(mcp_topics, "_dump_topics", measured_dump)
+    chunks = mcp_topics._topic_chunks(topics, max_lines=1000)
+    assert [native_dump(chunk).encode("utf-8") for chunk in chunks] == expected
+    assert 2 in calls
+
+
+def test_custom_mapping_exposure_and_topic_mutations_stay_fresh() -> None:
+    class ExposedTopics(UserDict[str, object]):
+        def __init__(self, values: dict[str, object]) -> None:
+            super().__init__(values)
+            self.exposures = 0
+
+        def items(self) -> ItemsView[str, object]:
+            self.exposures += 1
+            return super().items()
+
+    values: dict[str, object] = {"general_ludd.agent.first": {"value": "one"},
+              "general_ludd.agent.second": {"value": "two"}}
+    topics = ExposedTopics(values)
+    chunks = mcp_topics._topic_chunks(topics, max_lines=1000)
+    assert topics.exposures == 1
+    first = [mcp_topics._dump_topics(chunk).encode("utf-8") for chunk in chunks]
+    topics["general_ludd.agent.second"] = {"value": "changed\n" * 10}
+    chunks = mcp_topics._topic_chunks(topics, max_lines=1000)
+    second = [mcp_topics._dump_topics(chunk).encode("utf-8") for chunk in chunks]
+    assert first != second
+    assert second == _native_greedy_topic_bytes(topics, 1000)
+
+
+
+def test_live_generator_topics_keep_exact_native_shard_bytes(tmp_path: Path) -> None:
+    from scripts import gen_mcp_tools
+
+    _tools, topics = gen_mcp_tools.generate()
+    assert topics
+    assert mcp_topics._independent_builtin_topics(topics)
+    expected = _native_greedy_topic_bytes(topics, mcp_topics.DEFAULT_MAX_LINES)
+    paths = mcp_topics.write_topics(tmp_path / "MCP_TOOLS_TOPICS.yml", topics)
+    assert [path.read_bytes() for path in paths[1:]] == expected
+    assert mcp_topics.load_topics(paths[0]) == topics
