@@ -24,7 +24,7 @@ def _read_text(path: Path) -> str:
     return text
 
 
-def _fragment_paths(entrypoint: Path, text: str) -> tuple[Path, ...]:
+def _fragment_sources(entrypoint: Path, text: str) -> tuple[tuple[Path, str], ...]:
     relative_paths: list[str] = []
     for line_number, line in enumerate(text.splitlines(), start=1):
         if not INCLUDE_PREFIX_RE.match(line):
@@ -45,6 +45,7 @@ def _fragment_paths(entrypoint: Path, text: str) -> tuple[Path, ...]:
         relative_paths.append(raw)
 
     fragments = tuple(entrypoint.parent / path for path in relative_paths)
+    sources: list[tuple[Path, str]] = []
     for fragment in fragments:
         fragment_text = _read_text(fragment)
         for line_number, line in enumerate(fragment_text.splitlines(), start=1):
@@ -52,7 +53,8 @@ def _fragment_paths(entrypoint: Path, text: str) -> tuple[Path, ...]:
                 raise MakefileLayoutError(
                     f"{fragment}:{line_number}: nested Makefile includes are forbidden"
                 )
-    return fragments
+        sources.append((fragment, fragment_text))
+    return tuple(sources)
 
 
 def makefile_sources(entrypoint: Path) -> tuple[Path, ...]:
@@ -60,7 +62,10 @@ def makefile_sources(entrypoint: Path) -> tuple[Path, ...]:
 
     resolved_entrypoint = entrypoint.resolve()
     text = _read_text(resolved_entrypoint)
-    return (resolved_entrypoint, *_fragment_paths(resolved_entrypoint, text))
+    return (
+        resolved_entrypoint,
+        *(path for path, _text in _fragment_sources(resolved_entrypoint, text)),
+    )
 
 
 def compose_makefile(entrypoint: Path) -> str:
@@ -68,11 +73,12 @@ def compose_makefile(entrypoint: Path) -> str:
 
     resolved_entrypoint = entrypoint.resolve()
     text = _read_text(resolved_entrypoint)
-    fragments = iter(_fragment_paths(resolved_entrypoint, text))
+    fragments = iter(_fragment_sources(resolved_entrypoint, text))
     output: list[str] = []
     for line in text.splitlines(keepends=True):
         if EXACT_INCLUDE_RE.fullmatch(line.removesuffix("\n")):
-            output.append(_read_text(next(fragments)))
+            _path, fragment_text = next(fragments)
+            output.append(fragment_text)
         else:
             output.append(line)
     return "".join(output)

@@ -682,3 +682,51 @@ mutations rejecting missing, partial, widened, duplicate, misplaced, wrongly
 owned or over-budget routing. All 243 target contracts, duplicate/parity/help
 checks, strict test typing and Ruff pass. These are focused routing results;
 the complete bounded behavioral example and final release proof remain pending.
+
+## Preserve validated Makefile bytes during composition (2026-10-18)
+
+The reviewed candidate 51669b0 passes normal publication admission in 76.4
+observed seconds and its 36-file focus passes 1330 cases with two existing skips.
+Required Build 39097125106 nevertheless times out at the unchanged 90-second
+boundary on both hosted Python versions. Its 1838-case main children pass in
+78.32 seconds on 3.11 and 84.16 seconds on 3.12; the remaining children do not
+finish. Molecule 39097125202 and presentation 39097125234 pass. These successful
+workflows do not clear the Build failure. The owned local canonical gate is
+stopped, with no survivors, before source repair; retain its interrupted log
+`.gate-logs/gate-20261018042952-72c496e1.log` and all immutable candidate refs.
+
+A complete diagnostic takes 90.8 seconds under an explicitly diagnostic-only
+180-second cap. A separate standard-library cProfile run takes 106.4 seconds
+under a diagnostic-only 240-second cap and retains all 1838 + 1 + 2 passes.
+Neither clears the original 90/60 prerequisite. The latter run is retained in
+`.gate-logs/observed/v012-cohort-cprofile/runtime-cprofile-nativepath-51669-layout-20261018.log`.
+Worker profiles show repeated collection and native MCP topic sizing cost.
+They measure the repaired Makefile reader at only 0.356 and 0.404 cumulative
+seconds across 82 and 92 calls, respectively; its repair alone cannot establish
+the required admission margin.
+
+The existing Makefile reader validates each fragment, then rereads it while
+composing. A real mutation after the validated read reproduces emission of an
+unvalidated nested include. Retain each validated path/text pair only for that
+public call and emit those same bytes. Both public readers open and validate
+current files again on every invocation. Ordered includes, UTF-8/newline errors,
+duplicate/nested include refusal and unsplit Makefiles keep their original
+semantics. This is a per-file validated view, not an atomic snapshot of
+independently changing sources. No persistent cache or new scanner is added.
+
+Two new cases fail first and a path-reader control already passes. All 19
+complete reader tests then pass, with native branch coverage at 95% under the
+unchanged 85/75 floors. Both strict typing scopes pass. Every original assertion
+is retained. The read-count contract reduces composition from 25 to 13 source
+reads per call for the current twelve-fragment layout; no hosted timing benefit
+is inferred from that count.
+
+The long-lived [pytest collection discussion from 2017](https://github.com/pytest-dev/pytest/issues/2206)
+and [package collection design discussion from 2020](https://github.com/pytest-dev/pytest/issues/7777)
+describe costs and boundaries around filesystem hooks and package traversal.
+The [native pytest 9.1.1 collection source](https://github.com/pytest-dev/pytest/blob/9.1.1/src/_pytest/main.py)
+is the implementation reference. These are practitioner and upstream context,
+not Gludd proof or permission to replace collection, suppress plugins, narrow
+the roster or raise deadlines. Fresh bounded admission, independent source
+review, the complete canonical gate and exact-SHA hosted evidence remain
+required; all release tasks and promotion remain open.
