@@ -2156,3 +2156,65 @@ owner, all112 family objects, selectors/plugins/three2-1-1 children,90/60,
 no new coverage profile or performance claim. Required normal guarded
 collection/pin and independent source review remain separate; no broad replay,
 gate/hosted retry, provisioning, daemon action, merge, push or task closure.
+
+
+## S98.4 one fresh metadata object per runtime record (2026-10-18)
+
+UV conformance childf907a4fae661877730b4c043aaba38eed5a27b91 is pinned with
+parent368dd05 and its normal collection125856/125874,18deselected/0errors;
+native observer20261018T175147Z-19247-96a7a001 passed53.450s. Its failure
+and source-only proof remain distinct from release readiness.
+
+Serialized reuse-first research and pinned CPython3.12.15 prove duplicate
+public metadata materialization at exactly three receipt/environment sites.
+One fresh Distribution.metadata object now supplies Name and Version for each
+record, retaining original generator evaluation order, conversions/errors,
+duplicates/sorting/hash, plugin unknowns, six separate named-version lookups
+and every independent check/event/authentication/blob observation. There is
+no cross-call/object/event cache, new helper/parser/library or runner.
+
+Genuine read_text-backed Distribution fixtures first show initial14failures/
+3passes2.99s, including five new missing-header expectation mistakes. Corrected
+native RED13failures/6passes2.81s is retained separately; finite acceptance
+passes19/2.02s canonical311 and19/2.24s private3.12.15, zero skips. The tests
+retain each runtime's actual missing-field API behavior, including fatal312
+DeprecationWarning under -W error; no warning filter or default is introduced.
+Normal strict's existing bare/package module conflict,18/17 non-exported
+stdlib-target diagnostics and five rollover-stub annotation errors are
+retained as intermediate failures. TYPE_CHECKING-only test imports, identical
+stdlib monkeypatch targets and the actual optional dir_fd stub contract now
+pass normal strict/Ruff without casts, Any, new ignores or flag weakening.
+Original runtime imports, OSError fault, safety attribute and rollover
+assertions remain.
+
+The complete four-owner canonical run passes 434 cases in 265.68s, zero skips.
+Native observer 20261018T181154Z-42233-e35b2254 passes rc0 in 267.388s. The
+native audit reports 92.3% line and 87.5% branch aggregate coverage; receipts
+has 91.6% line/87.1% branch, progress 94.8%/88.8%. Both full files satisfy
+unchanged 85% aggregate and 75% per-file line and branch floors.
+The private 3.12.15 four-owner run executes all 434 cases with zero skips:
+433 pass and the original 0o4600 artifact-mode case fails in 296.89s.
+Observer v012-runtime-identity-private312/whole-metadata-20261018 finishes
+rc2 in 300.738s (not timeout; trace_path is null). All new metadata/integrity
+cases pass. Validation returned valid=True after chmod, but the run did not
+capture the effective native mode, so neither a policy defect nor a filesystem
+cause is established. The complete failed XML/status/log remain immutable;
+an exact native mode precondition is the next bounded diagnostic. No permission
+mask or original refusal assertion is weakened, and no broad retry is run.
+
+Authorized input-observation controls subsequently pass the exact mode node
+(1/1.33s), the full receipt owner (140/2.31s), and both original mode cases
+under the same ordered four-module collection (2/2.52s, 432 deselected).
+Those controls do not explain or replace the failed whole-private run. Their
+stronger fixture is retained for a separate test-only child; M21 restores the
+original mode fixture. No production mode fix is claimed. Fresh frozen-candidate
+runtime/combined proof remains required before any integration/release claim.
+
+The feature document cites firsthand pip12079 and Python.org repeated-lookup
+reports with their different workload/cache lifetimes and no Gludd timing
+claim. All112 families/non-family policy/Make/selectors/plugins, three2-1-1
+children,90/60,21/2850, fatal warnings, native85/75 and cleanup/promotion
+controls remain. No timing probe, broad90 replay, gate, hosted action,
+provisioning, real cleanup, daemon action, merge, push or task closure occurs.
+Required normal guarded collection/pin and cumulative M20+M21 independent
+source review remain separate from release proof.

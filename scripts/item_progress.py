@@ -227,8 +227,9 @@ def _environment_identity(environment: Mapping[str, str], cwd: Path | str | None
         "cwd": str((Path.cwd() if cwd is None else Path(cwd)).resolve()),
         "python": sys.version, "executable": executable_digest,
         "installed_distributions": sorted(
-            (distribution.metadata["Name"], distribution.version)
+            (metadata["Name"], metadata["Version"])
             for distribution in importlib.metadata.distributions()
+            for metadata in (distribution.metadata,)
         ),
     })
 

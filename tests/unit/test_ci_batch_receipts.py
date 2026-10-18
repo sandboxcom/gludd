@@ -2,33 +2,55 @@
 
 from __future__ import annotations
 
+import hashlib
+import importlib.metadata
 import importlib.util
 import json
 import os
 import shutil
 import subprocess
 import sys
+from importlib.metadata import Distribution
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 from coverage import CoverageData
 from filelock import FileLock
-from scripts import ci_batch_receipts as receipt_module
-from scripts import run_ci_shards_serial as serial_runner
-from scripts.ci_batch_receipts import (
-    MAX_RECEIPT_BYTES,
-    MAX_RECEIPT_GENERATIONS,
-    BatchReceiptRequest,
-    FailureReceiptRequest,
-    ReceiptPublication,
-    ShadowBatchReceiptWriter,
-    ShadowFailureReceiptWriter,
-    build_batch_runtime_identity,
-    canonical_json_sha256,
-    normalize_junit_outcomes,
-    validate_batch_receipt,
-)
+
+if TYPE_CHECKING:
+    import ci_batch_receipts as receipt_module
+    import run_ci_shards_serial as serial_runner
+    from ci_batch_receipts import (
+        MAX_RECEIPT_BYTES,
+        MAX_RECEIPT_GENERATIONS,
+        BatchReceiptRequest,
+        FailureReceiptRequest,
+        ReceiptPublication,
+        ShadowBatchReceiptWriter,
+        ShadowFailureReceiptWriter,
+        build_batch_runtime_identity,
+        canonical_json_sha256,
+        normalize_junit_outcomes,
+        validate_batch_receipt,
+    )
+else:
+    from scripts import ci_batch_receipts as receipt_module
+    from scripts import run_ci_shards_serial as serial_runner
+    from scripts.ci_batch_receipts import (
+        MAX_RECEIPT_BYTES,
+        MAX_RECEIPT_GENERATIONS,
+        BatchReceiptRequest,
+        FailureReceiptRequest,
+        ReceiptPublication,
+        ShadowBatchReceiptWriter,
+        ShadowFailureReceiptWriter,
+        build_batch_runtime_identity,
+        canonical_json_sha256,
+        normalize_junit_outcomes,
+        validate_batch_receipt,
+    )
 
 _SHA = "a" * 40
 
@@ -832,13 +854,13 @@ def test_shadow_writer_restores_quarantined_generation_on_rollover_failure(
     _set_generation_age(current, 2_000_000_000)
     if failure_mode == "unsupported":
         monkeypatch.setattr(
-            receipt_module.shutil.rmtree,
+            shutil.rmtree,
             "avoids_symlink_attacks",
             False,
         )
     elif failure_mode == "rename":
         monkeypatch.setattr(
-            receipt_module.os,
+            os,
             "rename",
             lambda *_args: (_ for _ in ()).throw(OSError("rename")),
         )
@@ -853,15 +875,15 @@ def test_shadow_writer_restores_quarantined_generation_on_rollover_failure(
 
         monkeypatch.setattr(receipt_module, "_safe_tree_snapshot", changed_snapshot)
     elif failure_mode == "delete":
-        real_rmtree = receipt_module.shutil.rmtree
+        real_rmtree = shutil.rmtree
 
-        def fail_retired_tree(path: Path, *args: object, **kwargs: object) -> None:
+        def fail_retired_tree(path: str | Path, *, dir_fd: int | None = None) -> None:
             if Path(path).name == "generation":
                 raise OSError("delete")
-            real_rmtree(path, *args, **kwargs)
+            real_rmtree(path, dir_fd=dir_fd)
 
         fail_retired_tree.avoids_symlink_attacks = True  # type: ignore[attr-defined]
-        monkeypatch.setattr(receipt_module.shutil, "rmtree", fail_retired_tree)
+        monkeypatch.setattr(shutil, "rmtree", fail_retired_tree)
 
     result = ShadowBatchReceiptWriter(cache).publish(_request(tmp_path))
 
@@ -2049,3 +2071,311 @@ def test_cli_operator_off_switch_never_creates_shadow_session(
     assert serial_runner.main() == 0
     assert received == [None]
     assert "status=disabled reason=operator-off" in capsys.readouterr().out
+
+class _MetadataDistribution(Distribution):
+    """Use the real public parser with observable, changing header snapshots."""
+
+    def __init__(self, *snapshots: str | OSError) -> None:
+        self.snapshots = snapshots
+        self.reads = 0
+
+    def read_text(self, filename: str) -> str | None:
+        if filename != "METADATA":
+            return None
+        snapshot = self.snapshots[min(self.reads, len(self.snapshots) - 1)]
+        self.reads += 1
+        if isinstance(snapshot, OSError):
+            raise snapshot
+        return snapshot
+
+    def locate_file(self, path: str | os.PathLike[str]) -> Path:
+        raise AssertionError("metadata identity must not locate package files")
+
+
+
+def test_installed_metadata_is_once_coherent_and_fresh_next_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    distribution = _MetadataDistribution("Name: First_Package\nVersion: 1\n",
+                                         "Name: Second_Package\nVersion: 2\n")
+    monkeypatch.setattr(importlib.metadata, "distributions", lambda: [distribution])
+
+    assert receipt_module._installed_distributions_sha256() == canonical_json_sha256(
+        [{"name": "first-package", "version": "1"}],
+    )
+    assert distribution.reads == 1
+    assert receipt_module._installed_distributions_sha256() == canonical_json_sha256(
+        [{"name": "second-package", "version": "2"}],
+    )
+    assert distribution.reads == 2
+
+
+def test_installed_metadata_preserves_exact_order_normalization_and_duplicates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = _MetadataDistribution("Name: A_Package \nVersion: 1\n")
+    last = _MetadataDistribution("Name: Z_Package\nVersion: 2\n")
+    monkeypatch.setattr(importlib.metadata, "distributions", lambda: [last, first, first])
+
+    assert receipt_module._installed_distributions_sha256() == canonical_json_sha256([
+        {"name": "a-package", "version": "1"},
+        {"name": "a-package", "version": "1"},
+        {"name": "z-package", "version": "2"},
+    ])
+    assert (first.reads, last.reads) == (2, 1)
+
+
+@pytest.mark.parametrize(("headers", "error"), [
+    ("Name: \nVersion: 1\n", RuntimeError),
+    ("Version: 1\n", AttributeError),
+])
+def test_installed_metadata_retains_blank_and_missing_name_errors(
+    monkeypatch: pytest.MonkeyPatch, headers: str, error: type[Exception],
+) -> None:
+    distribution = _MetadataDistribution(headers)
+    monkeypatch.setattr(importlib.metadata, "distributions", lambda: [distribution])
+    try:
+        _MetadataDistribution(headers).metadata["Name"].strip()
+    except (AttributeError, DeprecationWarning, KeyError) as failure:
+        error = type(failure)
+    with pytest.raises(error):
+        receipt_module._installed_distributions_sha256()
+    assert distribution.reads == 1
+
+
+def test_installed_metadata_retains_missing_version_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    distribution = _MetadataDistribution("Name: Unversioned\n")
+    monkeypatch.setattr(importlib.metadata, "distributions", lambda: [distribution])
+    try:
+        expected_version = _MetadataDistribution("Name: Unversioned\n").version
+    except (DeprecationWarning, KeyError) as failure:
+        with pytest.raises(type(failure)):
+            receipt_module._installed_distributions_sha256()
+    else:
+        assert receipt_module._installed_distributions_sha256() == canonical_json_sha256(
+            [{"name": "unversioned", "version": expected_version}],
+        )
+    assert distribution.reads == 1
+
+
+@pytest.mark.parametrize("owner", ["installed", "plugins"])
+def test_metadata_failure_never_reuses_previous_success(
+    monkeypatch: pytest.MonkeyPatch, owner: str,
+) -> None:
+    distribution = _MetadataDistribution("Name: Present\nVersion: 1\n", OSError("current metadata unavailable"))
+    monkeypatch.setattr(importlib.metadata, "distributions", lambda: [distribution])
+    monkeypatch.setattr(importlib.metadata, "entry_points",
+                        lambda: {"pytest11": [SimpleNamespace(dist=distribution, name="present", value="pkg:plugin")]})
+    monkeypatch.setattr(importlib.metadata, "version", lambda _name: "named-version")
+    observe = (receipt_module._installed_distributions_sha256
+               if owner == "installed" else receipt_module._pytest_plugin_identity)
+
+    assert observe()
+    assert distribution.reads == 1
+    with pytest.raises(OSError, match="current metadata unavailable"):
+        observe()
+    assert distribution.reads == 2
+
+
+def test_plugin_metadata_is_once_coherent_and_named_lookups_stay_fresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    distribution = _MetadataDistribution("Name: First_Plugin\nVersion: 1\n",
+                                         "Name: Second_Plugin\nVersion: 2\n")
+    entry = SimpleNamespace(dist=distribution, name="native", value="pkg:plugin")
+    monkeypatch.setattr(importlib.metadata, "entry_points",
+                        lambda: SimpleNamespace(select=lambda **_kwargs: [entry]))
+    lookups: list[str] = []
+
+    def named_version(name: str) -> str:
+        lookups.append(name)
+        if name == "pytest-xdist":
+            raise importlib.metadata.PackageNotFoundError(name)
+        return "named:" + name
+
+    monkeypatch.setattr(importlib.metadata, "version", named_version)
+    named = ["pytest", "pytest-cov", "coverage", "pytest-timeout", "pytest-asyncio", "pytest-xdist"]
+    for count, name, version in [(1, "First_Plugin", "1"), (2, "Second_Plugin", "2")]:
+        identity = receipt_module._pytest_plugin_identity()
+        assert identity == {
+            "inventory_kind": "installed-pytest11-v1",
+            "inventory_sha256": canonical_json_sha256([
+                {"distribution": name, "name": "native", "value": "pkg:plugin", "version": version},
+            ]),
+            "pytest": "named:pytest", "pytest_cov": "named:pytest-cov",
+            "coverage": "named:coverage", "pytest_timeout": "named:pytest-timeout",
+            "pytest_asyncio": "named:pytest-asyncio", "pytest_xdist": "absent",
+        }
+        assert distribution.reads == count
+        assert lookups == named * count
+
+
+def test_plugin_metadata_keeps_duplicate_unknown_and_blank_header_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    distribution = _MetadataDistribution("Name: A_Plugin\nVersion: 1\n")
+    unnamed = _MetadataDistribution("Name: \nVersion: 2\n")
+    unversioned = _MetadataDistribution("Name: No_Version\nVersion: \n")
+    entry = SimpleNamespace(dist=distribution, name="a", value="pkg:plugin")
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: {"pytest11": [
+        SimpleNamespace(dist=None, name="unknown", value="unknown:plugin"),
+        SimpleNamespace(dist=unversioned, name="noversion", value="noversion:plugin"),
+        entry, SimpleNamespace(dist=unnamed, name="unnamed", value="unnamed:plugin"), entry,
+    ]})
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: "named:" + name)
+
+    identity = receipt_module._pytest_plugin_identity()
+    assert identity["inventory_sha256"] == canonical_json_sha256([
+        {"distribution": "A_Plugin", "name": "a", "value": "pkg:plugin", "version": "1"},
+        {"distribution": "A_Plugin", "name": "a", "value": "pkg:plugin", "version": "1"},
+        {"distribution": "No_Version", "name": "noversion", "value": "noversion:plugin", "version": ""},
+        {"distribution": "unknown", "name": "unknown", "value": "unknown:plugin", "version": "unknown"},
+        {"distribution": "unknown", "name": "unnamed", "value": "unnamed:plugin", "version": "2"},
+    ])
+    assert (distribution.reads, unnamed.reads, unversioned.reads) == (2, 1, 1)
+
+
+@pytest.mark.parametrize("headers", ["Version: 2\n", "Name: No_Version\n"])
+def test_plugin_metadata_missing_fields_preserve_public_refusal(
+    monkeypatch: pytest.MonkeyPatch, headers: str,
+) -> None:
+    distribution = _MetadataDistribution(headers)
+    monkeypatch.setattr(importlib.metadata, "entry_points",
+                        lambda: {"pytest11": [SimpleNamespace(dist=distribution, name="native", value="pkg:plugin")]})
+    monkeypatch.setattr(importlib.metadata, "version", lambda _name: "named-version")
+    reference = _MetadataDistribution(headers).metadata
+    try:
+        name, version = reference["Name"], reference["Version"]
+    except (DeprecationWarning, KeyError) as failure:
+        with pytest.raises(type(failure)):
+            receipt_module._pytest_plugin_identity()
+    else:
+        identity = receipt_module._pytest_plugin_identity()
+        assert identity["inventory_sha256"] == canonical_json_sha256([
+            {"distribution": name or "unknown", "name": "native", "value": "pkg:plugin", "version": version},
+        ])
+    assert distribution.reads == 1
+
+def test_coverage_semantic_identity_hashes_sorted_native_arcs(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "semantic.coverage"
+    data = CoverageData(basename=str(path))
+    data.add_arcs({"z.py": {(3, -1)}, "a.py": {(2, -1), (1, 2)}})
+    data.write()
+    data.close()
+    before = path.read_bytes()
+    encoded = receipt_module.canonical_json_bytes({"schema_version": 1}) + b"\n"
+    for filename, arcs in (
+        ("a.py", [(1, 2), (2, -1)]),
+        ("z.py", [(3, -1)]),
+    ):
+        encoded += receipt_module.canonical_json_bytes(
+            {"arcs": arcs, "file": filename, "file_tracer": ""}
+        ) + b"\n"
+    assert receipt_module.coverage_semantic_sha256(path) == (
+        hashlib.sha256(encoded).hexdigest(),
+        None,
+    )
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("limit", [0, 1])
+def test_coverage_semantic_identity_refuses_native_item_overflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: int,
+) -> None:
+    path = tmp_path / "bounded.coverage"
+    _write_branch_coverage(path)
+    before = path.read_bytes()
+    monkeypatch.setattr(receipt_module, "MAX_SEMANTIC_COVERAGE_ITEMS", limit)
+    assert receipt_module.coverage_semantic_sha256(path) == (
+        None, "semantic coverage exceeds audit bound"
+    )
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("failure_at", [1, 2, 3, 4])
+def test_coverage_semantic_identity_refuses_each_unavailable_fingerprint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_at: int,
+) -> None:
+    path = tmp_path / "unavailable.coverage"
+    _write_branch_coverage(path)
+    original = receipt_module.file_sha256
+    reads = 0
+
+    def fingerprint(candidate: Path) -> str:
+        nonlocal reads
+        reads += 1
+        if reads == failure_at:
+            raise OSError("fingerprint unavailable")
+        return original(candidate)
+
+    monkeypatch.setattr(receipt_module, "file_sha256", fingerprint)
+    digest, error = receipt_module.coverage_semantic_sha256(path)
+    assert digest is None
+    assert error == "OSError: fingerprint unavailable"
+    assert reads == failure_at
+
+
+def test_coverage_semantic_identity_refuses_mutation_and_unreadable_arcs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "changed.coverage"
+    _write_branch_coverage(path)
+    original = receipt_module.file_sha256
+    reads = 0
+
+    def changed(candidate: Path) -> str:
+        nonlocal reads
+        reads += 1
+        return "0" * 64 if reads == 4 else original(candidate)
+
+    with monkeypatch.context() as context:
+        context.setattr(receipt_module, "file_sha256", changed)
+        assert receipt_module.coverage_semantic_sha256(path) == (
+            None, "validation mutated the coverage database"
+        )
+
+    def unavailable_arcs(self: CoverageData, filename: str) -> list[tuple[int, int]]:
+        raise ValueError("arcs unavailable")
+
+    monkeypatch.setattr(CoverageData, "arcs", unavailable_arcs)
+    assert receipt_module.coverage_semantic_sha256(path) == (
+        None, "ValueError: arcs unavailable"
+    )
+
+@pytest.mark.parametrize(
+    ("change", "reason"),
+    [
+        ({"schema_version": 2}, "schema"),
+        ({"status": "foreign"}, "schema"),
+        ({"failing_node_count": True}, "bounds"),
+        ({"failing_node_count": -1}, "bounds"),
+        ({"nodes": ()}, "bounds"),
+        ({"nodes": [{}] * (receipt_module.MAX_FAILURE_NODES + 1)}, "bounds"),
+        ({"nodes_truncated": 1}, "bounds"),
+        ({"failing_nodes_sha256": None}, "bounds"),
+        ({"failing_nodes_sha256": "invalid"}, "bounds"),
+        ({"nodes": []}, "bounds"),
+        ({"nodes_truncated": True}, "bounds"),
+        ({"status": "unavailable"}, "unavailable"),
+        ({"nodes": [None]}, "node"),
+        ({"nodes": [{"node_sha256": "a" * 64}]}, "node"),
+        ({"nodes": [{"node_sha256": None, "outcome": "failure"}]}, "node"),
+        ({"nodes": [{"node_sha256": "invalid", "outcome": "failure"}]}, "node"),
+        ({"nodes": [{"node_sha256": "a" * 64, "outcome": "passed"}]}, "node"),
+    ],
+)
+def test_failure_node_metadata_rejects_each_unsafe_boundary(
+    change: dict[str, object], reason: str,
+) -> None:
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "status": "available",
+        "failing_node_count": 1,
+        "failing_nodes_sha256": "b" * 64,
+        "nodes": [{"node_sha256": "a" * 64, "outcome": "failure"}],
+        "nodes_truncated": False,
+    }
+    assert receipt_module.failure_node_metadata_error(payload) is None
+    payload.update(change)
+    assert receipt_module.failure_node_metadata_error(payload) == reason
+    assert receipt_module.failure_node_metadata_error(None) == "schema"

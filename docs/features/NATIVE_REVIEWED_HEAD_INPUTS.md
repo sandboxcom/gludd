@@ -379,3 +379,93 @@ contracts pass. Only the test owner and feature/history docs change; production
 85/75 policy, all112 families/recipes/selectors/plugins, three2-1-1 children,
 90/60 and21/2850 remain unchanged. No broad replay, timeout margin, gate,
 promotion, daemon action or release completion is established.
+
+## One fresh metadata object per runtime record (2026-10-18)
+
+Source review of the native 368dd05 tail found duplicate public metadata
+materialization at exactly three sites: installed-distribution and pytest-plugin
+receipt identity, and command-admission environment identity. In
+[pinned CPython 3.12.15](https://github.com/python/cpython/blob/v3.12.15/Lib/importlib/metadata/__init__.py),
+Distribution.version reads self.metadata again. Reading Name from metadata
+and then version can therefore parse two header snapshots for one record.
+
+Each site now binds one fresh public metadata object per distribution record
+and reads both Name and Version from it. The environment generator retains its
+original evaluation order. There is no new helper/parser/library, memoization
+or cache across calls, objects or events. Duplicate records still observe
+individually, and the next check reads again. Existing Name conversion/errors,
+sorting/duplicates, canonical hashes, plugin unknowns, all six separate named
+package version lookups, private context, executable digest, candidate
+blobs/authentication and start/finish checks remain.
+
+Genuine public Distribution fixtures implement read_text with changing header
+snapshots. They prove one coherent read, same-object next-call freshness,
+exact stable identity, duplicate cardinality, named-version independence and
+current failure without a previous-success fallback. Missing fields retain
+the actual public API behavior: Python 3.12's DeprecationWarning remains fatal
+under -W error. No warnings are filtered. Initial 14-failure/3-pass evidence
+includes five incorrect new missing-field fixture expectations and is retained
+separately. The corrected native RED has 13 failures/6 passes in 2.81s; finite
+acceptance then passes 19 cases on canonical 3.11 in 2.02s and private 3.12.15
+in 2.24s.
+
+Normal strict checking exposed the existing bare/package test import conflict
+and module re-export diagnostics. TYPE_CHECKING-only bare test imports,
+identical stdlib monkeypatch targets and the rollover stub's actual path/dir_fd
+annotation preserve runtime imports, OSError('delete'), the safety attribute
+and every original assertion. All intermediate failures remain retained;
+all four changed Python files pass strict/Ruff without new suppressions.
+
+The first complete three-owner coverage run passed all 368 tests in 295.98s,
+with zero skips. Its native observer finished rc2 in 297.622s because the full
+two-file combined coverage was 84%, below 85% (receipts 81%, progress 93%).
+That failed evidence remains unchanged. Reuse research found the existing
+complete failure-receipt owner, which joins the final cohort. Twenty-five
+additional native semantic-database and failure-node boundary controls fill
+distinct integrity/error gaps, passing in 1.69s. The final source-only observer
+uses 600s/60s based on the actual near-300s cohort; no admission or per-test
+timeout changes.
+
+The complete four-owner canonical run passes 434 cases in 265.68s, zero skips.
+Native observer 20261018T181154Z-42233-e35b2254 passes rc0 in 267.388s. The
+native audit reports 92.3% line and 87.5% branch aggregate coverage; receipts
+has 91.6% line/87.1% branch, progress 94.8%/88.8%. Both full files satisfy
+unchanged 85% aggregate and 75% per-file line and branch floors.
+The private 3.12.15 four-owner run executes all 434 cases with zero skips:
+433 pass and the original 0o4600 artifact-mode case fails in 296.89s.
+Observer v012-runtime-identity-private312/whole-metadata-20261018 finishes
+rc2 in 300.738s (not timeout; trace_path is null). All new metadata/integrity
+cases pass. Validation returned valid=True after chmod, but the run did not
+capture the effective native mode, so neither a policy defect nor a filesystem
+cause is established. The complete failed XML/status/log remain immutable;
+an exact native mode precondition is the next bounded diagnostic. No permission
+mask or original refusal assertion is weakened, and no broad retry is run.
+
+Authorized input-observation controls subsequently pass the exact mode node
+(1/1.33s), the full receipt owner (140/2.31s), and both original mode cases
+under the same ordered four-module collection (2/2.52s, 432 deselected).
+Those controls do not explain or replace the failed whole-private run. Their
+stronger fixture is retained for a separate test-only child; M21 restores the
+original mode fixture. No production mode fix is claimed. Fresh frozen-candidate
+runtime/combined proof remains required before any integration/release claim.
+
+
+### Firsthand repeated-lookup findings and limits
+
+In [pip issue 12079](https://github.com/pypa/pip/issues/12079), a 2023 operator
+traced a pip/Plone resolver slowdown through candidate.version to repeated
+distribution.version access; the report records the associated fix and closure.
+The [2024 Python.org discussion](https://discuss.python.org/t/please-make-package-version-go-away/58501)
+contains firsthand repeated-version measurements and distinguishes warmed
+lookup from process/import startup. Those are different workloads, not Gludd
+native 3.12 cost attribution or exact Name/Version coherence reproductions.
+Their global/candidate-lifetime cache suggestions do not apply across
+independent proof checks. Pinned source and local semantic RED establish this
+change; latency savings and hosted 90-second margin remain unmeasured.
+
+The full two-file config includes both runtime owners with branch coverage,
+no exclusions or floor changes. All 112 manifest objects, Make recipes,
+selectors/plugins, three 2/1/1 children, 90/60, 21/2850, 85 aggregate/75 per file,
+fatal warnings, ZDD and cleanup/branch/promotion authority remain unchanged.
+This is focused source acceptance, not admission/gate/hosted readiness. No
+timing probe, broad replay, provisioning, daemon action or release closure.
