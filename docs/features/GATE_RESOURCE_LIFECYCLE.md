@@ -1399,3 +1399,77 @@ The existing long-lived reports [pytest-timeout issue 159](https://github.com/py
 retaining native tree ownership and fresh identity checks. They do not identify
 Gludd's signal sender or authorize host-wide command-name cleanup. The preserved
 native watchdog SIGTERM records remain the local incident evidence.
+
+
+## 2026-10-18: confirm native handoff exit before clearing metadata
+
+The first actual stop after source approval sent TERM to the verified old daemon
+and then refused because tree ownership or native protection changed. The exact
+triggering field was not logged. Later native inspection found both old daemon
+and UV launcher absent, while the original PID pointer remained. Preserve this
+failed stop; it does not prove that a zombie, cwd or command change caused it.
+
+The existing strict reader still decides every signal. A separate wait-only
+presence view keeps any occupied original PID pending even when command, start
+or cwd metadata changes during exit. Its representative records never enter a
+signal reader, sender or persisted observation. Any uncertainty revokes further
+signals. The existing five-second TERM grace and one-second KILL wait remain;
+a final successful complete native process table must show every original PID
+absent. Missing cwd or changed command alone never proves death. Unknown children,
+reused or foreign live identities and protected work retain signal refusal.
+
+The existing task-watchdog-stop owner also recovers a stale pointer without any
+signal. The pointer must remain a regular checkout-owned file with unchanged
+content, device/inode and modification identity. Two successful complete native
+snapshots must show its positive PID absent, with no matching daemon or UV
+launcher in that checkout and no unlocated matching identity. Malformed, replaced,
+symlinked, occupied or ambiguous pointers remain refused. Plan mode
+(TASK_WATCHDOG_VALIDATE_ONLY=1) remains mutation-free; explicit actual mode
+(TASK_WATCHDOG_VALIDATE_ONLY=0) may only clear that verified stale pointer.
+Only the current stop PID with its exact native stop flags, checkout cwd and
+start identity may be excluded from this absence check, together with its
+connected, verified UV launcher. Both identities are rechecked in the next native
+snapshot. Other --stop text, extra flags, unrelated launchers or uncertain
+identities do not qualify. The owner never starts a replacement.
+Root must preserve old evidence and finish
+the verified handoff before using the existing startup owner once.
+
+Eight failing-first controls include the actual native UV/Python fixture and
+routing failures (/tmp/gludd-v012-watchdog-exit-handoff-red.xml). The first
+implementation replay remains failed evidence: 100 passed and the real fixture
+failed because its test parent had not reaped its exited UV child. The fixture now
+owns a bounded concurrent wait/reap, preserves real ps/cwd/start reads and uses
+only an isolated checkout, script and PID file. It changes cwd after TERM, exits
+naturally and proves both native PIDs absent. It creates no environment or lock
+and touches no main daemon, PID or global task file. All 99 warning-fatal watchdog
+cases pass at 92% branch-aware coverage, retaining the 85/75 floors, in
+.gate-logs/coverage-task-watchdog-exit-handoff.json.
+
+The first combined source/routing replay passed 435 cases before the CLI-self
+control was added; it remains intermediate evidence. Four additional failures and
+six refusal controls reproduce the stop CLI self-blocker. The confined real CLI
+now passes both plan and actual recovery, and three fresh-snapshot tamper cases
+retain refusal. Final whole-owner coverage passes 112 warning-fatal cases at 92%
+(.gate-logs/coverage-task-watchdog-exit-handoff-final.json), with native audit
+.gate-logs/coverage-20261018T095151Z.json and raw observer run
+20261018T095145Z-28823-f926bbae.
+
+One cheap deterministic handoff-exit node is appended to the existing third
+admission child. All 106 previous families/selectors/order remain, with three
+sequential children, workers 2/1/1, 90/60 bounds and 21 phases/2850 seconds.
+Final combined source/routing acceptance passes all 448 cases in 59.91 seconds
+(/tmp/gludd-v012-watchdog-exit-handoff-complete-final.xml). Full gate, exact-SHA
+hosted CI and release promotion remain separate required proof.
+
+The first-hand [psutil issue 783](https://github.com/giampaolo/psutil/issues/783)
+(February 2016) reports macOS status appearing running while name/cmdline access
+raised ZombieProcess. This historical report supports separating metadata failure
+from confirmed PID absence; it does not establish the exact Gludd failure cause
+or a defect in the current dependency. The long-lived
+[psutil issue 2335](https://github.com/giampaolo/psutil/issues/2335) (December 2023)
+records command-line presentation and interpretation ambiguities.
+The maintained [Python subprocess wait documentation](https://docs.python.org/3.11/library/subprocess.html#subprocess.Popen.wait)
+assigns child waiting to its parent. These sources inform conservative identity
+handling and fixture ownership; neither proves the unlogged field in the actual
+Gludd refusal or authorizes a signal. ZDD, native observer limits, cleanup
+authority and all prior failed evidence remain unchanged.

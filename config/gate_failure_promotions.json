@@ -901,6 +901,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_ownership",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-handoff-exit-confirmation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes",
+      "full_gate_phase": "test"
     }
   ]
 }
