@@ -1216,3 +1216,20 @@ fatal warnings and the complete eight-shard 85/75 gate retain their authority.
 Hosted Python 3.12 repair proof, independent source review, the full gate,
 truthful completion metadata and promotion remain pending; all nineteen release
 repair rows stay open.
+
+### Managed Python 3.12 provisioning support (2026-10-18)
+
+The existing gate matrix keeps Python 3.11 unchanged and selects exact managed
+CPython 3.12.15 through the pinned setup-uv action (uv 0.13.1) and native atomic
+CI profile manager. All venv/locked-sync requests preserve that exact patch and
+only-managed preference; environment activation stays disabled. Two native
+workflow/routing controls fail first; all 428 complete workflow/profile/routing
+cases then pass with fatal warnings, with strict typing and Ruff green.
+The existing admission gains one additive family (102 total); original selection,
+90/60 limits, three children, ZDD and 85/75 floors remain.
+
+Local discovery reports managed 3.12.13 and uv 0.11.17, so actual 3.12.15
+acquisition and its hosted admission are still unproved. Preserve failed Build
+39100824559 and all immutable candidates. All nineteen release repair rows stay
+open pending independent successor review, exact-SHA hosted proof, the complete
+canonical gate and truthful completion metadata. No publication is authorized.

@@ -777,6 +777,7 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_make_help_audit.py::test_search_fallback_succeeds_when_match_precedes_scan_error
 # tests/unit/test_ci_run_summary_script.py::test_shard_timings_bind_all_eight_rows_to_one_exact_run_fetch
 # tests/unit/test_ci_workflow_integrity.py::TestTestShardStructure::test_hosted_matrix_prioritizes_long_lanes_without_extra_runners
+# tests/unit/test_ci_workflow_integrity.py::test_gate312_guard_is_promoted_before_fanout
 # tests/security/test_ci_workflow.py::TestGateMatrixStructure::test_test_shard_matrix_dimensions
 # tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::test_internal_targets_not_in_help
 # tests/unit/test_clean_stale_resource_namespaces.py::test_recorded_installed_module_is_not_a_runtime_lease_marker

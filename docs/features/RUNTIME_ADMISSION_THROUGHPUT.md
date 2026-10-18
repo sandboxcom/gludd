@@ -919,3 +919,56 @@ Focused validation passes all 103 native collection/routing cases, including the
 its original 90/60 limits. Main execution is 60.75 seconds; help is 0.92 and the
 reviewed tail 7.11. This local support proof does not clear the failed hosted
 Python3.12 lane or authorize milestone completion.
+
+## Provision the current managed Python 3.12 patch through existing owners
+
+The 191f588 failure reports Ubuntu system CPython 3.12.3, pytest 9.1.1 and
+Ansible 2.21.5. That observation does not establish interpreter causation or the
+distribution package's security-backport state. Keep the matrix minors 3.11 and
+3.12. The 3.12 leg now uses the existing pinned setup-uv action with uv 0.13.1
+and an exact Python 3.12.15 request; the 3.11 action and installation body retain
+their previous behavior behind a mutually exclusive condition.
+
+[CPython 3.12.15](https://www.python.org/downloads/release/python-31215/) was
+released on September 30, 2026. Official 3.12 releases are now source-only;
+[uv's managed distributions](https://docs.astral.sh/uv/concepts/python-versions/)
+provide the existing binary acquisition route.
+[uv 0.13.1](https://github.com/astral-sh/uv/releases/tag/0.13.1) is the current
+release checked on October 18. The
+[pinned setup-uv input contract](https://github.com/astral-sh/setup-uv/blob/fac544c07dec837d0ccb6301d7b5580bf5edae39/action.yml)
+supports these inputs. Environment activation stays disabled.
+
+The existing atomic dependency-profile manager owns venv creation, every locked
+overlay, pip check and promotion. Its exact 3.12.15 request is forwarded to every
+native venv/sync command. Native
+[only-managed preference](https://docs.astral.sh/uv/reference/environment/#uv_python_preference)
+prevents fallback to the runner's system interpreter. Acquisition is neither
+offline nor download-disabled; the existing global UV_NO_SYNC remains 1 and the
+profile manager retains its own explicit mutation setting. No new installer,
+global local-tool update, dependency override or environment replacement is added.
+
+The [uv base-interpreter replacement discussion from 2025](https://github.com/astral-sh/uv/issues/16252)
+records environment failures after interpreter replacement. The
+[standalone build discussion from 2024](https://github.com/astral-sh/python-build-standalone/issues/275)
+records build/distribution differences. These user reports support retaining
+actual runtime/build identity and avoiding silent shared-runtime replacement;
+neither predicts Gludd performance. The local read-only inventory finds managed
+3.12.13 and uv 0.11.17, with no observed 3.12.15. Local contract checks therefore
+cannot establish actual acquisition or execution of the newly pinned runtime.
+
+The two workflow/routing guards fail first while the exact native profile plan
+already passes. After implementation, all 428 cases in the nine-file workflow,
+profile, promotion, selection and runtime-boundary cohort pass with fatal
+warnings. Controls reject old/floating uv, a missing/old patch, system fallback,
+extra activation, overlapping branches, profile bypass and disabled acquisition.
+Every native profile command retains the exact request, inherited preference,
+locked overlays and original cleanup/promotion assertions.
+
+One additive manifest family routes the managed-runtime guard through the already
+selected complete workflow file before fan-out. All 101 earlier families remain;
+the manifest has 102. Existing raw flag expectations are conformed only to the
+absolute native glob spelling. All three children, workers 2/1/1, 90/60 bounds,
+21 phases, 2850-second ceiling, warning policy, ZDD and 85/75 coverage stay fixed.
+Hosted acquisition, actual 3.12.15 identity, the unchanged bounded admission,
+full exact-SHA gate and required workflows remain missing. No timeout repair,
+throughput improvement or release completion is claimed from these source checks.

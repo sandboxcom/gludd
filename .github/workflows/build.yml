@@ -218,6 +218,13 @@ jobs:
           test "$actual" = "$GITHUB_SHA"
           echo "CI_HEAD_SHA=$actual"
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+        if: matrix.python-version == '3.11'
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+        if: matrix.python-version == '3.12'
+        with:
+          version: "0.13.1"
+          python-version: "3.12.15"
+          activate-environment: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # pinned Node 26 runtime for plugin checks
         with:
           node-version: "26"
@@ -228,10 +235,19 @@ jobs:
         env:
           GLUDD_AUTH_PSK: ""
       - name: Install deps
+        if: matrix.python-version == '3.11'
         run: |
           echo "=== CI PHASE: install ==="
           python scripts/dependency_profiles.py sync \
             --set ci --environment .venv --python ${{ matrix.python-version }}
+      - name: Install managed Python 3.12 deps
+        if: matrix.python-version == '3.12'
+        env:
+          UV_PYTHON_PREFERENCE: only-managed
+        run: |
+          echo "=== CI PHASE: install ==="
+          python scripts/dependency_profiles.py sync \
+            --set ci --environment .venv --python 3.12.15
       - name: Verify pinned Ansible base manifest
         run: |
           echo "=== CI PHASE: ansible-base-manifest ==="

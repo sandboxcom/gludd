@@ -1118,3 +1118,39 @@ def test_cli_sync_requires_a_set_and_forwards_validated_arguments(
     assert observed["environment"] == tmp_path / ".profile-env"
     assert observed["python"] == "3.12"
     assert observed["validate_only"] is True
+
+
+def test_exact_managed_patch_survives_every_native_profile_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog = dependency_profiles.load_catalog(ROOT, CATALOG_PATH)
+    staging = tmp_path / ".venv.profile-stage"
+    commands = dependency_profiles.sync_commands(
+        catalog, profile_set="ci", environment=tmp_path / ".venv",
+        staging_environment=staging, python="3.12.15",
+    )
+    monkeypatch.setenv("UV_PYTHON", "3.12.15")
+    monkeypatch.setenv("UV_PYTHON_PREFERENCE", "only-managed")
+    observed: list[tuple[tuple[str, ...], dict[str, str], bool]] = []
+
+    def fake_run(argv: tuple[str, ...], *, check: bool, env: dict[str, str]) -> None:
+        observed.append((argv, env.copy(), check))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    dependency_profiles.execute_commands(commands)
+    assert len(observed) == len(commands)
+    for index, (argv, environment, checked) in enumerate(observed):
+        assert argv[-2:] == ("--python", "3.12.15")
+        assert argv.count("--python") == 1
+        assert environment["UV_PYTHON"] == "3.12.15"
+        assert environment["UV_PYTHON_PREFERENCE"] == "only-managed"
+        assert environment["UV_NO_SYNC"] == "0"
+        assert checked is True
+        if index:
+            assert "--locked" in argv
+            assert environment["UV_PROJECT_ENVIRONMENT"] == str(staging)
+            assert environment["VIRTUAL_ENV"] == str(staging)
+            assert ("--inexact" in argv) is (index > 1)
+        else:
+            assert argv[:3] == ("uv", "venv", "--relocatable")
+    assert not (tmp_path / ".venv").exists()
