@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import { extractBashCommand, reportAlive } from "./shared.ts";
+import { extractBashCommand, isReadTool, isSubagent, reportAlive } from "./shared.ts";
 
 export interface IdleMonitoringConfig {
   stateFile: string;
@@ -55,10 +55,11 @@ export function idleMonitoringToolExecuteBefore(
   cfg: IdleMonitoringConfig,
   denyMessage: string,
 ): { permissionDecision: "deny"; message: string } | undefined {
+  if (isSubagent()) return undefined;
   reportAlive(cfg.pluginName);
   try {
-    if (process.env[cfg.envDisableVar] === "0") return undefined;
     const tool = input.tool;
+    if (process.env[cfg.envDisableVar] === "0" || isReadTool(tool ?? "")) return undefined;
     const state = readState(cfg);
     if (tool === "bash") {
       const cmd = extractBashCommand(input, output);

@@ -67,13 +67,19 @@ ci-version-sim:
 		cp /tmp/gludd-init.bak src/general_ludd/__init__.py; \
 		echo "Restored pyproject.toml + __init__.py"
 
+# Reserve the gate and both native multiprocessing helper slots before scanning.
+export GLUDD_WORKER_LIMIT
+define _secrets_scan_native_cores
+$(PYTHON) -c 'import multiprocessing as mp; import sys; from scripts.active_work_status import _worker_limit; available = _worker_limit() - 3; sys.exit("GLUDD_WORKER_LIMIT must be at least 4 for secrets scanning (gate, tracker, and forkserver reserve)") if available < 1 else None; print(min(mp.cpu_count(), available))'
+endef
+
 scan-secrets:
-	@TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[scan-secrets] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; exit $$RC
+	@CORES=$$(GLUDD_WORKER_LIMIT="$${GLUDD_WORKER_LIMIT-}" $(_secrets_scan_native_cores)) || exit $$?; TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[scan-secrets] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets --cores "$$CORES" scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; exit $$RC
 
 # ── Secrets management targets ──
 # secrets-scan: scan for secrets without modifying files (checks against baseline)
 secrets-scan:
-	@TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[secrets-scan] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; if [ $$RC -ne 0 ]; then echo '{"last_push_blocked":true,"block_reason":"secrets-scan:secrets-found","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; fi; exit $$RC
+	@CORES=$$(GLUDD_WORKER_LIMIT="$${GLUDD_WORKER_LIMIT-}" $(_secrets_scan_native_cores)) || exit $$?; TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[secrets-scan] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets --cores "$$CORES" scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; if [ $$RC -ne 0 ]; then echo '{"last_push_blocked":true,"block_reason":"secrets-scan:secrets-found","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; fi; exit $$RC
 
 # secrets-scrub: find and scrub secrets from the codebase (interactive audit)
 secrets-scrub:
@@ -150,7 +156,7 @@ security-audit:
 	[ "$(SECURITY_AUDIT_PHASE_TIMEOUT_SECS)" -ge 60 ] && [ "$(SECURITY_AUDIT_PHASE_TIMEOUT_SECS)" -le 7200 ] || { echo "SECURITY_AUDIT_PHASE_TIMEOUT_SECS must be between 60 and 7200" >&2; exit 2; }; \
 	case "$(SECURITY_AUDIT_VALIDATE_ONLY)" in 0|1) :;; *) echo "SECURITY_AUDIT_VALIDATE_ONLY must be 0 or 1" >&2; exit 2;; esac; \
 	VALIDATE_ARG=""; [ "$(SECURITY_AUDIT_VALIDATE_ONLY)" = "0" ] || VALIDATE_ARG="--validate-only"; \
-	$(PYTHON) scripts/security_audit_observability.py audit \
+	GLUDD_WORKER_LIMIT="$${GLUDD_WORKER_LIMIT-}" $(PYTHON) scripts/security_audit_observability.py audit \
 		--heartbeat-seconds "$(SECURITY_AUDIT_HEARTBEAT_SECS)" \
 		--timeout-seconds "$(SECURITY_AUDIT_PHASE_TIMEOUT_SECS)" \
 		--summary "$(SECURITY_AUDIT_SUMMARY)" \

@@ -761,6 +761,76 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_failures_in_one_invocation",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "css-lint-hosted-native-engine-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_stylelint_workflow.py::test_css_lint_uses_pinned_native_engine_with_a_real_config_file",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "css-lint-local-hosted-command-parity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_stylelint_workflow.py::test_local_css_lint_target_matches_the_hosted_command",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "css-lint-vendor-policy-boundary",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_stylelint_workflow.py::test_css_lint_config_keeps_the_hosted_rules_enabled",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "plugin-hook-registration-uniqueness",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_single_plugin",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "plugin-session-start-read-isolation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_plugin_session_start_deadlock.py::TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "plugin-enforcement-source-budget",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_process_overhead.py::TestProcessTokenOverhead::test_anti_stop_plugins_are_lean",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "plugin-enforcement-runtime-executable-mode",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_enforcement_executable_modes.py::test_enforcement_runtime_surfaces_have_executable_git_mode",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "v011-exact-gate-plugin-budget",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_green_together",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "native-secrets-scan-worker-budget",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_secrets_scan_resources.py::test_native_scanner_argv_respects_host_and_project_budget",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "css-lint-exact-pin-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_pinned",
+      "full_gate_phase": "test"
     }
   ]
 }

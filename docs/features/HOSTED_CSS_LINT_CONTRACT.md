@@ -42,8 +42,9 @@ different values remain valid browser fallbacks, including the existing
   pass.
 - Missing arguments or configuration fail closed. A missing executable is
   restored only through the locked, namespaced `node-deps-sync` target.
-- The tracked ignore list excludes `.venv` and locked Node dependency content,
-  so hosted repository globs cannot lint installed third-party stylesheets.
+- The tracked ignore list excludes `.venv`, locked Node dependency content,
+  and the existing `docs/presentation/deck/vendor/**` distribution boundary.
+  The presentation vendor gate retains responsibility for those pinned assets.
 - `--no-error-on-unmatched-pattern` lets an explicit hosted language glob be
   empty without weakening checks for files that exist.
 
@@ -125,6 +126,43 @@ including all four failures and positive controls for short/long hex with and
 without alpha, nested fallback colors, strings, URL fragments and raw custom
 values. The exact combined source still requires independent signoff, fresh
 release admission, canonical coverage/full gate and exact-SHA hosted results.
+
+## Frozen-candidate contract failures (2026-10-18)
+
+The canonical diagnostic gate for `31b2b66be80fb96cdbb2fcb6a8e03a775e5cd0a6`
+failed two assertions in `tests/unit/test_ci_stylelint_workflow.py`: the retired
+Stylelint dependency and the former Make fragment. Those historical failures
+remain release blockers until the corresponding active-engine contracts pass.
+The security migration and low-threshold audit remain required.
+
+Source review also found that the active ESLint config had omitted the existing
+`docs/presentation/deck/vendor/**` ignore from `.stylelintignore`. The replacement
+contract retains that vendor assertion against the active policy. Restoring the
+same boundary preserves the existing presentation-vendor validation owner; it
+does not introduce a new exception. Repository globs must continue to inspect
+first-party CSS, SCSS and Less under all existing native defect rules.
+
+The repair conforms all three workflow cases to the exact locked ESLint
+engine, tracked config, public Make owner and explicit caller variables.
+The omitted vendor assertion fails before restoring the original ignore.
+All three contracts pass in the 234-case focused repair cohort. The complete
+workflow file is selected once in the existing first compatibility cohort;
+the 90-case promotion/resource run verifies its routing with all prior
+selectors, warning flags and resource bounds intact. These focused results
+do not replace canonical coverage/full gate or exact-SHA hosted proof. The real
+repository CSS/SCSS/Less glob and documented presentation example also pass
+through the locked native engine. The old diagnostic gate was terminated by
+its native owner with no
+survivors and remains ABORTED.
+
+The unchanged native dependency/config pin also catches a repair regression:
+folding the original dependency ignores into a differently shaped declaration.
+The config retains its original global dependency-ignore object and expresses
+the existing vendor boundary in a second native global-ignore object. The
+original assertion remains unchanged. All 17 native lint and workflow cases
+then pass, including the original pin and defect/browser-fallback controls.
+The exact pin is also added to existing early admission without selecting the
+slower native behavior file as a whole.
 
 ## Verification
 
