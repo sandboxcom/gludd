@@ -871,3 +871,51 @@ This is bounded local acceptance. The direct public proof-admission producer,
 independent source review, frozen combined focus, complete canonical gate and
 exact-SHA hosted proof remain required. No release task is closed, no failed
 candidate evidence is replaced and no promotion or publication follows yet.
+
+## Native absolute-glob admission support
+
+Build run 39100824559 at 191f588 passed the complete Python3.11 gate. Python3.12
+passed all 1865 main-cohort cases in 80.39 seconds and the fresh help case in
+2.10 seconds, then hit the existing 90-second observer limit during the final
+two-case child's collection (90.6 seconds observed). That failure remains in the
+native ledger and blocks final proof. No full local gate was started for this SHA.
+
+The existing first and third children now pass
+`--ignore-glob=$(CURDIR)/tests/*`. Pytest receives the same absolute pattern it
+previously derived for each sibling, while Make derives it once for the current
+invocation. The fresh-help child and generic test owner retain their original
+arguments. Native [pytest9.1.1 ignore handling](https://github.com/pytest-dev/pytest/blob/9.1.1/src/_pytest/main.py)
+still owns all decisions; [CPython's abspath](https://github.com/python/cpython/blob/3.12/Lib/posixpath.py)
+avoids its repeated cwd/join branch for this already absolute input. No collected
+package is bypassed. The original relative fixture exclusion remains native.
+
+Serial native collection diagnostics on 191f588 selected the same 1865 node IDs
+in identical order: relative glob 9.24 seconds (10.3 observed), absolute glob
+7.03 seconds (8.1 observed). Logs remain under
+`.gate-logs/observed/v012-collection-ignore-diagnostic/`. Collection-only timing
+is diagnostic; it establishes neither the three-child 90-second proof nor a
+hosted throughput improvement.
+
+The actual-Make native regression first fails because the glob is relative.
+Additive controls check fewer native cwd resolutions with identical ignore
+decisions, a fresh glob for each invocation directory, and rejection of relative,
+foreign-root, widened, omitted and duplicated patterns in both affected children.
+Existing native package/parent/plugin fixtures, exact selectors, fatal warnings,
+all three children and their worker counts retain their original assertions.
+Earlier literal flag expectations are conformed only to this absolute spelling.
+
+The long-lived [pytest2206 discussion](https://github.com/pytest-dev/pytest/issues/2206)
+records collection traversal and hook overhead reported by cloud-custodian users.
+[Pytest7777](https://github.com/pytest-dev/pytest/issues/7777) records package
+collection and fixture-scope concerns. Those reports motivate native options and
+lifecycle controls; they supply no performance proof here. `--pyargs` is rejected:
+filesystem fallback retains traversal, dotted packages retain the costly parent,
+and bare leaf imports lose package setup/scope semantics. Relocating the global
+fixture exclusion into a scoped conftest is also not an exact CLI replacement.
+
+Focused validation passes all 103 native collection/routing cases, including the
+12 additive cwd/boundary controls. The unchanged three-child observer passes
+1865 main cases, one help case and both reviewed controls in 72.7 seconds, under
+its original 90/60 limits. Main execution is 60.75 seconds; help is 0.92 and the
+reviewed tail 7.11. This local support proof does not clear the failed hosted
+Python3.12 lane or authorize milestone completion.

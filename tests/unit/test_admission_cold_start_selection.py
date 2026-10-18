@@ -42,11 +42,12 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
     )
     assert all((ROOT / node.split("::", 1)[0]).is_file() for node in (*ROSTER, HELP, *REVIEWED_FINALIZATION))
     flags = [str(row["flags"]) for row in rows]
-    assert "--ignore-glob=tests/*" in flags[0]
+    expected_glob = f"--ignore-glob={ROOT / 'tests' / '*'}"
+    assert flags[0].split().count(expected_glob) == 1
     assert "--ignore" not in flags[1]
     assert "-W error" in flags[0] and "-n 2 --maxprocesses 2" in flags[0]
     assert "-W error" in flags[1] and "-n 0 --maxprocesses 1" in flags[1]
-    assert "--ignore-glob=tests/*" in flags[2]
+    assert flags[2].split().count(expected_glob) == 1
     assert "-W error" in flags[2] and "-n 0 --maxprocesses 1" in flags[2]
     assert "--ignore-glob" not in _stanza("test-files")
     for flag in flags:
@@ -56,6 +57,7 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
                 "-k ",
                 "--deselect",
                 "--noconftest",
+                "--pyargs",
                 "--disable-plugin-autoload",
                 "--assert=plain",
                 "-W ignore",
@@ -330,3 +332,90 @@ def test_native_selected_failures_cannot_be_hidden_by_sibling_filter(tmp_path: P
     assert expected in result.stdout + result.stderr
     assert expected in original.stdout + original.stderr
     assert re.findall(r"Error (\d+)", result.stderr) == re.findall(r"Error (\d+)", original.stderr)
+
+
+@pytest.mark.parametrize("child", (0, 2))
+@pytest.mark.parametrize("mutation", ("relative", "foreign-root", "widening", "omission", "duplication"))
+def test_native_glob_guard_refuses_changed_boundaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child: int, mutation: str,
+) -> None:
+    original_stanza = scheduling._stanza
+    owner = original_stanza(scheduling.OWNER)
+    pattern = "--ignore-glob=$(CURDIR)/tests/*"
+    assert owner.count(pattern) == 2
+    position = owner.index(pattern) if child == 0 else owner.rindex(pattern)
+    replacements = {
+        "relative": "--ignore-glob=tests/*",
+        "foreign-root": "--ignore-glob=/tmp/gludd-foreign-checkout/tests/*",
+        "widening": "--ignore-glob=$(CURDIR)/*",
+        "omission": "",
+        "duplication": pattern + " " + pattern,
+    }
+    mutated = owner[:position] + replacements[mutation] + owner[position + len(pattern):]
+    monkeypatch.setattr(
+        scheduling, "_stanza",
+        lambda target: mutated if target == scheduling.OWNER else original_stanza(target),
+    )
+    with pytest.raises(AssertionError):
+        test_real_admission_filters_only_never_selected_main_siblings(tmp_path)
+
+
+def test_native_absolute_glob_avoids_repeated_cwd_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pytestconfig: pytest.Config,
+) -> None:
+    from _pytest.main import pytest_ignore_collect
+
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    actual = [
+        flag.removeprefix("--ignore-glob=")
+        for flag in str(rows[0]["flags"]).split() if flag.startswith("--ignore-glob=")
+    ]
+    assert len(actual) == 1
+    assert Path(actual[0]).is_absolute()
+    native_getcwd = os.getcwd
+    calls = 0
+
+    def counted_cwd() -> str:
+        nonlocal calls
+        calls += 1
+        return native_getcwd()
+
+    monkeypatch.setattr(os, "getcwd", counted_cwd)
+
+    def decisions(pattern: str) -> tuple[list[bool | None], int]:
+        nonlocal calls
+        monkeypatch.setattr(pytestconfig.option, "ignore_glob", [pattern])
+        calls = 0
+        outcomes = [
+            pytest_ignore_collect(
+                collection_path=ROOT / "tests/unit/test_admission_cold_start_selection.py",
+                config=pytestconfig,
+            )
+            for _ in range(5)
+        ]
+        return outcomes, calls
+
+    relative, relative_calls = decisions("tests/*")
+    normalized, normalized_calls = decisions(actual[0])
+    assert relative == normalized == [True] * 5
+    assert normalized_calls < relative_calls
+
+
+def test_native_glob_is_derived_from_each_invocation_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = scheduling._stanza(scheduling.OWNER)
+    first = tmp_path / "first-checkout"
+    second = tmp_path / "second-checkout"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setattr(scheduling, "_stanza", lambda _target: owner)
+    for root in (first, second):
+        monkeypatch.setattr(scheduling, "ROOT", root)
+        result, rows = _capture_owner(root, "")
+        assert result.returncode == 0, result.stdout + result.stderr
+        expected = f"--ignore-glob={root / 'tests' / '*'}"
+        assert str(rows[0]["flags"]).split().count(expected) == 1
+        assert str(rows[2]["flags"]).split().count(expected) == 1
+        assert "--ignore-glob" not in str(rows[1]["flags"])
