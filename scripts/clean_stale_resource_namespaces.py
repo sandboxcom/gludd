@@ -27,9 +27,9 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
-from importlib.metadata import Distribution, PackagePath
 from importlib.util import MAGIC_NUMBER, cache_from_source, source_from_cache, source_hash
-from pathlib import Path
+from io import StringIO
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -286,20 +286,6 @@ def _file_bytes(path: Path, limit: int, view: _NamespaceIO | None) -> bytes:
         return _NamespaceIO(path.parent, descriptor).read(path, limit)
 
 
-class _RecordedDistribution(Distribution):
-    """Let the existing metadata parser consume one bounded RECORD snapshot."""
-
-    def __init__(self, metadata: Path, record: str) -> None:
-        self.metadata_path = metadata
-        self.record_text = record
-
-    def read_text(self, filename: str) -> str | None:
-        return self.record_text if filename == "RECORD" else None
-
-    def locate_file(self, path: str | os.PathLike[str]) -> Path:
-        return self.metadata_path / path
-
-
 def _normalize_start(value: str) -> str:
     return " ".join(value.split())
 
@@ -411,7 +397,7 @@ def _recorded_package_bytes(
         if len(source) > _MAX_INSTALLED_SOURCE_BYTES:
             return None
         relative = marker.relative_to(site_packages).as_posix()
-        records: list[PackagePath] = []
+        records: list[tuple[str, str, int | None]] = []
         for name in view.names(site_packages):
             if not name.endswith(".dist-info"):
                 continue
@@ -430,18 +416,25 @@ def _recorded_package_bytes(
             record = view.read(record_path, _MAX_INSTALLED_SOURCE_BYTES)
             if len(record) > _MAX_INSTALLED_SOURCE_BYTES:
                 return None
-            distribution = _RecordedDistribution(metadata, record.decode("utf-8"))
-            records.extend(entry for entry in distribution.files or () if entry.as_posix() == relative)
+            for entry in csv.reader(StringIO(record.decode("utf-8"), newline="")):
+                if not 1 <= len(entry) <= 3:
+                    raise ValueError("invalid RECORD field count")
+                entry_name = PurePosixPath(entry[0]).as_posix()
+                hash_spec = entry[1] if len(entry) > 1 else ""
+                size_spec = entry[2] if len(entry) > 2 else ""
+                size = int(size_spec) if size_spec else None
+                mode, _separator, value = hash_spec.partition("=")
+                # Validate every row before filtering; names never locate a target.
+                if entry_name == relative:
+                    records.append((mode, value, size))
         if len(records) != 1:
             return None
-        recorded = records[0]
-        recorded_hash = recorded.hash
+        recorded_mode, recorded_digest, recorded_size = records[0]
         digest = urlsafe_b64encode(hashlib.sha256(source).digest()).decode("ascii").rstrip("=")
         verified = (
-            recorded_hash is not None
-            and recorded_hash.mode == "sha256"
-            and recorded_hash.value == digest
-            and recorded.size == len(source)
+            recorded_mode == "sha256"
+            and recorded_digest == digest
+            and recorded_size == len(source)
         )
         return source if verified else None
     except (OSError, SyntaxError, ValueError, TypeError, csv.Error):

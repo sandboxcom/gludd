@@ -256,3 +256,69 @@ retry, runtime diagnostic, proof/gate/CI replay, merge or push is claimed.
 913 review/history and all old refs/archives remain immutable. Required normal
 guarded collection, exact independent child review and actual capacity recovery
 are separate prerequisites.
+
+## RECORD snapshots across Python runtimes (2026-10-18)
+
+The first real private Python 3.12.15 execution on approved1329a87 failed36
+installed-module/documentation/bytecode/owner-precedence assertions. The native
+first child reported1910 passes and one separate hook-fixture skip in69.18s;
+the observer failedrc2/71.97s, not timeout, and the later children did not run.
+Its immutable raw evidence is
+/tmp/gludd-v012-312-execution-attribution-1329a87/. The separate hook-probe child
+3dd6d1d repairs the collection-time skip without changing confinement.
+
+The snapshot adapter used Distribution.files only as a RECORD parser. In
+[pinned CPython3.11.14](https://github.com/python/cpython/blob/v3.11.14/Lib/importlib/metadata/__init__.py)
+that path parsed rows. In
+[pinned CPython3.12.15](https://github.com/python/cpython/blob/v3.12.15/Lib/importlib/metadata/__init__.py)
+it also filters through path.locate().exists(). Our adapter located names below
+the .dist-info directory instead of site-packages, so valid captured rows
+disappeared. Changing that base would still add live target probes to an
+authorization path that must inspect only pinned snapshot bytes. The fixture's
+python3.11 directory is valid test data under either runner and stays unchanged.
+
+The existing owner now parses its bounded captured UTF-8 RECORD with public
+csv.reader(StringIO(..., newline="")), following the
+[PyPA RECORD CSV specification](https://packaging.python.org/en/latest/specifications/recording-installed-packages/#the-record-file).
+Names receive only pure POSIX normalization. Prior one-to-three-column optional
+hash/size behavior, FileHash-style partition at the first equals sign, integer
+conversion for every row before name filtering, and refusal on invalid row
+arity/conversion remain. Exactly one normalized matching row across every
+distribution must prove the exact sha256 digest and byte size. Missing hashes
+or sizes never authenticate a source. No locate/exists/resolve target lookup,
+private metadata API, fake location or extra parser dependency is used.
+
+The same no-follow descriptor reader captures source and RECORD; source/record
+freshness, metadata identity, AST/documentation/compiled-cache verification,
+owner precedence, kernel/PID leases, root-route pinning, all cleanup bounds,
+receipts and heartbeats remain authoritative. This repairs classification;
+it supplies no live cleanup authorization or service restart and preserves ZDD.
+
+The new private312 failing-first run records14 failures/13 passes in1.78s.
+Its no-target-probe control fails directly in the old metadata exists filter.
+All27 new cases then pass in1.61s: quoted/Unicode paths, LF/CRLF, optional
+fields, normalized duplicate cardinality within/across distributions, invalid
+unrelated rows, and source/RECORD/link mutation revalidation. The complete
+unchanged130 original cases plus27 additive cases pass157/2.22s on canonical311
+and157/2.61s on private3.12.15, zero skips and fatal warnings.
+Final seven whole owners pass370 tests in39.74s on canonical311, warnings fatal
+and serial. Observer20261018T173544Z-4028-a15145d8 passes41.311s. The unchanged
+three-file native audit measures92.8% line/86.6% branch; every file passes
+the original85/75 line/branch floors. Normal changed-owner strict checks and
+Ruff pass. Initial import-order/raw-regex lint failures remain as intermediates.
+
+All112 promotion-family objects, existing whole-file admission selection,
+plugins/order, three children/workers2-1-1,90/60,21/2850 and native85/75 remain
+unchanged. These focused source receipts prove no hosted margin or release
+completion. The original1329 failed run, old source pins and actual capacity
+history remain immutable; normal collection and cumulative independent review
+are separate prerequisites.
+
+### Related firsthand report and its limit
+
+A search for longstanding metadata path reports found
+[CPython issue46473](https://bugs.python.org/issue46473), where a2022 user reports
+editable .egg-link discovery differing from pkg_resources. That concerns
+editable distribution discovery, not this snapshot adapter or its RECORD
+authorization. No exact upstream report for the Gludd failure was found; the
+diagnosis rests on the pinned source comparison and native3.12 reproductions.

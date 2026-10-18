@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import marshal
 import os
@@ -14,7 +15,9 @@ from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, suppress
 from hashlib import sha256
+from importlib.metadata import PackagePath
 from importlib.util import cache_from_source
+from io import StringIO
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -352,6 +355,224 @@ def _recorded_package_file(
     for path in (candidate, *candidate.rglob("*")):
         os.utime(path, (OLD, OLD))
     return installed, record
+
+
+def _write_snapshot_record(record: Path, rows: list[list[str]], newline: str = "\n") -> None:
+    contents = StringIO(newline="")
+    csv.writer(contents, lineterminator=newline).writerows(rows)
+    record.write_bytes(contents.getvalue().encode("utf-8"))
+
+
+def test_record_snapshot_verification_does_not_probe_record_targets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "record-snapshot", toolchain=True)
+    module, record = _recorded_package_file(candidate)
+    original = module.read_bytes()
+    outside = tmp_path / "outside-record-target"
+    outside.write_bytes(b"outside data must not be inspected")
+    (record.parent / "target-link").symlink_to(outside)
+    (record.parent / "dangling-link").symlink_to(tmp_path / "absent-target")
+    (record.parent / "loop-link").symlink_to("loop-link")
+    digest = urlsafe_b64encode(sha256(original).digest()).decode("ascii").rstrip("=")
+    _write_snapshot_record(
+        record,
+        [
+            ["virtualenv/util/lock.py", f"sha256={digest}", str(len(original))],
+            [str(outside), "unrelated=opaque", "1"],
+            ["../../outside-record-target", "", ""],
+            ["target-link", "", ""],
+            ["dangling-link", "", ""],
+            ["loop-link", "", ""],
+        ],
+    )
+    reads: list[Path] = []
+    original_read = cleanup._NamespaceIO.read
+
+    def read_snapshot(view: cleanup._NamespaceIO, path: Path, limit: int) -> bytes:
+        reads.append(path)
+        return original_read(view, path, limit)
+
+    def forbidden_exists(_path: Path, **_options: object) -> Never:
+        pytest.fail("RECORD parsing must not probe whether a row target exists")
+
+    def forbidden_locate(_path: PackagePath) -> Never:
+        pytest.fail("RECORD parsing must not locate row targets")
+
+    with monkeypatch.context() as probes:
+        probes.setattr(cleanup._NamespaceIO, "read", read_snapshot)
+        probes.setattr(Path, "exists", forbidden_exists)
+        probes.setattr(PackagePath, "locate", forbidden_locate)
+        verified = cleanup._recorded_package_bytes(module, candidate)
+
+    assert verified == original
+    assert reads == [module, record]
+    assert outside.read_bytes() == b"outside data must not be inspected"
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+@pytest.mark.parametrize("filename", ['package/quoted,"owner.py', "package/caf\u00e9_owner.py"])
+def test_record_snapshot_csv_quoting_and_unicode(
+    tmp_path: Path,
+    newline: str,
+    filename: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "quoted-record", toolchain=True)
+    module, record = _recorded_package_file(candidate, filename)
+    content = module.read_bytes()
+    digest = urlsafe_b64encode(sha256(content).digest()).decode("ascii").rstrip("=")
+    _write_snapshot_record(
+        record,
+        [
+            [filename, f"sha256={digest}", str(len(content))],
+            ["fixture_distribution-1.0.dist-info/RECORD", "", ""],
+        ],
+        newline,
+    )
+
+    assert cleanup._recorded_package_bytes(module, candidate) == content
+    assert module.read_bytes() == content
+
+
+@pytest.mark.parametrize(
+    ("variant", "verified"),
+    [
+        ("single-normalized-path", True),
+        ("unrelated-one-field", True),
+        ("unrelated-two-fields", True),
+        ("unrelated-partitioned-hash", True),
+        ("integer-size-format", True),
+        ("one-field", False),
+        ("two-fields", False),
+        ("blank-hash", False),
+        ("blank-size", False),
+        ("wrong-mode", False),
+        ("extra-hash-separator", False),
+        ("wrong-size", False),
+        ("bad-size", False),
+        ("unrelated-bad-size", False),
+        ("unrelated-extra-field", False),
+        ("empty-row", False),
+    ],
+)
+def test_record_snapshot_preserves_optional_fields_and_fail_closed_conversion(
+    tmp_path: Path,
+    variant: str,
+    verified: bool,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "record-fields", toolchain=True)
+    module, record = _recorded_package_file(candidate)
+    content = module.read_bytes()
+    digest = urlsafe_b64encode(sha256(content).digest()).decode("ascii").rstrip("=")
+    row = ["virtualenv/util/lock.py", f"sha256={digest}", str(len(content))]
+    rows = [row]
+    if variant == "single-normalized-path":
+        row[0] = "virtualenv//util/./lock.py"
+    elif variant == "unrelated-one-field":
+        rows.append(["unrelated"])
+    elif variant == "unrelated-two-fields":
+        rows.append(["unrelated", "opaque-hash"])
+    elif variant == "unrelated-partitioned-hash":
+        rows.append(["unrelated", "opaque=hash=with=separators", "-1"])
+    elif variant == "integer-size-format":
+        row[2] = f" +00{len(content)} "
+    elif variant == "one-field":
+        del row[1:]
+    elif variant == "two-fields":
+        del row[2:]
+    elif variant == "blank-hash":
+        row[1] = ""
+    elif variant == "blank-size":
+        row[2] = ""
+    elif variant == "wrong-mode":
+        row[1] = f"sha512={digest}"
+    elif variant == "extra-hash-separator":
+        row[1] += "=extra"
+    elif variant == "wrong-size":
+        row[2] = str(len(content) + 1)
+    elif variant == "bad-size":
+        row[2] = "not-an-integer"
+    elif variant == "unrelated-bad-size":
+        rows.append(["unrelated", "", "not-an-integer"])
+    elif variant == "unrelated-extra-field":
+        rows.append(["unrelated", "", "", "unexpected"])
+    else:
+        assert variant == "empty-row"
+        rows.append([])
+    _write_snapshot_record(record, rows)
+
+    assert cleanup._recorded_package_bytes(module, candidate) == (content if verified else None)
+    assert module.read_bytes() == content
+
+
+@pytest.mark.parametrize("across_distributions", [False, True], ids=["same-record", "two-records"])
+def test_record_snapshot_duplicate_normalized_paths_are_ambiguous(
+    tmp_path: Path,
+    across_distributions: bool,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "duplicate-record", toolchain=True)
+    module, record = _recorded_package_file(candidate)
+    content = module.read_bytes()
+    digest = urlsafe_b64encode(sha256(content).digest()).decode("ascii").rstrip("=")
+    duplicate = ["virtualenv//util/./lock.py", f"sha256={digest}", str(len(content))]
+    if across_distributions:
+        other = record.parent.parent / "other_distribution-1.0.dist-info"
+        other.mkdir()
+        _write_snapshot_record(other / "RECORD", [duplicate])
+    else:
+        _write_snapshot_record(
+            record,
+            [["virtualenv/util/lock.py", f"sha256={digest}", str(len(content))], duplicate],
+        )
+
+    assert cleanup._recorded_package_bytes(module, candidate) is None
+    assert module.read_bytes() == content
+
+
+@pytest.mark.parametrize("mutation", ["source", "record", "record-link", "metadata-link"])
+def test_record_snapshot_revalidation_rejects_later_mutation(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "changed-record", toolchain=True)
+    module, record = _recorded_package_file(candidate)
+    content = module.read_bytes()
+    original_record = record.read_bytes()
+    outside = tmp_path / "outside-metadata"
+    outside.mkdir()
+    (outside / "RECORD").write_bytes(original_record)
+
+    with cleanup._directory_anchor(candidate) as descriptor:
+        view = cleanup._NamespaceIO(candidate, descriptor)
+        assert cleanup._recorded_package_bytes(module, candidate, view) == content
+        if mutation == "source":
+            module.write_bytes(content + b"# changed after capture\n")
+        elif mutation == "record":
+            record.write_bytes(original_record + b"unrelated,,\n")
+        elif mutation == "record-link":
+            record.unlink()
+            record.symlink_to(outside / "RECORD")
+        else:
+            assert mutation == "metadata-link"
+            metadata = record.parent
+            metadata.rename(metadata.with_name("retained-metadata"))
+            metadata.symlink_to(outside, target_is_directory=True)
+        with pytest.raises(OSError, match=r"identity changed|not an owned directory"):
+            view.verify()
+
+    assert (outside / "RECORD").read_bytes() == original_record
+    assert not (tmp_path / "receipts").exists()
 
 
 @pytest.mark.parametrize("module_name", ("lock.py", "lease.py", "owner.py", "pid.py"))

@@ -2085,3 +2085,43 @@ collection/pin and final cumulative source review remain separate; the
 authorized cleanup RECORD snapshot repair follows as another small commit.
 No broad replay, hosted margin, promotion, restart, task closure or release
 completion is claimed.
+
+## S98.4 captured RECORD runtime compatibility child (2026-10-18)
+
+B is the separate small committed3dd6d1dee3443579ab4a8cf153fd656c406af9ef,
+parent1329, pin reviewed-v012-source-3dd6d1d. Its normal guarded collection
+passes125826/125844,18deselected/0errors; native observer
+20261018T173207Z-2022-c2a460b6 passes48.819s. Root final main Rumdl passed its
+three exact docs22ms at17:31:44UTC. Raw B report/scope/cohort/receipts are in
+/tmp/gludd-v012-hook-probe-runtime-repair-evidence/ and its separate report.
+These remain distinct from the original private312 failure.
+
+The36 cleanup assertion failures on1329 share the snapshot Distribution.files
+adapter: pinned3.12 adds live locate().exists filtering, and the adapter used
+.dist-info as its base. The correction uses public csv.reader over the same
+bounded captured UTF-8 RECORD plus pure POSIX name normalization; no target
+probe, private parser or new dependency. Every row still validates optional
+1-3fields/int size before filtering; normalized duplicate cardinality across
+distributions and exactsha256+size authentication remain fail-closed.
+All original fixture paths, assertions, source/document/cache/owner precedence,
+descriptor freshness, lease/root-route/cleanup/bounds and ZDD duties remain.
+
+Private312 failing-first snapshot controls produce14failed/13passed in1.78s.
+After repair all27 pass1.61s. The complete130 original plus27 additive cleanup
+cases pass157/2.22s on canonical311 and157/2.61s on private3.12.15, zero skips
+and fatal warnings. Preserve no-target-probe, quoted/Unicode LF+CRLF,
+optional-field/all-row-validation, normalized duplicate and source/RECORD/link
+mutation controls. Changed two-file normal strict and Ruff pass; initial
+import-order/raw-regex lint failures remain intermediate evidence.
+
+Final seven complete owners pass370/39.74s with serial fatal warnings;
+observer20261018T173544Z-4028-a15145d8 passes41.311s. Native unchanged
+three-file85/75 audit passes92.8% line/86.6% branch. Native pre-coverage ps
+shows only29001 and0observed/leased workers after the separate scan drained
+naturally; no signal or ownership attribution was made. All112 manifest
+families/fields, Make recipes/selectors/plugins/three2-1-1 children,90/60
+and21/2850 remain. Feature history cites pinned CPython and PyPA CSV source,
+and distinguishes a longstanding editable-metadata report from this defect:
+no exact upstream report was found. Required normal guarded collection,
+source pin and cumulative B+A independent review remain separate. No broad
+runtime/proof replay, acquisition, live cleanup, restart, push or closure.
