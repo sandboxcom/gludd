@@ -1843,3 +1843,72 @@ authority remain. Main/canonical311/global tools and healthy watchdog29001
 remain untouched. Actual acquisition awaits its independent source acceptance
 and fresh capacity; exact3.12 sync/positiveCI inspection/original bounded
 serial import-collection diagnostic and release proofs remain missing.
+
+
+## S98.4 actual CI profile composition prerequisite (2026-10-18)
+
+Preserve source 253a6a2 and its SOURCE ONLY approval. Existing native
+acquisition succeeds for uv 0.13.1 in 1.417s, with published-tag-match and
+artifact_hash_locked=false. Exact hosted-profile native sync succeeds
+rc 0 / 25.436s using only verified private uv, exact target CPython 3.12.15,
+all ten lock checks/profile order and owned managed/cache roots.
+The existing bootstrap's auxiliary private CPython 3.11.17 is separate;
+canonical 3.11/main environment/global tools and watchdog 29001 stay untouched.
+
+Actual current-CI inspection fails rc 2 / 1.140s for installed jsonpointer 3.1.1
+violating unchanged controller jsonpointer==3.2.0. The raw sync shows the later
+dev-security locked inexact sync causing this replacement; pipcheck passes
+installed metadata but not the uninstalled standalone profile declaration.
+Retain the failed environment and full native acquisition/sync/inspection
+logs/status in /tmp/gludd-v012-312-runtime-diagnostic-evidence.
+Report /tmp/gludd-v012-312-runtime-diagnostic.md remains diagnostic-only.
+No Python3.12 import/collection run has been launched; costs remain unknown.
+
+Root authorizes only the actual input repair, not a broader sync redesign.
+Preserve existing chardet floor and all direct declarations; constrain the
+later dev-security graph to unchanged jsonpointer==3.2.0. Native scoped
+relock emits exactly one private uv lock command for dev-security, resolves 56,
+updates jsonpointer 3.1.1 to 3.2.0 and passes rc 0 / 1.724s without warnings.
+Explicit existing private cache/managed roots and downloads never remain.
+
+Existing lock/check and Make relock gain exact registered-profile selection.
+Empty remains all 26 projects; known scope omits unrelated/root regeneration.
+Unknown/combined CLI selections refuse. Literal public selector unexport and
+overridden internal carrier preserve inert Make text through supported
+recursive repository layers. Existing validate-only/default mutation policy
+and native lock/check/structural guards remain. Contract 247 changes only
+the existing relock entry; no new target/runner/resolver/cache is introduced.
+
+Initial 15 RED / 2 pass in 3.82s covers actual composition, scoped API/CLI/literal
+transport/contract and both additive admission routes. Retain the
+intermediate 13 pass / 1 failure arbitrary-parent-Make fixture and later 14 green
+controls using the actual guarded repository Make layers.
+All 64 profile/exact-routing cases pass in 4.35s; three environment guards
+pass in 1.81s. Strict typing initially reports tuple inference, corrected with
+an explicit tuple[Path,...] annotation; separate source/test scopes then pass.
+The combined scope alias diagnostic is retained, not suppressed.
+Ruff/Make/native247contracts/unchanged 261-resource inventory pass.
+Whole-profile native coverage 176 pass / 21.53s, 93.8% line / 89.3% branch, unchanged 85/75;
+observer 20261018T151457Z-17760-af05d9c6 passes in 23.747s.
+
+The source composition node reads installed-order lock choices for every
+controller-containing set. Family 111 appends exactly once in the third child,
+including a whole-owner/class duplicate guard; all 110 earlier family entries,
+non-family policy, selectors/order,3 children 2/1/1, 90/60, 21/2850 and full replay
+remain unchanged. First-handuv #12490/13125 and official native constraints/
+inexact semantics are documented with limits in RUNTIME_ADMISSION_THROUGHPUT.
+
+Retain the first complete-cohort 299 pass / 3 fail / 45.60s receipt, caused only
+by the original eight-selector count after additive ninth routing.
+Change that count to nine while preserving every original node/order/
+count-once assertion. Final five-owner acceptance 302 pass / 45.70s warning-fatal;
+XML /tmp/gludd-v012-profile-composition-cohort-acceptance.xml.
+Actual documented scoped check passes rc 0 / 0.3s with only private uv/cache/
+managed roots and no source lock mutation.
+
+TASKS changes one existing unchecked S98.4 row with no line/status/checkbox
+growth; this SESSION prefix and every earlier failure/ref/proof remain.
+Exact child source acceptance is still required before corrected sync or
+inspection; positive current-CI inspection and fresh capacity precede the one
+original bounded serial import/collection diagnostic. No deadline/coverage/
+warning/plugin/selector cut, gate/focus/CI/push, release claim or task closure.

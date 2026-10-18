@@ -437,6 +437,7 @@ help:
 		"  --- Setup ---" \
 		"  init                  Set up project (dirs + deps)" \
 		"  sync                  Atomically sync an explicit locked dependency profile set (DEPENDENCY_PROFILE_*)" \
+		"  relock                Check/regenerate native locks; optional DEPENDENCY_PROFILE_RELOCK_PROFILE" \
 		"  acquire-pinned-uv      Acquire hosted uv in a private native leaf (PINNED_UV_VALIDATE_ONLY=1 plans)" \
 		"  inspect-dependency-runtime Read-only registered runtime/profile metadata (DEPENDENCY_RUNTIME_*, plan by default)" \
 		"  sync-ansible-native-format Native locked/inexact dev tooling sync (ANSIBLE_FORMAT_SYNC_*, dry-plan by default)" \
@@ -1298,9 +1299,17 @@ sync-models:
 # Regenerate the root and every independent profile lock. The profile manager
 # validates the hard line ceiling after uv has generated each artifact.
 DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY ?= 0
+DEPENDENCY_PROFILE_RELOCK_PROFILE ?=
+override GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE := $(value DEPENDENCY_PROFILE_RELOCK_PROFILE)
+export GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE := $(value DEPENDENCY_PROFILE_RELOCK_PROFILE)
+unexport DEPENDENCY_PROFILE_RELOCK_PROFILE
 relock:
 	@case "$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)" in 0|1) ;; *) echo "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py $(if $(filter 1,$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)),check,lock) --root "$(CURDIR)" --manifest config/dependency_profiles.toml --uv "$(UV)"
+	@set -eu; set --; \
+	if [ -n "$$GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE" ]; then \
+		set -- --profile "$$GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE"; \
+	fi; \
+	UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py $(if $(filter 1,$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)),check,lock) --root "$(CURDIR)" --manifest config/dependency_profiles.toml --uv "$(UV)" "$$@"
 
 node-deps-sync:
 	@if [ "$(NODE_DEPS_VALIDATE_ONLY)" = "1" ]; then \

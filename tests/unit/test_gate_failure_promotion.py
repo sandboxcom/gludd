@@ -240,7 +240,7 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 8 and selectors.count(node) == 1
+    assert len(selectors) == 9 and selectors.count(node) == 1
     assert node not in recipes[1] and node not in recipes[2]
     phase = next(item for item in manifest["runtime_contract"]["phases"]
                  if item["target"] == family["owner_target"])
@@ -1699,6 +1699,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "watchdog-native-start-acknowledgement",
         "watchdog-native-start-serialized-acknowledgement",
         "watchdog-unit-log-namespace",
+        "selected-profile-jsonpointer-composition",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1770,6 +1771,10 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         (
             "watchdog-unit-log-namespace",
             "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
+        ),
+        (
+            "selected-profile-jsonpointer-composition",
+            "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
         ),
     ):
         assert families[family_id] == {
@@ -2033,3 +2038,22 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
         "https://github.com/seddonym/import-linter/issues/93",
     ):
         assert phrase in content
+
+
+def test_profile_composition_failure_has_one_exact_native_admission_family() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    expected = {
+        "id": "selected-profile-jsonpointer-composition",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": (
+            "tests/unit/test_dependency_profiles.py::"
+            "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
+        ),
+        "full_gate_phase": "test",
+    }
+    assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
+    assert payload["families"][-1] == expected
+    assert len(payload["families"]) == 111
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
+    assert owner.count(expected["node"]) == 1

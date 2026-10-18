@@ -1427,3 +1427,100 @@ Independent acquisition-source acceptance and fresh native capacity precede
 apply. All 110 admission families, selectors, three children/workers2-1-1,
 90/60 and 21/2850 limits, fatal warnings, coverage, cleanup/ZDD/authentication,
 branch/promotion authority and historical refs/proof remain; no task closes.
+
+
+## Exact CI composition prerequisite (2026-10-18)
+
+After independent source approval of 253a6a2, native acquisition verifies
+private uv 0.13.1 in 1.417 seconds without changing global uv or canonical 3.11.
+The unchanged ten-lock CI sync then provisions exact CPython 3.12.15 and
+Ansible 2.21.5 in 25.436 seconds using only that verified absolute uv and
+project-owned managed/cache roots. Its existing 3.11 bootstrap selects an
+auxiliary private CPython 3.11.17; every target environment sync stays
+explicitly 3.12.15. These identities are separate.
+
+Current-CI inspection fails closed in 1.140 seconds: the final environment
+has jsonpointer 3.1.1, violating the controller's unchanged direct
+jsonpointer==3.2.0 requirement. Actual sync output shows the controller
+install 3.2.0 before the later locked dev-security sync replaces it with 3.1.1.
+The successful installed-distribution pipcheck does not enforce a standalone,
+uninstalled profile project's direct declaration. This is a demonstrated
+fresh composition prerequisite; the earlier canonical 3.11 requested-profile
+refusal remains distinct from a corruption finding.
+
+The minimal input repair adds jsonpointer==3.2.0 to dev-security's existing
+constraint-dependencies while preserving its chardet floor and all direct
+requirements. Nativeuv generates only that profile's lock: one announced
+lock command, 56 packages resolved,3.1.1 replaced by3.2.0, no warning,
+observer 1.724 seconds. No profile order, sync command, interpreter target or
+runtime inspection policy changes. The failed environment and raw inspection
+remain evidence; this source does not silently retry or substitute profiles.
+
+The existing relock owner gains an optional exact registered-profile scope:
+
+```text
+make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1 DEPENDENCY_PROFILE_RELOCK_PROFILE=dev-security
+```
+
+Explicit0 regenerates;1 preserves native lock-check semantics. Empty profile
+retains root plus all 25 profiles, in their original order. The existing CLI
+lock/check owner rejects unknown profiles and simultaneous profile/set
+selection before producing commands. The literal Make carrier is overridden
+from the public value and the raw variable is unexported; ordinary and
+supported recursive repository Make controls keep Make-function text inert.
+No caller executable/path/package surface or separate lock runner is added.
+
+The additive composition regression reads the unchanged controller
+requirement and each selected independent lock in actual install order,
+for every set containing the controller. It rejects the final locked
+jsonpointer when a later profile would violate that direct requirement.
+This targeted invariant is not a new dependency resolver or a claim that
+every possible transitive conflict has been proven absent.
+Its exact node appends as family 111 in the existing third admission child,
+and the routing control also counts whole-owner/class selections to forbid
+duplicate execution. All 110 earlier family entries and every other manifest
+policy field remain equal; all existing first/help/tail selectors stay ordered.
+
+The existing [uv sync contract](https://docs.astral.sh/uv/concepts/projects/sync/)
+retains extraneous packages with inexact sync; conflicting project versions
+still follow the selected lock. The supported
+[constraint setting](https://docs.astral.sh/uv/reference/settings/#constraint-dependencies)
+narrows resolution without adding a dependency on its own. In first-hand
+[uv #12490](https://github.com/astral-sh/uv/issues/12490), opened in March 2025,
+Airflow users report differing installed versions across their service and
+development environments. A June 2025 participant reports that project
+constraint-dependencies addresses most of that alignment problem; maintainers
+also discuss keeping constraints in project metadata. First-hand
+[uv #13125](https://github.com/astral-sh/uv/issues/13125) describes a different
+editable-path pin conflict and confirms constraint alignment resolves it.
+Those reports motivate using existing metadata/native locks, not an
+override that ignores conflicts. Neither establishes this hosted timeout's
+cause or a timing improvement.
+
+The initial focused receipt retains 15 expected failures and 2 unchanged
+default controls in 3.82 seconds. Selector-only acceptance retains an
+intermediate 13-pass/1-failure arbitrary-parent-Make fixture, then 14 passing
+controls with both actual repository Make layers loaded. All literal,
+unknown/combined refusal and original assertions remain. The complete
+profile owner plus exact routing passes 64 cases in 4.35 seconds.
+Three live environment-name/documentation/default controls pass in 1.81 seconds;
+strict source/test typing, Ruff, 247 target contracts, Make parity/duplicates
+and unchanged 261-resource ownership pass. Native whole-profile coverage
+passes 176 cases in 21.53 seconds at 93.8% lines/89.3% branches, above unchanged
+85/75; observer 20261018T151457Z-17760-af05d9c6 passes in 23.747 seconds.
+
+The first complete five-owner replay retains 299 passes/3 failures in 45.60
+seconds: all three failures require the old eight-selector tail count.
+Conform only that count to nine for the additive node, preserving all earlier
+selectors/count-once/order assertions. Final whole-owner replay then passes
+all 302 cases warning-fatal in 45.70 seconds, one outer worker. The actual
+documented scoped check passes with private uv in 0.3 observed seconds.
+These are source receipts, not corrected-runtime or admission proof.
+
+Independent exact child source review must precede any corrected runtime
+sync/inspection. Positive current-CI inspection plus fresh native capacity
+still precede the single proposed original-three-child 90/60 serial
+import/collection diagnostic. Collect-only bypasses xdist and cannot supply
+admission, hosted headroom, full-gate, deployment or release evidence.
+All children/workers 2-1-1, 90/60, 21/2850, fatal warnings, 85/75, ZDD,
+cleanup/authentication and branch/promotion authority remain; no task closes.

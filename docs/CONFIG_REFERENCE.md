@@ -456,6 +456,26 @@ policy and native bounded lifecycle. It never upgrades canonical/global uv
 or changes the project environment. Published wheel and installed executable
 digests are separate; this tool operation is not project hash-lock proof.
 
+#### Scoped dependency profile relock carrier
+
+`DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY` keeps its existing default `0`:
+`1` checks and `0` regenerates native locks. The new
+`DEPENDENCY_PROFILE_RELOCK_PROFILE` defaults to empty, preserving root plus
+all25 profiles. An exact registered profile scopes only lock/check command
+generation; an unknown profile or simultaneous CLI profile/set refuses.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE` | `""` | Internal literal carrier derived with override from `DEPENDENCY_PROFILE_RELOCK_PROFILE`; empty selects the existing all-project cohort. |
+
+The raw Make selector is unexported and passed as one quoted native CLI
+argument, including supported recursive repository Make calls. It is not
+an executable, path or package runner. The documented safe behavior is:
+
+```text
+make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1 DEPENDENCY_PROFILE_RELOCK_PROFILE=dev-security
+```
+
 ### 1.2 Model-provider credentials
 
 Set **exactly one** provider's key to get a working model. The key name a

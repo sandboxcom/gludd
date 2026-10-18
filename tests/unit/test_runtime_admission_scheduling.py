@@ -124,6 +124,7 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
     "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
     "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
+    "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
 )
 
 
@@ -441,7 +442,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 110
+    assert len(families) == 111
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -659,7 +660,7 @@ def test_watchdog_handoff_exit_control_is_routed_once_in_third_child(tmp_path: P
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 110
+    assert len(payload["families"]) == 111
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -676,7 +677,7 @@ def test_native_watchdog_start_control_is_routed_once_in_third_child(tmp_path: P
         "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 110
+    assert len(payload["families"]) == 111
 
 
 def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(tmp_path: Path) -> None:
@@ -693,7 +694,7 @@ def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(
         "full_gate_phase": "test",
     }
     assert payload["families"][108] == expected
-    assert len(payload["families"]) == 110
+    assert len(payload["families"]) == 111
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -705,7 +706,7 @@ def test_watchdog_unit_log_namespace_guard_is_the_exact_new_third_child_node(tmp
     node = "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace"
     assert len(rows) == 3
     third_files = rows[2]["files"]
-    assert isinstance(third_files, list) and third_files[-1] == node
+    assert isinstance(third_files, list) and third_files[7] == node
     occurrences = 0
     for row in rows:
         files = row["files"]
@@ -714,8 +715,32 @@ def test_watchdog_unit_log_namespace_guard_is_the_exact_new_third_child_node(tmp
     assert occurrences == 1
     assert rows[2]["workers"] == "1"
     manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
-    assert manifest["families"][-1] == {
+    assert manifest["families"][109] == {
         "id": "watchdog-unit-log-namespace", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(manifest["families"]) == 110
+    assert len(manifest["families"]) == 111
+
+
+def test_profile_composition_guard_is_once_in_third_child_with_original_bounds(tmp_path: Path) -> None:
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    node = (
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
+    )
+    assert len(rows) == 3
+    selections = [row["files"] for row in rows]
+    assert all(isinstance(files, list) for files in selections)
+    assert sum(files.count(node) for files in selections if isinstance(files, list)) == 1
+    assert sum(
+        selection == node or node.startswith(selection + "::")
+        for files in selections if isinstance(files, list) for selection in files
+    ) == 1, "composition node executes once, including whole-owner selections"
+    assert selections[0] == list(ROSTER) and selections[1] == [HELP]
+    assert isinstance(selections[2], list) and selections[2][-1] == node
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    phase = next(item for item in manifest["runtime_contract"]["phases"] if item["target"] == OWNER)
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert manifest["full_gate_required"] is True

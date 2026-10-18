@@ -167,10 +167,20 @@ def lock_commands(
     profile_set: str | None,
     check: bool,
     uv: str = "uv",
+    profile: str | None = None,
 ) -> tuple[Command, ...]:
-    """Return uv lock commands for root plus a set, or every project."""
+    """Return native lock commands for one profile, a set, or every project."""
 
-    projects = (catalog.root, *[profile.project for profile in _selected(catalog, profile_set)])
+    projects: tuple[Path, ...]
+    if profile is not None:
+        if profile_set is not None:
+            raise ProfileError("profile and profile set are mutually exclusive")
+        selected = catalog.profiles.get(profile)
+        if selected is None:
+            raise ProfileError(f"unknown profile {profile!r}")
+        projects = (selected.project,)
+    else:
+        projects = (catalog.root, *[item.project for item in _selected(catalog, profile_set)])
     commands: list[Command] = []
     for project in projects:
         argv = [uv, "lock"]
@@ -1153,13 +1163,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(report, sort_keys=True))
         elif args.action == "lock":
             execute_commands(
-                lock_commands(catalog, profile_set=args.profile_set, check=False, uv=args.uv)
+                lock_commands(
+                    catalog, profile_set=args.profile_set, check=False, uv=args.uv, profile=args.profile,
+                )
             )
             validate_catalog(catalog)
         elif args.action == "check":
             validate_catalog(catalog)
             execute_commands(
-                lock_commands(catalog, profile_set=args.profile_set, check=True, uv=args.uv)
+                lock_commands(
+                    catalog, profile_set=args.profile_set, check=True, uv=args.uv, profile=args.profile,
+                )
             )
         elif args.action == "audit":
             if not args.profile_set:

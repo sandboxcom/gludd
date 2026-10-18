@@ -780,9 +780,10 @@
     {
       "name": "relock",
       "make_variables": [
-        "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY"
+        "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY",
+        "DEPENDENCY_PROFILE_RELOCK_PROFILE"
       ],
-      "behavior": "make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1"
+      "behavior": "make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1 DEPENDENCY_PROFILE_RELOCK_PROFILE=dev-security"
     },
     {
       "name": "sync-llama-cpp",
