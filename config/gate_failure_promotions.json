@@ -887,6 +887,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "native-focus-watchdog-ownership",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership",
+      "full_gate_phase": "test"
     }
   ]
 }

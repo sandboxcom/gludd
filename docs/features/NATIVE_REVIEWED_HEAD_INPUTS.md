@@ -291,3 +291,51 @@ through those restored defaults. There is no global/autouse environment scrub or
 change to production defaults, source/runtime identity, approval or gate policy.
 The original failed focus observation and unintended external input bundle remain
 retained; this scoped repair does not rerun or relabel that combined focus.
+
+## Focus producer watchdog ownership
+
+On 2026-10-18, candidate `76268ef66dcc51423ed4c4178b4cb8ca835ebe3a`
+completed all 1,699 focused cases with two existing conditional skips. The native
+observer recorded success after 297.108 seconds, but the outer producer exited
+143 before publishing `focused-auth.json` or `focused.json`. Those passing child
+results do not establish a completed focused binding.
+
+The existing task watchdog log identifies the sender: at 08:35:25 UTC it sent
+SIGTERM to the producer Python PID 79111 and its UV parent 79110. Its kill
+record follows at 08:35:30 after the normal five-second grace period. It selected
+the 300-second-old UV command while an unbound host-global deadline entry was already
+1,096 seconds old. The native observer's 600-second quiet and 3,600-second total
+limits had not fired. The failure is therefore producer ownership being lost
+between two control planes, not a test timeout or an unexplained tool limit.
+
+The repair must carry the existing legacy-watchdog compatibility protection
+through the native focus producer and every long-lived Make/UV/pytest child,
+including the interval after observer success while validation and authenticated
+publication finish. It reuses the gate's established command-marker and native
+pytest cache-directory pattern. It must preserve ordinary command cleanup,
+literal Make inputs, the one-worker focused command, fatal warnings, both native
+observer limits, process-group teardown, source/runtime checks and signatures.
+No existing reserved run may be adopted, overwritten, relabelled or signed
+retrospectively. The incomplete bundle and raw watchdog evidence remain retained
+under `/tmp/gludd-v012-focus-143-76268ef` and the original native proof paths.
+
+Long-lived user reports reinforce the lifecycle requirement. The 2023
+[pytest-timeout subprocess report](https://github.com/pytest-dev/pytest-timeout/issues/159)
+describes orphaned children after pytest exits; the 2025
+[psutil process-group discussion](https://github.com/giampaolo/psutil/issues/2534)
+explains why process-group ownership must be established before termination and
+can outlive an intermediate parent. These reports motivate preserving the native
+observer's cleanup authority. They do not diagnose this incident; the retained
+local kill log supplies that evidence. No watchdog is stopped, new daemon added,
+application restarted or release proof completed by this repair.
+
+
+Focused repair acceptance retains eight failing-first cases, then nine native
+cases pass. The broader routing/policy replay passes247cases after preserving
+its intermediate two stale-roster failures. Native two-owner coverage passes
+all193cases at95% combined (producer93%, background owner97%) and every unchanged
+85% aggregate/75% per-file floor. One new cheap selector joins the existing third
+admission child; all104 prior families, three children, workers2/1/1,21phases,
+2850-second ceiling and90/60 bounds remain. This is source acceptance only;
+independent source review, fresh final focus, full gate and exact-SHA hosted
+proof remain required.

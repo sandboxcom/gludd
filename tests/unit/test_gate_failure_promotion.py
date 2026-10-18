@@ -223,6 +223,7 @@ def test_timeout_teardown_failures_execute_in_early_admission(test_name: str) ->
     [
         "test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files",
         "test_finalization_accepts_actual_native_background_producer_command",
+        "test_native_focus_commands_preserve_watchdog_ownership",
     ],
 )
 def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_name: str) -> None:
@@ -239,7 +240,7 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 2 and selectors.count(node) == 1
+    assert len(selectors) == 3 and selectors.count(node) == 1
     assert node not in recipes[1] and node not in recipes[2]
     phase = next(item for item in manifest["runtime_contract"]["phases"]
                  if item["target"] == family["owner_target"])
@@ -1692,6 +1693,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "hosted-managed-python312-patch",
         "plugin-hook-subagent-isolation",
         "plugin-native-fallback-subagent-isolation",
+        "native-focus-watchdog-ownership",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1736,6 +1738,11 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
             "hook-runtime-helper-ast-portability",
             "tests/unit/test_hook_runtime_split_compat.py::"
             "test_helper_signatures_match_pre_split_snapshot",
+        ),
+        (
+            "native-focus-watchdog-ownership",
+            "tests/unit/test_reviewed_head_inputs.py::"
+            "test_native_focus_commands_preserve_watchdog_ownership",
         ),
     ):
         assert families[family_id] == {

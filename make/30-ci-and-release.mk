@@ -410,13 +410,21 @@ export GLUDD_REVIEWED_HEAD_INPUTS_REPO_ROOT := $(value REVIEWED_HEAD_INPUTS_REPO
 export GLUDD_REVIEWED_HEAD_INPUTS_GATE_ATTESTATION := $(value REVIEWED_HEAD_INPUTS_GATE_ATTESTATION)
 export GLUDD_REVIEWED_HEAD_INPUTS_VALIDATE_ONLY := $(value REVIEWED_HEAD_INPUTS_VALIDATE_ONLY)
 unexport REVIEWED_HEAD_INPUTS_ACTION REVIEWED_HEAD_INPUTS_INTENT REVIEWED_HEAD_INPUTS_OUTPUT REVIEWED_HEAD_INPUTS_REPO_ROOT REVIEWED_HEAD_INPUTS_GATE_ATTESTATION REVIEWED_HEAD_INPUTS_VALIDATE_ONLY
+# Keep the native producer protected through post-observer authentication, even
+# when a legacy task watchdog is already running in another linked worktree.
+override _REVIEWED_HEAD_FOCUS_WATCHDOG_ARG :=
+ifeq ($(value REVIEWED_HEAD_INPUTS_ACTION),focus)
+ifeq ($(value REVIEWED_HEAD_INPUTS_VALIDATE_ONLY),0)
+override _REVIEWED_HEAD_FOCUS_WATCHDOG_ARG := --watchdog-owned-reviewed-head-focus
+endif
+endif
 .PHONY: reviewed-head-inputs
 reviewed-head-inputs:
 	@# Literal exports: REVIEWED_HEAD_INPUTS_ACTION, REVIEWED_HEAD_INPUTS_INTENT,
 	@# REVIEWED_HEAD_INPUTS_OUTPUT, REVIEWED_HEAD_INPUTS_REPO_ROOT,
 	@# REVIEWED_HEAD_INPUTS_GATE_ATTESTATION, REVIEWED_HEAD_INPUTS_VALIDATE_ONLY.
 	@# Existing native progress admission: WORK_ITEM_ID, or its selected primary.
-	@$(UV) run python scripts/reviewed_head_inputs.py
+	@$(UV) run python scripts/reviewed_head_inputs.py $(_REVIEWED_HEAD_FOCUS_WATCHDOG_ARG)
 
 .PHONY: reviewed-head-receipt
 reviewed-head-receipt:

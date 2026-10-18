@@ -138,6 +138,7 @@ _REF = re.compile(r"refs/(?:heads|tags)/[A-Za-z0-9][A-Za-z0-9._/-]{0,230}\Z")
 _TEST = re.compile(r"tests/(?:unit|integration)/[A-Za-z0-9_./-]+\.py\Z")
 _REVIEWER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@-]{0,127}\Z")
 _LABEL = "reviewed-head-focus"
+_FOCUS_CACHE = ".gate-logs/observed/" + _LABEL + "/watchdog-owned-reviewed-head-focus/pytest-cache"
 _OWNER_KIND = "gludd_native_reviewed_head_inputs"
 _FOCUS_KIND = "gludd_native_reviewed_head_focus"
 _KEY_VARIABLE = "GLUDD_GATE_KEY_PATH"
@@ -320,7 +321,8 @@ def prepare_inputs(intent: object, *, repo_root: Path) -> dict[str, object]:
         "focused_command": [
             "make", "--no-print-directory", "test-files", "TESTFILES=" + " ".join(focused_files),
             'PYTEST_ARGS=-W error --junitxml="$${OBSERVED_JUNIT_PATH}" '
-            "-p scripts.xdist_trace_plugin -p scripts.reviewed_head_inputs",
+            "-p scripts.xdist_trace_plugin -p scripts.reviewed_head_inputs "
+            "--override-ini=cache_dir=" + _FOCUS_CACHE,
             "NPROC=1", "GLUDD_XDIST_WORKERS=1",
         ],
     }
@@ -409,8 +411,9 @@ def _auth_context(key_path: Path, epoch: int | None = None) -> ReceiptAuthContex
 
 def _focus_directory(root: Path) -> Path:
     directory = root.resolve() / ".gate-logs/observed" / _LABEL
+    cache = root.resolve() / _FOCUS_CACHE
     if any(path.is_symlink() or (path.exists() and not path.is_dir())
-           for path in (directory.parent.parent, directory.parent, directory)):
+           for path in (directory.parent.parent, directory.parent, directory, cache.parent, cache)):
         raise ValueError("focused native observation directory is not owned")
     return directory
 
@@ -772,10 +775,13 @@ def main(argv: list[str] | None = None) -> int:
             "--" + name,
             default=os.environ.get("GLUDD_REVIEWED_HEAD_INPUTS_" + name.upper().replace("-", "_"), default),
         )
+    parser.add_argument("--watchdog-owned-reviewed-head-focus", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
         if args.action not in {"admit", "record", "focus", "finalize"} or args.validate_only not in {"0", "1"}:
             raise ValueError("native input action or validation policy is unsupported")
+        if args.watchdog_owned_reviewed_head_focus and (args.action != "focus" or args.validate_only != "0"):
+            raise ValueError("native focus watchdog ownership requires actual focused execution")
         if args.validate_only == "1":
             print("REVIEWED-HEAD-INPUTS-PLAN action=" + args.action
                   + " release_ready=false gate_evidence=false writes=false")

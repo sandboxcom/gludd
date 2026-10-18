@@ -1300,3 +1300,93 @@ Independent source review, normal guarded commit/collection, actual repaired
 admission, a new genuine reviewed integration candidate, fresh full gate and
 exact-successor hosted proof remain required. All nineteen repair records
 remain unchecked; no master promotion, tag or release publication occurs.
+
+## 2026-10-18 native focused producer lifecycle interruption
+
+Source ba8dd9aa929f5da80e5149ca093580afe00ac558 passes independent
+source-only review, normal guarded fresh collection and actual public
+admission. Genuine reviewed integration candidate
+76268ef66dcc51423ed4c4178b4cb8ca835ebe3a has ordered parents
+23d3424064c84fe3193a5eeef685ac228f4dc68d and
+ba8dd9aa929f5da80e5149ca093580afe00ac558, with equal reviewed tree.
+Both immutable source/integration refs remain preserved. Native admit and
+record pass, and exact-candidate public admission passes1880main cases,
+one fresh help case and two reviewed-head cases under unchanged90/60 bounds.
+
+The native combined focus child passes1699cases with two existing
+conditional skips in294.49s; its observer records passed/rc0 at297.108s,
+2026-10-18T08:35:25.195278+00:00. Outer Make exits143 before
+focused-auth.json or focused.json publication. This is an incomplete
+producer lifecycle and does not establish completed focused proof.
+Original bundle /tmp/gludd-v012-proof-ba8dd9a and native run
+focus-4d937b8027a2a080fac092a86d85f7f89d8eaf2c4c3a5e1e7c625bc023b589b7
+remain untouched. Candidate76268ef is unpublished; no replacement full
+gate or hosted run is launched while this prerequisite is blocked.
+
+Native task-watchdog records establish the signal origin. At08:35:25UTC
+the live daemon sends SIGTERM to Python79111 and UV parent79110,
+then records the kill after its five-second grace at08:35:30UTC.
+The UV command is300seconds old; auto-1792311429398 is an unrelated
+stale deadline1096seconds old. Neither native focus600/3600 limit fires.
+The retained raw kill history, deadline file and entire watchdog log are
+copied natively to /tmp/gludd-v012-focus-143-76268ef. The near-five-minute
+tool-lifetime hypothesis is superseded by actual project watchdog evidence;
+no synthetic310-second diagnostic is run.
+
+A single isolated native-focus ownership repair starts from exact76268ef
+on branch agent-v012-native-focus-watchdog. It must reuse the existing
+gate legacy-watchdog compatibility pattern through the producer and all
+long-lived focused children, including authenticated publication after
+observer success. Ordinary task cleanup, source/runtime/authentication,
+failure retention, coverage85/75, ZDD, fatal warnings and all observer
+bounds remain required. No global watchdog is stopped or disabled,
+no unsigned completion is adopted and no historical bundle is retried.
+
+Read-only disk-check reports464.6MB generated scratch over its100MB
+soft threshold; existing protected/recent artifacts remain owned and no
+cleanup authority is expanded. The brief separately draining secrets
+scan finishes naturally, and the native active-work snapshot again
+reports zero workers, no observed children and no running gate before
+bounded repair tests. Worktree registration emits the existing UV
+no-sync/no-project warning; subsequent no-project operations must set
+UV_NO_SYNC=0 explicitly. Final source acceptance, normal guarded commit,
+independent review, fresh native focus, full gate, exact-SHA hosted
+acceptance and canonical master promotion remain pending. All nineteen
+S97/S98 repair records remain unchecked, with no tag or release published.
+
+Bounded producer acceptance retains eight RED cases in
+/tmp/gludd-v012-native-focus-watchdog-agent-red.xml, then nine cases pass
+in11.47s at /tmp/gludd-v012-native-focus-watchdog-agent-green-final.xml.
+The actual native Make/UV/pytest command layers retain the legacy filter
+shield; ordinary and separate-project stale controls remain eligible.
+Literal Make-function data stays inert. Native focused authentication
+finishes after observer success and reuses identical signed bytes without
+a second child; cache symlinks refuse before child execution.
+
+The existing third compatibility child gains one exact cheap selector.
+All104 prior family objects and the complete runtime contract remain
+byte-equivalent as data; the manifest now has105families,21phases and
+the unchanged2850-second ceiling,90/60 owner bounds, three children and
+workers2/1/1. Three routing controls fail first in1.86s. An intermediate
+whole replay preserves244passes and two obsolete two-selector assertions
+at /tmp/gludd-v012-native-focus-watchdog-routing-and-policy-green.xml;
+only that roster expectation gains the new third node, retaining all
+original checks. Final complete routing and unchanged watchdog-policy
+cohort passes247cases in76.74s at
+/tmp/gludd-v012-native-focus-watchdog-routing-policy-final-green.xml.
+Existing omission/duplication/widening controls now also exercise the new node.
+
+The native two-owner coverage profile passes all193cases in287.79s
+(289.7observed),95% combined, producer93% and background owner97%,
+with both unchanged85/75 floors passing:
+.gate-logs/coverage-v012-native-focus-watchdog.json and native audit
+.gate-logs/coverage-20261018T085627Z.json in this worktree.
+Complete Ruff/file limits, strict changed-file typing,243Make contracts,
+105-family validation, task registration and four-document Markdown pass.
+The entire121866-character prior SESSION prefix is verified unchanged.
+A missing runtime declaration during two initial worktree guard calls
+creates only an empty local3.14environment and causes missing-jsonschema;
+the existing canonical3.11environment passes both actual guards afterward,
+without installation, synchronization or confinement overrides.
+These are source-repair results. Independent exact-source review, clean
+candidate focus, full gate and exact-SHA hosted proof remain required.
