@@ -1650,3 +1650,46 @@ partial scheduling stdout tail and required native collection receipts are
 archived at /tmp/gludd-v012-gate-async-fixture-sync-evidence. Main development
 and its failed exact-source evidence remain untouched; no push, gate, focus,
 candidate seal, global daemon or release action is performed here.
+
+## v0.1.2 gate profile fixture isolation (2026-10-18)
+
+Historical integrated 48f0177c50bee4d90e663cdcd63d12fcc847bff3 passes the native
+90/60 owner in 73.5 seconds with all 1887 main cases, help1/tail10 and zero
+skips; both original hosted timing families are natively REPAIRED there.
+Actual release-profile scheduling then fails two original native-profile
+gate_run_lock ordering cases while 1885 pass. Production's extra release-state
+stage is correct. Raw actual failure remains at
+/tmp/gludd-v012-48f0177-release-profile-failure/actual-admission-stdout.txt.
+No complete gate, successor hosted proof or release completion follows.
+
+Sole branch agent-v012-gate-profile-fixture-isolation starts at the pinned
+v012-failed-admission-48f0177-20261018 ref. Scope:
+tests/unit/test_gate_run_lock.py, docs/features/RUNTIME_ADMISSION_THROUGHPUT.md,
+TASKS.md and SESSION.md. The existing child Make argv now owns its miniature
+fixture profile explicitly; inherited recursive command-line values can no
+longer override its intentionally different file assignment. Production
+header/stage, admission/lock ordering, branch/ZDD policy, -j2/.NOTPARALLEL,
+15-second bound, failure injection, seven original matrix rows/four release
+rows and every original assertion remain unchanged.
+
+Ten additive controls exercise ordinary environment, -e and recursive values
+in both directions, record actual effective profile/command-line origin,
+mutate the binding away/opposite and require original real event assertions
+to fail. Existing five-key owned-test environment isolation constructs only
+child dictionaries; all other runtime values and parent state stay unchanged.
+Original RED reproduces two failures in 1.78 seconds; transport RED gives six
+failures/four mutation passes in 1.51 seconds. Final whole owner passes 31 cases
+under actual enclosing release (2.34 seconds) and native (1.84 seconds), zero
+skips, fatal warnings, one worker. Ruff and strict typing pass after one
+receipt-line style wrap. Native PID/start/lock safety assertions also pass.
+
+The whole file was already in compatibility admission. All prior 1887 main
+cases, help1/tail10, 110 families, three children/workers2-1-1, 90/60, 21/2850,
+85/75, native authentication/cleanup/promotion authority stay. No production
+owner, target, dependency, runner/cache, warning or coverage policy changes,
+and no new unbounded full-roster replay. The existing feature records the GNU
+manual and first-hand 2021 GNU origin/-e discussion with narrow applicability.
+Raw source receipts and required normal collection are externally retained
+under /tmp/gludd-v012-gate-profile-fixture-isolation-evidence. Root owns
+independent review, genuine integration, actual release-profile/bounded
+admission and exact-successor gate/hosted proof. No task closure.
