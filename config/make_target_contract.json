@@ -22,7 +22,10 @@
     },
     {
       "name": "sync-ansible-native-format",
-      "make_variables": ["ANSIBLE_FORMAT_SYNC_ENVIRONMENT", "ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY"],
+      "make_variables": [
+        "ANSIBLE_FORMAT_SYNC_ENVIRONMENT",
+        "ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY"
+      ],
       "behavior": "make sync-ansible-native-format ANSIBLE_FORMAT_SYNC_ENVIRONMENT=.venv ANSIBLE_FORMAT_SYNC_VALIDATE_ONLY=1"
     },
     {
@@ -35,12 +38,21 @@
     },
     {
       "name": "git-owned-checkpoint-push",
-      "make_variables": ["FILES", "GIT_CHECKPOINT_LABEL", "GIT_CHECKPOINT_VALIDATE_ONLY"],
+      "make_variables": [
+        "FILES",
+        "GIT_CHECKPOINT_LABEL",
+        "GIT_CHECKPOINT_VALIDATE_ONLY"
+      ],
       "behavior": "make git-owned-checkpoint-push FILES=Makefile GIT_CHECKPOINT_LABEL=gludd-contract-checkpoint GIT_CHECKPOINT_VALIDATE_ONLY=1"
     },
     {
       "name": "git-owned-checkpoint-restore",
-      "make_variables": ["FILES", "GIT_CHECKPOINT_LABEL", "GIT_CHECKPOINT_SHA", "GIT_CHECKPOINT_VALIDATE_ONLY"],
+      "make_variables": [
+        "FILES",
+        "GIT_CHECKPOINT_LABEL",
+        "GIT_CHECKPOINT_SHA",
+        "GIT_CHECKPOINT_VALIDATE_ONLY"
+      ],
       "behavior": "make git-owned-checkpoint-restore FILES=Makefile GIT_CHECKPOINT_LABEL=gludd-contract-checkpoint GIT_CHECKPOINT_SHA=0000000000000000000000000000000000000000 GIT_CHECKPOINT_VALIDATE_ONLY=1"
     },
     {
@@ -670,14 +682,18 @@
       "name": "lint-markdown",
       "make_variables": [
         "MARKDOWN_FILES",
+        "RUMDL_CONFIG",
         "MARKDOWNLINT_CONFIG"
       ],
-      "behavior": "make lint-markdown MARKDOWN_FILES=docs/features/XMSS_BACKEND_SAFETY.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc"
+      "behavior": "make lint-markdown MARKDOWN_FILES=docs/features/XMSS_BACKEND_SAFETY.md RUMDL_CONFIG=config/rumdl.toml MARKDOWNLINT_CONFIG=config/rumdl.toml"
     },
     {
       "name": "lint-css",
-      "make_variables": [],
-      "behavior": "make lint-css"
+      "make_variables": [
+        "CSS_FILES",
+        "ESLINT_CSS_CONFIG"
+      ],
+      "behavior": "make lint-css CSS_FILES=docs/presentation/deck/presentation.css ESLINT_CSS_CONFIG=config/eslint-css.config.mjs"
     },
     {
       "name": "lint-docstrings",
@@ -1910,12 +1926,17 @@
     },
     {
       "name": "check-secrets-files",
-      "make_variables": ["SECRETS_FILES", "SECRETS_BASELINE_FILE"],
+      "make_variables": [
+        "SECRETS_FILES",
+        "SECRETS_BASELINE_FILE"
+      ],
       "behavior": "make check-secrets-files SECRETS_FILES=scripts/check_clean_tree.py SECRETS_BASELINE_FILE=.secrets.baseline"
     },
     {
       "name": "git-unstage-files",
-      "make_variables": ["FILES"],
+      "make_variables": [
+        "FILES"
+      ],
       "behavior": "make git-unstage-files FILES=docs/features/RELEASE_PROOF_THROUGHPUT.md"
     },
     {
@@ -1936,13 +1957,14 @@
         "DUPLICATE_CODE_BASE_REF",
         "DUPLICATE_CODE_CURRENT_REF",
         "MARKDOWN_FILES",
+        "RUMDL_CONFIG",
         "MARKDOWNLINT_CONFIG",
         "PRESENTATION_BROWSER_ENGINES",
         "PRESENTATION_BROWSER_ROOT",
         "PRESENTATION_BROWSER_OUTPUT",
         "PRESENTATION_BROWSER_TIMEOUT"
       ],
-      "behavior": "make integration-admission INTEGRATION_ADMISSION_VALIDATE_ONLY=1 GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd DUPLICATE_CODE_BASE_REF=development DUPLICATE_CODE_CURRENT_REF=HEAD MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser PRESENTATION_BROWSER_TIMEOUT=600"
+      "behavior": "make integration-admission INTEGRATION_ADMISSION_VALIDATE_ONLY=1 GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd DUPLICATE_CODE_BASE_REF=development DUPLICATE_CODE_CURRENT_REF=HEAD MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md RUMDL_CONFIG=config/rumdl.toml MARKDOWNLINT_CONFIG=config/rumdl.toml PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser PRESENTATION_BROWSER_TIMEOUT=600"
     },
     {
       "name": "list-plugins",
@@ -2186,17 +2208,27 @@
     },
     {
       "name": "resolve-ansible-runtime-requirements",
-      "make_variables": ["ANSIBLE_EE_COLLECTION_ROOT", "ANSIBLE_EE_RESOLUTION_OUTPUT", "ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY"],
+      "make_variables": [
+        "ANSIBLE_EE_COLLECTION_ROOT",
+        "ANSIBLE_EE_RESOLUTION_OUTPUT",
+        "ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY"
+      ],
       "behavior": "make resolve-ansible-runtime-requirements ANSIBLE_EE_COLLECTION_ROOT=/tmp/gludd-contract-ee-collections ANSIBLE_EE_RESOLUTION_OUTPUT=/tmp/gludd-contract-ee-resolution.txt ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1"
     },
     {
       "name": "search",
-      "make_variables": ["PATTERN", "SEARCH_PATH"],
+      "make_variables": [
+        "PATTERN",
+        "SEARCH_PATH"
+      ],
       "behavior": "make search PATTERN=^search: SEARCH_PATH=make/95-collections-and-pipelines.mk"
     },
     {
       "name": "native-temp-artifact-inspect",
-      "make_variables": ["NATIVE_TEMP_ARTIFACT_PATH", "NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY"],
+      "make_variables": [
+        "NATIVE_TEMP_ARTIFACT_PATH",
+        "NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY"
+      ],
       "behavior": "make native-temp-artifact-inspect NATIVE_TEMP_ARTIFACT_PATH=/Users/shawnwilson/tmp/.gludd-native-inspect-contract.dylib NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY=1"
     },
     {
@@ -2229,12 +2261,16 @@
     },
     {
       "name": "merge-commit-nv",
-      "make_variables": ["MSG"],
+      "make_variables": [
+        "MSG"
+      ],
       "behavior": "make merge-commit-nv MSG='merge branch'"
     },
     {
       "name": "worktree-commit-changes",
-      "make_variables": ["MSG"],
+      "make_variables": [
+        "MSG"
+      ],
       "behavior": "make worktree-commit-changes MSG='worktree commit'"
     },
     {

@@ -206,5 +206,5 @@ make test-files TESTFILES='tests/unit/test_freellmapi_sync_verifier.py'
 make coverage-files COVERAGE_TESTFILES='tests/unit/test_freellmapi_sync_verifier.py' COVERAGE_CONFIG=config/coverage_freellmapi_sync_verifier.ini COVERAGE_REPORT=.gate-logs/coverage-freellmapi-sync-verifier.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20
 make lint-files FILES='src/general_ludd/models/freellmapi_sync_contracts.py src/general_ludd/models/freellmapi_sync_inventory.py src/general_ludd/models/freellmapi_sync_plans.py src/general_ludd/models/freellmapi_sync_verifier.py tests/unit/test_freellmapi_sync_verifier.py'
 make typecheck-scope FILES='src/general_ludd/models/freellmapi_sync_contracts.py src/general_ludd/models/freellmapi_sync_inventory.py src/general_ludd/models/freellmapi_sync_plans.py src/general_ludd/models/freellmapi_sync_verifier.py tests/unit/test_freellmapi_sync_verifier.py'
-make lint-markdown MARKDOWN_FILES='docs/features/FREELLMAPI_V012_SYNC_VERIFIER.md' MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc
+make lint-markdown MARKDOWN_FILES='docs/features/FREELLMAPI_V012_SYNC_VERIFIER.md' RUMDL_CONFIG=config/rumdl.toml
 ```
