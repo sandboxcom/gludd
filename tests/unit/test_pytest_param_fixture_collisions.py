@@ -489,3 +489,190 @@ def test_repository_class_scoped_fixtures_use_supported_binding(
     assert not bindings, "Class-scoped fixtures require staticmethod or classmethod binding:\n" + "\n".join(
         f"  {item.path.relative_to(REPO_ROOT)}:{item.line}: {item.class_name}.{item.name}" for item in bindings
     )
+
+
+def test_declaration_traversal_visits_statements_once_without_payload_growth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Argument, alias and keyword payloads must not expand the statement walk."""
+    from collections.abc import Iterator
+
+    original_fields = ast.iter_fields
+    visit_counts: list[int] = []
+    for width in (1, 256):
+        parameters = ", ".join(f"argument_{index}=0" for index in range(width))
+        aliases = ", ".join(f"module_{index} as alias_{index}" for index in range(width))
+        keywords = ", ".join(f"key_{index}=0" for index in range(width))
+        source = (
+            f"import pytest as pt, {aliases}\n"
+            "pytest_plugins = ('plugin.one',)\n"
+            f"@pt.mark.parametrize('base_url', [dict({keywords})])\n"
+            f"def test_case(base_url, {parameters}): pass\n"
+            f"class TestExample(Base, {keywords}):\n"
+            "    @pt.fixture(scope='class')\n"
+            f"    def shared(self, {parameters}): pass\n"
+        )
+        tree = ast.parse(source)
+        expected_nodes = {
+            id(node) for node in ast.walk(tree) if isinstance(node, (ast.Module, ast.stmt))
+        }
+        visited: list[int] = []
+
+        def statement_fields(
+            node: ast.AST, *, expected_nodes: set[int] = expected_nodes,
+            visited: list[int] = visited,
+        ) -> Iterator[tuple[str, object]]:
+            assert id(node) in expected_nodes, (
+                f"Declaration traversal inspected non-statement payload {type(node).__name__}"
+            )
+            visited.append(id(node))
+            yield from original_fields(node)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(ast, "iter_fields", statement_fields)
+            declarations = fixture_audit._source_declarations(tree)
+
+        assert visited
+        assert set(visited) == expected_nodes
+        assert len(visited) == len(expected_nodes)
+        visit_counts.append(len(visited))
+        assert len(declarations.imports) == 1
+        assert len(declarations.imports[0].names) == width + 1
+        assert [
+            (node.name, getattr(owner, "name", "<module>"))
+            for node, owner in declarations.functions
+        ] == [("shared", "TestExample"), ("test_case", "<module>")]
+        assert [ast.literal_eval(value) for value in declarations.plugin_values] == [
+            ("plugin.one",),
+        ]
+        assert fixture_audit._declared_fixture_names(declarations) == {"shared"}
+
+    assert len(visit_counts) == 2
+    assert visit_counts[0] == visit_counts[1]
+
+
+def _nested_statement_payload(label: str) -> str:
+    """Put every declaration consumer beneath a native statement container."""
+    return dedent(f"""
+        pytest_plugins = "plugin.{label}.assigned"
+        pytest_plugins: tuple[str, ...] = ("plugin.{label}.annotated",)
+        class Test_{label}:
+            if condition:
+                @provide_{label}(scope="class", name="public_{label}")
+                async def shared(self):
+                    @pt_{label}.fixture(scope="class")
+                    def nested(): pass
+                @pt_{label}.fixture(scope="class")
+                @staticmethod
+                def supported(): pass
+        @cases_{label}.parametrize("base_url", [1])
+        def case_{label}(base_url): pass
+        from pytest import fixture as provide_{label}, mark as cases_{label}
+        import pytest as pt_{label}
+    """).strip()
+
+
+@pytest.mark.parametrize(
+    ("statement_template", "statement_slots", "reverse_statement_slots"),
+    [
+        pytest.param(
+            "if condition:\n{body}\nelif alternate:\n{alternate}\nelse:\n{orelse}\n",
+            (("body", 4), ("alternate", 4), ("orelse", 4)),
+            ("orelse", "alternate", "body"),
+            id="if-elif-else",
+        ),
+        pytest.param(
+            "for item in items:\n{body}\nelse:\n{orelse}\n",
+            (("body", 4), ("orelse", 4)), ("orelse", "body"), id="for-else",
+        ),
+        pytest.param(
+            "async for item in items:\n{body}\nelse:\n{orelse}\n",
+            (("body", 4), ("orelse", 4)), ("orelse", "body"), id="async-for-else",
+        ),
+        pytest.param(
+            "while condition:\n{body}\nelse:\n{orelse}\n",
+            (("body", 4), ("orelse", 4)), ("orelse", "body"), id="while-else",
+        ),
+        pytest.param(
+            "with manager() as resource:\n{body}\n",
+            (("body", 4),), ("body",), id="with",
+        ),
+        pytest.param(
+            "async with manager() as resource:\n{body}\n",
+            (("body", 4),), ("body",), id="async-with",
+        ),
+        pytest.param(
+            "try:\n{body}\nexcept ValueError as first:\n{first_handler}\n"
+            "except TypeError as second:\n{second_handler}\n"
+            "else:\n{orelse}\nfinally:\n{finalbody}\n",
+            (("body", 4), ("first_handler", 4), ("second_handler", 4),
+             ("orelse", 4), ("finalbody", 4)),
+            ("finalbody", "orelse", "second_handler", "first_handler", "body"),
+            id="try-except-else-finally",
+        ),
+        pytest.param(
+            "try:\n{body}\nexcept* ValueError as first:\n{first_handler}\n"
+            "except* TypeError as second:\n{second_handler}\n"
+            "else:\n{orelse}\nfinally:\n{finalbody}\n",
+            (("body", 4), ("first_handler", 4), ("second_handler", 4),
+             ("orelse", 4), ("finalbody", 4)),
+            ("finalbody", "orelse", "second_handler", "first_handler", "body"),
+            id="try-star-except-else-finally",
+        ),
+        pytest.param(
+            'match subject:\n    case {"value": value} if accepted(value):\n{body}\n'
+            "    case _:\n{otherwise}\n",
+            (("body", 8), ("otherwise", 8)), ("otherwise", "body"), id="match-cases",
+        ),
+    ],
+)
+def test_declarations_preserve_every_statement_container_order_and_owner(
+    tmp_path: Path,
+    statement_template: str,
+    statement_slots: tuple[tuple[str, int], ...],
+    reverse_statement_slots: tuple[str, ...],
+) -> None:
+    from textwrap import indent
+
+    statement = statement_template
+    for label, depth in statement_slots:
+        statement = statement.replace(
+            "{" + label + "}", indent(_nested_statement_payload(label), " " * depth),
+        )
+    source = "async def container():\n" + indent(statement, "    ")
+    declarations = fixture_audit._source_declarations(ast.parse(source))
+
+    expected_functions = [("container", "<module>")]
+    expected_imports: list[str] = []
+    expected_plugins: list[object] = []
+    for label in reverse_statement_slots:
+        expected_functions.extend([
+            (f"case_{label}", "container"),
+            ("supported", f"Test_{label}"),
+            ("shared", f"Test_{label}"),
+            ("nested", "shared"),
+        ])
+        expected_imports.extend([
+            f"import pytest as pt_{label}",
+            f"from pytest import fixture as provide_{label}, mark as cases_{label}",
+        ])
+        expected_plugins.extend([
+            (f"plugin.{label}.annotated",), f"plugin.{label}.assigned",
+        ])
+
+    assert [
+        (node.name, getattr(owner, "name", "<module>"))
+        for node, owner in declarations.functions
+    ] == expected_functions
+    assert [ast.unparse(node) for node in declarations.imports] == expected_imports
+    assert [ast.literal_eval(value) for value in declarations.plugin_values] == expected_plugins
+
+    path = tmp_path / "test_nested_statements.py"
+    path.write_text(source, encoding="utf-8")
+    report = fixture_audit.audit_pytest_sources([path], external_fixture_names={"base_url"})
+    assert [(item.path, item.name) for item in report.collisions] == [
+        (path, "base_url") for _label, _depth in statement_slots
+    ]
+    assert [(item.class_name, item.name) for item in report.bindings] == [
+        (f"Test_{label}", f"public_{label}") for label, _depth in statement_slots
+    ]
