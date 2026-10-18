@@ -530,6 +530,18 @@ combined repair cohort passes 234 cases, the explicit resource bindings pass
 runs are not full-gate proof. Native manifest validation reports 96 families
 and Make-contract validation reports 243 targets.
 
+Actual source `a521b8e` scheduling admission stops before candidate sealing:
+1823 cases pass and the original cold-start exact-roster control fails. A bounded
+replay of that file retains one failure and 53 passes. The shared literal
+`ROSTER` now gains the same eight already-owned selectors in their actual order;
+every original roster entry, exact-match assertion, mutation control, native
+flag and fresh-process boundary remains. No family or runtime phase is added.
+The complete scheduling/cold-start/promotion slice then passes 142 cases in
+47.20 seconds. The native failed admission is retained at
+`/tmp/gludd-v012-admission-a521-failure.log`; source-only approval of a521b8e
+is not approval or admission for its successor. Real scheduling admission must
+pass after this declaration repair before sealing or final proof.
+
 The terminal hosted timing report is produced by the existing
 `ci-run-summary` owner with `CI_RUN_SUMMARY_SHARD_TIMINGS=1`, retaining exact
 run/SHA identity and all eight shards. Failed shard intervals remain censored.

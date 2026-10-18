@@ -1,3 +1,26 @@
+## v0.1.2 early-admission roster repair (2026-10-18)
+
+Primary objective: complete hosted CI and the canonical gate, then merge verified
+work into master for v0.1.2. HEAD before this repair is
+`a521b8eab271591651597c92524c03636ea92ef4`; its independent approval is
+source only and remains immutable.
+
+Actual release-proof admission passes capacity/configuration/task/ownership
+checks, then fails the original cold-start exact-roster assertion: 1823 passed,
+one failed in 76.52 seconds. No candidate is sealed and no full gate starts.
+The bounded file replay retains one failed/53 passed; its shared literal roster
+now gains the same eight selectors already owned by the new admission recipe.
+All original exact-match/mutation assertions, selectors, phases and limits remain.
+The complete scheduling/cold-start/promotion slice passes 142 cases in 47.20
+seconds. Latest collection remains 125230/125231, one deselected, zero errors.
+
+Retain `/tmp/gludd-v012-admission-a521-failure.log` and all earlier failed
+proofs. Next: commit this declaration repair with fresh collection, repeat real
+admission after the changed input, obtain independent successor review, record
+native clean-SHA repairs and seal once for final canonical and exact-SHA hosted/
+deployment evidence. No task closure, master promotion, tag or publication follows
+focused results.
+
 ## v0.1.2 release continuation (2026-10-18 03:17 UTC)
 
 Primary objective: finish hosted CI and the canonical gate, merge verified work
