@@ -437,6 +437,7 @@ help:
 		"  --- Setup ---" \
 		"  init                  Set up project (dirs + deps)" \
 		"  sync                  Atomically sync an explicit locked dependency profile set (DEPENDENCY_PROFILE_*)" \
+		"  acquire-pinned-uv      Acquire hosted uv in a private native leaf (PINNED_UV_VALIDATE_ONLY=1 plans)" \
 		"  inspect-dependency-runtime Read-only registered runtime/profile metadata (DEPENDENCY_RUNTIME_*, plan by default)" \
 		"  sync-ansible-native-format Native locked/inexact dev tooling sync (ANSIBLE_FORMAT_SYNC_*, dry-plan by default)" \
 		"  uv-cache-path         Print the sandbox-writable Gludd uv cache path" \
@@ -1031,6 +1032,18 @@ init: setup-dirs
 	@command -v $(UV) >/dev/null 2>&1 || { echo "uv is required for locked dependency profiles"; exit 1; }
 	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@$(MAKE) --no-print-directory install-hooks
+
+.PHONY: acquire-pinned-uv
+PINNED_UV_VALIDATE_ONLY ?= 1
+override GLUDD_PINNED_UV_VALIDATE_ONLY := $(value PINNED_UV_VALIDATE_ONLY)
+# Explicit assignment keeps the existing environment-source audit authoritative.
+export GLUDD_PINNED_UV_VALIDATE_ONLY := $(value PINNED_UV_VALIDATE_ONLY)
+unexport PINNED_UV_VALIDATE_ONLY
+
+acquire-pinned-uv:
+	@case "$$GLUDD_PINNED_UV_VALIDATE_ONLY" in 0|1) ;; *) echo 'PINNED_UV_VALIDATE_ONLY must be 0 or 1'; exit 2;; esac; \
+	$(UV) run python -B -m scripts.dependency_profiles acquire-uv --root "$(CURDIR)" \
+		$$(if [ "$$GLUDD_PINNED_UV_VALIDATE_ONLY" = 1 ]; then printf '%s' --validate-only; fi)
 
 DEPENDENCY_RUNTIME_ENVIRONMENT ?=
 DEPENDENCY_RUNTIME_PYTHON ?= 3.12.15

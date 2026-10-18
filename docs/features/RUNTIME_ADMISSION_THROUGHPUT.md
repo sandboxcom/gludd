@@ -1340,3 +1340,90 @@ admission selector/family, bound, cleanup or promotion policy changes.
 Exact 3.12 acquisition, positive current-CI inspection and the proposed
 serial import/collection diagnostic remain missing; no release proof or
 task closure is claimed.
+
+### Native acquisition of the hosted uv pin (S98.4, 2026-10-18)
+
+Independent source-only review approves the repaired inspection descendant
+`0fccc95a47be44a0d2810693ad32b9da47612a0d`; immutable `77b80ea` remains
+changes requested. Neither review acquires a runtime or clears the censored
+Python 3.12 admission. The exact managed 3.12.15 interpreter is still
+unavailable to installed uv 0.11.17, and hosted setup pins uv 0.13.1.
+
+The existing dependency-profile lifecycle owner now exposes
+`acquire-pinned-uv PINNED_UV_VALIDATE_ONLY=1`. It reads the single exact stable
+version in the existing managed-3.12 setup-uv workflow step using the installed
+safe YAML parser. Package, official index, bootstrap policy and namespace are
+fixed. There is no editable second version pin or package/URL/path runner.
+The selected parent must already be Python 3.11 in a registered toolchain slot.
+
+Plan mode creates no directories or leases, starts no child and makes no
+network request. Its actual documented safe example passes on canonical
+3.11 and reports uv 0.13.1, the exact workflow hash and a derived private
+`<resource-root>-toolchain/pinned-uv/0.13.1` leaf:
+
+```text
+make acquire-pinned-uv PINNED_UV_VALIDATE_ONLY=1
+```
+
+Apply holds the existing nonblocking acquisition lease through verification
+and any failure cleanup. Native `uv tool install` receives the explicit
+existing interpreter, `--no-config`, `--no-python-downloads`, `--no-build`,
+official HTTPS PyPI and the exact workflow requirement. Tool, binary, cache
+and managed-Python paths stay within that fresh immutable version leaf.
+Conflicting UV/PIP/Python environment settings are removed only from the
+child dictionary; private PATH and concurrency1 are child-only. No shell
+profile, global uv/store, canonical311 or project environment is modified.
+
+The existing native observer owns the install process group and drain under
+180-second maximum/60-second quiet limits. A separate fixed HTTPS metadata
+read has 20-second I/O timeouts, a 20-second elapsed read budget and a 1MiB cap;
+a single blocking read can consume its remaining I/O timeout before refusal.
+Native metadata/version probes are bounded at ten seconds. Every attempt
+uses a unique producer-owned log/status identity; previous failures remain.
+
+Verified reuse never invokes the installer. It holds the native tool lease
+and checks the exact requirement/interpreter/index receipt, private exports,
+installed distribution/WHEEL/RECORD, actual Python prefix and uv version,
+executable digest and fresh path/file identities. Metadata and configuration
+shadows, malformed output, changed workflow/paths, foreign/symlink/partial
+state, held leases and known active usage refuse. Only this attempt's fresh,
+unchanged inode, held acquisition/native leases and confirmed child drain
+authorize cleanup; the existing active-path census is an additional refusal,
+never deletion authority. Unknown drain or changed authority retains the leaf.
+No populated environment is force-reinstalled, renamed or upgraded.
+
+The reported wheel URL/SHA-256 is the official published wheel matching
+installed WHEEL tags; `wheel_identity_kind=published-tag-match` states that
+limit. The installed executable is checked against its installed RECORD and
+hashed separately. This native tool install is not a project `uv.lock`
+transaction or an independently authenticated artifact/hash lock:
+`artifact_hash_locked=false` remains explicit. Unsupported locked/hash flags
+are not invented. If a pre-reviewed artifact digest is required, it remains
+an additional acquisition prerequisite.
+
+Research reused the
+[native uv 0.11.17 CLI](https://github.com/astral-sh/uv/blob/0.11.17/crates/uv-cli/src/lib.rs)
+and [official tool lifecycle](https://docs.astral.sh/uv/concepts/tools/).
+First-hand [uv #6400](https://github.com/astral-sh/uv/issues/6400) reports
+successful tool installation followed by Windows self-upgrade/entrypoint
+replacement failures in 2024. The 2025 first-hand
+[uv #11930](https://github.com/astral-sh/uv/issues/11930) reports a failed
+in-use replacement that later appeared current. These motivate immutable
+leaves plus actual executable verification; neither diagnoses this macOS
+catalogue prerequisite or Gludd's hosted timing failure.
+
+The initial missing-owner RED retains 36 failures/one existing refusal pass.
+Additional native-lease, linked-lease, final-path/YAML, literal-policy/deadline
+and real package-boundary REDs precede correction. All 161 complete
+profile/inspection/acquisition cases pass warning-fatal in 14.77 seconds,
+including fixture-only native timeout/drain and package execution.
+Native coverage is 93.8% lines/89.1% branches (92% combined), above 85/75;
+observer `20261018T145042Z-91233-e569523f` passes in 16.876 seconds.
+The 157-case coverage and 58-case run remain intermediate receipts.
+
+No actual uv acquisition, Python download, sync, positive current-CI
+inspection or import/collection diagnostic has run for this source change.
+Independent acquisition-source acceptance and fresh native capacity precede
+apply. All 110 admission families, selectors, three children/workers2-1-1,
+90/60 and 21/2850 limits, fatal warnings, coverage, cleanup/ZDD/authentication,
+branch/promotion authority and historical refs/proof remain; no task closes.

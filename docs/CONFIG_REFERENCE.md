@@ -438,6 +438,24 @@ authority. The raw Make variables are unexported to prevent recursive expansion.
 | `GLUDD_DEPENDENCY_RUNTIME_SET` | `ci` | Selected `ci` or `development` profile inputs. |
 | `GLUDD_DEPENDENCY_RUNTIME_VALIDATE_ONLY` | `1` | Plan by default; `0` permits bounded metadata inspection, never installation. |
 
+#### Native pinned uv acquisition carrier
+
+`make acquire-pinned-uv PINNED_UV_VALIDATE_ONLY=1` is the documented safe
+plan. `PINNED_UV_VALIDATE_ONLY` defaults to `1`; explicit `0` permits only
+the fixed native tool acquisition after source/capacity admission. Package,
+version source, index, bootstrap and output namespace are fixed by the owner.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `GLUDD_PINNED_UV_VALIDATE_ONLY` | `1` | Internal literal carrier derived with override from `PINNED_UV_VALIDATE_ONLY`; not independent installation authority. |
+
+The raw Make variable is unexported. Plan starts no child and creates no
+paths/leases or downloads. Apply uses the existing registered3.11 interpreter,
+private version tool/bin/cache roots, official PyPI/no-build/no-Python-download
+policy and native bounded lifecycle. It never upgrades canonical/global uv
+or changes the project environment. Published wheel and installed executable
+digests are separate; this tool operation is not project hash-lock proof.
+
 ### 1.2 Model-provider credentials
 
 Set **exactly one** provider's key to get a working model. The key name a

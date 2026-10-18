@@ -1789,3 +1789,57 @@ warnings, ZDD, cleanup/authentication and promotion authority remain.
 Normal guarded child commit/collection and exact cumulative source review
 are separate from runtime acquisition and the still-missing diagnostic
 and release proofs.
+
+### S98.4: fixed native pinned-uv acquisition owner; actual acquisition held
+
+The repaired M11 source `0fccc95a47be44a0d2810693ad32b9da47612a0d`
+has independent SOURCE ONLY approval cumulatively against3583000;
+unsafe77b80ea and all failed provisioning/mismatch evidence stay preserved.
+The separate researched next prerequisite is a private native uv tool install,
+not a timing patch or global uv update. Sole branch remains
+`agent-v012-native-312-startup-diagnostic`.
+
+Extended only dependency_profiles with fixed managed-3.12 workflow-pin
+selection, registered running3.11 bootstrap and existing namespace/lease
+owners. New target acquire-pinned-uv has one literal mode input, default1
+read-only plan. Actual0/1 and inert Make-function refusal controls preserve
+literal transport; internal carrier override and raw unexport are explicit.
+The real safe plan passes and reports version0.13.1, canonical3.11 and the
+derived private version leaf, without child/network/path creation.
+
+Actual install, if later admitted, uses native uv tool install with fixed
+official PyPI/no-build/no-Python-download policy and a scrubbed child-only
+environment. Existing stream_command owns the process group,180/60 bounds,
+unique logs/status and drain. The existing acquisition lease spans admission,
+verification and failure cleanup. Existing native tool lease, receipt,
+interpreter/private exports, distribution/WHEEL/RECORD, real version/hash
+and fresh identities gate reuse/success. Unknown/foreign/partial/active/held
+or changed state refuses; only this attempt's fresh unchanged inode and
+confirmed drain authorize removal, with the census only an extra refusal.
+Prior valid/unknown state is never reinstalled, renamed or deleted.
+
+Native published tag-matched wheel URL/digest and installed executable
+identity are distinct. This is not project-lock or independent artifact
+authentication; artifact_hash_locked=false is explicit. No new installer,
+runner, scanner, daemon, cache, dependency, plugin/selector cut or proof owner.
+Existing maturity research and firsthand uv6400/11930 applicability are
+recorded in RUNTIME_ADMISSION_THROUGHPUT; all earlier feature history remains.
+
+Retained REDs:36missing-owner failures/one pass; live native cleanup lease1;
+linked leases2; final-path/YAML5; valid literal policy/metadata deadline3;
+and real package-module boundary1. Intermediate35/2failure,58green and
+157-case coverage remain historical. The actual safe behavioral example also
+caught Make export/help and package-launch defects before final proof.
+Final complete three-owner native coverage passes161cases14.77s,
+93.8%line/89.1%branch,92%combined, unchanged85/75/fatal warnings/one worker;
+observer20261018T145042Z-91233-e569523f passesrc0 in16.876s.
+Real native fixture children stay isolated and reaped; metadata HTTP tests
+use MockTransport, and no package/index acquisition occurred.
+
+TASKS extends one existing unchecked S98.4 row with no line/status/checkbox
+growth and full SESSION prefix. All110 families, original admission roster,
+three children2/1/1,90/60,21/2850, ZDD, cleanup/authentication and promotion
+authority remain. Main/canonical311/global tools and healthy watchdog29001
+remain untouched. Actual acquisition awaits its independent source acceptance
+and fresh capacity; exact3.12 sync/positiveCI inspection/original bounded
+serial import-collection diagnostic and release proofs remain missing.
