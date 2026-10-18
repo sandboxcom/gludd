@@ -461,6 +461,35 @@ gate, exact-SHA hosted result or installed deployment acceptance.
 All 38 additive source-boundary/failure controls also pass on Python 3.14 in
 3.8 observed seconds (`.gate-logs/v012-pipeline-source-main-314.log`).
 
+## Explicit SSH identity for native observations
+
+The 2026-10-17 release diagnostic failed remote lookup with permission denied
+while the existing configured-key state target could read the remote. The
+`pipeline-status` recipe now exports its normal `SSH_KEY` transport to both
+the failure-ledger observer and snapshot producer. Both still resolve the
+actual remote branch; authentication failures remain lookup errors and replace
+prior current success through the existing producer. Explicit-SHA observation
+and all-workflow outcome rules keep their existing semantics.
+
+Four native Make regressions call the real remote-head adapter through a local
+Git fixture, verify the identity received by both children, and retain ledger
+and status failure propagation. They do not authenticate or claim hosted proof.
+The native secret scan flags their public repository argument. The existing
+baseline owner adds its exact finding with zero removals; native audit labels
+it non-secret. The existing source-derived review test pins that exact public
+argument and label for both fixtures. No detector or file exemption is added.
+
+[GitHub Community discussion #27456](https://github.com/orgs/community/discussions/27456)
+records the long-standing distinction between a working standalone SSH command
+and the command Git actually invokes. The maintained
+[Git environment reference](https://git-scm.com/docs/git#Documentation/git.txt-GITSSHCOMMAND)
+defines the transport override. Applied inference: bind the same configured
+identity at the existing Make entrypoint rather than treating another SSH
+command's success as evidence for the observer. No credentials, alternate
+watcher or serving process are added. ZDD rollout applies to new diagnostic
+invocations; active owners retain their environment. Rollback reverts the
+recipe and its contract after those owners finish, preserving all observations.
+
 ## Verification
 
 `tests/unit/test_ci_failure_ledger.py` covers all-failure collection,

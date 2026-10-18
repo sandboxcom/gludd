@@ -135,9 +135,12 @@ def test_public_capacity_grace_argument_has_one_exact_reviewed_finding() -> None
     assert finding["is_verified"] is False
 
 
-def test_public_bounded_status_repository_argument_has_one_exact_reviewed_finding() -> None:
+@pytest.mark.parametrize("filename", [
+    "tests/unit/test_item_progress.py",
+    "tests/unit/test_pipeline_status_ssh_transport.py",
+])
+def test_public_bounded_status_repository_argument_has_one_exact_reviewed_finding(filename: str) -> None:
     """Review only the literal public repository argument, not arbitrary settings."""
-    filename = "tests/unit/test_item_progress.py"
     source = (ROOT / filename).read_text(encoding="utf-8")
     arguments = {
         node.value for node in ast.walk(ast.parse(source))

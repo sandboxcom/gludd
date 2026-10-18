@@ -442,6 +442,7 @@ def test_make_target_forwards_explicit_identity_and_has_safe_contract() -> None:
         "PIPELINE_STATUS_FAILURE_LEDGER",
         "PIPELINE_STATUS_VALIDATE_ONLY",
         "PIPELINE_STATUS_OUTPUT",
+        "SSH_KEY",
     ]
     assert "PIPELINE_STATUS_VALIDATE_ONLY=1" in contract["behavior"]
 
