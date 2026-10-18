@@ -89,6 +89,14 @@ for equality, while continuing to track declaration adjacency. Both failures
 are repaired and all 33 CSS, Markdown, integration-routing and native clone
 tests pass. Existing defect and valid-browser-fallback controls remain intact.
 
+Before this integration, native low-threshold audit failed with 12 findings.
+Available dependency updates reduced but did not clear the unpatched
+[braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+The existing migration removes both dependency paths rather than recording a
+waiver. [Stylelint's downstream report](https://github.com/stylelint/stylelint/issues/9559)
+documents the maintained-tool impact; its proposed future release is not proof
+for Gludd. The actual combined graph now passes the same audit threshold.
+
 The combined lock retains development's exact jscpd 5.4.1 closure. Fresh native
 low-threshold Node audit reports zero vulnerabilities; the locked development
 profile synchronizes atomically and passes its compatibility check. The public
