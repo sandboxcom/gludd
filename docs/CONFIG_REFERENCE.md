@@ -863,3 +863,51 @@ Leave `pipeline.enabled` off.
 - `docs/operations/` — operator runbooks
 - `AGENTS.md` § "Project Overview" / "Key Make Targets" — make target catalogue
 - `Makefile` — every runnable target (only `make <target>` is permitted in bash)
+
+## Startup diagnostic literal inputs
+
+`runtime-startup-diagnostic`, `runtime-startup-report` and
+`runtime-startup-archive` share exact `OBSERVED_ROOT`, `OBSERVED_LABEL` and
+`RUN_ID`. The root is this checkout's `.gate-logs/observed`; `current` is
+forbidden. Run alone also consumes `LOG`, `OBSERVED_HEARTBEAT_SECS`,
+`OBSERVED_RETAIN_RUNS` and `WORK_ITEM_ID`. Run/archive plan by default;
+report is always read-only.
+
+| Public Make variable | Default | Meaning |
+| --- | --- | --- |
+| `RUNTIME_DIAGNOSTIC_VALIDATE_ONLY` | `1` | Literal `1` plan; explicit `0` applies run/archive. |
+| `RUNTIME_DIAGNOSTIC_SOURCE_SHA` | empty | Exact source for run; externally declared source for historical readers. |
+| `RUNTIME_DIAGNOSTIC_ENVIRONMENT` | empty | Existing registered environment; empty selects the inspector's derived slot. |
+| `RUNTIME_DIAGNOSTIC_PYTHON` | `3.12.15` | Fixed hosted runtime; no substitute/install. |
+| `RUNTIME_DIAGNOSTIC_SET` | `ci` | Fixed complete current CI composition. |
+| `RUNTIME_DIAGNOSTIC_REPORT` | empty | Stdout, or an explicit fresh external report file. |
+| `RUNTIME_DIAGNOSTIC_ARCHIVE` | empty | Fresh external destination, or verified report replay archive. |
+| `RUNTIME_DIAGNOSTIC_CONSOLE` | `[]` | JSON list of at most eight distinct external raw console parts. |
+
+Internal carriers below use Make override and literal public values, never
+additional authority. Raw public values are unexported to prevent Make-function
+evaluation. Shared ordinary observer inputs are confined only when these
+facades are requested.
+
+| Internal environment carrier | Default | Public owner |
+| --- | --- | --- |
+| `GLUDD_RUNTIME_DIAGNOSTIC_VALIDATE_ONLY` | `1` | `RUNTIME_DIAGNOSTIC_VALIDATE_ONLY` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_SOURCE_SHA` | empty | `RUNTIME_DIAGNOSTIC_SOURCE_SHA` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_ENVIRONMENT` | empty | `RUNTIME_DIAGNOSTIC_ENVIRONMENT` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_PYTHON` | `3.12.15` | `RUNTIME_DIAGNOSTIC_PYTHON` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_SET` | `ci` | `RUNTIME_DIAGNOSTIC_SET` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_REPORT` | empty | `RUNTIME_DIAGNOSTIC_REPORT` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_ARCHIVE` | empty | `RUNTIME_DIAGNOSTIC_ARCHIVE` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_CONSOLE` | `[]` | `RUNTIME_DIAGNOSTIC_CONSOLE` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_ROOT` | `.gate-logs/observed` | `OBSERVED_ROOT` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_LABEL` | empty | `OBSERVED_LABEL` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_RUN_ID` | empty | `RUN_ID` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_LOG` | empty | `LOG`; run falls back to `.gate-logs/runtime-startup.log` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_HEARTBEAT` | `30` | `OBSERVED_HEARTBEAT_SECS`; documented example uses `10` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_RETAIN` | `20` | `OBSERVED_RETAIN_RUNS` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_TASK` | empty | `WORK_ITEM_ID` |
+
+Historical reports cannot infer source/argv/runtime authentication or per-line
+timing absent from the original producer. Archives keep original status paths
+verbatim and replay through manifest role/path/hash mappings without fallback.
+No diagnostic surface grants admission, gate, hosted or release authority.

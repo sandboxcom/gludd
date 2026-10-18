@@ -2326,6 +2326,50 @@
         "PINNED_UV_VALIDATE_ONLY"
       ],
       "behavior": "make acquire-pinned-uv PINNED_UV_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "runtime-startup-diagnostic",
+      "make_variables": [
+        "RUNTIME_DIAGNOSTIC_VALIDATE_ONLY",
+        "OBSERVED_ROOT",
+        "OBSERVED_LABEL",
+        "RUN_ID",
+        "RUNTIME_DIAGNOSTIC_SOURCE_SHA",
+        "RUNTIME_DIAGNOSTIC_ENVIRONMENT",
+        "RUNTIME_DIAGNOSTIC_PYTHON",
+        "RUNTIME_DIAGNOSTIC_SET",
+        "LOG",
+        "OBSERVED_HEARTBEAT_SECS",
+        "OBSERVED_RETAIN_RUNS",
+        "WORK_ITEM_ID"
+      ],
+      "behavior": "make runtime-startup-diagnostic RUNTIME_DIAGNOSTIC_VALIDATE_ONLY=1 OBSERVED_ROOT=.gate-logs/observed OBSERVED_LABEL=startup-contract-plan RUN_ID=plan-only RUNTIME_DIAGNOSTIC_SOURCE_SHA=0000000000000000000000000000000000000000 RUNTIME_DIAGNOSTIC_ENVIRONMENT= RUNTIME_DIAGNOSTIC_PYTHON=3.12.15 RUNTIME_DIAGNOSTIC_SET=ci LOG=.gate-logs/startup-contract-plan.log OBSERVED_HEARTBEAT_SECS=10 OBSERVED_RETAIN_RUNS=20 WORK_ITEM_ID=S98.4"
+    },
+    {
+      "name": "runtime-startup-report",
+      "make_variables": [
+        "OBSERVED_ROOT",
+        "OBSERVED_LABEL",
+        "RUN_ID",
+        "RUNTIME_DIAGNOSTIC_SOURCE_SHA",
+        "RUNTIME_DIAGNOSTIC_ARCHIVE",
+        "RUNTIME_DIAGNOSTIC_CONSOLE",
+        "RUNTIME_DIAGNOSTIC_REPORT"
+      ],
+      "behavior": "make runtime-startup-report OBSERVED_ROOT=.gate-logs/observed OBSERVED_LABEL=v012-312-startup-profile RUN_ID=imports-f634b76-20261018 RUNTIME_DIAGNOSTIC_SOURCE_SHA=f634b7662a4122c6c96262f1656dc5088da03b96 RUNTIME_DIAGNOSTIC_ARCHIVE= RUNTIME_DIAGNOSTIC_CONSOLE='[]' RUNTIME_DIAGNOSTIC_REPORT="
+    },
+    {
+      "name": "runtime-startup-archive",
+      "make_variables": [
+        "RUNTIME_DIAGNOSTIC_VALIDATE_ONLY",
+        "OBSERVED_ROOT",
+        "OBSERVED_LABEL",
+        "RUN_ID",
+        "RUNTIME_DIAGNOSTIC_SOURCE_SHA",
+        "RUNTIME_DIAGNOSTIC_ARCHIVE",
+        "RUNTIME_DIAGNOSTIC_CONSOLE"
+      ],
+      "behavior": "make runtime-startup-archive RUNTIME_DIAGNOSTIC_VALIDATE_ONLY=1 OBSERVED_ROOT=.gate-logs/observed OBSERVED_LABEL=v012-312-startup-profile RUN_ID=imports-f634b76-20261018 RUNTIME_DIAGNOSTIC_SOURCE_SHA=f634b7662a4122c6c96262f1656dc5088da03b96 RUNTIME_DIAGNOSTIC_ARCHIVE=/tmp/gludd-runtime-startup-contract-plan RUNTIME_DIAGNOSTIC_CONSOLE='[]'"
     }
   ]
 }

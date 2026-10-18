@@ -1524,3 +1524,80 @@ import/collection diagnostic. Collect-only bypasses xdist and cannot supply
 admission, hosted headroom, full-gate, deployment or release evidence.
 All children/workers 2-1-1, 90/60, 21/2850, fatal warnings, 85/75, ZDD,
 cleanup/authentication and branch/promotion authority remain; no task closes.
+
+## Named startup diagnostic/report/archive owners (2026-10-18)
+
+The completed `v012-312-startup-profile / imports-f634b76-20261018`
+observation is retained input, not another collection request. Its native child
+passed collection-only in 21.694 seconds, with three printed summaries:
+1,897 / 11.22 seconds, isolated help 1 / 0.50 seconds, and tail 11 / 3.72 seconds.
+Collect-only bypasses xdist worker execution. These values establish neither
+executed assertions nor admission, hosted margin, full-gate or release authority.
+Corrected CI provisioning/inspection remain separate raw evidence under
+`/tmp/gludd-v012-312-runtime-diagnostic-f634b76-evidence`.
+Historical failed `253a6a2` composition/inspection evidence is unchanged.
+
+Three Make facades extend `scripts/stream_command.py`:
+
+- `runtime-startup-diagnostic` plans by default. Apply fixes the existing private
+  three-child compatibility command, release/resume=0, files=16, batch-workers=1,
+  original 2/1/1 carriers, `--collect-only -rs`, and 90/60 observer limits.
+  It refuses reserved identities, requires exact clean source, uses native
+  ps/active-work/load/disk admission and the current CI runtime inspector, and
+  calls the existing observer once. It never acquires packages or substitutes
+  runtimes. Future import profiling is confined to the child environment.
+- `runtime-startup-report` reads one exact terminal run. Absent/current aliases,
+  foreign paths, links, oversized or inconsistent raw files refuse. It launches
+  no process and changes no producer receipt/pointer. An external report is
+  published exclusively.
+- `runtime-startup-archive` plans by default. Apply snapshots raw status/log,
+  available trace and explicit external parent-console parts, checks freshness,
+  copies into a fresh external directory and publishes the manifest last.
+  Changed sources leave incomplete output without a manifest. Replay validates
+  copied identities/hashes and never falls back to originals.
+
+Public variables/literal carriers are documented in `docs/CONFIG_REFERENCE.md`;
+all three exact examples are in `config/make_target_contract.json`.
+The diagnostic example is a synthetic plan. Actual retained report/archive are
+executed only through these owners after the analyst code is committed/pinned.
+Their destinations are `/tmp/gludd-v012-312-runtime-diagnostic-f634b76.md` and
+`/tmp/gludd-v012-312-runtime-diagnostic-f634b76-archive`.
+
+The parser keeps three visible cold segments separate. It reports individual
+cumulative/self rankings and visible self sums in microseconds, never summed
+overlapping cumulative values or subtraction of unlike pytest/observer scopes.
+Successful file collection captures stderr: later import attribution is
+capture-limited/unknown, not zero. Without per-line timestamps or a pytest
+trace, historical first-header latency is unknown. The old status lacks source
+SHA, argv and runtime-input authentication; f634 remains an externally declared
+source. Actual analyst file digest is distinct. Historical parent console also
+contains observer imports and remains external capture, separate from child
+log/native timing.
+
+Firsthand [pytest issue #3918](https://github.com/pytest-dev/pytest/issues/3918),
+opened August 31, 2018, describes the reporter's profiling of an import-heavy
+workload and overhead in the then-current assertion-rewrite import hook.
+It supports measuring attribution, but does not diagnose current Gludd or
+justify disabling rewriting/plugins.
+[CPython importtime documentation](https://docs.python.org/3.12/using/cmdline.html#cmdoption-X)
+defines self/cumulative scopes and warns about threaded output.
+The [pinned pytest capture implementation](https://github.com/pytest-dev/pytest/blob/9.1.1/src/_pytest/capture.py#L801-L817)
+establishes the file-collection visibility limit.
+
+RED receipts retain 23 missing-owner failures (1.52 seconds), two missing-target
+failures (1.07 seconds), and two apply-boundary failures among seven cases
+(1.11 seconds). Intermediate whole-owner assertions all passed but coverage
+correctly failed: copied fixture owners were initially counted separately,
+then aggregate branch coverage was 84.3%/84.5%. Fixtures now invoke the actual
+owner through an explicit fixture import path; the complete existing native
+item-progress retention owner covers scoped/exempt preservation. Final receipts
+are distinct. No floor/assertion is relaxed. All 111 families, selectors/three
+children, warnings, 85/75, 21 phases/2850, ZDD and promotion gates are preserved.
+
+Final native coverage acceptance: 247 passed in 72.73 seconds, warning-fatal
+and serial, using `config/coverage_observed_command.ini` unchanged. The native
+audit meets 85% aggregate and 75% per file across all four production files.
+JUnit: `/tmp/gludd-v012-startup-codify-coverage-with-retention.xml`;
+coverage: `.gate-logs/v012-startup-codify-coverage-with-retention.json`;
+audit: `.gate-logs/coverage-20261018T155659Z.json`;
+observer: `coverage-files / 20261018T155544Z-48145-59edf63f`, passed in 74.9 seconds.

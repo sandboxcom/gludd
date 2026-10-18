@@ -1912,3 +1912,36 @@ Exact child source acceptance is still required before corrected sync or
 inspection; positive current-CI inspection and fresh capacity precede the one
 original bounded serial import/collection diagnostic. No deadline/coverage/
 warning/plugin/selector cut, gate/focus/CI/push, release claim or task closure.
+
+### 2026-10-18 S98.4: Make-owned retained startup diagnostics (M14)
+
+Single writer `agent-v012-native-312-startup-diagnostic`, parent
+`f634b7662a4122c6c96262f1656dc5088da03b96`; no main/policy edits.
+Default-plan `runtime-startup-diagnostic`/`runtime-startup-archive` and
+read-only exact `runtime-startup-report` reuse the existing observer, runtime
+and resource owners; no new runner/scanner/cache. The completed f634 21.694s
+collection-only run is not repeated. Historical source/argv binding remains
+declared/unknown; analyst code uses its actual file digest. Raw parent capture
+is separate from child log; collection imports remain capture-limited and
+first-header latency unknown.
+
+RED `/tmp/gludd-v012-startup-codify-red.xml`:23 failures/1.52s;
+`...-routing-red.xml`:2 failures/1.07s;
+`...-boundary-red.xml`:2 failures/5 passes/1.11s.
+GREEN 25/GREEN 38 pass. Intermediate 186/196-case executions passed assertions but
+failed coverage: copied fixture owners and later 84.3/84.5% aggregate branch.
+Those failures remain historical. Fixtures now use the original owner;
+complete item-progress retention acceptance covers native preservation paths.
+Final coverage/normal guarded collection are separate receipts. Every previous
+SESSION byte, failed source/runtime input and immutable pin remains preserved.
+No full gate, hosted retry, release completion or task closure.
+
+Native final acceptance: 247 passed in 72.73s, warning-fatal one worker;
+85% aggregate/75% per-file audit passed, all four production files above floor.
+Receipt `/tmp/gludd-v012-startup-codify-coverage-with-retention.xml`,
+`.gate-logs/v012-startup-codify-coverage-with-retention.json`,
+`.gate-logs/coverage-20261018T155659Z.json`;
+observer `20261018T155544Z-48145-59edf63f` passed in 74.9s.
+The complete eight-module source cohort includes the existing retention owner.
+Target contract passes 250 entries, preserving the original 247;
+Make duplicate/parity checks and strict two-file typing pass.

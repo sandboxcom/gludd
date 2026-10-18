@@ -525,6 +525,9 @@ help:
 		"  observed-status       Print current/exact retained command status (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)" \
 		"  observed-tail         Print bounded current/exact retained log tail (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)" \
 		"  run-watched           Observe one bounded command with quoted child arguments (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)" \
+		"  runtime-startup-diagnostic Plan a fixed serial collection diagnostic (RUNTIME_DIAGNOSTIC_*, OBSERVED_*, RUN_ID, LOG, WORK_ITEM_ID)" \
+		"  runtime-startup-report Read one exact retained/archive startup run; never launches work (RUNTIME_DIAGNOSTIC_*, OBSERVED_ROOT, OBSERVED_LABEL, RUN_ID)" \
+		"  runtime-startup-archive Plan an exclusive external raw startup archive (RUNTIME_DIAGNOSTIC_*, OBSERVED_ROOT, OBSERVED_LABEL, RUN_ID)" \
 		"  gate-async            Launch gate detached (non-blocking); writes .gate-status" \
 		"  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)" \
 		"  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)" \
