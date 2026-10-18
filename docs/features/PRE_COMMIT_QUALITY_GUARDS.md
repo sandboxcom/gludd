@@ -7,7 +7,7 @@ commit is created. The normal Git hook, the guarded Make commit targets, the
 fast pre-commit target, and feature-branch integration admission all share the
 same two checks. The line checker reads the staged index rather than a possibly
 different working-tree file. Clone admission uses the exactly locked `jscpd`
-5.4.0 executable; Gludd contains no custom clone algorithm.
+5.4.1 executable; Gludd contains no custom clone algorithm.
 
 The checks are control-plane only and preserve zero-downtime delivery. They do
 not start an application process, change a database, publish an artifact, or
@@ -58,6 +58,51 @@ The scope intentionally excludes tests and prose from clone admission. Those
 artifacts often repeat setup or contract language by design. Production roots
 are scanned together, so copying an unchanged helper into a changed file is
 still detected; scanning changed files alone would miss that relationship.
+
+## Native changed-file reporting and one export owner (2026-10-17)
+
+The staged gate exposed new reports between unchanged constant-list pairs after
+a compatibility export list changed. Dummy split assignments and artificial
+list concatenation are removed. The hook facade now binds one ordered registry
+of the actual owning functions. It preserves historical node names, definition
+order, signatures, marks, helper imports, direct CLI behavior and function
+identity. Imported functions and non-function callables cannot become cases;
+conflicting owners fail instead of silently overwriting a case. The old
+source-shape assertion now checks the complete runtime inventory and identities
+so it enforces those guarantees without a second handwritten registration list.
+
+[Upstream issue #1000](https://github.com/kucherenko/jscpd/issues/1000)
+links practitioner reports of unstable pairwise results with three or more
+copies. That is evidence for investigating pair selection, not proof of a
+specific Gludd worker race. The unchanged-pair observations are retained as
+failed diagnostics. The [baseline design](https://github.com/kucherenko/jscpd/issues/944)
+also explicitly treats an edit within an existing clone as new; changed-source
+findings still require repair.
+
+The exact [released 5.4.1 tool](https://github.com/kucherenko/jscpd/releases/tag/v5.4.1)
+adds native `--changed`: every bounded production file is scanned, and a report
+is retained when either occurrence touches a changed file. The candidate uses
+that flag with the existing explicit ephemeral baseline and zero-new-clone
+gate. It never uses `--changed-only`. No custom clone algorithm, hash
+reconciliation, finding suppression or nonzero-result override is added.
+
+The existing snapshot owner prepares private Git metadata for the materialized
+candidate. Its detached HEAD and index name the real base commit; the source
+object store is a read-only alternate. The actual source HEAD, index, refs and
+working files are never written by that preparation. Hook-exported Git
+redirects are cleared for these private metadata operations. Existing metadata
+is refused, all Git operations remain bounded, and the original temporary
+container owns cleanup. Staged and committed inputs stay exact even if the
+caller's working file has different content. Native tests cover unchanged
+changes, exact and renamed copies, a third occurrence, both snapshot modes and
+source-index preservation.
+
+Hosted shards install the same locked quality tools before these native tests.
+The 12-line/80-token floors, weak normalization, two-worker ceiling, 500 KiB
+bound, explicit production roots, fatal errors, 85/75 coverage and final release
+proofs remain mandatory. ZDD rollout changes control-plane invocations only.
+Rollback reverts the pin, native flag, snapshot adapter and corresponding
+tests/docs together after current owners finish; all failed evidence remains.
 
 ## Practitioner evidence
 

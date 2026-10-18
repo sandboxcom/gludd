@@ -176,6 +176,7 @@ def test_staged_guard_builds_head_baseline_then_scans_index(
 
     monkeypatch.setattr(check_duplicate_code, "materialize_ref", fake_ref)
     monkeypatch.setattr(check_duplicate_code, "materialize_index", fake_index)
+    monkeypatch.setattr(check_duplicate_code, "prepare_comparison_repository", lambda *_: None)
     monkeypatch.setattr(check_duplicate_code.subprocess, "run", fake_run)
 
     result = check_duplicate_code.run_guard(
@@ -197,6 +198,8 @@ def test_staged_guard_builds_head_baseline_then_scans_index(
     assert "--fail-on-new-clones" in calls[1][0]
     assert calls[0][0][-4:] == ["--workers", "2", "--reporters", "silent"]
     assert "json,silent" in calls[1][0]
+    assert "--changed" in calls[1][0]
+    assert "--changed-only" not in calls[1][0]
 
 
 def test_committed_guard_compares_feature_head_to_explicit_base(
@@ -242,6 +245,7 @@ def test_committed_guard_compares_feature_head_to_explicit_base(
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(check_duplicate_code, "materialize_ref", fake_materialize)
+    monkeypatch.setattr(check_duplicate_code, "prepare_comparison_repository", lambda *_: None)
     monkeypatch.setattr(check_duplicate_code.subprocess, "run", fake_run)
 
     assert (
@@ -552,6 +556,7 @@ def test_engine_failures_are_never_suppressed(
     )
     monkeypatch.setattr(check_duplicate_code, "materialize_ref", lambda *_: None)
     monkeypatch.setattr(check_duplicate_code, "materialize_index", lambda *_: None)
+    monkeypatch.setattr(check_duplicate_code, "prepare_comparison_repository", lambda *_: None)
     monkeypatch.setattr(
         check_duplicate_code.subprocess,
         "run",
@@ -587,6 +592,7 @@ def _staged_guard_inputs(
     )
     monkeypatch.setattr(check_duplicate_code, "materialize_ref", lambda *_: None)
     monkeypatch.setattr(check_duplicate_code, "materialize_index", lambda *_: None)
+    monkeypatch.setattr(check_duplicate_code, "prepare_comparison_repository", lambda *_: None)
 
 
 def test_missing_locked_engine_fails_closed(

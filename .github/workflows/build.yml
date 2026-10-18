@@ -648,6 +648,9 @@ jobs:
           npm install --no-save --no-package-lock esbuild@0.28.1
         env:
           GLUDD_AUTH_PSK: ""
+      - name: Install locked native quality tools
+        run: |
+          make node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false
       - name: Install pinned OpenCode CLI (other shard only)
         if: matrix.shard == 'other'
         run: |

@@ -409,6 +409,18 @@
       "decorators_ast": []
     },
     {
+      "name": "test_no_idle_monitoring_allows_productive_tool",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_idle_monitoring_blocks_repeated_status_checks",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
       "name": "test_stop_pending_work_text_blanked",
       "arguments_ast": "arguments()",
       "returns_ast": "Constant(value=None)",
