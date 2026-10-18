@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from importlib.metadata import Distribution
@@ -474,20 +475,43 @@ def test_receipt_validation_refuses_duplicate_json_keys(tmp_path: Path) -> None:
 def test_receipt_validation_refuses_unsafe_artifact_mode(
     tmp_path: Path,
     mode: int,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     result = ShadowBatchReceiptWriter(tmp_path / "batch-receipts").publish(
         _request(tmp_path)
     )
     assert result.path is not None
+    manifest = result.path / "manifest.json"
+    snapshots: list[tuple[bool, int, int, int, int]] = []
+    original_stat = Path.stat
+
+    def observed_stat(
+        path: Path, *, follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        metadata = original_stat(path, follow_symlinks=follow_symlinks)
+        if path == manifest:
+            snapshots.append((
+                follow_symlinks, metadata.st_mode, metadata.st_uid,
+                metadata.st_dev, metadata.st_ino,
+            ))
+        return metadata
+
+    monkeypatch.setattr(Path, "stat", observed_stat)
     os.chmod(result.path / "manifest.json", mode)
+    native_metadata = manifest.stat()
+    assert stat.S_IMODE(native_metadata.st_mode) == mode, (
+        f"requested={mode:#o} native={native_metadata.st_mode:#o} "
+        f"owner_uid={native_metadata.st_uid} process_uid={os.getuid()} "
+        f"native_snapshots={snapshots}"
+    )
 
     validation = validate_batch_receipt(
         result.path,
         expected_action_identity=_identity(),
     )
 
-    assert validation.valid is False
-    assert validation.reason == "corrupt-manifest.json-unsafe-mode"
+    assert validation.valid is False, snapshots
+    assert validation.reason == "corrupt-manifest.json-unsafe-mode", snapshots
 
 
 def test_receipt_validation_refuses_extra_artifact_and_foreign_identity(

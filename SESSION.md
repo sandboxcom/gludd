@@ -2218,3 +2218,42 @@ controls remain. No timing probe, broad90 replay, gate, hosted action,
 provisioning, real cleanup, daemon action, merge, push or task closure occurs.
 Required normal guarded collection/pin and cumulative M20+M21 independent
 source review remain separate from release proof.
+
+## S98.4 native receipt permission-input observation (2026-10-18)
+
+M21 committed dd806d3041c171d4a471b3939c1f783505fac4fc with parentf907a4f
+and pin refs/heads/reviewed-v012-source-dd806d3. Normal required collection
+125898/125916,18deselected,0errors passed; observer
+20261018T182953Z-79777-498454e8 rc0/48.991s. The initial EOF-fixer guard
+failure remains retained; only trailing blank lines were normalized.
+Root main Rumdl passed3docs21ms18:28:29UTC and normalized feature9ms18:29:28UTC,
+with TASKS/SESSION unchanged.
+
+The original private434 remains FAILED/unexplained:433passes/1mode failure,
+zero skips,296.89s; native rc2/300.738s. It did not record the effective
+0o4600 input. Authorized native diagnostic controls passed exactnode1/1.33s,
+whole receipt owner140/2.31s and same ordered four-module collection selecting
+only both mode nodes2/2.52s. None explains or replaces that full failure.
+
+This separate test-only child retains the stronger input-observation fixture:
+exact native post-chmod S_IMODE precondition, an unchanged delegating Path.stat
+reader scoped to the manifest, and native mode/uid/device/inode snapshots in
+both original refusal diagnostics. Original modes, conditions, expected reason
+and production permission/ownership checks remain. No fabricated stat value,
+skip, warning filter or fallback is introduced.
+
+Final complete receipt owner acceptance passes140/2.05s canonical311 and
+140/2.40s private3.12.15, zero skips and fatalwarnings; normal strict/Ruff pass.
+No second coverage or expensive reviewed-head body replay occurs. All112
+families,250contracts, selectors/plugins/three2-1-1/90-60/21-2850 and native
+85/75 remain unchanged. TASKS statuses/checkboxes/prefix stay open and intact.
+
+The existing feature records truthful evidence limits. M21 report/raw manifest:
+ /tmp/gludd-v012-runtime-metadata-once-report.md and
+ /tmp/gludd-v012-runtime-metadata-once-evidence/MANIFEST.md.
+Observation-child raw evidence:
+ /tmp/gludd-v012-receipt-mode-observation-evidence/.
+Normal guarded collection/pin and final cumulative independent source review
+remain separate. Fresh frozen-candidate runtime/combined/gate/exact-SHA hosted
+proof is required before integration/release claims. No merge, push, broad90,
+gate, hosted action, provisioning, daemon action, real cleanup or task closure.

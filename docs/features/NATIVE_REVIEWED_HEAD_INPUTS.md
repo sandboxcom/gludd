@@ -469,3 +469,33 @@ selectors/plugins, three 2/1/1 children, 90/60, 21/2850, 85 aggregate/75 per fil
 fatal warnings, ZDD and cleanup/branch/promotion authority remain unchanged.
 This is focused source acceptance, not admission/gate/hosted readiness. No
 timing probe, broad replay, provisioning, daemon action or release closure.
+
+## Native permission-input observation fixture (2026-10-18)
+
+The separate metadata child is pinned at
+dd806d3041c171d4a471b3939c1f783505fac4fc. Its complete private four-owner
+run remains FAILED: 433 passes and one original 0o4600-mode failure, with
+zero skips. Bounded passing controls do not explain or replace that run.
+
+The existing receipt fixture now requires its requested native S_IMODE
+immediately after chmod. A fixture-local Path.stat callback always delegates
+to the original method unchanged and records only this manifest's native
+follow_symlinks, mode, uid, device and inode values. Both original refusal
+conditions and the exact unsafe-mode reason remain, with snapshots included
+in failure diagnostics. No native values are fabricated; successful runs do
+not imply that the earlier unrecorded mode is known.
+
+The same private runtime passed the exact original mode node (1/1.33s), the
+whole receipt owner (140/2.31s), and both mode nodes after the original ordered
+four-module collection (2/2.52s, 432 deselected). Diagnostic retries stopped
+there. This separate fixture child passes the complete 140-case receipt owner
+on canonical 3.11 in 2.05s and private 3.12.15 in 2.40s, zero skips and fatal
+warnings. Normal strict/Ruff pass. These are focused source/input controls.
+
+No production permission mask, accepted state, ownership/cleanup authority,
+Make/manifest/selector/plugin/worker/deadline or coverage config changes.
+The previous full-file 92.3% line/87.5% branch audit remains separate source
+evidence; no second coverage or expensive reviewed-head body replay was run.
+The original runtime failure is unexplained, and fresh frozen-candidate
+runtime/combined/source/gate/hosted proof remains required. No production
+repair, latency saving or release readiness is claimed.
