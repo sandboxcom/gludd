@@ -38,13 +38,7 @@ watchdog-auto:
 		echo $$! > .gate-logs/watchdog.pid; \
 		echo "Agent watchdog started PID=$$!"; \
 	fi
-	@if [ -f .gate-logs/task-watchdog.pid ] && kill -0 $$(cat .gate-logs/task-watchdog.pid) 2>/dev/null; then \
-		echo "Task watchdog already running PID=$$(cat .gate-logs/task-watchdog.pid)"; \
-	else \
-		nohup $(UV) run python3 scripts/task_watchdog.py > .gate-logs/task-watchdog.log 2>&1 & \
-		echo $$! > .gate-logs/task-watchdog.pid; \
-		echo "Task watchdog started PID=$$!"; \
-	fi
+	@$(MAKE) --no-print-directory task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=0
 
 watchdog-log:
 	@tail -50 .gate-logs/watchdog.log 2>/dev/null || echo "No log yet"
@@ -53,9 +47,18 @@ watchdog-log:
 # Reads /tmp/gludd-task-deadlines.json (written by enforce-deadline.ts plugin).
 # Finds tasks whose elapsed > timeout, kills their child processes (SIGTERM→SIGKILL),
 # records kills in /tmp/gludd-task-killed.json. Prevents indefinite task blocking.
+TASK_WATCHDOG_START_VALIDATE_ONLY ?= 0
+unexport TASK_WATCHDOG_START_VALIDATE_ONLY
+override _TASK_WATCHDOG_START_VALIDATE_ARG := invalid
+ifeq ($(value TASK_WATCHDOG_START_VALIDATE_ONLY),0)
+override _TASK_WATCHDOG_START_VALIDATE_ARG := 0
+endif
+ifeq ($(value TASK_WATCHDOG_START_VALIDATE_ONLY),1)
+override _TASK_WATCHDOG_START_VALIDATE_ARG := 1
+endif
 task-watchdog-start:
-	@echo "Starting task watchdog (5s poll, kills tasks > $$(( ${GLUDD_TASK_TIMEOUT} * 1000 ))ms)..."
-	@nohup $(UV) run python3 scripts/task_watchdog.py > .gate-logs/task-watchdog.log 2>&1 & echo $$! > .gate-logs/task-watchdog.pid; echo "task watchdog PID=$$(cat .gate-logs/task-watchdog.pid)"
+	@# TASK_WATCHDOG_START_VALIDATE_ONLY: actual by default; literal 1 plans without writes.
+	@$(UV) run python3 scripts/task_watchdog.py --start --validate-only $(_TASK_WATCHDOG_START_VALIDATE_ARG)
 
 task-watchdog-status:
 	@echo "=== Task watchdog status ==="
@@ -74,6 +77,7 @@ task-watchdog-status:
 
 # Only an exact literal policy becomes native argv; stopping defaults to plan.
 TASK_WATCHDOG_VALIDATE_ONLY ?= 1
+unexport TASK_WATCHDOG_VALIDATE_ONLY
 override _TASK_WATCHDOG_STOP_VALIDATE_ARG := invalid
 ifeq ($(value TASK_WATCHDOG_VALIDATE_ONLY),0)
 override _TASK_WATCHDOG_STOP_VALIDATE_ARG := 0

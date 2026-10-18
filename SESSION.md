@@ -1490,3 +1490,78 @@ deterministic handoff-exit
 selector is appended. Actual stop evidence, prior source refs, review/bundles and
 this entire previous SESSION prefix are retained. No main daemon, pointer,
 candidate focus, full gate, CI, release promotion or checkbox is changed.
+
+## v0.1.2 native watchdog startup continuation (2026-10-18)
+
+The rc0/UV PID 47780 empty-log startup failure remains preserved; its cause is
+unproven. The native owner now uses selected Python, serialized admission,
+exclusive root-local PID publication, append-only fresh log acknowledgement and
+a detached PID/PGID/SID identity. Existing singleton admission rechecks pointer
+identity and does not depend on historical log retention. Actual-start default 0
+and explicit plan 1 remain caller-compatible; watchdog-auto reuses this owner.
+Stop defaults, all M2/M4/M5 refusals and native wait limits remain unchanged.
+
+The initial six-case RED includes a fixture constant error; the corrected real
+caller reproduces unacknowledged rc0/UV PID 53520. Seven ownership/routing and two
+publication-replacement REDs remain retained. Earlier 134/141/142-case passes and
+the 604-case combined pass remain intermediate. Actual Make execution exposes
+one, then two and three raw-policy export failures, including a recursive carrier.
+They create only temporary tripwires before invalid CLI arguments refuse lifecycle
+entry. Explicitly unexporting both raw policies keeps literal transport inert;
+overridden internal arguments still accept only exact 0/1. All four direct,
+recursive and promoted controls pass. Native start/stop plan examples remain
+write/spawn/signal-free.
+
+Final warning-fatal coverage passes 145 cases in 5.76 seconds at 93.2% lines and
+86.8% branches, preserving 85/75:
+.gate-logs/coverage-task-watchdog-native-start-policy-final.json; native audit
+.gate-logs/coverage-20261018T101658Z.json; raw observer
+20261018T101651Z-69005-8a261a10 passed in 7.478 seconds. Final combined acceptance
+passes 607 cases in 81.08 seconds; JUnit receipts are
+/tmp/gludd-v012-watchdog-native-start-policy-final-coverage.xml and
+/tmp/gludd-v012-watchdog-native-start-policy-final-combined.xml. The realistic
+fixture proves caller-group survival and strict native stop with all state
+confined. Complete gate-launch, cleanup, active-work, scheduling, promotion,
+cold-start and observability caller owners, plus the exact M2 control, pass.
+
+All 107 prior admission families/policy/order remain; one cheap exact startup node
+is appended. No main source/ref, global daemon/state, full gate, candidate focus,
+CI, publication, release task status or checkbox changes. The entire previous
+SESSION prefix and all historical proof/approved refs are preserved.
+
+## v0.1.2 reviewed watchdog startup transaction repair (2026-10-18)
+
+Independent M6 source review requests changes for three proved windows: actual
+existing-singleton admission before FileLock, failed-child drain after release,
+and final PID publication before checked ready output. Preserve unsafe source
+080158abec83b0c89dbebe5982ea91c5b19af96f, its 607/145 receipts and every earlier
+ref/failure. No standalone M6 approval is claimed; the repaired descendant needs
+cumulative review against M5 7a1ddbe1e73599a7823832e83d4b03e191a890c4.
+
+One existing native launch lease now covers every actual success and failure
+cleanup/refusal. Plan stays read-only. Checked ready output is flushed/fsynced
+before exclusive final PID publication; original fresh started bytes and all
+native pointer/log/start/cwd/session checks remain. Long-running idempotence
+needs no historical log retention or second cache. Strict cleanup, native bounds,
+Make literal/unexport behavior and M2/M4/M5 assertions remain unchanged.
+
+The two held-lock/drain REDs fail in 1.49 seconds, three readiness/real interrupted
+creator REDs in 2.43 seconds, and two routing REDs in 1.72 seconds. All are retained
+separately; seven repaired controls pass in 2.28 seconds. All real fixture signals
+and state remain isolated, followed by strict native stop. The original failed
+PID 47780 start remains unexplained.
+
+Final warning-fatal watchdog coverage passes 150 cases in 6.77 seconds at 94.1%
+lines/88.3% branches, preserving 85/75:
+.gate-logs/coverage-task-watchdog-start-serialization-final.json and native audit
+.gate-logs/coverage-20261018T103257Z.json, raw observer
+20261018T103249Z-97046-184e80f2 passed in 8.410 seconds. Complete acceptance passes
+619 cases in 68.22 seconds; XML receipts are
+/tmp/gludd-v012-watchdog-start-serialization-final-coverage.xml and
+/tmp/gludd-v012-watchdog-start-serialization-final-combined.xml.
+
+All 108 prior families and non-family policy remain; one exact cheap node/family
+is appended to the existing third child, totaling 109. Every previous SESSION
+byte is preserved. TASKS retains its existing unchecked row and line count.
+No main/ref mutation, live/global daemon action, admission, focus, gate, CI,
+push, publication, task completion or release-readiness claim occurs here.
