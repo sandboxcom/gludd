@@ -286,3 +286,31 @@ the full suite or a gate.
 [make-override]: https://www.gnu.org/s/make/manual/html_node/Override-Directive.html
 [uv-no-sync]: https://docs.astral.sh/uv/reference/cli/#uv-run--no-sync
 [make-multi-goal-forum]: https://stackoverflow.com/questions/36174028/makefile-set-variable-in-target
+
+## No-project workstream ownership commands
+
+The global no-sync export remains mandatory for project commands. Workstream
+registration and removal are stdlib-only `uv run --no-project` operations;
+inheriting `UV_NO_SYNC=1` there emits a native warning because the flag has no
+effect outside project discovery. A command-line Make assignment cannot clear
+the foundation's explicit override.
+
+Only these two existing recipes set `UV_NO_SYNC=0` in their child environment,
+before invoking the selected UV executable with the same `--no-project`
+arguments. Project commands retain the global value `1`. Native tests exercise both
+contexts, retain the selected toolchain and caller environment, and prove
+registration/removal, errors and nonmutation of source, refs, index, lockfile and
+virtual-environment inventory. The actual warning fails first; all 39 boundary
+and registry/pruning cases then pass with fatal pytest warnings.
+
+The 2025 [UV user report about misplaced project flags](https://github.com/astral-sh/uv/issues/12954)
+illustrates why option scope matters: the maintainer identified arguments after
+the script name as script arguments. This is a different reported trigger,
+not evidence for the local warning. The maintained
+[UV CLI reference](https://docs.astral.sh/uv/reference/cli/#uv-run--no-project)
+defines no-project discovery, and its
+[environment reference](https://docs.astral.sh/uv/configuration/environment/#uv_no_sync)
+defines the no-sync equivalence. The repair changes the two native command
+environments, with no dependency synchronization, package update, extra process,
+service restart or cleanup-policy change. Full gate and exact-SHA release proof
+remain separate requirements.
