@@ -2294,6 +2294,13 @@
       "name": "worktree-cleanup-merged",
       "make_variables": [],
       "behavior": "make worktree-cleanup-merged"
+    },
+    {
+      "name": "task-watchdog-stop",
+      "make_variables": [
+        "TASK_WATCHDOG_VALIDATE_ONLY"
+      ],
+      "behavior": "make task-watchdog-stop TASK_WATCHDOG_VALIDATE_ONLY=1"
     }
   ]
 }

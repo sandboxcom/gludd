@@ -72,14 +72,18 @@ task-watchdog-status:
 		echo "  (no kills recorded)"; \
 	fi
 
+# Only an exact literal policy becomes native argv; stopping defaults to plan.
+TASK_WATCHDOG_VALIDATE_ONLY ?= 1
+override _TASK_WATCHDOG_STOP_VALIDATE_ARG := invalid
+ifeq ($(value TASK_WATCHDOG_VALIDATE_ONLY),0)
+override _TASK_WATCHDOG_STOP_VALIDATE_ARG := 0
+endif
+ifeq ($(value TASK_WATCHDOG_VALIDATE_ONLY),1)
+override _TASK_WATCHDOG_STOP_VALIDATE_ARG := 1
+endif
 task-watchdog-stop:
-	@if [ -f .gate-logs/task-watchdog.pid ]; then \
-		kill $$(cat .gate-logs/task-watchdog.pid) 2>/dev/null || true; \
-		rm -f .gate-logs/task-watchdog.pid; \
-		echo "Task watchdog stopped"; \
-	else \
-		echo "No task watchdog running"; \
-	fi
+	@# TASK_WATCHDOG_VALIDATE_ONLY: preserve literal 0/1 without shell expansion.
+	@$(UV) run python3 scripts/task_watchdog.py --stop --validate-only $(_TASK_WATCHDOG_STOP_VALIDATE_ARG)
 
 task-watchdog-log:
 	@tail -50 .gate-logs/task-watchdog.log 2>/dev/null || echo "No log yet"

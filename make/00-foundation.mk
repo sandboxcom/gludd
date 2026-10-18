@@ -620,6 +620,7 @@ help:
 		"  check-make-target-contract  Validate target variables, help, and behavioral examples" \
 		"  check-generated-artifact-hygiene  Validate tracked generated Markdown/JSON/YAML postconditions" \
 		"  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks" \
+		"  task-watchdog-stop    Verify and drain this checkout daemon (TASK_WATCHDOG_VALIDATE_ONLY=1 default, 0 applies)" \
 		"  ps                    Report repository-owned test, audit, and supervisor processes" \
 		"  list-plugins          Report the active enforcement plugin roster" \
 		"  terminate-project-process-tree  Identity-check and preview/apply one project process tree" \

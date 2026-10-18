@@ -1426,3 +1426,35 @@ clone/scope/retained-checkpoint guards and fresh native collection:
 not the canonical main-checkout release gate. All three original
 checkpoint refs remain verified and retained. No candidate is pushed,
 no release task closed, and no master/tag/release mutation occurs.
+
+
+## v0.1.2 watchdog destructive ownership repair (2026-10-18)
+
+The legacy task candidate filter remains diagnostic. Native destructive cleanup
+now verifies registered-checkout cwd plus PID/start/command identity, preserves
+live observer descendants and Make/UV ancestors, and refuses capped or incomplete
+protection. Ordinary owned stale cleanup and child-first TERM/KILL remain active,
+including a verified child reparented after our own parent TERM. The existing stop
+owner is plan-only by default; actual stop verifies the old relative-argv daemon
+and UV parent and drains both before root may start the existing daemon once.
+
+Five ownership/lifecycle controls failed first; the parent-exit reparenting
+control separately failed first. The historical 67-case warning-fatal coverage
+passes at 91%. Seven further failures and one already-refusing control cover
+fresh/malformed native starts and unavailable subprocess inventories. The final
+76-case warning-fatal coverage also passes at 91%, retaining the 85/75 floors,
+with separate .gate-logs/coverage-task-watchdog-owned-cleanup-final.json evidence.
+Intermediate routing evidence remains failed (207 passed/3 stale selector
+assertions failed); the additive correction retains all 105 previous families,
+selectors, order and admission budgets. Final source/routing acceptance passes
+405 cases in 57.28 seconds (/tmp/gludd-v012-watchdog-owned-final-combined.xml).
+Exact-SHA gate/CI and release promotion remain pending. No loaded daemon was
+stopped/restarted and no candidate focus or full gate ran.
+
+The approved one-line change in scripts/kill_owned_gate.py only normalizes its
+TYPE_CHECKING import of resource_arbiter to the established standalone static
+module name; its runtime import and cleanup behavior are unchanged. This avoids
+two static names for one native owner without suppressions. The complete existing
+gate-owned cleanup and active-work suites are included in source acceptance.
+The full prior SESSION prefix, raw failed focus bundle, historical failures and
+all immutable approved source refs are preserved.
