@@ -339,3 +339,43 @@ admission child; all104 prior families, three children, workers2/1/1,21phases,
 2850-second ceiling and90/60 bounds remain. This is source acceptance only;
 independent source review, fresh final focus, full gate and exact-SHA hosted
 proof remain required.
+
+## Exact UV executable command input (2026-10-18)
+
+The frozen368dd05 private3.12 diagnostic executed all three children:
+main1974passes/67.65s, fresh-help1pass/1.09s and tail10passes/1failure/15.20s,
+zero skips. The native observer failedrc2/88.424s, not timeout. Its immutable
+raw history is /tmp/gludd-v012-312-execution-attribution-368dd05/. The tail
+ownership test searched for the literal token uv even though the supported
+UV input was the verified absolute pinned executable.
+
+The test now asks native Make for the selected producer argv, preserving
+inherited command-line/MAKEFLAGS precedence, checks that exact command shape
+and resolves only the selected executable. An unavailable selection fails;
+there is no fallback. It supplies one explicit shell-quoted absolute UV input
+to both ownership dry-runs and expects that exact token before
+run/python/-m/pytest. Existing watchdog-owned versus ordinary eligibility,
+focus marker routing, literal-value injection tripwire, cache option and trace
+plugins remain asserted. Three cheap real Make dry-run cases cover bare,
+absolute and quoted literal executable paths without parameterizing the
+costly native ownership fixture.
+
+The [GNU Make command-line override contract](https://www.gnu.org/s/make/manual/html_node/Overriding.html)
+and [recursive variable transport](https://www.gnu.org/software/make/manual/make.html#Options_002fRecursion)
+explain why the fixture reads Make's effective input rather than assuming an
+environment value wins. Existing
+[stdlib shlex quoting](https://docs.python.org/3.11/library/shlex.html#shlex.quote)
+keeps a POSIX-shell executable path as one token. In a related
+[firsthand2021 Make path report](https://stackoverflow.com/questions/69612558/save-path-with-spaces-in-makefile-variable),
+a user describes a path with spaces and the different behavior of quoting a
+program-plus-argument string. That is context for distinguishing one executable
+token, not an upstream UV defect or Windows portability proof.
+
+The unchanged node reproduces RED1/3.22s with the verified absolute privateUV.
+Final four-case acceptance passes4/3.07s on canonical311 and4/3.42s on private
+3.12.15, zero skips and fatal warnings. Initial4/3.25s acceptance is retained
+before tightening selected-input provenance. Normal strict/Ruff and250 target
+contracts pass. Only the test owner and feature/history docs change; production
+85/75 policy, all112 families/recipes/selectors/plugins, three2-1-1 children,
+90/60 and21/2850 remain unchanged. No broad replay, timeout margin, gate,
+promotion, daemon action or release completion is established.

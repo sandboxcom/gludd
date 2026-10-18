@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -1108,6 +1109,43 @@ def test_focused_signature_expiry_refuses_replay(tmp_path: Path) -> None:
                                 verification_epoch=int(time.time()) + 10**9)
 
 
+
+@pytest.mark.parametrize("uv_kind", ["bare", "absolute", "literal"])
+def test_native_focus_make_transports_exact_uv_executable(tmp_path: Path, uv_kind: str) -> None:
+    """A dry-run must retain the caller's complete executable as one token."""
+    uv_executable = {
+        "bare": "uv",
+        "absolute": str(tmp_path / "bin" / "uv"),
+        "literal": str(tmp_path / "selected uv's; literal launcher"),
+    }[uv_kind]
+    cases = [
+        (
+            "reviewed-head-inputs",
+            ["REVIEWED_HEAD_INPUTS_ACTION=focus", "REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=0"],
+            "scripts/reviewed_head_inputs.py",
+            [uv_executable, "run", "python", "scripts/reviewed_head_inputs.py",
+             "--watchdog-owned-reviewed-head-focus"],
+        ),
+        (
+            "test-files",
+            ["TESTFILES=tests/unit/test_native.py", "PYTEST_ARGS=-W error",
+             "NPROC=1", "GLUDD_XDIST_WORKERS=1"],
+            " -m pytest ",
+            [uv_executable, "run", "python", "-m", "pytest"],
+        ),
+    ]
+    for target, arguments, needle, expected in cases:
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-n", target, *arguments,
+             "UV=" + shlex.quote(uv_executable)],
+            cwd=ROOT, check=True, capture_output=True, text=True, timeout=10,
+        )
+        recipe = next(line for line in result.stdout.splitlines() if needle in line)
+        command = shlex.split(recipe)
+        offset = command.index(uv_executable)
+        assert command[offset:offset + len(expected)] == expected
+
+
 def test_native_focus_commands_preserve_watchdog_ownership(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1119,17 +1157,25 @@ def test_native_focus_commands_preserve_watchdog_ownership(
         "watchdog-owned-reviewed-head-focus/pytest-cache"
     )
 
-    def producer_command(action: str, validate_only: str) -> list[str]:
+    def producer_command(action: str, validate_only: str, *, uv_argument: str | None = None) -> list[str]:
         result = subprocess.run(
             ["make", "--no-print-directory", "-n", "reviewed-head-inputs",
              "REVIEWED_HEAD_INPUTS_ACTION=" + action,
-             "REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=" + validate_only],
+             "REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=" + validate_only,
+             *([uv_argument] if uv_argument is not None else [])],
             cwd=ROOT, check=True, capture_output=True, text=True, timeout=10,
         )
         line = next(line for line in result.stdout.splitlines() if "scripts/reviewed_head_inputs.py" in line)
         return shlex.split(line)
 
-    producer = producer_command("focus", "0")
+    # Ask Make itself so command-line overrides retain their native precedence.
+    selected = producer_command("focus", "0")
+    assert selected[1:] == ["run", "python", "scripts/reviewed_head_inputs.py", marker]
+    located_uv = shutil.which(selected[0])
+    assert located_uv is not None
+    uv_executable = str(Path(located_uv).absolute())
+    uv_argument = "UV=" + shlex.quote(uv_executable)
+    producer = producer_command("focus", "0", uv_argument=uv_argument)
     assert producer[-1] == marker
     tripwire = tmp_path / "make-expansion-tripwire"
     literal_function = "$(shell touch " + shlex.quote(str(tripwire)) + ")"
@@ -1140,7 +1186,7 @@ def test_native_focus_commands_preserve_watchdog_ownership(
         ("focus" + literal_function, "0"), ("focus", "0" + literal_function),
         (literal_function, "0"), ("focus", literal_function),
     ):
-        assert marker not in producer_command(action, validate_only)
+        assert marker not in producer_command(action, validate_only, uv_argument=uv_argument)
     assert not tripwire.exists()
 
     root, spec = _fixture(tmp_path)
@@ -1155,13 +1201,13 @@ def test_native_focus_commands_preserve_watchdog_ownership(
         "-p", "scripts.xdist_trace_plugin", "-p", "scripts.reviewed_head_inputs", cache_option,
     ]
     child = subprocess.run(
-        [*command[:2], "-n", *command[2:]], cwd=ROOT, check=True,
+        [*command[:2], "-n", *command[2:], uv_argument], cwd=ROOT, check=True,
         capture_output=True, text=True, timeout=10,
     )
     recipe = next(line for line in child.stdout.splitlines() if " -m pytest " in line)
     recipe_argv = shlex.split(recipe)
-    uv_child = recipe_argv[recipe_argv.index("uv"):]
-    assert uv_child[:5] == ["uv", "run", "python", "-m", "pytest"]
+    uv_child = recipe_argv[recipe_argv.index(uv_executable):]
+    assert uv_child[:5] == [uv_executable, "run", "python", "-m", "pytest"]
     assert cache_option in uv_child
     commands = [
         shlex.join(["make", "reviewed-head-inputs", "REVIEWED_HEAD_INPUTS_ACTION=focus",

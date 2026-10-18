@@ -2125,3 +2125,34 @@ and distinguishes a longstanding editable-metadata report from this defect:
 no exact upstream report was found. Required normal guarded collection,
 source pin and cumulative B+A independent review remain separate. No broad
 runtime/proof replay, acquisition, live cleanup, restart, push or closure.
+
+## S98.4 exact UV command-input conformance child (2026-10-18)
+
+Subsequent cumulative1329-to368dd05 source review approved B+A SOURCE ONLY
+at/tmp/gludd-v012-review-368dd05.md. Root's one actual frozen368 runtime
+diagnostic then executed all three children:1974main passes67.65s,1fresh-help
+pass1.09s,10tail passes/1failure15.20s, zero skips; native88.424s/rc2, not
+timeout. The immutable failure archive is
+/tmp/gludd-v012-312-execution-attribution-368dd05/. The tail native-focus
+ownership test's recipe_argv.index('uv') rejected the valid verified absolute
+pinnedUV input. This is a test command-input assumption, not a production
+watchdog/UV or timeout failure.
+
+The unchanged exact node reproduces RED1/3.22s on private3.12.15. The repair
+asks native Make for its effective selected executable, verifies command shape
+and resolves only that selection without fallback, then explicitly supplies
+one quoted absoluteUV to both ownership dry-runs. Existing cache/trace argv,
+watchdog-owned/ordinary eligibility, focus routing and literal-action injection
+tripwire assertions remain. Only three cheap bare/absolute/quoted-literal
+transport controls are added; the expensive original ownership node stays one
+case. InitialGREEN4/3.25s is retained before tighter native selection provenance.
+Final finite acceptance passes4/3.07s on canonical311 and4/3.42s on private312,
+zero skips and fatalwarnings; normal strict/Ruff and250contracts pass.
+
+Existing feature history records the native failure, GNU Make/shlex authority
+and a limited firsthand2021 path-quoting report. No production/Make/config
+owner, all112 family objects, selectors/plugins/three2-1-1 children,90/60,
+21/2850, native85/75 or cleanup authority changes. This test-only child creates
+no new coverage profile or performance claim. Required normal guarded
+collection/pin and independent source review remain separate; no broad replay,
+gate/hosted retry, provisioning, daemon action, merge, push or task closure.
