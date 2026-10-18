@@ -1565,3 +1565,38 @@ is appended to the existing third child, totaling 109. Every previous SESSION
 byte is preserved. TASKS retains its existing unchecked row and line count.
 No main/ref mutation, live/global daemon action, admission, focus, gate, CI,
 push, publication, task completion or release-readiness claim occurs here.
+
+## v0.1.2 watchdog unit-log namespace guardrail (2026-10-18)
+
+Frozen B b9d7bf9fe7e1e8e4882d4e821947478a5ad5fadd completed authenticated focus
+with 2202 passed/two conditional skips in 341.81 seconds; observer about 345 seconds
+and native final RC0. Preserve /tmp/gludd-v012-focus-b9d7bf9 and the complete
+/tmp/gludd-v012-proof-2480122 bundle. No B source/proof is modified or relabelled.
+
+Native B trace correlates both deliberate TestRunOnce fault emissions in worker
+46197 with the two POLL ERROR log timestamps at 2026-10-18T10:56:53Z. They do not
+prove a runtime failure in healthy daemon PID 29001; nine historical kills remain
+unchanged in the preserved root observation. No live/global action occurs here.
+
+A module autouse monkeypatch confines in-process WATCHDOG_LOG to each tmp_path.
+All original assertions/error strings, logging output and real child environments
+remain. Ownership is asserted before injected faults, so RED cannot pollute a
+shared log. Final ownership RED fails in 0.99 seconds; two routing REDs in 1.22
+seconds. Earlier ownership RED in 1.49 seconds remains intermediate. Five focused
+cases pass in 1.72 seconds. No production change or logging suppression occurs.
+
+Whole-watchdog warning-fatal coverage passes 151 cases in 6.50 seconds at 94.1%
+lines/88.3% branches with native 85/75 floors. Native report and audit:
+.gate-logs/coverage-task-watchdog-log-isolation-final.json,
+.gate-logs/coverage-20261018T110346Z.json; raw observer
+20261018T110338Z-80710-385dbf75 passed in 8.106 seconds. The three requested whole
+owners pass 275 cases in 35.91 seconds; receipts:
+/tmp/gludd-v012-watchdog-log-isolation-final-coverage.xml and
+/tmp/gludd-v012-watchdog-log-isolation-final-owners.xml.
+
+Only one exact namespace node/family is appended, totaling 110. All 109 prior
+families/policy/order, three children/workers 2/1/1, 90/60, 21/2850, contracts 245,
+auth/cleanup/warnings/ZDD and full replay remain. Previous SESSION bytes, TASKS
+line count, nineteen open milestone items and every checkbox/status are retained.
+Independent source review and integrated admission/focus/gate/hosted proof remain
+root-owned. No release task is closed by these source receipts.

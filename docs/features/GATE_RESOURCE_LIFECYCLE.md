@@ -1634,3 +1634,61 @@ source-level transaction windows or a claim about the current dependency.
 Root owns cumulative exact-source review, integrated release-proof admission,
 live startup/handoff, candidate focus, full gate and hosted release proof. This
 child repair creates no approval for unsafe M6 and closes no release checkbox.
+
+## 2026-10-18: isolate unit watchdog diagnostic logs
+
+Frozen candidate B b9d7bf9fe7e1e8e4882d4e821947478a5ad5fadd completed its
+authenticated native focus: 2202 passed, two conditional skips, 341.81 seconds;
+the observer completed in about 345 seconds and the native outer command returned
+zero. Preserve /tmp/gludd-v012-focus-b9d7bf9 and the complete original bundle
+/tmp/gludd-v012-proof-2480122. This successful focus is not full-gate or hosted
+release evidence and is not rebound to this later test-only source.
+
+B's trace attributes the two single POLL ERROR lines at 2026-10-18T10:56:53Z to
+worker 46197 executing the deliberately faulted TestRunOnce inventory-failure and
+unexpected-read tests. Their exact injected errors are git unavailable and
+unexpected read failure. The tests emitted them through the real logger because
+only some fixtures patched WATCHDOG_LOG. They do not establish a live-daemon
+runtime failure. Root preserved the healthy PID 29001 observation and unchanged
+nine-record kill history; this enhancement takes no daemon action.
+
+A module autouse fixture now sets the in-process WATCHDOG_LOG constant to each
+test's tmp_path/watchdog.log through pytest monkeypatch. Existing local overrides
+remain intact and monkeypatch restores the original value after each case.
+Production logger code, printed diagnostics, every original assertion/fault string
+and all real-child fixture environments remain unchanged. Logging continues;
+its unit-test artifacts belong to the existing native run and test namespaces.
+
+The cheap regression first requires exact fixture-local ownership before either
+fault can execute. Its final RED fails safely at that precondition in 0.99 seconds;
+the earlier 1.49-second ownership receipt remains intermediate. Two routing REDs
+fail in 1.22 seconds. After isolation, both deliberate errors are present in the
+local file while original zero-result/no-scan/no-signal behavior remains. All five
+focused checks pass in 1.72 seconds, including the two original fault cases.
+
+Final warning-fatal whole-watchdog coverage passes 151 cases in 6.50 seconds at
+94.1% lines/88.3% branches, retaining native 85/75:
+.gate-logs/coverage-task-watchdog-log-isolation-final.json; native audit
+.gate-logs/coverage-20261018T110346Z.json; raw observer
+20261018T110338Z-80710-385dbf75 passed in 8.106 seconds. Its JUnit receipt is
+/tmp/gludd-v012-watchdog-log-isolation-final-coverage.xml. The three whole owners,
+test_task_watchdog.py, test_runtime_admission_scheduling.py and
+test_gate_failure_promotion.py, pass all 275 cases in 35.91 seconds:
+/tmp/gludd-v012-watchdog-log-isolation-final-owners.xml.
+
+The exact namespace control is appended as family 110 in the existing third
+admission child. All 109 prior families, non-family policy, selector order,
+three sequential children, workers 2/1/1, 90/60, 21 phases/2850, contracts 245,
+authoritative replay, warning policy, authentication, ZDD and cleanup remain.
+
+The first-hand [pytest issue 11790](https://github.com/pytest-dev/pytest/issues/11790)
+(January 2024) describes temporary-path collisions across concurrent independent
+pytest invocations; maintainers explain the need for distinct basetemp paths.
+This feature reuses the existing Make invocation namespace and per-test tmp_path,
+without another temporary-directory owner. That historical report supplies
+namespace context, not a claim that a pytest dependency defect caused B's logs.
+
+The frozen B proof, previous SESSION bytes and existing TASKS statuses/checkboxes
+remain preserved. Root owns independent review, integrated admission/focus, full
+gate and hosted proof. No production edit, logging suppression, daemon restart,
+gate, CI, push or release-completion claim is made by this test-only enhancement.

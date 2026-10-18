@@ -123,6 +123,7 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes",
     "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
     "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
+    "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
 )
 
 
@@ -440,7 +441,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 109
+    assert len(families) == 110
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -658,7 +659,7 @@ def test_watchdog_handoff_exit_control_is_routed_once_in_third_child(tmp_path: P
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 109
+    assert len(payload["families"]) == 110
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -675,7 +676,7 @@ def test_native_watchdog_start_control_is_routed_once_in_third_child(tmp_path: P
         "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 109
+    assert len(payload["families"]) == 110
 
 
 def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(tmp_path: Path) -> None:
@@ -691,8 +692,30 @@ def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(
         "node": "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
         "full_gate_phase": "test",
     }
-    assert payload["families"][-1] == expected
-    assert len(payload["families"]) == 109
+    assert payload["families"][108] == expected
+    assert len(payload["families"]) == 110
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
+
+
+def test_watchdog_unit_log_namespace_guard_is_the_exact_new_third_child_node(tmp_path: Path) -> None:
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    node = "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace"
+    assert len(rows) == 3
+    third_files = rows[2]["files"]
+    assert isinstance(third_files, list) and third_files[-1] == node
+    occurrences = 0
+    for row in rows:
+        files = row["files"]
+        assert isinstance(files, list)
+        occurrences += files.count(node)
+    assert occurrences == 1
+    assert rows[2]["workers"] == "1"
+    manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    assert manifest["families"][-1] == {
+        "id": "watchdog-unit-log-namespace", "owner_target": OWNER,
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    assert len(manifest["families"]) == 110

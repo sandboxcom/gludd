@@ -922,6 +922,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-unit-log-namespace",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
+      "full_gate_phase": "test"
     }
   ]
 }
