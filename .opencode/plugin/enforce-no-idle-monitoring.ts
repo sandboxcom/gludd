@@ -26,7 +26,7 @@ const CONFIG: IdleMonitoringConfig = {
 };
 
 const defaultImpl: HotModule = {
-  "tool.execute.before": async (input, output) => idleMonitoringToolExecuteBefore(input, output, CONFIG, DENY_MESSAGE),
+  "tool.execute.before": async (input, output) => isSubagent() ? undefined : idleMonitoringToolExecuteBefore(input, output, CONFIG, DENY_MESSAGE),
 };
 
 export default (({ }) => ({

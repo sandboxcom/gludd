@@ -1233,3 +1233,70 @@ acquisition and its hosted admission are still unproved. Preserve failed Build
 39100824559 and all immutable candidates. All nineteen release repair rows stay
 open pending independent successor review, exact-SHA hosted proof, the complete
 canonical gate and truthful completion metadata. No publication is authorized.
+
+### v0.1.2 typed fallback subagent boundary, 2026-10-18
+
+Exact candidate23d3424064c84fe3193a5eeef685ac228f4dc68d Build39104090060
+is terminal failure: seven of eight shards pass, while unit-3b fails the
+unchanged test_all_tool_execute_before_hooks_have_subagent_guard assertion
+on enforce-no-idle-monitoring.ts. Both Python gate jobs pass, including
+actual managed Python3.12.15 execution, and the native ledger resolves the
+previous admission family. Molecule39104090010 and Pages39104090064 pass.
+The native ledger records unit-3b family
+98eeb10c0b6e7b3fd332fb7b05fa5ba752d97aa9d4d14f9f3b86fd94c55756b0
+as open at its seventh occurrence. Exact verdict history records failure;
+coverage is skipped after the failed shard, not reported green.
+
+The original assertion reproduces locally:1failed in1.22s at
+/tmp/gludd-v012-subagent-fallback-native-red.xml. The public wrapper and
+shared handler already guard subagents; the typed fallback delegates without
+its own boundary guard. A dependency-sentinel regression retains that actual
+callback and makes its delegate return a denial, proving bypass independently
+of the shared helper's guard while preserving parent dispatch. Together with
+the original audit and native routing/roster/wiring controls, all six cases
+fail before repair. The fallback now short-circuits through the existing
+isSubagent() helper without adding a physical source line or moving a guard.
+
+Both exact nodes join the existing first compatibility child. Native capture
+rosters and the exact family count retain their assertions and add only these
+two selectors/families; twelve omission/duplication/widening cases protect
+both additions. Intermediate full replays retain26 failures/431passes/2skips
+and24 failures/445passes/2skips from the stale roster/count before conformance.
+Their original XML remains untouched. Final twelve-owner native replay passes
+469cases with2existing conditional skips in62.02s:
+/tmp/gludd-v012-subagent-fallback-all-owners-green.xml.
+Hook runtime passes153cases with18conditional skips in30.00s; strict typing
+and lint pass. The original5999 source-budget and executable-mode assertions
+pass. All104families retain21phases,2850seconds and90/60 compatibility bounds,
+three sequential children and workers2/1/1, fatal warnings and full-gate
+authority. No coverage or cleanup exception is introduced.
+
+The existing native plugin-manifest producer updates only this plugin's
+digest to fc24ccc9e1e4229f89b0d14ea673b9e6a3c5bf5233e3efaa618de8aa6eb612dc.
+OpenCode must restart to load the changed entrypoint in an existing session;
+the source/runtime harness does not prove that a live session restarted.
+The documented practitioner lifecycle links retain their uncertainty and
+do not diagnose this structural boundary mismatch.
+
+The old local gate .gate-logs/gate-20261018064002-4c64ffbc.log is ABORTED
+through native gate-kill, with zero owned survivors; its producer finishes
+at2026-10-18T08:10:47.545531+00:00. Historical raw cancellation/status/CI
+files remain under /tmp/gludd-v012-failed-23d3424. A separately draining
+secrets scan finishes naturally, and native resource tracking returns zero
+workers before source edits. The generated untracked cancellation marker
+is preserved there before explicit cleanup. Immutable refs and the original
+reviewed source/focus bundle remain unchanged and are not finalized.
+
+Native immutable ci-run-summary owns all eight hosted shard intervals,
+including the censored failed unit-3b duration; its exact stdout and the
+feature document retain those diagnostic-only values. Actual full EE
+OpenTofu/controller initialization, captured image/collection provenance,
+platform package smokes and exact PyInstaller warning admission are indexed
+in /tmp/gludd-v012-installed-runtime-evidence-23d3424.md. These remain
+candidate-specific installed/build evidence, not a successful full gate,
+remote registry publication or universal feature deployment.
+
+Independent source review, normal guarded commit/collection, actual repaired
+admission, a new genuine reviewed integration candidate, fresh full gate and
+exact-successor hosted proof remain required. All nineteen repair records
+remain unchecked; no master promotion, tag or release publication occurs.

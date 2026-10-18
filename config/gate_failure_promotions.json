@@ -873,6 +873,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_workflow_integrity.py::test_gate312_guard_is_promoted_before_fanout",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "plugin-hook-subagent-isolation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_subagent_output_clean.py::TestSubagentOutputClean::test_all_tool_execute_before_hooks_have_subagent_guard",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "plugin-native-fallback-subagent-isolation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler",
+      "full_gate_phase": "test"
     }
   ]
 }

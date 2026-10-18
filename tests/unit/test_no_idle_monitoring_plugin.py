@@ -289,3 +289,56 @@ def test_shared_idle_handler_preserves_subagent_counter(hook_plugin_env: HookEnv
     state = hook_plugin_env.read_json("GLUDD_IDLE_MONITORING_STATE_FILE")
     assert isinstance(state, dict), state
     assert state["count"] == 0
+
+
+def test_fallback_subagent_guard_precedes_delegated_handler(
+    hook_plugin_env: HookEnv,
+) -> None:
+    """The actual fallback must isolate subagents before invoking its delegate."""
+    before = _seed_idle_counter(hook_plugin_env)
+    source = _plugin_source()
+    assert source.count("export default") == 1
+    fallback_source = source.split("export default", 1)[0]
+    library = PLUGIN_PATH.parent.parent / "lib"
+    for name in ("hot_reload.ts", "shared.ts"):
+        old_import = f'"../lib/{name}"'
+        assert fallback_source.count(old_import) == 1
+        fallback_source = fallback_source.replace(
+            old_import, json.dumps(str(library / name)),
+        )
+    delegate_import = (
+        'import { idleMonitoringToolExecuteBefore, type IdleMonitoringConfig } '
+        'from "../lib/idle_monitoring.ts";'
+    )
+    assert fallback_source.count(delegate_import) == 1
+    delegate_probe = (
+        "import type { IdleMonitoringConfig } from "
+        + json.dumps(str(library / "idle_monitoring.ts"))
+        + ";\n"
+        "const idleMonitoringToolExecuteBefore = (..._args: unknown[]) => ({"
+        'permissionDecision: "deny", message: "fallback-delegation-sentinel"});\n'
+    )
+    fallback_source = fallback_source.replace(delegate_import, delegate_probe)
+    probe = hook_plugin_env.cwd / "idle-fallback-guard-probe.ts"
+    probe.write_text(
+        fallback_source + "\nexport default () => defaultImpl;\n",
+        encoding="utf-8",
+    )
+    monitoring = {"tool": "bash", "args": {"command": "make gate-status-check"}}
+    subagent = hook_plugin_env.invoke(
+        str(probe), "tool.execute.before", input=monitoring,
+        env_overrides={"OPENCODE_SUBAGENT": "1"},
+    )
+    assert subagent.returncode == 0, subagent.stderr
+    assert json.loads(subagent.stdout) is None
+    assert hook_plugin_env.state_path("GLUDD_IDLE_MONITORING_STATE_FILE").read_bytes() == before
+
+    parent = hook_plugin_env.invoke(
+        str(probe), "tool.execute.before", input=monitoring,
+        env_overrides={"OPENCODE_SUBAGENT": "0"},
+    )
+    assert parent.returncode == 0, parent.stderr
+    assert json.loads(parent.stdout) == {
+        "permissionDecision": "deny", "message": "fallback-delegation-sentinel",
+    }
+    assert hook_plugin_env.state_path("GLUDD_IDLE_MONITORING_STATE_FILE").read_bytes() == before

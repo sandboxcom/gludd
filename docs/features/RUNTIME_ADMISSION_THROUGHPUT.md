@@ -972,3 +972,58 @@ absolute native glob spelling. All three children, workers 2/1/1, 90/60 bounds,
 Hosted acquisition, actual 3.12.15 identity, the unchanged bounded admission,
 full exact-SHA gate and required workflows remain missing. No timeout repair,
 throughput improvement or release completion is claimed from these source checks.
+
+### Exact terminal diagnosis for 23d3424
+
+Build run [39104090060](https://github.com/sandboxcom/gludd/actions/runs/39104090060)
+on 23d3424064c84fe3193a5eeef685ac228f4dc68d is terminal failure.
+Both required Python gate jobs pass, including actual managed Python3.12.15
+execution; the native ledger resolves the previous runtime-admission family.
+Seven test shards, every required platform/container/EE build and the separate
+Molecule/Pages workflows pass. The remaining unit-3b failure is the unchanged
+per-handler subagent audit at enforce-no-idle-monitoring.ts. Its typed fallback
+lacks its own visible guard even though the public wrapper and shared handler
+already call isSubagent(). The native original node reproduces one failure
+in1.22s. Keep the failing owner and actual input, not another run-label diagnosis.
+
+The repair adds the existing helper's real short circuit at the fallback
+boundary and a native dependency-sentinel regression that cannot be masked by
+the delegated helper's own guard. Both exact nodes join the first compatibility
+child; all prior selectors, three children, workers2/1/1, warning policy,
+absolute native globs, 90/60 bounds, 21 phases and2850-second ceiling remain.
+The six targeted structural/runtime/routing controls fail before their owners
+change. Existing full roster assertions are extended by exactly the two added
+selectors and two families; omission/duplication/widening controls cover both.
+No original assertion, depth exception, coverage floor or cleanup authority
+is relaxed. The native plugin-manifest producer changes only that plugin's digest.
+OpenCode must restart to load the changed entrypoint in an existing session;
+source/runtime-harness acceptance does not establish a live-session restart.
+
+The existing local gate .gate-logs/gate-20261018064002-4c64ffbc.log is
+ABORTED through make gate-kill after hosted proof fails. The native producer
+finishes at2026-10-18T08:10:47.545531+00:00; the cancellation reports no owned
+survivors. Raw status/background/cancellation/CI observations remain under
+/tmp/gludd-v012-failed-23d3424, and the original reviewed bundle and immutable
+candidate refs remain unchanged. No terminal gate, final coverage, task closure,
+master promotion or release publication is claimed for this candidate.
+
+The following values come only from the existing immutable
+make ci-run-summary RUN=39104090060 CI_RUN_SUMMARY_REPO=sandboxcom/gludd
+CI_RUN_SUMMARY_VALIDATE_ONLY=0 CI_RUN_SUMMARY_SHARD_TIMINGS=1 owner.
+The complete native stdout is retained in the historical directory above.
+Its successful gate barrier is2026-10-18T06:41:00Z. Delay measures gate completion
+to shard job start; test duration is the native Test step interval. All eight
+shards are present. No interval is unknown in this report; the failed unit-3b
+duration is explicitly censored. These diagnostics provide no gate/release
+authority and do not establish a general throughput improvement.
+
+| Shard | Exact job ID | Gate delay seconds | Test-step seconds | Native state | Censored |
+| --- | --- | --- | --- | --- | --- |
+| unit-1a1 | 117608539075 | 5133 | 364 | success | no |
+| unit-1a2 | 117608539179 | 4786 | 608 | success | no |
+| unit-1b | 117608539174 | 2958 | 2345 | success | no |
+| unit-1d | 117608539082 | 3698 | 1044 | success | no |
+| unit-2 | 117608539157 | 2 | 3657 | success | no |
+| unit-3a | 117608539112 | 3 | 2916 | success | no |
+| unit-3b | 117608539128 | 2558 | 2536 | failed | yes |
+| other | 117608539099 | 2 | 2509 | success | no |

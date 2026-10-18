@@ -201,6 +201,23 @@ all 37 plugin files load and execute without failures. Strict checking of the
 six changed test/fixture files passes after honest JSON shape narrowing and
 fixture annotations, preserving every original runtime assertion.
 
+Candidate 23d3424064c84fe3193a5eeef685ac228f4dc68d fails the unchanged
+per-handler subagent audit at the idle-monitoring fallback. Retain the
+[failed hosted job](https://github.com/sandboxcom/gludd/actions/runs/39104090060/job/117608539128)
+and native reproduction /tmp/gludd-v012-subagent-fallback-native-red.xml.
+The public wrapper and shared helper already guard delegated execution;
+the fallback also requires an explicit isSubagent() short circuit before
+its delegated handler. Keep all three boundaries and the depth-only exception.
+A native regression retains the actual fallback and substitutes a returned
+denial dependency, proving subagent bypass independently of the helper's own
+guard while requiring normal parent dispatch. Both exact structural/runtime
+nodes belong in the existing first compatibility cohort. The native six-case
+RED reproduces the audit, fallback behavior and missing routing before repair;
+actual acceptance and exact-SHA full gate/CI remain separate requirements.
+The failed candidate's local gate is ABORTED through its native owner, with no
+owned survivors; its historical raw evidence is retained beneath
+/tmp/gludd-v012-failed-23d3424. No task completion follows from this repair.
+
 Practitioners have reported similar symptoms without establishing one common
 cause. An [April 2026 session-stall discussion](https://www.reddit.com/r/opencodeCLI/comments/1shjlo1/anyone_else_noticed_opencode_getting_stuck_lots/)
 reports stalls across models and with DCP disabled; its author could not isolate

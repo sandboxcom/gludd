@@ -18,6 +18,7 @@ from tests.unit import test_runtime_admission_scheduling as scheduling
 from tests.unit.test_runtime_admission_scheduling import (
     APPROVED_PROMOTION_SELECTORS,
     HELP,
+    PLUGIN_ISOLATION_SELECTORS,
     REVIEWED_FINALIZATION,
     ROOT,
     ROSTER,
@@ -81,7 +82,9 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
 
 
-@pytest.mark.parametrize("promoted_selector", (*APPROVED_PROMOTION_SELECTORS, *REVIEWED_FINALIZATION))
+@pytest.mark.parametrize(
+    "promoted_selector", (*APPROVED_PROMOTION_SELECTORS, *PLUGIN_ISOLATION_SELECTORS, *REVIEWED_FINALIZATION),
+)
 @pytest.mark.parametrize("mutation", ("omission", "duplication", "widening"))
 @pytest.mark.parametrize(
     "guard",

@@ -29,6 +29,11 @@ APPROVED_PROMOTION_SELECTORS = (
     "tests/unit/test_collection_hook_environment.py::"
     "test_real_pre_push_collection_isolates_only_native_git_local_environment",
 )
+PLUGIN_ISOLATION_SELECTORS = (
+    "tests/unit/test_subagent_output_clean.py::"
+    "TestSubagentOutputClean::test_all_tool_execute_before_hooks_have_subagent_guard",
+    "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler",
+)
 ROSTER = (
     *APPROVED_PROMOTION_SELECTORS,
     "tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence",
@@ -75,6 +80,7 @@ ROSTER = (
     "test_no_plugin_denies_reads_at_session_start",
     "tests/unit/test_process_overhead.py::TestProcessTokenOverhead::test_anti_stop_plugins_are_lean",
     "tests/unit/test_enforcement_executable_modes.py::test_enforcement_runtime_surfaces_have_executable_git_mode",
+    *PLUGIN_ISOLATION_SELECTORS,
     "tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_green_together",
     "tests/unit/test_secrets_scan_resources.py",
     "tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_pinned",
@@ -429,7 +435,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 102
+    assert len(families) == 104
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
