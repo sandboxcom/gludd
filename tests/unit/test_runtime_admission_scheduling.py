@@ -122,6 +122,7 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_ownership",
     "tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes",
     "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
+    "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
 )
 
 
@@ -439,7 +440,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 108
+    assert len(families) == 109
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -657,7 +658,7 @@ def test_watchdog_handoff_exit_control_is_routed_once_in_third_child(tmp_path: P
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 108
+    assert len(payload["families"]) == 109
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -674,4 +675,24 @@ def test_native_watchdog_start_control_is_routed_once_in_third_child(tmp_path: P
         "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 108
+    assert len(payload["families"]) == 109
+
+
+def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(tmp_path: Path) -> None:
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    selected = [row["files"] for row in rows]
+    assert selected == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    expected = {
+        "id": "watchdog-native-start-serialized-acknowledgement", "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
+        "full_gate_phase": "test",
+    }
+    assert payload["families"][-1] == expected
+    assert len(payload["families"]) == 109
+    phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_required"] is True

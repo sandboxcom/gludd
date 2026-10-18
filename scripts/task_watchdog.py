@@ -45,7 +45,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
-from contextlib import suppress
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
@@ -140,15 +140,19 @@ class PollResult(TypedDict):
     killed: int
 
 
-def _log(msg: str) -> None:
+def _log(msg: str, *, required: bool = False) -> None:
     ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     line = f"[{ts}] {msg}"
     print(line, flush=True)
     try:
         with open(WATCHDOG_LOG, "a") as f:
             f.write(line + "\n")
+            if required:
+                f.flush()
+                os.fsync(f.fileno())
     except Exception:
-        pass
+        if required:
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -743,37 +747,41 @@ def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
     identity: cleanup_owner.ProcessRecord | None = None
     log_identity: tuple[int, int] | None = None
     log = root / ".gate-logs/task-watchdog.log"
-    try:
-        if os.name != "posix" or not hasattr(os, "getsid"):
-            raise ValueError("native detached watchdog startup requires POSIX session support")
-        if root not in {path.resolve() for path in _repository_roots()}:
-            raise ValueError("startup checkout is not registered")
-        script = root / "scripts/task_watchdog.py"
-        directory = root / ".gate-logs"
-        log = directory / "task-watchdog.log"
-        lock = directory / "task-watchdog-launch.lock"
-        if script.is_symlink() or not script.is_file():
-            raise ValueError("startup script is not a regular checkout-owned source")
-        if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
-            raise ValueError("startup directory is not checkout-owned")
-        for path in (log, lock):
-            if path.is_symlink() or (path.exists() and not path.is_file()):
-                raise ValueError("startup log or lock is not a regular owned file")
-        existing = _startup_admission(root, apply=apply)
-        if existing is not None:
-            print(f"TASK-WATCHDOG-START already-running pid={existing.pid} writes=false signals=false", flush=True)
-            return WatchdogLaunch(True, existing)
-        if not apply:
-            print("TASK-WATCHDOG-START plan writes=false spawn=false signals=false", flush=True)
-            return WatchdogLaunch(True)
-        # Reuse the native launch-lock/detached-session pattern. FileLock is
-        # already owned by the observer and CI control planes and stays portable.
-        from filelock import FileLock
+    # Keep the one launch lease through actual success and verified failure drain.
+    with ExitStack() as ownership:
+        try:
+            if os.name != "posix" or not hasattr(os, "getsid"):
+                raise ValueError("native detached watchdog startup requires POSIX session support")
+            if root not in {path.resolve() for path in _repository_roots()}:
+                raise ValueError("startup checkout is not registered")
+            script = root / "scripts/task_watchdog.py"
+            directory = root / ".gate-logs"
+            log = directory / "task-watchdog.log"
+            lock = directory / "task-watchdog-launch.lock"
+            if script.is_symlink() or not script.is_file():
+                raise ValueError("startup script is not a regular checkout-owned source")
+            if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+                raise ValueError("startup directory is not checkout-owned")
+            for path in (log, lock):
+                if path.is_symlink() or (path.exists() and not path.is_file()):
+                    raise ValueError("startup log or lock is not a regular owned file")
+            if not apply:
+                existing = _startup_admission(root, apply=False)
+                if existing is not None:
+                    print(f"TASK-WATCHDOG-START already-running pid={existing.pid} "
+                          "writes=false signals=false", flush=True)
+                else:
+                    print("TASK-WATCHDOG-START plan writes=false spawn=false signals=false", flush=True)
+                return WatchdogLaunch(True, existing)
+            # Reuse the native launch-lock/detached-session pattern. FileLock is
+            # already owned by the observer and CI control planes and stays portable.
+            from filelock import FileLock
 
-        directory.mkdir(parents=True, exist_ok=True)
-        with FileLock(str(lock), timeout=0, mode=0o600):
+            directory.mkdir(parents=True, exist_ok=True)
+            ownership.enter_context(FileLock(str(lock), timeout=0, mode=0o600))
             existing = _startup_admission(root, apply=apply)
             if existing is not None:
+                print(f"TASK-WATCHDOG-START already-running pid={existing.pid} spawn=false signals=false", flush=True)
                 return WatchdogLaunch(True, existing)
             environment = os.environ.copy()
             environment.update({
@@ -808,6 +816,7 @@ def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
                         if marker.is_symlink() or log.is_symlink():
                             raise ValueError("startup publication became a symlink")
                         if (_read_gate_pid(str(directory / "task-watchdog.pid")) == process.pid
+                                and f"task_watchdog ready: pid={process.pid} ".encode() in text
                                 and f"task_watchdog started: pid={process.pid} ".encode() in text):
                             marker_stat = marker.stat()
                             fresh = next((record for record in cleanup_owner._records(root)
@@ -829,26 +838,26 @@ def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
                         break
                     time.sleep(0.1)
                 raise RuntimeError("watchdog exited or did not acknowledge startup within five seconds")
-    except (OSError, RuntimeError, ValueError, TimeoutError, subprocess.SubprocessError) as exc:
-        if process is not None and identity is not None and process.poll() is None:
-            try:
-                _terminate_verified(identity, (root,), reap=process.poll)
-            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as cleanup_error:
-                print(f"TASK-WATCHDOG-START cleanup refused: {cleanup_error}", flush=True)
-        if process is not None and process.poll() is not None:
-            process.wait(timeout=1)
-        message = f"TASK-WATCHDOG-START refused: {exc}"
-        if log_identity is not None and not log.is_symlink():
-            try:
-                current_log = log.stat()
-                if log_identity == (current_log.st_dev, current_log.st_ino):
-                    with log.open("ab") as diagnostic:
-                        diagnostic.write((message + "\n").encode())
-                        diagnostic.flush()
-            except OSError:
-                pass
-        print(message, flush=True)
-        return WatchdogLaunch(False, identity, process)
+        except (OSError, RuntimeError, ValueError, TimeoutError, subprocess.SubprocessError) as exc:
+            if process is not None and identity is not None and process.poll() is None:
+                try:
+                    _terminate_verified(identity, (root,), reap=process.poll)
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as cleanup_error:
+                    print(f"TASK-WATCHDOG-START cleanup refused: {cleanup_error}", flush=True)
+            if process is not None and process.poll() is not None:
+                process.wait(timeout=1)
+            message = f"TASK-WATCHDOG-START refused: {exc}"
+            if log_identity is not None and not log.is_symlink():
+                try:
+                    current_log = log.stat()
+                    if log_identity == (current_log.st_dev, current_log.st_ino):
+                        with log.open("ab") as diagnostic:
+                            diagnostic.write((message + "\n").encode())
+                            diagnostic.flush()
+                except OSError:
+                    pass
+            print(message, flush=True)
+            return WatchdogLaunch(False, identity, process)
 
 
 def record_kill(
@@ -1021,7 +1030,11 @@ def main(argv: list[str] | None = None) -> int:
 
 def _write_pid() -> bool:
     try:
-        with Path(WATCHDOG_PID_FILE).open("x", encoding="utf-8") as marker:
+        pointer = Path(WATCHDOG_PID_FILE)
+        if pointer.exists() or pointer.is_symlink():
+            raise FileExistsError("task watchdog PID pointer already exists")
+        _log(f"task_watchdog ready: pid={_SELF_PID} ownership_policy={_OWNERSHIP_POLICY}", required=True)
+        with pointer.open("x", encoding="utf-8") as marker:
             marker.write(str(_SELF_PID))
         return True
     except OSError as exc:

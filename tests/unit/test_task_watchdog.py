@@ -1395,10 +1395,8 @@ def test_native_watchdog_start_target_uses_literal_safe_policy(tmp_path: Path, v
     assert not tripwire.exists()
 
 
-def test_real_native_watchdog_start_survives_caller_group_termination(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Adapt the existing gate session-survival control with confined real Make/Python."""
+def _native_start_fixture_checkout(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    """Confine the actual native source, bounded daemon and every state path."""
     root = tmp_path / "native-start-fixture"
     (root / "scripts").mkdir(parents=True)
     (root / ".gate-logs").mkdir()
@@ -1432,7 +1430,6 @@ def test_real_native_watchdog_start_survives_caller_group_termination(
     )
     for name, content in (("deadlines", "{}"), ("stale", "[]"), ("killed", "[]")):
         (root / name).write_text(content, encoding="utf-8")
-    receipt = root / "caller.json"
     environment = dict(
         os.environ, UV_PROJECT_ENVIRONMENT=sys.prefix, UV_NO_SYNC="1", UV_PYTHON_DOWNLOADS="never",
         PYTHONPATH=str(owner_root / "scripts"), GLUDD_TASK_DEADLINE_STATE=str(root / "deadlines"),
@@ -1440,6 +1437,15 @@ def test_real_native_watchdog_start_survives_caller_group_termination(
         GLUDD_TASK_WATCHDOG_PID=str(root / "inherited-wrong.pid"),
         GLUDD_TASK_WATCHDOG_LOG=str(root / "inherited-wrong.log"),
     )
+    return root, environment
+
+
+def test_real_native_watchdog_start_survives_caller_group_termination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Adapt the existing gate session-survival control with confined real Make/Python."""
+    root, environment = _native_start_fixture_checkout(tmp_path)
+    receipt = root / "caller.json"
     caller_source = (
         "import json, subprocess, sys, time\nfrom pathlib import Path\n"
         "result = subprocess.run(['make','--no-print-directory','task-watchdog-start',"
@@ -1506,8 +1512,10 @@ def _start_fixture(monkeypatch: pytest.MonkeyPatch, _owned_poll: OwnedPoll) -> S
             pgid=child.pid, started_at="new-child-start",
         ))
         cwds[child.pid] = root
-        (directory / "task-watchdog.pid").write_text(str(child.pid), encoding="utf-8")
         with (directory / "task-watchdog.log").open("a", encoding="utf-8") as log:
+            log.write(f"task_watchdog ready: pid={child.pid} ownership_policy=fixture\n")
+            log.flush()
+            (directory / "task-watchdog.pid").write_text(str(child.pid), encoding="utf-8")
             log.write(f"task_watchdog started: pid={child.pid} timeout=300\n")
         return child
 
@@ -1747,3 +1755,169 @@ def test_native_lifecycle_literal_policy_stays_inert_during_actual_make_executio
     tmp_path: Path, target: str, variable: str, recursive: bool,
 ) -> None:
     _assert_native_lifecycle_literal_policy(tmp_path, target, variable, recursive=recursive)
+
+
+def test_native_start_serializes_existing_acknowledgement(_start_fixture: StartFixture) -> None:
+    """A published child cannot bypass the actual creator's held native lock."""
+    from filelock import FileLock
+
+    (root, records, _cwds, _deadlines, sent), child, calls, spawn = _start_fixture
+    spawn([sys.executable, str(root / "scripts/task_watchdog.py")])
+    calls.clear()
+    log = root / ".gate-logs/task-watchdog.log"
+    log.write_text("retained prior log\n", encoding="utf-8")
+    before = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    with FileLock(str(root / ".gate-logs/task-watchdog-launch.lock"), timeout=0):
+        before_plan = {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+        plan = watchdog.start_owned_watchdog(root, apply=False)
+        assert plan.success and plan.process is None and plan.identity == records[0]
+        assert before_plan == {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
+        result = watchdog.start_owned_watchdog(root, apply=True)
+    assert result.success is False
+    assert result.process is None and calls == {} and sent == []
+    assert len(records) == 1 and records[0].pid == child.pid
+    assert all(path.read_bytes() == content for path, content in before.items())
+
+
+def test_failed_start_keeps_serialization_through_verified_child_drain(
+    monkeypatch: pytest.MonkeyPatch, _start_fixture: StartFixture,
+) -> None:
+    from filelock import FileLock, Timeout
+
+    (root, records, _cwds, _deadlines, sent), child, _calls, spawn = _start_fixture
+    probes: list[tuple[bool, bool]] = []
+    original_terminate = watchdog._terminate_verified
+
+    def no_ack(command: list[str], **kwargs: object) -> MagicMock:
+        result = spawn(command, **kwargs)
+        (root / ".gate-logs/task-watchdog.log").write_text("retained prior log\n", encoding="utf-8")
+        return result
+
+    def drain(
+        record: cleanup_owner.ProcessRecord, roots: tuple[Path, ...], *,
+        reap: Callable[[], int | None] | None = None,
+    ) -> bool:
+        held = False
+        try:
+            with FileLock(str(root / ".gate-logs/task-watchdog-launch.lock"), timeout=0):
+                pass
+        except Timeout:
+            held = True
+        adopter = watchdog.start_owned_watchdog(root, apply=True)
+        probes.append((held, adopter.success))
+        return original_terminate(record, roots, reap=reap)
+
+    monkeypatch.setattr(subprocess, "Popen", no_ack)
+    monkeypatch.setattr(watchdog, "_terminate_verified", drain)
+    result = watchdog.start_owned_watchdog(root, apply=True)
+    assert result.success is False
+    assert probes == [(True, False)]
+    assert records == [] and sent == [(child.pid, signal.SIGTERM)]
+
+
+def test_daemon_does_not_publish_a_pid_when_checked_readiness_cannot_be_logged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = tmp_path / "never-ready.pid"
+    unavailable_log = tmp_path / "not-a-log-file"
+    unavailable_log.mkdir()
+    monkeypatch.setattr(watchdog, "WATCHDOG_PID_FILE", str(marker))
+    monkeypatch.setattr(watchdog, "WATCHDOG_LOG", str(unavailable_log))
+    with patch("scripts.task_watchdog.run_once", side_effect=KeyboardInterrupt) as poll:
+        assert watchdog.main([]) == 1
+    poll.assert_not_called()
+    assert not marker.exists()
+
+
+def test_daemon_commits_its_pid_only_after_checked_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = tmp_path / "ready.pid"
+    log = tmp_path / "ready.log"
+    monkeypatch.setattr(watchdog, "WATCHDOG_PID_FILE", str(marker))
+    monkeypatch.setattr(watchdog, "WATCHDOG_LOG", str(log))
+    publications: list[tuple[str, bool, bool]] = []
+    original_log = watchdog._log
+
+    def observe(message: str, *, required: bool = False) -> None:
+        publications.append((message, required, marker.exists()))
+        if required:
+            original_log(message, required=True)
+        else:
+            original_log(message)
+
+    monkeypatch.setattr(watchdog, "_log", observe)
+    with patch("scripts.task_watchdog.run_once", side_effect=KeyboardInterrupt):
+        assert watchdog.main([]) == 0
+    assert publications[0][0].startswith(f"task_watchdog ready: pid={os.getpid()} ")
+    assert publications[0][1:] == (True, False)
+    assert publications[1][0].startswith(f"task_watchdog started: pid={os.getpid()} ")
+    assert publications[1][1:] == (False, True)
+    assert not marker.exists()
+
+
+def test_interrupted_creator_cannot_leave_an_adoptable_unacknowledged_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real creator dies before the child's checked ready publication."""
+    root, environment = _native_start_fixture_checkout(tmp_path)
+    script = root / "scripts/task_watchdog.py"
+    entered = root / "before-ready"
+    release = root / "release-ready"
+    barrier = (
+        '    _fixture_original_log = _log\n'
+        '    def _blocked_log(message, **kwargs):\n'
+        '        if message.startswith(("task_watchdog ready:", "task_watchdog started:")):\n'
+        f'            Path({str(entered)!r}).write_text(str(_SELF_PID))\n'
+        '            wait_until = time.monotonic() + 8\n'
+        f'            while not Path({str(release)!r}).exists():\n'
+        '                if time.monotonic() >= wait_until:\n'
+        '                    raise RuntimeError("fixture readiness barrier expired")\n'
+        '                time.sleep(0.02)\n'
+        '        return _fixture_original_log(message, **kwargs)\n'
+        '    _log = _blocked_log\n'
+    )
+    source = script.read_text(encoding="utf-8")
+    assert source.count("    POLL_SECS = 0.02\n") == 1
+    script.write_text(source.replace("    POLL_SECS = 0.02\n", "    POLL_SECS = 0.02\n" + barrier), encoding="utf-8")
+    monkeypatch.setattr(watchdog, "_repository_roots", lambda: (root,))
+    creator = subprocess.Popen(
+        [sys.executable, str(script), "--start", "--validate-only", "0"],
+        cwd=root, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, start_new_session=True,
+    )
+    identity: cleanup_owner.ProcessRecord | None = None
+    marker = root / ".gate-logs/task-watchdog.pid"
+    try:
+        deadline = time.monotonic() + 4
+        while not entered.exists() and creator.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert entered.exists() and creator.poll() is None
+        child_pid = int(entered.read_text(encoding="utf-8"))
+        identity = next(record for record in cleanup_owner._records(root) if record.pid == child_pid)
+        assert watchdog._startup_identity(identity, root)
+        assert os.getpgid(creator.pid) == creator.pid != child_pid
+        os.killpg(creator.pid, signal.SIGTERM)
+        creator.communicate(timeout=4)
+        assert creator.returncode == -signal.SIGTERM
+        result = watchdog.start_owned_watchdog(root, apply=True)
+        assert result.success is False and result.process is None
+        assert not marker.exists()
+        current = next(record for record in cleanup_owner._records(root) if record.pid == child_pid)
+        assert cleanup_owner._same_identity(identity, current) and watchdog._startup_identity(current, root)
+        assert (root / "killed").read_text(encoding="utf-8") == "[]"
+    finally:
+        release.write_text("release", encoding="utf-8")
+        if creator.poll() is None:
+            creator.terminate()
+        creator.communicate(timeout=4)
+        if identity is not None:
+            deadline = time.monotonic() + 4
+            while watchdog._read_gate_pid(str(marker)) != identity.pid and time.monotonic() < deadline:
+                time.sleep(0.02)
+            if watchdog._read_gate_pid(str(marker)) == identity.pid:
+                assert watchdog.stop_owned_watchdog(root, apply=True) is True
+            else:
+                assert watchdog._terminate_verified(identity, (root,)) is True
+    assert (root / "killed").read_text(encoding="utf-8") == "[]"
+    assert not (root / ".venv").exists() and not (root / "uv.lock").exists()

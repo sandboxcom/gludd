@@ -1528,3 +1528,40 @@ All 107 prior admission families/policy/order remain; one cheap exact startup no
 is appended. No main source/ref, global daemon/state, full gate, candidate focus,
 CI, publication, release task status or checkbox changes. The entire previous
 SESSION prefix and all historical proof/approved refs are preserved.
+
+## v0.1.2 reviewed watchdog startup transaction repair (2026-10-18)
+
+Independent M6 source review requests changes for three proved windows: actual
+existing-singleton admission before FileLock, failed-child drain after release,
+and final PID publication before checked ready output. Preserve unsafe source
+080158abec83b0c89dbebe5982ea91c5b19af96f, its 607/145 receipts and every earlier
+ref/failure. No standalone M6 approval is claimed; the repaired descendant needs
+cumulative review against M5 7a1ddbe1e73599a7823832e83d4b03e191a890c4.
+
+One existing native launch lease now covers every actual success and failure
+cleanup/refusal. Plan stays read-only. Checked ready output is flushed/fsynced
+before exclusive final PID publication; original fresh started bytes and all
+native pointer/log/start/cwd/session checks remain. Long-running idempotence
+needs no historical log retention or second cache. Strict cleanup, native bounds,
+Make literal/unexport behavior and M2/M4/M5 assertions remain unchanged.
+
+The two held-lock/drain REDs fail in 1.49 seconds, three readiness/real interrupted
+creator REDs in 2.43 seconds, and two routing REDs in 1.72 seconds. All are retained
+separately; seven repaired controls pass in 2.28 seconds. All real fixture signals
+and state remain isolated, followed by strict native stop. The original failed
+PID 47780 start remains unexplained.
+
+Final warning-fatal watchdog coverage passes 150 cases in 6.77 seconds at 94.1%
+lines/88.3% branches, preserving 85/75:
+.gate-logs/coverage-task-watchdog-start-serialization-final.json and native audit
+.gate-logs/coverage-20261018T103257Z.json, raw observer
+20261018T103249Z-97046-184e80f2 passed in 8.410 seconds. Complete acceptance passes
+619 cases in 68.22 seconds; XML receipts are
+/tmp/gludd-v012-watchdog-start-serialization-final-coverage.xml and
+/tmp/gludd-v012-watchdog-start-serialization-final-combined.xml.
+
+All 108 prior families and non-family policy remain; one exact cheap node/family
+is appended to the existing third child, totaling 109. Every previous SESSION
+byte is preserved. TASKS retains its existing unchecked row and line count.
+No main/ref mutation, live/global daemon action, admission, focus, gate, CI,
+push, publication, task completion or release-readiness claim occurs here.

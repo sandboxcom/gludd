@@ -915,6 +915,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-native-start-serialized-acknowledgement",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
+      "full_gate_phase": "test"
     }
   ]
 }

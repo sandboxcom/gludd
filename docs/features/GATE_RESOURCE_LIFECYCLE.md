@@ -1567,3 +1567,70 @@ Root alone may apply the reviewed source, run the safe start plan, start once,
 then verify the same native identity after the launching tool exits and at least
 one normal polling interval. Logs and killed history must remain intact before
 any candidate proof starts. Source acceptance does not close a release task.
+
+## 2026-10-18: serialize watchdog startup through publication and drain
+
+Independent review of source 080158abec83b0c89dbebe5982ea91c5b19af96f requests
+changes despite its passing focused receipts. It found three connected windows:
+actual existing-singleton success before the launch lock, failed-child drain after
+that lock exited, and PID publication before checked readiness. That unsafe M6
+commit and its evidence remain preserved and unapproved. Review the cumulative
+repaired descendant against M5 7a1ddbe1e73599a7823832e83d4b03e191a890c4.
+
+The existing lifecycle owner now acquires its checkout-local FileLock before every
+actual admission or success. An ExitStack keeps that same lease through fresh
+acknowledgement, verified failure cleanup/reaping and the final failure diagnostic.
+A concurrent actual adopter refuses while creation or cleanup owns the lease.
+Read-only plan admission remains mutation-free; actual already-running output
+reports no spawn/signals without making a claim about lock bookkeeping.
+
+The child writes its PID-bearing ready line through checked existing-log output,
+flushes and fsyncs it, then exclusively creates its final positive raw PID pointer.
+Failed readiness cannot publish that pointer. The creator still requires both new
+ready and started log bytes plus the final pointer, revalidated native identity,
+detached session and unchanged pointer/log ownership. If a creator dies before
+ready, the live unpointed child blocks adoption through the native census. A
+later verified singleton remains independent of historical log retention because
+its final pointer commits only after checked readiness. Ordinary diagnostic file
+logging remains fail-open. No second readiness cache or cleanup authority is added.
+
+Two real-lock/cleanup controls fail first in 1.49 seconds;
+three readiness/publication REDs fail in 2.43 seconds, including a real detached
+child whose creator is terminated before ready and which the old source wrongly
+adopts. The fixture is subsequently released and drained through strict native
+stop with deadline/stale/killed/PID/log state confined. Two additive routing REDs
+fail in 1.72 seconds. These receipts remain under the distinct
+/tmp/gludd-v012-watchdog-start-serialization-lock-red.xml,
+/tmp/gludd-v012-watchdog-start-serialization-publication-red.xml and
+/tmp/gludd-v012-watchdog-start-serialization-routing-red.xml paths. Seven repaired
+controls pass in 2.28 seconds. These transaction findings do not establish the
+cause of the original PID 47780 empty-log exit.
+
+Final warning-fatal whole-watchdog coverage passes 150 cases in 6.77 seconds at
+94.1% lines and 88.3% branches, preserving native 85/75 floors:
+.gate-logs/coverage-task-watchdog-start-serialization-final.json; native audit
+.gate-logs/coverage-20261018T103257Z.json; raw observer
+20261018T103249Z-97046-184e80f2 passed in 8.410 seconds. Its JUnit receipt is
+/tmp/gludd-v012-watchdog-start-serialization-final-coverage.xml. Final complete
+source/routing acceptance passes 619 cases in 68.22 seconds at
+/tmp/gludd-v012-watchdog-start-serialization-final-combined.xml. The prior complete
+cleanup, gate-launch, active-work, scheduling, promotion, cold-start and observability
+caller owners, plus the exact M2 control, remain included with every original
+assertion, Make literal/unexport guard, refusal, native wait and observer boundary.
+
+Only the exact serialized-acknowledgement node/family joins the third admission
+child. All 108 prior families, selector order and non-family policy remain exact;
+the total becomes 109. Three sequential children, workers 2/1/1, 90/60 admission,
+21 phases/2850, full authoritative replay, ZDD and cleanup authority remain.
+
+The long-lived [filelock issue 27](https://github.com/tox-dev/filelock/issues/27)
+discussion includes a 2019 explanation of split-inode races when Unix lock paths
+are unlinked. The first-hand Darwin reproducer in
+[issue 574](https://github.com/tox-dev/filelock/issues/574) (June 2026) revisits
+that behavior. These reports support retaining the existing native lease and
+avoiding a custom lock-file cleanup path; they are not a diagnosis of our three
+source-level transaction windows or a claim about the current dependency.
+
+Root owns cumulative exact-source review, integrated release-proof admission,
+live startup/handoff, candidate focus, full gate and hosted release proof. This
+child repair creates no approval for unsafe M6 and closes no release checkbox.
