@@ -1204,9 +1204,10 @@
         "SECURITY_AUDIT_SUMMARY",
         "SAST_REPORT",
         "SAST_SUMMARY",
-        "SAST_BASELINE"
+        "SAST_BASELINE",
+        "GLUDD_WORKER_LIMIT"
       ],
-      "behavior": "make security-audit SECURITY_AUDIT_HEARTBEAT_SECS=5 SECURITY_AUDIT_PHASE_TIMEOUT_SECS=60 SECURITY_AUDIT_VALIDATE_ONLY=1 SECURITY_AUDIT_SUMMARY=/tmp/gludd-security-audit-contract.json SAST_REPORT=tests/fixtures/security/sast-report.json SAST_SUMMARY=/tmp/gludd-sast-summary-contract.json SAST_BASELINE=tests/fixtures/security/sast-baseline.json"
+      "behavior": "make security-audit SECURITY_AUDIT_HEARTBEAT_SECS=5 SECURITY_AUDIT_PHASE_TIMEOUT_SECS=60 SECURITY_AUDIT_VALIDATE_ONLY=1 SECURITY_AUDIT_SUMMARY=/tmp/gludd-security-audit-contract.json SAST_REPORT=tests/fixtures/security/sast-report.json SAST_SUMMARY=/tmp/gludd-sast-summary-contract.json SAST_BASELINE=tests/fixtures/security/sast-baseline.json GLUDD_WORKER_LIMIT=8"
     },
     {
       "name": "gate-tail",
@@ -1923,6 +1924,22 @@
         "DUPLICATE_CODE_ENGINE"
       ],
       "behavior": "make pre-commit-check FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=.opencode/node_modules/.bin/jscpd"
+    },
+    {
+      "name": "scan-secrets",
+      "make_variables": [
+        "GLUDD_WORKER_LIMIT",
+        "ARGS"
+      ],
+      "behavior": "make scan-secrets GLUDD_WORKER_LIMIT=8 ARGS="
+    },
+    {
+      "name": "secrets-scan",
+      "make_variables": [
+        "GLUDD_WORKER_LIMIT",
+        "ARGS"
+      ],
+      "behavior": "make secrets-scan GLUDD_WORKER_LIMIT=8 ARGS="
     },
     {
       "name": "check-secrets-files",

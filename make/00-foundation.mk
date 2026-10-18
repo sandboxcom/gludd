@@ -739,16 +739,16 @@ help:
 		"  submodule-pin REPO=.. TAG=..  Pin a submodule to a tag/commit" \
 		"" \
 		"  --- Secrets + Security ---" \
-		"  secrets-scan          Scan for secrets against baseline (read-only)" \
+		"  secrets-scan          Scan for secrets against baseline (read-only; GLUDD_WORKER_LIMIT, ARGS)" \
 		"  secrets-scrub         Interactive secret audit + scrub" \
 		"  secrets-baseline      Refresh and verify canonical .secrets.baseline" \
 		"  secrets-baseline-check Verify canonical .secrets.baseline without mutation (SECRETS_BASELINE_FILE, POLICY, REPO_ROOT, EXECUTABLE)" \
 		"  check-secrets-files   Native read-only hook on explicit files (SECRETS_FILES, SECRETS_BASELINE_FILE)" \
 		"  git-unstage-files     Remove explicit files from index, preserving content (FILES)" \
-		"  scan-secrets          Alias for secrets-scan" \
+		"  scan-secrets          Alias for secrets-scan (GLUDD_WORKER_LIMIT, ARGS)" \
 		"  scan-secrets-baseline Alias for secrets-baseline" \
 		"  sast-summary          Summarize Bandit JSON by severity/rule/file with baseline deltas (SAST_REPORT, SAST_SUMMARY, SAST_BASELINE)" \
-		"  security-audit        Observable secrets/SAST/dependency/backlog audit (SECURITY_AUDIT_HEARTBEAT_SECS, SECURITY_AUDIT_PHASE_TIMEOUT_SECS, SECURITY_AUDIT_VALIDATE_ONLY, SECURITY_AUDIT_SUMMARY)" \
+		"  security-audit        Observable secrets/SAST/dependency/backlog audit (SECURITY_AUDIT_HEARTBEAT_SECS, SECURITY_AUDIT_PHASE_TIMEOUT_SECS, SECURITY_AUDIT_VALIDATE_ONLY, SECURITY_AUDIT_SUMMARY, GLUDD_WORKER_LIMIT)" \
 		"  clean-artifacts       Clean build artifacts, caches, temp files (replaces direct rm)" \
 		"  health-check          Verify imports and basic system health" \
 		"  clean-untracked       Remove reinvention-of-wheel files" \

@@ -126,13 +126,13 @@ machine report.
 Run the full audit with explicit operational bounds:
 
 ```console
-make security-audit SECURITY_AUDIT_HEARTBEAT_SECS=15 SECURITY_AUDIT_PHASE_TIMEOUT_SECS=1800 SECURITY_AUDIT_VALIDATE_ONLY=0 SECURITY_AUDIT_SUMMARY=dist/security-audit-summary.json SAST_REPORT=dist/sast-report.json SAST_SUMMARY=dist/sast-summary.json SAST_BASELINE=config/sast-summary-baseline.json
+make security-audit SECURITY_AUDIT_HEARTBEAT_SECS=15 SECURITY_AUDIT_PHASE_TIMEOUT_SECS=1800 SECURITY_AUDIT_VALIDATE_ONLY=0 SECURITY_AUDIT_SUMMARY=dist/security-audit-summary.json SAST_REPORT=dist/sast-report.json SAST_SUMMARY=dist/sast-summary.json SAST_BASELINE= GLUDD_WORKER_LIMIT=8
 ```
 
 Generate only the SAST comparison:
 
 ```console
-make sast-summary SAST_REPORT=dist/sast-report.json SAST_SUMMARY=dist/sast-summary.json SAST_BASELINE=config/sast-summary-baseline.json
+make sast-summary SAST_REPORT=dist/sast-report.json SAST_SUMMARY=dist/sast-summary.json SAST_BASELINE=
 ```
 
 Heartbeats are limited to 5–300 seconds and each phase timeout to 60–7200
@@ -144,3 +144,49 @@ and summary-writing paths without running scanners or contacting registries.
 Do not attach raw detect-secrets process output to bug reports. Share the
 aggregate audit summary and the SAST summary; neither contains credential values
 or source snippets.
+
+## Native scanner resource budget
+
+The audit secrets phase still calls the existing `make secrets-scan ARGS=` owner.
+That owner and `make scan-secrets` retain the disposable baseline, detector
+configuration, thresholds, scan arguments and scanner exit status. They pass
+the installed detect-secrets 1.5.0 global option before its subcommand:
+`detect-secrets --cores N scan --baseline <temporary-copy>`.
+
+The existing `GLUDD_WORKER_LIMIT` setting defaults to 8 and keeps the canonical
+1..128 clamp in `scripts/active_work_status.py:_worker_limit`. Native scanner
+parallelism is `min(multiprocessing.cpu_count(), worker_limit - 3)`. The same
+host-CPU function supplies the scanner's existing default ceiling, so this cap
+cannot raise parallelism on a smaller runner. Three slots remain reserved for
+the active gate, resource tracker and possible Python 3.14 forkserver. On the
+observed 8-core/8-slot host the cap is 5 scanning workers. A configured effective
+limit below 4 refuses before starting the scanner; it is not silently widened.
+
+The active-work report retains every observed process. A resource tracker is
+native multiprocessing infrastructure, rather than another scanning worker;
+its presence under spawn/forkserver is documented by
+[Python](https://docs.python.org/3.14/library/multiprocessing.html#contexts-and-start-methods).
+No lease-accounting rule changes or new scanner, runner, daemon or cache are
+introduced. Existing heartbeat/phase bounds and all five audit selectors remain.
+After the failed frozen gate ended, both public scan examples pass. Native
+process inspection records five scan children and one resource tracker; the
+active-work owner reports six workers against the unchanged limit of eight.
+The actual five-phase audit passes in 88.378 seconds, including a 67.808-second
+secrets phase, with the original 15-second heartbeat and 1800-second phase bound.
+Its native result is `dist/security-audit-summary.json`; this is focused repair
+acceptance, not canonical full-gate or hosted release evidence.
+
+The first actual audit retains a separate failed diagnostic at
+`/tmp/gludd-v012-security-audit-stale-baseline-failure.json`: the former usage
+example referenced a nonexistent comparison baseline. The examples now pass
+`SAST_BASELINE=` explicitly, matching the existing optional-baseline default;
+operators comparing reports supply an actual prior report or summary. Scanner
+settings, SAST reporting policy and all audit phases remain unchanged.
+
+The flag and default are supplied by the
+[version-pinned CLI parser](https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/core/usage/__init__.py);
+the [native collection](https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/core/secrets_collection.py)
+owns its process pool and child settings. The long-lived
+[Python 3.8 multiprocessing report](https://github.com/Yelp/detect-secrets/issues/452)
+shows why preserving that settings initializer matters. This change retains it;
+the report is historical context, not evidence of a current detector failure.

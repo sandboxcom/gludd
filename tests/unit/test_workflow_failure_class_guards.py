@@ -473,7 +473,7 @@ def test_secrets_scan_targets_do_not_dirty_committed_baseline() -> None:
         block = _target_block(target)
         assert "$$(mktemp /tmp/gludd-secrets-baseline." in block
         assert "cp .secrets.baseline \"$$TMP\"" in block
-        assert "$(UV) run detect-secrets scan --baseline \"$$TMP\"" in block
+        assert "$(UV) run detect-secrets --cores \"$$CORES\" scan --baseline \"$$TMP\"" in block
         assert "--baseline .secrets.baseline" not in block
 
 
