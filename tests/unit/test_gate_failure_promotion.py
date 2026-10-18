@@ -886,6 +886,18 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
             "test_independent_topic_sizing_has_one_native_dump_per_topic",
             id="mcp-independent-topic-native-dump-budget",
         ),
+        pytest.param(
+            "plugin-hook-subagent-isolation",
+            "tests/unit/test_subagent_output_clean.py::"
+            "TestSubagentOutputClean::test_all_tool_execute_before_hooks_have_subagent_guard",
+            id="plugin-hook-subagent-isolation",
+        ),
+        pytest.param(
+            "plugin-native-fallback-subagent-isolation",
+            "tests/unit/test_no_idle_monitoring_plugin.py::"
+            "test_fallback_subagent_guard_precedes_delegated_handler",
+            id="plugin-native-fallback-subagent-isolation",
+        ),
     ],
 )
 def test_repaired_failures_execute_as_exact_nodes_before_fanout(
@@ -1678,6 +1690,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "mcp-independent-topic-native-dump-budget",
         "pytest-source-native-gc-restoration",
         "hosted-managed-python312-patch",
+        "plugin-hook-subagent-isolation",
+        "plugin-native-fallback-subagent-isolation",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1875,6 +1889,10 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         'TestProcessTokenOverhead::test_anti_stop_plugins_are_lean '
         'tests/unit/test_enforcement_executable_modes.py::'
         'test_enforcement_runtime_surfaces_have_executable_git_mode '
+        'tests/unit/test_subagent_output_clean.py::'
+        'TestSubagentOutputClean::test_all_tool_execute_before_hooks_have_subagent_guard '
+        'tests/unit/test_no_idle_monitoring_plugin.py::'
+        'test_fallback_subagent_guard_precedes_delegated_handler '
         'tests/unit/test_v011_exact_gate_repair_contract.py::'
         'test_all_six_exact_gate_repairs_remain_green_together '
         'tests/unit/test_secrets_scan_resources.py '

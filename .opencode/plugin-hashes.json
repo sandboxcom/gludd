@@ -19,7 +19,7 @@
   "enforce-make.ts": "1b243c83e1874711dc17113d30ee60026872f2bf338e74f23213e660008e1e75",
   "enforce-multitask.ts": "96b4f7c6cd23639699307b4ea0c47de62c91e1c81f79ee0caec3cb6130a1af4c",
   "enforce-no-ci-poll.ts": "6cd8416c59ba16c972b6a7cf14b4f8369a325350e4b1121c8d632633cd9f5d57",
-  "enforce-no-idle-monitoring.ts": "16d226276797f229830f8fd5da9e0dc90908f3edeca0a38ac94441c5899b4391",
+  "enforce-no-idle-monitoring.ts": "fc24ccc9e1e4229f89b0d14ea673b9e6a3c5bf5233e3efaa618de8aa6eb612dc",
   "enforce-no-suppressions.ts": "7a68b8ee8b205c87a25e2700c5ae818444e55b246b50cbde8a0b5a3ec16afb58",
   "enforce-no-wait.ts": "45f4555b70394fcb48face37def1c53a71f98bb656f1a02a21a1fc838567e65f",
   "enforce-objective.ts": "52c62ea68c54d67b2e2a1fa487fe3befc943af983f316cb33b3aea46e43c1883",
