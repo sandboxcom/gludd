@@ -1293,3 +1293,50 @@ in 8.56 seconds; native coverage remains 94% (observer10.7s). All 34 inspection
 and four environment-documentation/default controls also pass (38 cases,
 6.07 seconds). Refused CI inspection retains the requested profile identity,
 all selected source lock hashes and actual installed metadata without success.
+
+### Runtime inspection review repair (S98.4, 2026-10-18)
+
+Independent exact-source review withholds approval of immutable
+`77b80ea24cfa5610b1e63a7266b1608c7f9c0092`. Its original inspection/provisioning
+receipts remain historical. Review identified two refusal gaps: profile/lock
+parsing could precede the first hash, and root-only, unnormalized virtual
+environment configuration checks could disagree with CPython's effective
+configuration. These are reproduced source defects, not a diagnosis of the
+original hosted timeout or evidence of a modified canonical runtime.
+
+The existing inspection owner now reads one ephemeral exact-byte snapshot
+of the manifest and every root/profile project and lock covered by its
+existing validation. It reparses the current manifest, selects and validates
+from those bytes, derives requirements and locked versions from the same
+bytes, and hashes those exact bytes. Fresh native file hashes after the probe
+must match; stale catalog selection and parse-before-hash mutation cannot
+be paired with a newer accepted fingerprint. Existing sync/audit callers
+retain their original readers and behavior.
+
+The fixed virtual-environment layout now requires exactly one normalized
+`include-system-site-packages=false` declaration. It refuses every
+executable-directory `pyvenv.cfg`, including symlinks and dangling symlinks,
+and verifies the unchanged root configuration bytes after the probe.
+Ordinary interpreter symlinks remain supported. This follows the actual
+[CPython 3.12.15 site owner](https://github.com/python/cpython/blob/v3.12.15/Lib/site.py),
+which checks executable-directory configuration before its parent and
+normalizes configuration keys while reading them.
+
+The first-hand October 2020
+[Python packaging discussion](https://discuss.python.org/t/interpreter-independent-isolated-virtual-environments/5378)
+describes configuration beside or above the executable and the compatibility
+cost of changing environment semantics. It supports checking the existing
+interpreter/configuration boundary; it does not establish Gludd's timeout
+cause or justify replacing native virtual-environment behavior.
+
+Thirteen additive controls preserve 11 expected RED failures and two already
+passing refusals/support cases, then all 94 complete profile/inspection cases
+pass warning-fatal in 5.48 seconds. Native coverage replays the same 94 cases
+in 7.67 seconds: 95.3% lines and 90.0% branches (94% combined), above unchanged
+85/75 floors. Observer `20261018T143405Z-74561-549fdc96` passes in 9.38 seconds.
+Strict typing, Ruff, the existing default-plan behavior, all 246 target
+contracts and native resource ownership pass. No target, dependency,
+admission selector/family, bound, cleanup or promotion policy changes.
+Exact 3.12 acquisition, positive current-CI inspection and the proposed
+serial import/collection diagnostic remain missing; no release proof or
+task closure is claimed.

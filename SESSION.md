@@ -1747,3 +1747,45 @@ in 8.56 seconds; native coverage remains 94% (observer10.7s). All 34 inspection
 and four environment-documentation/default controls also pass (38 cases,
 6.07 seconds). Refused CI inspection retains the requested profile identity,
 all selected source lock hashes and actual installed metadata without success.
+
+### S98.4: repair exact-source runtime inspection refusals before acquisition
+
+Independent review of immutable M11 `77b80ea24cfa5610b1e63a7266b1608c7f9c0092`
+requests changes. The original source/ref, unavailable 3.12 provisioning
+attempts and canonical 3.11 requested-CI mismatch remain retained.
+No acquisition/package/runtime mutation is part of this child repair.
+
+The first new RED selects thirteen controls: eleven failures and two passes
+in 3.41 seconds, retained at
+`/tmp/gludd-v012-runtime-inspection-freshness-red.xml`.
+They expose stale manifest selection, manifest/project/lock/config changes
+at the old first-hash boundary, normalized duplicate system-site declarations
+and executable-directory configuration shadows (file, symlink and dangling).
+The supported interpreter-symlink control remains passing.
+
+The existing owner now parses/validates/selects and fingerprints the same
+frozen manifest/project/lock bytes, then rechecks fresh native hashes.
+It revalidates unchanged effective configuration bytes and refuses duplicate
+normalized declarations or an executable-directory shadow. No second
+resolver/scanner/cache, no alternate path, no weaker original assertion.
+The optional reader seam leaves all existing sync/audit defaults unchanged.
+
+Whole owners `test_dependency_profiles.py` and
+`test_dependency_runtime_inspection.py` pass all 94 cases in 5.48 seconds.
+Native coverage repeats all 94 in 7.67 seconds, 95.3% lines/90.0% branches,
+94% combined, above unchanged 85/75 floors; observer
+`20261018T143405Z-74561-549fdc96` passes rc0 in 9.38 seconds.
+One typing diagnostic from reusing a filename loop variable is preserved,
+then the meaningful variable rename passes strict typing; Ruff passes.
+All 246 existing contracts, safe default-plan behavior and the native
+261-resource ownership inventory pass without an inventory rewrite.
+Feature documentation retains the CPython 3.12.15 source and first-hand
+2020 environment discussion with narrow applicability.
+
+Only the existing unchecked S98.4 TASKS row is extended; line/status/checkbox
+counts and the full SESSION prefix remain. All 110 admission families and
+original roster, 3-child 2/1/1 scheduling, 90/60 and 21/2850 bounds, fatal
+warnings, ZDD, cleanup/authentication and promotion authority remain.
+Normal guarded child commit/collection and exact cumulative source review
+are separate from runtime acquisition and the still-missing diagnostic
+and release proofs.

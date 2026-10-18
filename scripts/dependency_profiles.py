@@ -55,6 +55,12 @@ class Command:
 
 
 RunCommand = Callable[[Command], None]
+TextReader = Callable[[Path], str]
+
+
+def _profile_text(path: Path, reader: TextReader | None) -> str:
+    """Read one profile input from disk or the current inspection snapshot."""
+    return path.read_text(encoding="utf-8") if reader is None else reader(path)
 
 
 def _table(value: object, label: str) -> dict[str, object]:
@@ -89,6 +95,8 @@ def _audit_ignores(value: object, label: str) -> tuple[str, ...]:
 def load_catalog(
     root: str | Path,
     manifest: str | Path = "config/dependency_profiles.toml",
+    *,
+    read_text: TextReader | None = None,
 ) -> ProfileCatalog:
     """Load and structurally validate the dependency-profile catalog."""
 
@@ -97,7 +105,7 @@ def load_catalog(
     if not manifest_path.is_absolute():
         manifest_path = repo_root / manifest_path
     try:
-        raw = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        raw = tomllib.loads(_profile_text(manifest_path, read_text))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ProfileError(f"cannot load profile catalog {manifest_path}: {exc}") from exc
 
@@ -243,10 +251,12 @@ def sync_commands(
     return tuple(commands)
 
 
-def render_requirements(catalog: ProfileCatalog, profile_set: str) -> str:
+def render_requirements(
+    catalog: ProfileCatalog, profile_set: str, *, read_text: TextReader | None = None,
+) -> str:
     """Render the direct requirement union for tools that accept requirements files."""
 
-    root = tomllib.loads((catalog.root / "pyproject.toml").read_text(encoding="utf-8"))
+    root = tomllib.loads(_profile_text(catalog.root / "pyproject.toml", read_text))
     project = _table(root.get("project"), "root project")
     root_dependencies = project.get("dependencies")
     if not isinstance(root_dependencies, list) or not all(
@@ -256,7 +266,7 @@ def render_requirements(catalog: ProfileCatalog, profile_set: str) -> str:
 
     ordered = list(root_dependencies)
     for profile in _selected(catalog, profile_set):
-        dependencies, _ = _project_metadata(profile.project / "pyproject.toml")
+        dependencies, _ = _project_metadata(profile.project / "pyproject.toml", read_text=read_text)
         ordered.extend(dependencies)
     unique = tuple(dict.fromkeys(ordered))
     return "".join(f"{requirement}\n" for requirement in unique)
@@ -287,9 +297,11 @@ def write_requirements(catalog: ProfileCatalog, profile_set: str, output: Path) 
             temporary.unlink(missing_ok=True)
 
 
-def _project_metadata(path: Path) -> tuple[list[str], Mapping[str, object]]:
+def _project_metadata(
+    path: Path, *, read_text: TextReader | None = None,
+) -> tuple[list[str], Mapping[str, object]]:
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        data = tomllib.loads(_profile_text(path, read_text))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ProfileError(f"cannot load {path}: {exc}") from exc
     project = _table(data.get("project"), f"{path}: project")
@@ -301,11 +313,13 @@ def _project_metadata(path: Path) -> tuple[list[str], Mapping[str, object]]:
     return dependencies, uv
 
 
-def validate_catalog(catalog: ProfileCatalog, *, require_locks: bool = True) -> None:
+def validate_catalog(
+    catalog: ProfileCatalog, *, require_locks: bool = True, read_text: TextReader | None = None,
+) -> None:
     """Validate independence, lock presence, and the hard line ceiling."""
 
     try:
-        root_data = tomllib.loads((catalog.root / "pyproject.toml").read_text(encoding="utf-8"))
+        root_data = tomllib.loads(_profile_text(catalog.root / "pyproject.toml", read_text))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ProfileError(f"cannot load root pyproject.toml: {exc}") from exc
     root_project = _table(root_data.get("project"), "root project")
@@ -317,7 +331,7 @@ def validate_catalog(catalog: ProfileCatalog, *, require_locks: bool = True) -> 
         if profile.project in seen_projects:
             raise ProfileError(f"profile project is reused: {profile.project}")
         seen_projects.add(profile.project)
-        dependencies, uv = _project_metadata(profile.project / "pyproject.toml")
+        dependencies, uv = _project_metadata(profile.project / "pyproject.toml", read_text=read_text)
         if uv.get("package") is not False:
             raise ProfileError(f"profile {profile.name!r} must set tool.uv.package=false")
         if "workspace" in uv:
@@ -330,7 +344,7 @@ def validate_catalog(catalog: ProfileCatalog, *, require_locks: bool = True) -> 
     for project in (catalog.root, *seen_projects):
         lock = project / "uv.lock"
         try:
-            lines = len(lock.read_text(encoding="utf-8").splitlines())
+            lines = len(_profile_text(lock, read_text).splitlines())
         except OSError as exc:
             raise ProfileError(f"missing lock for project {project}: {exc}") from exc
         if lines > catalog.max_lock_lines:
@@ -526,6 +540,7 @@ def inspect_runtime(
     python: str, validate_only: bool = False,
 ) -> dict[str, object]:
     """Verify one existing registered toolchain slot; never install or modify it."""
+    import hashlib
     import json
     import re
 
@@ -545,8 +560,23 @@ def inspect_runtime(
 
     if re.fullmatch(r"3\.(?:11|12|13|14)\.[0-9]+", python) is None:
         raise ProfileError("inspection requires an exact supported Python patch version")
+    frozen = {catalog.manifest: catalog.manifest.read_bytes()}
+
+    def read_frozen(path: Path) -> str:
+        return frozen[path].decode("utf-8")
+
+    # Select and validate from the same bytes whose hashes are reported.
+    catalog = load_catalog(catalog.root, catalog.manifest, read_text=read_frozen)
+    for project in (catalog.root, *(profile.project for profile in catalog.profiles.values())):
+        for filename in ("pyproject.toml", "uv.lock"):
+            path = project / filename
+            frozen[path] = path.read_bytes()
+    fingerprint = {
+        str(path.relative_to(catalog.root)): hashlib.sha256(payload).hexdigest()
+        for path, payload in frozen.items()
+    }
     selected = _selected(catalog, profile_set)
-    validate_catalog(catalog)
+    validate_catalog(catalog, read_text=read_frozen)
     roots = _repository_roots()
     minor = python.rsplit(".", 1)[0]
     slots = {
@@ -563,30 +593,33 @@ def inspect_runtime(
     if validate_only:
         return result
     cfg = candidate / "pyvenv.cfg"
-    for path in (candidate, candidate.parent, candidate.parent.parent, cfg):
-        if path.is_symlink():
-            raise ProfileError("runtime environment and configuration must not be symlinks")
     executable = _environment_python(candidate)
+    protected = (candidate, candidate.parent, candidate.parent.parent, cfg, executable.parent)
+    shadow = executable.parent / "pyvenv.cfg"
+    if any(path.is_symlink() for path in protected):
+        raise ProfileError("runtime environment and configuration must not be symlinks")
+    if shadow.exists() or shadow.is_symlink():
+        raise ProfileError("executable-directory pyvenv.cfg shadow is refused")
     if not cfg.is_file() or cfg.stat().st_size > 16384 or not executable.is_file():
         raise ProfileError(f"existing runtime environment is unavailable: {candidate}")
-    config = dict(
-        line.split("=", 1) for line in cfg.read_text(encoding="utf-8").splitlines() if "=" in line
-    )
-    if not any(key.strip().lower() == "include-system-site-packages" and value.strip().lower() == "false"
-               for key, value in config.items()):
-        raise ProfileError("runtime must exclude system site-packages")
-    inputs = [catalog.manifest]
+    cfg_bytes = cfg.read_bytes()
+    site_flags = [
+        value.strip().lower()
+        for line in cfg_bytes.decode("utf-8").splitlines() if "=" in line
+        for key, value in (line.split("=", 1),)
+        if key.strip().lower() == "include-system-site-packages"
+    ]
+    if site_flags != ["false"]:
+        raise ProfileError("runtime requires one normalized system-site-packages=false declaration")
     locked_versions: dict[str, set[str]] = {}
     for project in (catalog.root, *(profile.project for profile in selected)):
-        inputs.extend((project / "pyproject.toml", project / "uv.lock"))
-        lock = tomllib.loads((project / "uv.lock").read_text(encoding="utf-8"))
+        lock = tomllib.loads(read_frozen(project / "uv.lock"))
         for value in lock.get("package", []):
             package = _table(value, "locked runtime package")
             name, version = package.get("name"), package.get("version")
             if not isinstance(name, str) or not isinstance(version, str):
                 raise ProfileError("runtime lock package must contain a name and version")
             locked_versions.setdefault(re.sub(r"[-_.]+", "-", name).lower(), set()).add(version)
-    fingerprint = {str(path.relative_to(catalog.root)): file_sha256(path) for path in inputs}
     def identities() -> tuple[tuple[int, ...], ...]:
         values = (path.stat() for path in (candidate, cfg, executable))
         return tuple(
@@ -596,7 +629,7 @@ def inspect_runtime(
 
     original = identities()
     request = {
-        "requirements": render_requirements(catalog, profile_set).splitlines(),
+        "requirements": render_requirements(catalog, profile_set, read_text=read_frozen).splitlines(),
         "locked_versions": {name: sorted(versions) for name, versions in locked_versions.items()},
     }
     code = (
@@ -635,12 +668,19 @@ def inspect_runtime(
             f"runtime identity/profile/lock mismatch: profile_set={profile_set!r} "
             f"input_sha256={fingerprint} runtime={metadata}"
         )
+    current_fingerprint = {
+        str(path.relative_to(catalog.root)): file_sha256(path) for path in frozen
+    }
     if (
-        identities() != original
-        or {str(path.relative_to(catalog.root)): file_sha256(path) for path in inputs} != fingerprint
+        current_fingerprint != fingerprint or identities() != original
+        or cfg.read_bytes() != cfg_bytes or any(path.is_symlink() for path in protected)
+        or shadow.exists() or shadow.is_symlink()
     ):
         raise ProfileError("runtime or profile inputs changed during inspection")
-    result.update(state="verified", runtime=metadata, input_sha256=fingerprint)
+    result.update(
+        state="verified", runtime=metadata, input_sha256=fingerprint,
+        runtime_configuration_sha256=hashlib.sha256(cfg_bytes).hexdigest(),
+    )
     return result
 
 

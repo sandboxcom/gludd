@@ -297,3 +297,89 @@ def test_inspection_parent_also_disables_bytecode_writes() -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "run python -B scripts/dependency_profiles.py inspect" in result.stdout
+
+@pytest.mark.parametrize("text", [
+    "include-system-site-packages = false\nInclude-System-Site-Packages = true\n",
+    "include-system-site-packages = false\ninclude-system-site-packages = true\n",
+    "include-system-site-packages = true\ninclude-system-site-packages = false\n",
+    "include-system-site-packages = false\ninclude-system-site-packages = false\n",
+], ids=["mixed-case-last-true", "last-true", "last-false", "duplicate-false"])
+def test_effective_runtime_config_refuses_duplicate_normalized_site_keys(
+    runtime: tuple[owner.ProfileCatalog, Path], tmp_path: Path, text: str,
+) -> None:
+    (runtime[1] / "pyvenv.cfg").write_text(text)
+    with pytest.raises(owner.ProfileError):
+        inspect(runtime)
+    assert not (tmp_path / "tripwire").exists()
+
+
+@pytest.mark.parametrize("kind", ["file", "symlink", "dangling"])
+def test_effective_runtime_config_refuses_executable_directory_shadow(
+    runtime: tuple[owner.ProfileCatalog, Path], tmp_path: Path, kind: str,
+) -> None:
+    shadow = runtime[1] / "bin/pyvenv.cfg"
+    if kind == "file":
+        shadow.write_text("include-system-site-packages = true\n")
+    else:
+        target = tmp_path / "shadow.cfg"
+        if kind == "symlink":
+            target.write_text("include-system-site-packages = true\n")
+        shadow.symlink_to(target)
+    with pytest.raises(owner.ProfileError):
+        inspect(runtime)
+    assert not (tmp_path / "tripwire").exists()
+
+
+@pytest.mark.parametrize("kind", ["manifest", "lock", "project", "cfg"])
+def test_runtime_input_parse_and_hash_use_identical_frozen_bytes(
+    runtime: tuple[owner.ProfileCatalog, Path], monkeypatch: pytest.MonkeyPatch, kind: str,
+) -> None:
+    import ci_batch_receipts
+
+    catalog, environment = runtime
+    target = {
+        "manifest": catalog.manifest, "lock": catalog.root / "uv.lock",
+        "project": catalog.root / "pyproject.toml", "cfg": environment / "pyvenv.cfg",
+    }[kind]
+    before = target.read_text()
+    replacements = {
+        "manifest": before + "\n# mutation after catalog selection\n",
+        "lock": before.replace('version="9.1.1"', 'version="0"'),
+        "project": before + "\n[project.optional-dependencies]\ninvalid=[]\n",
+        "cfg": "include-system-site-packages = true\n",
+    }
+    native_hash = ci_batch_receipts.file_sha256
+    changed = False
+
+    def change_before_first_hash(path: Path) -> str:
+        nonlocal changed
+        if not changed and (path == target or kind == "cfg"):
+            target.write_text(replacements[kind])
+            changed = True
+        return native_hash(path)
+
+    monkeypatch.setattr(ci_batch_receipts, "file_sha256", change_before_first_hash)
+    with pytest.raises(owner.ProfileError, match="changed"):
+        inspect(runtime)
+    assert changed
+
+
+def test_runtime_inspection_reparses_current_manifest_before_using_catalog_selection(
+    runtime: tuple[owner.ProfileCatalog, Path], tmp_path: Path,
+) -> None:
+    runtime[0].manifest.write_text(
+        'schema-version=1\nmax-lock-lines=2499\nprofiles={}\n[sets.ci]\nprofiles=["missing"]\n'
+    )
+    with pytest.raises(owner.ProfileError, match="unknown profiles"):
+        inspect(runtime)
+    assert not (tmp_path / "tripwire").exists()
+
+
+def test_effective_runtime_config_still_allows_native_interpreter_symlinks(
+    runtime: tuple[owner.ProfileCatalog, Path],
+) -> None:
+    executable = runtime[1] / "bin/python"
+    actual = executable.with_name("python-native")
+    executable.rename(actual)
+    executable.symlink_to(actual)
+    assert inspect(runtime)["state"] == "verified"
