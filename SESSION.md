@@ -1458,3 +1458,35 @@ two static names for one native owner without suppressions. The complete existin
 gate-owned cleanup and active-work suites are included in source acceptance.
 The full prior SESSION prefix, raw failed focus bundle, historical failures and
 all immutable approved source refs are preserved.
+
+
+## v0.1.2 native watchdog handoff exit continuation (2026-10-18)
+
+The actual verified stop sent TERM, then refused an unlogged ownership/protection
+change; later native inspection found both old identities absent and the original
+pointer retained. No precise zombie/cwd cause is claimed. The separate wait-only
+PID-presence view now tolerates natural exit metadata changes without transferring
+signal authority; final success requires fresh complete native PID absence.
+Stale-pointer recovery requires two absent snapshots, no live/unlocated matching
+checkout daemon/UV and an unchanged owned pointer. Plan writes/signals nothing;
+explicit actual recovery sends no signal and never starts a replacement.
+
+The eight-case native/snapshot/routing RED is retained, as is the intermediate
+100-pass/one-failure fixture-reaping replay. The fixture-only concurrent parent
+wait now keeps real native ps/cwd/start behavior and proves natural daemon/UV
+drain. All 99 watchdog cases pass warning-fatal at 92% branch-aware coverage
+(.gate-logs/coverage-task-watchdog-exit-handoff.json), retaining 85/75 floors.
+The first combined 435-case pass remains intermediate evidence. The CLI-self
+boundary adds four failing-first cases and six refusal controls, then all ten pass
+with real fixture-only native CLI plan/apply; three new snapshot tamper controls
+also refuse. Exact current-stop/connected-UV exemptions recheck native identity.
+Final whole-watchdog coverage passes 112 cases at 92%, in separate
+.gate-logs/coverage-task-watchdog-exit-handoff-final.json, native audit
+.gate-logs/coverage-20261018T095151Z.json, raw run
+20261018T095145Z-28823-f926bbae. Final combined source/routing acceptance passes
+448 cases in 59.91 seconds (/tmp/gludd-v012-watchdog-exit-handoff-complete-final.xml).
+All prior 106 admission families/selectors/order and budgets remain; one
+deterministic handoff-exit
+selector is appended. Actual stop evidence, prior source refs, review/bundles and
+this entire previous SESSION prefix are retained. No main daemon, pointer,
+candidate focus, full gate, CI, release promotion or checkbox is changed.

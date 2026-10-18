@@ -240,7 +240,7 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 4 and selectors.count(node) == 1
+    assert len(selectors) == 5 and selectors.count(node) == 1
     assert node not in recipes[1] and node not in recipes[2]
     phase = next(item for item in manifest["runtime_contract"]["phases"]
                  if item["target"] == family["owner_target"])
@@ -1695,6 +1695,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "plugin-native-fallback-subagent-isolation",
         "native-focus-watchdog-ownership",
         "watchdog-destructive-registered-ownership",
+        "watchdog-handoff-exit-confirmation",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1749,6 +1750,11 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
             "watchdog-destructive-registered-ownership",
             "tests/unit/test_task_watchdog.py::"
             "test_watchdog_destructive_boundary_requires_registered_ownership",
+        ),
+        (
+            "watchdog-handoff-exit-confirmation",
+            "tests/unit/test_task_watchdog.py::"
+            "test_watchdog_handoff_confirms_exit_after_metadata_changes",
         ),
     ):
         assert families[family_id] == {

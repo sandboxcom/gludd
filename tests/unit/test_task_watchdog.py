@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
+import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
@@ -1008,3 +1011,326 @@ def test_unavailable_native_inventory_refuses_both_cleanup_apis(
     else:
         result = watchdog.stop_owned_watchdog(root, apply=True)
     assert result is False and sent == [] and marker.read_text(encoding="utf-8") == str(expected.pid)
+
+
+@pytest.fixture
+def _owned_daemon(_owned_poll: OwnedPoll) -> tuple[OwnedPoll, Path]:
+    root, records, cwds, _deadlines, _sent = _owned_poll
+    (root / "scripts/task_watchdog.py").write_text("# isolated daemon fixture\n", encoding="utf-8")
+    records[:] = [
+        cleanup_owner.ProcessRecord(54000, 1, 400, "uv run python3 scripts/task_watchdog.py", started_at="uv-start"),
+        cleanup_owner.ProcessRecord(54001, 54000, 400, "python3 scripts/task_watchdog.py", started_at="daemon-start"),
+    ]
+    cwds.update({54000: root, 54001: root})
+    marker = root / ".gate-logs/task-watchdog.pid"
+    marker.parent.mkdir()
+    marker.write_text("54001", encoding="utf-8")
+    return _owned_poll, marker
+
+
+@pytest.mark.parametrize("metadata", ["cwd", "command", "start"])
+def test_watchdog_handoff_confirms_exit_after_metadata_changes(
+    monkeypatch: pytest.MonkeyPatch, _owned_daemon: tuple[OwnedPoll, Path], metadata: str,
+) -> None:
+    """Post-TERM metadata is not death; fresh complete absence confirms drain."""
+    (root, records, cwds, _deadlines, sent), marker = _owned_daemon
+    empty_snapshots = 0
+
+    def snapshot(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+        nonlocal empty_snapshots
+        empty_snapshots += not records
+        return list(records)
+
+    def natural_exit_after_term(pid: int, signum: signal.Signals) -> None:
+        assert (pid, signum) == (54001, signal.SIGTERM)
+        sent.append((pid, signum))
+        if metadata == "cwd":
+            cwds[pid] = None
+        else:
+            daemon = records[1]
+            records[1] = cleanup_owner.ProcessRecord(
+                pid, daemon.ppid, 400, "(python3)" if metadata == "command" else daemon.command,
+                started_at="unavailable-start" if metadata == "start" else daemon.started_at,
+            )
+
+    monkeypatch.setattr(cleanup_owner, "_records", snapshot)
+    monkeypatch.setattr(os, "kill", natural_exit_after_term)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: records.clear())
+    assert watchdog.stop_owned_watchdog(root, apply=True) is True
+    assert sent == [(54001, signal.SIGTERM)]
+    assert records == [] and empty_snapshots >= 2 and not marker.exists()
+
+
+@pytest.mark.parametrize("metadata", ["cwd", "command", "start", "protected", "new-child"])
+def test_live_uncertain_handoff_never_receives_another_signal(
+    monkeypatch: pytest.MonkeyPatch, _owned_daemon: tuple[OwnedPoll, Path], metadata: str,
+) -> None:
+    """An occupied uncertain identity is never inferred dead or escalated."""
+    (root, records, cwds, _deadlines, sent), marker = _owned_daemon
+
+    def uncertain_after_term(pid: int, signum: signal.Signals) -> None:
+        assert (pid, signum) == (54001, signal.SIGTERM)
+        sent.append((pid, signum))
+        daemon = records[1]
+        if metadata == "cwd":
+            cwds[pid] = None
+        elif metadata in {"command", "start"}:
+            records[1] = cleanup_owner.ProcessRecord(
+                pid, daemon.ppid, 400, "foreign command" if metadata == "command" else daemon.command,
+                started_at="reused-start" if metadata == "start" else daemon.started_at,
+            )
+        elif metadata == "protected":
+            (marker.parent / "gate-run.lock").write_text(json.dumps({"pid": pid}), encoding="utf-8")
+        else:
+            records.append(cleanup_owner.ProcessRecord(54002, pid, 400, "python child", started_at="unknown-child"))
+
+    monkeypatch.setattr(os, "kill", uncertain_after_term)
+    assert watchdog.stop_owned_watchdog(root, apply=True) is False
+    assert sent == [(54001, signal.SIGTERM)]
+    assert marker.read_text(encoding="utf-8") == "54001"
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_absent_watchdog_pointer_recovery_is_signal_free(
+    _owned_daemon: tuple[OwnedPoll, Path], apply: bool,
+) -> None:
+    """Only an unchanged owned pointer with a complete absent census is recoverable."""
+    (root, records, _cwds, _deadlines, sent), marker = _owned_daemon
+    records.clear()
+    before = marker.read_bytes()
+    assert watchdog.stop_owned_watchdog(root, apply=apply) is True
+    assert sent == []
+    assert not marker.exists() if apply else marker.read_bytes() == before
+
+
+@pytest.mark.parametrize("defect", [
+    "reused", "foreign", "unknown", "malformed", "invalid-pid", "live-daemon", "live-uv",
+    "unknown-daemon-cwd", "reappeared", "replaced-pointer", "symlink",
+])
+def test_absent_pointer_recovery_refuses_uncertain_or_live_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    _owned_daemon: tuple[OwnedPoll, Path], defect: str,
+) -> None:
+    (root, records, cwds, _deadlines, sent), marker = _owned_daemon
+    daemon, launcher = records[1], records[0]
+    records.clear()
+    if defect in {"reused", "foreign", "unknown"}:
+        records.append(cleanup_owner.ProcessRecord(
+            daemon.pid, 1, 400, "foreign command", started_at="reused-start",
+        ))
+        cwds[daemon.pid] = root if defect == "reused" else (tmp_path if defect == "foreign" else None)
+    elif defect in {"live-daemon", "unknown-daemon-cwd"}:
+        records.append(cleanup_owner.ProcessRecord(
+            54002, 1, 400, daemon.command, started_at="other-daemon",
+        ))
+        cwds[54002] = None if defect == "unknown-daemon-cwd" else root
+    elif defect == "live-uv":
+        records.append(launcher)
+    elif defect in {"malformed", "invalid-pid"}:
+        marker.write_text("broken" if defect == "malformed" else "0", encoding="utf-8")
+    elif defect == "symlink":
+        foreign = tmp_path / "foreign.pid"
+        foreign.write_text("54001", encoding="utf-8")
+        marker.unlink()
+        marker.symlink_to(foreign)
+    if defect in {"reappeared", "replaced-pointer"}:
+        reads = 0
+
+        def changing(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+            nonlocal reads
+            reads += 1
+            if reads >= 2:
+                if defect == "reappeared":
+                    return [daemon]
+                marker.unlink()
+                marker.write_text("54001", encoding="utf-8")
+            return []
+
+        monkeypatch.setattr(cleanup_owner, "_records", changing)
+    before = marker.read_bytes()
+    assert watchdog.stop_owned_watchdog(root, apply=True) is False
+    assert sent == [] and marker.read_bytes() == before
+
+
+def test_absent_pointer_recovery_requires_a_fresh_available_snapshot(
+    monkeypatch: pytest.MonkeyPatch, _owned_daemon: tuple[OwnedPoll, Path],
+) -> None:
+    (root, records, _cwds, _deadlines, sent), marker = _owned_daemon
+    records.clear()
+    reads = 0
+
+    def unavailable(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+        nonlocal reads
+        reads += 1
+        if reads > 1:
+            raise subprocess.CalledProcessError(1, ["ps"])
+        return []
+
+    monkeypatch.setattr(cleanup_owner, "_records", unavailable)
+    assert watchdog.stop_owned_watchdog(root, apply=True) is False
+    assert sent == [] and marker.read_text(encoding="utf-8") == "54001"
+
+
+def test_real_native_watchdog_handoff_drains_natural_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real UV/Python metadata and natural exit stay confined to an isolated fixture."""
+    root = tmp_path / "fixture-checkout"
+    (root / "scripts").mkdir(parents=True)
+    (root / ".gate-logs").mkdir()
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "gludd-watchdog-handoff-fixture"\nversion = "0.0.0"\nrequires-python = ">=3.11"\n',
+        encoding="utf-8",
+    )
+    marker = root / ".gate-logs/task-watchdog.pid"
+    received = root / "received-term"
+    foreign_cwd = tmp_path / "exiting-cwd"
+    foreign_cwd.mkdir()
+    (root / "scripts/task_watchdog.py").write_text(
+        "import os, signal, sys, time\nfrom pathlib import Path\n"
+        "def stop(_signal, _frame):\n"
+        f"    os.chdir({str(foreign_cwd)!r})\n"
+        f"    Path({str(received)!r}).write_text('TERM')\n"
+        "    time.sleep(0.4)\n    raise SystemExit(0)\n"
+        "signal.signal(signal.SIGTERM, stop)\n"
+        f"Path({str(marker)!r}).write_text(str(os.getpid()))\n"
+        "deadline = time.monotonic() + 6\n"
+        "while time.monotonic() < deadline:\n    time.sleep(0.02)\n",
+        encoding="utf-8",
+    )
+    uv = shutil.which("uv")
+    assert uv is not None
+    monkeypatch.setattr(watchdog, "_repository_roots", lambda: (root,))
+    env = dict(os.environ, UV_PROJECT_ENVIRONMENT=sys.prefix, UV_NO_SYNC="1", UV_PYTHON_DOWNLOADS="never")
+    with subprocess.Popen(
+        [uv, "run", "python3", "scripts/task_watchdog.py"], cwd=root, env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    ) as launcher, ThreadPoolExecutor(max_workers=1) as reaper:
+        try:
+            deadline = time.monotonic() + 4
+            while not marker.exists() and launcher.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert marker.exists()
+            daemon_pid = int(marker.read_text(encoding="utf-8"))
+            # The fixture owns Popen and must reap UV while native stop waits for
+            # actual PID absence; a zombie in ps must never count as drained.
+            exited = reaper.submit(launcher.wait, timeout=8)
+            assert watchdog.stop_owned_watchdog(root, apply=True) is True
+            assert exited.result(timeout=8) == 0
+            assert launcher.returncode == 0 and received.read_text(encoding="utf-8") == "TERM"
+            assert not marker.exists()
+            fresh = cleanup_owner._records(root)
+            assert not {daemon_pid, launcher.pid} & {record.pid for record in fresh}
+        finally:
+            launcher.wait(timeout=8)
+    assert not (root / ".venv").exists() and not (root / "uv.lock").exists()
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_absent_recovery_excludes_only_current_verified_stop_invocation(
+    _owned_daemon: tuple[OwnedPoll, Path], apply: bool,
+) -> None:
+    (root, records, cwds, _deadlines, sent), marker = _owned_daemon
+    command = f"python3 scripts/task_watchdog.py --stop --validate-only {int(not apply)}"
+    records[:] = [
+        cleanup_owner.ProcessRecord(os.getppid(), 1, 400, "uv run " + command, started_at="stop-uv-start"),
+        cleanup_owner.ProcessRecord(watchdog._SELF_PID, os.getppid(), 400, command, started_at="stop-start"),
+    ]
+    cwds.update({record.pid: root for record in records})
+    assert watchdog.stop_owned_watchdog(root, apply=apply) is True
+    assert sent == []
+    assert not marker.exists() if apply else marker.read_text(encoding="utf-8") == "54001"
+
+
+@pytest.mark.parametrize("defect", [
+    "other-stop-pid", "extra-arg", "wrong-policy", "unknown-cwd", "missing-start", "unrelated-uv",
+])
+def test_absent_recovery_never_excludes_arbitrary_stop_text(
+    _owned_daemon: tuple[OwnedPoll, Path], defect: str,
+) -> None:
+    (root, records, cwds, _deadlines, sent), marker = _owned_daemon
+    pid = 54003 if defect == "other-stop-pid" else watchdog._SELF_PID
+    command = "python3 scripts/task_watchdog.py --stop --validate-only " + ("1" if defect == "wrong-policy" else "0")
+    if defect == "extra-arg":
+        command += " --other"
+    records[:] = [cleanup_owner.ProcessRecord(
+        pid, os.getppid(), 400, command, started_at="" if defect == "missing-start" else "stop-start",
+    )]
+    cwds[pid] = None if defect == "unknown-cwd" else root
+    if defect == "unrelated-uv":
+        records.append(cleanup_owner.ProcessRecord(
+            54004, 1, 400, "uv run " + command, started_at="unrelated-uv",
+        ))
+        cwds[54004] = root
+    assert watchdog.stop_owned_watchdog(root, apply=True) is False
+    assert sent == [] and marker.read_text(encoding="utf-8") == "54001"
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_real_native_stop_cli_recovers_only_absent_fixture_pointer(
+    tmp_path: Path, apply: bool,
+) -> None:
+    root = tmp_path / "cli-fixture"
+    (root / "scripts").mkdir(parents=True)
+    (root / ".gate-logs").mkdir()
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "gludd-stop-cli-fixture"\nversion = "0.0.0"\nrequires-python = ">=3.11"\n',
+        encoding="utf-8",
+    )
+    # Copy the actual owner into the fixture so __file__ also stays confined.
+    # Only repository membership differs; argv/ps/cwd/start/pointer IO stay native.
+    owner_root = Path(__file__).resolve().parents[2]
+    source = (owner_root / "scripts/task_watchdog.py").read_text(encoding="utf-8")
+    source = source.replace(
+        'if __name__ == "__main__":\n',
+        'if __name__ == "__main__":\n    _repository_roots = lambda: (Path(__file__).resolve().parents[1],)\n',
+    )
+    (root / "scripts/task_watchdog.py").write_text(source, encoding="utf-8")
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as departed:
+        departed.wait(timeout=3)
+    marker = root / ".gate-logs/task-watchdog.pid"
+    marker.write_text(str(departed.pid), encoding="utf-8")
+    uv = shutil.which("uv")
+    assert uv is not None
+    result = subprocess.run(
+        [uv, "run", "python3", "scripts/task_watchdog.py", "--stop", "--validate-only", str(int(not apply))],
+        cwd=root, env=dict(os.environ, UV_PROJECT_ENVIRONMENT=sys.prefix, UV_NO_SYNC="1",
+                           UV_PYTHON_DOWNLOADS="never", PYTHONPATH=str(owner_root / "scripts")),
+        capture_output=True, text=True, timeout=8, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "absent-pointer verified" in result.stdout and "signals=false" in result.stdout
+    assert not marker.exists() if apply else marker.read_text(encoding="utf-8") == str(departed.pid)
+    assert not (root / ".venv").exists() and not (root / "uv.lock").exists()
+
+
+@pytest.mark.parametrize("changed", ["self-start", "launcher-start", "self-cwd"])
+def test_stop_invocation_exemption_is_rechecked_in_the_fresh_snapshot(
+    monkeypatch: pytest.MonkeyPatch, _owned_daemon: tuple[OwnedPoll, Path], changed: str,
+) -> None:
+    (root, records, cwds, _deadlines, sent), marker = _owned_daemon
+    command = "python3 scripts/task_watchdog.py --stop --validate-only 0"
+    records[:] = [
+        cleanup_owner.ProcessRecord(os.getppid(), 1, 400, "uv run " + command, started_at="uv-start"),
+        cleanup_owner.ProcessRecord(watchdog._SELF_PID, os.getppid(), 400, command, started_at="stop-start"),
+    ]
+    cwds.update({record.pid: root for record in records})
+    reads = 0
+
+    def changed_snapshot(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+        nonlocal reads
+        reads += 1
+        if reads > 1:
+            if changed == "self-cwd":
+                cwds[watchdog._SELF_PID] = None
+            else:
+                index = 0 if changed == "launcher-start" else 1
+                original = records[index]
+                records[index] = cleanup_owner.ProcessRecord(
+                    original.pid, original.ppid, 400, original.command, started_at="reused-start",
+                )
+        return list(records)
+
+    monkeypatch.setattr(cleanup_owner, "_records", changed_snapshot)
+    assert watchdog.stop_owned_watchdog(root, apply=True) is False
+    assert sent == [] and marker.read_text(encoding="utf-8") == "54001"
