@@ -40,6 +40,7 @@ import json
 import os
 import shutil
 import subprocess
+from collections.abc import Generator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -226,8 +227,8 @@ class HookEnv:
         self,
         plugin: str,
         hook: str,
-        input: dict | None = None,
-        output: dict | None = None,
+        input: Mapping[str, object] | None = None,
+        output: Mapping[str, object] | None = None,
         env_overrides: dict[str, str] | None = None,
         repeat: int = 1,
         timeout: int = 10,
@@ -268,11 +269,13 @@ class HookEnv:
     def state_path(self, env_var: str) -> Path:
         return Path(self.env[env_var])
 
-    def read_json(self, env_var: str) -> dict | list | None:
+    def read_json(self, env_var: str) -> object:
+        """Read untrusted JSON; callers narrow the shape they need."""
         p = self.state_path(env_var)
         if not p.exists():
             return None
-        return json.loads(p.read_text())
+        value: object = json.loads(p.read_text())
+        return value
 
 
 def read_optional_bytes(path: str | Path) -> bytes | None:
@@ -325,6 +328,8 @@ def _probe_harness() -> str | None:
         return HOOK_LIVE_SKIP_REASON
 
     node_bin = shutil.which("node")
+    if node_bin is None:
+        return "node executable disappeared from PATH before harness probe"
     plugin_path = _resolve_plugin_path("enforce-stop.ts")
     args = [
         node_bin,
@@ -380,7 +385,7 @@ if _HARNESS_PROBE_FAILURE is not None:
     HOOK_LIVE_SKIP_REASON = _HARNESS_PROBE_FAILURE
 
 
-def hook_plugin_env_impl(tmp_path: Path):
+def hook_plugin_env_impl(tmp_path: Path) -> Generator[HookEnv, None, None]:
     """Generator body for the `hook_plugin_env` fixture.
 
     NOTE: this is intentionally NOT decorated with `@pytest.fixture` here.

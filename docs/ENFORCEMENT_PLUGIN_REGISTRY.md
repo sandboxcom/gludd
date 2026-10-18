@@ -171,6 +171,51 @@ If the env var is not set by the opencode framework, plugins fall back to
 checking `/tmp/gludd-subagent-${process.pid}.json`. Run
 `make hot-reload-plugins` if subagent enforcement leaks occur.
 
+## Idle monitoring and release repair evidence
+
+Hosted source `31b2b66be80fb96cdbb2fcb6a8e03a775e5cd0a6` fails three
+existing audits in `unit-3a`: the idle-monitoring entrypoint exposes two hook
+definitions to the source audit, the startup audit cannot find its read/session
+admission boundary, and the unchanged plugin budget measures 6004 lines against
+its strict less-than-6000 limit. The failed hosted job is retained at
+[Build and Release job 117551606435](https://github.com/sandboxcom/gludd/actions/runs/39084793178/job/117551606435).
+The retained [unit-3b job 117551606420](https://github.com/sandboxcom/gludd/actions/runs/39084793178/job/117551606420)
+independently fails `test_all_six_exact_gate_repairs_remain_green_together`
+on the same plugin-implementation budget. All six of its original contracts
+remain required. The repair must preserve monitoring/reset behavior, subagent
+isolation, fail-open behavior and hot reload, while keeping the original audits
+and budget. Both exact budget nodes belong in existing early admission.
+
+The same frozen local gate rejects the helper's tracked mode 100644. Its required
+mode remains 100755. The existing `file-executable` and Git staging owners
+restore both host and index metadata; commit `7237e1f` records the mode-only
+repair after its original assertion passes and fresh collection has zero errors.
+The entrypoint now retains one auditable hook, explicit read/subagent admission
+and hot-dispatch fail-open behavior; the existing helper owns the shared checks.
+The unchanged top-level budget measures 5999 lines. All 40 idle-monitoring cases
+and the original duplicate-hook, read, mode and both budget audits pass within
+the 234-case focused repair cohort. Native hook/boot acceptance and the final
+canonical gate and exact-SHA hosted proofs remain separate requirements.
+Fresh-process native hook acceptance reports 153 passed and 18 existing skips;
+all 37 plugin files load and execute without failures. Strict checking of the
+six changed test/fixture files passes after honest JSON shape narrowing and
+fixture annotations, preserving every original runtime assertion.
+
+Practitioners have reported similar symptoms without establishing one common
+cause. An [April 2026 session-stall discussion](https://www.reddit.com/r/opencodeCLI/comments/1shjlo1/anyone_else_noticed_opencode_getting_stuck_lots/)
+reports stalls across models and with DCP disabled; its author could not isolate
+the cause. A [July 2026 plugin report](https://github.com/anomalyco/opencode/issues/38604)
+describes Desktop listing a plugin as active while its hooks did not execute,
+with the same source working through the CLI. These reports motivate separate
+read-admission, hook-execution and boot checks; they do not diagnose Gludd's
+failures or supply Gludd release evidence.
+
+Actual plugin source changes require an OpenCode restart before the running
+application loads the new entrypoint. Continue with the existing runtime until
+that restart; retain native fresh-process hook and boot proof separately from
+registration and source review. Validation-only changes do not restart serving
+workers or mutate application data.
+
 ## See also
 
 - `AGENTS.md` — full policy for every plugin (the "why")
