@@ -1600,3 +1600,53 @@ auth/cleanup/warnings/ZDD and full replay remain. Previous SESSION bytes, TASKS
 line count, nineteen open milestone items and every checkbox/status are retained.
 Independent source review and integrated admission/focus/gate/hosted proof remain
 root-owned. No release task is closed by these source receipts.
+
+## v0.1.2 async gate fixture synchronization (2026-10-18)
+
+The exact 58c267d hosted admission failure remains authoritative history in
+/tmp/gludd-v012-failed-58c267d. Both Python lanes exceed the unchanged 90-second
+outer budget; all 1880 main cases pass, Python 3.12's ten tail cases pass, and
+Python 3.11's remaining tail is censored. The prior native focused acceptance
+and aborted local gate remain distinct from missing complete release proof.
+
+Sole repair branch agent-v012-gate-async-fixture-sync starts at the immutable
+reviewed-v012-integration-67a9b0f-20261018 ref, exact
+58c267d0631cfb5f1df9385486252583e497c13e. Scope is
+tests/unit/test_gate_async.py, docs/features/RUNTIME_ADMISSION_THROUGHPUT.md,
+TASKS.md and SESSION.md. No production, routing, timeout, manifest, contract,
+coverage, environment or daemon change. The source-proven fixed three/two-second
+dummy waits are replaced by acknowledged child entry and explicit release via
+stdlib pipes/select. Existing five/ten/fifteen-second bounds, fixture checkout
+and resource namespaces and every original assertion remain; finally releases,
+closes and drains even when an assertion faults.
+
+Two live-RUNNING assertion-fault controls fail first (2 failed in 6.77 seconds)
+and are safely drained by their outer fixture. The complete owner then passes
+24 cases in 3.00 seconds, including all 17 original cases and seven additive
+cleanup/readiness/mutation controls. Ruff and strict typing pass after context
+and import style conformance. Raw initial receipts are
+/tmp/gludd-v012-gate-async-fixture-cleanup-red.xml and
+/tmp/gludd-v012-gate-async-fixture-whole-green.xml. Final scheduling admission,
+guards and required collection receipts are retained externally.
+
+The whole file is already selected by the original main compatibility child;
+all 110 families, original 1880/help1/tail10 cases, three invocations, workers
+2/1/1, fresh-help/tail isolation, 90/60, 21/2850, warning-fatal policy, 85/75,
+ZDD and native authenticated/promotion authority are preserved. First-hand
+pytest-xdist issues 271 and 981 are documented in the existing feature as
+coordination context, not this timeout's dependency diagnosis. No hosted margin
+or release readiness is claimed; reviewed integration and exact-successor
+full-gate/hosted proof remain missing. No task status or checkbox closes.
+
+Final whole-file acceptance passes 24 cases in 4.84 seconds. Actual native
+release-proof-admission passes disk/config/task/110-family/resource
+prerequisites and its direct runtime owner: 1886 passed, one skip (reason not
+printed) in 64.60 seconds; fresh help1 in 0.93 seconds; all tail10 in 12.80
+seconds. The scheduling target has no outer 90/60 observer, so no bounded
+admission or hosted-margin success is claimed. No second worktree replay.
+Root will use the existing bounded run-watched owner after independent review
+and genuine integration, before successor sealing. Final raw XML, proposal,
+partial scheduling stdout tail and required native collection receipts are
+archived at /tmp/gludd-v012-gate-async-fixture-sync-evidence. Main development
+and its failed exact-source evidence remain untouched; no push, gate, focus,
+candidate seal, global daemon or release action is performed here.

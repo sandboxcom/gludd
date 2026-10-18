@@ -8,11 +8,17 @@ so no real pytest run is triggered and no enclosing-worktree state is touched.
 from __future__ import annotations
 
 import os
+import select
+import shlex
 import signal
 import subprocess
+import sys
 import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
+import pytest
 from scripts.makefile_layout import compose_makefile
 
 GATE_ASYNC_SH = Path(__file__).parent.parent.parent / "scripts" / "gate_async.sh"
@@ -97,6 +103,63 @@ def _wait_for_status(path: Path, prefix: str, timeout: float = 5.0) -> str:
             return content
         time.sleep(0.05)
     raise AssertionError(f"status never started with {prefix!r}; last value: {content!r}")
+
+
+@contextmanager
+def _held_gate(
+    tmp_path: Path, *, gate_cmd: str | None = None,
+) -> Iterator[tuple[subprocess.Popen[str], str]]:
+    """Hold one real isolated gate until release, including on assertion faults."""
+    status = tmp_path / "gate-status"
+    lock = tmp_path / "gate-async.lock"
+    entry = tmp_path / "gate-entry-status"
+    ready_read, ready_write = os.pipe()
+    release_read, release_write = os.pipe()
+    with (
+        os.fdopen(ready_read, "rb", buffering=0) as ready,
+        os.fdopen(ready_write, "wb", buffering=0) as ready_sender,
+        os.fdopen(release_read, "rb", buffering=0) as release_receiver,
+        os.fdopen(release_write, "wb", buffering=0) as release,
+    ):
+        child = (
+            "import os, select; from pathlib import Path; "
+            f"Path({str(entry)!r}).write_text("
+            "Path(os.environ['STATUS_FILE']).read_text(encoding='utf-8'), encoding='utf-8'); "
+            f"os.write({ready_write}, b'R'); os.close({ready_write}); "
+            f"readable = select.select([{release_read}], [], [], 15)[0]; "
+            f"token = os.read({release_read}, 1) if readable else b''; "
+            f"os.close({release_read}); raise SystemExit(0 if token == b'R' else 1)"
+        )
+        env = _isolated_gate_env(
+            gate_cmd if gate_cmd is not None else shlex.join([sys.executable, "-c", child]),
+            status_file=status, lock_file=lock,
+        )
+        deadline = time.monotonic() + 5
+        process = subprocess.Popen(
+            ["bash", str(GATE_ASYNC_SH)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, env=env,
+            start_new_session=True, pass_fds=(ready_write, release_read),
+        )
+        ready_sender.close()
+        release_receiver.close()
+        try:
+            readable, _, _ = select.select([ready], [], [], max(0.0, deadline - time.monotonic()))
+            assert readable and ready.read(1) == b"R", "gate child did not acknowledge readiness"
+            content = _wait_for_status(status, "RUNNING ", timeout=max(0.0, deadline - time.monotonic()))
+            assert process.poll() is None, "acknowledged gate must remain live until release"
+            yield process, content.strip()
+        finally:
+            try:
+                with suppress(BrokenPipeError):
+                    release.write(b"R")
+            finally:
+                release.close()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired as exc:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=5)
+                    raise AssertionError("held gate did not drain within 10s") from exc
 
 
 def _interrupt_running_gate(
@@ -394,68 +457,43 @@ class TestGateAsyncConcurrentRefused:
 
     def test_second_launch_refused(self, tmp_path: Path) -> None:
         """
-        Start a slow first gate, then immediately try a second one.
+        Hold the first gate at readiness, then immediately try a second one.
         The second must fail (nonzero exit) without overwriting the status file.
         """
         status = str(tmp_path / "gate-status")
         lock = str(tmp_path / "gate-async.lock")
 
-        # First gate: slow enough that the second sees the lock held
-        gate_cmd_slow = "sleep 3; exit 0"
+        with _held_gate(tmp_path) as (first, content_before):
+            # Verify RUNNING was written while the actual gate child is held.
+            assert content_before.startswith("RUNNING "), (
+                f"Expected RUNNING, got: {content_before!r}"
+            )
 
-        env = _isolated_gate_env(
-            gate_cmd_slow,
-            status_file=Path(status),
-            lock_file=Path(lock),
-        )
+            # Try second concurrent launch — must be refused before its command runs.
+            second_result = _run(
+                gate_cmd="exit 0",
+                status_file=status,
+                lock_file=lock,
+            )
 
-        # Launch first gate in background
-        first = subprocess.Popen(
-            ["bash", str(GATE_ASYNC_SH)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            env=env,
-        )
+            assert second_result.returncode != 0, (
+                f"Second gate should have been refused but returned 0.\n"
+                f"stdout: {second_result.stdout}\nstderr: {second_result.stderr}"
+            )
+            assert "refusing" in second_result.stderr.lower() or "already running" in second_result.stderr.lower(), (
+                f"Expected refusal message, got stderr: {second_result.stderr!r}"
+            )
 
-        # Give the first gate time to acquire the lock and write RUNNING
-        time.sleep(0.5)
+            # Status file must still say RUNNING (not overwritten by refused second).
+            content_during = Path(status).read_text().strip()
+            assert content_during.startswith("RUNNING "), (
+                f"Second gate overwrote status to: {content_during!r}"
+            )
+            assert first.poll() is None, "refusal must be observed while the first gate is live"
+            assert content_during == content_before
 
-        # Verify RUNNING was written
-        content_before = Path(status).read_text().strip()
-        assert content_before.startswith("RUNNING "), (
-            f"Expected RUNNING, got: {content_before!r}"
-        )
-
-        # Try second concurrent launch — must be refused
-        second_result = _run(
-            gate_cmd=gate_cmd_slow,
-            status_file=status,
-            lock_file=lock,
-        )
-
-        assert second_result.returncode != 0, (
-            f"Second gate should have been refused but returned 0.\n"
-            f"stdout: {second_result.stdout}\nstderr: {second_result.stderr}"
-        )
-        assert "refusing" in second_result.stderr.lower() or "already running" in second_result.stderr.lower(), (
-            f"Expected refusal message, got stderr: {second_result.stderr!r}"
-        )
-
-        # Status file must still say RUNNING (not overwritten by refused second)
-        content_during = Path(status).read_text().strip()
-        assert content_during.startswith("RUNNING "), (
-            f"Second gate overwrote status to: {content_during!r}"
-        )
-
-        # Clean up: wait for first gate to finish
-        try:
-            first.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            first.kill()
-            first.wait()
-
-        # After first gate completes the status should be PASS
+        assert first.returncode == 0
+        # After first gate completes the status should be PASS.
         final_content = Path(status).read_text().strip()
         assert final_content.startswith("PASS "), f"Final status was: {final_content!r}"
 
@@ -465,54 +503,25 @@ class TestGateAsyncRunningWrittenImmediately:
 
     def test_running_written_before_gate_runs(self, tmp_path: Path) -> None:
         status = str(tmp_path / "gate-status")
-        lock = str(tmp_path / "gate-async.lock")
 
-        # Gate cmd that waits: if status is already RUNNING when it starts, we know
-        # the write was immediate.  We check status from the outside via a poll.
-        # Instead, start a slow gate in background and check status quickly.
-        env = _isolated_gate_env(
-            "sleep 2; exit 0",
-            status_file=Path(status),
-            lock_file=Path(lock),
-        )
+        with _held_gate(tmp_path) as (proc, content):
+            assert content.startswith("RUNNING "), (
+                f"STATUS_FILE was not RUNNING within 5s; got: {content!r}"
+            )
 
-        proc = subprocess.Popen(
-            ["bash", str(GATE_ASYNC_SH)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            env=env,
-        )
+            # Verify epoch + pid fields.
+            parts = content.split()
+            assert len(parts) == 3
+            epoch = int(parts[1])
+            pid = int(parts[2])
+            assert epoch > 1_700_000_000
+            assert pid > 0
+            assert pid == proc.pid
+            assert (tmp_path / "gate-entry-status").read_text(encoding="utf-8").strip() == content
+            assert proc.poll() is None
 
-        # Poll until RUNNING appears (or timeout)
-        deadline = time.time() + 5
-        content = ""
-        while time.time() < deadline:
-            try:
-                content = Path(status).read_text().strip()
-                if content.startswith("RUNNING"):
-                    break
-            except FileNotFoundError:
-                pass
-            time.sleep(0.1)
-
-        assert content.startswith("RUNNING "), (
-            f"STATUS_FILE was not RUNNING within 5s; got: {content!r}"
-        )
-
-        # Verify epoch + pid fields
-        parts = content.split()
-        assert len(parts) == 3
-        epoch = int(parts[1])
-        pid = int(parts[2])
-        assert epoch > 1_700_000_000
-        assert pid > 0
-
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
+        assert proc.returncode == 0
+        assert Path(status).read_text(encoding="utf-8").startswith("PASS ")
 
 
 def test_stale_pid_lock_is_reclaimed_only_when_pid_is_not_gate(tmp_path: Path) -> None:
@@ -533,3 +542,129 @@ def test_stale_pid_lock_is_reclaimed_only_when_pid_is_not_gate(tmp_path: Path) -
 
     assert result.returncode == 0, f"stderr: {result.stderr}"
     assert status.read_text(encoding="utf-8").startswith("PASS ")
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        TestGateAsyncConcurrentRefused().test_second_launch_refused,
+        TestGateAsyncRunningWrittenImmediately().test_running_written_before_gate_runs,
+    ],
+    ids=["concurrent-refusal", "running-before-entry"],
+)
+def test_held_gate_fixture_drains_after_assertion_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: Callable[[Path], None],
+) -> None:
+    """An assertion after live RUNNING publication must still drain the fixture."""
+    status = tmp_path / "gate-status"
+    launched: list[subprocess.Popen[str]] = []
+    original_popen = subprocess.Popen
+    original_read = Path.read_text
+
+    def capture(
+        args: list[str],
+        *,
+        stdout: int,
+        stderr: int,
+        text: bool,
+        env: dict[str, str],
+        start_new_session: bool = False,
+        pass_fds: tuple[int, ...] = (),
+    ) -> subprocess.Popen[str]:
+        process = original_popen(
+            args, stdout=stdout, stderr=stderr, text=text, env=env,
+            start_new_session=True, pass_fds=pass_fds,
+        )
+        launched.append(process)
+        return process
+
+    def fault_after_running(
+        path: Path, encoding: str | None = None, errors: str | None = None,
+    ) -> str:
+        content = original_read(path, encoding=encoding, errors=errors)
+        if path == status and content.startswith("RUNNING "):
+            assert len(launched) == 1 and launched[0].poll() is None
+            raise AssertionError("intentional live gate assertion failure")
+        return content
+
+    monkeypatch.setattr(subprocess, "Popen", capture)
+    monkeypatch.setattr(Path, "read_text", fault_after_running)
+    try:
+        with pytest.raises(AssertionError, match="intentional live gate assertion failure"):
+            case(tmp_path)
+        assert len(launched) == 1
+        assert launched[0].poll() is not None, "assertion failure must release and drain the held gate"
+        assert launched[0].returncode == 0
+        assert original_read(status, encoding="utf-8").startswith("PASS ")
+        assert not (tmp_path / "gate-async.lock").exists()
+    finally:
+        for process in launched:
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
+
+
+def test_held_gate_fixture_keeps_child_live_until_explicit_release(tmp_path: Path) -> None:
+    """Readiness is real child entry, with an owned lock until context release."""
+    with _held_gate(tmp_path) as (process, content):
+        assert process.poll() is None
+        assert content.startswith("RUNNING ")
+        assert (tmp_path / "gate-entry-status").read_text(encoding="utf-8").strip() == content
+        assert (tmp_path / "gate-async.lock").read_text(encoding="utf-8").strip() == str(process.pid)
+        assert os.getpgid(process.pid) == process.pid
+    assert process.returncode == 0
+    assert (tmp_path / "gate-status").read_text(encoding="utf-8").startswith("PASS ")
+    assert not (tmp_path / "gate-async.lock").exists()
+
+
+@pytest.mark.parametrize("gate_cmd, terminal", [("exit 0", "PASS "), ("exit 7", "FAIL ")])
+def test_held_gate_fixture_refuses_completion_without_readiness(
+    tmp_path: Path, gate_cmd: str, terminal: str,
+) -> None:
+    """Fast exit cannot stand in for a child held behind the release barrier."""
+    with (
+        pytest.raises(AssertionError, match="gate child did not acknowledge readiness"),
+        _held_gate(tmp_path, gate_cmd=gate_cmd),
+    ):
+        pytest.fail("a child without readiness must never enter the test body")
+    assert (tmp_path / "gate-status").read_text(encoding="utf-8").startswith(terminal)
+    assert not (tmp_path / "gate-async.lock").exists()
+
+
+@pytest.mark.parametrize("fault", ["missing-running", "released-lock"])
+def test_original_gate_assertions_reject_broken_fixture_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str,
+) -> None:
+    """Known-bad fixture commands must fail the original status/refusal checks."""
+    native_env = _isolated_gate_env
+
+    def broken_env(
+        gate_cmd: str, *, status_file: Path, lock_file: Path,
+        extra_env: dict[str, str] | None = None,
+    ) -> dict[str, str]:
+        prefix = (
+            'printf "PASS 1700000001\\n" > "$STATUS_FILE"; '
+            if fault == "missing-running" else 'rm -f "$LOCK_FILE"; '
+        )
+        env = native_env(prefix + gate_cmd, status_file=status_file, lock_file=lock_file, extra_env=extra_env)
+        env["GLUDD_GATE_ASYNC_FORCE_PIDFILE"] = "1"
+        return env
+
+    monkeypatch.setattr(f"{__name__}._isolated_gate_env", broken_env)
+    if fault == "missing-running":
+        # The mutation is already stable at child entry; keep this negative
+        # control immediate while exercising the original RUNNING assertion.
+        def published_status(path: Path, prefix: str, timeout: float = 5.0) -> str:
+            return path.read_text(encoding="utf-8")
+        monkeypatch.setattr(f"{__name__}._wait_for_status", published_status)
+        case = TestGateAsyncRunningWrittenImmediately().test_running_written_before_gate_runs
+        message = "STATUS_FILE was not RUNNING within 5s"
+    else:
+        case = TestGateAsyncConcurrentRefused().test_second_launch_refused
+        message = "Second gate should have been refused but returned 0"
+    with pytest.raises(AssertionError, match=message):
+        case(tmp_path)
+    assert not (tmp_path / "gate-async.lock").exists()
