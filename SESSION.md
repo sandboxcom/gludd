@@ -1390,3 +1390,39 @@ the existing canonical3.11environment passes both actual guards afterward,
 without installation, synchronization or confinement overrides.
 These are source-repair results. Independent exact-source review, clean
 candidate focus, full gate and exact-SHA hosted proof remain required.
+
+## 2026-10-18 no-project workstream warning repair
+
+The native workstream register/unregister recipes retain --no-project
+and the selected UV executable, while setting UV_NO_SYNC=0 only in
+their child environment. A Make command-line assignment alone cannot
+clear foundation's override/export1; that attempted invocation and its
+warning remain recorded. Actual project commands still receive1, with
+no global no-sync weakening or dependency-profile mutation.
+
+One actual-UV regression fails first in1.01s:
+ /tmp/gludd-v012-workstream-no-project-warning-red.xml.
+The complete two-file boundary and registry/pruning cohort then passes
+39cases in6.31s at
+/tmp/gludd-v012-workstream-no-project-warning-green.xml. Existing real
+owner failure, chosen toolchain, caller environment, owned source/index/
+ref bytes, absent lockfile/environment creation and cleanup authority
+remain asserted. The existing runtime-policy case now covers both an
+actual no-project owner with0 and an actual project owner with1.
+Both documented public contract behaviors execute warning-free against
+the reserved contract registry and remove only that contract entry.
+
+The active coding worktree is now registered through the native default
+common-Git namespace; its mistaken custom registry entry is removed by
+the same native owner. No manual registry JSON edit or process PID is
+invented. Canonical disk guard passes94%/95%, removing nine safe stale
+entries with zero errors while retaining protected/recent soft-cap scratch.
+
+The preceding focus-lifecycle repair is committed separately as
+ddd16e2da7381a954e46c91791e030f6ab398dda after normal content/secrets/
+clone/scope/retained-checkpoint guards and fresh native collection:
+125387/125405cases,18native deselections, zero errors,113.98pytest/
+121.5observed seconds. This worktree collection is source evidence,
+not the canonical main-checkout release gate. All three original
+checkpoint refs remain verified and retained. No candidate is pushed,
+no release task closed, and no master/tag/release mutation occurs.

@@ -693,12 +693,12 @@ agent-cleanup:
 # inferred from OS PIDs.  Registration is explicit and shared by all worktrees.
 workstream-register:
 	@[ -n "$(BRANCH)" ] && [ -n "$(WORKTREE)" ] || { echo "Usage: make workstream-register BRANCH=<name> WORKTREE=<path>"; exit 2; }
-	@$(UV) run --no-project python -m scripts.workstream_registry register --branch "$(BRANCH)" --worktree "$(WORKTREE)" \
+	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry register --branch "$(BRANCH)" --worktree "$(WORKTREE)" \
 		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)")
 
 workstream-unregister:
 	@[ -n "$(BRANCH)" ] || { echo "Usage: make workstream-unregister BRANCH=<name>"; exit 2; }
-	@$(UV) run --no-project python -m scripts.workstream_registry unregister --branch "$(BRANCH)" \
+	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry unregister --branch "$(BRANCH)" \
 		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)")
 
 # Bulk cleanup of all stale worktrees in .claude/worktrees/.

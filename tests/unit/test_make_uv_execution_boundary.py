@@ -246,7 +246,11 @@ def test_mixed_owner_preserves_explicit_uv_failure_instead_of_echo_success(nativ
     assert "Error 73" in result.stderr and not registry.exists()
 
 
-def test_real_owner_keeps_global_no_sync_and_selected_toolchain(native_make: NativeMake) -> None:
+@pytest.mark.parametrize(("target", "expected_no_sync"), [("workstream-register", "0"), ("notify-test", "1")])
+def test_real_owner_keeps_global_no_sync_and_selected_toolchain(
+    native_make: NativeMake, target: str, expected_no_sync: str,
+) -> None:
+    """Pure stdlib owners clear only an inapplicable flag; project owners keep it."""
     native_uv = shutil.which("uv", path=native_make.environment["PATH"])
     assert native_uv is not None
     policy = native_make.root / "runtime-policy.json"
@@ -262,17 +266,23 @@ def test_real_owner_keeps_global_no_sync_and_selected_toolchain(native_make: Nat
     registry = native_make.root / "active.json"
     result = native_make.run(
         "worktree-state",
-        "workstream-register",
+        target,
         f"UV={selected}",
         "UV_NO_SYNC=0",
         "BRANCH=agent-owned",
         f"WORKTREE={native_make.root}",
         f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
     )
-    assert result.returncode == 0 and registry.is_file(), result.stdout + result.stderr
+    if target == "workstream-register":
+        assert result.returncode == 0 and registry.is_file(), result.stdout + result.stderr
+        assert "warning:" not in result.stderr.lower(), result.stderr
+    else:
+        assert result.returncode != 0 and "application import forbidden" in result.stderr
+        assert not registry.exists()
+    assert not (native_make.root / ".venv").exists() and not (native_make.root / "uv.lock").exists()
     observed = json.loads(policy.read_text(encoding="utf-8"))
     assert observed == {
-        "UV_NO_SYNC": "1",
+        "UV_NO_SYNC": expected_no_sync,
         "UV_PYTHON_DOWNLOADS": "never",
         "UV_PROJECT_ENVIRONMENT": native_make.environment["UV_PROJECT_ENVIRONMENT"],
         "VIRTUAL_ENV": native_make.environment["VIRTUAL_ENV"],
@@ -285,3 +295,23 @@ def test_checkout_first_multi_goal_refusal_still_precedes_all_bodies(native_make
     result = native_make.run("git-checkout", "worktree-state", "MSG=fixture-target")
     assert result.returncode != 0 and "Quote multi-word variable values for git-checkout" in result.stderr
     assert not event.exists() and native_make.authority() == before
+
+
+def test_no_project_workstream_owners_run_without_uv_policy_warnings(native_make: NativeMake) -> None:
+    """Actual registration and removal must be warning-free without project sync."""
+    registry = native_make.root / "warning-free-active.json"
+    before = native_make.authority()
+    parent = dict(os.environ)
+    for target, present in (("workstream-register", True), ("workstream-unregister", False)):
+        result = native_make.run(
+            target,
+            "BRANCH=agent-owned",
+            f"WORKTREE={native_make.root}",
+            f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "warning:" not in result.stderr.lower(), result.stderr
+        payload = json.loads(registry.read_text(encoding="utf-8"))
+        assert ("agent-owned" in payload["workstreams"]) is present
+        assert native_make.authority() == before and os.environ == parent
+        assert not (native_make.root / ".venv").exists() and not (native_make.root / "uv.lock").exists()
