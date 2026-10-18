@@ -2301,6 +2301,13 @@
         "TASK_WATCHDOG_VALIDATE_ONLY"
       ],
       "behavior": "make task-watchdog-stop TASK_WATCHDOG_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "task-watchdog-start",
+      "make_variables": [
+        "TASK_WATCHDOG_START_VALIDATE_ONLY"
+      ],
+      "behavior": "make task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=1"
     }
   ]
 }

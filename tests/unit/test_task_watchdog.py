@@ -9,15 +9,18 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import shutil
 import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from scripts.makefile_layout import compose_makefile
@@ -1334,3 +1337,413 @@ def test_stop_invocation_exemption_is_rechecked_in_the_fresh_snapshot(
     monkeypatch.setattr(cleanup_owner, "_records", changed_snapshot)
     assert watchdog.stop_owned_watchdog(root, apply=True) is False
     assert sent == [] and marker.read_text(encoding="utf-8") == "54001"
+
+
+def test_native_watchdog_start_requires_child_acknowledgement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _owned_poll: OwnedPoll,
+) -> None:
+    """A published PID and preexisting log text cannot substitute for fresh acknowledgement."""
+    root, records, cwds, _deadlines, sent = _owned_poll
+    records.clear()
+    script = root / "scripts/task_watchdog.py"
+    script.write_text("# isolated native startup fixture\n", encoding="utf-8")
+    log = root / ".gate-logs/task-watchdog.log"
+    log.parent.mkdir()
+    log.write_text("prior log\n[watchdog] task_watchdog started: pid=56000 timeout=300\n", encoding="utf-8")
+    child = MagicMock(spec=subprocess.Popen)
+    child.pid = 56000
+    child.poll.return_value = None
+    child.wait.return_value = 0
+
+    def spawn(*args: object, **kwargs: object) -> MagicMock:
+        records.append(cleanup_owner.ProcessRecord(
+            child.pid, 1, 0, f"{sys.executable} {script}", pgid=child.pid, started_at="child-start",
+        ))
+        cwds[child.pid] = root
+        (log.parent / "task-watchdog.pid").write_text(str(child.pid), encoding="utf-8")
+        return child
+
+    with monkeypatch.context() as launch_patch:
+        launch_patch.setattr(subprocess, "Popen", spawn)
+        launch_patch.setattr(os, "getpgid", lambda pid: pid)
+        launch_patch.setattr(os, "getsid", lambda pid: pid)
+        result = watchdog.start_owned_watchdog(root, apply=True)
+        assert result.success is False
+        assert sent == [(child.pid, signal.SIGTERM)]
+        assert records == [] and log.read_text(encoding="utf-8").startswith("prior log\n")
+
+    for target, variable, recursive in (
+        ("task-watchdog-start", "TASK_WATCHDOG_START_VALIDATE_ONLY", False),
+        ("task-watchdog-stop", "TASK_WATCHDOG_VALIDATE_ONLY", False),
+        ("task-watchdog-start", "TASK_WATCHDOG_START_VALIDATE_ONLY", True),
+    ):
+        _assert_native_lifecycle_literal_policy(tmp_path, target, variable, recursive=recursive)
+
+
+@pytest.mark.parametrize("value", ["0", "1", "0 1", "", "function"])
+def test_native_watchdog_start_target_uses_literal_safe_policy(tmp_path: Path, value: str) -> None:
+    tripwire = tmp_path / "start-policy-tripwire"
+    if value == "function":
+        value = "$(shell touch " + str(tripwire) + ")"
+    root = Path(__file__).resolve().parents[2]
+    completed = subprocess.run(
+        ["make", "--no-print-directory", "-n", "task-watchdog-start", "TASK_WATCHDOG_START_VALIDATE_ONLY=" + value],
+        cwd=root, check=True, capture_output=True, text=True, timeout=10,
+    )
+    expected = value if value in {"0", "1"} else "invalid"
+    assert completed.stdout.splitlines()[-1].endswith("--start --validate-only " + expected)
+    assert not tripwire.exists()
+
+
+def test_real_native_watchdog_start_survives_caller_group_termination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Adapt the existing gate session-survival control with confined real Make/Python."""
+    root = tmp_path / "native-start-fixture"
+    (root / "scripts").mkdir(parents=True)
+    (root / ".gate-logs").mkdir()
+    owner_root = Path(__file__).resolve().parents[2]
+    source = (owner_root / "scripts/task_watchdog.py").read_text(encoding="utf-8")
+    injection = (
+        'if __name__ == "__main__":\n'
+        '    _repository_roots = lambda: (Path(__file__).resolve().parents[1],)\n'
+        '    _fixture_deadline = time.monotonic() + 12\n'
+        '    _fixture_poll = run_once\n'
+        '    def _bounded_poll():\n'
+        '        if time.monotonic() >= _fixture_deadline:\n'
+        '            raise KeyboardInterrupt\n'
+        '        return _fixture_poll()\n'
+        '    run_once = _bounded_poll\n'
+        '    POLL_SECS = 0.02\n'
+    )
+    (root / "scripts/task_watchdog.py").write_text(
+        source.replace('if __name__ == "__main__":\n', injection), encoding="utf-8",
+    )
+    (root / "pyproject.toml").write_text(
+        '[project]\nname="gludd-native-start-fixture"\nversion="0.0.0"\nrequires-python=">=3.11"\n',
+        encoding="utf-8",
+    )
+    uv = shutil.which("uv")
+    assert uv is not None
+    (root / "Makefile").write_text(
+        f"UV := {uv}\nGLUDD_TASK_TIMEOUT := 300\n"
+        + (owner_root / "make/80-agent-enforcement.mk").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    for name, content in (("deadlines", "{}"), ("stale", "[]"), ("killed", "[]")):
+        (root / name).write_text(content, encoding="utf-8")
+    receipt = root / "caller.json"
+    environment = dict(
+        os.environ, UV_PROJECT_ENVIRONMENT=sys.prefix, UV_NO_SYNC="1", UV_PYTHON_DOWNLOADS="never",
+        PYTHONPATH=str(owner_root / "scripts"), GLUDD_TASK_DEADLINE_STATE=str(root / "deadlines"),
+        GLUDD_TASK_STALE_FILE=str(root / "stale"), GLUDD_TASK_KILLED_FILE=str(root / "killed"),
+        GLUDD_TASK_WATCHDOG_PID=str(root / "inherited-wrong.pid"),
+        GLUDD_TASK_WATCHDOG_LOG=str(root / "inherited-wrong.log"),
+    )
+    caller_source = (
+        "import json, subprocess, sys, time\nfrom pathlib import Path\n"
+        "result = subprocess.run(['make','--no-print-directory','task-watchdog-start',"
+        "'TASK_WATCHDOG_START_VALIDATE_ONLY=0'], capture_output=True, text=True, timeout=8)\n"
+        f"Path({str(receipt)!r}).write_text(json.dumps(dict(rc=result.returncode, "
+        "out=result.stdout, err=result.stderr)))\n"
+        "time.sleep(15)\n"
+    )
+    monkeypatch.setattr(watchdog, "_repository_roots", lambda: (root,))
+    caller = subprocess.Popen(
+        [sys.executable, "-c", caller_source], cwd=root, env=environment, start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 10
+        while not receipt.exists() and caller.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert receipt.exists()
+        report = json.loads(receipt.read_text(encoding="utf-8"))
+        assert report["rc"] == 0, report
+        match = re.search(r"TASK-WATCHDOG-START acknowledged pid=(\d+)", report["out"])
+        assert match is not None, report
+        pid = int(match[1])
+        before = next(record for record in cleanup_owner._records(root) if record.pid == pid)
+        assert before.started_at and cleanup_owner._process_cwd(pid) == root
+        assert os.getpgid(pid) == os.getsid(pid) == pid and pid != caller.pid
+        assert (root / ".gate-logs/task-watchdog.pid").read_text(encoding="utf-8") == str(pid)
+        assert not (root / "inherited-wrong.pid").exists() and not (root / "inherited-wrong.log").exists()
+        os.killpg(caller.pid, signal.SIGTERM)
+        caller.wait(timeout=3)
+        after = next(record for record in cleanup_owner._records(root) if record.pid == pid)
+        assert cleanup_owner._same_identity(before, after)
+        assert cleanup_owner._process_cwd(pid) == root and os.getpgid(pid) == os.getsid(pid) == pid
+    finally:
+        if caller.poll() is None:
+            os.killpg(caller.pid, signal.SIGTERM)
+        caller.wait(timeout=3)
+        assert watchdog.stop_owned_watchdog(root, apply=True)
+    assert (root / "killed").read_text(encoding="utf-8") == "[]"
+    assert not (root / ".venv").exists() and not (root / "uv.lock").exists()
+
+
+StartFixture = tuple[OwnedPoll, MagicMock, dict[str, object], Callable[..., MagicMock]]
+
+
+@pytest.fixture
+def _start_fixture(monkeypatch: pytest.MonkeyPatch, _owned_poll: OwnedPoll) -> StartFixture:
+    root, records, cwds, _deadlines, _sent = _owned_poll
+    records.clear()
+    (root / "scripts/task_watchdog.py").write_text("# native start fixture\n", encoding="utf-8")
+    directory = root / ".gate-logs"
+    directory.mkdir()
+    (directory / "task-watchdog.log").write_text("retained prior log\n", encoding="utf-8")
+    child = MagicMock(spec=subprocess.Popen)
+    child.pid = 56000
+    child.poll.return_value = None
+    child.wait.return_value = 0
+    calls: dict[str, object] = {}
+
+    def spawn(command: list[str], **kwargs: object) -> MagicMock:
+        calls["command"] = command
+        calls.update(kwargs)
+        records.append(cleanup_owner.ProcessRecord(
+            child.pid, 1, 0, f"{sys.executable} {root / 'scripts/task_watchdog.py'}",
+            pgid=child.pid, started_at="new-child-start",
+        ))
+        cwds[child.pid] = root
+        (directory / "task-watchdog.pid").write_text(str(child.pid), encoding="utf-8")
+        with (directory / "task-watchdog.log").open("a", encoding="utf-8") as log:
+            log.write(f"task_watchdog started: pid={child.pid} timeout=300\n")
+        return child
+
+    monkeypatch.setattr(subprocess, "Popen", spawn)
+    monkeypatch.setattr(os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(os, "getsid", lambda pid: pid)
+    return _owned_poll, child, calls, spawn
+
+
+def test_native_start_uses_selected_python_and_verified_singleton(_start_fixture: StartFixture) -> None:
+    (root, records, _cwds, _deadlines, sent), child, calls, _spawn = _start_fixture
+    first = watchdog.start_owned_watchdog(root, apply=True)
+    assert first.success and first.process is child and first.identity == records[0]
+    assert calls["command"] == [sys.executable, str(root / "scripts/task_watchdog.py")]
+    assert calls["cwd"] == root and calls["start_new_session"] is True and calls["close_fds"] is True
+    assert calls["stdin"] == subprocess.DEVNULL and calls["stderr"] == subprocess.STDOUT
+    environment = calls["env"]
+    assert isinstance(environment, dict)
+    assert environment["GLUDD_TASK_WATCHDOG_PID"] == str(root / ".gate-logs/task-watchdog.pid")
+    assert environment["GLUDD_TASK_WATCHDOG_LOG"] == str(root / ".gate-logs/task-watchdog.log")
+    assert environment["PYTHONUNBUFFERED"] == "1"
+    second = watchdog.start_owned_watchdog(root, apply=True)
+    assert second.success and second.process is None and second.identity == first.identity
+    assert len(records) == 1 and sent == []
+    assert (root / ".gate-logs/task-watchdog.log").read_text(encoding="utf-8").startswith("retained prior log\n")
+
+
+def test_native_start_plan_has_no_mutations_or_spawn(_start_fixture: StartFixture) -> None:
+    (root, records, _cwds, _deadlines, sent), _child, calls, _spawn = _start_fixture
+    before = {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    assert watchdog.start_owned_watchdog(root, apply=False).success
+    assert calls == {} and sent == [] and records == []
+    assert before == {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+
+@pytest.mark.parametrize("defect", ["stale", "malformed", "foreign", "symlink", "log-symlink", "live-unpointed"])
+def test_native_start_refuses_unowned_admission_without_spawning(
+    tmp_path: Path, _start_fixture: StartFixture, defect: str,
+) -> None:
+    (root, records, cwds, _deadlines, sent), _child, calls, _spawn = _start_fixture
+    marker = root / ".gate-logs/task-watchdog.pid"
+    if defect == "symlink":
+        foreign = tmp_path / "foreign.pid"
+        foreign.write_text("56000", encoding="utf-8")
+        marker.symlink_to(foreign)
+    elif defect == "log-symlink":
+        log = root / ".gate-logs/task-watchdog.log"
+        log.unlink()
+        log.symlink_to(tmp_path / "foreign.log")
+    else:
+        if defect != "live-unpointed":
+            marker.write_text("broken" if defect == "malformed" else "56000", encoding="utf-8")
+        if defect in {"foreign", "live-unpointed"}:
+            records.append(cleanup_owner.ProcessRecord(
+                56000, 1, 400, f"python3 {root / 'scripts/task_watchdog.py'}", pgid=56000, started_at="live-start",
+            ))
+            cwds[56000] = tmp_path if defect == "foreign" else root
+    assert watchdog.start_owned_watchdog(root, apply=True).success is False
+    assert calls == {} and sent == []
+
+
+def test_native_start_singleton_lock_prevents_concurrent_spawn(_start_fixture: StartFixture) -> None:
+    from filelock import FileLock
+
+    (root, _records, _cwds, _deadlines, sent), _child, calls, _spawn = _start_fixture
+    with FileLock(str(root / ".gate-logs/task-watchdog-launch.lock"), timeout=0):
+        assert watchdog.start_owned_watchdog(root, apply=True).success is False
+    assert calls == {} and sent == []
+
+
+@pytest.mark.parametrize("failure", ["spawn", "immediate-exit", "wrong-pid", "wrong-session", "reused", "unknown-cwd"])
+def test_native_start_failure_never_publishes_success_or_signals_an_uncertain_identity(
+    monkeypatch: pytest.MonkeyPatch, _start_fixture: StartFixture, failure: str,
+) -> None:
+    (root, records, cwds, _deadlines, sent), child, _calls, original_spawn = _start_fixture
+    reads = 0
+
+    def spawn(command: list[str], **kwargs: object) -> MagicMock:
+        if failure == "spawn":
+            raise OSError("spawn unavailable")
+        result = original_spawn(command, **kwargs)
+        if failure == "immediate-exit":
+            child.poll.return_value = 1
+            records.clear()
+        elif failure == "wrong-pid":
+            (root / ".gate-logs/task-watchdog.pid").write_text("99998", encoding="utf-8")
+        elif failure == "wrong-session":
+            monkeypatch.setattr(os, "getsid", lambda pid: pid + 1)
+        elif failure == "unknown-cwd":
+            cwds[child.pid] = None
+        return result
+
+    def snapshot(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+        nonlocal reads
+        if records:
+            reads += 1
+            if failure == "reused" and reads > 1:
+                old = records[0]
+                records[0] = cleanup_owner.ProcessRecord(
+                    old.pid, 1, 0, old.command, pgid=old.pid, started_at="reused-start",
+                )
+        return list(records)
+
+    monkeypatch.setattr(subprocess, "Popen", spawn)
+    monkeypatch.setattr(cleanup_owner, "_records", snapshot)
+    result = watchdog.start_owned_watchdog(root, apply=True)
+    assert result.success is False
+    assert sent == ([(child.pid, signal.SIGTERM)] if failure == "wrong-pid" else [])
+    assert (root / ".gate-logs/task-watchdog.log").read_text(encoding="utf-8").startswith("retained prior log\n")
+
+
+def test_direct_daemon_never_overwrites_an_existing_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = tmp_path / "existing.pid"
+    marker.write_text("99998", encoding="utf-8")
+    monkeypatch.setattr(watchdog, "WATCHDOG_PID_FILE", str(marker))
+    monkeypatch.setattr(watchdog, "WATCHDOG_LOG", str(tmp_path / "log"))
+    with patch("scripts.task_watchdog.run_once") as poll:
+        assert watchdog.main([]) == 1
+    poll.assert_not_called()
+    assert marker.read_text(encoding="utf-8") == "99998"
+
+
+@pytest.mark.parametrize("mutation", ["content", "inode", "symlink"])
+def test_already_running_start_refuses_a_changed_pid_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _start_fixture: StartFixture, mutation: str,
+) -> None:
+    (root, records, _cwds, _deadlines, sent), _child, _calls, _spawn = _start_fixture
+    assert watchdog.start_owned_watchdog(root, apply=True).success
+    marker = root / ".gate-logs/task-watchdog.pid"
+    reads = 0
+
+    def replaced(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            if mutation == "content":
+                marker.write_text("99998", encoding="utf-8")
+            else:
+                marker.unlink()
+                if mutation == "symlink":
+                    foreign = tmp_path / "foreign-pointer"
+                    foreign.write_text("56000", encoding="utf-8")
+                    marker.symlink_to(foreign)
+                else:
+                    marker.write_text("56000", encoding="utf-8")
+        return list(records)
+
+    monkeypatch.setattr(cleanup_owner, "_records", replaced)
+    assert watchdog.start_owned_watchdog(root, apply=True).success is False
+    assert sent == [] and len(records) == 1
+
+
+def test_existing_singleton_does_not_depend_on_startup_log_retention(_start_fixture: StartFixture) -> None:
+    (root, records, _cwds, _deadlines, sent), _child, _calls, _spawn = _start_fixture
+    assert watchdog.start_owned_watchdog(root, apply=True).success
+    with (root / ".gate-logs/task-watchdog.log").open("a", encoding="utf-8") as log:
+        log.write("ordinary daemon output\n" * 1000)
+    result = watchdog.start_owned_watchdog(root, apply=True)
+    assert result.success and result.process is None and result.identity == records[0]
+    assert len(records) == 1 and sent == []
+
+
+def test_native_start_target_contract_and_auto_reuse_owner() -> None:
+    root = Path(__file__).resolve().parents[2]
+    contract = json.loads((root / "config/make_target_contract.json").read_text(encoding="utf-8"))
+    entry = next(item for item in contract["targets"] if item["name"] == "task-watchdog-start")
+    assert entry["make_variables"] == ["TASK_WATCHDOG_START_VALIDATE_ONLY"]
+    assert entry["behavior"] == "make task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=1"
+    source = (root / "make/80-agent-enforcement.mk").read_text(encoding="utf-8")
+    auto = source.split("\nwatchdog-auto:\n", 1)[1].split("\n\n", 1)[0]
+    assert "task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=0" in auto
+    assert "nohup $(UV) run python3 scripts/task_watchdog.py" not in source
+
+
+@pytest.mark.parametrize("changed", ["pointer", "log"])
+def test_new_start_acknowledgement_rechecks_its_owned_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _start_fixture: StartFixture, changed: str,
+) -> None:
+    (root, records, _cwds, _deadlines, sent), child, _calls, _spawn = _start_fixture
+    reads = 0
+
+    def changed_snapshot(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+        nonlocal reads
+        if records:
+            reads += 1
+            if reads == 2:
+                if changed == "pointer":
+                    (root / ".gate-logs/task-watchdog.pid").write_text("99998", encoding="utf-8")
+                else:
+                    log = root / ".gate-logs/task-watchdog.log"
+                    log.unlink()
+                    foreign = tmp_path / "foreign-log"
+                    foreign.write_text(f"task_watchdog started: pid={child.pid} timeout=300\n", encoding="utf-8")
+                    log.symlink_to(foreign)
+        return list(records)
+
+    monkeypatch.setattr(cleanup_owner, "_records", changed_snapshot)
+    assert watchdog.start_owned_watchdog(root, apply=True).success is False
+    assert sent == [(child.pid, signal.SIGTERM)]
+    if changed == "pointer":
+        assert (root / ".gate-logs/task-watchdog.pid").read_text(encoding="utf-8") == "99998"
+
+
+def _assert_native_lifecycle_literal_policy(
+    tmp_path: Path, target: str, variable: str, *, recursive: bool = False,
+) -> None:
+    """Exercise actual recipe environments, including the native recursive carrier."""
+    root = Path(__file__).resolve().parents[2]
+    suffix = "-recursive" if recursive else ""
+    tripwire = tmp_path / (target + suffix + "-executed-policy-tripwire")
+    literal = "$(shell touch " + str(tripwire) + ")"
+    arguments = ["make", "--no-print-directory", target, variable + "=" + literal]
+    if recursive:
+        carrier = tmp_path / (target + "-carrier.mk")
+        carrier.write_text(
+            (root / "make/80-agent-enforcement.mk").read_text(encoding="utf-8")
+            + "\nliteral-policy-carrier:\n\t@$(MAKE) --no-print-directory -C "
+            + shlex.quote(str(root)) + " " + target + "\n",
+            encoding="utf-8",
+        )
+        arguments[2:3] = ["-f", str(carrier), "literal-policy-carrier"]
+    result = subprocess.run(
+        arguments, cwd=root, capture_output=True, text=True, timeout=8, check=False,
+    )
+    assert result.returncode != 0 and "invalid choice" in result.stderr
+    assert not tripwire.exists()
+
+
+@pytest.mark.parametrize(("target", "variable", "recursive"), [
+    ("task-watchdog-start", "TASK_WATCHDOG_START_VALIDATE_ONLY", False),
+    ("task-watchdog-stop", "TASK_WATCHDOG_VALIDATE_ONLY", False),
+    ("task-watchdog-start", "TASK_WATCHDOG_START_VALIDATE_ONLY", True),
+])
+def test_native_lifecycle_literal_policy_stays_inert_during_actual_make_execution(
+    tmp_path: Path, target: str, variable: str, recursive: bool,
+) -> None:
+    _assert_native_lifecycle_literal_policy(tmp_path, target, variable, recursive=recursive)

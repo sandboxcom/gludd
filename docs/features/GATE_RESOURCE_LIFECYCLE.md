@@ -1473,3 +1473,97 @@ assigns child waiting to its parent. These sources inform conservative identity
 handling and fixture ownership; neither proves the unlogged field in the actual
 Gludd refusal or authorizes a signal. ZDD, native observer limits, cleanup
 authority and all prior failed evidence remain unchanged.
+
+
+## 2026-10-18: acknowledge native detached watchdog startup
+
+The first actual startup after handoff returned zero and printed UV PID 47780.
+Six seconds later native inspection found it absent, with an empty new log and
+the unchanged nine-record kill history. Root retained
+/tmp/gludd-v012-watchdog-handoff-20261018/failed-start-7a1ddbe.* and used the
+approved absent-pointer recovery afterward. The cause of that exit is unproven.
+A shell background PID and a successful Make return do not acknowledge a daemon.
+
+The existing lifecycle owner now reuses the gate's detached native launch pattern:
+one checkout-local singleton admission lock, the selected sys.executable directly,
+stdin closed, append-only output and a separate child session. PYTHONUNBUFFERED=1
+keeps the exact interpreter-plus-script role accepted by native stop. The child
+exclusively creates its root-local PID pointer and flushes its own PID-bearing
+startup line. Inherited PID/log overrides cannot redirect that publication.
+Startup polls for at most five seconds; success requires the new log bytes, its
+actual child PID/start/cwd/script identity and PGID=SID=PID, revalidated in a fresh
+native table with unchanged pointer/log ownership. Historical log text never
+acknowledges a new child.
+
+Already-running admission verifies a live singleton and unchanged pointer
+content/device/inode/mtime through two censuses. It does not depend on retaining
+an old startup line in a bounded log window. Stale, foreign, symlinked or unknown
+pointers block startup; only the separate native stop recovery owner may retire
+verified absent metadata. Exact current-action/self/connected-UV exemptions retain
+fresh identity checks and never exempt arbitrary start/stop text. Failed startup
+returns nonzero and retains diagnostics; only a positively verified newly created
+child may receive cleanup signals. Parent-owned child polling reaps it while the
+unchanged five-second/one-second native drain checks confirm actual PID absence.
+Unknown identities remain refused and cannot authorize a retry or a duplicate.
+
+TASK_WATCHDOG_START_VALIDATE_ONLY=0 preserves established actual-start behavior.
+Literal 1 performs a plan with no writes, spawn or signals:
+
+~~~text
+make task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=1
+~~~
+
+The watchdog-auto task branch explicitly calls this same start owner with 0.
+Stop keeps its separate default-plan TASK_WATCHDOG_VALIDATE_ONLY=1 contract.
+Unsupported detached-session platforms refuse startup before mutation; the module
+adds no unconditional POSIX-only import. No environment is installed or created.
+
+The initial six-case RED includes a fixture constant error; after correcting that
+fixture, the real Make caller reproduces rc0 with unacknowledged UV PID 53520.
+Seven pointer/log-retention/contract/routing failures and two new-publication
+replacement failures are retained separately. The realistic native fixture
+acknowledges a detached daemon, terminates the caller process group, verifies the
+same daemon identity survives, and drains it through the strict native stop owner.
+All deadline, stale, killed, PID and log paths remain fixture-local.
+
+The earlier 142-case coverage pass remains intermediate at
+.gate-logs/coverage-task-watchdog-native-start-final.json, native audit
+.gate-logs/coverage-20261018T101037Z.json and raw observer
+20261018T101030Z-60037-7b143f79. Earlier 134/141-case receipts and the 604-case
+combined pass remain historical. Actual Make execution then exposed expansion of
+raw command-line policy values while constructing recipe environments. The
+one-case, two-case and three-case direct/recursive RED XML receipts are retained;
+each creates only an isolated tripwire and rejects invalid CLI input before any
+lifecycle operation. Both raw policy variables are now explicitly unexported.
+The internal overridden argument still admits only exact literal 0 or 1. Direct
+start, direct stop, recursive start and the promoted acknowledgement control pass
+all four bounded checks. Both documented native plan examples remain mutation-free.
+
+Final warning-fatal whole-watchdog acceptance passes all 145 cases in 5.76 seconds
+with 93.2% line and 86.8% branch coverage, preserving the native 85/75 floors:
+.gate-logs/coverage-task-watchdog-native-start-policy-final.json; native audit
+.gate-logs/coverage-20261018T101658Z.json; raw observer
+20261018T101651Z-69005-8a261a10, passed in 7.478 seconds. Its JUnit receipt is
+/tmp/gludd-v012-watchdog-native-start-policy-final-coverage.xml. Final combined
+source/routing acceptance passes all 607 cases in 81.08 seconds:
+/tmp/gludd-v012-watchdog-native-start-policy-final-combined.xml.
+The complete cleanup, gate-launch, active-work, scheduling, promotion, cold-start
+and observability caller owners retain their original assertions; the exact M2
+command-layer control also passes. One exact cheap acknowledgement control is
+appended to the third admission child, preserving all 107 previous families/order
+and three children, workers 2/1/1, 90/60 and 21 phases/2850 seconds.
+
+The first-hand [uv issue 12830](https://github.com/astral-sh/uv/issues/12830)
+(April 2025, Darwin/uv 0.6.12) describes wrapper/child signal-handling surprises and
+orphaned Python processes; maintainers closed it with signal-forwarding changes.
+It supplies historical context, not a diagnosis of this local empty-log failure
+or a claim about the current dependency. Python's maintained
+[subprocess documentation](https://docs.python.org/3.11/library/subprocess.html#subprocess.Popen)
+defines the new-session behavior. The existing native gate session-survival test
+and the new real watchdog fixture provide local acceptance. ZDD, observer bounds,
+M2/M4/M5 refusals, cleanup authority, release gates and all failed evidence remain.
+
+Root alone may apply the reviewed source, run the safe start plan, start once,
+then verify the same native identity after the launching tool exits and at least
+one normal polling interval. Logs and killed history must remain intact before
+any candidate proof starts. Source acceptance does not close a release task.
