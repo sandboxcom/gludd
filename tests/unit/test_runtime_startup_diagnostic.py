@@ -559,3 +559,355 @@ def test_native_startup_refuses_load_failure_without_diagnostic(
     monkeypatch.setattr(subprocess, "run", native)
     with pytest.raises(ValueError, match="load"):
         owner._startup_capacity(tmp_path, {})
+
+
+_READER_FIXTURE = r"""
+import json, os, sys
+from pathlib import Path
+from scripts import stream_command as owner
+
+request = json.loads(sys.argv[1])
+repository = Path(request["repository"])
+root = repository / ".gate-logs/observed"
+archive = Path(request["archive"]) if request.get("archive") else None
+status = (archive / "status/profile/run-1.json" if archive else root / "profile/run-1.json")
+replacement = request.get("replacement")
+if replacement == "open-fifo":
+    native_open = os.open
+    swapped = False
+    def descriptor_open(name, flags, *args, **kwargs):
+        global swapped
+        if name == status.name and kwargs.get("dir_fd") is not None and not swapped:
+            swapped = True
+            status.unlink()
+            os.mkfifo(status)
+        return native_open(name, flags, *args, **kwargs)
+    os.open = descriptor_open
+elif replacement:
+    native_read = owner._startup_read
+    replaced = False
+    def read(role, path, boundary):
+        global replaced
+        item = native_read(role, path, boundary)
+        if role == "status" and not replaced:
+            replaced = True
+            path.unlink()
+            if replacement == "fifo":
+                os.mkfifo(path)
+            else:
+                with path.open("wb") as handle:
+                    handle.truncate(owner._STARTUP_LIMIT + 1)
+        return item
+    owner._startup_read = read
+    if replacement == "oversized":
+        native_text = Path.read_text
+        def text(path, *args, **kwargs):
+            if path == status:
+                raise AssertionError("unbounded status reopen after snapshot")
+            return native_text(path, *args, **kwargs)
+        Path.read_text = text
+
+def forbidden(*args, **kwargs):
+    raise AssertionError("reader launched a process")
+owner.subprocess.run = forbidden
+owner.subprocess.Popen = forbidden
+try:
+    if request.get("apply_archive"):
+        owner.runtime_startup_archive(
+            repository, root, "profile", "run-1",
+            destination=Path(request["destination"]), validate_only=False,
+        )
+    else:
+        owner.runtime_startup_report(
+            repository, root, "profile", "run-1", archive=archive,
+            console_paths=[Path(path) for path in request.get("console", [])],
+        )
+except (OSError, ValueError):
+    print("refused without launch", flush=True)
+else:
+    raise AssertionError("unsafe input accepted")
+"""
+
+
+def _bounded_reader_refusal(request: dict[str, Any]) -> None:
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(ROOT) + os.pathsep + environment.get("PYTHONPATH", "")
+    process = subprocess.Popen(
+        [sys.executable, "-B", "-c", _READER_FIXTURE, json.dumps(request)],
+        cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        start_new_session=True,
+    )
+    timed_out = False
+    try:
+        try:
+            stdout, stderr = process.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            process.kill()
+            stdout, stderr = process.communicate(timeout=2)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=2)
+    assert process.poll() is not None
+    assert not timed_out, "bounded reader fixture blocked on an owned no-writer FIFO"
+    assert process.returncode == 0, stdout + stderr
+    assert stdout.strip() == "refused without launch", stderr
+
+
+@pytest.mark.parametrize("role", [
+    "status", "log", "trace", "console", "manifest", "archive-status", "archive-log",
+    "archive-report", "status-archive",
+])
+def test_real_fifo_read_roles_refuse_without_launch_or_completed_output(
+    tmp_path: Path, role: str,
+) -> None:
+    repository, root, status, log = _run(tmp_path)
+    request: dict[str, Any] = {"repository": str(repository)}
+    destination = tmp_path / "new-output"
+    request["destination"] = str(destination)
+    target = status if role in {"status", "status-archive"} else log
+    if role == "trace":
+        target = repository / ".gate-logs/trace.jsonl"
+        value = json.loads(status.read_text())
+        value["trace_path"] = str(target)
+        status.write_text(json.dumps(value))
+    elif role == "console":
+        target = tmp_path / "console"
+        request["console"] = [str(target)]
+    elif role in {"manifest", "archive-status", "archive-log", "archive-report"}:
+        archive = tmp_path / "existing-archive"
+        owner.runtime_startup_archive(
+            repository, root, "profile", "run-1", destination=archive, validate_only=False,
+        )
+        request["archive"] = str(archive)
+        relative = {
+            "manifest": "manifest.json", "archive-status": "status/profile/run-1.json",
+            "archive-log": "child.log", "archive-report": "report.md",
+        }[role]
+        target = archive / relative
+    if role == "status-archive":
+        request["apply_archive"] = True
+    preserved = {path: path.read_bytes() for path in (status, log) if path != target}
+    if target.exists():
+        target.unlink()
+    os.mkfifo(target)
+    _bounded_reader_refusal(request)
+    assert not destination.exists()
+    assert all(path.read_bytes() == data for path, data in preserved.items())
+
+
+@pytest.mark.parametrize("archived", [False, True])
+@pytest.mark.parametrize("replacement", ["fifo", "oversized"])
+def test_status_snapshot_replacement_never_reopens_an_unbounded_path(
+    tmp_path: Path, archived: bool, replacement: str,
+) -> None:
+    repository, root, _, _ = _run(tmp_path)
+    request: dict[str, Any] = {"repository": str(repository), "replacement": replacement}
+    if archived:
+        archive = tmp_path / "archive"
+        owner.runtime_startup_archive(
+            repository, root, "profile", "run-1", destination=archive, validate_only=False,
+        )
+        request["archive"] = str(archive)
+    _bounded_reader_refusal(request)
+
+
+@pytest.mark.parametrize("archived", [False, True])
+def test_status_identity_uses_only_the_captured_native_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, archived: bool,
+) -> None:
+    repository, root, _, _ = _run(tmp_path)
+    archive = tmp_path / "archive" if archived else None
+    if archive is not None:
+        owner.runtime_startup_archive(
+            repository, root, "profile", "run-1", destination=archive, validate_only=False,
+        )
+    monkeypatch.setattr(owner, "_load_status", lambda *a, **k: pytest.fail("status path reopened"))
+    report = owner.runtime_startup_report(repository, root, "profile", "run-1", archive=archive)
+    assert "1897 collected / 11.22 seconds" in report
+
+
+def test_archive_status_role_requires_the_canonical_manifest_path(tmp_path: Path) -> None:
+    repository, root, _, _ = _run(tmp_path)
+    archive = tmp_path / "archive"
+    owner.runtime_startup_archive(
+        repository, root, "profile", "run-1", destination=archive, validate_only=False,
+    )
+    manifest = json.loads((archive / "manifest.json").read_text())
+    row = next(row for row in manifest["files"] if row["role"] == "status")
+    (archive / "alternate.json").write_bytes((archive / row["path"]).read_bytes())
+    row["path"] = "alternate.json"
+    (archive / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="canonical"):
+        owner.runtime_startup_report(repository, root, "profile", "run-1", archive=archive)
+
+
+@pytest.mark.parametrize("swap", ["final-link", "ancestor-link", "final-regular"])
+def test_read_open_boundary_never_consumes_swapped_foreign_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, swap: str,
+) -> None:
+    directory = tmp_path / "owned"
+    foreign = tmp_path / "foreign"
+    directory.mkdir()
+    foreign.mkdir()
+    path = directory / "input"
+    path.write_bytes(b"owned bytes")
+    (foreign / "input").write_bytes(b"foreign bytes")
+    native_open = os.open
+    native_path_open = Path.open
+    native_read = os.read
+    opened: list[int] = []
+    swapped = False
+
+    def exchange() -> None:
+        nonlocal swapped
+        if swapped:
+            return
+        swapped = True
+        if swap == "ancestor-link":
+            directory.rename(tmp_path / "retained-owned")
+            directory.symlink_to(foreign, target_is_directory=True)
+        else:
+            path.unlink()
+            if swap == "final-link":
+                path.symlink_to(foreign / "input")
+            else:
+                path.write_bytes(b"foreign replacement")
+
+    def descriptor_open(name: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        if name == "input":
+            exchange()
+        fd = native_open(name, flags, *args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def buffered_open(selected: Path, *args: Any, **kwargs: Any) -> Any:
+        if selected == path and args and args[0] == "rb":
+            exchange()
+            pytest.fail("buffered path open consumed the swapped input")
+        return native_path_open(selected, *args, **kwargs)
+
+    def descriptor_read(fd: int, size: int) -> bytes:
+        info = os.fstat(fd)
+        assert (info.st_dev, info.st_ino) != (
+            (foreign / "input").stat().st_dev, (foreign / "input").stat().st_ino,
+        )
+        return native_read(fd, size)
+
+    monkeypatch.setattr(os, "open", descriptor_open)
+    monkeypatch.setattr(os, "read", descriptor_read)
+    monkeypatch.setattr(Path, "open", buffered_open)
+    with pytest.raises((ValueError, OSError)):
+        owner._startup_read("fixture", path, tmp_path)
+    assert swapped
+    for fd in opened:
+        with pytest.raises(OSError):
+            os.fstat(fd)
+
+
+@pytest.mark.parametrize("fail_read", [False, True])
+def test_startup_read_closes_every_descriptor_on_success_or_read_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_read: bool,
+) -> None:
+    path = tmp_path / "input"
+    path.write_bytes(b"owned bytes")
+    native_open = os.open
+    native_read = os.read
+    opened: list[int] = []
+
+    def descriptor_open(*args: Any, **kwargs: Any) -> int:
+        fd = native_open(*args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def descriptor_read(*args: Any, **kwargs: Any) -> bytes:
+        if fail_read:
+            raise OSError("fixture descriptor read failure")
+        return native_read(*args, **kwargs)
+
+    monkeypatch.setattr(os, "open", descriptor_open)
+    monkeypatch.setattr(os, "read", descriptor_read)
+    if fail_read:
+        with pytest.raises(OSError, match="fixture descriptor"):
+            owner._startup_read("fixture", path, tmp_path)
+    else:
+        assert owner._startup_read("fixture", path, tmp_path).data == b"owned bytes"
+    assert opened, "regular-file admission must use verified native descriptors"
+    for fd in opened:
+        with pytest.raises(OSError):
+            os.fstat(fd)
+
+
+@pytest.mark.parametrize("archived", [False, True])
+def test_fifo_replacement_at_descriptor_open_is_nonblocking_and_refused(
+    tmp_path: Path, archived: bool,
+) -> None:
+    repository, root, _, _ = _run(tmp_path)
+    request: dict[str, Any] = {"repository": str(repository), "replacement": "open-fifo"}
+    if archived:
+        archive = tmp_path / "archive"
+        owner.runtime_startup_archive(
+            repository, root, "profile", "run-1", destination=archive, validate_only=False,
+        )
+        request["archive"] = str(archive)
+    _bounded_reader_refusal(request)
+
+
+def test_startup_reader_accepts_exact_16mib_limit_and_fixed_tmp_alias(tmp_path: Path) -> None:
+    path = tmp_path / "exact-limit"
+    with path.open("wb") as handle:
+        handle.truncate(16 * 1024 * 1024)
+    result = owner._startup_read("fixture", path, tmp_path)
+    assert len(result.data) == 16 * 1024 * 1024
+    # Native pytest basetemp is rooted in /tmp; exercise the platform-owned alias.
+    actual = path.resolve()
+    alias = Path("/tmp") / actual.relative_to(Path("/tmp").resolve())
+    assert owner._startup_read("fixture", alias, Path("/tmp")).data == result.data
+
+
+def test_startup_reader_never_falls_back_when_safe_descriptors_are_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "input"
+    path.write_bytes(b"owned")
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    monkeypatch.setattr(os, "open", lambda *a, **k: pytest.fail("unsafe fallback open"))
+    with pytest.raises(ValueError, match="unsupported"):
+        owner._startup_read("fixture", path, tmp_path)
+
+
+def test_startup_reader_refuses_contents_changed_during_descriptor_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "input"
+    path.write_bytes(b"owned")
+    native_read = os.read
+    changed = False
+
+    def mutate(fd: int, size: int) -> bytes:
+        nonlocal changed
+        data = native_read(fd, size)
+        if data and not changed:
+            changed = True
+            with path.open("ab") as handle:
+                handle.write(b"changed")
+        return data
+
+    monkeypatch.setattr(os, "read", mutate)
+    with pytest.raises(ValueError, match="changed"):
+        owner._startup_read("fixture", path, tmp_path)
+    assert changed
+
+
+def test_startup_path_refuses_unknown_tmp_alias_and_relative_escape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native_link = Path.is_symlink
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(Path, "is_symlink", lambda path: path == Path("/tmp") or native_link(path))
+    monkeypatch.setattr(os, "readlink", lambda path: "/foreign")
+    with pytest.raises(ValueError, match="unknown"):
+        owner._startup_file_path(Path("/tmp/input"))
+    with pytest.raises(ValueError, match="absolute confined"):
+        owner._startup_file_path(Path("../input"))

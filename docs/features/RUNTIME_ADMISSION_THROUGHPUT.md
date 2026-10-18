@@ -1601,3 +1601,69 @@ JUnit: `/tmp/gludd-v012-startup-codify-coverage-with-retention.xml`;
 coverage: `.gate-logs/v012-startup-codify-coverage-with-retention.json`;
 audit: `.gate-logs/coverage-20261018T155659Z.json`;
 observer: `coverage-files / 20261018T155544Z-48145-59edf63f`, passed in 74.9 seconds.
+
+## Bounded startup evidence reader repair (M15, 2026-10-18)
+
+Independent source review of immutable
+`94055feae952cf5899c425c21ffbac1ef9bb95d8` requested changes:
+the reader opened a path before verifying that it was regular, so a no-writer
+FIFO could block; retained/replay status validation also reopened paths through
+an unbounded text reader after capturing bounded bytes. These are refusal-path
+defects. The successful historical regular-file f634 report/archive/replay
+remain unchanged and are not relabeled as failures.
+
+The same owner now admits a bounded regular object before opening, then uses
+nonblocking/no-follow descriptors and descriptor-anchored directory traversal.
+It checks the opened object's type, size, device/inode and content metadata
+against admission before reading; reads at most 16 MiB plus the detection byte;
+checks unchanged contents/path afterward; and closes all acquired descriptors
+on every exit. The sole alias exception remains macOS's fixed
+`/tmp -> /private/tmp`. Unknown aliases and platforms without safe descriptor
+operations refuse rather than use a path-based fallback. No namespace expands.
+
+Native observed-status identity checks now have a shared pure validator.
+Startup report/archive and replay validate JSON from their captured bytes,
+without a second path load. Ordinary `_load_status` path/current/exact-run
+semantics remain intact. Replay additionally requires the status role's exact
+`status/<label>/<run>.json` manifest mapping. Exclusive reports, fresh archive
+destinations, hash/freshness checks, manifest-last completion, retained partial
+failures, honest declared source and all prior assertions remain unchanged.
+
+Finite real controls exercise no-writer FIFOs at retained status/log/trace,
+external console, archive manifest and copied status/log/report, including
+archive refusal without output. Their only outer deadline is a two-second
+fixture-reader bound; each fixture owns and finally drains its child.
+Additional controls replace status after snapshot with FIFO/oversized data,
+swap final/ancestor links and regular objects at open, inject FIFO exactly at
+descriptor open, verify descriptor closure on success/failure, enforce canonical
+archive status mapping, preserve the exact 16 MiB limit and fixed alias, and
+refuse unsupported descriptor operations. No test is skipped or weakened.
+
+RED: 21 failures plus 53 existing passes in 25.23 seconds,
+`/tmp/gludd-v012-startup-bounded-reader-red.xml`.
+First GREEN: all 74 cases in 2.89 seconds.
+Final native eight-owner coverage: 274 passed in 72.45 seconds; aggregate
+line 92.1% / branch 86.0%, every file above 75%; stream owner 90.6% / 84.6%.
+JUnit: `/tmp/gludd-v012-startup-bounded-reader-coverage.xml`;
+coverage: `.gate-logs/v012-startup-bounded-reader-coverage.json`;
+audit: `.gate-logs/coverage-20261018T161310Z.json`;
+observer `coverage-files / 20261018T161155Z-57989-a43b8f10`,
+passed in 74.4 seconds. The original coverage config and 85/75 floors remain.
+
+Firsthand historical evidence:
+[CPython issue #47252 / BPO 3002](https://github.com/python/cpython/issues/47252)
+records a May 2008 report of copying hanging while opening a named pipe.
+On June 6, the reporter explained that ordinary open already blocks before a
+later file-type check, and that a stat-before-open check alone races with
+replacement; the suggested primitive was nonblocking descriptor open followed
+by descriptor type inspection. This supports the primitive and race boundary
+reproduced here. It is not a claim that present `shutil.copyfile` is defective
+or that a FIFO occurred in the historical Gludd run.
+[CPython os.open documentation](https://docs.python.org/3.12/library/os.html#os.open)
+describes descriptor flags and relative directory descriptors.
+
+This is source repair/focused acceptance only. All 111 admission families,
+selectors/plugins, three 2/1/1 children, 90/60 limits, 21 phases/2850 bounds,
+fatal warnings, ZDD, cleanup and release authority remain unchanged.
+No acquisition/sync, historical diagnostic/reanalysis, admission, gate, hosted
+retry, integration decision or task closure is authorized by this evidence.

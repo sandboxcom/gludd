@@ -1945,3 +1945,25 @@ observer `20261018T155544Z-48145-59edf63f` passed in 74.9s.
 The complete eight-module source cohort includes the existing retention owner.
 Target contract passes 250 entries, preserving the original 247;
 Make duplicate/parity checks and strict two-file typing pass.
+
+### 2026-10-18 S98.4: bounded startup reader child (M15)
+
+Same sole-writer branch, parent immutable `94055fe`. Independent
+`/tmp/gludd-v012-review-94055fe.md` remains changes_requested: open-before-fstat
+could block on FIFO; status path reopens bypassed bounded snapshots.
+Implemented only that same-owner correction: nonblocking/no-follow anchored
+descriptors with regular-file/16 MiB/identity/freshness checks and complete
+descriptor closure; shared native identity validation of captured JSON;
+canonical manifest status role. Ordinary observed status semantics and every
+prior assertion remain. No public target/configuration/policy surface changes.
+
+RED `/tmp/gludd-v012-startup-bounded-reader-red.xml`: 21 failures, 53 prior
+passes, 25.23s. Real FIFO children had finite two-second fixture bounds and were
+owned/drained. GREEN 74/2.89s; final eight-owner coverage 274/72.45s, line 92.1%
+and branch 86.0%, stream 90.6/84.6, unchanged native 85/75.
+Native observer `20261018T161155Z-57989-a43b8f10` passed 74.4s;
+audit `.gate-logs/coverage-20261018T161310Z.json`.
+The feature records firsthand CPython BPO 3002/issue #47252 context and its limits.
+All earlier SESSION bytes, the 94055fe pin, actual f634 report/archive/replay,
+failed source/runtime observations and root clarification remain unchanged.
+No historical reanalysis or performance/proof replay occurred.

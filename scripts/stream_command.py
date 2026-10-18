@@ -737,20 +737,13 @@ def stream_command(
     return requested_code
 
 
-def _load_status(
-    root: Path, label: str, *, run_id: str | None = None
+def _validate_status(
+    value: object, *, path: Path, label: str, run_id: str | None,
 ) -> dict[str, Any]:
-    """Load current status or one immutable retained run, failing closed."""
+    """Validate native identity from one caller-owned parsed snapshot."""
     safe_label = _safe_name(label, field="label")
     safe_run_id = _safe_name(run_id, field="run_id") if run_id is not None else None
-    directory = root.resolve() / safe_label
     current_alias = safe_run_id == "current"
-    path = directory / (
-        "current.json"
-        if safe_run_id is None or current_alias
-        else f"{safe_run_id}.json"
-    )
-    value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError(f"observed status is not a JSON object: {path}")
     expected_run_id = safe_run_id
@@ -768,6 +761,23 @@ def _load_status(
         qualifier = "current" if current_alias else "retained"
         raise ValueError(f"{qualifier} observed status identity mismatch: {path}")
     return value
+
+
+def _load_status(
+    root: Path, label: str, *, run_id: str | None = None
+) -> dict[str, Any]:
+    """Load current status or one immutable retained run, failing closed."""
+    safe_label = _safe_name(label, field="label")
+    safe_run_id = _safe_name(run_id, field="run_id") if run_id is not None else None
+    directory = root.resolve() / safe_label
+    path = directory / (
+        "current.json" if safe_run_id is None or safe_run_id == "current"
+        else f"{safe_run_id}.json"
+    )
+    return _validate_status(
+        json.loads(path.read_text(encoding="utf-8")),
+        path=path, label=safe_label, run_id=safe_run_id,
+    )
 
 
 def _load_current(root: Path, label: str) -> dict[str, Any]:
@@ -880,19 +890,63 @@ def _startup_no_links(path: Path, boundary: Path) -> None:
             raise ValueError("startup evidence must not contain symbolic links")
 
 
-def _startup_read(role: str, path: Path, boundary: Path) -> _StartupFile:
-    import stat
+def _startup_file_path(path: Path) -> Path:
+    """Permit only the fixed macOS /tmp alias; never resolve caller links."""
+    if not path.is_absolute() or ".." in path.parts:
+        raise ValueError("startup evidence requires an absolute confined path")
+    if sys.platform == "darwin" and path.is_relative_to(Path("/tmp")) and Path("/tmp").is_symlink():
+        if os.readlink("/tmp") not in {"private/tmp", "/private/tmp"}:
+            raise ValueError("startup evidence has an unknown temporary alias")
+        return Path("/private/tmp") / path.relative_to("/tmp")
+    return path
 
+
+def _startup_file_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    """Bind opened bytes to the admitted object and its unchanged contents."""
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def _startup_read(role: str, path: Path, boundary: Path) -> _StartupFile:
+    """Admit a regular descriptor before a bounded read, without following links."""
+    import stat
+    from contextlib import ExitStack
+
+    path = _startup_file_path(path)
+    boundary = _startup_file_path(boundary)
     _startup_no_links(path, boundary)
-    with path.open("rb") as handle:
-        info = os.fstat(handle.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_size > _STARTUP_LIMIT:
-            raise ValueError("startup evidence must be a bounded regular file")
-        data = handle.read(_STARTUP_LIMIT + 1)
-        if len(data) > _STARTUP_LIMIT or len(data) != info.st_size:
+    admitted = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(admitted.st_mode) or admitted.st_size > _STARTUP_LIMIT:
+        raise ValueError("startup evidence must be a bounded regular file")
+    required = ("O_NONBLOCK", "O_NOFOLLOW", "O_DIRECTORY")
+    if not all(hasattr(os, name) for name in required) or not os.supports_dir_fd:
+        raise ValueError("safe startup descriptor reads are unsupported on this platform")
+    file_flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    directory_flags = file_flags | os.O_DIRECTORY
+    with ExitStack() as descriptors:
+        parent = os.open(path.anchor, directory_flags)
+        descriptors.callback(os.close, parent)
+        for part in path.parts[1:-1]:
+            parent = os.open(part, directory_flags, dir_fd=parent)
+            descriptors.callback(os.close, parent)
+        descriptor = os.open(path.name, file_flags, dir_fd=parent)
+        descriptors.callback(os.close, descriptor)
+        opened = os.fstat(descriptor)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_size > _STARTUP_LIMIT
+                or _startup_file_identity(opened) != _startup_file_identity(admitted)):
+            raise ValueError("startup evidence changed before regular-file admission")
+        data = bytearray()
+        while len(data) <= _STARTUP_LIMIT:
+            chunk = os.read(descriptor, min(65536, _STARTUP_LIMIT + 1 - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+        if (len(data) > _STARTUP_LIMIT or len(data) != opened.st_size
+                or _startup_file_identity(os.fstat(descriptor)) != _startup_file_identity(opened)):
             raise ValueError("startup evidence changed or exceeded its bound")
-    _startup_no_links(path, boundary)
-    return _StartupFile(role, path, data)
+        _startup_no_links(path, boundary)
+        if _startup_file_identity(path.stat(follow_symlinks=False)) != _startup_file_identity(opened):
+            raise ValueError("startup evidence path changed during its descriptor read")
+    return _StartupFile(role, path, bytes(data))
 
 
 def _startup_fresh(files: Sequence[_StartupFile]) -> None:
@@ -946,9 +1000,9 @@ def _startup_inputs(
         raise ValueError("startup reader requires the exact checkout producer namespace")
     _startup_no_links(expected, repository)
     status_file = _startup_read("status", expected / label / f"{run_id}.json", repository)
-    status = _load_status(expected, label, run_id=run_id)
-    if json.loads(status_file.data) != status:
-        raise ValueError("startup status changed during identity validation")
+    status = _validate_status(
+        json.loads(status_file.data), path=status_file.path, label=label, run_id=run_id,
+    )
     if status.get("state") not in _TERMINAL_STATES:
         raise ValueError("startup readers require a terminal retained run")
     files = [status_file]
@@ -1098,6 +1152,8 @@ def _startup_replay(archive: Path, label: str, run_id: str) -> str:
         if not isinstance(role, str) or role in files or not isinstance(relative, str):
             raise ValueError("duplicate/malformed startup archive role")
         path = archive / relative
+        if role == "status" and relative != f"status/{label}/{run_id}.json":
+            raise ValueError("startup archive status role must use its canonical path")
         if Path(relative).is_absolute() or ".." in Path(relative).parts:
             raise ValueError("startup archive path escape")
         item = _startup_read(role, path, archive)
@@ -1106,9 +1162,9 @@ def _startup_replay(archive: Path, label: str, run_id: str) -> str:
         files[role] = item
     if not {"status", "log", "report"}.issubset(files):
         raise ValueError("startup archive lacks required roles")
-    status = _load_status(archive / "status", label, run_id=run_id)
-    if json.loads(files["status"].data) != status:
-        raise ValueError("startup archive status role mismatch")
+    _validate_status(
+        json.loads(files["status"].data), path=files["status"].path, label=label, run_id=run_id,
+    )
     _startup_fresh([raw, *files.values()])
     return files["report"].data.decode("utf-8")
 
