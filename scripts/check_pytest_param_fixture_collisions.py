@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import ast
+import gc
 import importlib.util
+import sys
+import sysconfig
 from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
+
+
+# The release audit uses ordinary reference-counted CPython; other builds keep
+# their original collection behavior until separately established.
+_BOUND_SOURCE_GC = sys.implementation.name == "cpython" and not sysconfig.get_config_var(
+    "Py_GIL_DISABLED",
+)
 
 
 @dataclass(frozen=True, order=True)
@@ -286,9 +296,26 @@ def find_parametrized_fixture_collisions(
 def _source_findings(
     path: Path, external_fixture_names: set[str],
 ) -> tuple[list[ParametrizedFixtureCollision], list[ClassScopedInstanceFixture]]:
-    declarations = _source_declarations(
-        ast.parse(path.read_text(encoding="utf-8"), filename=str(path)),
-    )
+    source = path.read_text(encoding="utf-8")
+    if not _BOUND_SOURCE_GC:
+        return _parsed_source_findings(path, source, external_fixture_names)
+    was_enabled = gc.isenabled()
+    try:
+        # Native ASTs have no parent links or retained nodes. Release this one
+        # source's helper frame before restoring collection between sources.
+        gc.disable()
+        return _parsed_source_findings(path, source, external_fixture_names)
+    finally:
+        if was_enabled:
+            gc.enable()
+        else:
+            gc.disable()
+
+
+def _parsed_source_findings(
+    path: Path, source: str, external_fixture_names: set[str],
+) -> tuple[list[ParametrizedFixtureCollision], list[ClassScopedInstanceFixture]]:
+    declarations = _source_declarations(ast.parse(source, filename=str(path)))
     aliases = _pytest_aliases(declarations.imports)
     binding_aliases = _pytest_aliases(declarations.imports, include_asyncio=True)
     collisions: list[ParametrizedFixtureCollision] = []

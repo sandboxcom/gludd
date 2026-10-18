@@ -27,6 +27,14 @@ All 100 manifest/generator cases pass on 3.14; strict typing passes. Exact-byte
 and live-generator controls retain the same artifacts, aliases and bounds.
 This focused repair is not a successful whole-admission or hosted proof.
 
+The source audit now bounds cyclic-GC suspension to one native source on ordinary
+GIL CPython and restores the exact entry state. Seven controls fail first; all 49
+cases pass on both runtimes with 96% native coverage. Independent complete-inventory
+processes have identical canonical findings, zero retained tracked AST nodes and
+zero deferred garbage; total local audit/cleanup is 5.6044 versus 3.8116 seconds,
+with 103.33 versus 103.48 MB peak RSS. This is local evidence only. Next: route the
+cheap new guards, run actual bounded admission, then review one frozen successor.
+
 See `docs/features/RUNTIME_ADMISSION_THROUGHPUT.md` for retained logs and
 upstream practitioner context. All S98 tasks remain unchecked. Do not finalize
 the old receipt, replay the gate, retry hosted CI unchanged, publish a tag or

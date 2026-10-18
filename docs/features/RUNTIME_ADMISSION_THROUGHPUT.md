@@ -776,3 +776,60 @@ run; the earlier two-worker diagnostic recorded 2.28 and 1.98 seconds.
 Those different local invocations are not a controlled hosted comparison.
 The unchanged bounded admission and exact-SHA hosted lanes remain necessary
 before claiming that the original timeout prerequisite is repaired.
+
+## Bound cyclic collection to each native source audit (2026-10-18)
+
+A native diagnostic identifies repeated automatic cyclic-GC scans during the
+complete source audit. With the same 4106 sources and 41 external fixture names,
+the original observation takes 6.2775 seconds versus 3.8071 with per-source
+suspension. Extending suspension across the entire inventory saves only another
+0.0609 seconds and is rejected. Those same-process RSS peaks are not independent
+memory measurements and do not establish memory parity.
+
+The existing owner now reads each source before entering a small guarded helper.
+Only ordinary GIL CPython suspends cyclic collection while native parsing,
+declaration traversal and compact findings extraction run for that one source.
+Its helper frame releases AST references before the wrapper restores the exact
+entry enabled state in finally, including errors and BaseException cancellation.
+Collection can resume between files. Other interpreters and free-threaded builds
+retain the original behavior. No threshold, freeze, explicit collection, parent
+links, result retention, inventory, plugin discovery or fixture ownership changes.
+
+The [Python GC contract](https://docs.python.org/3.11/library/gc.html) distinguishes
+cyclic collection from reference counting, and the
+[standard-library timeit implementation](https://github.com/python/cpython/blob/3.11/Lib/timeit.py)
+uses entry-state restoration. The long-lived
+[temporary-GC context discussion](https://github.com/python/cpython/issues/75537)
+and [nested disable/enable discussion](https://github.com/python/cpython/issues/85717)
+motivate explicit state restoration; they do not prove this optimization safe or
+fast for Gludd. The [free-threaded build documentation](https://docs.python.org/3.14/howto/free-threading-python.html)
+documents Py_GIL_DISABLED and its different memory model, supporting the fallback.
+The flag is interpreter-wide; the guarded region contains native static parsing
+and extraction, not plugin execution or a whole pytest worker lifetime.
+
+Seven new controls fail first with one passing disabled-input syntax control.
+All 49 original/additive cases then pass on installed Python 3.11 and 3.14.
+The existing native coverage profile measures 96% with unchanged 85/75 floors;
+both strict typing scopes and Ruff pass. Controls preserve both findings and
+fresh parsing, read errors outside the guard, exact True/False cleanup after
+body mutation, SyntaxError, RuntimeError and KeyboardInterrupt. Real per-file
+Module/ClassDef/FunctionDef weak references are dead before the next parse
+without explicit collection; deliberate retention proves that check detects
+a leak. The complete original assertions remain.
+
+An additional independent-process diagnostic addresses the unresolved memory
+question, using the actual complete inventory and tracking file-owned AST nodes.
+Its sorted canonical finding and path digests match in both processes. Original
+and guarded total audit-plus-cleanup times are 5.6044 and 3.8116 seconds; Darwin
+peak RSS is 103333888 and 103481344 bytes. Both final AST reference counts and
+diagnostic cleanup garbage counts are zero. Automatic collection counts change
+from 13243/1203/102 to 5/0/0. These are bounded local observations, not a universal
+memory guarantee or hosted throughput proof. An earlier diagnostic digest used
+unordered frozenset repr; the retained canonical observations fix that diagnostic
+serialization without changing audit output. Evidence is
+/tmp/gludd-v012-ast-gc-memory-baseline-canonical.xml and
+/tmp/gludd-v012-ast-gc-memory-guarded-canonical.xml.
+
+The original 90/60 admission, full gate, exact-SHA hosted lanes, source review,
+85/75 coverage, ZDD and promotion requirements remain. Rollback reverts this
+isolated helper and its additive controls; it does not restore old observations.
