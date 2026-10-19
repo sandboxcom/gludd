@@ -1848,3 +1848,46 @@ Native commands, RED/GREEN and normal guarded source evidence remain under
 /tmp/gludd-v012-publication-parameter-conformance-evidence/. Source acceptance
 does not supply updated admission, gate, hosted or release proof; all19tasks
 stay open and Root owns genuine integration and subsequent proof.
+
+## 2026-10-19: synthetic Make probes own their recorder commands
+
+The native reviewed focus on development
+13b3566681f91efdf4d42e3646d89d1370280a78 failed13 tests, with4247passes
+and3existing conditional skips, in525.549seconds. Preserve its log, observer,
+JUnit and trace at /tmp/gludd-v012-focus-failure-13b3566*. The failures belong
+to six precommit recorder cases, four promotion recorder cases and three
+release-admission probes. Inherited command-line UV selected the real runtime
+instead of the miniature Makefile's recorder; missing synthetic-root scripts
+and recorder files expose that input mismatch.
+
+On agent-v012-make-probe-isolation-20261019, each existing probe supplies its
+own unchanged recorder or selected wrapper through one explicit UV assignment
+in native Make argv. The promotion fixture also explicitly owns its existing
+child.mk MAKE command and literal manifest. Full assignments remain single
+argv elements. The production reviewed-focus environment, native Make
+precedence and all original checker, ordering, failure, injection, watchdog
+and no-proof assertions remain unchanged.
+
+The [GNU Make manual](https://www.gnu.org/software/make/manual/make.html#Variables_002fRecursion)
+distinguishes environment defaults from recursive command-line assignments.
+The firsthand2015 [override and recursive Make report](https://stackoverflow.com/questions/32637204/why-doesnt-gnu-makes-override-pass-through-to-sub-makes)
+and its later caveats illustrate why a fixture must own its child inputs
+explicitly instead of reconstructing opaque carriers. This is not evidence of
+a present GNU Make defect or a Gludd performance diagnosis.
+
+Native controls retain the caller's MAKEFLAGS and MAKEOVERRIDES, exercise
+real recursive Make with conflicting UV and environment-override mode, and
+prove omitted or opposite bindings fail the original assertions. The
+promotion controls separately replace UV, MAKE and the manifest; foreign
+command tripwires and exact recorded arguments distinguish those inputs.
+The selected wrapper still prepares actual fixture-local focus at runtime.
+The untouched source reproduces all13 failures; the repaired finite roster
+passes33 tests. Complete three-owner acceptance on both installed runtimes,
+static checks and normal source-commit evidence are retained under
+/tmp/gludd-v012-make-probe-isolation-evidence/.
+
+All113 admission families, original selectors/plugins, three2/1/1 children,
+90/60,21phases2850,all8shards,fatal warnings,85/75 line+branch,ZDD,cleanup
+and branch/promotion authority remain. The old failed focus and its original
+three conditional skips are retained; focused acceptance supplies no passing
+combined focus, gate, hosted or release proof. All19 tasks remain open.

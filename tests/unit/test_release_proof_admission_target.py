@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -63,7 +64,8 @@ def _run(
     return subprocess.run(
         [selected_make, "--no-print-directory", f"MAKE={selected_make}", "release-proof-admission",
          f"RELEASE_PROOF_ADMISSION_VALIDATE_ONLY={mode}",
-         f"FAILED_PHASE={failed_phase}", f"CLAIMED_HEAD={claimed_head}", f"WORK_ITEM_ID={task}"],
+         f"FAILED_PHASE={failed_phase}", f"CLAIMED_HEAD={claimed_head}", f"WORK_ITEM_ID={task}",
+         f"UV={uv}"],
         cwd=tmp_path, capture_output=True, text=True, check=False, timeout=30,
     )
 
@@ -198,6 +200,71 @@ def test_pass_runs_all_owners_in_order_but_is_not_release_proof(tmp_path: Path) 
     assert not (tmp_path / ".gate-status").exists()
     assert not (tmp_path / "attestation.json").exists()
 
+
+@pytest.mark.parametrize("native_focus", (False, True))
+@pytest.mark.parametrize("mutation", ("owned", "omitted", "opposite"))
+def test_admission_probe_owns_selected_uv_through_real_recursive_make(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_focus: bool, mutation: str,
+) -> None:
+    """The original focus/phase assertions must detect ambient UV execution."""
+    tripwire = tmp_path / "ambient-uv-ran"
+    poison = tmp_path / "ambient recorder.py"
+    poison.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(tripwire)!r}).write_text('ambient UV')\nraise SystemExit(86)\n",
+        encoding="utf-8",
+    )
+    ambient_uv = f"{shlex.quote(sys.executable)} {shlex.quote(str(poison))}"
+    native_run = subprocess.run
+    inherited = os.environ.copy()
+    invocations: list[list[str]] = []
+
+    def execute(
+        arguments: list[str], *, cwd: Path, capture_output: bool, text: bool,
+        check: bool, timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        assert capture_output and text and not check and timeout == 30
+        command = arguments.copy()
+        if mutation == "owned":
+            assert len([arg for arg in command if arg.startswith("UV=")]) == 1
+        else:
+            command = [arg for arg in command if not arg.startswith("UV=")]
+            if mutation == "opposite":
+                command.append(f"UV={ambient_uv}")
+        invocations.append(command)
+        carrier = tmp_path / "carrier.mk"
+        literal_arguments = shlex.join(command[1:]).replace("$", "$$")
+        carrier.write_text(f"all:\n\t@$(MAKE) {literal_arguments}\n", encoding="utf-8")
+        environment = inherited.copy()
+        environment["UV"] = ambient_uv
+        return native_run(
+            [arguments[0], "--no-print-directory", *(["-e"] if not native_focus else []),
+             "-f", str(carrier), f"MAKE={arguments[0]}", f"UV={ambient_uv}"],
+            cwd=cwd, env=environment, capture_output=True, text=True,
+            check=False, timeout=30,
+        )
+
+    def original_probe() -> None:
+        if native_focus:
+            test_runtime_prepares_real_focus_before_any_watched_child(tmp_path, "F12.1")
+        else:
+            test_runtime_admission_uses_original_selected_runtime_and_native_ninety_sixty_owner(tmp_path)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(subprocess, "run", execute)
+        if mutation == "owned":
+            original_probe()
+        else:
+            with pytest.raises(AssertionError):
+                original_probe()
+    assert len(invocations) == 1
+    if mutation == "owned":
+        assert len([arg for arg in invocations[0] if arg.startswith("UV=")]) == 1
+        assert not tripwire.exists()
+    elif native_focus or mutation == "opposite":
+        assert tripwire.exists()
+    assert subprocess.run is native_run
+    assert os.environ == inherited
 
 def test_real_owner_keeps_live_capacity_read_only_and_release_policy_fixed() -> None:
     owner = _recipe()
