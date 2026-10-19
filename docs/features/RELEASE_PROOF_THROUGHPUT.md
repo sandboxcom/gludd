@@ -1376,6 +1376,39 @@ are source acceptance only; the canonical gate, exact-SHA hosted CI, deployment 
 and branch promotion requirements remain separate. ZDD changes only this
 control-plane workflow; no serving process is restarted or replaced.
 
+### 2026-10-19: authenticate the integration resume fixture
+
+The full gate at frozen development `1bbd47ed0e27c62f2e49c9542baa0d1e4222ca1f`
+failed `test_preflights_skip_when_exact_sha_resume_receipt_exists`:
+1 failed, 3467 passed and 13 skipped. The old integration fixture wrote an unsigned
+`preflights PASS 35` line under a synthetic SHA filename. The production owner
+correctly requires an explicit prior-status pointer, a native terminal signature,
+fresh current repository/index identity and the matching profile/files/workers
+policy. The retained failed gate remains failed.
+
+The fixture now follows the existing preflight unit owner's committed private
+Git repository pattern. Its key, prior receipt and status outputs stay under
+pytest's temporary namespace. It uses `sign_terminal_status` and the actual
+`repository_state_id`, then executes the current Make preflight recipe and native
+verifier. The resume-always targets delegate to the real repository's registration,
+line-limit and dead-code-baseline checks; all original positive skip assertions
+remain. No main index, key or status is staged or rewritten.
+
+Unsigned, tampered, stale and changed-policy receipts must take the cold path
+and run the original deliberately failing full-preflight target. A separate
+control proves that a valid signed failed receipt can authorize preflight reuse
+while `verify_status` still refuses it as green full-gate evidence. Disabling
+resume also runs the full-preflight target even with a genuine signed receipt.
+
+The [firsthand branch/code report above](https://github.com/orgs/community/discussions/26071)
+supports distinguishing the source actually executed from its commit label.
+It does not describe this fixture failure or establish an authentication defect.
+Here the native refusal and the existing signed unit fixture identify the
+concrete input mismatch; production authentication, freshness and ZDD remain
+unchanged. Complete integration and authentication-owner acceptance on both
+installed runtimes is source evidence, never a replacement for the retained
+failed gate, exact-SHA hosted CI or release proof. All 19 tasks remain open.
+
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
 [observation-api]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository
