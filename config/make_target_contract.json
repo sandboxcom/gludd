@@ -408,6 +408,15 @@
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q UV_PROJECT_ENVIRONMENT=.venv"
     },
     {
+      "name": "test-files-cprofile",
+      "make_variables": [
+        "TESTFILES",
+        "PYTEST_ARGS",
+        "UV_PROJECT_ENVIRONMENT"
+      ],
+      "behavior": "make test-files-cprofile TESTFILES=tests/unit/test_makefile_targets_deep.py::test_test_files_namespaces_ansible_local_temp PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=.venv"
+    },
+    {
       "name": "migrate-up",
       "make_variables": [
         "MIGRATE_DATABASE_URL",

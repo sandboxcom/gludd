@@ -1667,3 +1667,71 @@ selectors/plugins, three 2/1/1 children, 90/60 limits, 21 phases/2850 bounds,
 fatal warnings, ZDD, cleanup and release authority remain unchanged.
 No acquisition/sync, historical diagnostic/reanalysis, admission, gate, hosted
 retry, integration decision or task closure is authorized by this evidence.
+
+
+## Opt-in native pytest profiling (M25, 2026-10-19)
+
+The frozen 7207e97 admission failure remains failed. The existing tail controls
+retain independent mutable-input checks, real Make children and complete
+assertions; their intervals do not identify a safe optimization. Profiling is
+a separate diagnostic prerequisite and does not repair or extend the original
+90-second admission boundary.
+
+`make test-files-cprofile` is a thin alias of the existing `test-files` owner.
+It inherits `TESTFILES`, `PYTEST_ARGS` and `UV_PROJECT_ENVIRONMENT` unchanged,
+including the genuine selected UV executable and recursive Make arguments.
+A file-defined, target-specific, non-exported internal mode supplies one
+request to the existing trace plugin. External CLI/environment mode injection
+is refused before expansion. The plugin consumes the request before initial
+conftest collection, so nested Make/pytest processes and xdist workers do not
+inherit profiling authority. Ordinary `test-files` retains its exact native
+`python -m pytest` command and does not import profiling modules.
+
+The existing plugin lazily uses public
+[cProfile.Profile](https://docs.python.org/3.12/library/profile.html#profile.Profile)
+during the controller's session-start/session-finish interval. Its idempotent
+unconfigure fallback disables the owned profiler and closes artifact descriptors
+when completion is interrupted; an already active profiler is never replaced.
+Pytest continues to own its actual success, assertion, fatal-warning, collection,
+usage, no-tests and interruption exit status. Publication failure makes a
+passing diagnostic fail and never turns an existing failure green. The
+[pinned cProfile CLI](https://github.com/python/cpython/blob/v3.12.15/Lib/cProfile.py#L122-L182)
+was rejected because its command path catches `SystemExit`; there is no new
+launcher, runner, dependency, cache or argument rewriting.
+
+Each invocation exclusively creates a private checkout-owned
+`.gate-logs/test-files-cprofile/profile-<pid>-<nonce>` leaf. Descriptor-relative
+no-follow checks refuse unsafe routes, foreign ownership and replacement.
+The native basetemp owns temporary staging and cleanup. Final `pytest.pstats`
+and `report.txt` are exclusive immutable outputs, bounded at 16 MiB and 1 MiB,
+with the existing run-isolated trace beside them. A partial publication is
+retained as incomplete; no current observation or proof JSON is fabricated.
+
+The report uses [pstats.Stats](https://docs.python.org/3.12/library/profile.html#the-stats-class)
+on the live public profile object, retaining full source paths and at most
+40 rows each sorted by cumulative and self time. Cumulative rows overlap and
+must not be added. No untrusted marshal input is parsed by this owner.
+The profile is process-local after session start: it does not observe cold
+startup or child CPU and is not timing, gate, hosted-margin or release evidence.
+
+The safe behavioral example keeps the existing fixture's assertions:
+
+```text
+make test-files-cprofile TESTFILES=tests/unit/test_makefile_targets_deep.py::test_test_files_namespaces_ansible_local_temp PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=.venv
+```
+
+The documented environment must already be provisioned; source acceptance uses
+the selected canonical runtime explicitly. Native controls exercise genuine
+pytest exits, full-path raw/report data, ordinary argv parity, nested Make,
+workers, hostile literal mode values, active-profiler refusal, immutable and
+oversized outputs, changed routes and finalizer/descriptor cleanup.
+
+The firsthand [2018 pytest profiling report](https://github.com/pytest-dev/pytest/issues/3918)
+and [2020 package-collection discussion](https://github.com/pytest-dev/pytest/issues/7777)
+remain relevant examples of measuring collection and preserving package fixtures.
+They do not reproduce Gludd's current hot path or establish any speed saving.
+The earlier [worker fixture report](https://github.com/pytest-dev/pytest-xdist/issues/271)
+also explains why this diagnostic distinguishes controller and worker sessions.
+All 113 admission families, selectors/plugins, three 2/1/1 children, 90/60,
+21 phases/2850, fatal warnings, 85/75 coverage, ZDD, cleanup and promotion
+authority remain unchanged. Task S98.4 and required final proofs remain open.

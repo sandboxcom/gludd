@@ -1,3 +1,11 @@
+# This one-shot mode is selected only by the owning file-defined alias.
+unexport _TEST_FILES_CPROFILE
+ifneq ($(filter command line environment override,$(origin _TEST_FILES_CPROFILE)),)
+$(error _TEST_FILES_CPROFILE is internal; use test-files-cprofile)
+endif
+override _TEST_FILES_CPROFILE := 0
+.PHONY: test-files-cprofile
+
 MSG ?=
 FILES ?=
 TESTFILE ?=
@@ -608,6 +616,7 @@ help:
 		"  test-specific         Single test (TESTFILE=path::TestClass::test_name)" \
 		"  test-specific-pyver   Single test under explicit Python (TESTFILE, PYTHON_VERSION)" \
 		"  test-files            Multiple tests (TESTFILES, PYTEST_ARGS, UV_PROJECT_ENVIRONMENT); explicit environments route nested UV consistently" \
+		"  test-files-cprofile   Opt-in process-local pytest profile (TESTFILES, PYTEST_ARGS, UV_PROJECT_ENVIRONMENT); immutable namespaced diagnostics" \
 		"  grep                  Repository text search (Q=regex SEARCH_PATH=path)" \
 		"  ci-shards-diagnostic Serial collect-all diagnostics (CI_SHARDS_DIAGNOSTIC_SHARDS, CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY=0|1; default 1)" \
 		"  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)" \

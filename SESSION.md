@@ -2291,3 +2291,40 @@ Raw source evidence: /tmp/gludd-v012-setuid-admission-evidence/.
 Normal guarded commit/fresh collection, independent exact-source review and
 Root's actual updated90 behavioral example remain separate. No full target
 behavior, integration, gate, hosted success or release readiness is claimed.
+
+
+## 2026-10-19: native opt-in pytest profiling owner
+
+S98.4 remains open; preserve frozen7207e97, its actual admission failure and all
+prior immutable refs/receipts. Add only the thin test-files-cprofile alias and
+lazy public cProfile lifecycle in the existing trace plugin. A target-specific
+file mode is non-exported, rejects external injection and is consumed before
+collection/children. Ordinary native pytest argv, recursive Make carriers and
+the selected UV executable remain unchanged; no CLI cProfile/runpy launcher is
+introduced. Current controller-only/session-start profiling cannot prove cold
+startup, child CPU, latency improvement or hosted margin.
+
+Retain exact pytest failure exits and normal trace hooks. Public live-object
+pstats output keeps full paths and40 cumulative/self rows; raw/report limits
+are16MiB/1MiB. Fresh private owned leaves use descriptor-relative no-follow
+admission and exclusive outputs, basetemp staging and idempotent finalization.
+Active profilers, unsafe/replaced paths, existing outputs and oversize/error
+publication refuse without concealing an original failure. Allocation failure
+retains descriptor ownership until transfer and closes every acquisition.
+
+Source scope: make/00-foundation.mk, make/10-observability-and-tests.mk,
+scripts/xdist_trace_plugin.py, tests/unit/test_scoped_admission_targets.py,
+tests/unit/test_xdist_trace_diagnostics.py, config/make_target_contract.json,
+config/resource_ownership_inventory.json, the existing
+RUNTIME_ADMISSION_THROUGHPUT feature, TASKS and this append. The feature records
+primary public-API/CLI findings and relevant firsthand pytest reports with
+their limits. Native RED/intermediate failures remain historical; final source
+metrics and exact evidence are external under
+/tmp/gludd-v012-native-pytest-profile-evidence/.
+
+All113 families, selectors/plugins, three2-1-1 children,90/60,21/2850,
+fatal warnings, full four-file coverage85/75, ZDD and promotion gates remain.
+TASKS changes one existing unchecked row with no line/status/checkbox growth.
+Required guarded collection, independent frozen-source review and Root's one
+actual private312 profile stay separate from implementation; no actual tail
+profile, admission retry, full gate, CI, integration or release claim is made.

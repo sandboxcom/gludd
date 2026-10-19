@@ -30,11 +30,15 @@ test-specific-pyver:
 		BT="$$WORK/pytest"; \
 		$(UV) run --no-sync --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE) -n 1 --dist loadgroup --max-worker-restart=0 -v -W error $(PYTEST_ARGS) --basetemp="$$BT"
 
+test-files-cprofile: _TEST_FILES_CPROFILE := 1
+test-files-cprofile: test-files
+  # Inherit TESTFILES, PYTEST_ARGS and UV_PROJECT_ENVIRONMENT unchanged from test-files.
+
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; mkdir -p "$$BT/ansible-local"; \
 		if [ -n "$$UV_PROJECT_ENVIRONMENT" ]; then export VIRTUAL_ENV="$$UV_PROJECT_ENVIRONMENT"; fi; \
-		ANSIBLE_LOCAL_TEMP="$$BT/ansible-local" $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
+		$(if $(filter 1,$(_TEST_FILES_CPROFILE)),_TEST_FILES_CPROFILE=1 )ANSIBLE_LOCAL_TEMP="$$BT/ansible-local" $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"$(if $(filter 1,$(_TEST_FILES_CPROFILE)), -p scripts.xdist_trace_plugin); RC=$$?; rm -rf "$$BT"; exit $$RC
 
 coverage-files:
 	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20"; exit 2; fi
