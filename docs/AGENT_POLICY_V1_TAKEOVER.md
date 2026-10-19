@@ -2,6 +2,70 @@
 
 This is a versioned handoff document, not generated current observation JSON or a release seal. Snapshot updated: 2026-10-19 for the failed888 admission and its isolated contract repair. The original agent-agents-compression-20261019 branch started at C3583000e3b315f67acf0292dec8ba38642317a1c; its source history is retained below. Root AGENTS remains the binding instruction entry; [preservation map](AGENT_POLICY_V1_PRESERVATION.md) and [original source](AGENT_POLICY_V1_SOURCE_3583000.md) explain this branch's documentation change.
 
+## Compact-policy conformance repair (2026-10-19)
+
+S98.4's isolated source owner is
+agent-v012-compact-policy-conformance-20261019, worktree
+/tmp/gludd-worktrees/agent-v012-compact-policy-conformance-20261019, based on
+da994299b3479fa074bc7a765766369c7e9692f5. This section records the repair's
+source contract; it does not grant source approval, full-gate evidence,
+exact-SHA hosted success or release completion.
+
+The original seven policy nodes reproduced seven failures in2.40s. The
+Markdown owner reproduced the three displaced archive links; new missing-file
+and missing-directory-index controls also failed against the original resolver.
+Native RED logs/JUnit are retained under
+/tmp/gludd-v012-compact-policy-conformance-red-nodes311 and
+/tmp/gludd-v012-compact-policy-conformance-red-links311 with .log/.xml suffixes.
+The earlier whole-owner quiet-timeout remains a separate failed observation,
+not evidence that these assertions ran.
+
+Live binding clauses remain in root AGENTS.md. The target inventory follows
+only its existing mandatory .agents/policy/key-make-targets.md reference;
+unbound, optional, replaced or absent live references fail closed. Archived
+policy text never supplies a missing binding obligation. The immutable
+AGENT_POLICY_V1_SOURCE_3583000.md bytes retain the original root AGENTS.md link
+context in the existing Markdown resolver, with all target existence,
+directory-index and repository-boundary assertions preserved.
+
+Complete focused owners are test_guardrails.py,
+test_no_home_directory_access.py, test_oversized_document_splits.py and
+test_markdown_docs_deep.py (all tests/unit), under both the selected canonical
+3.11 and private3.12 environments, one worker and fatal warnings. Commands,
+actual outcomes and native artifact paths belong in
+/tmp/gludd-v012-compact-policy-conformance-report.md and its evidence index.
+Root owns the guarded commit, project feature evidence and exact candidate
+proof. Promote the deterministic policy/link checks through the existing
+release-proof-admission owner, reusing test-files; add no scanner, runner,
+cache, family or timeout exception. Preserve113 families,90/60 runtime bounds,
+2/1/1 runtime children, full-gate replay,85/75 line/branch floors and ZDD.
+
+### Later T23 pass-count evidence clause (2026-10-19)
+
+Hosted Q run39293586802/job118205887327 later exposed the unchanged
+test_spec_enforcement_t01_t29.py T23 pass-count citation assertion.
+Native red-pass-count311-20261019 reproduced1FAIL in1.88s before the edit.
+The live Evidence-Based Response Policy now explicitly requires the Make
+output including the pass count when claiming tests pass, matching the
+original source's binding instruction. No assertion or test file changed.
+
+The extension's complete owners are test_spec_enforcement_t01_t29.py,
+test_agent_context_metrics.py, test_oversized_document_splits.py and
+test_documentation_integrity.py, plus the directly affected
+test_guardrails.py::TestEvidencePolicyGuardrail class (all tests/unit).
+Both selected runtimes passed all88 cases: canonical3.11 in4.08s and private
+3.12 in5.85s, one worker and fatal warnings. Private3.12 retains the existing
+explicit checkout src PYTHONPATH binding. Native logs/JUnit are
+/tmp/gludd-v012-compact-policy-conformance-pass-count-whole311 and
+/tmp/gludd-v012-compact-policy-conformance-pass-count-whole312, with .log/.xml
+suffixes; the report/index records the exact commands and observer receipts.
+
+The earlier146-case suite receipts keep their original scope and source date;
+this extension does not relabel them as a new combined replay. Root still owns
+final candidate integration, combined acceptance, complete gate and exact-SHA
+hosted proofs. Line/byte measurements are diagnostic, never fixed targets or
+ratchets; legitimate additions and reformatting remain allowed.
+
 ## Native execution and ownership
 
 Use functions.exec only to transport a named Make command/result or literal editing data. Project analysis/workflows belong to native Make owners with documented variables, argv/status and durable artifacts; no project verdict comes from ad hoc JS/Python in a tool wrapper or hidden function-store state.

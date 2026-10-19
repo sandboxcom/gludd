@@ -15,6 +15,12 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent.parent
 DOCS = ROOT / "docs"
 
+# This byte-preserved snapshot was originally the root AGENTS.md. Its relative
+# links keep that source location; all other documents use their own directory.
+ORIGINAL_SOURCE_LINK_BASES = {
+    DOCS / "AGENT_POLICY_V1_SOURCE_3583000.md": ROOT,
+}
+
 EXCLUDE_PREFIXES = {
     str(ROOT / "external"),
     str(DOCS / "archive"),
@@ -140,8 +146,8 @@ def _all_headers(lines: list[str]) -> list[tuple[int, int, str]]:
 
 
 def _resolve(path: Path, target: str) -> Path:
-    """Resolve a relative link target against the file's directory."""
-    base = path.parent
+    """Resolve links in their explicit original or current source directory."""
+    base = ORIGINAL_SOURCE_LINK_BASES.get(path, path.parent)
     if "#" in target:
         target = target.split("#")[0]
     if not target:
@@ -150,6 +156,63 @@ def _resolve(path: Path, target: str) -> Path:
 
 
 # ── tests ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "docs/features/RELEASE_PROOF_THROUGHPUT.md",
+        ".agents/policy/key-make-targets.md",
+        ".agents/policy/enforcement-plugins.md",
+    ],
+)
+def test_archived_policy_links_keep_original_source_context(target: str) -> None:
+    source = DOCS / "AGENT_POLICY_V1_SOURCE_3583000.md"
+    resolved = _resolve(source, target)
+    assert resolved == (ROOT / target).resolve()
+    assert resolved.is_file()
+
+
+@pytest.mark.parametrize(
+    "document",
+    ["AGENTS.md", "docs/AGENT_POLICY_V1.md", "docs/AGENT_POLICY_V1_SOURCE_other.md"],
+)
+def test_other_documents_retain_their_own_link_context(document: str) -> None:
+    source = ROOT / document
+    assert _resolve(source, "guide.md") == (source.parent / "guide.md").resolve()
+
+
+def test_archived_policy_fragment_keeps_the_archived_document() -> None:
+    source = DOCS / "AGENT_POLICY_V1_SOURCE_3583000.md"
+    assert _resolve(source, "#research-basis") == source
+
+
+def test_original_source_link_context_is_exact() -> None:
+    assert ORIGINAL_SOURCE_LINK_BASES == {
+        DOCS / "AGENT_POLICY_V1_SOURCE_3583000.md": ROOT,
+    }
+
+
+@pytest.mark.parametrize("missing_kind", ["file", "directory-index"])
+def test_original_source_context_preserves_missing_link_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing_kind: str
+) -> None:
+    source = tmp_path / "docs" / "AGENT_POLICY_V1_SOURCE_3583000.md"
+    source.parent.mkdir()
+    target = "required.md" if missing_kind == "file" else "guide"
+    source.write_text(f"# Original source\n\n[Required]({target})\n", encoding="utf-8")
+    decoy = source.parent / target
+    if missing_kind == "file":
+        decoy.write_text("# Wrong source context\n", encoding="utf-8")
+    else:
+        decoy.mkdir()
+        (decoy / "index.md").write_text("# Wrong source context\n", encoding="utf-8")
+        (tmp_path / target).mkdir()
+    monkeypatch.setitem(ORIGINAL_SOURCE_LINK_BASES, source, tmp_path)
+    monkeypatch.setitem(globals(), "MD_FILES", [source])
+
+    with pytest.raises(AssertionError, match="broken link"):
+        test_all_internal_links_resolve()
 
 
 def test_all_md_files_parsable():

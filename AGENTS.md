@@ -66,8 +66,8 @@ Never use `continue-on-error` to weaken required validation. A diagnostic may co
 
 ## CRITICAL: No External File Access
 
-Read/Write/Edit/Glob/Grep (including path arguments and subagents) may access exactly five prefixes: /Users/shawnwilson/gludd/**, /tmp/**, /Users/shawnwilson/.config/opencode/**, /Users/shawnwilson/.local/share/opencode/** and /Users/shawnwilson/.cache/**. Never request full-home access. No “just reading” exception for SSH/AWS/GPG, Documents/Desktop/Library, /etc or another repo.
-If outside data is needed, find workspace data, add a Make owner to expose it, or name the specific needed path in≤2 lines and continue other work; never fire a prompting external tool call. opencode.json uses last-match-wins allow rules and catch-all deny. The older mechanical summary/structural test mention three prefixes; this exhaustive five-prefix clause remains the source's explicit policy, not a grant beyond session/tool permissions.
+Read/Write/Edit/Glob/Grep (including path arguments and subagents) may access exactly five prefixes: /Users/shawnwilson/gludd/**, /tmp/**, /Users/shawnwilson/.config/opencode/**, /Users/shawnwilson/.local/share/opencode/** and /Users/shawnwilson/.cache/**. NEVER ask for access to the user's full home directory ever again. No “just reading” exception for ~/.ssh, ~/.aws, ~/.gnupg, Documents/Desktop/Library, /etc or another repo.
+If outside data is needed, find workspace data, add a Make owner to expose it, or name the specific needed path in≤2 lines and continue other work; never fire a prompting external tool call. opencode.json uses last-match-wins allow rules and catch-all deny. The older mechanical summary/structural test mention three prefixes; this exhaustive five-prefix clause remains the source's explicit policy, not a grant beyond session/tool permissions. Structural enforcement: `tests/unit/test_no_home_directory_access.py` pins both global and build-agent permission scopes.
 
 ## ⛔ PRE-GENERATION CONTRACT (READ BEFORE GENERATING ANY TEXT)
 
@@ -146,7 +146,7 @@ Owners: hasRealPendingWork/enforce-stop, enforce-multitask, enforce-delegate, /t
 
 ## CRITICAL: Task Completion Policy
 
-No victory laps. After completing one objective, immediately start the next. Complete EVERY requested step or reach a genuine unfixable blocker (credentials/payment/environment). Never ask to continue, treat infrastructure as the real deliverable, take victory laps, stop after a plan/audit, drop returned results, report “next steps” instead of doing them, or hide a stop in a Q&A recap. Low priority sets ORDER, not omission; terminal task states are completed/cancelled.
+No victory laps. After completing one objective, immediately start the next. Complete ALL requested work through EVERY requested step or reach a genuine unfixable blocker (credentials/payment/environment). Do NOT stop early to report status or ask to continue. Do NOT get sidetracked; refocus immediately on the requested work. Never ask to continue, treat infrastructure as the real deliverable, take victory laps, stop after a plan/audit, drop returned results, report “next steps” instead of doing them, or hide a stop in a Q&A recap. Low priority sets ORDER, not omission; terminal task states are completed/cancelled.
 A gap found while working is owned: fix/test/commit and resume original work, except unavailable credentials/payment/environment. Inline useful work is valid; replacement dispatch is optional. Keep all objectives; status≤brief answer then resume immediately.
 
 ## CRITICAL: Q&A Response Pattern — Answer THEN Continue
@@ -192,7 +192,7 @@ Every NEW restriction needs ALL3: opencode.json config permission hard gate, run
 
 ## CRITICAL: Guardrail Integrity Policy
 
-NEVER remove/disable/weaken a guardrail to fix noise, errors or friction. Trace root cause, narrow false-positive conditions, keep block/throw for real violations, run guardrail tests. Error→empty block, leaked message→deletion, failing test→weaker assertion are regressions. enforce-make and test_guardrails.py cover it.
+NEVER remove/disable/weaken a guardrail to fix noise, errors or friction. Trace root cause to make the guardrail smarter, narrow false-positive conditions, keep block/throw for real violations, run guardrail tests. Error→empty block, leaked message→deletion, failing test→weaker assertion are regressions. enforce-make and test_guardrails.py cover it.
 
 ## CRITICAL: No Lint-Suppression Comments
 
@@ -253,7 +253,7 @@ ONLY `make <target>`; never direct uv/python/pip/git/which/ls/cat/find/rm/cp/mv/
 
 ## CRITICAL: TDD Policy
 
-Identify behavior→write test FIRST→`make test-unit` RED→minimal implementation→same GREEN→refactor green. Never retroactively test implementation or call unproved behavior complete.
+Identify behavior→Write a test FIRST that fails for missing behavior→`make test-unit` RED→minimal implementation→same GREEN→refactor green. Never retroactively test implementation or call unproved behavior complete.
 Real-time editor gate applies src/general_ludd/**/*.py only; expected tests/unit/test_general_ludd_foo.py or test_foo.py must exist. tests/docs/scripts/config/non-Python pass. Allowlist __init__.py,*.pyi,protocols.py,typing.py,type_defs.py,_types.py matches check_tdd_compliance.py. GLUDD_TDD_ENFORCE=0 only for genuinely blocked test-first legacy refactor; commit check still backs it.
 `make check-tdd-compliance` requires a tests/unit file that imports each modified src module AND contains test functions; modified modules below50% block, target85%; documented config/tdd_allowlist.yml reasons required, “don't need tests” is invalid. Release85/75 floors remain mandatory.
 
@@ -277,7 +277,7 @@ One CI run in flight; pending blocks; cooldown30min; >3 cancellations/2h blocks 
 ## CRITICAL: Evidence-Based Response Policy
 
 Every factual claim MUST have supporting evidence from a tool call, file read, URL fetch, or test result.
-- If you say “X tests pass”, cite the make output.
+- If you say “X tests pass”, cite the make output including the pass count.
 - If you say “file Y contains Z”, cite the file path and line number.
 - If you say “opencode supports X”, cite the URL or docs page you fetched.
 Unsupported claims violate policy. enforce-make and review/evidence_checker.py enforce. This HAVE requirement is not generalized into CITE-every-fact or same-message-every-fact.
