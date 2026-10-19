@@ -953,7 +953,8 @@ trace._profile_root = lambda: root
 base = root / "basetemp"
 base.mkdir()
 config = pytest.Config.fromdictargs({"basetemp": str(base)}, [str(root)])
-os.environ["_TEST_FILES_CPROFILE"] = "1"
+monkeypatch = pytest.MonkeyPatch()
+monkeypatch.setenv("_TEST_FILES_CPROFILE", "1")
 trace._consume_profile_request(config)
 state = trace._profile_state(config)
 assert state is not None
@@ -967,6 +968,7 @@ try:
 finally:
     trace._finish_profile(config, 1)
     config._ensure_unconfigure()
+    monkeypatch.undo()
 assert refused, "profile FIFO accepted"
 print("native profile FIFO refused", flush=True)
 """

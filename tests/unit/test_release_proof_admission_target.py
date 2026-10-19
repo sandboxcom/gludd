@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 PHASES = (
     "disk-cleanup-preflight", "gate-admission-config", "check-task-registration",
     "check-task-integrity", "check-gate-failure-promotions",
-    "check-resource-ownership", "_pytest-runtime-compatibility-admission",
+    "check-resource-ownership", "check-test-env-writes", "test-files",
+    "_pytest-runtime-compatibility-admission",
 )
 
 
@@ -34,6 +35,10 @@ def _run(
     targets = "".join(
         f"{phase}:\n\t@printf '%s\\n' '{phase}' >> phases.log\n"
         f"\t@test '{phase}' != '$(FAILED_PHASE)'\n"
+        + (
+            "\t@printf '%s\\n' '$(TESTFILES)' '$(PYTEST_ARGS)' > source-contract-selection\n"
+            if phase == "test-files" else ""
+        )
         for phase in PHASES
     )
     uv = "true"
@@ -265,6 +270,24 @@ def test_admission_probe_owns_selected_uv_through_real_recursive_make(
         assert tripwire.exists()
     assert subprocess.run is native_run
     assert os.environ == inherited
+
+def test_source_contract_admission_keeps_original_nodes_and_warning_policy(tmp_path: Path) -> None:
+    result = _run(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    selected, arguments = (tmp_path / "source-contract-selection").read_text().splitlines()
+    assert shlex.split(selected) == [
+        "tests/unit/test_guardrails.py::TestBashGuardrailPrompting::test_agents_md_lists_make_targets",
+        "tests/unit/test_guardrails.py::TestTDDGuardrail::test_agents_md_tdd_lists_workflow_steps",
+        "tests/unit/test_guardrails.py::TestGuardrailIntegrity::test_agents_md_has_guardrail_integrity_policy",
+        "tests/unit/test_guardrails.py::TestTaskCompletionGuardrail::test_agents_md_has_completion_policy",
+        "tests/unit/test_guardrails.py::TestTaskCompletionGuardrail::test_agents_md_completion_policy_forbids_early_stop",
+        "tests/unit/test_no_home_directory_access.py::test_agents_md_documents_allowed_boundary",
+        "tests/unit/test_no_home_directory_access.py::test_agents_md_lists_structural_test_as_enforcement",
+        "tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve",
+        "tests/unit/test_oversized_document_splits.py",
+    ]
+    assert shlex.split(arguments) == ["-q", "-W", "error", "-n", "0"]
+
 
 def test_real_owner_keeps_live_capacity_read_only_and_release_policy_fixed() -> None:
     owner = _recipe()

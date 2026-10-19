@@ -17,6 +17,90 @@ dependency resolver, or proof cache is introduced.
 
 ## Mechanical scheduling admission
 
+### Existing fixture and policy contracts before expensive proof
+
+The full gate on da99429 passed integration preflight in495.6s, then the
+existing environment-write phase refused a bare assignment in the native
+profile FIFO fixture. Hosted Build39293586802 on development1bbd47e also
+exposed five compact-policy assertions, two home-boundary assertions and the
+Markdown owner's three displaced archive links. Preserve those failed inputs
+and the natively aborted local gate; neither is a completed release proof.
+
+The existing release-proof-admission owner now calls check-test-env-writes
+and test-files after resource ownership, before its original runtime observer.
+The selected tests retain all seven original policy assertions, the original
+Markdown link assertion and the complete oversized-document-split owner.
+Nine scheduling owners replace seven; no new scanner, runner or proof cache
+is added. Original full-gate phases still replay their checks. The113 runtime
+families/selectors,90max/60quiet observer,2/1/1 children,85/75 line and branch
+floors, ZDD, cleanup and promotion authority remain unchanged.
+
+The embedded child fixture now uses pytest.MonkeyPatch.setenv and undo,
+preserving its actual no-writer FIFO, bounded drain and refusal assertions.
+The native whole-tree environment guard failed first, then passed after this
+instruction-conformance repair. Three new admission routing cases also failed
+first: both cheap failures previously reached runtime, and the source-test
+selection was absent. Their existing Make probe now verifies stop ordering,
+the exact original node set and fatal-warning single-process invocation.
+
+Complete diagnostic, environment-guard and admission-target owners pass all90
+cases under both selected runtimes:3.11 takes9.22s/native10.4s;3.12 takes11.06s/
+native12.7s, each rc0 with fatal warnings and no skips. Ruff, strict typing,
+253 target contracts and file-line limits pass; the documented validate-only
+behavior prints the new plan and remains gate_evidence=false/release_ready=false.
+Raw native logs, observers, commands and JUnit are indexed in
+/tmp/gludd-v012-source-contract-admission-evidence/MANIFEST.md.
+
+This isolated source does not contain the independently owned compact-policy
+repair. Actual final admission remains blocked until that reviewed repair is
+genuinely merged. Re-run real admission only after changed failing inputs;
+then freeze a candidate for combined acceptance, full canonical gate and its
+own exact-SHA hosted proof. No task is closed by this source acceptance.
+
+### Retained source handoff history
+
+The following records are moved verbatim from TASKS/SESSION to keep the
+active ledgers navigable. They remain historical source claims; their pending
+states are not relabelled as current proof. The original bytes also remain at
+immutable development da994299b3479fa074bc7a765766369c7e9692f5.
+
+```text
+## S98.4 AST field traversal enhancement — recorded base ca91f33743014d6667646757f34616457a81b987
+
+Last Updated: 2026-10-19. Branch agent-v012-ast-field-traversal-20261019 uses the
+existing scanner's stdlib field-values iterator; every current field, statement/
+wrapper/LIFO/owner rule, source signature, fresh parse and exact GC/tree release
+remains. No pruning/cache/schema flag/runner/dependency is added. Details and the
+retained diagnostic's non-predictive2.459s overlap are in the owning feature doc.
+
+Eight additive controls: RED5FAIL/3PASS1.39s; real field-pair operations23→0 with
+findings intact. Final complete57-case owner passes3.11/5.37s and3.12.15/6.72s.
+Unchanged full-file coverage passes57/8.01s,96%combined/97.7line/94.0branch with
+85/75 retained (observer20261019T103422Z-34695-5321c9fe rc0/9.543s). Final passes
+include the typed test-constructor correction; production is unchanged since coverage.
+Exact commands/roster/JUnits/native log/status/actual coverage trace/audit:
+ /tmp/gludd-v012-ast-field-traversal-evidence. Source review and guarded commit/
+collection remain pending; no original90, diagnostic replay, gate/CI or task closure.
+S98.4/19-task states and90/60/three-child/21phase2850/ZDD/cleanup/promotion stay intact.
+
+S98.4 user-authorized temporary disk headroom, 2026-10-14: raise the single
+canonical volume limit from 90% to 95% in `scripts/check_disk_usage.py`, with
+help in `make/00-foundation.mk` and regression coverage in
+`tests/unit/test_check_disk_usage.py`, `tests/unit/test_disk_alias_admission.py`,
+`tests/unit/test_automatic_disk_cleanup_resources.py`, and
+`tests/unit/test_pipeline_status_exact_sha.py`. Twenty-one new boundary/alias
+checks fail first. The 251 related cases and 37 alias subtests pass on Python
+3.11/3.14; existing failure assertions now use measurements above the explicitly
+authorized limit. Native two-owner coverage meets unchanged 85/75 floors
+(.gate-logs/coverage-user-disk95-20261014.json). Actual observed read-only
+preflight `v012-user-authorized-disk95/v012-disk95-capacity-check-6dbcabc` passes
+at disk 91.0%/limit 95%, scratch 836.3 MB/soft cap 100 MB, zero removals,
+211 protected/skipped entries and zero errors. No gate failure is rewritten,
+unknown-data cleanup authorized or release item completed. Restore 90% when the
+user ends this exception; fresh gate/exact-successor/deployment proof is pending.
+
+```
+
 ### Temporary volume headroom authorized on 2026-10-14
 
 At the user's explicit request, the canonical repository-volume limit is raised
