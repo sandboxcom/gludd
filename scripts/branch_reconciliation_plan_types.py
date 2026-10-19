@@ -1348,14 +1348,9 @@ def _parse_plan_snapshot_basis(
                 "expected_tip": _snapshot_object_id(
                     entry["expected_tip"], valid_object_id
                 ),
-                "initial_classification": cast(
-                    Literal["ancestor", "patch-equivalent", "unique"],
-                    classification,
-                ),
-                "initial_lifecycle": cast(
-                    Literal["current", "historical"], lifecycle
-                ),
-                "plan_state": cast(PlanSnapshotState, plan_state),
+                "initial_classification": classification,
+                "initial_lifecycle": lifecycle,
+                "plan_state": plan_state,
                 "ref": ref,
             }
         )
@@ -1546,7 +1541,7 @@ def _parse_approval_trust_store(
             "reviewer_identity_digest": _snapshot_digest(
                 key_data["reviewer_identity_digest"]
             ),
-            "status": cast(Literal["active", "revoked"], status_value),
+            "status": status_value,
         }
         keys[key_id] = key
         order.append(key_id)

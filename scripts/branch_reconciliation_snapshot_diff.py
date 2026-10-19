@@ -117,7 +117,7 @@ def _parse_branch(
         "operator-approval",
     }:
         raise plan_types._snapshot_error()
-    basis = cast("RetirementBasis | None", basis_value)
+    basis: RetirementBasis | None = basis_value
     reason_value = branch["retirement_reason_code"]
     if reason_value is not None and reason_value not in plan_types._RETIREMENT_REASON_CODES:
         raise plan_types._snapshot_error()
