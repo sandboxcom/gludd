@@ -25,8 +25,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from filelock import FileLock, Timeout
-
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LEDGER = ROOT / ".gludd" / "ci-failure-ledger.json"
 DEFAULT_REPOSITORY = "sandboxcom/gludd"
@@ -169,6 +167,8 @@ def write_ledger(path: Path, ledger: dict[str, Any]) -> None:
 @contextmanager
 def _locked_ledger(path: Path) -> Iterator[dict[str, Any]]:
     """Reload the latest state under one bounded, private native writer lock."""
+    from filelock import FileLock, Timeout
+
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock_path = path.with_name(f".{path.name}.lock")
     if lock_path.is_symlink():
