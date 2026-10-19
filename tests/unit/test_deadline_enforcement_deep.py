@@ -17,6 +17,11 @@ import re
 import time
 from pathlib import Path
 
+import pytest
+
+from tests.unit.test_task_watchdog import OwnedPoll
+from tests.unit.test_task_watchdog import _owned_poll as _owned_poll
+
 # ---------------------------------------------------------------------------
 # Python mirror of plugin state-machine logic (from enforce-deadline.ts)
 # ---------------------------------------------------------------------------
@@ -373,41 +378,54 @@ class TestStaleFileWatchdogBridge:
 class TestKillProcessEdgeCases:
     """kill_process signal ordering and error handling."""
 
-    def test_sigterm_before_sigkill_ordering(self):
+    def test_sigterm_before_sigkill_ordering(self, _owned_poll: OwnedPoll) -> None:
         import signal as sig_module
         from unittest.mock import patch
 
         from scripts.task_watchdog import kill_process
 
+        root, records, _cwds, _deadlines, _sent = _owned_poll
+        record = records[0]
         signals_sent: list[int] = []
 
         def _record_kill(pid: int, sig: int) -> None:
+            assert pid == record.pid
             signals_sent.append(sig)
+            if sig == sig_module.SIGKILL:
+                records.clear()
 
         with patch("scripts.task_watchdog.os.kill") as mk, patch("scripts.task_watchdog.time.sleep"):
             mk.side_effect = _record_kill
-            kill_process(99999)
+            result = kill_process(record.pid, expected_record=record, repository_roots=(root,))
+            assert result is True
             assert sig_module.SIGTERM in signals_sent
             sigterm_idx = signals_sent.index(sig_module.SIGTERM)
             sigkill_detected = any(s == sig_module.SIGKILL for s in signals_sent[sigterm_idx:])
             assert sigkill_detected
+            assert signals_sent == [sig_module.SIGTERM, sig_module.SIGKILL]
+            assert records == []
 
-    def test_process_exited_during_sigterm_wait(self):
+    def test_process_exited_during_sigterm_wait(self, _owned_poll: OwnedPoll) -> None:
+        import signal
         from unittest.mock import patch
 
         from scripts.task_watchdog import kill_process
 
-        call_count = [0]
+        root, records, _cwds, _deadlines, _sent = _owned_poll
+        record = records[0]
 
-        def _alternating(pid: int, sig: int) -> None:
-            call_count[0] += 1
-            if call_count[0] == 2:
-                raise ProcessLookupError
+        def exit_during_wait(_seconds: float) -> None:
+            records.clear()
 
-        with patch("scripts.task_watchdog.os.kill") as mk, patch("scripts.task_watchdog.time.sleep"):
-            mk.side_effect = _alternating
-            result = kill_process(99999)
+        with (
+            patch("scripts.task_watchdog.os.kill") as mk,
+            patch("scripts.task_watchdog.time.sleep", side_effect=exit_during_wait) as wait,
+        ):
+            result = kill_process(record.pid, expected_record=record, repository_roots=(root,))
             assert result is True
+            mk.assert_called_once_with(record.pid, signal.SIGTERM)
+            wait.assert_called_once()
+            assert records == []
 
     def test_permission_denied_mid_sequence_continues(self):
         """PermissionError on fallback kill path returns False (fail-open, not a crash)."""
@@ -1063,8 +1081,60 @@ class TestWatchdogSourceInvariants:
         assert "TASK_PROCESS_PATTERNS" in self.src
         assert "EXCLUDE_PATTERNS" in self.src
 
-    def test_kill_multiple_candidates(self):
-        assert "descendant_processes" in self.src or "for process in candidates" in self.src
+    @pytest.mark.parametrize("ownership", ["owned-tree", "foreign-descendant", "unknown-descendant"])
+    def test_kill_multiple_candidates(
+        self, _owned_poll: OwnedPoll, tmp_path: Path, ownership: str,
+    ) -> None:
+        """Drain every owned descendant and refuse a tree with unverified ownership."""
+        import signal
+        from unittest.mock import patch
+
+        from scripts.task_watchdog import cleanup_owner, kill_process
+
+        root, records, cwds, _deadlines, _sent = _owned_poll
+        parent = records[0]
+        child = cleanup_owner.ProcessRecord(
+            parent.pid + 1, parent.pid, 390, "python child", started_at="child-start",
+        )
+        grandchild = cleanup_owner.ProcessRecord(
+            parent.pid + 2, child.pid, 380, "python grandchild", started_at="grandchild-start",
+        )
+        foreign = cleanup_owner.ProcessRecord(
+            parent.pid + 3, 1, 400, "python foreign-project", started_at="foreign-start",
+        )
+        records[:] = [parent, child, grandchild, foreign]
+        cwds.update({child.pid: root, grandchild.pid: root, foreign.pid: tmp_path})
+        if ownership == "foreign-descendant":
+            cwds[grandchild.pid] = tmp_path
+        elif ownership == "unknown-descendant":
+            cwds[grandchild.pid] = None
+        original = list(records)
+        owned_sender = os.kill
+
+        with patch("scripts.task_watchdog.os.kill", side_effect=owned_sender) as send:
+            result = kill_process(
+                parent.pid, expected_command=parent.command,
+                expected_record=parent, repository_roots=(root,),
+            )
+            if ownership != "owned-tree":
+                assert result is False
+                send.assert_not_called()
+                assert records == original
+                return
+
+            assert result is True
+            assert [(call.args[0], call.args[1]) for call in send.call_args_list] == [
+                (grandchild.pid, signal.SIGTERM),
+                (child.pid, signal.SIGTERM),
+                (parent.pid, signal.SIGTERM),
+            ]
+            assert records == [foreign]
+            send.reset_mock()
+            assert kill_process(
+                foreign.pid, expected_record=foreign, repository_roots=(root,),
+            ) is False
+            send.assert_not_called()
+            assert records == [foreign]
 
 
 # ===========================================================================

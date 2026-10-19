@@ -57,6 +57,39 @@ genuinely merged. Re-run real admission only after changed failing inputs;
 then freeze a candidate for combined acceptance, full canonical gate and its
 own exact-SHA hosted proof. No task is closed by this source acceptance.
 
+### Native watchdog and profiler fixture conformance
+
+Terminal hosted Build39293586802 identified stale watchdog/deadline test
+interfaces and the exact _TEST_FILES_CPROFILE reset-key omission. The current
+cleanup owner still requires fresh process identity, repository roots and
+protected-tree checks. Tests now reuse its existing ProcessRecord inventory
+and owned poll fixture; command mismatches, TERM-before-KILL, exit during wait,
+leaf-first drain and foreign/unknown-descendant refusal remain executable.
+No host process is signalled and production cleanup authority is unchanged.
+Three configuration probes reuse the existing isolated module loader and
+scoped environments; six failing-first controls prove original environments,
+canonical module configuration and aliases survive normal and failed asserts.
+
+A native3.12 replay exposed the old sys.getprofile expectation: CPython3.12
+cProfile uses sys.monitoring rather than the legacy hook. The firsthand
+[CPython issue130377](https://github.com/python/cpython/issues/130377)
+reports that getter incompatibility; it is not performance evidence for Gludd.
+The selected native backend now proves real cProfile ownership, all seven
+independent events and actual test-body pstats. The original3.11 getter assert
+remains; ordinary nested Make and xdist workers also prove monitoring absence.
+Pinned source and the public ancillary-event grouping contract are linked in
+/tmp/gludd-v012-watchdog-env-conformance-report.md. Narrow Protocols and the
+typed optional getattr boundary introduce no Any or production shim.
+
+The report indexes every original failed and corrected receipt. Whole seven
+owners pass319/zero skips on each runtime before the final typing-only delta;
+post-delta finite acceptance passes19each, with strict typing and Ruff green.
+Earlier219PASS/1FAIL,17PASS/1FAIL and312PASS/1FAIL stay failed. The reset scanner
+already passed locally before its key addition; do not invent a local RED.
+Final combined candidate acceptance, original90/60 scheduling admission,
+complete gate, unchanged85/75 line-and-branch floors and exact-SHA hosted
+proof remain required. No task checkbox or completion status changes here.
+
 ### Retained source handoff history
 
 The following records are moved verbatim from TASKS/SESSION to keep the
