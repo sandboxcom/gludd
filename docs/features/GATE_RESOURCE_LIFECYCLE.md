@@ -19,6 +19,36 @@ lower worker count instead of staying stopped.
 
 ## Contract
 
+### Bounded shared-UV cleanup phase diagnostics
+
+The2026-10-19 disk repair reclaimed241,812,053 and237,600,576 bytes of
+regenerable bytecode plus disposable caches, while actual disk remained96%
+against the unchanged95% limit. The existing aggregate20-detail output hid
+shared-cache reasons behind409 scratch skips. The existing cleanup owner now
+emits one flushed shared-uv-cache phase event directly from its existing
+CleanupResult before aggregation: status/full counts plus at most20 skip and
+error details each. Native active-UV PIDs/refusal reasons remain visible;
+refusals use stderr and other outcomes stdout. No reinspection, extra cleanup,
+scanner, runner, cache or broader deletion authority is introduced.
+
+Four failing-first cases retain409 unrelated skips/errors and prove event
+ordering, full aggregation, exact inspection/operation counts, bounded detail,
+streams and unchanged rc1 under96% pressure. All independent cleaners are
+confined/stubbed; native UV callbacks are injected and fixture bytes survive.
+Final complete owner passes4/1.45s on311 and4/1.56s on312; native observers
+2.974/2.913s both rc0. Ruff and separate strict source/test checks pass.
+Original4FAIL, intermediate passes and namespace/type failures remain retained
+at /tmp/gludd-v012-cleanup-capacity-diagnostics-report.md. No whole-source
+coverage, real reclamation, capacity clearance or gate is claimed by this proof.
+
+The existing firsthand cache-locking research in
+[automatic disk cleanup](../automatic-disk-cleanup.md) remains context, never
+permission to bypass active-owner checks. Every identity/root/symlink/lock,
+checkpoint,120s operation and95% disk/85-75 BOTH coverage/ZDD guard remains.
+After genuine source integration, use the existing documented cleanup owner
+to inspect actual reasons; do not retry expensive final proof until the real
+capacity prerequisite clears. All19release items remain open.
+
 ### Complete-gate deadline and truthful terminal state
 
 The release gate runs 244 fresh-process batches so imported state, native

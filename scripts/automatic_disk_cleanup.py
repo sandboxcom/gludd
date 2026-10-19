@@ -2237,6 +2237,19 @@ def _automatic_cleanup(
         dry_run=dry_run,
         missing_is_clean=True,
     )
+    uv_status = "refused" if uv_result.errors else "skipped" if uv_result.skipped else "complete"
+    uv_details = {
+        "skipped": uv_result.skipped[:MAX_CLEANUP_DETAILS_PER_KIND],
+        "errors": uv_result.errors[:MAX_CLEANUP_DETAILS_PER_KIND],
+    }
+    print(
+        "phase=cleanup action=shared-uv-cache "
+        f"status={uv_status} removed={len(uv_result.removed)} "
+        f"skipped={len(uv_result.skipped)} errors={len(uv_result.errors)} "
+        f"details={json.dumps(uv_details)}",
+        file=sys.stderr if uv_result.errors else sys.stdout,
+        flush=True,
+    )
     terraform_provider_result = clean_owned_terraform_provider_caches(
         dry_run=dry_run,
     )
