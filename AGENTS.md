@@ -45,6 +45,7 @@ The enhancement plugin classifies unknown as fix; checks waves≥2 at text.compl
 
 ### Branch discipline (HARD GATE)
 
+NEVER push fix-forward waves straight to `master`; use a `release-candidate/*` branch with exact-SHA CI green and the existing promotion gates.
 NEVER push feature work directly to master. Master is for merges from development ONLY, or emergency pipeline fixes. Features land on development/feature branches; shared master/development are never rebased, only merge-forward.
 NEVER merge to master from inside a worktree. Before merging development→master: development gate green, exact CI green, then `make release-promote`. `make batch-push` pushes CURRENT branch. Verify which branch you're on with `make verify-state` before pushing. Emergency fixes on master get backported IMMEDIATELY before other feature work.
 
@@ -496,7 +497,7 @@ Checking ci-status more than3 times in a row without code changes is a stop patt
 
 ## CRITICAL: CI Wait Productivity (DC.1)
 
-Advance release-related test/failure/docs/slow-shard work under release scope; dispatch subagents only for concrete independent deliverables0..3. No filler while waiting.
+During CI waits, advance release-related work: fix tests, write structural tests, update docs or investigate slow shards. Dispatch only concrete independent deliverables; zero subagents is valid when none exist. CI waiting never justifies filler. Use up to three useful owners.
 
 ## CRITICAL: Polling CI Is Not Work (DC.2)
 

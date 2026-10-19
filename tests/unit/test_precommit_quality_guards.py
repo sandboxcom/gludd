@@ -150,11 +150,29 @@ def test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_c
 ) -> None:
     """Keep recursive Make options/overrides while forwarding the real checker CLI."""
     recorder = tmp_path / "record.py"
+    native_carriers = tmp_path / "native-carriers.mk"
+    native_carriers.write_text(
+        ".PHONY: refuse native-carriers\n"
+        "refuse:\n\t@exit 23\n"
+        "native-carriers:\n"
+        f"\t@{shlex.quote(sys.executable)} {shlex.quote(str(recorder))} native-carriers "
+        "'$(subst ','\"'\"',$(DUPLICATE_CODE_ENGINE))' "
+        "'$(subst ','\"'\"',$(FLAG_CANARY))'\n",
+    )
     recorder.write_text(
-        "import json, os, sys\n"
+        "import json, os, subprocess, sys\n"
+        "if sys.argv[1:2] == ['native-carriers']:\n"
+        "    print(json.dumps({'engine': sys.argv[2], 'canary': sys.argv[3]}))\n"
+        "    raise SystemExit(0)\n"
+        f"native = subprocess.run(['make', '--no-print-directory', '-f', {str(native_carriers)!r}, "
+        "'refuse', 'native-carriers'], check=False, capture_output=True, text=True, timeout=10)\n"
+        "assert native.returncode == 2, native.stdout + native.stderr\n"
+        "assert native.stdout, 'native Make lost inherited keep-going option: ' + native.stderr\n"
         "print(json.dumps({'arguments': sys.argv[1:], 'engine': "
         "os.environ.get('DUPLICATE_CODE_ENGINE'), 'flags': os.environ.get('MAKEFLAGS', ''), "
-        "'level': os.environ.get('MAKELEVEL', '')}))\n",
+        "'level': os.environ.get('MAKELEVEL', ''), 'overrides': os.environ.get('MAKEOVERRIDES', ''), "
+        "'native': json.loads(native.stdout), "
+        "'keep_going_status': native.returncode}))\n",
     )
     uv = f'{shlex.quote(sys.executable)} {shlex.quote(str(recorder))} "$(FLAG_CANARY)"'
     makefile = tmp_path / "Makefile"
@@ -190,16 +208,76 @@ def test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_c
     assert arguments[1:4] == ["run", "python", "scripts/check_duplicate_code.py"]
     assert arguments[arguments.index("--engine") + 1] == engine
     assert arguments[-1] == "--validate-only"
-    assert f"DUPLICATE_CODE_ENGINE={engine}" in shlex.split(checker["flags"])
+    assert checker["native"]["engine"] == engine, "native checker engine override was lost"
     assert collection["arguments"] == [canary, "unrelated-collection"]
-    assert not any(
-        item.startswith("DUPLICATE_CODE_ENGINE=") for item in shlex.split(collection["flags"])
-    )
+    assert collection["native"]["engine"] == "", "native collection engine override leaked"
     for report in (checker, collection):
         assert report["engine"] is None
-        assert f"FLAG_CANARY={canary}" in shlex.split(report["flags"])
-        assert "-k" in report["flags"] or report["flags"].startswith("k")
+        assert report["native"]["canary"] == canary, "native Make changed literal override canary"
+        assert report["keep_going_status"] == 2
         assert int(report["level"]) >= (2 if recursive else 1)
+
+
+@pytest.mark.parametrize("recursive", (False, True))
+@pytest.mark.parametrize("mutation", ("owned", "missing-engine", "missing-canary", "missing-keep-going"))
+def test_engine_probe_preserves_deferred_make_override_carriers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recursive: bool, mutation: str,
+) -> None:
+    """Use GNU Make's documented deferred representation without shell parsing."""
+    native_run = subprocess.run
+    inherited = os.environ.copy()
+    invocations = 0
+    flags = "e --no-print-directory" if mutation == "missing-keep-going" else "ek --no-print-directory"
+
+    def execute(
+        arguments: list[str], *, cwd: Path, env: dict[str, str], check: bool,
+        text: bool, capture_output: bool, timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal invocations
+        invocations += 1
+        makefile = Path(arguments[arguments.index("-f") + 1])
+        # Native expansion makes the deferred carrier self-contained across Make versions.
+        makefile.write_text(
+            makefile.read_text() + "\nexport MAKEOVERRIDES := $(MAKEOVERRIDES)\n",
+        )
+        native_carriers = tmp_path / "native-carriers.mk"
+        if mutation in {"missing-engine", "missing-canary"}:
+            name = "DUPLICATE_CODE_ENGINE" if mutation == "missing-engine" else "FLAG_CANARY"
+            native_carriers.write_text(native_carriers.read_text() + f"\noverride {name} :=\n")
+        command = [
+            f"UV=MAKEFLAGS='{flags} -- $$(MAKEOVERRIDES)' " + argument[3:]
+            if argument.startswith("UV=") else argument
+            for argument in arguments
+        ]
+        result = native_run(
+            command, cwd=cwd, env=env, check=check, text=text,
+            capture_output=capture_output, timeout=timeout,
+        )
+        if mutation != "missing-keep-going":
+            assert result.returncode == 0, result.stdout + result.stderr
+            for line in result.stdout.splitlines():
+                assert json.loads(line)["flags"] == f"{flags} -- $(MAKEOVERRIDES)"
+        return result
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(subprocess, "run", execute)
+        if mutation == "owned":
+            test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_children(
+                tmp_path, recursive, "engine with spaces/jscpd",
+            )
+        else:
+            reason = {
+                "missing-engine": "native checker engine override was lost",
+                "missing-canary": "native Make changed literal override canary",
+                "missing-keep-going": "native Make lost inherited keep-going option",
+            }[mutation]
+            with pytest.raises(AssertionError, match=reason):
+                test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_children(
+                    tmp_path, recursive, "engine with spaces/jscpd",
+                )
+    assert invocations == 1
+    assert subprocess.run is native_run
+    assert os.environ == inherited
 
 
 @pytest.mark.parametrize("engine_name", (
