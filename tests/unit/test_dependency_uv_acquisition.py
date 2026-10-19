@@ -117,7 +117,7 @@ class Fixture:
 
 
 @pytest.fixture
-def acquisition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fixture:
+def native_acquisition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fixture:
     root = tmp_path / "checkout"
     (root / ".github/workflows").mkdir(parents=True)
     (root / ".github/workflows/build.yml").write_text(
@@ -147,6 +147,20 @@ def acquisition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fixture:
     monkeypatch.setattr(clean_ci_shard_scratch, "_active_process_pids", lambda path: [])
     monkeypatch.setattr(owner, "_uv_wheel_metadata", fixture.wheels, raising=False)
     return fixture
+
+
+def _modeled_post_admission_parent_version() -> None:
+    """Model only prior311 admission for the actual312 lifecycle fixture."""
+
+
+@pytest.fixture
+def acquisition(native_acquisition: Fixture, monkeypatch: pytest.MonkeyPatch) -> Fixture:
+    if sys.version_info[:2] == (3, 12):
+        monkeypatch.setattr(
+            owner, "_require_uv_acquisition_parent_version",
+            _modeled_post_admission_parent_version, raising=False,
+        )
+    return native_acquisition
 
 
 def test_pinned_uv_plan_has_no_mutation_probe_or_installer(
@@ -666,3 +680,126 @@ def test_real_package_verification_uses_native_module_boundary(acquisition: Fixt
     report = json.loads(result.stdout)
     assert report["executable"] == str(acquisition.leaf / "bin/uv")
     assert report["wheel_identity_kind"] == "published-tag-match"
+
+
+def _acquisition_fixture_snapshot(root: Path) -> dict[Path, bytes | str | None]:
+    return {
+        path: str(path.readlink()) if path.is_symlink()
+        else path.read_bytes() if path.is_file() else None
+        for path in root.rglob("*")
+    }
+
+
+def _forbid_acquisition_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("parent version admission must precede lifecycle work")
+
+    monkeypatch.setattr(owner, "_uv_owned_paths", forbidden)
+    monkeypatch.setattr(owner, "_uv_wheel_metadata", forbidden)
+    monkeypatch.setattr("shutil.which", forbidden)
+    monkeypatch.setattr("shutil.rmtree", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(collection_lock, "collection_lock", forbidden)
+    monkeypatch.setattr(clean_ci_shard_scratch, "_active_process_pids", forbidden)
+
+
+@pytest.mark.parametrize("plan", [True, False], ids=["plan", "apply"])
+def test_public_acquisition_routes_parent_version_before_lifecycle(
+    native_acquisition: Fixture, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, plan: bool,
+) -> None:
+    before_version = sys.version_info
+    before_environment = dict(os.environ)
+    before_tree = _acquisition_fixture_snapshot(tmp_path)
+    calls: list[None] = []
+
+    def reject_parent_version() -> None:
+        calls.append(None)
+        raise owner.ProfileError("fixture parent admission rejected")
+
+    monkeypatch.setattr(
+        owner, "_require_uv_acquisition_parent_version", reject_parent_version,
+        raising=False,
+    )
+    _forbid_acquisition_lifecycle(monkeypatch)
+    with pytest.raises(owner.ProfileError, match=r"^fixture parent admission rejected$"):
+        native_acquisition.acquire(plan=plan)
+    assert calls == [None]
+    assert not native_acquisition.calls and not native_acquisition.wheel_requests
+    assert _acquisition_fixture_snapshot(tmp_path) == before_tree
+    assert dict(os.environ) == before_environment
+    assert sys.version_info is before_version
+
+
+@pytest.mark.parametrize("plan", [True, False], ids=["plan", "apply"])
+def test_native_parent_version_policy_is_not_modeled(
+    native_acquisition: Fixture, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, plan: bool,
+) -> None:
+    before_version = sys.version_info
+    before_environment = dict(os.environ)
+    before_tree = _acquisition_fixture_snapshot(tmp_path)
+    print(json.dumps({
+        "actual_parent_version": list(before_version[:3]), "validate_only": plan,
+        "fixture_parent_version_override": False,
+    }, sort_keys=True))
+    if before_version[:2] != (3, 11):
+        _forbid_acquisition_lifecycle(monkeypatch)
+        with pytest.raises(
+            owner.ProfileError,
+            match=r"^native uv acquisition requires an existing registered Python 3\.11 interpreter$",
+        ):
+            native_acquisition.acquire(plan=plan)
+        assert not native_acquisition.calls and not native_acquisition.wheel_requests
+        assert _acquisition_fixture_snapshot(tmp_path) == before_tree
+    else:
+        result = native_acquisition.acquire(plan=plan)
+        assert result["state"] == ("plan" if plan else "verified")
+        assert len(native_acquisition.calls) == (0 if plan else 1)
+        if plan:
+            assert _acquisition_fixture_snapshot(tmp_path) == before_tree
+    assert dict(os.environ) == before_environment
+    assert sys.version_info is before_version
+
+
+def test_post_admission_lifecycle_reaches_real_full_version_probe_without_mutation(
+    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before_version = sys.version_info
+    native_run = subprocess.run
+    observed: list[object] = []
+    environment = acquisition.leaf / "tools/uv"
+    python = environment / "bin/python"
+
+    def record(
+        argv: Sequence[str], *, check: bool, capture_output: bool, text: bool, timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        assert text is True
+        result = native_run(
+            argv, check=check, capture_output=capture_output, text=True, timeout=timeout,
+        )
+        if list(argv[:4]) == [str(python), "-I", "-B", "-c"]:
+            payload: object = json.loads(result.stdout)
+            assert payload == [str(environment), str(python), list(before_version[:3])]
+            observed.append(payload)
+        return result
+
+    monkeypatch.setattr(subprocess, "run", record)
+    try:
+        first = acquisition.acquire()
+        second = acquisition.acquire()
+        assert first["state"] == second["state"] == "verified"
+        assert first["reused"] is False and second["reused"] is True
+        assert len(acquisition.calls) == 1
+        assert len(observed) == 2
+        if before_version[:2] == (3, 12):
+            assert owner._require_uv_acquisition_parent_version is _modeled_post_admission_parent_version
+        else:
+            assert owner._require_uv_acquisition_parent_version is not _modeled_post_admission_parent_version
+        print(json.dumps({
+            "actual_parent_version": list(before_version[:3]),
+            "actual_native_child_observations": observed,
+            "modeled_post_admission": before_version[:2] == (3, 12),
+        }, sort_keys=True))
+    finally:
+        assert sys.version_info is before_version

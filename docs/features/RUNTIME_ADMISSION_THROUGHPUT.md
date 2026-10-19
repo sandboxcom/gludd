@@ -2022,3 +2022,324 @@ all selectors/assertions, three2-1-1children,90/60,21phases2850,all8shards,
 fatal warnings,85/75 BOTH,ZDD,cleanup and promotion remain. All19task statuses
 stayopen. Full-candidate replay/gate/exact-SHA hosted proof remain required;
 the completed-item preparation queue follows these pipeline repairs.
+
+## 2026-10-19: exercise the complete native startup import chain
+
+Receipt source6f18a47 passed independent source review and normal guarded
+collection126504/126522selected,18deselected,zero errors120.29s/native127.0rc0.
+Its genuine development application iseb78ebd354539bc4d9d324899873db3969306515,
+parents1bbe27b/6f18a47; Main guarded collection also passed126504/126522,
+18/0,45.94s/native51.3rc0. Neither commit asserts diagnostic or release proof.
+The source worktree was deliberately unregistered, planned and archived/retired
+through the existing native owner after integration. Its refs and all ignored
+proof are retained by .git/gludd-release-evidence/
+e7d99dab838e-6f18a471335298551049940e58743d9b02c385a0/manifest.json;
+all four owned checkpoints remain. No force, unlock or ref deletion occurred.
+
+The actual existing startup diagnostic was then retried on cleaneb78ebd with
+private312. It again failed before its observer/child existed, rc2/about0.128s:
+stream_command._startup_source imports scripts.reviewed_head_inputs, whose
+module initialization imports scripts.verify_dual_track_ci. That owner's bare
+ci_named_shard_files import raises ModuleNotFoundError in package context.
+The full literal Make command and actual exception boundary are retained in
+/tmp/gludd-v012-startup-native-chain-root-evidence.md, a Root-authored manual
+transcript/index. No generated diagnostic JSON or timing exists for this
+attempt. Preserve this failure and the prior receipt-helper failure separately.
+
+A helper-only fresh-process regression did not cover the complete startup
+import chain. Add substantive fresh-E package/flat controls for the actual
+startup prerequisite owners, with native Make entrypoint controls that keep
+source, capacity and installed-runtime refusals authoritative. Repair the
+existing sibling bindings; do not add path injection, a broad import fallback,
+a lazy authority bypass, dependencies or another scanner/runner/cache.
+The import contract and firsthand context report linked immediately above
+apply to this local chain defect; no upstream bug or speedup is claimed.
+
+Current exact pushed512eaf9 evidence is Build39317225438FAILED on the original
+90/60 owner, Molecule39317225223PASS and Pages39317225126FAILED on cold WebKit
+5.001225731 against the original5s readiness assertion. Native pipeline-status
+records3open families,9repaired,38resolved,139runs and release_ready=false;
+capacity hard_blocked=false. Pages has a separate source owner. All19task
+statuses and original full-candidate/gate/exact-SHA proofs remain pending.
+
+The new native chain owner first records3FAIL/2PASS2.16s at the verifier's
+ci_named_shard_files import. After that package binding is repaired, its next
+actual3FAIL/2PASS1.83s reaches serial runner ci_shadow_receipt_runtime. Explicit
+fresh package/flat controls then expose the whole direct closure in one bounded
+RED9FAIL/8PASS2.71s. Actual nested failures are shadow→batch receipts,
+batch receipts→receipt authentication, replay→batch receipts,
+gate progress→batch receipts and parallel runner→named shard files. All six
+flat-module controls pass. Retain those native failure logs/JUnit/observers;
+these are distinct changed failing inputs, not speculative repeated final proof.
+Correct only package sibling import arms in the seven actual owners, keeping
+the original typing imports, flat arms, aliases, constants and function bodies.
+Root authorized one external full-seven-file coverage union with the existing
+branch/parallel/subprocess settings and unchanged85aggregate/75each BOTH;
+no omits, tracked configuration or child-E weakening. Finite GREEN, whole-owner
+acceptance, coverage, source review and corrected actual diagnostic remain
+required. The source-owner report retains exact commands and native evidence.
+
+After those import repairs, an additive full-chain assertion records16PASS/
+1FAIL5.75s because existing unchanged validate_task_ledger.py27-30 prepends
+only the current source/src path. A retained1FAIL1.42s diagnostic captures the
+exact before/after order through item_progress→task_scope. The new blanket
+path-immutability assertion overstated the requested no scripts-path injection
+boundary. Root directly read that existing owner and authorized only its exact
+source/src prepend for the full startup action, preserving every remaining
+path/order and scripts-path prohibition. All direct package/flat controls still
+require an unchanged path and actual binding; no old test was edited. Finite
+conforming17PASS3.32s follows; original failures remain. A later RuffSIM114
+flags the verifier's byte-identical typing/package arms. Combining only that
+condition as TYPE_CHECKING or __package__ preserves the original qualified
+body and flat else; the other six typing arms remain literal. Final whole
+acceptance and coverage must follow this last source edit, without suppression.
+
+Native strict checking then identifies the verifier's preexisting mixed typing
+namespace: ci_named_shard_files is found as both scripts.ci_named_shard_files
+and ci_named_shard_files. Root independently reproduces that exact error on
+untouched developmenteb78ebd with make typecheck-scope FILES=scripts/verify_dual_track_ci.py,
+rc2/about0.025s; this is a literal native transcript, not generated JSON.
+The canonical owner already sets MYPYPATH=src:scripts and explicit package bases.
+Normalize only this verifier's typing imports to the same flat namespace as the
+other six owners, while keeping a separate qualified package-runtime arm and
+the original flat-runtime arm. The six other typing bodies, all runtime APIs/
+constants and authority remain. No checker options, follow-imports, exclusions,
+ignore flags, new target or suppression change. This supersedes the intermediate
+combined verifier guard; final whole acceptance follows the actual final source.
+
+Root read [mypy module mapping](https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules)
+and the firsthand [September2020 duplicate-module report](https://stackoverflow.com/questions/63871252/source-file-found-twice-error-with-mypy-0-780-in-python-for-vscode)
+on2026-10-19. The primary contract derives module names from selected package
+bases. The report and later replies describe duplicate names and differing
+layout-specific remedies. Here the native owner already has its explicit bases;
+keep that policy and correct local static import identity. No mypy regression,
+universal forum workaround or missing-import suppression is inferred.
+
+Final seven-file coverage first runs a19whole-owner cohort:748PASS66.19s,
+but its native coverage observer correctly failsrc1/68.687s on actual floors.
+Aggregate89.1%line/84.5%branch and parallel runner65.2%line/55.1%branch do not
+meet85aggregate/75each BOTH. Other six files pass their per-file floors.
+Retained immutable audit210903Z, raw/JUnit/trace/observer preserve that failure.
+Existing parallel owners cover helpers and legacy execution; scoped native
+search finds no omitted owner for the unchanged resume coordinator570-763.
+Add substantive confined child/fragment/hash/reuse/failure/cleanup controls in
+the new owned test file, reuse the existing public runner and established
+serial-resume fixture pattern, then remeasure all seven complete files.
+Do not omit that file, alter production bodies, or lower a floor for throughput.
+
+The failed full coverage.pyJSON is honestly absent: the existing coverage-files
+trap removes temporary REPORT_WORK on failed audit before final publication.
+A native copy of the exact temporary path refuses missing file. Do not
+reconstruct that artifact or label it preserved. Native audit/raw/trace/JUnit/
+status are retained unchanged. The actual combined data path derived from
+REPORT_WORK94675, .gate-logs/coverage-files-data-94675, is also absent after
+that trap removes data/fragments; native copy refuses it too. Neither artifact
+is reconstructed. The immutable audit retains actual per-file counts and
+missing lines/arcs. This auxiliary retention limitation is distinct from the
+actual measured floor failure and does not grant proof.
+
+Fifteen additive coordinator/fragment controls close the actual untested path:
+real bounded children write genuine CoverageData; exact candidate/file/hash
+controls distinguish reuse from rerun, and failures, missing/corrupt fragments,
+timeout and interruption retain cleanup and refusal authority. Narrow native
+acceptance passes32cases with zero skips in15.75s. All seven production bodies
+remain unchanged. Final Python3.11 acceptance replays the same19whole owners:
+763PASS/zero skips77.28s, native79.446s/rc0. The native audit211613Z measures
+92.2% aggregate line and88.5% branch coverage; every complete production file
+passes75% in both dimensions. The parallel runner now measures93.1%/89.2%.
+The original748/floor-failed receipt remains failed. Full final coverage.py
+JSON, immutable audit, raw log, status and trace are copied unchanged under
+/tmp/gludd-v012-startup-native-chain-final-coverage311-*.
+
+The same complete cohort on private Python3.12 records1FAIL/762PASS63.60s,
+native68.168s/rc2. A fresh-E full-chain child cannot import
+ general_ludd.git_release at build_reviewed_head_integration_receipt.py15,
+before reaching the seven repaired script bindings. Direct package/flat
+controls and the other762cases pass. The exact failed native receipt is
+v012-startup-native-chain/whole312-eb78ebd-20261019; do not call it green or
+rerun unchanged. Inspect the actual installed-project prerequisite through
+existing Make owners before changing code. The real startup diagnostic's
+canonical311 controller and owned private312 source/src test children remain
+distinct from this fresh-E installed-project control. No assertion, path,
+production scope or original release authority is weakened.
+
+One external metadata diagnostic through the existing observed test-files owner
+identifies the changed prerequisite: general-ludd-agent0.1.2 has an editable
+ direct_url to retired /private/tmp/gludd-worktrees/agent-v012-native-312-startup-diagnostic.
+Its remaining namespace lacks git_release; no general_ludd import or path
+mutation occurs in the diagnostic. This is metadata evidence, not acceptance.
+The inspector also refuses that old runtime as no longer a registered slot.
+Retain the diagnostic-authoring collection failure and corrected native query
+v012-startup-native-chain/metadata-corrected312-eb78ebd-20261019 separately.
+
+Root uses the existing sync owner from clean Maineb78ebd to rebuild the stable
+registered Main slot, /Users/shawnwilson/tmp/gludd-resources/
+gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12. All ten native lock checks,
+locked offline profile overlays and237-package compatibility check pass; the
+actual atomically promoted runtime binds the current Main project. No lock or declared
+dependency version changes; tracked source, assertions and floors are unchanged. Native sync apply0
+passes2.0s; registered runtime inspection then verifies CPython3.12.15/ci with
+zero mismatches in1.0s. Their immutable Main observer identities are
+v012-installed312-prerequisite/sync-apply-managed-main-eb78ebd-20261019 and
+v012-installed312-prerequisite/inspect-managed-main-eb78ebd-20261019.
+An earlier plan failed when its default managed-interpreter directory lacked
+3.12.15. The corrected plan explicitly names the actual existing managed
+installation directory reported by the metadata query; downloads stay disabled.
+The unused explicit-venv-interpreter plan is retained but was never applied.
+Current failing-node and whole19-owner312 acceptance must follow this changed
+installed prerequisite; the older failed whole312 receipt stays failed.
+
+[uv's editable-install contract](https://docs.astral.sh/uv/concepts/projects/sync/#editable-installation)
+explains why source location remains part of an editable environment. The
+[firsthand October2025 report](https://github.com/astral-sh/uv/issues/16306)
+describes an installed tool breaking after workspace source removal; that
+separate tool-install issue was closed in April2026. These sources support
+preserving actual source provenance. They do not establish a current uv defect,
+Gludd's hosted timeout cause or measured speed improvement. The local native
+metadata and unchanged failing test identify this specific prerequisite.
+
+With that installed prerequisite actually repaired, the unchanged fresh-E
+startup case passes1/zero skips5.49s, native9.8s/rc0. The same19complete owners
+then pass763/zero skips64.27s, native68.6s/rc0 on registered Main312. Those
+receipts retain their seven-file source scope; neither is full-gate evidence.
+
+Root's subsequent source read finds an additional positive-inspection path:
+inspect_runtime's package arm still uses bare ci_batch_receipts. The earlier
+full-chain case exercised a missing fixture catalog and stopped before that
+body. One distinct fresh-E call to the actual _startup_runtime with the real
+catalog and repaired registered Main312 records1FAIL0.37s/native1.1s/rc2:
+stream_command.py1301 reaches dependency_profiles.py562 and raises
+ModuleNotFoundError for ci_batch_receipts. The native positive-runtime312-red
+log/status/JUnit remain failed. This actual input differs from the installed
+project failure and from the seven module-initialization bindings above.
+
+Extend the same repair to exactly that one package-arm sibling import in
+scripts/dependency_profiles.py; its typing/flat arms and remaining logic stay
+unchanged. Add fresh-E package/flat controls that use the real current catalog
+and require the native unsupported-Python refusal after entering this import
+path; they need no developer-specific installed runtime. Root also requires
+the real positive inspection diagnostic to pass after the import correction.
+The expanded final scope is eight complete production files and22whole test
+owners, adding the existing dependency profile, runtime-inspection and pinned
+UV acquisition suites to the prior19. Preserve all earlier32assertions and
+763case receipts; final full-file85aggregate/75each line AND branch coverage,
+whole-owner acceptance on both runtimes and independent review must cover the
+actual expanded source. No new runner, tracked coverage policy, path workaround,
+fixture bootstrap, timeout or release authority is introduced.
+
+The additive runtime-context controls first expose two distinct failures:
+the package path's genuine missing import and a newly authored flat-path
+immutability assertion. The latter is conformed only to the already verified
+existing source/src prepend, preserving the remaining path order and package
+scripts-path prohibition. The original32controls remain unchanged. The two
+controls then pass1.24s/native2.3rc0; the real positive registered312 inspection
+passes0.79s/native1.5rc0 with verified runtime/profile identity. RuffI001 then
+requires only canonical ordering of the three package imports; after sorting,
+those two controls plus real positive inspection pass3cases2.51s/native3.7rc0.
+The earlier Ruff failure remains retained; no suppression or other logic changes.
+
+The first expanded22-owner311 coverage attempt records4FAIL/937PASS97.37s,
+native98.933s/rc1. All four are the existing frozen-byte mutation controls in
+ test_dependency_runtime_inspection.py, parameterized manifest/lock/project/cfg.
+They still patch flat ci_batch_receipts.file_sha256 even though their actual
+owner is scripts.dependency_profiles and the corrected package arm now uses
+ scripts.ci_batch_receipts. The mutation callback never runs, producing four
+DID NOT RAISE failures. Root directly reads the original callback and every
+raise/changed assertion before authorizing a fixture-context correction.
+
+Conform only that test's sibling binding: flat under TYPE_CHECKING and qualified
+scripts binding at runtime, matching its actual owner context. Every mutation,
+callback, raises assertion and changed assertion remains byte-identical. No
+production alias, fallback, new path or freshness fence is altered. Retain the
+failed native raw/status/trace/JUnit; coverage.pyJSON/data were not produced
+because pytest failed before combine/audit, and must not be reconstructed.
+First replay the four corrected fixture controls, then measure the same22
+complete owners and eight full production files with unchanged85/75 BOTH.
+This adds one changed existing test path, giving twelve registered source/
+metadata paths. All task statuses and final exact-candidate proof obligations
+remain pending.
+
+The corrected full22-owner canonical311 run passes941 cases, zero skips,
+116.07s/native118.358s. Native coverage-files/20261019T213623Z-16570-62b7d6fe
+and immutable coverage-20261019T213821Z audit measure all eight complete files:
+92.6% line/88.7% branch aggregate, every file above75% both. This is focused
+source evidence for those actual bytes, not a full gate or hosted proof.
+
+The identical registeredMain312 cohort fails14/927PASS72.66s/native76.804s.
+All14 failures are in test_dependency_uv_acquisition.py: its fixture places
+the real3.12 controller behind a synthetic registered3.11 prefix/executable.
+The unchanged acquisition predicate correctly refuses before installation or
+cleanup, so lifecycle assertions never exercise their intended states. Preserve
+raw/status/JUnit under /tmp/gludd-v012-startup-native-chain-final-eight-whole312-failed*;
+the actual observer trace_path is null. No failing receipt becomes success.
+
+A genuine fixture-context repair must preserve actual sys.version_info,
+the native bootstrap child identity at dependency_profiles924-928, all
+registered-slot/parent/file/ownership checks and every existing assertion.
+Faking version_info to3.11 would contradict the actual3.12 child. Root requests
+a precise existing-owner policy seam decision before authorizing implementation;
+no extra runtime download, skip, verifier stub or production version relaxation.
+The existing acquisition test owner is registered as the thirteenth path.
+After actual repair, final same22-owner/both-runtime acceptance and full8-file
+85aggregate/75each line AND branch measurement must cover the final source.
+Independent review and normal guarded integration remain separate and pending.
+
+The approved decision at
+/tmp/gludd-v012-acquisition-fixture-context-decision.md extracts only the
+unchanged parent-version predicate into a typed argument-free private helper,
+called unconditionally at the same original guard location. Prefix/file,
+registered311-slot, ownership and real full native child identity stay active.
+The original fixture body becomes native_acquisition; actual311 uses it
+unpatched, while actual312 lifecycle tests model only prior version admission.
+All67 original acquisition cases/assertions remain; no sys.version_info change.
+
+Five additive controls require plan/apply sentinel routing, real selected
+parent policy and apply/reuse native-child reachability/immutability. Both
+runtimes retain3FAIL/2PASS first, with their actual parent refusal/acceptance
+controls passing before extraction. Complete acquisition then passes72/0skip
+on actual3116.34s/native7.5 and actual3126.92s/native8.3, including two actual
+full-version child observations on each. A new-pattern RuffRUF043 failure is
+retained and corrected only by literal regex escaping; all11 changed Python
+paths pass Ruff and the changed complete owners pass strict typing.
+
+Final current-source SAME22whole-owner canonical311 coverage passes946/0skip
+98.44s/native100.893rc0: coverage-files/20261019T215021Z-27388-59f757e3,
+immutable audit coverage-20261019T215202Z.json. Aggregate92.6% line/88.7% branch;
+all8 complete production files exceed75% both, dependency_profiles94.1/89.4.
+Same22-owner registeredMain312 passes946/0skip76.77s/native80.920rc0,
+v012-startup-native-chain/parent-seam-whole312-eb78ebd-20261019.
+The earlier941 proof and14-failure run remain their distinct historical scopes.
+Actual312 unit success includes separate native unsupported-parent refusals
+and explicitly modeled post-admission lifecycle tests; it does not establish
+real312 native311-controller acquisition. Full commands/artifacts and final
+source scope are /tmp/gludd-v012-startup-native-chain-report.md and
+/tmp/gludd-v012-startup-native-chain-evidence-index.md. Independent review,
+normal guarded integration, actual startup diagnostic, original90/60 admission,
+full gate, exact-SHA CI and all19 release task closures remain pending.
+
+Independent source review subsequently records CHANGES REQUIRED at
+/tmp/gludd-v012-startup-native-chain-independent-review.md: three new decorated
+context parameter names collide with the installed external Playwright fixture.
+The946-case cohort does not include the repository collision inventory owner.
+Preserve that negative decision and all946/coverage receipts with their actual
+pre-rename test signatures; they do not prove repository naming conformance.
+
+The exact existing guard is
+tests/unit/test_pytest_param_fixture_collisions.py::test_repository_parameters_do_not_shadow_external_pytest_fixtures.
+It checks audit.collisions. The initially proposed class-scoped binding case
+checks audit.bindings instead; source inspection corrects this before any run,
+so no failure is attributed to that unrelated node. Native unchanged guard
+RED is1FAIL5.64s/native6.9 on311 and1FAIL6.33s/native7.5 on312, naming exactly
+the three new decorators169/201/610. No scanner, allowlist or plugin changes.
+
+Rename only those new decorator/function/local Python bindings to import_context;
+preserve case values/order, child protocol/JSON, helpers and assertion meaning.
+The exact collision node plus WHOLE34-case new owner then passes35/0skip each:
+31120.58s/native21.703rc0;31221.88s/native23.019rc0. The changed test passes
+fresh Ruff/strict. Actual commands/raw/status/JUnits are indexed as
+context-audit-red311/312, context-green311/312 and context-lint311/strict311
+in the existing source handoff. Every one of the eight production files remains
+unchanged since its measured92.6line/88.7branch full-file proof. No946/coverage
+replay was run for this identifier-only conformance; final exact-candidate
+combined acceptance remains later. Freeze the thirteen paths again for a
+successor independent source decision; retain the original negative review.
