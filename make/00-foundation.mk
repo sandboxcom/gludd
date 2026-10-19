@@ -604,6 +604,7 @@ help:
 		"  test-files            Multiple tests (TESTFILES, PYTEST_ARGS, UV_PROJECT_ENVIRONMENT); explicit environments route nested UV consistently" \
 		"  grep                  Repository text search (Q=regex SEARCH_PATH=path)" \
 		"  ci-shards-diagnostic Serial collect-all diagnostics (CI_SHARDS_DIAGNOSTIC_SHARDS, CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY=0|1; default 1)" \
+		"  audit-agent-context-size Measure explicit JSON file set or default AGENTS/docs CLAUDE (AGENT_CONTEXT_FILES, AGENT_CONTEXT_JSON=0|1)" \
 		"  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)" \
 		"  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)" \
 		"  test-count            Count collected tests" \

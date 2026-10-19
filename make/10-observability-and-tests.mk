@@ -574,10 +574,17 @@ audit-agent-dead-code:
 audit-agent-script-discipline:
 	@$(UV) run python3 scripts/audit_agent_behavior.py --filter AB057
 
-# AB060 — audit-agent-context-size: check AGENTS.md + CLAUDE.md
-# combined size against thresholds.
+# AB060 — default AGENTS.md + docs/CLAUDE.md; explicit file sets are
+# literal JSON arrays, never shell/Make fragments. Empty retains the default.
+AGENT_CONTEXT_FILES ?=
+AGENT_CONTEXT_JSON ?= 0
+override GLUDD_AGENT_CONTEXT_FILES := $(value AGENT_CONTEXT_FILES)
+override GLUDD_AGENT_CONTEXT_JSON := $(value AGENT_CONTEXT_JSON)
+export GLUDD_AGENT_CONTEXT_FILES GLUDD_AGENT_CONTEXT_JSON
+unexport AGENT_CONTEXT_FILES AGENT_CONTEXT_JSON
 audit-agent-context-size:
-	@$(UV) run python3 scripts/audit_agent_behavior.py --filter AB060
+	@# AGENT_CONTEXT_FILES / AGENT_CONTEXT_JSON use the literal exported carriers above.
+	@$(UV) run python3 scripts/audit_agent_behavior.py --filter AB060 --context-from-env
 
 # ── AB061-AB080: Observability & Operations Integrity ──────────────────
 # audit-observability runs ALL AB061-AB080 checks; individual filters

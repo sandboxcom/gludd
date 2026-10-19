@@ -1,3 +1,44 @@
+## User-requested agent-policy compression on isolated branch (2026-10-19)
+
+Branch agent-agents-compression-20261019 is based on
+3583000e3b315f67acf0292dec8ba38642317a1c; main development/release sources remain
+untouched by this branch. The compact AGENTS root is536physical lines/69557bytes,
+versus the exact2499-line/231107-byte archive. Default AB060 context plus both
+preexisting conditional references is877lines/90947bytes versus2840/252497.
+No tokenizer or automatic losslessness claim is made. Every unique operative
+clause is intended to remain root; dated incidents/examples/research remain
+versioned comparison context without a new broad mandatory read.
+
+The full-original/full-root independent preservation review identified13 concrete
+repairs, now restored with all original tensions retained. Its prior508-line
+changes-requested artifact remains historical. The final root literal/27-owner handoff have independent exact-byte policy
+approval; code review found all three metrics boundaries repaired. Final
+committed-SHA source binding remains pending; no release approval is inferred.
+
+Unchanged instruction tests plus the new metrics owners pass565/0skip in15.06s
+(/tmp/gludd-agents-compression-27-owner-final.xml). Subsequent independent metrics
+review identified alias double-counting, CR-only legacy threshold drift and
+nonregular-read entry; the author's native5FAIL/35PASS is retained at
+/tmp/gludd-agents-metrics-boundary-red.xml. The corrected complete40-case metrics
+owners pass2.28s with97% native whole-file coverage/85aggregate75each-file floors,
+observer coverage-files/20261019T093215Z-60413-9c92f4de rc0/3.9s;
+.gate-logs/coverage-agent-context-metrics-boundaries.json is the actual report.
+Strict3-file mypy, Ruff,246target contracts,261resources, line limits and scoped
+locked Rumdl pass. Normal guarded commit/fresh collection still pending.
+
+The versioned takeover records14 unmerged C358→7207 repair commits separately
+from historical nine-focused confirmations and19-row release closure. The
+release-specific appendix codifies the existing reviewed S83.180 genuine
+reconciliation/metadata-merge protocol, preserves the67 completed finite
+controls, and requires a SECOND exact-metadata-SHA fullgate/hosted pair after
+actual19-task proof closure. It creates no new proof owner or admission exception.
+
+Source author ownership of TASKS/SESSION was explicitly released before these
+supporting notes. This branch preserves every old row/history and claims no
+new90/60 acceptance, full gate, exact-SHA hosted success, task completion, readiness,
+promotion or publication. Current native producers continue to own generated
+observations; no current JSON was manually edited.
+
 ## v0.1.2 hosted admission repair in progress (2026-10-18)
 
 Candidate `51669b0eaa4ce138ead678dd0f0d28584abf1077` is pushed normally.
