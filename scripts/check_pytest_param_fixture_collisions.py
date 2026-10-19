@@ -7,11 +7,11 @@ import gc
 import importlib.util
 import sys
 import sysconfig
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from importlib import metadata
+from itertools import repeat
 from pathlib import Path
-
 
 # The release audit uses ordinary reference-counted CPython; other builds keep
 # their original collection behavior until separately established.
@@ -61,6 +61,11 @@ class _SourceDeclarations:
     plugin_values: tuple[ast.expr, ...]
 
 
+def _field_values(node: ast.AST) -> Iterator[object]:
+    """Read every current field once in order; absent attributes yield None."""
+    return map(getattr, repeat(node), node._fields, repeat(None))
+
+
 def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
     imports: list[ast.Import | ast.ImportFrom] = []
     functions: list[
@@ -90,7 +95,7 @@ def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
         # Only statement lists can hold declarations. Non-statement wrappers
         # (exception handlers and match cases) expose their statements as body.
         # Preserve native field/list order for the existing LIFO traversal.
-        for _field, value in ast.iter_fields(node):
+        for value in _field_values(node):
             if not isinstance(value, list):
                 continue
             for child in value:

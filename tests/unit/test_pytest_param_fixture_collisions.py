@@ -492,13 +492,174 @@ def test_repository_class_scoped_fixtures_use_supported_binding(
     )
 
 
+def test_declaration_field_values_avoid_python_field_pair_iterator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from collections.abc import Iterator
+
+    tree = ast.parse(
+        "import pytest as pt\n"
+        "pytest_plugins = ('plugin.owner',)\n"
+        "@pt.mark.parametrize('base_url', [1])\n"
+        "def test_case(base_url): pass\n"
+        "class TestExample:\n"
+        "    @pt.fixture(scope='class')\n"
+        "    def shared(self): pass\n"
+    )
+    original_fields = ast.iter_fields
+    yielded_pairs: list[str] = []
+
+    def tracked_pairs(node: ast.AST) -> Iterator[tuple[str, object]]:
+        for field, value in original_fields(node):
+            yielded_pairs.append(field)
+            yield field, value
+
+    monkeypatch.setattr(ast, "iter_fields", tracked_pairs)
+    declarations = fixture_audit._source_declarations(tree)
+
+    assert len(declarations.imports) == 1
+    assert [
+        (node.name, getattr(owner, "name", "<module>"))
+        for node, owner in declarations.functions
+    ] == [("shared", "TestExample"), ("test_case", "<module>")]
+    assert [ast.literal_eval(value) for value in declarations.plugin_values] == [
+        ("plugin.owner",),
+    ]
+    assert fixture_audit._declared_fixture_names(declarations) == {"shared"}
+    assert yielded_pairs == [], "Declaration scanning still resumes Python field-pair generators"
+
+
+def test_field_values_preserve_lazy_once_order_and_attribute_error_defaults() -> None:
+    observed: list[str] = []
+    first, second = object(), object()
+
+    class ObservedFields(ast.AST):
+        _fields = ("first", "missing", "second", "attribute_error")
+
+        def __init__(self) -> None:
+            self.first = first
+            self.second = second
+
+        def __getattribute__(self, name: str) -> object:
+            if name in ("first", "missing", "second", "attribute_error"):
+                observed.append(name)
+            return super().__getattribute__(name)
+
+        @property
+        def attribute_error(self) -> object:
+            raise AttributeError("optional field unavailable")
+
+    node = ObservedFields()
+    values = fixture_audit._field_values(node)
+    assert observed == []
+    assert list(values) == [first, None, second, None]
+    assert observed == ["first", "missing", "second", "attribute_error"]
+
+    observed.clear()
+    assert [value for _field, value in ast.iter_fields(node)] == [first, second]
+    assert observed == ["first", "missing", "second", "attribute_error"]
+
+
+@pytest.mark.parametrize("kind", ["native-module", "custom-module", "custom-statement"])
+def test_field_values_preserve_modified_and_custom_declaration_fields(
+    monkeypatch: pytest.MonkeyPatch, kind: str,
+) -> None:
+    from collections.abc import Iterator
+
+    body = ast.parse(
+        "import pytest as pt\n"
+        "pytest_plugins = ('plugin.body',)\n"
+        "@pt.fixture\n"
+        "def body_fixture(): pass\n"
+    ).body
+    extra = ast.parse(
+        "from pytest import fixture as provide\n"
+        "pytest_plugins = ('plugin.extra',)\n"
+        "@provide\n"
+        "def extra_fixture(): pass\n"
+    ).body
+
+    class CustomModule(ast.Module):
+        pass
+
+    class CustomStatement(ast.stmt):
+        pass
+
+    if kind == "custom-statement":
+        statement = CustomStatement()
+        monkeypatch.setattr(statement, "_fields", ("extra", "missing"), raising=False)
+        monkeypatch.setattr(statement, "extra", extra, raising=False)
+        tree = ast.Module(body=[*body, statement], type_ignores=[])
+    else:
+        tree = (CustomModule if kind == "custom-module" else ast.Module)(
+            body=body, type_ignores=[],
+        )
+        monkeypatch.setattr(tree, "_fields", (*tree._fields, "extra", "missing"))
+        monkeypatch.setattr(tree, "extra", extra, raising=False)
+
+    def generic_values(node: ast.AST) -> Iterator[object]:
+        for _field, value in ast.iter_fields(node):
+            yield value
+
+    with monkeypatch.context() as patch:
+        patch.setattr(fixture_audit, "_field_values", generic_values, raising=False)
+        expected = fixture_audit._source_declarations(tree)
+    actual = fixture_audit._source_declarations(tree)
+
+    assert actual == expected
+    assert [node.name for node, _owner in actual.functions] == [
+        "extra_fixture", "body_fixture",
+    ]
+    assert [ast.literal_eval(value) for value in actual.plugin_values] == [
+        ("plugin.extra",), ("plugin.body",),
+    ]
+    assert fixture_audit._declared_fixture_names(actual) == {
+        "body_fixture", "extra_fixture",
+    }
+
+
+@pytest.mark.parametrize("error", [RuntimeError, KeyboardInterrupt])
+def test_field_values_propagate_non_attribute_errors(error: type[BaseException]) -> None:
+    class BrokenModule(ast.Module):
+        _fields = ("body", "type_ignores", "broken")
+
+        @property
+        def broken(self) -> object:
+            raise error("native field access failure")
+
+    tree = BrokenModule(body=[], type_ignores=[])
+    with pytest.raises(error, match="native field access failure"):
+        list(ast.iter_fields(tree))
+    with pytest.raises(error, match="native field access failure"):
+        list(fixture_audit._field_values(tree))
+    with pytest.raises(error, match="native field access failure"):
+        fixture_audit._source_declarations(tree)
+
+
+def test_field_values_release_nodes_and_rebuild_after_field_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = ast.parse("pass\n")
+    reference = weakref.ref(tree)
+    assert list(fixture_audit._field_values(tree)) == [tree.body, tree.type_ignores]
+    monkeypatch.setattr(tree, "_fields", ("type_ignores", "body", "fresh"))
+    monkeypatch.setattr(tree, "fresh", ["new value"], raising=False)
+    assert list(fixture_audit._field_values(tree)) == [
+        tree.type_ignores, tree.body, ["new value"],
+    ]
+    # Undo the fixture's own strong references before checking the iterator's lifetime.
+    monkeypatch.undo()
+    del tree
+    assert reference() is None
+
+
 def test_declaration_traversal_visits_statements_once_without_payload_growth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Argument, alias and keyword payloads must not expand the statement walk."""
     from collections.abc import Iterator
 
-    original_fields = ast.iter_fields
+    original_fields = fixture_audit._field_values
     visit_counts: list[int] = []
     for width in (1, 256):
         parameters = ", ".join(f"argument_{index}=0" for index in range(width))
@@ -522,7 +683,7 @@ def test_declaration_traversal_visits_statements_once_without_payload_growth(
         def statement_fields(
             node: ast.AST, *, expected_nodes: set[int] = expected_nodes,
             visited: list[int] = visited,
-        ) -> Iterator[tuple[str, object]]:
+        ) -> Iterator[object]:
             assert id(node) in expected_nodes, (
                 f"Declaration traversal inspected non-statement payload {type(node).__name__}"
             )
@@ -530,7 +691,7 @@ def test_declaration_traversal_visits_statements_once_without_payload_growth(
             yield from original_fields(node)
 
         with monkeypatch.context() as patch:
-            patch.setattr(ast, "iter_fields", statement_fields)
+            patch.setattr(fixture_audit, "_field_values", statement_fields)
             declarations = fixture_audit._source_declarations(tree)
 
         assert visited
