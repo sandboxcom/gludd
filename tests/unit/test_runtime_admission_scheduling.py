@@ -35,6 +35,8 @@ PLUGIN_ISOLATION_SELECTORS = (
     "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler",
 )
 ROSTER = (
+    "tests/unit/test_ci_batch_receipts.py::"
+    "test_receipt_validation_refuses_unsafe_artifact_mode[2432]",
     *APPROVED_PROMOTION_SELECTORS,
     "tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence",
     "tests/unit/test_owned_checkpoint_shared_worktree_admission.py::"
@@ -442,7 +444,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 112
+    assert len(families) == 113
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -660,7 +662,7 @@ def test_watchdog_handoff_exit_control_is_routed_once_in_third_child(tmp_path: P
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 112
+    assert len(payload["families"]) == 113
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -677,7 +679,7 @@ def test_native_watchdog_start_control_is_routed_once_in_third_child(tmp_path: P
         "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 112
+    assert len(payload["families"]) == 113
 
 
 def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(tmp_path: Path) -> None:
@@ -694,7 +696,7 @@ def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(
         "full_gate_phase": "test",
     }
     assert payload["families"][108] == expected
-    assert len(payload["families"]) == 112
+    assert len(payload["families"]) == 113
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -719,7 +721,7 @@ def test_watchdog_unit_log_namespace_guard_is_the_exact_new_third_child_node(tmp
         "id": "watchdog-unit-log-namespace", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(manifest["families"]) == 112
+    assert len(manifest["families"]) == 113
 
 
 def test_profile_composition_guard_is_once_in_third_child_with_original_bounds(tmp_path: Path) -> None:
@@ -761,11 +763,99 @@ def test_descendant_symlink_cleanup_is_selected_once_by_original_whole_owner(tmp
         for files in selections if isinstance(files, list) for selection in files
     ) == 1
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
-    assert payload["families"][-1] == {
+    assert payload["families"][111] == {
         "id": "ordinary-descendant-symlink-unlink", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(payload["families"]) == 112
+    assert len(payload["families"]) == 113
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
+
+
+def _assert_native_setuid_input_first_route(
+    payload: dict[str, object], rows: list[dict[str, object]],
+) -> None:
+    node = (
+        "tests/unit/test_ci_batch_receipts.py::"
+        "test_receipt_validation_refuses_unsafe_artifact_mode[2432]"
+    )
+    file = node.split("::", 1)[0]
+    families = payload["families"]
+    assert isinstance(families, list)
+    expected = {
+        "id": "native-setuid-input-realization", "owner_target": OWNER,
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    assert len(families) == 113 and families[112] == expected
+    assert [family for family in families if family["id"] == expected["id"]] == [expected]
+    assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    first_files = rows[0]["files"]
+    assert isinstance(first_files, list) and first_files[0] == node
+    selected: list[str] = []
+    for row in rows:
+        files = row["files"]
+        assert isinstance(files, list)
+        selected.extend(selector for selector in files if selector.split("::", 1)[0] == file)
+    assert selected == [node], "only the exact setuid case may be selected, once in MAIN"
+    assert [(row["nproc"], row["workers"]) for row in rows] == [
+        ("2", "2"), ("1", "1"), ("1", "1"),
+    ]
+    assert [row["flags"] for row in rows] == [
+        f"-W error -q -n 2 --maxprocesses 2 --ignore-glob={ROOT / 'tests' / '*'} -o verbosity_test_cases=-2",
+        "-W error -q -n 0 --maxprocesses 1",
+        f"-W error -q -n 0 --maxprocesses 1 --ignore-glob={ROOT / 'tests' / '*'}",
+    ]
+    runtime = payload["runtime_contract"]
+    assert isinstance(runtime, dict)
+    phases = runtime["phases"]
+    assert isinstance(phases, list)
+    phase = next(item for item in phases if item["target"] == OWNER)
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(phases) == 21 and sum(item["max_seconds"] for item in phases) == 2850
+    assert payload["full_gate_required"] is True
+
+
+def test_native_setuid_input_is_first_once_in_main_child(tmp_path: Path) -> None:
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    _assert_native_setuid_input_first_route(payload, rows)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("missing", "whole-file", "wrong-case", "duplicate", "later-only", "not-first", "wrong-family-node"),
+)
+def test_native_setuid_input_routing_rejects_contract_mutations(tmp_path: Path, mutation: str) -> None:
+    result, captured = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    original = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    _assert_native_setuid_input_first_route(original, captured)
+    payload, rows = deepcopy(original), deepcopy(captured)
+    node = (
+        "tests/unit/test_ci_batch_receipts.py::"
+        "test_receipt_validation_refuses_unsafe_artifact_mode[2432]"
+    )
+    selectors = rows[0]["files"]
+    assert isinstance(selectors, list)
+    if mutation == "missing":
+        selectors.remove(node)
+    elif mutation == "whole-file":
+        selectors[0] = node.split("::", 1)[0]
+    elif mutation == "wrong-case":
+        selectors[0] = node.replace("[2432]", "[420]")
+    elif mutation == "duplicate":
+        selectors.append(node)
+    elif mutation == "later-only":
+        selectors.remove(node)
+        later = rows[2]["files"]
+        assert isinstance(later, list)
+        later.append(node)
+    elif mutation == "not-first":
+        selectors.append(selectors.pop(0))
+    else:
+        assert mutation == "wrong-family-node"
+        payload["families"][112]["node"] = node.replace("[2432]", "[420]")
+    with pytest.raises(AssertionError):
+        _assert_native_setuid_input_first_route(payload, rows)

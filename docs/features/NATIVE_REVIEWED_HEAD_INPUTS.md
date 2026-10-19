@@ -499,3 +499,62 @@ evidence; no second coverage or expensive reviewed-head body replay was run.
 The original runtime failure is unexplained, and fresh frozen-candidate
 runtime/combined/source/gate/hosted proof remains required. No production
 repair, latency saving or release readiness is claimed.
+
+## Native setuid-input admission guard (2026-10-19)
+
+The exact d6a634a frozen four-owner private 3.12.15 run remains FAILED:
+433 passes, one failure and zero skips, 299.31s; its native observer reports
+rc2/302.972s. The requested permission input04600 was absent at the immediate
+post-chmod precondition: native permissions0600, uid501, with matching recorded
+device/inode. Validation was not reached. This does not retrospectively
+explain the older metadata-child failure, which recorded no effective mode.
+
+A bounded observation kept the selected builtin posix.chmod and its integer
+argument2432 unchanged. It returned None while direct builtin stat retained
+raw33152 (0100600); the ordinary0644 control changed raw33152 to33188.
+That default-context diagnostic reports22 passes/one failure in3.87s. Root
+then ran the exact instrumented ordered-four-owner comparison outside the
+sandbox: the requested mode was realized as raw35200 (0104600), both original
+unsafe-mode refusals passed, and all434 cases passed with zero skips in
+289.58s; native observer293.477s. The observed difference establishes execution
+context dependence for these runs. It identifies neither a specific kernel
+policy nor the cause of older unrecorded failures. Neither run is relabelled,
+and this is not a production permission repair or performance measurement.
+Raw comparison ownership remains with
+`/tmp/gludd-v012-chmod-native-context-comparison-d6a634a/`.
+
+Family113, native-setuid-input-realization, now appends the exact existing
+`test_receipt_validation_refuses_unsafe_artifact_mode[2432]` node to the
+promotion manifest and places it first in the MAIN admission child. All112
+earlier family objects and every earlier selector's relative order remain.
+No receipt fixture or validator changes. Real-Make routing controls require
+exactly this parameter case once, rejecting omission, whole-module expansion,
+the ordinary0644 case, duplication, later-child execution, later MAIN position
+and a mismatched manifest node. Existing three sequential children, workers
+2/1/1, original90/60,21phases/2850 ceiling, plugins, fatal warnings, ZDD,
+authentication, cleanup and85/75 coverage authority remain intact.
+
+Two new routing controls fail first in1.42s; all nine finite controls then pass
+in1.97s. Intermediate whole-owner acceptance retains133 passes/four failures:
+two stale exact-roster literals and two existing native fixture-collection
+EPERM failures. Only the literal expectations are conformed to the additive
+selector; no fixture boundary, assertion or setting bypass is introduced.
+Final complete routing-owner acceptance is recorded in the source report.
+This source guard does not prove the updated90-second target behavior;
+independent source review and Root's actual unchanged-bound behavior remain
+separate prerequisites before release claims.
+
+The upstream decision at
+`/tmp/gludd-v012-native-setuid-input-upstream-decision.md` found no matching
+successful-chmod/S_ISUID-loss report. Pinned
+[CPython3.12.15 os_chmod_impl](https://github.com/python/cpython/blob/v3.12.15/Modules/posixmodule.c#L3200-L3318)
+passes the requested mode and checks the native return code without verifying
+the resulting bits. Published
+[Apple authorization source](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_subr.c#L10364-L10430)
+distinguishes S_ISUID ownership from S_ISGID membership; gid0 alone does not
+explain this S_ISUID request, and that source does not identify the running
+kernel's policy. A firsthand
+[Homebrew Seatbelt report](https://github.com/orgs/Homebrew/discussions/6747)
+describes explicit denied writes and kernel deny records, not a successful
+04600-to0600 operation. These findings provide context, not an exact upstream
+cause or a universal sandbox behavior claim.

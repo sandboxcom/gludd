@@ -2257,3 +2257,37 @@ Normal guarded collection/pin and final cumulative independent source review
 remain separate. Fresh frozen-candidate runtime/combined/gate/exact-SHA hosted
 proof is required before integration/release claims. No merge, push, broad90,
 gate, hosted action, provisioning, daemon action, real cleanup or task closure.
+
+## 2026-10-19: exact native setuid input enters existing admission
+
+Task S98.4 remains open. Base d6a634a stays pinned and every old failure remains
+failed. Root's paired default/outside-sandbox instrumented runs observe
+04600-to0600 versus realized0104600, respectively; builtin posix.chmod receives
+the unchanged integer2432. Outside the sandbox all434 original four-owner
+cases pass, zero skips,289.58s/native293.477s. This proves the observed context
+difference, not a particular kernel policy or the older unrecorded failure's
+cause; no production mode repair or latency improvement is claimed.
+
+Append only manifest family113 native-setuid-input-realization and prepend the
+existing exact receipt[2432] node to MAIN. All112 previous objects and prior
+selector relative order, three sequential children/workers2-1-1,90-60,
+21phases/2850, plugins/fatalwarnings/authentication/ZDD/cleanup/85-75 remain.
+No receipt fixture/validator, runtime, dependency, setting or promotion change.
+
+New real-Make route and manifest controls fail first2/1.42s, then finite9 pass
+in1.97s, including seven meaningful contract-mutation negatives. Retain the
+first whole-routing run FAILED133/4/0skip32.31s, native33.129s: two exact roster
+literal conformance failures plus two native xdist fixture EPERM collection
+failures. Preserve those diagnostics and conform only the additive literals.
+Final complete routing-owner result is recorded in the source report.
+
+Scope: config/gate_failure_promotions.json, make/10-observability-and-tests.mk,
+tests/unit/test_gate_failure_promotion.py,
+tests/unit/test_runtime_admission_scheduling.py, the existing
+NATIVE_REVIEWED_HEAD_INPUTS feature, TASKS and this append. TASKS replaces one
+existing row without line/status/checkbox growth. The feature records the
+primary CPython/Apple and firsthand Homebrew findings with their actual limits.
+Raw source evidence: /tmp/gludd-v012-setuid-admission-evidence/.
+Normal guarded commit/fresh collection, independent exact-source review and
+Root's actual updated90 behavioral example remain separate. No full target
+behavior, integration, gate, hosted success or release readiness is claimed.
