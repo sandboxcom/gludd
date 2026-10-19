@@ -445,11 +445,17 @@ reviewed-head-receipt:
 
 RELEASE_READINESS_CI_BRANCH ?=
 
+ifneq (,$(filter gate gate-resume _gate-release-proof-admission release-proof-admission,$(MAKECMDGOALS)))
+unexport WORK_ITEM_ID
+endif
+
 # Scheduling admission only: existing owners remain the policy authorities.
 # Do not seal/replay a candidate or start a full gate while this is blocked.
 .PHONY: release-proof-admission
 release-proof-admission:
-	@case "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: RELEASE_PROOF_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac; \
+	@WORK_TASK='$(subst ','"'"',$(value WORK_ITEM_ID))'; \
+	case "$$WORK_TASK" in *[!A-Za-z0-9._-]*) echo "ERROR: WORK_ITEM_ID must be literal task data"; echo "PROOF-ADMISSION-BLOCKED phase=release-proof-admission rc=2"; exit 2;; esac; \
+	case "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: RELEASE_PROOF_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac; \
 	if [ "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" = "1" ]; then \
 		echo "PROOF-ADMISSION-PLAN capacity -> gate-config -> task-registration -> task-integrity -> failure-promotions -> resource-ownership -> runtime-compatibility; release_ready=false gate_evidence=false"; \
 		exit 0; \
@@ -457,10 +463,21 @@ release-proof-admission:
 	run_owner() { \
 		phase="$$1"; \
 		echo "PROOF-ADMISSION-START phase=$$phase"; \
+		if [ "$$phase" = "_pytest-runtime-compatibility-admission" ]; then \
+			if $(UV) run python scripts/item_progress.py prepare-runtime --task "$$WORK_TASK"; then :; else \
+				rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; exit "$$rc"; \
+			fi; \
+			runtime_run_id="proof-admission-$$(date -u +%Y%m%dT%H%M%SZ)-$$$$"; \
+			set -- run-watched WORK_ITEM_ID="$$WORK_TASK" GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 \
+				CMD='$(MAKE) --no-print-directory _pytest-runtime-compatibility-admission' \
+				OBSERVED_LABEL=release-proof-runtime-admission RUN_ID="$$runtime_run_id" MAX_SECS=90 STALL_SECS=60 \
+				LOG="$(OBSERVED_ROOT)/release-proof-runtime-admission/$$runtime_run_id.log" \
+				OBSERVED_ROOT="$(OBSERVED_ROOT)" OBSERVED_HEARTBEAT_SECS=10 OBSERVED_RETAIN_RUNS="$(or $(OBSERVED_RETAIN_RUNS),20)"; \
+		fi; \
 		if $(MAKE) --no-print-directory "$$@"; then \
 			echo "PROOF-ADMISSION-PHASE-PASS phase=$$phase"; \
 		else \
-			rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase"; exit "$$rc"; \
+			rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; exit "$$rc"; \
 		fi; \
 	}; \
 	run_owner disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800; \

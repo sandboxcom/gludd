@@ -7,7 +7,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from general_ludd.gate._types import GateEvent, GateRun, Heartbeat
+from general_ludd.gate._types import GateAdmission, GateEvent, GateRun, Heartbeat
 
 (
     _PHASE_RE,
@@ -65,6 +65,7 @@ def parse_gate_log(path: Path) -> GateRun:
     shards: list[tuple[str, int]] = []
     terminal: str | None = None
     resume_batches = 0
+    admission: GateAdmission | None = None
     open_phase: GateEvent | None = None
     open_batch: GateEvent | None = None
 
@@ -97,6 +98,38 @@ def parse_gate_log(path: Path) -> GateRun:
     for line_no, raw in enumerate(lines, start=1):
         line = raw.rstrip("\n")
 
+        if admission is not None:
+            owner = re.match(r"^PROOF-ADMISSION-START phase=(\S+)$", line)
+            blocked = re.match(r"^PROOF-ADMISSION-BLOCKED phase=(\S+)(?: .*)?$", line)
+            observed = re.match(r"^\[observed [^\]]+\] start run_id=(\S+) log=(.+)$", line)
+            if owner:
+                admission.owner = owner.group(1)[:128]
+                admission.reason = None
+                admission.node = None
+            elif blocked:
+                admission.state = "blocked"
+                admission.owner = blocked.group(1)[:128]
+            elif line.startswith("PROOF-ADMISSION-PASS "):
+                admission.state = "passed"
+            elif admission.state == "running":
+                if observed:
+                    admission.run_id = observed.group(1)[:128]
+                    admission.log_path = observed.group(2)[:512]
+                elif line.startswith("FAILED "):
+                    admission.node = line.split(" ", 2)[1][:256]
+                elif re.match(
+                    r"^(?:ERROR:|BLOCKED:|E |observed command error:|observed-command:|work-item:"
+                    r"|phase=(?:inspect|cleanup|recheck) status=failed)", line,
+                ):
+                    admission.reason = line[:256]
+                elif re.match(r"^\[observed [^\]]+\] result state=(?:timed_out|failed|interrupted) ", line):
+                    if admission.reason is None or "state=timed_out " in line:
+                        admission.reason = line[:256]
+            if line.startswith("admission FAIL ") and admission.log_path is None:
+                pointer = re.search(r" log=(\S+)", line)
+                if pointer:
+                    admission.log_path = pointer.group(1)[:512]
+
         heartbeat_match = _HEARTBEAT_RE.match(line)
         if heartbeat_match:
             heartbeats.append(Heartbeat(line=line_no, elapsed=float(heartbeat_match.group(1))))
@@ -118,6 +151,9 @@ def parse_gate_log(path: Path) -> GateRun:
         if phase_match:
             _close_phase(line_no - 1)
             _close_batch(line_no - 1)
+            if phase_match.group(1) == "admission":
+                admission = GateAdmission()
+                continue
             open_phase = GateEvent(kind="phase", label=phase_match.group(1), start_line=line_no, end_line=line_no)
             continue
 
@@ -175,6 +211,7 @@ def parse_gate_log(path: Path) -> GateRun:
         lines=lines,
         terminal=terminal,
         resume_batches=resume_batches,
+        admission=admission,
     )
 
 

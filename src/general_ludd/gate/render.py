@@ -23,6 +23,15 @@ def _format_eta(seconds: float) -> str:
 
 def failure_summary(run: GateRun) -> str:
     """Extract failing test ids and the first error line from a failed log."""
+    if run.admission is not None and run.admission.state == "blocked":
+        admission = run.admission
+        details = [f"admission owner={admission.owner or 'unknown'}"]
+        details.extend(value for value in (admission.node, admission.reason) if value)
+        if admission.log_path:
+            details.append(f"log={admission.log_path}")
+        if admission.run_id:
+            details.append(f"run_id={admission.run_id}")
+        return " ".join(details)
     failed_ids: list[str] = []
     seen: set[str] = set()
     error_message: str | None = None

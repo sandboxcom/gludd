@@ -4,11 +4,14 @@ Reads the Makefile as text and asserts the session launcher, PID file, and
 streaming phase markers exist. Mirrors test_guardrails.py::TestMakefileTargets.
 """
 
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+from scripts.gate_status_attestation import repository_state_id, sign_terminal_status
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parent.parent.parent
@@ -276,20 +279,132 @@ def test_gate_background_dry_run_has_no_filesystem_side_effects(
     assert set(tmp_path.iterdir()) == before_entries
 
 
+def _resume_make_fixture(
+    tmp_path: Path, *, mutation: str = "", plan: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    import shlex
+
+    recipe = _content().split("\ngate-resume: gate-admission-config\n", 1)[1].split("\n\n", 1)[0]
+    recipe = recipe.replace(
+        "scripts/gate_status_attestation.py", str(ROOT / "scripts/gate_status_attestation.py"),
+    )
+    uv = tmp_path / "selected-uv"
+    uv.write_text(
+        '#!/bin/sh\n[ "$1" = run ] || exit 91\nshift\n'
+        '[ "$1" = python ] || exit 92\nshift\n'
+        f'exec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8",
+    )
+    uv.chmod(0o700)
+    (tmp_path / ".gitignore").write_text(
+        ".gate-logs/\n.gate-status\ncalled\n", encoding="utf-8",
+    )
+    (tmp_path / "Makefile").write_text(
+        f"UV := {shlex.quote(str(uv))}\n_GATE_MAKE := make\n"
+        f"_GATE_REPOSITORY_ROOT := {tmp_path}\n_GATE_ENTRY_MAKEFILE := {tmp_path / 'Makefile'}\n"
+        "gate-admission-config:\n\t@:\n"
+        "gate-resume: gate-admission-config\n" + recipe
+        + "\n\ngate-background:\n"
+        "\t@echo resumed=$(GATE_EXACT_SHA_RESUME) profile=$(GATE_TEST_PROFILE) "
+        "files=$(GATE_MAX_FILES_PER_BATCH) workers=$(GATE_BATCH_WORKERS) > called\n",
+        encoding="utf-8",
+    )
+    for arguments in (
+        ("init", "--quiet"), ("config", "user.name", "Resume fixture"),
+        ("config", "user.email", "resume@example.invalid"), ("add", "."),
+        ("commit", "--quiet", "-m", "fixture"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *arguments], check=True, capture_output=True)
+    key = b"r" * 32
+    logs = tmp_path / ".gate-logs"
+    logs.mkdir()
+    key_path = logs / "fixture.key"
+    key_path.write_text(key.hex(), encoding="ascii")
+    log = logs / "gate-20261019T000000Z-fixture.log"
+    log.write_text("=== GATE: FAILED ===\n", encoding="utf-8")
+    status = tmp_path / ".gate-status"
+    status.write_text(
+        "=== GATE fixture ===\n"
+        f"gate-policy profile={'native' if mutation == 'policy' else 'release'} max_files_per_batch=16 workers=1\n"
+        "preflights PASS 35\nlint FAIL 1\n=== GATE: FAILED ===\n", encoding="utf-8",
+    )
+    if mutation != "unsigned":
+        sign_terminal_status(status, state_id=repository_state_id(tmp_path), key=key)
+    if mutation == "head":
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "commit", "--quiet", "--allow-empty", "-m", "new head"],
+            check=True, capture_output=True,
+        )
+    elif mutation == "tamper":
+        status.write_text(status.read_text().replace("PASS 35", "PASS 36"), encoding="utf-8")
+    original = status.read_bytes()
+    before = {path.name: path.read_bytes() for path in logs.iterdir()}
+    result = subprocess.run(
+        ["make", "--no-print-directory", "gate-resume", "GATE_TIMEOUT=3600",
+         "GATE_TEST_PROFILE=release", "GATE_MAX_FILES_PER_BATCH=16", "GATE_BATCH_WORKERS=1",
+         f"GATE_BACKGROUND_VALIDATE_ONLY={int(plan)}"],
+        cwd=tmp_path, env={**os.environ, "GLUDD_GATE_KEY_PATH": str(key_path)},
+        check=False, capture_output=True, text=True, timeout=20,
+    )
+    assert status.read_bytes() == original
+    assert {path.name: path.read_bytes() for path in logs.iterdir()} == before
+    return result
+
+
+@pytest.mark.parametrize("mutation", ["", "head", "policy", "unsigned", "tamper"])
+def test_resume_launch_uses_only_authenticated_current_state_and_policy(
+    tmp_path: Path, mutation: str,
+) -> None:
+    result = _resume_make_fixture(tmp_path, mutation=mutation)
+    assert result.returncode == 0, result.stdout + result.stderr
+    expected = 0 if mutation else 1
+    assert (tmp_path / "called").read_text().strip() == (
+        f"resumed={expected} profile=release files=16 workers=1"
+    )
+    assert ("PREFLIGHT-COLD:" in result.stdout) == bool(mutation)
+    assert not list((tmp_path / ".gate-logs").glob("gate-resume-prior-*.status"))
+
+
+def test_resume_plan_is_read_only_and_never_starts_a_child(tmp_path: Path) -> None:
+    result = _resume_make_fixture(tmp_path, plan=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VALIDATE" in result.stdout and "gate-background" in result.stdout
+    assert not (tmp_path / "called").exists()
+
+
+
+def test_gate_resume_plan_in_a_fresh_checkout_has_no_side_effects(tmp_path: Path) -> None:
+    metadata = (ROOT / "pyproject.toml").read_bytes()
+    (tmp_path / "pyproject.toml").write_bytes(metadata)
+    before = set(tmp_path.iterdir())
+    result = subprocess.run(
+        ["make", "-I", str(ROOT), "-f", str(MAKEFILE), "gate-resume",
+         "GATE_TIMEOUT=3600", "GATE_BACKGROUND_VALIDATE_ONLY=1",
+         "GATE_TEST_PROFILE=release", "GATE_MAX_FILES_PER_BATCH=16", "GATE_BATCH_WORKERS=1",
+         "PYTEST_CMD=", "PYTEST_ARGS=", "PYTEST_ADDOPTS=", "MYPY_MAX=0"],
+        cwd=tmp_path, check=False, capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VALIDATE" in result.stdout and "gate-background" in result.stdout
+    assert set(tmp_path.iterdir()) == before
+    assert (tmp_path / "pyproject.toml").read_bytes() == metadata
+
+
 def test_gate_resume_target_exists() -> None:
     content = _content()
     assert "gate-resume:" in content, "Makefile missing 'gate-resume:' target"
 
 
 def test_gate_resume_forwards_resume_and_gate_policy() -> None:
-    """gate-resume must invoke gate-background with GATE_EXACT_SHA_RESUME=1."""
+    """gate-resume forwards policy and the authenticated reuse decision."""
     content = _content()
     idx = content.find("gate-resume:")
     assert idx != -1
     next_target = re.search(r"\n[a-zA-Z_-][a-zA-Z0-9_-]*:", content[idx:])
     end = idx + next_target.start() if next_target else len(content)
     recipe_block = content[idx:end]
-    assert "GATE_EXACT_SHA_RESUME=1" in recipe_block
+    assert 'GATE_EXACT_SHA_RESUME="$$RESUME"' in recipe_block
+    assert "verify-resume .gate-status" in recipe_block
+    assert "RESUME=0" in recipe_block and "RESUME=1" in recipe_block
     assert "gate-background" in recipe_block
     assert "$(_GATE_MAKE)" in recipe_block
 
@@ -390,21 +505,24 @@ def test_gate_resume_validates_launch_with_failed_state(tmp_path: Path) -> None:
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "resuming from failed gate log" in result.stdout
+    assert "VALIDATE" in result.stdout and "gate-background" in result.stdout
+    assert (tmp_path / ".gate-status").read_text() == "=== GATE: FAILED ===\n"
+    assert not list(log_dir.glob("gate-resume-prior-*.status"))
 
 
-def test_gate_resume_captures_sha_stamped_preflight_receipt() -> None:
-    """gate-resume must preserve the prior .gate-status under the candidate SHA so
-    _gate-preflights can skip preflights on exact-SHA resume.
-    """
+def test_gate_resume_preserves_prior_status_without_relabelling_it() -> None:
+    """The locked gate owns immutable archival, rather than the resume facade."""
     content = _content()
     idx = content.find("gate-resume:")
     assert idx != -1
     next_target = re.search(r"\n[a-zA-Z_-][a-zA-Z0-9_-]*:", content[idx:])
     end = idx + next_target.start() if next_target else len(content)
     recipe_block = content[idx:end]
-    assert "cp .gate-status" in recipe_block
-    assert "gate-resume-prior-$(GATE_CANDIDATE_SHA).status" in recipe_block
+    assert "cp .gate-status" not in recipe_block
+    assert "gate-resume-prior-$(GATE_CANDIDATE_SHA).status" not in recipe_block
+    gate = content.split("\ngate:", 1)[1].split("\n# gate-lite:", 1)[0]
+    assert gate.index("archive-prior .gate-status") < gate.index('printf "RUNNING')
+    assert 'GATE_PREFLIGHT_RESUME_RECEIPT="$$PRIOR"' in gate
 
 
 def test_gate_preflights_skip_when_resume_receipt_exists() -> None:

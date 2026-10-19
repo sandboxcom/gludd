@@ -1257,6 +1257,125 @@ Existing finding identities/reviews, plugins, policy and thresholds remain;
 native disposable filename and line metadata refresh normally. No source rewrite
 to evade detection, pragma, exclusion or scanner bypass is used.
 
+### Logged release admission and authenticated resume
+
+The canonical release-profile `make gate` owns scheduling admission before its
+preflights, lint, collection and eight-shard test phase. Its existing profile and
+clean-candidate prerequisites still run before lock acquisition. After taking
+the native gate lock, the recipe preserves the previous raw status in a
+content-addressed, exclusive `.gate-logs/gate-resume-prior-<digest>.status`
+archive before publishing this invocation's running status. It never names old
+proof bytes after a newly selected commit.
+
+The release recipe emits `=== GATE PHASE: admission ===` and streams the
+existing `release-proof-admission` owner into a fresh private native log.
+The existing seven owners retain their order, read-only capacity preview and
+configuration, registration, task-integrity, promotion and resource checks.
+Only the final runtime compatibility owner runs through `run-watched`, with
+its original command, selected installed environment, three sequential children,
+2/1/1 workers, 90-second total / 60-second quiet bounds and fixed ten-second
+heartbeat. The facade does not advertise a heartbeat override. No interpreter,
+plugin, selector or proof authority is substituted.
+
+A failing admission records its exact owner and native log pointer in the
+partial status. The existing terminalizer writes authenticated `FAILED` with
+test and smoke `NOT-STARTED`; later phases do not start. The diagnostic log
+retains the real failing node, assertion, timeout, capacity reason or unchanged
+input refusal. A passing admission permits gate work to start; it supplies no
+green gate, exact-SHA CI, deployment proof or release authority.
+
+The watched runtime uses the current valid native work-item focus. On a fresh
+checkout, provide the actual active `WORK_ITEM_ID` or initialize it through
+`make work-item WORK_ITEM_ACTION=focus WORK_ITEM_ID=ACTIVE_TASK_ID WORK_ITEM_REASON='' WORK_ITEM_VALIDATE_ONLY=0`.
+`ACTIVE_TASK_ID` is a placeholder for a canonical open task, not an automatic
+milestone selection. Missing, inactive or unrelated IDs fail before the runtime
+child starts. A supporting ID must already have an explicit native declaration.
+Existing unattended observer callers keep their established behavior. The new
+entrypoint references carry task IDs as literal data: Make functions, shell
+substitutions, backticks and quote-bearing invalid values fail before child
+creation or plan output. The guard does not change unrelated observer callers.
+
+The unchanged-input retry guard remains in the existing item-progress owner.
+For the exact runtime compatibility command only, the candidate SHA and gate
+owner PID fields are lifecycle metadata rather than semantic test input.
+Profile, resume policy, batch size, workers, selected UV/environment, pytest
+options, warning policy and unknown variables remain semantic. Native Make
+carries changed command assignments in `MAKEFLAGS`; the existing volatile
+treatment remains. `MAKEOVERRIDES` is retained byte-for-byte, including its
+native opaque reference or any explicit escaped value. It is never parsed as
+shell words or broadly stripped. A new SHA, observer label or PID cannot alone
+authorize unchanged failed or timed-out runtime inputs.
+
+`make gate-resume` authenticates the failed status against fresh strict
+repository identity, the current index and signed profile/files/workers policy.
+Only a fresh HMAC-valid current-state status with one successful preflight
+record permits the original resume-always subset. New HEAD, changed content or
+mode, index mismatch, stale or unsigned status, malformed/duplicate records and
+policy changes take an explicit cold path. The gate revalidates the archived
+snapshot at its preflight boundary; a facade decision cannot bypass that fence.
+Existing exact batch receipt validation and original full-gate replay remain.
+
+Use the safe, mutation-free behavior example:
+
+```text
+make gate-resume GATE_TIMEOUT=3600 GATE_BACKGROUND_VALIDATE_ONLY=1 GATE_TEST_PROFILE=release GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 WORK_ITEM_ID=''
+```
+
+This plan validates configuration and describes the prospective launch. It
+does not start a child, copy a status, publish a PID or create gate evidence,
+including in a fresh checkout. Actual resume retains the failed-status and
+prior-log prerequisites and uses the existing isolated-session launcher without
+changing its canonical gate argv, PID ownership, watchdog or cleanup lifecycle.
+
+`gate-progress` derives admission diagnostics from the selected native log,
+including the observed runtime run/log pointer. An unrelated status file or
+another live gate cannot relabel a selected terminal log. Every admission-only
+state, including PASS followed by interruption before full-gate work, reports
+zero completed gate segments and unknown ETA. Native `work-item:` refusals
+retain their missing-focus or invalid-primary reason without inventing an
+observer identity. The public Make target uses the selected installed `UV`
+runtime and the current checkout parser; a local `.venv` is not required. Its
+cooldown record stays in the checkout-owned `.gate-logs` namespace. Existing
+force, cooldown and print-before-sleep behavior remain. Use
+`make gate-progress GATE_PROGRESS_MAX_HISTORICAL=20 GATE_PROGRESS_COOLDOWN_SECS=0 GATE_PROGRESS_FORCE=1 GATE_PROGRESS_SLEEP=0 GATE_PROGRESS_ARGS=--help`
+for the safe behavioral example. The next action is to repair the named owner
+and its actual input before resuming; changing a run ID supplies no proof.
+
+An isolated implementation branch is not the development pipeline source.
+The timed native original-90 run at clean development `ca91f33` failed its
+90-second bound; that historical failure remains. Reviewed source commits merge
+once into development. Dependent active worktrees then merge-forward those same
+commits before combined acceptance and exact-source proof. No feature is
+independently recreated in a second branch, and a worktree test never relabels
+the last hosted development result.
+
+The existing `ci-failure-repair` owner may record a meaningful changed-owner
+repair on the exact clean descendant SHA as `repaired`, awaiting hosted CI.
+The old private-3.12 admission does not have to pass first. This local repair
+state remains distinct from `resolved`, which requires later matching hosted
+success. Native `batch-push` independently requires the canonical Python 3.11
+90/60 admission and all its normal guards. A focused repair cannot substitute
+for that admission, clear the retained `ca91f33` timeout or establish final
+gate/release proof. Do not add an extra local-3.12 prerequisite that idles
+otherwise policy-admitted development CI.
+
+In [GitHub Community discussion #26071](https://github.com/orgs/community/discussions/26071),
+the July 2020 reporter initially suspected manual Actions runs used an old
+commit. Their August follow-up traced it to scripts baked into a container
+rebuilt only on master, so a different branch still executed old scripts.
+This is firsthand evidence to distinguish a trigger or commit label from the
+code actually loaded. It is not evidence of Gludd's timeout cause, a current
+GitHub defect or a measured benefit from resume.
+
+The finite native fixtures exercise the actual gate recipe with a deliberately
+failing admission owner, real terminal authentication and the native progress
+parser. Their retained log/status show the exact blocked owner and unstarted
+later phases. These checks use a seven-file coverage profile with nine complete
+test owners and keep 85% aggregate and 75% per-file line and branch floors. They
+are source acceptance only; the canonical gate, exact-SHA hosted CI, deployment acceptance
+and branch promotion requirements remain separate. ZDD changes only this
+control-plane workflow; no serving process is restarted or replaced.
+
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
 [observation-api]: https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository

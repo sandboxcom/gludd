@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import shlex
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,24 +28,129 @@ def _recipe() -> str:
 
 def _run(
     tmp_path: Path, *, mode: str = "0", failed_phase: str = "",
-    claimed_head: str = "a" * 40,
+    claimed_head: str = "a" * 40, native_focus: bool = False, task: str = "",
 ) -> subprocess.CompletedProcess[str]:
     targets = "".join(
         f"{phase}:\n\t@printf '%s\\n' '{phase}' >> phases.log\n"
         f"\t@test '{phase}' != '$(FAILED_PHASE)'\n"
         for phase in PHASES
     )
+    uv = "true"
+    recipe = _recipe()
+    if native_focus:
+        selected_uv = tmp_path / "selected-uv"
+        selected_uv.write_text(
+            '#!/bin/sh\n[ "$1" = run ] || exit 91\nshift\n'
+            '[ "$1" = python ] || exit 92\nshift\n'
+            f'exec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8",
+        )
+        selected_uv.chmod(0o700)
+        uv = shlex.quote(str(selected_uv))
+        recipe = recipe.replace("scripts/item_progress.py", str(ROOT / "scripts/item_progress.py"))
+        (tmp_path / "TASKS.md").write_text(
+            "v0.12.0 milestone is the exact task set F12.1-F12.3\n"
+            "- [ ] F12.1 — primary | status: pending\n", encoding="utf-8",
+        )
     (tmp_path / "Makefile").write_text(
-        "RELEASE_PROOF_ADMISSION_VALIDATE_ONLY ?= 0\n"
-        + "release-proof-admission:\n" + _recipe() + "\n\n" + targets,
+        f"RELEASE_PROOF_ADMISSION_VALIDATE_ONLY ?= 0\nUV := {uv}\n"
+        + "release-proof-admission:\n" + recipe + "\n\n" + targets
+        + "\nrun-watched:\n\t@printf '%s\\n' '$(CMD)' '$(MAX_SECS)' '$(STALL_SECS)' "
+        "'$(OBSERVED_HEARTBEAT_SECS)' > runtime-watch\n\t@$(CMD)\n",
         encoding="utf-8",
     )
+    selected_make = shutil.which("make")
+    assert selected_make is not None
     return subprocess.run(
-        ["make", "--no-print-directory", "release-proof-admission",
+        [selected_make, "--no-print-directory", f"MAKE={selected_make}", "release-proof-admission",
          f"RELEASE_PROOF_ADMISSION_VALIDATE_ONLY={mode}",
-         f"FAILED_PHASE={failed_phase}", f"CLAIMED_HEAD={claimed_head}"],
+         f"FAILED_PHASE={failed_phase}", f"CLAIMED_HEAD={claimed_head}", f"WORK_ITEM_ID={task}"],
         cwd=tmp_path, capture_output=True, text=True, check=False, timeout=30,
     )
+
+
+
+def test_runtime_admission_uses_original_selected_runtime_and_native_ninety_sixty_owner(
+    tmp_path: Path,
+) -> None:
+    result = _run(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    command, total, quiet, heartbeat = (tmp_path / "runtime-watch").read_text().splitlines()
+    selected_make = shutil.which("make")
+    assert selected_make is not None
+    assert shlex.split(command) == [selected_make, "--no-print-directory", "_pytest-runtime-compatibility-admission"]
+    assert (total, quiet, heartbeat) == ("90", "60", "10")
+    assert (tmp_path / "phases.log").read_text().splitlines() == list(PHASES)
+    assert not (tmp_path / ".gate-status").exists()
+    owner = _recipe()
+    assert "UV_PYTHON=3.11" not in owner
+    assert "sync " not in owner and "install " not in owner
+
+
+
+@pytest.mark.parametrize("task", ["", "not-an-active-task", "F12.1"])
+def test_runtime_prepares_real_focus_before_any_watched_child(tmp_path: Path, task: str) -> None:
+    result = _run(tmp_path, native_focus=True, task=task)
+    if task == "F12.1":
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (tmp_path / "runtime-watch").exists()
+        assert (tmp_path / ".gludd" / "item-progress.json").exists()
+    else:
+        assert result.returncode != 0
+        assert not (tmp_path / "runtime-watch").exists()
+        assert not (tmp_path / ".gludd" / "item-progress.json").exists()
+        assert (tmp_path / "phases.log").read_text().splitlines() == list(PHASES[:-1])
+        assert "WORK_ITEM_ID" in result.stderr or "active task" in result.stderr
+        assert "PROOF-ADMISSION-BLOCKED phase=_pytest-runtime-compatibility-admission" in result.stdout
+
+
+
+@pytest.mark.parametrize("owner", ["release-proof-admission", "gate-resume"])
+@pytest.mark.parametrize("syntax", ["make-function", "shell-substitution", "backticks", "quotes"])
+def test_plan_refuses_literal_task_injection_without_evaluation_or_children(
+    tmp_path: Path, owner: str, syntax: str,
+) -> None:
+    tripwire = tmp_path / "literal-task-evaluated"
+    values = {
+        "make-function": f"$(shell touch {tripwire})",
+        "shell-substitution": f"$$(touch {tripwire})",
+        "backticks": f"`touch {tripwire}`",
+        "quotes": f'x"; touch {tripwire}; : "',
+    }
+    (tmp_path / "pyproject.toml").write_bytes((ROOT / "pyproject.toml").read_bytes())
+    result = subprocess.run(
+        ["make", "-I", str(ROOT), "-f", str(ROOT / "Makefile"), owner,
+         "RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=1", "GATE_BACKGROUND_VALIDATE_ONLY=1",
+         "GATE_TEST_PROFILE=release", "GATE_MAX_FILES_PER_BATCH=16", "GATE_BATCH_WORKERS=1",
+         "PYTEST_CMD=", "PYTEST_ARGS=", "PYTEST_ADDOPTS=", "MYPY_MAX=0",
+         f"WORK_ITEM_ID={values[syntax]}"],
+        cwd=tmp_path, check=False, capture_output=True, text=True, timeout=20,
+    )
+    assert not tripwire.exists(), result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "WORK_ITEM_ID" in result.stdout + result.stderr
+    assert not (tmp_path / ".gate-logs").exists()
+    assert not (tmp_path / ".gludd").exists()
+
+
+
+def test_facade_contract_does_not_advertise_the_fixed_runtime_heartbeat() -> None:
+    import json
+
+    contract = json.loads((ROOT / "config/make_target_contract.json").read_text(encoding="utf-8"))
+    assert isinstance(contract, dict)
+    targets = contract["targets"]
+    assert isinstance(targets, list)
+    for target in targets:
+        assert isinstance(target, dict)
+        if target.get("name") == "release-proof-admission":
+            variables = target["make_variables"]
+            assert isinstance(variables, list)
+            assert "OBSERVED_HEARTBEAT_SECS" not in variables
+            behavior = target["behavior"]
+            assert isinstance(behavior, str)
+            assert "OBSERVED_HEARTBEAT_SECS" not in behavior
+            return
+    pytest.fail("Missing existing release-proof-admission contract")
 
 
 def test_plan_mode_does_not_run_owners_or_claim_admission(tmp_path: Path) -> None:

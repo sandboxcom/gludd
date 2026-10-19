@@ -312,7 +312,18 @@ def _verify_status(
     """Authenticate one terminal status under the requested admission policy."""
     if not status_path.exists():
         return VerificationResult(False, f"gate status is missing: {status_path}")
-    body, fields, parse_error = _split_status(status_path.read_text(encoding="utf-8"))
+    return _verify_status_content(
+        status_path.read_text(encoding="utf-8"), state_id=state_id, key=key, now=now,
+        freshness_seconds=freshness_seconds, require_pass=require_pass,
+    )
+
+
+def _verify_status_content(
+    content: str, *, state_id: str, key: bytes, now: int | None,
+    freshness_seconds: int, require_pass: bool,
+) -> VerificationResult:
+    """Apply the native signature policy to exactly one already captured status."""
+    body, fields, parse_error = _split_status(content)
     if parse_error:
         return VerificationResult(False, parse_error)
     missing = [field for field in _FIELDS if field not in fields]
@@ -394,6 +405,93 @@ def verify_terminal_status(
     )
 
 
+
+def _captured_resume_status(path: Path, *, directory_fd: int | None = None) -> bytes:
+    """Read one owned regular status snapshot without following its final entry."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=directory_fd)
+    try:
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+                or before.st_nlink != 1 or not 0 < before.st_size <= 128 * 1024):
+            raise ValueError("resume status must be a bounded owned regular file")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            encoded = stream.read(128 * 1024 + 1)
+        fingerprint = (before.st_dev, before.st_ino, before.st_mode, before.st_uid,
+                       before.st_size, before.st_mtime_ns, before.st_ctime_ns, before.st_nlink)
+        observations = (os.fstat(descriptor), os.stat(path, dir_fd=directory_fd, follow_symlinks=False))
+        if len(encoded) != before.st_size or any(
+            (value.st_dev, value.st_ino, value.st_mode, value.st_uid, value.st_size,
+             value.st_mtime_ns, value.st_ctime_ns, value.st_nlink) != fingerprint
+            for value in observations
+        ):
+            raise ValueError("resume status changed while capturing its bytes")
+        return encoded
+    finally:
+        os.close(descriptor)
+
+
+def archive_prior_status(status_path: Path, archive_root: Path) -> Path | None:
+    """Retain exact prior bytes by content identity, never under a new candidate SHA."""
+    try:
+        encoded = _captured_resume_status(status_path)
+    except FileNotFoundError:
+        return None
+    archive_root.mkdir(parents=True, exist_ok=True)
+    directory = os.open(archive_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        name = f"gate-resume-prior-{hashlib.sha256(encoded).hexdigest()}.status"
+        try:
+            descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                 0o600, dir_fd=directory)
+        except FileExistsError:
+            if _captured_resume_status(Path(name), directory_fd=directory) != encoded:
+                raise ValueError("prior status archive is occupied by different bytes") from None
+        else:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+        pinned = os.fstat(directory)
+        current = archive_root.lstat()
+        if (pinned.st_dev, pinned.st_ino) != (current.st_dev, current.st_ino):
+            raise ValueError("prior status archive directory identity changed")
+        return archive_root / name
+    finally:
+        os.close(directory)
+
+
+def verify_resume_status(
+    status_path: Path, *, state_id: str, key: bytes, profile: str,
+    max_files_per_batch: int, workers: int, now: int | None = None,
+    freshness_seconds: int = _DEFAULT_FRESHNESS_SECONDS,
+) -> VerificationResult:
+    """Permit only fresh authenticated current-state policy/preflight reuse."""
+    try:
+        content = _captured_resume_status(status_path).decode("utf-8")
+    except (OSError, ValueError) as exc:
+        return VerificationResult(False, f"resume status unavailable: {exc}")
+    result = _verify_status_content(
+        content, state_id=state_id, key=key, now=now,
+        freshness_seconds=freshness_seconds, require_pass=False,
+    )
+    if not result.ok:
+        return result
+    body, _fields, _error = _split_status(content)
+    lines = body.splitlines()
+    policy = f"gate-policy profile={profile} max_files_per_batch={max_files_per_batch} workers={workers}"
+    if [line for line in lines if line.startswith("gate-policy ")] != [policy]:
+        return VerificationResult(False, "resume gate policy is missing, duplicate or changed")
+    preflights = [line for line in lines if line.startswith("preflights ")]
+    if (len(preflights) != 1 or len(preflights[0].split()) != 3
+            or preflights[0].split()[1] != "PASS"
+            or not preflights[0].split()[2].isascii()
+            or not preflights[0].split()[2].isdigit()):
+        return VerificationResult(False, "resume preflights are not uniquely passed")
+    if "=== GATE: FAILED ===" not in lines:
+        return VerificationResult(False, "resume requires an authenticated failed gate")
+    return VerificationResult(True, "authenticated current preflights and policy", result.age_seconds)
+
+
 def _read_key(path: Path, *, create: bool) -> bytes:
     if create and not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -417,9 +515,14 @@ def _read_key(path: Path, *, create: bool) -> bytes:
 def main(argv: list[str] | None = None) -> int:
     """Sign or verify canonical status with strict default source identity."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("sign", "sign-terminal", "verify"))
+    parser.add_argument(
+        "action", choices=("sign", "sign-terminal", "verify", "verify-terminal", "verify-resume", "archive-prior"),
+    )
     parser.add_argument("status", nargs="?", default=".gate-status")
     parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--profile", choices=("native", "release"), default="native")
+    parser.add_argument("--max-files-per-batch", type=int, default=32)
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument(
         "--key-path",
         default=os.environ.get("GLUDD_GATE_KEY_PATH", str(_DEFAULT_KEY_PATH)),
@@ -438,6 +541,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = Path(args.repo_root).resolve()
         status = Path(args.status)
+        if args.action == "archive-prior":
+            archived = archive_prior_status(status, root / ".gate-logs")
+            if archived is not None:
+                print(archived)
+            return 0
         key = _read_key(
             Path(args.key_path),
             create=args.action in {"sign", "sign-terminal"},
@@ -451,12 +559,18 @@ def main(argv: list[str] | None = None) -> int:
             sign_terminal_status(status, state_id=worktree_state, key=key)
             print(f"terminal gate attestation signed state={worktree_state[:12]}")
             return 0
-        result = verify_status(
-            status,
-            state_id=worktree_state,
-            key=key,
-            freshness_seconds=args.freshness_seconds,
-        )
+        if args.action == "verify-resume":
+            result = verify_resume_status(
+                status, state_id=worktree_state, key=key, profile=args.profile,
+                max_files_per_batch=args.max_files_per_batch, workers=args.workers,
+                freshness_seconds=args.freshness_seconds,
+            )
+        else:
+            verifier = verify_terminal_status if args.action == "verify-terminal" else verify_status
+            result = verifier(
+                status, state_id=worktree_state, key=key,
+                freshness_seconds=args.freshness_seconds,
+            )
         if not result.ok:
             print(f"gate attestation rejected: {result.reason}", file=sys.stderr)
             return 1

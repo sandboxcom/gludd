@@ -234,6 +234,21 @@ def _environment_identity(environment: Mapping[str, str], cwd: Path | str | None
     })
 
 
+
+def _semantic_environment(command: Sequence[str], environment: Mapping[str, str]) -> Mapping[str, str]:
+    """Normalize only lifecycle metadata for the fixed compatibility command."""
+    arguments = [arg for arg in command[1:] if arg != "--no-print-directory"]
+    if not command or Path(command[0]).name != "make" or arguments != ["_pytest-runtime-compatibility-admission"]:
+        return environment
+    lifecycle = {"GATE_CANDIDATE_SHA", "GLUDD_CANDIDATE_SHA",
+                 "GLUDD_GATE_OWNER_PID", "GATE_RUN_LOCK_OWNER_PID"}
+    normalized = {name: value for name, value in environment.items() if name not in lifecycle}
+    # GNU Make carries command assignments through MAKEFLAGS (already volatile).
+    # MAKEOVERRIDES may be an opaque native reference or explicit semantic input;
+    # preserve its bytes rather than interpreting Make escaping as shell syntax.
+    return normalized
+
+
 def _identity(root: Path, command: Sequence[str], environment: Mapping[str, str],
               quiet_seconds: float, max_seconds: float, *, cwd: Path | str | None = None) -> dict[str, object]:
     if (not command or len(command) > 128
@@ -244,7 +259,7 @@ def _identity(root: Path, command: Sequence[str], environment: Mapping[str, str]
     return {
         "root": str(root), "command": list(command),
         "source": repository_state_id(root, include_head=False, exclude_bookkeeping=True),
-        "environment": _environment_identity(environment, cwd),
+        "environment": _environment_identity(_semantic_environment(command, environment), cwd),
         "limits": [quiet_seconds, max_seconds],
     }
 
@@ -294,7 +309,9 @@ class Admission:
     ) -> None:
         """Refuse an effective child context not admitted by the existing owner."""
         if (self.identity["command"] != list(command)
-                or self.identity["environment"] != _environment_identity(environment, cwd)
+                or self.identity["environment"] != _environment_identity(
+                    _semantic_environment(command, environment), cwd,
+                )
                 or self.identity["limits"] != [quiet_seconds, max_seconds]):
             raise ValueError("observed child execution context differs from native admission")
 
@@ -488,18 +505,37 @@ def command_admission(
         _release(root, key, token)
 
 
+
+def prepare_runtime_focus(root: Path, task_id: str = "") -> dict[str, object]:
+    """Require/revalidate existing focus before the bounded runtime can start."""
+    root = root.resolve()
+    with _locked(root) as (path, state):
+        primary = str(state["primary_task_id"]) if state is not None else task_id
+        if not primary:
+            raise ValueError(
+                "runtime admission requires native focus or explicit WORK_ITEM_ID; use "
+                "make work-item WORK_ITEM_ACTION=focus WORK_ITEM_ID=<active-task> WORK_ITEM_VALIDATE_ONLY=0"
+            )
+        state = _select(root, state, primary)
+        supporting = _supports(state["supporting_tasks"], primary)
+        if task_id and task_id not in {primary, *supporting}:
+            raise ValueError("runtime task must be the current primary or declared direct support")
+        _atomic_write_json(path, state)
+        return state
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Expose bounded administrative controls without executing a second runner."""
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("status", "focus", "support"))
+    parser.add_argument("action", choices=("status", "focus", "support", "prepare-runtime"))
     parser.add_argument("--task", default="")
     parser.add_argument("--reason", default="")
     parser.add_argument("--validate-only", choices=("0", "1"), default="0")
     args = parser.parse_args(argv)
     try:
-        if args.action != "status" and not args.task.strip():
+        if args.action in {"focus", "support"} and not args.task.strip():
             raise ValueError("focus/support requires one canonical task ID")
         if args.action == "support" and not args.reason.strip():
             raise ValueError("support requires a direct acceptance reason")
@@ -508,6 +544,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "kind": "work_item_plan", "action": args.action, "task": args.task,
                 "release_ready": False, "gate_evidence": False,
             }
+        elif args.action == "prepare-runtime":
+            record = prepare_runtime_focus(Path.cwd(), args.task)
         elif args.action == "focus":
             record = focus_item(Path.cwd(), args.task)
         elif args.action == "support":

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import time
@@ -41,6 +42,146 @@ def _passed_status(path: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+
+def _resume_status(path: Path, *, now: int = 1000, policy: str | None = None) -> None:
+    path.write_text(
+        "=== GATE fixture ===\n"
+        + (policy if policy is not None else
+           "gate-policy profile=release max_files_per_batch=16 workers=1\n")
+        + "preflights PASS 35\nlint FAIL 1\n=== GATE: FAILED ===\n",
+        encoding="utf-8",
+    )
+    sign_terminal_status(path, state_id=_STATE, key=_KEY, now=now)
+
+
+def test_resume_requires_current_signed_policy_without_admitting_failed_gate(tmp_path: Path) -> None:
+    status = tmp_path / ".gate-status"
+    _resume_status(status)
+    result = attestation.verify_resume_status(
+        status, state_id=_STATE, key=_KEY, profile="release",
+        max_files_per_batch=16, workers=1, now=1001, freshness_seconds=60,
+    )
+    assert result.ok, result.reason
+    assert verify_terminal_status(status, state_id=_STATE, key=_KEY, now=1001).ok
+    assert not verify_status(status, state_id=_STATE, key=_KEY, now=1001).ok
+
+
+@pytest.mark.parametrize(
+    ("mutation", "state", "key", "now"),
+    [
+        ("unsigned", _STATE, _KEY, 1001),
+        ("tamper", _STATE, _KEY, 1001),
+        ("policy", _STATE, _KEY, 1001),
+        ("duplicate-policy", _STATE, _KEY, 1001),
+        ("missing-policy", _STATE, _KEY, 1001),
+        ("failed-preflight", _STATE, _KEY, 1001),
+        ("duplicate-preflight", _STATE, _KEY, 1001),
+        ("unchanged", "different-state", _KEY, 1001),
+        ("unchanged", _STATE, b"x" * 32, 1001),
+        ("unchanged", _STATE, _KEY, 1061),
+    ],
+)
+def test_resume_refuses_unsigned_stale_changed_or_incomplete_evidence(
+    tmp_path: Path, mutation: str, state: str, key: bytes, now: int,
+) -> None:
+    status = tmp_path / ".gate-status"
+    _resume_status(status)
+    original = status.read_text(encoding="utf-8")
+    changed = original
+    if mutation == "unsigned":
+        changed = original.split("attestation-version", 1)[0]
+    elif mutation == "tamper":
+        changed = original.replace("preflights PASS 35", "preflights PASS 36")
+    elif mutation == "policy":
+        _resume_status(status, policy="gate-policy profile=native max_files_per_batch=16 workers=1\n")
+    elif mutation == "duplicate-policy":
+        _resume_status(status, policy=(
+            "gate-policy profile=release max_files_per_batch=16 workers=1\n" * 2
+        ))
+    elif mutation == "missing-policy":
+        _resume_status(status, policy="")
+    elif mutation == "failed-preflight":
+        changed = original.split("attestation-version", 1)[0].replace("preflights PASS 35", "preflights FAIL 1")
+        status.write_text(changed, encoding="utf-8")
+        sign_terminal_status(status, state_id=_STATE, key=_KEY, now=1000)
+    elif mutation == "duplicate-preflight":
+        changed = original.split("attestation-version", 1)[0].replace(
+            "preflights PASS 35", "preflights PASS 35\npreflights FAIL 1",
+        )
+        status.write_text(changed, encoding="utf-8")
+        sign_terminal_status(status, state_id=_STATE, key=_KEY, now=1000)
+    if mutation in {"unsigned", "tamper"}:
+        status.write_text(changed, encoding="utf-8")
+    result = attestation.verify_resume_status(
+        status, state_id=state, key=key, profile="release",
+        max_files_per_batch=16, workers=1, now=now, freshness_seconds=60,
+    )
+    assert not result.ok
+    assert result.reason
+
+
+def test_resume_policy_uses_the_authenticated_captured_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    status = tmp_path / ".gate-status"
+    _resume_status(status)
+    captured = status.read_text(encoding="utf-8")
+    split = attestation._split_status
+    observations: list[str] = []
+
+    def replace_after_capture(content: str) -> tuple[str, dict[str, str], str | None]:
+        observations.append(content)
+        status.write_text("preflights PASS 999\n", encoding="utf-8")
+        return split(content)
+
+    monkeypatch.setattr(attestation, "_split_status", replace_after_capture)
+    result = attestation.verify_resume_status(
+        status, state_id=_STATE, key=_KEY, profile="release",
+        max_files_per_batch=16, workers=1, now=1001,
+    )
+    assert result.ok, result.reason
+    assert observations and all(content == captured for content in observations)
+    assert status.read_text(encoding="utf-8") == "preflights PASS 999\n"
+
+
+def test_prior_status_archive_is_content_addressed_exclusive_and_not_sha_relabelled(
+    tmp_path: Path,
+) -> None:
+    status, archive = tmp_path / ".gate-status", tmp_path / ".gate-logs"
+    assert attestation.archive_prior_status(status, archive) is None
+    assert not archive.exists()
+    _resume_status(status)
+    original = status.read_bytes()
+    saved = attestation.archive_prior_status(status, archive)
+    assert saved is not None
+    assert saved.name == f"gate-resume-prior-{hashlib.sha256(original).hexdigest()}.status"
+    assert saved.read_bytes() == original
+    identity = saved.stat()
+    assert attestation.archive_prior_status(status, archive) == saved
+    assert saved.stat().st_ino == identity.st_ino
+    status.write_bytes(b"historical malformed status\xff\n")
+    newer = attestation.archive_prior_status(status, archive)
+    assert newer is not None and newer != saved
+    assert saved.read_bytes() == original
+    assert newer.read_bytes() == status.read_bytes()
+    saved.write_bytes(b"occupied foreign bytes\n")
+    status.write_bytes(original)
+    with pytest.raises(ValueError, match=r"archive|occupied|identity"):
+        attestation.archive_prior_status(status, archive)
+    assert saved.read_bytes() == b"occupied foreign bytes\n"
+
+
+def test_prior_status_archive_refuses_links_and_never_changes_the_target(tmp_path: Path) -> None:
+    target = tmp_path / "outside"
+    target.write_bytes(b"outside history\n")
+    status = tmp_path / ".gate-status"
+    status.symlink_to(target)
+    with pytest.raises((OSError, ValueError)):
+        attestation.archive_prior_status(status, tmp_path / ".gate-logs")
+    assert target.read_bytes() == b"outside history\n"
+    assert not (tmp_path / ".gate-logs").exists()
 
 
 def test_signed_current_status_is_accepted(tmp_path: Path) -> None:

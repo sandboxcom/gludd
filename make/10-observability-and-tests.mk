@@ -1089,7 +1089,7 @@ GATE_PREFLIGHT_TARGETS := \
 GATE_PREFLIGHT_STATUS ?= .gate-logs/gate-preflights.status
 GATE_PREFLIGHT_GATE_STATUS ?= .gate-status.next
 GATE_PREFLIGHT_FAILED_FILE ?= .gate-failed
-GATE_PREFLIGHT_RESUME_RECEIPT ?= .gate-logs/gate-resume-prior-$(GATE_CANDIDATE_SHA).status
+GATE_PREFLIGHT_RESUME_RECEIPT ?=
 GATE_PREFLIGHT_RESUME_ALWAYS ?= check-task-registration check-file-line-limits _dead-code-baseline-refresh
 
 .PHONY: _gate-preflights _gate-validation-admission _gate-preflight-fixture-pass-one _gate-preflight-fixture-fail _gate-preflight-fixture-pass-two
@@ -1105,8 +1105,8 @@ _gate-preflights:
 	: > "$(GATE_PREFLIGHT_STATUS)"; \
 	RECEIPT="$(GATE_PREFLIGHT_RESUME_RECEIPT)"; \
 	if [ "$(GATE_EXACT_SHA_RESUME)" = "1" ] && [ -f "$$RECEIPT" ]; then \
-		PRIOR=$$(grep '^preflights PASS' "$$RECEIPT" 2>/dev/null || true); \
-		if [ -n "$$PRIOR" ]; then \
+		if $(UV) run python scripts/gate_status_attestation.py verify-resume "$$RECEIPT" --profile "$(GATE_TEST_PROFILE)" --max-files-per-batch "$(GATE_MAX_FILES_PER_BATCH)" --workers "$(GATE_BATCH_WORKERS)"; then \
+			PRIOR="authenticated current-state preflights from $$RECEIPT"; \
 			PREFLIGHT_TOTAL=0; \
 			for target in $(GATE_PREFLIGHT_RESUME_ALWAYS); do \
 				PREFLIGHT_TOTAL=$$((PREFLIGHT_TOTAL + 1)); \
@@ -1130,6 +1130,9 @@ _gate-preflights:
 			echo "PASS $$PREFLIGHT_TOTAL" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
 			exit 0; \
 		fi; \
+		echo "PREFLIGHT-COLD: prior status failed current-state/policy authentication"; \
+	elif [ "$(GATE_EXACT_SHA_RESUME)" = "1" ]; then \
+		echo "PREFLIGHT-COLD: no authenticated prior status is available"; \
 	fi; \
 	PREFLIGHT_TOTAL=0; \
 	for target in $(GATE_PREFLIGHT_TARGETS); do \
@@ -1157,6 +1160,25 @@ GATE_ADMISSION_FINAL_STATUS ?= .gate-status
 GATE_ADMISSION_FAILED_FILE ?= .gate-failed
 GATE_RUN_LOCK_OWNER_PID ?= 0
 
+
+.PHONY: _gate-release-proof-admission
+_gate-release-proof-admission:
+	@mkdir -p .gate-logs; \
+	ADMISSION_LOG=$$(mktemp .gate-logs/gate-admission-XXXXXXXX) || exit $$?; \
+	echo "=== GATE PHASE: admission ==="; \
+	if $(UV) run python scripts/stream_command.py --log "$$ADMISSION_LOG" -- $(MAKE) --no-print-directory release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 WORK_ITEM_ID='$(subst ','"'"',$(value WORK_ITEM_ID))'; then \
+		echo "admission PASS log=$$ADMISSION_LOG" >> "$(GATE_ADMISSION_STATUS)"; \
+	else \
+		RC=$$?; \
+		OWNER=$$(sed -n 's/^PROOF-ADMISSION-BLOCKED phase=\([^ ]*\).*/\1/p' "$$ADMISSION_LOG" | tail -1); \
+		[ -n "$$OWNER" ] || OWNER=release-proof-admission; \
+		echo "admission FAIL owner=$$OWNER reason=owner-exit-$$RC log=$$ADMISSION_LOG" >> "$(GATE_ADMISSION_STATUS)"; \
+		touch "$(GATE_ADMISSION_FAILED_FILE)"; \
+		$(MAKE) --no-print-directory _gate-validation-admission; \
+		exit "$$RC"; \
+	fi
+
+
 _gate-validation-admission:
 	@if [ ! -f "$(GATE_ADMISSION_FAILED_FILE)" ]; then \
 		echo "GATE-VALIDATION-ADMISSION status=pass"; \
@@ -1181,13 +1203,24 @@ _gate-validation-admission:
 	exit 1
 
 gate: gate-admission-config $(if $(filter release,$(GATE_TEST_PROFILE)),_gate-release-state-check,) _gate-run-lock-acquire
-	@rm -f .gate-failed .gate-status.next .gate-status.running .gate-terminalized
-	@mkdir -p .gate-logs
-	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
-	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next
-	@echo "=== GATE PHASE: preflights ==="
-	@printf "preflights " >> .gate-status.next
-	@if ! $(MAKE) --no-print-directory _gate-preflights; then \
+	@WORK_TASK='$(subst ','"'"',$(value WORK_ITEM_ID))'; \
+	case "$$WORK_TASK" in *[!A-Za-z0-9._-]*) echo "ERROR: WORK_ITEM_ID must be literal task data"; $(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID"; exit 2;; esac; \
+	mkdir -p .gate-logs; \
+	if ! PRIOR=$$($(UV) run python scripts/gate_status_attestation.py archive-prior .gate-status); then \
+		echo "[gate] prior status archive refused; preserving the original status" >&2; \
+		$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID"; \
+		exit 2; \
+	fi; \
+	rm -f .gate-failed .gate-status.next .gate-status.running .gate-terminalized; \
+	printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status; \
+	echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next; \
+	echo "gate-policy profile=$(GATE_TEST_PROFILE) max_files_per_batch=$(GATE_MAX_FILES_PER_BATCH) workers=$(GATE_BATCH_WORKERS)" >> .gate-status.next; \
+	if [ "$(GATE_TEST_PROFILE)" = "release" ]; then \
+		$(MAKE) --no-print-directory _gate-release-proof-admission GATE_RUN_LOCK_OWNER_PID="$$PPID" WORK_ITEM_ID="$$WORK_TASK" || exit $$?; \
+	fi; \
+	echo "=== GATE PHASE: preflights ==="; \
+	printf "preflights " >> .gate-status.next; \
+	if ! $(MAKE) --no-print-directory _gate-preflights GATE_PREFLIGHT_RESUME_RECEIPT="$$PRIOR"; then \
 		echo "---" >> .gate-status.next; \
 		echo "epoch $$(date +%s)" >> .gate-status.next; \
 		$(UV) run python scripts/gate_run_lock.py release "$(GATE_RUN_LOCK)" "$$PPID" || echo "gate-lock FAIL release" >> .gate-status.next; \
