@@ -861,6 +861,17 @@ branch-reconciliation-summary:
 	@[ "$(RECONCILE_HEAD_SEMANTICS)" = "0" ] || [ "$(RECONCILE_DETAILS)" = "1" ] || { echo "RECONCILE_HEAD_SEMANTICS=1 requires RECONCILE_DETAILS=1"; exit 2; }
 	@$(UV) run python scripts/branch_reconciliation_inventory.py --target "$(RECONCILE_TARGET)" --limit "$(RECONCILE_LIMIT)" --after "" --all-pages $(if $(filter 1,$(RECONCILE_DETAILS)),,--counts-only) $(if $(filter 1,$(RECONCILE_CURRENT_ONLY)),--current-only,) $(if $(filter 1,$(RECONCILE_QUIET_PROGRESS)),--quiet-progress,) $(if $(filter 1,$(RECONCILE_HEAD_SEMANTICS)),--head-semantics,)
 
+ifneq (,$(filter branch-reconciliation-completed-backlog,$(MAKECMDGOALS)))
+unexport RECONCILE_TARGET RECONCILE_LIMIT RECONCILE_BASELINE RECONCILE_STAGING_PATH RECONCILE_REPORT_LIMIT RECONCILE_QUIET_PROGRESS RECONCILE_HUMAN
+endif
+
+branch-reconciliation-completed-backlog:
+	@$(foreach name,RECONCILE_TARGET RECONCILE_LIMIT RECONCILE_BASELINE RECONCILE_STAGING_PATH RECONCILE_REPORT_LIMIT RECONCILE_QUIET_PROGRESS RECONCILE_HUMAN,[ '$(origin $(name))' = 'command line' ] || [ '$(origin $(name))' = 'environment' ] || [ '$(origin $(name))' = 'environment override' ] || { echo "$(name) must be explicitly supplied"; exit 2; };)
+	@[ -n '$(subst ','"'"',$(value RECONCILE_TARGET))' ] && [ -n '$(subst ','"'"',$(value RECONCILE_LIMIT))' ] && [ -n '$(subst ','"'"',$(value RECONCILE_BASELINE))' ] && [ -n '$(subst ','"'"',$(value RECONCILE_STAGING_PATH))' ] && [ -n '$(subst ','"'"',$(value RECONCILE_REPORT_LIMIT))' ] && [ -n '$(subst ','"'"',$(value RECONCILE_QUIET_PROGRESS))' ] && [ -n '$(subst ','"'"',$(value RECONCILE_HUMAN))' ] || { echo "Usage: make branch-reconciliation-completed-backlog RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_BASELINE=v0.1.1 RECONCILE_STAGING_PATH=config/v012_completed_backlog_reconciliation.json RECONCILE_REPORT_LIMIT=1000 RECONCILE_QUIET_PROGRESS=0 RECONCILE_HUMAN=1"; exit 2; }
+	@[ '$(subst ','"'"',$(value RECONCILE_QUIET_PROGRESS))' = '0' ] || [ '$(subst ','"'"',$(value RECONCILE_QUIET_PROGRESS))' = '1' ] || { echo "RECONCILE_QUIET_PROGRESS must be 0 or 1"; exit 2; }
+	@[ '$(subst ','"'"',$(value RECONCILE_HUMAN))' = '0' ] || [ '$(subst ','"'"',$(value RECONCILE_HUMAN))' = '1' ] || { echo "RECONCILE_HUMAN must be 0 or 1"; exit 2; }
+	@$(UV) run python scripts/branch_reconciliation_inventory.py --target '$(subst ','"'"',$(value RECONCILE_TARGET))' --limit '$(subst ','"'"',$(value RECONCILE_LIMIT))' --after '' --completed-backlog --baseline '$(subst ','"'"',$(value RECONCILE_BASELINE))' --staging-path '$(subst ','"'"',$(value RECONCILE_STAGING_PATH))' --report-limit '$(subst ','"'"',$(value RECONCILE_REPORT_LIMIT))' $(if $(filter 1,$(value RECONCILE_QUIET_PROGRESS)),--quiet-progress,) $(if $(filter 1,$(value RECONCILE_HUMAN)),--human,)
+
 # Anti-overstatement tool: the MEASURED pass-rate of recent CI runs, so
 # "reliable"/"green" must be quoted as this ratio, never asserted as an adjective.
 ci-greenness:

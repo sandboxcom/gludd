@@ -1498,6 +1498,19 @@
       "behavior": "make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0 RECONCILE_QUIET_PROGRESS=0 RECONCILE_HEAD_SEMANTICS=0"
     },
     {
+      "name": "branch-reconciliation-completed-backlog",
+      "make_variables": [
+        "RECONCILE_TARGET",
+        "RECONCILE_LIMIT",
+        "RECONCILE_BASELINE",
+        "RECONCILE_STAGING_PATH",
+        "RECONCILE_REPORT_LIMIT",
+        "RECONCILE_QUIET_PROGRESS",
+        "RECONCILE_HUMAN"
+      ],
+      "behavior": "make branch-reconciliation-completed-backlog RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_BASELINE=v0.1.1 RECONCILE_STAGING_PATH=config/v012_completed_backlog_reconciliation.json RECONCILE_REPORT_LIMIT=1000 RECONCILE_QUIET_PROGRESS=0 RECONCILE_HUMAN=1"
+    },
+    {
       "name": "development-merge-forward",
       "make_variables": [
         "SOURCE",

@@ -917,6 +917,89 @@ Schema-v2 queue consumers can ignore additive members, while version-1 receipts
 must be regenerated rather than replayed. That requires no repository or runtime
 cleanup.
 
+## Completed backlog claims across current branches
+
+The six completed post-v0.1.1 items declared for v0.1.2 describe development's
+release ledger. That count is not an exhaustive assertion about other branches.
+Use the existing inventory owner's completed-backlog mode:
+
+```sh
+make branch-reconciliation-completed-backlog RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_BASELINE=v0.1.1 RECONCILE_STAGING_PATH=config/v012_completed_backlog_reconciliation.json RECONCILE_REPORT_LIMIT=1000 RECONCILE_QUIET_PROGRESS=0 RECONCILE_HUMAN=1
+```
+
+Supply all seven variables explicitly, using the registered selected runtime.
+RECONCILE_HUMAN=0 emits JSON. The target exhausts inventory pages itself and
+deduplicates aliases by immutable source SHA. It reads regular immutable TASKS
+blobs and the target's existing staging declaration, then repeats the inventory
+and baseline ref fences. No fetch or network freshness is implied.
+
+The helper reuses the canonical task parser and completion predicate. It
+separates already-completed target work, baseline history, additional source
+completion claims and v0.1.2 declaration state. A unique or nonancestor source
+head does not prove that its implementation is missing from development;
+implementation integration remains unknown pending content review.
+
+Missing, contradictory, malformed or overbound evidence never becomes zero.
+Historical duplicate/contradictory IDs remain uncertain and are excluded
+individually. Other unique, canonical, effectively complete IDs remain visible
+with their source ledger status and issues; they cannot turn a partial ledger
+into a complete count or a known comparison. All exhaustive totals remain
+nullable for partial evidence, and unknown comparisons stay explicitly unknown.
+Report omissions are counted. Unknown or truncated evidence exits2.
+
+The Make facade preserves raw literal values without recursive Make evaluation,
+does not export the original argument variables, and rejects inherited file
+defaults as explicit inputs. Native script bounds still own ref/path validation.
+The private bounded TASKS adapter uses TemporaryDirectory scope cleanup; no
+ref, index, worktree, service, process daemon or persistent cache is created.
+Rollback is a normal revert of this additive diagnostic mode and its facade;
+existing inventory, queue, receipt and source-proof workflows remain available.
+
+Every output fixes diagnostic_only=true, gate_evidence=false and
+release_ready=false. A checked box, a passing report or focused source tests
+cannot close a task or authorize a merge. Full-gate and exact-SHA proofs retain
+their existing owners, coverage floors, warning policy and ZDD obligations.
+
+The first actual local diagnostic, against development fbd0fc9a6f67fb9ec54c38b5f743783d29da3cf9,
+exhausted the refs and found111 distinct unique heads/113 branch aliases.
+Historical S76/S77/S78 primary-ID collisions correctly prevented an exhaustive
+completion count; its original all-or-nothing result is retained at
+/tmp/gludd-v012-completed-branch-first-diagnostic.log and native observer
+/tmp/gludd-v012-completed-branch-first-observer.json.
+The subsequent per-ID evidence repair preserves those uncertainties instead of
+hiding unrelated valid claims. Exact failing-first/source/facade commands and
+native receipts are in /tmp/gludd-v012-completed-branch-report-proposal.md.
+This dated diagnostic is not a promise that refs remain unchanged.
+
+The repaired actual snapshot at development09191054f47d0c41defbad2164364c050c2a307f
+retained111 unique heads/113 aliases and26 additional checked claims, with all
+terminal ref fences passing. Its161.3s/rc2 result keeps malformed totals unknown.
+Raw stdout/native metadata are /tmp/gludd-v012-completed-branches-0919105.log
+and /tmp/gludd-v012-completed-branches-0919105-observer.json.
+Root's interpretation is /tmp/gludd-v012-completed-branch-findings-0919105.md.
+
+Twenty claims on enhance-self-improve-codex-parity refer to implementations
+already in that development SHA: S83.47-S83.54,S83.58-S83.62,S83.64-S83.70.
+The existing native git-is-ancestor owner returned exit=0 for all20 cited source
+commits. Their development rows remain unchecked with full-gate-pending evidence.
+Three other claims are explicitly implemented-open (S83.158,S83.163,S83.166);
+two are awaiting-CI/gate-launched checkpoints (S79.2,S81.11), and historical
+S91.1 differs from the current adaptive0..3 task definition.
+These findings do not establish additional complete-and-unmerged items, and
+malformed identities still prevent an exhaustive assertion that none exist.
+The six formally completed/staged post-baseline declarations retain their
+original scoped meaning. Never turn branch ancestry or inherited checkboxes
+into full-gate or exact-SHA release proof.
+
+The user's 2026-10-19 sequencing instruction is to finish the current release
+pipeline repairs first, then prepare the work marked complete for v0.1.2.
+Use this retained claim inventory as the follow-on queue: establish the actual
+implementation and integration state, resolve each missing proof, and integrate
+eligible changes sequentially through the existing Make and branch owners.
+Do not infer that all113 branch refs are completed work or re-merge the20 sources
+already in development. Keep the six scoped completed declarations and all
+implemented-open owners distinct until their required final evidence exists.
+
 ## Makefile integrity
 
 Reconciliation tooling must remain discoverable through `make help`. The deep

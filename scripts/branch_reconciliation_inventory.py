@@ -1250,9 +1250,7 @@ def _parse_receipt_collapsed(
         collapsed.append(
             {
                 "branch_count": branch_count,
-                "classification": cast(
-                    Literal["ancestor", "patch-equivalent"], classification_value
-                ),
+                "classification": classification_value,
                 "expected_tip": expected_tip,
                 "refs": refs,
             }
@@ -2165,6 +2163,13 @@ def main(
     run: RunFn = _run,
 ) -> int:
     """Run the inventory CLI."""
+    provided = list(argv) if argv is not None else sys.argv[1:]
+    if "--completed-backlog" in provided:
+        import importlib
+
+        prefix = f"{__package__}." if __package__ else ""
+        completed = importlib.import_module(f"{prefix}branch_reconciliation_completed")
+        return cast(int, completed.main(provided, run=run))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, help="symbolic target ref")
     parser.add_argument("--limit", required=True, help="maximum branch records")
