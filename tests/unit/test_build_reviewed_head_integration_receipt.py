@@ -34,6 +34,33 @@ def _git(repo: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
+@pytest.mark.parametrize(
+    ("operation", "requested", "error"),
+    [
+        ("metadata", (), "commit metadata requires one or two exact object identities"),
+        ("metadata", ("bad",), "commit metadata requires complete native object identities"),
+        ("patch", (), "repository patch identities require one or two exact objects"),
+        ("patch", ("bad",), "repository patch identities require complete native object identities"),
+    ],
+)
+def test_native_object_admission_keeps_exact_owner_errors_before_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    operation: str, requested: tuple[str, ...], error: str,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def unexpected_git(_repo: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        calls.append(arguments)
+        raise AssertionError("invalid exact objects must refuse before native Git")
+
+    monkeypatch.setattr(builder, "_git", unexpected_git)
+    reader = builder._commit_metadata if operation == "metadata" else builder._patch_ids
+    with pytest.raises(ValueError) as refused:
+        reader(tmp_path, *requested)
+    assert str(refused.value) == error
+    assert calls == []
+
+
 def _commit(repo: Path, name: str, content: str) -> str:
     (repo / name).write_text(content, encoding="utf-8")
     _git(repo, "add", name)
@@ -116,11 +143,12 @@ def _merge_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[str, o
 
 
 def _cherry_pick_fixture(
-    tmp_path: Path,
+    tmp_path: Path, object_format: str | None = None,
 ) -> tuple[Path, dict[str, object], dict[str, object]]:
     repo = tmp_path / "repo"
     repo.mkdir()
-    _git(repo, "init", "-b", "development")
+    initial = ("--object-format=" + object_format,) if object_format is not None else ()
+    _git(repo, "init", "-b", "development", *initial)
     _git(repo, "config", "user.name", "Gludd Tests")
     _git(repo, "config", "user.email", "tests@gludd.invalid")
     reviewed_base = _commit(repo, "base.txt", "base\n")
@@ -187,6 +215,200 @@ def _cherry_pick_fixture(
         "returncode": 0,
     }
     return repo, manifest, attestation
+
+
+@pytest.mark.parametrize("object_format", ["sha1", "sha256"])
+@pytest.mark.parametrize("kind", ["equal", "unequal", "binary"])
+def test_paired_native_patch_ids_match_unchanged_legacy_ids(
+    tmp_path: Path, object_format: str, kind: str,
+) -> None:
+    repo, _manifest, _attestation = _cherry_pick_fixture(tmp_path, object_format)
+    source = _git(repo, "rev-parse", "fix/cherry")
+    application = _git(repo, "rev-parse", "HEAD")
+    if kind == "unequal":
+        application = _commit(repo, "fix.txt", "a different native patch\n")
+    elif kind == "binary":
+        _git(repo, "switch", "fix/cherry")
+        (repo / "binary.bin").write_bytes(bytes(range(256)) + b"\x00native binary patch\xff")
+        _git(repo, "add", "binary.bin")
+        _git(repo, "commit", "-m", "binary source")
+        source = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "switch", "development")
+        _git(repo, "cherry-pick", source)
+        application = _git(repo, "rev-parse", "HEAD")
+    expected = {sha: builder._patch_id(repo, sha) for sha in (source, application)}
+    assert builder._patch_ids(repo, source, application) == expected
+    assert (expected[source] == expected[application]) is (kind != "unequal")
+
+
+def test_paired_native_patch_ids_deduplicate_identical_objects_per_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, _manifest, _attestation = _cherry_pick_fixture(tmp_path)
+    source = _git(repo, "rev-parse", "fix/cherry")
+    expected = builder._patch_id(repo, source)
+    original = builder._git
+    commands: list[tuple[str, ...]] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        commands.append(arguments)
+        return original(repository, *arguments, input_bytes=input_bytes)
+
+    monkeypatch.setattr(builder, "_git", recorded)
+    for _boundary in range(2):
+        start = len(commands)
+        assert builder._patch_ids(repo, source, source) == {source: expected}
+        current = commands[start:]
+        assert len(current) == 2
+        assert current[0].count(source) == 1
+        assert current[1] == ("patch-id", "--stable")
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_paired_native_patch_ids_refuse_empty_patches_without_reusing_success(
+    tmp_path: Path, mixed: bool,
+) -> None:
+    repo, _manifest, _attestation = _cherry_pick_fixture(tmp_path)
+    source = _git(repo, "rev-parse", "fix/cherry")
+    application = _git(repo, "rev-parse", "HEAD")
+    expected = {sha: builder._patch_id(repo, sha) for sha in (source, application)}
+    assert builder._patch_ids(repo, source, application) == expected
+    _git(repo, "commit", "--allow-empty", "-m", "empty native patch")
+    empty = _git(repo, "rev-parse", "HEAD")
+    with pytest.raises(ValueError, match="patch identity is unavailable"):
+        builder._patch_id(repo, empty)
+    with pytest.raises(ValueError, match="patch identit"):
+        builder._patch_ids(repo, source if mixed else empty, empty)
+    assert builder._patch_ids(repo, source, application) == expected
+
+
+def test_paired_native_patch_ids_refresh_replacement_and_failure_views(tmp_path: Path) -> None:
+    repo, _manifest, _attestation = _cherry_pick_fixture(tmp_path)
+    source = _git(repo, "rev-parse", "fix/cherry")
+    application = _git(repo, "rev-parse", "HEAD")
+    original = builder._patch_ids(repo, source, application)
+    _git(repo, "switch", "--detach", source + "^")
+    replacement = _commit(repo, "fix.txt", "replacement native patch\n")
+    _git(repo, "replace", source, replacement)
+    changed = builder._patch_ids(repo, source, application)
+    assert changed == {sha: builder._patch_id(repo, sha) for sha in (source, application)}
+    assert changed[source] != original[source]
+    assert changed[application] == original[application]
+    _git(repo, "replace", "-d", source)
+    assert builder._patch_ids(repo, source, application) == original
+    with pytest.raises(ValueError, match="repository evidence"):
+        builder._patch_ids(repo, source, "f" * len(source))
+    assert builder._patch_ids(repo, source, application) == original
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["empty", "missing", "duplicate", "foreign", "extra-field", "bad-digest",
+     "bad-width", "non-ascii", "oversize", "native-failure"],
+)
+def test_paired_native_patch_ids_refuse_malformed_native_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str,
+) -> None:
+    repo, _manifest, _attestation = _cherry_pick_fixture(tmp_path)
+    source = _git(repo, "rev-parse", "fix/cherry")
+    application = _git(repo, "rev-parse", "HEAD")
+    original = builder._git
+
+    def corrupted(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        result = original(repository, *arguments, input_bytes=input_bytes)
+        if arguments != ("patch-id", "--stable"):
+            return result
+        rows = result.splitlines(keepends=True)
+        assert len(rows) == 2
+        digest, key = rows[0].split()
+        if mutation == "native-failure":
+            raise ValueError("repository evidence does not match the integration manifest")
+        if mutation == "empty":
+            return b""
+        if mutation == "missing":
+            return rows[0]
+        if mutation == "duplicate":
+            return rows[0] + rows[0]
+        if mutation == "foreign":
+            return digest + b" " + b"f" * len(key) + b"\n" + rows[1]
+        if mutation == "extra-field":
+            return digest + b" " + key + b" extra\n" + rows[1]
+        if mutation == "bad-digest":
+            return b"z" * len(digest) + b" " + key + b"\n" + rows[1]
+        if mutation == "bad-width":
+            return digest[:-1] + b" " + key + b"\n" + rows[1]
+        if mutation == "non-ascii":
+            return b"\xff" + result[1:]
+        assert mutation == "oversize"
+        return result * 3
+
+    monkeypatch.setattr(builder, "_git", corrupted)
+    with pytest.raises(ValueError, match=r"patch identit|repository evidence|ascii"):
+        builder._patch_ids(repo, source, application)
+
+
+@pytest.mark.parametrize(
+    "requested",
+    [(), ("a" * 40, "b" * 40, "c" * 40), ("a" * 39,), ("A" * 40,),
+     ("a" * 40, "b" * 64), ("--help",)],
+)
+def test_paired_native_patch_ids_reject_nonexact_inputs_before_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, requested: tuple[str, ...],
+) -> None:
+    def unexpected(*_arguments: object, **_keywords: object) -> bytes:
+        pytest.fail("invalid object identities reached native Git")
+
+    monkeypatch.setattr(builder, "_git", unexpected)
+    with pytest.raises(ValueError, match="patch identit"):
+        builder._patch_ids(tmp_path, *requested)
+
+
+def test_paired_native_patch_ids_map_reordered_records_by_exact_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, _manifest, _attestation = _cherry_pick_fixture(tmp_path)
+    source = _git(repo, "rev-parse", "fix/cherry")
+    application = _commit(repo, "fix.txt", "different keyed native patch\n")
+    expected = {sha: builder._patch_id(repo, sha) for sha in (source, application)}
+    assert expected[source] != expected[application]
+    original = builder._git
+
+    def reordered(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        result = original(repository, *arguments, input_bytes=input_bytes)
+        return b"".join(reversed(result.splitlines(keepends=True))) if arguments == ("patch-id", "--stable") else result
+
+    monkeypatch.setattr(builder, "_git", reordered)
+    assert builder._patch_ids(repo, source, application) == expected
+
+
+def test_topology_uses_one_fresh_paired_native_patch_operation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, manifest, attestation = _cherry_pick_fixture(tmp_path)
+    source = _git(repo, "rev-parse", "fix/cherry")
+    application = _git(repo, "rev-parse", "HEAD")
+    assert source != application
+    assert builder._patch_id(repo, source) == builder._patch_id(repo, application)
+    original = builder._git
+    commands: list[tuple[str, ...]] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        result = original(repository, *arguments, input_bytes=input_bytes)
+        if arguments[0] == "patch-id" or (arguments[0] == "show" and "--binary" in arguments):
+            commands.append(arguments)
+        return result
+
+    monkeypatch.setattr(builder, "_git", recorded)
+    for _boundary in range(2):
+        start = len(commands)
+        receipt = builder.build_receipt_from_manifest(
+            manifest, manifest_dir=repo.parent, gate_attestation=attestation, repo_root=repo,
+        )
+        assert receipt.final_sha == application
+        current = commands[start:]
+        assert len(current) == 2, current
+        assert current[0][0] == "show" and {source, application}.issubset(current[0])
+        assert current[1] == ("patch-id", "--stable")
 
 
 def test_builds_canonical_receipt_from_real_merge_and_gate_evidence(

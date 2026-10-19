@@ -424,7 +424,7 @@ reviewed-head-inputs:
 	@# REVIEWED_HEAD_INPUTS_OUTPUT, REVIEWED_HEAD_INPUTS_REPO_ROOT,
 	@# REVIEWED_HEAD_INPUTS_GATE_ATTESTATION, REVIEWED_HEAD_INPUTS_VALIDATE_ONLY.
 	@# Existing native progress admission: WORK_ITEM_ID, or its selected primary.
-	@$(UV) run python scripts/reviewed_head_inputs.py $(_REVIEWED_HEAD_FOCUS_WATCHDOG_ARG)
+	@PYTHONPATH="$(CURDIR)/src$${PYTHONPATH:+:$$PYTHONPATH}" $(UV) run python scripts/reviewed_head_inputs.py $(_REVIEWED_HEAD_FOCUS_WATCHDOG_ARG)
 
 .PHONY: reviewed-head-receipt
 reviewed-head-receipt:

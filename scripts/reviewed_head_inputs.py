@@ -259,8 +259,10 @@ def prepare_inputs(intent: object, *, repo_root: Path) -> dict[str, object]:
         source_tree, source_parents = metadata[source]
         if parents == (before,):
             mode = HeadApplicationMode.CHERRY_PICK
-            if (source_parents != (reviewed_base,)
-                    or receipt_owner._patch_id(root, source) != receipt_owner._patch_id(root, after)):
+            if source_parents != (reviewed_base,):
+                raise ValueError("native cherry-pick patch or reviewed source base differs")
+            patch_ids = receipt_owner._patch_ids(root, source, after)
+            if patch_ids[source] != patch_ids[after]:
                 raise ValueError("native cherry-pick patch or reviewed source base differs")
         elif parents == (before, source):
             mode = HeadApplicationMode.MERGE_TWO_PARENT
