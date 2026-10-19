@@ -22,6 +22,16 @@ SKELETON_SCRIPT = ROOT / "scripts" / "skeleton.py"
 SKILL_FILE = ROOT / ".opencode" / "skills" / "guardrail-pattern" / "SKILL.md"
 
 
+def _make_target_policy(agents_md: Path) -> str:
+    """Read the live entry and its explicitly mandatory target companion."""
+    content = agents_md.read_text(encoding="utf-8")
+    companion = ".agents/policy/key-make-targets.md"
+    assert f"mandatory [key Make targets]({companion})" in content, (
+        "AGENTS.md must retain the mandatory current Make target reference"
+    )
+    return content + "\n" + (agents_md.parent / companion).read_text(encoding="utf-8")
+
+
 class TestMakefileTargets:
     def test_makefile_exists(self) -> None:
         assert MAKEFILE.exists(), "Makefile must exist"
@@ -256,10 +266,39 @@ class TestBashGuardrailPrompting:
         assert "AGENTS.md" in content
 
     def test_agents_md_lists_make_targets(self) -> None:
-        content = AGENTS_MD.read_text()
+        content = _make_target_policy(AGENTS_MD)
         assert "make test" in content
         assert "make lint" in content
         assert "make init" in content
+
+    @pytest.mark.parametrize(
+        "reference",
+        [
+            "",
+            "mandatory [key Make targets](docs/AGENT_POLICY_V1_SOURCE_3583000.md)",
+            "[key Make targets](.agents/policy/key-make-targets.md)",
+        ],
+        ids=["unbound-inventory", "archive-substitution", "optional-current-link"],
+    )
+    def test_make_target_inventory_requires_current_mandatory_link(
+        self, tmp_path: Path, reference: str
+    ) -> None:
+        policy = tmp_path / "AGENTS.md"
+        policy.write_text(f"make init\nmake lint\nmake test\n{reference}\n", encoding="utf-8")
+        with pytest.raises(AssertionError, match="mandatory current Make target"):
+            _make_target_policy(policy)
+
+    def test_missing_current_target_companion_never_uses_archive(self, tmp_path: Path) -> None:
+        policy = tmp_path / "AGENTS.md"
+        policy.write_text(
+            "mandatory [key Make targets](.agents/policy/key-make-targets.md)\n",
+            encoding="utf-8",
+        )
+        archive = tmp_path / "docs" / "AGENT_POLICY_V1_SOURCE_3583000.md"
+        archive.parent.mkdir()
+        archive.write_text("make init\nmake lint\nmake test\n", encoding="utf-8")
+        with pytest.raises(FileNotFoundError):
+            _make_target_policy(policy)
 
 
 class TestTDDGuardrail:
