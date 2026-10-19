@@ -132,19 +132,31 @@ def _commit_parents(repo_root: Path, sha: str) -> tuple[str, ...]:
     return tuple(fields[1:])
 
 
-def _commit_metadata(
-    repo_root: Path, *shas: str,
-) -> dict[str, tuple[str, tuple[str, ...]]]:
-    """Read tree and ordered parents once for at most two exact native objects."""
+def _native_object_request(
+    shas: Sequence[str], *, cardinality_error: str, identity_error: str,
+) -> tuple[tuple[str, ...], int]:
+    """Admit a local ordered set of one or two complete native object IDs."""
     requested = tuple(dict.fromkeys(shas))
     if not 1 <= len(requested) <= 2:
-        raise ValueError("commit metadata requires one or two exact object identities")
+        raise ValueError(cardinality_error)
     width = len(requested[0])
     if width not in {40, 64} or any(
         len(sha) != width or any(character not in "0123456789abcdef" for character in sha)
         for sha in requested
     ):
-        raise ValueError("commit metadata requires complete native object identities")
+        raise ValueError(identity_error)
+    return requested, width
+
+
+def _commit_metadata(
+    repo_root: Path, *shas: str,
+) -> dict[str, tuple[str, tuple[str, ...]]]:
+    """Read tree and ordered parents once for at most two exact native objects."""
+    requested, width = _native_object_request(
+        shas,
+        cardinality_error="commit metadata requires one or two exact object identities",
+        identity_error="commit metadata requires complete native object identities",
+    )
     encoded = _git(
         repo_root, "show", "--no-patch", "--no-color", "--no-decorate", "--no-notes",
         "--no-show-signature", "--format=%H%x20%T%x20%P", *requested, "--",
@@ -188,6 +200,36 @@ def _patch_id(repo_root: Path, sha: str) -> str:
     if not fields:
         raise ValueError("repository patch identity is unavailable")
     return fields[0]
+
+
+def _patch_ids(repo_root: Path, *shas: str) -> dict[str, str]:
+    """Read one fresh keyed stable-patch identity for each exact native object."""
+    requested, width = _native_object_request(
+        shas,
+        cardinality_error="repository patch identities require one or two exact objects",
+        identity_error="repository patch identities require complete native object identities",
+    )
+    patch = _git(
+        repo_root, "show", "--format=commit %H", "--binary", "--full-index", *requested, "--",
+    )
+    encoded = _git(repo_root, "patch-id", "--stable", input_bytes=patch)
+    if not encoded or len(encoded) > len(requested) * (2 * width + 2):
+        raise ValueError("repository patch identity is unavailable")
+    records: dict[str, str] = {}
+    for line in encoded.decode("ascii").splitlines():
+        fields = line.split()
+        if (
+            len(fields) != 2 or fields[1] not in requested or fields[1] in records
+            or any(
+                len(field) != width or any(character not in "0123456789abcdef" for character in field)
+                for field in fields
+            )
+        ):
+            raise ValueError("repository patch identity is unavailable")
+        records[fields[1]] = fields[0]
+    if set(records) != set(requested):
+        raise ValueError("repository patch identity is unavailable")
+    return records
 
 
 def _verify_gate_attestation(
@@ -271,11 +313,10 @@ def _verify_repository_topology(
             raise ValueError("repository source ref does not match the reviewed SHA")
         if _commit_parents(repo_root, evidence.after_sha) != evidence.parent_shas:
             raise ValueError("repository parent topology disagrees with the manifest")
-        if evidence.application_mode is HeadApplicationMode.CHERRY_PICK and (
-            _patch_id(repo_root, head.source_sha)
-            != _patch_id(repo_root, evidence.after_sha)
-        ):
-            raise ValueError("repository cherry-pick patch identity does not match")
+        if evidence.application_mode is HeadApplicationMode.CHERRY_PICK:
+            patch_ids = _patch_ids(repo_root, head.source_sha, evidence.after_sha)
+            if patch_ids[head.source_sha] != patch_ids[evidence.after_sha]:
+                raise ValueError("repository cherry-pick patch identity does not match")
         for prerequisite in head.prerequisite_ancestry:
             if prerequisite.resolution is PrerequisiteResolution.ALREADY_REACHABLE:
                 _git(

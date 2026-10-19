@@ -605,3 +605,78 @@ receipt-builder and native-startup/input coverage owners remain in acceptance.
 Raw RED/GREEN, coverage and mandatory collection receipts are retained under
 `/tmp/gludd-v012-native-git-metadata-repair-evidence/`. Reduced launches are
 not measured wall-time savings, updated admission behavior or release proof.
+
+## Fresh paired native patch identities (2026-10-19)
+
+Each independent cherry-pick comparison now uses the existing receipt Git owner
+for one keyed multi-object `git show` and one `git patch-id --stable`. The legacy
+single-object `_patch_id` remains unchanged as the native parity reference.
+Complete immutable IDs are deduplicated only within the current pair; output
+must contain exactly one complete digest for each requested key. Missing,
+duplicate, foreign, malformed, non-ASCII, oversized, empty-patch and native-error
+responses refuse. Only the small keyed result is bounded; patch payloads keep
+their existing native behavior.
+
+The normal duplicate-code guard retained a failed attempt for repeated exact-ID
+admission. Both readers now share one pure ordered-request validator, preserving
+each caller's original error text, one/two distinct common-width40/64 lowerhex
+identities and zero Git work before validation. Query/parsing bodies and the
+legacy parity reference remain unchanged; no clone waiver or cache is added.
+
+Real Git controls prepare fixtures before recording and delegate every command.
+They establish four launches become two for each local pair, on two independent
+builder calls and two independent preparations. SHA1/SHA256, equal and unequal
+changes, binary payloads, same-ID deduplication, result ordering, replacement
+views, failure after success and next-call freshness retain native parity.
+Invalid source parents still refuse before any patch probe. No result crosses
+a preparation, capture, validation, repository mutation or authentication fence.
+
+[Git show](https://git-scm.com/docs/git-show) and
+[Git patch-id](https://git-scm.com/docs/git-patch-id) define the native formatting
+and keyed stable identity contract. A firsthand
+[2012-2017 duplicate-commit discussion](https://stackoverflow.com/questions/11605703/git-finding-duplicate-commits-by-patch-id)
+distinguishes attributed show output from raw diff streams and describes merge
+diff caveats in historical Git versions. It motivates exact keys and unchanged
+parent/topology checks; it is neither a current Gludd defect nor a benchmark.
+The original report's additional changes were not an identical patch.
+
+The failed development source remains immutable at
+`refs/heads/reviewed-v012-integration-dfb4bf8-20261019`: canonical admission
+failed with rc124 after90.547s; MAIN1990 passed in72.84s and fresh help1 passed
+in1.11s, while the tail was censored. Raw history stays at
+`/tmp/gludd-v012-admission-timeout-dfb4bf8/README.md`. Both native cleanup repair
+receipts in `/tmp/gludd-v012-cleanup-dfb4bf8-ci-repair-receipts.md` are repaired
+awaiting hosted confirmation, not resolved or admission clearance.
+
+The active model implementation owner is release_repair_proposal_review on
+`agent-v012-paired-patch-20261019`; model work has no invented OS PID.
+The private3.12 whole-owner attempt retained208 passes and one failed public
+Make behavior: the selected environment's installed package did not provide
+`general_ludd.git_release`. The existing reviewed-head Make recipe now prepends
+its current repository/src to preserved caller PYTHONPATH, following the
+existing gate-progress convention. Selected UV, actual Python argv, literal
+inputs and the focus-only watchdog marker remain unchanged. Native empty and
+poison-package controls fail first; the poison payload is syntax-checked and
+must never execute once current source is bound. Original hostile-path and
+owned-versus-ordinary process assertions remain unchanged.
+A source-acceptance run retained199 passes and one failed symlink-output case:
+the unchanged production guard first rejected the fixture's lifecycle/signing
+timestamps. The sole unchanged node reproduction passed; that does not replace
+the failed whole run or identify which historical epoch bound failed.
+A new no-sleep earlier-focus regression fails against the actual native signed
+epoch. The existing fixture now records genuine UTC start/completion around its
+unchanged producer/sign work, preserving focus, shard and signer chronology.
+Every original output/refusal/foreign-target survival assertion and production
+timestamp allowance remains unchanged; this is fixture input conformance.
+
+Canonical whole-owner coverage retains both existing full-file profiles and
+independent85/75 line/branch floors. Private3.12 acceptance retains both complete
+changed test owners and every original assertion. All113 families, selectors,
+plugins, three sequential2/1/1 children,90/60,21phases2850, fatal warnings, ZDD,
+cleanup and branch/promotion gates remain unchanged. Native source receipts
+and commands are retained under `/tmp/gludd-v012-paired-patch-evidence/`.
+
+After frozen-source acceptance, review and integration, Root owns the original
+unchanged canonical admission, ordinary guarded development push and final
+native release proofs. Reduced native operation counts do not establish
+wall-time savings, hosted margin, passing admission or release readiness.

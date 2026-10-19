@@ -175,26 +175,30 @@ def _producer_gate_command(root: Path) -> list[str]:
 
 
 def _gate(root: Path, tmp_path: Path, focus_completed: str) -> Path:
-    started = datetime.fromisoformat(focus_completed) + timedelta(microseconds=1)
-    completed = started + timedelta(microseconds=1)
+    started = max(
+        datetime.fromisoformat(focus_completed) + timedelta(microseconds=1),
+        datetime.now(UTC),
+    )
     started_text = started.isoformat()
-    completed_text = completed.isoformat()
     # Ignore policy uses Git's native local exclude, preserving the candidate.
     log_dir = root / ".gate-logs"
     log_dir.mkdir(exist_ok=True)
     run_id = "20261014T120000Z-native-test"
-    state = {
-        "schema_version": 1, "kind": "gludd_gate_background", "state": "finished",
-        "run_id": run_id, "project_root": str(root.resolve()),
-        "command": _producer_gate_command(root),
-        "started_at": started_text, "finished_at": completed_text,
-        "termination_reason": "gate-exited",
-    }
-    (log_dir / "gate-background-state.json").write_text(json.dumps(state), encoding="utf-8")
+    command = _producer_gate_command(root)
     status = root / ".gate-status"
     status.write_text("lint PASS\ntypecheck PASS\ncollect PASS\ntest PASS\nsmoke PASS\n"
                       "=== GATE: PASSED ===\n", encoding="utf-8")
     gate_owner.sign_status(status, state_id=gate_owner.repository_state_id(root), key=KEY)
+    completed = max(datetime.now(UTC), started + timedelta(microseconds=1))
+    completed_text = completed.isoformat()
+    state = {
+        "schema_version": 1, "kind": "gludd_gate_background", "state": "finished",
+        "run_id": run_id, "project_root": str(root.resolve()),
+        "command": command,
+        "started_at": started_text, "finished_at": completed_text,
+        "termination_reason": "gate-exited",
+    }
+    (log_dir / "gate-background-state.json").write_text(json.dumps(state), encoding="utf-8")
     final = _git(root, "rev-parse", "HEAD")
     pairing = shard_owner._attestation_pairing(list(SHARDS), pytest_args=list(shard_owner.RELEASE_PYTEST_ARGS))
     # Model the external canonical release gate, not this fixture inspector's runtime.
@@ -213,6 +217,27 @@ def _gate(root: Path, tmp_path: Path, focus_completed: str) -> Path:
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(attestation), encoding="utf-8")
     return path
+
+
+def test_gate_fixture_lifecycle_spans_actual_native_signing_after_earlier_focus(tmp_path: Path) -> None:
+    root, _ = _fixture(tmp_path)
+    focus_completed = datetime.now(UTC) - timedelta(seconds=10)
+    attestation = _gate(root, tmp_path, focus_completed.isoformat())
+    state = json.loads((root / ".gate-logs/gate-background-state.json").read_text(encoding="utf-8"))
+    gate = json.loads(attestation.read_text(encoding="utf-8"))
+    outer_started = datetime.fromisoformat(state["started_at"])
+    outer_completed = datetime.fromisoformat(state["finished_at"])
+    gate_started = datetime.fromisoformat(gate["started_at"])
+    gate_completed = datetime.fromisoformat(gate["completed_at"])
+    _, authenticated_fields, _ = gate_owner._split_status(
+        (root / ".gate-status").read_text(encoding="utf-8"),
+    )
+    signed_epoch = int(authenticated_fields["attestation-epoch"])
+    assert focus_completed <= outer_started <= gate_started <= gate_completed <= outer_completed
+    assert gate_started.timestamp() - 1 <= signed_epoch <= outer_completed.timestamp() + 1, (
+        f"actual signed epoch={signed_epoch}; gate_started={gate_started.isoformat()}; "
+        f"outer_completed={outer_completed.isoformat()}"
+    )
 
 
 @pytest.mark.parametrize("inspector_python", ["3.11", "3.14"])
@@ -1081,6 +1106,30 @@ def test_native_signer_revocation_refuses_previously_authenticated_focus(
         inputs.validate_focused(repo_root=root, bundle=bundle, key_path=key)
 
 
+@pytest.mark.parametrize("ambient", ["empty", "poison"])
+def test_public_make_behavior_binds_current_source_before_ambient_package(tmp_path: Path, ambient: str) -> None:
+    contract = json.loads((ROOT / "config/make_target_contract.json").read_text(encoding="utf-8"))
+    entry = next(item for item in contract["targets"] if item["name"] == "reviewed-head-inputs")
+    poison = tmp_path / "ambient-package"
+    package = poison / "general_ludd"
+    package.mkdir(parents=True)
+    package_init = package / "__init__.py"
+    package_init.write_text('raise RuntimeError("ambient general_ludd must not execute")\n', encoding="utf-8")
+    compile(package_init.read_text(encoding="utf-8"), str(package_init), "exec")
+    output = tmp_path / "plan-must-not-publish"
+    command = [argument for argument in entry["behavior"].split()
+               if not argument.startswith("REVIEWED_HEAD_INPUTS_OUTPUT=")]
+    command.append("REVIEWED_HEAD_INPUTS_OUTPUT=" + str(output))
+    completed = subprocess.run(
+        command, cwd=ROOT, env={**os.environ, "PYTHONPATH": str(poison) if ambient == "poison" else ""},
+        check=False, capture_output=True, text=True, timeout=15,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "release_ready=false" in completed.stdout
+    assert not output.exists()
+    assert package_init.read_text(encoding="utf-8") == 'raise RuntimeError("ambient general_ludd must not execute")\n'
+
+
 def test_make_contract_has_explicit_behavior_and_literal_hostile_paths(tmp_path: Path) -> None:
     contract = json.loads((ROOT / "config/make_target_contract.json").read_text(encoding="utf-8"))
     entry = next(item for item in contract["targets"] if item["name"] == "reviewed-head-inputs")
@@ -1169,13 +1218,17 @@ def test_native_focus_commands_preserve_watchdog_ownership(
         return shlex.split(line)
 
     # Ask Make itself so command-line overrides retain their native precedence.
+    source_binding = "PYTHONPATH=" + str(ROOT / "src") + "${PYTHONPATH:+:$PYTHONPATH}"
     selected = producer_command("focus", "0")
+    assert selected[0] == source_binding
+    selected = selected[1:]
     assert selected[1:] == ["run", "python", "scripts/reviewed_head_inputs.py", marker]
     located_uv = shutil.which(selected[0])
     assert located_uv is not None
     uv_executable = str(Path(located_uv).absolute())
     uv_argument = "UV=" + shlex.quote(uv_executable)
     producer = producer_command("focus", "0", uv_argument=uv_argument)
+    assert producer[0] == source_binding
     assert producer[-1] == marker
     tripwire = tmp_path / "make-expansion-tripwire"
     literal_function = "$(shell touch " + shlex.quote(str(tripwire)) + ")"
@@ -1318,6 +1371,59 @@ def test_focus_cache_symlink_refuses_foreign_owner_before_child(
     assert list(foreign.iterdir()) == []
     assert not (bundle / "focused.json").exists()
     assert not (bundle / "focused-auth.json").exists()
+
+
+def test_prepare_refuses_wrong_source_parent_before_any_patch_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, spec = _fixture(tmp_path)
+    source = _git(root, "rev-parse", "refs/heads/reviewed/one")
+    _git(root, "tag", "different-reviewed-base", source + "~2")
+    heads = spec["heads"]
+    assert isinstance(heads, list) and len(heads) == 1
+    assert isinstance(heads[0], dict)
+    heads[0]["reviewed_base_ref"] = "refs/tags/different-reviewed-base"
+    original = receipt_owner._git
+    patches: list[tuple[str, ...]] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        if arguments[0] == "patch-id" or (arguments[0] == "show" and "--binary" in arguments):
+            patches.append(arguments)
+            pytest.fail("invalid source parent reached patch identity inspection")
+        return original(repository, *arguments, input_bytes=input_bytes)
+
+    monkeypatch.setattr(receipt_owner, "_git", recorded)
+    with pytest.raises(ValueError, match="native cherry-pick patch or reviewed source base differs"):
+        inputs.prepare_inputs(spec, repo_root=root)
+    assert patches == []
+
+
+def test_prepare_uses_one_fresh_paired_native_patch_operation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, spec = _fixture(tmp_path)
+    expected = inputs.prepare_inputs(spec, repo_root=root)
+    source = _git(root, "rev-parse", "refs/heads/reviewed/one")
+    application = _git(root, "rev-parse", "HEAD")
+    assert source != application
+    assert receipt_owner._patch_id(root, source) == receipt_owner._patch_id(root, application)
+    original = receipt_owner._git
+    commands: list[tuple[str, ...]] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        result = original(repository, *arguments, input_bytes=input_bytes)
+        if arguments[0] == "patch-id" or (arguments[0] == "show" and "--binary" in arguments):
+            commands.append(arguments)
+        return result
+
+    monkeypatch.setattr(receipt_owner, "_git", recorded)
+    for _boundary in range(2):
+        start = len(commands)
+        assert inputs.prepare_inputs(spec, repo_root=root) == expected
+        current = commands[start:]
+        assert len(current) == 2, current
+        assert current[0][0] == "show" and {source, application}.issubset(current[0])
+        assert current[1] == ("patch-id", "--stable")
 
 
 @pytest.mark.parametrize("mode", ["cherry_pick", "merge_two_parent"])
