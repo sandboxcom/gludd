@@ -8,6 +8,7 @@ import marshal
 import os
 import py_compile
 import shutil
+import stat
 import subprocess
 import time
 from base64 import urlsafe_b64encode
@@ -1292,6 +1293,176 @@ def test_receipt_location_and_slow_delete_guardrails(
     with cleanup._directory_anchor(root) as descriptor:
         cleanup._delete_with_heartbeats(candidate, 0.001, dir_fd=descriptor)
     assert "RESOURCE_CLEANUP_HEARTBEAT" in capsys.readouterr().out
+
+
+def _override_directory_sizes(
+    monkeypatch: pytest.MonkeyPatch, sizes: Mapping[tuple[int, int], int],
+) -> None:
+    """Model filesystem directory metadata without changing native FD identities."""
+    original_stat, original_fstat = os.stat, os.fstat
+
+    def resize(metadata: os.stat_result) -> os.stat_result:
+        identity = metadata.st_dev, metadata.st_ino
+        if identity not in sizes:
+            return metadata
+        assert stat.S_ISDIR(metadata.st_mode)
+        values = list(metadata)
+        values[6] = sizes[identity]
+        return os.stat_result(values, {
+            "st_atime": metadata.st_atime, "st_mtime": metadata.st_mtime, "st_ctime": metadata.st_ctime,
+            "st_atime_ns": metadata.st_atime_ns, "st_mtime_ns": metadata.st_mtime_ns,
+            "st_ctime_ns": metadata.st_ctime_ns,
+        })
+
+    def sized_stat(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes] | int,
+        *, dir_fd: int | None = None, follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        return resize(original_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks))
+
+    def sized_fstat(descriptor: int) -> os.stat_result:
+        return resize(original_fstat(descriptor))
+
+    monkeypatch.setattr(os, "stat", sized_stat)
+    monkeypatch.setattr(os, "fstat", sized_fstat)
+
+
+@pytest.mark.parametrize("directory_sizes", ((0, 0), (4096, 4096), (65_536, 131_072)))
+def test_logical_byte_census_excludes_root_and_nested_directory_sizes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, directory_sizes: tuple[int, int],
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "logical")
+    nested = candidate / "nested"
+    nested.mkdir()
+    payload = nested / "data.bin"
+    payload.write_bytes(b"nested payload")
+    for path in (payload, nested, candidate):
+        os.utime(path, (OLD, OLD))
+    identities = [path.stat() for path in (candidate, nested)]
+    sizes = {(item.st_dev, item.st_ino): size for item, size in zip(identities, directory_sizes, strict=True)}
+    config = _config(root, tmp_path / "receipts.jsonl", validate_only=False)
+
+    with monkeypatch.context() as patch:
+        _override_directory_sizes(patch, sizes)
+        plan = plan_cleanup(config, set(), {})
+        assert plan.decisions[0].action == "reclaim"
+        expected = len(b"payload") + len(b"nested payload")
+        assert plan.decisions[0].fingerprints[0].size_bytes == expected
+        assert apply_cleanup(plan, config, set(), {}).deleted == (candidate,)
+
+    assert json.loads(config.receipt_path.read_text())["size_bytes"] == expected
+
+
+def test_empty_directory_tree_has_zero_logical_bytes(tmp_path: Path) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "empty-logical")
+    (candidate / "payload.bin").unlink()
+    nested = candidate / "nested"
+    nested.mkdir()
+    for path in (nested, candidate):
+        os.utime(path, (OLD, OLD))
+    config = _config(root, tmp_path / "receipts.jsonl", validate_only=False)
+
+    plan = plan_cleanup(config, set(), {})
+    assert plan.decisions[0].fingerprints[0].size_bytes == 0
+    assert apply_cleanup(plan, config, set(), {}).deleted == (candidate,)
+    assert json.loads(config.receipt_path.read_text())["size_bytes"] == 0
+
+
+@pytest.mark.parametrize("changed_directory", ("root", "nested"))
+def test_directory_size_only_change_still_refuses_fresh_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed_directory: str,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "directory-size-change")
+    nested = candidate / "nested"
+    nested.mkdir()
+    for path in (nested, candidate):
+        os.utime(path, (OLD, OLD))
+    identities = {name: path.stat() for name, path in (("root", candidate), ("nested", nested))}
+    sizes = {(item.st_dev, item.st_ino): 4096 for item in identities.values()}
+    config = _config(root, tmp_path / "receipts.jsonl", validate_only=False)
+
+    with monkeypatch.context() as patch:
+        _override_directory_sizes(patch, sizes)
+        plan = plan_cleanup(config, set(), {})
+        assert plan.decisions[0].action == "reclaim"
+        changed = identities[changed_directory]
+        sizes[(changed.st_dev, changed.st_ino)] += 4096
+        result = apply_cleanup(plan, config, set(), {})
+
+    assert result.deleted == () and result.refused == (candidate,)
+    assert candidate.is_dir() and nested.is_dir()
+    assert not config.receipt_path.exists()
+
+
+def test_logical_link_bytes_exclude_live_directory_and_file_targets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "gludd-resources"
+    root.mkdir()
+    candidate = _namespace(root, "logical-links")
+    outside = tmp_path / "outside-\N{LATIN SMALL LETTER E WITH ACUTE}"
+    outside.mkdir()
+    sentinel = outside / "sentinel.bin"
+    sentinel.write_bytes(b"outside" * 4096)
+    links = {
+        "external-directory": outside,
+        "external-file": sentinel,
+        "dangling": tmp_path / "missing",
+        "loop": candidate / "loop",
+    }
+    for name, target in links.items():
+        link = candidate / name
+        link.symlink_to(target)
+        os.utime(link, (OLD, OLD), follow_symlinks=False)
+    os.utime(candidate, (OLD, OLD))
+    expected = len(b"payload") + sum(len(os.fsencode(target)) for target in links.values())
+    original_stat, original_open = os.stat, os.open
+    nofollow_stamps: list[str] = []
+    config = _config(root, tmp_path / "receipts.jsonl", validate_only=False)
+
+    def guarded_stat(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes] | int,
+        *, dir_fd: int | None = None, follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        if not isinstance(path, int):
+            name = os.fsdecode(path)
+            assert name not in {str(outside), str(sentinel)}, "targets are not byte-census input"
+            if Path(name).name in links:
+                assert follow_symlinks is False
+                nofollow_stamps.append(name)
+        return original_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+
+    def guarded_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
+        *, dir_fd: int | None = None,
+    ) -> int:
+        assert os.fsdecode(path) not in {*links, str(outside), str(sentinel)}
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "stat", guarded_stat)
+        patch.setattr(os, "open", guarded_open)
+        plan = plan_cleanup(config, set(), {})
+        assert plan.decisions[0].fingerprints[0].size_bytes == expected
+
+    sentinel.write_bytes(b"fresh target" * 8192)
+    os.utime(sentinel, (NOW, NOW))
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "stat", guarded_stat)
+        patch.setattr(os, "open", guarded_open)
+        assert plan_cleanup(config, set(), {}).decisions == plan.decisions
+
+    result = apply_cleanup(plan, config, set(), {})
+    assert nofollow_stamps and result.deleted == (candidate,)
+    assert json.loads(config.receipt_path.read_text())["size_bytes"] == expected
+    assert outside.is_dir() and sentinel.read_bytes() == b"fresh target" * 8192
+    assert not links["dangling"].exists()
 
 
 def test_ordinary_descendant_symlink_unlinks_without_following_target(tmp_path: Path) -> None:

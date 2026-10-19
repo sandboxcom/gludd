@@ -5,6 +5,69 @@ Gludd stores checkout-scoped scratch state below a `gludd-resources` root. The
 reclaim only namespaces that are old enough and proven inactive. Inventory is
 the default; deletion is an explicit second mode.
 
+## Logical byte accounting across filesystems (2026-10-19)
+
+Hosted Build 39240588418 failed the unchanged ordinary-descendant-symlink
+assertion on both Python 3.11 and 3.12: the receipt reported 4,522 bytes against
+the original `<4096` bound. The main children completed 1,982 passes and one
+failure in 51.25s and 65.45s; neither failure was a timeout. The scanner included
+the candidate directory's `st_size` and every nested directory's `st_size` in
+its total. Those values describe filesystem directory metadata, rather than the
+logical contents selected by the no-follow entry census.
+
+The existing fingerprint `size_bytes`, deletion-receipt `size_bytes` and summary
+`reclaim_bytes` count only non-directory entries observed by that census.
+Regular files contribute their logical `st_size`; symlinks contribute their own
+stored pathname bytes, never their targets' sizes or contents. Empty directory
+trees contribute zero. Directory metadata still participates in identity and
+race revalidation. The candidate directory's `st_size` moves into the existing
+tree digest so excluding it from the total cannot hide a size-only change
+between inventory and apply; descendant directory sizes remain in their
+original digest stamps. All traversal, ownership, lease, age, receipt,
+root-route, descriptor-lifetime and native deletion checks remain required.
+
+This logical total does not measure physical bytes freed. Directory allocation,
+sparse files and other filesystem allocation details are outside this entry
+census. The existing disk/capacity owner remains authoritative for actual
+free-space measurements and admission. A cleanup receipt alone does not prove
+a capacity prerequisite or authorize another deletion.
+
+The [Python stat_result contract](https://docs.python.org/3.11/library/os.html#os.stat_result.st_size)
+defines file and symlink byte sizes, including the stored pathname length
+for a symlink. A firsthand
+[Unix and Linux operator investigation from 2014](https://unix.stackexchange.com/questions/124979/where-does-ext4-store-directory-sizes)
+retains strace output with a 4,096-byte directory and separate 1,048,576-byte
+files. That historical observation demonstrates why directory metadata and
+contents must be distinguished. It does not identify the hosted runner's
+filesystem, establish a universal directory size or prove physical reclamation
+here. The [older filesystem discussion](https://unix.stackexchange.com/questions/55/what-does-size-of-a-directory-mean-in-output-of-ls-l-command/49619)
+also distinguishes filesystem-specific directory size from its contents.
+
+Seven additive regressions exercise zero, 4,096-byte and larger root/nested
+directory metadata on native descriptor scans; exact regular-file and Unicode
+symlink byte totals; empty directories; live, dangling and loop links; changed
+target data; and size-only directory mutations. Target stat/open guards surround
+the scanner, while native apply independently proves the outside target
+survives. The project's audit hook can resolve paths during fixture writes and
+stdlib unlink, so those operations are outside the scanner-only guard.
+All original assertions, including the `<4096` receipt bound, remain.
+
+Failing-first acceptance records four failures and three passes in 1.71s.
+The complete cleanup owner then passes 164 cases on canonical Python 3.11.14
+in 2.14s and on the existing private Python 3.12.15 in 3.08s, with zero skips and
+fatal warnings. The unchanged `config/coverage_stale_resource_namespaces.ini`
+covers all three original production files through seven complete test owners:
+386 passes in 42.85s, native observer 44.454s, aggregate 92.8% line and 86.7%
+branch coverage. Cleanup itself measures 93.0% line and 85.7% branch; all three
+files meet the unchanged 85% aggregate/75% per-file line and branch policy.
+Two interim additive-fixture guard failures remain retained alongside the RED,
+GREEN and raw native receipts in `/tmp/gludd-v012-cleanup-accounting-evidence`.
+
+This is focused source acceptance. The original hosted failures remain failed;
+no original 90/60 admission replay, complete gate, hosted repair verdict,
+capacity recovery, cleanup of real namespaces, release completion or timing
+improvement is claimed.
+
 ## Safety and ZDD contract
 
 The cleaner treats a namespace and its optional `-toolchain` directory as one
