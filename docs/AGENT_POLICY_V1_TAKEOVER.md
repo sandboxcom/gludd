@@ -99,6 +99,46 @@ suffixes. No test, runtime hook, Make/config, tracking file or ref changed.
 Counts are diagnostic; review, guarded commit, final candidate union, complete
 gate and exact-SHA hosted proof remain Root-owned and are not claimed here.
 
+### Terminal-Q DC.1/P30 and native deferred carriers (2026-10-19)
+
+The full immutable Q unit-3a context revealed four omitted failures, so the
+known total is24, not20. The actual source base for this repair is
+ ae9fa28ef7925dab9a73f9c83815284710e45cf0. Live DC.1 now retains fix-tests,
+structural-test/docs/slow-shard examples, explicit zero-subagents-is-valid and
+no filler under the adaptive0..3/release scope. P30's explicit prohibition
+on pushing fix-forward waves straight to master uses the existing exact-SHA
+release-candidate/promotion gates. No fixed line-count ratchet is added.
+
+The original four-node replay was3FAIL/1PASS; the hosted UV case passed on the
+local Make representation. A separate exact deferred-carrier control reproduced
+two original engine-assertion failures at ek --no-print-directory -- $(MAKEOVERRIDES).
+[GNU's recursion contract](https://www.gnu.org/software/make/manual/html_node/Options_002fRecursion.html)
+and [quick reference](https://www.gnu.org/s/make/manual/html_node/Quick-Reference.html)
+explain the override reference and native environment transport; raw flags
+cannot be assumed to be shell-tokenized concrete assignments. The firsthand
+[2002 help-make discussion](https://lists.gnu.org/r/help-make/2002-09/msg00053.html)
+already describes abandoning that parse after learning about MAKEOVERRIDES;
+its [maintainer reply](https://lists.gnu.org/r/help-make/2002-09/msg00048.html)
+identifies environment propagation across a remote shell. This is historical
+practitioner context, not a current GNU defect or proof of production loss.
+
+The fixture now asks real inherited Make to report engine/canary values and
+prove keep-going by executing a later target after a deliberate earlier failure.
+Raw flags/overrides remain recorded; exact CLI, repeated-space canary,
+collection non-export, UV ownership/mutations and environment restoration stay.
+Eight direct/recursive controls require the exact deferred spelling and reject
+missing engine, canary or keep-going. GNU immediate assignment makes the
+synthetic override carrier self-contained; no custom Make parser is introduced.
+
+All intermediate failures remain scoped separately. Complete six affected
+owners pass151/zero skips each runtime:3115.61s/native6.614rc0 and
+3127.12s/native8.343rc0. Strict/Ruff, locked Rumdl and universal file limits
+pass. Commands, original RED/native receipts and research provenance:
+/tmp/gludd-v012-terminal-q-contract-repair-report.md and its evidence index.
+Root added this feature record after frozen two-file acceptance. No Make,
+TypeScript,113-family/90-60/2-1-1 runtime,85/75 BOTH, ZDD, cleanup, task checkbox
+or promotion rule is weakened. Combined gate/exact-SHA hosted proof remains.
+
 ## Native execution and ownership
 
 Use functions.exec only to transport a named Make command/result or literal editing data. Project analysis/workflows belong to native Make owners with documented variables, argv/status and durable artifacts; no project verdict comes from ad hoc JS/Python in a tool wrapper or hidden function-store state.
