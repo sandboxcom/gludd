@@ -1692,3 +1692,60 @@ The frozen B proof, previous SESSION bytes and existing TASKS statuses/checkboxe
 remain preserved. Root owns independent review, integrated admission/focus, full
 gate and hosted proof. No production edit, logging suppression, daemon restart,
 gate, CI, push or release-completion claim is made by this test-only enhancement.
+
+## 2026-10-19: positively retain a recovered checkpoint owner
+
+The normal publication-policy source commit first refused owned checkpoint
+90142d0d8e82af1978fe24eaf4a155ae1429a8e4 because its archived checkout was
+no longer a live registered worktree. Root recovered the genuine original
+branch and canonical path at f4cfa5c, then the native checkpoint guard verified
+all four retained checkpoints with zero unowned entries. Recovery and the later
+34741f6 guarded source commit remain historical evidence. A fresh activity lease
+alone does not promise retention after completion or lease expiry.
+
+The existing prune owner now exposes agent-worktree-retain. Required inputs
+BRANCH, WORKTREE and WORKTREE_RETAIN_REASON identify one exact linked checkout;
+WORKTREE_RETAIN_VALIDATE_ONLY defaults to literal 1 and accepts only 0 or 1.
+Its dependency-free SYSTEM_PYTHON invocation uses -B, without UV or environment
+provisioning. This safe behavioral example starts no native Git child, writes nothing and
+discloses native_ownership_verified=0 even though the requested path is absent:
+
+~~~text
+make agent-worktree-retain BRANCH=agent-retention-contract WORKTREE=/tmp/gludd-retention-absent WORKTREE_RETAIN_REASON=checkpoint-owner WORKTREE_RETAIN_VALIDATE_ONLY=1
+~~~
+
+Explicit 0 requires the invoking repository's native unredirected identity and
+reuses checkpoint registered-root, common-directory and backlink checks.
+It verifies the exact canonical linked checkout and branch twice before native
+git worktree lock --reason, then verifies the same root/backlink identity and
+lock using fresh inventory. Native retention Git calls have a 30-second bound.
+The existing pruning call default is unchanged. Foreign, missing, main,
+symlinked, replaced or changed registrations refuse; failures remain fatal.
+Make inputs are transported as literal data; dollar-containing Make expressions
+are rejected before recipe expansion. No arbitrary command or path executor,
+activity renewal, checkpoint mutation or administrative-file write is added.
+
+An already locked owner is verified without rewriting its lock. The receipt's
+reason is the caller-requested reason; already_locked=true does not claim that
+text is the observed existing lock reason. The native regression preserves the
+original lock bytes, inode and modification time. Native lock protection applies
+to existing automatic cleanup and safe pruning. Explicit authorized destructive
+owners can still unlock/remove, so retention is not permanent deletion immunity.
+Future checkpoint reconciliation and deliberate removal stay separate actions.
+
+Real native Make controls fail first, then exercise plan, apply, exact quoted
+path/reason, hostile inputs, ownership refusal, preserved locks and failed fresh
+verification. Real clean/integrated checkpoint-owner fixtures prove both an
+initial lock and one arriving at cleanup refresh retain tree/cache/branch/
+checkpoint bytes while an eligible unlocked sibling actually retires. Existing
+prune/cleanup assertions, registry/grace/process guards, ZDD and 85/75 line and
+branch floors remain. No live recovered owner is locked by these tests.
+
+The [Git worktree manual](https://git-scm.com/docs/git-worktree) documents native
+lock/reason and automatic pruning/removal protection. The firsthand
+[Recover Pruned Worktree report](https://stackoverflow.com/questions/53711126/recover-pruned-worktree)
+describes a 2018 registration loss during a network outage; a 2025 response
+recommends native locking. It motivates durable retention and careful recovery,
+not a network diagnosis for Gludd or authority to reconstruct Git metadata.
+Root owns the actual recovered-owner retention decision, integration and later
+gate/hosted/release proofs. All 19 task checkboxes remain open.

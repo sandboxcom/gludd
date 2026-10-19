@@ -5,11 +5,20 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from scripts import automatic_disk_cleanup
-from scripts.prune_worktrees_safe import WorktreeRecord
+
+if TYPE_CHECKING:
+    import automatic_disk_cleanup
+    import owned_git_checkpoint
+    import prune_worktrees_safe
+    from prune_worktrees_safe import WorktreeRecord
+else:
+    from scripts import automatic_disk_cleanup, owned_git_checkpoint, prune_worktrees_safe
+    from scripts.prune_worktrees_safe import WorktreeRecord
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -20,7 +29,7 @@ def _fake_git_for_lifecycle(
     head_epoch: int = 50,
     cherry: str = "",
     receipt: str = "",
-):
+) -> Callable[..., subprocess.CompletedProcess[str]]:
     def run(*args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
         assert check is False
         if "status" in args:
@@ -41,6 +50,116 @@ def _fake_git_for_lifecycle(
 def _record(path: Path, branch: str, *, locked: bool = False) -> WorktreeRecord:
     path.mkdir(parents=True, exist_ok=True)
     return WorktreeRecord(path=path.resolve(), branch=branch, locked=locked)
+
+
+@pytest.mark.parametrize("late_lock", (False, True))
+def test_native_retention_preserves_completed_checkpoint_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, late_lock: bool,
+) -> None:
+    """Native locks protect real completed owners and their retained checkpoints."""
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=repository, check=True, text=True,
+            env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"},
+            capture_output=True, timeout=30,
+        ).stdout
+
+    git("init", "-b", "development")
+    git("config", "user.name", "Native retention")
+    git("config", "user.email", "retention@example.invalid")
+    (repository / "owned.txt").write_bytes(b"committed source\n")
+    (repository / ".gitignore").write_text(".venv/\n.pytest_cache/\n")
+    git("add", "owned.txt", ".gitignore")
+    git("commit", "-m", "completed native fixture")
+    namespace = tmp_path / "gludd-worktrees"
+    retained = namespace / "retained"
+    unlocked = namespace / "unlocked"
+    for path in (retained, unlocked):
+        git("worktree", "add", "-b", f"feature/{path.name}", str(path))
+        for name in (".venv", ".pytest_cache"):
+            (path / name).mkdir()
+            (path / name / "payload").write_bytes(b"retained cache bytes\n")
+    (retained / "owned.txt").write_bytes(b"checkpoint bytes\n")
+    owned_git_checkpoint.push(
+        retained.resolve(), ["owned.txt"], "retention-checkpoint-fixture", validate=False,
+    )
+    checkpoint = git("rev-parse", "refs/stash").strip()
+    checkpoint_bytes = git("cat-file", "-p", checkpoint)
+    refs = git("show-ref")
+    monkeypatch.chdir(repository)
+
+    def records() -> list[WorktreeRecord]:
+        return prune_worktrees_safe.parse_worktrees(git("worktree", "list", "--porcelain"))
+
+    initial = records()
+    leases = {
+        f"feature/{path.name}": automatic_disk_cleanup.WorkstreamLease(
+            f"feature/{path.name}", path.resolve(), 1,
+        )
+        for path in (retained, unlocked)
+    }
+    point = automatic_disk_cleanup.IntegrationPoint(
+        "HEAD", int(git("show", "-s", "--format=%ct", "HEAD")),
+    )
+
+    def completed(
+        record: WorktreeRecord, lease: automatic_disk_cleanup.WorkstreamLease,
+    ) -> automatic_disk_cleanup.LifecycleDecision:
+        return automatic_disk_cleanup._completion_proof(
+            record, lease, integration_points=(point,), now_epoch=point.committed_epoch + 1,
+        )
+
+    assert all(completed(record, leases[record.branch]).reclaimable
+               for record in initial if record.branch in leases)
+    locked = False
+
+    def lock_owner() -> None:
+        nonlocal locked
+        assert prune_worktrees_safe.retain(
+            branch="feature/retained", worktree=retained.resolve(),
+            reason="preserve genuine owned checkpoint", validate_only=False,
+        ) == 0
+        locked = True
+
+    if not late_lock:
+        lock_owner()
+        initial = records()
+
+    def refresh() -> list[WorktreeRecord]:
+        if late_lock and not locked:
+            lock_owner()
+        return records()
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=initial, approved_roots=(namespace.resolve(),),
+        protected_paths=frozenset({repository.resolve()}),
+        active_branches=lambda: frozenset(leases),
+        active_workstream_leases=lambda: leases,
+        lifecycle_proof=completed, refresh_records=refresh,
+        active_process_pids=lambda _path: [],
+        remove_materialization=lambda record, dry_run: (
+            automatic_disk_cleanup._remove_worktree_materialization(
+                record, dry_run=dry_run,
+                evidence_archive_root=tmp_path / "evidence",
+            )
+        ),
+    )
+    assert result.errors == ()
+    assert retained.exists()
+    assert not unlocked.exists()
+    assert (retained / "owned.txt").read_bytes() == b"committed source\n"
+    for name in (".venv", ".pytest_cache"):
+        assert (retained / name / "payload").read_bytes() == b"retained cache bytes\n"
+    assert git("show-ref") == refs
+    assert git("rev-parse", "refs/stash").strip() == checkpoint
+    assert git("cat-file", "-p", checkpoint) == checkpoint_bytes
+    assert owned_git_checkpoint.count_leaks(repository.resolve()) == 0
+    assert any(record.path == retained.resolve() and record.locked for record in records())
+    expected = "registration changed" if late_lock else "git worktree lock"
+    assert any(expected in item for item in result.skipped)
 
 
 def test_cleanup_removes_only_allowlisted_caches_from_inactive_gludd_worktree(
@@ -294,9 +413,9 @@ def test_current_process_ancestry_excludes_children_and_pid_one(
         "10 9\n9 4\n4 1\n88 10\n",
         "",
     )
-    monkeypatch.setattr(automatic_disk_cleanup.os, "getpid", lambda: 10)
+    monkeypatch.setattr(os, "getpid", lambda: 10)
     monkeypatch.setattr(
-        automatic_disk_cleanup.subprocess,
+        subprocess,
         "run",
         lambda *_args, **_kwargs: completed,
     )
@@ -409,7 +528,9 @@ def test_invoking_cleanup_reports_each_late_safety_failure(tmp_path: Path) -> No
     )
     assert refresh_failure.errors == (f"{cache}:ownership-revalidation-failed",)
 
-    process_reads = iter(([], automatic_disk_cleanup.ProcessInspectionError("late")))
+    process_reads: Iterator[list[int] | automatic_disk_cleanup.ProcessInspectionError] = iter(
+        ([], automatic_disk_cleanup.ProcessInspectionError("late"))
+    )
 
     def late_inspection(_path: Path) -> list[int]:
         value = next(process_reads)
@@ -583,7 +704,7 @@ def test_active_workstream_lease_reader_validates_and_filters_entries(
     worktree = tmp_path / "worktree"
 
     class Registry:
-        def _read(self):
+        def _read(self) -> dict[str, object]:
             return {
                 "workstreams": {
                     "feature/active": {
@@ -644,7 +765,7 @@ def test_active_workstream_lease_reader_fails_closed_on_invalid_schema(
     workstreams: object,
 ) -> None:
     class Registry:
-        def _read(self):
+        def _read(self) -> dict[str, object]:
             return {"workstreams": workstreams}
 
     with pytest.raises(ValueError, match="active-workstream registry"):
@@ -1056,7 +1177,9 @@ def test_revalidation_failures_and_late_process_are_fail_closed(tmp_path: Path) 
         refresh_records=fail_refresh,
         active_process_pids=lambda _path: [],
     )
-    process_reads = iter(([], automatic_disk_cleanup.ProcessInspectionError("ps")))
+    process_reads: Iterator[list[int] | automatic_disk_cleanup.ProcessInspectionError] = iter(
+        ([], automatic_disk_cleanup.ProcessInspectionError("ps"))
+    )
 
     def fail_late_process(_path: Path) -> list[int]:
         value = next(process_reads)
@@ -1102,6 +1225,7 @@ def test_lease_refresh_during_revalidation_cancels_cleanup(tmp_path: Path) -> No
         worktree=record.path,
         updated_epoch=999,
     )
+    assert record.branch is not None
     lease_reads = iter(
         (
             {record.branch: initial},
@@ -1149,6 +1273,7 @@ def test_tool_environment_rechecks_lease_immediately_before_removal(
     renewed = automatic_disk_cleanup.WorkstreamLease(
         branch=record.branch or "", worktree=record.path, updated_epoch=2
     )
+    assert record.branch is not None
     lease_reads = iter(
         (
             {record.branch: initial},
