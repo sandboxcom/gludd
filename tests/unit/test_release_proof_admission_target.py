@@ -187,6 +187,8 @@ def test_failed_owner_stops_later_work_without_proof_or_success(
     assert "PROOF-ADMISSION-PASS" not in result.stdout
     assert not (tmp_path / ".gate-status").exists()
     assert not (tmp_path / "attestation.json").exists()
+    if failed_phase != PHASES[-1]:
+        assert not (tmp_path / "runtime-watch").exists()
 
 
 def test_changed_head_does_not_clear_an_unchanged_capacity_blocker(tmp_path: Path) -> None:
@@ -285,6 +287,39 @@ def test_source_contract_admission_keeps_original_nodes_and_warning_policy(tmp_p
         "tests/unit/test_no_home_directory_access.py::test_agents_md_lists_structural_test_as_enforcement",
         "tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve",
         "tests/unit/test_oversized_document_splits.py",
+        (
+            "tests/unit/test_spec_enforcement_t01_t29.py::"
+            "TestT22T23T24GateStatusEvidence::test_t23_cite_pass_count_with_test_claim_policy"
+        ),
+        "tests/unit/test_behavioral_specs.py::TestAgentsMdPolicies::test_dispatch_floor_policy",
+        "tests/unit/test_behavioral_specs.py::TestAgentsMdPolicies::test_ci_poll_subagents_forbidden",
+        "tests/unit/test_e4_noqa_guardrail.py::TestAgentsMdRule::test_runtime_hook_layer_documented",
+        "tests/unit/test_e4_noqa_guardrail.py::TestAgentsMdRule::test_behavior_pin_test_documented",
+        "tests/unit/test_e4_noqa_guardrail.py::TestAgentsMdRule::test_guardrail_integrity_policy_cross_reference",
+        "tests/unit/test_watchdog_deep.py::TestTaskWatchdogProcessIdentity::test_kill_skips_when_identity_changed",
+        "tests/unit/test_xdist_pollution_guard.py::test_all_setenv_literals_are_in_leaky_env_vars",
+        (
+            "tests/unit/test_deadline_enforcement_deep.py::"
+            "TestKillProcessEdgeCases::test_sigterm_before_sigkill_ordering"
+        ),
+        (
+            "tests/unit/test_deadline_enforcement_deep.py::"
+            "TestKillProcessEdgeCases::test_process_exited_during_sigterm_wait"
+        ),
+        "tests/unit/test_deadline_enforcement_deep.py::TestWatchdogSourceInvariants::test_kill_multiple_candidates",
+        "tests/unit/test_watchdog_deep.py::TestTaskWatchdogConfiguration",
+        "tests/unit/test_scoped_admission_targets.py",
+        "tests/integration/test_gate_resume_preflights.py::test_preflights_skip_when_exact_sha_resume_receipt_exists",
+        "tests/unit/test_operational_discipline_full.py::test_dc1_dispatch_examples",
+        "tests/unit/test_operational_discipline_full.py::test_dc1_zero_subagents_allowed_without_filler",
+        (
+            "tests/unit/test_precommit_quality_guards.py::"
+            "test_engine_probe_owns_uv_without_discarding_native_make_carriers[owned-environment-overrides]"
+        ),
+        (
+            "tests/unit/test_push_discipline_checks_p2.py::"
+            "TestP30NeverPushFixForwardToMaster::test_agents_forbids_fix_forward_to_master"
+        ),
     ]
     assert shlex.split(arguments) == ["-q", "-W", "error", "-n", "0"]
 
