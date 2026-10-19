@@ -358,12 +358,12 @@ def _assert_release_runtime_policy(rows: list[dict[str, object]]) -> None:
 
 
 @pytest.mark.parametrize(
-    "context", ("default", "environment", "command-line", "opaque-overrides"),
+    "policy_context", ("default", "environment", "command-line", "opaque-overrides"),
 )
 def test_publication_runtime_owns_release_policy_without_changing_caller(
-    tmp_path: Path, context: str,
+    tmp_path: Path, policy_context: str,
 ) -> None:
-    result, rows, _ = _publish(tmp_path, gate_policy_context=context)
+    result, rows, _ = _publish(tmp_path, gate_policy_context=policy_context)
     assert result.returncode == 0, result.stdout + result.stderr
     _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
     _assert_release_runtime_policy(rows)

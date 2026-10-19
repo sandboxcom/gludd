@@ -1822,3 +1822,29 @@ proves policy behavior only. Original90/60,21phases2850,all8shards,fatal
 warnings,85/75 line/branch,ZDD,cleanup and branch/promotion authority remain.
 Root owns genuine same-source integration, actual unchanged-bound publication
 and all final gate/hosted/release proof; no task status or checkbox is closed.
+
+## 2026-10-19: keep publication policy parameters distinct from plugin fixtures
+
+Actual development Y 3eaf72ab3f845146a42dda34501c4435dffb6278
+failed scheduling admission with rc2 in about75seconds, not a timeout.
+MAIN completed1990PASS/1FAIL in72.16seconds. The existing
+test_repository_parameters_do_not_shadow_external_pytest_fixtures owner
+identified tests/unit/test_runtime_publish_admission.py:360: the newly added
+context parameter shadows an installed external pytest fixture.
+
+The exact frozen fa5ffea source reproduces that one collision in5.32seconds.
+Only the new decorator name, function parameter and local argument reference
+become policy_context. The default, environment, command-line and
+opaque-overrides cases, every policy/safety assertion, scanner authority and
+original source selectors remain unchanged. No allowlist, external fixture,
+production policy, deadline, plugin or coverage setting changes.
+
+The existing GNU manual and firsthand recursive-Make reports above remain the
+context for the four policy-carrier tests; this naming correction addresses
+local project-rule conformance, not a Make or pytest defect. Preserve Y's failed
+receipt and both immutable34741f6/fa5ffea pins. Complete scanner and both policy
+owners run on both installed runtimes with serial execution/fatal warnings.
+Native commands, RED/GREEN and normal guarded source evidence remain under
+/tmp/gludd-v012-publication-parameter-conformance-evidence/. Source acceptance
+does not supply updated admission, gate, hosted or release proof; all19tasks
+stay open and Root owns genuine integration and subsequent proof.
