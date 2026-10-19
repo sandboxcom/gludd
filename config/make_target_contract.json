@@ -2,6 +2,11 @@
   "version": 1,
   "targets": [
     {
+      "name": "audit-agent-context-size",
+      "make_variables": ["AGENT_CONTEXT_FILES", "AGENT_CONTEXT_JSON"],
+      "behavior": "make audit-agent-context-size AGENT_CONTEXT_FILES='[\"AGENTS.md\",\"docs/CLAUDE.md\"]' AGENT_CONTEXT_JSON=1"
+    },
+    {
       "name": "verify-state",
       "make_variables": [],
       "behavior": "make verify-state"
