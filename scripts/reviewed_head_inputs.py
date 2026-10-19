@@ -189,10 +189,28 @@ def _ref(root: Path, value: object) -> str:
     return receipt_owner._git(root, "rev-parse", "--verify", f"{ref}^{{commit}}").decode("ascii").strip()
 
 
-def _clean_identity(root: Path) -> tuple[str, str]:
-    if receipt_owner._git(root, "status", "--porcelain", "--untracked-files=all").strip():
+def _clean_head(root: Path) -> str:
+    """Read a clean native HEAD from one NUL-framed status-v2 observation."""
+    raw = receipt_owner._git(
+        root, "status", "--porcelain=v2", "--branch", "--no-ahead-behind",
+        "-z", "--untracked-files=all",
+    )
+    records = raw.split(b"\0")
+    if any(record and not record.startswith(b"# ") for record in records):
         raise ValueError("native inputs require an exact clean repository")
-    sha = receipt_owner._git(root, "rev-parse", "HEAD").decode("ascii").strip()
+    if (not raw.endswith(b"\0") or not all(records[:-1])
+            or b"# branch.oid" in records):
+        raise ValueError("repository evidence does not match the integration manifest")
+    prefix = b"# branch.oid "
+    heads = [record[len(prefix):] for record in records[:-1] if record.startswith(prefix)]
+    if (len(heads) != 1 or len(heads[0]) not in {40, 64}
+            or any(character not in b"0123456789abcdef" for character in heads[0])):
+        raise ValueError("repository evidence does not match the integration manifest")
+    return heads[0].decode("ascii")
+
+
+def _clean_identity(root: Path) -> tuple[str, str]:
+    sha = _clean_head(root)
     state = gate_owner.repository_state_id(root, source="worktree")
     if state != gate_owner.repository_state_id(root, source="index"):
         raise ValueError("native worktree and index identities disagree")

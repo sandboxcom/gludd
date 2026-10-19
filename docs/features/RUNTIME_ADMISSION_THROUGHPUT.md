@@ -1891,3 +1891,52 @@ All113 admission families, original selectors/plugins, three2/1/1 children,
 and branch/promotion authority remain. The old failed focus and its original
 three conditional skips are retained; focused acceptance supplies no passing
 combined focus, gate, hosted or release proof. All19 tasks remain open.
+
+## 2026-10-19: read clean native HEAD with the same status observation
+
+The reviewed-head tail recorded32 clean-identity calls; parent-process
+profiling recorded595 subprocess calls with5.088seconds cumulative time.
+Those intervals do not attribute child CPU or establish hosted savings.
+The current hosted13 failure remains90.6seconds; the unchanged local CI-mode
+body diagnostic72.644seconds is separate evidence, not timeout clearance.
+
+Each existing _clean_identity now obtains clean status and full HEAD through
+one fresh native status-v2 operation with --branch, --no-ahead-behind, -z and
+--untracked-files=all. It consumes NUL-framed bytes, refuses every non-header
+record as dirty before HEAD checks, and requires one40/64lowercase-hex
+branch.oid. Missing, duplicate, malformed or unborn identities fail closed;
+proper optional headers remain compatible and detached HEAD remains supported.
+No pathname is split on newline or decoded as branch metadata.
+
+Both actual repository_state_id observations still run in their original
+worktree/index order with the same comparison. Every prepare/capture/validate/
+finalize before/after boundary remains independent; nothing is shared across
+calls. This samples HEAD with status and is not a transaction against concurrent
+repository mutation. Existing native errors and dirty-first ordering remain.
+The existing metadata-count test changes only its two mechanism expectations:
+two v2 observations replace two old status/HEAD pairs. Its two fresh clean calls
+per preparation and all metadata, parent, tree and freshness assertions remain.
+
+The [Git status contract](https://git-scm.com/docs/git-status) defines porcelain
+v2 branch headers and NUL framing; pinned [Git status source](https://github.com/git/git/blob/v2.51.0/wt-status.c#L2038-L2080)
+shows the full commit OID and NUL header terminator. The
+[firsthand2018 machine-readable status discussion](https://stackoverflow.com/questions/51228892/get-json-from-git-commands-such-as-git-status/51228920)
+recommends native porcelain branch metadata. Its examples do not establish
+NUL, SHA256, replacement or race parity; real confined native controls supply
+those checks. No upstream defect or forum performance result is claimed.
+
+Native controls retain the original two-command implementation as a reference
+and exercise SHA1/SHA256, attached/detached HEAD, tracking/configuration,
+replacement views, tracked/index/mode/rename/conflict/untracked/submodule
+changes, ignored files, newline/Unicode/header-looking paths and fresh calls.
+Envelope controls cover native failure, unknown optional headers, malformed
+framing and OIDs, with no state reads after refusal. Original source-ref,
+chronology, authentication and mutation controls remain authoritative.
+
+Commands, initial RED23FAIL/15PASS and GREEN40, known-header RED1FAIL/1PASS
+then final GREEN42, whole-owner311/312 acceptance,
+unchanged full-file85/75 line+branch coverage and guarded source evidence remain
+/tmp/gludd-v012-native-clean-head-evidence/. One fewer native launch per clean
+observation is count-proven, not a measured hosted speedup. Original113families,
+three2/1/1 children,90/60,21phases2850,all8shards,fatal warnings,ZDD,cleanup,
+branch gates and all19open task statuses remain; Root owns exact final proof.
