@@ -1,5 +1,81 @@
 # Runtime Admission Throughput
 
+## Read-only ledger import boundary (2026-10-19)
+
+Single source agent-v012-ledger-read-import-20261019 starts at Main
+eb20128176e3533743c23d888e675df690b25814. Root owns production/docs/Git;
+compact_policy_conformance authors additive controls in the two existing ledger
+test owners. Both original-source REDs finish before Root moves the import:
+27FAIL/1PASS each runtime, native5.084s/4.784s, no errors or skips. All failures
+reach the original eager dependency import; real independent contention already
+passes. The same28 controls then pass each runtime without fixture changes.
+The actual plan-only pipeline import diagnostic passed0.344s; its synthetic
+CI PASS lines are not hosted evidence. Second CLI FileLock cumulative63334us
+overlaps ledger64097us; first CLI25890us shows variability, not a stable saving.
+Native evidence/decision: /tmp/gludd-v012-ledger-filelock-import-decision.md.
+
+The ordinary public FileLock/Timeout import now lives inside _locked_ledger,
+before any filesystem changes. Its exact original transaction body, live timeout,0600
+sidecar/inode, independent contention, symlink refusal and actual exception
+identity remain unchanged. Read/plan paths need no lock. Live observe-sha still imports/acquires
+the same lock; fresh observations on every heartbeat tick remain unchanged.
+No helper/proxy/cache/dependency upgrade or writer speedup claim. Incidental
+ledger.FileLock/Timeout attributes would disappear; no repository consumers were
+found, while external consumers are unknown. No compatibility claim covers them.
+
+The [public FileLock timeout guidance](https://py-filelock.readthedocs.io/en/latest/how-to.html#handle-lock-timeouts)
+uses the same actual class and exception. The
+[firsthand reentrancy discussion](https://github.com/tox-dev/filelock/discussions/262)
+explains why contention needs an independent holder, not the same object.
+Later [upstream import changes](https://py-filelock.readthedocs.io/en/latest/changelog.html)
+do not establish an installed4.0.12 gain. Fresh package/flat/pipeline importguard
+RED/GREEN, blocked writer and actual native holder controls are retained below.
+Seven whole owners use unchanged85/75 native coverage. No admission,
+hosted throughput, full gate, release readiness or completion follows from
+removing an unused import; all19 statuses remain open.
+
+Complete seven-owner measurement passes on both actual runtimes:311517PASS
+68.10s/native70.182s and312516PASS plus one existing canonical311-toolchain
+conditional skip75.98s/native78.624s. The unchanged skip is
+test_release_readiness_make_target_binds_the_invoking_worktree; it is not a
+new waiver or a zero-skip claim. Both native audits select one whole actual
+ledger and report97.1% lines/94.2% branches, all85aggregate75each BOTH.
+Raw coverage also retains existing external heartbeat fixture scripts; native
+repository audit, not their raw TOTAL, owns these percentages.
+
+Strict typing first exposes the existing flat/package module-identity collision.
+Only the owned test import gains the established TYPE_CHECKING flat/runtime
+package split; actual runtime binding and every original assertion remain.
+Two new-test style findings are also repaired without suppressions. Final
+strict3/Ruff pass. Production and measured INI bytes remain unchanged after the
+seven-owner proof; the two complete owned test modules plus exact existing
+fixture-collision inventory then pass253/0errors/0skips on each runtime,
+3117.73s/3128.94s. No duplicate517-case coverage replay is claimed.
+Normal guarded commit/source review/integration and exact final release proofs
+remain pending. The initial Task registration reached2500lines and failed the
+existing universal<2500 guard; joining its added scope to the existing S98.4
+paragraph retains all text and repairs that layout without a policy change.
+
+Reuse the existing config/coverage_ci_failure_ledger.ini with its original
+report-display settings. Its branch/subprocess tracking and entire actual
+ledger input match the portable measured INI, with no omitted lines. The initial
+literal-copy attempt removed only two display preferences; Root restores them
+and leaves no config delta. Future agents use the existing native owner:
+
+```text
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_ci_failure_ledger.py tests/unit/test_ci_failure_ledger_concurrency.py tests/unit/test_ci_repair_child_environment.py tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_pipeline_status_ssh_transport.py tests/unit/test_status_heartbeat_terminal.py tests/unit/test_release_readiness.py -n 0 --maxprocesses 1' COVERAGE_CONFIG=config/coverage_ci_failure_ledger.ini COVERAGE_REPORT=.gate-logs/coverage-ci-failure-ledger.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
+```
+
+Actual measurements use /tmp/gludd-v012-ledger-read-import-coverage.ini and
+explicit registered311/312 runtime variables in the native command index. The
+existing tracked config adds only skip_covered=False and precision=2 display
+preferences; no receipt is relabeled as execution with that pathname. Native --source=.
+audits the complete owned ledger; existing external heartbeat script fixtures
+may also appear in raw coverage and are not counted as repository files. No
+new filtering or floor exception was introduced. Actual RED/GREEN/whole-owner
+evidence and exact commands remain /tmp/gludd-v012-ledger-read-import-report.md,
+its evidence index and commands.txt; no generated current JSON is hand-edited.
+
 The exact c9d2e98 hosted Build 38362521808 runtime admission failed at the
 unchanged 90-second deadline on both Python 3.11 and 3.12. The 3.11 lane had
 reached the separately isolated help check; the 3.12 lane reached 70% of the

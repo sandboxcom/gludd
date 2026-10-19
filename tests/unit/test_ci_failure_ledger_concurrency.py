@@ -6,6 +6,7 @@ import importlib.util
 import json
 import stat
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event
@@ -13,7 +14,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 _ADJACENT_SCRIPT = Path(__file__).resolve().with_name("ci_failure_ledger.py")
 SCRIPT = (
@@ -343,3 +344,93 @@ def test_exact_sha_preparation_retains_valid_workflows_and_reports_each_failure(
         "sha": "detail SHA differs", "immutable": "immutable terminal run",
     }
     assert expected[error_kind] in errors
+
+
+@pytest.mark.parametrize("writer_input_case", ("missing", "existing"))
+def test_fresh_writer_requests_public_filelock_before_mutation_or_yield(
+    tmp_path: Path, writer_input_case: str,
+) -> None:
+    """A read-only import boundary must never become an unlocked writer fallback."""
+    path = tmp_path / "private" / "ledger.json"
+    if writer_input_case == "existing":
+        _seed(_load(), path)
+    before = path.read_bytes() if path.exists() else None
+    parent_existed = path.parent.exists()
+    program = f"""
+import builtins
+import importlib.util
+import sys
+from pathlib import Path
+assert not any(name == "filelock" or name.startswith("filelock.") for name in sys.modules)
+attempts = []
+native_import = builtins.__import__
+def refuse_lock(name, globals=None, locals=None, fromlist=(), level=0):
+    if name == "filelock" or name.startswith("filelock."):
+        attempts.append(name)
+        raise ModuleNotFoundError("writer dependency blocked by test", name=name)
+    return native_import(name, globals, locals, fromlist, level)
+builtins.__import__ = refuse_lock
+spec = importlib.util.spec_from_file_location("ledger_writer_import_probe", {str(SCRIPT)!r})
+assert spec is not None and spec.loader is not None
+owner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(owner)
+print("LEDGER_READER_IMPORTED_WITHOUT_LOCK")
+ledger_path = Path({str(path)!r})
+yielded = False
+try:
+    with owner._locked_ledger(ledger_path):
+        yielded = True
+except ModuleNotFoundError as error:
+    assert error.name == "filelock", error
+else:
+    raise AssertionError("writer bypassed its required public FileLock import")
+assert not yielded
+assert attempts == ["filelock"], attempts
+assert (ledger_path.read_bytes() if ledger_path.exists() else None) == {before!r}
+assert ledger_path.parent.exists() is {parent_existed!r}
+assert not ledger_path.with_name("." + ledger_path.name + ".lock").exists()
+assert not any(name == "filelock" or name.startswith("filelock.") for name in sys.modules)
+print("LEDGER_WRITER_IMPORT_REFUSAL_PASS")
+"""
+    result = subprocess.run(
+        [sys.executable, "-W", "error", "-c", program],
+        cwd=tmp_path, check=False, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "LEDGER_READER_IMPORTED_WITHOUT_LOCK" in result.stdout
+    assert "LEDGER_WRITER_IMPORT_REFUSAL_PASS" in result.stdout
+    assert (path.read_bytes() if path.exists() else None) == before
+    assert path.parent.exists() is parent_existed
+    assert not path.with_name(f".{path.name}.lock").exists()
+
+
+def test_locked_ledger_keeps_real_timeout_cause_and_reacquires_after_independent_holder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Independent public locks contend; the live timeout and private sidecar stay authoritative."""
+    module = _load()
+    path = tmp_path / "private" / "ledger.json"
+    _seed(module, path)
+    before = path.read_bytes()
+    lock_path = path.with_name(f".{path.name}.lock")
+    timeout_before = module.LOCK_TIMEOUT_SECONDS
+    holder = FileLock(str(lock_path), timeout=0, mode=0o600)
+    with monkeypatch.context() as scoped:
+        scoped.setattr(module, "LOCK_TIMEOUT_SECONDS", 0)
+        with holder:
+            lock_inode = lock_path.stat().st_ino
+            with (
+                pytest.raises(module.LedgerError, match="ledger transaction lock") as captured,
+                module._locked_ledger(path),
+            ):
+                pytest.fail("an independently held writer lock must never yield")
+            assert isinstance(captured.value.__cause__, Timeout)
+            assert path.read_bytes() == before
+            assert lock_path.stat().st_ino == lock_inode
+        with module._locked_ledger(path) as ledger:
+            assert ledger == json.loads(before)
+        assert lock_path.stat().st_ino == lock_inode
+        assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+        assert path.read_bytes() == before
+    assert timeout_before == module.LOCK_TIMEOUT_SECONDS

@@ -9,14 +9,19 @@ import shlex
 import stat
 import subprocess
 import sys
+import textwrap
 from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
-from scripts import ci_failure_ledger as _native_owner
 from scripts.makefile_layout import compose_makefile
+
+if TYPE_CHECKING:
+    import ci_failure_ledger as _native_owner
+else:
+    from scripts import ci_failure_ledger as _native_owner
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "ci_failure_ledger.py"
@@ -2186,3 +2191,182 @@ def test_optional_details_preserve_legacy_version_one_and_existing_size_bound(
     assert module.main(["observe", "--run", str(DETAIL_RUN_ID), "--ledger", str(path)]) == 2
     assert "2 MiB" in capsys.readouterr().err
     assert path.read_bytes() == original
+
+
+def _fresh_filelock_read_probe(
+    tmp_path: Path, ledger_import_style: str, body: str,
+) -> subprocess.CompletedProcess[str]:
+    """Use a fresh real interpreter, never a cached or substituted FileLock module."""
+    source_path = ROOT if ledger_import_style == "package" else ROOT / "scripts"
+    program = f"""
+import importlib
+import importlib.abc
+import json
+import runpy
+import sys
+from pathlib import Path
+assert not any(name == "filelock" or name.startswith("filelock.") for name in sys.modules)
+attempts = []
+class RejectFileLock(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "filelock" or fullname.startswith("filelock."):
+            attempts.append(fullname)
+            raise ModuleNotFoundError("read-only path requested FileLock", name=fullname)
+        return None
+sys.meta_path.insert(0, RejectFileLock())
+sys.path.insert(0, {str(source_path)!r})
+exit_code = 0
+""" + textwrap.dedent(body) + """
+assert attempts == [], attempts
+assert not any(name == "filelock" or name.startswith("filelock.") for name in sys.modules)
+print("LEDGER_READ_IMPORT_GUARD_PASS")
+raise SystemExit(exit_code)
+"""
+    return subprocess.run(
+        [sys.executable, "-W", "error", "-c", program],
+        cwd=tmp_path, check=False, capture_output=True, text=True, timeout=30,
+    )
+
+
+def _importguard_ledger_inputs(tmp_path: Path) -> dict[str, Path]:
+    ledger = _native_owner.new_ledger()
+    _native_owner.observe_payload(ledger, _failed_payload(), observed_at="import-boundary")
+    encoded = json.dumps(ledger).encode("utf-8")
+    paths = {name: tmp_path / f"{name}.json" for name in (
+        "missing", "valid", "bounded", "malformed", "schema", "oversized",
+    )}
+    paths["valid"].write_bytes(encoded)
+    paths["bounded"].write_bytes(
+        encoded + b" " * (_native_owner.MAX_LEDGER_BYTES - len(encoded)),
+    )
+    paths["malformed"].write_text("{", encoding="utf-8")
+    paths["schema"].write_text('{"version": 999, "runs": {}, "families": {}}', encoding="utf-8")
+    paths["oversized"].write_bytes(b" " * (_native_owner.MAX_LEDGER_BYTES + 1))
+    return paths
+
+
+@pytest.mark.parametrize("ledger_import_style", ("package", "flat"))
+def test_fresh_readonly_ledger_inputs_and_guards_do_not_import_filelock(
+    tmp_path: Path, ledger_import_style: str,
+) -> None:
+    paths = _importguard_ledger_inputs(tmp_path)
+    before = {path: path.read_bytes() for path in paths.values() if path.exists()}
+    module_name = "scripts.ci_failure_ledger" if ledger_import_style == "package" else "ci_failure_ledger"
+    invalid = [
+        (str(paths["malformed"]), "ledger is invalid JSON"),
+        (str(paths["schema"]), "unsupported ledger version"),
+        (str(paths["oversized"]), "2 MiB safety bound"),
+    ]
+    result = _fresh_filelock_read_probe(tmp_path, ledger_import_style, f"""
+        owner = importlib.import_module({module_name!r})
+        expected = json.loads(Path({str(paths["valid"])!r}).read_text(encoding="utf-8"))
+        assert owner.read_ledger(Path({str(paths["missing"])!r})) == owner.new_ledger()
+        for path in {tuple(str(paths[key]) for key in ("valid", "bounded"))!r}:
+            assert owner.read_ledger(Path(path)) == expected
+        for path, message in {invalid!r}:
+            try:
+                owner.read_ledger(Path(path))
+            except owner.LedgerError as error:
+                assert message in str(error), str(error)
+            else:
+                raise AssertionError("invalid reader input was accepted")
+        assert "open=3 repaired=0 resolved=0 runs=1" in owner.status_lines(expected)[-1]
+        assert len(owner.guard_push(expected, {"b" * 40!r}, is_ancestor=lambda old, new: True)) == 3
+        assert "unchanged failed run" in " ".join(owner.guard_rerun(expected, 101))
+    """)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "LEDGER_READ_IMPORT_GUARD_PASS" in result.stdout
+    assert not paths["missing"].exists()
+    assert all(path.read_bytes() == content for path, content in before.items())
+    assert all(not path.with_name(f".{path.name}.lock").exists() for path in paths.values())
+
+
+@pytest.mark.parametrize("ledger_import_style", ("package", "flat", "script"))
+@pytest.mark.parametrize(("ledger_input_case", "expected_exit", "expected_output"), (
+    ("missing", 0, "CI_FAILURE_LEDGER_INACTIVE"),
+    ("valid", 1, "open=3 repaired=0 resolved=0 runs=1"),
+    ("bounded", 1, "open=3 repaired=0 resolved=0 runs=1"),
+    ("malformed", 2, "ledger is invalid JSON"),
+    ("schema", 2, "unsupported ledger version"),
+    ("oversized", 2, "2 MiB safety bound"),
+))
+def test_fresh_native_ledger_status_does_not_import_filelock(
+    tmp_path: Path, ledger_import_style: str, ledger_input_case: str,
+    expected_exit: int, expected_output: str,
+) -> None:
+    paths = _importguard_ledger_inputs(tmp_path)
+    path = paths[ledger_input_case]
+    before = path.read_bytes() if path.exists() else None
+    module_name = "scripts.ci_failure_ledger" if ledger_import_style == "package" else "ci_failure_ledger"
+    entry = (
+        f"runpy.run_path({str(SCRIPT)!r}, run_name='__main__')"
+        if ledger_import_style == "script"
+        else f"runpy.run_module({module_name!r}, run_name='__main__')"
+    )
+    result = _fresh_filelock_read_probe(tmp_path, ledger_import_style, f"""
+        sys.argv = [{str(SCRIPT)!r}, "status", "--ledger", {str(path)!r}]
+        try:
+            {entry}
+        except SystemExit as error:
+            exit_code = error.code
+    """)
+    assert result.returncode == expected_exit, result.stdout + result.stderr
+    assert "LEDGER_READ_IMPORT_GUARD_PASS" in result.stdout, result.stdout + result.stderr
+    assert expected_output in result.stdout + result.stderr
+    assert (path.read_bytes() if path.exists() else None) == before
+    assert not path.with_name(f".{path.name}.lock").exists()
+
+
+@pytest.mark.parametrize("ledger_import_style", ("package", "flat"))
+def test_fresh_ledger_validation_commands_do_not_import_filelock(
+    tmp_path: Path, ledger_import_style: str,
+) -> None:
+    module_name = "scripts.ci_failure_ledger" if ledger_import_style == "package" else "ci_failure_ledger"
+    ledger_path = tmp_path / "validation-must-not-create" / "ledger.json"
+    result = _fresh_filelock_read_probe(tmp_path, ledger_import_style, f"""
+        owner = importlib.import_module({module_name!r})
+        commands = [
+            ["observe", "--run", "7"],
+            ["observe-sha", "--sha", {"0" * 40!r}],
+            ["status"],
+            ["guard-rerun", "--run", "7"],
+            ["guard-runner-acquisition-rerun", "--run", "7"],
+            ["repair", "--all-open", "--sha", {"0" * 40!r}, "--evidence-target", "test-count"],
+            ["guard-push", "--head", {"0" * 40!r}],
+        ]
+        for command in commands:
+            assert owner.main(command + ["--validate-only", "--ledger", {str(ledger_path)!r}]) == 0
+        assert not Path({str(ledger_path.parent)!r}).exists()
+    """)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "LEDGER_READ_IMPORT_GUARD_PASS" in result.stdout
+    assert "CI_FAILURE_LEDGER_OBSERVE run=7" in result.stdout
+    assert "VALIDATE_ONLY_PASS" in result.stdout
+    assert not ledger_path.parent.exists()
+
+
+@pytest.mark.parametrize("ledger_import_style", ("package", "flat", "script"))
+def test_fresh_real_pipeline_plan_does_not_import_filelock(
+    tmp_path: Path, ledger_import_style: str,
+) -> None:
+    pipeline = ROOT / "scripts" / "pipeline_status.py"
+    module_name = "scripts.pipeline_status" if ledger_import_style == "package" else "pipeline_status"
+    entry = (
+        f"runpy.run_path({str(pipeline)!r}, run_name='__main__')"
+        if ledger_import_style == "script"
+        else f"runpy.run_module({module_name!r}, run_name='__main__')"
+    )
+    snapshot = tmp_path / "plan-must-not-publish.json"
+    ledger_path = tmp_path / "plan-ledger-must-not-exist.json"
+    result = _fresh_filelock_read_probe(tmp_path, ledger_import_style, f"""
+        sys.argv = [{str(pipeline)!r}, "status", "--validate-only", "--sha", {"a" * 40!r},
+                    "--snapshot-output", {str(snapshot)!r}, "--failure-ledger", {str(ledger_path)!r}]
+        try:
+            {entry}
+        except SystemExit as error:
+            exit_code = error.code
+    """)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "LEDGER_READ_IMPORT_GUARD_PASS" in result.stdout
+    assert "PIPELINE_STATUS_VALIDATE_ONLY_PASS" in result.stdout
+    assert not snapshot.exists() and not ledger_path.exists()
