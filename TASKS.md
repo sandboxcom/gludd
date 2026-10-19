@@ -5,7 +5,7 @@ S98.4 source-contract admission scope: `make/30-ci-and-release.mk`,
 `docs/features/RELEASE_PROOF_THROUGHPUT.md`, `TASKS.md`, `SESSION.md`.
 [The owning feature](docs/features/RELEASE_PROOF_THROUGHPUT.md#existing-fixture-and-policy-contracts-before-expensive-proof)
 records original RED, whole90PASS each311/312 and the unchanged full-proof obligations.
-Native evidence: /tmp/gludd-v012-source-contract-admission-evidence/MANIFEST.md.
+Native evidence: /tmp/gludd-v012-source-contract-admission-evidence/MANIFEST.md. Separate S98.4 UV-diagnostics support covers `scripts/automatic_disk_cleanup.py`, `tests/unit/test_automatic_disk_cleanup_uv_diagnostics.py`, `docs/features/GATE_RESOURCE_LIFECYCLE.md` and `TASKS.md`; its bounded RED/GREEN and strict evidence are /tmp/gludd-v012-cleanup-capacity-diagnostics-report.md. All19tasks stay open.
 All19release items remain open; compact-policy repair and real final admission are pending.
 
 S98.4 native fixture conformance support: `tests/conftest.py`, `tests/unit/test_watchdog_deep.py`, `tests/unit/test_deadline_enforcement_deep.py`, `tests/unit/test_scoped_admission_targets.py`, `TASKS.md` and `docs/features/RELEASE_PROOF_THROUGHPUT.md`.
