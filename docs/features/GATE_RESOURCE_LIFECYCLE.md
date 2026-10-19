@@ -1749,3 +1749,136 @@ recommends native locking. It motivates durable retention and careful recovery,
 not a network diagnosis for Gludd or authority to reconstruct Git metadata.
 Root owns the actual recovered-owner retention decision, integration and later
 gate/hosted/release proofs. All 19 task checkboxes remain open.
+
+## 2026-10-19: explicitly retire one merged repair worktree
+
+Three safe cache reclamations left actual disk usage at96% against95%. Native
+shared-UV diagnostics retained active-owner refusal. Several completed source
+workstreams had already been explicitly unregistered; the automatic lifecycle
+owner correctly lacked their positive completion leases. Registry absence
+alone cannot supply that proof. Do not re-register/backdate ownership, bypass
+UV owners or retry final proof merely because HEAD or elapsed time changes.
+
+The existing wt-prune-safe owner adds an explicit single-owner mode.
+WT_PRUNE_RETIRE_MERGED defaults0;1 selects literal BRANCH and canonical absolute
+WORKTREE. WT_PRUNE_RETIRE_VALIDATE_ONLY defaults1 and accepts0|1.
+ACTIVE_WORKSTREAM_REGISTRY selects the existing registry; WT_PRUNE_VALIDATE_ONLY
+retains its original meaning in default mode. Every variable is documented in
+help and config/make_target_contract.json. The original default call remains.
+
+The native mode reuses registered-root/backlink identity, trusted integration
+points and real ancestry, process census, validated checkpoint inventory and
+the existing automatic evidence archival/rollback/removal owner. It requires
+clean exact source/branch/HEAD, approved namespace and no active logical lease,
+Git lock or process. Unknown checkpoint authority refuses; a verified sibling
+checkpoint remains preserved and does not falsely own the selected checkout.
+Only this explicit mode distinguishes its own exact Python/selected-UV/Make
+launch chain from other active users. Existing psutil supplies lossless argv,
+cwd,UID,parent and creation time; every controller must match the selected
+source/request and remain outside the target. Every fence compares fresh
+identity. Unknown/reused/changed identity, target-cwd ancestors and unrelated
+live children still refuse. The original global process scan is unchanged.
+The Make mode uses exec to avoid an extra launcher; default mode is unchanged.
+An actual failed probe found Apple's Make shim selected a different executable,
+so this mode reuses start_gate_background's existing native executable selector;
+the shell hypothesis was not proven and no path/name fallback is added.
+
+Before actual removal it repeats ownership and ancestry fences after evidence
+archival, rejects newly appeared proof/unknown ignored data, and lets the
+existing owner restore archived evidence if Git refuses. All refs and commit
+objects survive; no force, unlock, raw deletion or Git-metadata reconstruction
+is added. Default automatic lease/grace/cleanup authority remains unchanged.
+
+Use explicit plan1 for the actual verified merged owner before a deliberate
+plan0 apply. A plan starts native inspection and can refuse; it is not removal,
+capacity clearance, admission or release evidence. The documented absent-path
+example intentionally refuses rc2 without mutation:
+
+~~~text
+make wt-prune-safe ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json WT_PRUNE_VALIDATE_ONLY=1 WT_PRUNE_RETIRE_MERGED=1 WT_PRUNE_RETIRE_VALIDATE_ONLY=1 BRANCH=contract/retirement WORKTREE=/tmp/gludd-worktrees/contract-retirement
+~~~
+
+Root ran that exact example through run-watched before and after fixing the
+facade's recipe layout; both retained the honest native ownership refusal.
+Initial target-contract checks could not inspect variables after conditional
+directives inside a recipe. Root changed only recipe construction to one
+native Make conditional-argument call; the original checker stayed unchanged
+and passes254 contracts. Full native Make literal/default/hostile controls and
+complete source-owner evidence belong to the frozen source handoff; no live
+retirement or reclaimed-byte claim is supplied by this source description.
+
+Initial311 complete original workstream/checkpoint/new-owner acceptance passes
+164/95.28s, observer97.4rc0. The original include scopes with subprocess coverage
+measure aggregate93.1%line/85.6%branch; prune93.4/87.9, checkpoint90.2/81.7 and
+registry98.9/95.0, passing original85/75 independently for BOTH metrics. This
+historical receipt precedes a typing-only new-test correction and subsequent
+independent source finding; it is not relabelled as the corrected source proof.
+The unchanged archive helper is not claimed fully covered by that scope.
+
+Actual first312 whole replay retains16FAIL/148PASS99.43s/native101.7rc2.
+All16 fail before policy with ModuleNotFoundError:scripts: required outer
+PYTHONPATH=checkout/src command-line transport overrides fixture source paths
+set only in child environment. The existing _retain_make helper and new facade
+must bind their already-selected source path explicitly in child Make argv;
+all original assertions, selected runtimes and inherited carriers remain.
+
+Independent review also found that repeated -f sources could overwrite the
+first observed Makefile path, allowing foreign-first/approved-last input past
+that source predicate. The correction requires at most one explicit source,
+with failing-first pure-controller and real-Make refusal before archival or
+removal. A further confined native control reproduced the same gap through
+explicit/inherited MAKEFILES: it read the harmless foreign marker and removed
+only its fixture. The existing validator now refuses that extra source
+authority while preserving MAKEFLAGS/MAKEOVERRIDES. Original two MAKEFILES
+controls fail first; five finite controls then pass, including original
+duplicate-source refusal and the recognized positive chain. GNU's
+[MAKEFILES contract](https://www.gnu.org/s/make/manual/html_node/MAKEFILES-Variable.html)
+documents those additional inputs; the indexed primary manual was read after
+the alternate direct URL timed out. No custom flags parser is introduced.
+Preserve the original CHANGES REQUIRED decision and every failed run.
+Corrected complete coverage/runtime results, exact commands and original
+failures are retained at /tmp/gludd-v012-worktree-retirement-report.md.
+Root's facade index is /tmp/gludd-v012-worktree-retirement-root-facade-evidence.md.
+Source acceptance supplies no final candidate/gate/hosted proof.
+
+The corrected frozen source passes168whole cases/zero skips on311(77.46s,
+native79.328rc0) and312(74.36s,native76.6rc0). Fresh311 subprocess coverage run
+20261019T201859Z-50747-3df4603e measures aggregate93.1%line/85.8%branch,
+prune93.6/88.3, checkpoint90.2/81.7 and registry98.9/95.0. All three pass75/75
+and aggregate85/85; the unchanged archive helper is outside this measured scope.
+The original164-case coverage, first failed312 run, repeated-source RED and
+MAKEFILES RED are retained separately. Independent corrected-source review,
+normal guarded commit and genuine integration still precede any live retirement.
+
+Research revisited the [Git worktree manual](https://git-scm.com/docs/git-worktree)
+and firsthand [2018 recovery report](https://stackoverflow.com/questions/53711126/recover-pruned-worktree)
+on2026-10-19. The report describes accidental registration pruning while a
+network drive was temporarily unavailable; its2025 reply recommends locking.
+Git documents clean native removal and lock protection. This historical
+experience supports preserving native registration/locks and explicit owner
+selection, not a Gludd network diagnosis or permission to rebuild metadata.
+
+The firsthand [chroxy5244 report](https://github.com/blamechris/chroxy/issues/5244)
+on2026-06-06 also reproduces ignored local-data loss under ordinary clean
+status and no-force native removal on Git2.51.2; downstream5249 closed it.
+Root read this report on2026-10-19. It corroborates inspecting ignored data and
+retaining existing archive/unknown-data refusals; it supplies no Gludd capacity
+proof, upstream defect diagnosis or expanded cleanup authority.
+
+All19release tasks remain open.85/75 BOTH coverage, fatal warnings, ZDD,
+checkpoint retention, capacity95%, final admission, full gate, exact-SHA hosted
+proof and promotion authority remain required. The future0.1.2 completed-item
+preparation queue follows these pipeline repairs under the user's sequence.
+
+The same repair push supplied a concrete scheduling boundary: all2003 runtime
+assertions passed while a separate164-case coverage run overlapped, but the
+original90-second publication observer timed out90.6s and prevented transport.
+After both owners ended, make ps showed only the namespaced watchdog. Holding
+further expensive checks let the unchanged90/60 owner pass73.554s; normal
+pre-push checks and exact development512eaf9 transport then passed. Keep both
+native receipts; this local result is not a hosted throughput improvement.
+Before bounded publication/final proof, use make ps and logical workstream
+ownership, finish competing test/coverage owners, and reserve that proof window
+until its native terminal state. Read-only review/model work may continue.
+Coordinate through existing Make/workstream owners; no new lock, scanner,
+runner, daemon, cache, extra heartbeat or widened deadline is introduced.

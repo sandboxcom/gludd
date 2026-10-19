@@ -2,7 +2,7 @@
 
 S98.4 source-contract admission scope: `make/30-ci-and-release.mk`,
 `tests/unit/test_release_proof_admission_target.py`, `tests/unit/test_xdist_trace_diagnostics.py`,
-`docs/features/RELEASE_PROOF_THROUGHPUT.md`, `TASKS.md`, `SESSION.md`.
+`docs/features/RELEASE_PROOF_THROUGHPUT.md`, `TASKS.md`, `SESSION.md`. Separate S98.4 merged-retirement support covers `scripts/prune_worktrees_safe.py`, `scripts/owned_git_checkpoint.py`, `tests/unit/test_worktree_retirement.py`, `tests/unit/test_workstream_prune.py`, `make/00-foundation.mk`, `make/30-ci-and-release.mk`, `config/make_target_contract.json`, `docs/features/GATE_RESOURCE_LIFECYCLE.md` and `TASKS.md`; preserve all19open task statuses and native checkpoint/evidence ownership.
 [The owning feature](docs/features/RELEASE_PROOF_THROUGHPUT.md#existing-fixture-and-policy-contracts-before-expensive-proof)
 records original RED, whole90PASS each311/312 and the unchanged full-proof obligations.
 Native evidence: /tmp/gludd-v012-source-contract-admission-evidence/MANIFEST.md.

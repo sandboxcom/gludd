@@ -5,8 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
+import shutil
 import stat
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -224,11 +228,262 @@ def retain(*, branch: str, worktree: Path, reason: str, validate_only: bool) -> 
     return 0
 
 
+@dataclass(frozen=True)
+class _RetirementController:
+    """Lossless native identity for one member of this invocation's launch chain."""
+
+    pid: int
+    ppid: int
+    started: float
+    cwd: Path
+    executable: Path
+    argv: tuple[str, ...]
+    uid: tuple[int, int]
+
+
+def _retirement_controller(pid: int) -> _RetirementController:
+    """Query only one concrete process through the already installed library."""
+    import psutil
+
+    try:
+        process = psutil.Process(pid)
+        uids = process.uids()
+        record = _RetirementController(
+            pid, process.ppid(), process.create_time(), Path(process.cwd()),
+            Path(process.exe()), tuple(process.cmdline()), (uids.real, uids.effective),
+        )
+        if not process.is_running():
+            raise ValueError("retirement controller identity changed during inspection")
+        return record
+    except (psutil.Error, OSError, AttributeError) as exc:
+        raise ValueError("retirement controller identity is unavailable") from exc
+
+
+def _validate_retirement_controllers(
+    records: tuple[_RetirementController, ...], *, root: Path, worktree: Path, branch: str,
+) -> tuple[_RetirementController, ...]:
+    """Allow only the concrete Python, optional selected uv, and public Make chain."""
+    if os.environ.get("MAKEFILES"):
+        raise ValueError("retirement Make source supplied through MAKEFILES")
+    if len(records) not in {2, 3} or len({record.pid for record in records}) != len(records):
+        raise ValueError("retirement controller ancestry is unknown")
+    for index, record in enumerate(records):
+        if (record.pid <= 1 or not math.isfinite(record.started) or record.started <= 0
+                or record.cwd != root or record.cwd == worktree
+                or record.cwd.is_relative_to(worktree)
+                or record.uid != (os.getuid(), os.geteuid()) or not record.argv
+                or (index and records[index - 1].ppid != record.pid)):
+            raise ValueError("retirement controller identity or cwd is not owned")
+    python = records[0]
+    if (python.executable.resolve(strict=True) != Path(sys.executable).resolve(strict=True)
+            or python.argv[1:3] != ("-m", "scripts.prune_worktrees_safe")):
+        raise ValueError("current process is not the native retirement invocation")
+    try:
+        request = _parser().parse_args(python.argv[3:])
+    except SystemExit as exc:
+        raise ValueError("retirement controller argv is not a supported request") from exc
+    if not request.retire_merged or request.branch != branch or request.worktree != worktree:
+        raise ValueError("retirement controller argv differs from selected owner")
+    if len(records) == 3:
+        uv = records[1]
+        selected = shutil.which(os.environ.get("UV", "uv"))
+        if (selected is None or uv.executable.resolve(strict=True) != Path(selected).resolve(strict=True)
+                or uv.argv[1:] != ("run", "python", *python.argv[1:])):
+            raise ValueError("retirement uv controller argv or executable differs")
+    if TYPE_CHECKING:
+        import start_gate_background as gate_launcher
+    else:
+        from scripts import start_gate_background as gate_launcher
+    make = records[-1]
+    selected_make = gate_launcher._native_make_executable()
+    if make.executable.resolve(strict=True) != selected_make:
+        raise ValueError(f"retirement Make executable is unknown: observed={make.executable} selected={selected_make}")
+    arguments = list(make.argv[1:])
+    source = Path(__file__).resolve().parents[1]
+    makefile = root / "Makefile"
+    assignments: dict[str, str] = {}
+    target_count = 0
+    explicit_makefile = False
+    while arguments:
+        argument = arguments.pop(0)
+        if argument in {"--no-print-directory", "--silent", "-s"}:
+            continue
+        if argument == "-f" and arguments:
+            if explicit_makefile:
+                raise ValueError("retirement Make argv names more than one source")
+            explicit_makefile = True
+            makefile = Path(arguments.pop(0))
+            continue
+        if argument == "wt-prune-safe":
+            target_count += 1
+            continue
+        key, separator, value = argument.partition("=")
+        if (not separator or not key or not key.replace("_", "").isalnum()
+                or key[0].isdigit() or key in assignments or key == "MAKEFILES"):
+            raise ValueError("retirement Make argv is not an exact single-target invocation")
+        assignments[key] = value
+    if (target_count != 1 or makefile.resolve(strict=True) not in {
+            source / "Makefile", source / "make/30-ci-and-release.mk",
+        } or assignments.get("WT_PRUNE_RETIRE_MERGED") != "1"
+            or assignments.get("BRANCH") != branch or assignments.get("WORKTREE") != str(worktree)):
+        raise ValueError("retirement Make argv or source does not bind selected owner")
+    return records
+
+
+def _retirement_controllers(
+    *, root: Path, worktree: Path, branch: str,
+) -> tuple[_RetirementController, ...]:
+    """Capture this exact controller chain freshly, without scanning other trees."""
+    current = _retirement_controller(os.getpid())
+    parent = _retirement_controller(current.ppid)
+    records: tuple[_RetirementController, ...] = (current, parent)
+    if parent.argv[1:3] == ("run", "python"):
+        records += (_retirement_controller(parent.ppid),)
+    return _validate_retirement_controllers(records, root=root, worktree=worktree, branch=branch)
+
+
+@dataclass(frozen=True)
+class _RetirementIdentity:
+    """One exact, independently refreshed retirement boundary."""
+
+    record: WorktreeRecord
+    root_identity: tuple[int, int]
+    backlink_identity: tuple[int, int, int, int]
+    head: str
+    integration_revisions: tuple[str, ...]
+    controllers: tuple[_RetirementController, ...]
+
+
+def retire_merged(
+    *, branch: str, worktree: Path, registry_path: Path, validate_only: bool,
+) -> int:
+    """Archive and retire one explicitly selected, clean and integrated owner."""
+    if TYPE_CHECKING:
+        import automatic_disk_cleanup as cleanup
+        import clean_ci_shard_scratch as process_owner
+    else:
+        from scripts import automatic_disk_cleanup as cleanup
+        from scripts import clean_ci_shard_scratch as process_owner
+
+    if (not branch or branch != branch.strip() or not worktree.is_absolute()
+            or ".." in worktree.parts
+            or any(character in branch + str(worktree) for character in "\0\r\n")):
+        raise ValueError("explicit literal BRANCH and canonical absolute WORKTREE are required")
+    root = owned_git_checkpoint.repository_root()
+    _git("check-ref-format", f"refs/heads/{branch}", timeout=30)
+    registry = WorkstreamRegistry(registry_path)
+
+    def bounded_git(
+        *args: str, check: bool = True, timeout: float | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return _git(*args, check=check, timeout=30 if timeout is None else timeout)
+
+    def observe() -> _RetirementIdentity:
+        record, identity = _retention_identity(branch, worktree)
+        records = cleanup._registered_worktrees()
+        main = records[0].path.resolve(strict=True)
+        if worktree in {root, main}:
+            raise ValueError("current/main checkout cannot be retired")
+        if not cleanup._inside_approved_root(
+            worktree, (main / ".claude/worktrees", cleanup.DEFAULT_TMP_WORKTREE_ROOT),
+        ):
+            raise ValueError("WORKTREE is outside the approved namespace")
+        leases = cleanup._active_workstream_leases(registry)
+        if branch in leases or any(lease.worktree == worktree for lease in leases.values()):
+            raise ValueError("active logical workstream cannot be retired")
+        if record.locked:
+            raise ValueError("git worktree lock protects this owner")
+        if worktree in owned_git_checkpoint.retained_checkpoint_owners(root):
+            raise ValueError("retained checkpoint protects this worktree owner")
+        pids = set(process_owner._active_process_pids(worktree))
+        controllers = _retirement_controllers(root=root, worktree=worktree, branch=branch) if pids else ()
+        protected = pids - {controller.pid for controller in controllers[1:]}
+        if protected:
+            raise ValueError(f"active processes protect this worktree owner: {sorted(protected)}")
+        status = bounded_git(
+            "-C", str(worktree), "status", "--porcelain=v1", "-z", "--untracked-files=all",
+        )
+        if status.stdout:
+            raise ValueError("dirty worktree cannot be retired")
+        head = bounded_git("-C", str(worktree), "rev-parse", "--verify", "HEAD^{commit}").stdout.strip()
+        points = cleanup._integration_points(records)
+        integrated = False
+        for point in points:
+            result = bounded_git(
+                "--no-replace-objects", "merge-base", "--is-ancestor", head, point.revision,
+                check=False,
+            )
+            if result.returncode not in {0, 1}:
+                raise ValueError("native integration ancestry inspection failed")
+            integrated |= result.returncode == 0
+        if not integrated:
+            raise ValueError("unmerged worktree cannot be retired")
+        return _RetirementIdentity(
+            record, (identity[0][0], identity[0][1]), identity[1], head,
+            tuple(point.revision for point in points), controllers,
+        )
+
+    initial = observe()
+    preflight = cleanup._remove_worktree_materialization(
+        initial.record, True, run_git=bounded_git,
+    )
+    if not preflight.reclaimable:
+        raise ValueError(preflight.reason)
+    receipt: dict[str, str | bool | int] = {
+        "branch": branch, "worktree": str(worktree), "head": initial.head,
+        "validate_only": validate_only, "native_ownership_verified": 1,
+        "status": "planned" if validate_only else "removed",
+    }
+    if validate_only:
+        print(json.dumps(receipt, sort_keys=True))
+        return 0
+    if observe() != initial:
+        raise ValueError("retirement identity or integration input changed")
+    refusal = ""
+
+    def retiring_git(
+        *args: str, check: bool = True, timeout: float | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal refusal
+        if args[:2] == ("worktree", "remove"):
+            try:
+                if observe() != initial:
+                    raise ValueError("retirement identity or integration input changed")
+                final = cleanup._remove_worktree_materialization(
+                    initial.record, True, run_git=bounded_git,
+                )
+                if not final.reclaimable:
+                    raise ValueError(final.reason)
+                evidence = bounded_git(
+                    "--literal-pathspecs", "-C", str(worktree), "ls-files", "--others",
+                    "--ignored", "--exclude-standard", "-z", "--",
+                    *sorted(cleanup.ARCHIVABLE_PRESERVED_DATA_NAMES),
+                )
+                if evidence.stdout:
+                    raise ValueError("new ignored proof appeared during archival")
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+                refusal = str(exc)
+                return subprocess.CompletedProcess(args, 1, "", refusal)
+        return bounded_git(*args, check=check, timeout=timeout)
+
+    outcome = cleanup._remove_worktree_materialization(
+        initial.record, False, evidence_archive_root=cleanup._canonical_evidence_archive_root(),
+        run_git=retiring_git,
+    )
+    if not outcome.reclaimable:
+        raise ValueError(f"{outcome.reason}: {refusal}" if refusal else outcome.reason)
+    print(json.dumps(receipt, sort_keys=True))
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", type=Path)
     parser.add_argument("--validate-only", action="store_true")
-    parser.add_argument("--retain", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--retain", action="store_true")
+    modes.add_argument("--retire-merged", action="store_true")
+    parser.add_argument("--retire-validate-only", choices=("0", "1"), default="1")
     parser.add_argument("--branch", default="")
     parser.add_argument("--worktree", type=Path)
     parser.add_argument("--reason", default="")
@@ -239,6 +494,18 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Run the fail-closed worktree pruning command."""
     args = _parser().parse_args(argv)
+    if args.retire_merged:
+        try:
+            if args.worktree is None:
+                raise ValueError("WORKTREE is required")
+            return retire_merged(
+                branch=args.branch, worktree=args.worktree,
+                registry_path=args.registry or default_registry_path(),
+                validate_only=args.retire_validate_only == "1",
+            )
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+            print(f"wt-prune-safe: retirement refused: {exc}")
+            return 2
     if args.retain:
         try:
             if args.worktree is None:
