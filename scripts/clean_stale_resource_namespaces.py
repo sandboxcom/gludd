@@ -624,10 +624,10 @@ def _scan_candidate(
             root_descriptor = os.open(path.name, _directory_flags(), dir_fd=parent_descriptor)
             anchors.callback(os.close, root_descriptor)
             digest = hashlib.sha256()
-            digest.update(repr((top.st_mode, top.st_uid, top.st_gid, top.st_nlink,
+            digest.update(repr((top.st_mode, top.st_uid, top.st_gid, top.st_nlink, top.st_size,
                                 top.st_mtime_ns, top.st_ctime_ns)).encode("ascii"))
             newest = top.st_mtime
-            size_bytes = top.st_size
+            size_bytes = 0  # Logical entry bytes exclude filesystem directory metadata.
             entries = 0
             if not _same_entry(top, os.fstat(root_descriptor)):
                 return _Scan(None, "candidate-identity-changed")
@@ -662,7 +662,8 @@ def _scan_candidate(
                         )
                         digest.update(repr(stamp).encode("utf-8", "surrogateescape"))
                         newest = max(newest, identity.st_mtime)
-                        size_bytes += identity.st_size
+                        if not stat.S_ISDIR(identity.st_mode):
+                            size_bytes += identity.st_size
                         if stat.S_ISLNK(identity.st_mode):
                             if _is_marker(child):
                                 return _Scan(None, "marker-symlink", child)
