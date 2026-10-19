@@ -6,6 +6,8 @@ import secrets
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Protocol, cast
 
 import pytest
 
@@ -207,20 +209,116 @@ def test_native_cprofile_off_preserves_original_recipe() -> None:
     ) == ordinary.stdout
 
 
+class _ProfileHooks(Protocol):
+    def getprofile(self) -> object | None: ...
+
+
+class _ProfileEvents(Protocol):
+    PY_START: int
+    PY_RESUME: int
+    PY_THROW: int
+    PY_RETURN: int
+    PY_YIELD: int
+    PY_UNWIND: int
+    CALL: int
+
+
+class _MonitoringProfiler(Protocol):
+    PROFILER_ID: int
+    events: _ProfileEvents
+
+    def get_tool(self, tool_id: int, /) -> str | None: ...
+
+    def get_events(self, tool_id: int, /) -> int: ...
+
+
+def _native_cprofile_active(system: _ProfileHooks = sys) -> bool:
+    """Observe the selected runtime's native profiling backend."""
+    monitoring = cast(_MonitoringProfiler | None, getattr(system, "monitoring", None))
+    if monitoring is None:
+        return system.getprofile() is not None
+    events = monitoring.events
+    # CALL controls ancillary C_RETURN/C_RAISE, which get_events does not report.
+    required = (
+        events.PY_START | events.PY_RESUME | events.PY_THROW
+        | events.PY_RETURN | events.PY_YIELD | events.PY_UNWIND
+        | events.CALL
+    )
+    return (
+        system.getprofile() is None
+        and monitoring.get_tool(monitoring.PROFILER_ID) == "cProfile"
+        and monitoring.get_events(monitoring.PROFILER_ID) & required == required
+    )
+
+
+@pytest.mark.parametrize(
+    ("hook", "expected"),
+    [(None, False), (object(), True)],
+    ids=("disabled", "enabled"),
+)
+def test_native_cprofile_activity_uses_legacy_hook_without_monitoring(
+    hook: object | None, expected: bool,
+) -> None:
+    system = SimpleNamespace(getprofile=lambda: hook)
+    assert _native_cprofile_active(system) is expected
+
+
+@pytest.mark.parametrize(
+    ("tool", "event_mask", "legacy_hook", "expected"),
+    [
+        pytest.param("cProfile", 511, None, True, id="enabled"),
+        pytest.param("cProfile", 127, None, True, id="enabled-ungrouped-events"),
+        pytest.param(None, 0, None, False, id="disabled"),
+        pytest.param("foreign-profiler", 511, None, False, id="wrong-tool"),
+        pytest.param("cProfile", 0, None, False, id="no-events"),
+        pytest.param("cProfile", 511, object(), False, id="unrelated-legacy-hook"),
+        *[
+            pytest.param(
+                "cProfile", 511 ^ (1 << bit), None, bit >= 7,
+                id=f"missing-independent-event-{bit}" if bit < 7 else f"ancillary-event-{bit}",
+            )
+            for bit in range(9)
+        ],
+    ],
+)
+def test_native_cprofile_activity_requires_owned_monitoring_and_every_event(
+    tool: str | None, event_mask: int, legacy_hook: object | None, expected: bool,
+) -> None:
+    events = SimpleNamespace(
+        PY_START=1, PY_RESUME=2, PY_THROW=4, PY_RETURN=8, PY_YIELD=16,
+        PY_UNWIND=32, CALL=64, C_RETURN=128, C_RAISE=256,
+    )
+    monitoring = SimpleNamespace(
+        PROFILER_ID=2, events=events,
+        get_tool=lambda tool_id: tool if tool_id == 2 else "wrong-id",
+        get_events=lambda tool_id: event_mask if tool_id == 2 else 0,
+    )
+    system = SimpleNamespace(getprofile=lambda: legacy_hook, monitoring=monitoring)
+    assert _native_cprofile_active(system) is expected
+
+
 def test_native_cprofile_request_is_consumed_before_collection_and_nested_make(tmp_path: Path) -> None:
+    import pstats
+
     child = tmp_path / "test_profile_child.py"
     child.write_text(
         "import os, sys\n"
         "assert '_TEST_FILES_CPROFILE' not in os.environ\n"
         "def test_unprofiled_child():\n"
-        "    assert sys.getprofile() is None\n",
+        "    assert sys.getprofile() is None\n"
+        "    if hasattr(sys, 'monitoring'):\n"
+        "        assert sys.monitoring.get_tool(sys.monitoring.PROFILER_ID) is None\n"
+        "        assert sys.monitoring.get_events(sys.monitoring.PROFILER_ID) == 0\n",
         encoding="utf-8",
     )
     source = (
         "import os, subprocess, sys\n"
+        "from tests.unit.test_scoped_admission_targets import _native_cprofile_active\n"
         "assert '_TEST_FILES_CPROFILE' not in os.environ\n"
         "def test_nested_native_make():\n"
-        "    assert sys.getprofile() is not None\n"
+        "    if not hasattr(sys, 'monitoring'):\n"
+        "        assert sys.getprofile() is not None\n"
+        "    assert _native_cprofile_active()\n"
         f"    result = subprocess.run(['make', '--no-print-directory', 'test-files', 'TESTFILES={child}', "
         "'PYTEST_ARGS=-q -W error -n 0', 'NPROC=1', 'GLUDD_XDIST_WORKERS=1', "
         f"'UV_PROJECT_ENVIRONMENT={sys.prefix}'], cwd={str(ROOT)!r}, "
@@ -231,6 +329,12 @@ def test_native_cprofile_request_is_consumed_before_collection_and_nested_make(t
     result = _native_cprofile_probe(tmp_path, source)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("pytest-cprofile: directory=") == 1
+    prefix = "pytest-cprofile: directory="
+    line = next(line for line in result.stdout.splitlines() if line.startswith(prefix))
+    directory = Path(line.removeprefix(prefix))
+    functions = pstats.Stats(str(directory / "pytest.pstats")).get_stats_profile().func_profiles
+    assert "test_nested_native_make" in functions
+    assert Path(functions["test_nested_native_make"].file_name) == tmp_path / "test_native_profile_probe.py"
 
 
 def test_native_cprofile_does_not_profile_xdist_workers(tmp_path: Path) -> None:
@@ -240,7 +344,10 @@ def test_native_cprofile_does_not_profile_xdist_workers(tmp_path: Path) -> None:
         "assert '_TEST_FILES_CPROFILE' not in os.environ\n"
         "def test_native_worker():\n"
         "    assert os.environ.get('PYTEST_XDIST_WORKER', '').startswith('gw')\n"
-        "    assert sys.getprofile() is None\n",
+        "    assert sys.getprofile() is None\n"
+        "    if hasattr(sys, 'monitoring'):\n"
+        "        assert sys.monitoring.get_tool(sys.monitoring.PROFILER_ID) is None\n"
+        "        assert sys.monitoring.get_events(sys.monitoring.PROFILER_ID) == 0\n",
         arguments="-q -W error -n 2",
     )
     assert result.returncode == 0, result.stdout + result.stderr

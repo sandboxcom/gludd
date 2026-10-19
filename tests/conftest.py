@@ -867,6 +867,7 @@ _LEAKY_ENV_VARS: frozenset[str] = frozenset(
         "GLUDD_XDIST_TRACE_LOG",
         "ZAI_API_KEY",
         "ZAI_BASE_URL",
+        "_TEST_FILES_CPROFILE",
     }
 )
 

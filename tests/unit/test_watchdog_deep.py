@@ -21,6 +21,8 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.conftest import _load_path_module_isolated
+
 ROOT = Path(__file__).parent.parent.parent
 
 
@@ -899,49 +901,94 @@ class TestTaskWatchdogKillRecordDeep:
 
 class TestTaskWatchdogConfiguration:
     def test_env_var_overrides_deadlines_file(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_TASK_DEADLINE_STATE", "/tmp/custom-deadlines.json")
-        import importlib
-
-        import scripts.task_watchdog as tw
-
-        importlib.reload(tw)
-        assert "/tmp/custom-deadlines.json" in tw.DEADLINES_FILE
-        # Restore
-        monkeypatch.delenv("GLUDD_TASK_DEADLINE_STATE", raising=False)
+        with monkeypatch.context() as config:
+            config.setenv("GLUDD_TASK_DEADLINE_STATE", "/tmp/custom-deadlines.json")
+            tw = _load_path_module_isolated(
+                "_task_watchdog_configuration_probe", ROOT / "scripts/task_watchdog.py",
+            )
+            assert "/tmp/custom-deadlines.json" in tw.DEADLINES_FILE
 
     def test_env_var_overrides_timeout_ms(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_TASK_TIMEOUT_MS", "600000")
-        import importlib
-
-        import scripts.task_watchdog as tw
-
-        importlib.reload(tw)
-        assert tw.TIMEOUT_MS == 600000
-        monkeypatch.delenv("GLUDD_TASK_TIMEOUT_MS", raising=False)
+        with monkeypatch.context() as config:
+            config.setenv("GLUDD_TASK_TIMEOUT_MS", "600000")
+            tw = _load_path_module_isolated(
+                "_task_watchdog_configuration_probe", ROOT / "scripts/task_watchdog.py",
+            )
+            assert tw.TIMEOUT_MS == 600000
 
     def test_env_var_overrides_poll_secs(self, monkeypatch):
-        monkeypatch.setenv("GLUDD_TASK_WATCHDOG_POLL", "3")
-        import importlib
+        with monkeypatch.context() as config:
+            config.setenv("GLUDD_TASK_WATCHDOG_POLL", "3")
+            tw = _load_path_module_isolated(
+                "_task_watchdog_configuration_probe", ROOT / "scripts/task_watchdog.py",
+            )
+            assert tw.POLL_SECS == 3
 
-        import scripts.task_watchdog as tw
 
-        importlib.reload(tw)
-        assert tw.POLL_SECS == 3
-        monkeypatch.delenv("GLUDD_TASK_WATCHDOG_POLL", raising=False)
+    @pytest.mark.parametrize(
+        ("method", "env_key", "original_env", "attribute", "wrong_value"),
+        [
+            ("test_env_var_overrides_deadlines_file", "GLUDD_TASK_DEADLINE_STATE",
+             "/tmp/prior-deadlines.json", "DEADLINES_FILE", "wrong-deadlines"),
+            ("test_env_var_overrides_timeout_ms", "GLUDD_TASK_TIMEOUT_MS",
+             "700000", "TIMEOUT_MS", -1),
+            ("test_env_var_overrides_poll_secs", "GLUDD_TASK_WATCHDOG_POLL",
+             "7", "POLL_SECS", -1),
+        ],
+        ids=("deadlines", "timeout", "poll"),
+    )
+    @pytest.mark.parametrize("assertion_failure", [False, True], ids=("normal", "assertion-failure"))
+    def test_configuration_probe_preserves_selected_environment_and_canonical_module(
+        self, monkeypatch: pytest.MonkeyPatch, method: str, env_key: str,
+        original_env: str, attribute: str, wrong_value: object, assertion_failure: bool,
+    ) -> None:
+        import scripts.task_watchdog as canonical
+
+        monkeypatch.setenv(env_key, original_env)
+        original_config = (canonical.DEADLINES_FILE, canonical.TIMEOUT_MS, canonical.POLL_SECS)
+        alias = "_task_watchdog_configuration_probe"
+        original_alias = sys.modules.get(alias)
+        if assertion_failure:
+            load_real = _load_path_module_isolated
+
+            def incorrect_config(module_name: str, module_path: str | Path):
+                module = load_real(module_name, module_path)
+                setattr(module, attribute, wrong_value)
+                return module
+
+            monkeypatch.setattr(sys.modules[__name__], "_load_path_module_isolated", incorrect_config)
+            with pytest.raises(AssertionError):
+                getattr(self, method)(monkeypatch)
+        else:
+            getattr(self, method)(monkeypatch)
+
+        assert sys.modules["scripts.task_watchdog"] is canonical
+        current_config = (canonical.DEADLINES_FILE, canonical.TIMEOUT_MS, canonical.POLL_SECS)
+        assert current_config == original_config
+        assert os.environ.get(env_key) == original_env
+        assert sys.modules.get(alias) is original_alias
 
 
 class TestTaskWatchdogProcessIdentity:
-    def test_kill_skips_when_identity_changed(self):
+    def test_kill_skips_when_identity_changed(self, tmp_path: Path) -> None:
         """kill_process returns False when command != expected_command."""
-        from scripts.process_cleanup import ProcessInfo
+        from scripts.task_watchdog import cleanup_owner
 
-        table = {99999: ProcessInfo(99999, 1, 500, "python some_other_script.py")}
+        record = cleanup_owner.ProcessRecord(
+            99999, 1, 500, "python some_other_script.py", started_at="original-start",
+        )
         with (
-            patch("scripts.task_watchdog.snapshot_processes", return_value=table),
-            patch("scripts.task_watchdog.time.sleep"),
+            patch.object(cleanup_owner, "_records", return_value=[record]) as inventory,
+            patch("scripts.task_watchdog._terminate_verified") as terminate,
+            patch.object(cleanup_owner, "_signal_targets") as signal_targets,
         ):
-            result = kill_process(99999, expected_command="python pytest test.py")
+            result = kill_process(
+                99999, expected_command="python pytest test.py", repository_roots=(tmp_path,),
+            )
             assert result is False
+            inventory.assert_called_once_with(tmp_path)
+            terminate.assert_not_called()
+            signal_targets.assert_not_called()
 
 
 class TestTaskWatchdogGateExclusion:
