@@ -45,12 +45,19 @@ gate-background: gate-admission-config
 		--timeout-seconds "$(GATE_TIMEOUT)" \
 		--validate-only "$(GATE_BACKGROUND_VALIDATE_ONLY)"
 
-# Canonical path to resume a failed gate. Refuses to start if there is no
-# failed gate state to resume from, preventing accidental full restarts.
-# This enforces the AGENTS.md rule: never re-run from zero on the same SHA.
+# Resume only authenticated current-state/policy preflights. Changed, unsigned,
+# or stale state takes an explicit cold path; no previous proof is re-labelled.
+# The gate archives prior raw status under its own lock before overwriting it.
 .PHONY: gate-resume
 gate-resume: gate-admission-config
-	@if [ ! -f .gate-status ]; then \
+	@WORK_TASK='$(subst ','"'"',$(value WORK_ITEM_ID))'; \
+	case "$$WORK_TASK" in *[!A-Za-z0-9._-]*) echo "ERROR: WORK_ITEM_ID must be literal task data"; exit 2;; esac; \
+	case "$(GATE_BACKGROUND_VALIDATE_ONLY)" in 0|1) ;; *) echo "GATE_BACKGROUND_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
+	if [ "$(GATE_BACKGROUND_VALIDATE_ONLY)" = "1" ]; then \
+		echo "gate-resume: VALIDATE gate-background profile=$(GATE_TEST_PROFILE) timeout=$(GATE_TIMEOUT); authenticate failed current-state/policy before reuse; no launch or status writes"; \
+		exit 0; \
+	fi; \
+	if [ ! -f .gate-status ]; then \
 		echo "ERROR: gate-resume requires an existing .gate-status file"; \
 		exit 1; \
 	fi; \
@@ -64,11 +71,14 @@ gate-resume: gate-admission-config
 		echo "ERROR: gate-resume requires a prior gate log in .gate-logs/"; \
 		exit 1; \
 	fi; \
-	mkdir -p .gate-logs; \
-	cp .gate-status ".gate-logs/gate-resume-prior-$(GATE_CANDIDATE_SHA).status"; \
-	echo "GATE-PREFLIGHT-RESUME captured prior preflight pass for $(GATE_CANDIDATE_SHA)"; \
-	echo "gate-resume: resuming from failed gate log $$LATEST"; \
-	$(_GATE_MAKE) -I "$(_GATE_REPOSITORY_ROOT)" -f "$(_GATE_ENTRY_MAKEFILE)" --no-print-directory gate-background GATE_EXACT_SHA_RESUME=1 GATE_TEST_PROFILE="$(GATE_TEST_PROFILE)" GATE_MAX_FILES_PER_BATCH="$(GATE_MAX_FILES_PER_BATCH)" GATE_BATCH_WORKERS="$(GATE_BATCH_WORKERS)" GATE_CANDIDATE_SHA="$(GATE_CANDIDATE_SHA)" GATE_TIMEOUT="$(GATE_TIMEOUT)"
+	RESUME=0; \
+	if $(UV) run python scripts/gate_status_attestation.py verify-resume .gate-status --profile "$(GATE_TEST_PROFILE)" --max-files-per-batch "$(GATE_MAX_FILES_PER_BATCH)" --workers "$(GATE_BATCH_WORKERS)"; then \
+		RESUME=1; \
+	else \
+		echo "PREFLIGHT-COLD: failed status is not authenticated for the current repository state and policy"; \
+	fi; \
+	echo "gate-resume: resuming from failed gate log $$LATEST; preflight-reuse=$$RESUME"; \
+	$(_GATE_MAKE) -I "$(_GATE_REPOSITORY_ROOT)" -f "$(_GATE_ENTRY_MAKEFILE)" --no-print-directory gate-background GATE_EXACT_SHA_RESUME="$$RESUME" GATE_TEST_PROFILE="$(GATE_TEST_PROFILE)" GATE_MAX_FILES_PER_BATCH="$(GATE_MAX_FILES_PER_BATCH)" GATE_BATCH_WORKERS="$(GATE_BATCH_WORKERS)" GATE_CANDIDATE_SHA="$(GATE_CANDIDATE_SHA)" GATE_TIMEOUT="$(GATE_TIMEOUT)" WORK_ITEM_ID="$$WORK_TASK"
 
 # Managed command runners may reap detached descendants as soon as their root
 # command exits. Keep that root Make invocation alive while the ordinary
@@ -263,8 +273,7 @@ GATE_PROGRESS_FORCE ?= 0
 GATE_PROGRESS_ARGS ?=
 GATE_PROGRESS_SLEEP ?= 0
 gate-progress:
-	@mkdir -p .gate-logs
-	@.venv/bin/python3 scripts/gate_progress.py --max-historical $(GATE_PROGRESS_MAX_HISTORICAL) --cooldown-secs $(GATE_PROGRESS_COOLDOWN_SECS) --sleep $(GATE_PROGRESS_SLEEP) $(if $(filter 1,$(GATE_PROGRESS_FORCE)),--force) $(GATE_PROGRESS_ARGS)
+	@PYTHONPATH="$(_GATE_REPOSITORY_ROOT)/src$${PYTHONPATH:+:$$PYTHONPATH}" $(UV) run python "$(_GATE_REPOSITORY_ROOT)/scripts/gate_progress.py" --state-file .gate-logs/gate-progress-state.json --max-historical $(GATE_PROGRESS_MAX_HISTORICAL) --cooldown-secs $(GATE_PROGRESS_COOLDOWN_SECS) --sleep $(GATE_PROGRESS_SLEEP) $(if $(filter 1,$(GATE_PROGRESS_FORCE)),--force) $(GATE_PROGRESS_ARGS)
 
 # Force-kill one identity-verified gate tree: descendants first, bounded TERM,
 # then KILL. The Python owner writes terminal status/evidence and releases only

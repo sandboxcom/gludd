@@ -94,9 +94,12 @@
     {
       "name": "release-proof-admission",
       "make_variables": [
-        "RELEASE_PROOF_ADMISSION_VALIDATE_ONLY"
+        "RELEASE_PROOF_ADMISSION_VALIDATE_ONLY",
+        "WORK_ITEM_ID",
+        "OBSERVED_ROOT",
+        "OBSERVED_RETAIN_RUNS"
       ],
-      "behavior": "make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=1"
+      "behavior": "make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=1 WORK_ITEM_ID='' OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20"
     },
     {
       "name": "_pytest-runtime-compatibility-admission",
@@ -1237,9 +1240,10 @@
         "GATE_PROGRESS_MAX_HISTORICAL",
         "GATE_PROGRESS_COOLDOWN_SECS",
         "GATE_PROGRESS_FORCE",
+        "GATE_PROGRESS_SLEEP",
         "GATE_PROGRESS_ARGS"
       ],
-      "behavior": "make gate-progress GATE_PROGRESS_MAX_HISTORICAL=20 GATE_PROGRESS_COOLDOWN_SECS=0 GATE_PROGRESS_FORCE=1 GATE_PROGRESS_ARGS=--debug"
+      "behavior": "make gate-progress GATE_PROGRESS_MAX_HISTORICAL=20 GATE_PROGRESS_COOLDOWN_SECS=0 GATE_PROGRESS_FORCE=1 GATE_PROGRESS_SLEEP=0 GATE_PROGRESS_ARGS=--help"
     },
     {
       "name": "gate-lite-tail",
@@ -2142,11 +2146,13 @@
       "name": "gate-resume",
       "make_variables": [
         "GATE_TIMEOUT",
+        "GATE_BACKGROUND_VALIDATE_ONLY",
         "GATE_TEST_PROFILE",
         "GATE_MAX_FILES_PER_BATCH",
-        "GATE_BATCH_WORKERS"
+        "GATE_BATCH_WORKERS",
+        "WORK_ITEM_ID"
       ],
-      "behavior": "make gate-resume GATE_TIMEOUT=3600 GATE_TEST_PROFILE=release GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
+      "behavior": "make gate-resume GATE_TIMEOUT=3600 GATE_BACKGROUND_VALIDATE_ONLY=1 GATE_TEST_PROFILE=release GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 WORK_ITEM_ID=''"
     },
     {
       "name": "gate-background-observed",

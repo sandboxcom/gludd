@@ -523,7 +523,7 @@ help:
 		"  pants-unit-cache-lane Pants hermetic cross-commit pure-unit lane (PANTS_UNIT_CACHE_*)" \
 		"  pants-unit-cache-nightly Compare cached and forced-fresh nodes/outcomes/coverage (PANTS_UNIT_CACHE_*)" \
 		"  gate-background           Launch one identity-tracked gate in an isolated session (forwards GATE_TEST_PROFILE and GATE_* policy)" \
-		"  gate-resume             Resume a failed gate from its last failing batch; refuses if no failed gate state exists" \
+		"  gate-resume             Authenticate current-state/policy before reuse; GATE_BACKGROUND_VALIDATE_ONLY=1 plans without writes" \
 		"  gate-background-observed  Launch the selected gate profile and keep its automation owner alive while polling" \
 		"  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)" \
 		"  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM" \
@@ -776,7 +776,7 @@ help:
 		"  release-list          List all GitHub releases" \
 		"  reviewed-head-receipt ...  Build exact-topology integration evidence after the final gate" \
 		"  release-readiness TAG=..  Fail-closed blockers + exact reviewed-head receipt for v0.1.2" \
-		"  release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0|1  Cheap read-only scheduling admission; never release proof" \
+		"  release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0|1  Scheduling only; uses current focus or explicit WORK_ITEM_ID" \
 		"  release-page-notes TAG=..  Build/validate bounded ledger-backed GitHub release-page notes" \
 		"  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings" \
 		"  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)" \

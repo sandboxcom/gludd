@@ -2486,3 +2486,13 @@ Native metrics and raw proof receipts remain external under
 All113families/Make/selectors/plugins/three2-1-1/90-60/21-2850, warning policy,
 ZDD, cleanup and promotion authority remain. No actual profile/admission/gate,
 CI push, task closure or measured latency/headroom claim is made here.
+
+## 2026-10-19: logged release admission and authenticated resume
+
+Supporting S98.4/S98.7 on agent-v012-gate-admission-resume-20261019; merge344518f imports the same reviewed AST source from development4322432.
+The release gate logs native admission before preflights; immutable prior bytes are archived under its existing lock, never relabelled as current proof.
+Fresh HMAC/current-state/index/policy checks alone permit preflight reuse; new or invalid inputs take the original cold path and unchanged hard failures retain the native retry guard.
+Literal task inputs, selected installed progress runtime, native owner/log/focus reasons and admission-only zero percent/unknown ETA are covered by bounded real Make fixtures.
+Preserve initial and independent review refusals, native REDs and failed capacity/runtime history; only actual Make owners produce observations.
+All113families, three2-1-1 children,90/60,21phases2850,all8shards,85/75 line+branch,fatal warnings,ZDD,cleanup and promotion remain unchanged; all19tasks stay open.
+Exact commands and source acceptance receipts are external at /tmp/gludd-v012-gate-admission-resume-evidence/; full gate, exact-SHA hosted CI and release proof remain separate.

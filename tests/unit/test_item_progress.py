@@ -115,6 +115,148 @@ def _state(root: Path) -> dict[str, object]:
     return cast(dict[str, object], json.loads((root / ".gludd/item-progress.json").read_text(encoding="utf-8")))
 
 
+
+@pytest.mark.parametrize("state", ["failed", "timed_out"])
+def test_gate_lifecycle_metadata_cannot_launder_a_failed_runtime_input(
+    policy: ModuleType, repository: Path, state: str,
+) -> None:
+    command = ("make", "--no-print-directory", "_pytest-runtime-compatibility-admission")
+    first = {
+        "GATE_TEST_PROFILE": "release", "GATE_EXACT_SHA_RESUME": "0",
+        "GATE_MAX_FILES_PER_BATCH": "16", "GATE_BATCH_WORKERS": "1",
+        "GATE_CANDIDATE_SHA": "a" * 40, "GLUDD_CANDIDATE_SHA": "a" * 40,
+        "GLUDD_GATE_OWNER_PID": "101", "GATE_RUN_LOCK_OWNER_PID": "101",
+        "RUN_ID": "first-runtime", "LOG": ".gate-logs/first-runtime.log",
+    }
+    _start(policy, repository, command=command, environment=first, state=state)
+    _git(repository, "commit", "--allow-empty", "--quiet", "-m", "lifecycle only")
+    second = {
+        **first, "GATE_CANDIDATE_SHA": "b" * 40, "GLUDD_CANDIDATE_SHA": "b" * 40,
+        "GLUDD_GATE_OWNER_PID": "202", "GATE_RUN_LOCK_OWNER_PID": "202",
+        "RUN_ID": "second-runtime", "LOG": ".gate-logs/second-runtime.log",
+    }
+    with pytest.raises(ValueError, match="unchanged failed inputs"):
+        _start(policy, repository, command=command, environment=second,
+               state=state, run_id="attempt-2", label="different-observer")
+    observations = _state(repository)["observations"]
+    assert isinstance(observations, dict)
+    assert len(observations) == 1
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["GATE_TEST_PROFILE", "GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH",
+     "GATE_BATCH_WORKERS", "UV_PROJECT_ENVIRONMENT", "PYTEST_ADDOPTS", "PYTHONWARNINGS",
+     "GLUDD_XDIST_WORKERS", "GATE_UNKNOWN_POLICY"],
+)
+def test_runtime_policy_and_unknown_fields_remain_semantic(
+    policy: ModuleType, repository: Path, field: str,
+) -> None:
+    command = ("make", "--no-print-directory", "_pytest-runtime-compatibility-admission")
+    first = policy._identity(repository, command, {field: "first"}, 60, 90)
+    assert policy._identity(repository, command, {field: "second"}, 60, 90) != first
+    assert policy._identity(repository, command, {"MAKEOVERRIDES": f"{field}=first"}, 60, 90) != (
+        policy._identity(repository, command, {"MAKEOVERRIDES": f"{field}=second"}, 60, 90)
+    )
+
+
+
+
+def test_native_make_lifecycle_carrier_remains_opaque_and_stable(
+    policy: ModuleType, repository: Path,
+) -> None:
+    import shlex
+
+    capture = repository / "capture.py"
+    capture.write_text(
+        "import json, os\n"
+        "fields = ('MAKEOVERRIDES', 'MAKEFLAGS', 'GATE_CANDIDATE_SHA', "
+        "'GLUDD_CANDIDATE_SHA', 'GLUDD_GATE_OWNER_PID', 'GATE_RUN_LOCK_OWNER_PID', "
+        "'RUN_ID', 'LOG', 'GATE_TEST_PROFILE', 'PYTEST_ADDOPTS')\n"
+        "print(json.dumps({key: os.environ[key] for key in fields if key in os.environ}))\n",
+        encoding="utf-8",
+    )
+    (repository / "Makefile").write_text(
+        "_pytest-runtime-compatibility-admission:\n"
+        f"\t@{shlex.quote(sys.executable)} {shlex.quote(str(capture))}\n", encoding="utf-8",
+    )
+    _git(repository, "add", ".")
+    _git(repository, "commit", "--quiet", "-m", "native Make carrier")
+    environment = {name: value for name, value in os.environ.items()
+                   if name not in {"MAKEOVERRIDES", "MAKEFLAGS", "MFLAGS", "GATE_CANDIDATE_SHA",
+                                   "GLUDD_CANDIDATE_SHA", "GLUDD_GATE_OWNER_PID", "GATE_RUN_LOCK_OWNER_PID"}}
+    samples: list[dict[str, str]] = []
+    for variables in (
+        ["RUN_ID=first-runtime", "GATE_TEST_PROFILE=release"],
+        ["RUN_ID=second-runtime", "GATE_TEST_PROFILE=release", "GATE_CANDIDATE_SHA=" + "a" * 40,
+         "GLUDD_CANDIDATE_SHA=" + "a" * 40, "GLUDD_GATE_OWNER_PID=123", "GATE_RUN_LOCK_OWNER_PID=123"],
+    ):
+        result = subprocess.run(
+            ["make", "--no-print-directory", "_pytest-runtime-compatibility-admission", *variables],
+            cwd=repository, env=environment, check=True, capture_output=True, text=True, timeout=10,
+        )
+        observed = json.loads(result.stdout)
+        assert isinstance(observed, dict)
+        sample: dict[str, str] = {}
+        for name, value in observed.items():
+            assert isinstance(name, str) and isinstance(value, str)
+            sample[name] = value
+        samples.append(sample)
+    assert samples[0].get("MAKEOVERRIDES") == samples[1].get("MAKEOVERRIDES")
+    assert samples[0]["MAKEFLAGS"] != samples[1]["MAKEFLAGS"]
+    print("Native Make carrier:", [(sample.get("MAKEOVERRIDES"), sample["MAKEFLAGS"]) for sample in samples])
+    command = ("make", "--no-print-directory", "_pytest-runtime-compatibility-admission")
+    _start(policy, repository, command=command, environment=samples[0])
+    with pytest.raises(ValueError, match="unchanged failed inputs"):
+        _start(policy, repository, command=command, environment=samples[1], run_id="attempt-2")
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (r"PYTEST_ADDOPTS=--flag\ RUN_ID=first", r"PYTEST_ADDOPTS=--flag\ RUN_ID=second"),
+        ("RUN_ID=first", "RUN_ID=second"),
+        ("GATE_CANDIDATE_SHA=" + "a" * 40, "GATE_CANDIDATE_SHA=" + "b" * 40),
+        ("", "RUN_ID=added"),
+    ],
+)
+def test_explicit_makeoverrides_is_semantic_in_the_runtime_identity(
+    policy: ModuleType, repository: Path, first: str, second: str,
+) -> None:
+    command = ("make", "--no-print-directory", "_pytest-runtime-compatibility-admission")
+    one = policy._identity(repository, command, {"MAKEOVERRIDES": first}, 60, 90)
+    two = policy._identity(repository, command, {"MAKEOVERRIDES": second}, 60, 90)
+    assert one != two
+
+
+def test_runtime_focus_requires_explicit_task_on_a_fresh_checkout(
+    policy: ModuleType, repository: Path,
+) -> None:
+    with pytest.raises(ValueError, match="WORK_ITEM_ID"):
+        policy.prepare_runtime_focus(repository)
+    assert not (repository / ".gludd/item-progress.json").exists()
+    with pytest.raises(ValueError, match="active"):
+        policy.prepare_runtime_focus(repository, "not-an-active-task")
+    assert not (repository / ".gludd/item-progress.json").exists()
+    state = policy.prepare_runtime_focus(repository, "F12.1")
+    assert state["primary_task_id"] == "F12.1"
+    assert state["release_ready"] is False and state["gate_evidence"] is False
+    assert state["observations"] == {}
+
+
+def test_runtime_focus_reuses_valid_primary_without_switching_task_authority(
+    policy: ModuleType, repository: Path,
+) -> None:
+    _start(policy, repository, state="passed")
+    before = _state(repository)
+    assert policy.prepare_runtime_focus(repository)["primary_task_id"] == "F12.1"
+    with pytest.raises(ValueError, match=r"primary|support"):
+        policy.prepare_runtime_focus(repository, "F12.2")
+    assert _state(repository)["observations"] == before["observations"]
+    policy.support_item(repository, "F12.2", "direct runtime acceptance")
+    assert policy.prepare_runtime_focus(repository, "F12.2")["primary_task_id"] == "F12.1"
+
+
 def test_first_primary_is_canonical_and_state_has_no_completion_authority(
     policy: ModuleType, repository: Path,
 ) -> None:

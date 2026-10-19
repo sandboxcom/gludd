@@ -32,19 +32,19 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _gate_status(log_dir: Path, current: Path) -> str:
+    run = parse_gate_log(current)
+    if run.terminal is not None:
+        return f"FINISHED: {run.terminal}"
     pid_file = log_dir.parent / ".gate-background.pid"
     if pid_file.exists():
         text = pid_file.read_text(encoding="utf-8").strip()
         if text.isdigit() and _pid_alive(int(text)):
             return f"RUNNING (pid={text})"
-    run = parse_gate_log(current)
-    if run.terminal is not None:
-        return f"FINISHED: {run.terminal}"
     return "IDLE (no running gate)"
 
 
-def _first_fail_phase(log_dir: Path) -> str | None:
-    status_file = log_dir.parent / ".gate-status"
+def _first_fail_phase(current: Path) -> str | None:
+    status_file = current
     if not status_file.exists():
         return None
     for line in status_file.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -144,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     if status.startswith("FINISHED: FAILED"):
         failure = failure_summary(parse_gate_log(current))
         if not failure:
-            phase = _first_fail_phase(args.log_dir)
+            phase = _first_fail_phase(current)
             if phase:
                 failure = f"phase {phase}"
     next_poll_secs: float | None = None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import textwrap
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,268 @@ def _write_log(tmp_path: Path, name: str, content: str, mtime: float | None = No
     if mtime is not None:
         path.touch()
     return path
+
+
+
+def test_progress_without_logs_refuses_to_invent_gate_state(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from scripts.gate_progress import main
+
+    log_dir = tmp_path / ".gate-logs"
+    log_dir.mkdir()
+    assert main([
+        "--log-dir", str(log_dir), "--state-file", str(tmp_path / "cooldown.json"),
+        "--cooldown-secs", "0",
+    ]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "No gate logs found.\n"
+    assert list(log_dir.iterdir()) == []
+    assert not (tmp_path / ".gate-status").exists()
+    assert not (tmp_path / ".gate-background.pid").exists()
+
+
+@pytest.mark.parametrize(
+    "error_type", [None, ProcessLookupError, PermissionError],
+    ids=["no-owner", "exited-owner", "permission-refused"],
+)
+def test_progress_keeps_missing_or_unobservable_owners_idle_without_signals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], error_type: type[OSError] | None,
+) -> None:
+    from scripts import gate_progress
+
+    log_dir = tmp_path / ".gate-logs"
+    log_dir.mkdir()
+    current = _write_log(
+        log_dir, "gate-20261019000000-owned.log",
+        "=== GATE PHASE: admission ===\n"
+        "PROOF-ADMISSION-START phase=_pytest-runtime-compatibility-admission\n",
+    )
+    if error_type is not None:
+        (tmp_path / ".gate-background.pid").write_text("4242\n", encoding="utf-8")
+    attempted: list[tuple[int, int]] = []
+
+    def unavailable(pid: int, signal_number: int) -> None:
+        attempted.append((pid, signal_number))
+        assert error_type is not None
+        raise error_type("fixture native PID observation unavailable")
+
+    monkeypatch.setattr(os, "kill", unavailable)
+    assert gate_progress.main([
+        "--current", str(current), "--log-dir", str(log_dir), "--force",
+        "--state-file", str(tmp_path / "cooldown.json"),
+    ]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "IDLE (no running gate)" in captured.out
+    assert "RUNNING (pid=" not in captured.out and "FINISHED: PASS" not in captured.out
+    assert "0.0% of gate complete" in captured.out and "ETA unknown" in captured.out
+    assert attempted == ([] if error_type is None else [(4242, 0)])
+
+
+def test_phase_failure_fallback_reads_only_the_selected_existing_log(tmp_path: Path) -> None:
+    from scripts.gate_progress import _first_fail_phase
+
+    (tmp_path / ".gate-status").write_text("unrelated FAIL stale proof\n", encoding="utf-8")
+    current = tmp_path / "gate-20261019000000-owned.log"
+    assert _first_fail_phase(current) is None
+    current.write_text(
+        "=== GATE PHASE: admission ===\nwork-item: missing native focus\n",
+        encoding="utf-8",
+    )
+    assert _first_fail_phase(current) is None
+    selected_failure = "admission FAIL owner=disk-cleanup-preflight log=.gate-logs/owned.log"
+    with current.open("a", encoding="utf-8") as handle:
+        handle.write(selected_failure + "\n")
+    assert _first_fail_phase(current) == selected_failure
+
+
+@pytest.mark.parametrize("blocked", [False, True])
+def test_admission_only_progress_has_no_completed_gate_proof(
+    tmp_path: Path, blocked: bool,
+) -> None:
+    log = _write_log(
+        tmp_path, "gate-20261019000000-12345678.log",
+        "=== GATE PHASE: admission ===\n"
+        "PROOF-ADMISSION-START phase=_pytest-runtime-compatibility-admission\n"
+        "[observed release-proof-runtime-admission] start run_id=runtime-123 log=.gate-logs/runtime-123.log\n"
+        + (
+            "FAILED tests/unit/test_fixture.py::test_actual_input\n"
+            "E AssertionError: effective native input differs\n"
+            "PROOF-ADMISSION-BLOCKED phase=_pytest-runtime-compatibility-admission rc=2\n"
+            "admission FAIL owner=_pytest-runtime-compatibility-admission "
+            "reason=owner-exit-2 log=.gate-logs/admission.log\n"
+            "=== GATE: FAILED ===\n" if blocked else ""
+        ),
+    )
+    run = parse_gate_log(log)
+    assert run.admission is not None
+    assert run.admission.owner == "_pytest-runtime-compatibility-admission"
+    assert run.admission.state == ("blocked" if blocked else "running")
+    assert run.admission.run_id == "runtime-123"
+    assert run.admission.log_path == ".gate-logs/runtime-123.log"
+    report = estimate_progress(log, [], now=run.start_time + 10)
+    assert report.percent_complete == 0
+    assert report.completed_segments == 0
+    assert not report.remaining_known
+    if blocked:
+        assert "test_fixture.py::test_actual_input" in failure_summary(run)
+        assert "effective native input differs" in failure_summary(run)
+
+
+def test_admission_progress_uses_selected_log_not_unrelated_gate_status(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from scripts.gate_progress import main
+
+    log_dir = tmp_path / ".gate-logs"
+    log_dir.mkdir()
+    (tmp_path / ".gate-status").write_text("unrelated FAIL stale-private-input\n", encoding="utf-8")
+    current = _write_log(
+        log_dir, "gate-20261019000000-12345678.log",
+        "=== GATE PHASE: admission ===\n"
+        "PROOF-ADMISSION-START phase=disk-cleanup-preflight\n"
+        "ERROR: owned capacity is still blocked\n"
+        "PROOF-ADMISSION-BLOCKED phase=disk-cleanup-preflight rc=1\n"
+        "admission FAIL owner=disk-cleanup-preflight reason=owner-exit-1 log=.gate-logs/admission-owned.log\n"
+        "=== GATE: FAILED ===\n",
+    )
+    assert main([
+        "--current", str(current), "--log-dir", str(log_dir),
+        "--state-file", str(tmp_path / "cooldown.json"), "--cooldown-secs", "0",
+    ]) == 0
+    output = capsys.readouterr().out
+    assert "disk-cleanup-preflight" in output
+    assert "owned capacity is still blocked" in output
+    assert "admission-owned.log" in output
+    assert "0.0% of gate complete" in output and "ETA unknown" in output
+    assert "stale-private-input" not in output
+    assert "then make gate-resume" in output
+
+
+
+@pytest.mark.parametrize("terminal", ["", "=== GATE: FAILED ===\n"])
+def test_admission_pass_alone_never_completes_gate_proof(tmp_path: Path, terminal: str) -> None:
+    log = _write_log(
+        tmp_path, "gate-20261019000000-12345678.log",
+        "=== GATE PHASE: admission ===\n"
+        "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false\n"
+        + terminal,
+    )
+    run = parse_gate_log(log)
+    report = estimate_progress(log, [], now=run.start_time + 10)
+    assert report.percent_complete == 0 and report.completed_segments == 0
+    assert not report.remaining_known
+
+
+
+@pytest.mark.parametrize(
+    ("owner", "native_line", "reason"),
+    [
+        ("_pytest-runtime-compatibility-admission",
+         "[observed release-proof-runtime-admission] result state=timed_out rc=124 elapsed=90.6s",
+         "state=timed_out rc=124"),
+        ("disk-cleanup-preflight",
+         "phase=recheck status=failed pass=2 reason=pass-limit disk_percent=96.0 disk_limit=95.0 disk_limit_kind=hard",
+         "reason=pass-limit"),
+        ("_pytest-runtime-compatibility-admission",
+         "observed-command: unchanged failed inputs: release-proof-runtime-admission/prior-run; "
+         "change the failing input",
+         "unchanged failed inputs"),
+    ],
+)
+def test_admission_progress_preserves_native_producer_refusal(
+    tmp_path: Path, owner: str, native_line: str, reason: str,
+) -> None:
+    log = _write_log(
+        tmp_path, "gate-20261019000000-12345678.log",
+        "=== GATE PHASE: admission ===\n"
+        f"PROOF-ADMISSION-START phase={owner}\n"
+        "[observed release-proof-runtime-admission] start run_id=native-run log=.gate-logs/native-run.log\n"
+        f"{native_line}\n"
+        f"PROOF-ADMISSION-BLOCKED phase={owner} rc=2\n"
+        "=== GATE: FAILED ===\n",
+    )
+    run = parse_gate_log(log)
+    detail = failure_summary(run)
+    assert owner in detail and reason in detail
+    assert "native-run" in detail and ".gate-logs/native-run.log" in detail
+    report = estimate_progress(log, [], now=run.start_time + 10)
+    assert report.percent_complete == 0 and not report.remaining_known
+
+
+def test_selected_terminal_log_is_not_overridden_by_another_live_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    from scripts import gate_progress
+
+    logs = tmp_path / ".gate-logs"
+    logs.mkdir()
+    (tmp_path / ".gate-background.pid").write_text("12345\n", encoding="utf-8")
+    monkeypatch.setattr(gate_progress, "_pid_alive", lambda pid: True)
+    log = _write_log(
+        logs, "gate-20261019000000-12345678.log",
+        "=== GATE PHASE: admission ===\n"
+        "PROOF-ADMISSION-START phase=check-resource-ownership\n"
+        "ERROR: selected historical input\n"
+        "PROOF-ADMISSION-BLOCKED phase=check-resource-ownership rc=2\n"
+        "=== GATE: FAILED ===\n",
+    )
+    assert gate_progress.main([
+        "--current", str(log), "--log-dir", str(logs),
+        "--state-file", str(tmp_path / "cooldown.json"), "--cooldown-secs", "0",
+    ]) == 0
+    output = capsys.readouterr().out
+    assert "FINISHED: FAILED" in output and "selected historical input" in output
+    assert "RUNNING (pid=12345)" not in output
+
+
+
+@pytest.mark.parametrize(
+    "native_line",
+    [
+        "work-item: runtime admission requires native focus or explicit WORK_ITEM_ID; "
+        "use make work-item WORK_ITEM_ACTION=focus WORK_ITEM_ID=<active-task> WORK_ITEM_VALIDATE_ONLY=0",
+        "work-item: primary must name an open canonical active task",
+    ],
+)
+def test_admission_progress_reports_focus_refusal_without_inventing_an_observer(
+    tmp_path: Path, native_line: str,
+) -> None:
+    log = _write_log(
+        tmp_path, "gate-20261019000000-12345678.log",
+        "=== GATE PHASE: admission ===\n"
+        "PROOF-ADMISSION-START phase=_pytest-runtime-compatibility-admission\n"
+        + native_line + "\n"
+        "PROOF-ADMISSION-BLOCKED phase=_pytest-runtime-compatibility-admission rc=2\n"
+        "admission FAIL owner=_pytest-runtime-compatibility-admission log=.gate-logs/gate-admission-owned\n"
+        "=== GATE: FAILED ===\n",
+    )
+    run = parse_gate_log(log)
+    detail = failure_summary(run)
+    assert native_line in detail
+    assert ".gate-logs/gate-admission-owned" in detail
+    assert "run_id=" not in detail and "observed" not in detail
+    assert run.admission is not None and run.admission.run_id is None
+    report = estimate_progress(log, [], now=run.start_time + 10)
+    assert report.percent_complete == 0 and not report.remaining_known
+
+
+def test_admission_pass_does_not_erase_later_gate_failure(tmp_path: Path) -> None:
+    current = _write_log(
+        tmp_path, "gate-20261019000000-12345678.log",
+        "=== GATE PHASE: admission ===\n"
+        "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false\n"
+        "=== GATE PHASE: test ===\n"
+        "FAILED tests/unit/test_fixture.py::test_coverage_and_warnings\n"
+        "=== GATE: FAILED ===\n",
+    )
+    run = parse_gate_log(current)
+    assert run.admission is not None and run.admission.state == "passed"
+    assert run.terminal == "FAILED"
+    assert "test_coverage_and_warnings" in failure_summary(run)
 
 
 def test_script_main_refuses_rapid_repolls(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -181,6 +444,54 @@ def test_script_main_sleep_zero_is_noop(tmp_path: Path, capsys: pytest.CaptureFi
     assert "gate: FINISHED: PASSED" in captured.out
 
 
+
+def test_native_make_progress_uses_selected_runtime_and_repaired_source_without_a_local_venv(tmp_path: Path) -> None:
+    import os
+    import shlex
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    (tmp_path / "pyproject.toml").write_bytes((root / "pyproject.toml").read_bytes())
+    selected_uv = tmp_path / "selected-uv"
+    argv_file = tmp_path / "selected-runtime-argv"
+    selected_uv.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$@\" > {shlex.quote(str(argv_file))}\n"
+        '[ "$1" = run ] || exit 91\nshift\n'
+        '[ "$1" = python ] || exit 92\nshift\n'
+        f'exec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8",
+    )
+    selected_uv.chmod(0o700)
+    logs = tmp_path / ".gate-logs"
+    logs.mkdir()
+    current = _write_log(
+        logs, "gate-20261019000000-12345678.log",
+        "=== GATE PHASE: admission ===\n"
+        "PROOF-ADMISSION-START phase=_pytest-runtime-compatibility-admission\n"
+        "observed-command: unchanged failed inputs: release-proof-runtime-admission/prior-run; "
+        "change the failing input\n"
+        "PROOF-ADMISSION-BLOCKED phase=_pytest-runtime-compatibility-admission rc=2\n"
+        "admission FAIL owner=_pytest-runtime-compatibility-admission log=.gate-logs/gate-admission-owned\n"
+        "=== GATE: FAILED ===\n",
+    )
+    result = subprocess.run(
+        ["make", "-I", str(root), "-f", str(root / "Makefile"), "gate-progress",
+         f"UV={shlex.quote(str(selected_uv))}", "GATE_PROGRESS_MAX_HISTORICAL=20",
+         "GATE_PROGRESS_COOLDOWN_SECS=0", "GATE_PROGRESS_SLEEP=0", "GATE_PROGRESS_FORCE=1",
+         f"GATE_PROGRESS_ARGS={shlex.join(['--current', str(current)])}"],
+        cwd=tmp_path, env={**os.environ, "PYTHONPATH": ""}, check=False,
+        capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (tmp_path / ".venv").exists()
+    assert argv_file.read_text().splitlines()[:3] == ["run", "python", str(root / "scripts/gate_progress.py")]
+    assert "FINISHED: FAILED" in result.stdout
+    assert "unchanged failed inputs" in result.stdout and "0.0% of gate complete" in result.stdout
+    assert "ETA unknown" in result.stdout and "run_id=" not in result.stdout
+    assert (logs / "gate-progress-state.json").exists()
+
+
 def test_make_target_gate_progress_has_cooldown_knobs() -> None:
     from scripts.makefile_layout import compose_makefile
 
@@ -264,6 +575,7 @@ def test_script_main_failed_reports_phase_when_no_test_failed(
         "gate-20261017000000-00000000.log",
         "[gate-background] launcher run_id=20261017T000000Z-00000000 namespace=gludd\n"
         "=== GATE PHASE: typecheck ===\n"
+        "typecheck FAIL 2\n"
         "=== GATE: FAILED ===\n",
     )
     argv = [

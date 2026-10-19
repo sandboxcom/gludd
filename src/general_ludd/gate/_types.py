@@ -24,6 +24,19 @@ class Heartbeat:
     elapsed: float
 
 
+
+@dataclass
+class GateAdmission:
+    """Diagnostic admission state from this selected gate log, never proof."""
+
+    state: str = "running"
+    owner: str | None = None
+    reason: str | None = None
+    node: str | None = None
+    log_path: str | None = None
+    run_id: str | None = None
+
+
 @dataclass
 class GateRun:
     """Parsed representation of one gate log."""
@@ -38,6 +51,7 @@ class GateRun:
     lines: list[str]
     terminal: str | None
     resume_batches: int = 0
+    admission: GateAdmission | None = None
 
     @property
     def duration(self) -> float:

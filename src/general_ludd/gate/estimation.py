@@ -150,6 +150,16 @@ def estimate_progress(
 
     elapsed = _elapsed_seconds(current, now or time.time())
 
+    if current.admission is not None and not current.events:
+        report = _starting_report(elapsed, False)
+        admission = current.admission
+        report.current_label = f"admission {admission.state} owner={admission.owner or 'starting'}"
+        if admission.log_path:
+            report.current_label += f" log={admission.log_path}"
+        if admission.run_id:
+            report.current_label += f" run_id={admission.run_id}"
+        return report
+
     if current.terminal is not None:
         return _terminal_report(current, elapsed)
 
