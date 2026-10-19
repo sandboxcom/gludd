@@ -1,3 +1,39 @@
+## S98.4 native admission contract repair — recorded base 8885374b253fc4d3e88501dfe3212fb2a93671d0
+
+Last Updated: 2026-10-19. Branch agent-v012-admission-contract-repair-20261019
+is isolated from the clean frozen development merge above. The actual original
+Python 3.12 admission at that merge failed five unchanged contract assertions:
+1970 passed, 5 failed in 67.38s; native observer repair-8885374-20261019
+failed rc2 in72.398s without timeout. Retained native evidence is
+/tmp/gludd-v012-admission-contract-failure-8885374/child.log and observer.json.
+Those failures remain failures; no gate or current observation was rewritten.
+
+This bounded source repair documents both GLUDD_AGENT_CONTEXT carriers, restores
+backlog-audit in the first canonical PHONY block while keeping cprofile phony,
+separates cprofile's target-specific assignment from its dependency declaration,
+restores the exact producer-owned current-JSON instruction and places this valid
+recorded base SHA before dated branch names in SESSION. All test assertions,
+profiling guards, literal transports and release bounds remain unchanged.
+The versioned takeover distinguishes this actual merged input from its historical
+source snapshots and supplies the existing native integration/publication/proof
+sequence. The first complete11-owner acceptance retained240PASS/1FAIL in38.40s: the five
+original failures pass, but the unchanged reverse environment audit cannot bind
+15 documented diagnostic carriers assembled from a namespace prefix. The existing
+stream_command lookup now names exactly those15 keys in an immutable mapping,
+with the same lazy per-call lookup, empty/default behavior and fixed call sites.
+No real documentation is removed and no audit assertion is changed.
+The combined18-whole-owner native coverage execution passes497 cases/0skip in
+156.59s (observer coverage-files/20261019T100203Z-91252-cc8baf04 rc0/158.707s).
+The unchanged four-production-file scope passes85/75:92.8% lines/86.2% branches,
+all four files above75% on both metrics; original tests/assertions are unchanged.
+Ruff/strict source typing,252target contracts,262resources and documented cprofile
+and backlog validation examples pass. Exact commands and all18 owner paths are
+retained in the versioned takeover and external repair evidence. Normal guarded
+commit/fresh collection is next; its native outputs own the resulting SHA.
+No original
+90-second admission replay, push, full gate, hosted success or task closure is
+claimed by this branch. S98.4 and the other release items remain open.
+
 ## User-requested agent-policy compression on isolated branch (2026-10-19)
 
 Branch agent-agents-compression-20261019 is based on

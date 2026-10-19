@@ -12,8 +12,8 @@
 8. After prerequisites clear, freeze one candidate, obtain independent source review, run combined acceptance, the complete canonical gate and hosted CI for that exact SHA. Do not edit it during final proof.
 9. Source-only approval and green focus never close a backlog item. Tick TASKS.md only with actual green full-gate evidence and required exact-SHA proofs. Preserve failures and immutable candidate refs.
 10. Separate blocker repairs from completed proofs. State missing evidence and exact next action. Never weaken cleanup, ZDD, 85% aggregate/75% per-file coverage or branch/promotion gates for throughput.
-11. Never manually edit generated current handoff/observation JSON. Use `make ci-await` or `make pipeline-status`; preserve manual/history evidence as such. Configuration JSON is not a generated observation. Pending/lookup-error/timeout must invalidate prior current success.
-12. Hosted timing comes from immutable `make ci-run-summary CI_RUN_SUMMARY_SHARD_TIMINGS=1`, retaining exact run/SHA, all eight shards and censored/unknown intervals. Diagnostic timing is not gate/release authority. Measure the exact hosted scheduling SHA before claiming improvement.
+11. Do not manually update generated current handoff or observation JSON. Use `make ci-await` or `make pipeline-status`; preserve manual/history evidence as such. Configuration JSON is not a generated observation. Pending/lookup-error/timeout must invalidate prior current success.
+12. Hosted timing comes from immutable `make ci-run-summary CI_RUN_SUMMARY_SHARD_TIMINGS=1`, retaining exact run/SHA, all eight shards and censored/unknown intervals. The report is diagnostic-only, never gate or release authority. Measure the exact hosted scheduling SHA before claiming improvement.
 
 ## Make Target Selection Contract
 

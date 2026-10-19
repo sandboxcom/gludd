@@ -911,3 +911,20 @@ Historical reports cannot infer source/argv/runtime authentication or per-line
 timing absent from the original producer. Archives keep original status paths
 verbatim and replay through manifest role/path/hash mappings without fallback.
 No diagnostic surface grants admission, gate, hosted or release authority.
+
+## Agent-context audit literal inputs
+
+`make audit-agent-context-size` uses the existing AB060 owner. Configure the
+public `AGENT_CONTEXT_FILES` and `AGENT_CONTEXT_JSON` Make variables; the internal
+carriers are derived with Make `override` from their literal values. Public
+values are unexported, and callers must not set the internal carriers directly.
+
+| Internal environment carrier | Default | Public owner and meaning |
+| --- | --- | --- |
+| `GLUDD_AGENT_CONTEXT_FILES` | empty | `AGENT_CONTEXT_FILES`; empty measures the existing `AGENTS.md` plus `docs/CLAUDE.md` defaults. An explicit value is a nonempty JSON array of confined relative regular-file paths; duplicates, symlinks and malformed inputs are refused. |
+| `GLUDD_AGENT_CONTEXT_JSON` | `0` | `AGENT_CONTEXT_JSON`; literal `0` produces text and literal `1` produces native JSON. Other values are refused. |
+
+The audit reports captured bytes, physical lines, legacy normalized line counts
+and SHA256 values. Its existing 20,000 legacy-line threshold is unchanged;
+`threshold_kb=600` remains diagnostic-only. Neither metrics nor a passing AB060
+result establishes semantic preservation, client ingestion or release proof.
