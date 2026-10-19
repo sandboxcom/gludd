@@ -1318,3 +1318,59 @@ def test_focus_cache_symlink_refuses_foreign_owner_before_child(
     assert list(foreign.iterdir()) == []
     assert not (bundle / "focused.json").exists()
     assert not (bundle / "focused-auth.json").exists()
+
+
+@pytest.mark.parametrize("mode", ["cherry_pick", "merge_two_parent"])
+def test_prepare_uses_one_fresh_native_commit_metadata_query(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str,
+) -> None:
+    root, spec = _fixture(tmp_path, mode=mode)
+    expected = inputs.prepare_inputs(spec, repo_root=root)
+    after = _git(root, "rev-parse", "HEAD")
+    source = _git(root, "rev-parse", "refs/heads/reviewed/one")
+    expected_parents = _git(root, "rev-list", "--parents", "-n", "1", after).split()[1:]
+    expected_tree = _git(root, "rev-parse", f"{source}^{{tree}}")
+    original = receipt_owner._git
+    original_clean = inputs._clean_identity
+    commands: list[tuple[str, ...]] = []
+    clean_calls: list[Path] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        result = original(repository, *arguments, input_bytes=input_bytes)
+        commands.append(arguments)
+        return result
+
+    def cleaned(repository: Path) -> tuple[str, str]:
+        result = original_clean(repository)
+        clean_calls.append(repository)
+        return result
+
+    monkeypatch.setattr(receipt_owner, "_git", recorded)
+    monkeypatch.setattr(inputs, "_clean_identity", cleaned)
+    for _boundary in range(2):
+        start = len(commands)
+        before_clean = len(clean_calls)
+        prepared = inputs.prepare_inputs(spec, repo_root=root)
+        assert prepared == expected
+        current = commands[start:]
+        metadata = [
+            arguments for arguments in current
+            if (
+                arguments[:4] == ("rev-list", "--parents", "-n", "1")
+                and arguments[-1] in {after, source}
+            ) or arguments == ("rev-parse", f"{source}^{{tree}}")
+            or arguments[:2] == ("show", "--no-patch")
+        ]
+        assert len(metadata) == 1, metadata
+        assert metadata[0][-3:] == (after, source, "--")
+        assert "--no-show-signature" in metadata[0]
+        assert len(clean_calls) - before_clean == 2
+        assert current.count(("status", "--porcelain", "--untracked-files=all")) == 2
+        assert current.count(("rev-parse", "HEAD")) == 2
+        heads = prepared["heads"]
+        reviews = prepared["reviews"]
+        assert isinstance(heads, list) and len(heads) == 1
+        assert isinstance(reviews, list) and len(reviews) == 1
+        assert heads[0]["parent_shas"] == expected_parents
+        assert reviews[0]["native"]["source_tree"] == expected_tree
+    assert len(clean_calls) == 4

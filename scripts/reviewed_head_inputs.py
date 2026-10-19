@@ -254,10 +254,12 @@ def prepare_inputs(intent: object, *, repo_root: Path) -> dict[str, object]:
             raise ValueError("original source must be distinct from every application SHA")
         if not _ancestor(root, reviewed_base, source) or reviewed_base == source:
             raise ValueError("reviewed base must be an original source ancestor")
-        parents = receipt_owner._commit_parents(root, after)
+        metadata = receipt_owner._commit_metadata(root, after, source)
+        parents = metadata[after][1]
+        source_tree, source_parents = metadata[source]
         if parents == (before,):
             mode = HeadApplicationMode.CHERRY_PICK
-            if (receipt_owner._commit_parents(root, source) != (reviewed_base,)
+            if (source_parents != (reviewed_base,)
                     or receipt_owner._patch_id(root, source) != receipt_owner._patch_id(root, after)):
                 raise ValueError("native cherry-pick patch or reviewed source base differs")
         elif parents == (before, source):
@@ -288,9 +290,7 @@ def prepare_inputs(intent: object, *, repo_root: Path) -> dict[str, object]:
             "focused_validation_ids": list(command_ids),
             "native": {"diff_sha256": _digest(patch),
                        "changed_files": [os.fsdecode(path) for path in changed.split(b"\0") if path],
-                       "source_tree": receipt_owner._git(
-                           root, "rev-parse", f"{source}^{{tree}}",
-                       ).decode("ascii").strip()},
+                       "source_tree": source_tree},
         }
         digest = _digest(_encoded(review))
         typed = ReviewedHead(source_ref, source, reviewed_base, digest, command_ids, mode, tuple(prerequisites))

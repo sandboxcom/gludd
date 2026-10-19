@@ -2,14 +2,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from scripts import build_reviewed_head_integration_receipt as builder
 from scripts.makefile_layout import compose_makefile
 
+if TYPE_CHECKING:
+    import build_reviewed_head_integration_receipt as builder
+else:
+    from scripts import build_reviewed_head_integration_receipt as builder
+
 from general_ludd.git_release.reviewed_head_integration import (
+    encode_reviewed_head_integration_receipt,
     load_reviewed_head_integration_receipt,
 )
 
@@ -618,10 +625,10 @@ def test_exclusive_receipt_admits_only_identical_concurrent_arrival(
     receipt = builder.build_receipt_from_manifest(
         manifest, manifest_dir=repo.parent, gate_attestation=gate, repo_root=repo,
     )
-    expected = builder.encode_reviewed_head_integration_receipt(receipt).encode("utf-8")
+    expected = encode_reviewed_head_integration_receipt(receipt).encode("utf-8")
     output, foreign = tmp_path / "receipt.json", tmp_path / "foreign.json"
     foreign.write_bytes(b"preserve concurrent owner\n")
-    real_link = builder.os.link
+    real_link = os.link
     arrivals: list[tuple[int, int]] = []
 
     def arrive(source: Path, destination: Path) -> None:
@@ -634,7 +641,7 @@ def test_exclusive_receipt_admits_only_identical_concurrent_arrival(
         arrivals.append((metadata.st_ino, metadata.st_mtime_ns))
         real_link(source, destination)
 
-    monkeypatch.setattr(builder.os, "link", arrive)
+    monkeypatch.setattr(os, "link", arrive)
     if state == "same":
         builder.write_receipt(output, receipt, exclusive=True)
         assert output.read_bytes() == expected
@@ -658,7 +665,7 @@ def test_default_receipt_writer_retains_legacy_atomic_replacement(tmp_path: Path
     output = tmp_path / "receipt.json"
     output.write_bytes(b"legacy caller may replace\n")
     builder.write_receipt(output, receipt)
-    assert output.read_text(encoding="utf-8") == builder.encode_reviewed_head_integration_receipt(receipt)
+    assert output.read_text(encoding="utf-8") == encode_reviewed_head_integration_receipt(receipt)
 
 
 def test_review_receipt_path_cannot_escape_manifest_directory(tmp_path: Path) -> None:
@@ -755,3 +762,184 @@ def test_make_target_is_documented_and_has_safe_validate_only_contract() -> None
     )
     assert completed.returncode == 0, completed.stderr
     assert "REVIEWED-HEAD-RECEIPT-PLAN" in completed.stdout
+
+
+@pytest.mark.parametrize("object_format", ["sha1", "sha256"])
+def test_native_commit_metadata_matches_ordered_legacy_queries_and_deduplicates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, object_format: str,
+) -> None:
+    monkeypatch.setenv("GIT_DEFAULT_HASH", object_format)
+    repo, _manifest, _attestation = _merge_fixture(tmp_path)
+    after = _git(repo, "rev-parse", "HEAD")
+    source = _git(repo, "rev-parse", "fix/release-continuity")
+    base = _git(repo, "rev-list", "--max-parents=0", "HEAD")
+    expected = {
+        sha: (_git(repo, "rev-parse", f"{sha}^{{tree}}"),
+              tuple(_git(repo, "rev-list", "--parents", "-n", "1", sha).split()[1:]))
+        for sha in (after, source)
+    }
+    original = builder._git
+    commands: list[tuple[str, ...]] = []
+
+    def recorded(root: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        result = original(root, *arguments, input_bytes=input_bytes)
+        commands.append(arguments)
+        return result
+
+    monkeypatch.setattr(builder, "_git", recorded)
+    assert builder._commit_metadata(repo, after, source, source) == expected
+    assert len(commands) == 1
+    assert commands[0] == (
+        "show", "--no-patch", "--no-color", "--no-decorate", "--no-notes",
+        "--no-show-signature", "--format=%H%x20%T%x20%P", after, source, "--",
+    )
+    assert builder._commit_metadata(repo, base, base) == {
+        base: (_git(repo, "rev-parse", f"{base}^{{tree}}"), ()),
+    }
+    assert len(commands) == 2
+    assert commands[1][-2:] == (base, "--")
+
+
+def test_native_commit_metadata_refreshes_effective_object_view_each_call(tmp_path: Path) -> None:
+    repo, _manifest, _attestation = _merge_fixture(tmp_path)
+    after = _git(repo, "rev-parse", "HEAD")
+    source = _git(repo, "rev-parse", "fix/release-continuity")
+    base = _git(repo, "rev-list", "--max-parents=0", "HEAD")
+    first = builder._commit_metadata(repo, after, source)
+    replacement = _git(
+        repo, "commit-tree", _git(repo, "rev-parse", f"{after}^{{tree}}"),
+        "-p", base, "-m", "native replacement view",
+    )
+    _git(repo, "replace", source, replacement)
+    second = builder._commit_metadata(repo, after, source)
+    assert first[source] != second[source]
+    for sha in (after, source):
+        assert second[sha] == (
+            _git(repo, "rev-parse", f"{sha}^{{tree}}"),
+            tuple(_git(repo, "rev-list", "--parents", "-n", "1", sha).split()[1:]),
+        )
+
+
+def test_native_commit_metadata_ignores_configured_signature_display(
+    tmp_path: Path,
+) -> None:
+    import shlex
+
+    repo, _manifest, _attestation = _merge_fixture(tmp_path)
+    source = _git(repo, "rev-parse", "fix/release-continuity")
+    tree = _git(repo, "rev-parse", f"{source}^{{tree}}")
+    signed = (
+        f"tree {tree}\nparent {source}\n"
+        "author Native Fixture <fixture@gludd.invalid> 1 +0000\n"
+        "committer Native Fixture <fixture@gludd.invalid> 1 +0000\n"
+        "gpgsig -----BEGIN PGP SIGNATURE-----\n \n ZmFrZQ==\n"
+        " -----END PGP SIGNATURE-----\n\nfixture signature boundary\n"
+    ).encode("ascii")
+    sha = builder._git(repo, "hash-object", "-t", "commit", "-w", "--stdin", input_bytes=signed).decode("ascii").strip()
+    marker = repo / ".git" / "gpg-must-not-run"
+    program = repo / ".git" / "fixture-gpg"
+    program.write_text(
+        "#!/bin/sh\nprintf called > " + shlex.quote(str(marker)) + "\nexit 77\n",
+        encoding="utf-8",
+    )
+    program.chmod(0o700)
+    _git(repo, "config", "gpg.program", str(program))
+    _git(repo, "config", "log.showSignature", "true")
+    subprocess.run(
+        ["git", "-C", str(repo), "show", "--no-patch", "--show-signature", sha],
+        check=False, capture_output=True, timeout=10,
+    )
+    assert marker.read_text(encoding="utf-8") == "called"
+    marker.unlink()
+    expected = {
+        sha: (_git(repo, "rev-parse", f"{sha}^{{tree}}"),
+              tuple(_git(repo, "rev-list", "--parents", "-n", "1", sha).split()[1:])),
+    }
+    assert builder._commit_metadata(repo, sha) == expected
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("shas", [
+    (), ("HEAD",), ("--help",), ("a" * 39,), ("g" * 40,),
+    ("a" * 40, "b" * 64), ("a" * 40, "b" * 40, "c" * 40),
+])
+def test_native_commit_metadata_refuses_nonexact_or_unbounded_input_before_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shas: tuple[str, ...],
+) -> None:
+    def forbidden(*_args: object, **_kwargs: object) -> bytes:
+        raise AssertionError("invalid metadata request launched Git")
+
+    monkeypatch.setattr(builder, "_git", forbidden)
+    with pytest.raises(ValueError, match="metadata"):
+        builder._commit_metadata(tmp_path, *shas)
+
+
+@pytest.mark.parametrize("mutation", [
+    "empty", "missing", "duplicate", "unexpected", "missing-tree",
+    "bad-tree", "short-key", "bad-parent", "non-ascii", "oversized",
+])
+def test_native_commit_metadata_refuses_malformed_keyed_native_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str,
+) -> None:
+    repo, _manifest, _attestation = _merge_fixture(tmp_path)
+    after = _git(repo, "rev-parse", "HEAD")
+    source = _git(repo, "rev-parse", "fix/release-continuity")
+    expected = builder._commit_metadata(repo, after, source)
+    rows = [
+        " ".join((sha, tree, *parents))
+        for sha, (tree, parents) in expected.items()
+    ]
+    if mutation == "empty":
+        encoded = b""
+    elif mutation == "missing":
+        encoded = (rows[0] + "\n").encode("ascii")
+    elif mutation == "duplicate":
+        encoded = (rows[0] + "\n" + rows[0] + "\n" + rows[1]).encode("ascii")
+    elif mutation == "unexpected":
+        encoded = (rows[0] + "\n" + "f" * 40 + " " + expected[source][0]).encode("ascii")
+    elif mutation == "missing-tree":
+        encoded = (after + "\n" + rows[1]).encode("ascii")
+    elif mutation == "bad-tree":
+        encoded = (after + " " + "g" * 40 + "\n" + rows[1]).encode("ascii")
+    elif mutation == "short-key":
+        encoded = (after[:-1] + " " + expected[after][0] + "\n" + rows[1]).encode("ascii")
+    elif mutation == "bad-parent":
+        encoded = (after + " " + expected[after][0] + " invalid-parent\n" + rows[1]).encode("ascii")
+    elif mutation == "non-ascii":
+        encoded = b"\xff"
+    else:
+        encoded = b"\n" * (1_048_576 + 1)
+
+    def substituted(*_args: object, **_kwargs: object) -> bytes:
+        return encoded
+
+    monkeypatch.setattr(builder, "_git", substituted)
+    with pytest.raises(ValueError):
+        builder._commit_metadata(repo, after, source)
+
+
+def test_native_commit_metadata_maps_records_by_key_and_preserves_native_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, _manifest, _attestation = _merge_fixture(tmp_path)
+    after = _git(repo, "rev-parse", "HEAD")
+    source = _git(repo, "rev-parse", "fix/release-continuity")
+    expected = builder._commit_metadata(repo, after, source)
+    original = builder._git
+
+    def reversed_records(root: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        result = original(root, *arguments, input_bytes=input_bytes)
+        return b"\n".join(reversed([row for row in result.splitlines() if row]))
+
+    monkeypatch.setattr(builder, "_git", reversed_records)
+    assert builder._commit_metadata(repo, after, source) == expected
+    monkeypatch.setattr(builder, "_git", original)
+    with pytest.raises(ValueError, match="repository evidence"):
+        builder._commit_metadata(repo, "f" * 40)
+
+    def unavailable(*_args: object, **_kwargs: object) -> None:
+        raise OSError("native Git unavailable")
+
+    monkeypatch.setattr(subprocess, "run", unavailable)
+    with pytest.raises(ValueError, match="repository evidence"):
+        builder._commit_metadata(repo, after, source)

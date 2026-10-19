@@ -2360,3 +2360,34 @@ manifest family, selector/plugin/worker/deadline, coverage floor, ZDD or
 promotion authority changes. Source metrics/raw RED/GREEN/coverage/collection
 remain external under /tmp/gludd-v012-profile-trace-route-repair-evidence/.
 S98.4 stays unchecked; all task/status/history prefixes remain preserved.
+
+## 2026-10-19: one fresh native commit metadata query per preparation
+
+Preserve clean7d079b5, f277be0's actual session profile and every earlier source,
+review and failed proof. The measured lead is repeated native metadata reads
+for the same two exact commit objects within one prepare_inputs boundary.
+Reuse the existing receipt Git owner with native show formatting, explicit
+no-show-signature and exact unique-key/complete-ID/tree/ordered-parent
+validation under the existing bound. Deduplicate requests locally only;
+independent preparations still requery the effective native object view.
+
+Genuine fixtures precede native recorders. Two operation-count cases fail
+first on the old3/2-query paths;22finite helper contracts also fail before
+implementation. Final24finite cases pass with fatal warnings, preserving
+complete plan parity, both original cleanliness fences and all original
+topology/ref/patch/diff/path/authentication/finalization checks. Actual Git
+replacement, SHA1/SHA256 low-level parity and configured-signature controls
+preserve native semantics; existing public receipt schema policy is unchanged.
+Intermediate failed edits/checks remain failed evidence, never relabelled.
+
+Scope is the existing receipt helper/preparation caller, both existing test
+owners and NATIVE_REVIEWED_HEAD_INPUTS feature/TASKS row/this append. Static
+test imports use the existing bare TYPE_CHECKING convention and direct public
+model/stdlib symbols without runtime branch changes or weaker assertions.
+Both complete existing receipt-builder and startup/input coverage owners,
+unchanged85/75 line+branch floors and normal guarded collection remain required.
+Native metrics and raw proof receipts remain external under
+/tmp/gludd-v012-native-git-metadata-repair-evidence/.
+All113families/Make/selectors/plugins/three2-1-1/90-60/21-2850, warning policy,
+ZDD, cleanup and promotion authority remain. No actual profile/admission/gate,
+CI push, task closure or measured latency/headroom claim is made here.

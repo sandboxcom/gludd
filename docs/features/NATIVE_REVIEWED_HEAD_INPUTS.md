@@ -558,3 +558,50 @@ kernel's policy. A firsthand
 describes explicit denied writes and kernel deny records, not a successful
 04600-to0600 operation. These findings provide context, not an exact upstream
 cause or a universal sandbox behavior claim.
+
+## Fresh native commit metadata per preparation (2026-10-19)
+
+Root's frozen f277be0 first-two session profile records repeated native Git
+launches inside independent reviewed-head preparations. Its controller-local
+self/cumulative intervals overlap; they are not summed and do not establish
+child CPU cost, hosted latency or clearance of the original90-second blocker.
+The retained profile is diagnostic-only; the trace-route child and its source
+review remain separate from that historical observation.
+
+The existing receipt Git owner now reads the application/source commit trees
+and ordered parents in one native `git show --no-patch` query per preparation.
+Requested immutable IDs are deduplicated only within that call. Response
+validation requires exactly the unique requested keys, complete native object
+IDs, a tree and ordered parents, with the existing1MiB bound; missing, duplicate,
+unexpected, malformed, non-ASCII and failed responses refuse. The lower-level
+Git helper preserves native SHA1/SHA256 widths; existing receipt schema policy
+is unchanged. `--no-show-signature` preserves the old metadata reads' behavior
+when repository signature display or a GPG command is configured.
+
+Genuine Git count/parity controls create fixtures before recording and delegate
+every native command. They prove metadata launches change from3 to1 for the
+one-head cherry-pick and2 to1 for the two-parent merge, on each of two fresh
+preparations. Complete plan, source tree, ordered parents and both original
+cleanliness fences remain equal to independent native references. A genuine
+Git replacement changes the next call's effective object view; no metadata is
+reused across preparations, checks, roots, native children or mutations.
+All original ref/ancestry, patch/remerge, diff, focused-path, clean HEAD,
+worktree/index, authentication, capture, validation and finalization checks
+remain.
+
+[Git show's native formatting](https://git-scm.com/docs/git-show) supplies the
+structured fields; the existing receipt subprocess owner retains launch/error
+authority. No Git library, persistent process, raw-object parser or cache is
+added. A firsthand [GitPython issue906 report](https://github.com/gitpython-developers/GitPython/issues/906)
+describes a2019 Zuul user's test-runtime regression after a dependency version
+change. It does not identify repeated native launches as its cause or provide
+a transferable Gludd speedup. The local source/profile and real operation
+counts justify this bounded change, not an upstream bug claim.
+
+All113 admission families, original selectors/plugins, three sequential2/1/1
+children,90/60 bounds,21phases/2850 ceiling, fatal warnings,85/75 line/branch
+floors, ZDD, cleanup and branch/promotion authority remain. Full existing
+receipt-builder and native-startup/input coverage owners remain in acceptance.
+Raw RED/GREEN, coverage and mandatory collection receipts are retained under
+`/tmp/gludd-v012-native-git-metadata-repair-evidence/`. Reduced launches are
+not measured wall-time savings, updated admission behavior or release proof.
