@@ -2,6 +2,16 @@
   "version": 1,
   "targets": [
     {
+      "name": "agent-worktree-retain",
+      "make_variables": [
+        "BRANCH",
+        "WORKTREE",
+        "WORKTREE_RETAIN_REASON",
+        "WORKTREE_RETAIN_VALIDATE_ONLY"
+      ],
+      "behavior": "make agent-worktree-retain BRANCH=agent-retention-contract WORKTREE=/tmp/gludd-retention-absent WORKTREE_RETAIN_REASON=checkpoint-owner WORKTREE_RETAIN_VALIDATE_ONLY=1"
+    },
+    {
       "name": "audit-agent-context-size",
       "make_variables": ["AGENT_CONTEXT_FILES", "AGENT_CONTEXT_JSON"],
       "behavior": "make audit-agent-context-size AGENT_CONTEXT_FILES='[\"AGENTS.md\",\"docs/CLAUDE.md\"]' AGENT_CONTEXT_JSON=1"

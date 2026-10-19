@@ -371,7 +371,7 @@ PYTEST_VERBOSITY ?= -v
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
-        agent-worktree agent-worktree-base agent-merge agent-merge-dev agent-cleanup agent-worktree-list worktree-commit-changes worktree-cleanup-merged merge-commit-nv \
+        agent-worktree agent-worktree-base agent-worktree-retain agent-merge agent-merge-dev agent-cleanup agent-worktree-list worktree-commit-changes worktree-cleanup-merged merge-commit-nv \
         agent-worktree-dev agent-merge-dev \
         self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-accelerator-auth-store azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-environment-guard azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
@@ -700,6 +700,7 @@ help:
 		"  feature-done MSG='...' Test, merge to master with --no-ff" \
 		"  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)" \
 		"  agent-worktree-base BRANCH=<name> BASE=<ref>  Isolated worktree from an explicit base ref" \
+		"  agent-worktree-retain  Plan a native retention lock (BRANCH, WORKTREE, WORKTREE_RETAIN_REASON, WORKTREE_RETAIN_VALIDATE_ONLY=1)" \
 		"  workstream-register BRANCH=<name> WORKTREE=<path>  Protect an active logical workstream" \
 		"  workstream-unregister BRANCH=<name>  Release a completed logical workstream" \
 		"  wt-prune-safe         Prune clean worktrees except registered active workstreams (ACTIVE_WORKSTREAM_REGISTRY, WT_PRUNE_VALIDATE_ONLY)" \

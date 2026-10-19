@@ -667,6 +667,22 @@ agent-worktree-base:
 	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
 	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH) from $(BASE)"
 
+# Positive native retention; no unlock, activity renewal or checkpoint mutation.
+WORKTREE_RETAIN_REASON ?=
+WORKTREE_RETAIN_VALIDATE_ONLY ?= 1
+ifneq (,$(filter agent-worktree-retain,$(MAKECMDGOALS)))
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value WORKTREE_RETAIN_REASON)$(value WORKTREE_RETAIN_VALIDATE_ONLY)))
+$(error agent-worktree-retain inputs must be literal data, not Make expressions)
+endif
+endif
+
+agent-worktree-retain:
+	@$(SYSTEM_PYTHON) -B -m scripts.prune_worktrees_safe --retain \
+		--branch '$(subst ','"'"',$(value BRANCH))' \
+		--worktree '$(subst ','"'"',$(value WORKTREE))' \
+		--reason '$(subst ','"'"',$(value WORKTREE_RETAIN_REASON))' \
+		--retain-validate-only '$(subst ','"'"',$(value WORKTREE_RETAIN_VALIDATE_ONLY))'
+
 # Merge a subagent's worktree branch back to master. Run on the MAIN checkout
 # (never from inside a worktree). Usage:
 #   make agent-merge BRANCH=agent-fix-slurm

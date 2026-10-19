@@ -4,6 +4,17 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-19 — Completed checkpoint owner needed durable retention
+
+The normal source guard refused checkpoint90142d0d8e82af1978fe24eaf4a155ae1429a8e4
+after its completed checkout was archived/removed. Root recovered the genuine
+original branch/path at f4cfa5c; the native guard then verified all4checkpoints,
+unowned0. Preserve both refusals and recovery history. New positive native
+worktree retention protects that registered owner from automatic retirement
+without fake activity, checkpoint mutation or manual administrative writes.
+Plan is unverified/no-write; apply requires native ownership and fresh lock
+verification. No live lock or final gate/hosted/release proof is claimed here.
+
 ### 2026-10-14 — Historical native failures exhausted command capacity
 
 - S98.4's 32-pointer owner refused a distinct locked-artifact acquisition before
