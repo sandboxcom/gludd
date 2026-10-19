@@ -369,6 +369,7 @@ def _retain_make(
         "make", "--no-print-directory", "-f",
         str(PROJECT_ROOT / "make" / "40-cross-version-and-worktrees.mk"),
         "agent-worktree-retain", f"SYSTEM_PYTHON={sys.executable}",
+        f"PYTHONPATH={environment['PYTHONPATH']}",
         f"BRANCH={branch}", f"WORKTREE={owner}",
         f"WORKTREE_RETAIN_REASON={reason}", *make_args,
     ]

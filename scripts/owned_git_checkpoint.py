@@ -150,9 +150,10 @@ def verify_registered_root(owner: Path, *, main: bool, common: Path) -> None:
         raise Refused("registered checkpoint owner has a stale or foreign native backlink")
 
 
-def count_leaks(root: Path) -> int:
-    """Count unknown stashes while verifying retained checkpoints without mutation."""
+def _checkpoint_inventory(root: Path) -> tuple[int, frozenset[Path]]:
+    """Validate one fresh native inventory and preserve its existing diagnostics."""
     retained = unowned = 0
+    retained_owners: set[Path] = set()
     labels: set[str] = set()
     worktrees = git(root, "worktree", "list", "--porcelain", "-z")
     owners = registered_roots(worktrees)
@@ -203,13 +204,27 @@ def count_leaks(root: Path) -> int:
             print(f"OWNED-CHECKPOINT-UNOWNED checkpoint_sha={sha} reason={exc}", file=sys.stderr, flush=True)
             continue
         labels.add(label)
+        retained_owners.add(owner)
         retained += 1
         print(f"OWNED-CHECKPOINT-VERIFIED checkpoint_sha={sha}", file=sys.stderr, flush=True)
     if (git(root, "stash", "list", "--format=%H%x00%s%x00") != records
             or git(root, "worktree", "list", "--porcelain", "-z") != worktrees):
         raise Refused("native checkpoint inventory changed during inspection; retry after writers finish")
     print(f"OWNED-CHECKPOINT-COUNT retained={retained} unowned={unowned}", file=sys.stderr, flush=True)
-    return unowned
+    return unowned, frozenset(retained_owners)
+
+
+def count_leaks(root: Path) -> int:
+    """Count unknown stashes while verifying retained checkpoints without mutation."""
+    return _checkpoint_inventory(root)[0]
+
+
+def retained_checkpoint_owners(root: Path) -> frozenset[Path]:
+    """Return verified retained owners, refusing any unknown checkpoint authority."""
+    unowned, owners = _checkpoint_inventory(root)
+    if unowned:
+        raise Refused("unowned checkpoints prevent worktree retirement")
+    return owners
 
 
 def push(root: Path, files: list[str], label: str, *, validate: bool) -> None:

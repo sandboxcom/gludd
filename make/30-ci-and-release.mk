@@ -813,10 +813,27 @@ wt-remove-locked-many:
 # uncommitted changes, so dirty/unsynced ones are preserved). Branch refs always
 # persist, so committed feature branches survive removal and can be merged by
 # name or re-checked-out later. Protects the main checkout + the orchestrator cwd.
+WT_PRUNE_RETIRE_MERGED ?= 0
+WT_PRUNE_RETIRE_VALIDATE_ONLY ?= 1
+ifneq (,$(filter wt-prune-safe,$(MAKECMDGOALS)))
+ifeq ($(value WT_PRUNE_RETIRE_MERGED),1)
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value WT_PRUNE_RETIRE_VALIDATE_ONLY)))
+$(error wt-prune-safe retirement inputs must be literal data, not Make expressions)
+endif
+else ifneq ($(value WT_PRUNE_RETIRE_MERGED),0)
+$(error WT_PRUNE_RETIRE_MERGED must be 0 or 1)
+endif
+endif
+
 wt-prune-safe:
-	@$(UV) run python -m scripts.prune_worktrees_safe \
+	@$(if $(filter 1,$(value WT_PRUNE_RETIRE_MERGED)),exec ,)$(UV) run python -m scripts.prune_worktrees_safe \
+		$(if $(filter 1,$(value WT_PRUNE_RETIRE_MERGED)),--retire-merged \
+		--branch '$(subst ','"'"',$(value BRANCH))' \
+		--worktree '$(subst ','"'"',$(value WORKTREE))' \
+		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))') \
+		--retire-validate-only '$(subst ','"'"',$(value WT_PRUNE_RETIRE_VALIDATE_ONLY))',\
 		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)") \
-		$(if $(filter 1,$(WT_PRUNE_VALIDATE_ONLY)),--validate-only)
+		$(if $(filter 1,$(WT_PRUNE_VALIDATE_ONLY)),--validate-only))
 
 # Read-only: which feature/* branches still have work NOT yet in master (the real
 # integration backlog). A branch absent here is already merged.
