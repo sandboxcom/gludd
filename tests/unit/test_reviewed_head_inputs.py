@@ -1471,8 +1471,8 @@ def test_prepare_uses_one_fresh_native_commit_metadata_query(
         assert metadata[0][-3:] == (after, source, "--")
         assert "--no-show-signature" in metadata[0]
         assert len(clean_calls) - before_clean == 2
-        assert current.count(("status", "--porcelain", "--untracked-files=all")) == 2
-        assert current.count(("rev-parse", "HEAD")) == 2
+        assert current.count(_CLEAN_STATUS) == 2
+        assert current.count(("rev-parse", "HEAD")) == 0
         heads = prepared["heads"]
         reviews = prepared["reviews"]
         assert isinstance(heads, list) and len(heads) == 1
@@ -1480,3 +1480,267 @@ def test_prepare_uses_one_fresh_native_commit_metadata_query(
         assert heads[0]["parent_shas"] == expected_parents
         assert reviews[0]["native"]["source_tree"] == expected_tree
     assert len(clean_calls) == 4
+
+
+_CLEAN_STATUS = (
+    "status", "--porcelain=v2", "--branch", "--no-ahead-behind",
+    "-z", "--untracked-files=all",
+)
+
+
+def _clean_repository(tmp_path: Path, object_format: str = "sha1") -> Path:
+    root = tmp_path / "repo with spaces"
+    root.mkdir(parents=True)
+    _git(root, "init", f"--object-format={object_format}", "-b", "development")
+    _git(root, "config", "user.name", "Gludd native tests")
+    _git(root, "config", "user.email", "native@gludd.invalid")
+    _git(root, "config", "core.filemode", "true")
+    _commit(root, "tracked.txt", "original\n")
+    return root
+
+
+def _legacy_clean_identity(root: Path) -> tuple[str, str]:
+    """Keep the original native two-command behavior as the parity reference."""
+    if receipt_owner._git(root, "status", "--porcelain", "--untracked-files=all").strip():
+        raise ValueError("native inputs require an exact clean repository")
+    sha = receipt_owner._git(root, "rev-parse", "HEAD").decode("ascii").strip()
+    state = gate_owner.repository_state_id(root, source="worktree")
+    if state != gate_owner.repository_state_id(root, source="index"):
+        raise ValueError("native worktree and index identities disagree")
+    return sha, state
+
+
+@pytest.mark.parametrize("object_format", ("sha1", "sha256"))
+@pytest.mark.parametrize("detached", (False, True))
+def test_clean_identity_uses_one_fresh_status_and_both_native_state_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    object_format: str, detached: bool,
+) -> None:
+    root = _clean_repository(tmp_path, object_format)
+    if detached:
+        _git(root, "checkout", "--detach")
+    expected = _legacy_clean_identity(root)
+    assert len(expected[0]) == (40 if object_format == "sha1" else 64)
+    native_git = receipt_owner._git
+    native_state = gate_owner.repository_state_id
+    commands: list[tuple[str, ...]] = []
+    reads: list[str] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        commands.append(arguments)
+        return native_git(repository, *arguments, input_bytes=input_bytes)
+
+    def state(repository: Path, *, source: str = "worktree") -> str:
+        reads.append(source)
+        return native_state(repository, source=source)
+
+    monkeypatch.setattr(receipt_owner, "_git", recorded)
+    monkeypatch.setattr(gate_owner, "repository_state_id", state)
+    for _boundary in range(2):
+        start, before = len(commands), len(reads)
+        assert inputs._clean_identity(root) == expected
+        assert commands[start:] == [_CLEAN_STATUS]
+        assert reads[before:] == ["worktree", "index"]
+
+
+@pytest.mark.parametrize("change", (
+    "tracked", "index", "untracked-newline", "untracked-unicode", "header-looking",
+    "rename", "mode", "conflict", "ignored-only", "submodule",
+))
+def test_clean_identity_preserves_real_git_dirty_and_ignored_refusals(
+    tmp_path: Path, change: str,
+) -> None:
+    root = _clean_repository(tmp_path)
+    tracked = root / "tracked.txt"
+    if change in {"tracked", "index"}:
+        tracked.write_text("changed\n", encoding="utf-8")
+        if change == "index":
+            _git(root, "add", "tracked.txt")
+    elif change.startswith("untracked") or change == "header-looking":
+        name = {
+            "untracked-newline": "line\nnext",
+            "untracked-unicode": "naïve-λ",
+            "header-looking": "# branch.oid " + "a" * 40 + "\n# branch.head fake",
+        }[change]
+        (root / name).write_text("untracked\n", encoding="utf-8")
+    elif change == "rename":
+        _git(root, "mv", "tracked.txt", "renamed\n# branch.oid fake")
+    elif change == "mode":
+        tracked.chmod(0o755)
+    elif change == "conflict":
+        _git(root, "checkout", "-b", "side")
+        _commit(root, "tracked.txt", "side\n")
+        _git(root, "checkout", "development")
+        _commit(root, "tracked.txt", "main\n")
+        with pytest.raises(subprocess.CalledProcessError):
+            _git(root, "merge", "side")
+    elif change == "ignored-only":
+        _commit(root, ".gitignore", "ignored/\n")
+        (root / "ignored").mkdir()
+        (root / "ignored" / "file").write_text("ignored\n", encoding="utf-8")
+    else:
+        nested = _clean_repository(tmp_path / "source")
+        _git(root, "-c", "protocol.file.allow=always", "submodule", "add", str(nested), "nested")
+        _git(root, "commit", "-am", "native submodule")
+        (root / "nested" / "tracked.txt").write_text("nested mutation\n", encoding="utf-8")
+    if change == "ignored-only":
+        assert inputs._clean_identity(root) == _legacy_clean_identity(root)
+    else:
+        assert receipt_owner._git(root, *_CLEAN_STATUS).split(b"\0")[-2]
+        for observer in (_legacy_clean_identity, inputs._clean_identity):
+            with pytest.raises(ValueError, match="native inputs require an exact clean repository"):
+                observer(root)
+
+
+@pytest.mark.parametrize("repository_kind", ("unborn", "invalid"))
+def test_clean_identity_preserves_native_unborn_and_repository_failure(
+    tmp_path: Path, repository_kind: str,
+) -> None:
+    root = tmp_path / "repository"
+    root.mkdir()
+    if repository_kind == "unborn":
+        _git(root, "init", "-b", "development")
+    for observer in (_legacy_clean_identity, inputs._clean_identity):
+        with pytest.raises(ValueError, match="repository evidence does not match the integration manifest"):
+            observer(root)
+
+
+@pytest.mark.parametrize("envelope", (
+    "native", "reordered", "unknown-header", "duplicate-oid", "missing-oid",
+    "valueless-oid", "extra-valueless-oid",
+    "initial", "short-oid", "uppercase-oid", "nonhex-oid", "missing-nul",
+    "empty-record", "empty", "lf-framing", "dirty", "dirty-malformed-oid",
+    "rename-header-tail", "unknown-data", "native-failure",
+))
+def test_clean_identity_strict_native_nul_envelope_before_state_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, envelope: str,
+) -> None:
+    root = _clean_repository(tmp_path)
+    expected = _legacy_clean_identity(root)
+    native_git = receipt_owner._git
+    native_state = gate_owner.repository_state_id
+    raw = native_git(root, *_CLEAN_STATUS)
+    oid = expected[0].encode("ascii")
+    header = b"# branch.oid " + oid + b"\0"
+    variants = {
+        "native": raw,
+        "reordered": b"# branch.head (detached)\0" + header,
+        "unknown-header": (b"# future.extension opaque\0" + raw
+                           + b"# branch.oid-format sha1\0# \0# branch.oidish ignored\0"),
+        "duplicate-oid": raw + header,
+        "missing-oid": b"# branch.head development\0",
+        "valueless-oid": b"# branch.oid\0",
+        "extra-valueless-oid": raw + b"# branch.oid\0",
+        "initial": b"# branch.oid (initial)\0# branch.head development\0",
+        "short-oid": b"# branch.oid aaaa\0",
+        "uppercase-oid": b"# branch.oid " + b"A" * 40 + b"\0",
+        "nonhex-oid": b"# branch.oid " + b"g" * 40 + b"\0",
+        "missing-nul": raw[:-1],
+        "empty-record": raw + b"\0",
+        "empty": b"",
+        "lf-framing": raw.replace(b"\0", b"\n"),
+        "dirty": raw + b"? line\n# branch.oid " + oid + b"\0",
+        "dirty-malformed-oid": b"# branch.oid invalid\0? native-dirty\0",
+        "rename-header-tail": raw + b"2 R. native rename\0# branch.oid " + oid + b"\0",
+        "unknown-data": raw + b"x unsupported-data\0",
+    }
+    commands: list[tuple[str, ...]] = []
+    reads: list[str] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        commands.append(arguments)
+        if arguments == _CLEAN_STATUS:
+            if envelope == "native-failure":
+                return native_git(repository, *arguments, "--gludd-unsupported-status-option")
+            return variants[envelope]
+        return native_git(repository, *arguments, input_bytes=input_bytes)
+
+    def state(repository: Path, *, source: str = "worktree") -> str:
+        reads.append(source)
+        return native_state(repository, source=source)
+
+    monkeypatch.setattr(receipt_owner, "_git", recorded)
+    monkeypatch.setattr(gate_owner, "repository_state_id", state)
+    if envelope in {"native", "reordered", "unknown-header"}:
+        assert inputs._clean_identity(root) == expected
+        assert reads == ["worktree", "index"]
+    else:
+        dirty = envelope in {"dirty", "dirty-malformed-oid", "rename-header-tail", "unknown-data"}
+        reason = ("native inputs require an exact clean repository" if dirty else
+                  "repository evidence does not match the integration manifest")
+        with pytest.raises(ValueError, match=reason):
+            inputs._clean_identity(root)
+        assert reads == []
+    assert commands == [_CLEAN_STATUS]
+
+
+def test_clean_identity_refreshes_head_tracking_and_native_configuration_each_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _clean_repository(tmp_path)
+    first = inputs._clean_identity(root)
+    _git(root, "branch", "upstream")
+    _git(root, "config", "branch.development.remote", ".")
+    _git(root, "config", "branch.development.merge", "refs/heads/upstream")
+    _git(root, "config", "color.status", "always")
+    _git(root, "config", "status.relativePaths", "false")
+    _git(root, "config", "status.renames", "copies")
+    second_sha = _commit(root, "tracked.txt", "new head\n")
+    native_git = receipt_owner._git
+    commands: list[tuple[str, ...]] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        commands.append(arguments)
+        return native_git(repository, *arguments, input_bytes=input_bytes)
+
+    monkeypatch.setattr(receipt_owner, "_git", recorded)
+    second = inputs._clean_identity(root)
+    assert second == _legacy_clean_identity(root)
+    assert second[0] == second_sha and second != first
+    assert commands[0] == _CLEAN_STATUS
+    assert b"# branch.upstream " in native_git(root, *_CLEAN_STATUS)
+    _git(root, "checkout", "--detach", first[0])
+    before = len(commands)
+    third = inputs._clean_identity(root)
+    assert third == _legacy_clean_identity(root)
+    assert third[0] == first[0] and third != second
+    assert commands[before] == _CLEAN_STATUS
+
+
+@pytest.mark.parametrize("object_format", ("sha1", "sha256"))
+def test_clean_identity_preserves_raw_head_in_fresh_native_replacement_views(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, object_format: str,
+) -> None:
+    root = _clean_repository(tmp_path, object_format)
+    head = _git(root, "rev-parse", "HEAD")
+    replacement = _git(root, "commit-tree", f"{head}^{{tree}}", "-m", "replacement metadata")
+    assert replacement != head
+    _git(root, "replace", head, replacement)
+    for no_replace in (False, True, False):
+        if no_replace:
+            monkeypatch.setenv("GIT_NO_REPLACE_OBJECTS", "1")
+        else:
+            monkeypatch.delenv("GIT_NO_REPLACE_OBJECTS", raising=False)
+        assert _git(root, "rev-parse", "HEAD") == head
+        assert inputs._clean_identity(root) == _legacy_clean_identity(root)
+        assert inputs._clean_identity(root)[0] == head
+    (root / "tracked.txt").write_text("fresh mutation\n", encoding="utf-8")
+    for observer in (_legacy_clean_identity, inputs._clean_identity):
+        with pytest.raises(ValueError, match="native inputs require an exact clean repository"):
+            observer(root)
+
+
+def test_clean_identity_preserves_native_worktree_index_mismatch_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _clean_repository(tmp_path)
+    reads: list[str] = []
+
+    def disagree(_repository: Path, *, source: str = "worktree") -> str:
+        reads.append(source)
+        return source
+
+    monkeypatch.setattr(gate_owner, "repository_state_id", disagree)
+    with pytest.raises(ValueError, match="native worktree and index identities disagree"):
+        inputs._clean_identity(root)
+    assert reads == ["worktree", "index"]
