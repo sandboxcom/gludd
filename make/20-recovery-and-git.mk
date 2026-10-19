@@ -1312,14 +1312,14 @@ batch-push-nv: check-clean-tree _no-bypass-guard _stash-before-push-guard _ci-re
 	echo "$$COUNT unpushed commits, threshold met. Pushing (--no-verify)..."; \
 	$(MAKE) git-push-sandboxcom-nv
 
-# Publication reuses the installed canonical runtime and existing bounded observer.
+# Publication owns the canonical runtime/release policy and existing bounded observer.
 RUNTIME_PUBLISH_ENVIRONMENT ?=
 RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY ?= 0
 .PHONY: _runtime-publish-admission
 _runtime-publish-admission:
 	@case "$(RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo 'RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY must be 0 or 1'; exit 2;; esac
 	@if [ "$(RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY)" = 1 ]; then \
-		echo "RUNTIME-PUBLISH-ADMISSION-PLAN environment=$(RUNTIME_PUBLISH_ENVIRONMENT) max_seconds=90 quiet_seconds=60 observed_root=$(OBSERVED_ROOT) release_ready=false gate_evidence=false"; exit 0; \
+		echo "RUNTIME-PUBLISH-ADMISSION-PLAN environment=$(RUNTIME_PUBLISH_ENVIRONMENT) max_seconds=90 quiet_seconds=60 profile=release exact_sha_resume=0 max_files_per_batch=16 gate_workers=1 observed_root=$(OBSERVED_ROOT) release_ready=false gate_evidence=false"; exit 0; \
 	fi; \
 	runtime_environment="$(RUNTIME_PUBLISH_ENVIRONMENT)"; \
 	if [ -z "$$runtime_environment" ]; then \
@@ -1331,6 +1331,7 @@ _runtime-publish-admission:
 	runtime_run_id="batch-push-runtime-admission-$$$$"; \
 	UV_PROJECT_ENVIRONMENT="$$runtime_environment" UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never \
 	$(MAKE) --no-print-directory run-watched WORK_ITEM_ID="$(WORK_ITEM_ID)" UV_PROJECT_ENVIRONMENT="$$runtime_environment" \
+		GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 \
 		CMD='$(MAKE) --no-print-directory _pytest-runtime-compatibility-admission' \
 		OBSERVED_LABEL=batch-push-runtime-admission RUN_ID="$$runtime_run_id" STALL_SECS=60 MAX_SECS=90 \
 		LOG="$(OBSERVED_ROOT)/batch-push-runtime-admission/$$runtime_run_id.log" \

@@ -8,6 +8,8 @@ from pathlib import Path
 
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_runtime_publish_admission import _assert_release_runtime_policy, _publish
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -16,6 +18,17 @@ FEATURE_DOC = ROOT / "docs" / "features" / "INTEGRATION_ADMISSION.md"
 
 def _target_stanza(makefile: str, target: str) -> str:
     return makefile.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
+
+
+def test_publication_runtime_policy_matches_release_admission(tmp_path: Path) -> None:
+    """Keep this native policy guard in the already-selected complete owner."""
+    result, rows, _ = _publish(tmp_path, gate_policy_context="command-line")
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_release_runtime_policy(rows)
+    main = next(row for row in rows if row["kind"] == "runtime" and row["workers"] == "2")
+    files = main["files"]
+    assert isinstance(files, list)
+    assert files.count("tests/unit/test_integration_admission_target.py") == 1
 
 
 def test_clone_admission_precedes_runtime_and_collection_work() -> None:

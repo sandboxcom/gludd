@@ -39,6 +39,7 @@ def _publish(
     goal: str = "batch-push",
     validate_only: int = 0,
     runtime_state: str = "valid",
+    gate_policy_context: str = "default",
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]], Path]:
     """Run actual Make recipes and observer, replacing only native test/Git boundaries."""
     trace = tmp_path / "trace.jsonl"
@@ -49,17 +50,22 @@ def _publish(
         "def record(kind, **values):\n"
         "    with trace.open('a') as stream:\n"
         "        stream.write(json.dumps(dict(kind=kind, **values)) + '\\n')\n"
+        "names = ('GATE_TEST_PROFILE', 'GATE_EXACT_SHA_RESUME', 'GATE_MAX_FILES_PER_BATCH', 'GATE_BATCH_WORKERS')\n"
+        "def context():\n"
+        "    return dict(policy=[os.environ.get(name) for name in names], "
+        "sentinel=os.environ.get('probe'), "
+        "makeflags=os.environ.get('MAKEFLAGS'), makeoverrides=os.environ.get('MAKEOVERRIDES'))\n"
         "args = sys.argv[1:]\n"
         "if args[:3] == ['run', 'python', 'scripts/stream_command.py']:\n"
-        "    record('observer', args=args[3:])\n"
+        "    record('observer', args=args[3:], **context())\n"
         f"    os.execv(sys.executable, [sys.executable, {str(ROOT / 'scripts/stream_command.py')!r}, *args[3:]])\n"
         "elif args[0] == 'test-files':\n"
         f"    phase = 'help' if args[1] == {HELP!r} else 'full'\n"
         "    record('runtime', phase=phase, files=args[1].split(), nproc=args[2], workers=args[3], flags=args[4], "
         "environment=os.environ.get('UV_PROJECT_ENVIRONMENT'), no_sync=os.environ.get('UV_NO_SYNC'), "
-        "python=os.environ.get('UV_PYTHON'))\n"
+        "python=os.environ.get('UV_PYTHON'), **context())\n"
         f"    raise SystemExit(1 if phase == {failure!r} else 0)\n"
-        "elif args[0] == 'record-verdict': record('verdict')\n"
+        "elif args[0] == 'record-verdict': record('verdict', **context())\n"
         "elif args[0] == 'verify-remote': record('verify-remote')\n"
         "else: raise AssertionError(args)\n",
         encoding="utf-8",
@@ -98,6 +104,9 @@ def _publish(
     )
     runtime_python.chmod(0o755)
     source = makefile_layout.compose_makefile(ROOT / "Makefile")
+    policy_start = source.index("\nGATE_TEST_PROFILE ?=") + 1
+    policy_end = source.index("\n.PHONY: gate-admission-config", policy_start)
+    policy_defaults = source[policy_start:policy_end]
     recovery = RECOVERY_PATH.read_text(encoding="utf-8")
     publication = [
         _target(recovery, name)
@@ -129,10 +138,12 @@ def _publish(
     selected_environment = canonical.parent if runtime_state != "missing" else tmp_path / "absent-runtime"
     recipe.write_text(
         f"MAKE := make --no-print-directory -f {recipe}\nUV := {quoted_runner}\n"
+        "probe := file-default\n"
         f"OBSERVED_ROOT := {tmp_path / 'observed'}\nWORK_ITEM_ID :=\nSSH_KEY := {tmp_path / 'absent-key'}\n"
         f"RUNTIME_PUBLISH_ENVIRONMENT := {selected_environment}\n"
         f"RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY := {validate_only}\n"
-        f".PHONY: batch-push run-watched {OWNER} {PUBLISH_OWNER} test-files _record-push-verdict "
+        + policy_defaults + "\n"
+        + f".PHONY: batch-push run-watched {OWNER} {PUBLISH_OWNER} test-files _record-push-verdict "
         f"{' '.join(prerequisites)}\n"
         + "".join(f"{name}:\n\t@true\n\n" for name in prerequisites)
         + "\n\n".join(publication)
@@ -161,8 +172,26 @@ def _publish(
         "COUNT": str(count),
         "THRESHOLD": str(threshold),
     }
+    names = (
+        "GATE_TEST_PROFILE", "GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS",
+    )
+    for name in names:
+        environment.pop(name, None)
+    command = [
+        "make", "--no-print-directory", "-f", str(recipe), goal,
+        "UV_PROJECT_ENVIRONMENT=.venv", "probe=kept",
+    ]
+    conflict = dict(zip(names, ("native", "1", "32", "2"), strict=True))
+    if gate_policy_context == "environment":
+        environment.update(conflict)
+    elif gate_policy_context in {"command-line", "opaque-overrides"}:
+        command.extend(f"{name}={value}" for name, value in conflict.items())
+        if gate_policy_context == "opaque-overrides":
+            command.append("MAKEOVERRIDES=probe=kept")
+    else:
+        assert gate_policy_context == "default"
     result = subprocess.run(
-        ["make", "--no-print-directory", "-f", str(recipe), goal, "UV_PROJECT_ENVIRONMENT=.venv"],
+        command,
         cwd=tmp_path,
         env=environment,
         capture_output=True,
@@ -315,7 +344,35 @@ def test_runtime_owner_plan_is_mutation_free_and_has_no_transport(tmp_path: Path
     assert result.returncode == 0, result.stdout + result.stderr
     assert rows == [] and not observed.exists()
     assert "max_seconds=90 quiet_seconds=60" in result.stdout
+    assert "profile=release exact_sha_resume=0 max_files_per_batch=16 gate_workers=1" in result.stdout
     assert "release_ready=false gate_evidence=false" in result.stdout
+
+
+def _assert_release_runtime_policy(rows: list[dict[str, object]]) -> None:
+    observed = [row for row in rows if row["kind"] in {"observer", "runtime"}]
+    assert len(observed) == 4
+    for row in observed:
+        assert row["policy"] == ["release", "0", "16", "1"], row
+        assert row["sentinel"] == "kept", row
+        assert "probe=kept" in str(row["makeflags"]), row
+
+
+@pytest.mark.parametrize(
+    "context", ("default", "environment", "command-line", "opaque-overrides"),
+)
+def test_publication_runtime_owns_release_policy_without_changing_caller(
+    tmp_path: Path, context: str,
+) -> None:
+    result, rows, _ = _publish(tmp_path, gate_policy_context=context)
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
+    _assert_release_runtime_policy(rows)
+    verdict = next(row for row in rows if row["kind"] == "verdict")
+    assert verdict["policy"] == ["native", "1", "32", "2"], verdict
+    assert verdict["sentinel"] == "kept"
+    owner = _target(RECOVERY_PATH.read_text(encoding="utf-8"), PUBLISH_OWNER)
+    assert "MAKEFLAGS" not in owner
+    assert "MAKEOVERRIDES" not in owner
 
 
 def test_runtime_publish_owner_has_documented_mutation_free_contract(tmp_path: Path) -> None:

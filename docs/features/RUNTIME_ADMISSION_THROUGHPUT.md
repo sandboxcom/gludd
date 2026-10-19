@@ -1769,3 +1769,56 @@ above remain context, not a reproduction of this Gludd refusal defect.
 All113 families, original selectors/plugins/workers/deadlines,85/75,ZDD and
 release authority remain unchanged. Focused acceptance and Root's actual
 profile are diagnostic/source evidence only; no task or release proof closes.
+
+
+## 2026-10-19: publication owns its release-runtime policy
+
+Frozen development d9456ef passes release-proof runtime admission in75.207s:
+MAIN1990 passes59.52s, fresh help1 passes1.01s and tail11 passes9.45s.
+Ordinary publication then times out90.556s/rc124 before Git transport.
+Its MAIN1990 passes76.63s and help1 passes0.88s; ten tail cases pass and the
+last controller-lock composition case remains censored. Preserve both native
+logs/statuses at /tmp/gludd-v012-admission-d9456ef* and
+/tmp/gludd-v012-publication-timeout-d9456ef*. Neither the last visible node nor
+the different environment fingerprints establishes the elapsed-time cause.
+
+A concrete independent configuration mismatch exists: the release-proof owner
+explicitly supplies release/0/16/1, while publication omitted those values and
+inherited the exported native/1/32/2 defaults. The existing publication owner
+now explicitly passes GATE_TEST_PROFILE=release, GATE_EXACT_SHA_RESUME=0,
+GATE_MAX_FILES_PER_BATCH=16 and GATE_BATCH_WORKERS=1 to its existing recursive
+run-watched invocation. Its child command remains the exact compatibility owner.
+This owns only that child's gate policy; caller policy and unrelated command
+assignments remain intact. Gate workers1 does not change the compatibility
+owner's three sequential2/1/1 children. No MAKEFLAGS/MAKEOVERRIDES clearing,
+identity normalization, runtime sync, profiler, runner or cache is introduced.
+The safe plan discloses the fixed policy and remains child/mutation-free.
+
+Finite native Make controls use the actual default/export definitions and the
+existing observer/test/Git boundary fixture. Omitted defaults, conflicting
+environment and command-line settings, and an opaque override carrier all
+fail first on the observed native/1/32/2 tuple. A conflicting fixture-file
+sentinel requires real unrelated command-line precedence to survive recursion;
+a brittle comparison of GNU Make's private opaque reference is not used.
+The original runtime, exact argv,2/1/1,90/60, force/refusal, no-transport and
+plan assertions remain. The meaningful cheap guard also runs exactly once
+through the already-selected complete integration-admission owner.
+All113 manifest families and original selectors/plugins remain unchanged.
+
+The [GNU Make recursion manual](https://www.gnu.org/software/make/manual/make.html#Variables_002fRecursion)
+distinguishes exported environment defaults from recursive command-line values.
+A [2018 parent TARGET report](https://stackoverflow.com/questions/52165966/prevent-variable-overwrite-into-submakefile)
+describes an inherited assignment unexpectedly naming a child library; a
+[2010 parent export report](https://stackoverflow.com/questions/3103464/overriding-submake-assigned-variables-in-a-parent-makefile)
+describes an export failing to displace a child assignment. These firsthand
+experiences motivate real transport/default controls, not a GNU defect,
+Gludd timing diagnosis or a transferable performance claim.
+
+Exact native RED/GREEN, complete affected-owner acceptance on both installed
+runtimes, static/contracts/guarded collection and source review remain distinct
+under /tmp/gludd-v012-publication-policy-evidence/. Retain initial6FAIL and
+the separate4PASS/2FAIL new-instrumentation result. The final finite6PASS
+proves policy behavior only. Original90/60,21phases2850,all8shards,fatal
+warnings,85/75 line/branch,ZDD,cleanup and branch/promotion authority remain.
+Root owns genuine same-source integration, actual unchanged-bound publication
+and all final gate/hosted/release proof; no task status or checkbox is closed.
