@@ -197,7 +197,7 @@ NEVER remove/disable/weaken a guardrail to fix noise, errors or friction. Trace 
 ## CRITICAL: No Lint-Suppression Comments
 
 Forbidden in src/tests: # noqa, # type: ignore, # pylint: disable/skip-file, # fmt: off/skip/on, # isort:skip. Fix code; no “just once” exception. Reflow/extract, add and narrow object types (never Any), remove unused imports; unfixable third-party attributes use typed getattr wrapper or correct cast.
-Only data-pattern allowlist: src/general_ludd/security/fix_not_disable.py and tests/unit/test_type_safety_guardrails.py. Do not add paths; narrow matcher. Runtime hook: clean deny JSON+exit0, fail-open on exception. Behavior pin: SUPPRESSION_PATTERNS/ALLOWLIST_PATHS. Repo-wide scan: assert violations, never warnings.warn.
+Only data-pattern allowlist: src/general_ludd/security/fix_not_disable.py and tests/unit/test_type_safety_guardrails.py. Do not add paths; narrow matcher. Runtime hook: `.opencode/plugin/enforce-no-suppressions.ts`, clean deny JSON+exit0, fail-open on exception. Behavior pin: `tests/unit/test_no_suppression_comments_plugin.py` verifies SUPPRESSION_PATTERNS/ALLOWLIST_PATHS. Repo-wide scan: assert violations, never warnings.warn. Apply Guardrail Integrity Policy above.
 
 ## Opencode Plugin Ports (Claude Hook Equivalents)
 
@@ -354,6 +354,8 @@ Never next-version bump/epic until current exact Build-and-Release GREEN+complet
 
 ## CRITICAL: Three-Agent Dispatch Ceiling and Configurable Floor
 
+### Dispatch Floor
+
 Canonical single source of truth .opencode/lib/multitask_config.ts: MIN_DISPATCHES=0,MAX_DISPATCHES=3,HARD_MAX_DISPATCHES=3,MAX_ZERO_STREAK=2; plugins import them. Env/state may lower, never raise cap. GLUDD_MIN_DISPATCHES0..3 clamps;0 disables minimum only, not cap/dedup/ownership.
 enforce-multitask blocks breaches of explicit prior-message floors; source's current-zero+pending block description remains constrained by canonical zero-floor override. Positive-floor two-zero-streak and immediate under-floor blocks otherwise apply. GLUDD_MULTITASK_FLOOR_ENFORCE=0 disables; disengage temporary expires MAX_DISENGAGE_MS without bypassing fundamental pending latch.
 Task quality2–5min real synthesis/deliverable, sufficient context, no quick grep/status placeholders. No-independent-work means inline, never filler.
@@ -415,6 +417,9 @@ Process evidence/results promptly before reassigning, plan disjoint deliverables
 ## CRITICAL: Background Operations NEVER Block Dispatch (anti-wait rule)
 
 Launch observable -background(<1s), IMMEDIATELY resume useful disjoint work; inspect once at natural break. No main sleep+status, gate-tail, “wait then decide/commit”, silent task or polling owner. GLUDD_NO_WAIT_ENFORCE=0 disables default-on enforce-no-wait.ts; matchers cover sleep+Make/status/tail.
+
+### CI-Poll Subagents Are Forbidden
+
 CI-poll subagents FORBIDDEN. NEVER dispatch a "poll CI until terminal" task; `make ci-await` must NEVER be dispatched to a subagent. `make ci-wait` and `make ci-await` are for release-cut only. `ci-await` uses a 3600s default timeout. No verdict loop until terminal. Push fire-and-forget via batch-push+verify-remote; never hold non-release work for green.
 Original exception permits one gate-wait-report call then inspection/redispatch only if unfinished, never “every N seconds” loops. This scoped exception and forbidden polling-task phrases remain, not new permission.
 

@@ -66,6 +66,39 @@ final candidate integration, combined acceptance, complete gate and exact-SHA
 hosted proofs. Line/byte measurements are diagnostic, never fixed targets or
 ratchets; legitimate additions and reformatting remain allowed.
 
+### Successor behavioral labels and E4 references (2026-10-19)
+
+This successor started from native-verified clean
+3284c3a9e69826ce1e4bbd80a55a87fdd4cf6841 on the same isolated branch/worktree.
+Root owns Git/ref operations and the earlier committed/pinned source.
+The original da99429 and146/88-case records above retain their historical
+source scope; this is a later two-file AGENTS/takeover patch.
+
+Terminal hosted Q run39293586802 exposed two further policy families:
+unit1d job118205887604 batch002's Dispatch Floor and CI-poll labels, and
+unit1b job118205887306's suppression-hook/test/integrity references.
+Unchanged original nodes reproduced2FAIL/1.92s and3FAIL/1.82s before their
+respective edits. The existing substantive instructions remain: adaptive
+default0, hard maximum3, release priority, no status-only/filler agents,
+CI-poll prohibition, clean deny/fail-open, the original two-path data
+allowlist and assert-based scanning. No10-agent floor is restored.
+
+The intermediate label-only canon311 receipt retains372PASS/0skip/21.44s.
+Final combined acceptance includes five complete tests/unit owners:
+test_behavioral_specs.py, test_e4_noqa_guardrail.py,
+test_agent_context_metrics.py, test_documentation_integrity.py and
+test_oversized_document_splits.py. Canonical3.11 passed426/0skip/30.97s;
+private3.12 passed426/0skip/32.54s. Both use one worker, fatal warnings,
+the selected pinnedUV and explicit checkout src PYTHONPATH.
+
+Actual RED/intermediate/GREEN logs, JUnit and native observer JSON remain
+separate in the existing report/index. Final logs/JUnit use
+/tmp/gludd-v012-compact-policy-conformance-behavior-e4-whole311 and
+/tmp/gludd-v012-compact-policy-conformance-behavior-e4-whole312 with .log/.xml
+suffixes. No test, runtime hook, Make/config, tracking file or ref changed.
+Counts are diagnostic; review, guarded commit, final candidate union, complete
+gate and exact-SHA hosted proof remain Root-owned and are not claimed here.
+
 ## Native execution and ownership
 
 Use functions.exec only to transport a named Make command/result or literal editing data. Project analysis/workflows belong to native Make owners with documented variables, argv/status and durable artifacts; no project verdict comes from ad hoc JS/Python in a tool wrapper or hidden function-store state.
