@@ -2328,3 +2328,35 @@ TASKS changes one existing unchecked row with no line/status/checkbox growth.
 Required guarded collection, independent frozen-source review and Root's one
 actual private312 profile stay separate from implementation; no actual tail
 profile, admission retry, full gate, CI, integration or release claim is made.
+
+
+## 2026-10-19: repair profile trace route after exact review
+
+Preserve f277be0, its CHANGES REQUESTED review and all native profile/source
+receipts. Review R1 identified legacy pathname trace writes inside the new
+profile leaf; real initial/event/worker link controls reproduce outside-sentinel
+changes before finalizer refusal, and the bounded native no-writer FIFO control
+reproduces blocking with complete child drain. No real project outside data
+is touched by these isolated fixture controls.
+
+The same plugin now pins the profile trace route per Config/process, including
+inherited trace-only workers. No-follow/nonblocking descriptor append verifies
+owned regular/single-link file and current route/object identity, refuses
+replacement/truncation and closes descriptors on every exit. Worker events and
+native failures remain; workers receive no profiler/publication authority.
+Ordinary legacy trace paths keep their append/truncate behavior. The active
+trace references Config state only during its session; no cross-session profile
+or mutable-input cache is introduced.
+
+Clarify the earlier M25 entry: one-shot consumption occurs at the public
+initial-conftest hook. Native controls demonstrate test-module collection,
+test-body nested Make and xdist workers; earlier plugin-import children and
+cold startup remain unobserved. Root's actual f277 first-two profile is a
+separate diagnostic, not source approval, deadline clearance or release proof.
+
+Scope is the existing trace plugin/diagnostics owner, existing
+RUNTIME_ADMISSION_THROUGHPUT feature and this append/TASKS row. No Make recipe,
+manifest family, selector/plugin/worker/deadline, coverage floor, ZDD or
+promotion authority changes. Source metrics/raw RED/GREEN/coverage/collection
+remain external under /tmp/gludd-v012-profile-trace-route-repair-evidence/.
+S98.4 stays unchecked; all task/status/history prefixes remain preserved.

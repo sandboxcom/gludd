@@ -725,13 +725,15 @@ def test_native_cprofile_publication_error_never_turns_failure_green(
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
-    _begin_native_profile(native_profile_config, monkeypatch)
+    monkeypatch.setenv("_TEST_FILES_CPROFILE", "1")
+    trace._consume_profile_request(native_profile_config)
+    session = pytest.Session.from_config(native_profile_config)
+    trace.pytest_sessionstart(session)
 
     def unavailable(*_args: object, **_kwargs: object) -> None:
         raise OSError("native profile publication unavailable")
 
     monkeypatch.setattr(trace, "_publish_profile", unavailable)
-    session = pytest.Session.from_config(native_profile_config)
     session.exitstatus = exitstatus
     trace.pytest_sessionfinish(session, exitstatus)
     assert session.exitstatus == (pytest.ExitCode.INTERNAL_ERROR if exitstatus == 0 else exitstatus)
@@ -835,3 +837,247 @@ def test_native_cprofile_allocation_failure_closes_every_descriptor(
     for descriptor in descriptors:
         with pytest.raises(OSError):
             os.fstat(descriptor)
+
+
+@pytest.mark.parametrize("replacement", ["leaf-link", "parent-link", "trace-link", "trace-hardlink", "trace-directory"])
+def test_profile_trace_replacement_never_changes_outside_bytes(
+    native_profile_config: pytest.Config, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, replacement: str,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    monkeypatch.setenv("_TEST_FILES_CPROFILE", "1")
+    trace._consume_profile_request(native_profile_config)
+    state = trace._profile_state(native_profile_config)
+    assert state is not None
+    session = pytest.Session.from_config(native_profile_config)
+    trace.pytest_sessionstart(session)
+    outside = tmp_path / "outside-trace"
+    outside.mkdir()
+    sentinel = outside / "trace.jsonl"
+    sentinel.write_text("outside stays unchanged", encoding="utf-8")
+    path = state.directory / "trace.jsonl"
+    if replacement == "leaf-link":
+        state.directory.rename(state.directory.with_name(state.directory.name + "-held"))
+        state.directory.symlink_to(outside, target_is_directory=True)
+    elif replacement == "parent-link":
+        parent = state.directory.parent
+        parent.rename(parent.with_name("held-profile-parent"))
+        (outside / state.directory.name).mkdir()
+        (outside / state.directory.name / "trace.jsonl").write_text("nested stays unchanged", encoding="utf-8")
+        parent.symlink_to(outside, target_is_directory=True)
+    else:
+        path.unlink()
+        if replacement == "trace-link":
+            path.symlink_to(sentinel)
+        elif replacement == "trace-hardlink":
+            path.hardlink_to(sentinel)
+        else:
+            path.mkdir()
+    refused = False
+    try:
+        try:
+            trace.write_event("START", nodeid="owned::must_refuse")
+        except (OSError, ValueError, pytest.UsageError):
+            refused = True
+    finally:
+        trace._finish_profile(native_profile_config, 1)
+    assert sentinel.read_text(encoding="utf-8") == "outside stays unchanged"
+    if replacement == "parent-link":
+        assert (outside / state.directory.name / "trace.jsonl").read_text(encoding="utf-8") == "nested stays unchanged"
+    assert refused, "changed profile trace route was accepted"
+    assert state.root_fd == state.directory_fd == -1
+
+
+def test_profile_trace_initial_run_start_refuses_replaced_leaf(
+    native_profile_config: pytest.Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    monkeypatch.setenv("_TEST_FILES_CPROFILE", "1")
+    trace._consume_profile_request(native_profile_config)
+    state = trace._profile_state(native_profile_config)
+    assert state is not None
+    outside = tmp_path / "initial-outside"
+    outside.mkdir()
+    sentinel = outside / "trace.jsonl"
+    sentinel.write_text("initial unchanged", encoding="utf-8")
+    state.directory.rename(state.directory.with_name(state.directory.name + "-held"))
+    state.directory.symlink_to(outside, target_is_directory=True)
+    session = pytest.Session.from_config(native_profile_config)
+    refused = False
+    try:
+        try:
+            trace.pytest_sessionstart(session)
+        except (OSError, ValueError, pytest.UsageError):
+            refused = True
+    finally:
+        trace._finish_profile(native_profile_config, 1)
+    assert sentinel.read_text(encoding="utf-8") == "initial unchanged"
+    assert refused
+
+
+def test_profile_trace_keeps_real_controller_and_worker_events(tmp_path: Path) -> None:
+    from tests.unit.test_scoped_admission_targets import _native_cprofile_probe
+
+    result = _native_cprofile_probe(
+        tmp_path,
+        "import os, sys\n"
+        "def test_preserved_worker_trace():\n"
+        "    assert os.environ.get('PYTEST_XDIST_WORKER', '').startswith('gw')\n"
+        "    assert sys.getprofile() is None\n",
+        arguments="-q -W error -n 2",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    prefix = "pytest-cprofile: directory="
+    lines = [line for line in result.stdout.splitlines() if line.startswith(prefix)]
+    assert len(lines) == 1
+    directory = Path(lines[0].removeprefix(prefix))
+    events = [json.loads(line) for line in (directory / "trace.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert any(event["event"] == "RUN_START" and event["role"] == "controller" for event in events)
+    assert any(event["event"] == "RUN_START" and event["role"] == "worker" for event in events)
+    assert any(event["event"] == "START" and event["worker"].startswith("gw") for event in events)
+    assert any(event["event"] == "FINISH" and event["worker"].startswith("gw") for event in events)
+    assert any(event["event"] == "RUN_FINISH" and event["role"] == "worker" for event in events)
+
+
+_PROFILE_TRACE_FIFO_FIXTURE = r"""
+import os, sys
+from pathlib import Path
+import pytest
+from scripts import xdist_trace_plugin as trace
+root = Path(sys.argv[1])
+root.mkdir()
+os.chdir(root)
+trace._profile_root = lambda: root
+base = root / "basetemp"
+base.mkdir()
+config = pytest.Config.fromdictargs({"basetemp": str(base)}, [str(root)])
+os.environ["_TEST_FILES_CPROFILE"] = "1"
+trace._consume_profile_request(config)
+state = trace._profile_state(config)
+assert state is not None
+os.mkfifo(state.directory / "trace.jsonl")
+refused = False
+try:
+    try:
+        trace.pytest_sessionstart(pytest.Session.from_config(config))
+    except (OSError, ValueError, pytest.UsageError):
+        refused = True
+finally:
+    trace._finish_profile(config, 1)
+    config._ensure_unconfigure()
+assert refused, "profile FIFO accepted"
+print("native profile FIFO refused", flush=True)
+"""
+
+
+def test_profile_trace_no_writer_fifo_refuses_with_bounded_native_drain(tmp_path: Path) -> None:
+    import os
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(root) + os.pathsep + environment.get("PYTHONPATH", "")
+    process = subprocess.Popen(
+        [sys.executable, "-B", "-W", "error", "-c", _PROFILE_TRACE_FIFO_FIXTURE, str(tmp_path / "checkout")],
+        cwd=root, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, start_new_session=True,
+    )
+    timed_out = False
+    try:
+        try:
+            stdout, stderr = process.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            process.kill()
+            stdout, stderr = process.communicate(timeout=2)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=2)
+    assert process.poll() is not None
+    assert not timed_out, "profile trace blocked on a native no-writer FIFO"
+    assert process.returncode == 0, stdout + stderr
+    assert stdout.strip() == "native profile FIFO refused", stderr
+
+
+@pytest.mark.parametrize("replacement", ["trace-link", "trace-hardlink"])
+def test_profile_trace_inherited_worker_refuses_outside_file(
+    native_profile_config: pytest.Config, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, replacement: str,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    monkeypatch.setenv("_TEST_FILES_CPROFILE", "1")
+    trace._consume_profile_request(native_profile_config)
+    state = trace._profile_state(native_profile_config)
+    assert state is not None
+    directory = state.directory
+    trace._finish_profile(native_profile_config, 1)
+    outside = tmp_path / "worker-outside"
+    outside.write_text("worker outside unchanged", encoding="utf-8")
+    target = directory / "trace.jsonl"
+    if replacement == "trace-link":
+        target.symlink_to(outside)
+    else:
+        target.hardlink_to(outside)
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(target))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", directory.name)
+    worker = pytest.Config.fromdictargs({"basetemp": str(tmp_path / "worker-base")}, [str(trace._profile_root())])
+    monkeypatch.setattr(worker, "workerinput", {"workerid": "gw1"}, raising=False)
+    session = pytest.Session.from_config(worker)
+    refused = False
+    try:
+        try:
+            trace.pytest_sessionstart(session)
+        except (OSError, ValueError, pytest.UsageError):
+            refused = True
+    finally:
+        trace._finish_profile(worker, 1)
+        worker._ensure_unconfigure()
+    assert outside.read_text(encoding="utf-8") == "worker outside unchanged"
+    assert refused
+
+
+@pytest.mark.parametrize("member", [
+    "other.jsonl", "nested/trace.jsonl", "../trace.jsonl",
+])
+def test_profile_trace_reserved_namespace_refuses_noncanonical_members(
+    native_profile_config: pytest.Config, member: str,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    path = trace._profile_root() / ".gate-logs" / "test-files-cprofile" / member
+    with pytest.raises(ValueError, match="profile trace"):
+        trace._profile_trace_directory(path)
+    assert not path.exists()
+
+
+def test_profile_trace_pins_regular_file_identity_and_refuses_truncation(
+    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    monkeypatch.setenv("_TEST_FILES_CPROFILE", "1")
+    trace._consume_profile_request(native_profile_config)
+    session = pytest.Session.from_config(native_profile_config)
+    trace.pytest_sessionstart(session)
+    state = trace._profile_state(native_profile_config)
+    assert state is not None
+    path = state.directory / "trace.jsonl"
+    original = path.read_bytes()
+    path.rename(path.with_name("held-trace.jsonl"))
+    path.write_text("replacement unchanged", encoding="utf-8")
+    try:
+        with pytest.raises(ValueError, match="identity changed"):
+            trace.write_event("START", nodeid="must::not_append")
+        assert path.read_text(encoding="utf-8") == "replacement unchanged"
+        assert path.with_name("held-trace.jsonl").read_bytes() == original
+        monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "1")
+        with pytest.raises(ValueError, match="cannot be truncated"):
+            trace.pytest_sessionstart(session)
+        assert path.read_text(encoding="utf-8") == "replacement unchanged"
+    finally:
+        trace._finish_profile(native_profile_config, 1)

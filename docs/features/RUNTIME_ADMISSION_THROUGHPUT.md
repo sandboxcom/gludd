@@ -1682,9 +1682,11 @@ It inherits `TESTFILES`, `PYTEST_ARGS` and `UV_PROJECT_ENVIRONMENT` unchanged,
 including the genuine selected UV executable and recursive Make arguments.
 A file-defined, target-specific, non-exported internal mode supplies one
 request to the existing trace plugin. External CLI/environment mode injection
-is refused before expansion. The plugin consumes the request before initial
-conftest collection, so nested Make/pytest processes and xdist workers do not
-inherit profiling authority. Ordinary `test-files` retains its exact native
+is refused before expansion. The plugin consumes the request at the
+initial-conftest hook. Native controls prove absence during test-module
+collection, test-body nested Make/pytest and xdist-worker execution. Children
+created during earlier plugin import are outside that demonstrated boundary.
+Ordinary `test-files` retains its exact native
 `python -m pytest` command and does not import profiling modules.
 
 The existing plugin lazily uses public
@@ -1735,3 +1737,35 @@ also explains why this diagnostic distinguishes controller and worker sessions.
 All 113 admission families, selectors/plugins, three 2/1/1 children, 90/60,
 21 phases/2850, fatal warnings, 85/75 coverage, ZDD, cleanup and promotion
 authority remain unchanged. Task S98.4 and required final proofs remain open.
+
+
+### Profile trace route repair (2026-10-19)
+
+Independent source review of immutable f277be0 requested changes: raw/report
+publication was anchored, but the older event writer could follow a replaced
+profile leaf or trace member before finalization refused. Retain that source,
+its negative review and every native profile/acceptance artifact unchanged.
+Real fixture-owned outside sentinels reproduce the initial RUN_START and
+subsequent event writes; inherited worker paths reproduce the same gap.
+The no-writer FIFO control owns, bounds and finally drains its native child.
+
+The existing plugin now binds profile trace ownership per pytest Config and
+process, reusing the pinned leaf and the existing directory admission.
+Controller and inherited trace-only worker events append through no-follow,
+nonblocking descriptors after owned, regular, single-link file checks.
+Fresh descriptor/path identity checks reject replaced parents, leaves or trace
+objects; the profile trace cannot be reset through the legacy truncate path.
+File descriptors close on success and refusal; trace-only workers receive no
+profiler or raw/report publication authority. Their existing lifecycle and
+failure events remain present. Ordinary trace paths outside the reserved
+profile namespace keep their original append/truncate behavior and errors.
+
+The same public session/finalizer lifecycle, native pytest exits, raw/report
+bounds and full source paths remain. Earlier plugin import and cold startup
+are explicitly unobserved; no broad bootstrap change is introduced. The
+existing [descriptor-relative open documentation](https://docs.python.org/3.12/library/os.html#os.open)
+supplies the native primitives. The firsthand pytest profile/worker reports
+above remain context, not a reproduction of this Gludd refusal defect.
+All113 families, original selectors/plugins/workers/deadlines,85/75,ZDD and
+release authority remain unchanged. Focused acceptance and Root's actual
+profile are diagnostic/source evidence only; no task or release proof closes.

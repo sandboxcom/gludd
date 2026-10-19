@@ -15,6 +15,7 @@ import pytest
 DEFAULT_TRACE_LOG = "/tmp/gludd-xdist-progress.log"
 _ACTIVE_TRACE_PATH: Path | None = None
 _ACTIVE_RUN_ID: str | None = None
+_ACTIVE_TRACE_CONFIG: pytest.Config | None = None
 
 
 if TYPE_CHECKING:
@@ -33,6 +34,9 @@ class _ProfileState:
         self.profiler: cProfile.Profile | None = None
         self.basetemp: Path | None = None
         self.finished = False
+        self.profiling = True
+        self.trace_identity: tuple[int, int] | None = None
+        self.previous_config = _ACTIVE_TRACE_CONFIG
         self.previous_trace = {
             key: os.environ.get(key) for key in (
                 "GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE",
@@ -72,7 +76,7 @@ def _profile_directory(parent_fd: int, name: str, *, create: bool = False) -> in
     return descriptor
 
 
-def _new_profile_state() -> _ProfileState:
+def _new_profile_state(trace_directory: Path | None = None) -> _ProfileState:
     import secrets
 
     root = _profile_root()
@@ -85,14 +89,16 @@ def _new_profile_state() -> _ProfileState:
             raise ValueError("profile request must run in its owning checkout")
         parent = root_fd
         for component in (".gate-logs", "test-files-cprofile"):
-            parent = _profile_directory(parent, component, create=True)
+            parent = _profile_directory(parent, component, create=trace_directory is None)
             opened.append(parent)
-        name = f"profile-{os.getpid()}-{secrets.token_hex(8)}"
-        os.mkdir(name, 0o700, dir_fd=parent)
+        name = f"profile-{os.getpid()}-{secrets.token_hex(8)}" if trace_directory is None else trace_directory.name
+        if trace_directory is None:
+            os.mkdir(name, 0o700, dir_fd=parent)
         leaf = _profile_directory(parent, name)
         opened.append(leaf)
         state = _ProfileState(root / ".gate-logs" / "test-files-cprofile" / name, root_fd, leaf)
         opened.pop()  # The state now owns the leaf through finalization.
+        state.profiling = trace_directory is None
         return state
     except BaseException:
         os.close(root_fd)
@@ -126,7 +132,7 @@ def pytest_load_initial_conftests(early_config: pytest.Config, parser: pytest.Pa
 
 def _start_profile(config: pytest.Config) -> None:
     state = _profile_state(config)
-    if state is None:
+    if state is None or not state.profiling:
         return
     import cProfile
     import sys
@@ -212,7 +218,7 @@ def _publish_profile(state: _ProfileState, profiler: cProfile.Profile, exitstatu
 
 
 def _finish_profile(config: pytest.Config, exitstatus: int | None) -> bool:
-    global _ACTIVE_TRACE_PATH, _ACTIVE_RUN_ID
+    global _ACTIVE_TRACE_PATH, _ACTIVE_RUN_ID, _ACTIVE_TRACE_CONFIG
     state = _profile_state(config)
     if state is None or state.finished:
         return True
@@ -240,6 +246,7 @@ def _finish_profile(config: pytest.Config, exitstatus: int | None) -> bool:
             else:
                 os.environ[key] = previous
         _ACTIVE_TRACE_PATH, _ACTIVE_RUN_ID = state.previous_active
+        _ACTIVE_TRACE_CONFIG = state.previous_config
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
@@ -296,7 +303,6 @@ def _is_controller(config: Any) -> bool:
 def write_event(event: str, *, nodeid: str | None = None, extra: dict[str, Any] | None = None) -> None:
     """Append one resource-enriched event under the active observed run ID."""
     path = _trace_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {
         "event": event,
         "run_id": _run_id(),
@@ -311,8 +317,16 @@ def write_event(event: str, *, nodeid: str | None = None, extra: dict[str, Any] 
     }
     if extra:
         payload.update(extra)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, sort_keys=True) + os.linesep)
+    line = json.dumps(payload, sort_keys=True) + os.linesep
+    state = _profile_state(_ACTIVE_TRACE_CONFIG) if _ACTIVE_TRACE_CONFIG is not None else None
+    if state is not None:
+        _write_profile_trace(state, line)
+    elif _profile_trace_directory(path) is not None:
+        raise ValueError("profile trace has no active session owner")
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -322,7 +336,10 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     _ACTIVE_TRACE_PATH = _configured_trace_path()
     _ACTIVE_RUN_ID = _configured_run_id()
     path = _trace_path()
+    _pin_profile_trace(config)
     if _is_controller(config) and os.environ.get("GLUDD_XDIST_TRACE_TRUNCATE") == "1":
+        if _profile_state(config) is not None:
+            raise ValueError("owned profile trace cannot be truncated")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("", encoding="utf-8")
     write_event("RUN_START", extra={"role": "controller" if _is_controller(config) else "worker"})
@@ -369,3 +386,74 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
                 "longrepr": str(report.longrepr)[:4000],
             },
         )
+
+
+def _profile_trace_directory(path: Path) -> Path | None:
+    """Recognize only the reserved native profile trace namespace."""
+    root = _profile_root()
+    candidate = path if path.is_absolute() else root / path
+    if root.parts[:3] == ("/", "private", "tmp") and candidate.parts[:2] == ("/", "tmp"):
+        candidate = Path("/private") / candidate.relative_to("/")
+    try:
+        parts = candidate.relative_to(root / ".gate-logs" / "test-files-cprofile").parts
+    except ValueError:
+        return None
+    if len(parts) != 2 or parts[1] != "trace.jsonl":
+        raise ValueError("invalid profile trace member")
+    leaf = parts[0].split("-")
+    if (
+        len(leaf) != 3 or leaf[0] != "profile" or not leaf[1].isdigit()
+        or len(leaf[2]) != 16 or any(character not in "0123456789abcdef" for character in leaf[2])
+        or parts[0] != _configured_run_id()
+    ):
+        raise ValueError("invalid profile trace identity")
+    return candidate.parent
+
+
+def _pin_profile_trace(config: pytest.Config) -> None:
+    """Bind inherited worker traces without granting profiling authority."""
+    global _ACTIVE_TRACE_CONFIG
+    state = _profile_state(config)
+    if state is None:
+        directory = _profile_trace_directory(_trace_path())
+        if directory is not None:
+            state = _new_profile_state(directory)
+            config.stash[_PROFILE_STATE] = state
+            config.add_cleanup(lambda: pytest_unconfigure(config))
+    if state is not None:
+        _profile_route(state)
+        _ACTIVE_TRACE_CONFIG = config
+    else:
+        _ACTIVE_TRACE_CONFIG = None
+
+
+def _write_profile_trace(state: _ProfileState, line: str) -> None:
+    """Append to one owned regular object through the session's pinned leaf."""
+    import stat
+
+    if state.pid != os.getpid() or state.finished:
+        raise ValueError("profile trace process or lifecycle changed")
+    _profile_route(state)
+    flags = os.O_WRONLY | os.O_APPEND | os.O_NONBLOCK | os.O_NOFOLLOW
+    if state.trace_identity is None and state.profiling:
+        flags |= os.O_CREAT | os.O_EXCL
+    descriptor = os.open("trace.jsonl", flags, 0o600, dir_fd=state.directory_fd)
+    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+        def verify() -> tuple[int, int]:
+            metadata = os.fstat(handle.fileno())
+            identity = (metadata.st_dev, metadata.st_ino)
+            current = os.stat("trace.jsonl", dir_fd=state.directory_fd, follow_symlinks=False)
+            if (
+                not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid()
+                or metadata.st_nlink != 1 or metadata.st_mode & 0o022
+                or identity != (current.st_dev, current.st_ino)
+                or (state.trace_identity is not None and identity != state.trace_identity)
+            ):
+                raise ValueError("profile trace file ownership or identity changed")
+            return identity
+
+        state.trace_identity = verify()
+        handle.write(line)
+        handle.flush()
+        _profile_route(state)
+        verify()
