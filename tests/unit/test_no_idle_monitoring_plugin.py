@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 import time
 from collections.abc import Generator
 from pathlib import Path
+from textwrap import dedent
+from xml.etree import ElementTree
 
 import pytest
 
@@ -342,3 +346,92 @@ def test_fallback_subagent_guard_precedes_delegated_handler(
         "permissionDecision": "deny", "message": "fallback-delegation-sentinel",
     }
     assert hook_plugin_env.state_path("GLUDD_IDLE_MONITORING_STATE_FILE").read_bytes() == before
+
+
+@pytest.mark.xdist_group("enforcement-shared-state")
+def test_hook_harness_collection_defers_probe_and_runs_supported_fallback(tmp_path: Path) -> None:
+    """Observe real confined collection, then require the original runtime assertion."""
+    script = tmp_path / "probe_collection.py"
+    receipt = tmp_path / "probe-events.json"
+    junit = tmp_path / "runtime.xml"
+    script.write_text(
+        dedent(
+            """
+            import json
+            import sys
+            from pathlib import Path
+
+            sys.path.insert(0, str(Path.cwd()))
+            import pytest
+
+            collection_commands = []
+            collection_started = False
+            runtime_started = False
+            def observe(event, arguments):
+                if event == "subprocess.Popen" and collection_started and not runtime_started:
+                    command = arguments[1]
+                    assert isinstance(command, (list, tuple))
+                    assert all(isinstance(part, str) for part in command)
+                    collection_commands.append(list(command))
+
+            class PhaseObserver:
+                @pytest.hookimpl(tryfirst=True)
+                def pytest_collection(self):
+                    global collection_started
+                    collection_started = True
+
+                @pytest.hookimpl(tryfirst=True)
+                def pytest_runtest_setup(self):
+                    global runtime_started
+                    runtime_started = True
+
+            sys.addaudithook(observe)
+            result = pytest.main([
+                "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler",
+                "-q", "-n", "0", "-W", "error",
+                "--junitxml=" + sys.argv[2], "--basetemp=" + sys.argv[3],
+            ], plugins=[PhaseObserver()])
+            from tests.unit import _hook_fixtures as helpers
+            reason = helpers._probe_harness()
+            Path(sys.argv[1]).write_text(json.dumps({
+                "collection_commands": collection_commands,
+                "collection_started": collection_started,
+                "runtime_started": runtime_started,
+                "runtime_probe_failure": reason,
+            }), encoding="utf-8")
+            raise SystemExit(int(result))
+            """
+        ),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, str(script), str(receipt), str(junit), str(tmp_path / "child-pytest")],
+        cwd=PLUGIN_PATH.parents[2], capture_output=True, text=True, timeout=30, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload: object = json.loads(receipt.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    assert payload["collection_started"] is True and payload["runtime_started"] is True
+    commands = payload["collection_commands"]
+    assert isinstance(commands, list)
+    for command in commands:
+        assert isinstance(command, list)
+        assert len(command) == 2 and command[1] == "--version", (
+            "collection must never execute the harness, even when confinement catches the attempt",
+            command,
+        )
+    failure = payload["runtime_probe_failure"]
+    assert failure is None or isinstance(failure, str)
+    suites = list(ElementTree.parse(junit).getroot().iter("testsuite"))
+    assert len(suites) == 1
+    suite = suites[0]
+    assert suite.attrib["tests"] == "1"
+    assert suite.attrib["errors"] == "0" and suite.attrib["failures"] == "0"
+    assert suite.attrib["skipped"] == ("0" if failure is None else "1")
+    if failure is None:
+        cases = list(suite.iter("testcase"))
+        assert len(cases) == 1
+        assert cases[0].attrib["name"] == "test_fallback_subagent_guard_precedes_delegated_handler"
+        assert list(cases[0]) == [], "the supported actual runtime test must pass without a skip"
+    else:
+        assert "during pytest collection" not in failure

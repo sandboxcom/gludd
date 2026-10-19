@@ -1193,3 +1193,579 @@ post content and official manual were subsequently available for this feature.
 Raw RED/GREEN XML, research proposal, source scope and normal required
 collection are retained in /tmp/gludd-v012-gate-profile-fixture-isolation-evidence.
 Its manifest identifies exact source/ref/cohort and preserves proof boundaries.
+
+### Native Python 3.12 startup prerequisite inspection (S98.4, 2026-10-18)
+
+Exact candidate `3583000e3b315f67acf0292dec8ba38642317a1c` keeps its failed
+hosted Python 3.12.15 admission: 1897 main passes in 74.42 seconds, isolated
+help in 1.88 seconds, and a censored original tail at the unchanged 90-second
+limit. Its first pytest header appears about 21.6 seconds after observer
+start. That interval has no measured import/collection attribution; it also
+contains possible worker startup and output buffering. The separately retained
+canonical Python 3.11 diagnostic passed in 73.2 seconds. Neither receipt proves
+Python 3.12 headroom or clears the hosted failure.
+
+The existing dependency-profile owner now has a read-only
+`inspect-dependency-runtime` entrypoint. It derives eligible CI toolchain slots
+from the existing native registered-checkout and resource-namespace owners.
+It accepts no arbitrary executable and refuses foreign/traversing paths,
+environment/configuration symlinks, missing virtual environments, system site
+packages, wrong exact CPython patch/prefix/executable, malformed metadata,
+changed inputs, selected-profile/direct-lock disagreements and unavailable
+or timed-out probes. The probe uses the existing selected interpreter with
+`-I -B`, a fixed command and a 20-second subprocess bound. It reuses the native
+receipt distribution/plugin metadata helpers, never imports pytest/plugins
+or loads entrypoints, and never creates, syncs or writes an environment.
+Selected root/profile manifests and locks are fingerprinted before and after
+inspection. The reported lock membership covers selected direct requirements
+and installed pytest entrypoint distributions, not a new dependency resolver
+or a synchronization receipt. All existing sync/audit/install behavior remains.
+
+The four Make inputs are `DEPENDENCY_RUNTIME_ENVIRONMENT` (empty means the
+current checkout's derived slot), `DEPENDENCY_RUNTIME_PYTHON` (exact supported
+patch, default `3.12.15`), `DEPENDENCY_RUNTIME_SET` (`ci` or `development`,
+default `ci`) and `DEPENDENCY_RUNTIME_VALIDATE_ONLY` (default `1` plan).
+Literal derived carriers are documented in the configuration reference.
+The safe registered behavioral example is:
+
+```text
+make inspect-dependency-runtime DEPENDENCY_RUNTIME_ENVIRONMENT= DEPENDENCY_RUNTIME_PYTHON=3.12.15 DEPENDENCY_RUNTIME_SET=ci DEPENDENCY_RUNTIME_VALIDATE_ONLY=1
+```
+
+Actual native inspection confirms the main registered Python 3.12 slot is
+unavailable. This is separate from the earlier correctly refused absolute
+`cat-file` read, which established no filesystem absence. The requested
+current `ci` inspection of the existing canonical 3.11.14 slot refuses
+`ansible-controller`'s direct `jsonpointer==3.2.0` declaration against installed
+`3.1.1`; the latter also occurs in other selected independent locks. This
+requested-profile mismatch is not a diagnosis of canonical-runtime corruption
+or evidence of a completed fresh CI synchronization. Canonical 3.11 and the
+main virtual environment remain unchanged, and successful positive current-CI
+inspection proof is still missing.
+
+After native zero-worker/load/disk admission, the existing hosted `ci` sync
+owner checked all ten source locks successfully, then refused managed
+Python 3.12.15 acquisition with downloads disabled. The separately retained
+downloads-enabled attempt refused the same exact interpreter before any
+download and advised that uv's embedded catalogue needs updating.
+`make check-uv` reports local Homebrew uv 0.11.17; hosted 3.12 pins uv 0.13.1.
+The installed-runtime catalogue exposes 3.12.13, which is not substituted.
+Both staged failures remain failed; no environment was promoted. No global uv
+upgrade, alternate reader spelling, installer, downloader or timing patch was
+introduced. Future acquisition must use a reviewed mature owner with explicit
+project-owned tool/bin/cache/managed-runtime roots.
+
+The initial 27 missing-owner/contract failures precede 33 inspection controls
+passing, including actual temporary executable boundaries, unchanged files
+and environment, metadata-only entrypoint guards and CLI conformance.
+All 80 complete profile/inspection cases pass warning-fatal on canonical
+Python 3.11 at 94% native combined source coverage under unchanged 85/75 floors.
+The default-plan behavior and 246 contracts pass. These are tool/source
+receipts. The proposed original-three-child import-time/collect-only diagnostic
+has not run; no self/cumulative import or collection costs are invented.
+Its next prerequisites are exact namespaced uv/runtime acquisition, successful
+hosted-profile synchronization and positive metadata inspection.
+
+Firsthand [pytest #2206](https://github.com/pytest-dev/pytest/issues/2206)
+includes a 2020 collection/directory-traversal investigation and a 2022
+compile/assertion-rewrite profile. It motivates measuring Gludd's current
+owner, not copying another project's cause or removing selectors.
+Firsthand [uv #9666](https://github.com/astral-sh/uv/issues/9666) reports
+workload-dependent first-interpreter latency on macOS in December 2024; it
+does not explain the hosted Linux failure. Python's
+[import-time documentation](https://docs.python.org/3.12/using/cmdline.html#cmdoption-X)
+distinguishes self from nested cumulative time: cumulative values must not be
+summed. Native
+[xdist 3.8.0 collect-only handling](https://github.com/pytest-dev/pytest-xdist/blob/v3.8.0/src/xdist/plugin.py)
+bypasses distributed sessions, so the future three-child experiment will be a
+serial import/collection diagnostic despite unchanged 2/1/1 command settings,
+never admission or worker-throughput proof.
+
+All 110 admission families, original 1897/help1/tail10 selectors, three children,
+fresh-help isolation, 2/1/1 policy, 90/60 limits, 21/2850 bounds, fatal warnings,
+85/75 coverage, ZDD, cleanup/authentication and promotion authority remain.
+No task is closed. The original hosted failure and every prior reviewed
+source, candidate ref and proof bundle remain retained.
+
+Final parent-bytecode and refusal-provenance controls retain two additional
+one-case RED receipts before repair. The final complete 81-case owner passes
+in 8.56 seconds; native coverage remains 94% (observer10.7s). All 34 inspection
+and four environment-documentation/default controls also pass (38 cases,
+6.07 seconds). Refused CI inspection retains the requested profile identity,
+all selected source lock hashes and actual installed metadata without success.
+
+### Runtime inspection review repair (S98.4, 2026-10-18)
+
+Independent exact-source review withholds approval of immutable
+`77b80ea24cfa5610b1e63a7266b1608c7f9c0092`. Its original inspection/provisioning
+receipts remain historical. Review identified two refusal gaps: profile/lock
+parsing could precede the first hash, and root-only, unnormalized virtual
+environment configuration checks could disagree with CPython's effective
+configuration. These are reproduced source defects, not a diagnosis of the
+original hosted timeout or evidence of a modified canonical runtime.
+
+The existing inspection owner now reads one ephemeral exact-byte snapshot
+of the manifest and every root/profile project and lock covered by its
+existing validation. It reparses the current manifest, selects and validates
+from those bytes, derives requirements and locked versions from the same
+bytes, and hashes those exact bytes. Fresh native file hashes after the probe
+must match; stale catalog selection and parse-before-hash mutation cannot
+be paired with a newer accepted fingerprint. Existing sync/audit callers
+retain their original readers and behavior.
+
+The fixed virtual-environment layout now requires exactly one normalized
+`include-system-site-packages=false` declaration. It refuses every
+executable-directory `pyvenv.cfg`, including symlinks and dangling symlinks,
+and verifies the unchanged root configuration bytes after the probe.
+Ordinary interpreter symlinks remain supported. This follows the actual
+[CPython 3.12.15 site owner](https://github.com/python/cpython/blob/v3.12.15/Lib/site.py),
+which checks executable-directory configuration before its parent and
+normalizes configuration keys while reading them.
+
+The first-hand October 2020
+[Python packaging discussion](https://discuss.python.org/t/interpreter-independent-isolated-virtual-environments/5378)
+describes configuration beside or above the executable and the compatibility
+cost of changing environment semantics. It supports checking the existing
+interpreter/configuration boundary; it does not establish Gludd's timeout
+cause or justify replacing native virtual-environment behavior.
+
+Thirteen additive controls preserve 11 expected RED failures and two already
+passing refusals/support cases, then all 94 complete profile/inspection cases
+pass warning-fatal in 5.48 seconds. Native coverage replays the same 94 cases
+in 7.67 seconds: 95.3% lines and 90.0% branches (94% combined), above unchanged
+85/75 floors. Observer `20261018T143405Z-74561-549fdc96` passes in 9.38 seconds.
+Strict typing, Ruff, the existing default-plan behavior, all 246 target
+contracts and native resource ownership pass. No target, dependency,
+admission selector/family, bound, cleanup or promotion policy changes.
+Exact 3.12 acquisition, positive current-CI inspection and the proposed
+serial import/collection diagnostic remain missing; no release proof or
+task closure is claimed.
+
+### Native acquisition of the hosted uv pin (S98.4, 2026-10-18)
+
+Independent source-only review approves the repaired inspection descendant
+`0fccc95a47be44a0d2810693ad32b9da47612a0d`; immutable `77b80ea` remains
+changes requested. Neither review acquires a runtime or clears the censored
+Python 3.12 admission. The exact managed 3.12.15 interpreter is still
+unavailable to installed uv 0.11.17, and hosted setup pins uv 0.13.1.
+
+The existing dependency-profile lifecycle owner now exposes
+`acquire-pinned-uv PINNED_UV_VALIDATE_ONLY=1`. It reads the single exact stable
+version in the existing managed-3.12 setup-uv workflow step using the installed
+safe YAML parser. Package, official index, bootstrap policy and namespace are
+fixed. There is no editable second version pin or package/URL/path runner.
+The selected parent must already be Python 3.11 in a registered toolchain slot.
+
+Plan mode creates no directories or leases, starts no child and makes no
+network request. Its actual documented safe example passes on canonical
+3.11 and reports uv 0.13.1, the exact workflow hash and a derived private
+`<resource-root>-toolchain/pinned-uv/0.13.1` leaf:
+
+```text
+make acquire-pinned-uv PINNED_UV_VALIDATE_ONLY=1
+```
+
+Apply holds the existing nonblocking acquisition lease through verification
+and any failure cleanup. Native `uv tool install` receives the explicit
+existing interpreter, `--no-config`, `--no-python-downloads`, `--no-build`,
+official HTTPS PyPI and the exact workflow requirement. Tool, binary, cache
+and managed-Python paths stay within that fresh immutable version leaf.
+Conflicting UV/PIP/Python environment settings are removed only from the
+child dictionary; private PATH and concurrency1 are child-only. No shell
+profile, global uv/store, canonical311 or project environment is modified.
+
+The existing native observer owns the install process group and drain under
+180-second maximum/60-second quiet limits. A separate fixed HTTPS metadata
+read has 20-second I/O timeouts, a 20-second elapsed read budget and a 1MiB cap;
+a single blocking read can consume its remaining I/O timeout before refusal.
+Native metadata/version probes are bounded at ten seconds. Every attempt
+uses a unique producer-owned log/status identity; previous failures remain.
+
+Verified reuse never invokes the installer. It holds the native tool lease
+and checks the exact requirement/interpreter/index receipt, private exports,
+installed distribution/WHEEL/RECORD, actual Python prefix and uv version,
+executable digest and fresh path/file identities. Metadata and configuration
+shadows, malformed output, changed workflow/paths, foreign/symlink/partial
+state, held leases and known active usage refuse. Only this attempt's fresh,
+unchanged inode, held acquisition/native leases and confirmed child drain
+authorize cleanup; the existing active-path census is an additional refusal,
+never deletion authority. Unknown drain or changed authority retains the leaf.
+No populated environment is force-reinstalled, renamed or upgraded.
+
+The reported wheel URL/SHA-256 is the official published wheel matching
+installed WHEEL tags; `wheel_identity_kind=published-tag-match` states that
+limit. The installed executable is checked against its installed RECORD and
+hashed separately. This native tool install is not a project `uv.lock`
+transaction or an independently authenticated artifact/hash lock:
+`artifact_hash_locked=false` remains explicit. Unsupported locked/hash flags
+are not invented. If a pre-reviewed artifact digest is required, it remains
+an additional acquisition prerequisite.
+
+Research reused the
+[native uv 0.11.17 CLI](https://github.com/astral-sh/uv/blob/0.11.17/crates/uv-cli/src/lib.rs)
+and [official tool lifecycle](https://docs.astral.sh/uv/concepts/tools/).
+First-hand [uv #6400](https://github.com/astral-sh/uv/issues/6400) reports
+successful tool installation followed by Windows self-upgrade/entrypoint
+replacement failures in 2024. The 2025 first-hand
+[uv #11930](https://github.com/astral-sh/uv/issues/11930) reports a failed
+in-use replacement that later appeared current. These motivate immutable
+leaves plus actual executable verification; neither diagnoses this macOS
+catalogue prerequisite or Gludd's hosted timing failure.
+
+The initial missing-owner RED retains 36 failures/one existing refusal pass.
+Additional native-lease, linked-lease, final-path/YAML, literal-policy/deadline
+and real package-boundary REDs precede correction. All 161 complete
+profile/inspection/acquisition cases pass warning-fatal in 14.77 seconds,
+including fixture-only native timeout/drain and package execution.
+Native coverage is 93.8% lines/89.1% branches (92% combined), above 85/75;
+observer `20261018T145042Z-91233-e569523f` passes in 16.876 seconds.
+The 157-case coverage and 58-case run remain intermediate receipts.
+
+No actual uv acquisition, Python download, sync, positive current-CI
+inspection or import/collection diagnostic has run for this source change.
+Independent acquisition-source acceptance and fresh native capacity precede
+apply. All 110 admission families, selectors, three children/workers2-1-1,
+90/60 and 21/2850 limits, fatal warnings, coverage, cleanup/ZDD/authentication,
+branch/promotion authority and historical refs/proof remain; no task closes.
+
+
+## Exact CI composition prerequisite (2026-10-18)
+
+After independent source approval of 253a6a2, native acquisition verifies
+private uv 0.13.1 in 1.417 seconds without changing global uv or canonical 3.11.
+The unchanged ten-lock CI sync then provisions exact CPython 3.12.15 and
+Ansible 2.21.5 in 25.436 seconds using only that verified absolute uv and
+project-owned managed/cache roots. Its existing 3.11 bootstrap selects an
+auxiliary private CPython 3.11.17; every target environment sync stays
+explicitly 3.12.15. These identities are separate.
+
+Current-CI inspection fails closed in 1.140 seconds: the final environment
+has jsonpointer 3.1.1, violating the controller's unchanged direct
+jsonpointer==3.2.0 requirement. Actual sync output shows the controller
+install 3.2.0 before the later locked dev-security sync replaces it with 3.1.1.
+The successful installed-distribution pipcheck does not enforce a standalone,
+uninstalled profile project's direct declaration. This is a demonstrated
+fresh composition prerequisite; the earlier canonical 3.11 requested-profile
+refusal remains distinct from a corruption finding.
+
+The minimal input repair adds jsonpointer==3.2.0 to dev-security's existing
+constraint-dependencies while preserving its chardet floor and all direct
+requirements. Nativeuv generates only that profile's lock: one announced
+lock command, 56 packages resolved,3.1.1 replaced by3.2.0, no warning,
+observer 1.724 seconds. No profile order, sync command, interpreter target or
+runtime inspection policy changes. The failed environment and raw inspection
+remain evidence; this source does not silently retry or substitute profiles.
+
+The existing relock owner gains an optional exact registered-profile scope:
+
+```text
+make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1 DEPENDENCY_PROFILE_RELOCK_PROFILE=dev-security
+```
+
+Explicit0 regenerates;1 preserves native lock-check semantics. Empty profile
+retains root plus all 25 profiles, in their original order. The existing CLI
+lock/check owner rejects unknown profiles and simultaneous profile/set
+selection before producing commands. The literal Make carrier is overridden
+from the public value and the raw variable is unexported; ordinary and
+supported recursive repository Make controls keep Make-function text inert.
+No caller executable/path/package surface or separate lock runner is added.
+
+The additive composition regression reads the unchanged controller
+requirement and each selected independent lock in actual install order,
+for every set containing the controller. It rejects the final locked
+jsonpointer when a later profile would violate that direct requirement.
+This targeted invariant is not a new dependency resolver or a claim that
+every possible transitive conflict has been proven absent.
+Its exact node appends as family 111 in the existing third admission child,
+and the routing control also counts whole-owner/class selections to forbid
+duplicate execution. All 110 earlier family entries and every other manifest
+policy field remain equal; all existing first/help/tail selectors stay ordered.
+
+The existing [uv sync contract](https://docs.astral.sh/uv/concepts/projects/sync/)
+retains extraneous packages with inexact sync; conflicting project versions
+still follow the selected lock. The supported
+[constraint setting](https://docs.astral.sh/uv/reference/settings/#constraint-dependencies)
+narrows resolution without adding a dependency on its own. In first-hand
+[uv #12490](https://github.com/astral-sh/uv/issues/12490), opened in March 2025,
+Airflow users report differing installed versions across their service and
+development environments. A June 2025 participant reports that project
+constraint-dependencies addresses most of that alignment problem; maintainers
+also discuss keeping constraints in project metadata. First-hand
+[uv #13125](https://github.com/astral-sh/uv/issues/13125) describes a different
+editable-path pin conflict and confirms constraint alignment resolves it.
+Those reports motivate using existing metadata/native locks, not an
+override that ignores conflicts. Neither establishes this hosted timeout's
+cause or a timing improvement.
+
+The initial focused receipt retains 15 expected failures and 2 unchanged
+default controls in 3.82 seconds. Selector-only acceptance retains an
+intermediate 13-pass/1-failure arbitrary-parent-Make fixture, then 14 passing
+controls with both actual repository Make layers loaded. All literal,
+unknown/combined refusal and original assertions remain. The complete
+profile owner plus exact routing passes 64 cases in 4.35 seconds.
+Three live environment-name/documentation/default controls pass in 1.81 seconds;
+strict source/test typing, Ruff, 247 target contracts, Make parity/duplicates
+and unchanged 261-resource ownership pass. Native whole-profile coverage
+passes 176 cases in 21.53 seconds at 93.8% lines/89.3% branches, above unchanged
+85/75; observer 20261018T151457Z-17760-af05d9c6 passes in 23.747 seconds.
+
+The first complete five-owner replay retains 299 passes/3 failures in 45.60
+seconds: all three failures require the old eight-selector tail count.
+Conform only that count to nine for the additive node, preserving all earlier
+selectors/count-once/order assertions. Final whole-owner replay then passes
+all 302 cases warning-fatal in 45.70 seconds, one outer worker. The actual
+documented scoped check passes with private uv in 0.3 observed seconds.
+These are source receipts, not corrected-runtime or admission proof.
+
+Independent exact child source review must precede any corrected runtime
+sync/inspection. Positive current-CI inspection plus fresh native capacity
+still precede the single proposed original-three-child 90/60 serial
+import/collection diagnostic. Collect-only bypasses xdist and cannot supply
+admission, hosted headroom, full-gate, deployment or release evidence.
+All children/workers 2-1-1, 90/60, 21/2850, fatal warnings, 85/75, ZDD,
+cleanup/authentication and branch/promotion authority remain; no task closes.
+
+## Named startup diagnostic/report/archive owners (2026-10-18)
+
+The completed `v012-312-startup-profile / imports-f634b76-20261018`
+observation is retained input, not another collection request. Its native child
+passed collection-only in 21.694 seconds, with three printed summaries:
+1,897 / 11.22 seconds, isolated help 1 / 0.50 seconds, and tail 11 / 3.72 seconds.
+Collect-only bypasses xdist worker execution. These values establish neither
+executed assertions nor admission, hosted margin, full-gate or release authority.
+Corrected CI provisioning/inspection remain separate raw evidence under
+`/tmp/gludd-v012-312-runtime-diagnostic-f634b76-evidence`.
+Historical failed `253a6a2` composition/inspection evidence is unchanged.
+
+Three Make facades extend `scripts/stream_command.py`:
+
+- `runtime-startup-diagnostic` plans by default. Apply fixes the existing private
+  three-child compatibility command, release/resume=0, files=16, batch-workers=1,
+  original 2/1/1 carriers, `--collect-only -rs`, and 90/60 observer limits.
+  It refuses reserved identities, requires exact clean source, uses native
+  ps/active-work/load/disk admission and the current CI runtime inspector, and
+  calls the existing observer once. It never acquires packages or substitutes
+  runtimes. Future import profiling is confined to the child environment.
+- `runtime-startup-report` reads one exact terminal run. Absent/current aliases,
+  foreign paths, links, oversized or inconsistent raw files refuse. It launches
+  no process and changes no producer receipt/pointer. An external report is
+  published exclusively.
+- `runtime-startup-archive` plans by default. Apply snapshots raw status/log,
+  available trace and explicit external parent-console parts, checks freshness,
+  copies into a fresh external directory and publishes the manifest last.
+  Changed sources leave incomplete output without a manifest. Replay validates
+  copied identities/hashes and never falls back to originals.
+
+Public variables/literal carriers are documented in `docs/CONFIG_REFERENCE.md`;
+all three exact examples are in `config/make_target_contract.json`.
+The diagnostic example is a synthetic plan. Actual retained report/archive are
+executed only through these owners after the analyst code is committed/pinned.
+Their destinations are `/tmp/gludd-v012-312-runtime-diagnostic-f634b76.md` and
+`/tmp/gludd-v012-312-runtime-diagnostic-f634b76-archive`.
+
+The parser keeps three visible cold segments separate. It reports individual
+cumulative/self rankings and visible self sums in microseconds, never summed
+overlapping cumulative values or subtraction of unlike pytest/observer scopes.
+Successful file collection captures stderr: later import attribution is
+capture-limited/unknown, not zero. Without per-line timestamps or a pytest
+trace, historical first-header latency is unknown. The old status lacks source
+SHA, argv and runtime-input authentication; f634 remains an externally declared
+source. Actual analyst file digest is distinct. Historical parent console also
+contains observer imports and remains external capture, separate from child
+log/native timing.
+
+Firsthand [pytest issue #3918](https://github.com/pytest-dev/pytest/issues/3918),
+opened August 31, 2018, describes the reporter's profiling of an import-heavy
+workload and overhead in the then-current assertion-rewrite import hook.
+It supports measuring attribution, but does not diagnose current Gludd or
+justify disabling rewriting/plugins.
+[CPython importtime documentation](https://docs.python.org/3.12/using/cmdline.html#cmdoption-X)
+defines self/cumulative scopes and warns about threaded output.
+The [pinned pytest capture implementation](https://github.com/pytest-dev/pytest/blob/9.1.1/src/_pytest/capture.py#L801-L817)
+establishes the file-collection visibility limit.
+
+RED receipts retain 23 missing-owner failures (1.52 seconds), two missing-target
+failures (1.07 seconds), and two apply-boundary failures among seven cases
+(1.11 seconds). Intermediate whole-owner assertions all passed but coverage
+correctly failed: copied fixture owners were initially counted separately,
+then aggregate branch coverage was 84.3%/84.5%. Fixtures now invoke the actual
+owner through an explicit fixture import path; the complete existing native
+item-progress retention owner covers scoped/exempt preservation. Final receipts
+are distinct. No floor/assertion is relaxed. All 111 families, selectors/three
+children, warnings, 85/75, 21 phases/2850, ZDD and promotion gates are preserved.
+
+Final native coverage acceptance: 247 passed in 72.73 seconds, warning-fatal
+and serial, using `config/coverage_observed_command.ini` unchanged. The native
+audit meets 85% aggregate and 75% per file across all four production files.
+JUnit: `/tmp/gludd-v012-startup-codify-coverage-with-retention.xml`;
+coverage: `.gate-logs/v012-startup-codify-coverage-with-retention.json`;
+audit: `.gate-logs/coverage-20261018T155659Z.json`;
+observer: `coverage-files / 20261018T155544Z-48145-59edf63f`, passed in 74.9 seconds.
+
+## Bounded startup evidence reader repair (M15, 2026-10-18)
+
+Independent source review of immutable
+`94055feae952cf5899c425c21ffbac1ef9bb95d8` requested changes:
+the reader opened a path before verifying that it was regular, so a no-writer
+FIFO could block; retained/replay status validation also reopened paths through
+an unbounded text reader after capturing bounded bytes. These are refusal-path
+defects. The successful historical regular-file f634 report/archive/replay
+remain unchanged and are not relabeled as failures.
+
+The same owner now admits a bounded regular object before opening, then uses
+nonblocking/no-follow descriptors and descriptor-anchored directory traversal.
+It checks the opened object's type, size, device/inode and content metadata
+against admission before reading; reads at most 16 MiB plus the detection byte;
+checks unchanged contents/path afterward; and closes all acquired descriptors
+on every exit. The sole alias exception remains macOS's fixed
+`/tmp -> /private/tmp`. Unknown aliases and platforms without safe descriptor
+operations refuse rather than use a path-based fallback. No namespace expands.
+
+Native observed-status identity checks now have a shared pure validator.
+Startup report/archive and replay validate JSON from their captured bytes,
+without a second path load. Ordinary `_load_status` path/current/exact-run
+semantics remain intact. Replay additionally requires the status role's exact
+`status/<label>/<run>.json` manifest mapping. Exclusive reports, fresh archive
+destinations, hash/freshness checks, manifest-last completion, retained partial
+failures, honest declared source and all prior assertions remain unchanged.
+
+Finite real controls exercise no-writer FIFOs at retained status/log/trace,
+external console, archive manifest and copied status/log/report, including
+archive refusal without output. Their only outer deadline is a two-second
+fixture-reader bound; each fixture owns and finally drains its child.
+Additional controls replace status after snapshot with FIFO/oversized data,
+swap final/ancestor links and regular objects at open, inject FIFO exactly at
+descriptor open, verify descriptor closure on success/failure, enforce canonical
+archive status mapping, preserve the exact 16 MiB limit and fixed alias, and
+refuse unsupported descriptor operations. No test is skipped or weakened.
+
+RED: 21 failures plus 53 existing passes in 25.23 seconds,
+`/tmp/gludd-v012-startup-bounded-reader-red.xml`.
+First GREEN: all 74 cases in 2.89 seconds.
+Final native eight-owner coverage: 274 passed in 72.45 seconds; aggregate
+line 92.1% / branch 86.0%, every file above 75%; stream owner 90.6% / 84.6%.
+JUnit: `/tmp/gludd-v012-startup-bounded-reader-coverage.xml`;
+coverage: `.gate-logs/v012-startup-bounded-reader-coverage.json`;
+audit: `.gate-logs/coverage-20261018T161310Z.json`;
+observer `coverage-files / 20261018T161155Z-57989-a43b8f10`,
+passed in 74.4 seconds. The original coverage config and 85/75 floors remain.
+
+Firsthand historical evidence:
+[CPython issue #47252 / BPO 3002](https://github.com/python/cpython/issues/47252)
+records a May 2008 report of copying hanging while opening a named pipe.
+On June 6, the reporter explained that ordinary open already blocks before a
+later file-type check, and that a stat-before-open check alone races with
+replacement; the suggested primitive was nonblocking descriptor open followed
+by descriptor type inspection. This supports the primitive and race boundary
+reproduced here. It is not a claim that present `shutil.copyfile` is defective
+or that a FIFO occurred in the historical Gludd run.
+[CPython os.open documentation](https://docs.python.org/3.12/library/os.html#os.open)
+describes descriptor flags and relative directory descriptors.
+
+This is source repair/focused acceptance only. All 111 admission families,
+selectors/plugins, three 2/1/1 children, 90/60 limits, 21 phases/2850 bounds,
+fatal warnings, ZDD, cleanup and release authority remain unchanged.
+No acquisition/sync, historical diagnostic/reanalysis, admission, gate, hosted
+retry, integration decision or task closure is authorized by this evidence.
+
+
+## Opt-in native pytest profiling (M25, 2026-10-19)
+
+The frozen 7207e97 admission failure remains failed. The existing tail controls
+retain independent mutable-input checks, real Make children and complete
+assertions; their intervals do not identify a safe optimization. Profiling is
+a separate diagnostic prerequisite and does not repair or extend the original
+90-second admission boundary.
+
+`make test-files-cprofile` is a thin alias of the existing `test-files` owner.
+It inherits `TESTFILES`, `PYTEST_ARGS` and `UV_PROJECT_ENVIRONMENT` unchanged,
+including the genuine selected UV executable and recursive Make arguments.
+A file-defined, target-specific, non-exported internal mode supplies one
+request to the existing trace plugin. External CLI/environment mode injection
+is refused before expansion. The plugin consumes the request at the
+initial-conftest hook. Native controls prove absence during test-module
+collection, test-body nested Make/pytest and xdist-worker execution. Children
+created during earlier plugin import are outside that demonstrated boundary.
+Ordinary `test-files` retains its exact native
+`python -m pytest` command and does not import profiling modules.
+
+The existing plugin lazily uses public
+[cProfile.Profile](https://docs.python.org/3.12/library/profile.html#profile.Profile)
+during the controller's session-start/session-finish interval. Its idempotent
+unconfigure fallback disables the owned profiler and closes artifact descriptors
+when completion is interrupted; an already active profiler is never replaced.
+Pytest continues to own its actual success, assertion, fatal-warning, collection,
+usage, no-tests and interruption exit status. Publication failure makes a
+passing diagnostic fail and never turns an existing failure green. The
+[pinned cProfile CLI](https://github.com/python/cpython/blob/v3.12.15/Lib/cProfile.py#L122-L182)
+was rejected because its command path catches `SystemExit`; there is no new
+launcher, runner, dependency, cache or argument rewriting.
+
+Each invocation exclusively creates a private checkout-owned
+`.gate-logs/test-files-cprofile/profile-<pid>-<nonce>` leaf. Descriptor-relative
+no-follow checks refuse unsafe routes, foreign ownership and replacement.
+The native basetemp owns temporary staging and cleanup. Final `pytest.pstats`
+and `report.txt` are exclusive immutable outputs, bounded at 16 MiB and 1 MiB,
+with the existing run-isolated trace beside them. A partial publication is
+retained as incomplete; no current observation or proof JSON is fabricated.
+
+The report uses [pstats.Stats](https://docs.python.org/3.12/library/profile.html#the-stats-class)
+on the live public profile object, retaining full source paths and at most
+40 rows each sorted by cumulative and self time. Cumulative rows overlap and
+must not be added. No untrusted marshal input is parsed by this owner.
+The profile is process-local after session start: it does not observe cold
+startup or child CPU and is not timing, gate, hosted-margin or release evidence.
+
+The safe behavioral example keeps the existing fixture's assertions:
+
+```text
+make test-files-cprofile TESTFILES=tests/unit/test_makefile_targets_deep.py::test_test_files_namespaces_ansible_local_temp PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=.venv
+```
+
+The documented environment must already be provisioned; source acceptance uses
+the selected canonical runtime explicitly. Native controls exercise genuine
+pytest exits, full-path raw/report data, ordinary argv parity, nested Make,
+workers, hostile literal mode values, active-profiler refusal, immutable and
+oversized outputs, changed routes and finalizer/descriptor cleanup.
+
+The firsthand [2018 pytest profiling report](https://github.com/pytest-dev/pytest/issues/3918)
+and [2020 package-collection discussion](https://github.com/pytest-dev/pytest/issues/7777)
+remain relevant examples of measuring collection and preserving package fixtures.
+They do not reproduce Gludd's current hot path or establish any speed saving.
+The earlier [worker fixture report](https://github.com/pytest-dev/pytest-xdist/issues/271)
+also explains why this diagnostic distinguishes controller and worker sessions.
+All 113 admission families, selectors/plugins, three 2/1/1 children, 90/60,
+21 phases/2850, fatal warnings, 85/75 coverage, ZDD, cleanup and promotion
+authority remain unchanged. Task S98.4 and required final proofs remain open.
+
+
+### Profile trace route repair (2026-10-19)
+
+Independent source review of immutable f277be0 requested changes: raw/report
+publication was anchored, but the older event writer could follow a replaced
+profile leaf or trace member before finalization refused. Retain that source,
+its negative review and every native profile/acceptance artifact unchanged.
+Real fixture-owned outside sentinels reproduce the initial RUN_START and
+subsequent event writes; inherited worker paths reproduce the same gap.
+The no-writer FIFO control owns, bounds and finally drains its native child.
+
+The existing plugin now binds profile trace ownership per pytest Config and
+process, reusing the pinned leaf and the existing directory admission.
+Controller and inherited trace-only worker events append through no-follow,
+nonblocking descriptors after owned, regular, single-link file checks.
+Fresh descriptor/path identity checks reject replaced parents, leaves or trace
+objects; the profile trace cannot be reset through the legacy truncate path.
+File descriptors close on success and refusal; trace-only workers receive no
+profiler or raw/report publication authority. Their existing lifecycle and
+failure events remain present. Ordinary trace paths outside the reserved
+profile namespace keep their original append/truncate behavior and errors.
+
+The same public session/finalizer lifecycle, native pytest exits, raw/report
+bounds and full source paths remain. Earlier plugin import and cold startup
+are explicitly unobserved; no broad bootstrap change is introduced. The
+existing [descriptor-relative open documentation](https://docs.python.org/3.12/library/os.html#os.open)
+supplies the native primitives. The firsthand pytest profile/worker reports
+above remain context, not a reproduction of this Gludd refusal defect.
+All113 families, original selectors/plugins/workers/deadlines,85/75,ZDD and
+release authority remain unchanged. Focused acceptance and Root's actual
+profile are diagnostic/source evidence only; no task or release proof closes.

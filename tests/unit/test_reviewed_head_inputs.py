@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -1108,6 +1109,43 @@ def test_focused_signature_expiry_refuses_replay(tmp_path: Path) -> None:
                                 verification_epoch=int(time.time()) + 10**9)
 
 
+
+@pytest.mark.parametrize("uv_kind", ["bare", "absolute", "literal"])
+def test_native_focus_make_transports_exact_uv_executable(tmp_path: Path, uv_kind: str) -> None:
+    """A dry-run must retain the caller's complete executable as one token."""
+    uv_executable = {
+        "bare": "uv",
+        "absolute": str(tmp_path / "bin" / "uv"),
+        "literal": str(tmp_path / "selected uv's; literal launcher"),
+    }[uv_kind]
+    cases = [
+        (
+            "reviewed-head-inputs",
+            ["REVIEWED_HEAD_INPUTS_ACTION=focus", "REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=0"],
+            "scripts/reviewed_head_inputs.py",
+            [uv_executable, "run", "python", "scripts/reviewed_head_inputs.py",
+             "--watchdog-owned-reviewed-head-focus"],
+        ),
+        (
+            "test-files",
+            ["TESTFILES=tests/unit/test_native.py", "PYTEST_ARGS=-W error",
+             "NPROC=1", "GLUDD_XDIST_WORKERS=1"],
+            " -m pytest ",
+            [uv_executable, "run", "python", "-m", "pytest"],
+        ),
+    ]
+    for target, arguments, needle, expected in cases:
+        result = subprocess.run(
+            ["make", "--no-print-directory", "-n", target, *arguments,
+             "UV=" + shlex.quote(uv_executable)],
+            cwd=ROOT, check=True, capture_output=True, text=True, timeout=10,
+        )
+        recipe = next(line for line in result.stdout.splitlines() if needle in line)
+        command = shlex.split(recipe)
+        offset = command.index(uv_executable)
+        assert command[offset:offset + len(expected)] == expected
+
+
 def test_native_focus_commands_preserve_watchdog_ownership(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1119,17 +1157,25 @@ def test_native_focus_commands_preserve_watchdog_ownership(
         "watchdog-owned-reviewed-head-focus/pytest-cache"
     )
 
-    def producer_command(action: str, validate_only: str) -> list[str]:
+    def producer_command(action: str, validate_only: str, *, uv_argument: str | None = None) -> list[str]:
         result = subprocess.run(
             ["make", "--no-print-directory", "-n", "reviewed-head-inputs",
              "REVIEWED_HEAD_INPUTS_ACTION=" + action,
-             "REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=" + validate_only],
+             "REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=" + validate_only,
+             *([uv_argument] if uv_argument is not None else [])],
             cwd=ROOT, check=True, capture_output=True, text=True, timeout=10,
         )
         line = next(line for line in result.stdout.splitlines() if "scripts/reviewed_head_inputs.py" in line)
         return shlex.split(line)
 
-    producer = producer_command("focus", "0")
+    # Ask Make itself so command-line overrides retain their native precedence.
+    selected = producer_command("focus", "0")
+    assert selected[1:] == ["run", "python", "scripts/reviewed_head_inputs.py", marker]
+    located_uv = shutil.which(selected[0])
+    assert located_uv is not None
+    uv_executable = str(Path(located_uv).absolute())
+    uv_argument = "UV=" + shlex.quote(uv_executable)
+    producer = producer_command("focus", "0", uv_argument=uv_argument)
     assert producer[-1] == marker
     tripwire = tmp_path / "make-expansion-tripwire"
     literal_function = "$(shell touch " + shlex.quote(str(tripwire)) + ")"
@@ -1140,7 +1186,7 @@ def test_native_focus_commands_preserve_watchdog_ownership(
         ("focus" + literal_function, "0"), ("focus", "0" + literal_function),
         (literal_function, "0"), ("focus", literal_function),
     ):
-        assert marker not in producer_command(action, validate_only)
+        assert marker not in producer_command(action, validate_only, uv_argument=uv_argument)
     assert not tripwire.exists()
 
     root, spec = _fixture(tmp_path)
@@ -1155,13 +1201,13 @@ def test_native_focus_commands_preserve_watchdog_ownership(
         "-p", "scripts.xdist_trace_plugin", "-p", "scripts.reviewed_head_inputs", cache_option,
     ]
     child = subprocess.run(
-        [*command[:2], "-n", *command[2:]], cwd=ROOT, check=True,
+        [*command[:2], "-n", *command[2:], uv_argument], cwd=ROOT, check=True,
         capture_output=True, text=True, timeout=10,
     )
     recipe = next(line for line in child.stdout.splitlines() if " -m pytest " in line)
     recipe_argv = shlex.split(recipe)
-    uv_child = recipe_argv[recipe_argv.index("uv"):]
-    assert uv_child[:5] == ["uv", "run", "python", "-m", "pytest"]
+    uv_child = recipe_argv[recipe_argv.index(uv_executable):]
+    assert uv_child[:5] == [uv_executable, "run", "python", "-m", "pytest"]
     assert cache_option in uv_child
     commands = [
         shlex.join(["make", "reviewed-head-inputs", "REVIEWED_HEAD_INPUTS_ACTION=focus",
@@ -1272,3 +1318,59 @@ def test_focus_cache_symlink_refuses_foreign_owner_before_child(
     assert list(foreign.iterdir()) == []
     assert not (bundle / "focused.json").exists()
     assert not (bundle / "focused-auth.json").exists()
+
+
+@pytest.mark.parametrize("mode", ["cherry_pick", "merge_two_parent"])
+def test_prepare_uses_one_fresh_native_commit_metadata_query(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str,
+) -> None:
+    root, spec = _fixture(tmp_path, mode=mode)
+    expected = inputs.prepare_inputs(spec, repo_root=root)
+    after = _git(root, "rev-parse", "HEAD")
+    source = _git(root, "rev-parse", "refs/heads/reviewed/one")
+    expected_parents = _git(root, "rev-list", "--parents", "-n", "1", after).split()[1:]
+    expected_tree = _git(root, "rev-parse", f"{source}^{{tree}}")
+    original = receipt_owner._git
+    original_clean = inputs._clean_identity
+    commands: list[tuple[str, ...]] = []
+    clean_calls: list[Path] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        result = original(repository, *arguments, input_bytes=input_bytes)
+        commands.append(arguments)
+        return result
+
+    def cleaned(repository: Path) -> tuple[str, str]:
+        result = original_clean(repository)
+        clean_calls.append(repository)
+        return result
+
+    monkeypatch.setattr(receipt_owner, "_git", recorded)
+    monkeypatch.setattr(inputs, "_clean_identity", cleaned)
+    for _boundary in range(2):
+        start = len(commands)
+        before_clean = len(clean_calls)
+        prepared = inputs.prepare_inputs(spec, repo_root=root)
+        assert prepared == expected
+        current = commands[start:]
+        metadata = [
+            arguments for arguments in current
+            if (
+                arguments[:4] == ("rev-list", "--parents", "-n", "1")
+                and arguments[-1] in {after, source}
+            ) or arguments == ("rev-parse", f"{source}^{{tree}}")
+            or arguments[:2] == ("show", "--no-patch")
+        ]
+        assert len(metadata) == 1, metadata
+        assert metadata[0][-3:] == (after, source, "--")
+        assert "--no-show-signature" in metadata[0]
+        assert len(clean_calls) - before_clean == 2
+        assert current.count(("status", "--porcelain", "--untracked-files=all")) == 2
+        assert current.count(("rev-parse", "HEAD")) == 2
+        heads = prepared["heads"]
+        reviews = prepared["reviews"]
+        assert isinstance(heads, list) and len(heads) == 1
+        assert isinstance(reviews, list) and len(reviews) == 1
+        assert heads[0]["parent_shas"] == expected_parents
+        assert reviews[0]["native"]["source_tree"] == expected_tree
+    assert len(clean_calls) == 4

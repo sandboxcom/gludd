@@ -30,11 +30,15 @@ test-specific-pyver:
 		BT="$$WORK/pytest"; \
 		$(UV) run --no-sync --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE) -n 1 --dist loadgroup --max-worker-restart=0 -v -W error $(PYTEST_ARGS) --basetemp="$$BT"
 
+test-files-cprofile: _TEST_FILES_CPROFILE := 1
+test-files-cprofile: test-files
+  # Inherit TESTFILES, PYTEST_ARGS and UV_PROJECT_ENVIRONMENT unchanged from test-files.
+
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; mkdir -p "$$BT/ansible-local"; \
 		if [ -n "$$UV_PROJECT_ENVIRONMENT" ]; then export VIRTUAL_ENV="$$UV_PROJECT_ENVIRONMENT"; fi; \
-		ANSIBLE_LOCAL_TEMP="$$BT/ansible-local" $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
+		$(if $(filter 1,$(_TEST_FILES_CPROFILE)),_TEST_FILES_CPROFILE=1 )ANSIBLE_LOCAL_TEMP="$$BT/ansible-local" $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"$(if $(filter 1,$(_TEST_FILES_CPROFILE)), -p scripts.xdist_trace_plugin); RC=$$?; rm -rf "$$BT"; exit $$RC
 
 coverage-files:
 	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20"; exit 2; fi
@@ -574,10 +578,17 @@ audit-agent-dead-code:
 audit-agent-script-discipline:
 	@$(UV) run python3 scripts/audit_agent_behavior.py --filter AB057
 
-# AB060 — audit-agent-context-size: check AGENTS.md + CLAUDE.md
-# combined size against thresholds.
+# AB060 — default AGENTS.md + docs/CLAUDE.md; explicit file sets are
+# literal JSON arrays, never shell/Make fragments. Empty retains the default.
+AGENT_CONTEXT_FILES ?=
+AGENT_CONTEXT_JSON ?= 0
+override GLUDD_AGENT_CONTEXT_FILES := $(value AGENT_CONTEXT_FILES)
+override GLUDD_AGENT_CONTEXT_JSON := $(value AGENT_CONTEXT_JSON)
+export GLUDD_AGENT_CONTEXT_FILES GLUDD_AGENT_CONTEXT_JSON
+unexport AGENT_CONTEXT_FILES AGENT_CONTEXT_JSON
 audit-agent-context-size:
-	@$(UV) run python3 scripts/audit_agent_behavior.py --filter AB060
+	@# AGENT_CONTEXT_FILES / AGENT_CONTEXT_JSON use the literal exported carriers above.
+	@$(UV) run python3 scripts/audit_agent_behavior.py --filter AB060 --context-from-env
 
 # ── AB061-AB080: Observability & Operations Integrity ──────────────────
 # audit-observability runs ALL AB061-AB080 checks; individual filters
@@ -787,6 +798,7 @@ _pytest-runtime-compatibility-admission:
 # tests/security/test_ci_workflow.py::TestGateMatrixStructure::test_test_shard_matrix_dimensions
 # tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::test_internal_targets_not_in_help
 # tests/unit/test_clean_stale_resource_namespaces.py::test_recorded_installed_module_is_not_a_runtime_lease_marker
+# tests/unit/test_clean_stale_resource_namespaces.py::test_ordinary_descendant_symlink_unlinks_without_following_target
 # tests/unit/test_native_temp_artifact_target.py::test_native_temp_artifact_inspection_preserves_literal_path_data
 # tests/unit/test_self_improve_private_policy_ci_contract.py::test_private_policy_e2e_has_one_local_and_hosted_release_contract
 # tests/unit/test_ci_shards_log_context_bounds.py::test_cumulative_bound_preserves_source_order_and_declares_omitted_context
@@ -832,10 +844,11 @@ _pytest-runtime-compatibility-admission:
 # tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_invocation
 # tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic
 # tests/unit/test_pytest_param_fixture_collisions.py::test_source_audit_restores_exact_gc_state_after_native_work
+# tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]
 # Every selector below is an explicit initial file/node; ignore only never-selected
 # sibling collectors. Generic/full-suite selection and the fresh help child stay intact.
 	@$(MAKE) --no-print-directory test-files \
-		TESTFILES="tests/unit/test_env_var_audit_deep.py::TestGLUDDNamingConvention::test_no_trailing_underscore tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_live_vars tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_consistent tests/unit/test_backlog_audit_target.py::test_backlog_target_is_public_registered_and_documented tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_failures_in_one_invocation tests/unit/test_collection_hook_environment.py::test_real_pre_push_collection_isolates_only_native_git_local_environment tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence tests/unit/test_owned_checkpoint_shared_worktree_admission.py::test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact tests/unit/test_precommit_quality_guards.py::test_real_project_make_refuses_engine_expression_before_parse_or_export_execution tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py tests/unit/test_bulkhead_admission.py tests/unit/test_enhancement_ratio_plugin.py tests/unit/test_pytest_param_fixture_collisions.py tests/unit/test_ansible_runtime_artifacts.py tests/unit/test_ansible_ee_full_warm_acceptance.py tests/unit/test_ansible_ee_searx_acceptance.py tests/unit/test_beta4_python_runtime_boundary.py tests/unit/test_ansible_searxng_source_inspection.py tests/unit/test_integration_admission_target.py tests/unit/test_ci_failure_ledger.py tests/unit/test_ci_failure_ledger_concurrency.py tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py tests/unit/test_ci_verdict_all_required.py tests/unit/test_ci_verdict_structural_repair.py tests/unit/test_secrets_baseline_compaction.py tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_status_heartbeat_terminal.py tests/unit/test_task_ledger_validation.py tests/unit/test_make_readonly_version.py tests/unit/test_make_help_audit.py tests/unit/test_clean_stale_resource_namespaces.py tests/unit/test_native_temp_artifact_target.py tests/unit/test_ci_run_summary_script.py tests/unit/test_ci_run_summary_target.py tests/unit/test_ci_workflow_integrity.py tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_single_plugin tests/unit/test_plugin_session_start_deadlock.py::TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start tests/unit/test_process_overhead.py::TestProcessTokenOverhead::test_anti_stop_plugins_are_lean tests/unit/test_enforcement_executable_modes.py::test_enforcement_runtime_surfaces_have_executable_git_mode tests/unit/test_subagent_output_clean.py::TestSubagentOutputClean::test_all_tool_execute_before_hooks_have_subagent_guard tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_green_together tests/unit/test_secrets_scan_resources.py tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_pinned tests/unit/test_gate_status_attestation.py::test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests tests/unit/test_ci_stylelint_workflow.py tests/security/test_ci_workflow.py tests/unit/test_workflow_safe_parser.py tests/unit/test_self_improve_private_policy_ci_contract.py tests/unit/test_ci_shards_log_context.py tests/unit/test_ci_shards_log_context_bounds.py tests/unit/test_makefile_syntax.py tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_invocation tests/unit/test_makefile_targets_deep.py tests/unit/test_azure_containerapp_coverage_target.py tests/unit/test_ee_owned_collection_runtime_metadata.py tests/unit/test_no_sleep_subagent.py tests/unit/test_ansible_ee_locked_consumer.py tests/unit/test_native_builder_optional_formats.py tests/unit/test_native_format_profile_sync_target.py tests/unit/test_ansible_ee_locked_consumer_admission.py tests/unit/test_release_asset_matrix.py tests/unit/test_release_ee_collection_closure.py tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic tests/unit/test_mcp_tool_gen.py tests/unit/test_observed_command.py tests/unit/test_observer_retention_concurrency.py tests/unit/test_ci_collect_all_stress.py tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings" \
+		TESTFILES="tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432] tests/unit/test_env_var_audit_deep.py::TestGLUDDNamingConvention::test_no_trailing_underscore tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_live_vars tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_consistent tests/unit/test_backlog_audit_target.py::test_backlog_target_is_public_registered_and_documented tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_failures_in_one_invocation tests/unit/test_collection_hook_environment.py::test_real_pre_push_collection_isolates_only_native_git_local_environment tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence tests/unit/test_owned_checkpoint_shared_worktree_admission.py::test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact tests/unit/test_precommit_quality_guards.py::test_real_project_make_refuses_engine_expression_before_parse_or_export_execution tests/unit/test_session_start_crash_recovery.py tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py tests/unit/test_session_persistence_integration.py tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py tests/unit/test_bulkhead_admission.py tests/unit/test_enhancement_ratio_plugin.py tests/unit/test_pytest_param_fixture_collisions.py tests/unit/test_ansible_runtime_artifacts.py tests/unit/test_ansible_ee_full_warm_acceptance.py tests/unit/test_ansible_ee_searx_acceptance.py tests/unit/test_beta4_python_runtime_boundary.py tests/unit/test_ansible_searxng_source_inspection.py tests/unit/test_integration_admission_target.py tests/unit/test_ci_failure_ledger.py tests/unit/test_ci_failure_ledger_concurrency.py tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py tests/unit/test_ci_verdict_all_required.py tests/unit/test_ci_verdict_structural_repair.py tests/unit/test_secrets_baseline_compaction.py tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_status_heartbeat_terminal.py tests/unit/test_task_ledger_validation.py tests/unit/test_make_readonly_version.py tests/unit/test_make_help_audit.py tests/unit/test_clean_stale_resource_namespaces.py tests/unit/test_native_temp_artifact_target.py tests/unit/test_ci_run_summary_script.py tests/unit/test_ci_run_summary_target.py tests/unit/test_ci_workflow_integrity.py tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_single_plugin tests/unit/test_plugin_session_start_deadlock.py::TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start tests/unit/test_process_overhead.py::TestProcessTokenOverhead::test_anti_stop_plugins_are_lean tests/unit/test_enforcement_executable_modes.py::test_enforcement_runtime_surfaces_have_executable_git_mode tests/unit/test_subagent_output_clean.py::TestSubagentOutputClean::test_all_tool_execute_before_hooks_have_subagent_guard tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_green_together tests/unit/test_secrets_scan_resources.py tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_pinned tests/unit/test_gate_status_attestation.py::test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests tests/unit/test_ci_stylelint_workflow.py tests/security/test_ci_workflow.py tests/unit/test_workflow_safe_parser.py tests/unit/test_self_improve_private_policy_ci_contract.py tests/unit/test_ci_shards_log_context.py tests/unit/test_ci_shards_log_context_bounds.py tests/unit/test_makefile_syntax.py tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_invocation tests/unit/test_makefile_targets_deep.py tests/unit/test_azure_containerapp_coverage_target.py tests/unit/test_ee_owned_collection_runtime_metadata.py tests/unit/test_no_sleep_subagent.py tests/unit/test_ansible_ee_locked_consumer.py tests/unit/test_native_builder_optional_formats.py tests/unit/test_native_format_profile_sync_target.py tests/unit/test_ansible_ee_locked_consumer_admission.py tests/unit/test_release_asset_matrix.py tests/unit/test_release_ee_collection_closure.py tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic tests/unit/test_mcp_tool_gen.py tests/unit/test_observed_command.py tests/unit/test_observer_retention_concurrency.py tests/unit/test_ci_collect_all_stress.py tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings" \
 		NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 --ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"
 # A separate test-files invocation is already a fresh Python process. The single
 # help case needs no additional xdist worker; retain all plugin/fixture loading.
@@ -845,7 +858,7 @@ _pytest-runtime-compatibility-admission:
 # Keep the native reviewed-head controls separate from the established roster.
 # They still share this owner's unchanged 90-second/60-second outer budget.
 	@$(MAKE) --no-print-directory test-files \
-		TESTFILES="tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_ownership tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace" \
+		TESTFILES="tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_ownership tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement" \
 		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 0 --maxprocesses 1 --ignore-glob=$(CURDIR)/tests/*"
 
 _ansible-role-variable-prefix:
@@ -1548,6 +1561,72 @@ MANIFEST ?= /tmp/gludd-gated-merge-manifest.txt
 
 gated-merge: _gate-mutation-guard
 	@BASE='$(BASE)' BRANCHES='$(BRANCHES)' MERGE_STRATEGY='$(MERGE_STRATEGY)' MANIFEST='$(MANIFEST)' bash scripts/gated_merge.sh
+
+
+# Three thin startup facades over the existing runtime/observed-command owners.
+# Public values are literal data, including inherited Make-function text.
+RUNTIME_DIAGNOSTIC_VALIDATE_ONLY ?= 1
+RUNTIME_DIAGNOSTIC_SOURCE_SHA ?=
+RUNTIME_DIAGNOSTIC_ENVIRONMENT ?=
+RUNTIME_DIAGNOSTIC_PYTHON ?= 3.12.15
+RUNTIME_DIAGNOSTIC_SET ?= ci
+RUNTIME_DIAGNOSTIC_REPORT ?=
+RUNTIME_DIAGNOSTIC_ARCHIVE ?=
+RUNTIME_DIAGNOSTIC_CONSOLE ?= []
+override GLUDD_RUNTIME_DIAGNOSTIC_VALIDATE_ONLY := $(value RUNTIME_DIAGNOSTIC_VALIDATE_ONLY)
+export GLUDD_RUNTIME_DIAGNOSTIC_VALIDATE_ONLY := $(value RUNTIME_DIAGNOSTIC_VALIDATE_ONLY)
+override GLUDD_RUNTIME_DIAGNOSTIC_SOURCE_SHA := $(value RUNTIME_DIAGNOSTIC_SOURCE_SHA)
+export GLUDD_RUNTIME_DIAGNOSTIC_SOURCE_SHA := $(value RUNTIME_DIAGNOSTIC_SOURCE_SHA)
+override GLUDD_RUNTIME_DIAGNOSTIC_ENVIRONMENT := $(value RUNTIME_DIAGNOSTIC_ENVIRONMENT)
+export GLUDD_RUNTIME_DIAGNOSTIC_ENVIRONMENT := $(value RUNTIME_DIAGNOSTIC_ENVIRONMENT)
+override GLUDD_RUNTIME_DIAGNOSTIC_PYTHON := $(value RUNTIME_DIAGNOSTIC_PYTHON)
+export GLUDD_RUNTIME_DIAGNOSTIC_PYTHON := $(value RUNTIME_DIAGNOSTIC_PYTHON)
+override GLUDD_RUNTIME_DIAGNOSTIC_SET := $(value RUNTIME_DIAGNOSTIC_SET)
+export GLUDD_RUNTIME_DIAGNOSTIC_SET := $(value RUNTIME_DIAGNOSTIC_SET)
+override GLUDD_RUNTIME_DIAGNOSTIC_REPORT := $(value RUNTIME_DIAGNOSTIC_REPORT)
+export GLUDD_RUNTIME_DIAGNOSTIC_REPORT := $(value RUNTIME_DIAGNOSTIC_REPORT)
+override GLUDD_RUNTIME_DIAGNOSTIC_ARCHIVE := $(value RUNTIME_DIAGNOSTIC_ARCHIVE)
+export GLUDD_RUNTIME_DIAGNOSTIC_ARCHIVE := $(value RUNTIME_DIAGNOSTIC_ARCHIVE)
+override GLUDD_RUNTIME_DIAGNOSTIC_CONSOLE := $(value RUNTIME_DIAGNOSTIC_CONSOLE)
+export GLUDD_RUNTIME_DIAGNOSTIC_CONSOLE := $(value RUNTIME_DIAGNOSTIC_CONSOLE)
+unexport RUNTIME_DIAGNOSTIC_VALIDATE_ONLY RUNTIME_DIAGNOSTIC_SOURCE_SHA RUNTIME_DIAGNOSTIC_ENVIRONMENT RUNTIME_DIAGNOSTIC_PYTHON RUNTIME_DIAGNOSTIC_SET RUNTIME_DIAGNOSTIC_REPORT RUNTIME_DIAGNOSTIC_ARCHIVE RUNTIME_DIAGNOSTIC_CONSOLE
+ifneq ($(filter runtime-startup-diagnostic runtime-startup-report runtime-startup-archive,$(MAKECMDGOALS)),)
+override GLUDD_RUNTIME_DIAGNOSTIC_ROOT := $(value OBSERVED_ROOT)
+export GLUDD_RUNTIME_DIAGNOSTIC_ROOT := $(value OBSERVED_ROOT)
+override GLUDD_RUNTIME_DIAGNOSTIC_LABEL := $(value OBSERVED_LABEL)
+export GLUDD_RUNTIME_DIAGNOSTIC_LABEL := $(value OBSERVED_LABEL)
+override GLUDD_RUNTIME_DIAGNOSTIC_RUN_ID := $(value RUN_ID)
+export GLUDD_RUNTIME_DIAGNOSTIC_RUN_ID := $(value RUN_ID)
+override GLUDD_RUNTIME_DIAGNOSTIC_LOG := $(value LOG)
+export GLUDD_RUNTIME_DIAGNOSTIC_LOG := $(value LOG)
+override GLUDD_RUNTIME_DIAGNOSTIC_HEARTBEAT := $(value OBSERVED_HEARTBEAT_SECS)
+export GLUDD_RUNTIME_DIAGNOSTIC_HEARTBEAT := $(value OBSERVED_HEARTBEAT_SECS)
+override GLUDD_RUNTIME_DIAGNOSTIC_RETAIN := $(value OBSERVED_RETAIN_RUNS)
+export GLUDD_RUNTIME_DIAGNOSTIC_RETAIN := $(value OBSERVED_RETAIN_RUNS)
+override GLUDD_RUNTIME_DIAGNOSTIC_TASK := $(value WORK_ITEM_ID)
+export GLUDD_RUNTIME_DIAGNOSTIC_TASK := $(value WORK_ITEM_ID)
+unexport OBSERVED_ROOT OBSERVED_LABEL RUN_ID LOG OBSERVED_HEARTBEAT_SECS OBSERVED_RETAIN_RUNS WORK_ITEM_ID
+endif
+
+.PHONY: runtime-startup-diagnostic runtime-startup-report runtime-startup-archive
+runtime-startup-diagnostic:
+	@# Literal environment inputs: RUNTIME_DIAGNOSTIC_VALIDATE_ONLY, OBSERVED_ROOT, OBSERVED_LABEL
+	@# Literal environment inputs: RUN_ID, RUNTIME_DIAGNOSTIC_SOURCE_SHA, RUNTIME_DIAGNOSTIC_ENVIRONMENT
+	@# Literal environment inputs: RUNTIME_DIAGNOSTIC_PYTHON, RUNTIME_DIAGNOSTIC_SET, LOG
+	@# Literal environment inputs: OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS, WORK_ITEM_ID
+	@$(UV) run python -B -m scripts.stream_command --runtime-startup run
+
+runtime-startup-report:
+	@# Literal environment inputs: OBSERVED_ROOT, OBSERVED_LABEL, RUN_ID
+	@# Literal environment inputs: RUNTIME_DIAGNOSTIC_SOURCE_SHA, RUNTIME_DIAGNOSTIC_ARCHIVE, RUNTIME_DIAGNOSTIC_CONSOLE
+	@# Literal environment inputs: RUNTIME_DIAGNOSTIC_REPORT
+	@$(UV) run python -B -m scripts.stream_command --runtime-startup report
+
+runtime-startup-archive:
+	@# Literal environment inputs: RUNTIME_DIAGNOSTIC_VALIDATE_ONLY, OBSERVED_ROOT, OBSERVED_LABEL
+	@# Literal environment inputs: RUN_ID, RUNTIME_DIAGNOSTIC_SOURCE_SHA, RUNTIME_DIAGNOSTIC_ARCHIVE
+	@# Literal environment inputs: RUNTIME_DIAGNOSTIC_CONSOLE
+	@$(UV) run python -B -m scripts.stream_command --runtime-startup archive
 
 STALL_SECS ?= 180
 MAX_SECS ?= 3600

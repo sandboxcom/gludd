@@ -1,3 +1,11 @@
+# This one-shot mode is selected only by the owning file-defined alias.
+unexport _TEST_FILES_CPROFILE
+ifneq ($(filter command line environment override,$(origin _TEST_FILES_CPROFILE)),)
+$(error _TEST_FILES_CPROFILE is internal; use test-files-cprofile)
+endif
+override _TEST_FILES_CPROFILE := 0
+.PHONY: test-files-cprofile
+
 MSG ?=
 FILES ?=
 TESTFILE ?=
@@ -437,6 +445,9 @@ help:
 		"  --- Setup ---" \
 		"  init                  Set up project (dirs + deps)" \
 		"  sync                  Atomically sync an explicit locked dependency profile set (DEPENDENCY_PROFILE_*)" \
+		"  relock                Check/regenerate native locks; optional DEPENDENCY_PROFILE_RELOCK_PROFILE" \
+		"  acquire-pinned-uv      Acquire hosted uv in a private native leaf (PINNED_UV_VALIDATE_ONLY=1 plans)" \
+		"  inspect-dependency-runtime Read-only registered runtime/profile metadata (DEPENDENCY_RUNTIME_*, plan by default)" \
 		"  sync-ansible-native-format Native locked/inexact dev tooling sync (ANSIBLE_FORMAT_SYNC_*, dry-plan by default)" \
 		"  uv-cache-path         Print the sandbox-writable Gludd uv cache path" \
 		"  migrate-up            Upgrade an explicit database URL to a revision (MIGRATE_DATABASE_URL, MIGRATE_REVISION)" \
@@ -522,6 +533,9 @@ help:
 		"  observed-status       Print current/exact retained command status (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)" \
 		"  observed-tail         Print bounded current/exact retained log tail (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)" \
 		"  run-watched           Observe one bounded command with quoted child arguments (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)" \
+		"  runtime-startup-diagnostic Plan a fixed serial collection diagnostic (RUNTIME_DIAGNOSTIC_*, OBSERVED_*, RUN_ID, LOG, WORK_ITEM_ID)" \
+		"  runtime-startup-report Read one exact retained/archive startup run; never launches work (RUNTIME_DIAGNOSTIC_*, OBSERVED_ROOT, OBSERVED_LABEL, RUN_ID)" \
+		"  runtime-startup-archive Plan an exclusive external raw startup archive (RUNTIME_DIAGNOSTIC_*, OBSERVED_ROOT, OBSERVED_LABEL, RUN_ID)" \
 		"  gate-async            Launch gate detached (non-blocking); writes .gate-status" \
 		"  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)" \
 		"  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)" \
@@ -602,8 +616,10 @@ help:
 		"  test-specific         Single test (TESTFILE=path::TestClass::test_name)" \
 		"  test-specific-pyver   Single test under explicit Python (TESTFILE, PYTHON_VERSION)" \
 		"  test-files            Multiple tests (TESTFILES, PYTEST_ARGS, UV_PROJECT_ENVIRONMENT); explicit environments route nested UV consistently" \
+		"  test-files-cprofile   Opt-in process-local pytest profile (TESTFILES, PYTEST_ARGS, UV_PROJECT_ENVIRONMENT); immutable namespaced diagnostics" \
 		"  grep                  Repository text search (Q=regex SEARCH_PATH=path)" \
 		"  ci-shards-diagnostic Serial collect-all diagnostics (CI_SHARDS_DIAGNOSTIC_SHARDS, CI_SHARDS_DIAGNOSTIC_VALIDATE_ONLY=0|1; default 1)" \
+		"  audit-agent-context-size Measure explicit JSON file set or default AGENTS/docs CLAUDE (AGENT_CONTEXT_FILES, AGENT_CONTEXT_JSON=0|1)" \
 		"  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)" \
 		"  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)" \
 		"  test-count            Count collected tests" \
@@ -1031,6 +1047,38 @@ init: setup-dirs
 	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@$(MAKE) --no-print-directory install-hooks
 
+.PHONY: acquire-pinned-uv
+PINNED_UV_VALIDATE_ONLY ?= 1
+override GLUDD_PINNED_UV_VALIDATE_ONLY := $(value PINNED_UV_VALIDATE_ONLY)
+# Explicit assignment keeps the existing environment-source audit authoritative.
+export GLUDD_PINNED_UV_VALIDATE_ONLY := $(value PINNED_UV_VALIDATE_ONLY)
+unexport PINNED_UV_VALIDATE_ONLY
+
+acquire-pinned-uv:
+	@case "$$GLUDD_PINNED_UV_VALIDATE_ONLY" in 0|1) ;; *) echo 'PINNED_UV_VALIDATE_ONLY must be 0 or 1'; exit 2;; esac; \
+	$(UV) run python -B -m scripts.dependency_profiles acquire-uv --root "$(CURDIR)" \
+		$$(if [ "$$GLUDD_PINNED_UV_VALIDATE_ONLY" = 1 ]; then printf '%s' --validate-only; fi)
+
+DEPENDENCY_RUNTIME_ENVIRONMENT ?=
+DEPENDENCY_RUNTIME_PYTHON ?= 3.12.15
+DEPENDENCY_RUNTIME_SET ?= ci
+DEPENDENCY_RUNTIME_VALIDATE_ONLY ?= 1
+export GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT := $(value DEPENDENCY_RUNTIME_ENVIRONMENT)
+export GLUDD_DEPENDENCY_RUNTIME_PYTHON := $(value DEPENDENCY_RUNTIME_PYTHON)
+export GLUDD_DEPENDENCY_RUNTIME_SET := $(value DEPENDENCY_RUNTIME_SET)
+export GLUDD_DEPENDENCY_RUNTIME_VALIDATE_ONLY := $(value DEPENDENCY_RUNTIME_VALIDATE_ONLY)
+unexport DEPENDENCY_RUNTIME_ENVIRONMENT DEPENDENCY_RUNTIME_PYTHON DEPENDENCY_RUNTIME_SET DEPENDENCY_RUNTIME_VALIDATE_ONLY
+
+inspect-dependency-runtime:
+	@case "$$GLUDD_DEPENDENCY_RUNTIME_VALIDATE_ONLY" in 0|1) ;; *) echo 'DEPENDENCY_RUNTIME_VALIDATE_ONLY must be 0 or 1'; exit 2;; esac; \
+	case "$$GLUDD_DEPENDENCY_RUNTIME_PYTHON" in 3.11.[0-9]*|3.12.[0-9]*|3.13.[0-9]*|3.14.[0-9]*) ;; *) echo 'exact supported Python patch is required'; exit 2;; esac; \
+	case "$$GLUDD_DEPENDENCY_RUNTIME_SET" in ci|development) ;; *) echo 'DEPENDENCY_RUNTIME_SET must be ci or development'; exit 2;; esac; \
+	case "$$GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT" in ''|/*) ;; *) echo 'registered absolute runtime environment is required'; exit 2;; esac; \
+	$(UV) run python -B scripts/dependency_profiles.py inspect --root "$(CURDIR)" \
+		--set "$$GLUDD_DEPENDENCY_RUNTIME_SET" --python "$$GLUDD_DEPENDENCY_RUNTIME_PYTHON" \
+		$${GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT:+--environment "$$GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT"} \
+		$$(if [ "$$GLUDD_DEPENDENCY_RUNTIME_VALIDATE_ONLY" = 1 ]; then printf '%s' --validate-only; fi)
+
 DEPENDENCY_PROFILE_SET ?= development
 DEPENDENCY_PROFILE_ENVIRONMENT ?= .venv
 DEPENDENCY_PROFILE_PYTHON ?=
@@ -1264,9 +1312,17 @@ sync-models:
 # Regenerate the root and every independent profile lock. The profile manager
 # validates the hard line ceiling after uv has generated each artifact.
 DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY ?= 0
+DEPENDENCY_PROFILE_RELOCK_PROFILE ?=
+override GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE := $(value DEPENDENCY_PROFILE_RELOCK_PROFILE)
+export GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE := $(value DEPENDENCY_PROFILE_RELOCK_PROFILE)
+unexport DEPENDENCY_PROFILE_RELOCK_PROFILE
 relock:
 	@case "$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)" in 0|1) ;; *) echo "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py $(if $(filter 1,$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)),check,lock) --root "$(CURDIR)" --manifest config/dependency_profiles.toml --uv "$(UV)"
+	@set -eu; set --; \
+	if [ -n "$$GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE" ]; then \
+		set -- --profile "$$GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE"; \
+	fi; \
+	UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py $(if $(filter 1,$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)),check,lock) --root "$(CURDIR)" --manifest config/dependency_profiles.toml --uv "$(UV)" "$$@"
 
 node-deps-sync:
 	@if [ "$(NODE_DEPS_VALIDATE_ONLY)" = "1" ]; then \

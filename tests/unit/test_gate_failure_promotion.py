@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import re
 import subprocess
 import sys
 from copy import deepcopy
@@ -240,7 +241,7 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 8 and selectors.count(node) == 1
+    assert len(selectors) == 9 and selectors.count(node) == 1
     assert node not in recipes[1] and node not in recipes[2]
     phase = next(item for item in manifest["runtime_contract"]["phases"]
                  if item["target"] == family["owner_target"])
@@ -1699,6 +1700,9 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "watchdog-native-start-acknowledgement",
         "watchdog-native-start-serialized-acknowledgement",
         "watchdog-unit-log-namespace",
+        "selected-profile-jsonpointer-composition",
+        "ordinary-descendant-symlink-unlink",
+        "native-setuid-input-realization",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1770,6 +1774,10 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         (
             "watchdog-unit-log-namespace",
             "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
+        ),
+        (
+            "selected-profile-jsonpointer-composition",
+            "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
         ),
     ):
         assert families[family_id] == {
@@ -1867,7 +1875,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert 'PYTEST_ARGS="-W error -q -n 0"' in cloud_iam_owner
     assert "$(MAKE) --no-print-directory test-files" in runtime_compatibility_owner
     assert (
-        'TESTFILES="tests/unit/test_env_var_audit_deep.py::'
+        'TESTFILES="tests/unit/test_ci_batch_receipts.py::'
+        'test_receipt_validation_refuses_unsafe_artifact_mode[2432] '
+        'tests/unit/test_env_var_audit_deep.py::'
         'TestGLUDDNamingConvention::test_no_trailing_underscore '
         'tests/unit/test_env_var_audit_deep.py::'
         'TestGLUDDDocumentation::test_config_reference_documents_live_vars '
@@ -2033,3 +2043,73 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
         "https://github.com/seddonym/import-linter/issues/93",
     ):
         assert phrase in content
+
+
+def test_profile_composition_failure_has_one_exact_native_admission_family() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    expected = {
+        "id": "selected-profile-jsonpointer-composition",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": (
+            "tests/unit/test_dependency_profiles.py::"
+            "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
+        ),
+        "full_gate_phase": "test",
+    }
+    assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
+    assert payload["families"][110] == expected
+    assert len(payload["families"]) == 113
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
+    assert owner.count(expected["node"]) == 1
+
+
+def test_ordinary_descendant_links_have_one_exact_native_admission_family() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    expected = {
+        "id": "ordinary-descendant-symlink-unlink",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": (
+            "tests/unit/test_clean_stale_resource_namespaces.py::"
+            "test_ordinary_descendant_symlink_unlinks_without_following_target"
+        ),
+        "full_gate_phase": "test",
+    }
+    assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
+    assert payload["families"][111] == expected
+    assert len(payload["families"]) == 113
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
+    first_files = owner.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    assert first_files.count("tests/unit/test_clean_stale_resource_namespaces.py") == 1
+    assert owner.count(expected["node"]) == 1, "the family documents its exact whole-owner node"
+    arguments = re.findall(r'TESTFILES="([^"]*)"', owner)
+    assert len(arguments) == 3
+    assert all(expected["node"] not in value.split() for value in arguments), (
+        "whole-owner admission must not duplicate the exact node"
+    )
+
+
+def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None:
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    expected = {
+        "id": "native-setuid-input-realization",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": (
+            "tests/unit/test_ci_batch_receipts.py::"
+            "test_receipt_validation_refuses_unsafe_artifact_mode[2432]"
+        ),
+        "full_gate_phase": "test",
+    }
+    assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
+    assert len(payload["families"]) == 113 and payload["families"][112] == expected
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
+    arguments = re.findall(r'TESTFILES="([^"]*)"', owner)
+    assert len(arguments) == 3 and arguments[0].split()[0] == expected["node"]
+    file = expected["node"].split("::", 1)[0]
+    assert [
+        selector for argument in arguments for selector in argument.split()
+        if selector.split("::", 1)[0] == file
+    ] == [expected["node"]]
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True

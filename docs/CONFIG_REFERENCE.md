@@ -423,6 +423,59 @@ worktree protection. A user report opened 2026-05-10 describes
 after abnormal exit. That long-lived failure mode is why Gludd records logical
 lifecycle ownership explicitly instead of guessing it from a process ID.
 
+
+### 1.1c Dependency-runtime inspection Make carriers
+
+These internal values are derived literally from the corresponding documented
+`DEPENDENCY_RUNTIME_*` Make inputs. They are CLI transport for the read-only
+inspection owner, not independent application configuration or installation
+authority. The raw Make variables are unexported to prevent recursive expansion.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `GLUDD_DEPENDENCY_RUNTIME_ENVIRONMENT` | empty | Exact existing registered toolchain slot; empty selects this checkout's derived slot. |
+| `GLUDD_DEPENDENCY_RUNTIME_PYTHON` | `3.12.15` | Exact requested CPython patch identity. |
+| `GLUDD_DEPENDENCY_RUNTIME_SET` | `ci` | Selected `ci` or `development` profile inputs. |
+| `GLUDD_DEPENDENCY_RUNTIME_VALIDATE_ONLY` | `1` | Plan by default; `0` permits bounded metadata inspection, never installation. |
+
+#### Native pinned uv acquisition carrier
+
+`make acquire-pinned-uv PINNED_UV_VALIDATE_ONLY=1` is the documented safe
+plan. `PINNED_UV_VALIDATE_ONLY` defaults to `1`; explicit `0` permits only
+the fixed native tool acquisition after source/capacity admission. Package,
+version source, index, bootstrap and output namespace are fixed by the owner.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `GLUDD_PINNED_UV_VALIDATE_ONLY` | `1` | Internal literal carrier derived with override from `PINNED_UV_VALIDATE_ONLY`; not independent installation authority. |
+
+The raw Make variable is unexported. Plan starts no child and creates no
+paths/leases or downloads. Apply uses the existing registered3.11 interpreter,
+private version tool/bin/cache roots, official PyPI/no-build/no-Python-download
+policy and native bounded lifecycle. It never upgrades canonical/global uv
+or changes the project environment. Published wheel and installed executable
+digests are separate; this tool operation is not project hash-lock proof.
+
+#### Scoped dependency profile relock carrier
+
+`DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY` keeps its existing default `0`:
+`1` checks and `0` regenerates native locks. The new
+`DEPENDENCY_PROFILE_RELOCK_PROFILE` defaults to empty, preserving root plus
+all25 profiles. An exact registered profile scopes only lock/check command
+generation; an unknown profile or simultaneous CLI profile/set refuses.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE` | `""` | Internal literal carrier derived with override from `DEPENDENCY_PROFILE_RELOCK_PROFILE`; empty selects the existing all-project cohort. |
+
+The raw Make selector is unexported and passed as one quoted native CLI
+argument, including supported recursive repository Make calls. It is not
+an executable, path or package runner. The documented safe behavior is:
+
+```text
+make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1 DEPENDENCY_PROFILE_RELOCK_PROFILE=dev-security
+```
+
 ### 1.2 Model-provider credentials
 
 Set **exactly one** provider's key to get a working model. The key name a
@@ -810,3 +863,51 @@ Leave `pipeline.enabled` off.
 - `docs/operations/` — operator runbooks
 - `AGENTS.md` § "Project Overview" / "Key Make Targets" — make target catalogue
 - `Makefile` — every runnable target (only `make <target>` is permitted in bash)
+
+## Startup diagnostic literal inputs
+
+`runtime-startup-diagnostic`, `runtime-startup-report` and
+`runtime-startup-archive` share exact `OBSERVED_ROOT`, `OBSERVED_LABEL` and
+`RUN_ID`. The root is this checkout's `.gate-logs/observed`; `current` is
+forbidden. Run alone also consumes `LOG`, `OBSERVED_HEARTBEAT_SECS`,
+`OBSERVED_RETAIN_RUNS` and `WORK_ITEM_ID`. Run/archive plan by default;
+report is always read-only.
+
+| Public Make variable | Default | Meaning |
+| --- | --- | --- |
+| `RUNTIME_DIAGNOSTIC_VALIDATE_ONLY` | `1` | Literal `1` plan; explicit `0` applies run/archive. |
+| `RUNTIME_DIAGNOSTIC_SOURCE_SHA` | empty | Exact source for run; externally declared source for historical readers. |
+| `RUNTIME_DIAGNOSTIC_ENVIRONMENT` | empty | Existing registered environment; empty selects the inspector's derived slot. |
+| `RUNTIME_DIAGNOSTIC_PYTHON` | `3.12.15` | Fixed hosted runtime; no substitute/install. |
+| `RUNTIME_DIAGNOSTIC_SET` | `ci` | Fixed complete current CI composition. |
+| `RUNTIME_DIAGNOSTIC_REPORT` | empty | Stdout, or an explicit fresh external report file. |
+| `RUNTIME_DIAGNOSTIC_ARCHIVE` | empty | Fresh external destination, or verified report replay archive. |
+| `RUNTIME_DIAGNOSTIC_CONSOLE` | `[]` | JSON list of at most eight distinct external raw console parts. |
+
+Internal carriers below use Make override and literal public values, never
+additional authority. Raw public values are unexported to prevent Make-function
+evaluation. Shared ordinary observer inputs are confined only when these
+facades are requested.
+
+| Internal environment carrier | Default | Public owner |
+| --- | --- | --- |
+| `GLUDD_RUNTIME_DIAGNOSTIC_VALIDATE_ONLY` | `1` | `RUNTIME_DIAGNOSTIC_VALIDATE_ONLY` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_SOURCE_SHA` | empty | `RUNTIME_DIAGNOSTIC_SOURCE_SHA` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_ENVIRONMENT` | empty | `RUNTIME_DIAGNOSTIC_ENVIRONMENT` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_PYTHON` | `3.12.15` | `RUNTIME_DIAGNOSTIC_PYTHON` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_SET` | `ci` | `RUNTIME_DIAGNOSTIC_SET` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_REPORT` | empty | `RUNTIME_DIAGNOSTIC_REPORT` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_ARCHIVE` | empty | `RUNTIME_DIAGNOSTIC_ARCHIVE` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_CONSOLE` | `[]` | `RUNTIME_DIAGNOSTIC_CONSOLE` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_ROOT` | `.gate-logs/observed` | `OBSERVED_ROOT` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_LABEL` | empty | `OBSERVED_LABEL` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_RUN_ID` | empty | `RUN_ID` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_LOG` | empty | `LOG`; run falls back to `.gate-logs/runtime-startup.log` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_HEARTBEAT` | `30` | `OBSERVED_HEARTBEAT_SECS`; documented example uses `10` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_RETAIN` | `20` | `OBSERVED_RETAIN_RUNS` |
+| `GLUDD_RUNTIME_DIAGNOSTIC_TASK` | empty | `WORK_ITEM_ID` |
+
+Historical reports cannot infer source/argv/runtime authentication or per-line
+timing absent from the original producer. Archives keep original status paths
+verbatim and replay through manifest role/path/hash mappings without fallback.
+No diagnostic surface grants admission, gate, hosted or release authority.

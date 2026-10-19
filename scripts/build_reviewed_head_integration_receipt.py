@@ -132,6 +132,44 @@ def _commit_parents(repo_root: Path, sha: str) -> tuple[str, ...]:
     return tuple(fields[1:])
 
 
+def _commit_metadata(
+    repo_root: Path, *shas: str,
+) -> dict[str, tuple[str, tuple[str, ...]]]:
+    """Read tree and ordered parents once for at most two exact native objects."""
+    requested = tuple(dict.fromkeys(shas))
+    if not 1 <= len(requested) <= 2:
+        raise ValueError("commit metadata requires one or two exact object identities")
+    width = len(requested[0])
+    if width not in {40, 64} or any(
+        len(sha) != width or any(character not in "0123456789abcdef" for character in sha)
+        for sha in requested
+    ):
+        raise ValueError("commit metadata requires complete native object identities")
+    encoded = _git(
+        repo_root, "show", "--no-patch", "--no-color", "--no-decorate", "--no-notes",
+        "--no-show-signature", "--format=%H%x20%T%x20%P", *requested, "--",
+    )
+    if not encoded or len(encoded) > _MAX_EVIDENCE_BYTES:
+        raise ValueError("commit metadata is empty or exceeds the existing evidence bound")
+    records: dict[str, tuple[str, tuple[str, ...]]] = {}
+    for line in encoded.decode("ascii").splitlines():
+        if not line:
+            continue
+        fields = line.split()
+        if (
+            len(fields) < 2 or fields[0] not in requested or fields[0] in records
+            or any(
+                len(field) != width or any(character not in "0123456789abcdef" for character in field)
+                for field in fields
+            )
+        ):
+            raise ValueError("commit metadata is malformed or has an unexpected object identity")
+        records[fields[0]] = (fields[1], tuple(fields[2:]))
+    if set(records) != set(requested):
+        raise ValueError("commit metadata is missing a requested object identity")
+    return records
+
+
 def _patch_id(repo_root: Path, sha: str) -> str:
     patch = _git(
         repo_root,

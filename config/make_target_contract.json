@@ -2,6 +2,11 @@
   "version": 1,
   "targets": [
     {
+      "name": "audit-agent-context-size",
+      "make_variables": ["AGENT_CONTEXT_FILES", "AGENT_CONTEXT_JSON"],
+      "behavior": "make audit-agent-context-size AGENT_CONTEXT_FILES='[\"AGENTS.md\",\"docs/CLAUDE.md\"]' AGENT_CONTEXT_JSON=1"
+    },
+    {
       "name": "verify-state",
       "make_variables": [],
       "behavior": "make verify-state"
@@ -408,6 +413,15 @@
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q UV_PROJECT_ENVIRONMENT=.venv"
     },
     {
+      "name": "test-files-cprofile",
+      "make_variables": [
+        "TESTFILES",
+        "PYTEST_ARGS",
+        "UV_PROJECT_ENVIRONMENT"
+      ],
+      "behavior": "make test-files-cprofile TESTFILES=tests/unit/test_makefile_targets_deep.py::test_test_files_namespaces_ansible_local_temp PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=.venv"
+    },
+    {
       "name": "migrate-up",
       "make_variables": [
         "MIGRATE_DATABASE_URL",
@@ -780,9 +794,10 @@
     {
       "name": "relock",
       "make_variables": [
-        "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY"
+        "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY",
+        "DEPENDENCY_PROFILE_RELOCK_PROFILE"
       ],
-      "behavior": "make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1"
+      "behavior": "make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1 DEPENDENCY_PROFILE_RELOCK_PROFILE=dev-security"
     },
     {
       "name": "sync-llama-cpp",
@@ -2308,6 +2323,67 @@
         "TASK_WATCHDOG_START_VALIDATE_ONLY"
       ],
       "behavior": "make task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "inspect-dependency-runtime",
+      "make_variables": [
+        "DEPENDENCY_RUNTIME_ENVIRONMENT",
+        "DEPENDENCY_RUNTIME_PYTHON",
+        "DEPENDENCY_RUNTIME_SET",
+        "DEPENDENCY_RUNTIME_VALIDATE_ONLY"
+      ],
+      "behavior": "make inspect-dependency-runtime DEPENDENCY_RUNTIME_ENVIRONMENT= DEPENDENCY_RUNTIME_PYTHON=3.12.15 DEPENDENCY_RUNTIME_SET=ci DEPENDENCY_RUNTIME_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "acquire-pinned-uv",
+      "make_variables": [
+        "PINNED_UV_VALIDATE_ONLY"
+      ],
+      "behavior": "make acquire-pinned-uv PINNED_UV_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "runtime-startup-diagnostic",
+      "make_variables": [
+        "RUNTIME_DIAGNOSTIC_VALIDATE_ONLY",
+        "OBSERVED_ROOT",
+        "OBSERVED_LABEL",
+        "RUN_ID",
+        "RUNTIME_DIAGNOSTIC_SOURCE_SHA",
+        "RUNTIME_DIAGNOSTIC_ENVIRONMENT",
+        "RUNTIME_DIAGNOSTIC_PYTHON",
+        "RUNTIME_DIAGNOSTIC_SET",
+        "LOG",
+        "OBSERVED_HEARTBEAT_SECS",
+        "OBSERVED_RETAIN_RUNS",
+        "WORK_ITEM_ID"
+      ],
+      "behavior": "make runtime-startup-diagnostic RUNTIME_DIAGNOSTIC_VALIDATE_ONLY=1 OBSERVED_ROOT=.gate-logs/observed OBSERVED_LABEL=startup-contract-plan RUN_ID=plan-only RUNTIME_DIAGNOSTIC_SOURCE_SHA=0000000000000000000000000000000000000000 RUNTIME_DIAGNOSTIC_ENVIRONMENT= RUNTIME_DIAGNOSTIC_PYTHON=3.12.15 RUNTIME_DIAGNOSTIC_SET=ci LOG=.gate-logs/startup-contract-plan.log OBSERVED_HEARTBEAT_SECS=10 OBSERVED_RETAIN_RUNS=20 WORK_ITEM_ID=S98.4"
+    },
+    {
+      "name": "runtime-startup-report",
+      "make_variables": [
+        "OBSERVED_ROOT",
+        "OBSERVED_LABEL",
+        "RUN_ID",
+        "RUNTIME_DIAGNOSTIC_SOURCE_SHA",
+        "RUNTIME_DIAGNOSTIC_ARCHIVE",
+        "RUNTIME_DIAGNOSTIC_CONSOLE",
+        "RUNTIME_DIAGNOSTIC_REPORT"
+      ],
+      "behavior": "make runtime-startup-report OBSERVED_ROOT=.gate-logs/observed OBSERVED_LABEL=v012-312-startup-profile RUN_ID=imports-f634b76-20261018 RUNTIME_DIAGNOSTIC_SOURCE_SHA=f634b7662a4122c6c96262f1656dc5088da03b96 RUNTIME_DIAGNOSTIC_ARCHIVE= RUNTIME_DIAGNOSTIC_CONSOLE='[]' RUNTIME_DIAGNOSTIC_REPORT="
+    },
+    {
+      "name": "runtime-startup-archive",
+      "make_variables": [
+        "RUNTIME_DIAGNOSTIC_VALIDATE_ONLY",
+        "OBSERVED_ROOT",
+        "OBSERVED_LABEL",
+        "RUN_ID",
+        "RUNTIME_DIAGNOSTIC_SOURCE_SHA",
+        "RUNTIME_DIAGNOSTIC_ARCHIVE",
+        "RUNTIME_DIAGNOSTIC_CONSOLE"
+      ],
+      "behavior": "make runtime-startup-archive RUNTIME_DIAGNOSTIC_VALIDATE_ONLY=1 OBSERVED_ROOT=.gate-logs/observed OBSERVED_LABEL=v012-312-startup-profile RUN_ID=imports-f634b76-20261018 RUNTIME_DIAGNOSTIC_SOURCE_SHA=f634b7662a4122c6c96262f1656dc5088da03b96 RUNTIME_DIAGNOSTIC_ARCHIVE=/tmp/gludd-runtime-startup-contract-plan RUNTIME_DIAGNOSTIC_CONSOLE='[]'"
     }
   ]
 }

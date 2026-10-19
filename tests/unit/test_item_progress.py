@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import importlib.metadata
 import importlib.util
 import json
 import os
@@ -9,6 +11,7 @@ import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from importlib.metadata import Distribution
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Protocol, cast
@@ -986,3 +989,107 @@ def test_real_exited_native_owner_releases_only_a_source_superseded_capacity_slo
     assert after["reservations"] == {}
     assert after["release_ready"] is False and after["gate_evidence"] is False
     assert all(path.read_bytes() == content for path, content in original.items())
+
+class _MetadataDistribution(Distribution):
+    """Use the real public parser with observable, changing header snapshots."""
+
+    def __init__(self, *snapshots: str | OSError) -> None:
+        self.snapshots = snapshots
+        self.reads = 0
+
+    def read_text(self, filename: str) -> str | None:
+        if filename != "METADATA":
+            return None
+        snapshot = self.snapshots[min(self.reads, len(self.snapshots) - 1)]
+        self.reads += 1
+        if isinstance(snapshot, OSError):
+            raise snapshot
+        return snapshot
+
+    def locate_file(self, path: str | os.PathLike[str]) -> Path:
+        raise AssertionError("metadata identity must not locate package files")
+
+
+
+def test_environment_metadata_is_once_coherent_and_fresh_next_call(
+    policy: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_headers = "Name: First_Package\nVersion: 1\n"
+    second_headers = "Name: Second_Package\nVersion: 2\n"
+    first = _MetadataDistribution(first_headers)
+    second = _MetadataDistribution(second_headers)
+    current = [first]
+    monkeypatch.setattr(importlib.metadata, "distributions", lambda: current)
+    first_identity = policy._environment_identity({"TOKEN": "private"}, tmp_path)
+    current[:] = [second]
+    second_identity = policy._environment_identity({"TOKEN": "private"}, tmp_path)
+    assert first_identity != second_identity
+    changing = _MetadataDistribution(first_headers, second_headers)
+    current[:] = [changing]
+
+    assert policy._environment_identity({"TOKEN": "private"}, tmp_path) == first_identity
+    assert changing.reads == 1
+    assert policy._environment_identity({"TOKEN": "private"}, tmp_path) == second_identity
+    assert changing.reads == 2
+
+
+def test_environment_metadata_preserves_exact_private_context_and_duplicate_inventory(
+    policy: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = _MetadataDistribution("Name: A_Package\nVersion: 1\n")
+    last = _MetadataDistribution("Name: Z_Package\nVersion: 2\n")
+    monkeypatch.setattr(importlib.metadata, "distributions", lambda: [last, first, first])
+    environment = {"TOKEN": "private", "MAKEFLAGS": "ignored", "OBSERVED_LABEL": "ignored"}
+    expected = {
+        "variables": {"TOKEN": "private"},
+        "cwd": str(tmp_path.resolve()), "python": sys.version,
+        "executable": hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
+        "installed_distributions": [("A_Package", "1"), ("A_Package", "1"), ("Z_Package", "2")],
+    }
+    digest = hashlib.sha256(json.dumps(
+        expected, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+
+    assert policy._environment_identity(environment, tmp_path) == digest
+    assert (first.reads, last.reads) == (2, 1)
+    assert policy._environment_identity({**environment, "TOKEN": "changed"}, tmp_path) != digest
+    assert policy._environment_identity(environment, tmp_path.parent) != digest
+
+
+@pytest.mark.parametrize("headers", ["Version: 1\n", "Name: Unversioned\n", "Name: \nVersion: \n"])
+def test_environment_metadata_retains_missing_and_blank_header_values(
+    policy: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, headers: str,
+) -> None:
+    distribution = _MetadataDistribution(headers)
+    monkeypatch.setattr(importlib.metadata, "distributions", lambda: [distribution])
+    reference = _MetadataDistribution(headers).metadata
+    try:
+        fields = (reference["Name"], reference["Version"])
+    except (DeprecationWarning, KeyError) as failure:
+        with pytest.raises(type(failure)):
+            policy._environment_identity({}, tmp_path)
+        assert distribution.reads == 1
+        return
+    expected = {
+        "variables": {}, "cwd": str(tmp_path.resolve()), "python": sys.version,
+        "executable": hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
+        "installed_distributions": [fields],
+    }
+    digest = hashlib.sha256(json.dumps(
+        expected, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+    assert policy._environment_identity({}, tmp_path) == digest
+    assert distribution.reads == 1
+
+
+def test_environment_metadata_failure_never_reuses_previous_success(
+    policy: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    distribution = _MetadataDistribution("Name: Present\nVersion: 1\n", OSError("current metadata unavailable"))
+    monkeypatch.setattr(importlib.metadata, "distributions", lambda: [distribution])
+
+    assert policy._environment_identity({}, tmp_path)
+    assert distribution.reads == 1
+    with pytest.raises(OSError, match="current metadata unavailable"):
+        policy._environment_identity({}, tmp_path)
+    assert distribution.reads == 2

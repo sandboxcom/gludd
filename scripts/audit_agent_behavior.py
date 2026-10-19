@@ -25,12 +25,15 @@ Exit: 0 = all checks pass, 1 = violations found, 2 = audit script error.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import io
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +48,7 @@ def _git(*args: str) -> str:
     """Run git command in ROOT, return stdout, raise on failure."""
     try:
         result = subprocess.run(
-            ["git"] + list(args),
+            ["git", *args],
             cwd=str(ROOT),
             capture_output=True,
             text=True,
@@ -60,7 +63,7 @@ def _git(*args: str) -> str:
 
 def _git_lines(*args: str) -> list[str]:
     out = _git(*args)
-    return [l for l in out.split("\n") if l] if out else []
+    return [line for line in out.split("\n") if line] if out else []
 
 
 def _parse_iso(s: str) -> datetime | None:
@@ -71,7 +74,7 @@ def _parse_iso(s: str) -> datetime | None:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ── AB041 — overlapping file edits in concurrent dispatch windows ─────────────
@@ -142,9 +145,8 @@ def check_ab047_task_evidence() -> dict[str, Any]:
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
-        if stripped.startswith("- [x]") or stripped.startswith("* [x]"):
-            if not evidence_pat.search(stripped):
-                violations.append({"line": i, "text": stripped[:120]})
+        if (stripped.startswith("- [x]") or stripped.startswith("* [x]")) and not evidence_pat.search(stripped):
+            violations.append({"line": i, "text": stripped[:120]})
 
     return {"status": "FAIL" if violations else "PASS", "violations": violations}
 
@@ -165,7 +167,7 @@ def check_ab048_task_ledger_drift() -> dict[str, Any]:
 
     last_commit_str = _git("log", "-1", "--format=%aI")
     last_mod_str = (
-        str(datetime.fromtimestamp(tasks_path.stat().st_mtime, tz=timezone.utc).isoformat())
+        str(datetime.fromtimestamp(tasks_path.stat().st_mtime, tz=UTC).isoformat())
         if tasks_path.exists()
         else ""
     )
@@ -223,7 +225,7 @@ def check_ab052_worktree_isolation() -> dict[str, Any]:
 def check_ab054_abandoned_worktrees() -> dict[str, Any]:
     """Detect git worktrees older than 24h with unmerged commits."""
     violations: list[dict[str, Any]] = []
-    all_worktrees: list[str] = []
+    all_worktrees: list[dict[str, str]] = []
     worktree_lines = _git_lines("worktree", "list")
     now = _now()
 
@@ -246,18 +248,17 @@ def check_ab054_abandoned_worktrees() -> dict[str, Any]:
         except OSError:
             continue
 
-        if wt_age_hours > 24:
-            if wt_branch not in ("detached", "(detached)"):
-                commits = _git_lines("log", "development.." + wt_branch, "--oneline")
-                if commits:
-                    violations.append(
-                        {
-                            "path": wt_path,
-                            "branch": wt_branch,
-                            "age_hours": round(wt_age_hours, 1),
-                            "unmerged_commits": len(commits),
-                        }
-                    )
+        if wt_age_hours > 24 and wt_branch not in ("detached", "(detached)"):
+            commits = _git_lines("log", "development.." + wt_branch, "--oneline")
+            if commits:
+                violations.append(
+                    {
+                        "path": wt_path,
+                        "branch": wt_branch,
+                        "age_hours": round(wt_age_hours, 1),
+                        "unmerged_commits": len(commits),
+                    }
+                )
 
     return {
         "status": "FAIL" if violations else "PASS",
@@ -278,7 +279,7 @@ def check_ab056_dead_code() -> dict[str, Any]:
         text=True,
         timeout=60,
     )
-    dead_symbols: list[str] = [l.strip() for l in vulture_result.stdout.split("\n") if l.strip()]
+    dead_symbols: list[str] = [line.strip() for line in vulture_result.stdout.split("\n") if line.strip()]
     return {
         "status": "INFO",
         "dead_symbol_count": len(dead_symbols),
@@ -319,34 +320,61 @@ def check_ab057_orphan_scripts() -> dict[str, Any]:
 # ── AB060 — AGENTS.md + CLAUDE.md context size ───────────────────────────────
 
 
-def check_ab060_context_size() -> dict[str, Any]:
-    """Check combined size of AGENTS.md and CLAUDE.md."""
-    files = ["AGENTS.md", "docs/CLAUDE.md"]
+def check_ab060_context_size(context_files: list[str] | None = None) -> dict[str, Any]:
+    """Measure context files; retain the original default and line threshold."""
+    files = ["AGENTS.md", "docs/CLAUDE.md"] if context_files is None else context_files
     total_lines = 0
-    total_kb = 0.0
+    physical_lines = 0
+    total_bytes = 0
     file_sizes: dict[str, dict[str, Any]] = {}
+    violations: list[str] = []
+    seen_paths: set[Path] = set()
+    if not files:
+        violations.append("Explicit context file set must not be empty")
 
     for fname in files:
-        fpath = ROOT / fname
-        if fpath.exists():
-            text = fpath.read_text()
-            lines = text.count("\n") + 1
-            kb = len(text.encode("utf-8")) / 1024.0
-            total_lines += lines
-            total_kb += kb
-            file_sizes[fname] = {"lines": lines, "kb": round(kb, 1)}
+        path = Path(fname)
+        if path.is_absolute() or ".." in path.parts or path in seen_paths:
+            violations.append(f"Invalid or duplicate context path: {fname}")
+            continue
+        seen_paths.add(path)
+        fpath = ROOT / path
+        if not fpath.exists() and context_files is None:
+            continue  # Preserve the existing default audit's missing-file behavior.
+        try:
+            if fpath.is_symlink() or not fpath.resolve().is_relative_to(ROOT.resolve()):
+                raise ValueError("symlink or path outside repository")
+            if not stat.S_ISREG(fpath.stat().st_mode):
+                raise ValueError("context path is not a regular file")
+            captured = fpath.read_bytes()
+            with io.StringIO(captured.decode("utf-8"), newline=None) as stream:
+                text = stream.read()
+        except (OSError, UnicodeError, ValueError) as exc:
+            violations.append(f"Cannot measure {fname}: {exc}")
+            continue
+        lines = text.count("\n") + 1  # Legacy AB060 threshold semantics.
+        physical = captured.count(b"\n") + int(bool(captured) and not captured.endswith(b"\n"))
+        total_lines += lines
+        physical_lines += physical
+        total_bytes += len(captured)
+        file_sizes[fname] = {
+            "lines": lines, "physical_lines": physical, "bytes": len(captured),
+            "kb": round(len(captured) / 1024.0, 1),
+            "sha256": hashlib.sha256(captured).hexdigest(),
+        }
 
     threshold_lines = 20000
-    threshold_kb = 600
-
+    threshold_kb = 600  # Historical diagnostic only; not a second failure threshold.
     return {
-        "status": "FAIL" if total_lines > threshold_lines else "PASS",
+        "status": "FAIL" if violations or total_lines > threshold_lines else "PASS",
         "total_lines": total_lines,
-        "total_kb": round(total_kb, 1),
+        "physical_lines": physical_lines,
+        "total_bytes": total_bytes,
+        "total_kb": round(total_bytes / 1024.0, 1),
         "threshold_lines": threshold_lines,
         "threshold_kb": threshold_kb,
         "files": file_sizes,
-        "violations": [],
+        "violations": violations,
     }
 
 
@@ -382,7 +410,30 @@ def main() -> int:
         action="store_true",
         help="List available checks",
     )
+    parser.add_argument(
+        "--context-from-env", action="store_true",
+        help="AB060 only: literal GLUDD_AGENT_CONTEXT_FILES JSON and JSON=0/1 carriers",
+    )
     args = parser.parse_args()
+    context_files: list[str] | None = None
+    if args.context_from_env:
+        if args.filter != "AB060" or args.list:
+            parser.error("Context file carriers require --filter AB060 without --list")
+        raw_files = os.environ.get("GLUDD_AGENT_CONTEXT_FILES", "")
+        raw_json = os.environ.get("GLUDD_AGENT_CONTEXT_JSON", "0")
+        if raw_json not in ("0", "1"):
+            parser.error("AGENT_CONTEXT_JSON must be literal 0 or 1")
+        if raw_files:
+            try:
+                decoded = json.loads(raw_files)
+            except (ValueError, TypeError):
+                parser.error("AGENT_CONTEXT_FILES must be a JSON array of relative file paths")
+            if not isinstance(decoded, list) or not decoded or any(
+                not isinstance(item, str) or not item for item in decoded
+            ):
+                parser.error("AGENT_CONTEXT_FILES must be a nonempty JSON array of file paths")
+            context_files = decoded
+        args.json = args.json or raw_json == "1"
 
     if args.list:
         for spec_id in sorted(CHECKS):
@@ -403,7 +454,7 @@ def main() -> int:
         if fn is None:
             continue
         try:
-            result = fn()
+            result = check_ab060_context_size(context_files) if spec_id == "AB060" else fn()
             results[spec_id] = result
             if result.get("status") == "FAIL":
                 overall_fail += 1
@@ -433,6 +484,7 @@ def main() -> int:
                 print(f"         dead_symbols: {result['dead_symbol_count']}")
             if result.get("total_lines") is not None:
                 print(f"         context: {result['total_lines']} lines / {result['total_kb']} KB")
+                print(f"         measured: {result['physical_lines']} physical lines / {result['total_bytes']} bytes")
             if result.get("pending_count") is not None:
                 print(f"         pending_tasks: {result['pending_count']}")
 

@@ -14,7 +14,9 @@ conditions before deletion:
 
 - the root is an exact, owned, non-symlink directory named `gludd-resources`;
 - the candidate is a canonical direct child with a 12-hex checkout digest;
-- every descendant is owned, readable, non-symlink, and not a hard link;
+- every descendant is owned and readable; ordinary symlinks are treated only as
+  entries, while namespace roots, namespace candidates and marker-looking links
+  remain refused; regular hard links and multiply linked symlinks are refused;
 - the newest descendant is older than the bounded grace period;
 - kernel lock inspection proves that no lock is held;
 - every PID marker is dead or has a start identity proving PID reuse; and
@@ -93,8 +95,9 @@ already-locked MarkdownIt implementation. A `.md` suffix, opaque owner text,
 modified bytes or an unavailable parser is insufficient. Python 3.14's borrowed
 arguments can change marshal's reference flag; retaining compiler ownership
 reproduces the standard writer without normalizing cache bytes or accepting
-another serialization. Real inventory then reaches descendant-symlink refusal;
-that tree remains protected and no reclaimed-capacity credit is reported.
+another serialization. Historical inventory reached the blanket descendant-symlink refusal;
+that retained failure remains valid for its original source, and no recovered
+capacity is inferred from it.
 
 ## Long-lived operator reports considered
 
@@ -128,3 +131,194 @@ that tree remains protected and no reclaimed-capacity credit is reported.
 The reports span several cleanup implementations and years, so the feature
 encodes their recurring failure modes as tests rather than relying on operator
 judgment during disk pressure.
+
+
+## Ordinary interior links and descriptor-bound inspection (M16)
+
+The 2026-10-18 user clarification permits unlinking ordinary symlink entries
+without following their targets. The earlier blanket refusal at immutable
+6ade745 preserved retired toolchains even when their interior links were normal
+interpreter links. That inventory did not report the actual first link path;
+it establishes the blanket refusal, not target danger or reclaimable capacity.
+
+The existing scanner now obtains names through directory descriptors and uses
+no-follow metadata and O_DIRECTORY/O_NOFOLLOW opens for every traversed
+component. Ordinary links contribute their own uid, inode, link count,
+timestamps, byte size and readlink text to the fingerprint. Their target
+existence, ownership, age and bytes are irrelevant. Replacing a link, changing
+the candidate directory metadata, or swapping an ancestor rejects the scan or
+fresh apply comparison. Every owned descriptor closes on refusal and error.
+
+Marker-looking links retain explicit marker-symlink refusal and blocking_marker.
+The existing marker, packaged RECORD/source/bytecode and documentation checks
+read through the same pinned namespace. Bounded captured RECORD bytes feed the
+existing distribution parser; no candidate code or entrypoint is loaded.
+The existing lease owner accepts a narrowly checked directory-relative identity
+for cleanup, preserving bounded record parsing and the actual noncreating
+kernel-lock probe. Missing or changed guarded records are unavailable.
+
+Root/candidate links, foreign owners, hard links, current and registered
+worktrees, namespace/toolchain pairing, native grace/census/PID/lease checks,
+fresh fingerprints and exclusive receipt authority remain required. No
+force option, alternate deleter, scanner, runner, cache or threshold is added.
+Unsupported no-follow primitives preserve the namespace.
+
+Actual deletion still uses the existing fd-safe shutil.rmtree with
+avoids_symlink_attacks required. Ordinary interior links are unlinked.
+A late raced directory replacement can cause the stdlib to open/fstat a
+directory before rejecting descent; its guarantee is resistance to destructive
+symlink traversal, not zero transient opens under every adversarial race.
+The scanner and classification reader enforce the stronger no-target-open
+boundary. A real fixture retains the native late-error/partial directory state,
+writes no success receipt, and proves outside data survives.
+
+The firsthand [CPython issue4489](https://bugs.python.org/issue4489),
+[migrated issue48739](https://github.com/python/cpython/issues/48739), spans
+2008-2012 and is resolved. It records ancestor-replacement races and a regression
+in deleting directories containing symlinks, followed by fd/inode checks and
+regression fixes. This supports distinguishing ordinary interior unlink from
+top-level link refusal. It is not a current stdlib vulnerability finding or
+proof of exploitation here. Current
+[rmtree documentation](https://docs.python.org/3.11/library/shutil.html#shutil.rmtree)
+and [fwalk documentation](https://docs.python.org/3.11/library/os.html#os.fwalk)
+describe the mature descriptor facilities. CPython's
+[3.11 fwalk implementation](https://github.com/python/cpython/blob/v3.11.14/Lib/os.py#L438)
+also explains why the stricter scanner uses explicit no-follow opens.
+
+Source acceptance and actual capacity recovery are separate. Retain
+/tmp/gludd-v012-capacity-repair-6ade745 and its failed 96/95 native guard,
+11 empty-directory receipts and unrelated UV-launcher refusal. No real cleanup
+apply or unchanged hard-guard retry is evidence from the M16 fixtures.
+
+
+Source acceptance on canonical Python 3.11.14 completed 331 tests across all seven
+whole owners in 40.75s, with warnings fatal and one serial worker. Observer
+20261018T165353Z-79605-a5127f91 passed in 42.608s. Native coverage measured
+92.1% line and 86.4% branch overall; every measured file passed unchanged
+85/75 line/branch policy. The preceding 307-pass/24-failure run is retained:
+all failures were the old routing helper's111-family count after family112
+was appended. Its count now conforms to112; every original mutation check
+and expected selector remains.
+
+Separate normal strict checks cover all three production modules and all seven
+test owners. TYPE_CHECKING import/export coherence follows the existing bare
+module convention; production package/direct-script branches are unchanged.
+The resource-observability test narrows its decoded JSON and counts every
+inventory element without filtering. Ruff, native Make validation,250 target
+contracts,112 promotion families,261 resource records, task/line guards pass.
+Normal guarded commit collection and independent source review remain separate
+receipts. These source checks recover no disk capacity and authorize no live
+cleanup, unchanged hard-guard retry or release completion.
+
+
+## Root-route binding through native deletion (M17)
+
+Independent review of immutable913ff57 withheld source approval: root discovery
+reopened the validated path, and the heartbeat worker passed an absolute path
+to rmtree after the scanner's root anchors had closed. A caller-root or ancestor
+replacement could therefore select a different same-basename outside directory.
+
+The separate child keeps the existing no-follow root anchor open for bounded
+fd-scandir discovery and passes that descriptor into candidate classification.
+Apply opens and checks the planned root, performs the immediate no-follow leaf
+identity/uid check relative to it, and borrows the same descriptor through the
+existing worker's completion or error. Native rmtree receives only candidate.name
+and dir_fd; there is no path fallback. The anchor revalidates the root route
+before the existing success receipt is published. A late route change can leave
+truthful partial deletion of the original owned fixture, raises an error and
+writes no false receipt; the replacement/outside tree is never selected.
+
+The historical [CPython discussion](https://bugs.python.org/issue4489) above
+motivated fd/inode checks and distinguishes top-level link refusal from interior
+unlink. Current [rmtree's dir_fd contract](https://docs.python.org/3.11/library/shutil.html#shutil.rmtree)
+and its [CPython3.11.14 entry path](https://github.com/python/cpython/blob/v3.11.14/Lib/shutil.py#L663-L740)
+explain this caller obligation: the library first chooses the supplied root.
+The repaired caller binds that choice to its already approved parent descriptor.
+This resolved historical report is not a present stdlib defect or evidence of
+exploitation in Gludd. The accepted native interior transient-open semantics
+and the existing late-interior-race fixture remain unchanged.
+
+Actual RED has eight failures/1.54s. A strengthened separate native handoff RED
+has three failures/one pass/1.36s and directly proves loss of both outside fixture
+sentinels on913. Retain the first implementation's126 passes/two failures/2.06s;
+its old candidate fault injection reached the newly guarded root first. The
+faults now remain at their original candidate boundary with all prior assertions,
+and new root-level refusal/closure controls cover the higher boundary.
+The cleanup whole owner passes130/2.05s. Final seven complete owners pass343
+in39.84s, warnings fatal and serial; observer20261018T170759Z-86373-b9830c7f
+passes41.422s. Native unchanged85/75 audit passes all three files at aggregate
+92.4% line/86.3% branch. Changed source/test strict checks and Ruff pass.
+
+All112 manifest objects, Make recipes, selectors/order/plugins, workers2/1/1,
+90/60,21/2850, current/registered/paired/grace/census/lease/authenticity/hardlink,
+fingerprint, receipt and heartbeat duties remain. No live cleanup, hard-capacity
+retry, runtime diagnostic, proof/gate/CI replay, merge or push is claimed.
+913 review/history and all old refs/archives remain immutable. Required normal
+guarded collection, exact independent child review and actual capacity recovery
+are separate prerequisites.
+
+## RECORD snapshots across Python runtimes (2026-10-18)
+
+The first real private Python 3.12.15 execution on approved1329a87 failed36
+installed-module/documentation/bytecode/owner-precedence assertions. The native
+first child reported1910 passes and one separate hook-fixture skip in69.18s;
+the observer failedrc2/71.97s, not timeout, and the later children did not run.
+Its immutable raw evidence is
+/tmp/gludd-v012-312-execution-attribution-1329a87/. The separate hook-probe child
+3dd6d1d repairs the collection-time skip without changing confinement.
+
+The snapshot adapter used Distribution.files only as a RECORD parser. In
+[pinned CPython3.11.14](https://github.com/python/cpython/blob/v3.11.14/Lib/importlib/metadata/__init__.py)
+that path parsed rows. In
+[pinned CPython3.12.15](https://github.com/python/cpython/blob/v3.12.15/Lib/importlib/metadata/__init__.py)
+it also filters through path.locate().exists(). Our adapter located names below
+the .dist-info directory instead of site-packages, so valid captured rows
+disappeared. Changing that base would still add live target probes to an
+authorization path that must inspect only pinned snapshot bytes. The fixture's
+python3.11 directory is valid test data under either runner and stays unchanged.
+
+The existing owner now parses its bounded captured UTF-8 RECORD with public
+csv.reader(StringIO(..., newline="")), following the
+[PyPA RECORD CSV specification](https://packaging.python.org/en/latest/specifications/recording-installed-packages/#the-record-file).
+Names receive only pure POSIX normalization. Prior one-to-three-column optional
+hash/size behavior, FileHash-style partition at the first equals sign, integer
+conversion for every row before name filtering, and refusal on invalid row
+arity/conversion remain. Exactly one normalized matching row across every
+distribution must prove the exact sha256 digest and byte size. Missing hashes
+or sizes never authenticate a source. No locate/exists/resolve target lookup,
+private metadata API, fake location or extra parser dependency is used.
+
+The same no-follow descriptor reader captures source and RECORD; source/record
+freshness, metadata identity, AST/documentation/compiled-cache verification,
+owner precedence, kernel/PID leases, root-route pinning, all cleanup bounds,
+receipts and heartbeats remain authoritative. This repairs classification;
+it supplies no live cleanup authorization or service restart and preserves ZDD.
+
+The new private312 failing-first run records14 failures/13 passes in1.78s.
+Its no-target-probe control fails directly in the old metadata exists filter.
+All27 new cases then pass in1.61s: quoted/Unicode paths, LF/CRLF, optional
+fields, normalized duplicate cardinality within/across distributions, invalid
+unrelated rows, and source/RECORD/link mutation revalidation. The complete
+unchanged130 original cases plus27 additive cases pass157/2.22s on canonical311
+and157/2.61s on private3.12.15, zero skips and fatal warnings.
+Final seven whole owners pass370 tests in39.74s on canonical311, warnings fatal
+and serial. Observer20261018T173544Z-4028-a15145d8 passes41.311s. The unchanged
+three-file native audit measures92.8% line/86.6% branch; every file passes
+the original85/75 line/branch floors. Normal changed-owner strict checks and
+Ruff pass. Initial import-order/raw-regex lint failures remain as intermediates.
+
+All112 promotion-family objects, existing whole-file admission selection,
+plugins/order, three children/workers2-1-1,90/60,21/2850 and native85/75 remain
+unchanged. These focused source receipts prove no hosted margin or release
+completion. The original1329 failed run, old source pins and actual capacity
+history remain immutable; normal collection and cumulative independent review
+are separate prerequisites.
+
+### Related firsthand report and its limit
+
+A search for longstanding metadata path reports found
+[CPython issue46473](https://bugs.python.org/issue46473), where a2022 user reports
+editable .egg-link discovery differing from pkg_resources. That concerns
+editable distribution discovery, not this snapshot adapter or its RECORD
+authorization. No exact upstream report for the Gludd failure was found; the
+diagnosis rests on the pinned source comparison and native3.12 reproductions.

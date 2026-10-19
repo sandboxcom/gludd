@@ -754,13 +754,14 @@ def _distribution_version(name: str) -> str:
 def _installed_distributions_sha256() -> str:
     distributions: list[dict[str, str]] = []
     for distribution in importlib.metadata.distributions():
-        name = distribution.metadata["Name"]
+        metadata = distribution.metadata
+        name = metadata["Name"]
         if not name.strip():
             raise RuntimeError("installed distribution is missing its canonical name")
         distributions.append(
             {
                 "name": name.strip().lower().replace("_", "-"),
-                "version": distribution.version,
+                "version": metadata["Version"],
             }
         )
     return canonical_json_sha256(
@@ -781,10 +782,11 @@ def _pytest_plugin_identity() -> dict[str, object]:
         distribution_name = "unknown"
         distribution_version = "unknown"
         if distribution is not None:
-            candidate_name = distribution.metadata["Name"]
+            metadata = distribution.metadata
+            candidate_name = metadata["Name"]
             if candidate_name:
                 distribution_name = candidate_name
-            distribution_version = distribution.version
+            distribution_version = metadata["Version"]
         plugins.append(
             {
                 "distribution": distribution_name,

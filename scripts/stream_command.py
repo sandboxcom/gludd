@@ -19,7 +19,7 @@ from contextlib import AbstractContextManager, contextmanager, nullcontext, supp
 from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
-from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, TypedDict
+from typing import TYPE_CHECKING, Any, BinaryIO, NamedTuple, Protocol, TypedDict
 
 DEFAULT_OBSERVED_ROOT = Path(".gate-logs/observed")
 DEFAULT_HEARTBEAT_SECS = 30.0
@@ -353,6 +353,7 @@ def stream_command(
     progress_root: Path | None = None,
     environment: Mapping[str, str] | None = None,
     cwd: Path | str | None = None,
+    startup_metadata: Mapping[str, object] | None = None,
 ) -> int:
     """Run ``command`` with live output, bounded waits, and atomic status.
 
@@ -406,6 +407,8 @@ def stream_command(
             log_path=resolved_log,
             trace_path=trace_path,
         )
+        if startup_metadata is not None:
+            status["startup_diagnostic"] = dict(startup_metadata)
         if progress_admission is not None:
             status["progress_identity"] = progress_admission.identity
         try:
@@ -734,20 +737,13 @@ def stream_command(
     return requested_code
 
 
-def _load_status(
-    root: Path, label: str, *, run_id: str | None = None
+def _validate_status(
+    value: object, *, path: Path, label: str, run_id: str | None,
 ) -> dict[str, Any]:
-    """Load current status or one immutable retained run, failing closed."""
+    """Validate native identity from one caller-owned parsed snapshot."""
     safe_label = _safe_name(label, field="label")
     safe_run_id = _safe_name(run_id, field="run_id") if run_id is not None else None
-    directory = root.resolve() / safe_label
     current_alias = safe_run_id == "current"
-    path = directory / (
-        "current.json"
-        if safe_run_id is None or current_alias
-        else f"{safe_run_id}.json"
-    )
-    value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError(f"observed status is not a JSON object: {path}")
     expected_run_id = safe_run_id
@@ -765,6 +761,23 @@ def _load_status(
         qualifier = "current" if current_alias else "retained"
         raise ValueError(f"{qualifier} observed status identity mismatch: {path}")
     return value
+
+
+def _load_status(
+    root: Path, label: str, *, run_id: str | None = None
+) -> dict[str, Any]:
+    """Load current status or one immutable retained run, failing closed."""
+    safe_label = _safe_name(label, field="label")
+    safe_run_id = _safe_name(run_id, field="run_id") if run_id is not None else None
+    directory = root.resolve() / safe_label
+    path = directory / (
+        "current.json" if safe_run_id is None or safe_run_id == "current"
+        else f"{safe_run_id}.json"
+    )
+    return _validate_status(
+        json.loads(path.read_text(encoding="utf-8")),
+        path=path, label=safe_label, run_id=safe_run_id,
+    )
 
 
 def _load_current(root: Path, label: str) -> dict[str, Any]:
@@ -848,10 +861,594 @@ def observed_tail(
     return 0
 
 
+# Startup diagnostics reuse this observer. Readers never execute or refresh a run.
+_STARTUP_LIMIT = 16 * 1024 * 1024
+_STARTUP_COMMAND = ("make", "--no-print-directory", "_pytest-runtime-compatibility-admission")
+
+
+class _StartupFile(NamedTuple):
+    """One bounded byte snapshot, with its original path retained separately."""
+
+    role: str
+    path: Path
+    data: bytes
+
+    @property
+    def digest(self) -> str:
+        """Hash the bytes actually parsed/copied, never a later path read."""
+        import hashlib
+
+        return hashlib.sha256(self.data).hexdigest()
+
+
+def _startup_no_links(path: Path, boundary: Path) -> None:
+    relative = path.relative_to(boundary)
+    current = boundary
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError("startup evidence must not contain symbolic links")
+
+
+def _startup_file_path(path: Path) -> Path:
+    """Permit only the fixed macOS /tmp alias; never resolve caller links."""
+    if not path.is_absolute() or ".." in path.parts:
+        raise ValueError("startup evidence requires an absolute confined path")
+    if sys.platform == "darwin" and path.is_relative_to(Path("/tmp")) and Path("/tmp").is_symlink():
+        if os.readlink("/tmp") not in {"private/tmp", "/private/tmp"}:
+            raise ValueError("startup evidence has an unknown temporary alias")
+        return Path("/private/tmp") / path.relative_to("/tmp")
+    return path
+
+
+def _startup_file_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    """Bind opened bytes to the admitted object and its unchanged contents."""
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def _startup_read(role: str, path: Path, boundary: Path) -> _StartupFile:
+    """Admit a regular descriptor before a bounded read, without following links."""
+    import stat
+    from contextlib import ExitStack
+
+    path = _startup_file_path(path)
+    boundary = _startup_file_path(boundary)
+    _startup_no_links(path, boundary)
+    admitted = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(admitted.st_mode) or admitted.st_size > _STARTUP_LIMIT:
+        raise ValueError("startup evidence must be a bounded regular file")
+    required = ("O_NONBLOCK", "O_NOFOLLOW", "O_DIRECTORY")
+    if not all(hasattr(os, name) for name in required) or not os.supports_dir_fd:
+        raise ValueError("safe startup descriptor reads are unsupported on this platform")
+    file_flags = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    directory_flags = file_flags | os.O_DIRECTORY
+    with ExitStack() as descriptors:
+        parent = os.open(path.anchor, directory_flags)
+        descriptors.callback(os.close, parent)
+        for part in path.parts[1:-1]:
+            parent = os.open(part, directory_flags, dir_fd=parent)
+            descriptors.callback(os.close, parent)
+        descriptor = os.open(path.name, file_flags, dir_fd=parent)
+        descriptors.callback(os.close, descriptor)
+        opened = os.fstat(descriptor)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_size > _STARTUP_LIMIT
+                or _startup_file_identity(opened) != _startup_file_identity(admitted)):
+            raise ValueError("startup evidence changed before regular-file admission")
+        data = bytearray()
+        while len(data) <= _STARTUP_LIMIT:
+            chunk = os.read(descriptor, min(65536, _STARTUP_LIMIT + 1 - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+        if (len(data) > _STARTUP_LIMIT or len(data) != opened.st_size
+                or _startup_file_identity(os.fstat(descriptor)) != _startup_file_identity(opened)):
+            raise ValueError("startup evidence changed or exceeded its bound")
+        _startup_no_links(path, boundary)
+        if _startup_file_identity(path.stat(follow_symlinks=False)) != _startup_file_identity(opened):
+            raise ValueError("startup evidence path changed during its descriptor read")
+    return _StartupFile(role, path, bytes(data))
+
+
+def _startup_fresh(files: Sequence[_StartupFile]) -> None:
+    for item in files:
+        # Every component is checked again; an absent/changed input never publishes.
+        if item.path.resolve() != item.path or item.path.is_symlink():
+            raise ValueError("startup evidence changed")
+        try:
+            current = _startup_read(item.role, item.path, Path(item.path.anchor))
+        except OSError as exc:
+            raise ValueError("startup evidence changed") from exc
+        if current.data != item.data:
+            raise ValueError("startup evidence changed")
+
+
+def _startup_external(repository: Path, path: Path) -> Path:
+    absolute = Path(os.path.abspath(path))
+    canonical = absolute.resolve()
+    bases = (Path("/tmp").resolve(), Path(tempfile.gettempdir()).resolve(), (Path.home() / "tmp").resolve())
+    if not any(canonical.is_relative_to(base) and canonical != base for base in bases):
+        raise ValueError("startup output must be in an external temporary namespace")
+    if canonical.is_relative_to(repository.resolve()):
+        raise ValueError("startup output must be outside the checkout")
+    # /tmp is the platform-owned alias on macOS; other caller links are refused.
+    for parent in (absolute, *absolute.parents):
+        if parent.is_symlink() and parent != Path("/tmp"):
+            raise ValueError("startup output must not contain symbolic links")
+        if (parent / ".git").exists():
+            raise ValueError("startup output must not be inside another checkout")
+    return canonical
+
+
+def _startup_identity(label: str, run_id: str, source_sha: str) -> None:
+    import re
+
+    _safe_name(label, field="label")
+    _safe_name(run_id, field="run_id")
+    if run_id == "current":
+        raise ValueError("an exact retained run is required, never current")
+    if source_sha and re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:
+        raise ValueError("source SHA must be a full lowercase commit identity")
+
+
+def _startup_inputs(
+    repository: Path, root: Path, label: str, run_id: str,
+    console_paths: Sequence[Path],
+) -> tuple[dict[str, Any], list[_StartupFile]]:
+    repository = repository.resolve()
+    expected = repository / DEFAULT_OBSERVED_ROOT
+    if root.resolve() != expected:
+        raise ValueError("startup reader requires the exact checkout producer namespace")
+    _startup_no_links(expected, repository)
+    status_file = _startup_read("status", expected / label / f"{run_id}.json", repository)
+    status = _validate_status(
+        json.loads(status_file.data), path=status_file.path, label=label, run_id=run_id,
+    )
+    if status.get("state") not in _TERMINAL_STATES:
+        raise ValueError("startup readers require a terminal retained run")
+    files = [status_file]
+    for role, key in (("log", "log_path"), ("trace", "trace_path")):
+        value = status.get(key)
+        if value is None and role == "trace":
+            continue
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"startup status lacks {role} path")
+        path = Path(value)
+        if not path.is_absolute():
+            raise ValueError("startup evidence path must be absolute")
+        for parent in (path, *path.parents):
+            if parent.is_symlink() and parent != Path("/tmp"):
+                raise ValueError("startup evidence must not contain symbolic links")
+        path = path.resolve()
+        if not path.is_relative_to(repository / ".gate-logs"):
+            raise ValueError("startup evidence path is outside the producer namespace")
+        files.append(_startup_read(role, path, repository))
+    log = next(item for item in files if item.role == "log")
+    if (status.get("bytes_written") != len(log.data)
+            or status.get("lines_written") != len(log.data.splitlines())):
+        raise ValueError("startup log size/count differs from its terminal status")
+    if len(console_paths) > 8 or len(set(console_paths)) != len(console_paths):
+        raise ValueError("at most eight distinct external console parts are accepted")
+    for index, console in enumerate(console_paths, 1):
+        path = _startup_external(repository, console)
+        files.append(_startup_read(f"console-{index}", path, Path(path.anchor)))
+    _startup_fresh(files)
+    return status, files
+
+
+def _startup_imports(data: bytes) -> list[dict[str, Any]]:
+    """Parse three sequential visible import/session/collection segments only."""
+    import re
+
+    segments: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    stage = ""
+    for line in data.decode("utf-8", errors="strict").splitlines():
+        if line.startswith("import time: self [us]"):
+            if current is not None and stage != "complete":
+                raise ValueError("interleaved or truncated import segment")
+            current = {"rows": [], "platform": "", "count": 0, "seconds": ""}
+            segments.append(current)
+            stage = "imports"
+        elif line.startswith("import time:"):
+            if current is None or stage != "imports":
+                raise ValueError("import row outside its visible pre-header segment")
+            row = re.fullmatch(r"import time:\s*([0-9]+)\s*\|\s*([0-9]+)\s*\|\s*(\S.*)", line)
+            if row is None or int(row[2]) < int(row[1]):
+                raise ValueError("malformed importtime self/cumulative columns")
+            current["rows"].append((int(row[1]), int(row[2]), row[3].strip()))
+        elif "test session starts" in line:
+            if current is None or stage != "imports" or not current["rows"]:
+                raise ValueError("missing or interleaved session imports")
+            stage = "session"
+        elif line.startswith("platform "):
+            if current is None or stage != "session" or current["platform"]:
+                raise ValueError("missing or interleaved platform header")
+            current["platform"] = line
+        elif re.search(r"=+ .* tests? collected in ", line):
+            if current is None or stage != "session" or not current["platform"]:
+                raise ValueError("collection summary without its platform/session")
+            summary = re.fullmatch(r"=+ ([0-9]+) tests? collected in ([0-9]+\.[0-9]+)s =+", line)
+            if summary is None:
+                raise ValueError("malformed collection summary")
+            current.update(count=int(summary[1]), seconds=summary[2])
+            stage = "complete"
+    if len(segments) != 3 or stage != "complete":
+        raise ValueError("expected exactly three complete cold collection segments")
+    if len({segment["platform"] for segment in segments}) != 1:
+        raise ValueError("platform differs across cold segments")
+    return segments
+
+
+def _startup_render(
+    status: Mapping[str, Any], files: Sequence[_StartupFile], source_sha: str,
+) -> str:
+    import hashlib
+
+    log = next(item for item in files if item.role == "log")
+    tool_digest = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    lines = [
+        "# Retained Python startup diagnostic", "",
+        "Diagnostic only; never admission or release evidence.", "",
+        f"Exact observer: {status['label']} / {status['run_id']}.",
+        f"state: {status['state']}; rc: {status.get('exit_code')}; "
+        f"observer elapsed: {status.get('elapsed_seconds')} seconds.",
+        f"Declared observed source: {source_sha or 'unknown'}; source binding: declared "
+        "(historical status may not authenticate this declaration).",
+        f"Analyst tool SHA-256: {tool_digest} (analysis code, not observed source).",
+        "command argv: " + ("recorded" if status.get("startup_diagnostic") else "absent"),
+        "trace: " + ("present" if any(item.role == "trace" for item in files) else "absent"),
+        "parent console: " + ("external tool capture; separate from child log"
+                             if any(item.role.startswith("console-") for item in files) else "absent"),
+        "first-header latency: unknown (no per-line timestamps).", "",
+        "File-collection import attribution is unobserved/capture-limited: pytest captures "
+        "stderr during successful file collection. Hidden work is unknown, never zero.",
+        "Visible self sums cover only validated visible import rows. They are not startup, "
+        "CPU, or collection totals. Cumulative rows overlap and are never summed; "
+        "cold segments are separate. No subtraction from observer/pytest durations "
+        "can establish a missing interval.", "",
+    ]
+    try:
+        segments = _startup_imports(log.data)
+    except (ValueError, UnicodeError) as exc:
+        lines.append(f"Import analysis incomplete: {exc}")
+    else:
+        for index, segment in enumerate(segments, 1):
+            rows = segment["rows"]
+            lines.extend([
+                f"## Visible segment {index}", "",
+                segment["platform"],
+                f"{segment['count']} collected / {segment['seconds']} seconds.",
+                f"Visible self: {sum(row[0] for row in rows)} microseconds.",
+                "Largest individual cumulative rows (overlapping; not a sum):",
+            ])
+            for self_us, cumulative_us, name in sorted(rows, key=lambda row: row[1], reverse=True)[:10]:
+                lines.append(f"- {name}: self {self_us}, cumulative {cumulative_us} microseconds")
+            lines.extend(["", "Largest individual self rows:", ""])
+            for self_us, cumulative_us, name in sorted(rows, key=lambda row: row[0], reverse=True)[:10]:
+                lines.append(f"- {name}: self {self_us}, cumulative {cumulative_us} microseconds")
+            lines.append("")
+    lines.extend(["", "Raw input SHA-256 (bytes actually read):", ""])
+    lines.extend(f"- {item.role}: {item.digest} ({len(item.data)} bytes)" for item in files)
+    return "\n".join(lines) + "\n"
+
+
+def _startup_replay(archive: Path, label: str, run_id: str) -> str:
+    archive = archive.resolve()
+    raw = _startup_read("manifest", archive / "manifest.json", archive)
+    manifest = json.loads(raw.data)
+    if (not isinstance(manifest, dict) or manifest.get("schema_version") != 1
+            or manifest.get("kind") != "runtime_startup_archive"
+            or manifest.get("label") != label or manifest.get("run_id") != run_id
+            or manifest.get("diagnostic_only") is not True):
+        raise ValueError("startup archive identity mismatch")
+    entries = manifest.get("files")
+    if not isinstance(entries, list) or not 3 <= len(entries) <= 12:
+        raise ValueError("startup archive file list must be bounded")
+    files: dict[str, _StartupFile] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("malformed startup archive file")
+        role, relative = entry.get("role"), entry.get("path")
+        if not isinstance(role, str) or role in files or not isinstance(relative, str):
+            raise ValueError("duplicate/malformed startup archive role")
+        path = archive / relative
+        if role == "status" and relative != f"status/{label}/{run_id}.json":
+            raise ValueError("startup archive status role must use its canonical path")
+        if Path(relative).is_absolute() or ".." in Path(relative).parts:
+            raise ValueError("startup archive path escape")
+        item = _startup_read(role, path, archive)
+        if item.digest != entry.get("sha256") or len(item.data) != entry.get("size"):
+            raise ValueError("startup archive hash/size changed")
+        files[role] = item
+    if not {"status", "log", "report"}.issubset(files):
+        raise ValueError("startup archive lacks required roles")
+    _validate_status(
+        json.loads(files["status"].data), path=files["status"].path, label=label, run_id=run_id,
+    )
+    _startup_fresh([raw, *files.values()])
+    return files["report"].data.decode("utf-8")
+
+
+def runtime_startup_report(
+    repository: Path, root: Path, label: str, run_id: str, *,
+    source_sha: str = "", archive: Path | None = None, console_paths: Sequence[Path] = (),
+) -> str:
+    """Derive a read-only report from one exact run or checked archived bytes."""
+    _startup_identity(label, run_id, source_sha)
+    if archive is not None:
+        return _startup_replay(_startup_external(repository, archive), label, run_id)
+    status, files = _startup_inputs(repository, root, label, run_id, console_paths)
+    report = _startup_render(status, files, source_sha)
+    _startup_fresh(files)
+    return report
+
+
+def runtime_startup_archive(
+    repository: Path, root: Path, label: str, run_id: str, *,
+    destination: Path, source_sha: str = "", validate_only: bool = True,
+    console_paths: Sequence[Path] = (),
+) -> dict[str, object]:
+    """Plan/copy immutable raw snapshots; publish an exclusive manifest last."""
+    import hashlib
+
+    _startup_identity(label, run_id, source_sha)
+    destination = _startup_external(repository, destination)
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("startup archive destination already exists")
+    status, files = _startup_inputs(repository, root, label, run_id, console_paths)
+    report = _startup_render(status, files, source_sha).encode("utf-8")
+    result: dict[str, object] = {
+        "validate_only": validate_only, "destination": str(destination),
+        "label": label, "run_id": run_id, "diagnostic_only": True,
+    }
+    if validate_only:
+        return result
+    _startup_fresh(files)
+    destination.mkdir()
+    entries = []
+    for item in [*files, _StartupFile("report", Path("report.md"), report)]:
+        relative = (f"status/{label}/{run_id}.json" if item.role == "status"
+                    else "child.log" if item.role == "log"
+                    else "report.md" if item.role == "report"
+                    else f"{item.role}.raw")
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("xb") as handle:
+            handle.write(item.data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        entries.append({
+            "role": item.role, "path": relative, "original_path": str(item.path),
+            "sha256": item.digest, "size": len(item.data),
+        })
+    _startup_fresh(files)
+    _atomic_write_json(destination / "manifest.json", {
+        "schema_version": 1, "kind": "runtime_startup_archive",
+        "label": label, "run_id": run_id, "diagnostic_only": True,
+        "declared_source": source_sha or None,
+        "analyst_tool_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "source_binding": "declaration only unless recorded by original producer",
+        "missing_trace": not any(item.role == "trace" for item in files),
+        "missing_console": not any(item.role.startswith("console-") for item in files),
+        "files": entries,
+    }, exclusive=True)
+    return result
+
+
+def _startup_capacity(repository: Path, environment: Mapping[str, str]) -> None:
+    """Use the existing native admission owners, never a parallel scanner."""
+    for target, variables in (
+        ("ps", ()), ("active-work-status", ()), ("check-system-load", ()),
+        ("disk-guard", (
+            "DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0", "DISK_CLEANUP_PREFLIGHT_DRY_RUN=0",
+            "DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800",
+        )),
+    ):
+        completed = subprocess.run(
+            ["make", "--no-print-directory", target, *variables],
+            cwd=repository, env=dict(environment), check=True, timeout=120,
+            capture_output=True, text=True,
+        )
+        print(completed.stdout, end="", flush=True)
+        if completed.stderr:
+            print(completed.stderr, end="", file=sys.stderr, flush=True)
+        if target == "active-work-status":
+            value = json.loads(completed.stdout)
+            if not isinstance(value, dict):
+                raise ValueError("native startup capacity is malformed")
+            resources = value.get("resource_observability", {})
+            if not isinstance(resources, dict):
+                raise ValueError("native startup capacity is malformed")
+            lease = resources.get("collection_lease", {})
+            if not isinstance(lease, dict):
+                raise ValueError("native startup collection lease is malformed")
+            if (resources.get("worker_count") != 0 or resources.get("leased_worker_count") != 0
+                    or lease.get("state") != "available"
+                    or value.get("gate", {}).get("state") == "RUNNING"):
+                raise ValueError("native startup capacity is busy or unknown")
+        if target == "check-system-load" and not any(
+            line.split() == ["Verdict", ":", verdict]
+            for line in completed.stdout.splitlines() for verdict in ("OK", "WARN")
+        ):
+            raise ValueError("native startup load is critical or unknown")
+
+
+def _startup_runtime(
+    repository: Path, environment: Path | None, python: str, profile_set: str,
+) -> dict[str, object]:
+    if TYPE_CHECKING:
+        from dependency_profiles import ProfileError, inspect_runtime, load_catalog
+    else:
+        from scripts.dependency_profiles import ProfileError, inspect_runtime, load_catalog
+    try:
+        return inspect_runtime(
+            load_catalog(repository), profile_set=profile_set, environment=environment, python=python,
+        )
+    except ProfileError as exc:
+        raise ValueError(f"startup runtime inspection refused: {exc}") from exc
+
+
+def _startup_source(repository: Path) -> tuple[str, str]:
+    if TYPE_CHECKING:
+        from reviewed_head_inputs import _clean_identity
+    else:
+        from scripts.reviewed_head_inputs import _clean_identity
+    return _clean_identity(repository)
+
+
+def runtime_startup_diagnostic(
+    repository: Path, root: Path, label: str, run_id: str, *,
+    source_sha: str, environment: Path | None, python: str, profile_set: str,
+    log_path: Path, validate_only: bool = True, heartbeat: float = 10,
+    retain: int = 20, task: str = "",
+) -> dict[str, Any]:
+    """Plan one fixed collection diagnostic, or use the existing observer once."""
+    _startup_identity(label, run_id, source_sha)
+    if not source_sha or python != "3.12.15" or profile_set != "ci":
+        raise ValueError("startup diagnostic requires exact source and hosted ci Python 3.12.15")
+    if not 0 < heartbeat <= 60 or not 1 <= retain <= 100:
+        raise ValueError("startup heartbeat/retention is outside native bounded policy")
+    repository = repository.resolve()
+    if root.resolve() != repository / DEFAULT_OBSERVED_ROOT:
+        raise ValueError("startup observer root must be the native checkout namespace")
+    if not log_path.is_absolute():
+        log_path = repository / log_path
+    log_path = Path(os.path.abspath(log_path))
+    if not log_path.is_relative_to(repository / ".gate-logs"):
+        raise ValueError("startup log must remain in the native checkout namespace")
+    fixed = {
+        "GATE_TEST_PROFILE": "release", "GATE_CANDIDATE_SHA": source_sha,
+        "GATE_EXACT_SHA_RESUME": "0", "GATE_MAX_FILES_PER_BATCH": "16",
+        "GATE_BATCH_WORKERS": "1", "NPROC": "1", "GLUDD_XDIST_WORKERS": "1",
+        "PYTEST_ADDOPTS": "--collect-only -rs", "PYTHONPROFILEIMPORTTIME": "1",
+        "UV_NO_SYNC": "1", "UV_PYTHON": python, "UV_PYTHON_DOWNLOADS": "never",
+        "UV_PYTHON_PREFERENCE": "only-managed",
+    }
+    result: dict[str, Any] = {
+        "validate_only": validate_only, "diagnostic_only": True, "command": list(_STARTUP_COMMAND),
+        "quiet_seconds": 60, "max_seconds": 90, "environment": fixed,
+        "label": label, "run_id": run_id, "source_sha": source_sha,
+        "log_path": str(log_path),
+    }
+    if validate_only:
+        return result
+    _startup_no_links(log_path, repository)
+    _startup_no_links(root.resolve(), repository)
+    directory = root.resolve() / label
+    if any(path.exists() or path.is_symlink() for path in (
+        log_path, directory / f"{run_id}.json", directory / f"{run_id}.pytest.jsonl",
+    )):
+        raise ValueError("startup identity already reserved; use report/archive, never rerun")
+    before = _startup_source(repository)
+    if before[0] != source_sha:
+        raise ValueError("startup source does not match the exact clean candidate")
+    if TYPE_CHECKING:
+        from run_ci_shards_serial import _owned_test_environment
+    else:
+        from scripts.run_ci_shards_serial import _owned_test_environment
+    bootstrap_environment = _owned_test_environment(dict(os.environ))
+    _startup_capacity(repository, bootstrap_environment)
+    child_environment = {**bootstrap_environment, **fixed}
+    inspection = _startup_runtime(repository, environment, python, profile_set)
+    if inspection.get("state") != "verified":
+        raise ValueError("startup runtime lacks positive current ci inspection")
+    metadata = inspection.get("runtime")
+    if not isinstance(metadata, dict) or not isinstance(metadata.get("prefix"), str):
+        raise ValueError("startup inspection lacks actual runtime prefix")
+    child_environment["UV_PROJECT_ENVIRONMENT"] = metadata["prefix"]
+    if _startup_source(repository) != before:
+        raise ValueError("startup source changed during prerequisite inspection")
+    if TYPE_CHECKING:
+        from item_progress import command_admission, progress_status
+    else:
+        from scripts.item_progress import command_admission, progress_status
+    context: AbstractContextManager[_ProgressAdmission | None] = nullcontext(None)
+    progress_root: Path | None = None
+    if progress_status(repository) is not None:
+        progress_root = repository
+        context = command_admission(
+            repository, _STARTUP_COMMAND, environment=child_environment,
+            quiet_seconds=60, max_seconds=90, task_id=task or None,
+        )
+    with context as admission:
+        code = stream_command(
+            _STARTUP_COMMAND, log_path, observed_root=root, label=label, run_id=run_id,
+            heartbeat_seconds=heartbeat, quiet_seconds=60, max_seconds=90, retain_runs=retain,
+            environment=child_environment, cwd=repository, progress_admission=admission,
+            progress_root=progress_root,
+            startup_metadata={
+                "source_before": source_sha, "tree_before": before[1],
+                "command": list(_STARTUP_COMMAND), "environment": fixed,
+                "runtime_inspection": inspection,
+                "source_after": "not recorded in observer; checked after return",
+            },
+        )
+    result["exit_code"] = code
+    after = _startup_source(repository)
+    result["source_after"] = after[0]
+    if after != before:
+        raise ValueError("startup source changed; diagnostic has no stable source binding")
+    return result
+
+
+def _runtime_startup_cli(action: str) -> int:
+    """Literal Make carriers are data; this surface accepts no arbitrary command."""
+    def value(name: str, default: str = "") -> str:
+        return os.environ.get("GLUDD_RUNTIME_DIAGNOSTIC_" + name, "") or default
+
+    repository = Path.cwd()
+    root = Path(value("ROOT", ".gate-logs/observed"))
+    if not root.is_absolute():
+        root = repository / root
+    label, run_id = value("LABEL"), value("RUN_ID")
+    source = value("SOURCE_SHA")
+    raw_console = json.loads(value("CONSOLE", "[]"))
+    if not isinstance(raw_console, list) or any(not isinstance(path, str) for path in raw_console):
+        raise ValueError("console must be a JSON list of explicit external capture paths")
+    console = [Path(path) for path in raw_console]
+    if action == "report":
+        report = runtime_startup_report(
+            repository, root, label, run_id, source_sha=source, console_paths=console,
+            archive=Path(value("ARCHIVE")) if value("ARCHIVE") else None,
+        )
+        if value("REPORT"):
+            output = _startup_external(repository, Path(value("REPORT")))
+            with output.open("x", encoding="utf-8") as handle:
+                handle.write(report)
+        else:
+            print(report, end="")
+        return 0
+    policy = value("VALIDATE_ONLY", "1")
+    if policy not in {"0", "1"}:
+        raise ValueError("RUNTIME_DIAGNOSTIC_VALIDATE_ONLY must be 0 or 1")
+    if action == "archive":
+        if not value("ARCHIVE"):
+            raise ValueError("an explicit external archive destination is required")
+        result = runtime_startup_archive(
+            repository, root, label, run_id, source_sha=source, console_paths=console,
+            destination=Path(value("ARCHIVE")), validate_only=policy == "1",
+        )
+    else:
+        result = runtime_startup_diagnostic(
+            repository, root, label, run_id, source_sha=source,
+            environment=Path(value("ENVIRONMENT")) if value("ENVIRONMENT") else None,
+            python=value("PYTHON", "3.12.15"), profile_set=value("SET", "ci"),
+            log_path=Path(value("LOG", ".gate-logs/runtime-startup.log")),
+            validate_only=policy == "1", heartbeat=float(value("HEARTBEAT", "10")),
+            retain=int(value("RETAIN", "20")), task=value("TASK"),
+        )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    code = result.get("exit_code", 0)
+    if not isinstance(code, int):
+        raise ValueError("diagnostic returned a non-integer exit code")
+    return code
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse compatible run mode plus bounded status/tail reader modes."""
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--runtime-startup", choices=("run", "report", "archive"))
     modes.add_argument("--status", action="store_true")
     modes.add_argument("--tail", type=int, metavar="LINES")
     parser.add_argument("--log", type=Path)
@@ -871,6 +1468,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.command[:1] == ["--"]:
         args.command = args.command[1:]
+    if args.runtime_startup:
+        if args.command:
+            parser.error("startup facades do not accept arbitrary commands")
+        return args
     if args.status or args.tail is not None:
         if not args.label:
             parser.error("--label is required for status and tail modes")
@@ -888,6 +1489,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Execute the selected run, status, or bounded-tail operation."""
     args = _parse_args(argv)
     try:
+        if args.runtime_startup:
+            return _runtime_startup_cli(args.runtime_startup)
         if args.status:
             return observed_status(
                 args.root,
@@ -945,7 +1548,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 progress_admission=admission,
                 progress_root=progress_root,
             )
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError) as exc:
         print(f"observed-command: {exc}", file=sys.stderr)
         return 2
 

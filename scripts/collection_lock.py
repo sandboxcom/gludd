@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import fcntl
 import os
-import subprocess
+import stat
+import subprocess as subprocess
 import sys
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -99,31 +100,76 @@ def _read_lease_record(handle: TextIO) -> LeaseRecord | None:
     return parse_lease_record(handle.read(MAX_LEASE_RECORD_BYTES + 1))
 
 
-def inspect_lease(path: Path | str) -> LeaseInspection:
-    """Observe a lease without creating, unlinking, or trusting its record."""
+def _lease_stamp(value: os.stat_result) -> tuple[int, ...]:
+    return (
+        value.st_dev, value.st_ino, value.st_ctime_ns, value.st_mtime_ns, value.st_size,
+        value.st_mode, value.st_uid, value.st_gid, value.st_nlink,
+    )
 
+
+def inspect_lease(
+    path: Path | str, *, dir_fd: int | None = None, expected_identity: os.stat_result | None = None,
+) -> LeaseInspection:
+    """Observe a lease without creating, unlinking, or trusting its record."""
     lock_path = Path(path).expanduser()
+    guarded = dir_fd is not None
+    if guarded and (
+        expected_identity is None or lock_path.is_absolute() or len(lock_path.parts) != 1
+        or lock_path.name in {"", ".", ".."}
+        or not all(hasattr(os, flag) for flag in ("O_NOFOLLOW", "O_NONBLOCK"))
+    ):
+        return LeaseInspection(state="unavailable", record=None)
     try:
-        identity = lock_path.lstat()
+        identity = (
+            os.stat(lock_path.name, dir_fd=dir_fd, follow_symlinks=False)
+            if guarded else lock_path.lstat()
+        )
     except FileNotFoundError:
-        return LeaseInspection(state="available", record=None)
+        return LeaseInspection(state="unavailable" if guarded else "available", record=None)
     except OSError:
         return LeaseInspection(state="unavailable", record=None)
-    if not lock_path.is_file() or lock_path.is_symlink():
+    if guarded:
+        if (
+            expected_identity is None or not stat.S_ISREG(identity.st_mode)
+            or identity.st_uid != os.getuid() or identity.st_nlink != 1
+            or _lease_stamp(identity) != _lease_stamp(expected_identity)
+        ):
+            return LeaseInspection(state="unavailable", record=None)
+    elif not lock_path.is_file() or lock_path.is_symlink():
         return LeaseInspection(state="unavailable", record=None)
     try:
-        with lock_path.open("r+", encoding="utf-8") as handle:
+        with ExitStack() as stack:
+            if guarded:
+                descriptor = os.open(
+                    lock_path.name, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd,
+                )
+                try:
+                    handle = os.fdopen(descriptor, "r+", encoding="utf-8")
+                except BaseException:
+                    os.close(descriptor)
+                    raise
+                stack.enter_context(handle)
+            else:
+                handle = stack.enter_context(lock_path.open("r+", encoding="utf-8"))
             opened = os.fstat(handle.fileno())
-            if (identity.st_dev, identity.st_ino) != (opened.st_dev, opened.st_ino):
+            if (
+                _lease_stamp(identity) != _lease_stamp(opened) if guarded
+                else (identity.st_dev, identity.st_ino) != (opened.st_dev, opened.st_ino)
+            ):
                 return LeaseInspection(state="unavailable", record=None)
             record = _read_lease_record(handle)
             try:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                return LeaseInspection(state="held", record=record)
+                result = LeaseInspection(state="held", record=record)
             else:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-                return LeaseInspection(state="available", record=record)
+                result = LeaseInspection(state="available", record=record)
+            if guarded:
+                after = os.stat(lock_path.name, dir_fd=dir_fd, follow_symlinks=False)
+                if _lease_stamp(identity) != _lease_stamp(after):
+                    return LeaseInspection(state="unavailable", record=None)
+            return result
     except (OSError, UnicodeError):
         return LeaseInspection(state="unavailable", record=None)
 

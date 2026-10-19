@@ -16,15 +16,21 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collection_lock import (
-        LeaseInspection,
-        LeaseRecord,
+        LeaseInspection as LeaseInspection,
+    )
+    from collection_lock import (
+        LeaseRecord as LeaseRecord,
+    )
+    from collection_lock import (
         RepositoryIdentityError,
         default_collection_lock,
         default_resource_lock,
         inspect_lease,
     )
     from resource_arbiter import resource_path, resource_root
-    from task_scope import task_inventory as _task_inventory
+    from task_scope import task_inventory as _native_task_inventory
+
+    _task_inventory = _native_task_inventory
 elif __package__:
     from scripts.collection_lock import (
         LeaseInspection,

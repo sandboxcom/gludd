@@ -339,3 +339,269 @@ admission child; all104 prior families, three children, workers2/1/1,21phases,
 2850-second ceiling and90/60 bounds remain. This is source acceptance only;
 independent source review, fresh final focus, full gate and exact-SHA hosted
 proof remain required.
+
+## Exact UV executable command input (2026-10-18)
+
+The frozen368dd05 private3.12 diagnostic executed all three children:
+main1974passes/67.65s, fresh-help1pass/1.09s and tail10passes/1failure/15.20s,
+zero skips. The native observer failedrc2/88.424s, not timeout. Its immutable
+raw history is /tmp/gludd-v012-312-execution-attribution-368dd05/. The tail
+ownership test searched for the literal token uv even though the supported
+UV input was the verified absolute pinned executable.
+
+The test now asks native Make for the selected producer argv, preserving
+inherited command-line/MAKEFLAGS precedence, checks that exact command shape
+and resolves only the selected executable. An unavailable selection fails;
+there is no fallback. It supplies one explicit shell-quoted absolute UV input
+to both ownership dry-runs and expects that exact token before
+run/python/-m/pytest. Existing watchdog-owned versus ordinary eligibility,
+focus marker routing, literal-value injection tripwire, cache option and trace
+plugins remain asserted. Three cheap real Make dry-run cases cover bare,
+absolute and quoted literal executable paths without parameterizing the
+costly native ownership fixture.
+
+The [GNU Make command-line override contract](https://www.gnu.org/s/make/manual/html_node/Overriding.html)
+and [recursive variable transport](https://www.gnu.org/software/make/manual/make.html#Options_002fRecursion)
+explain why the fixture reads Make's effective input rather than assuming an
+environment value wins. Existing
+[stdlib shlex quoting](https://docs.python.org/3.11/library/shlex.html#shlex.quote)
+keeps a POSIX-shell executable path as one token. In a related
+[firsthand2021 Make path report](https://stackoverflow.com/questions/69612558/save-path-with-spaces-in-makefile-variable),
+a user describes a path with spaces and the different behavior of quoting a
+program-plus-argument string. That is context for distinguishing one executable
+token, not an upstream UV defect or Windows portability proof.
+
+The unchanged node reproduces RED1/3.22s with the verified absolute privateUV.
+Final four-case acceptance passes4/3.07s on canonical311 and4/3.42s on private
+3.12.15, zero skips and fatal warnings. Initial4/3.25s acceptance is retained
+before tightening selected-input provenance. Normal strict/Ruff and250 target
+contracts pass. Only the test owner and feature/history docs change; production
+85/75 policy, all112 families/recipes/selectors/plugins, three2-1-1 children,
+90/60 and21/2850 remain unchanged. No broad replay, timeout margin, gate,
+promotion, daemon action or release completion is established.
+
+## One fresh metadata object per runtime record (2026-10-18)
+
+Source review of the native 368dd05 tail found duplicate public metadata
+materialization at exactly three sites: installed-distribution and pytest-plugin
+receipt identity, and command-admission environment identity. In
+[pinned CPython 3.12.15](https://github.com/python/cpython/blob/v3.12.15/Lib/importlib/metadata/__init__.py),
+Distribution.version reads self.metadata again. Reading Name from metadata
+and then version can therefore parse two header snapshots for one record.
+
+Each site now binds one fresh public metadata object per distribution record
+and reads both Name and Version from it. The environment generator retains its
+original evaluation order. There is no new helper/parser/library, memoization
+or cache across calls, objects or events. Duplicate records still observe
+individually, and the next check reads again. Existing Name conversion/errors,
+sorting/duplicates, canonical hashes, plugin unknowns, all six separate named
+package version lookups, private context, executable digest, candidate
+blobs/authentication and start/finish checks remain.
+
+Genuine public Distribution fixtures implement read_text with changing header
+snapshots. They prove one coherent read, same-object next-call freshness,
+exact stable identity, duplicate cardinality, named-version independence and
+current failure without a previous-success fallback. Missing fields retain
+the actual public API behavior: Python 3.12's DeprecationWarning remains fatal
+under -W error. No warnings are filtered. Initial 14-failure/3-pass evidence
+includes five incorrect new missing-field fixture expectations and is retained
+separately. The corrected native RED has 13 failures/6 passes in 2.81s; finite
+acceptance then passes 19 cases on canonical 3.11 in 2.02s and private 3.12.15
+in 2.24s.
+
+Normal strict checking exposed the existing bare/package test import conflict
+and module re-export diagnostics. TYPE_CHECKING-only bare test imports,
+identical stdlib monkeypatch targets and the rollover stub's actual path/dir_fd
+annotation preserve runtime imports, OSError('delete'), the safety attribute
+and every original assertion. All intermediate failures remain retained;
+all four changed Python files pass strict/Ruff without new suppressions.
+
+The first complete three-owner coverage run passed all 368 tests in 295.98s,
+with zero skips. Its native observer finished rc2 in 297.622s because the full
+two-file combined coverage was 84%, below 85% (receipts 81%, progress 93%).
+That failed evidence remains unchanged. Reuse research found the existing
+complete failure-receipt owner, which joins the final cohort. Twenty-five
+additional native semantic-database and failure-node boundary controls fill
+distinct integrity/error gaps, passing in 1.69s. The final source-only observer
+uses 600s/60s based on the actual near-300s cohort; no admission or per-test
+timeout changes.
+
+The complete four-owner canonical run passes 434 cases in 265.68s, zero skips.
+Native observer 20261018T181154Z-42233-e35b2254 passes rc0 in 267.388s. The
+native audit reports 92.3% line and 87.5% branch aggregate coverage; receipts
+has 91.6% line/87.1% branch, progress 94.8%/88.8%. Both full files satisfy
+unchanged 85% aggregate and 75% per-file line and branch floors.
+The private 3.12.15 four-owner run executes all 434 cases with zero skips:
+433 pass and the original 0o4600 artifact-mode case fails in 296.89s.
+Observer v012-runtime-identity-private312/whole-metadata-20261018 finishes
+rc2 in 300.738s (not timeout; trace_path is null). All new metadata/integrity
+cases pass. Validation returned valid=True after chmod, but the run did not
+capture the effective native mode, so neither a policy defect nor a filesystem
+cause is established. The complete failed XML/status/log remain immutable;
+an exact native mode precondition is the next bounded diagnostic. No permission
+mask or original refusal assertion is weakened, and no broad retry is run.
+
+Authorized input-observation controls subsequently pass the exact mode node
+(1/1.33s), the full receipt owner (140/2.31s), and both original mode cases
+under the same ordered four-module collection (2/2.52s, 432 deselected).
+Those controls do not explain or replace the failed whole-private run. Their
+stronger fixture is retained for a separate test-only child; M21 restores the
+original mode fixture. No production mode fix is claimed. Fresh frozen-candidate
+runtime/combined proof remains required before any integration/release claim.
+
+
+### Firsthand repeated-lookup findings and limits
+
+In [pip issue 12079](https://github.com/pypa/pip/issues/12079), a 2023 operator
+traced a pip/Plone resolver slowdown through candidate.version to repeated
+distribution.version access; the report records the associated fix and closure.
+The [2024 Python.org discussion](https://discuss.python.org/t/please-make-package-version-go-away/58501)
+contains firsthand repeated-version measurements and distinguishes warmed
+lookup from process/import startup. Those are different workloads, not Gludd
+native 3.12 cost attribution or exact Name/Version coherence reproductions.
+Their global/candidate-lifetime cache suggestions do not apply across
+independent proof checks. Pinned source and local semantic RED establish this
+change; latency savings and hosted 90-second margin remain unmeasured.
+
+The full two-file config includes both runtime owners with branch coverage,
+no exclusions or floor changes. All 112 manifest objects, Make recipes,
+selectors/plugins, three 2/1/1 children, 90/60, 21/2850, 85 aggregate/75 per file,
+fatal warnings, ZDD and cleanup/branch/promotion authority remain unchanged.
+This is focused source acceptance, not admission/gate/hosted readiness. No
+timing probe, broad replay, provisioning, daemon action or release closure.
+
+## Native permission-input observation fixture (2026-10-18)
+
+The separate metadata child is pinned at
+dd806d3041c171d4a471b3939c1f783505fac4fc. Its complete private four-owner
+run remains FAILED: 433 passes and one original 0o4600-mode failure, with
+zero skips. Bounded passing controls do not explain or replace that run.
+
+The existing receipt fixture now requires its requested native S_IMODE
+immediately after chmod. A fixture-local Path.stat callback always delegates
+to the original method unchanged and records only this manifest's native
+follow_symlinks, mode, uid, device and inode values. Both original refusal
+conditions and the exact unsafe-mode reason remain, with snapshots included
+in failure diagnostics. No native values are fabricated; successful runs do
+not imply that the earlier unrecorded mode is known.
+
+The same private runtime passed the exact original mode node (1/1.33s), the
+whole receipt owner (140/2.31s), and both mode nodes after the original ordered
+four-module collection (2/2.52s, 432 deselected). Diagnostic retries stopped
+there. This separate fixture child passes the complete 140-case receipt owner
+on canonical 3.11 in 2.05s and private 3.12.15 in 2.40s, zero skips and fatal
+warnings. Normal strict/Ruff pass. These are focused source/input controls.
+
+No production permission mask, accepted state, ownership/cleanup authority,
+Make/manifest/selector/plugin/worker/deadline or coverage config changes.
+The previous full-file 92.3% line/87.5% branch audit remains separate source
+evidence; no second coverage or expensive reviewed-head body replay was run.
+The original runtime failure is unexplained, and fresh frozen-candidate
+runtime/combined/source/gate/hosted proof remains required. No production
+repair, latency saving or release readiness is claimed.
+
+## Native setuid-input admission guard (2026-10-19)
+
+The exact d6a634a frozen four-owner private 3.12.15 run remains FAILED:
+433 passes, one failure and zero skips, 299.31s; its native observer reports
+rc2/302.972s. The requested permission input04600 was absent at the immediate
+post-chmod precondition: native permissions0600, uid501, with matching recorded
+device/inode. Validation was not reached. This does not retrospectively
+explain the older metadata-child failure, which recorded no effective mode.
+
+A bounded observation kept the selected builtin posix.chmod and its integer
+argument2432 unchanged. It returned None while direct builtin stat retained
+raw33152 (0100600); the ordinary0644 control changed raw33152 to33188.
+That default-context diagnostic reports22 passes/one failure in3.87s. Root
+then ran the exact instrumented ordered-four-owner comparison outside the
+sandbox: the requested mode was realized as raw35200 (0104600), both original
+unsafe-mode refusals passed, and all434 cases passed with zero skips in
+289.58s; native observer293.477s. The observed difference establishes execution
+context dependence for these runs. It identifies neither a specific kernel
+policy nor the cause of older unrecorded failures. Neither run is relabelled,
+and this is not a production permission repair or performance measurement.
+Raw comparison ownership remains with
+`/tmp/gludd-v012-chmod-native-context-comparison-d6a634a/`.
+
+Family113, native-setuid-input-realization, now appends the exact existing
+`test_receipt_validation_refuses_unsafe_artifact_mode[2432]` node to the
+promotion manifest and places it first in the MAIN admission child. All112
+earlier family objects and every earlier selector's relative order remain.
+No receipt fixture or validator changes. Real-Make routing controls require
+exactly this parameter case once, rejecting omission, whole-module expansion,
+the ordinary0644 case, duplication, later-child execution, later MAIN position
+and a mismatched manifest node. Existing three sequential children, workers
+2/1/1, original90/60,21phases/2850 ceiling, plugins, fatal warnings, ZDD,
+authentication, cleanup and85/75 coverage authority remain intact.
+
+Two new routing controls fail first in1.42s; all nine finite controls then pass
+in1.97s. Intermediate whole-owner acceptance retains133 passes/four failures:
+two stale exact-roster literals and two existing native fixture-collection
+EPERM failures. Only the literal expectations are conformed to the additive
+selector; no fixture boundary, assertion or setting bypass is introduced.
+Final complete routing-owner acceptance is recorded in the source report.
+This source guard does not prove the updated90-second target behavior;
+independent source review and Root's actual unchanged-bound behavior remain
+separate prerequisites before release claims.
+
+The upstream decision at
+`/tmp/gludd-v012-native-setuid-input-upstream-decision.md` found no matching
+successful-chmod/S_ISUID-loss report. Pinned
+[CPython3.12.15 os_chmod_impl](https://github.com/python/cpython/blob/v3.12.15/Modules/posixmodule.c#L3200-L3318)
+passes the requested mode and checks the native return code without verifying
+the resulting bits. Published
+[Apple authorization source](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_subr.c#L10364-L10430)
+distinguishes S_ISUID ownership from S_ISGID membership; gid0 alone does not
+explain this S_ISUID request, and that source does not identify the running
+kernel's policy. A firsthand
+[Homebrew Seatbelt report](https://github.com/orgs/Homebrew/discussions/6747)
+describes explicit denied writes and kernel deny records, not a successful
+04600-to0600 operation. These findings provide context, not an exact upstream
+cause or a universal sandbox behavior claim.
+
+## Fresh native commit metadata per preparation (2026-10-19)
+
+Root's frozen f277be0 first-two session profile records repeated native Git
+launches inside independent reviewed-head preparations. Its controller-local
+self/cumulative intervals overlap; they are not summed and do not establish
+child CPU cost, hosted latency or clearance of the original90-second blocker.
+The retained profile is diagnostic-only; the trace-route child and its source
+review remain separate from that historical observation.
+
+The existing receipt Git owner now reads the application/source commit trees
+and ordered parents in one native `git show --no-patch` query per preparation.
+Requested immutable IDs are deduplicated only within that call. Response
+validation requires exactly the unique requested keys, complete native object
+IDs, a tree and ordered parents, with the existing1MiB bound; missing, duplicate,
+unexpected, malformed, non-ASCII and failed responses refuse. The lower-level
+Git helper preserves native SHA1/SHA256 widths; existing receipt schema policy
+is unchanged. `--no-show-signature` preserves the old metadata reads' behavior
+when repository signature display or a GPG command is configured.
+
+Genuine Git count/parity controls create fixtures before recording and delegate
+every native command. They prove metadata launches change from3 to1 for the
+one-head cherry-pick and2 to1 for the two-parent merge, on each of two fresh
+preparations. Complete plan, source tree, ordered parents and both original
+cleanliness fences remain equal to independent native references. A genuine
+Git replacement changes the next call's effective object view; no metadata is
+reused across preparations, checks, roots, native children or mutations.
+All original ref/ancestry, patch/remerge, diff, focused-path, clean HEAD,
+worktree/index, authentication, capture, validation and finalization checks
+remain.
+
+[Git show's native formatting](https://git-scm.com/docs/git-show) supplies the
+structured fields; the existing receipt subprocess owner retains launch/error
+authority. No Git library, persistent process, raw-object parser or cache is
+added. A firsthand [GitPython issue906 report](https://github.com/gitpython-developers/GitPython/issues/906)
+describes a2019 Zuul user's test-runtime regression after a dependency version
+change. It does not identify repeated native launches as its cause or provide
+a transferable Gludd speedup. The local source/profile and real operation
+counts justify this bounded change, not an upstream bug claim.
+
+All113 admission families, original selectors/plugins, three sequential2/1/1
+children,90/60 bounds,21phases/2850 ceiling, fatal warnings,85/75 line/branch
+floors, ZDD, cleanup and branch/promotion authority remain. Full existing
+receipt-builder and native-startup/input coverage owners remain in acceptance.
+Raw RED/GREEN, coverage and mandatory collection receipts are retained under
+`/tmp/gludd-v012-native-git-metadata-repair-evidence/`. Reduced launches are
+not measured wall-time savings, updated admission behavior or release proof.

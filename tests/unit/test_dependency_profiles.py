@@ -237,7 +237,9 @@ def test_profile_projects_are_independent_and_locks_are_bounded() -> None:
     assert isinstance(security_tool, dict)
     security_uv = security_tool["uv"]
     assert isinstance(security_uv, dict)
-    assert security_uv["constraint-dependencies"] == ["chardet>=7.6.0,<8"]
+    assert security_uv["constraint-dependencies"] == [
+        "chardet>=7.6.0,<8", "jsonpointer==3.2.0",
+    ]
 
 
 def test_install_sets_reference_only_known_profiles_and_preserve_legacy_names() -> None:
@@ -1154,3 +1156,131 @@ def test_exact_managed_patch_survives_every_native_profile_command(
         else:
             assert argv[:3] == ("uv", "venv", "--relocatable")
     assert not (tmp_path / ".venv").exists()
+
+
+def test_selected_profile_locks_preserve_controller_jsonpointer_requirement() -> None:
+    """A later inexact profile must preserve the controller's direct requirement."""
+    catalog = dependency_profiles.load_catalog(ROOT, CATALOG_PATH)
+    controller, _ = dependency_profiles._project_metadata(
+        catalog.profiles["ansible-controller"].project / "pyproject.toml"
+    )
+    requirement = next(
+        value for text in controller
+        if canonicalize_name((value := Requirement(text)).name) == "jsonpointer"
+    )
+    for name, selected in catalog.sets.items():
+        if "ansible-controller" not in selected:
+            continue
+        installed: str | None = None
+        for profile in selected:
+            packages = _load(catalog.profiles[profile].project / "uv.lock")["package"]
+            assert isinstance(packages, list)
+            for package in packages:
+                assert isinstance(package, dict)
+                if package.get("name") == "jsonpointer":
+                    version = package["version"]
+                    assert isinstance(version, str)
+                    installed = version
+        assert installed is not None
+        assert installed in requirement.specifier, f"{name}: {installed} violates {requirement}"
+
+
+@pytest.mark.parametrize("check", [False, True])
+def test_relock_can_select_one_registered_profile_without_root_or_neighbors(
+    tmp_path: Path, check: bool,
+) -> None:
+    catalog = _temporary_catalog(tmp_path)
+    commands = dependency_profiles.lock_commands(
+        catalog, profile_set=None, profile="example", check=check, uv="private-uv",
+    )
+    expected = ("private-uv", "lock", *(("--check",) if check else ()),
+                "--project", str(catalog.profiles["example"].project))
+    assert [command.argv for command in commands] == [expected]
+    assert commands[0].environment == {}
+
+
+@pytest.mark.parametrize(
+    ("profile", "profile_set", "message"),
+    [("missing", None, "unknown profile"), ("", None, "unknown profile"),
+     ("example", "example", "mutually exclusive")],
+)
+def test_relock_profile_refuses_unknown_or_combined_selection_before_commands(
+    tmp_path: Path, profile: str, profile_set: str | None, message: str,
+) -> None:
+    catalog = _temporary_catalog(tmp_path)
+    with pytest.raises(dependency_profiles.ProfileError, match=message):
+        dependency_profiles.lock_commands(
+            catalog, profile_set=profile_set, profile=profile, check=True,
+        )
+
+
+@pytest.mark.parametrize("action", ["check", "lock"])
+def test_cli_relock_profile_forwards_exact_registered_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action: str,
+) -> None:
+    catalog = _temporary_catalog(tmp_path)
+    calls: list[dependency_profiles.Command] = []
+    monkeypatch.setattr(dependency_profiles, "execute_commands", lambda commands: calls.extend(commands))
+    assert dependency_profiles.main([
+        action, "--root", str(tmp_path), "--manifest", str(catalog.manifest),
+        "--profile", "example",
+    ]) == 0
+    assert len(calls) == 1
+    assert calls[0].argv[-2:] == ("--project", str(catalog.profiles["example"].project))
+    assert ("--check" in calls[0].argv) is (action == "check")
+
+
+@pytest.mark.parametrize("recursive", [False, True])
+@pytest.mark.parametrize("profile", ["", "dev-security", "$(shell touch {tripwire})"])
+def test_real_relock_target_transports_the_profile_literally(
+    tmp_path: Path, profile: str, recursive: bool,
+) -> None:
+    import json
+    import sys
+
+    tripwire = tmp_path / "selector-tripwire"
+    profile = profile.replace("{tripwire}", str(tripwire))
+    record = tmp_path / "uv-call.json"
+    shim = tmp_path / "uv"
+    shim.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\nfrom pathlib import Path\n"
+        f"Path({str(record)!r}).write_text(json.dumps(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o700)
+    argv = ["make", "--no-print-directory", "-C", str(ROOT), "relock"]
+    if recursive:
+        carrier = tmp_path / "carrier.mk"
+        carrier.write_text(
+            "all:\n\t@$(MAKE) --no-print-directory -C " + str(ROOT) + " relock\n",
+            encoding="utf-8",
+        )
+        argv = ["make", "--no-print-directory", "-C", str(ROOT),
+                "-f", "Makefile", "-f", str(carrier), "all"]
+    result = subprocess.run(
+        [*argv, f"UV={shim}", "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1",
+         f"DEPENDENCY_PROFILE_RELOCK_PROFILE={profile}"],
+        text=True, capture_output=True, timeout=15, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    actual = json.loads(record.read_text(encoding="utf-8"))
+    assert "check" in actual and "lock" not in actual
+    assert actual.count("--profile") == bool(profile)
+    if profile:
+        assert actual[actual.index("--profile") + 1] == profile
+    assert not tripwire.exists()
+
+
+def test_relock_profile_selector_is_registered_with_a_safe_behavior() -> None:
+    import json
+
+    contract = json.loads((ROOT / "config/make_target_contract.json").read_text(encoding="utf-8"))
+    target = next(value for value in contract["targets"] if value["name"] == "relock")
+    assert target["make_variables"] == [
+        "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY", "DEPENDENCY_PROFILE_RELOCK_PROFILE",
+    ]
+    assert target["behavior"] == (
+        "make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1 "
+        "DEPENDENCY_PROFILE_RELOCK_PROFILE=dev-security"
+    )
