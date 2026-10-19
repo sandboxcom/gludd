@@ -457,7 +457,7 @@ release-proof-admission:
 	case "$$WORK_TASK" in *[!A-Za-z0-9._-]*) echo "ERROR: WORK_ITEM_ID must be literal task data"; echo "PROOF-ADMISSION-BLOCKED phase=release-proof-admission rc=2"; exit 2;; esac; \
 	case "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: RELEASE_PROOF_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac; \
 	if [ "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" = "1" ]; then \
-		echo "PROOF-ADMISSION-PLAN capacity -> gate-config -> task-registration -> task-integrity -> failure-promotions -> resource-ownership -> runtime-compatibility; release_ready=false gate_evidence=false"; \
+		echo "PROOF-ADMISSION-PLAN capacity -> gate-config -> task-registration -> task-integrity -> failure-promotions -> resource-ownership -> test-env-writes -> source-contracts -> runtime-compatibility; release_ready=false gate_evidence=false"; \
 		exit 0; \
 	fi; \
 	run_owner() { \
@@ -486,6 +486,8 @@ release-proof-admission:
 	run_owner check-task-integrity; \
 	run_owner check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json; \
 	run_owner check-resource-ownership RESOURCE_OWNERSHIP_ROOT=. RESOURCE_OWNERSHIP_PATHS='' RESOURCE_OWNERSHIP_INVENTORY=config/resource_ownership_inventory.json RESOURCE_OWNERSHIP_WRITE=0; \
+	run_owner check-test-env-writes; \
+	run_owner test-files TESTFILES='tests/unit/test_guardrails.py::TestBashGuardrailPrompting::test_agents_md_lists_make_targets tests/unit/test_guardrails.py::TestTDDGuardrail::test_agents_md_tdd_lists_workflow_steps tests/unit/test_guardrails.py::TestGuardrailIntegrity::test_agents_md_has_guardrail_integrity_policy tests/unit/test_guardrails.py::TestTaskCompletionGuardrail::test_agents_md_has_completion_policy tests/unit/test_guardrails.py::TestTaskCompletionGuardrail::test_agents_md_completion_policy_forbids_early_stop tests/unit/test_no_home_directory_access.py::test_agents_md_documents_allowed_boundary tests/unit/test_no_home_directory_access.py::test_agents_md_lists_structural_test_as_enforcement tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve tests/unit/test_oversized_document_splits.py' PYTEST_ARGS='-q -W error -n 0'; \
 	run_owner _pytest-runtime-compatibility-admission; \
 	echo "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false"
 
