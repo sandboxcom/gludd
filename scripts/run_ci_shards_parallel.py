@@ -23,6 +23,9 @@ from xml.etree import ElementTree
 if TYPE_CHECKING:
     from ci_named_shard_files import expand_shard
     from resource_arbiter import resource_root as project_resource_root
+elif __package__:
+    from scripts.ci_named_shard_files import expand_shard
+    from scripts.resource_arbiter import resource_root as project_resource_root
 else:
     from ci_named_shard_files import expand_shard
     from resource_arbiter import resource_root as project_resource_root

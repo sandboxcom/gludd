@@ -45,6 +45,30 @@ if TYPE_CHECKING:
         ShadowGateProgress,
     )
     from ci_receipt_auth import AUTH_ALGORITHM
+elif __package__:
+    from scripts.ci_batch_receipts import (
+        MAX_FAILURE_NODES,
+        MAX_FAILURE_RECEIPTS_PER_GENERATION,
+        FailureReceiptRequest,
+        ShadowBatchReceiptWriter,
+        ShadowFailureReceiptWriter,
+    )
+    from scripts.ci_batch_replay_audit import (
+        ReplayAdmissionRequest,
+        ReplayAdmissionResult,
+        ReplayAuditRequest,
+        ShadowReplayAuditor,
+    )
+    from scripts.ci_gate_progress import (
+        MAX_PROGRESS_BATCHES,
+        MAX_PROGRESS_OUTPUT_BYTES,
+        MAX_TIMING_SAMPLES,
+        ProgressBatch,
+        ProgressExecution,
+        ReceiptStatus,
+        ShadowGateProgress,
+    )
+    from scripts.ci_receipt_auth import AUTH_ALGORITHM
 else:
     from ci_batch_receipts import (
         MAX_FAILURE_NODES,

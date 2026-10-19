@@ -14,6 +14,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from ci_named_shard_files import SHARDS
+    from resource_arbiter import resource_root
+    from run_ci_shards_serial import (
+        ATTESTATION_SCHEMA_VERSION,
+        canonical_json_sha256,
+        release_execution_policy,
+    )
+elif __package__:
     from scripts.ci_named_shard_files import SHARDS
     from scripts.resource_arbiter import resource_root
     from scripts.run_ci_shards_serial import (
