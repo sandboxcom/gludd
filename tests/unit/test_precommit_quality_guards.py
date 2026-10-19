@@ -156,11 +156,12 @@ def test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_c
         "os.environ.get('DUPLICATE_CODE_ENGINE'), 'flags': os.environ.get('MAKEFLAGS', ''), "
         "'level': os.environ.get('MAKELEVEL', '')}))\n",
     )
+    uv = f'{shlex.quote(sys.executable)} {shlex.quote(str(recorder))} "$(FLAG_CANARY)"'
     makefile = tmp_path / "Makefile"
     makefile.write_text(
         f'include {ROOT / "make" / "00-foundation.mk"}\n'
         f'PYTHON := {sys.executable}\n'
-        f'UV := {sys.executable} {recorder} "$(FLAG_CANARY)"\n'
+        f'UV := {uv}\n'
         "boundary-probe: check-duplicate-code test-count\n"
         "test-count:\n"
         "\t@$(UV) unrelated-collection\n"
@@ -177,7 +178,7 @@ def test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_c
             "make", "--no-print-directory", "--keep-going", "-f", str(makefile),
             "recursive-probe" if recursive else "boundary-probe",
             f"DUPLICATE_CODE_ENGINE={engine}", "DUPLICATE_CODE_VALIDATE_ONLY=1",
-            f"FLAG_CANARY={canary}",
+            f"FLAG_CANARY={canary}", f"UV={uv}",
         ],
         cwd=tmp_path, env=environment, check=False, text=True,
         capture_output=True, timeout=30,
@@ -286,10 +287,11 @@ def test_verified_apostrophes_and_shell_operator_text_remain_literal_engine_data
     engine = f"{tmp_path}/engine'; touch {sentry}; printf 'file/jscpd"
     recorder = tmp_path / "record.py"
     recorder.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]))\n")
+    uv = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
     makefile = tmp_path / "Makefile"
     makefile.write_text(
         f'include {ROOT / "make" / "00-foundation.mk"}\n'
-        f'UV := {sys.executable} {recorder}\n'
+        f'UV := {uv}\n'
         "recursive-check:\n"
         f'\t@$(MAKE) --no-print-directory -f "{makefile}" check-duplicate-code '
         'DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)"\n',
@@ -297,7 +299,7 @@ def test_verified_apostrophes_and_shell_operator_text_remain_literal_engine_data
     result = subprocess.run(
         [
             "make", "--no-print-directory", "-f", str(makefile),
-            "recursive-check" if recursive else "check-duplicate-code",
+            "recursive-check" if recursive else "check-duplicate-code", f"UV={uv}",
             f"DUPLICATE_CODE_ENGINE={engine}", "DUPLICATE_CODE_VALIDATE_ONLY=1",
         ],
         cwd=tmp_path, check=False, text=True, capture_output=True, timeout=30,
@@ -307,6 +309,70 @@ def test_verified_apostrophes_and_shell_operator_text_remain_literal_engine_data
     assert arguments[arguments.index("--engine") + 1] == engine
     assert not sentry.exists()
 
+
+@pytest.mark.parametrize("transport", ("environment-overrides", "recursive"))
+@pytest.mark.parametrize("mutation", ("owned", "omitted", "opposite"))
+def test_engine_probe_owns_uv_without_discarding_native_make_carriers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, transport: str, mutation: str,
+) -> None:
+    """Original checker/collection assertions must reject a lost fixture UV."""
+    tripwire = tmp_path / "ambient-uv-ran"
+    poison = tmp_path / "ambient recorder.py"
+    poison.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(tripwire)!r}).write_text('ambient UV')\nraise SystemExit(86)\n",
+        encoding="utf-8",
+    )
+    ambient_uv = f"{shlex.quote(sys.executable)} {shlex.quote(str(poison))}"
+    native_run = subprocess.run
+    inherited = os.environ.copy()
+    invocations: list[list[str]] = []
+
+    def execute(
+        arguments: list[str], *, cwd: Path, env: dict[str, str], check: bool,
+        text: bool, capture_output: bool, timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        assert not check and text and capture_output and timeout == 30
+        command = arguments.copy()
+        if mutation == "owned":
+            assert len([arg for arg in command if arg.startswith("UV=")]) == 1
+        else:
+            command = [arg for arg in command if not arg.startswith("UV=")]
+            if mutation == "opposite":
+                command.append(f"UV={ambient_uv}")
+        invocations.append(command)
+        carrier = tmp_path / "carrier.mk"
+        literal_arguments = shlex.join(command[1:]).replace("$", "$$")
+        carrier.write_text(f"all:\n\t@$(MAKE) {literal_arguments}\n", encoding="utf-8")
+        environment = env.copy()
+        environment["UV"] = ambient_uv
+        return native_run(
+            [arguments[0], "--no-print-directory", "--keep-going",
+             *(["-e"] if transport == "environment-overrides" else []),
+             "-f", str(carrier), f"MAKE={arguments[0]}", f"UV={ambient_uv}"],
+            cwd=cwd, env=environment, check=False, text=True,
+            capture_output=True, timeout=30,
+        )
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(subprocess, "run", execute)
+        if mutation == "owned":
+            test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_children(
+                tmp_path, transport == "recursive", "engine with spaces/jscpd",
+            )
+        else:
+            with pytest.raises(AssertionError):
+                test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_children(
+                    tmp_path, transport == "recursive", "engine with spaces/jscpd",
+                )
+    assert len(invocations) == 1
+    if mutation == "owned":
+        assert len([arg for arg in invocations[0] if arg.startswith("UV=")]) == 1
+        assert not tripwire.exists()
+    elif transport == "recursive" or mutation == "opposite":
+        assert tripwire.exists()
+    assert subprocess.run is native_run
+    assert os.environ == inherited
 
 def test_real_project_make_refuses_engine_expression_before_parse_or_export_execution(
     tmp_path: Path,

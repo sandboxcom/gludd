@@ -5,7 +5,9 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import os
 import re
+import shlex
 import subprocess
 import sys
 from copy import deepcopy
@@ -286,10 +288,12 @@ def test_promotion_checker_executes_both_structural_pins_only_after_valid_manife
     manifest = tmp_path / "literal manifest.json"
     manifest.write_text("{}\n", encoding="utf-8")
     stanza = _target_stanza(compose_makefile(ROOT / "Makefile"), "check-gate-failure-promotions")
+    uv = shlex.join([sys.executable, str(probe), "validator"])
+    child_make = shlex.join(["make", "--no-print-directory", "-f", str(child)])
     owner = tmp_path / "owner.mk"
     owner.write_text(
-        f'UV := "{sys.executable}" "{probe}" validator\n'
-        f"MAKE := make --no-print-directory -f {child}\n"
+        f"UV := {uv}\n"
+        f"MAKE := {child_make}\n"
         f"GATE_FAILURE_PROMOTION_MANIFEST := {manifest}\n"
         ".PHONY: check-gate-failure-promotions\n"
         f"check-gate-failure-promotions:{stanza}\n"
@@ -297,7 +301,8 @@ def test_promotion_checker_executes_both_structural_pins_only_after_valid_manife
         encoding="utf-8",
     )
     result = subprocess.run(
-        ["make", "--no-print-directory", "-f", str(owner), "check-gate-failure-promotions"],
+        ["make", "--no-print-directory", "-f", str(owner), "check-gate-failure-promotions",
+         f"UV={uv}", f"MAKE={child_make}", f"GATE_FAILURE_PROMOTION_MANIFEST={manifest}"],
         cwd=ROOT, capture_output=True, text=True, timeout=10,
     )
     rows = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()]
@@ -319,6 +324,80 @@ def test_promotion_checker_executes_both_structural_pins_only_after_valid_manife
     else:
         assert result.returncode == 0, result.stdout + result.stderr
 
+
+@pytest.mark.parametrize(
+    ("transport", "mutation", "binding"),
+    [
+        ("environment-overrides", "owned", ""),
+        ("recursive", "owned", ""),
+        *[("recursive", mutation, binding)
+          for binding in ("UV", "MAKE", "GATE_FAILURE_PROMOTION_MANIFEST")
+          for mutation in ("omitted", "opposite")],
+    ],
+)
+def test_promotion_probe_owns_only_its_native_make_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    transport: str, mutation: str, binding: str,
+) -> None:
+    """Real recursive precedence must preserve validator and structural pins."""
+    tripwire = tmp_path / "ambient-command-ran"
+    poison = tmp_path / "ambient recorder.py"
+    poison.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(tripwire)!r}).write_text('ambient command')\nraise SystemExit(86)\n",
+        encoding="utf-8",
+    )
+    ambient_command = f"{shlex.quote(sys.executable)} {shlex.quote(str(poison))}"
+    ambient_manifest = tmp_path / "ambient manifest.json"
+    ambient_manifest.write_text("{}\n", encoding="utf-8")
+    ambient = {
+        "UV": ambient_command, "MAKE": ambient_command,
+        "GATE_FAILURE_PROMOTION_MANIFEST": str(ambient_manifest),
+    }
+    native_run = subprocess.run
+    inherited = os.environ.copy()
+    invocations: list[list[str]] = []
+
+    def execute(
+        arguments: list[str], *, cwd: Path, capture_output: bool,
+        text: bool, timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        assert capture_output and text and timeout == 10
+        command = arguments.copy()
+        if mutation == "owned":
+            for name in ambient:
+                assert len([arg for arg in command if arg.startswith(f"{name}=")]) == 1
+        else:
+            command = [arg for arg in command if not arg.startswith(f"{binding}=")]
+            if mutation == "opposite":
+                command.append(f"{binding}={ambient[binding]}")
+        invocations.append(command)
+        carrier = tmp_path / "carrier.mk"
+        literal_command = shlex.join(command).replace("$", "$$")
+        carrier.write_text(f"all:\n\t@+{literal_command}\n", encoding="utf-8")
+        environment = inherited.copy()
+        environment.update(ambient)
+        return native_run(
+            ["make", "--no-print-directory",
+             *(["-e"] if transport == "environment-overrides" else []),
+             "-f", str(carrier), *(f"{name}={value}" for name, value in ambient.items())],
+            cwd=cwd, env=environment, capture_output=True, text=True, timeout=10,
+        )
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(subprocess, "run", execute)
+        if mutation == "owned":
+            test_promotion_checker_executes_both_structural_pins_only_after_valid_manifest(tmp_path, "")
+        else:
+            with pytest.raises((AssertionError, FileNotFoundError)):
+                test_promotion_checker_executes_both_structural_pins_only_after_valid_manifest(tmp_path, "")
+    assert len(invocations) == 1
+    assert tripwire.exists() is (mutation != "owned" and binding in {"UV", "MAKE"})
+    if mutation != "owned" and binding == "GATE_FAILURE_PROMOTION_MANIFEST":
+        rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+        assert rows[0]["args"][-3] == str(ambient_manifest)
+    assert subprocess.run is native_run
+    assert os.environ == inherited
 
 def test_gate_lock_prerequisite_failure_runs_in_whole_file_early_admission() -> None:
     """A read-only admission check must not be confused with a stateful gate phase."""
