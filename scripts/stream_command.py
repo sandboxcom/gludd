@@ -18,7 +18,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from types import FrameType
+from types import FrameType, MappingProxyType
 from typing import TYPE_CHECKING, Any, BinaryIO, NamedTuple, Protocol, TypedDict
 
 DEFAULT_OBSERVED_ROOT = Path(".gate-logs/observed")
@@ -864,6 +864,23 @@ def observed_tail(
 # Startup diagnostics reuse this observer. Readers never execute or refresh a run.
 _STARTUP_LIMIT = 16 * 1024 * 1024
 _STARTUP_COMMAND = ("make", "--no-print-directory", "_pytest-runtime-compatibility-admission")
+_RUNTIME_STARTUP_CARRIERS: Mapping[str, str] = MappingProxyType({
+    "VALIDATE_ONLY": "GLUDD_RUNTIME_DIAGNOSTIC_VALIDATE_ONLY",
+    "SOURCE_SHA": "GLUDD_RUNTIME_DIAGNOSTIC_SOURCE_SHA",
+    "ENVIRONMENT": "GLUDD_RUNTIME_DIAGNOSTIC_ENVIRONMENT",
+    "PYTHON": "GLUDD_RUNTIME_DIAGNOSTIC_PYTHON",
+    "SET": "GLUDD_RUNTIME_DIAGNOSTIC_SET",
+    "REPORT": "GLUDD_RUNTIME_DIAGNOSTIC_REPORT",
+    "ARCHIVE": "GLUDD_RUNTIME_DIAGNOSTIC_ARCHIVE",
+    "CONSOLE": "GLUDD_RUNTIME_DIAGNOSTIC_CONSOLE",
+    "ROOT": "GLUDD_RUNTIME_DIAGNOSTIC_ROOT",
+    "LABEL": "GLUDD_RUNTIME_DIAGNOSTIC_LABEL",
+    "RUN_ID": "GLUDD_RUNTIME_DIAGNOSTIC_RUN_ID",
+    "LOG": "GLUDD_RUNTIME_DIAGNOSTIC_LOG",
+    "HEARTBEAT": "GLUDD_RUNTIME_DIAGNOSTIC_HEARTBEAT",
+    "RETAIN": "GLUDD_RUNTIME_DIAGNOSTIC_RETAIN",
+    "TASK": "GLUDD_RUNTIME_DIAGNOSTIC_TASK",
+})
 
 
 class _StartupFile(NamedTuple):
@@ -1394,7 +1411,7 @@ def runtime_startup_diagnostic(
 def _runtime_startup_cli(action: str) -> int:
     """Literal Make carriers are data; this surface accepts no arbitrary command."""
     def value(name: str, default: str = "") -> str:
-        return os.environ.get("GLUDD_RUNTIME_DIAGNOSTIC_" + name, "") or default
+        return os.environ.get(_RUNTIME_STARTUP_CARRIERS[name], "") or default
 
     repository = Path.cwd()
     root = Path(value("ROOT", ".gate-logs/observed"))

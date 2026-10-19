@@ -31,6 +31,7 @@ test-specific-pyver:
 		$(UV) run --no-sync --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE) -n 1 --dist loadgroup --max-worker-restart=0 -v -W error $(PYTEST_ARGS) --basetemp="$$BT"
 
 test-files-cprofile: _TEST_FILES_CPROFILE := 1
+
 test-files-cprofile: test-files
   # Inherit TESTFILES, PYTEST_ARGS and UV_PROJECT_ENVIRONMENT unchanged from test-files.
 
