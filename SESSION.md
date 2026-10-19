@@ -1,3 +1,21 @@
+## S98.4 AST field traversal enhancement — recorded base ca91f33743014d6667646757f34616457a81b987
+
+Last Updated: 2026-10-19. Branch agent-v012-ast-field-traversal-20261019 uses the
+existing scanner's stdlib field-values iterator; every current field, statement/
+wrapper/LIFO/owner rule, source signature, fresh parse and exact GC/tree release
+remains. No pruning/cache/schema flag/runner/dependency is added. Details and the
+retained diagnostic's non-predictive2.459s overlap are in the owning feature doc.
+
+Eight additive controls: RED5FAIL/3PASS1.39s; real field-pair operations23→0 with
+findings intact. Final complete57-case owner passes3.11/5.37s and3.12.15/6.72s.
+Unchanged full-file coverage passes57/8.01s,96%combined/97.7line/94.0branch with
+85/75 retained (observer20261019T103422Z-34695-5321c9fe rc0/9.543s). Final passes
+include the typed test-constructor correction; production is unchanged since coverage.
+Exact commands/roster/JUnits/native log/status/actual coverage trace/audit:
+ /tmp/gludd-v012-ast-field-traversal-evidence. Source review and guarded commit/
+collection remain pending; no original90, diagnostic replay, gate/CI or task closure.
+S98.4/19-task states and90/60/three-child/21phase2850/ZDD/cleanup/promotion stay intact.
+
 ## S98.4 native admission contract repair — recorded base 8885374b253fc4d3e88501dfe3212fb2a93671d0
 
 Last Updated: 2026-10-19. Branch agent-v012-admission-contract-repair-20261019
