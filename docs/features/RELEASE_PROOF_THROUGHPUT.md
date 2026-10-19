@@ -17,6 +17,44 @@ dependency resolver, or proof cache is introduced.
 
 ## Mechanical scheduling admission
 
+### Known hosted failures in the existing source-contract owner
+
+Terminal Q Build39293586802 exposed24 original failing nodes across six shards.
+The existing test-files source-contract phase selects27 entries: its original
+nine plus18 additions. All24 exact Q nodes remain, together with three support
+selections: the complete oversized-document owner, isolated configuration class
+and native-profile admission owner. The authenticated integration resume
+positive fixture is an actual Q failure. Every original selector and phase
+remains; no new scanner, runner or proof cache is introduced.
+
+The initial23-entry patch used an incomplete20-node summary: original RED
+1FAIL/33PASS/6.50s identified14 missing entries, then whole routing34PASS each
+runtime proved that narrower selection. Independent review then retained all
+six immutable native job contexts and found four omitted unit-3a failures:
+two DC.1 assertions, the exact owned/environment-overrides UV carrier case
+and the P30 fix-forward prohibition. Native counts3+5+3+6+6+1 prove24;
+/tmp/gludd-v012-terminal-q-failure-evidence/MANIFEST.md indexes unchanged logs
+and observer JSON. Those retrieval successes do not turn Q's failures green.
+
+The corrected assertion failed first1FAIL/33PASS/8.40s/native10.0rc2, naming
+four missing inputs. After the actual four-selector Make expansion, complete
+routing passes34/zero skips each:3115.02s/native5.806rc0 and3125.33s/native6.146rc0.
+The original23-entry source snapshots, RED/GREEN and changes-required review
+remain separate. Corrected commands/native receipts:
+/tmp/gludd-v012-known-failure-admission-routing-v2.md.
+
+Existing PHASES controls require no runtime-watch artifact after every
+prerequisite failure. Original owner/order/refusal, raw-UV, fatal-warning and
+serial assertions remain. Strict typing/Ruff,253 target contracts and the
+documented plan-only example pass. Runtime remains113 families,2/1/1 children
+and90max/60quiet; plan/admission stays release_ready=false/gate_evidence=false.
+
+This source's base predates the separately reviewed policy/watchdog successors.
+Only the genuinely combined development source may execute the expanded real
+selection. Actual capacity admission, combined candidate replay, full gate,
+85/75 BOTH coverage floors and exact-SHA hosted evidence remain required.
+No open task or historical failed proof is relabelled by this routing change.
+
 ### Existing fixture and policy contracts before expensive proof
 
 The full gate on da99429 passed integration preflight in495.6s, then the
