@@ -1940,3 +1940,85 @@ unchanged full-file85/75 line+branch coverage and guarded source evidence remain
 observation is count-proven, not a measured hosted speedup. Original113families,
 three2/1/1 children,90/60,21phases2850,all8shards,fatal warnings,ZDD,cleanup,
 branch gates and all19open task statuses remain; Root owns exact final proof.
+
+## 2026-10-19: native startup diagnostic imports its receipt sibling
+
+Hosted development512eaf9 Build39317225438 fails both original90-second runtime
+admissions. MAIN1991passes73.80s/75.44s and fresh help1passes1.65s/1.95s.
+The311tail prints10passes before its final lock check is censored at90.5s;
+312prints one pass before its native-background producer check is censored at
+90.6s. A censored node is the cutoff location, not the root cause. All8downstream
+shards remain unknown/skipped. Native fullfailed log and all8unknown diagnostic
+timing rows remain /tmp/gludd-v012-hosted-512eaf9-all-failed.log and the existing
+v012-hosted-terminal-timing/repair-512eaf9-build-39317225438-20261019 owner.
+
+The existing native duration diagnostic was recovered rather than rerun.
+Its MAIN source-inventory fixture setup5.23s identifies a component owner.
+A single current1bbe27b/311 native test-files-cprofile measurement then passes
+the real fixture case in7.54s/native8.6rc0, preserving every source/provider/
+grouping/GC/assertion. Actual profile76806-4265ebb64530ccea records one fixture
+5.603s, one audit5.549s,4114source reads and parses, and statement declarations
+1.684s cumulative. Native compile3.010s and those cumulative rows overlap.
+This establishes no duplicated source parse or safe new inventory shortcut,
+hosted gain, cold-start cost or overall deadline clearance. Its process-local
+scope excludes cold imports and child CPU. The native raw/trace/report and
+observer remain under .gate-logs/test-files-cprofile and
+v012-runtime-inventory-profile/inventory-1bbe27b-311-20261019.
+
+The genuine capacity input changed first: reviewed retirement sourcefef6ce7
+was normally committed and genuinely merged as1bbe27b. Twelve independently
+planned clean merged source owners were archived/retired through wt-prune-safe;
+all refs, native evidence and four checkpoints remained. Actual native disk
+changed96% to94%/12Gi available, against unchanged95%. Native manifests and
+exact source/collection receipts are indexed in the Root-authored
+/tmp/gludd-v012-integration-1bbe27b-handoff.md. This is capacity clearance,
+never admission, task closure or release proof.
+
+With that input clear, the existing runtime-startup-diagnostic apply0 was
+selected to measure current private312 cold imports. It failed before an
+observer or child was created: stream_command._startup_source imports
+scripts.reviewed_head_inputs, then scripts.ci_receipt_auth. The latter's bare
+gate_status_attestation import raises ModuleNotFoundError under the real
+package entrypoint. The command returns rc2/about0.26s. Retain that actual
+Root tool transcript; no generated observation is invented for an execution
+that never reached its producer. pytest's shared conftest path setup had hidden
+this package/flat-script distinction from existing in-process tests.
+
+Repair the existing receipt helper's native sibling resolution, retaining both
+supported import contexts and the same key/HMAC/freshness/refusal primitive.
+Fresh isolated subprocess regression controls must fail first without pytest
+bootstrap, exercise real signing/key behavior and retain flat-script behavior.
+Do not inject a production sys.path, catch broad import failures, install a
+library, clear caller carriers or create a second scanner/runner/cache.
+The actual existing startup diagnostic may resume only after the corrected
+source is reviewed, normally committed and genuinely integrated.
+
+Actual fresh-process RED has4FAIL/4PASS1.95s/native3.2rc2: every package case
+fails at the bare import, while all flat cases already sign/verify/refuse keys.
+Only the runtime __package__ branch now selects scripts.gate_status_attestation;
+TYPE_CHECKING and flat imports and all authentication logic remain unchanged.
+Finite GREEN8passes1.46s/native2.5rc0. Complete auth/startup/native owners pass
+111cases/zero skips each311(9.96s,native12.1rc0) and312(7.16s,native8.7rc0).
+The full actual ci_receipt_auth.py measures98.2%line/95.3%branch, passing both
+85aggregate and75per-file floors under unchanged native branch/subprocess
+settings. Both import arms are covered without weakening fresh-E isolation;
+no omits or tracked coverage changes. The reused unchanged gate-attestation
+helper is outside this measured scope. Ruff and separate strict checks pass.
+The original failed Make command is indexed as a manual transcript at
+/tmp/gludd-v012-startup-native-import-root-evidence.md, never fabricated JSON.
+
+Root read Python's [package-relative import contract](https://docs.python.org/3.11/reference/import.html#package-relative-imports)
+and the firsthand [October2023 sibling-import report](https://stackoverflow.com/questions/77316817/python-sibling-relative-import-error-no-known-parent-package)
+on2026-10-19. The report contrasts launching a file with importing its package;
+Python defines the package metadata used for sibling resolution. They support
+native context-aware imports and fresh-process controls. This is a Gludd
+import-binding defect, not an upstream Python defect, a performance diagnosis
+or authority to change the signed receipt format.
+
+Source acceptance and original failed CLI/profiling commands belong to
+/tmp/gludd-v012-startup-native-import-report.md. Root owns normal guarded
+integration and the existing diagnostic/report producer. Original113families,
+all selectors/assertions, three2-1-1children,90/60,21phases2850,all8shards,
+fatal warnings,85/75 BOTH,ZDD,cleanup and promotion remain. All19task statuses
+stayopen. Full-candidate replay/gate/exact-SHA hosted proof remain required;
+the completed-item preparation queue follows these pipeline repairs.
