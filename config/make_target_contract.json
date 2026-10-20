@@ -1,24 +1,9 @@
 {
   "version": 1,
   "targets": [
-    {
-      "name": "replace-lines",
-      "make_variables": [
-        "FILE",
-        "START",
-        "END",
-        "NEW_FILE"
-      ],
-      "behavior": "make replace-lines FILE=/tmp/gludd-text-contract.txt START=1 END=1 NEW_FILE=/tmp/gludd-text-contract-replacement.txt"
-    },
-    {
-      "name": "human-todo-module",
-      "make_variables": [
-        "HUMAN_TODO_ARGS_JSON",
-        "HUMAN_TODO_VALIDATE_ONLY"
-      ],
-      "behavior": "make human-todo-module HUMAN_TODO_ARGS_JSON='{\"title\":\"Make HumanTodo contract\",\"body\":\"Validation only\",\"agent_id\":\"gludd-release-staging\",\"timeout\":5}' HUMAN_TODO_VALIDATE_ONLY=1"
-    },
+    {"name": "ps-gludd", "make_variables": [], "behavior": "make ps-gludd"},
+    {"name": "replace-lines", "make_variables": ["FILE", "START", "END", "NEW_FILE"], "behavior": "make replace-lines FILE=/tmp/gludd-text-contract.txt START=1 END=1 NEW_FILE=/tmp/gludd-text-contract-replacement.txt"},
+    {"name": "human-todo-module", "make_variables": ["HUMAN_TODO_ARGS_JSON", "HUMAN_TODO_VALIDATE_ONLY"], "behavior": "make human-todo-module HUMAN_TODO_ARGS_JSON='{\"title\":\"Make HumanTodo contract\",\"body\":\"Validation only\",\"agent_id\":\"gludd-release-staging\",\"timeout\":5}' HUMAN_TODO_VALIDATE_ONLY=1"},
     {
       "name": "write-text-b64",
       "make_variables": ["FILE", "TEXT_B64"],

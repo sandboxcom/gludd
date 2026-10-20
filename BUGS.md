@@ -4,53 +4,25 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-20 - Ranged text edits masked errors and changed executable mode
+
+The native replace-lines wrapper returned zero after a missing-input/range failure because it still moved the temporary copy and cleared the trap. A valid edit also replaced executable permissions with mode 0600. Five confined cases reproduce those failures and Make/shell evaluation before repair. Local failure handling, metadata-preserving copy and literal carriers retain the same native helper, adjacent publication and all original assertions. Complete editor, contract and environment owners pass 65 cases. Native failures, exact receipts, the real example and the long-lived user report are versioned in RELEASE_PROOF_THROUGHPUT.md. No release task is closed by source acceptance.
+
+### 2026-10-20 - Mock CI observations escaped tests and daemon topology implied stale
+
+The finished public-review worktree retains a synthetic pending run 99999 in .ci-status. Two original watchdog tests confined input/cache/gate paths but left the CI writer at the checkout. Two guards fail before any write; the existing autouse fixture now confines the output, preserves every original assertion and checks the actual native status write. All 97 cases pass. The read-only ps-gludd also called acknowledged detached watchdogs stale solely because PPID was 1. Its final Make route projects watchdog/daemon classifications from the existing native project-owned inventory and defers authority to native lifecycle/status owners; global grep and parent-based stale inference are removed. Original failed receipts and exact real cleanup/capacity measurements are in GATE_RESOURCE_LIFECYCLE.md. No current observation is hand-edited.
+
 ### 2026-10-20 - Literal edit transport could corrupt files before validation
 
-The original Make decoder accepted non-text bytes and could execute malformed
-Make/shell input before validation. A real encoding error exposed NUL source and
-an unreadable report. The native strict text owner validates before destination
-IO; both production targets now use literal internal carriers and that same
-owner. The corrected native Make reproduction is 40 FAIL/17 PASS before repair,
-then the 101 target/library cases pass. Final whole replay passes 156 cases with
-100% line and branch coverage under unchanged 85/75 thresholds; the existing
-environment audit requires explicit export assignments and is unchanged.
-Preserve the failed fixture and original
-structural-contract receipt separately. All original semantic assertions remain;
-only removed temporary-file checks conform to the native dispatch. See
-docs/features/RELEASE_PROOF_THROUGHPUT.md for source decisions, original user
-research, exact receipts and complete-owner coverage. No release task is closed.
+The original Make decoder accepted non-text bytes and could execute malformed Make/shell input before validation. A real encoding error exposed NUL source and an unreadable report. The native strict text owner validates before destination IO; both production targets now use literal internal carriers and that same owner. The corrected native Make reproduction is 40 FAIL/17 PASS before repair, then the 101 target/library cases pass. Final whole replay passes 156 cases with 100% line and branch coverage under unchanged 85/75 thresholds; the existing environment audit requires explicit export assignments and is unchanged. Preserve the failed fixture and original structural-contract receipt separately. All original semantic assertions remain; only removed temporary-file checks conform to the native dispatch. See docs/features/RELEASE_PROOF_THROUGHPUT.md for source decisions, original user research, exact receipts and complete-owner coverage. No release task is closed.
 
 ### 2026-10-20 - Cleanup compatibility routes bypassed native evidence protection
 
-Legacy agent-cleanup/clean-stale-worktrees still forced removal and branch
-deletion. Thirty confined Make negative controls fail before native delegation;
-a later -e replay requires callee literal capture before unexport. Five native
-Git controls then prove ordinary pruning deleted ignored historical proof and
-bypassed process/checkpoint/unknown-data checks. Both routes now share the
-existing native retirement ownership/archival implementation; committed branch
-refs survive and selected merged retirement still requires ancestry.
-The expanded 172-case proof clears 85/75 at 94.3% line and 89.8% branch coverage,
-including both real alias apply routes and sixteen process-controller cases.
-All original assertions survive in two stronger native fixtures. Exact failures, source rationale,
-upstream practitioner reports and next native action are in
-docs/features/GATE_RESOURCE_LIFECYCLE.md. No full-gate or capacity claim follows.
+Legacy agent-cleanup/clean-stale-worktrees still forced removal and branch deletion. Thirty confined Make negative controls fail before native delegation; a later -e replay requires callee literal capture before unexport. Five native Git controls then prove ordinary pruning deleted ignored historical proof and bypassed process/checkpoint/unknown-data checks. Both routes now share the existing native retirement ownership/archival implementation; committed branch refs survive and selected merged retirement still requires ancestry. The expanded 172-case proof clears 85/75 at 94.3% line and 89.8% branch coverage, including both real alias apply routes and sixteen process-controller cases. All original assertions survive in two stronger native fixtures. Exact failures, source rationale, upstream practitioner reports and next native action are in docs/features/GATE_RESOURCE_LIFECYCLE.md. No full-gate or capacity claim follows.
 
 ### 2026-10-20 - Long-lived UV watchdog blocked safe cache cleanup
 
-The real native PID diagnostic identified the project agent-watchdog UV wrapper;
-the original status pointer was missing. Existing native lease verification now
-owns stop/start through the shared acknowledged lifecycle. Original failing
-controls reproduce false adoption before readiness and partial publication
-faults. The source owner passes452 whole-owner cases with94.7/89.7 line/branch
-coverage and fresh0-error collection. Native Make default/alias/literal controls
-plus complete task/environment/guide owners pass249 cases. Preserve original
-upstream user issue16112 and all failed receipts in GATE_RESOURCE_LIFECYCLE.md.
-The verified native handoff signals only Python child 68516; UV parent 68501
-exits naturally. Native auto-start acknowledges direct Python PID 39922 alongside
-task watchdog 29001. Actual cleanup removes 239986255 regenerable bytes and
-finishes UV pruning, but its measured 96% disk use still exceeds the 95% ceiling.
-Do not force UV cleanup, remove unverified locks, shorten retention or waive
-disk/full-gate/exact-SHA guards.
+The real native PID diagnostic identified the project agent-watchdog UV wrapper; the original status pointer was missing. Existing native lease verification now owns stop/start through the shared acknowledged lifecycle. Original failing controls reproduce false adoption before readiness and partial publication faults. The source owner passes452 whole-owner cases with94.7/89.7 line/branch coverage and fresh0-error collection. Native Make default/alias/literal controls plus complete task/environment/guide owners pass249 cases. Preserve original upstream user issue16112 and all failed receipts in GATE_RESOURCE_LIFECYCLE.md. The verified native handoff signals only Python child 68516; UV parent 68501 exits naturally. Native auto-start acknowledges direct Python PID 39922 alongside task watchdog 29001. Actual cleanup removes 239986255 regenerable bytes and finishes UV pruning, but its measured 96% disk use still exceeds the 95% ceiling. Do not force UV cleanup, remove unverified locks, shorten retention or waive disk/full-gate/exact-SHA guards.
 
 ### 2026-10-20 - Source staging exposed false green workflow checks
 

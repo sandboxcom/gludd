@@ -1432,25 +1432,10 @@ gate-lite: disk-cleanup-preflight _dead-code-baseline-refresh check-opencode-int
 ps-pytest:
 	@pgrep -fl 'pytest|molecule test|make gate' || echo "NONE running"
 
-# Read-only census of every gludd-related process (pytest/molecule/uv/python
-# daemon/gate/ansible) with PID, PPID, elapsed time and command. Marks each row
-# ORPHAN when its parent is PID 1 (init/launchd) — i.e. the make/agent/gate that
-# spawned it has died and it was reparented: the signature of a STALE process.
-# A row whose parent is still alive is ACTIVE. Never kills anything; it is the
-# evidence `kill-stale` acts on. Excludes this make invocation's own tree.
+# Reuse the existing project-owned process inventory and display bounds.
+# Detached parentage alone grants no cleanup authority.
 ps-gludd:
-	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
-	printf '%-8s %-8s %-10s %-7s %s\n' PID PPID ELAPSED STATE COMMAND; \
-	ps -axo pid=,ppid=,etime=,command= | \
-	grep -E 'pytest|molecule|general_ludd|gludd-gate-basetemp|ansible-playbook|task_watchdog\.py|agent_watchdog\.py' | \
-	grep -v -E 'grep |ps-gludd|kill-stale' | \
-	while read -r pid ppid etime rest; do \
-		[ "$$pid" = "$$SELF" ] && continue; \
-		[ "$$pid" = "$$PARENT" ] && continue; \
-		if [ "$$ppid" = "1" ]; then state=ORPHAN; else state=active; fi; \
-		printf '%-8s %-8s %-10s %-7s %s\n' "$$pid" "$$ppid" "$$etime" "$$state" "$$(echo "$$rest" | cut -c1-86)"; \
-	done; \
-	echo "--- ORPHAN(ppid=1)=stale. kill-stale removes stale scratch processes and workspace daemon trees only ---"
+	@$(SYSTEM_PYTHON) scripts/active_work_status.py --daemon-process-table
 
 # Kill stray pytest/gate processes (e.g. xdist workers orphaned by a killed run).
 # NOTE: blunt instrument — see kill-stale for self-tree-protecting cleanup.

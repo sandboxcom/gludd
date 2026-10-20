@@ -642,6 +642,7 @@ help:
 		"  task-watchdog-start   Acknowledge detached startup (TASK_WATCHDOG_START_VALIDATE_ONLY=0 default, 1 plans)" \
 		"  task-watchdog-stop    Verify and drain this checkout daemon (TASK_WATCHDOG_VALIDATE_ONLY=1 default, 0 applies)" \
 		"  ps                    Report repository-owned test, audit, and supervisor processes" \
+		"  ps-gludd              Project-owned watchdog/daemon view from the same native inventory" \
 		"  human-todo-module     Existing HumanTodo module (HUMAN_TODO_ARGS_JSON; HUMAN_TODO_VALIDATE_ONLY=1 default)" \
 		"  list-plugins          Report the active enforcement plugin roster" \
 		"  terminate-project-process-tree  Identity-check and preview/apply one project process tree" \

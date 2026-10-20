@@ -179,6 +179,68 @@ actual eligibility or reclamation. Apply uses fresh native ownership and archiva
 capacity must be measured afterward before real release admission. All19 release
 items remain open; source/coverage/plan are not full-gate or exact-SHA proof.
 
+### Watchdog observations stay inside their native ownership boundary
+
+Actual post-integration pruning at development 3b62a8b archives the finished
+model-workflow checkout's proof under
+.git/gludd-release-evidence/3efdba60cc11-20167a2f7ecfdff362c5f97e0ca40e1bd6147972
+and removes its materialization. The native receipt retains branch
+codex-v012-model-workflow-20261020 and commit
+20167a2f7ecfdff362c5f97e0ca40e1bd6147972. All six retained checkpoints verify.
+The public-review checkout is retained for ignored .ci-status data; the
+release-note checkout remains dirty and is retained. Locks and active owners
+remain protected. The native summary is removed=1/protected=4/retained=2.
+
+The retained .ci-status contains a synthetic pending run 99999. Source tracing
+finds the same mocked run in two watchdog tests: local gate/tasks/ratchet/cache
+paths were confined, but the CI output path still targeted the real checkout.
+Two precondition assertions reproduce that escape before any writer runs:
+2 FAIL in 1.09s, /tmp/gludd-v012-watchdog-observation-confinement-red.xml.
+The existing autouse fixture now confines that output for every case. Both
+ownership preconditions and an actual confined CI-status write are checked;
+all 97 original cases pass in 1.18s at
+/tmp/gludd-v012-watchdog-observation-confinement-green.xml. Original detection,
+health, stop and failure assertions remain. Production observation semantics,
+current JSON and historical files are unchanged; no observation is hand-edited.
+
+The same read-only process census labelled acknowledged Python watchdogs
+29001 and 39922 ORPHAN and claimed PPID1 meant stale. Parent 1 also describes
+healthy detached daemons. An initial topology-label correction is retained as
+manual history. The final Make route uses the existing active_work_status.py
+--daemon-process-table mode staged at 6d4e082bb (source b1378f4aaad4d4d5a93e171c202feff1a2912c16).
+It filters existing watchdog/e2e-daemon classifications from one fresh native
+project-owned snapshot and uses the same bounded renderer. Global grep and
+parent-based stale inference are removed. Default JSON and agent_pids:false
+remain unchanged; no scanner, observer, signal or cleanup authority is added.
+
+Nine original audit-filename controls reproduce false watchdog labels. Native
+execution order now distinguishes an audit naming watchdog source from a real
+watchdog whose argument says pytest. All 94 original cases plus 23 additions
+pass: 117 cases, whole-producer 94.6% line/90.8% branch coverage under 85/75.
+Source receipts and original failures are retained in
+/tmp/gludd-v012-daemon-table-report.md. The actual production Make example
+exits zero and reports only acknowledged watchdogs 29001/39922, each PPID1.
+The original observability source-token assertions now inspect their actual
+native producer and its Make delegation; their watchdog-visibility intent is
+retained by the real CLI and native snapshot controls. No gate authority follows.
+
+The integrated complete eight-owner replay passes all 292 cases in 11.80s;
+whole original producer coverage passes the unchanged 85/75 line/branch audit at
+.gate-logs/coverage-20261020T202036Z.json. Exact XML:
+/tmp/gludd-v012-daemon-main-coverage.xml; observed elapsed 13.6s, rc0.
+Ruff, 268 target contracts, 1174 unique targets and the canonical generated
+264-resource ownership inventory pass. Native Node26 compatibility separately
+passes all six controls. Full release gate and exact-SHA CI remain missing.
+
+After the real worktree removal changed capacity input, one ordinary actual
+cleanup removes 6012 regenerable bytecode files (240043188 bytes) from the public
+checkout, seven (174190 bytes) from the release-note checkout and disposable
+caches. Pass one reports removed=6/errors=0; pass two reports removed=0/errors=0
+and native no-progress failure. Scratch changes from 416.1 to 403.4 MB, while
+disk remains 96% against the hard 95% ceiling. Do not repeat the same failed
+input. Real admission and final proof remain blocked by capacity; source proof
+does not waive that prerequisite or close any release task.
+
 ### Bounded shared-UV cleanup phase diagnostics
 
 The2026-10-19 disk repair reclaimed241,812,053 and237,600,576 bytes of

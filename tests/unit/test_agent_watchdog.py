@@ -62,8 +62,9 @@ pending_work_exists = aw._pending_work_exists
 
 
 @pytest.fixture(autouse=True)
-def _isolate_watchdog_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep every watchdog unit case free of real make/network subprocesses."""
+def _isolate_watchdog_subprocess(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Confine mock CI observations and avoid real make/network subprocesses."""
+    monkeypatch.setattr(aw, "_CI_STATUS", tmp_path / ".ci-status")
 
     def _no_external_subprocess(cmd, *_args, **_kwargs):
         return subprocess.CompletedProcess(
@@ -935,6 +936,8 @@ def test_check_and_reset_with_ci_only_pending(tmp_path: Path, monkeypatch: pytes
     (tmp_path / "ratchet.yml").write_text("# empty\n")
     (tmp_path / ".gate-status").write_text("lint PASS 0\ntypecheck PASS 0\n")
 
+    # Mock observations must stay inside this case before any writer runs.
+    assert aw._CI_STATUS.is_relative_to(tmp_path)
     # But CI is pending
     def mock_subprocess_run(cmd, **_kwargs):
         if isinstance(cmd, list) and cmd[1] == "ci-verdict":
@@ -1108,6 +1111,8 @@ def test_check_and_reset_ci_only_pending_no_stop_flag(tmp_path, monkeypatch):
     (tmp_path / "ratchet.yml").write_text("# empty\n")
     (tmp_path / ".gate-status").write_text("lint PASS 0\ntypecheck PASS 0\n")
 
+    # Mock observations must stay inside this case before any writer runs.
+    assert aw._CI_STATUS.is_relative_to(tmp_path)
     # CI is pending
     def mock_run(cmd, **_kwargs):
         if isinstance(cmd, list) and "ci-verdict" in str(cmd):
@@ -1130,6 +1135,7 @@ def test_check_and_reset_ci_only_pending_no_stop_flag(tmp_path, monkeypatch):
     # When only CI is pending and agent is active, stop_detected should be
     # false (or null/absent). The orchestrator state should reflect health.
     assert result.get("stop_detected") is False or result.get("stop_detected") is None
+    assert "CI FAIL pending (run 99999)" in aw._CI_STATUS.read_text(encoding="utf-8")
 
     orchestrator = tmp_path / "orchestrator.json"
     if orchestrator.exists():

@@ -199,8 +199,10 @@ class TestMakefileMonitoringTargets:
         mk = compose_makefile(MAKEFILE)
         block = mk.split("\nps-gludd:\n", 1)[1].split("\n\n", 1)[0]
 
-        assert r"task_watchdog\.py" in block
-        assert r"agent_watchdog\.py" in block
+        assert "$(SYSTEM_PYTHON) scripts/active_work_status.py --daemon-process-table" in block
+        producer = (ROOT / "scripts/active_work_status.py").read_text(encoding="utf-8")
+        assert '"task_watchdog.py"' in producer
+        assert '"agent_watchdog.py"' in producer
 
     def test_ps_delegates_to_cross_worktree_owned_process_inventory(self) -> None:
         """The lightweight process census must not hard-code one checkout."""
