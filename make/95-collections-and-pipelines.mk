@@ -564,16 +564,29 @@ mkdir-p:
 	@$(PYTHON) scripts/mkdir_p.py "$(PATH_ARG)"
 
 
+ifneq ($(filter replace-lines,$(MAKECMDGOALS)),)
+override GLUDD_LINE_EDIT_FILE := $(value FILE)
+override GLUDD_LINE_EDIT_START := $(value START)
+override GLUDD_LINE_EDIT_END := $(value END)
+override GLUDD_LINE_EDIT_NEW_FILE := $(value NEW_FILE)
+export GLUDD_LINE_EDIT_FILE := $(value FILE)
+export GLUDD_LINE_EDIT_START := $(value START)
+export GLUDD_LINE_EDIT_END := $(value END)
+export GLUDD_LINE_EDIT_NEW_FILE := $(value NEW_FILE)
+unexport FILE START END NEW_FILE
+endif
+
 replace-lines:
-	@[ -n "$(FILE)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@[ -n "$(START)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@[ -n "$(END)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@[ -n "$(NEW_FILE)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@TMP=$$(mktemp "$(FILE).replace.XXXXXX"); \
+	@[ -n "$$GLUDD_LINE_EDIT_FILE" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "$$GLUDD_LINE_EDIT_START" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "$$GLUDD_LINE_EDIT_END" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "$$GLUDD_LINE_EDIT_NEW_FILE" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@set -eu; \
+	TMP=$$(mktemp "$$GLUDD_LINE_EDIT_FILE.replace.XXXXXX"); \
 	trap 'rm -f "$$TMP"' EXIT INT TERM; \
-	cp "$(FILE)" "$$TMP"; \
-	$(PYTHON) scripts/replace_lines.py "$$TMP" "$(START)" "$(END)" "$(NEW_FILE)"; \
-	mv "$$TMP" "$(FILE)"; \
+	cp -p "$$GLUDD_LINE_EDIT_FILE" "$$TMP"; \
+	$(PYTHON) scripts/replace_lines.py "$$TMP" "$$GLUDD_LINE_EDIT_START" "$$GLUDD_LINE_EDIT_END" "$$GLUDD_LINE_EDIT_NEW_FILE"; \
+	mv "$$TMP" "$$GLUDD_LINE_EDIT_FILE"; \
 	trap - EXIT INT TERM
 
 gate-all-background:

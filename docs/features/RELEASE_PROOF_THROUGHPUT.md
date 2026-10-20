@@ -136,6 +136,38 @@ and validation before destination IO are Gludd text requirements, not upstream
 guarantees. These executable controls reduce dependence on model memory; they
 are not a benchmark proving equal performance across models.
 
+## Ranged edits retain native failures and executable modes (2026-10-20)
+
+The real replace-lines Make wrapper ran its Python helper, then unconditionally
+moved a temporary copy and cleared the trap. A missing input or invalid range
+therefore printed the native error but returned zero. Its plain copy also
+replaced an executable destination with the temporary file's 0600 mode.
+Three confined cases fail before repair; two added literal-input canaries
+produce five native failures at /tmp/gludd-v012-ranged-edit-expanded-red.xml.
+The initial three-case receipt remains /tmp/gludd-v012-ranged-edit-red.xml.
+
+The existing wrapper now enables local shell failure propagation before
+creating its adjacent temporary copy, copies with preserved metadata and
+publishes only after the same unchanged scripts/replace_lines.py succeeds.
+A failure cleans the temporary path and retains original bytes and mode.
+Four literal internal carriers retain selected FILE/START/END/NEW_FILE values
+under -e without Make or shell evaluation; public values are unexported.
+No new editor, parser, temporary owner or helper CLI is introduced.
+
+All ten native Make controls and the complete original editor, guide-contract
+and environment owners pass: 65 cases in 4.61s at
+/tmp/gludd-v012-ranged-edit-complete-owners.xml. The earlier 18-case receipt
+remains /tmp/gludd-v012-ranged-edit-green.xml. Existing assertions remain.
+The documented real example separately replaces the prepared /tmp contract
+file and a native read returns gamma plus newline.
+
+The firsthand [2012 Make user report](https://stackoverflow.com/questions/10559064/terminate-makefile-command-when-subcommand-throws)
+describes a combined recipe proceeding after failed tests. Its later macOS
+follow-up also reports needing explicit failure handling. This supports keeping
+the critical command chain local and executable; Gludd's own native errors,
+unchanged bytes/modes and shell-canary controls establish this repair.
+Do not infer global shell behavior or release readiness from that discussion.
+
 ## Native HumanTodo entrypoint for real blockers (2026-10-20)
 
 The required HumanTodo route existed as general_ludd.agent.gludd_human_todo,

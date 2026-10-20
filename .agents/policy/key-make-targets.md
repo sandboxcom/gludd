@@ -166,7 +166,9 @@ replacement are validated before the destination is opened. Invalid transport
 leaves existing bytes untouched. Make requires nonempty encoded fields and
 replacement requires exactly one match. The existing native text owner preserves
 write bytes and replacement newline behavior; it creates no temporary decoder
-files. Do not place shell interpolation in Make arguments.
+files. For a line range, use make replace-lines FILE=path START=1 END=1
+NEW_FILE=path-to-replacement; the existing wrapper preserves mode and reports
+native failures before publishing. Do not place shell interpolation in Make arguments.
 
 Setup through `make init`, dependency synchronization, packaging, Ansible,
 Terraform, secrets,

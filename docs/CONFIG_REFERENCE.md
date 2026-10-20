@@ -944,6 +944,20 @@ goals; do not configure them directly. Public inputs are unexported.
 | `GLUDD_TEXT_OLD_B64` | empty | OLD_B64 |
 | `GLUDD_TEXT_NEW_B64` | empty | NEW_B64 |
 
+## Ranged text Make inputs
+
+make replace-lines uses FILE/START/END/NEW_FILE with the existing native helper.
+The adjacent temporary copy preserves mode; local shell failure handling retains
+the destination and removes the copy on helper failure. Literal public values
+are copied with override into the carriers below and unexported.
+
+| Internal environment carrier | Default | Required public input |
+| --- | --- | --- |
+| `GLUDD_LINE_EDIT_FILE` | empty | FILE |
+| `GLUDD_LINE_EDIT_START` | empty | START |
+| `GLUDD_LINE_EDIT_END` | empty | END |
+| `GLUDD_LINE_EDIT_NEW_FILE` | empty | NEW_FILE |
+
 ## HumanTodo Make entrypoint
 
 make human-todo-module delegates to general_ludd.agent.gludd_human_todo through
