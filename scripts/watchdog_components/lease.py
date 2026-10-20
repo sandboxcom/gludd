@@ -120,6 +120,7 @@ def acquire_watchdog_lock(
         "version": owner_version,
         "namespace": runtime.project_namespace(runtime._WORKSPACE),
         "token": token,
+        "ready": 0,
     }
     for _ in range(3):
         try:
@@ -151,6 +152,56 @@ def acquire_watchdog_lock(
                 raise
             return cast(WatchdogLease, runtime.WatchdogLease(path=path, fd=fd, token=token))
     return None
+
+
+def acknowledge_watchdog(runtime: Any, lease: WatchdogLease) -> None:
+    """Commit one ready bit through the original descriptor; keep JSON valid."""
+    path = lease.path
+    owner = runtime._read_lock_owner(path)
+    descriptor = runtime.os.fstat(lease.fd)
+    current = path.stat()
+    if (path.is_symlink() or (descriptor.st_dev, descriptor.st_ino) != (current.st_dev, current.st_ino)
+            or owner is None or owner.get("token") != lease.token
+            or owner.get("pid") != runtime.os.getpid()
+            or owner.get("namespace") != runtime.project_namespace(runtime._WORKSPACE)
+            or owner.get("version") != runtime.WATCHDOG_VERSION
+            or not owner.get("pid_start_time")
+            or owner["pid_start_time"] != runtime._process_start_time(runtime.os.getpid())
+            or type(owner.get("ready")) is not int or owner["ready"] not in {0, 1}
+            or current.st_size > 8192):
+        raise ValueError("watchdog readiness descriptor or singleton identity changed")
+    if owner["ready"] == 1:
+        return
+    content = path.read_bytes()
+    marker = b'"ready": 0'
+    if content.count(marker) != 1:
+        raise ValueError("watchdog readiness metadata is not the native owned format")
+    offset = content.index(marker) + len(marker) - 1
+    committed = False
+    runtime.os.fsync(lease.fd)
+    try:
+        # A one-byte 0 -> 1 write cannot expose partially rewritten JSON.
+        if runtime.os.pwrite(lease.fd, b"1", offset) != 1:
+            raise OSError("watchdog readiness write was incomplete")
+        committed = True
+        runtime.os.fsync(lease.fd)
+        fresh = path.stat()
+        acknowledged = runtime._read_lock_owner(path)
+        if ((fresh.st_dev, fresh.st_ino) != (descriptor.st_dev, descriptor.st_ino)
+                or acknowledged is None or acknowledged.get("token") != lease.token
+                or acknowledged.get("ready") != 1):
+            raise ValueError("watchdog readiness descriptor changed during publication")
+    except BaseException as exc:
+        if committed:
+            current = path.stat()
+            expected = content[:offset] + b"1" + content[offset + 1:]
+            if (path.is_symlink() or (current.st_dev, current.st_ino) != (descriptor.st_dev, descriptor.st_ino)
+                    or path.read_bytes() != expected):
+                raise ValueError("watchdog readiness rollback refused a replaced owner") from exc
+            if runtime.os.pwrite(lease.fd, b"0", offset) != 1:
+                raise OSError("watchdog readiness rollback was incomplete") from exc
+            runtime.os.fsync(lease.fd)
+        raise
 
 
 def release_watchdog_lock(runtime: Any, lease: WatchdogLease | None) -> None:

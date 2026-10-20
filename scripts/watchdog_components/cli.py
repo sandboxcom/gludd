@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import lifecycle
+
 
 def _cli_classification(runtime: Any, argv: list[str]) -> int:
     """Handle --once, --count-stalled, --list-stalled, --all flags."""
@@ -36,6 +38,8 @@ def _cli_classification(runtime: Any, argv: list[str]) -> int:
 def main(runtime: Any, argv: list[str] | None = None) -> int:
     if argv is None:
         argv = runtime.sys.argv[1:]
+    if any(arg.split("=", 1)[0] in {"--start", "--stop", "--validate-only"} for arg in argv):
+        return lifecycle.dispatch(runtime, argv)
     if argv and any(a.startswith("--") or not a.startswith("-") for a in argv):
         return int(runtime._cli_classification(argv))
     lease = runtime.acquire_watchdog_lock()
@@ -45,9 +49,14 @@ def main(runtime: Any, argv: list[str] | None = None) -> int:
             f"{runtime.project_namespace(runtime._WORKSPACE)}; refusing duplicate"
         )
         return 0
+    pointer = None
+    previous_handler = None
     try:
+        previous_handler = lifecycle.install_termination_handler()
         runtime._log(f"watchdog started — poll={runtime.POLL_SECS}s, threshold={runtime.STREAK_THRESHOLD}")
         runtime._check_plugin_liveness_on_startup()
+        pointer = lifecycle.configured_pointer(runtime)
+        lifecycle.publish_ready(runtime, lease)
         while True:
             if runtime.HIBERNATION_MARKER.exists():
                 runtime._log("hibernation marker present — sleeping")
@@ -66,4 +75,11 @@ def main(runtime: Any, argv: list[str] | None = None) -> int:
                 runtime._log(f"error: {exc}")
             runtime.time.sleep(runtime.POLL_SECS)
     finally:
-        runtime.release_watchdog_lock(lease)
+        try:
+            lifecycle.release_pointer(pointer)
+        finally:
+            try:
+                runtime.release_watchdog_lock(lease)
+            finally:
+                if previous_handler is not None:
+                    runtime.signal.signal(runtime.signal.SIGTERM, previous_handler)

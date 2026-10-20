@@ -461,6 +461,7 @@ def _protected_pids(records: list[cleanup_owner.ProcessRecord], roots: tuple[Pat
 def _terminate_verified(
     expected: cleanup_owner.ProcessRecord, roots: tuple[Path, ...], *, apply: bool = True,
     reap: Callable[[], int | None] | None = None,
+    authority: Callable[[list[cleanup_owner.ProcessRecord]], None] | None = None,
 ) -> bool:
     """Keep signal authority strict while confirming exit by fresh PID absence."""
     if not roots or not all(root.is_absolute() and root.is_dir() for root in roots):
@@ -482,6 +483,8 @@ def _terminate_verified(
 
     def validate(fresh: list[cleanup_owner.ProcessRecord]) -> None:
         nonlocal unverified_child
+        if authority is not None:
+            authority(fresh)
         protected = _protected_pids(fresh, roots)
         live_owner = next((record for record in fresh if record.pid == expected.pid), None)
         if live_owner is not None and any(
@@ -586,12 +589,41 @@ def kill_process(
         return False
 
 
+@dataclass(frozen=True)
+class WatchdogSpec:
+    """Explicit daemon context for the existing acknowledged lifecycle owner."""
+
+    script_name: str = "task_watchdog.py"
+    stem: str = "task-watchdog"
+    label: str = "TASK-WATCHDOG"
+    pid_environment: str = "GLUDD_TASK_WATCHDOG_PID"
+    log_environment: str = "GLUDD_TASK_WATCHDOG_LOG"
+    environment: tuple[tuple[str, str], ...] = ()
+    marker: Callable[[Path], Path] | None = None
+    read_pid: Callable[[Path], int | None] | None = None
+    drain_supervisor: bool = True
+    startup_ready: Callable[[cleanup_owner.ProcessRecord, Path], None] | None = None
+    authority: Callable[
+        [cleanup_owner.ProcessRecord, Path], Callable[[list[cleanup_owner.ProcessRecord]], None]
+    ] | None = None
+
+    def marker_path(self, root: Path) -> Path:
+        return self.marker(root) if self.marker else root / f".gate-logs/{self.stem}.pid"
+
+    def marker_pid(self, path: Path) -> int | None:
+        return self.read_pid(path) if self.read_pid else _read_gate_pid(str(path))
+
+
+_TASK_SPEC = WatchdogSpec()
+
+
 def _current_stop_invocation(
     root: Path, records: list[cleanup_owner.ProcessRecord], *, apply: bool, action: str = "--stop",
+    spec: WatchdogSpec = _TASK_SPEC,
 ) -> dict[int, cleanup_owner.ProcessRecord]:
     """Identify only this exact CLI lifecycle action and its connected UV launcher."""
     def native_stop(record: cleanup_owner.ProcessRecord, *, uv: bool = False) -> bool:
-        return (_script_role(record, root, "task_watchdog.py", uv=uv)
+        return (_script_role(record, root, spec.script_name, uv=uv)
                 and shlex.split(record.command)[4 if uv else 2:]
                 == [action, "--validate-only", str(int(not apply))])
 
@@ -609,7 +641,7 @@ def _current_stop_invocation(
 
 def _confirm_watchdog_absence(
     root: Path, pid: int | None, records: list[cleanup_owner.ProcessRecord],
-    stop_invocation: dict[int, cleanup_owner.ProcessRecord],
+    stop_invocation: dict[int, cleanup_owner.ProcessRecord], spec: WatchdogSpec = _TASK_SPEC,
 ) -> None:
     """A complete absent PID census may recover metadata, never authorize signals."""
     if any(record.pid == pid for record in records):
@@ -620,30 +652,32 @@ def _confirm_watchdog_absence(
             if not cleanup_owner._same_identity(stop_record, record) or _owned_cwd(record, (root,)) != root:
                 raise ValueError("current stop invocation identity changed")
             continue
-        if not (_script_role(record, root, "task_watchdog.py")
-                or _script_role(record, root, "task_watchdog.py", uv=True)):
+        if not (_script_role(record, root, spec.script_name)
+                or _script_role(record, root, spec.script_name, uv=True)):
             continue
         cwd = cleanup_owner._process_cwd(record.pid)
         if cwd is None or cwd.resolve() == root:
             raise ValueError("a matching watchdog daemon or launcher is live or unlocated")
 
 
-def stop_owned_watchdog(project_root: Path, *, apply: bool) -> bool:
+def stop_owned_watchdog(
+    project_root: Path, *, apply: bool, spec: WatchdogSpec = _TASK_SPEC,
+) -> bool:
     """Plan/drain one old daemon, or recover its proven-absent pointer, without restart."""
     root = project_root.resolve()
-    marker = root / ".gate-logs/task-watchdog.pid"
+    marker = spec.marker_path(root)
     if not marker.exists() and not marker.is_symlink():
-        print("TASK-WATCHDOG-STOP absent writes=false signals=false", flush=True)
+        print(f"{spec.label}-STOP absent writes=false signals=false", flush=True)
         return True
     try:
         if (marker.is_symlink() or not marker.is_file()
-                or marker.resolve().parent != root / ".gate-logs"
+                or marker.resolve() != spec.marker_path(root).absolute()
                 or root not in {path.resolve() for path in _repository_roots()}):
             raise ValueError("watchdog PID pointer is not checkout-owned")
         recorded_pid = marker.read_text(encoding="utf-8")
         recorded_stat = marker.stat()
-        pid = int(recorded_pid.strip())
-        if pid <= 1:
+        pid = spec.marker_pid(marker)
+        if pid is None or pid <= 1:
             raise ValueError("watchdog PID pointer is malformed")
 
         def unchanged_pointer() -> None:
@@ -656,36 +690,53 @@ def stop_owned_watchdog(project_root: Path, *, apply: bool) -> bool:
         records = cleanup_owner._records(root)
         daemon = next((record for record in records if record.pid == pid), None)
         if daemon is None:
-            stop_invocation = _current_stop_invocation(root, records, apply=apply)
-            _confirm_watchdog_absence(root, pid, records, stop_invocation)
-            _confirm_watchdog_absence(root, pid, cleanup_owner._records(root), stop_invocation)
+            stop_invocation = _current_stop_invocation(root, records, apply=apply, spec=spec)
+            _confirm_watchdog_absence(root, pid, records, stop_invocation, spec)
+            _confirm_watchdog_absence(root, pid, cleanup_owner._records(root), stop_invocation, spec)
             unchanged_pointer()
             if apply:
                 marker.unlink()
-            print(f"TASK-WATCHDOG-STOP absent-pointer verified apply={apply} signals=false", flush=True)
+            print(f"{spec.label}-STOP absent-pointer verified apply={apply} signals=false", flush=True)
             return True
         if (not daemon.started_at or _owned_cwd(daemon, (root,)) != root
-                or not _script_role(daemon, root, "task_watchdog.py")):
+                or not _script_role(daemon, root, spec.script_name)):
             raise ValueError("watchdog PID pointer has no verified native daemon")
         if len(shlex.split(daemon.command)) != 2:
             raise ValueError("watchdog daemon command is not the native singleton")
         parent = next((record for record in records if record.pid == daemon.ppid), None)
+        supervisor: cleanup_owner.ProcessRecord | None = None
         owner = daemon
-        if parent is not None and _script_role(parent, root, "task_watchdog.py", uv=True):
+        if parent is not None and _script_role(parent, root, spec.script_name, uv=True):
             if (not parent.started_at or _owned_cwd(parent, (root,)) != root
                     or len(shlex.split(parent.command)) != 4):
                 raise ValueError("watchdog UV launcher ownership is incomplete")
-            owner = parent
+            if spec.drain_supervisor:
+                owner = parent
+            else:
+                supervisor = parent
+        authority = spec.authority(daemon, root) if spec.authority else None
         unchanged_pointer()
-        if not _terminate_verified(owner, (root,), apply=apply):
+        drain = (_terminate_verified(owner, (root,), apply=apply) if authority is None
+                 else _terminate_verified(owner, (root,), apply=apply, authority=authority))
+        if not drain:
             raise ValueError("watchdog lifecycle did not fully drain")
+        if apply and supervisor is not None:
+            print(f"{spec.label}-STOP waiting for native UV supervisor pid={supervisor.pid} "
+                  "timeout=2s signals=false", flush=True)
+            cleanup_owner._wait_for_exit(
+                cleanup_owner._tree_targets([supervisor], supervisor), timeout=2, poll_seconds=0.1,
+                records_reader=lambda: cleanup_owner._records(root),
+                monotonic=time.monotonic, sleep=time.sleep,
+            )
+            if any(record.pid == supervisor.pid for record in cleanup_owner._records(root)):
+                raise ValueError("watchdog UV supervisor has not naturally exited")
         if apply and marker.exists():
             unchanged_pointer()
             marker.unlink()
-        print(f"TASK-WATCHDOG-STOP verified apply={apply} old_tree_drained={apply}", flush=True)
+        print(f"{spec.label}-STOP verified apply={apply} old_tree_drained={apply}", flush=True)
         return True
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
-        print(f"TASK-WATCHDOG-STOP refused: {exc}", flush=True)
+        print(f"{spec.label}-STOP refused: {exc}", flush=True)
         return False
 
 
@@ -698,35 +749,45 @@ class WatchdogLaunch:
     process: subprocess.Popen[bytes] | None = None
 
 
-def _startup_identity(record: cleanup_owner.ProcessRecord, root: Path) -> bool:
-    return (bool(record.started_at) and _script_role(record, root, "task_watchdog.py")
+def _startup_identity(
+    record: cleanup_owner.ProcessRecord, root: Path, spec: WatchdogSpec = _TASK_SPEC,
+) -> bool:
+    return (bool(record.started_at) and _script_role(record, root, spec.script_name)
             and len(shlex.split(record.command)) == 2 and _owned_cwd(record, (root,)) == root
             and record.pgid == record.pid and os.getpgid(record.pid) == os.getsid(record.pid) == record.pid)
 
 
-def _startup_admission(root: Path, *, apply: bool) -> cleanup_owner.ProcessRecord | None:
-    marker = root / ".gate-logs/task-watchdog.pid"
+def _startup_admission(
+    root: Path, *, apply: bool, spec: WatchdogSpec = _TASK_SPEC,
+) -> cleanup_owner.ProcessRecord | None:
+    marker = spec.marker_path(root)
     records = cleanup_owner._records(root)
-    invocation = _current_stop_invocation(root, records, apply=apply, action="--start")
+    invocation = _current_stop_invocation(root, records, apply=apply, action="--start", spec=spec)
     existing: cleanup_owner.ProcessRecord | None = None
     pointer_identity: tuple[int, int, int, str] | None = None
     if marker.exists() or marker.is_symlink():
-        if marker.is_symlink() or not marker.is_file() or marker.resolve().parent != root / ".gate-logs":
+        if marker.is_symlink() or not marker.is_file() or marker.resolve() != spec.marker_path(root).absolute():
             raise ValueError("startup PID pointer is not checkout-owned")
         pointer_text = marker.read_text(encoding="utf-8")
         pointer_stat = marker.stat()
         pointer_identity = (pointer_stat.st_dev, pointer_stat.st_ino, pointer_stat.st_mtime_ns, pointer_text)
-        pid = int(pointer_text.strip())
+        pid = spec.marker_pid(marker)
+        if pid is None or pid <= 1:
+            raise ValueError("startup PID pointer is malformed")
         existing = next((record for record in records if record.pid == pid), None)
         if existing is None:
             raise ValueError("stale startup pointer requires the native stop recovery owner")
-        if not _startup_identity(existing, root):
+        if not _startup_identity(existing, root, spec):
             raise ValueError("existing watchdog has no verified detached identity")
         # A long-running singleton is identified natively, independently of log retention.
         invocation[existing.pid] = existing
-    _confirm_watchdog_absence(root, None, records, invocation)
+        if spec.startup_ready:
+            spec.startup_ready(existing, root)
+        if spec.authority:
+            spec.authority(existing, root)(records)
+    _confirm_watchdog_absence(root, None, records, invocation, spec)
     fresh = cleanup_owner._records(root)
-    _confirm_watchdog_absence(root, None, fresh, invocation)
+    _confirm_watchdog_absence(root, None, fresh, invocation, spec)
     if existing is not None:
         current_stat = marker.stat()
         if (marker.is_symlink() or pointer_identity != (
@@ -735,18 +796,24 @@ def _startup_admission(root: Path, *, apply: bool) -> cleanup_owner.ProcessRecor
             raise ValueError("existing watchdog PID pointer changed during admission")
         current = next((record for record in fresh if record.pid == existing.pid), None)
         if (current is None or not cleanup_owner._same_identity(existing, current)
-                or not _startup_identity(current, root)):
+                or not _startup_identity(current, root, spec)):
             raise ValueError("existing watchdog changed during startup admission")
+        if spec.startup_ready:
+            spec.startup_ready(current, root)
+        if spec.authority:
+            spec.authority(existing, root)(fresh)
     return existing
 
 
-def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
+def start_owned_watchdog(
+    project_root: Path, *, apply: bool, spec: WatchdogSpec = _TASK_SPEC,
+) -> WatchdogLaunch:
     """Admit one detached selected-Python daemon and acknowledge its actual identity."""
     root = project_root.resolve()
     process: subprocess.Popen[bytes] | None = None
     identity: cleanup_owner.ProcessRecord | None = None
     log_identity: tuple[int, int] | None = None
-    log = root / ".gate-logs/task-watchdog.log"
+    log = root / f".gate-logs/{spec.stem}.log"
     # Keep the one launch lease through actual success and verified failure drain.
     with ExitStack() as ownership:
         try:
@@ -754,10 +821,10 @@ def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
                 raise ValueError("native detached watchdog startup requires POSIX session support")
             if root not in {path.resolve() for path in _repository_roots()}:
                 raise ValueError("startup checkout is not registered")
-            script = root / "scripts/task_watchdog.py"
+            script = root / "scripts" / spec.script_name
             directory = root / ".gate-logs"
-            log = directory / "task-watchdog.log"
-            lock = directory / "task-watchdog-launch.lock"
+            log = directory / f"{spec.stem}.log"
+            lock = directory / f"{spec.stem}-launch.lock"
             if script.is_symlink() or not script.is_file():
                 raise ValueError("startup script is not a regular checkout-owned source")
             if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
@@ -766,12 +833,12 @@ def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
                 if path.is_symlink() or (path.exists() and not path.is_file()):
                     raise ValueError("startup log or lock is not a regular owned file")
             if not apply:
-                existing = _startup_admission(root, apply=False)
+                existing = _startup_admission(root, apply=False, spec=spec)
                 if existing is not None:
-                    print(f"TASK-WATCHDOG-START already-running pid={existing.pid} "
+                    print(f"{spec.label}-START already-running pid={existing.pid} "
                           "writes=false signals=false", flush=True)
                 else:
-                    print("TASK-WATCHDOG-START plan writes=false spawn=false signals=false", flush=True)
+                    print(f"{spec.label}-START plan writes=false spawn=false signals=false", flush=True)
                 return WatchdogLaunch(True, existing)
             # Reuse the native launch-lock/detached-session pattern. FileLock is
             # already owned by the observer and CI control planes and stays portable.
@@ -779,14 +846,15 @@ def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
 
             directory.mkdir(parents=True, exist_ok=True)
             ownership.enter_context(FileLock(str(lock), timeout=0, mode=0o600))
-            existing = _startup_admission(root, apply=apply)
+            existing = _startup_admission(root, apply=apply, spec=spec)
             if existing is not None:
-                print(f"TASK-WATCHDOG-START already-running pid={existing.pid} spawn=false signals=false", flush=True)
+                print(f"{spec.label}-START already-running pid={existing.pid} spawn=false signals=false", flush=True)
                 return WatchdogLaunch(True, existing)
             environment = os.environ.copy()
+            environment.update(dict(spec.environment))
             environment.update({
-                "GLUDD_TASK_WATCHDOG_PID": str(directory / "task-watchdog.pid"),
-                "GLUDD_TASK_WATCHDOG_LOG": str(log), "PYTHONUNBUFFERED": "1",
+                spec.pid_environment: str(directory / f"{spec.stem}.pid"),
+                spec.log_environment: str(log), "PYTHONUNBUFFERED": "1",
             })
             with log.open("ab") as output:
                 opened = os.fstat(output.fileno())
@@ -804,7 +872,7 @@ def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
                     current = next((record for record in cleanup_owner._records(root)
                                     if record.pid == process.pid), None)
                     if current is not None:
-                        if not _startup_identity(current, root):
+                        if not _startup_identity(current, root, spec):
                             raise ValueError("new watchdog identity or session is unverified")
                         if identity is not None and not cleanup_owner._same_identity(identity, current):
                             raise ValueError("new watchdog start identity changed")
@@ -812,26 +880,30 @@ def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
                         with log.open("rb") as acknowledgement:
                             acknowledgement.seek(offset)
                             text = acknowledgement.read(8192)
-                        marker = directory / "task-watchdog.pid"
+                        marker = spec.marker_path(root)
                         if marker.is_symlink() or log.is_symlink():
                             raise ValueError("startup publication became a symlink")
-                        if (_read_gate_pid(str(directory / "task-watchdog.pid")) == process.pid
-                                and f"task_watchdog ready: pid={process.pid} ".encode() in text
-                                and f"task_watchdog started: pid={process.pid} ".encode() in text):
+                        if (spec.marker_pid(marker) == process.pid
+                                and f"{Path(spec.script_name).stem} ready: pid={process.pid} ".encode() in text
+                                and f"{Path(spec.script_name).stem} started: pid={process.pid} ".encode() in text):
                             marker_stat = marker.stat()
                             fresh = next((record for record in cleanup_owner._records(root)
                                           if record.pid == process.pid), None)
                             current_marker = marker.stat()
                             current_log = log.stat()
                             if (fresh is None or not cleanup_owner._same_identity(identity, fresh)
-                                    or not _startup_identity(fresh, root) or process.poll() is not None
+                                    or not _startup_identity(fresh, root, spec) or process.poll() is not None
                                     or marker.is_symlink() or log.is_symlink()
-                                    or _read_gate_pid(str(marker)) != process.pid
+                                    or spec.marker_pid(marker) != process.pid
                                     or (marker_stat.st_dev, marker_stat.st_ino, marker_stat.st_mtime_ns)
                                     != (current_marker.st_dev, current_marker.st_ino, current_marker.st_mtime_ns)
                                     or log_identity != (current_log.st_dev, current_log.st_ino)):
                                 raise ValueError("acknowledged watchdog identity changed")
-                            print(f"TASK-WATCHDOG-START acknowledged pid={fresh.pid} "
+                            if spec.startup_ready:
+                                spec.startup_ready(fresh, root)
+                            if spec.authority:
+                                spec.authority(fresh, root)([fresh])
+                            print(f"{spec.label}-START acknowledged pid={fresh.pid} "
                                   f"start={fresh.started_at!r} pgid={fresh.pid} sid={fresh.pid}", flush=True)
                             return WatchdogLaunch(True, fresh, process)
                     if time.monotonic() >= deadline:
@@ -843,10 +915,10 @@ def start_owned_watchdog(project_root: Path, *, apply: bool) -> WatchdogLaunch:
                 try:
                     _terminate_verified(identity, (root,), reap=process.poll)
                 except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as cleanup_error:
-                    print(f"TASK-WATCHDOG-START cleanup refused: {cleanup_error}", flush=True)
+                    print(f"{spec.label}-START cleanup refused: {cleanup_error}", flush=True)
             if process is not None and process.poll() is not None:
                 process.wait(timeout=1)
-            message = f"TASK-WATCHDOG-START refused: {exc}"
+            message = f"{spec.label}-START refused: {exc}"
             if log_identity is not None and not log.is_symlink():
                 try:
                     current_log = log.stat()
