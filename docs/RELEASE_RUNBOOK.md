@@ -8,6 +8,53 @@ A tag is not a release. A release is complete only when the exact tagged commit
 has green CI, every required artifact has passed the pre-publish functional
 matrix, and the published release passes the remote completeness check.
 
+## Branch reconciliation sweep (beta4 procedure)
+
+The repeatable procedure used to reconcile the beta.4 branch backlog onto
+`development`. Every step runs on the MAIN checkout, on `development`, with a
+clean tree — never inside a worktree.
+
+### 1. Inventory unique heads
+```
+make branch-reconciliation-summary RECONCILE_TARGET=development \
+  RECONCILE_LIMIT=100 RECONCILE_DETAILS=1 RECONCILE_CURRENT_ONLY=1 \
+  RECONCILE_QUIET_PROGRESS=1
+```
+Emits a current-only JSON document listing every local branch whose tip carries
+work not reachable from `development` (`unique` classification). Branches
+classified `ancestor` or `patch-equivalent` need nothing.
+
+### 2. Content merge for genuinely absent work
+For each listed branch whose files exist nowhere on `development`, dry-run first
+(`APPLY=0`), then apply:
+```
+make development-merge-forward SOURCE=<branch> MODE=content APPLY=1
+```
+`APPLY=1` hard-requires: current branch `development`, clean worktree. Content
+mode merges `--no-ff -X ours` (development wins conflicts), aborts on structural
+conflicts, runs `collect-check`, and commits.
+
+### 3. Ancestry-only for superseded / WIP branches
+For each listed branch whose files were **deleted or rewritten on development**
+(WIP experiments, abandoned worktree branches, superseded designs):
+```
+make development-merge-forward SOURCE=<branch> MODE=ancestry-only APPLY=1
+```
+Records the branch tip while preserving development content verbatim (`-s ours`).
+**Document the per-branch rationale** before applying; `master` is forbidden as
+SOURCE for this mode.
+
+### 4. End state
+Re-run step 1. The sweep is complete only when the summary reports `unique` = 0.
+
+### 5. Duplicate-target check after content merges
+Content merges can bring Makefile edits from another branch, so run:
+```
+make check-duplicate-targets
+```
+This caught the beta.4 incident where a content merge introduced duplicate
+`gate-tail`/`kill-gate-force` targets. Fix the Makefile if it fails.
+
 ## What "complete" means
 
 The only acceptable remote verdict is:
