@@ -1,138 +1,136 @@
 ## Key Make Targets
 
-Run `make help` for the full categorized list (~100 targets). Key targets below.
+Run `make help` for the current categorized target list. This is the short
+operating path; [the executable contract](../../config/make_target_contract.json)
+owns target variables and safe examples. Use only Make commands, including
+reads, edits, research helpers, tests and Git operations. Add and test a missing
+target before using it. Follow the release rules in the root AGENTS.md.
 
-### Setup
-- `make init` - Set up the project (dirs + deps)
-- `make sync` - Sync uv dependencies
-- `make bootstrap` - init + lint + test + healthcheck
-- `make install-hooks` - Install pre-commit hooks (secrets, lint, collect)
-- `make clean` - Remove build artifacts
+### Establish current state before changing it
 
-### Quality
-- `make lint` - Run ruff linter
-- `make lint-fix` - Run ruff with auto-fix
-- `make typecheck` - Run mypy
-- `make check-types` - Flag `Any` usage in annotations (tight types)
-- `make healthcheck` - Verify imports work
-- `make collect-check` - Fast collection-error gate (use before every commit)
-- `make preflight` - Preflight quality gate (coverage, lint, mypy, templates)
-- `make gate` - Full gate: lint + typecheck + collect-check + test; writes `.gate-status`
-- `make gate-lite` - Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM. NOT the gate of record. Use between commits for fast feedback.
-- `make gate-audit` - Gate + coverage audit (85% per-file threshold)
-- `make gate-async` - Launch gate detached (non-blocking); writes `.gate-status`
-- `make gate-status` - Print current .gate-status (RUNNING/PASS/FAIL)
-- `make qa` - Run lint + typecheck + test + healthcheck
-- `make validate` - Full validation including ansible syntax
-- `make security` - Full security: sast + sbom + pip-audit
-- `make sast` - Run bandit SAST
-- `make sbom` - Generate CycloneDX SBOM
-- `make pip-audit` - Audit dependencies for vulnerabilities
-- `make check-node-v26-compat` - Check Node v26 `--experimental-strip-types` compatibility for plugin code
+Read TASKS.md, BUGS.md, config/ratchet.yml and SESSION.md together using
+`make cat-file FILE=path`. Use `make worktree-state` for the current branch,
+SHA and staged/unstaged paths; `make all-worktree-state` includes other checkouts.
+Use `make active-work-status`, `make ps` and `make disk` to identify existing
+owners, subprocesses, worker capacity and disk use. `make ps-gludd` covers
+namespaced daemons only. Model-agent status is separate from process PIDs.
 
-### Testing
-- `make test` - Full test suite with coverage
-- `make test-unit` - Unit tests only
-- `make test-integration` - Integration tests
-- `make test-e2e` - End-to-end tests
-- `make test-specific TESTFILE='path::TestClass::test_name'` - Single test
-- `make test-count` - Count collected tests
-- `make test-failures` - Show test failures
-- `make test-guardrails` - Test guardrail infrastructure
-- `make test-hook-runtime` - Functional hook runtime tests
-- `make test-and-commit` - Run tests then commit if green (`MSG="msg"`)
-- `make task CMD='make test-unit'` - Run CMD with timeout (GLUDD_TASK_TIMEOUT=300)
-- `make audit-coverage` - Coverage audit with per-file threshold check
+Preserve existing staged work and immutable failure evidence. A live gate owns
+its frozen candidate: do not edit that checkout, change its index or move its
+HEAD during proof. Use an isolated development-based worktree for disjoint
+repairs; record branch, base SHA, task and file ownership before editing.
+Unknown ownership needs investigation through existing owners, not another gate.
 
-### Secrets + Security
-- `make secrets-scan` - Scan for secrets against baseline (read-only)
-- `make secrets-scrub` - Interactive secret audit + scrub
-- `make secrets-baseline` - Rebuild .secrets.baseline
-- `make security-audit` - Comprehensive: secrets + sast + pip-audit + backlog gate
-- `make clean-artifacts` - Clean build artifacts, caches, temp files
+### Choose the next action from evidence
 
-### Git (use ONLY these — NEVER raw git commands)
-- `make git-status` - Show git status
-- `make git-diff` - Show diff stats
-- `make git-staged` - Show staged changes
-- `make git-log` - Show recent commits
-- `make git-show` - Show last commit diff
-- `make git-add FILES='f1 f2 ...'` - Stage specific files
-- `make git-add-all` - Stage all changes
-- `make git-commit MSG='message'` - Commit staged changes
-- `make git-reset FILES='HEAD~1'` - Reset to ref (soft by default)
-- `make git-branch MSG='name'` - Create branch
-- `make git-checkout MSG='branch'` - Switch branch
-- `make git-merge MSG='branch'` - Merge branch with --no-ff
-- `make git-stash` - Stash changes
-- `make git-stash-pop` - Pop stashed changes
-- `make git-rm FILES='...'` - Remove files from git
-- `make git-mv OLD='...' NEW='...'` - Rename/move tracked files
-- `make git-rebranch-onto` - Rebase current branch onto a new base
+| Current input | Next action |
+|---|---|
+| Capacity, runtime, configuration or ownership prerequisite fails | Repair the named input and run its focused acceptance. |
+| Focused tests pass | Run each complete changed test owner, lint and strict typing; collect before committing. |
+| A Make recipe or variable changes | Run `make check-make-target-contract` and the contract's behavioral example. |
+| Source is reviewed and prerequisites pass | Freeze one candidate for combined acceptance, full gate and exact-SHA hosted CI. |
+| Local or hosted proof fails | Preserve its receipt and log; change the actual failing input before retrying. |
+| Gate and required exact-SHA proofs pass | Record task evidence and use the guarded promotion owner from the canonical main checkout. |
 
-### Feature Branch & Worktree Workflow
-- `make feature-start MSG='feature/short-name'` - Create and switch to feature branch
-- `make feature-done MSG='feature/short-name'` - Test, merge to master with --no-ff
-- `make agent-worktree BRANCH=<name>` - Isolated git worktree for a subagent
-- `make agent-merge BRANCH=<name>` - Merge a subagent worktree branch into master
-- `make agent-cleanup BRANCH=<name>` - Remove a subagent worktree + branch
-- `make agent-worktree-list` - List active git worktrees
-- `make agent-worktree-dev BRANCH=<name>` - Worktree from development branch
-- `make agent-merge-dev BRANCH=<name>` - Merge worktree branch into development
+Source review, focused acceptance, collection, plan mode and scheduling admission
+have distinct meanings. A plan reports `gate_evidence=false`; it never supplies
+a full gate, CI result, deployment proof or permission to close a task.
 
-### Development Branch
-- `make development-start` - Create development branch from master
-- `make development-push` - Push development branch to remote
-- `make development-status` - Show commits on development not yet on master
-- `make development-merge-to-master` - Merge development into master (CI-green required)
+### Run focused checks with explicit inputs
 
-### Git Remote (sandboxcom)
-- `make git-remote-sandboxcom` - Configure sandboxcom GitHub remote with SSH key
-- `make git-push-sandboxcom` - Push to sandboxcom/gludd mirror
-- `make git-pull-sandboxcom` - Pull and rebase from sandboxcom/gludd
-- `make git-fetch-sandboxcom` - Fetch from sandboxcom/gludd
-- `make ship-async REF=<hash> [TARGET=master]` - Gate in background; ff-only merge on green
+This is a safe contract example, not the complete acceptance scope for a change:
 
-### Build + Deploy
-- `make dist` - Build distribution tarball
-- `make build-executable` - Build standalone executable (pyinstaller)
-- `make container-build` - Build container image
-- `make container-run` - Run container locally
-- `make container-push` - Push container image
+```bash
+make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=.venv
+```
 
-### Ansible
-- `make ansible-syntax` - Validate playbook syntax
-- `make playbook-list` - List registered playbooks
-- `make molecule-test` - Run molecule tests
+Select the installed environment belonging to the active checkout or its
+registered shared toolchain. An isolated worktree must not point at the canonical
+main checkout's .venv: its subprocess-confinement guard rejects that reference.
+Keep warnings fatal and preserve ordinary plugins and original assertions.
+`make lint-files FILES='path1.py path2.py'` and
+`make typecheck-scope FILES='path1.py path2.py'` provide focused checks.
+`make lint`, `make collect-check` and `make test-count` remain required
+by the commit/completion policy. A focused pass is not a green full gate.
 
-### Terraform
-- `make tf-cache-warm` - Download all providers into shared plugin cache
-- `make tf-init STACK=s/n` - Init a stack using shared cache
-- `make tf-validate STACK=s/n` - Validate a stack
-- `make tf-versions-check` - Enforce stacks match infra/terraform/versions.tf
-- `make tf-clean` - Remove shared plugin cache
+### Admit and prove a release candidate
 
-### Submodules
-- `make submodule-init` - Initialize all git submodules (recursive)
-- `make submodule-update` - Update submodules to latest remote (--merge)
-- `make submodule-status` - Show status of each submodule
-- `make submodule-pin REPO=.. TAG=..` - Pin a submodule to a tag/commit
+First inspect the existing admission plan:
 
-### Disk
-- `make disk` - Print disk usage + gludd footprint
-- `make disk-guard` - Check disk + clean caches if above threshold (95%)
-- `make disk-check` - Check disk usage, exit 1 if above threshold
-- `make check-disk` - Pre-commit check (fail if /tmp/gludd-* >100MB or disk >90%)
-- `make clean-tmp` - Clean /tmp/gludd-* files
+```bash
+make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=1 WORK_ITEM_ID='' OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20
+```
 
-### Recovery / Other
-- `make crash-recovery` - Reset enforcement state files (`/tmp/gludd-session-start.json` et al.) after a crashed session leaves stale state (PID mismatch / age-gated)
-- `make backup-opencode` - Snapshot .opencode/ -> .opencode.orig/ (run before long sessions)
-- `make check-opencode-backup` - Warn if .opencode.orig/ is stale (>24h older than .opencode/)
-- `make verify-opencode-backup` - Verify backup is current (file listing + shared.ts export parity)
-- `make restore-opencode` - Restore .opencode/ (from .opencode.orig/ first, git HEAD fallback) + clear cache
-- `make smoke` - Quick daemon boot health check
-- `make gated-merge` - Guarded multi-branch merge with manifest
-- `make git-index` - Index git log into SQLite (.gludd/git_history.db)
-- `make git-search Q='...'` - Search indexed git history
-- `make git-stats` - Show git history index statistics
+When the identified prerequisites have changed or are clear, use the real owner
+for the active release task. Do not start a second proof while another owner
+holds the candidate or resources:
+
+```bash
+make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 WORK_ITEM_ID=S98.4 OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20
+make gate GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1
+```
+
+Use the installed canonical release runtime and the complete gate. Preserve
+85% aggregate and 75% per-file line and branch coverage, fatal warnings, ZDD,
+cleanup and exact-SHA promotion requirements. The native gate owns .gate-status
+and its authenticated evidence. Resume only through the existing authenticated
+resume owner after it verifies current source, index and policy; do not relabel
+historical green output as current proof.
+
+`make gate-tail GATE_TAIL_LINES=80` shows a bounded log snapshot.
+`make gate-progress GATE_PROGRESS_MAX_HISTORICAL=10` explains phase progress.
+Use existing pipeline-status/ci-await owners for generated current CI evidence;
+select their full variables from the contract. Do not manually edit observation
+JSON or repeatedly poll status in place of repairing a known failure.
+
+### Commit, integrate and promote through their owners
+
+`make agent-worktree-dev BRANCH=feature-name` creates an isolated branch from
+development. For a bounded source repair, use
+`make ship-commit-files FILES='explicit paths' MSG='one tested change' PUSH=0`;
+its native content, index-scope and fresh collection guards still apply.
+`make git-commit MSG='one tested change'` additionally requires a fresh green
+gate. Keep each small tested change in its own commit.
+Before a push, `make verify-state` must identify the intended current branch.
+
+From a clean development checkout, plan integration of the reviewed source:
+
+```bash
+make development-merge-forward SOURCE=HEAD MODE=content APPLY=0
+```
+
+Replace SOURCE with the reviewed branch or exact ref before applying. Inspect
+overlapping files: content mode retains development's version on overlapping
+content and collection alone cannot prove semantic integration. Ancestry-only
+mode is exceptional and needs a documented decision that development already
+contains or intentionally supersedes the source deliverable. Preserve failed
+proofs; source integration does not close release tasks.
+
+Master receives development through the release owner, after local and hosted
+exact-SHA proof, task evidence and the reviewed-head integration receipt.
+The following validates policy/topology only and does not publish:
+
+```bash
+make release-promote TAG=v0.1.2 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1 RELEASE_PROMOTE_PUBLISH=0 REVIEWED_HEAD_INTEGRATION_RECEIPT=
+```
+
+Real promotion runs only from the canonical main checkout with the genuine
+receipt and validated candidate. Follow
+[Release Proof Throughput](../../docs/features/RELEASE_PROOF_THROUGHPUT.md) for
+missing-proof records and
+[the release runbook](../../docs/RELEASE_RUNBOOK.md) for artifact/publication proof.
+
+### Other supported work
+
+Use `make search PATTERN=regex SEARCH_PATH=directory-or-file` for bounded
+repository searches and `make show-lines FILE=path START=1 END=80` for slices.
+Use `make write-text-b64 FILE=path TEXT_B64=encoded` or
+`make replace-text-b64 FILE=path OLD_B64=encoded NEW_B64=encoded` for literal edits.
+Do not place shell interpolation in Make arguments.
+
+Setup through `make init`, dependency synchronization, packaging, Ansible,
+Terraform, secrets,
+resource cleanup and recovery each have dedicated owners in `make help`.
+Read their contract before execution. Cleanup must retain live owners and failed
+proof evidence. A target name, dry run or old threshold in prose is not evidence
+that its current policy admits an action.

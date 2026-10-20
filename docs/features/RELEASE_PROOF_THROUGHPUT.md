@@ -15,6 +15,73 @@ Reuse the existing Make owners, failure-promotion manifest, CI failure ledger,
 readiness checker, and observed gate. No additional scanner, runner, daemon,
 dependency resolver, or proof cache is introduced.
 
+## Model-independent release operating path (2026-10-20)
+
+The mandatory [.agents Make guide](../../.agents/policy/key-make-targets.md)
+previously recommended feature completion and agent merges directly into master,
+a shared-history rebase helper and a generic asynchronous gate. It omitted the
+release admission and promotion owners, described obsolete disk thresholds and
+called gate-audit an 85% per-file gate. These instructions could direct a model
+away from the existing branch, capacity, canonical-runtime and 85/75 policies.
+
+The guide now orders work by observed state: establish ownership, repair the
+actual prerequisite, accept the complete changed owners, check the Make contract,
+freeze once and obtain complete exact-SHA proof before guarded promotion.
+AGENTS.md routes agents to that recipe through its existing mandatory reference.
+No new enforcement restriction, proof owner, scanner, daemon or cache is added.
+
+| Assessed surface | Existing authority | Codified behavior |
+| --- | --- | --- |
+| Agent instructions and target discovery | AGENTS.md, make help and target contract | One short mandatory recipe uses current release owners and explicit inputs. |
+| Make and build proof | release-proof-admission, canonical gate and native CI producers | Plan, focus, collection, full gate, hosted proof and completion remain separate. |
+| Shared checkout and resources | worktree-state, active-work-status, ps and disk | Preserve staged work and a live candidate; isolate disjoint repairs and respect capacity. |
+| Branch integration | development-merge-forward and release-promote | Inspect overlap semantics, retain source ancestry, require genuine receipts and canonical-main promotion. |
+| Model reliability | existing test_make_target_contract owner | Regressions reject legacy release shortcuts and examples missing declared variables. |
+
+The original two new controls fail on the unchanged guide: missing admission
+owner and no copyable variable-complete admission example. After the guide
+repair, the complete owner passes nine cases on canonical CPython 3.11.14
+(2.14s, fatal warnings, serial pytest). This is source acceptance only.
+The initial shared-main .venv attempt is a separate INTERNALERROR: the existing
+worktree subprocess guard correctly refuses its canonical-checkout reference.
+The next run uses the installed registered shared toolchain. No confinement,
+plugin, warning, timeout, cleanup or coverage rule is changed.
+
+### Practitioner findings and limits
+
+The firsthand [Codex issue 25884](https://github.com/openai/codex/issues/25884),
+opened 2026-06-02, reports instructions read correctly and then applied
+inconsistently in later turns; follow-up users describe resumed-session drift.
+This is a reported failure mode, not proof about every model or the present
+runtime. The engineering decision is to make critical choices short, local and
+testable through existing owners, rather than depend on remembering more prose.
+
+The long-lived [recursive Make variable report](https://stackoverflow.com/questions/32637204/why-doesnt-gnu-makes-override-pass-through-to-sub-makes)
+shows command-line carriers surviving into child Make despite a parent export.
+The [GNU Make manual](https://www.gnu.org/software/make/manual/make.html)
+documents recursive variable and option propagation. Gludd retains its existing
+native carrier tests and literal argv owners; the guide supplies every declared
+variable in its release examples. The report's suggested flag rewrites are not
+adopted. Neither reference supplies Gludd release proof or measured model parity.
+
+Lower-capability models have the same executable path and failure messages.
+Comparable success still requires actual complete-owner and release evidence;
+this change does not claim a cross-model benchmark. Keep all open task statuses,
+historical failures, ZDD and 85% aggregate/75% per-file line and branch floors.
+The complete four-owner replay retains116PASS/3FAIL in194.06s: all guide,
+policy and split controls pass; the whole Markdown scanner names20 missing
+release-note links, four untagged runbook fences and32 trailing-space lines.
+The missing source documents are assigned to the release-note integrity owner;
+main already stages the formatting repairs. These failed source snapshots stay
+failed until genuine integration and whole-owner replay. Ruff, strict typing,
+254 target contracts,10786-file line limits and five-file locked Rumdl pass.
+The admission behavioral plan prints its native nine-owner route and retains
+gate_evidence=false/release_ready=false. The locked Rumdl binary is materialized
+through existing mkdir-p/copy-file owners; no environment sync or new daemon.
+The live main-checkout gate and previously staged repairs are separate work.
+No full-gate, hosted, release-readiness or task-completion result follows from
+these documentation/source controls.
+
 ## Mechanical scheduling admission
 
 ### Known hosted failures in the existing source-contract owner

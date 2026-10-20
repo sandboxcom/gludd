@@ -4,6 +4,19 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-20 - Mandatory Make guide disagreed with release owners
+
+The first-read target guide recommended direct master merges, shared-history
+rebasing and a generic async gate while omitting release admission/promotion.
+It also described old disk thresholds and the wrong per-file coverage floor.
+A model following the mandatory guide could therefore violate the root policy.
+Two new existing-owner regressions fail first on the missing admission path;
+the repaired guide passes the complete nine-case owner on CPython 3.11.14.
+AGENTS.md now points explicitly to the ordered recipe. Full proof remains open;
+source acceptance does not close S98.4 or validate the existing live candidate.
+The owning RELEASE_PROOF_THROUGHPUT feature records decisions, practitioner
+reports, the refused shared-main runtime attempt and evidence boundaries.
+
 ### 2026-10-19 — Completed checkpoint owner needed durable retention
 
 The normal source guard refused checkpoint90142d0d8e82af1978fe24eaf4a155ae1429a8e4

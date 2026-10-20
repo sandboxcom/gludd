@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -141,3 +142,50 @@ def test_patch_equivalence_target_uses_git_cherry() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert "patch-equivalent" in result.stdout
     assert "unique" in result.stdout
+
+
+def test_key_make_targets_recommends_guarded_release_owners() -> None:
+    """Keep the mandatory first read consistent with release promotion policy."""
+    guidance = (ROOT / ".agents/policy/key-make-targets.md").read_text(encoding="utf-8")
+    for owner in (
+        "release-proof-admission",
+        "development-merge-forward",
+        "release-promote",
+        "check-make-target-contract",
+        "worktree-state",
+    ):
+        assert f"make {owner}" in guidance, f"mandatory guide omits {owner}"
+
+    for shortcut in (
+        "make feature-done",
+        "make agent-merge BRANCH",
+        "make git-rebranch-onto",
+        "make git-pull-sandboxcom",
+        "make gate-async",
+    ):
+        assert shortcut not in guidance, f"mandatory guide recommends unsafe shortcut: {shortcut}"
+    assert "canonical main checkout" in guidance
+    assert "exact-SHA" in guidance
+    assert "85%" in guidance and "75%" in guidance
+    assert "gate_evidence=false" in guidance
+
+
+def test_key_make_targets_release_examples_use_declared_variables() -> None:
+    """Catch stale copyable examples when the executable target contract changes."""
+    guidance = (ROOT / ".agents/policy/key-make-targets.md").read_text(encoding="utf-8")
+    contract = load_contract(ROOT / "config/make_target_contract.json")
+    names = {"release-proof-admission", "development-merge-forward", "release-promote", "test-files"}
+    for entry in contract["targets"]:
+        if entry["name"] not in names:
+            continue
+        prefix = f"make {entry['name']} "
+        commands = [line for line in guidance.splitlines() if line.startswith(prefix)]
+        assert commands, f"mandatory guide has no copyable example for {entry['name']}"
+        for command in commands:
+            arguments = shlex.split(command)
+            supplied = {arg.partition("=")[0] for arg in arguments[2:] if "=" in arg}
+            assert set(entry["make_variables"]) <= supplied, command
+    assert "GATE_TEST_PROFILE=release" in guidance
+    assert "GATE_EXACT_SHA_RESUME=0" in guidance
+    assert "GATE_MAX_FILES_PER_BATCH=16" in guidance
+    assert "GATE_BATCH_WORKERS=1" in guidance
