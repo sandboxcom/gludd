@@ -1,8 +1,8 @@
 # Natural-Language Configuration Changes
 
-Status: proposed for v0.1.2  
-Capability: `configuration-intent`  
-Ansible collection: `general_ludd.configuration`  
+Status: proposed for v0.1.2
+Capability: `configuration-intent`
+Ansible collection: `general_ludd.configuration`
 Primary role: `general_ludd.configuration.natural_language_change`
 
 ## Outcome
