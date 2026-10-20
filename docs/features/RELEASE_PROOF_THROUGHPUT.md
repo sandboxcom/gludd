@@ -112,6 +112,70 @@ passes268 targets and actual help exits0. Focused XML is
 /tmp/gludd-v012-help-conformance.xml. These clear that failed source input;
 the original complete runtime replay remains required.
 
+## Automatic browser observation and measured remaining runtime cost (2026-10-20)
+
+The actual original311 repair on e2912f58334e09b97eee2ff5c43a5c0517a51e9c
+passes2019 main,1help and11tail cases in82.9observed seconds. The native ledger
+records its selected family locally repaired; this is not hosted resolution.
+The corresponding312 run passes MAIN2019/75.08s, help1/1.10s and ten tail cases,
+then times out90.6s during the last node. Its receipt remains withheld.
+The original failed log is
+.gate-logs/observed/v012-runtime-repair312/v012-repair312-e2912f5-20261020.log.
+
+One explicitly diagnostic180s-cap replay retains every original selector,
+plugin and2/1/1 child. It passes2019/62.19s,1/1.06s,11/8.79s, native76.4s,
+with largest source-inventory setup6.07s. This warm diagnostic is not deadline
+clearance or a repair receipt. A native three-control cProfile then passes3
+cases/11.3observed seconds:560subprocess.run calls/4.543cumulative seconds,
+receipt-owner Git280calls; cumulative rows overlap, and child CPU/cold imports
+are unobserved. Retain v012-runtime-diagnostic312 and v012-review-tail-profile312
+under .gate-logs/observed, plus native profile87486-9b5857b8ecb6cd7f.
+
+[UV's native bytecode option](https://docs.astral.sh/uv/reference/cli/#uv-sync--compile-bytecode)
+trades installation work and disk for startup. The firsthand March2026
+[macOS report18577](https://github.com/astral-sh/uv/issues/18577), now closed as
+duplicate, instead attributes its measured first-import lag to native-extension
+security scans. Neither diagnoses Gludd. No link mode, compiler, package,
+platform security, plugin, cache or timeout is changed from those hypotheses.
+The measured Git component remains a bounded source-repair opportunity.
+
+The first real installed WebKitJS0 replay records cold1.740s/cached1.344s,
+then desktop20PASS/1FAIL/3ERROR289.41s; compact is not reached. Cleanup reports
+TargetClosedError at the original SVG fault node. Native task-watchdog history
+identifies the interruption:2026-10-20T21:17:20, parent74910 make ci-failure-repair
+is killed at301s, with its descendant tree. Native killed audit independently
+records74910 at1792531040.02602. Preserve the raw history copy
+/tmp/gludd-v012-webkit-watchdog-failure-history.log and original browser artifacts
+/tmp/gludd-v012-pages-webkit-ci-repair-installed-e2912f5/.
+The complete original six-fixture node then passes unchanged1/32.97s,
+native34.0s under existing run-watched; pw:browser91308 exits0 without a signal.
+Exact diagnostic log is .gate-logs/observed/v012-webkit-svg-diagnostic/v012-svg-webkit-e2912f5-20261020.log.
+The [bounded research proposal](/tmp/gludd-v012-webkit-svg-closure-proposal.md)
+retains firsthand lifecycle/reentrancy hypotheses; the actual watchdog evidence
+controls this repair. No collector, controller, assertion or engine is changed.
+
+Root integrates the separate native visibility source46118498c8bdfeb65a8078e25bb714d70d590d74
+as e318ad7f6: exact registered resource-root plus its native -toolchain sibling,
+with the existing path-boundary/ancestry filter and browser driver accounting.
+Whole seven-owner acceptance211PASS; whole producer94.7line/91.0branch under85/75,
+audit20261020T212900Z; source fresh127533/127557,24deselected/0errors.
+No broader parent namespace, extra PID provider or termination authority is added.
+
+The public presentation-browser-test owner now automatically places executed
+engine commands under the same stream_command owner used by run-watched.
+Plans stay read-only, native argv/Make carriers stay intact, failures stop the
+matrix and preserve their original exit in native metadata. Standard OBSERVED
+root/heartbeat/quiet/max/retention variables are explicit in its target contract.
+Watchdog policy/exclusions, per-viewport600s,5s readiness,10s geometry, hosted20min,
+both engines and85/75 line and branch floors remain unchanged. New native routing
+RED is3FAIL/2PASS. After conforming both original exact-schema expectations to
+the five added variables, complete311 owners pass102/10.83s and312 Make owner
+passes34/4.67s, no skips. The earlier101PASS/1schemaFAIL remains in
+/tmp/gludd-v012-browser-observer-routing-green.xml; final311/312 XML names are
+/tmp/gludd-v012-browser-observer-routing-final311.xml and -final312.xml.
+Real protected WebKit, ChromiumJS0/JS1-c8,312repair, full gate, hosted exact-SHA,
+deployment and promotion remain missing. All release records remain open.
+
 ## Model-independent release operating path (2026-10-20)
 
 The mandatory [.agents Make guide](../../.agents/policy/key-make-targets.md)

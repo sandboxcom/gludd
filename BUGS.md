@@ -4,6 +4,10 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-20 - Public browser execution lacked native watchdog ownership
+
+The repair-owned WebKit desktop replay retained20PASS/1FAIL/3ERROR after the task watchdog killed its unobserved make ci-failure-repair process tree at301s. Cleanup TargetClosedError obscured that cause. The complete original six-fixture SVG case passes unchanged1/32.97s under run-watched with browser exit0; preserve both native logs. The existing public browser target now automatically uses the same native stream_command owner in apply mode and leaves plans read-only. Five additive controls fail3 first, then the three complete owners pass102 on311 and the Make owner passes34 on312; original argv, fatal child status, matrix order, watchdog limits,600s viewport,5s readiness,10s geometry and85/75 floors remain. The feature records exact evidence and the still-required clean-SHA full browser/c8/runtime/hosted/deployment proofs. No source-only result closes S98.4.
+
 ### 2026-10-20 - Focused source acceptance hid actionable CI repair preconditions
 
 A clean-source handoff stopped at capacity while three native CI families still lacked repair receipts. The stop hook continued S98.4; the native push guard refused before transport. Its first repair-owned311 replay retains87FAIL/1932PASS, mostly a fresh package import from the observer into kill_owned_gate, plus source handoff-token and Make declaration-spacing failures. Ordinary warmed pytest imports had hidden the transitive boundary. Preserve that native failure and every original assertion; root repairs the two source-format inputs and codifies the existing guarded repair path in AGENTS.md and the mandatory Make guide, while the isolated source owner adds fresh package/flat controls and the explicit sibling binding. Exact source, counts, command policy, evidence path and remaining312/WebKit/full-gate/hosted/deployment obligations are in RELEASE_PROOF_THROUGHPUT.md. All19release records remain open; capacity and source focus never create a repair receipt.

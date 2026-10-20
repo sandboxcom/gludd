@@ -127,6 +127,39 @@ transitive claim follows. Exact commands/native paths are
 /tmp/gludd-v012-pages-js-coverage-node-prerequisites.md.
 Native c8 conversion/threshold execution remains separate and unproved.
 
+## Automatic watched browser execution (2026-10-20)
+
+A native watchdog killed an unobserved repair-owned browser tree at301s, while
+the browser's own viewport policy allowed600s. The original SVG fault case then
+passed unchanged under the existing observer. The native failure, exact process
+audit and focused control are retained in RELEASE_PROOF_THROUGHPUT.
+The public target now uses that same stream_command owner for each executed
+engine, so normal callers receive live metadata, retained raw logs and watchdog
+protection automatically. Validate-only still runs no browser or observer.
+
+The exact target contract now includes the five existing OBSERVED controls.
+A complete read-only example is:
+
+```bash
+make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 \
+  PRESENTATION_BROWSER_ENGINES='chromium webkit' \
+  PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers \
+  PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser \
+  PRESENTATION_BROWSER_TIMEOUT=600 PRESENTATION_BROWSER_JS_COVERAGE=0 \
+  OBSERVED_ROOT=/tmp/gludd-presentation-observed OBSERVED_HEARTBEAT_SECS=15 \
+  OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=1200 OBSERVED_RETAIN_RUNS=20
+```
+
+Use explicit0 for actual acceptance and the installed selected runtime.
+The observer labels are presentation-browser-chromium and
+presentation-browser-webkit. The shared owner generates current JSON; never
+author that metadata manually. Its timeout and the original per-viewport bounds
+remain independent. Native pytest/browser cleanup and both engines remain
+required. A plan, unit routing check or focused six-fixture pass cannot issue
+a browser repair receipt or establish whole-controller coverage.
+No browser console collector/controller workaround follows from the interrupted
+suite; the actual watchdog ownership failure is repaired at the Make boundary.
+
 ## Source progress and takeover
 
 Coverage tooling originated on agent-v012-pages-js-coverage-20261019 at

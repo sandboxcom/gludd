@@ -84,6 +84,8 @@ def test_presentation_browser_target_has_explicit_owned_bounds() -> None:
             "PRESENTATION_BROWSER_OUTPUT",
             "PRESENTATION_BROWSER_TIMEOUT",
             "PRESENTATION_BROWSER_JS_COVERAGE",
+            "OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_QUIET_SECS",
+            "OBSERVED_MAX_SECS", "OBSERVED_RETAIN_RUNS",
         ],
         "behavior": (
             "make presentation-browser-test "
@@ -92,7 +94,10 @@ def test_presentation_browser_target_has_explicit_owned_bounds() -> None:
             "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers "
             "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser "
             "PRESENTATION_BROWSER_TIMEOUT=600 "
-            "PRESENTATION_BROWSER_JS_COVERAGE=0"
+            "PRESENTATION_BROWSER_JS_COVERAGE=0 "
+            "OBSERVED_ROOT=/tmp/gludd-presentation-observed "
+            "OBSERVED_HEARTBEAT_SECS=15 OBSERVED_QUIET_SECS=60 "
+            "OBSERVED_MAX_SECS=1200 OBSERVED_RETAIN_RUNS=20"
         ),
     }
     assert "PRESENTATION_BROWSER_TIMEOUT=600" in pages_workflow
@@ -271,6 +276,8 @@ def test_javascript_coverage_make_flag_is_optional_explicit_and_documented() -> 
         "PRESENTATION_BROWSER_OUTPUT",
         "PRESENTATION_BROWSER_TIMEOUT",
         "PRESENTATION_BROWSER_JS_COVERAGE",
+        "OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_QUIET_SECS",
+        "OBSERVED_MAX_SECS", "OBSERVED_RETAIN_RUNS",
     ]
     assert "PRESENTATION_BROWSER_JS_COVERAGE=0" in str(contract["behavior"])
 
@@ -400,6 +407,7 @@ def test_pages_coverage_artifact_is_retained_on_success_and_failure() -> None:
 
 def _run_native_presentation_flag(
     tmp_path: Path, *, coverage_flag: str, flag_origin: str, validate_flag: str = "1",
+    browser_exit: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     """Exercise the real target, replacing only its UV child with an argv recorder."""
     selected_make = shutil.which("make")
@@ -423,6 +431,9 @@ def _run_native_presentation_flag(
     recorder.write_text(
         "import json, os, subprocess, sys\n"
         "from pathlib import Path\n"
+        "if sys.argv[1:4] == ['run', 'python', 'scripts/stream_command.py']:\n"
+        "    observed = subprocess.run([sys.executable, *sys.argv[3:]], check=False)\n"
+        "    raise SystemExit(observed.returncode)\n"
         "if sys.argv[1:2] == ['native-carriers']:\n"
         "    print(json.dumps({'canary': sys.argv[2]}))\n"
         "    raise SystemExit(0)\n"
@@ -435,7 +446,8 @@ def _run_native_presentation_flag(
         "'flags': os.environ.get('MAKEFLAGS', ''), 'level': os.environ.get('MAKELEVEL', ''), "
         f"'inherited': {{name: os.environ.get(name) for name in {inherited_names!r}}}}}\n"
         f"with Path({str(calls)!r}).open('a', encoding='utf-8') as output:\n"
-        "    output.write(json.dumps(report) + '\\n')\n",
+        "    output.write(json.dumps(report) + '\\n')\n"
+        f"raise SystemExit({browser_exit})\n",
         encoding="utf-8",
     )
     uv = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
@@ -448,6 +460,9 @@ def _run_native_presentation_flag(
         f"PRESENTATION_BROWSER_ROOT={tmp_path / 'browser binaries'}",
         f"PRESENTATION_BROWSER_OUTPUT={tmp_path / 'browser output'}",
         "PRESENTATION_BROWSER_TIMEOUT=600",
+        f"OBSERVED_ROOT={tmp_path / 'observed'}",
+        "OBSERVED_HEARTBEAT_SECS=1", "OBSERVED_QUIET_SECS=10",
+        "OBSERVED_MAX_SECS=20", "OBSERVED_RETAIN_RUNS=2",
     ]
     inherited = os.environ.copy()
     environment = inherited.copy()
@@ -462,6 +477,51 @@ def _run_native_presentation_flag(
     )
     assert os.environ == inherited
     return result, calls
+
+
+@pytest.mark.parametrize("validate_flag", ("0", "1"))
+@pytest.mark.parametrize("coverage_flag", ("0", "1"))
+def test_native_browser_observer_protection_is_automatic_and_plans_stay_read_only(
+    tmp_path: Path, coverage_flag: str, validate_flag: str,
+) -> None:
+    """A real observer must own each executed engine before its native child."""
+    result, calls = _run_native_presentation_flag(
+        tmp_path, coverage_flag=coverage_flag, flag_origin="command-line",
+        validate_flag=validate_flag,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert calls.is_file()
+    observed = tmp_path / "observed"
+    if validate_flag == "1":
+        assert not observed.exists()
+        return
+    engines = ("chromium", "webkit") if coverage_flag == "0" else ("chromium",)
+    for engine in engines:
+        current = observed / f"presentation-browser-{engine}" / "current.json"
+        assert current.is_file(), result.stdout + result.stderr
+        status = cast(dict[str, object], json.loads(current.read_text(encoding="utf-8")))
+        assert status["state"] == "passed" and status["exit_code"] == 0
+        assert type(status["owner_pid"]) is int and type(status["child_pid"]) is int
+        assert status["owner_pid"] != status["child_pid"]
+        assert status["termination_reason"] is None
+        log_path = Path(cast(str, status["log_path"]))
+        assert log_path.is_relative_to(observed) and log_path.is_file()
+
+
+def test_native_browser_observer_keeps_child_failure_and_stops_matrix(tmp_path: Path) -> None:
+    result, calls = _run_native_presentation_flag(
+        tmp_path, coverage_flag="0", flag_origin="command-line", validate_flag="0",
+        browser_exit=27,
+    )
+    assert result.returncode != 0
+    samples = [json.loads(line) for line in calls.read_text(encoding="utf-8").splitlines()]
+    assert len(samples) == 1 and samples[0]["argv"][6:8] == ["--browser", "chromium"]
+    observed = tmp_path / "observed"
+    current = observed / "presentation-browser-chromium" / "current.json"
+    assert current.is_file(), result.stdout + result.stderr
+    status = cast(dict[str, object], json.loads(current.read_text(encoding="utf-8")))
+    assert status["state"] == "failed" and status["exit_code"] == 27
+    assert not (observed / "presentation-browser-webkit").exists()
 
 
 @pytest.mark.parametrize("flag_origin", ("command-line", "environment"))
