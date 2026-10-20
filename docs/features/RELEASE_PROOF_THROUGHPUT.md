@@ -70,6 +70,23 @@ alongside final capacity admission, full gate, exact-SHA CI and deployment.
 All19release records stay open. The mandatory guide and AGENTS.md now expose
 this existing guarded route so a smaller model does not stop at source receipts.
 
+The next repair-owned311 execution on763e6447c4a946bdc509b351fd88f9b83fcd105d
+retains1FAIL/2018PASS61.94s, observed rc2/64.8s. Its actual remaining node is
+the existing external pytest-fixture collision guard: the new observer tests
+parametrize context at three sites, shadowing Playwright's fixture. Root renames
+only those pytest-side parameters to import_context, keeping all12 values,
+assertions, child payload keys and fresh-process/CLI checks. Production source
+and the unchanged full-file coverage scope do not change.
+Both complete owners pass69/0skip6.65s; Ruff/strict pass. Exact focused XML:
+/tmp/gludd-v012-observer-fixture-conformance.xml. Original failed evidence:
+.gate-logs/observed/v012-runtime-repair311/v012-repair311-763e644-20261020.log.
+No repair receipt is issued by the failed replay. The mandatory early-focus
+recipe now includes the existing complete fixture-collision owner whenever
+pytest parametrization changes; ordinary plugins and its repository assertion
+remain authoritative. Do not obtain a receipt until a changed clean source
+passes the original complete90/60 owner.
+
+
 ## Model-independent release operating path (2026-10-20)
 
 The mandatory [.agents Make guide](../../.agents/policy/key-make-targets.md)

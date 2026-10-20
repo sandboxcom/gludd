@@ -61,27 +61,27 @@ print(json.dumps({"entry": entry, "context": context, "identity": "verified"}))
 """
 
 
-@pytest.mark.parametrize("context", ["package", "flat"])
+@pytest.mark.parametrize("import_context", ["package", "flat"])
 @pytest.mark.parametrize("entry", ["pipeline_status", "active_work_status", "kill_owned_gate"])
 def test_fresh_observer_import_chain_retains_canonical_sibling_identity(
-    context: str, entry: str,
+    import_context: str, entry: str,
 ) -> None:
-    directory = ROOT if context == "package" else ROOT / "scripts"
+    directory = ROOT if import_context == "package" else ROOT / "scripts"
     result = subprocess.run(
-        [sys.executable, "-E", "-B", "-W", "error", "-c", _PROBE, entry, context, str(ROOT)],
+        [sys.executable, "-E", "-B", "-W", "error", "-c", _PROBE, entry, import_context, str(ROOT)],
         cwd=directory, capture_output=True, text=True, check=False, timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stderr == ""
-    assert json.loads(result.stdout) == {"entry": entry, "context": context, "identity": "verified"}
+    assert json.loads(result.stdout) == {"entry": entry, "context": import_context, "identity": "verified"}
 
 
-@pytest.mark.parametrize("context", ["package", "flat"])
+@pytest.mark.parametrize("import_context", ["package", "flat"])
 @pytest.mark.parametrize("entry", ["pipeline_status", "active_work_status"])
 def test_fresh_observer_cli_help_never_runs_current_observation_or_network(
-    tmp_path: Path, context: str, entry: str,
+    tmp_path: Path, import_context: str, entry: str,
 ) -> None:
-    arguments = ["-m", "scripts." + entry] if context == "package" else [
+    arguments = ["-m", "scripts." + entry] if import_context == "package" else [
         str(ROOT / "scripts" / (entry + ".py")),
     ]
     result = subprocess.run(
@@ -94,14 +94,14 @@ def test_fresh_observer_cli_help_never_runs_current_observation_or_network(
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.parametrize("context", ["package", "flat"])
+@pytest.mark.parametrize("import_context", ["package", "flat"])
 def test_fresh_cleanup_cli_missing_fixture_lock_retains_read_only_noop(
-    tmp_path: Path, context: str,
+    tmp_path: Path, import_context: str,
 ) -> None:
     sentinel = tmp_path / "retained.txt"
     sentinel.write_text("retained native fixture\n", encoding="utf-8")
     before = sentinel.read_bytes()
-    arguments = ["-m", "scripts.kill_owned_gate"] if context == "package" else [
+    arguments = ["-m", "scripts.kill_owned_gate"] if import_context == "package" else [
         str(ROOT / "scripts/kill_owned_gate.py"),
     ]
     result = subprocess.run(

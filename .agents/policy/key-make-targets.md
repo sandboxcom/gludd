@@ -59,6 +59,12 @@ Select the installed environment belonging to the active checkout or its
 registered shared toolchain. An isolated worktree must not point at the canonical
 main checkout's .venv: its subprocess-confinement guard rejects that reference.
 Keep warnings fatal and preserve ordinary plugins and original assertions.
+When pytest parametrization changes, include the complete existing
+tests/unit/test_pytest_param_fixture_collisions.py owner with the changed
+test files. Names such as context are external Playwright fixtures; use a
+specific parameter name such as import_context while keeping case values and
+assertions. The existing repository guard remains part of native admission;
+focused behavior alone does not establish fixture-namespace conformance.
 `make lint-files FILES='path1.py path2.py'` and
 `make typecheck-scope FILES='path1.py path2.py'` provide focused checks.
 `make lint`, `make collect-check` and `make test-count` remain required
