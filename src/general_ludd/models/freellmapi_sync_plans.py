@@ -23,11 +23,7 @@ def _normalise_schema_plan(value: object) -> dict[str, object]:
     )
     from_version = positive_int(schema["from_version"], fault)
     to_version = positive_int(schema["to_version"], fault)
-    if (
-        to_version <= from_version
-        or to_version > 2_147_483_647
-        or schema["compatibility"] != "backward"
-    ):
+    if to_version < from_version or schema["compatibility"] != "backward":
         fail_sync(fault)
     return {
         "from_version": from_version,
@@ -132,7 +128,7 @@ def normalise_live_boundary(
         return expected
     if mode != "live":
         fail_sync(fault)
-    if allow_live is not True:
+    if not allow_live:
         fail_sync(FreeLLMAPISyncFault.LIVE_MODE_NOT_ADMITTED)
     request_count = positive_int(boundary["max_requests"], fault)
     timeout = positive_int(boundary["timeout_seconds"], fault)

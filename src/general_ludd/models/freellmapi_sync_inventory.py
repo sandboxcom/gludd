@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from pathlib import PurePosixPath
 
 from general_ludd.models.freellmapi_sync_contracts import (
     FreeLLMAPISyncFault,
@@ -17,6 +16,7 @@ from general_ludd.models.freellmapi_sync_contracts import (
 
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _EXPORT = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]{0,127}$")
+_OWNED_PREFIX = "src/general_ludd/"
 _SHIM_KEYS = {
     "id",
     "path",
@@ -25,27 +25,7 @@ _SHIM_KEYS = {
     "sha256",
     "upstream_exports",
     "copied_upstream_source",
-    "file_type",
 }
-
-
-def _normalise_path(value: object) -> str:
-    fault = FreeLLMAPISyncFault.OWNED_SHIM_BOUNDARY
-    path = nonempty(value, fault)
-    if not path.isascii() or "\\" in path or "\x00" in path:
-        fail_sync(fault)
-    parsed = PurePosixPath(path)
-    parts = parsed.parts
-    if (
-        parsed.is_absolute()
-        or parsed.as_posix() != path
-        or parts[:2] != ("src", "general_ludd")
-        or any(part in {"", ".", ".."} for part in parts)
-        or any(part.casefold() == "vendor" for part in parts)
-        or not path.endswith((".py", ".json", ".md"))
-    ):
-        fail_sync(fault)
-    return path
 
 
 def _normalise_shim(value: object) -> dict[str, object]:
@@ -57,13 +37,20 @@ def _normalise_shim(value: object) -> dict[str, object]:
     shim_id = nonempty(shim["id"], FreeLLMAPISyncFault.OWNED_SHIM_INVENTORY_INVALID)
     if _IDENTIFIER.fullmatch(shim_id) is None:
         fail_sync(FreeLLMAPISyncFault.OWNED_SHIM_INVENTORY_INVALID)
-    path = _normalise_path(shim["path"])
+    path = nonempty(shim["path"], FreeLLMAPISyncFault.OWNED_SHIM_BOUNDARY)
+    path_parts = path.split("/")
+    if (
+        not path.startswith(_OWNED_PREFIX)
+        or path.startswith("/")
+        or ".." in path_parts
+        or "vendor" in path_parts
+        or not path.endswith((".py", ".json", ".md"))
+    ):
+        fail_sync(FreeLLMAPISyncFault.OWNED_SHIM_BOUNDARY)
     if (
         shim["owner"] != "gludd"
-        or type(shim["kind"]) is not str
-        or shim["kind"] not in ("adapter", "schema", "migration", "test_bridge")
+        or shim["kind"] not in {"adapter", "schema", "migration", "test_bridge"}
         or shim["copied_upstream_source"] is not False
-        or shim["file_type"] != "regular"
     ):
         fail_sync(FreeLLMAPISyncFault.OWNED_SHIM_BOUNDARY)
     return {
@@ -78,23 +65,12 @@ def _normalise_shim(value: object) -> dict[str, object]:
             pattern=_EXPORT,
         ),
         "copied_upstream_source": False,
-        "file_type": "regular",
     }
 
 
 def _normalise_shim_list(value: object) -> list[dict[str, object]]:
     fault = FreeLLMAPISyncFault.OWNED_SHIM_INVENTORY_INVALID
-    if type(value) is not list or not value or len(value) > 256:
-        fail_sync(fault)
-    raw_paths = [
-        item.get("path") if type(item) is dict else None for item in value
-    ]
-    folded_paths = [
-        path.casefold() for path in raw_paths if type(path) is str
-    ]
-    if len(folded_paths) != len(raw_paths) or len(folded_paths) != len(
-        set(folded_paths)
-    ):
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence) or not value:
         fail_sync(fault)
     result = [_normalise_shim(item) for item in value]
     ids = [str(item["id"]) for item in result]
