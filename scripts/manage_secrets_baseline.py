@@ -62,10 +62,21 @@ class BaselineSummary:
         }
 
 
+def _unique_object(pairs: list[tuple[str, object]]) -> JsonObject:
+    payload: JsonObject = {}
+    for key, value in pairs:
+        if key in payload:
+            raise BaselineError("JSON object contains duplicate keys")
+        payload[key] = value
+    return payload
+
+
 def _load_object(path: Path) -> JsonObject:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        payload = json.loads(
+            path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise BaselineError(f"invalid JSON document: {path.name}") from exc
     if not isinstance(payload, dict) or not all(
         isinstance(key, str) for key in payload
@@ -285,11 +296,14 @@ def _write_atomic(path: Path, text: str) -> None:
         temp_path.unlink(missing_ok=True)
 
 
-def compact(path: Path, policy: Policy) -> BaselineSummary:
-    """Atomically canonicalize without changing settings or findings."""
-    payload = _load_object(path)
-    before_settings = _settings(payload)
-    before_findings = finding_counts(payload)
+def _publish_preserving_inventory(
+    path: Path,
+    payload: JsonObject,
+    policy: Policy,
+    *,
+    before_settings: Mapping[str, object],
+    before_findings: Counter[FindingIdentity],
+) -> BaselineSummary:
     text = canonical_text(normalize_payload(payload))
     round_trip = cast(JsonObject, json.loads(text))
     if _settings(round_trip) != before_settings:
@@ -299,6 +313,63 @@ def compact(path: Path, policy: Policy) -> BaselineSummary:
     validate_payload(round_trip, policy)
     _write_atomic(path, text)
     return summary(round_trip, physical_lines=len(text.splitlines()))
+
+
+def compact(path: Path, policy: Policy) -> BaselineSummary:
+    """Atomically canonicalize without changing settings or findings."""
+    payload = _load_object(path)
+    return _publish_preserving_inventory(
+        path, payload, policy,
+        before_settings=_settings(payload),
+        before_findings=finding_counts(payload),
+    )
+
+
+def review_findings(
+    path: Path, policy: Policy, identities: Sequence[FindingIdentity],
+) -> BaselineSummary:
+    """Review exact unique findings without changing settings or inventory.
+
+    No source text, prefix, or detector-wide exemption grants review authority.
+    Validate the complete requested transaction before changing any audit label.
+    A conflicting prior review or verified finding requires a separate decision.
+    """
+    if not identities or any(
+        len(identity) != 3
+        or not all(isinstance(value, str) and value for value in identity)
+        or re.fullmatch(r"[0-9a-f]{40}", identity[2]) is None
+        for identity in identities
+    ):
+        raise BaselineError("review identities must be exact filename/detector/digest tuples")
+    intended = set(identities)
+    if len(intended) != len(identities):
+        raise BaselineError("review identities must be unique")
+    payload = _load_object(path)
+    validate_payload(payload, policy)
+    before_settings = _settings(payload)
+    before_findings = finding_counts(payload)
+    if any(before_findings[identity] != 1 for identity in intended):
+        raise BaselineError("intended review identity is missing or duplicated")
+    selected: list[JsonObject] = []
+    for result_path, entries in _results(payload).items():
+        for entry in entries:
+            identity = _finding_key(result_path, entry)
+            if identity not in intended:
+                continue
+            if result_path != identity[0] or entry.get("filename") != result_path:
+                raise BaselineError("intended review filename disagrees with result path")
+            if entry.get("is_verified") is not False or (
+                "is_secret" in entry and entry["is_secret"] is not False
+            ):
+                raise BaselineError("intended review conflicts with existing finding state")
+            selected.append(entry)
+    for entry in selected:
+        entry["is_secret"] = False
+    return _publish_preserving_inventory(
+        path, payload, policy,
+        before_settings=before_settings,
+        before_findings=before_findings,
+    )
 
 
 def _scan_command(executable: str, policy: Policy, baseline: Path) -> list[str]:
