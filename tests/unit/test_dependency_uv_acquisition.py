@@ -1,4 +1,5 @@
 """Fixed native uv acquisition: isolated paths, leases and bounded child ownership."""
+
 from __future__ import annotations
 
 import base64
@@ -56,9 +57,11 @@ def write_tool(leaf: Path, bootstrap: Path, version: str = PIN) -> None:
     receipt = (
         '[tool]\nrequirements=[{name="uv",specifier="==' + version + '"}]\n'
         f"python={json.dumps(str(bootstrap))}\n"
-        'entrypoints=[{name="uv",install-path=' + json.dumps(str(leaf / "bin/uv")) +
-        ',from="uv"},{name="uvx",install-path=' + json.dumps(str(leaf / "bin/uvx")) +
-        ',from="uv"}]\n[tool.options]\n'
+        'entrypoints=[{name="uv",install-path='
+        + json.dumps(str(leaf / "bin/uv"))
+        + ',from="uv"},{name="uvx",install-path='
+        + json.dumps(str(leaf / "bin/uvx"))
+        + ',from="uv"}]\n[tool.options]\n'
         'index=[{url="https://pypi.org/simple",default=true}]\n'
     )
     (environment / "uv-receipt.toml").write_text(receipt)
@@ -108,12 +111,15 @@ class Fixture:
 
     def wheels(self, version: str) -> list[dict[str, object]]:
         self.wheel_requests.append(version)
-        return [{
-            "filename": f"uv-{version}-{TAG}.whl",
-            "url": f"https://files.pythonhosted.org/packages/fixture/uv-{version}-{TAG}.whl",
-            "digests": {"sha256": "a" * 64},
-            "packagetype": "bdist_wheel", "yanked": False,
-        }]
+        return [
+            {
+                "filename": f"uv-{version}-{TAG}.whl",
+                "url": f"https://files.pythonhosted.org/packages/fixture/uv-{version}-{TAG}.whl",
+                "digests": {"sha256": "a" * 64},
+                "packagetype": "bdist_wheel",
+                "yanked": False,
+            }
+        ]
 
 
 @pytest.fixture
@@ -134,7 +140,10 @@ def native_acquisition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fixtu
     installer.write_text(f"#!{NATIVE_PYTHON}\nprint('uv 0.11.17')\n")
     installer.chmod(0o700)
     fixture = Fixture(
-        root, namespace, bootstrap, installer,
+        root,
+        namespace,
+        bootstrap,
+        installer,
         Path(f"{namespace}-toolchain") / "pinned-uv" / PIN,
     )
     monkeypatch.setattr(active_work_status, "_repository_roots", lambda: (root,))
@@ -155,19 +164,24 @@ def _modeled_post_admission_parent_version() -> None:
 
 @pytest.fixture
 def acquisition(native_acquisition: Fixture, monkeypatch: pytest.MonkeyPatch) -> Fixture:
-    if sys.version_info[:2] == (3, 12):
+    if sys.version_info[:2] != (3, 11):
         monkeypatch.setattr(
-            owner, "_require_uv_acquisition_parent_version",
-            _modeled_post_admission_parent_version, raising=False,
+            owner,
+            "_require_uv_acquisition_parent_version",
+            _modeled_post_admission_parent_version,
+            raising=False,
         )
     return native_acquisition
 
 
 def test_pinned_uv_plan_has_no_mutation_probe_or_installer(
-    acquisition: Fixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    acquisition: Fixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def unexpected_probe(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         pytest.fail("plan must not start any native child")
+
     monkeypatch.setattr(subprocess, "run", unexpected_probe)
     before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
     environment = dict(os.environ)
@@ -182,10 +196,20 @@ def test_pinned_uv_plan_has_no_mutation_probe_or_installer(
 
 
 def test_native_pinned_uv_apply_is_fixed_and_private(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    for key in ("UV_INDEX_URL", "UV_EXTRA_INDEX_URL", "UV_FIND_LINKS", "UV_COMPILE_BYTECODE",
-                "UV_INSECURE_HOST", "UV_PYTHON", "UV_CONSTRAINT", "UV_TOOL_DIR", "PIP_INDEX_URL"):
+    for key in (
+        "UV_INDEX_URL",
+        "UV_EXTRA_INDEX_URL",
+        "UV_FIND_LINKS",
+        "UV_COMPILE_BYTECODE",
+        "UV_INSECURE_HOST",
+        "UV_PYTHON",
+        "UV_CONSTRAINT",
+        "UV_TOOL_DIR",
+        "PIP_INDEX_URL",
+    ):
         monkeypatch.setenv(key, "untrusted")
     before = dict(os.environ)
     report = acquisition.acquire()
@@ -193,26 +217,47 @@ def test_native_pinned_uv_apply_is_fixed_and_private(
     assert len(acquisition.calls) == 1
     call = acquisition.calls[0]
     assert call.argv == (
-        str(acquisition.installer.resolve()), "--no-config", "tool", "install",
-        "--python", str(acquisition.bootstrap), "--no-python-downloads", "--no-build",
-        "--default-index", "https://pypi.org/simple", f"uv=={PIN}",
+        str(acquisition.installer.resolve()),
+        "--no-config",
+        "tool",
+        "install",
+        "--python",
+        str(acquisition.bootstrap),
+        "--no-python-downloads",
+        "--no-build",
+        "--default-index",
+        "https://pypi.org/simple",
+        f"uv=={PIN}",
     )
-    for key, suffix in (("UV_TOOL_DIR", "tools"), ("UV_TOOL_BIN_DIR", "bin"),
-                        ("UV_CACHE_DIR", "cache"), ("UV_PYTHON_INSTALL_DIR", "python")):
+    for key, suffix in (
+        ("UV_TOOL_DIR", "tools"),
+        ("UV_TOOL_BIN_DIR", "bin"),
+        ("UV_CACHE_DIR", "cache"),
+        ("UV_PYTHON_INSTALL_DIR", "python"),
+    ):
         assert call.environment[key] == str(acquisition.leaf / suffix)
     assert call.environment["UV_PYTHON_DOWNLOADS"] == "never"
     assert call.environment["UV_CONCURRENT_DOWNLOADS"] == "1"
     assert call.environment["PATH"].split(os.pathsep)[0] == str(acquisition.leaf / "bin")
-    assert not any(key in call.environment for key in (
-        "UV_INDEX_URL", "UV_EXTRA_INDEX_URL", "UV_FIND_LINKS", "UV_COMPILE_BYTECODE",
-        "UV_INSECURE_HOST", "UV_PYTHON", "UV_CONSTRAINT", "PIP_INDEX_URL",
-    ))
+    assert not any(
+        key in call.environment
+        for key in (
+            "UV_INDEX_URL",
+            "UV_EXTRA_INDEX_URL",
+            "UV_FIND_LINKS",
+            "UV_COMPILE_BYTECODE",
+            "UV_INSECURE_HOST",
+            "UV_PYTHON",
+            "UV_CONSTRAINT",
+            "PIP_INDEX_URL",
+        )
+    )
     assert call.options["max_seconds"] == 180 and call.options["quiet_seconds"] == 60
     assert call.options["cwd"] == acquisition.root
     assert report["wheel_sha256"] == "a" * 64 and report["artifact_hash_locked"] is False
-    assert report["executable_sha256"] == hashlib.sha256(
-        (acquisition.leaf / "tools/uv/bin/uv").read_bytes()
-    ).hexdigest()
+    assert (
+        report["executable_sha256"] == hashlib.sha256((acquisition.leaf / "tools/uv/bin/uv").read_bytes()).hexdigest()
+    )
     assert isinstance(report["wheel_url"], str)
     assert report["wheel_url"].startswith("https://files.pythonhosted.org/")
     assert dict(os.environ) == before
@@ -225,14 +270,15 @@ def test_valid_native_reuse_never_reinstalls(acquisition: Fixture) -> None:
     report = acquisition.acquire()
     assert report["state"] == "verified" and report["reused"] is True
     assert not acquisition.calls
-    assert contents == {
-        p: p.read_bytes() for p in acquisition.leaf.rglob("*") if p.is_file() and p.name != ".lock"
-    }
+    assert contents == {p: p.read_bytes() for p in acquisition.leaf.rglob("*") if p.is_file() and p.name != ".lock"}
 
 
 @pytest.mark.parametrize("fault", ["partial", "leaf-symlink", "parent-symlink", "foreign-root", "foreign-uid"])
 def test_unknown_acquisition_state_is_never_replaced(
-    acquisition: Fixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str,
+    acquisition: Fixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
 ) -> None:
     if fault == "partial":
         acquisition.leaf.mkdir(parents=True)
@@ -260,17 +306,24 @@ def test_unknown_acquisition_state_is_never_replaced(
 
 @pytest.mark.parametrize("fault", ["active", "inventory-unavailable", "held-acquisition-lease", "held-native-lease"])
 def test_active_or_unknown_acquisition_ownership_refuses(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch, fault: str,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
 ) -> None:
     write_tool(acquisition.leaf, acquisition.bootstrap)
     if fault == "active":
         monkeypatch.setattr(clean_ci_shard_scratch, "_active_process_pids", lambda path: [12345])
     elif fault == "inventory-unavailable":
+
         def unavailable(path: Path) -> list[int]:
             raise clean_ci_shard_scratch.ProcessInspectionError("fixture inventory unavailable")
+
         monkeypatch.setattr(clean_ci_shard_scratch, "_active_process_pids", unavailable)
-    lease = (acquisition.namespace / f"pinned-uv-{PIN}.lock" if fault == "held-acquisition-lease"
-             else acquisition.leaf / "tools/.lock")
+    lease = (
+        acquisition.namespace / f"pinned-uv-{PIN}.lock"
+        if fault == "held-acquisition-lease"
+        else acquisition.leaf / "tools/.lock"
+    )
     if fault.startswith("held-"):
         with collection_lock.collection_lock(lease, timeout=0), pytest.raises(owner.ProfileError):
             acquisition.acquire()
@@ -280,12 +333,26 @@ def test_active_or_unknown_acquisition_ownership_refuses(
     assert not acquisition.calls and acquisition.leaf.exists()
 
 
-@pytest.mark.parametrize("fault", [
-    "receipt", "receipt-symlink", "requirement", "index", "export", "python", "wheel",
-    "metadata", "record", "version", "configuration",
-])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "receipt",
+        "receipt-symlink",
+        "requirement",
+        "index",
+        "export",
+        "python",
+        "wheel",
+        "metadata",
+        "record",
+        "version",
+        "configuration",
+    ],
+)
 def test_native_reuse_refuses_tamper_without_cleanup_or_install(
-    acquisition: Fixture, tmp_path: Path, fault: str,
+    acquisition: Fixture,
+    tmp_path: Path,
+    fault: str,
 ) -> None:
     write_tool(acquisition.leaf, acquisition.bootstrap)
     environment = acquisition.leaf / "tools/uv"
@@ -299,10 +366,12 @@ def test_native_reuse_refuses_tamper_without_cleanup_or_install(
         receipt.unlink()
         receipt.symlink_to(outside)
     elif fault in {"requirement", "index"}:
-        receipt.write_text(receipt.read_text().replace(
-            "==0.13.1" if fault == "requirement" else "https://pypi.org/simple",
-            ">=0" if fault == "requirement" else "https://foreign.invalid/simple",
-        ))
+        receipt.write_text(
+            receipt.read_text().replace(
+                "==0.13.1" if fault == "requirement" else "https://pypi.org/simple",
+                ">=0" if fault == "requirement" else "https://foreign.invalid/simple",
+            )
+        )
     elif fault == "export":
         export = acquisition.leaf / "bin/uv"
         export.unlink()
@@ -331,7 +400,8 @@ def test_native_reuse_refuses_tamper_without_cleanup_or_install(
 
 @pytest.mark.parametrize("code", [1, 124, 125])
 def test_failed_or_timed_out_native_install_cleans_only_its_fresh_leaf(
-    acquisition: Fixture, code: int,
+    acquisition: Fixture,
+    code: int,
 ) -> None:
     predecessor = acquisition.leaf.parent / "0.12.0"
     predecessor.mkdir(parents=True)
@@ -346,6 +416,7 @@ def test_failed_or_timed_out_native_install_cleans_only_its_fresh_leaf(
 def test_unknown_child_failure_retains_fresh_leaf(acquisition: Fixture, monkeypatch: pytest.MonkeyPatch) -> None:
     def unknown(argv: Sequence[str], log: Path, **options: object) -> int:
         raise OSError("fixture unknown child drain")
+
     monkeypatch.setattr(observer, "stream_command", unknown)
     with pytest.raises(owner.ProfileError):
         acquisition.acquire()
@@ -354,10 +425,13 @@ def test_unknown_child_failure_retains_fresh_leaf(acquisition: Fixture, monkeypa
 
 @pytest.mark.parametrize("change", ["active", "identity", "workflow"])
 def test_failed_fresh_cleanup_refuses_changed_authority(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch, change: str,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
 ) -> None:
     active: list[int] = []
     monkeypatch.setattr(clean_ci_shard_scratch, "_active_process_pids", lambda path: active)
+
     def failed(argv: Sequence[str], log: Path, **options: object) -> int:
         if change == "active":
             active.append(12345)
@@ -368,6 +442,7 @@ def test_failed_fresh_cleanup_refuses_changed_authority(
             workflow = acquisition.root / ".github/workflows/build.yml"
             workflow.write_text(workflow.read_text().replace(PIN, "0.13.2"))
         return 1
+
     monkeypatch.setattr(observer, "stream_command", failed)
     with pytest.raises(owner.ProfileError):
         acquisition.acquire()
@@ -402,7 +477,8 @@ def test_acquisition_target_has_safe_literal_contract() -> None:
     contract = json.loads((ROOT / "config/make_target_contract.json").read_text())
     entry = next((row for row in contract["targets"] if row["name"] == "acquire-pinned-uv"), None)
     assert entry == {
-        "name": "acquire-pinned-uv", "make_variables": ["PINNED_UV_VALIDATE_ONLY"],
+        "name": "acquire-pinned-uv",
+        "make_variables": ["PINNED_UV_VALIDATE_ONLY"],
         "behavior": "make acquire-pinned-uv PINNED_UV_VALIDATE_ONLY=1",
     }
     assert "acquire-pinned-uv:" in makefile
@@ -418,19 +494,28 @@ def test_acquisition_cli_refuses_arbitrary_package(acquisition: Fixture) -> None
 
 
 def test_real_native_install_timeout_drains_before_fresh_cleanup(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     native = NATIVE_STREAM_COMMAND
+
     # The fixture adapter shortens only its own child deadline, not production policy.
     def bounded(argv: Sequence[str], log: Path, **options: object) -> int:
         environment = options["environment"]
         assert isinstance(environment, Mapping)
         child_environment = {str(key): str(value) for key, value in environment.items()}
         return native(
-            argv, log, observed_root=acquisition.root / ".gate-logs/observed",
-            label="fixture-pinned-uv", heartbeat_seconds=0, max_seconds=0.15,
-            quiet_seconds=0, environment=child_environment, cwd=acquisition.root,
+            argv,
+            log,
+            observed_root=acquisition.root / ".gate-logs/observed",
+            label="fixture-pinned-uv",
+            heartbeat_seconds=0,
+            max_seconds=0.15,
+            quiet_seconds=0,
+            environment=child_environment,
+            cwd=acquisition.root,
         )
+
     pidfile = acquisition.root / "fixture-installer.pid"
     acquisition.installer.write_text(
         f"#!{NATIVE_PYTHON}\nimport os,sys,time\nfrom pathlib import Path\n"
@@ -443,6 +528,7 @@ def test_real_native_install_timeout_drains_before_fresh_cleanup(
     assert not acquisition.leaf.exists()
     pid = int(pidfile.read_text())
     import psutil
+
     assert not psutil.pid_exists(pid)
 
 
@@ -450,15 +536,18 @@ NATIVE_STREAM_COMMAND = observer.stream_command
 
 
 def test_fresh_cleanup_refuses_a_live_native_tool_lease(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from contextlib import ExitStack
 
     with ExitStack() as held:
+
         def install(argv: Sequence[str], log: Path, **options: object) -> int:
             (acquisition.leaf / "tools").mkdir()
             held.enter_context(collection_lock.collection_lock(acquisition.leaf / "tools/.lock", timeout=0))
             return 1
+
         monkeypatch.setattr(observer, "stream_command", install)
         with pytest.raises(owner.ProfileError):
             acquisition.acquire()
@@ -467,7 +556,9 @@ def test_fresh_cleanup_refuses_a_live_native_tool_lease(
 
 @pytest.mark.parametrize("fault", ["missing-bootstrap", "foreign-prefix", "missing-installer", "installer-error"])
 def test_missing_or_unproven_bootstrap_never_starts_install(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch, fault: str,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
 ) -> None:
     if fault == "missing-bootstrap":
         acquisition.bootstrap.unlink()
@@ -476,9 +567,11 @@ def test_missing_or_unproven_bootstrap_never_starts_install(
     elif fault == "missing-installer":
         monkeypatch.setattr("shutil.which", lambda name: None)
     else:
+
         def unavailable(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
             assert kwargs["timeout"] == 10 and kwargs["check"] is True
             raise subprocess.TimeoutExpired("fixture-version", 10)
+
         monkeypatch.setattr(subprocess, "run", unavailable)
     with pytest.raises(owner.ProfileError):
         acquisition.acquire()
@@ -487,11 +580,14 @@ def test_missing_or_unproven_bootstrap_never_starts_install(
 
 @pytest.mark.parametrize("fault", ["valid", "status", "timeout", "invalid-json", "invalid-urls", "oversized"])
 def test_official_wheel_metadata_is_fixed_bounded_and_never_downloads_artifacts(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch, fault: str,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
 ) -> None:
     import httpx
 
     seen: list[str] = []
+
     def respond(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
         assert str(request.url) == f"https://pypi.org/pypi/uv/{PIN}/json"
@@ -503,13 +599,19 @@ def test_official_wheel_metadata_is_fixed_bounded_and_never_downloads_artifacts(
             return httpx.Response(200, content=b"{")
         if fault == "oversized":
             return httpx.Response(200, content=b"x" * 1048577)
-        return httpx.Response(200, json={
-            "urls": ["not metadata"] if fault == "invalid-urls" else acquisition.wheels(PIN),
-        })
+        return httpx.Response(
+            200,
+            json={
+                "urls": ["not metadata"] if fault == "invalid-urls" else acquisition.wheels(PIN),
+            },
+        )
+
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+
         def stream(method: str, url: str, **options: object) -> object:
             assert options == {"timeout": 20, "follow_redirects": False, "trust_env": False}
             return client.stream(method, url, timeout=20, follow_redirects=False)
+
         monkeypatch.setattr(httpx, "stream", stream)
         if fault == "valid":
             assert NATIVE_WHEEL_METADATA(PIN) == acquisition.wheels(PIN)
@@ -521,7 +623,9 @@ def test_official_wheel_metadata_is_fixed_bounded_and_never_downloads_artifacts(
 
 @pytest.mark.parametrize("fault", ["missing-wheel", "foreign-url", "malformed-hash", "sdist-plus-wheel"])
 def test_published_wheel_identity_is_checked_without_installing_again(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch, fault: str,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
 ) -> None:
     write_tool(acquisition.leaf, acquisition.bootstrap)
     values = acquisition.wheels(PIN)
@@ -543,13 +647,15 @@ def test_published_wheel_identity_is_checked_without_installing_again(
 
 
 def test_workflow_change_after_install_cannot_publish_a_verified_executable(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def install(argv: Sequence[str], log: Path, **options: object) -> int:
         write_tool(acquisition.leaf, acquisition.bootstrap)
         workflow = acquisition.root / ".github/workflows/build.yml"
         workflow.write_text(workflow.read_text().replace(PIN, "0.13.2"))
         return 0
+
     monkeypatch.setattr(observer, "stream_command", install)
     with pytest.raises(owner.ProfileError, match="workflow input changed"):
         acquisition.acquire()
@@ -558,14 +664,18 @@ def test_workflow_change_after_install_cannot_publish_a_verified_executable(
 
 @pytest.mark.parametrize("value", ["invalid", "1 extra", "$(shell touch {tripwire})"])
 def test_actual_acquisition_target_refuses_raw_literal_policy_before_lifecycle(
-    acquisition: Fixture, tmp_path: Path, value: str,
+    acquisition: Fixture,
+    tmp_path: Path,
+    value: str,
 ) -> None:
     tripwire = tmp_path / "make-tripwire"
     value = value.replace("{tripwire}", str(tripwire))
     result = subprocess.run(
-        ["make", "--no-print-directory", "-C", str(ROOT), "acquire-pinned-uv",
-         f"PINNED_UV_VALIDATE_ONLY={value}"],
-        capture_output=True, text=True, timeout=15, check=False,
+        ["make", "--no-print-directory", "-C", str(ROOT), "acquire-pinned-uv", f"PINNED_UV_VALIDATE_ONLY={value}"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
     )
     assert result.returncode != 0 and "PINNED_UV_VALIDATE_ONLY must be 0 or 1" in result.stdout
     assert not tripwire.exists() and not acquisition.calls
@@ -576,13 +686,14 @@ NATIVE_WHEEL_METADATA = owner._uv_wheel_metadata
 
 @pytest.mark.parametrize("native", [False, True], ids=["acquisition-lease", "native-tool-lease"])
 def test_symlinked_lease_is_never_followed_or_written(
-    acquisition: Fixture, tmp_path: Path, native: bool,
+    acquisition: Fixture,
+    tmp_path: Path,
+    native: bool,
 ) -> None:
     write_tool(acquisition.leaf, acquisition.bootstrap)
     foreign = tmp_path / "foreign-lease"
     foreign.write_text("unchanged foreign lease\n")
-    lease = (acquisition.leaf / "tools/.lock" if native
-             else acquisition.namespace / f"pinned-uv-{PIN}.lock")
+    lease = acquisition.leaf / "tools/.lock" if native else acquisition.namespace / f"pinned-uv-{PIN}.lock"
     lease.parent.mkdir(parents=True, exist_ok=True)
     lease.symlink_to(foreign)
     with pytest.raises(owner.ProfileError):
@@ -593,13 +704,22 @@ def test_symlinked_lease_is_never_followed_or_written(
 
 @pytest.mark.parametrize("fault", ["receipt-link", "export-link", "binary-link", "cfg-shadow"])
 def test_native_verification_rechecks_final_path_authority(
-    acquisition: Fixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str,
+    acquisition: Fixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
 ) -> None:
     write_tool(acquisition.leaf, acquisition.bootstrap)
     native = subprocess.run
     environment = acquisition.leaf / "tools/uv"
+
     def mutate(
-        argv: Sequence[str], *, check: bool, capture_output: bool, text: bool, timeout: int,
+        argv: Sequence[str],
+        *,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
     ) -> subprocess.CompletedProcess[str]:
         assert text is True
         result = native(argv, check=check, capture_output=capture_output, text=True, timeout=timeout)
@@ -607,8 +727,7 @@ def test_native_verification_rechecks_final_path_authority(
             if fault == "cfg-shadow":
                 (environment / "bin/pyvenv.cfg").write_text("include-system-site-packages = true\n")
             else:
-                target = (environment / "uv-receipt.toml" if fault == "receipt-link"
-                          else environment / "bin/uv")
+                target = environment / "uv-receipt.toml" if fault == "receipt-link" else environment / "bin/uv"
                 outside = tmp_path / f"outside-{fault}"
                 outside.write_bytes(target.read_bytes())
                 outside.chmod(0o700)
@@ -617,6 +736,7 @@ def test_native_verification_rechecks_final_path_authority(
                 target.unlink()
                 target.symlink_to(outside)
         return result
+
     monkeypatch.setattr(subprocess, "run", mutate)
     with pytest.raises(owner.ProfileError):
         acquisition.acquire()
@@ -633,9 +753,19 @@ def test_malformed_workflow_is_a_structured_readonly_refusal(acquisition: Fixtur
 @pytest.mark.parametrize("mode", ["0", "1"])
 def test_actual_acquisition_policy_carrier_preserves_valid_modes(tmp_path: Path, mode: str) -> None:
     result = subprocess.run(
-        ["make", "--no-print-directory", "acquire-pinned-uv", "UV=echo",
-         f"PINNED_UV_VALIDATE_ONLY={mode}", "GLUDD_PINNED_UV_VALIDATE_ONLY=invalid"],
-        cwd=ROOT, capture_output=True, text=True, timeout=5, check=False,
+        [
+            "make",
+            "--no-print-directory",
+            "acquire-pinned-uv",
+            "UV=echo",
+            f"PINNED_UV_VALIDATE_ONLY={mode}",
+            "GLUDD_PINNED_UV_VALIDATE_ONLY=invalid",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "python -B -m scripts.dependency_profiles acquire-uv" in result.stdout
@@ -643,17 +773,20 @@ def test_actual_acquisition_policy_carrier_preserves_valid_modes(tmp_path: Path,
 
 
 def test_official_metadata_has_an_overall_read_deadline(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import time
 
     import httpx
 
-    with httpx.Client(transport=httpx.MockTransport(
-        lambda request: httpx.Response(200, json={"urls": acquisition.wheels(PIN)})
-    )) as client:
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"urls": acquisition.wheels(PIN)}))
+    ) as client:
+
         def stream(method: str, url: str, **options: object) -> object:
             return client.stream(method, url, timeout=20, follow_redirects=False)
+
         monkeypatch.setattr(httpx, "stream", stream)
         samples = iter((0.0, 21.0, 21.0, 21.0))
         with monkeypatch.context() as clock:
@@ -672,9 +805,23 @@ def test_real_package_verification_uses_native_module_boundary(acquisition: Fixt
         "print(json.dumps(owner._verify_pinned_uv(Path(sys.argv[2]),Path(sys.argv[3]),sys.argv[5])))"
     )
     result = subprocess.run(
-        [NATIVE_PYTHON, "-I", "-B", "-c", code, str(ROOT), str(acquisition.leaf),
-         str(acquisition.bootstrap), json.dumps(acquisition.wheels(PIN)), PIN],
-        cwd=acquisition.root, check=False, capture_output=True, text=True, timeout=15,
+        [
+            NATIVE_PYTHON,
+            "-I",
+            "-B",
+            "-c",
+            code,
+            str(ROOT),
+            str(acquisition.leaf),
+            str(acquisition.bootstrap),
+            json.dumps(acquisition.wheels(PIN)),
+            PIN,
+        ],
+        cwd=acquisition.root,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(result.stdout)
@@ -684,8 +831,7 @@ def test_real_package_verification_uses_native_module_boundary(acquisition: Fixt
 
 def _acquisition_fixture_snapshot(root: Path) -> dict[Path, bytes | str | None]:
     return {
-        path: str(path.readlink()) if path.is_symlink()
-        else path.read_bytes() if path.is_file() else None
+        path: str(path.readlink()) if path.is_symlink() else path.read_bytes() if path.is_file() else None
         for path in root.rglob("*")
     }
 
@@ -705,8 +851,10 @@ def _forbid_acquisition_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("plan", [True, False], ids=["plan", "apply"])
 def test_public_acquisition_routes_parent_version_before_lifecycle(
-    native_acquisition: Fixture, tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, plan: bool,
+    native_acquisition: Fixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plan: bool,
 ) -> None:
     before_version = sys.version_info
     before_environment = dict(os.environ)
@@ -718,7 +866,9 @@ def test_public_acquisition_routes_parent_version_before_lifecycle(
         raise owner.ProfileError("fixture parent admission rejected")
 
     monkeypatch.setattr(
-        owner, "_require_uv_acquisition_parent_version", reject_parent_version,
+        owner,
+        "_require_uv_acquisition_parent_version",
+        reject_parent_version,
         raising=False,
     )
     _forbid_acquisition_lifecycle(monkeypatch)
@@ -733,16 +883,24 @@ def test_public_acquisition_routes_parent_version_before_lifecycle(
 
 @pytest.mark.parametrize("plan", [True, False], ids=["plan", "apply"])
 def test_native_parent_version_policy_is_not_modeled(
-    native_acquisition: Fixture, tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, plan: bool,
+    native_acquisition: Fixture,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    plan: bool,
 ) -> None:
     before_version = sys.version_info
     before_environment = dict(os.environ)
     before_tree = _acquisition_fixture_snapshot(tmp_path)
-    print(json.dumps({
-        "actual_parent_version": list(before_version[:3]), "validate_only": plan,
-        "fixture_parent_version_override": False,
-    }, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "actual_parent_version": list(before_version[:3]),
+                "validate_only": plan,
+                "fixture_parent_version_override": False,
+            },
+            sort_keys=True,
+        )
+    )
     if before_version[:2] != (3, 11):
         _forbid_acquisition_lifecycle(monkeypatch)
         with pytest.raises(
@@ -763,7 +921,8 @@ def test_native_parent_version_policy_is_not_modeled(
 
 
 def test_post_admission_lifecycle_reaches_real_full_version_probe_without_mutation(
-    acquisition: Fixture, monkeypatch: pytest.MonkeyPatch,
+    acquisition: Fixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     before_version = sys.version_info
     native_run = subprocess.run
@@ -772,11 +931,20 @@ def test_post_admission_lifecycle_reaches_real_full_version_probe_without_mutati
     python = environment / "bin/python"
 
     def record(
-        argv: Sequence[str], *, check: bool, capture_output: bool, text: bool, timeout: int,
+        argv: Sequence[str],
+        *,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
     ) -> subprocess.CompletedProcess[str]:
         assert text is True
         result = native_run(
-            argv, check=check, capture_output=capture_output, text=True, timeout=timeout,
+            argv,
+            check=check,
+            capture_output=capture_output,
+            text=True,
+            timeout=timeout,
         )
         if list(argv[:4]) == [str(python), "-I", "-B", "-c"]:
             payload: object = json.loads(result.stdout)
@@ -792,14 +960,19 @@ def test_post_admission_lifecycle_reaches_real_full_version_probe_without_mutati
         assert first["reused"] is False and second["reused"] is True
         assert len(acquisition.calls) == 1
         assert len(observed) == 2
-        if before_version[:2] == (3, 12):
+        if before_version[:2] != (3, 11):
             assert owner._require_uv_acquisition_parent_version is _modeled_post_admission_parent_version
         else:
             assert owner._require_uv_acquisition_parent_version is not _modeled_post_admission_parent_version
-        print(json.dumps({
-            "actual_parent_version": list(before_version[:3]),
-            "actual_native_child_observations": observed,
-            "modeled_post_admission": before_version[:2] == (3, 12),
-        }, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "actual_parent_version": list(before_version[:3]),
+                    "actual_native_child_observations": observed,
+                    "modeled_post_admission": before_version[:2] != (3, 11),
+                },
+                sort_keys=True,
+            )
+        )
     finally:
         assert sys.version_info is before_version
