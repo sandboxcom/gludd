@@ -126,7 +126,15 @@ def _task_label(command: str) -> str:
         return "self-improve"
     if "stream_command.py" in command:
         return "observed-command"
-    if "task_watchdog.py" in command or "agent_watchdog.py" in command:
+    # An audit may name watchdog code; watchdog arguments may name an audit.
+    watchdog_source = re.search(r"(?:task|agent)_watchdog\.py", command)
+    audit_execution = re.search(
+        r"(?:^|\s)(?:\S*/)?(?:pytest|-mpytest|mypy|detect-secrets|audit_coverage\.py)(?=\s|$)",
+        command,
+    )
+    if watchdog_source is not None and (
+        audit_execution is None or watchdog_source.start() < audit_execution.start()
+    ):
         return "watchdog"
     if "audit_coverage.py" in command:
         return "coverage-audit"
@@ -822,6 +830,10 @@ def _parser() -> argparse.ArgumentParser:
         help="print the repository-owned process inventory instead of JSON",
     )
     mode.add_argument(
+        "--daemon-process-table", action="store_true",
+        help="print only repository-owned daemon/watchdog processes instead of JSON",
+    )
+    mode.add_argument(
         "--inspect-pid", type=_positive_pid, metavar="PID",
         help="inspect one native PID read-only without changing project ownership",
     )
@@ -835,8 +847,14 @@ def main(argv: list[str] | None = None) -> int:
         payload = _inspect_pid(args.inspect_pid)
         print(json.dumps(payload, sort_keys=True))
         return 2 if payload["state"] == "unavailable" else 0
-    if args.process_table:
-        print(_render_process_table(_processes()), end="")
+    if args.process_table or args.daemon_process_table:
+        processes = _processes()
+        if args.daemon_process_table:
+            processes = [
+                process for process in processes
+                if process["task"] in {"watchdog", "e2e-daemon"}
+            ]
+        print(_render_process_table(processes), end="")
     else:
         print(json.dumps(collect_status(), sort_keys=True))
     return 0
