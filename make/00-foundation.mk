@@ -500,7 +500,7 @@ help:
 		"  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)" \
 		"  presentation-browser-install Check/install pinned Chromium + WebKit (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)" \
 		"  presentation-browser-install-deps Validate/install Playwright browser system libraries (PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0|1)" \
-		"  presentation-browser-test   Validate/run bounded Chromium + WebKit acceptance (PRESENTATION_BROWSER_VALIDATE_ONLY=0|1)" \
+		"  presentation-browser-test   Validate/run bounded Chromium + WebKit acceptance (PRESENTATION_BROWSER_VALIDATE_ONLY=0|1); optional Chromium JS coverage (PRESENTATION_BROWSER_JS_COVERAGE=0|1)" \
 		"  presentation-safari-test    Validate/run bounded native Safari smoke (PRESENTATION_SAFARI_VALIDATE_ONLY=0|1)" \
 		"  presentation-pages-probe    Compare the public Pages artifact with an expected exact SHA" \
 		"  lint-fix              Run ruff with auto-fix" \
