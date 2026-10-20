@@ -701,19 +701,23 @@ agent-merge: _gate-mutation-guard
 	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into master"
 	@echo "Merged $(BRANCH) into master"
 
-# Remove a worktree and its branch after the work has been merged. Safe to
-# run even if the worktree was already removed manually. Usage:
-#   make agent-cleanup BRANCH=agent-fix-slurm
+# Compatibility cleanup routes retain the existing native ownership authority.
+AGENT_CLEANUP_VALIDATE_ONLY ?= 1
+CLEAN_STALE_WORKTREES_VALIDATE_ONLY ?= 1
+unexport AGENT_CLEANUP_VALIDATE_ONLY CLEAN_STALE_WORKTREES_VALIDATE_ONLY
+ifneq (,$(filter agent-cleanup clean-stale-worktrees,$(MAKECMDGOALS)))
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value AGENT_CLEANUP_VALIDATE_ONLY)$(value CLEAN_STALE_WORKTREES_VALIDATE_ONLY)))
+$(error cleanup inputs must be literal data, not Make expressions)
+endif
+endif
+
+# Explicit selected-owner retirement; plan by default, never delete branch refs.
 agent-cleanup:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-cleanup BRANCH=agent-<name>"; exit 1; }
-	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
-	CLAUDE_WT_PATH=".claude/worktrees/$(BRANCH)"; \
-	git worktree remove "$$WORKTREE_PATH" --force 2>/dev/null || true; \
-	git worktree unlock "$$CLAUDE_WT_PATH" 2>/dev/null || true; \
-	git worktree remove "$$CLAUDE_WT_PATH" --force 2>/dev/null || true; \
-	git branch -d "$(BRANCH)" 2>/dev/null || true; \
-	$(MAKE) --no-print-directory workstream-unregister BRANCH="$(BRANCH)" ACTIVE_WORKSTREAM_REGISTRY="$(ACTIVE_WORKSTREAM_REGISTRY)"; \
-	echo "Cleaned up worktree + branch for $(BRANCH)"
+	@case '$(subst ','"'"',$(value AGENT_CLEANUP_VALIDATE_ONLY))' in 0|1) ;; *) echo "AGENT_CLEANUP_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@exec $(UV) run python -m scripts.prune_worktrees_safe --retire-merged \
+		--branch '$(subst ','"'"',$(value BRANCH))' --worktree '$(subst ','"'"',$(value WORKTREE))' \
+		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))') \
+		--retire-validate-only '$(subst ','"'"',$(value AGENT_CLEANUP_VALIDATE_ONLY))'
 
 # Logical workstreams represent model-agent ownership and therefore cannot be
 # inferred from OS PIDs.  Registration is explicit and shared by all worktrees.
@@ -727,34 +731,12 @@ workstream-unregister:
 	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry unregister --branch "$(BRANCH)" \
 		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)")
 
-# Bulk cleanup of all stale worktrees in .claude/worktrees/.
-# Unlocks then force-removes every worktree, deletes branches, prunes metadata.
-# Usage: make clean-stale-worktrees
+# Plan ordinary clean pruning through the native registry/lock-aware owner.
 clean-stale-worktrees:
-	@echo "=== Cleaning stale worktrees ==="; \
-	count=0; \
-	for wt_dir in .claude/worktrees/agent-*; do \
-		[ -d "$$wt_dir" ] || continue; \
-		branch=$$(git --work-tree="$$wt_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""); \
-		git worktree unlock "$$wt_dir" 2>/dev/null || true; \
-		if ! git worktree remove --force "$$wt_dir" 2>/dev/null; then \
-			rm -rf "$$wt_dir"; \
-		fi; \
-		[ -n "$$branch" ] && git branch -D "$$branch" 2>/dev/null || true; \
-		count=$$((count + 1)); \
-	done; \
-	for wt_dir in /tmp/gludd-worktrees/agent-*; do \
-		[ -d "$$wt_dir" ] || continue; \
-		branch=$$(git --work-tree="$$wt_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""); \
-		git worktree unlock "$$wt_dir" 2>/dev/null || true; \
-		if ! git worktree remove --force "$$wt_dir" 2>/dev/null; then \
-			rm -rf "$$wt_dir"; \
-		fi; \
-		[ -n "$$branch" ] && git branch -D "$$branch" 2>/dev/null || true; \
-		count=$$((count + 1)); \
-	done; \
-	git worktree prune; \
-	echo "=== Cleaned $$count stale worktrees ==="
+	@case '$(subst ','"'"',$(value CLEAN_STALE_WORKTREES_VALIDATE_ONLY))' in 0|1) ;; *) echo "CLEAN_STALE_WORKTREES_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(MAKE) --no-print-directory wt-prune-safe WT_PRUNE_RETIRE_MERGED=0 WT_PRUNE_RETIRE_VALIDATE_ONLY=1 \
+		WT_PRUNE_VALIDATE_ONLY='$(subst ','"'"',$(value CLEAN_STALE_WORKTREES_VALIDATE_ONLY))' \
+		ACTIVE_WORKSTREAM_REGISTRY='$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))'
 
 # List active worktrees (read-only diagnostic).
 agent-worktree-list:

@@ -815,15 +815,27 @@ wt-remove-locked-many:
 # uncommitted changes, so dirty/unsynced ones are preserved). Branch refs always
 # persist, so committed feature branches survive removal and can be merged by
 # name or re-checked-out later. Protects the main checkout + the orchestrator cwd.
+WT_PRUNE_VALIDATE_ONLY ?= 0
 WT_PRUNE_RETIRE_MERGED ?= 0
 WT_PRUNE_RETIRE_VALIDATE_ONLY ?= 1
+# Capture the selected literal before unexport can restore ambient data under -e.
+override WT_PRUNE_VALIDATE_ONLY := $(value WT_PRUNE_VALIDATE_ONLY)
+override WT_PRUNE_RETIRE_MERGED := $(value WT_PRUNE_RETIRE_MERGED)
+override WT_PRUNE_RETIRE_VALIDATE_ONLY := $(value WT_PRUNE_RETIRE_VALIDATE_ONLY)
+unexport WT_PRUNE_VALIDATE_ONLY WT_PRUNE_RETIRE_MERGED WT_PRUNE_RETIRE_VALIDATE_ONLY
 ifneq (,$(filter wt-prune-safe,$(MAKECMDGOALS)))
-ifeq ($(value WT_PRUNE_RETIRE_MERGED),1)
-ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value WT_PRUNE_RETIRE_VALIDATE_ONLY)))
-$(error wt-prune-safe retirement inputs must be literal data, not Make expressions)
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value WT_PRUNE_VALIDATE_ONLY)$(value WT_PRUNE_RETIRE_MERGED)$(value WT_PRUNE_RETIRE_VALIDATE_ONLY)))
+$(error wt-prune-safe inputs must be literal data, not Make expressions)
 endif
-else ifneq ($(value WT_PRUNE_RETIRE_MERGED),0)
+ifneq ($(value WT_PRUNE_RETIRE_MERGED),0)
+ifneq ($(value WT_PRUNE_RETIRE_MERGED),1)
 $(error WT_PRUNE_RETIRE_MERGED must be 0 or 1)
+endif
+endif
+ifneq ($(value WT_PRUNE_VALIDATE_ONLY),0)
+ifneq ($(value WT_PRUNE_VALIDATE_ONLY),1)
+$(error WT_PRUNE_VALIDATE_ONLY must be 0 or 1)
+endif
 endif
 endif
 
@@ -834,8 +846,8 @@ wt-prune-safe:
 		--worktree '$(subst ','"'"',$(value WORKTREE))' \
 		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))') \
 		--retire-validate-only '$(subst ','"'"',$(value WT_PRUNE_RETIRE_VALIDATE_ONLY))',\
-		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)") \
-		$(if $(filter 1,$(WT_PRUNE_VALIDATE_ONLY)),--validate-only))
+		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))') \
+		$(if $(filter 1,$(value WT_PRUNE_VALIDATE_ONLY)),--validate-only))
 
 # Read-only: which feature/* branches still have work NOT yet in master (the real
 # integration backlog). A branch absent here is already merged.

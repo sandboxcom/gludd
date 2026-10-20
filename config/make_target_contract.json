@@ -2099,6 +2099,16 @@
       "behavior": "make workstream-unregister BRANCH=contract/workstream ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
     },
     {
+      "name": "agent-cleanup",
+      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY", "AGENT_CLEANUP_VALIDATE_ONLY"],
+      "behavior": "make agent-cleanup BRANCH=contract/retirement WORKTREE=/tmp/gludd-worktrees/contract-retirement ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json AGENT_CLEANUP_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "clean-stale-worktrees",
+      "make_variables": ["ACTIVE_WORKSTREAM_REGISTRY", "CLEAN_STALE_WORKTREES_VALIDATE_ONLY"],
+      "behavior": "make clean-stale-worktrees ACTIVE_WORKSTREAM_REGISTRY= CLEAN_STALE_WORKTREES_VALIDATE_ONLY=1"
+    },
+    {
       "name": "wt-prune-safe",
       "make_variables": [
         "ACTIVE_WORKSTREAM_REGISTRY",

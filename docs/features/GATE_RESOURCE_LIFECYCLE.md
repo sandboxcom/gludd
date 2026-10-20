@@ -43,7 +43,8 @@ lock for active work. Repair the actual long-lived watchdog launcher through
 its existing acknowledged lifecycle and namespaced native lease. Keep direct
 installed-Python startup, actual PID/readiness acknowledgment, verified child
 drain and natural supervisor exit; do not force cache access or signal from a
-diagnostic alone. Real handoff and changed-capacity cleanup remain pending.
+diagnostic alone. The subsequent verified handoff is recorded below; the hard disk prerequisite
+remains pending.
 
 ### Acknowledged agent-watchdog handoff (2026-10-20)
 
@@ -94,7 +95,89 @@ A refusal preserves ownership evidence and stops this sequence. Never signal a
 supervisor from a diagnostic CWD. The native child drain and natural parent exit
 must precede new direct-Python startup; re-establish both watchdogs immediately.
 Only after actual supervisor absence changes the blocking input may the existing
-disk cleanup run again. Real handoff and capacity clearance remain pending.
+disk cleanup run again. The real handoff at about19:21UTC verifies and signals only Python child68516;
+UV parent68501 exits naturally without a signal. Native startup acknowledges
+direct-Python child39922 and reuses task-watchdog29001. Exact old-PID inspection
+then reports missing, new-PID inspection reports tracked-command ownership, and
+make ps reports just the two Python watchdogs. All documented startup/auto plan
+examples pass after this changed input.
+
+Subsequent existing actual cleanup removes239986255 regenerable bytes and three
+disposable caches; shared UV prune/clean completes and removes9files/7.6KiB.
+Pass1 removes5 entries/0errors; pass2 removes0 and refuses no-progress at96%
+against95%. Preserve this refusal. The historical manual native transcript is
+/tmp/gludd-v012-agent-watchdog-real-handoff.md, never a current observation.
+A bounded independent diagnostic at eccfcc3, using immutable main-owner exports
+from7d1fec6, measures39 namespaces/0reclaimable bytes and exactly10128539648
+available bytes. The separate8GiB floor passes; that does not clear the95%
+ceiling. Largest2.325GB/1.503GB/0.962GB namespaces remain protected by worktree
+ownership, and the0.119GB content cache by hardlinks. No outside-prefix inventory,
+forced deletion, shortened retention or repeated full gate follows from size.
+The readable historical decision is /tmp/gludd-v012-capacity-remediation-plan.md.
+
+### Cleanup routes share native retirement ownership (2026-10-20)
+
+Current source inspection found agent-cleanup and clean-stale-worktrees still
+unlocked/force-removed worktrees, deleted branch refs and sometimes fell back to
+recursive deletion. Their compatibility interfaces now delegate to the existing
+native prune/retirement owner and default to plan. agent-cleanup requires exact
+BRANCH and canonical WORKTREE; its AGENT_CLEANUP_VALIDATE_ONLY=1 plans selected
+merged-owner retirement, literal0 applies. CLEAN_STALE_WORKTREES_VALIDATE_ONLY=1
+plans ordinary pruning, literal0 applies. Both pass the selected registry and
+literal arguments; invalid policy and Make expressions refuse before native IO.
+
+The original30 native routing cases fail before repair. A real GNU Make -e
+replay then exposes opposing inherited mode restoration during unexport; capture
+the selected literal with override/value before unexport, as the existing runner
+repair requires. Caller-side target assignments alone do not repair that input.
+Quoting the registry as literal single-quoted data also prevents backtick
+execution. Whole routing/retirement/registry/guide replay passes149 cases;
+contract263 and native behavioral examples retain their real results. The
+synthetic retirement example correctly refuses an absent registered owner.
+
+Five additional native-Git controls prove ordinary pruning deleted ignored
+failed-proof and history files and bypassed process/checkpoint/unknown-data
+protection. Ordinary pruning now uses the same existing ownership, process,
+checkpoint, identity revalidation and canonical evidence-archival routine.
+It preserves its existing committed-unmerged-branch behavior through surviving
+refs; selected merged retirement retains the original ancestry requirement.
+No separate scanner, observer, evidence store or deletion authority is added.
+
+The initial 154 complete cases pass in 33.68s at 93.6% line and 88.1% branch
+coverage; preserve .gate-logs/coverage-20261020T193850Z.json as intermediate proof.
+The expanded final replay passes all 172 cases in 36.79s at 94.3% line and 89.8%
+branch coverage for the whole pruning file. Aggregate 85% and per-file 75% line
+and branch thresholds remain unchanged. Final audit:
+.gate-logs/coverage-20261020T194534Z.json; exact XML:
+/tmp/gludd-v012-prune-preservation-sealed-coverage.xml.
+
+The actual alias test exposes an extra unverified Make parent when delegation
+recurses through another Make invocation. agent-cleanup therefore dispatches the
+same native Python module directly. The existing two/three-controller bound is
+unchanged; exact source, target, apply policy, path, process start and CWD checks
+remain mandatory. GNU Make -e and --environment-overrides are recognized as
+native flags, never ownership waivers. Sixteen positive/negative controller
+cases and both real alias apply routes cover this boundary.
+Two old fake-Git fixtures modeled only direct removal and could not exercise
+new ownership IO; they now use confined native repositories with all original
+active/idle assertions, added ref/data preservation and a genuine dirty file.
+No original acceptance is dropped. RED receipts remain
+/tmp/gludd-v012-legacy-worktree-cleanup-red-native.xml and
+/tmp/gludd-v012-prune-preservation-red.xml; intermediate wrong-mode/fixture
+failures remain as such. Ruff, docstrings and strict four-file typing pass.
+
+The firsthand [June2026 reproduction](https://github.com/blamechris/chroxy/issues/5244)
+reports ignored local data disappearing after a clean status and ordinary
+worktree removal. The [September2026 practitioner report](https://github.com/cursor/plugins/issues/449)
+describes an agent cleanup playbook losing untracked/ignored evidence through
+force removal and fallback deletion. These support explicit ignored-data and
+native-ownership checks; they do not authorize replacing a refusal. Our confined
+Git tests independently reproduce the project failure and prove archival.
+
+A safe pruning plan reports candidates with clean check deferred. It proves no
+actual eligibility or reclamation. Apply uses fresh native ownership and archival;
+capacity must be measured afterward before real release admission. All19 release
+items remain open; source/coverage/plan are not full-gate or exact-SHA proof.
 
 ### Bounded shared-UV cleanup phase diagnostics
 

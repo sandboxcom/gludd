@@ -151,5 +151,9 @@ Setup through `make init`, dependency synchronization, packaging, Ansible,
 Terraform, secrets,
 resource cleanup and recovery each have dedicated owners in `make help`.
 Read their contract before execution. Cleanup must retain live owners and failed
-proof evidence. A target name, dry run or old threshold in prose is not evidence
+proof evidence. clean-stale-worktrees now plans through the native prune owner
+with CLEAN_STALE_WORKTREES_VALIDATE_ONLY=1. agent-cleanup requires explicit BRANCH
+and canonical WORKTREE and plans native merged-owner retirement with
+AGENT_CLEANUP_VALIDATE_ONLY=1. Both retain active streams, locks, checkpoints and
+branch refs; literal0 applies only after the same owner validates eligibility. A target name, dry run or old threshold in prose is not evidence
 that its current policy admits an action.

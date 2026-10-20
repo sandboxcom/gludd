@@ -154,13 +154,17 @@ def prune(*, registry_path: Path, validate_only: bool) -> int:
             retained += 1
             print(f"  would remove (clean check deferred): {record.path}")
             continue
-        result = _git("worktree", "remove", str(record.path), check=False)
-        if result.returncode == 0:
-            removed += 1
-            print(f"  removed (clean): {record.path}")
-        else:
+        try:
+            _retire_worktree(
+                branch=record.branch or "", worktree=record.path, registry_path=registry_path,
+                validate_only=False, require_merged=False,
+            )
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
             retained += 1
-            print(f"  kept (dirty/unsynced): {record.path}")
+            print(f"  kept (native ownership/evidence refusal: {exc}): {record.path}")
+        else:
+            removed += 1
+            print(f"  removed (clean, evidence archived): {record.path}")
     print(
         "wt-prune-safe done: "
         f"removed={removed} protected={protected} retained={retained} "
@@ -303,10 +307,11 @@ def _validate_retirement_controllers(
     makefile = root / "Makefile"
     assignments: dict[str, str] = {}
     target_count = 0
+    target = ""
     explicit_makefile = False
     while arguments:
         argument = arguments.pop(0)
-        if argument in {"--no-print-directory", "--silent", "-s"}:
+        if argument in {"--no-print-directory", "--silent", "-s", "-e", "--environment-overrides"}:
             continue
         if argument == "-f" and arguments:
             if explicit_makefile:
@@ -314,17 +319,24 @@ def _validate_retirement_controllers(
             explicit_makefile = True
             makefile = Path(arguments.pop(0))
             continue
-        if argument == "wt-prune-safe":
+        if argument in {"wt-prune-safe", "agent-cleanup"}:
             target_count += 1
+            target = argument
             continue
         key, separator, value = argument.partition("=")
         if (not separator or not key or not key.replace("_", "").isalnum()
                 or key[0].isdigit() or key in assignments or key == "MAKEFILES"):
             raise ValueError("retirement Make argv is not an exact single-target invocation")
         assignments[key] = value
+    if target == "agent-cleanup":
+        fragment = source / "make/40-cross-version-and-worktrees.mk"
+        policy_key, policy_value = "AGENT_CLEANUP_VALIDATE_ONLY", "0"
+    else:
+        fragment = source / "make/30-ci-and-release.mk"
+        policy_key, policy_value = "WT_PRUNE_RETIRE_MERGED", "1"
     if (target_count != 1 or makefile.resolve(strict=True) not in {
-            source / "Makefile", source / "make/30-ci-and-release.mk",
-        } or assignments.get("WT_PRUNE_RETIRE_MERGED") != "1"
+            source / "Makefile", fragment,
+        } or assignments.get(policy_key) != policy_value
             or assignments.get("BRANCH") != branch or assignments.get("WORKTREE") != str(worktree)):
         raise ValueError("retirement Make argv or source does not bind selected owner")
     return records
@@ -358,6 +370,16 @@ def retire_merged(
     *, branch: str, worktree: Path, registry_path: Path, validate_only: bool,
 ) -> int:
     """Archive and retire one explicitly selected, clean and integrated owner."""
+    return _retire_worktree(
+        branch=branch, worktree=worktree, registry_path=registry_path,
+        validate_only=validate_only, require_merged=True,
+    )
+
+
+def _retire_worktree(
+    *, branch: str, worktree: Path, registry_path: Path, validate_only: bool, require_merged: bool,
+) -> int:
+    """Share native identity, ownership and archival across both pruning routes."""
     if TYPE_CHECKING:
         import automatic_disk_cleanup as cleanup
         import clean_ci_shard_scratch as process_owner
@@ -416,7 +438,7 @@ def retire_merged(
             if result.returncode not in {0, 1}:
                 raise ValueError("native integration ancestry inspection failed")
             integrated |= result.returncode == 0
-        if not integrated:
+        if require_merged and not integrated:
             raise ValueError("unmerged worktree cannot be retired")
         return _RetirementIdentity(
             record, (identity[0][0], identity[0][1]), identity[1], head,

@@ -708,6 +708,8 @@ help:
 		"  agent-worktree-retain  Plan a native retention lock (BRANCH, WORKTREE, WORKTREE_RETAIN_REASON, WORKTREE_RETAIN_VALIDATE_ONLY=1)" \
 		"  workstream-register BRANCH=<name> WORKTREE=<path>  Protect an active logical workstream" \
 		"  workstream-unregister BRANCH=<name>  Release a completed logical workstream" \
+		"  agent-cleanup         Plan native merged-owner retirement (BRANCH, WORKTREE, ACTIVE_WORKSTREAM_REGISTRY, AGENT_CLEANUP_VALIDATE_ONLY=1; 0 applies)" \
+		"  clean-stale-worktrees Plan native clean pruning (ACTIVE_WORKSTREAM_REGISTRY, CLEAN_STALE_WORKTREES_VALIDATE_ONLY=1; 0 applies)" \
 		"  wt-prune-safe         Default clean pruning; WT_PRUNE_RETIRE_MERGED=1 retires one merged BRANCH/WORKTREE with archived proof (WT_PRUNE_RETIRE_VALIDATE_ONLY=1 plans; ACTIVE_WORKSTREAM_REGISTRY, WT_PRUNE_VALIDATE_ONLY)" \
 		"  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)" \
 		"  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge" \

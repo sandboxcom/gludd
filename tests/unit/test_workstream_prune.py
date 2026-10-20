@@ -22,6 +22,9 @@ else:
     from scripts.workstream_registry import WorkstreamRegistry
 
 
+pytest_plugins = ("tests.unit.test_worktree_retirement",)
+
+
 def test_active_logical_workstream_is_never_pruned(tmp_path: Path) -> None:
     """A clean worktree remains protected while its branch is registered active."""
     registry_path = tmp_path / "active-workstreams.json"
@@ -228,36 +231,29 @@ def test_registry_cli_requires_action_arguments(tmp_path: Path) -> None:
 
 
 def test_prune_calls_git_remove_only_for_unregistered_candidate(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, checkout: tuple[Path, Path, Path],
 ) -> None:
-    main = tmp_path / "main"
-    active = tmp_path / "active"
-    idle = tmp_path / "idle"
-    porcelain = (
-        f"worktree {main}\nHEAD abc\nbranch refs/heads/development\n\n"
-        f"worktree {active}\nHEAD def\nbranch refs/heads/feature/active\n\n"
-        f"worktree {idle}\nHEAD fed\nbranch refs/heads/feature/idle\n"
-    )
-    registry_path = tmp_path / "registry.json"
+    main, idle, registry_path = checkout
+    active = main / ".claude/worktrees/active"
+    _retention_git(main, "worktree", "add", "-b", "feature/active", str(active))
     WorkstreamRegistry(registry_path).register("feature/active", active)
+    before_refs = _retention_git(main, "show-ref")
     calls: list[tuple[str, ...]] = []
+    native = prune_worktrees_safe._git
 
-    def fake_git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def recording_git(
+        *args: str, check: bool = True, timeout: float | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         calls.append(args)
-        if args == ("worktree", "list", "--porcelain"):
-            return subprocess.CompletedProcess(args, 0, porcelain, "")
-        if args == ("rev-parse", "--show-toplevel"):
-            return subprocess.CompletedProcess(args, 0, f"{main}\n", "")
-        assert args == ("worktree", "remove", str(idle.resolve()))
-        assert check is False
-        return subprocess.CompletedProcess(args, 0, "", "")
+        return native(*args, check=check, timeout=timeout)
 
-    monkeypatch.setattr(prune_worktrees_safe, "_git", fake_git)
+    monkeypatch.setattr(prune_worktrees_safe, "_git", recording_git)
 
     assert prune_worktrees_safe.prune(registry_path=registry_path, validate_only=False) == 0
-    assert ("worktree", "remove", str(idle.resolve())) in calls
-    assert ("worktree", "remove", str(active.resolve())) not in calls
+    assert ("worktree", "remove", "--", str(idle.resolve())) in calls
+    assert not any(args[:2] == ("worktree", "remove") and str(active.resolve()) in args for args in calls)
+    assert not idle.exists() and active.is_dir()
+    assert _retention_git(main, "show-ref") == before_refs
 
 
 def test_validate_only_never_calls_git_remove(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -289,26 +285,15 @@ def test_prune_handles_empty_inventory(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert prune_worktrees_safe.prune(registry_path=tmp_path / "missing.json", validate_only=False) == 0
 
 
-def test_dirty_candidate_is_retained(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    main = tmp_path / "main"
-    dirty = tmp_path / "dirty"
-    porcelain = (
-        f"worktree {main}\nHEAD abc\nbranch refs/heads/development\n\n"
-        f"worktree {dirty}\nHEAD def\nbranch refs/heads/feature/dirty\n"
-    )
+def test_dirty_candidate_is_retained(checkout: tuple[Path, Path, Path]) -> None:
+    main, dirty, registry = checkout
+    (dirty / "owned.txt").write_bytes(b"retain uncommitted source")
+    before_refs = _retention_git(main, "show-ref")
 
-    def fake_git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        if args == ("worktree", "list", "--porcelain"):
-            return subprocess.CompletedProcess(args, 0, porcelain, "")
-        if args == ("rev-parse", "--show-toplevel"):
-            return subprocess.CompletedProcess(args, 0, f"{main}\n", "")
-        assert args == ("worktree", "remove", str(dirty.resolve()))
-        assert check is False
-        return subprocess.CompletedProcess(args, 1, "", "contains modified files")
-
-    monkeypatch.setattr(prune_worktrees_safe, "_git", fake_git)
-
-    assert prune_worktrees_safe.prune(registry_path=tmp_path / "missing.json", validate_only=False) == 0
+    assert prune_worktrees_safe.prune(registry_path=registry, validate_only=False) == 0
+    assert dirty.is_dir() and (dirty / "owned.txt").read_bytes() == b"retain uncommitted source"
+    assert (dirty / ".gate-logs/failed-proof.log").read_bytes() == b"FAILED original proof\n"
+    assert _retention_git(main, "show-ref") == before_refs
 
 
 def test_prune_cli_passes_registry_and_validate_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

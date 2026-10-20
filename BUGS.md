@@ -4,6 +4,21 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-20 - Cleanup compatibility routes bypassed native evidence protection
+
+Legacy agent-cleanup/clean-stale-worktrees still forced removal and branch
+deletion. Thirty confined Make negative controls fail before native delegation;
+a later -e replay requires callee literal capture before unexport. Five native
+Git controls then prove ordinary pruning deleted ignored historical proof and
+bypassed process/checkpoint/unknown-data checks. Both routes now share the
+existing native retirement ownership/archival implementation; committed branch
+refs survive and selected merged retirement still requires ancestry.
+The expanded 172-case proof clears 85/75 at 94.3% line and 89.8% branch coverage,
+including both real alias apply routes and sixteen process-controller cases.
+All original assertions survive in two stronger native fixtures. Exact failures, source rationale,
+upstream practitioner reports and next native action are in
+docs/features/GATE_RESOURCE_LIFECYCLE.md. No full-gate or capacity claim follows.
+
 ### 2026-10-20 - Long-lived UV watchdog blocked safe cache cleanup
 
 The real native PID diagnostic identified the project agent-watchdog UV wrapper;
@@ -14,9 +29,12 @@ faults. The source owner passes452 whole-owner cases with94.7/89.7 line/branch
 coverage and fresh0-error collection. Native Make default/alias/literal controls
 plus complete task/environment/guide owners pass249 cases. Preserve original
 upstream user issue16112 and all failed receipts in GATE_RESOURCE_LIFECYCLE.md.
-The legacy stop plan is verified without signals; actual handoff and capacity
-clearance still require native measurements. Do not force UV cleanup, remove
-unverified locks, shorten retention or waive disk/full-gate/exact-SHA guards.
+The verified native handoff signals only Python child 68516; UV parent 68501
+exits naturally. Native auto-start acknowledges direct Python PID 39922 alongside
+task watchdog 29001. Actual cleanup removes 239986255 regenerable bytes and
+finishes UV pruning, but its measured 96% disk use still exceeds the 95% ceiling.
+Do not force UV cleanup, remove unverified locks, shorten retention or waive
+disk/full-gate/exact-SHA guards.
 
 ### 2026-10-20 - Source staging exposed false green workflow checks
 
