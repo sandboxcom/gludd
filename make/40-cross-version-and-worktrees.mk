@@ -658,10 +658,10 @@ feature-done:
 
 # --- Worktree-per-subagent dispatch protocol ---
 # Each subagent that mutates files works in an isolated git worktree on its
-# own branch, so concurrent edits cannot interleave on the shared master
-# checkout (no dirty-tree surprises, no commit races, no misattributed work).
-# Lifecycle: agent-worktree (create) -> subagent edits+commits on the branch
-# -> agent-merge (fan in to master) -> agent-cleanup (teardown). Read-only
+# own branch, so concurrent edits cannot interleave on the shared checkout
+# (no dirty-tree surprises, no commit races, no misattributed work).
+# Lifecycle: agent-worktree -> branch edits+commits -> reviewed agent-merge-dev
+# -> proven release-promote -> native planned agent-cleanup. Read-only
 # research tasks skip this entirely — they do not touch the working tree.
 
 # Create an isolated worktree for a subagent. Usage:

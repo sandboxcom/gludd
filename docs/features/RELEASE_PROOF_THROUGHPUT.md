@@ -98,6 +98,20 @@ The existing PRESENTATION_JAVASCRIPT_COVERAGE feature now distinguishes that
 integration from its older pre-product94.2/88.75 coverage; fresh real browser/c8
 and the three repair-owned families remain required. No release record is ticked.
 
+The next native311 replay on3819295a60a3e4d9ae26974a67a8ef8a2b85ef30 passes
+all2019 main cases60.79s, then the original isolated help owner fails0.96s:
+agent-cleanup appears twice. The retained native90/60 observation exits2/66.3s
+at .gate-logs/observed/v012-runtime-repair311/v012-repair311-3819295-20261020.log.
+No repair receipt exists. Root removes only the stale duplicate help entry,
+retains the native planned-retirement entry and its variables, and corrects
+adjacent legacy master-helper guidance to the existing development/promotion
+owners. The worktree lifecycle comment follows the same existing branch policy.
+The original duplicate-help assertion remains unchanged. The three complete
+Make audit/contract/syntax owners pass51/0skip2.95s; native target contract
+passes268 targets and actual help exits0. Focused XML is
+/tmp/gludd-v012-help-conformance.xml. These clear that failed source input;
+the original complete runtime replay remains required.
+
 ## Model-independent release operating path (2026-10-20)
 
 The mandatory [.agents Make guide](../../.agents/policy/key-make-targets.md)

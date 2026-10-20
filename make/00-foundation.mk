@@ -704,7 +704,7 @@ help:
 		"  git-cherry-pick SHA=<commit> Cherry-pick a specific commit" \
 		"  git-cherry-pick-list SHAS='a b ...' Cherry-pick commits in order" \
 		"  feature-start MSG='...' Create and switch to feature branch" \
-		"  feature-done MSG='...' Test, merge to master with --no-ff" \
+		"  feature-done         Legacy master helper; use development-merge-forward then release-promote" \
 		"  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)" \
 		"  agent-worktree-base BRANCH=<name> BASE=<ref>  Isolated worktree from an explicit base ref" \
 		"  agent-worktree-retain  Plan a native retention lock (BRANCH, WORKTREE, WORKTREE_RETAIN_REASON, WORKTREE_RETAIN_VALIDATE_ONLY=1)" \
@@ -713,8 +713,7 @@ help:
 		"  agent-cleanup         Plan native merged-owner retirement (BRANCH, WORKTREE, ACTIVE_WORKSTREAM_REGISTRY, AGENT_CLEANUP_VALIDATE_ONLY=1; 0 applies)" \
 		"  clean-stale-worktrees Plan native clean pruning (ACTIVE_WORKSTREAM_REGISTRY, CLEAN_STALE_WORKTREES_VALIDATE_ONLY=1; 0 applies)" \
 		"  wt-prune-safe         Default clean pruning; WT_PRUNE_RETIRE_MERGED=1 retires one merged BRANCH/WORKTREE with archived proof (WT_PRUNE_RETIRE_VALIDATE_ONLY=1 plans; ACTIVE_WORKSTREAM_REGISTRY, WT_PRUNE_VALIDATE_ONLY)" \
-		"  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)" \
-		"  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge" \
+		"  agent-merge          Legacy master helper; use agent-merge-dev then release-promote" \
 		"  agent-worktree-list           List active git worktrees" \
 		"  worktree-commit-changes MSG='...'  Commit all changes in the current worktree" \
 		"  worktree-cleanup-merged       Remove worktrees whose branches are merged into development" \
