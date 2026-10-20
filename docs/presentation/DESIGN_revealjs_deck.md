@@ -566,3 +566,43 @@ describes sibling jobs cancelled by default matrix fail-fast, while
 records artifact name collisions after immutable artifact uploads were introduced.
 The new structural regressions retain both engines, independent evidence, unique
 diagnostics, and one deployment artifact. They do not close S98.4 or the release.
+
+### Successful batch summaries — 2026-10-19
+
+Exact development512eaf9 Pages run39317225126 reached chart readiness, then
+failed its original cold elapsed<5 assertion at5.0012257310000905s. The17-case
+WebKit desktop owner ended1FAIL/16PASS in348.91s; the cached iteration was not
+reached. The full native failed log is retained at
+/tmp/gludd-v012-hosted-pages-512eaf9-all-failed.log. This remains failed evidence.
+
+Local completeRender called updateFailureSummary after every successful chart.
+That summary calls health, which queries the whole deck and rechecks every
+rendered visual's DOM metadata. The serial render batch therefore repeated a
+whole-deck scan for each success. Move that one summary call to the existing
+end-of-batch reconciliation, before validateVisibleGeometry. Immediate chart
+state, fallback/notice visibility, rendering and geometry validation remain.
+failDiagram still restores source and publishes its failure summary immediately;
+late geometry failures use the same owner. Public health remains a fresh query,
+with no counters or cached success. No library, renderer or dependency changed.
+
+The existing Node-backed production-function harness gained six additive cases.
+Actual RED2FAIL/12PASS2.78s observes3/8summary calls for3/8successful charts,
+against the new one-per-batch contract. All original eight geometry/frame/
+deadline controls and added immediate source/late-geometry failure, refresh and
+fresh-health fault controls remain. After the product call move, all three
+whole presentation unit owners pass50cases/zero skips on311(2.68s) and
+312(3.73s), including native JS syntax and existing matrix/600s guards.
+Ruff and scoped strict checks pass. Exact commands and native observations:
+/tmp/gludd-v012-pages-cold-readiness-report.md and its evidence index.
+This measures call counts, not JavaScript coverage, browser CPU or latency.
+The full original cold/cached/browser geometry/CSP/navigation/file/source-reader
+suite and exact corrected hosted SHA remain required before any browser repair,
+throughput, gate or release claim. Original5s/600s budgets remain unchanged.
+
+Root re-read the firsthand [Community12523 report](https://github.com/orgs/community/discussions/12523)
+on2026-10-19: its2022Safari clipping report has a2023reply describing clipped
+labels in other browsers too. Root also re-read [WebKit198609](https://bugs.webkit.org/show_bug.cgi?id=198609):
+its historical viewBox-size/relayout problem is marked FIXED with an August2025
+landing. These retained reports justify preserving real geometry checks across
+engines; neither explains the2026cold timing or this local repeated-summary
+work. No currently unresolved upstream defect is inferred from those histories.

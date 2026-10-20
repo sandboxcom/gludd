@@ -341,7 +341,6 @@
       notice.textContent = "";
     }
     setState(diagram, "rendered");
-    updateFailureSummary();
   }
 
   function classifyRenderFailure(error) {
@@ -510,6 +509,8 @@
         failDiagram(diagram, "render-timeout");
       }
     }
+    // Successful charts need one deck summary after the serial batch.
+    updateFailureSummary();
     await validateVisibleGeometry();
   }
 
