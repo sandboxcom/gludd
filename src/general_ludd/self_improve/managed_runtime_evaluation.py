@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Protocol, TypeVar, runtime_checkable
 
 from general_ludd.self_improve.codex_comparison import CodexReference
 from general_ludd.self_improve.managed_runner import (
@@ -18,6 +18,7 @@ from general_ludd.self_improve.private_policy import SelfImproveRuntimePolicyGua
 _RunnerT = TypeVar("_RunnerT", contravariant=True)
 
 
+@runtime_checkable
 class ManagedAttemptEvaluator(Protocol[_RunnerT]):
     """Evaluate one immutable plan-bound proposal with an owned runner."""
 
