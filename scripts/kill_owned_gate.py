@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from resource_arbiter import project_namespace, resource_root
+elif __package__:
+    from scripts.resource_arbiter import project_namespace, resource_root
 else:
     from resource_arbiter import project_namespace, resource_root
 
