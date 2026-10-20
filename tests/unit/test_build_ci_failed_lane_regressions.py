@@ -43,6 +43,22 @@ def test_gate_runs_lint_before_azure_coverage_without_hiding_coverage() -> None:
     assert "!cancelled() && matrix.python-version == '3.11'" in coverage_step
 
 
+def test_azure_coverage_requires_a_verified_manifest_and_keeps_lint_diagnostics() -> None:
+    """Reject a missing image input without skipping independent lint diagnostics."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["gate"]["steps"]
+    manifest = next(step for step in steps if step.get("name") == "Verify pinned Ansible base manifest")
+    coverage = next(step for step in steps if step.get("name") == "Azure Container App coverage (hermetic)")
+    assert manifest.get("id") == "ansible_base_manifest"
+    assert "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0" in manifest["run"]
+    assert coverage["if"] == (
+        "${{ steps.ansible_base_manifest.outcome == 'success' && "
+        "!cancelled() && matrix.python-version == '3.11' }}"
+    )
+    assert coverage.get("continue-on-error", False) is False
+    assert "make test-azure-containerapp-coverage" in coverage["run"]
+
+
 def test_runtime_artifacts_read_the_split_controller_profile(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

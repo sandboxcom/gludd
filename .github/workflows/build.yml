@@ -249,6 +249,7 @@ jobs:
           python scripts/dependency_profiles.py sync \
             --set ci --environment .venv --python 3.12.15
       - name: Verify pinned Ansible base manifest
+        id: ansible_base_manifest
         run: |
           echo "=== CI PHASE: ansible-base-manifest ==="
           make check-ansible-base-image ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0
@@ -302,7 +303,7 @@ jobs:
         env:
           GLUDD_AUTH_PSK: ""
       - name: Azure Container App coverage (hermetic)
-        if: "${{ !cancelled() && matrix.python-version == '3.11' }}"
+        if: "${{ steps.ansible_base_manifest.outcome == 'success' && !cancelled() && matrix.python-version == '3.11' }}"
         run: |
           echo "=== CI PHASE: azure-containerapp-coverage ==="
           make test-azure-containerapp-coverage

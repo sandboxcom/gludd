@@ -715,3 +715,28 @@ free. These controls validate routing, not hosted success or a full gate.
 A live new manifest is input evidence only. Full image build/offline warm,
 canonical release gate, exact-successor hosted CI, deployment acceptance and
 receipt-bound promotion remain required. All seven S98 tasks remain open.
+
+### Coverage diagnostics require the served input
+
+The retained3b2fdc2 gate job118932860510 continues into the hermetic Azure
+coverage owner after the exact manifest fails. Its explicit !cancelled()
+condition overrides GitHub's default success requirement. Give the existing
+manifest step the stable ansible_base_manifest ID and require that step's
+successful outcome before coverage. Keep the existing !cancelled()/Python311
+condition, fatal result and complete coverage owner. In particular, lint failure
+after a verified manifest still permits independent coverage diagnostics; a
+broad success() condition would drop that original assertion intent.
+
+The new parsed-workflow regression first fails1/5PASS. All133 original/new
+build-failure, runtime-boundary, artifact and fallback cases then pass4.43s with
+fatal warnings. Ruff and strict typing pass. The original lint/coverage-order
+assertion is retained verbatim. Hosted evaluation of the new dependency remains
+pending; a parsed YAML assertion is not an Actions execution or full gate.
+
+[GitHub's status-check reference](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)
+states that a status function overrides the implicit success requirement and
+that !cancelled() permits work regardless of earlier success/failure. The
+[2022-2024 practitioner discussion](https://github.com/orgs/community/discussions/26303)
+records continuing confusion around always(), cancellation and expression/YAML
+boundaries. This motivates an explicit prerequisite outcome in the original
+native workflow, without a replacement expression parser or diagnostic runner.
