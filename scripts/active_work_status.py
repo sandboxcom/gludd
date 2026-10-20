@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         default_resource_lock,
         inspect_lease,
     )
+    from kill_owned_gate import _process_cwd
     from resource_arbiter import resource_path, resource_root
     from task_scope import task_inventory as _native_task_inventory
 
@@ -40,11 +41,13 @@ elif __package__:
         default_resource_lock,
         inspect_lease,
     )
+    from scripts.kill_owned_gate import _process_cwd
     from scripts.resource_arbiter import resource_path, resource_root
     from scripts.task_scope import task_inventory as _task_inventory
 else:  # pragma: no cover - direct script execution
     _collection_lock = import_module("collection_lock")
     _resource_arbiter = import_module("resource_arbiter")
+    _process_cwd = import_module("kill_owned_gate")._process_cwd
     _task_scope = import_module("task" + "_scope")
     LeaseInspection = _collection_lock.LeaseInspection
     LeaseRecord = _collection_lock.LeaseRecord
@@ -410,33 +413,117 @@ def _observer_owned_processes_from_output(
     ]
 
 
-def _processes() -> list[dict[str, str]]:
-    repository_roots = _repository_roots()
-    result = subprocess.run(
+def _process_output() -> str:
+    """Read one fresh native process-table projection without a shell."""
+    return subprocess.run(
         ["ps", "-axo", "pid=,ppid=,command="],
         cwd=ROOT,
         capture_output=True,
         text=True,
         timeout=10,
         check=True,
-    )
+    ).stdout
+
+
+def _processes_from_output(
+    output: str, *, repository_roots: tuple[Path, ...], resource_roots: tuple[Path, ...],
+) -> list[dict[str, str]]:
+    """Apply the existing ownership owners to one native snapshot."""
     tracked = _owned_processes_from_output(
-        result.stdout,
-        repository_roots=repository_roots,
-        resource_roots=_owned_resource_roots(repository_roots),
+        output, repository_roots=repository_roots, resource_roots=resource_roots,
     )
     observed = _observer_owned_processes_from_output(
-        result.stdout,
-        repository_roots=repository_roots,
+        output, repository_roots=repository_roots,
     )
     merged = {process["pid"]: process for process in tracked}
     for process in observed:
         merged[process["pid"]] = {**merged.get(process["pid"], {}), **process}
     return [
         merged[row["pid"]]
-        for row in _process_rows(result.stdout)
+        for row in _process_rows(output)
         if row["pid"] in merged
     ]
+
+
+def _processes() -> list[dict[str, str]]:
+    repository_roots = _repository_roots()
+    output = _process_output()
+    return _processes_from_output(
+        output, repository_roots=repository_roots,
+        resource_roots=_owned_resource_roots(repository_roots),
+    )
+
+
+def _inspect_pid(pid: int) -> dict[str, object]:
+    """Inspect one native row without conferring gate or termination authority."""
+    ownership: dict[str, object] = {
+        "verified": False, "source": "unverified", "cwd": None,
+        "cwd_matches_repository": False, "cwd_matches_resource_root": False,
+        "cwd_truncated": False,
+    }
+    payload: dict[str, object] = {
+        "requested_pid": pid, "state": "missing", "process": None,
+        "ownership": ownership,
+        "audit_contract": {
+            "agent_pids": False, "diagnostic_only": True,
+            "gate_authority": False, "kill_authority": False,
+        },
+    }
+    try:
+        output = _process_output()
+        matches = [row for row in _process_rows(output) if row["pid"] == str(pid)]
+        if not matches:
+            return payload
+        if len(matches) != 1:
+            raise ValueError("native snapshot repeats the requested PID")
+        row = matches[0]
+        if (
+            re.fullmatch(r"[0-9]{1,10}", row["ppid"]) is None
+            or int(row["ppid"]) > 2_147_483_647
+        ):
+            raise ValueError("native parent PID is malformed")
+        command = row["command"]
+        payload["process"] = {
+            **row, "task": _task_label(command),
+            "command": _safe_bounded_text(command, limit=_COMMAND_DISPLAY_LIMIT),
+            "command_truncated": len(command) > _COMMAND_DISPLAY_LIMIT,
+        }
+        repository_roots = _repository_roots()
+        resource_roots = _owned_resource_roots(repository_roots)
+        owned = next(
+            (
+                process for process in _processes_from_output(
+                    output, repository_roots=repository_roots,
+                    resource_roots=resource_roots,
+                )
+                if process["pid"] == str(pid)
+            ),
+            None,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        payload["state"] = "unavailable"
+        ownership["source"] = "unavailable"
+        return payload
+    payload["state"] = "present"
+    if owned is not None:
+        ownership["verified"] = True
+        ownership["source"] = owned.get("process_source", "tracked-command")
+    process_cwd: Path | None = None
+    with suppress(OSError, subprocess.SubprocessError):
+        process_cwd = _process_cwd(pid)
+    if process_cwd is not None:
+        cwd = str(process_cwd)
+        ownership.update({
+            "cwd": _safe_bounded_text(cwd, limit=_LEASE_PATH_DISPLAY_LIMIT),
+            "cwd_truncated": len(cwd) > _LEASE_PATH_DISPLAY_LIMIT,
+            "cwd_matches_repository": any(
+                _command_mentions_path(cwd, root) for root in repository_roots
+            ),
+            "cwd_matches_resource_root": any(
+                _command_mentions_path(cwd, root) for root in resource_roots
+            ),
+        })
+    return payload
 
 
 def _render_process_table(processes: list[dict[str, str]]) -> str:
@@ -720,12 +807,23 @@ def collect_status() -> dict[str, object]:
     }
 
 
+def _positive_pid(value: str) -> int:
+    if re.fullmatch(r"[0-9]{1,10}", value) is None or not 0 < int(value) <= 2_147_483_647:
+        raise argparse.ArgumentTypeError("PID must be a positive native process identifier")
+    return int(value)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--process-table",
         action="store_true",
         help="print the repository-owned process inventory instead of JSON",
+    )
+    mode.add_argument(
+        "--inspect-pid", type=_positive_pid, metavar="PID",
+        help="inspect one native PID read-only without changing project ownership",
     )
     return parser
 
@@ -733,6 +831,10 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Emit the JSON status or the shared human-readable process view."""
     args = _parser().parse_args(argv)
+    if args.inspect_pid is not None:
+        payload = _inspect_pid(args.inspect_pid)
+        print(json.dumps(payload, sort_keys=True))
+        return 2 if payload["state"] == "unavailable" else 0
     if args.process_table:
         print(_render_process_table(_processes()), end="")
     else:
