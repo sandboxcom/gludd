@@ -16,11 +16,14 @@ import os
 import re
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.unit.test_task_watchdog import OwnedPoll
-from tests.unit.test_task_watchdog import _owned_poll as _owned_poll
+if TYPE_CHECKING:
+    from tests.unit.test_task_watchdog import OwnedPoll
+
+pytest_plugins = ["tests.unit.test_task_watchdog"]
 
 # ---------------------------------------------------------------------------
 # Python mirror of plugin state-machine logic (from enforce-deadline.ts)
@@ -1083,7 +1086,10 @@ class TestWatchdogSourceInvariants:
 
     @pytest.mark.parametrize("ownership", ["owned-tree", "foreign-descendant", "unknown-descendant"])
     def test_kill_multiple_candidates(
-        self, _owned_poll: OwnedPoll, tmp_path: Path, ownership: str,
+        self,
+        _owned_poll: OwnedPoll,
+        tmp_path: Path,
+        ownership: str,
     ) -> None:
         """Drain every owned descendant and refuse a tree with unverified ownership."""
         import signal
@@ -1094,13 +1100,25 @@ class TestWatchdogSourceInvariants:
         root, records, cwds, _deadlines, _sent = _owned_poll
         parent = records[0]
         child = cleanup_owner.ProcessRecord(
-            parent.pid + 1, parent.pid, 390, "python child", started_at="child-start",
+            parent.pid + 1,
+            parent.pid,
+            390,
+            "python child",
+            started_at="child-start",
         )
         grandchild = cleanup_owner.ProcessRecord(
-            parent.pid + 2, child.pid, 380, "python grandchild", started_at="grandchild-start",
+            parent.pid + 2,
+            child.pid,
+            380,
+            "python grandchild",
+            started_at="grandchild-start",
         )
         foreign = cleanup_owner.ProcessRecord(
-            parent.pid + 3, 1, 400, "python foreign-project", started_at="foreign-start",
+            parent.pid + 3,
+            1,
+            400,
+            "python foreign-project",
+            started_at="foreign-start",
         )
         records[:] = [parent, child, grandchild, foreign]
         cwds.update({child.pid: root, grandchild.pid: root, foreign.pid: tmp_path})
@@ -1113,8 +1131,10 @@ class TestWatchdogSourceInvariants:
 
         with patch("scripts.task_watchdog.os.kill", side_effect=owned_sender) as send:
             result = kill_process(
-                parent.pid, expected_command=parent.command,
-                expected_record=parent, repository_roots=(root,),
+                parent.pid,
+                expected_command=parent.command,
+                expected_record=parent,
+                repository_roots=(root,),
             )
             if ownership != "owned-tree":
                 assert result is False
@@ -1130,9 +1150,14 @@ class TestWatchdogSourceInvariants:
             ]
             assert records == [foreign]
             send.reset_mock()
-            assert kill_process(
-                foreign.pid, expected_record=foreign, repository_roots=(root,),
-            ) is False
+            assert (
+                kill_process(
+                    foreign.pid,
+                    expected_record=foreign,
+                    repository_roots=(root,),
+                )
+                is False
+            )
             send.assert_not_called()
             assert records == [foreign]
 

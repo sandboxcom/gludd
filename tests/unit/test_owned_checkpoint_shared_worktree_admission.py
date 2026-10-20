@@ -21,7 +21,8 @@ from tests.unit.test_owned_git_checkpoint import (
     retained_objects,
     snapshot,
 )
-from tests.unit.test_owned_git_checkpoint import repo as repo
+
+pytest_plugins = ["tests.unit.test_owned_git_checkpoint"]
 
 
 def linked(root: Path, path: Path, branch: str = "peer-owner") -> Path:
@@ -67,7 +68,9 @@ def test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact(re
 
 
 def test_peer_checkpoint_is_admitted_from_main_and_another_registered_peer(
-    repo: Path, peer: Path, tmp_path: Path,
+    repo: Path,
+    peer: Path,
+    tmp_path: Path,
 ) -> None:
     observer = linked(repo, tmp_path / "observer", "peer-observer")
     sha = saved(peer)
@@ -110,12 +113,23 @@ def test_shared_inventory_keeps_other_unknown_stashes_blocking(repo: Path, peer:
         assert retained_objects(repo, item) == content
 
 
-@pytest.mark.parametrize("state", (
-    "unregistered", "prunable", "symlink-gitfile", "wrong-backlink",
-    "symlink-backlink", "symlink-commondir", "symlink-root",
-))
+@pytest.mark.parametrize(
+    "state",
+    (
+        "unregistered",
+        "prunable",
+        "symlink-gitfile",
+        "wrong-backlink",
+        "symlink-backlink",
+        "symlink-commondir",
+        "symlink-root",
+    ),
+)
 def test_stale_or_redirected_peer_registration_never_admits_its_checkpoint(
-    repo: Path, peer: Path, tmp_path: Path, state: str,
+    repo: Path,
+    peer: Path,
+    tmp_path: Path,
+    state: str,
 ) -> None:
     sha = saved(peer)
     if state == "unregistered":
@@ -146,7 +160,9 @@ def test_stale_or_redirected_peer_registration_never_admits_its_checkpoint(
 
 
 def test_registered_path_replaced_with_another_repository_is_unowned(
-    repo: Path, peer: Path, tmp_path: Path,
+    repo: Path,
+    peer: Path,
+    tmp_path: Path,
 ) -> None:
     sha = saved(peer)
     foreign = tmp_path / "foreign"
@@ -175,7 +191,9 @@ def test_duplicate_peer_labels_still_count_as_unknown(repo: Path, peer: Path) ->
 
 @pytest.mark.parametrize("scope", ("../owned.txt", "owned.txt,owned.txt", "outside.txt", "owned.txt,new.txt"))
 def test_forged_peer_scope_is_unowned_and_retains_all_objects(
-    repo: Path, peer: Path, scope: str,
+    repo: Path,
+    peer: Path,
+    scope: str,
 ) -> None:
     original = saved(peer)
     identity = hashlib.sha256(os.fsencode(peer)).hexdigest()
@@ -219,8 +237,11 @@ def test_peer_metadata_cannot_admit_captured_symlinks(repo: Path, peer: Path) ->
 
 @pytest.mark.parametrize("failure", ("lookup", "unterminated", "relative", "duplicate"))
 def test_failed_or_malformed_native_registration_refuses_without_mutation(
-    repo: Path, peer: Path, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str], failure: str,
+    repo: Path,
+    peer: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
 ) -> None:
     sha = saved(peer)
     objects = retained_objects(repo, sha)
@@ -250,8 +271,12 @@ def test_failed_or_malformed_native_registration_refuses_without_mutation(
 
 @pytest.mark.parametrize("change", ("stash", "worktree"))
 def test_competing_native_inventory_change_refuses_a_count_receipt(
-    repo: Path, peer: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str], change: str,
+    repo: Path,
+    peer: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    change: str,
 ) -> None:
     original = saved(peer)
     objects = retained_objects(repo, original)
