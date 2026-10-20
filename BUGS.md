@@ -4,6 +4,10 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-20 - Planned browser proof assumed an idle cache survived pressure cleanup
+
+Native cleanup correctly reclaims the idle Playwright root under its explicit pressure policy, reducing97% to96% but still failing95%. Root initially mislabels this as a retention defect before reading the owning policy/tests. The corrected workflow retains all guards, performs pinned prefetch after cleanup and before acceptance, and aligns outer/child runtime selection to remove a UV configuration warning. Both browsers restore in36.0s; clean5b77f02 JS1 passes23+1 cases and native94.2line/88.3branch in390.5s. After proof,97% disk still blocks final admission. The Make guide and feature records codify this order, the actual missing capacity input, independent source review and original312 repair78.3s; no task closes and no cleanup/reinstall loop is permitted by those facts.
+
 ### 2026-10-20 - Cheap promotion checks missed a shared exact-roster contract
 
 Clean88b176db1 original312 repair fails1/2022PASS61.65s on the shared literal ROSTER, so no receipt is recorded. The original two cheap pins had not executed either exact native roster guard. Five failing-first cases and the real four-pin2FAIL/2PASS route expose that gap. The existing checker now retains its two pins plus both roster guards; expected entries and seven exact family counts conform to the added114th family without dropping assertions. Six added omission/duplication/widening mutations retain the original boundaries, including quoted last-main input. Preserve initial7FAIL/267PASS and final274PASS/74.85s, native76.1s/rc0, separately in RELEASE_PROOF_THROUGHPUT.md. Native114-family/four-pin checks,46guide/session cases, Ruff/strict/268contracts pass; full gate/hosted/deployment remain pending.

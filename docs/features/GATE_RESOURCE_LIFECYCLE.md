@@ -19,6 +19,31 @@ lower worker count instead of staying stopped.
 
 ## Contract
 
+### Measured cleanup and browser prefetch order (2026-10-20)
+
+After completed source proof and retired peer testing, native preflight removes
+6027eligible bytecode files/240549715bytes, three disposable caches, the exact
+idle Playwright root7834entries and11UV files/12.2KiB. Six removals/0errors on the
+first pass become0progress on the second; native refusal remains96% against95%.
+All live owners, unknown data, branch/checkpoint locks and failed proofs survive.
+
+This matches the pressure-only Playwright lifecycle below. Root initially calls
+the browser eviction a retention defect before consulting that policy, then
+corrects the interpretation. No source guard is removed or weakened. Existing
+pinned presentation-browser-install restores Chromium1243 and WebKit2359 before
+acceptance, observed36.0s/rc0. An initial cross-runtime UV warning is removed by
+aligning the selected installed runtime across observer and installer; the aligned
+312 check then reports both actual executables available/rc0 without that warning.
+The corrected aligned312 actual installer replay also passes both engines in
+observed1.7s/rc0 with no warning or new download; the browser feature retains its
+complete existing Make recipe and exact native log.
+
+Fresh browser/c8 proof then passes at clean5b77f02; its owning feature retains
+the exact source, native94.2line/88.3branch and terminal390.5s receipt. After it,
+disk measures97%,7.2GiB available. This does not clear final admission. Preserve
+the failed cleanup and avoid cycling cache eviction/restoration at unchanged
+capacity. Full release proof still requires a genuine changed capacity input.
+
 ### Native cache-lock owner discovery (2026-10-20)
 
 Actual disk-cleanup-preflight with validate-only0/dry-run0/grace1800 removes16

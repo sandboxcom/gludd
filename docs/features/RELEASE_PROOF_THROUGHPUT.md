@@ -272,6 +272,100 @@ and executing runtimes differ. No latency, deadline-clearance or hosted gain
 is claimed. Actual original31290/60 repair remains required after integration.
 No release checkbox, full gate, hosted exact-SHA or deployment proof is supplied.
 
+## Frozen5b77f02 native source proof (2026-10-20)
+
+Native worktree-state retains clean development5b77f02715ddb8cc4c5dcf80a2dc7ac602fe8fc0
+through all proof below. Its guarded source collection selects127698/127722,
+24deselected,0errors49.09s; observed55.1s/rc0.
+
+The original312 repair now passes2023main/63.48s,1fresh-help/1.08s and11tail/9.12s.
+Native observed78.3s/rc0 records CI_FAILURE_REPAIR_RECORDED for that exact SHA.
+The selected original90total/60quiet, release/0/16/1 and2/1/1 children remain.
+Log:.gate-logs/observed/v012-runtime-repair312/v012-repair312-5b77f02-20261020.log.
+Native ledger reports open0/repaired12/resolved38/runs139. Repaired is a local
+receipt state; hosted resolution remains pending. Preserve the earlier failures.
+
+Complete receiving metadata coverage passes all380cases/221.25s,0skip;
+observed223.3s/rc0. The whole499-statement/212-branch producer measures95.4line/
+89.6branch and retains85aggregate/75each. Audit:
+.gate-logs/coverage-20261020T223053Z.json. Report:
+.gate-logs/coverage-adapter-metadata-main-5b77f02.json. The four complete source,
+receipt, startup and fixture-collision owners use the same native coverage owner.
+Its retained INI is /tmp/gludd-v012-adapter-metadata-main.ini: branch/parallel/
+subprocess tracking and the complete Main producer path, with no omitted function.
+The peer INI names its isolated checkout and cannot supply Main coverage.
+No ambient PYTEST_ADDOPTS is introduced. Different run times establish no gain.
+
+For this canonical Main checkout, the complete actual retained INI is:
+
+```ini
+[run]
+branch = True
+parallel = True
+patch = subprocess
+include =
+    /Users/shawnwilson/gludd/scripts/reviewed_head_inputs.py
+[report]
+show_missing = True
+```
+
+The following two existing Make owners reconstruct that exact input and replay
+the same complete proof. This is a Main-specific recipe; an isolated owner must
+bind its own actual checkout from worktree-state rather than point at Main.
+
+```text
+make write-text-b64 FILE=/tmp/gludd-v012-adapter-metadata-main.ini TEXT_B64=W3J1bl0KYnJhbmNoID0gVHJ1ZQpwYXJhbGxlbCA9IFRydWUKcGF0Y2ggPSBzdWJwcm9jZXNzCmluY2x1ZGUgPQogICAgL1VzZXJzL3NoYXdud2lsc29uL2dsdWRkL3NjcmlwdHMvcmV2aWV3ZWRfaGVhZF9pbnB1dHMucHkKW3JlcG9ydF0Kc2hvd19taXNzaW5nID0gVHJ1ZQo=
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_reviewed_head_inputs.py tests/unit/test_build_reviewed_head_integration_receipt.py tests/unit/test_runtime_startup_native_chain.py tests/unit/test_pytest_param_fixture_collisions.py' COVERAGE_CONFIG=/tmp/gludd-v012-adapter-metadata-main.ini COVERAGE_REPORT=.gate-logs/coverage-adapter-metadata-main-5b77f02.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=10 OBSERVED_QUIET_SECS=120 OBSERVED_MAX_SECS=600 OBSERVED_RETAIN_RUNS=20 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11
+```
+
+release_note_integrity independently APPROVES this exact source against156eb240d.
+Root reads the complete persisted decision:
+ /tmp/gludd-v012-candidate-5b77f02-source-review.md.
+It inspects every changed production/test owner, raw/normalized source coverage,
+native Git replacement/order/bounds/freshness and four fatal exact-roster pins.
+No blocking source defect or patch is identified. This is source review, not a
+genuine native reviewed-head integration receipt or final release authority.
+
+Fresh public ChromiumJS1 passes23desktop/334.76s and1compact/45.34s;
+native390.5s/rc0. Cold1.799s/cached2.113s retain the5s readiness assertion;
+600s viewport and10s geometry assertions remain. Actual c8 reports94.2line/
+88.3branch,732/777lines and219/248branches,0skipped;53/54functions98.14%.
+Both native aggregate85 and each-file75 line AND branch checks exit0.
+The report contains the entire controller, with no omitted lines or fake ranges:
+ /tmp/gludd-v012-chromium-js1-5b77f02/chromium/javascript-coverage/reports/coverage-summary.json.
+Source.json and runtime.json retain clean5b77f02/tree05e8c59420f12027f2615a0908f535b5dc25b780,
+controller b8da13d77eee1e5dcc41c88286a5fc5e7e9490daa1f072727d861b6373b8c661,
+actual Chromium153.0.8010.12, Node26.0.0/c8 12.0.0, Playwright1.63.0 and Python3.12.15.
+Log:.gate-logs/observed/presentation-browser-chromium/20261020T223516Z-3682-6d466df5.log.
+
+After the prior proof exits, normal owned cleanup removes6027peer bytecode files/
+240549715bytes, three disposable caches, idle Playwright cache7834entries and
+11UV files/12.2KiB. First pass removes6 with0errors; second makes0progress and
+still refuses96% against95%. The resource feature explicitly permits this idle
+browser eviction under pressure. Root initially mislabels it a retention bug,
+then corrects that interpretation after reading the actual policy/tests.
+No cleanup guard changes. The pinned installer restores both engines in36.0s;
+the aligned312 availability check then reports both actual executables/rc0.
+An initial outer311/child312 UV warning is retained. The corrected aligned312
+actual-mode replay passes both engines in observed1.7s/rc0 with no warning or
+new download; selecting one installed runtime removes the configuration mismatch.
+Log:.gate-logs/observed/v012-browser-prefetch-aligned/v012-browser-prefetch-aligned-5b77f02-20261020.log.
+After restoration/browser proof, disk measures97%,7.2GiB available. No unchanged
+cleanup/reinstall loop, final admission or full gate is attempted at that input.
+
+The mandatory guide now explains cleanup before pinned prefetch and acceptance;
+keep the existing long-lived practitioner references in GATE_RESOURCE_LIFECYCLE.
+Both model agents are quiescent. Native ps after browser exit shows only the two
+acknowledged watchdogs, no test/browser owner. Preserve all six checkpoints,
+source refs/locks, failed proofs and the unsubmitted HumanTodo configuration.
+Source/acceptance/local repair receipts permit the normal guarded development
+repair-push route. Full canonical gate, genuine integration receipt, exact-SHA
+hosted CI/deployment and promotion remain missing; all seven tasks stay open.
+The final original guide/session/objective owners pass46/2.95s, XML:
+/tmp/gludd-v012-proof-handoff-final.xml. Native Nodev26 compatibility passes
+all six controls/11.12s. Locked Markdown passes all seven changed files and
+native worktree line limits remain below2500. These are scoped source guards.
+
 ## Original312 repair exposed a stale shared roster (2026-10-20)
 
 The normal guarded browser source commit is d929ce676b7413ff6125783ff9089cef5b6d7946:

@@ -75,6 +75,28 @@ focused behavior alone does not establish fixture-namespace conformance.
 `make lint`, `make collect-check` and `make test-count` remain required
 by the commit/completion policy. A focused pass is not a green full gate.
 
+### Cleanup, pinned browser prefetch and acceptance
+
+The native pressure policy may reclaim the exact idle Playwright cache after
+repeat process and identity checks. Read its owning resource feature before
+classifying that expected reclamation as data loss. Run cache-reclaiming preflight
+before pinned browser prefetch and acceptance. Use the same selected installed CI
+runtime across an outer watched owner and its installer child; an inherited
+different VIRTUAL_ENV produces a UV warning.
+
+The read-only installer check uses the current target contract:
+
+```bash
+make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_INSTALL_TIMEOUT=600
+```
+
+If the cache was reclaimed, the existing actual installer mode0 restores pinned
+binaries before browser acceptance. Keep installation visible through run-watched.
+Follow the exact retained recipe in the browser/resource feature and select the
+registered CI runtime first. Browser restoration is not capacity clearance.
+A final admission still over95% remains blocked; do not cycle cleanup/install or
+repeat unchanged final proof. No cleanup, ZDD, retention or coverage guard changes.
+
 ### Admit and prove a release candidate
 
 First inspect the existing admission plan:

@@ -33,6 +33,36 @@ The current single-file scope makes the aggregate threshold stricter, while
 preserving the per-file contract for future expansion. No ignore pragmas or
 reduced floors are allowed. JSON, summary, LCOV and visible text reports remain.
 
+## Measured clean5b77f02 controller (2026-10-20)
+
+The repaired public JS1 target passes all23desktop cases/334.76s and the compact
+layout case/45.34s; native390.5s/rc0. Cold1.799s/cached2.113s remain below5s.
+Native c8 measures94.2% line and88.3% branch,732/777lines and219/248branches,
+with0skipped and53/54functions. Aggregate85 and each-file75 line AND branch
+checks both exit0. The entire controller is measured without omissions.
+
+Source.json and runtime.json bind clean5b77f02715ddb8cc4c5dcf80a2dc7ac602fe8fc0,
+tree05e8c59420f12027f2615a0908f535b5dc25b780 and controller
+b8da13d77eee1e5dcc41c88286a5fc5e7e9490daa1f072727d861b6373b8c661.
+Actual tools:Chromium153.0.8010.12, Node26.0.0/c8 12.0.0, Playwright1.63.0,
+pytest-playwright0.9.0, Python3.12.15. Retained native summary:
+ /tmp/gludd-v012-chromium-js1-5b77f02/chromium/javascript-coverage/reports/coverage-summary.json.
+Observed log:
+.gate-logs/observed/presentation-browser-chromium/20261020T223516Z-3682-6d466df5.log.
+Root reads the actual summary and both source/runtime records before this claim.
+Earlier94.2/88.75 is a different historical source measurement.
+
+Native cleanup may reclaim this exact idle browser cache under measured pressure.
+Run the existing pinned installer after such cleanup and before acceptance; align
+the selected installed CI runtime across outer observer and installer to avoid
+UV VIRTUAL_ENV mismatch. Keep the existing cleanup/process/identity guards.
+Do not repeat cleanup followed by installation to manufacture capacity clearance.
+After restoration and proof, measured97% still exceeds the95% release ceiling.
+
+This scoped browser receipt and independent source approval do not close S98.4.
+Final capacity admission/full gate, native reviewed-head receipt, exact-SHA hosted
+CI, deployment and promotion remain pending.
+
 ## Codified commands
 
 All work runs through Make. The safe default example is:
@@ -53,6 +83,21 @@ carriers. Only the enabled child receives the fresh owned coverage directory
 and manifest. Browser installation and locked Node tools retain their existing
 presentation-browser-install and node-deps-sync/relock/audit owners and explicit
 documented variables; no npx download, alternate runner or tool-path override.
+
+The canonical Main restoration recipe below selects the same registered312
+environment for both native observer and installer. Run it after reclaiming
+preflight, before acceptance. It retains the original installer bounds and
+existing pinned downloads; no alternate driver, warning suppression or sync.
+
+```text
+make run-watched CMD='make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0 PRESENTATION_BROWSER_ENGINES="chromium webkit" PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-v012-browser-restore-aligned-5b77f02 PRESENTATION_BROWSER_INSTALL_TIMEOUT=600 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never' OBSERVED_LABEL=v012-browser-prefetch-aligned RUN_ID=v012-browser-prefetch-aligned-5b77f02-20261020 STALL_SECS=60 MAX_SECS=1200 LOG=.gate-logs/observed/v012-browser-prefetch-aligned/v012-browser-prefetch-aligned-5b77f02-20261020.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=10 OBSERVED_RETAIN_RUNS=20 WORK_ITEM_ID=S98.4 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never
+```
+
+Use a fresh retained run identity for a genuinely needed later restoration.
+The corrected actual recipe passes both installed engines in observed1.7s/rc0,
+with no UV warning or new download. Existing binaries make the native installer
+idempotent; repeated unchanged capacity failure is not a reason to rerun it. Check mode1 separately reports
+actual executable availability and supplies no browser acceptance.
 
 Internal GLUDD_PRESENTATION_JS_COVERAGE_DIR and
 GLUDD_PRESENTATION_JS_COVERAGE_MANIFEST are child-only producer carriers for
