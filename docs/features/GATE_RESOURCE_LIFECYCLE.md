@@ -241,6 +241,24 @@ disk remains 96% against the hard 95% ceiling. Do not repeat the same failed
 input. Real admission and final proof remain blocked by capacity; source proof
 does not waive that prerequisite or close any release task.
 
+A final bounded cleanup after the completed public-review workstream was
+unregistered and its fresh collection regenerated caches has a changed eligible
+input: 6013 bytecode files, 240096109 bytes. The existing actual preflight
+removes those files and disposable caches, reports pass1 removed=5/errors=0,
+then pass2 removed=0/errors=0 and refuses no-progress (native rc1, Make exit2).
+Scratch changes from416.9 to404.0 MB; disk remains96% against95%.
+The release-note checkout has no eligible bytecode. All518 generated-scratch
+candidates are preserved by native eligibility checks; no retention, unknown
+data, checkpoint or ownership guard is weakened. Do not repeat this same input.
+The final read-only state atbc324c286 is clean on development, two acknowledged
+watchdogs and zero observed audit workers; exact-SHA CI has no runs and both
+required workflows remain missing. These measurements supply neither a green
+full gate nor permission to promote. Existing daemon connection refusal still
+prevents filing the capacity HumanTodo; its unsubmitted request is configuration
+only. SESSION.md and the mandatory ordered Make guide retain the exact next
+admission command after real capacity changes.
+
+
 ### Bounded shared-UV cleanup phase diagnostics
 
 The2026-10-19 disk repair reclaimed241,812,053 and237,600,576 bytes of
