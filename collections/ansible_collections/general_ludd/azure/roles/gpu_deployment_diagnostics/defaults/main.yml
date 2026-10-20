@@ -1,0 +1,9 @@
+---
+# Fail closed and remain report-only unless the caller explicitly opts in.
+azure_gpu_diagnostics_enabled: false
+azure_gpu_diagnostics_write_artifact: false
+azure_gpu_diagnostics_artifact_dir: /tmp/gludd-azure-gpu-diagnostics
+
+# Normalized schema-v1 facts supplied by an Azure SDK or azure.azcollection
+# adapter. Raw Azure messages, credentials, prompts, and tokens are forbidden.
+azure_gpu_diagnostics_observation: {}

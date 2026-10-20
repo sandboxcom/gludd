@@ -1,0 +1,339 @@
+---
+- name: Exercise sanitized Azure GPU diagnostic decisions
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    artifact_dir: /tmp/gludd-azure-gpu-diagnostics-molecule
+    common_phases:
+      - phase: preflight
+        status: succeeded
+        duration_seconds: 2
+      - phase: environment_apply
+        status: succeeded
+        duration_seconds: 19
+      - phase: application_apply
+        status: succeeded
+        duration_seconds: 18
+  tasks:
+    - name: Exercise healthy exact-replica and inference evidence
+      ansible.builtin.include_role:
+        name: general_ludd.azure.gpu_deployment_diagnostics
+      vars:
+        azure_gpu_diagnostics_enabled: true
+        azure_gpu_diagnostics_observation:
+          schema_version: 1
+          operation_id: healthy-001
+          region: test-region
+          phases: "{{ common_phases + [{'phase': 'revision_activation', 'status': 'succeeded', 'duration_seconds': 27}, {'phase': 'inference_probe', 'status': 'succeeded', 'duration_seconds': 4}, {'phase': 'cleanup', 'status': 'succeeded', 'duration_seconds': 8}] }}"
+          quota:
+            available: 2
+            requested: 1
+            sufficient: true
+          workload_profile:
+            name: gpu-profile-primary
+            accelerator_kind: nvidia_gpu
+            available: true
+            quota_sufficient: true
+          revision:
+            summary_replica_count: 1
+            exact_replicas:
+              - state: running
+                ready_containers: 1
+                started_containers: 1
+                restart_count: 0
+                reason_class: none
+          system_events: []
+          retry:
+            attempt: 1
+            max_attempts: 3
+          fallback_profiles: []
+          cleanup:
+            application_absent: true
+            environment_retained: true
+            estimated_idle_hourly_cost_usd: 0
+            retention_mode: zero_cost_only
+
+    - name: Capture healthy fact
+      ansible.builtin.set_fact:
+        healthy: "{{ azure_gpu_diagnostics }}"
+
+    - name: Exercise quota-blocked preflight
+      ansible.builtin.include_role:
+        name: general_ludd.azure.gpu_deployment_diagnostics
+      vars:
+        azure_gpu_diagnostics_enabled: true
+        azure_gpu_diagnostics_observation:
+          schema_version: 1
+          operation_id: quota-blocked-001
+          region: test-region
+          phases:
+            - phase: preflight
+              status: failed
+              duration_seconds: 1
+          quota:
+            available: 0
+            requested: 1
+            sufficient: false
+          workload_profile:
+            name: gpu-profile-primary
+            accelerator_kind: nvidia_gpu
+            available: true
+            quota_sufficient: false
+          revision:
+            summary_replica_count: 0
+            exact_replicas: []
+          system_events:
+            - scope: environment
+              severity: warning
+              reason_class: quota_exhausted
+              count: 1
+          retry:
+            attempt: 1
+            max_attempts: 3
+          fallback_profiles: []
+          cleanup:
+            application_absent: true
+            environment_retained: true
+            estimated_idle_hourly_cost_usd: 0
+            retention_mode: zero_cost_only
+
+    - name: Capture quota-blocked fact
+      ansible.builtin.set_fact:
+        quota_blocked: "{{ azure_gpu_diagnostics }}"
+
+    - name: Exercise bounded same-profile retry
+      ansible.builtin.include_role:
+        name: general_ludd.azure.gpu_deployment_diagnostics
+      vars:
+        azure_gpu_diagnostics_enabled: true
+        azure_gpu_diagnostics_observation:
+          schema_version: 1
+          operation_id: retry-same-profile-001
+          region: test-region
+          phases: "{{ common_phases + [{'phase': 'revision_activation', 'status': 'failed', 'duration_seconds': 45}, {'phase': 'cleanup', 'status': 'succeeded', 'duration_seconds': 10}] }}"
+          quota:
+            available: 2
+            requested: 1
+            sufficient: true
+          workload_profile:
+            name: gpu-profile-primary
+            accelerator_kind: nvidia_gpu
+            available: true
+            quota_sufficient: true
+          revision:
+            summary_replica_count: 1
+            exact_replicas: []
+          system_events:
+            - scope: environment
+              severity: warning
+              reason_class: capacity_unavailable
+              count: 1
+          retry:
+            attempt: 1
+            max_attempts: 3
+          fallback_profiles: []
+          cleanup:
+            application_absent: true
+            environment_retained: true
+            estimated_idle_hourly_cost_usd: 0
+            retention_mode: zero_cost_only
+
+    - name: Capture same-profile retry fact
+      ansible.builtin.set_fact:
+        retry_same_profile: "{{ azure_gpu_diagnostics }}"
+
+    - name: Exercise deployment repair instead of capacity failover
+      ansible.builtin.include_role:
+        name: general_ludd.azure.gpu_deployment_diagnostics
+      vars:
+        azure_gpu_diagnostics_enabled: true
+        azure_gpu_diagnostics_observation:
+          schema_version: 1
+          operation_id: repair-deployment-001
+          region: test-region
+          phases: "{{ common_phases + [{'phase': 'revision_activation', 'status': 'failed', 'duration_seconds': 12}, {'phase': 'cleanup', 'status': 'succeeded', 'duration_seconds': 9}] }}"
+          quota:
+            available: 2
+            requested: 1
+            sufficient: true
+          workload_profile:
+            name: gpu-profile-primary
+            accelerator_kind: nvidia_gpu
+            available: true
+            quota_sufficient: true
+          revision:
+            summary_replica_count: 1
+            exact_replicas:
+              - state: failed
+                ready_containers: 0
+                started_containers: 0
+                restart_count: 1
+                reason_class: image_pull
+          system_events:
+            - scope: application
+              severity: error
+              reason_class: image_pull
+              count: 2
+          retry:
+            attempt: 1
+            max_attempts: 3
+          fallback_profiles: []
+          cleanup:
+            application_absent: true
+            environment_retained: true
+            estimated_idle_hourly_cost_usd: 0
+            retention_mode: zero_cost_only
+
+    - name: Capture deployment-repair fact
+      ansible.builtin.set_fact:
+        repair_deployment: "{{ azure_gpu_diagnostics }}"
+
+    - name: Exercise replica-summary mismatch and empirical failover
+      ansible.builtin.include_role:
+        name: general_ludd.azure.gpu_deployment_diagnostics
+      vars:
+        azure_gpu_diagnostics_enabled: true
+        azure_gpu_diagnostics_write_artifact: true
+        azure_gpu_diagnostics_artifact_dir: "{{ artifact_dir }}"
+        azure_gpu_diagnostics_observation:
+          schema_version: 1
+          operation_id: replica-summary-mismatch-001
+          region: test-region
+          phases: "{{ common_phases + [{'phase': 'revision_activation', 'status': 'failed', 'duration_seconds': 90}, {'phase': 'cleanup', 'status': 'succeeded', 'duration_seconds': 18}] }}"
+          quota:
+            available: 2
+            requested: 1
+            sufficient: true
+          workload_profile:
+            name: gpu-profile-primary
+            accelerator_kind: nvidia_gpu
+            available: true
+            quota_sufficient: true
+          revision:
+            summary_replica_count: 1
+            exact_replicas: []
+          system_events:
+            - scope: application
+              severity: warning
+              reason_class: capacity_unavailable
+              count: 2
+            - scope: environment
+              severity: info
+              reason_class: none
+              count: 14
+          retry:
+            attempt: 3
+            max_attempts: 3
+          fallback_profiles:
+            - name: gpu-profile-fallback
+              accelerator_kind: nvidia_gpu
+              available: true
+              quota_sufficient: true
+              estimated_hourly_cost_usd: 3.5
+          cleanup:
+            application_absent: true
+            environment_retained: true
+            estimated_idle_hourly_cost_usd: 0
+            retention_mode: zero_cost_only
+
+    - name: Capture replica-summary mismatch fact
+      ansible.builtin.set_fact:
+        replica_summary_mismatch: "{{ azure_gpu_diagnostics }}"
+        failover_profile: "{{ azure_gpu_diagnostics.decision.selected_fallback_profile }}"
+
+    - name: Exercise cleanup-required evidence
+      ansible.builtin.include_role:
+        name: general_ludd.azure.gpu_deployment_diagnostics
+      vars:
+        azure_gpu_diagnostics_enabled: true
+        azure_gpu_diagnostics_observation:
+          schema_version: 1
+          operation_id: cleanup-required-001
+          region: test-region
+          phases:
+            - phase: cleanup
+              status: failed
+              duration_seconds: 30
+          quota:
+            available: 1
+            requested: 1
+            sufficient: true
+          workload_profile:
+            name: gpu-profile-primary
+            accelerator_kind: nvidia_gpu
+            available: true
+            quota_sufficient: true
+          revision:
+            summary_replica_count: 0
+            exact_replicas: []
+          system_events: []
+          retry:
+            attempt: 1
+            max_attempts: 1
+          fallback_profiles: []
+          cleanup:
+            application_absent: false
+            environment_retained: true
+            estimated_idle_hourly_cost_usd: 0.5
+            retention_mode: cost_bearing
+
+    - name: Capture cleanup-required fact
+      ansible.builtin.set_fact:
+        cleanup_required: "{{ azure_gpu_diagnostics }}"
+
+    - name: Prove raw provider input is rejected
+      block:
+        - name: Invoke role with a forbidden provider message
+          ansible.builtin.include_role:
+            name: general_ludd.azure.gpu_deployment_diagnostics
+          vars:
+            azure_gpu_diagnostics_enabled: true
+            azure_gpu_diagnostics_observation:
+              schema_version: 1
+              operation_id: raw-input-rejected-001
+              region: test-region
+              phases: []
+              quota: {available: 1, requested: 1, sufficient: true}
+              workload_profile:
+                name: gpu-profile-primary
+                accelerator_kind: nvidia_gpu
+                available: true
+                quota_sufficient: true
+              revision: {summary_replica_count: 0, exact_replicas: []}
+              system_events:
+                - scope: application
+                  severity: error
+                  reason_class: unknown
+                  count: 1
+                  provider_message: forbidden-sensitive-provider-content
+              retry: {attempt: 1, max_attempts: 1}
+              fallback_profiles: []
+              cleanup:
+                application_absent: true
+                environment_retained: false
+                estimated_idle_hourly_cost_usd: 0
+                retention_mode: destroyed
+        - name: Mark unexpected raw input acceptance
+          ansible.builtin.set_fact:
+            raw_input_rejected: false
+      rescue:
+        - name: Mark expected raw input rejection without retaining its value
+          ansible.builtin.set_fact:
+            raw_input_rejected: true
+
+    - name: Persist scenario results for independent verification
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'healthy': healthy,
+            'quota_blocked': quota_blocked,
+            'retry_same_profile': retry_same_profile,
+            'repair_deployment': repair_deployment,
+            'replica_summary_mismatch': replica_summary_mismatch,
+            'failover_profile': failover_profile,
+            'cleanup_required': cleanup_required,
+            'raw_input_rejected': raw_input_rejected
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/molecule-results.json"
+        mode: "0600"

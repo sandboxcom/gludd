@@ -1,0 +1,557 @@
+---
+- name: Require explicit Azure GPU diagnostics opt-in
+  ansible.builtin.assert:
+    that:
+      - azure_gpu_diagnostics_enabled | bool
+      - azure_gpu_diagnostics_observation is mapping
+    fail_msg: >-
+      gpu_deployment_diagnostics requires azure_gpu_diagnostics_enabled=true
+      and one normalized observation mapping.
+
+- name: Define the closed diagnostic schema
+  ansible.builtin.set_fact:
+    _azure_gpu_allowed_observation_keys:
+      - schema_version
+      - operation_id
+      - region
+      - phases
+      - quota
+      - workload_profile
+      - revision
+      - system_events
+      - retry
+      - fallback_profiles
+      - cleanup
+    _azure_gpu_required_observation_keys:
+      - schema_version
+      - operation_id
+      - region
+      - phases
+      - quota
+      - workload_profile
+      - revision
+      - system_events
+      - retry
+      - fallback_profiles
+      - cleanup
+    _azure_gpu_allowed_phase_keys: [phase, status, duration_seconds]
+    _azure_gpu_allowed_quota_keys: [available, requested, sufficient]
+    _azure_gpu_allowed_profile_keys:
+      - name
+      - accelerator_kind
+      - available
+      - quota_sufficient
+    _azure_gpu_allowed_revision_keys:
+      - summary_replica_count
+      - exact_replicas
+    _azure_gpu_allowed_replica_keys:
+      - state
+      - ready_containers
+      - started_containers
+      - restart_count
+      - reason_class
+    _azure_gpu_allowed_event_keys: [scope, severity, reason_class, count]
+    _azure_gpu_allowed_retry_keys: [attempt, max_attempts]
+    _azure_gpu_allowed_fallback_keys:
+      - name
+      - accelerator_kind
+      - available
+      - quota_sufficient
+      - estimated_hourly_cost_usd
+    _azure_gpu_allowed_cleanup_keys:
+      - application_absent
+      - environment_retained
+      - estimated_idle_hourly_cost_usd
+      - retention_mode
+    _azure_gpu_forbidden_keys:
+      - provider_message
+      - raw_message
+      - credential
+      - credentials
+      - access_token
+      - token
+      - secret
+      - prompt
+    _azure_gpu_phase_names:
+      - bootstrap
+      - preflight
+      - environment_apply
+      - application_apply
+      - revision_activation
+      - replica_inventory
+      - inference_probe
+      - cleanup
+      - complete
+    _azure_gpu_phase_statuses: [pending, running, succeeded, failed, skipped]
+    _azure_gpu_reason_classes:
+      - none
+      - quota_exhausted
+      - capacity_unavailable
+      - platform_scheduling
+      - image_pull
+      - container_crash
+      - startup_probe_failed
+      - readiness_probe_failed
+      - oom
+      - gpu_unavailable
+      - driver_incompatible
+      - identity_or_registry
+      - unknown
+    _azure_gpu_reason_priority:
+      - quota_exhausted
+      - identity_or_registry
+      - image_pull
+      - driver_incompatible
+      - gpu_unavailable
+      - oom
+      - container_crash
+      - startup_probe_failed
+      - readiness_probe_failed
+      - capacity_unavailable
+      - platform_scheduling
+      - unknown
+    _azure_gpu_transient_reasons:
+      - capacity_unavailable
+      - platform_scheduling
+      - unknown
+    _azure_gpu_deployment_repair_reasons:
+      - identity_or_registry
+      - image_pull
+      - driver_incompatible
+      - gpu_unavailable
+      - oom
+      - container_crash
+      - startup_probe_failed
+      - readiness_probe_failed
+
+- name: Reject unknown or sensitive top-level observation fields
+  ansible.builtin.assert:
+    that:
+      - >-
+        azure_gpu_diagnostics_observation.keys() | list |
+        difference(_azure_gpu_allowed_observation_keys) | length == 0
+      - >-
+        _azure_gpu_required_observation_keys |
+        difference(azure_gpu_diagnostics_observation.keys() | list) | length == 0
+      - >-
+        _azure_gpu_forbidden_keys |
+        intersect(azure_gpu_diagnostics_observation.keys() | list) | length == 0
+      - azure_gpu_diagnostics_observation.schema_version | int == 1
+      - >-
+        azure_gpu_diagnostics_observation.operation_id is
+        match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
+      - >-
+        azure_gpu_diagnostics_observation.region is
+        match('^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
+    fail_msg: >-
+      Observation must match sanitized schema version 1; raw provider output,
+      credentials, tokens, secrets, and prompts are not accepted.
+
+- name: Extract normalized diagnostic sections
+  ansible.builtin.set_fact:
+    _azure_gpu_phases: "{{ azure_gpu_diagnostics_observation.phases }}"
+    _azure_gpu_quota: "{{ azure_gpu_diagnostics_observation.quota }}"
+    _azure_gpu_profile: "{{ azure_gpu_diagnostics_observation.workload_profile }}"
+    _azure_gpu_revision: "{{ azure_gpu_diagnostics_observation.revision }}"
+    _azure_gpu_events: "{{ azure_gpu_diagnostics_observation.system_events }}"
+    _azure_gpu_retry: "{{ azure_gpu_diagnostics_observation.retry }}"
+    _azure_gpu_fallback_profiles: >-
+      {{ azure_gpu_diagnostics_observation.fallback_profiles }}
+    _azure_gpu_cleanup: "{{ azure_gpu_diagnostics_observation.cleanup }}"
+  no_log: true
+
+- name: Validate normalized section types and keys
+  ansible.builtin.assert:
+    that:
+      - _azure_gpu_phases is sequence
+      - _azure_gpu_phases is not string
+      - _azure_gpu_quota is mapping
+      - >-
+        _azure_gpu_quota.keys() | list |
+        difference(_azure_gpu_allowed_quota_keys) | length == 0
+      - >-
+        _azure_gpu_allowed_quota_keys |
+        difference(_azure_gpu_quota.keys() | list) | length == 0
+      - _azure_gpu_profile is mapping
+      - >-
+        _azure_gpu_profile.keys() | list |
+        difference(_azure_gpu_allowed_profile_keys) | length == 0
+      - >-
+        _azure_gpu_allowed_profile_keys |
+        difference(_azure_gpu_profile.keys() | list) | length == 0
+      - _azure_gpu_revision is mapping
+      - >-
+        _azure_gpu_revision.keys() | list |
+        difference(_azure_gpu_allowed_revision_keys) | length == 0
+      - >-
+        _azure_gpu_allowed_revision_keys |
+        difference(_azure_gpu_revision.keys() | list) | length == 0
+      - _azure_gpu_events is sequence
+      - _azure_gpu_events is not string
+      - _azure_gpu_retry is mapping
+      - >-
+        _azure_gpu_retry.keys() | list |
+        difference(_azure_gpu_allowed_retry_keys) | length == 0
+      - >-
+        _azure_gpu_allowed_retry_keys |
+        difference(_azure_gpu_retry.keys() | list) | length == 0
+      - _azure_gpu_fallback_profiles is sequence
+      - _azure_gpu_fallback_profiles is not string
+      - _azure_gpu_cleanup is mapping
+      - >-
+        _azure_gpu_cleanup.keys() | list |
+        difference(_azure_gpu_allowed_cleanup_keys) | length == 0
+      - >-
+        _azure_gpu_allowed_cleanup_keys |
+        difference(_azure_gpu_cleanup.keys() | list) | length == 0
+    fail_msg: "Every diagnostic section must use only its documented keys."
+
+- name: Validate scalar preflight retry and cleanup facts
+  ansible.builtin.assert:
+    that:
+      - _azure_gpu_quota.available is number
+      - _azure_gpu_quota.available | float >= 0
+      - _azure_gpu_quota.requested is number
+      - _azure_gpu_quota.requested | float >= 0
+      - _azure_gpu_quota.sufficient is boolean
+      - _azure_gpu_profile.name is match('^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+      - >-
+        _azure_gpu_profile.accelerator_kind is
+        match('^[a-z0-9][a-z0-9._-]{0,63}$')
+      - _azure_gpu_profile.available is boolean
+      - _azure_gpu_profile.quota_sufficient is boolean
+      - _azure_gpu_revision.summary_replica_count is number
+      - _azure_gpu_revision.summary_replica_count | int >= 0
+      - _azure_gpu_revision.exact_replicas is sequence
+      - _azure_gpu_revision.exact_replicas is not string
+      - _azure_gpu_retry.attempt is number
+      - _azure_gpu_retry.attempt | int >= 1
+      - _azure_gpu_retry.max_attempts is number
+      - _azure_gpu_retry.max_attempts | int >= 1
+      - _azure_gpu_retry.attempt | int <= _azure_gpu_retry.max_attempts | int
+      - _azure_gpu_cleanup.application_absent is boolean
+      - _azure_gpu_cleanup.environment_retained is boolean
+      - _azure_gpu_cleanup.estimated_idle_hourly_cost_usd is number
+      - _azure_gpu_cleanup.estimated_idle_hourly_cost_usd | float >= 0
+      - >-
+        _azure_gpu_cleanup.retention_mode in
+        ['destroyed', 'zero_cost_only', 'cost_bearing', 'none']
+      - >-
+        not (azure_gpu_diagnostics_write_artifact | bool) or
+        azure_gpu_diagnostics_artifact_dir is
+        match('^/tmp/gludd-[A-Za-z0-9._/-]+$')
+    fail_msg: "Diagnostic scalar values are missing, unsafe, or out of bounds."
+
+- name: Validate every sanitized phase marker
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - >-
+        item.keys() | list |
+        difference(_azure_gpu_allowed_phase_keys) | length == 0
+      - >-
+        _azure_gpu_allowed_phase_keys |
+        difference(item.keys() | list) | length == 0
+      - item.phase in _azure_gpu_phase_names
+      - item.status in _azure_gpu_phase_statuses
+      - item.duration_seconds is number
+      - item.duration_seconds | float >= 0
+    fail_msg: "Phase markers accept only phase, status, and duration_seconds."
+  loop: "{{ _azure_gpu_phases }}"
+  loop_control:
+    label: "{{ item.phase | default('invalid') }}"
+  no_log: true
+
+- name: Validate every exact replica observation
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - >-
+        item.keys() | list |
+        difference(_azure_gpu_allowed_replica_keys) | length == 0
+      - >-
+        _azure_gpu_allowed_replica_keys |
+        difference(item.keys() | list) | length == 0
+      - item.state in ['pending', 'running', 'not_running', 'failed', 'unknown']
+      - item.ready_containers is number
+      - item.ready_containers | int >= 0
+      - item.started_containers is number
+      - item.started_containers | int >= 0
+      - item.restart_count is number
+      - item.restart_count | int >= 0
+      - item.reason_class in _azure_gpu_reason_classes
+    fail_msg: "Exact replica facts contain unknown or unsafe fields."
+  loop: "{{ _azure_gpu_revision.exact_replicas }}"
+  loop_control:
+    label: "exact-replica-{{ ansible_loop.index }}"
+    extended: true
+  no_log: true
+
+- name: Validate every normalized system event aggregate
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - >-
+        item.keys() | list |
+        difference(_azure_gpu_allowed_event_keys) | length == 0
+      - >-
+        _azure_gpu_allowed_event_keys |
+        difference(item.keys() | list) | length == 0
+      - _azure_gpu_forbidden_keys | intersect(item.keys() | list) | length == 0
+      - item.scope in ['application', 'environment', 'revision']
+      - item.severity in ['info', 'warning', 'error']
+      - item.reason_class in _azure_gpu_reason_classes
+      - item.count is number
+      - item.count | int >= 1
+    fail_msg: >-
+      System events must be bounded aggregates; raw provider messages and
+      credentials are forbidden.
+  loop: "{{ _azure_gpu_events }}"
+  loop_control:
+    label: "{{ item.scope | default('invalid') }}"
+  no_log: true
+
+- name: Validate every policy-approved fallback profile
+  ansible.builtin.assert:
+    that:
+      - item is mapping
+      - >-
+        item.keys() | list |
+        difference(_azure_gpu_allowed_fallback_keys) | length == 0
+      - >-
+        _azure_gpu_allowed_fallback_keys |
+        difference(item.keys() | list) | length == 0
+      - item.name is match('^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+      - item.accelerator_kind is match('^[a-z0-9][a-z0-9._-]{0,63}$')
+      - item.available is boolean
+      - item.quota_sufficient is boolean
+      - item.estimated_hourly_cost_usd is number
+      - item.estimated_hourly_cost_usd | float >= 0
+    fail_msg: "Fallback profiles must be sanitized, available policy facts."
+  loop: "{{ _azure_gpu_fallback_profiles }}"
+  loop_control:
+    label: "{{ item.name | default('invalid') }}"
+  no_log: true
+
+- name: Emit sanitized phase progress markers
+  ansible.builtin.debug:
+    msg:
+      event: azure_gpu_diagnostics_phase
+      phase: "{{ item.phase }}"
+      status: "{{ item.status }}"
+      duration_seconds: "{{ item.duration_seconds | float }}"
+  loop: "{{ _azure_gpu_phases }}"
+  loop_control:
+    label: "{{ item.phase }}"
+
+- name: Aggregate exact replica and system event facts
+  ansible.builtin.set_fact:
+    _azure_gpu_exact_replica_count: >-
+      {{ _azure_gpu_revision.exact_replicas | length }}
+    _azure_gpu_ready_container_count: >-
+      {{ _azure_gpu_revision.exact_replicas |
+         map(attribute='ready_containers') | map('int') | sum }}
+    _azure_gpu_started_container_count: >-
+      {{ _azure_gpu_revision.exact_replicas |
+         map(attribute='started_containers') | map('int') | sum }}
+    _azure_gpu_restart_count: >-
+      {{ _azure_gpu_revision.exact_replicas |
+         map(attribute='restart_count') | map('int') | sum }}
+    _azure_gpu_observed_reasons: >-
+      {{
+        (_azure_gpu_events | map(attribute='reason_class') | list) +
+        (_azure_gpu_revision.exact_replicas |
+         map(attribute='reason_class') | list) +
+        ((_azure_gpu_quota.sufficient | bool) |
+         ternary([], ['quota_exhausted'])) +
+        ((_azure_gpu_profile.available | bool) |
+         ternary([], ['capacity_unavailable']))
+      }}
+    _azure_gpu_viable_fallbacks: >-
+      {{ _azure_gpu_fallback_profiles |
+         selectattr('available', 'equalto', true) |
+         selectattr('quota_sufficient', 'equalto', true) | list }}
+    _azure_gpu_inference_succeeded: >-
+      {{ _azure_gpu_phases |
+         selectattr('phase', 'equalto', 'inference_probe') |
+         selectattr('status', 'equalto', 'succeeded') | list | length > 0 }}
+
+- name: Classify replica consistency reason and cleanup state
+  ansible.builtin.set_fact:
+    _azure_gpu_replica_summary_mismatch: >-
+      {{ _azure_gpu_revision.summary_replica_count | int !=
+         _azure_gpu_exact_replica_count | int }}
+    _azure_gpu_primary_reason: >-
+      {{ (_azure_gpu_reason_priority |
+          select('in', _azure_gpu_observed_reasons) | list | first) |
+         default('none', true) }}
+    _azure_gpu_exact_replica_ready: >-
+      {{ _azure_gpu_exact_replica_count | int > 0 and
+         _azure_gpu_ready_container_count | int > 0 and
+         _azure_gpu_started_container_count | int > 0 }}
+    _azure_gpu_cleanup_cost_bearing: >-
+      {{ _azure_gpu_cleanup.environment_retained | bool and
+         _azure_gpu_cleanup.estimated_idle_hourly_cost_usd | float > 0 }}
+    _azure_gpu_cleanup_verdict: >-
+      {%- if not (_azure_gpu_cleanup.application_absent | bool) -%}
+      cleanup_required
+      {%- elif _azure_gpu_cleanup.environment_retained | bool and
+                _azure_gpu_cleanup.estimated_idle_hourly_cost_usd | float > 0 -%}
+      cleanup_required
+      {%- elif _azure_gpu_cleanup.environment_retained | bool and
+                _azure_gpu_cleanup.retention_mode == 'zero_cost_only' -%}
+      zero_cost_retained
+      {%- elif not (_azure_gpu_cleanup.environment_retained | bool) -%}
+      destroyed
+      {%- else -%}
+      cleanup_required
+      {%- endif -%}
+
+- name: Derive effective reason decision and model-evidence attribution
+  ansible.builtin.set_fact:
+    _azure_gpu_effective_reason: >-
+      {%- if _azure_gpu_primary_reason != 'none' -%}
+      {{ _azure_gpu_primary_reason }}
+      {%- elif _azure_gpu_replica_summary_mismatch | bool or
+                not (_azure_gpu_exact_replica_ready | bool) -%}
+      unknown
+      {%- else -%}
+      none
+      {%- endif -%}
+    _azure_gpu_selected_fallback_profile: >-
+      {{ (_azure_gpu_viable_fallbacks |
+          map(attribute='name') | list | first) | default('', true) }}
+    _azure_gpu_quality_evidence_action: >-
+      {%- if _azure_gpu_inference_succeeded | bool and
+                _azure_gpu_exact_replica_ready | bool -%}
+      record_success
+      {%- elif _azure_gpu_primary_reason in _azure_gpu_transient_reasons or
+                _azure_gpu_primary_reason == 'quota_exhausted' or
+                not (_azure_gpu_exact_replica_ready | bool) -%}
+      censor_model_score
+      {%- else -%}
+      separate_model_evaluation_required
+      {%- endif -%}
+
+- name: Derive bounded next action and overall status
+  ansible.builtin.set_fact:
+    _azure_gpu_decision_action: >-
+      {%- if _azure_gpu_cleanup_verdict == 'cleanup_required' -%}
+      cleanup_owned_resources
+      {%- elif not (_azure_gpu_quota.sufficient | bool) or
+                not (_azure_gpu_profile.quota_sufficient | bool) -%}
+      request_quota
+      {%- elif not (_azure_gpu_profile.available | bool) and
+                _azure_gpu_viable_fallbacks | length > 0 -%}
+      failover_profile
+      {%- elif not (_azure_gpu_profile.available | bool) -%}
+      wait_for_capacity
+      {%- elif _azure_gpu_inference_succeeded | bool and
+                _azure_gpu_exact_replica_ready | bool -%}
+      use_deployment
+      {%- elif _azure_gpu_effective_reason in
+                _azure_gpu_deployment_repair_reasons -%}
+      repair_deployment
+      {%- elif _azure_gpu_effective_reason in _azure_gpu_transient_reasons and
+                _azure_gpu_retry.attempt | int <
+                _azure_gpu_retry.max_attempts | int -%}
+      retry_same_profile
+      {%- elif _azure_gpu_effective_reason in _azure_gpu_transient_reasons and
+                _azure_gpu_viable_fallbacks | length > 0 -%}
+      failover_profile
+      {%- elif _azure_gpu_effective_reason in _azure_gpu_transient_reasons -%}
+      wait_for_capacity
+      {%- else -%}
+      inspect_sanitized_evidence
+      {%- endif -%}
+    _azure_gpu_status: >-
+      {%- if _azure_gpu_cleanup_verdict == 'cleanup_required' -%}
+      cleanup_required
+      {%- elif _azure_gpu_inference_succeeded | bool and
+                _azure_gpu_exact_replica_ready | bool -%}
+      ready
+      {%- elif not (_azure_gpu_quota.sufficient | bool) or
+                not (_azure_gpu_profile.quota_sufficient | bool) or
+                not (_azure_gpu_profile.available | bool) -%}
+      blocked
+      {%- else -%}
+      degraded
+      {%- endif -%}
+
+- name: Publish sanitized Azure GPU diagnostic fact
+  ansible.builtin.set_fact:
+    azure_gpu_diagnostics:
+      schema_version: 1
+      operation_id: "{{ azure_gpu_diagnostics_observation.operation_id }}"
+      region: "{{ azure_gpu_diagnostics_observation.region }}"
+      status: "{{ _azure_gpu_status }}"
+      phase_markers: "{{ _azure_gpu_phases }}"
+      preflight:
+        quota_available: "{{ _azure_gpu_quota.available | float }}"
+        quota_requested: "{{ _azure_gpu_quota.requested | float }}"
+        quota_sufficient: "{{ _azure_gpu_quota.sufficient | bool }}"
+        workload_profile: "{{ _azure_gpu_profile.name }}"
+        accelerator_kind: "{{ _azure_gpu_profile.accelerator_kind }}"
+        profile_available: "{{ _azure_gpu_profile.available | bool }}"
+      replica_inventory:
+        summary_replica_count: >-
+          {{ _azure_gpu_revision.summary_replica_count | int }}
+        exact_replica_count: "{{ _azure_gpu_exact_replica_count | int }}"
+        ready_container_count: "{{ _azure_gpu_ready_container_count | int }}"
+        started_container_count: >-
+          {{ _azure_gpu_started_container_count | int }}
+        restart_count: "{{ _azure_gpu_restart_count | int }}"
+        summary_matches_exact: >-
+          {{ not (_azure_gpu_replica_summary_mismatch | bool) }}
+      system_event_aggregates: "{{ _azure_gpu_events }}"
+      decision:
+        action: "{{ _azure_gpu_decision_action }}"
+        reason_class: "{{ _azure_gpu_effective_reason }}"
+        retry_attempt: "{{ _azure_gpu_retry.attempt | int }}"
+        retry_limit: "{{ _azure_gpu_retry.max_attempts | int }}"
+        selected_fallback_profile: >-
+          {{ _azure_gpu_selected_fallback_profile }}
+        attribution: >-
+          {{ (_azure_gpu_quality_evidence_action == 'record_success') |
+             ternary('model_observation', 'infrastructure_or_unknown') }}
+        quality_evidence_action: >-
+          {{ _azure_gpu_quality_evidence_action }}
+      cleanup:
+        application_absent: >-
+          {{ _azure_gpu_cleanup.application_absent | bool }}
+        environment_retained: >-
+          {{ _azure_gpu_cleanup.environment_retained | bool }}
+        estimated_idle_hourly_cost_usd: >-
+          {{ _azure_gpu_cleanup.estimated_idle_hourly_cost_usd | float }}
+        retention_mode: "{{ _azure_gpu_cleanup.retention_mode }}"
+        cost_bearing: "{{ _azure_gpu_cleanup_cost_bearing | bool }}"
+        verdict: "{{ _azure_gpu_cleanup_verdict }}"
+      artifact_path: >-
+        {{ (azure_gpu_diagnostics_write_artifact | bool) |
+           ternary(azure_gpu_diagnostics_artifact_dir ~
+                   '/azure_gpu_diagnostics.json', '') }}
+
+- name: Emit sanitized diagnostic decision marker
+  ansible.builtin.debug:
+    msg:
+      event: azure_gpu_diagnostics_decision
+      status: "{{ azure_gpu_diagnostics.status }}"
+      action: "{{ azure_gpu_diagnostics.decision.action }}"
+      reason_class: "{{ azure_gpu_diagnostics.decision.reason_class }}"
+      exact_replica_count: >-
+        {{ azure_gpu_diagnostics.replica_inventory.exact_replica_count }}
+      cleanup_verdict: "{{ azure_gpu_diagnostics.cleanup.verdict }}"
+
+- name: Create namespaced diagnostic artifact directory
+  ansible.builtin.file:
+    path: "{{ azure_gpu_diagnostics_artifact_dir }}"
+    state: directory
+    mode: "0700"
+  when: azure_gpu_diagnostics_write_artifact | bool
+
+- name: Write sanitized diagnostic artifact
+  ansible.builtin.copy:
+    content: "{{ azure_gpu_diagnostics | to_nice_json }}\n"
+    dest: "{{ azure_gpu_diagnostics_artifact_dir }}/azure_gpu_diagnostics.json"
+    mode: "0600"
+  when: azure_gpu_diagnostics_write_artifact | bool
