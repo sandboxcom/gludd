@@ -1431,6 +1431,12 @@ check-duplicate-code:
 		--current-ref "$(DUPLICATE_CODE_CURRENT_REF)" \
 		$(if $(filter 1,$(DUPLICATE_CODE_VALIDATE_ONLY)),--validate-only,)
 
+# Bind the selected runner before recursive -e can re-export an ambient UV.
+check-duplicate-code: override UV := $(UV)
+test-count: override UV := $(UV)
+check-duplicate-code: override MAKEFLAGS = $(MFLAGS) -- $(MAKEOVERRIDES)
+test-count: override MAKEFLAGS = $(MFLAGS) -- $(MAKEOVERRIDES)
+
 split-makefile-layout:
 	@case "$(MAKEFILE_SPLIT_APPLY)" in 0|1) ;; *) echo "MAKEFILE_SPLIT_APPLY must be 0 or 1"; exit 2;; esac
 	@$(UV) run python -m scripts.split_makefile --entrypoint "$(CURDIR)/Makefile" $(if $(filter 1,$(MAKEFILE_SPLIT_APPLY)),--apply,)

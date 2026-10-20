@@ -14,52 +14,74 @@ from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 PHASES = (
-    "disk-cleanup-preflight", "gate-admission-config", "check-task-registration",
-    "check-task-integrity", "check-gate-failure-promotions",
-    "check-resource-ownership", "check-test-env-writes", "test-files",
+    "disk-cleanup-preflight",
+    "gate-admission-config",
+    "check-task-registration",
+    "check-task-integrity",
+    "check-gate-failure-promotions",
+    "check-resource-ownership",
+    "check-test-env-writes",
+    "test-files",
     "_pytest-runtime-compatibility-admission",
 )
 
 
-def _recipe() -> str:
-    source = compose_makefile(ROOT / "Makefile")
+def _recipe(source: str | None = None) -> str:
+    if source is None:
+        source = compose_makefile(ROOT / "Makefile")
     marker = "\nrelease-proof-admission:\n"
     assert marker in source, "Missing final-proof admission owner"
     return source.split(marker, 1)[1].split("\n\n", 1)[0]
 
 
 def _run(
-    tmp_path: Path, *, mode: str = "0", failed_phase: str = "",
-    claimed_head: str = "a" * 40, native_focus: bool = False, task: str = "",
+    tmp_path: Path,
+    *,
+    mode: str = "0",
+    failed_phase: str = "",
+    claimed_head: str = "a" * 40,
+    native_focus: bool = False,
+    task: str = "",
 ) -> subprocess.CompletedProcess[str]:
     targets = "".join(
         f"{phase}:\n\t@printf '%s\\n' '{phase}' >> phases.log\n"
         f"\t@test '{phase}' != '$(FAILED_PHASE)'\n"
         + (
             "\t@printf '%s\\n' '$(TESTFILES)' '$(PYTEST_ARGS)' > source-contract-selection\n"
-            if phase == "test-files" else ""
+            if phase == "test-files"
+            else ""
         )
         for phase in PHASES
     )
     uv = "true"
-    recipe = _recipe()
+    source = compose_makefile(ROOT / "Makefile")
+    recipe = _recipe(source)
+    binding = "\n".join(
+        line for line in source.splitlines()
+        if line.startswith("release-proof-admission: override UV :=")
+    )
     if native_focus:
         selected_uv = tmp_path / "selected-uv"
         selected_uv.write_text(
             '#!/bin/sh\n[ "$1" = run ] || exit 91\nshift\n'
             '[ "$1" = python ] || exit 92\nshift\n'
-            f'exec {shlex.quote(sys.executable)} "$@"\n', encoding="utf-8",
+            f'exec {shlex.quote(sys.executable)} "$@"\n',
+            encoding="utf-8",
         )
         selected_uv.chmod(0o700)
         uv = shlex.quote(str(selected_uv))
         recipe = recipe.replace("scripts/item_progress.py", str(ROOT / "scripts/item_progress.py"))
         (tmp_path / "TASKS.md").write_text(
-            "v0.12.0 milestone is the exact task set F12.1-F12.3\n"
-            "- [ ] F12.1 — primary | status: pending\n", encoding="utf-8",
+            "v0.12.0 milestone is the exact task set F12.1-F12.3\n- [ ] F12.1 — primary | status: pending\n",
+            encoding="utf-8",
         )
     (tmp_path / "Makefile").write_text(
         f"RELEASE_PROOF_ADMISSION_VALIDATE_ONLY ?= 0\nUV := {uv}\n"
-        + "release-proof-admission:\n" + recipe + "\n\n" + targets
+        + binding + "\n\n"
+        + "release-proof-admission:\n"
+        + recipe
+        + "\n\n"
+        + targets
         + "\nrun-watched:\n\t@printf '%s\\n' '$(CMD)' '$(MAX_SECS)' '$(STALL_SECS)' "
         "'$(OBSERVED_HEARTBEAT_SECS)' > runtime-watch\n\t@$(CMD)\n",
         encoding="utf-8",
@@ -67,13 +89,23 @@ def _run(
     selected_make = shutil.which("make")
     assert selected_make is not None
     return subprocess.run(
-        [selected_make, "--no-print-directory", f"MAKE={selected_make}", "release-proof-admission",
-         f"RELEASE_PROOF_ADMISSION_VALIDATE_ONLY={mode}",
-         f"FAILED_PHASE={failed_phase}", f"CLAIMED_HEAD={claimed_head}", f"WORK_ITEM_ID={task}",
-         f"UV={uv}"],
-        cwd=tmp_path, capture_output=True, text=True, check=False, timeout=30,
+        [
+            selected_make,
+            "--no-print-directory",
+            f"MAKE={selected_make}",
+            "release-proof-admission",
+            f"RELEASE_PROOF_ADMISSION_VALIDATE_ONLY={mode}",
+            f"FAILED_PHASE={failed_phase}",
+            f"CLAIMED_HEAD={claimed_head}",
+            f"WORK_ITEM_ID={task}",
+            f"UV={uv}",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
     )
-
 
 
 def test_runtime_admission_uses_original_selected_runtime_and_native_ninety_sixty_owner(
@@ -93,7 +125,6 @@ def test_runtime_admission_uses_original_selected_runtime_and_native_ninety_sixt
     assert "sync " not in owner and "install " not in owner
 
 
-
 @pytest.mark.parametrize("task", ["", "not-an-active-task", "F12.1"])
 def test_runtime_prepares_real_focus_before_any_watched_child(tmp_path: Path, task: str) -> None:
     result = _run(tmp_path, native_focus=True, task=task)
@@ -110,11 +141,12 @@ def test_runtime_prepares_real_focus_before_any_watched_child(tmp_path: Path, ta
         assert "PROOF-ADMISSION-BLOCKED phase=_pytest-runtime-compatibility-admission" in result.stdout
 
 
-
 @pytest.mark.parametrize("owner", ["release-proof-admission", "gate-resume"])
 @pytest.mark.parametrize("syntax", ["make-function", "shell-substitution", "backticks", "quotes"])
 def test_plan_refuses_literal_task_injection_without_evaluation_or_children(
-    tmp_path: Path, owner: str, syntax: str,
+    tmp_path: Path,
+    owner: str,
+    syntax: str,
 ) -> None:
     tripwire = tmp_path / "literal-task-evaluated"
     values = {
@@ -125,19 +157,35 @@ def test_plan_refuses_literal_task_injection_without_evaluation_or_children(
     }
     (tmp_path / "pyproject.toml").write_bytes((ROOT / "pyproject.toml").read_bytes())
     result = subprocess.run(
-        ["make", "-I", str(ROOT), "-f", str(ROOT / "Makefile"), owner,
-         "RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=1", "GATE_BACKGROUND_VALIDATE_ONLY=1",
-         "GATE_TEST_PROFILE=release", "GATE_MAX_FILES_PER_BATCH=16", "GATE_BATCH_WORKERS=1",
-         "PYTEST_CMD=", "PYTEST_ARGS=", "PYTEST_ADDOPTS=", "MYPY_MAX=0",
-         f"WORK_ITEM_ID={values[syntax]}"],
-        cwd=tmp_path, check=False, capture_output=True, text=True, timeout=20,
+        [
+            "make",
+            "-I",
+            str(ROOT),
+            "-f",
+            str(ROOT / "Makefile"),
+            owner,
+            "RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=1",
+            "GATE_BACKGROUND_VALIDATE_ONLY=1",
+            "GATE_TEST_PROFILE=release",
+            "GATE_MAX_FILES_PER_BATCH=16",
+            "GATE_BATCH_WORKERS=1",
+            "PYTEST_CMD=",
+            "PYTEST_ARGS=",
+            "PYTEST_ADDOPTS=",
+            "MYPY_MAX=0",
+            f"WORK_ITEM_ID={values[syntax]}",
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
     )
     assert not tripwire.exists(), result.stdout + result.stderr
     assert result.returncode != 0
     assert "WORK_ITEM_ID" in result.stdout + result.stderr
     assert not (tmp_path / ".gate-logs").exists()
     assert not (tmp_path / ".gludd").exists()
-
 
 
 def test_facade_contract_does_not_advertise_the_fixed_runtime_heartbeat() -> None:
@@ -176,13 +224,12 @@ def test_invalid_mode_stops_before_any_owner(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("failed_phase", PHASES)
 def test_failed_owner_stops_later_work_without_proof_or_success(
-    tmp_path: Path, failed_phase: str,
+    tmp_path: Path,
+    failed_phase: str,
 ) -> None:
     result = _run(tmp_path, failed_phase=failed_phase)
     assert result.returncode != 0
-    assert (tmp_path / "phases.log").read_text().splitlines() == list(
-        PHASES[:PHASES.index(failed_phase) + 1]
-    )
+    assert (tmp_path / "phases.log").read_text().splitlines() == list(PHASES[: PHASES.index(failed_phase) + 1])
     assert f"PROOF-ADMISSION-BLOCKED phase={failed_phase}" in result.stdout
     assert "PROOF-ADMISSION-PASS" not in result.stdout
     assert not (tmp_path / ".gate-status").exists()
@@ -211,14 +258,16 @@ def test_pass_runs_all_owners_in_order_but_is_not_release_proof(tmp_path: Path) 
 @pytest.mark.parametrize("native_focus", (False, True))
 @pytest.mark.parametrize("mutation", ("owned", "omitted", "opposite"))
 def test_admission_probe_owns_selected_uv_through_real_recursive_make(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_focus: bool, mutation: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    native_focus: bool,
+    mutation: str,
 ) -> None:
     """The original focus/phase assertions must detect ambient UV execution."""
     tripwire = tmp_path / "ambient-uv-ran"
-    poison = tmp_path / "ambient recorder.py"
+    poison = tmp_path / "ambient_recorder.py"
     poison.write_text(
-        "from pathlib import Path\n"
-        f"Path({str(tripwire)!r}).write_text('ambient UV')\nraise SystemExit(86)\n",
+        f"from pathlib import Path\nPath({str(tripwire)!r}).write_text('ambient UV')\nraise SystemExit(86)\n",
         encoding="utf-8",
     )
     ambient_uv = f"{shlex.quote(sys.executable)} {shlex.quote(str(poison))}"
@@ -227,8 +276,13 @@ def test_admission_probe_owns_selected_uv_through_real_recursive_make(
     invocations: list[list[str]] = []
 
     def execute(
-        arguments: list[str], *, cwd: Path, capture_output: bool, text: bool,
-        check: bool, timeout: int,
+        arguments: list[str],
+        *,
+        cwd: Path,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+        timeout: int,
     ) -> subprocess.CompletedProcess[str]:
         assert capture_output and text and not check and timeout == 30
         command = arguments.copy()
@@ -243,12 +297,25 @@ def test_admission_probe_owns_selected_uv_through_real_recursive_make(
         literal_arguments = shlex.join(command[1:]).replace("$", "$$")
         carrier.write_text(f"all:\n\t@$(MAKE) {literal_arguments}\n", encoding="utf-8")
         environment = inherited.copy()
+        environment.pop("MAKEFLAGS", None)
+        environment.pop("MAKEOVERRIDES", None)
         environment["UV"] = ambient_uv
         return native_run(
-            [arguments[0], "--no-print-directory", *(["-e"] if not native_focus else []),
-             "-f", str(carrier), f"MAKE={arguments[0]}", f"UV={ambient_uv}"],
-            cwd=cwd, env=environment, capture_output=True, text=True,
-            check=False, timeout=30,
+            [
+                arguments[0],
+                "--no-print-directory",
+                *(["-e"] if not native_focus else []),
+                "-f",
+                str(carrier),
+                f"MAKE={arguments[0]}",
+                f"UV={ambient_uv}",
+            ],
+            cwd=cwd,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
         )
 
     def original_probe() -> None:
@@ -272,6 +339,29 @@ def test_admission_probe_owns_selected_uv_through_real_recursive_make(
         assert tripwire.exists()
     assert subprocess.run is native_run
     assert os.environ == inherited
+
+
+@pytest.mark.parametrize("binding", ["missing", "opposite"])
+def test_admission_probe_cannot_invent_production_runner_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, binding: str,
+) -> None:
+    """Removing the real Make binding must invalidate the original positive probe."""
+    native_compose = compose_makefile
+    declaration = "release-proof-admission: override UV := $(UV)"
+
+    def changed_source(path: Path) -> str:
+        source = native_compose(path)
+        assert source.count(declaration) == 1
+        replacement = "" if binding == "missing" else "release-proof-admission: override UV := false"
+        return source.replace(declaration, replacement)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(sys.modules[__name__], "compose_makefile", changed_source)
+        with pytest.raises(AssertionError):
+            test_admission_probe_owns_selected_uv_through_real_recursive_make(
+                tmp_path, scoped, native_focus=False, mutation="owned",
+            )
+
 
 def test_source_contract_admission_keeps_original_nodes_and_warning_policy(tmp_path: Path) -> None:
     result = _run(tmp_path)

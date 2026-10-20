@@ -452,6 +452,8 @@ endif
 # Scheduling admission only: existing owners remain the policy authorities.
 # Do not seal/replay a candidate or start a full gate while this is blocked.
 .PHONY: release-proof-admission
+release-proof-admission: override UV := $(UV)
+
 release-proof-admission:
 	@WORK_TASK='$(subst ','"'"',$(value WORK_ITEM_ID))'; \
 	case "$$WORK_TASK" in *[!A-Za-z0-9._-]*) echo "ERROR: WORK_ITEM_ID must be literal task data"; echo "PROOF-ADMISSION-BLOCKED phase=release-proof-admission rc=2"; exit 2;; esac; \

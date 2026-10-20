@@ -191,6 +191,8 @@ def test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_c
     canary = f"keep  two spaces DUPLICATE_CODE_ENGINE={engine} remain  exact"
     environment = os.environ.copy()
     environment.pop("DUPLICATE_CODE_ENGINE", None)
+    environment.pop("MAKEFLAGS", None)
+    environment.pop("MAKEOVERRIDES", None)
     result = subprocess.run(
         [
             "make", "--no-print-directory", "--keep-going", "-f", str(makefile),
@@ -208,7 +210,7 @@ def test_native_make_owns_engine_arguments_without_exporting_them_to_unrelated_c
     assert arguments[1:4] == ["run", "python", "scripts/check_duplicate_code.py"]
     assert arguments[arguments.index("--engine") + 1] == engine
     assert arguments[-1] == "--validate-only"
-    assert checker["native"]["engine"] == engine, "native checker engine override was lost"
+    assert checker["native"]["engine"] == engine, f"native checker engine override was lost: {checker!r}"
     assert collection["arguments"] == [canary, "unrelated-collection"]
     assert collection["native"]["engine"] == "", "native collection engine override leaked"
     for report in (checker, collection):
@@ -235,10 +237,10 @@ def test_engine_probe_preserves_deferred_make_override_carriers(
     ) -> subprocess.CompletedProcess[str]:
         nonlocal invocations
         invocations += 1
-        makefile = Path(arguments[arguments.index("-f") + 1])
+        probe_makefile = Path(arguments[arguments.index("-f") + 1])
         # Native expansion makes the deferred carrier self-contained across Make versions.
-        makefile.write_text(
-            makefile.read_text() + "\nexport MAKEOVERRIDES := $(MAKEOVERRIDES)\n",
+        probe_makefile.write_text(
+            probe_makefile.read_text() + "\nexport MAKEOVERRIDES := $(MAKEOVERRIDES)\n",
         )
         native_carriers = tmp_path / "native-carriers.mk"
         if mutation in {"missing-engine", "missing-canary"}:
