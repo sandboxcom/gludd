@@ -1,13 +1,117 @@
-"""Regression guards for root-directory hygiene and security documentation."""
+"""Regression guards for root-directory hygiene and security documentation.
+
+Scoped archive ignores follow https://git-scm.com/docs/gitignore: wildcards do
+not cross path separators and tracked files remain tracked. The long-lived
+https://stackoverflow.com/questions/44155648 discussion likewise distinguishes
+root-only ignore rules from hiding every directory with the same name.
+"""
 
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
 
+import pytest
+from scripts.ansible_runtime_artifacts import COLLECTION_ARTIFACTS
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
+COLLECTION_ARCHIVES = tuple(archive.relative_to(ROOT).as_posix() for _source, archive in COLLECTION_ARTIFACTS)
+
+
+def _archive_fixture_git(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    """Run bounded native Git only inside an owned fixture, with no inherited routing."""
+    environment = {
+        "PATH": os.defpath, "HOME": str(root), "XDG_CONFIG_HOME": str(root / "xdg"),
+        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C",
+    }
+    return subprocess.run(
+        ["git", *arguments], cwd=root, env=environment, capture_output=True,
+        text=True, check=False, timeout=10,
+    )
+
+
+@pytest.fixture
+def archive_repository(tmp_path: Path) -> Path:
+    """Never allow ambient GIT_DIR/index/config to redirect setup mutations."""
+    result = _archive_fixture_git(tmp_path, "init", "--quiet", "--initial-branch=archive-fixture")
+    assert result.returncode == 0, result.stderr
+    return tmp_path
+
+
+@pytest.mark.parametrize("command", ["status", "check-ignore"])
+def test_generated_collection_archives_are_ignored_by_native_git(archive_repository: Path, command: str) -> None:
+    """Every archive selected by the existing context owner is generated output."""
+    (archive_repository / ".gitignore").write_bytes((ROOT / ".gitignore").read_bytes())
+    for relative in COLLECTION_ARCHIVES:
+        archive = archive_repository / relative
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_bytes(b"owned generated archive")
+    if command == "status":
+        result = _archive_fixture_git(archive_repository, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+        assert result.returncode == 0, result.stderr
+        assert {record[3:] for record in result.stdout.split("\0") if record.startswith("?? ")} == {".gitignore"}
+    else:
+        result = _archive_fixture_git(archive_repository, "check-ignore", "--", *COLLECTION_ARCHIVES)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert set(result.stdout.splitlines()) == set(COLLECTION_ARCHIVES)
+    assert all(
+        (archive_repository / relative).read_bytes() == b"owned generated archive" for relative in COLLECTION_ARCHIVES
+    )
+
+
+def test_collection_archive_ignore_keeps_unexpected_sources_and_build_inputs_visible(archive_repository: Path) -> None:
+    """Neither the dist tree nor the source collection tree is blanket ignored."""
+    visible = (
+        "dist/install.sh", "dist/README.md", "dist/general-ludd.service", "dist/debian/control",
+        "dist/rpm/gludd.spec", "dist/windows/gludd.nsi", "dist/collections/README.md",
+        "dist/collections/unexpected.py", "dist/collections/unexpected.yml",
+        "dist/collections/hand-authored.tar.gz", "dist/collections/other_namespace-agent-0.2.0.tar.gz",
+        "dist/collections/general_ludd-agent-not-a-version.tar.gz",
+        "dist/collections/general_ludd-agent-0.2.0.tar.gz.yml",
+        "dist/collections/general_ludd-agent-0.2.0.tar.gz.sha256",
+        "dist/collections/nested/general_ludd-agent-0.2.0.tar.gz",
+        "elsewhere/dist/collections/general_ludd-agent-0.2.0.tar.gz",
+        "collections/ansible_collections/general_ludd/agent/galaxy.yml",
+        "collections/ansible_collections/general_ludd/agent/plugins/modules/unexpected.py",
+    )
+    (archive_repository / ".gitignore").write_bytes((ROOT / ".gitignore").read_bytes())
+    for relative in visible:
+        path = archive_repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"owned source input")
+    checked = _archive_fixture_git(archive_repository, "check-ignore", "--", *visible)
+    assert checked.returncode == 1 and checked.stdout == "", checked.stdout + checked.stderr
+    status = _archive_fixture_git(archive_repository, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    assert status.returncode == 0, status.stderr
+    untracked = {record[3:] for record in status.stdout.split("\0") if record.startswith("?? ")}
+    assert untracked == set(visible) | {".gitignore"}
+    assert all((archive_repository / relative).read_bytes() == b"owned source input" for relative in visible)
+
+
+def test_collection_archive_ignore_does_not_hide_tracked_inputs_or_archives(archive_repository: Path) -> None:
+    """An existing index entry remains visible even when its filename matches."""
+    tracked = (COLLECTION_ARCHIVES[0], "dist/install.sh", "dist/README.md", "dist/collections/README.md")
+    for relative in tracked:
+        path = archive_repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"owned tracked input")
+    added = _archive_fixture_git(archive_repository, "add", "--", *tracked)
+    assert added.returncode == 0, added.stderr
+    before = _archive_fixture_git(archive_repository, "ls-files", "--stage").stdout
+    (archive_repository / ".gitignore").write_bytes((ROOT / ".gitignore").read_bytes())
+    for relative in tracked:
+        (archive_repository / relative).write_bytes(b"modified tracked input")
+    checked = _archive_fixture_git(archive_repository, "check-ignore", "--", *tracked)
+    assert checked.returncode == 1 and checked.stdout == "", checked.stdout + checked.stderr
+    matched = _archive_fixture_git(archive_repository, "check-ignore", "--no-index", "--", COLLECTION_ARCHIVES[0])
+    assert matched.returncode == 0 and matched.stdout.strip() == COLLECTION_ARCHIVES[0]
+    modified = _archive_fixture_git(archive_repository, "diff", "--name-only")
+    assert modified.returncode == 0 and set(modified.stdout.splitlines()) == set(tracked), modified.stderr
+    assert _archive_fixture_git(archive_repository, "ls-files", "--stage").stdout == before
+    assert all((archive_repository / relative).read_bytes() == b"modified tracked input" for relative in tracked)
 
 
 def test_private_deploy_key_is_not_kept_at_repository_root() -> None:

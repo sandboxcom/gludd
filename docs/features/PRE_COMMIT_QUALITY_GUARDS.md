@@ -254,3 +254,29 @@ collection errors, original canonical lease released, and Collection OK in
 56.7 observed seconds. This is a fresh native example, not the capture fixture's
 printed count; the commit workflow must independently collect once before
 committing its exact index.
+
+## Generated collection archive hygiene (2026-10-15)
+
+Candidate `1ff095f19720a6b3f501238fbc92015f2b99dfe3` prepared a valid native EE context but left eight untracked
+`dist/collections/general_ludd-<name>-<version>.tar.gz` duplicates in the checkout.
+Validated context copies remained intact. The existing `dist/*.tar.gz` rule
+does not cover that child directory, so successful preparation dirtied Git state.
+
+The narrow `/dist/collections/general_ludd-*-[0-9]*.tar.gz` rule targets those
+root-local, version-shaped outputs. Neither `dist/` nor `collections/` is
+blanket ignored. Hand-authored packaging inputs, unexpected source/config files,
+foreign namespaces and nested lookalikes remain visible; tracked archives and
+index entries remain tracked. This change performs no cleanup.
+
+Research verified on 2026-10-15: [Git's official ignore manual](https://git-scm.com/docs/gitignore),
+last updated for 2.55.0 on 2026-06-29, distinguishes anchored paths, non-recursive
+asterisks and already-tracked files. The [2017-05-24 practitioner discussion](https://stackoverflow.com/questions/44155648/ignore-a-particular-folder-only-in-gitignore-but-allow-other-folders-with-same)
+documents an unanchored `dist` rule unintentionally hiding nested directories.
+These findings support scoped native-Git controls, not a whole-directory ignore.
+
+Three native-Git failures precede 39 passing root-hygiene and packaging-template
+cases on locked Python 3.11 with serial pytest and fatal warnings. Controls cover
+all eight owner-declared archives, retained input visibility and tracked bytes;
+Ruff and strict typing pass. This is focused acceptance, not full-gate or hosted
+proof. ZDD, unchanged 85/75 coverage floors and promotion guards remain; no
+service restart, dependency installation or backlog-completion claim is added.
