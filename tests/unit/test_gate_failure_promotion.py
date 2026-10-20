@@ -131,10 +131,7 @@ def _checker() -> ModuleType:
 
 def test_async_canonical_profile_contract_fails_in_compatibility_admission_first() -> None:
     """A cheap exact-node failure must not recur deep in hosted unit-2."""
-    node = (
-        "tests/unit/test_gate_async.py::"
-        "test_default_gate_command_invokes_whole_gate_without_recursion"
-    )
+    node = "tests/unit/test_gate_async.py::test_default_gate_command_invokes_whole_gate_without_recursion"
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next((family for family in manifest["families"] if family["node"] == node), None)
     assert family is not None
@@ -154,10 +151,8 @@ def test_async_canonical_profile_contract_fails_in_compatibility_admission_first
     [
         (
             "session-objective-ci-evidence",
-            "tests/unit/test_enforce_objective_plugin.py::"
-            "TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
-            "tests/unit/test_enforce_objective_plugin.py::"
-            "TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
+            "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
+            "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
         ),
         (
             "session-handoff-git-identity",
@@ -168,7 +163,9 @@ def test_async_canonical_profile_contract_fails_in_compatibility_admission_first
     ],
 )
 def test_session_metadata_failures_are_executed_before_hosted_shards(
-    family_id: str, node: str, executable_input: str,
+    family_id: str,
+    node: str,
+    executable_input: str,
 ) -> None:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(
@@ -191,9 +188,7 @@ def test_session_metadata_failures_are_executed_before_hosted_shards(
         '--ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"'
     ) in executable
     assert manifest["full_gate_required"] is True
-    assert ("pytest-runtime-compatibility", family["owner_target"], "fast", 90, 60) in (
-        EXPECTED_RUNTIME_PHASES
-    )
+    assert ("pytest-runtime-compatibility", family["owner_target"], "fast", 90, 60) in (EXPECTED_RUNTIME_PHASES)
 
 
 @pytest.mark.parametrize(
@@ -239,14 +234,13 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in executable
-    assert "tests/unit/test_reviewed_head_inputs.py\"" not in executable
+    assert 'tests/unit/test_reviewed_head_inputs.py"' not in executable
     recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert len(selectors) == 9 and selectors.count(node) == 1
     assert node not in recipes[1] and node not in recipes[2]
-    phase = next(item for item in manifest["runtime_contract"]["phases"]
-                 if item["target"] == family["owner_target"])
+    phase = next(item for item in manifest["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
     assert (phase["budget_class"], phase["max_seconds"], phase["quiet_seconds"]) == ("fast", 90, 60)
     assert manifest["full_gate_required"] is True
 
@@ -261,7 +255,8 @@ def _target_stanza(makefile: str, target: str) -> str:
     ids=("success", "manifest-pin-fails", "wiring-pin-fails", "validator-fails"),
 )
 def test_promotion_checker_executes_both_structural_pins_only_after_valid_manifest(
-    tmp_path: Path, failed_owner: str,
+    tmp_path: Path,
+    failed_owner: str,
 ) -> None:
     """Run the actual Make stanza, replacing only its validator and test child."""
     record = tmp_path / "calls.jsonl"
@@ -301,18 +296,39 @@ def test_promotion_checker_executes_both_structural_pins_only_after_valid_manife
         encoding="utf-8",
     )
     result = subprocess.run(
-        ["make", "--no-print-directory", "-f", str(owner), "check-gate-failure-promotions",
-         f"UV={uv}", f"MAKE={child_make}", f"GATE_FAILURE_PROMOTION_MANIFEST={manifest}"],
-        cwd=ROOT, capture_output=True, text=True, timeout=10,
+        [
+            "make",
+            "--no-print-directory",
+            "-f",
+            str(owner),
+            "check-gate-failure-promotions",
+            f"UV={uv}",
+            f"MAKE={child_make}",
+            f"GATE_FAILURE_PROMOTION_MANIFEST={manifest}",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
+    if not record.exists():
+        raise AssertionError(
+            f"record missing: {record}; rc={result.returncode}; stdout={result.stdout!r}; stderr={result.stderr!r}"
+        )
     rows = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()]
     expected_phases = ["validator"] if failed_owner == "validator" else ["validator", "tests"]
     if not failed_owner:
         expected_phases.append("after")
     assert [row["phase"] for row in rows] == expected_phases
     assert rows[0]["args"] == [
-        "run", "python", "-m", "scripts.check_gate_failure_promotions",
-        "--manifest", str(manifest), "--repository-root", str(ROOT),
+        "run",
+        "python",
+        "-m",
+        "scripts.check_gate_failure_promotions",
+        "--manifest",
+        str(manifest),
+        "--repository-root",
+        str(ROOT),
     ]
     if failed_owner != "validator":
         assert rows[1]["files"] == list(STRUCTURAL_PROMOTION_NODES)
@@ -330,28 +346,33 @@ def test_promotion_checker_executes_both_structural_pins_only_after_valid_manife
     [
         ("environment-overrides", "owned", ""),
         ("recursive", "owned", ""),
-        *[("recursive", mutation, binding)
-          for binding in ("UV", "MAKE", "GATE_FAILURE_PROMOTION_MANIFEST")
-          for mutation in ("omitted", "opposite")],
+        *[
+            ("recursive", mutation, binding)
+            for binding in ("UV", "MAKE", "GATE_FAILURE_PROMOTION_MANIFEST")
+            for mutation in ("omitted", "opposite")
+        ],
     ],
 )
 def test_promotion_probe_owns_only_its_native_make_inputs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    transport: str, mutation: str, binding: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    transport: str,
+    mutation: str,
+    binding: str,
 ) -> None:
     """Real recursive precedence must preserve validator and structural pins."""
     tripwire = tmp_path / "ambient-command-ran"
     poison = tmp_path / "ambient recorder.py"
     poison.write_text(
-        "from pathlib import Path\n"
-        f"Path({str(tripwire)!r}).write_text('ambient command')\nraise SystemExit(86)\n",
+        f"from pathlib import Path\nPath({str(tripwire)!r}).write_text('ambient command')\nraise SystemExit(86)\n",
         encoding="utf-8",
     )
     ambient_command = f"{shlex.quote(sys.executable)} {shlex.quote(str(poison))}"
     ambient_manifest = tmp_path / "ambient manifest.json"
     ambient_manifest.write_text("{}\n", encoding="utf-8")
     ambient = {
-        "UV": ambient_command, "MAKE": ambient_command,
+        "UV": ambient_command,
+        "MAKE": ambient_command,
         "GATE_FAILURE_PROMOTION_MANIFEST": str(ambient_manifest),
     }
     native_run = subprocess.run
@@ -359,8 +380,12 @@ def test_promotion_probe_owns_only_its_native_make_inputs(
     invocations: list[list[str]] = []
 
     def execute(
-        arguments: list[str], *, cwd: Path, capture_output: bool,
-        text: bool, timeout: int,
+        arguments: list[str],
+        *,
+        cwd: Path,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
     ) -> subprocess.CompletedProcess[str]:
         assert capture_output and text and timeout == 10
         command = arguments.copy()
@@ -377,11 +402,21 @@ def test_promotion_probe_owns_only_its_native_make_inputs(
         carrier.write_text(f"all:\n\t@+{literal_command}\n", encoding="utf-8")
         environment = inherited.copy()
         environment.update(ambient)
+        ambient_overrides = [f"{name}={value}" for name, value in ambient.items()] if transport == "recursive" else []
         return native_run(
-            ["make", "--no-print-directory",
-             *(["-e"] if transport == "environment-overrides" else []),
-             "-f", str(carrier), *(f"{name}={value}" for name, value in ambient.items())],
-            cwd=cwd, env=environment, capture_output=True, text=True, timeout=10,
+            [
+                "make",
+                "--no-print-directory",
+                *(["-e"] if transport == "environment-overrides" else []),
+                "-f",
+                str(carrier),
+                *ambient_overrides,
+            ],
+            cwd=cwd,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
 
     with monkeypatch.context() as scoped:
@@ -399,13 +434,11 @@ def test_promotion_probe_owns_only_its_native_make_inputs(
     assert subprocess.run is native_run
     assert os.environ == inherited
 
+
 def test_gate_lock_prerequisite_failure_runs_in_whole_file_early_admission() -> None:
     """A read-only admission check must not be confused with a stateful gate phase."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    family = next(
-        family for family in payload["families"]
-        if family["id"] == "gate-lock-prerequisite-order"
-    )
+    family = next(family for family in payload["families"] if family["id"] == "gate-lock-prerequisite-order")
     assert family == {
         "id": "gate-lock-prerequisite-order",
         "owner_target": "_pytest-runtime-compatibility-admission",
@@ -416,10 +449,7 @@ def test_gate_lock_prerequisite_failure_runs_in_whole_file_early_admission() -> 
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert "tests/unit/test_gate_run_lock.py" in owner
     assert "test_gate_and_refresh_acquire_before_running_phases" in owner
-    phase = next(
-        phase for phase in payload["runtime_contract"]["phases"]
-        if phase["target"] == family["owner_target"]
-    )
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
@@ -440,7 +470,9 @@ def test_gate_lock_prerequisite_failure_runs_in_whole_file_early_admission() -> 
     ],
 )
 def test_bulkhead_scheduling_failures_execute_in_complete_early_cohorts(
-    family_id: str, node: str, test_file: str,
+    family_id: str,
+    node: str,
+    test_file: str,
 ) -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(family for family in payload["families"] if family["id"] == family_id)
@@ -454,10 +486,7 @@ def test_bulkhead_scheduling_failures_execute_in_complete_early_cohorts(
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert node in owner
     assert test_file in owner
-    phase = next(
-        phase for phase in payload["runtime_contract"]["phases"]
-        if phase["target"] == family["owner_target"]
-    )
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert "-W error" in owner and "-n 2" in owner
     assert payload["full_gate_required"] is True
@@ -467,10 +496,7 @@ def test_hosted_fanout_requires_executed_runtime_admission() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text())
     jobs = workflow["jobs"]
     steps = jobs["gate"]["steps"]
-    owners = [
-        step for step in steps
-        if "make _pytest-runtime-compatibility-admission" in step.get("run", "")
-    ]
+    owners = [step for step in steps if "make _pytest-runtime-compatibility-admission" in step.get("run", "")]
     assert len(owners) == 1
     owner = owners[0]
     assert "if" not in owner and not owner.get("continue-on-error", False)
@@ -482,8 +508,14 @@ def test_hosted_fanout_requires_executed_runtime_admission() -> None:
     assert "--set ci --environment .venv" in dependency_step["run"]
     assert jobs["gate"]["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
     for job_name in (
-        "test-shard", "linux", "macos", "windows", "termux", "container",
-        "ansible-ee", "game-building",
+        "test-shard",
+        "linux",
+        "macos",
+        "windows",
+        "termux",
+        "container",
+        "ansible-ee",
+        "game-building",
     ):
         assert "gate" in jobs[job_name]["needs"]
 
@@ -510,7 +542,9 @@ def test_hosted_fanout_requires_executed_runtime_admission() -> None:
     ],
 )
 def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
-    family_id: str, node: str, test_file: str,
+    family_id: str,
+    node: str,
+    test_file: str,
 ) -> None:
     """Unsupported fixture declarations must fail before late hosted setup."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -526,10 +560,7 @@ def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in owner
     assert test_file in executable
-    phase = next(
-        phase for phase in payload["runtime_contract"]["phases"]
-        if phase["target"] == family["owner_target"]
-    )
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
@@ -564,7 +595,8 @@ def test_class_fixture_binding_failures_execute_in_complete_early_cohorts(
     ],
 )
 def test_ee_metadata_contracts_execute_before_hosted_image_construction(
-    family_id: str, test_name: str,
+    family_id: str,
+    test_name: str,
 ) -> None:
     """Reuse the installed Builder with complete frozen-input acceptance files."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -586,10 +618,7 @@ def test_ee_metadata_contracts_execute_before_hosted_image_construction(
         "tests/unit/test_ansible_searxng_source_inspection.py",
     ):
         assert test_file in executable
-    phase = next(
-        phase for phase in payload["runtime_contract"]["phases"]
-        if phase["target"] == family["owner_target"]
-    )
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
@@ -612,7 +641,8 @@ def test_ee_metadata_contracts_execute_before_hosted_image_construction(
     ],
 )
 def test_admission_plan_contracts_execute_before_hosted_shards(
-    family_id: str, test_name: str,
+    family_id: str,
+    test_name: str,
 ) -> None:
     """Plan and documented bounds belong to the complete executable early cohort."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -633,10 +663,7 @@ def test_admission_plan_contracts_execute_before_hosted_shards(
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
         '--ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"'
     ) in executable
-    phase = next(
-        phase for phase in payload["runtime_contract"]["phases"]
-        if phase["target"] == family["owner_target"]
-    )
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
@@ -644,13 +671,9 @@ def test_admission_plan_contracts_execute_before_hosted_shards(
 def test_ci_ledger_concurrent_evidence_executes_in_complete_early_cohort() -> None:
     """Publication must prove the complete ledger race suite before hosted fan-out."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    family = next(
-        family for family in payload["families"]
-        if family["id"] == "ci-ledger-concurrent-evidence"
-    )
+    family = next(family for family in payload["families"] if family["id"] == "ci-ledger-concurrent-evidence")
     node = (
-        "tests/unit/test_ci_failure_ledger_concurrency.py::"
-        "test_repair_retains_concurrent_run_and_other_family_receipt"
+        "tests/unit/test_ci_failure_ledger_concurrency.py::test_repair_retains_concurrent_run_and_other_family_receipt"
     )
     assert family == {
         "id": "ci-ledger-concurrent-evidence",
@@ -667,10 +690,7 @@ def test_ci_ledger_concurrent_evidence_executes_in_complete_early_cohort() -> No
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
         '--ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"'
     ) in executable
-    phase = next(
-        phase for phase in payload["runtime_contract"]["phases"]
-        if phase["target"] == family["owner_target"]
-    )
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
@@ -678,14 +698,8 @@ def test_ci_ledger_concurrent_evidence_executes_in_complete_early_cohort() -> No
 def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> None:
     """The real Make argument transport must be proved before hosted fan-out."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    family = next(
-        family for family in payload["families"]
-        if family["id"] == "ci-repair-evidence-variable-forwarding"
-    )
-    node = (
-        "tests/unit/test_ci_failure_ledger.py::"
-        "test_make_ci_failure_repair_exports_quoted_values_to_cli_probe"
-    )
+    family = next(family for family in payload["families"] if family["id"] == "ci-repair-evidence-variable-forwarding")
+    node = "tests/unit/test_ci_failure_ledger.py::test_make_ci_failure_repair_exports_quoted_values_to_cli_probe"
     assert family == {
         "id": "ci-repair-evidence-variable-forwarding",
         "owner_target": "_pytest-runtime-compatibility-admission",
@@ -701,10 +715,7 @@ def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> No
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
         '--ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"'
     ) in executable
-    phase = next(
-        phase for phase in payload["runtime_contract"]["phases"]
-        if phase["target"] == family["owner_target"]
-    )
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
@@ -712,36 +723,49 @@ def test_ci_repair_evidence_forwarding_executes_in_complete_early_cohort() -> No
 @pytest.mark.parametrize(
     ("family_id", "node"),
     [
-        ("automatic-proof-observation-ownership",
-         "tests/unit/test_proof_observations.py::test_writer_derives_timestamp_and_never_admits_release"),
-        ("automatic-proof-handoff-native-query-shape",
-         "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_accepts_the_existing_ledger_detail_shape"),
-        ("make-search-literal-transport",
-         "tests/unit/test_make_readonly_version.py::test_actual_search_never_evaluates_exported_make_function_data"),
-        ("producer-current-capacity-proof-admission",
-         "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_current_capacity_selects_safe_next_action"),
+        (
+            "automatic-proof-observation-ownership",
+            "tests/unit/test_proof_observations.py::test_writer_derives_timestamp_and_never_admits_release",
+        ),
+        (
+            "automatic-proof-handoff-native-query-shape",
+            "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_accepts_the_existing_ledger_detail_shape",
+        ),
+        (
+            "make-search-literal-transport",
+            "tests/unit/test_make_readonly_version.py::test_actual_search_never_evaluates_exported_make_function_data",
+        ),
+        (
+            "producer-current-capacity-proof-admission",
+            "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_snapshot_current_capacity_selects_safe_next_action",
+        ),
     ],
 )
 def test_automatic_observation_contracts_execute_in_complete_early_cohorts(
-    family_id: str, node: str,
+    family_id: str,
+    node: str,
 ) -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(family for family in payload["families"] if family["id"] == family_id)
     assert family == {
-        "id": family_id, "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in owner
     for test_file in (
-        "tests/unit/test_proof_observations.py", "tests/unit/test_ci_await_exact.py",
-        "tests/unit/test_pipeline_status_exact_sha.py", "tests/unit/test_task_ledger_validation.py",
+        "tests/unit/test_proof_observations.py",
+        "tests/unit/test_ci_await_exact.py",
+        "tests/unit/test_pipeline_status_exact_sha.py",
+        "tests/unit/test_task_ledger_validation.py",
         "tests/unit/test_make_readonly_version.py",
     ):
         assert test_file in executable
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
@@ -764,13 +788,17 @@ def test_automatic_observation_contracts_execute_in_complete_early_cohorts(
     ],
 )
 def test_hosted_timing_contracts_execute_in_complete_early_cohorts(
-    family_id: str, node: str,
+    family_id: str,
+    node: str,
 ) -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(family for family in payload["families"] if family["id"] == family_id)
     assert family == {
-        "id": family_id, "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert node in owner
@@ -781,8 +809,7 @@ def test_hosted_timing_contracts_execute_in_complete_early_cohorts(
         "tests/unit/test_ci_workflow_integrity.py",
     ):
         assert test_file in executable
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
@@ -807,22 +834,26 @@ def test_hosted_timing_contracts_execute_in_complete_early_cohorts(
     ],
 )
 def test_makefile_integrity_executes_in_complete_early_cohorts(
-    family_id: str, node: str, test_file: str,
+    family_id: str,
+    node: str,
+    test_file: str,
 ) -> None:
     """The full Make cohorts must catch style and topology defects before fan-out."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(family for family in payload["families"] if family["id"] == family_id)
     assert family == {
-        "id": family_id, "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert node in owner
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     selectors = executable.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert test_file in selectors
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
@@ -833,16 +864,14 @@ def test_makefile_integrity_executes_in_complete_early_cohorts(
 
 def test_private_help_regression_runs_before_hosted_unit_2() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    node = (
-        "tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::"
-        "test_internal_targets_not_in_help"
-    )
-    family = next(family for family in payload["families"]
-                  if family["id"] == "make-private-target-help-visibility")
+    node = "tests/unit/test_makefile_targets_deep.py::TestInternalTargetConventions::test_internal_targets_not_in_help"
+    family = next(family for family in payload["families"] if family["id"] == "make-private-target-help-visibility")
     assert family == {
         "id": "make-private-target-help-visibility",
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
@@ -850,8 +879,7 @@ def test_private_help_regression_runs_before_hosted_unit_2() -> None:
     assert node.split("::", 1)[0] in selectors
     assert node in owner
     assert _checker().validate_manifest(payload, repository_root=ROOT) == []
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert (
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
@@ -864,24 +892,30 @@ def test_private_help_regression_runs_before_hosted_unit_2() -> None:
     ("family_id", "file", "node_name"),
     [
         (
-            "stale-resource-packaged-artifact-identity", "tests/unit/test_clean_stale_resource_namespaces.py",
+            "stale-resource-packaged-artifact-identity",
+            "tests/unit/test_clean_stale_resource_namespaces.py",
             "test_recorded_installed_module_is_not_a_runtime_lease_marker",
         ),
         (
-            "native-artifact-literal-argument-transport", "tests/unit/test_native_temp_artifact_target.py",
+            "native-artifact-literal-argument-transport",
+            "tests/unit/test_native_temp_artifact_target.py",
             "test_native_temp_artifact_inspection_preserves_literal_path_data",
         ),
     ],
 )
 def test_artifact_identity_and_literal_transport_execute_before_fanout(
-    family_id: str, file: str, node_name: str,
+    family_id: str,
+    file: str,
+    node_name: str,
 ) -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(item for item in payload["families"] if item["id"] == family_id)
     assert family == {
         "id": family_id,
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": f"{file}::{node_name}", "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": f"{file}::{node_name}",
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
@@ -890,8 +924,7 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
         '--ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"'
     ) in executable
-    phase = next(item for item in payload["runtime_contract"]["phases"]
-                 if item["target"] == family["owner_target"])
+    phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
@@ -915,8 +948,7 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
         ),
         (
             "plugin-hook-registration-uniqueness",
-            "tests/unit/test_plugin_manifest_deep.py::"
-            "TestHookValidity::test_no_duplicate_hooks_within_single_plugin",
+            "tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_single_plugin",
         ),
         (
             "plugin-session-start-read-isolation",
@@ -925,8 +957,7 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
         ),
         (
             "plugin-enforcement-source-budget",
-            "tests/unit/test_process_overhead.py::"
-            "TestProcessTokenOverhead::test_anti_stop_plugins_are_lean",
+            "tests/unit/test_process_overhead.py::TestProcessTokenOverhead::test_anti_stop_plugins_are_lean",
         ),
         (
             "plugin-enforcement-runtime-executable-mode",
@@ -935,13 +966,11 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
         ),
         (
             "v011-exact-gate-plugin-budget",
-            "tests/unit/test_v011_exact_gate_repair_contract.py::"
-            "test_all_six_exact_gate_repairs_remain_green_together",
+            "tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_green_together",
         ),
         pytest.param(
             "css-lint-exact-pin-contract",
-            "tests/unit/test_css_lint_target.py::"
-            "test_lint_css_dependency_config_and_contract_are_exactly_pinned",
+            "tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_pinned",
             id="css-lint-exact-pin-contract",
         ),
         pytest.param(
@@ -963,8 +992,7 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
         ),
         pytest.param(
             "mcp-independent-topic-native-dump-budget",
-            "tests/unit/test_mcp_topics_manifest.py::"
-            "test_independent_topic_sizing_has_one_native_dump_per_topic",
+            "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic",
             id="mcp-independent-topic-native-dump-budget",
         ),
         pytest.param(
@@ -975,14 +1003,14 @@ def test_artifact_identity_and_literal_transport_execute_before_fanout(
         ),
         pytest.param(
             "plugin-native-fallback-subagent-isolation",
-            "tests/unit/test_no_idle_monitoring_plugin.py::"
-            "test_fallback_subagent_guard_precedes_delegated_handler",
+            "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler",
             id="plugin-native-fallback-subagent-isolation",
         ),
     ],
 )
 def test_repaired_failures_execute_as_exact_nodes_before_fanout(
-    family_id: str, node: str,
+    family_id: str,
+    node: str,
 ) -> None:
     """Promote the original failure without collecting unrelated file siblings."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -990,7 +1018,9 @@ def test_repaired_failures_execute_as_exact_nodes_before_fanout(
     assert family == {
         "id": family_id,
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
@@ -1004,8 +1034,7 @@ def test_repaired_failures_execute_as_exact_nodes_before_fanout(
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
         '--ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"'
     ) in recipes[1]
-    phase = next(item for item in payload["runtime_contract"]["phases"]
-                 if item["target"] == family["owner_target"])
+    phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     phases = payload["runtime_contract"]["phases"]
     assert len(phases) == 21
@@ -1214,9 +1243,7 @@ def test_validator_rejects_gate_and_owner_topology_drift(tmp_path: Path) -> None
     missing_targets = deepcopy(payload)
     missing_targets["admission_target"] = "absent"
     missing_targets["full_gate_target"] = "absent"
-    missing_errors = _checker().validate_manifest(
-        missing_targets, repository_root=repository
-    )
+    missing_errors = _checker().validate_manifest(missing_targets, repository_root=repository)
     assert any("admission target is not defined" in error for error in missing_errors)
     assert any("full gate target is not defined" in error for error in missing_errors)
     assert any("admission target must remain separate" in error for error in missing_errors)
@@ -1246,22 +1273,12 @@ def test_cli_rejects_missing_invalid_and_oversized_manifests(
 ) -> None:
     checker = _checker()
     missing = tmp_path / "missing.json"
-    assert (
-        checker.main(
-            ["--manifest", str(missing), "--repository-root", str(ROOT)]
-        )
-        == 1
-    )
+    assert checker.main(["--manifest", str(missing), "--repository-root", str(ROOT)]) == 1
     assert "cannot load manifest" in capsys.readouterr().err
 
     invalid = tmp_path / "invalid.json"
     invalid.write_text("{}", encoding="utf-8")
-    assert (
-        checker.main(
-            ["--manifest", str(invalid), "--repository-root", str(ROOT)]
-        )
-        == 1
-    )
+    assert checker.main(["--manifest", str(invalid), "--repository-root", str(ROOT)]) == 1
     assert "schema_version" in capsys.readouterr().err
 
     oversized = tmp_path / "oversized.json"
@@ -1273,21 +1290,29 @@ def test_cli_rejects_missing_invalid_and_oversized_manifests(
 @pytest.mark.parametrize(
     ("family_id", "test_name"),
     [
-        ("ee-complete-offline-build-acceptance",
-         "test_acceptance_warms_all_controller_imports_with_owned_offline_containers"),
-        ("ee-immutable-built-image-acceptance",
-         "test_build_warms_captured_image_after_candidate_tag_can_be_retargeted"),
+        (
+            "ee-complete-offline-build-acceptance",
+            "test_acceptance_warms_all_controller_imports_with_owned_offline_containers",
+        ),
+        (
+            "ee-immutable-built-image-acceptance",
+            "test_build_warms_captured_image_after_candidate_tag_can_be_retargeted",
+        ),
     ],
 )
 def test_full_ee_acceptance_executes_before_hosted_fanout(
-    family_id: str, test_name: str,
+    family_id: str,
+    test_name: str,
 ) -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(family for family in payload["families"] if family["id"] == family_id)
     node = f"tests/unit/test_ansible_ee_full_warm_acceptance.py::{test_name}"
     assert family == {
-        "id": family_id, "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
@@ -1297,18 +1322,14 @@ def test_full_ee_acceptance_executes_before_hosted_fanout(
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
         '--ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"'
     ) in executable
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
 
 def test_byte_bounded_ci_context_executes_in_complete_early_cohort() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    family = next(
-        family for family in payload["families"]
-        if family["id"] == "ci-failure-context-output-byte-bound"
-    )
+    family = next(family for family in payload["families"] if family["id"] == "ci-failure-context-output-byte-bound")
     node = (
         "tests/unit/test_ci_shards_log_context_bounds.py::"
         "test_cumulative_bound_preserves_source_order_and_declares_omitted_context"
@@ -1316,7 +1337,9 @@ def test_byte_bounded_ci_context_executes_in_complete_early_cohort() -> None:
     assert family == {
         "id": "ci-failure-context-output-byte-bound",
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
@@ -1327,18 +1350,14 @@ def test_byte_bounded_ci_context_executes_in_complete_early_cohort() -> None:
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
         '--ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"'
     ) in executable
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
 
 def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    family = next(
-        family for family in payload["families"]
-        if family["id"] == "private-policy-hosted-matrix-membership"
-    )
+    family = next(family for family in payload["families"] if family["id"] == "private-policy-hosted-matrix-membership")
     node = (
         "tests/unit/test_self_improve_private_policy_ci_contract.py::"
         "test_private_policy_e2e_has_one_local_and_hosted_release_contract"
@@ -1346,7 +1365,9 @@ def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
     assert family == {
         "id": "private-policy-hosted-matrix-membership",
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
@@ -1356,21 +1377,24 @@ def test_private_policy_contract_runs_before_hosted_shard_fanout() -> None:
         'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 '
         '--ignore-glob=$(CURDIR)/tests/* -o verbosity_test_cases=-2"'
     ) in executable
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
 
-@pytest.mark.parametrize("kind", [
-    "automatic-terminal-push-verdict", "terminal-heartbeat-ownership", "all-required-ci-verdict",
-])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "automatic-terminal-push-verdict",
+        "terminal-heartbeat-ownership",
+        "all-required-ci-verdict",
+    ],
+)
 def test_verdict_history_contract_executes_before_hosted_fanout(kind: str) -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     nodes = {
         "automatic-terminal-push-verdict": (
-            "tests/unit/test_pipeline_status_exact_sha.py::"
-            "test_pipeline_terminal_snapshot_records_owned_push_verdict"
+            "tests/unit/test_pipeline_status_exact_sha.py::test_pipeline_terminal_snapshot_records_owned_push_verdict"
         ),
         "terminal-heartbeat-ownership": (
             "tests/unit/test_status_heartbeat_terminal.py::"
@@ -1383,15 +1407,17 @@ def test_verdict_history_contract_executes_before_hosted_fanout(kind: str) -> No
     }
     family = next(f for f in payload["families"] if f["id"] == kind)
     assert family == {
-        "id": kind, "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": nodes[kind], "full_gate_phase": "test",
+        "id": kind,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": nodes[kind],
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert nodes[kind] in owner
     combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
     assert nodes[kind].split("::", 1)[0] in combined
-    phase = next(p for p in payload["runtime_contract"]["phases"]
-                 if p["target"] == family["owner_target"])
+    phase = next(p for p in payload["runtime_contract"]["phases"] if p["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
@@ -1399,21 +1425,21 @@ def test_verdict_history_contract_executes_before_hosted_fanout(kind: str) -> No
 def test_current_task_inventory_real_scanner_executes_before_hosted_fanout() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     node = (
-        "tests/unit/test_secrets_baseline_compaction.py::"
-        "test_current_task_inventory_passes_real_readonly_secret_owner"
+        "tests/unit/test_secrets_baseline_compaction.py::test_current_task_inventory_passes_real_readonly_secret_owner"
     )
     family = next(f for f in payload["families"] if f["id"] == "current-task-inventory-real-secret-scan")
     assert family == {
         "id": "current-task-inventory-real-secret-scan",
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert node in owner
     combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
     assert node.split("::", 1)[0] in combined
-    phase = next(p for p in payload["runtime_contract"]["phases"]
-                 if p["target"] == family["owner_target"])
+    phase = next(p for p in payload["runtime_contract"]["phases"] if p["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
@@ -1428,60 +1454,55 @@ def test_native_verdict_compatibility_contract_executes_before_hosted_fanout() -
     assert family == {
         "id": "native-verdict-caller-compatibility",
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert node in owner
     combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
     assert node.split("::", 1)[0] in combined
-    phase = next(p for p in payload["runtime_contract"]["phases"]
-                 if p["target"] == family["owner_target"])
+    phase = next(p for p in payload["runtime_contract"]["phases"] if p["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
 
 def test_searxng_frozen_source_contract_executes_before_hosted_fanout() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    node = (
-        "tests/unit/test_ansible_ee_searx_acceptance.py::"
-        "test_installer_copies_only_matching_real_frozen_provenance"
-    )
-    family = next(
-        (f for f in payload["families"] if f["id"] == "ee-searxng-frozen-source-acceptance"), None
-    )
+    node = "tests/unit/test_ansible_ee_searx_acceptance.py::test_installer_copies_only_matching_real_frozen_provenance"
+    family = next((f for f in payload["families"] if f["id"] == "ee-searxng-frozen-source-acceptance"), None)
     assert family == {
         "id": "ee-searxng-frozen-source-acceptance",
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert node in owner
     combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
     assert node.split("::", 1)[0] in combined
-    phase = next(p for p in payload["runtime_contract"]["phases"]
-                 if p["target"] == family["owner_target"])
+    phase = next(p for p in payload["runtime_contract"]["phases"] if p["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
 
 def test_workflow_safe_parser_contract_executes_before_hosted_fanout() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    node = (
-        "tests/unit/test_workflow_safe_parser.py::"
-        "test_each_workflow_reader_uses_selected_safe_backend"
-    )
+    node = "tests/unit/test_workflow_safe_parser.py::test_each_workflow_reader_uses_selected_safe_backend"
     family = next(f for f in payload["families"] if f["id"] == "workflow-safe-parser-throughput")
     assert family == {
         "id": "workflow-safe-parser-throughput",
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert node in owner
     combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
     assert node.split("::", 1)[0] in combined
-    phase = next(p for p in payload["runtime_contract"]["phases"]
-                 if p["target"] == family["owner_target"])
+    phase = next(p for p in payload["runtime_contract"]["phases"] if p["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
@@ -1499,57 +1520,49 @@ def test_search_scan_contract_executes_in_complete_early_cohort(kind: str) -> No
     assert family == {
         "id": family_id,
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert node in owner
     combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
     assert "tests/unit/test_make_help_audit.py" in combined
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
 
 def test_security_workflow_membership_executes_in_complete_early_cohort() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    family = next(
-        family for family in payload["families"]
-        if family["id"] == "security-workflow-shard-membership"
-    )
-    node = (
-        "tests/security/test_ci_workflow.py::"
-        "TestGateMatrixStructure::test_test_shard_matrix_dimensions"
-    )
+    family = next(family for family in payload["families"] if family["id"] == "security-workflow-shard-membership")
+    node = "tests/security/test_ci_workflow.py::TestGateMatrixStructure::test_test_shard_matrix_dimensions"
     assert family == {
         "id": "security-workflow-shard-membership",
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     assert node in owner
     combined = owner.split("\t@$(MAKE) --no-print-directory test-files")[1]
     assert "tests/security/test_ci_workflow.py" in combined
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
 
 def test_duplicate_help_failure_runs_in_a_fresh_early_process() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    family = next(
-        family for family in payload["families"]
-        if family["id"] == "make-help-duplicate-admission"
-    )
-    node = (
-        "tests/unit/test_makefile_audit_deep.py::"
-        "TestHelpNoDupTargets::test_no_duplicate_help_entries"
-    )
+    family = next(family for family in payload["families"] if family["id"] == "make-help-duplicate-admission")
+    node = "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries"
     assert family == {
         "id": "make-help-duplicate-admission",
         "owner_target": "_pytest-runtime-compatibility-admission",
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     recipes = owner.split("\t@$(MAKE) --no-print-directory test-files")
@@ -1557,8 +1570,7 @@ def test_duplicate_help_failure_runs_in_a_fresh_early_process() -> None:
     assert "tests/unit/test_makefile_audit_deep.py" not in recipes[1]
     assert f'TESTFILES="{node}"' in recipes[2]
     assert 'NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 0 --maxprocesses 1"' in recipes[2]
-    phase = next(phase for phase in payload["runtime_contract"]["phases"]
-                 if phase["target"] == family["owner_target"])
+    phase = next(phase for phase in payload["runtime_contract"]["phases"] if phase["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
 
@@ -1581,7 +1593,8 @@ def test_duplicate_help_failure_runs_in_a_fresh_early_process() -> None:
     ],
 )
 def test_css_lint_contract_failures_execute_in_complete_early_cohort(
-    family_id: str, test_name: str,
+    family_id: str,
+    test_name: str,
 ) -> None:
     """Keep engine, Make-owner and vendor-policy failures in one early cohort."""
     _assert_complete_early_runtime_cohort(
@@ -1613,13 +1626,17 @@ def test_native_secret_scan_budget_executes_in_complete_early_cohort() -> None:
 
 
 def _assert_complete_early_runtime_cohort(
-    family_id: str, test_file: str, test_name: str, required_cases: set[str],
+    family_id: str,
+    test_file: str,
+    test_name: str,
+    required_cases: set[str],
 ) -> None:
     """Require one complete file in the original bounded first cohort."""
     node = f"{test_file}::{test_name}"
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     family = next(
-        (item for item in payload["families"] if item["id"] == family_id), None,
+        (item for item in payload["families"] if item["id"] == family_id),
+        None,
     )
     assert family == {
         "id": family_id,
@@ -1634,9 +1651,7 @@ def _assert_complete_early_runtime_cohort(
         "_pytest-runtime-compatibility-admission",
     )
     assert node in owner
-    executable = "\n".join(
-        line for line in owner.splitlines() if not line.startswith("#")
-    )
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[1].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
@@ -1650,9 +1665,9 @@ def _assert_complete_early_runtime_cohort(
 
     tree = ast.parse((ROOT / test_file).read_text(encoding="utf-8"))
     cases = [
-        item.name for item in tree.body
-        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and item.name.startswith("test_")
+        item.name
+        for item in tree.body
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name.startswith("test_")
     ]
     assert required_cases <= set(cases)
     phases = payload["runtime_contract"]["phases"]
@@ -1785,12 +1800,10 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
-        "tests/unit/test_mcp_builtins_structural.py::TestBuiltinToolHandler::"
-        "test_contain_workspace_escape_returns_none"
+        "tests/unit/test_mcp_builtins_structural.py::TestBuiltinToolHandler::test_contain_workspace_escape_returns_none"
     )
     assert families["mcp-workspace-dispatch-jail"]["node"] == (
-        "tests/unit/test_project_runner_tool.py::TestRunProjectCheckDispatch::"
-        "test_workspace_escaping_jail_is_refused"
+        "tests/unit/test_project_runner_tool.py::TestRunProjectCheckDispatch::test_workspace_escaping_jail_is_refused"
     )
     assert families["module-graph-classification-drift"]["node"] == (
         "tests/unit/test_module_graph_deep.py::test_all_subpackages_classified"
@@ -1804,13 +1817,10 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "test_aws_prune_produces_warning_when_actions_removed"
     )
     assert families["cloud-iam-generation-parity"]["node"] == (
-        "tests/unit/test_cloud_iam_expert.py::TestGenerateCloudRole::"
-        "test_generate_aws_terraform_deploy"
+        "tests/unit/test_cloud_iam_expert.py::TestGenerateCloudRole::test_generate_aws_terraform_deploy"
     )
     assert families["coverage-gap-drift"]["node"] == "check-coverage-gaps"
-    assert families["resource-ownership-drift"]["node"] == (
-        "check-resource-ownership"
-    )
+    assert families["resource-ownership-drift"]["node"] == ("check-resource-ownership")
     for family_id, node in (
         (
             "pytest-class-fixture-scope",
@@ -1824,23 +1834,19 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         ),
         (
             "hook-runtime-helper-ast-portability",
-            "tests/unit/test_hook_runtime_split_compat.py::"
-            "test_helper_signatures_match_pre_split_snapshot",
+            "tests/unit/test_hook_runtime_split_compat.py::test_helper_signatures_match_pre_split_snapshot",
         ),
         (
             "native-focus-watchdog-ownership",
-            "tests/unit/test_reviewed_head_inputs.py::"
-            "test_native_focus_commands_preserve_watchdog_ownership",
+            "tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership",
         ),
         (
             "watchdog-destructive-registered-ownership",
-            "tests/unit/test_task_watchdog.py::"
-            "test_watchdog_destructive_boundary_requires_registered_ownership",
+            "tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_ownership",
         ),
         (
             "watchdog-handoff-exit-confirmation",
-            "tests/unit/test_task_watchdog.py::"
-            "test_watchdog_handoff_confirms_exit_after_metadata_changes",
+            "tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes",
         ),
         (
             "watchdog-native-start-acknowledgement",
@@ -1890,15 +1896,10 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     module_graph_owner = _target_stanza(makefile, "_module-graph-classification")
     variable_prefix_owner = _target_stanza(makefile, "_ansible-role-variable-prefix")
     cloud_iam_owner = _target_stanza(makefile, "_cloud-iam-generation-parity")
-    runtime_compatibility_owner = _target_stanza(
-        makefile, "_pytest-runtime-compatibility-admission"
-    )
+    runtime_compatibility_owner = _target_stanza(makefile, "_pytest-runtime-compatibility-admission")
 
     assert "check-gate-failure-promotions" in makefile.split("help:", 1)[0]
-    assert (
-        "check-gate-failure-promotions  Validate owned fast-admission failure nodes"
-        in makefile
-    )
+    assert "check-gate-failure-promotions  Validate owned fast-admission failure nodes" in makefile
     assert (
         admission.index('run_phase "worktree-guard"')
         < admission.index('run_phase "check-gate-failure-promotions"')
@@ -1914,14 +1915,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert "$(MAKE) --no-print-directory _module-graph-classification;" in admission
     assert "$(MAKE) --no-print-directory _ansible-role-variable-prefix;" in admission
     assert "$(MAKE) --no-print-directory _cloud-iam-generation-parity;" in admission
-    assert (
-        "$(MAKE) --no-print-directory _pytest-runtime-compatibility-admission;"
-        in admission
-    )
-    assert (
-        'GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"'
-        in admission
-    )
+    assert "$(MAKE) --no-print-directory _pytest-runtime-compatibility-admission;" in admission
+    assert 'GATE_FAILURE_PROMOTION_MANIFEST="$(GATE_FAILURE_PROMOTION_MANIFEST)"' in admission
     for fragment in (
         "scripts/stream_command.py",
         '--root ".gate-logs/observed"',
@@ -1955,126 +1950,117 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert "$(MAKE) --no-print-directory test-files" in runtime_compatibility_owner
     assert (
         'TESTFILES="tests/unit/test_ci_batch_receipts.py::'
-        'test_receipt_validation_refuses_unsafe_artifact_mode[2432] '
-        'tests/unit/test_env_var_audit_deep.py::'
-        'TestGLUDDNamingConvention::test_no_trailing_underscore '
-        'tests/unit/test_env_var_audit_deep.py::'
-        'TestGLUDDDocumentation::test_config_reference_documents_live_vars '
-        'tests/unit/test_env_var_audit_deep.py::'
-        'TestGLUDDDefaultConsistency::test_default_values_consistent '
-        'tests/unit/test_backlog_audit_target.py::'
-        'test_backlog_target_is_public_registered_and_documented '
-        'tests/unit/test_canonical_release_gate.py::'
-        'test_actual_local_release_recipe_collects_later_failures_in_one_invocation '
-        'tests/unit/test_collection_hook_environment.py::'
-        'test_real_pre_push_collection_isolates_only_native_git_local_environment '
-        'tests/unit/test_content_addressed_unit_lane.py::'
-        'test_atomic_json_candidate_and_control_evidence '
-        'tests/unit/test_owned_checkpoint_shared_worktree_admission.py::'
-        'test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact '
-        'tests/unit/test_precommit_quality_guards.py::'
-        'test_real_project_make_refuses_engine_expression_before_parse_or_export_execution '
-        'tests/unit/test_session_start_crash_recovery.py '
-        'tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py '
-        'tests/unit/test_session_persistence_integration.py '
-        'tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::'
-        'test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py '
-        'tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py '
-        'tests/unit/test_bulkhead_admission.py '
-        'tests/unit/test_enhancement_ratio_plugin.py '
-        'tests/unit/test_pytest_param_fixture_collisions.py '
-        'tests/unit/test_ansible_runtime_artifacts.py '
-        'tests/unit/test_ansible_ee_full_warm_acceptance.py '
-        'tests/unit/test_ansible_ee_searx_acceptance.py '
-        'tests/unit/test_beta4_python_runtime_boundary.py '
-        'tests/unit/test_ansible_searxng_source_inspection.py '
-        'tests/unit/test_integration_admission_target.py '
-        'tests/unit/test_ci_failure_ledger.py '
-        'tests/unit/test_ci_failure_ledger_concurrency.py '
-        'tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py '
-        'tests/unit/test_ci_verdict_all_required.py '
-        'tests/unit/test_ci_verdict_structural_repair.py '
-        'tests/unit/test_secrets_baseline_compaction.py '
-        'tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_status_heartbeat_terminal.py '
-        'tests/unit/test_task_ledger_validation.py '
-        'tests/unit/test_make_readonly_version.py '
-        'tests/unit/test_make_help_audit.py '
-        'tests/unit/test_clean_stale_resource_namespaces.py '
-        'tests/unit/test_native_temp_artifact_target.py '
-        'tests/unit/test_ci_run_summary_script.py '
-        'tests/unit/test_ci_run_summary_target.py '
-        'tests/unit/test_ci_workflow_integrity.py '
-        'tests/unit/test_plugin_manifest_deep.py::'
-        'TestHookValidity::test_no_duplicate_hooks_within_single_plugin '
-        'tests/unit/test_plugin_session_start_deadlock.py::'
-        'TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start '
-        'tests/unit/test_process_overhead.py::'
-        'TestProcessTokenOverhead::test_anti_stop_plugins_are_lean '
-        'tests/unit/test_enforcement_executable_modes.py::'
-        'test_enforcement_runtime_surfaces_have_executable_git_mode '
-        'tests/unit/test_subagent_output_clean.py::'
-        'TestSubagentOutputClean::test_all_tool_execute_before_hooks_have_subagent_guard '
-        'tests/unit/test_no_idle_monitoring_plugin.py::'
-        'test_fallback_subagent_guard_precedes_delegated_handler '
-        'tests/unit/test_v011_exact_gate_repair_contract.py::'
-        'test_all_six_exact_gate_repairs_remain_green_together '
-        'tests/unit/test_secrets_scan_resources.py '
-        'tests/unit/test_css_lint_target.py::'
-        'test_lint_css_dependency_config_and_contract_are_exactly_pinned '
-        'tests/unit/test_gate_status_attestation.py::'
-        'test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests '
-        'tests/unit/test_ci_stylelint_workflow.py '
-        'tests/security/test_ci_workflow.py '
-        'tests/unit/test_workflow_safe_parser.py '
-        'tests/unit/test_self_improve_private_policy_ci_contract.py '
-        'tests/unit/test_ci_shards_log_context.py '
-        'tests/unit/test_ci_shards_log_context_bounds.py '
-        'tests/unit/test_makefile_syntax.py '
-        'tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once '
-        'tests/unit/test_makefile_layout.py::'
-        'test_composition_emits_validated_bytes_and_revalidates_next_invocation '
-        'tests/unit/test_makefile_targets_deep.py '
-        'tests/unit/test_azure_containerapp_coverage_target.py '
-        'tests/unit/test_ee_owned_collection_runtime_metadata.py '
-        'tests/unit/test_no_sleep_subagent.py '
-        'tests/unit/test_ansible_ee_locked_consumer.py '
-        'tests/unit/test_native_builder_optional_formats.py '
-        'tests/unit/test_native_format_profile_sync_target.py '
-        'tests/unit/test_ansible_ee_locked_consumer_admission.py '
-        'tests/unit/test_release_asset_matrix.py '
-        'tests/unit/test_release_ee_collection_closure.py '
-        'tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic '
-        'tests/unit/test_mcp_tool_gen.py '
-        'tests/unit/test_observed_command.py '
+        "test_receipt_validation_refuses_unsafe_artifact_mode[2432] "
+        "tests/unit/test_env_var_audit_deep.py::"
+        "TestGLUDDNamingConvention::test_no_trailing_underscore "
+        "tests/unit/test_env_var_audit_deep.py::"
+        "TestGLUDDDocumentation::test_config_reference_documents_live_vars "
+        "tests/unit/test_env_var_audit_deep.py::"
+        "TestGLUDDDefaultConsistency::test_default_values_consistent "
+        "tests/unit/test_backlog_audit_target.py::"
+        "test_backlog_target_is_public_registered_and_documented "
+        "tests/unit/test_canonical_release_gate.py::"
+        "test_actual_local_release_recipe_collects_later_failures_in_one_invocation "
+        "tests/unit/test_collection_hook_environment.py::"
+        "test_real_pre_push_collection_isolates_only_native_git_local_environment "
+        "tests/unit/test_content_addressed_unit_lane.py::"
+        "test_atomic_json_candidate_and_control_evidence "
+        "tests/unit/test_owned_checkpoint_shared_worktree_admission.py::"
+        "test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact "
+        "tests/unit/test_precommit_quality_guards.py::"
+        "test_real_project_make_refuses_engine_expression_before_parse_or_export_execution "
+        "tests/unit/test_session_start_crash_recovery.py "
+        "tests/unit/test_hook_runtime_split_compat.py tests/unit/test_gate_async.py "
+        "tests/unit/test_session_persistence_integration.py "
+        "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::"
+        "test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py "
+        "tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py "
+        "tests/unit/test_bulkhead_admission.py "
+        "tests/unit/test_enhancement_ratio_plugin.py "
+        "tests/unit/test_pytest_param_fixture_collisions.py "
+        "tests/unit/test_ansible_runtime_artifacts.py "
+        "tests/unit/test_ansible_ee_full_warm_acceptance.py "
+        "tests/unit/test_ansible_ee_searx_acceptance.py "
+        "tests/unit/test_beta4_python_runtime_boundary.py "
+        "tests/unit/test_ansible_searxng_source_inspection.py "
+        "tests/unit/test_integration_admission_target.py "
+        "tests/unit/test_ci_failure_ledger.py "
+        "tests/unit/test_ci_failure_ledger_concurrency.py "
+        "tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py "
+        "tests/unit/test_ci_verdict_all_required.py "
+        "tests/unit/test_ci_verdict_structural_repair.py "
+        "tests/unit/test_secrets_baseline_compaction.py "
+        "tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_status_heartbeat_terminal.py "
+        "tests/unit/test_task_ledger_validation.py "
+        "tests/unit/test_make_readonly_version.py "
+        "tests/unit/test_make_help_audit.py "
+        "tests/unit/test_clean_stale_resource_namespaces.py "
+        "tests/unit/test_native_temp_artifact_target.py "
+        "tests/unit/test_ci_run_summary_script.py "
+        "tests/unit/test_ci_run_summary_target.py "
+        "tests/unit/test_ci_workflow_integrity.py "
+        "tests/unit/test_plugin_manifest_deep.py::"
+        "TestHookValidity::test_no_duplicate_hooks_within_single_plugin "
+        "tests/unit/test_plugin_session_start_deadlock.py::"
+        "TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start "
+        "tests/unit/test_process_overhead.py::"
+        "TestProcessTokenOverhead::test_anti_stop_plugins_are_lean "
+        "tests/unit/test_enforcement_executable_modes.py::"
+        "test_enforcement_runtime_surfaces_have_executable_git_mode "
+        "tests/unit/test_subagent_output_clean.py::"
+        "TestSubagentOutputClean::test_all_tool_execute_before_hooks_have_subagent_guard "
+        "tests/unit/test_no_idle_monitoring_plugin.py::"
+        "test_fallback_subagent_guard_precedes_delegated_handler "
+        "tests/unit/test_v011_exact_gate_repair_contract.py::"
+        "test_all_six_exact_gate_repairs_remain_green_together "
+        "tests/unit/test_secrets_scan_resources.py "
+        "tests/unit/test_css_lint_target.py::"
+        "test_lint_css_dependency_config_and_contract_are_exactly_pinned "
+        "tests/unit/test_gate_status_attestation.py::"
+        "test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests "
+        "tests/unit/test_ci_stylelint_workflow.py "
+        "tests/security/test_ci_workflow.py "
+        "tests/unit/test_workflow_safe_parser.py "
+        "tests/unit/test_self_improve_private_policy_ci_contract.py "
+        "tests/unit/test_ci_shards_log_context.py "
+        "tests/unit/test_ci_shards_log_context_bounds.py "
+        "tests/unit/test_makefile_syntax.py "
+        "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once "
+        "tests/unit/test_makefile_layout.py::"
+        "test_composition_emits_validated_bytes_and_revalidates_next_invocation "
+        "tests/unit/test_makefile_targets_deep.py "
+        "tests/unit/test_azure_containerapp_coverage_target.py "
+        "tests/unit/test_ee_owned_collection_runtime_metadata.py "
+        "tests/unit/test_no_sleep_subagent.py "
+        "tests/unit/test_ansible_ee_locked_consumer.py "
+        "tests/unit/test_native_builder_optional_formats.py "
+        "tests/unit/test_native_format_profile_sync_target.py "
+        "tests/unit/test_ansible_ee_locked_consumer_admission.py "
+        "tests/unit/test_release_asset_matrix.py "
+        "tests/unit/test_release_ee_collection_closure.py "
+        "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic "
+        "tests/unit/test_mcp_tool_gen.py "
+        "tests/unit/test_observed_command.py "
         "tests/unit/test_observer_retention_concurrency.py "
         "tests/unit/test_ci_collect_all_stress.py "
         "tests/unit/test_admission_cold_start_selection.py::"
-        'test_real_admission_filters_only_never_selected_main_siblings"'
-        in runtime_compatibility_owner
+        'test_real_admission_filters_only_never_selected_main_siblings"' in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
     assert "-n 0" in runtime_compatibility_owner
 
     contracts = json.loads(CONTRACT.read_text(encoding="utf-8"))["targets"]
-    check_contract = next(
-        item for item in contracts if item["name"] == "check-gate-failure-promotions"
-    )
+    check_contract = next(item for item in contracts if item["name"] == "check-gate-failure-promotions")
     assert check_contract == {
         "name": "check-gate-failure-promotions",
         "make_variables": ["GATE_FAILURE_PROMOTION_MANIFEST"],
         "behavior": (
-            "make check-gate-failure-promotions "
-            "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json"
+            "make check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json"
         ),
     }
-    admission_contract = next(
-        item for item in contracts if item["name"] == "integration-admission"
-    )
+    admission_contract = next(item for item in contracts if item["name"] == "integration-admission")
     assert "GATE_FAILURE_PROMOTION_MANIFEST" in admission_contract["make_variables"]
-    assert (
-        "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json"
-        in admission_contract["behavior"]
-    )
+    assert "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json" in admission_contract["behavior"]
 
 
 def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
@@ -2175,10 +2161,7 @@ def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None
         "id": "native-setuid-input-realization",
         "owner_target": "_pytest-runtime-compatibility-admission",
         "node_kind": "pytest_node",
-        "node": (
-            "tests/unit/test_ci_batch_receipts.py::"
-            "test_receipt_validation_refuses_unsafe_artifact_mode[2432]"
-        ),
+        "node": ("tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]"),
         "full_gate_phase": "test",
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
@@ -2188,7 +2171,6 @@ def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None
     assert len(arguments) == 3 and arguments[0].split()[0] == expected["node"]
     file = expected["node"].split("::", 1)[0]
     assert [
-        selector for argument in arguments for selector in argument.split()
-        if selector.split("::", 1)[0] == file
+        selector for argument in arguments for selector in argument.split() if selector.split("::", 1)[0] == file
     ] == [expected["node"]]
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True

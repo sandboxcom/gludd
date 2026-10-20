@@ -19,27 +19,33 @@ from tests.unit.test_item_progress import (
     _start,
     _state,
 )
-from tests.unit.test_item_progress import policy as policy
-from tests.unit.test_item_progress import repository as repository
 
 if TYPE_CHECKING:
     import stream_command
 else:
     from scripts import stream_command
 
+pytest_plugins = ["tests.unit.test_item_progress"]
+
 
 def _fill(policy: ModuleType, root: Path, state: str = "passed", *, passed_last: bool = False) -> dict[str, object]:
     for index in range(32):
-        _start(policy, root, command=("make", f"proof-{index}"), run_id=f"proof-{index}",
-               state="passed" if passed_last and index == 31 else state)
+        _start(
+            policy,
+            root,
+            command=("make", f"proof-{index}"),
+            run_id=f"proof-{index}",
+            state="passed" if passed_last and index == 31 else state,
+        )
     return _state(root)
 
 
 def _new_context(policy: ModuleType, monkeypatch: pytest.MonkeyPatch, field: str = "source") -> None:
     previous = policy._identity
 
-    def identity(root: Path, command: tuple[str, ...], environment: dict[str, str],
-                 quiet_seconds: float, max_seconds: float) -> dict[str, object]:
+    def identity(
+        root: Path, command: tuple[str, ...], environment: dict[str, str], quiet_seconds: float, max_seconds: float
+    ) -> dict[str, object]:
         result = cast(dict[str, object], previous(root, command, environment, quiet_seconds, max_seconds))
         return {**result, field: "c" * 64}
 
@@ -49,15 +55,19 @@ def _new_context(policy: ModuleType, monkeypatch: pytest.MonkeyPatch, field: str
 def _native_files(root: Path, state: dict[str, object]) -> dict[Path, bytes]:
     pointers = cast(dict[str, dict[str, str]], state["observations"])
     return {
-        Path(pointer["root"]) / pointer["label"] / f"{pointer['run_id']}.json":
-        (Path(pointer["root"]) / pointer["label"] / f"{pointer['run_id']}.json").read_bytes()
+        Path(pointer["root"]) / pointer["label"] / f"{pointer['run_id']}.json": (
+            Path(pointer["root"]) / pointer["label"] / f"{pointer['run_id']}.json"
+        ).read_bytes()
         for pointer in pointers.values()
     }
 
 
 @pytest.mark.parametrize("changed", ["source", "environment"])
 def test_full_history_retires_only_verified_success_pointers_and_keeps_receipts(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
     changed: str,
 ) -> None:
     _fixed_identity(policy, monkeypatch)
@@ -75,12 +85,27 @@ def test_full_history_retires_only_verified_success_pointers_and_keeps_receipts(
     assert "ITEM_PROGRESS_RETENTION_RELEASED" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("unsafe", [
-    "failed", "timed_out", "interrupted", "running", "starting", "missing",
-    "malformed", "wrong-command", "wrong-root", "false-success", "release-authority",
-])
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        "failed",
+        "timed_out",
+        "interrupted",
+        "running",
+        "starting",
+        "missing",
+        "malformed",
+        "wrong-command",
+        "wrong-root",
+        "false-success",
+        "release-authority",
+    ],
+)
 def test_capacity_refuses_to_retire_failed_live_unknown_or_forged_observations(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, unsafe: str,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    unsafe: str,
 ) -> None:
     _fixed_identity(policy, monkeypatch)
     before = _fill(policy, repository, state="failed")
@@ -96,9 +121,12 @@ def test_capacity_refuses_to_retire_failed_live_unknown_or_forged_observations(
             unsafe if unsafe in {"failed", "timed_out", "interrupted", "running", "starting"} else "passed"
         )
         native["exit_code"] = (
-            None if unsafe in {"starting", "running"}
-            else 124 if unsafe == "timed_out"
-            else 1 if unsafe in {"failed", "interrupted", "false-success"}
+            None
+            if unsafe in {"starting", "running"}
+            else 124
+            if unsafe == "timed_out"
+            else 1
+            if unsafe in {"failed", "interrupted", "false-success"}
             else 0
         )
         if unsafe == "wrong-command":
@@ -116,14 +144,17 @@ def test_capacity_refuses_to_retire_failed_live_unknown_or_forged_observations(
 
 
 def test_verified_success_retirement_keeps_unchanged_failure_and_owned_reservation(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _fixed_identity(policy, monkeypatch)
     _fill(policy, repository, state="failed", passed_last=True)
     _new_context(policy, monkeypatch)
     _start(policy, repository, command=("make", "proof-0"), run_id="current-failure", state="failed")
-    with policy.command_admission(repository, ("make", "new-proof"), primary_task_id="F12.1",
-                                  environment={}, quiet_seconds=30, max_seconds=120):
+    with policy.command_admission(
+        repository, ("make", "new-proof"), primary_task_id="F12.1", environment={}, quiet_seconds=30, max_seconds=120
+    ):
         state = _state(repository)
         assert len(cast(dict[str, object], state["observations"])) == 31
         assert len(cast(dict[str, object], state["reservations"])) == 1
@@ -135,7 +166,9 @@ def test_verified_success_retirement_keeps_unchanged_failure_and_owned_reservati
 
 
 def test_success_from_current_context_cannot_release_the_inventory_bound(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _fixed_identity(policy, monkeypatch)
     _fill(policy, repository)
@@ -146,12 +179,15 @@ def test_success_from_current_context_cannot_release_the_inventory_bound(
 
 
 def test_a_reserved_success_pointer_is_not_retired(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _fixed_identity(policy, monkeypatch)
     _fill(policy, repository, state="failed", passed_last=True)
-    with policy.command_admission(repository, ("make", "proof-31"), primary_task_id="F12.1",
-                                  environment={}, quiet_seconds=30, max_seconds=120):
+    with policy.command_admission(
+        repository, ("make", "proof-31"), primary_task_id="F12.1", environment={}, quiet_seconds=30, max_seconds=120
+    ):
         before = (repository / ".gludd/item-progress.json").read_bytes()
         _new_context(policy, monkeypatch)
         with pytest.raises(ValueError, match="bounded command inventory"):
@@ -160,7 +196,10 @@ def test_a_reserved_success_pointer_is_not_retired(
 
 
 def test_retirement_admission_write_failure_preserves_history_and_receipts(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     _fixed_identity(policy, monkeypatch)
     before = _fill(policy, repository)
@@ -180,10 +219,15 @@ def test_retirement_admission_write_failure_preserves_history_and_receipts(
 
 
 def _historical_failures(
-    policy: ModuleType, root: Path, monkeypatch: pytest.MonkeyPatch, state: str,
-    *, count: int = 32,
+    policy: ModuleType,
+    root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+    *,
+    count: int = 32,
 ) -> dict[str, object]:
     """Keep real source hashing while isolating runtime and ended-owner checks."""
+
     def environment_identity(environment: Mapping[str, str], cwd: Path | str | None = None) -> str:
         return str(policy._command_key(dict(environment)))
 
@@ -199,8 +243,11 @@ def _historical_failures(
 
 @pytest.mark.parametrize("state", ["failed", "timed_out"])
 def test_actual_source_change_releases_one_historical_failed_slot(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str], state: str,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
 ) -> None:
     before = _historical_failures(policy, repository, monkeypatch, state)
     files = _native_files(repository, before)
@@ -221,8 +268,12 @@ def test_actual_source_change_releases_one_historical_failed_slot(
 @pytest.mark.parametrize("overlap", [False, True])
 @pytest.mark.parametrize("state", ["failed", "timed_out"])
 def test_full_bound_dead_incoming_reservation_replacement_does_not_retire_history(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str], overlap: bool, state: str,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    overlap: bool,
+    state: str,
 ) -> None:
     count = 32 if overlap else 31
     before = _historical_failures(policy, repository, monkeypatch, state, count=count)
@@ -251,8 +302,12 @@ def test_full_bound_dead_incoming_reservation_replacement_does_not_retire_histor
         "owner.__enter__()\nos._exit(0)\n"
     )
     completed = subprocess.run(
-        [sys.executable, "-c", code], cwd=repository, text=True, capture_output=True,
-        check=False, timeout=30,
+        [sys.executable, "-c", code],
+        cwd=repository,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     abandoned = _state(repository)
@@ -265,8 +320,12 @@ def test_full_bound_dead_incoming_reservation_replacement_does_not_retire_histor
     implementation.write_text("result = 'source-repair'\n", encoding="utf-8")
     capsys.readouterr()
     with policy.command_admission(
-        repository, command, primary_task_id="F12.1", environment={"PYTHONHASHSEED": "0"},
-        quiet_seconds=30, max_seconds=120,
+        repository,
+        command,
+        primary_task_id="F12.1",
+        environment={"PYTHONHASHSEED": "0"},
+        quiet_seconds=30,
+        max_seconds=120,
     ):
         during = _state(repository)
         current_observations = cast(dict[str, object], during["observations"])
@@ -286,7 +345,11 @@ def test_full_bound_dead_incoming_reservation_replacement_does_not_retire_histor
 @pytest.mark.parametrize("route", ["scoped", "exempt"])
 @pytest.mark.parametrize("state", ["failed", "timed_out"])
 def test_retired_failure_survives_real_retention_and_refuses_run_identity_reuse(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, route: str, state: str,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    route: str,
+    state: str,
 ) -> None:
     before = _historical_failures(policy, repository, monkeypatch, state)
     pointers = cast(dict[str, dict[str, str]], before["observations"])
@@ -312,28 +375,49 @@ def test_retired_failure_survives_real_retention_and_refuses_run_identity_reuse(
     environment = dict(os.environ)
     if route == "scoped":
         with policy.command_admission(
-            repository, command, primary_task_id="F12.1", environment=environment,
-            quiet_seconds=0, max_seconds=10,
+            repository,
+            command,
+            primary_task_id="F12.1",
+            environment=environment,
+            quiet_seconds=0,
+            max_seconds=10,
         ) as admission:
             result = stream_command.stream_command(
-                command, directory / "probe.log", observed_root=directory.parent,
-                label=pointer["label"], run_id="probe", retain_runs=1, max_seconds=10,
-                progress_admission=admission, environment=environment,
+                command,
+                directory / "probe.log",
+                observed_root=directory.parent,
+                label=pointer["label"],
+                run_id="probe",
+                retain_runs=1,
+                max_seconds=10,
+                progress_admission=admission,
+                environment=environment,
             )
     else:
         result = stream_command.stream_command(
-            command, directory / "probe.log", observed_root=directory.parent,
-            label=pointer["label"], run_id="probe", retain_runs=1, max_seconds=10,
-            progress_root=repository, environment=environment,
+            command,
+            directory / "probe.log",
+            observed_root=directory.parent,
+            label=pointer["label"],
+            run_id="probe",
+            retain_runs=1,
+            max_seconds=10,
+            progress_root=repository,
+            environment=environment,
         )
     assert result == 0
     assert all(path.exists() and path.read_bytes() == content for path, content in artifacts.items())
     marker = repository / "reuse-executed"
     result = stream_command.stream_command(
         [sys.executable, "-c", f"from pathlib import Path; Path({str(marker)!r}).touch()"],
-        directory / "reuse-attempt.log", observed_root=directory.parent,
-        label=pointer["label"], run_id=pointer["run_id"], retain_runs=1, max_seconds=10,
-        progress_root=repository, environment=environment,
+        directory / "reuse-attempt.log",
+        observed_root=directory.parent,
+        label=pointer["label"],
+        run_id=pointer["run_id"],
+        retain_runs=1,
+        max_seconds=10,
+        progress_root=repository,
+        environment=environment,
     )
     assert result == 125 and not marker.exists()
     assert all(path.read_bytes() == content for path, content in artifacts.items())
@@ -341,7 +425,10 @@ def test_retired_failure_survives_real_retention_and_refuses_run_identity_reuse(
 
 @pytest.mark.parametrize("change", ["none", "environment", "bookkeeping", "empty-commit"])
 def test_failed_slots_require_actual_source_change(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, change: str,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
 ) -> None:
     _historical_failures(policy, repository, monkeypatch, "failed")
     environment = {"PYTHONHASHSEED": "0"}
@@ -360,14 +447,20 @@ def test_failed_slots_require_actual_source_change(
 
 
 def test_retiring_old_source_failure_preserves_current_source_refusal_and_reservation(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _historical_failures(policy, repository, monkeypatch, "failed")
     (repository / "implementation.py").write_text("result = True\n", encoding="utf-8")
     _start(policy, repository, command=("make", "proof-0"), run_id="current-failure")
     with policy.command_admission(
-        repository, ("make", "new-acquisition"), primary_task_id="F12.1",
-        environment={"PYTHONHASHSEED": "0"}, quiet_seconds=30, max_seconds=120,
+        repository,
+        ("make", "new-acquisition"),
+        primary_task_id="F12.1",
+        environment={"PYTHONHASHSEED": "0"},
+        quiet_seconds=30,
+        max_seconds=120,
     ):
         during = _state(repository)
         assert len(cast(dict[str, object], during["observations"])) == 31
@@ -378,7 +471,10 @@ def test_retiring_old_source_failure_preserves_current_source_refusal_and_reserv
 
 
 def test_failed_slot_retirement_write_failure_keeps_every_native_record(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     before = _historical_failures(policy, repository, monkeypatch, "failed")
     files = _native_files(repository, before)
@@ -397,13 +493,33 @@ def test_failed_slot_retirement_write_failure_keeps_every_native_record(
     assert "ITEM_PROGRESS_RETENTION_RELEASED" not in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("unsafe", [
-    "current-source", "environment-only", "live-owner", "unknown-owner", "boolean-owner", "zero-owner",
-    "reserved", "wrong-command", "wrong-root", "invalid-source", "missing", "malformed", "symlink",
-    "invalid-exit", "interrupted", "running", "starting",
-])
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        "current-source",
+        "environment-only",
+        "live-owner",
+        "unknown-owner",
+        "boolean-owner",
+        "zero-owner",
+        "reserved",
+        "wrong-command",
+        "wrong-root",
+        "invalid-source",
+        "missing",
+        "malformed",
+        "symlink",
+        "invalid-exit",
+        "interrupted",
+        "running",
+        "starting",
+    ],
+)
 def test_one_source_obsolete_failure_cannot_bypass_native_safety_boundaries(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch, unsafe: str,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    unsafe: str,
 ) -> None:
     _fixed_identity(policy, monkeypatch)
     before = _fill(policy, repository, state="failed")
@@ -450,7 +566,9 @@ def test_one_source_obsolete_failure_cannot_bypass_native_safety_boundaries(
 
 
 def test_failed_slot_retirement_keeps_latest_context_not_all_historical_source_deduplication(
-    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    policy: ModuleType,
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     before = _historical_failures(policy, repository, monkeypatch, "failed")
     pointers = cast(dict[str, dict[str, str]], before["observations"])
