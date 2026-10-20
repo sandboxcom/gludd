@@ -442,21 +442,29 @@
       }
       const image = createSvgImage(stabilizedSvg.outerHTML, dimensions);
       diagram.replaceChildren(image);
-      if (!await awaitImageReady(image, deadline)) {
-        failDiagram(diagram, "render-timeout");
-        return;
-      }
-      if (!stabilizeImageViewport(diagram, image, dimensions)) {
-        failDiagram(diagram, "invalid-geometry");
-        return;
-      }
-      scratch.remove();
-      afterRender(diagram);
-      if (diagram.dataset.mermaidState === "rendering") {
-        completeRender(diagram);
-      }
+      // Image loading is independent of Mermaid's serialized parsing/layout.
+      return {
+        completion: completeImageRender(diagram, image, dimensions, deadline).catch((error) => {
+          failDiagram(diagram, classifyRenderFailure(error));
+        }),
+      };
     } finally {
       scratch.remove();
+    }
+  }
+
+  async function completeImageRender(diagram, image, dimensions, deadline) {
+    if (!await awaitImageReady(image, deadline)) {
+      failDiagram(diagram, "render-timeout");
+      return;
+    }
+    if (!stabilizeImageViewport(diagram, image, dimensions)) {
+      failDiagram(diagram, "invalid-geometry");
+      return;
+    }
+    afterRender(diagram);
+    if (diagram.dataset.mermaidState === "rendering") {
+      completeRender(diagram);
     }
   }
 
@@ -478,6 +486,7 @@
     for (const diagram of candidates) {
       diagram.classList.add("gludd-mermaid-deferred");
     }
+    const completions = [];
     try {
       if (document.fonts?.ready) {
         await document.fonts.ready;
@@ -490,11 +499,15 @@
         window.gluddPresentationActiveDiagram = index;
         diagram.classList.remove("gludd-mermaid-deferred");
         try {
-          await renderDiagram(diagram, stage, deadline);
+          const result = await renderDiagram(diagram, stage, deadline);
+          if (result) {
+            completions.push(result.completion);
+          }
         } catch (error) {
           failDiagram(diagram, classifyRenderFailure(error));
         }
       }
+      await Promise.all(completions);
     } finally {
       for (const diagram of candidates) {
         diagram.classList.remove("gludd-mermaid-deferred");
