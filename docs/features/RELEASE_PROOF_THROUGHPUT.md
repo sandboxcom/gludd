@@ -86,6 +86,17 @@ pytest parametrization changes; ordinary plugins and its repository assertion
 remain authoritative. Do not obtain a receipt until a changed clean source
 passes the original complete90/60 owner.
 
+Normal root source commit e2e7685495819d9428100ce90491d86fdd1329fe retains fresh
+collection127516/127540,24deselected/0errors. Root then reviews and integrates
+the retained Pages product40392bdba7e228f84f87fd51958f6330ac541c93 as90a4f08a9.
+Its original three-file scope moves successful-chart summary work to one batch
+reconciliation; immediate failures, fresh health, geometry and original browser
+bounds remain. Native tests-only RED2FAIL/12PASS precedes complete50PASS/0skip,
+Ruff/strict/syntax and locked Markdown. Source collection127522/127546 has
+24deselected/0errors. The original db4 checkpoint and worktree lock remain.
+The existing PRESENTATION_JAVASCRIPT_COVERAGE feature now distinguishes that
+integration from its older pre-product94.2/88.75 coverage; fresh real browser/c8
+and the three repair-owned families remain required. No release record is ticked.
 
 ## Model-independent release operating path (2026-10-20)
 

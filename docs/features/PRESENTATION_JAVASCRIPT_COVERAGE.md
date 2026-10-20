@@ -129,13 +129,26 @@ Native c8 conversion/threshold execution remains separate and unproved.
 
 ## Source progress and takeover
 
-Single-writer branch agent-v012-pages-js-coverage-20261019 starts at
-eb78ebd354539bc4d9d324899873db3969306515, under S98.4. All implementation agents
-are complete; Root owns integration of the reviewed20-path scope. Current focused
-native ChromiumJS1 passes24 cases and whole-controller94.2line/88.75branch,
-including both independent floors, after V4 source-only approval. Normal guarded
-commit/development integration and final gate/exact-SHA proof remain pending.
-The separate product repair remains frozen on agent-v012-pages-cold-readiness-20261019.
+Coverage tooling originated on agent-v012-pages-js-coverage-20261019 at
+eb78ebd354539bc4d9d324899873db3969306515, under S98.4, and is integrated.
+The prior focused ChromiumJS1 result is24 cases and whole-controller
+94.2line/88.75branch on the exact pre-product controller documented below.
+It cannot establish current coverage after the successful-batch product change.
+
+On2026-10-20 the original locked product branch commits its retained three-file
+delta as40392bdba7e228f84f87fd51958f6330ac541c93; Root reviews and integrates it
+as90a4f08a96f29f89c50323caba35ca8e12f5950b. The native owned checkpoint db4b17f,
+original branch and worktree lock remain intact. Tests-only RED is2FAIL/12PASS;
+all three complete finite owners then pass50/0skip2.72s, including native syntax.
+Fresh source collection is127522/127546 with24deselected and zero errors.
+Ruff, scoped strict checking and locked Design Markdown checking pass.
+These receipts prove the summary-call change and preserved failure controls,
+not browser latency or current whole-controller coverage. Root owns fresh
+repair-owned WebKitJS0, Chromium acceptance and ChromiumJS1/c8 proof with the
+original5s/600s bounds and85aggregate/75each line and branch thresholds.
+The final canonical gate, exact-SHA hosted proof, deployment and S98.4 remain
+pending. Exact source commands and preserved failed evidence are recorded in
+/tmp/gludd-v012-pages-retained-product-report.md.
 The chronological evidence below preserves superseded pending states and failures.
 
 Failing-first complete two-owner unit run collects68 cases with zero errors
