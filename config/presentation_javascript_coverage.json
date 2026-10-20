@@ -1,0 +1,12 @@
+{
+  "all": true,
+  "src": ["docs/presentation/deck"],
+  "include": ["docs/presentation/deck/presentation.js"],
+  "exclude": [],
+  "extension": [".js"],
+  "reporter": ["json", "json-summary", "lcov", "text"],
+  "lines": 85,
+  "branches": 85,
+  "per-file": false,
+  "skip-full": false
+}

@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ci_receipt_auth import ReceiptSigner, create_receipt_envelope
+elif __package__:
+    from scripts.ci_receipt_auth import ReceiptSigner, create_receipt_envelope
 else:
     from ci_receipt_auth import ReceiptSigner, create_receipt_envelope
 

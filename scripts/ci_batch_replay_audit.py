@@ -34,6 +34,27 @@ if TYPE_CHECKING:
         ReceiptTrustPolicy,
         authenticate_receipt,
     )
+elif __package__:
+    from scripts.ci_batch_receipts import (
+        MAX_FAILURE_RECEIPTS_PER_GENERATION,
+        MAX_RECEIPT_GENERATIONS,
+        RECEIPT_SCHEMA_VERSION,
+        action_identity_error,
+        canonical_json_sha256,
+        coverage_semantic_sha256,
+        file_sha256,
+        outcome_manifest_error,
+        private_path_error,
+        read_strict_json,
+        validate_batch_receipt,
+        validate_failure_receipt,
+    )
+    from scripts.ci_gate_progress import receipt_duration_seconds
+    from scripts.ci_receipt_auth import (
+        ReceiptAuthStatus,
+        ReceiptTrustPolicy,
+        authenticate_receipt,
+    )
 else:
     from ci_batch_receipts import (
         MAX_FAILURE_RECEIPTS_PER_GENERATION,

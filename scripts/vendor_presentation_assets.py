@@ -128,7 +128,7 @@ def _download(url: str) -> bytes:
     with urllib.request.urlopen(request, timeout=30) as response:
         if response.status != 200:
             raise RuntimeError(f"asset download returned HTTP {response.status}")
-        payload = response.read(12 * 1024 * 1024 + 1)
+        payload: bytes = response.read(12 * 1024 * 1024 + 1)
     if not payload or len(payload) > 12 * 1024 * 1024:
         raise RuntimeError("asset is empty or exceeds the 12 MiB acquisition bound")
     return payload.replace(b"//# sourceMappingURL=", b"//# source map omitted: ")

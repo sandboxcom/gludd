@@ -17,14 +17,19 @@ import http.server
 import json
 import re
 import shutil
+import socket
+import socketserver
 import subprocess
 import sys
+from collections.abc import Mapping
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar, NotRequired, TypedDict, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
-if __package__:
+if TYPE_CHECKING:
+    from vendor_presentation_assets import validate_assets
+elif __package__:
     from scripts.vendor_presentation_assets import validate_assets
 else:
     from vendor_presentation_assets import validate_assets
@@ -58,7 +63,20 @@ BANNED_MARKETING = [
 ]
 
 
-def parse_readme_status_table() -> list[dict]:
+class _DeckData(TypedDict):
+    """The fields collected by the live deck-data owner."""
+
+    version: str
+    git_sha: str
+    git_sha_full: str
+    test_count: int
+    role_count: int
+    features: list[dict[str, str]]
+    generated_at: str
+    game_audit: NotRequired[object]
+
+
+def parse_readme_status_table() -> list[dict[str, str]]:
     """Parse the README status table rows into feature dicts."""
     text = README.read_text()
     features = []
@@ -117,10 +135,11 @@ def get_version() -> str:
     return "unknown"
 
 
-def get_game_audit() -> dict | None:
+def get_game_audit() -> object:
     """Load game audit report if it exists."""
     if GAME_AUDIT.exists():
-        return json.loads(GAME_AUDIT.read_text())
+        payload: object = json.loads(GAME_AUDIT.read_text())
+        return payload
     return None
 
 
@@ -134,9 +153,9 @@ def count_roles() -> int:
     return len([line for line in result.stdout.strip().splitlines() if line.strip()])
 
 
-def build_deck_data() -> dict:
+def build_deck_data() -> _DeckData:
     """Collect all live data for the deck."""
-    data = {
+    data: _DeckData = {
         "version": get_version(),
         "git_sha": get_git_sha(),
         "git_sha_full": get_git_sha(short=False),
@@ -156,7 +175,7 @@ def build_deck_data() -> dict:
     return data
 
 
-def apply_tokens(html: str, data: dict) -> tuple[str, list[str]]:
+def apply_tokens(html: str, data: Mapping[str, object]) -> tuple[str, list[str]]:
     """Replace {{TOKEN}} placeholders in HTML with live data values.
 
     Returns the rewritten HTML and a list of tokens that were not found in
@@ -318,16 +337,16 @@ class _CitationLinker(HTMLParser):
         enters_skip = tag in self._SKIP_TAGS or "mermaid" in classes
         enters_anchor = tag == "a"
         if tag in self._VOID_TAGS:
-            self.parts.append(self.get_starttag_text())
+            self.parts.append(cast(str, self.get_starttag_text()))
             return
         self._stack.append((enters_skip, enters_anchor))
         self._skip_depth += int(enters_skip)
         self._anchor_depth += int(enters_anchor)
-        self.parts.append(self.get_starttag_text())
+        self.parts.append(cast(str, self.get_starttag_text()))
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         del tag, attrs
-        self.parts.append(self.get_starttag_text())
+        self.parts.append(cast(str, self.get_starttag_text()))
 
     def handle_endtag(self, tag: str) -> None:
         self.parts.append(f"</{tag}>")
@@ -383,7 +402,7 @@ def honesty_check(html: str) -> list[str]:
     return violations
 
 
-def build_preview_copy(preview_dir: Path = PREVIEW_DIR, *, data: dict | None = None) -> Path:
+def build_preview_copy(preview_dir: Path = PREVIEW_DIR, *, data: Mapping[str, object] | None = None) -> Path:
     """Build a token-resolved copy of the deck in a scratch dir for local preview.
 
     Copies the entire tracked deck dir (index.html + assets) to `preview_dir`,
@@ -449,8 +468,13 @@ def source_request_handler(
 
         server_version = "GluddDeck/1"
 
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            super().__init__(*args, directory=str(serve_dir), **kwargs)
+        def __init__(
+            self,
+            request: socket.socket | tuple[bytes, socket.socket],
+            client_address: tuple[str, int],
+            server: socketserver.BaseServer,
+        ) -> None:
+            super().__init__(request, client_address, server, directory=str(serve_dir))
 
         def do_GET(self) -> None:
             request = urlsplit(self.path)
@@ -521,7 +545,7 @@ class DeckThreadingHTTPServer(http.server.ThreadingHTTPServer):
         error = sys.exception()
         if isinstance(error, (BrokenPipeError, ConnectionResetError)):
             return
-        super().handle_error(request, client_address)
+        super().handle_error(cast(socket.socket | tuple[bytes, socket.socket], request), client_address)
 
 
 def serve_deck(port: int = 8080, serve_dir: Path = DECK_DIR, *, url_prefix: str = "") -> None:

@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+
+if TYPE_CHECKING:
+    import run_presentation_browser_tests as browser_runner
+    from playwright.sync_api import Page
+else:
+    from scripts import run_presentation_browser_tests as browser_runner
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -73,6 +80,58 @@ def browser_events(page: Any) -> dict[str, list[str]]:
         else None,
     )
     return events
+
+
+
+@pytest.fixture(autouse=True)
+def _retain_presentation_javascript_coverage(
+    page: Page,
+    browser_name: str,
+    request: pytest.FixtureRequest,
+) -> Generator[None, None, None]:
+    """The original page fixture remains unchanged unless the runner opts in."""
+    directory = os.environ.get(browser_runner.JS_COVERAGE_DIR_ENV)
+    manifest_name = os.environ.get(browser_runner.JS_COVERAGE_MANIFEST_ENV)
+    if directory is None and manifest_name is None:
+        yield
+        return
+    if directory is None or manifest_name is None or browser_name != "chromium":
+        raise RuntimeError("JavaScript coverage requires explicit Chromium runner carriers")
+    output = browser_runner._safe_owned_tmp(Path(directory), label="JavaScript coverage output")
+    manifest_path = Path(manifest_name).resolve()
+    if manifest_path != output / "source.json":
+        raise RuntimeError("JavaScript coverage manifest is outside its owned output")
+    manifest = browser_runner._read_json_object(manifest_path)
+    source_path = (browser_runner.ROOT / browser_runner.CONTROLLER_RELATIVE).resolve()
+    digest = manifest.get("source_sha256")
+    if (
+        manifest.get("schema_version") != 1
+        or manifest.get("browser") != "chromium"
+        or manifest.get("source_path") != str(source_path)
+        or not isinstance(digest, str)
+    ):
+        raise RuntimeError("JavaScript coverage source manifest is invalid")
+    session = cast(
+        browser_runner.CoverageSession, page.context.new_cdp_session(page),
+    )
+    collector = browser_runner.JavaScriptCoverageCollector(
+        session, source_path=source_path, expected_sha256=digest,
+        output_root=output, test_id=request.node.nodeid,
+    )
+    browser = page.context.browser
+    if browser is None:
+        raise RuntimeError("JavaScript coverage browser identity is unavailable")
+    browser_runner._write_json(output / f"runtime-{collector.identity}.json", {
+        "browser": browser_name, "browser_version": browser.version,
+        "source_sha256": digest, "test_id": request.node.nodeid,
+        "source_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    })
+    collector.start()
+    with browser_runner.coverage_boundaries(page, collector):
+        try:
+            yield
+        finally:
+            collector.finish()
 
 
 @pytest.fixture(autouse=True)

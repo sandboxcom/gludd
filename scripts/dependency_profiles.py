@@ -559,9 +559,8 @@ def inspect_runtime(
         from ci_batch_receipts import file_sha256
         from resource_arbiter import resource_root
     elif __package__:
-        from ci_batch_receipts import file_sha256
-
         from scripts.active_work_status import _repository_roots
+        from scripts.ci_batch_receipts import file_sha256
         from scripts.resource_arbiter import resource_root
     else:
         from active_work_status import _repository_roots
@@ -949,6 +948,11 @@ def _verify_pinned_uv(leaf: Path, bootstrap: Path, version: str) -> dict[str, ob
 
 
 
+def _require_uv_acquisition_parent_version() -> None:
+    if sys.version_info[:2] != (3, 11):
+        raise ProfileError("native uv acquisition requires an existing registered Python 3.11 interpreter")
+
+
 def acquire_pinned_uv(root: Path, *, validate_only: bool = True) -> dict[str, object]:
     """Acquire only the hosted uv pin in one fresh immutable native tool leaf."""
     import hashlib
@@ -987,7 +991,8 @@ def acquire_pinned_uv(root: Path, *, validate_only: bool = True) -> dict[str, ob
         Path(f"{resource_root(selected)}-toolchain") / "ci-shards/python-3.11"
         for selected in roots
     }
-    if (sys.version_info[:2] != (3, 11) or Path(sys.prefix) not in slots
+    _require_uv_acquisition_parent_version()
+    if (Path(sys.prefix) not in slots
             or bootstrap.parent.parent != Path(sys.prefix) or not bootstrap.is_file()):
         raise ProfileError("native uv acquisition requires an existing registered Python 3.11 interpreter")
     _uv_owned_paths((Path(sys.prefix), bootstrap.parent))

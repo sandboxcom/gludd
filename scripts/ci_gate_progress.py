@@ -28,6 +28,21 @@ if TYPE_CHECKING:
         ReceiptTrustPolicy,
         authenticate_receipt,
     )
+elif __package__:
+    from scripts.ci_batch_receipts import (
+        action_identity_error,
+        canonical_json_bytes,
+        canonical_json_sha256,
+        file_sha256,
+        private_path_error,
+        read_strict_json,
+        validate_batch_receipt,
+    )
+    from scripts.ci_receipt_auth import (
+        ReceiptAuthStatus,
+        ReceiptTrustPolicy,
+        authenticate_receipt,
+    )
 else:
     from ci_batch_receipts import (
         action_identity_error,

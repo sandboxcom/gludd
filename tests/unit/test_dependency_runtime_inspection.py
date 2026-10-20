@@ -12,10 +12,11 @@ import pytest
 
 if TYPE_CHECKING:
     import active_work_status
+    import ci_batch_receipts
     import dependency_profiles as owner
     import resource_arbiter
 else:
-    from scripts import active_work_status, resource_arbiter
+    from scripts import active_work_status, ci_batch_receipts, resource_arbiter
     from scripts import dependency_profiles as owner
 from scripts.makefile_layout import compose_makefile
 
@@ -334,8 +335,6 @@ def test_effective_runtime_config_refuses_executable_directory_shadow(
 def test_runtime_input_parse_and_hash_use_identical_frozen_bytes(
     runtime: tuple[owner.ProfileCatalog, Path], monkeypatch: pytest.MonkeyPatch, kind: str,
 ) -> None:
-    import ci_batch_receipts
-
     catalog, environment = runtime
     target = {
         "manifest": catalog.manifest, "lock": catalog.root / "uv.lock",

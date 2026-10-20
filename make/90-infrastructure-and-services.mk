@@ -76,6 +76,10 @@ DECK_DIR := docs/presentation/deck
 DECK_DATA := docs/presentation/deck-data.json
 PRESENTATION_VENDOR_VALIDATE_ONLY ?= 1
 PRESENTATION_BROWSER_VALIDATE_ONLY ?= 1
+PRESENTATION_BROWSER_JS_COVERAGE ?= 0
+override GLUDD_PRESENTATION_BROWSER_JS_COVERAGE := $(value PRESENTATION_BROWSER_JS_COVERAGE)
+export GLUDD_PRESENTATION_BROWSER_JS_COVERAGE := $(value PRESENTATION_BROWSER_JS_COVERAGE)
+unexport PRESENTATION_BROWSER_JS_COVERAGE
 PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY ?= 1
 PRESENTATION_BROWSER_ENGINES ?= chromium webkit
 PRESENTATION_BROWSER_ROOT ?= /tmp/gludd-playwright-browsers
@@ -98,6 +102,7 @@ vendor-presentation-assets:
 
 presentation-browser-test:
 	@case "$(PRESENTATION_BROWSER_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@case "$$GLUDD_PRESENTATION_BROWSER_JS_COVERAGE" in 0|1) ;; *) echo "PRESENTATION_BROWSER_JS_COVERAGE must be 0 or 1"; exit 2;; esac
 	@for browser in $(PRESENTATION_BROWSER_ENGINES); do \
 		echo "presentation-browser matrix browser=$$browser phase=test"; \
 		$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
@@ -105,7 +110,8 @@ presentation-browser-test:
 			--browser "$$browser" \
 			--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
 			--output-root "$(PRESENTATION_BROWSER_OUTPUT)/$$browser" \
-			--timeout-seconds "$(PRESENTATION_BROWSER_TIMEOUT)" || exit $$?; \
+			--timeout-seconds "$(PRESENTATION_BROWSER_TIMEOUT)" \
+			--js-coverage "$$GLUDD_PRESENTATION_BROWSER_JS_COVERAGE" || exit $$?; \
 	done
 
 presentation-browser-install:
