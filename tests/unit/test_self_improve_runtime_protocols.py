@@ -6,6 +6,13 @@ import importlib
 
 import pytest
 
+from general_ludd.execution.adapter_protocols import (
+    CallableAdapterProtocol,
+    ObservableRunnerProtocol,
+)
+from general_ludd.self_improve.local_worker_request import _ObservableRunner
+from general_ludd.self_improve.managed_runtime_evaluation import ManagedAttemptEvaluator
+
 _METHOD_ONLY_ADAPTERS = (
     ("general_ludd.self_improve.apply", "_EventBus", ("publish",)),
     ("general_ludd.self_improve.apply", "_Reloader", ("reload_changed_modules",)),
@@ -14,6 +21,16 @@ _METHOD_ONLY_ADAPTERS = (
     ("general_ludd.self_improve.codex_comparison", "_LlamaGrammarType", ("from_json_schema",)),
     ("general_ludd.self_improve.codex_comparison", "_LocalModel", ("__call__",)),
     ("general_ludd.self_improve.codex_comparison", "_ModelFactory", ("__call__",)),
+    (
+        "general_ludd.self_improve.local_worker_request",
+        "_ObservableRunner",
+        ("run_observable",),
+    ),
+    (
+        "general_ludd.self_improve.managed_runtime_evaluation",
+        "ManagedAttemptEvaluator",
+        ("__call__",),
+    ),
     ("general_ludd.self_improve.managed_runner", "_AttemptEvaluator", ("__call__",)),
     ("general_ludd.self_improve.managed_runner", "_CandidatePlanner", ("__call__",)),
     ("general_ludd.self_improve.managed_runner", "_FailureLoader", ("__call__",)),
@@ -73,3 +90,9 @@ def test_data_bearing_protocol_remains_static_only(module_name: str, protocol_na
     protocol = getattr(importlib.import_module(module_name), protocol_name)
 
     assert not getattr(protocol, "_is_runtime_protocol", False), protocol_name
+
+
+def test_new_self_improve_seams_refine_core_owned_runtime_protocols() -> None:
+    """Capability compatibility names must not own reusable adapter behavior."""
+    assert ObservableRunnerProtocol in _ObservableRunner.__bases__
+    assert CallableAdapterProtocol in ManagedAttemptEvaluator.__bases__

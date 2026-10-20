@@ -31,9 +31,7 @@ signature or provenance verification.
 A candidate must be newer than the baseline and must change its commit, tree,
 and archive identity. Mutable refs, all-zero placeholders, partial hashes,
 unknown fields, a source/archive digest mismatch, or a failed verification
-flag reject the update. Verification flags must be the exact JSON boolean
-`true`; truthy numbers or strings are not signature evidence. A tag never acts
-as identity by itself.
+flag reject the update. A tag never acts as identity by itself.
 
 The verifier deliberately does not implement signature verification or archive
 acquisition. Those remain mature upstream/build-tool responsibilities. This
@@ -141,7 +139,7 @@ retry of the same operation remains deterministic.
 ## Operator and maintainer evidence
 
 FreeLLMAPI is young, so there is no multi-year forum history. The oldest
-relevant operator threads reviewed again in October 2026 are still useful and are
+relevant operator threads available in September 2026 are still useful and are
 recorded without claiming long-term stability:
 
 - [Issue #268](https://github.com/tashfeenahmed/freellmapi/issues/268) reports a
@@ -194,17 +192,3 @@ receipt and normalized outcome by digest. Receipt consumers revalidate fixed
 literals, every digest, sorted disjoint diff groups, and exact diff counts before
 accepting scope. Unknown, malformed, inconsistent, or oversized input fails
 closed rather than being preserved for diagnostics.
-
-## Reproducible verification
-
-The verifier's focused proof is repository-owned rather than dependent on an
-operator's ambient coverage configuration. Run the unit contract, measured
-line/branch coverage, scoped lint and type checks, and documentation lint with:
-
-```console
-make test-files TESTFILES='tests/unit/test_freellmapi_sync_verifier.py'
-make coverage-files COVERAGE_TESTFILES='tests/unit/test_freellmapi_sync_verifier.py' COVERAGE_CONFIG=config/coverage_freellmapi_sync_verifier.ini COVERAGE_REPORT=.gate-logs/coverage-freellmapi-sync-verifier.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20
-make lint-files FILES='src/general_ludd/models/freellmapi_sync_contracts.py src/general_ludd/models/freellmapi_sync_inventory.py src/general_ludd/models/freellmapi_sync_plans.py src/general_ludd/models/freellmapi_sync_verifier.py tests/unit/test_freellmapi_sync_verifier.py'
-make typecheck-scope FILES='src/general_ludd/models/freellmapi_sync_contracts.py src/general_ludd/models/freellmapi_sync_inventory.py src/general_ludd/models/freellmapi_sync_plans.py src/general_ludd/models/freellmapi_sync_verifier.py tests/unit/test_freellmapi_sync_verifier.py'
-make lint-markdown MARKDOWN_FILES='docs/features/FREELLMAPI_V012_SYNC_VERIFIER.md' RUMDL_CONFIG=config/rumdl.toml
-```

@@ -494,11 +494,24 @@ async def async_git_repo_lock(
                 self._executor.shutdown(wait=True)
 
     cm = git_repo_lock(repo_path, timeout=timeout, stale_after=stale_after)
-    loop = asyncio.get_running_loop()
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="gludd-git-lock")
+    enter_future = executor.submit(cm.__enter__)
     try:
-        await loop.run_in_executor(executor, cm.__enter__)
+        await asyncio.wrap_future(enter_future)
     except BaseException:
-        executor.shutdown(wait=True)
+        # Cancelling the asyncio wrapper cannot stop a running executor
+        # thread.  Resolve the underlying future directly, then release on
+        # that same single worker if it acquired the thread-owned RLock.  This
+        # bounded synchronous cleanup prevents an orphaned repository mutex
+        # before cancellation or an enter failure is propagated.
+        acquired = False
+        with contextlib.suppress(BaseException):
+            enter_future.result()
+            acquired = True
+        try:
+            if acquired:
+                executor.submit(cm.__exit__, None, None, None).result()
+        finally:
+            executor.shutdown(wait=True)
         raise
     return _EnteredAsyncGitRepoLock(cm, executor)

@@ -9,6 +9,7 @@ acquire/release ordering.
 
 from __future__ import annotations
 
+import asyncio
 import concurrent.futures
 import contextlib
 import errno
@@ -56,6 +57,11 @@ class TestNormalizeEdgeCases:
             os.symlink(real_dir, link1)
             os.symlink(link1, link2)
             assert locking._normalize(link2) == os.path.realpath(real_dir)
+
+    def test_anchor_spelling_preserves_identical_directory(self) -> None:
+        """An exact lexical anchor needs no reconstructed suffix."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assert locking._restore_anchor_spelling(tmpdir, anchor=tmpdir) == tmpdir
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +286,32 @@ class TestFileLockDepthCounterIsolation:
                 assert locking._file_lock_depth[key_a] == 1
             assert locking._file_lock_depth.get(key_a, 0) == 0
 
+    def test_foreign_inherited_depth_closes_descriptor_before_acquire(self) -> None:
+        """Copied ownership state must never admit a different process."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            key = "foreign-inherited-owner"
+            inherited_fd, peer_fd = os.pipe()
+            locking._file_lock_depth[key] = 1
+            locking._file_lock_owner[key] = (os.getpid() + 1, threading.get_ident())
+            locking._file_lock_fds[key] = inherited_fd
+            try:
+                with locking._file_lock(
+                    tmpdir,
+                    key,
+                    timeout=1.0,
+                    stale_after=60.0,
+                ):
+                    assert locking._file_lock_owner[key][0] == os.getpid()
+                with pytest.raises(OSError):
+                    os.fstat(inherited_fd)
+            finally:
+                locking._file_lock_depth.pop(key, None)
+                locking._file_lock_owner.pop(key, None)
+                locking._file_lock_fds.pop(key, None)
+                with contextlib.suppress(OSError):
+                    os.close(inherited_fd)
+                os.close(peer_fd)
+
 
 # ---------------------------------------------------------------------------
 # _file_lock boundary / error paths
@@ -441,6 +473,26 @@ class TestFileLockBoundary:
             ):
                 pass
             assert len(call_count) >= 4, "EAGAIN was not retried"
+
+    def test_unexpected_flock_error_propagates(self) -> None:
+        """Only contention errors may enter the bounded retry loop."""
+        pytest.importorskip("fcntl")
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch(
+                "general_ludd.git_automation.locking.fcntl.flock",
+                side_effect=OSError(errno.EIO, "device error"),
+            ),
+            pytest.raises(OSError, match="device error"),
+            locking._file_lock(
+                tmpdir,
+                "unexpected-flock-error",
+                timeout=1.0,
+                stale_after=60.0,
+            ),
+        ):
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -613,6 +665,37 @@ class TestCrossProcessMultiWaiter:
 
 
 class TestAsyncGitRepoLockEdge:
+    @pytest.mark.asyncio
+    async def test_cancelled_enter_releases_context_after_worker_finishes(self) -> None:
+        """Cancellation must not orphan a lock acquired by the executor."""
+        entered = threading.Event()
+        allow_acquire = threading.Event()
+        exited = threading.Event()
+
+        class _SlowEnter:
+            def __enter__(self) -> None:
+                entered.set()
+                assert allow_acquire.wait(timeout=2.0)
+
+            def __exit__(self, *exc: object) -> None:
+                exited.set()
+
+        with patch.object(locking, "git_repo_lock", return_value=_SlowEnter()):
+            task = asyncio.create_task(
+                locking.async_git_repo_lock(
+                    ".",
+                    timeout=1.0,
+                    stale_after=60.0,
+                )
+            )
+            assert await asyncio.to_thread(entered.wait, 2.0)
+            task.cancel()
+            allow_acquire.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        assert exited.wait(timeout=1.0), "cancelled acquisition leaked its lock"
+
     @pytest.mark.asyncio
     async def test_exc_during_enter_shuts_down_executor(self) -> None:
         class _BoomOnEnter:

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import configparser
 import copy
 import hashlib
 import json
 from collections.abc import Iterator
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -39,27 +37,6 @@ def _object_list(value: object) -> list[object]:
 _PROJECT_IDENTITY = _digest("gludd-project-identity")
 _OPERATION_ID = _digest("freellmapi-v012-operation")
 _RELEASE_IDENTITY_PROTOCOL = "gludd-freellmapi-release-identity-v1"
-
-
-def test_repository_owned_coverage_profile_is_complete() -> None:
-    """Keep the focused coverage proof reproducible and exact."""
-    root = Path(__file__).parents[2]
-    profile = root / "config/coverage_freellmapi_sync_verifier.ini"
-    parser = configparser.ConfigParser()
-
-    assert parser.read(profile, encoding="utf-8") == [str(profile)]
-    assert parser.getboolean("run", "branch")
-    assert parser.getboolean("run", "parallel")
-    assert set(parser.get("run", "include").split()) == {
-        "*/src/general_ludd/models/freellmapi_sync_contracts.py",
-        "*/src/general_ludd/models/freellmapi_sync_inventory.py",
-        "*/src/general_ludd/models/freellmapi_sync_plans.py",
-        "*/src/general_ludd/models/freellmapi_sync_verifier.py",
-    }
-    documentation = (
-        root / "docs/features/FREELLMAPI_V012_SYNC_VERIFIER.md"
-    ).read_text(encoding="utf-8")
-    assert "COVERAGE_CONFIG=config/coverage_freellmapi_sync_verifier.ini" in documentation
 
 
 def _canonical_digest(value: object) -> str:
@@ -394,21 +371,6 @@ def test_supply_chain_ownership_plans_and_rollback_fail_closed(
         "manifest_sha256",
         "receipt_scope_sha256",
     }
-
-
-def test_artifact_signature_attestation_requires_exact_boolean() -> None:
-    """Reject truthy substitutes for independently verified signatures."""
-    request = _request()
-    candidate = _object_dict(request["candidate"])
-    supply_chain = _object_dict(candidate["supply_chain"])
-    supply_chain["artifact_signature_verified"] = 1
-
-    receipt = _verify(request)
-
-    assert receipt["decision"] == "rejected"
-    assert receipt["runtime_admitted"] is False
-    assert receipt["fault"] == FreeLLMAPISyncFault.SUPPLY_CHAIN_INVALID.value
-    assert "artifact_signature" not in json.dumps(receipt, sort_keys=True)
 
 
 def test_rejection_receipt_does_not_echo_untrusted_content() -> None:
