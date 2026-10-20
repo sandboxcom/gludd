@@ -32,6 +32,7 @@ PLAYBOOK_FILES = ["prepare.yml", "converge.yml", "verify.yml", "molecule.yml"]
 
 SCENARIOS_WITHOUT_PREPARE = frozenset(
     {
+        "azure_gpu_deployment_diagnostics",
         "binary_smoke_macos",
         "chat",
         "daemon_lifecycle",
@@ -68,9 +69,7 @@ def _load_yaml(path: Path) -> Any:
         return yaml.safe_load(f)
 
 
-def _find_var_refs(
-    value: Any, parent_keys: tuple[str, ...] = ()
-) -> set[str]:
+def _find_var_refs(value: Any, parent_keys: tuple[str, ...] = ()) -> set[str]:
     refs: set[str] = set()
     if isinstance(value, str):
         for m in _VAR_REF_RE.finditer(value):
@@ -351,9 +350,7 @@ class TestMoleculeVariableReferences:
                 )
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_vars_with_mustache_refs_have_default_filters(
-        self, scenario: str
-    ) -> None:
+    def test_vars_with_mustache_refs_have_default_filters(self, scenario: str) -> None:
         paths = _collect_playbook_paths(scenario)
         for filename in ["converge.yml", "prepare.yml", "verify.yml"]:
             if filename == "converge.yml" and scenario in SCENARIOS_WITHOUT_CONVERGE:
@@ -404,9 +401,7 @@ class TestMoleculeVariableReferences:
 
 class TestMoleculeRoleDependencies:
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_converge_includes_a_role_or_module(
-        self, scenario: str
-    ) -> None:
+    def test_converge_includes_a_role_or_module(self, scenario: str) -> None:
         if scenario in SCENARIOS_WITHOUT_CONVERGE:
             pytest.skip(f"no converge.yml for {scenario}")
         if scenario == "noop":
@@ -446,9 +441,7 @@ class TestMoleculeRoleDependencies:
             assert "converge" in playbooks, f"[{scenario}] molecule.yml missing playbooks.converge"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_molecule_yml_driver_name_is_valid(
-        self, scenario: str
-    ) -> None:
+    def test_molecule_yml_driver_name_is_valid(self, scenario: str) -> None:
         if scenario == "default":
             pytest.skip("canonical default scenario has no driver")
         paths = _collect_playbook_paths(scenario)
@@ -478,9 +471,7 @@ class TestMoleculeRoleDependencies:
             assert verifier.get("name", "") == "ansible", f"[{scenario}] molecule.yml verifier.name must be 'ansible'"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_converge_include_role_has_name(
-        self, scenario: str
-    ) -> None:
+    def test_converge_include_role_has_name(self, scenario: str) -> None:
         if scenario in SCENARIOS_WITHOUT_CONVERGE:
             pytest.skip(f"no converge.yml for {scenario}")
         paths = _collect_playbook_paths(scenario)
@@ -509,9 +500,7 @@ class TestMoleculeRoleDependencies:
 class TestMoleculeStructuralCoherence:
     def test_runtime_validate_uses_repository_root_and_explicit_auth(self) -> None:
         for filename in ("converge.yml", "verify.yml"):
-            playbook = (
-                PLAYBOOKS_DIR / "runtime_validate" / "default" / filename
-            ).read_text(encoding="utf-8")
+            playbook = (PLAYBOOKS_DIR / "runtime_validate" / "default" / filename).read_text(encoding="utf-8")
 
             assert "lookup('env', 'MOLECULE_PROJECT_DIRECTORY')" in playbook
             assert "lookup('env', 'PWD')" not in playbook
@@ -545,9 +534,7 @@ class TestMoleculeStructuralCoherence:
         assert not missing, f"Missing files: {missing}"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_molecule_yml_is_valid_mapping(
-        self, scenario: str
-    ) -> None:
+    def test_molecule_yml_is_valid_mapping(self, scenario: str) -> None:
         paths = _collect_playbook_paths(scenario)
         path = paths["molecule.yml"]
         if path is None:
@@ -575,9 +562,7 @@ class TestMoleculeStructuralCoherence:
                     assert play is not None, f"[{scenario}] {filename} play {idx} is null"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_scenario_name_matches_directory(
-        self, scenario: str
-    ) -> None:
+    def test_scenario_name_matches_directory(self, scenario: str) -> None:
         paths = _collect_playbook_paths(scenario)
         path = paths["molecule.yml"]
         if path is None:
@@ -617,9 +602,7 @@ class TestMoleculeStructuralCoherence:
                 assert first_line == "---", f"[{scenario}] {filename} missing YAML document start '---'"
 
     @pytest.mark.parametrize("scenario", MOLECULE_SCENARIOS)
-    def test_playbook_filenames_consistent(
-        self, scenario: str
-    ) -> None:
+    def test_playbook_filenames_consistent(self, scenario: str) -> None:
         paths = _collect_playbook_paths(scenario)
         path = paths["molecule.yml"]
         if path is None:
@@ -636,13 +619,10 @@ class TestMoleculeStructuralCoherence:
                 shared_filenames = {f"{key}.yml"}
                 if key in {"cleanup", "destroy"}:
                     shared_filenames.add(f"mock_daemon_{key}.yml")
-                shared_paths = {
-                    f"{shared_prefix}{filename}" for filename in shared_filenames
-                }
+                shared_paths = {f"{shared_prefix}{filename}" for filename in shared_filenames}
                 allowed_paths = {local_path, *shared_paths}
                 assert rel_path in allowed_paths, (
-                    f"[{scenario}] molecule.yml playbooks.{key} = {rel_path}, "
-                    f"expected one of {sorted(allowed_paths)}"
+                    f"[{scenario}] molecule.yml playbooks.{key} = {rel_path}, expected one of {sorted(allowed_paths)}"
                 )
                 if rel_path in shared_paths:
                     shared_filename = rel_path.removeprefix(shared_prefix)
@@ -653,9 +633,7 @@ class TestMoleculeStructuralCoherence:
 
     def test_ansible_lint_playbooks_delegates_to_canonical_fail_closed_lint(self) -> None:
         makefile = compose_makefile(PROJECT_ROOT / "Makefile")
-        target_body = makefile.split("ansible-lint-playbooks:", 1)[1].split(
-            "ansible-collection-test:", 1
-        )[0]
+        target_body = makefile.split("ansible-lint-playbooks:", 1)[1].split("ansible-collection-test:", 1)[0]
 
         assert "ansible-lint-playbooks: yaml-lint" in makefile
         assert "|| true" not in target_body
