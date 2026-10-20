@@ -1,133 +1,258 @@
 # Release runbook
 
-This is the fail-closed procedure for cutting Gludd `v0.1.1`.
+Release target: `v0.1.2`
+
+Last updated: 2026-10-20
+
+This is the fail-closed procedure for the committed v0.1.2 candidate. The
+[archived v0.1.1 procedure](RELEASE_RUNBOOK_V011.md) retains the earlier
+branch-reconciliation workflow, published-release exceptions, and historical
+commands. Those commands do not authorize this release.
 
 ## The rule
 
-A tag is not a release. A release is complete only when the exact tagged commit
-has green CI, every required artifact has passed the pre-publish functional
-matrix, and the published release passes the remote completeness check.
+A tag is not a release. Completion requires the exact tagged SHA to have its
+own green canonical local gate, required exact-SHA hosted CI, reviewed-head
+integration receipt, complete functional artifact matrix, signed publication,
+and remote completeness PASS. Source approval, focused acceptance, collection,
+scheduling admission, a dry-run, and a plan establish different facts.
 
-## Branch reconciliation sweep (beta4 procedure)
-
-The repeatable procedure used to reconcile the beta.4 branch backlog onto
-`development`. Every step runs on the MAIN checkout, on `development`, with a
-clean tree — never inside a worktree.
-
-### 1. Inventory unique heads
-```
-make branch-reconciliation-summary RECONCILE_TARGET=development \
-  RECONCILE_LIMIT=100 RECONCILE_DETAILS=1 RECONCILE_CURRENT_ONLY=1 \
-  RECONCILE_QUIET_PROGRESS=1
-```
-Emits a current-only JSON document listing every local branch whose tip carries
-work not reachable from `development` (`unique` classification). Branches
-classified `ancestor` or `patch-equivalent` need nothing.
-
-### 2. Content merge for genuinely absent work
-For each listed branch whose files exist nowhere on `development`, dry-run first
-(`APPLY=0`), then apply:
-```
-make development-merge-forward SOURCE=<branch> MODE=content APPLY=1
-```
-`APPLY=1` hard-requires: current branch `development`, clean worktree. Content
-mode merges `--no-ff -X ours` (development wins conflicts), aborts on structural
-conflicts, runs `collect-check`, and commits.
-
-### 3. Ancestry-only for superseded / WIP branches
-For each listed branch whose files were **deleted or rewritten on development**
-(WIP experiments, abandoned worktree branches, superseded designs):
-```
-make development-merge-forward SOURCE=<branch> MODE=ancestry-only APPLY=1
-```
-Records the branch tip while preserving development content verbatim (`-s ours`).
-**Document the per-branch rationale** before applying; `master` is forbidden as
-SOURCE for this mode.
-
-### 4. End state
-Re-run step 1. The sweep is complete only when the summary reports `unique` = 0.
-
-### 5. Duplicate-target check after content merges
-Content merges can bring Makefile edits from another branch, so run:
-```
-make check-duplicate-targets
-```
-This caught the beta.4 incident where a content merge introduced duplicate
-`gate-tail`/`kill-gate-force` targets. Fix the Makefile if it fails.
+Keep one proof owner and one explicit missing-proof record for each release
+task. Retain every failed gate, timeout, CI run, receipt, and immutable candidate
+ref; a later source change cannot relabel an earlier failure. Follow
+[Release Proof Throughput](features/RELEASE_PROOF_THROUGHPUT.md).
 
 ## What "complete" means
 
-The only acceptable remote verdict is:
+The release must pass all 28 artifact categories with at least 30 assets, the
+exact tag version, no zero-byte assets, a non-draft release, and the stable
+release flag `isPrerelease: false`. The pre-publish matrix also proves artifact
+contents, all 15 required smoke checks, aggregate checksums, digest-pinned
+container/EE references, canonical Ansible metadata, rollback receipt, and
+signed provenance. The published bytes must pass their separate replay.
 
-```text
-make verify-release-completeness TAG=v0.1.1
-...
-COMPLETENESS CHECK: PASS
+The only acceptable terminal remote completeness verdict is:
+
+```console
+make verify-release-completeness TAG=v0.1.2
 ```
 
-The v0.1.1 verifier requires all 28 artifact categories to pass, at least 30
-assets to be present, the exact tag version in release assets, a non-draft
-release, and no zero-byte asset. Before publication, CI also verifies artifact
-contents, aggregate checksums, digest-pinned image references, canonical
-Ansible runtime metadata, and all smoke attestations.
+Require its actual `COMPLETENESS CHECK: PASS` output; this document is not a
+receipt. Missing, pending, timed-out, cancelled, stale, or wrong-SHA evidence
+blocks completion and task closure.
 
 ## Preconditions
 
-Run these commands from the main checkout. Stop on every non-zero exit.
+Perform release promotion from the canonical main checkout, at the exact clean
+`development` tip. Feature work lands on development first. Never rebase either
+shared branch, push feature/fix-forward work directly to master, or merge to
+master from a worktree. The promotion owner captures the verified development
+SHA and fast-forwards canonical master only after its gates pass.
 
-```text
+Commit all release metadata before sealing the candidate: `pyproject.toml`,
+`src/general_ludd/__init__.py`, README, release notes, changelog, workflow
+inputs, locks, and required task/evidence metadata must describe the same
+version and candidate. Run:
+
+```console
 make check-version-consistency
-make check-readme-status TAG=v0.1.1
+make check-readme-status TAG=v0.1.2
+make check-runbook-currency TAG=v0.1.2
 make validate-ansible-runtime-boundary
-make check-collection-interop
-make gate-all
-make ci-verdict-safe BRANCH=development
+make test-files TESTFILES=tests/unit/test_collection_interop.py \
+  PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=.venv
+make release-page-notes TAG=v0.1.2 \
+  RELEASE_PAGE_NOTES_LEDGER=config/v012_completed_backlog_reconciliation.json \
+  RELEASE_PAGE_NOTES_OUTPUT=docs/releases/v0.1.2.md \
+  RELEASE_PAGE_NOTES_VALIDATE_ONLY=1
 ```
 
-Required evidence:
+Require version `0.1.2` everywhere, the locked core/controller/managed-host
+Python boundary, and declared/resolved cross-collection dependencies. The full
+collection-interop test owner invokes the existing native graph audit on this
+repository through its original `test_repository_collection_graph_is_valid`
+assertion, alongside missing/undeclared dependency, role/module, cycle, CLI,
+and ZDD refusal controls. Its real repository report must contain zero issues;
+fixture-only success or a Python-boundary check cannot replace that result.
+The release page must preserve both ledger-backed source inventory and historical
+integration/proof/default-disabled boundaries; implementation is not release
+completion. A non-zero exit stops the sequence at its actual failing owner.
 
-- `pyproject.toml`, `src/general_ludd/__init__.py`, and the README carry the same
-  committed version bump;
-- the project version is `0.1.1` everywhere;
-- the core/controller/managed-host Python boundary is valid and locked;
-- every cross-collection role edge resolves and its dependency is declared;
-- aggregate coverage is at least 85%, every measured file is at least 75%, and
-  the full gate has no warnings, errors, collection errors, xfails, or
-  unexpected skips;
-- CI is successful for the exact `development` tip. Missing, stale, pending,
-  or cancelled CI is not green.
+Each uppercase value below denotes an actual native value, not a fact to
+invent: `ACTIVE_RELEASE_TASK_ID` is the selected canonical open task,
+`FULL_DEVELOPMENT_SHA` is the captured clean development SHA, and
+`CANONICAL_NATIVE_GATE_ATTESTATION` is the resource owner's canonical
+`ci-shards/attestation.json` path. Resolve them from the existing native
+work-item, worktree, and gate/resource outputs before execution. Keep the
+review intent and producer-owned evidence under the named external
+`/tmp/gludd-v012-*` paths so evidence creation does not dirty the candidate.
+
+### 1. Admit actual proof work before sealing
+
+```console
+make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 \
+  WORK_ITEM_ID=ACTIVE_RELEASE_TASK_ID \
+  OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20
+```
+
+Run real admission before candidate sealing, final combined replay, or an
+expensive full gate. It checks the existing capacity, cleanup, configuration,
+ownership, source-contract, and runtime prerequisites. Repair the actual
+failing input before retrying. A changed HEAD, elapsed time, observer ID, or a
+larger resource budget does not clear an unchanged prerequisite failure.
+
+A successful admission permits proof to start; it is not gate or release
+evidence. Any `VALIDATE_ONLY=1` or other plan output remains non-authoritative.
+
+### 2. Freeze one candidate and bind independent source review
+
+After admission, pin the original source/base refs and one final candidate.
+Obtain independent review of the actual original sources. Never replace that
+approval with a passing suite, a Markdown verdict, a task checkbox, or synthetic
+review JSON. Use the trusted reviewer's explicit intent and the existing
+[native reviewed-head producer](features/NATIVE_REVIEWED_HEAD_INPUTS.md):
+
+```console
+make reviewed-head-inputs REVIEWED_HEAD_INPUTS_ACTION=record \
+  REVIEWED_HEAD_INPUTS_INTENT=/tmp/gludd-v012-release-review-intent.json \
+  REVIEWED_HEAD_INPUTS_OUTPUT=/tmp/gludd-v012-release-reviewed-inputs \
+  REVIEWED_HEAD_INPUTS_REPO_ROOT=. \
+  REVIEWED_HEAD_INPUTS_GATE_ATTESTATION=CANONICAL_NATIVE_GATE_ATTESTATION \
+  REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=0 WORK_ITEM_ID=ACTIVE_RELEASE_TASK_ID
+make reviewed-head-inputs REVIEWED_HEAD_INPUTS_ACTION=focus \
+  REVIEWED_HEAD_INPUTS_INTENT=/tmp/gludd-v012-release-review-intent.json \
+  REVIEWED_HEAD_INPUTS_OUTPUT=/tmp/gludd-v012-release-reviewed-inputs \
+  REVIEWED_HEAD_INPUTS_REPO_ROOT=. \
+  REVIEWED_HEAD_INPUTS_GATE_ATTESTATION=CANONICAL_NATIVE_GATE_ATTESTATION \
+  REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=0 WORK_ITEM_ID=ACTIVE_RELEASE_TASK_ID
+```
+
+The producer derives native source/ref, patch/topology, application-order, and
+review bindings. Its single combined focused acceptance uses the original
+reviewed test owners, fatal warnings, one worker, native JUnit/trace, exact
+candidate/runtime identity, and the existing authentication owner. A focus
+failure remains a failure; changing the bundle or observer cannot authorize
+repeating unchanged failed inputs. Keep the candidate unchanged during proof.
+
+### 3. Run the complete canonical release gate once
+
+The canonical gate policy is `make gate` with
+`GATE_TEST_PROFILE=release`, `GATE_EXACT_SHA_RESUME=0`,
+`GATE_MAX_FILES_PER_BATCH=16`, and `GATE_BATCH_WORKERS=1`.
+Launch that same gate once through its existing observed lifecycle owner:
+
+```console
+make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 \
+  GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=0 \
+  GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 \
+  GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 \
+  WORK_ITEM_ID=ACTIVE_RELEASE_TASK_ID
+```
+
+This owner keeps the operation visible and records the real outer gate
+lifecycle needed by receipt finalization. Do not launch a second foreground
+gate to manufacture another receipt. Require the authenticated terminal full
+gate PASS, all eight native shard receipts with the canonical release
+execution policy, every required integration/E2E/Molecule/artifact phase, and
+all original assertions. A background PID or shard-only result is not the
+completed outer gate.
+
+Treat warnings as errors. Coverage must be at least **85% aggregate** and
+**75% per file** on both lines and branches, retaining stricter feature
+thresholds. Require zero lint errors, type errors beyond the permitted baseline,
+collection errors, failing tests, xfails, and unexpected skips. Do not reduce
+selectors, change workers/profile/resume policy, omit files/branches, waive
+cleanup, or relax assertions to obtain proof.
+
+### 4. Finalize the native reviewed-head integration receipt
+
+Only after the exact candidate's combined focus and complete gate pass:
+
+```console
+make reviewed-head-inputs REVIEWED_HEAD_INPUTS_ACTION=finalize \
+  REVIEWED_HEAD_INPUTS_INTENT=/tmp/gludd-v012-release-review-intent.json \
+  REVIEWED_HEAD_INPUTS_OUTPUT=/tmp/gludd-v012-release-reviewed-inputs \
+  REVIEWED_HEAD_INPUTS_REPO_ROOT=. \
+  REVIEWED_HEAD_INPUTS_GATE_ATTESTATION=CANONICAL_NATIVE_GATE_ATTESTATION \
+  REVIEWED_HEAD_INPUTS_VALIDATE_ONLY=0 WORK_ITEM_ID=ACTIVE_RELEASE_TASK_ID
+```
+
+The producer authenticates the actual finished outer lifecycle, current clean
+SHA/content, native local shard attestation, focused runtime, and chronology.
+It publishes `reviewed-head-receipt.json`, then `manifest.json`, outside the
+candidate. Do not hand-author, copy from fixtures, rewrite, or relocate current
+observations to manufacture acceptance. Its canonical receipt is the artifact
+consumed below; a second manual receipt builder is unnecessary.
 
 ## Verify CI
 
-Run `make ci-verdict-safe BRANCH=development` only after the full gate passes.
-The verdict must belong to the exact development SHA that will be merged. A
-missing, pending, stale, skipped, timed-out, or cancelled run is not a green
-verdict and cannot authorize a release.
+Use the existing policy-guarded development push owner after native admission;
+verify the selected branch before pushing. Keep the frozen candidate unchanged
+while hosted proof runs. Observe the exact captured SHA and workflow identity:
 
-## Merge development
-
-Only the main checkout may merge development to master.
-
-```text
-make development-merge-to-master
-make verify-remote BRANCH=master SHA=<master-full-sha>
+```console
+make ci-await BRANCH=development TIMEOUT=5400 SHA=FULL_DEVELOPMENT_SHA \
+  CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push \
+  CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 \
+  CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0 \
+  CI_AWAIT_OBSERVATION_OUTPUT=/tmp/gludd-v012-release-ci.json
+make ci-verdict-safe SHA=FULL_DEVELOPMENT_SHA CI_BRANCH=development \
+  BRANCH=development CI_CHECK_COOLDOWN_SEC=600 CI_VERDICT_VALIDATE_ONLY=0
 ```
 
-Do not create a release from a feature worktree. Do not rebase either shared
-branch.
+The exact-SHA verdict must include every required workflow, with `headSha`
+equal to the candidate/development tip. One successful workflow cannot replace
+the complete verdict. Missing, pending, skipped, stale, failed, cancelled, or
+timed-out runs are non-success. Use the existing producers for current CI JSON;
+pending/lookup-error/timeout must invalidate an earlier current success.
+Preserve immutable run URLs, all eight shard identities, original failures,
+and timing/censored intervals; diagnostics and plans never become authority.
 
-## Cut v0.1.1 with release-cut
+## Merge development and release-cut through promotion
 
-```text
-make release-cut TAG=v0.1.1 MSG='v0.1.1: S83.166 release documentation and version bump'
+Revalidate real readiness on the same clean development candidate:
+
+```console
+make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=0 \
+  RELEASE_COMPLETED_STAGES='' RELEASE_OBSERVATIONS='' \
+  REVIEWED_HEAD_INTEGRATION_RECEIPT=/tmp/gludd-v012-release-reviewed-inputs/reviewed-head-receipt.json \
+  RELEASE_CANDIDATE_SHA=FULL_DEVELOPMENT_SHA \
+  RELEASE_READINESS_CI_BRANCH=development
 ```
 
-The tag-triggered workflow first proves that the identical development SHA has a
-terminal green canonical run. It then completes the tag gate plus every platform,
-container, execution-environment, provenance, and artifact job before its release
-job can publish. `release-cut` snapshots any older matching tag run, polls the new
-exact tag/SHA/workflow/event every 10 seconds for at most 90 minutes, and finally
-runs artifact and full-matrix verification. A local timeout remains non-success.
+Empty forecast fields do not waive task, receipt, gate, CI, completeness, or
+deployment prerequisites. Then, from canonical main at the verified
+development tip, use the sole promotion owner:
+
+```console
+make release-promote TAG=v0.1.2 MSG='v0.1.2 release' \
+  RELEASE_PROMOTE_VALIDATE_ONLY=0 RELEASE_PROMOTE_PUBLISH=1 \
+  REVIEWED_HEAD_INTEGRATION_RECEIPT=/tmp/gludd-v012-release-reviewed-inputs/reviewed-head-receipt.json
+```
+
+The owner revalidates clean topology, exact-SHA local/hosted evidence and
+readiness, fast-forwards canonical master to the captured development SHA,
+and calls `release-cut` with that same SHA, local attestation, CI source branch,
+and reviewed-head receipt. Do not substitute a manual merge, direct tag push,
+or worktree promotion. Validation/planning mode and `PUBLISH=0` do not publish
+or complete a release.
+
+The internal `release-cut` path verifies a signed annotated tag before push,
+snapshots any prior matching workflow run, and waits for a newer exact
+tag/SHA/workflow/event identity. Its tag-triggered lane rechecks the unchanged
+development proof and runs every platform, container, EE, provenance, and
+artifact prerequisite before publication. A timeout remains non-success.
+
+### Metadata changes require a new candidate proof
+
+Any edit after sealing, including version, changelog, runbook, generated notes,
+workflow, lock, TASKS evidence, or other metadata, creates a different
+candidate. Preserve the original candidate ref and its failed/passing receipts;
+re-enter actual admission, original-source review/binding, combined acceptance,
+full canonical gate, and exact-SHA CI for the new final SHA before promotion.
+Bookkeeping, a new commit label, or a previously green parent is not an
+exception. Keep native evidence outside the checkout and never modify a frozen
+candidate during final proof.
 
 ## Functional artifact matrix
 
@@ -218,7 +343,7 @@ After the matrix writes and validates `SHA256SUMS`, the release job uses
 `1e69f48acb82d1966a394da916b4c1698aa569d6`. Its `subject-checksums` input binds
 the signed SLSA statement to the same complete asset set that is published. The
 job grants `id-token: write` and `attestations: write` explicitly, and
-`make check-provenance-attestation TAG=<tag>` uses `gh release verify`; a source
+`make check-provenance-attestation TAG=v0.1.2` uses `gh release verify`; a source
 manifest alone is not signed provenance.
 
 Long-lived practitioner reports shaped the guardrails. In
@@ -229,13 +354,13 @@ permissions and is blocking. In
 [actions/attest-build-provenance #454](https://github.com/actions/attest-build-provenance/issues/454),
 multi-subject input remained a recurring usability issue; Gludd avoids a
 hand-maintained subject list by feeding the already-verified aggregate checksum
-file to the consolidated action. GitHub's current
+file to the consolidated action. GitHub's cited
 [artifact-attestation guidance](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
 confirms the OIDC/attestations permissions and post-build placement.
 
 Historical exception: v0.1.1 was published before this signed-attestation step
 existed. Its immutable source manifest and SHA-256 coverage remain valid, but
-`gh release verify v0.1.1` correctly reports no attestation. Do not rewrite the
+its immutable historical publication has no signed attestation. Do not rewrite the
 public tag or assets; the exception and fix-forward are recorded in
 `docs/releases/audit-0.1.1.json`.
 
@@ -276,7 +401,7 @@ Container and Ansible EE builds are additive:
 Rollback routes new work to the previously recorded digest and drains the bad
 revision. Never mutate or retag the prior digest. Platform release assets are
 also immutable: a repair must come from the same tagged CI SHA or from a new
-beta tag.
+version tag.
 
 Before publication, inspect the rollback receipt in the staged matrix. Its
 `candidate.sha256` must match the staged Linux archive, both prior-route
@@ -293,69 +418,56 @@ zero-downtime service for existing users while a corrected candidate is built.
 
 ## Verify with verify-release-completeness
 
-```text
-make verify-release-completeness TAG=v0.1.1
-make release-view TAG=v0.1.1
+After publication and hosted-byte rollback replay, independently require:
+
+```console
+make verify-release-completeness TAG=v0.1.2
+make check-provenance-attestation TAG=v0.1.2
+make release-view TAG=v0.1.2
 ```
 
-Expected release state:
+Require `isDraft: false`, `isPrerelease: false`, all 28 required artifact
+categories PASS, at least 30 assets, zero zero-byte assets, exact v0.1.2 tag/SHA
+and release URL, successful signed provenance verification, and the published
+rollback receipt/checksum/manifest/smoke set replay. A source manifest or
+successful upload does not replace the hosted-byte checks.
 
-- `isDraft: false`;
-- `isPrerelease: false`;
-- all 28 required artifact categories report `PASS`;
-- at least 30 assets are present;
-- no zero-sized asset;
-- signed release provenance verifies with `gh release verify` (the immutable
-  v0.1.1 historical exception is recorded above and in its audit receipt);
-- release URL identifies `v0.1.1`.
-
-Record the release URL, exact tag SHA, CI run URL, gate evidence, coverage
-evidence, and completeness PASS in the task ledger.
+Record actual release/download URLs, signed tag and exact SHA, local gate,
+line/branch coverage, required CI run URLs, reviewed-head receipt, and remote
+completeness PASS in the owning evidence record. Tick tasks only with their
+required completed proof. A later metadata commit follows the new-candidate
+rule above; never move the published tag or rewrite immutable assets.
 
 ## Rollback
 
-The v0.1.1 rollback target is `v0.1.0-beta.4`. Rollback is a routing change to
-that already-published version; it never moves, deletes, or overwrites the
-v0.1.1 tag or its release assets.
+The v0.1.2 prior-version rollback target is the already-published `v0.1.1`.
+Before live admission, pin and verify that release's exact immutable platform
+artifact, checksum set, image digest, configuration snapshot, and compatibility
+evidence. Its unsigned-tag and missing-attestation history remains explicitly
+recorded in the [v0.1.1 audit](releases/audit-0.1.1.json) and
+[archived procedure](RELEASE_RUNBOOK_V011.md). That exception never waives
+v0.1.2 signed-tag/provenance or functional proof.
 
-- **Target:** route new work to `v0.1.0-beta.4`, then drain work already bound
-  to v0.1.1.
-- **Container:** resolve the immutable image digest recorded by the
-  `v0.1.0-beta.4` release metadata and pin that digest. Never roll back to a
-  mutable image tag.
-- **Binary:** obtain the platform artifact from
-  `https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.4` and verify it
-  with that release's checksum set before installation.
-- **Config compatibility:** restore a configuration snapshot validated by
-  v0.1.0-beta.4 and run its migration/health checks before shifting traffic.
-  Do not downgrade a database or configuration in place without that proof.
+Route new work back to the verified prior digest first, block new candidate
+intake, and drain work already bound to the failed generation. Keep minimum
+healthy capacity; do not mutate or retag the prior digest, overwrite either
+release's assets, or downgrade a database/configuration in place without
+verified compatibility and migration/health evidence.
 
-After traffic is restored, independently verify the prior digest, binary
-version, health endpoint, and absence of v0.1.1-bound new work. Preserve the
-failed deployment and its content-free evidence until the incident record is
-complete.
+Independently verify the prior digest, binary version, health, work continuity,
+and absence of candidate-bound new work after routing recovery. Preserve the
+failed candidate, deployment receipts, logs, and content-free incident evidence.
+The hermetic published receipt proves the release lane's candidate activation,
+immutable prior-route restoration, and unchanged active work; it does not
+replace provider-specific live canary, health, rollback, or cleanup proof.
 
-The published receipt proves that the release lane can activate the exact
-candidate and restore its immutable prior route without changing already-active
-work. It does not replace this live verification: if live health/version or
-work continuity differs from the receipt, refuse completion and keep the prior
-route active.
-
-Never upload a locally built replacement to a published release. Only artifacts
-built by CI from the exact tagged SHA have valid provenance.
-
-If publication was transiently interrupted, `release-recut` snapshots the prior
-run before re-pushing the tag, waits only for a newer exact-identity run, and then
-repeats both artifact checks:
-
-```text
-make release-recut TAG=v0.1.1
-make verify-release-completeness TAG=v0.1.1
-```
-
-If the tagged SHA is red or an artifact is functionally invalid, do not paper
-over it. Fix forward on development, repeat the full gate and exact-SHA CI
-check, then cut the next prerelease tag.
+Cleanup removes only resources owned by the exact candidate/lease after bounded
+drain and provider-side absence checks. Unknown cleanup remains
+`CLEANUP_PENDING`; preserve the primary error. An interrupted publication
+requires the existing exact-identity recovery policy and the same complete
+artifact checks. Never upload local replacements or recut a red/invalid
+candidate to manufacture success. Fix forward through development with a new
+reviewed, gated, exact-SHA candidate and new version tag when required.
 
 ## Traps
 
@@ -377,6 +489,10 @@ check, then cut the next prerelease tag.
   only an audited thread/ordinal range; never use a broad restore or reset.
 
 ## Long-lived practitioner failure history
+
+The following reports retain their original review dates and version scope.
+They define refusal shapes for this release; they provide no current upstream
+status, successful Gludd proof, or exception to the v0.1.2 procedure.
 
 Reviewed on 2026-08-30, two long-running practitioner reports explain why
 v0.1.1 and earlier beta releases fail closed instead of trusting a successful
