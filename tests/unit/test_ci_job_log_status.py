@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[2]
 JOB_ID = "118932830925"
 
 
+def _assert_no_owned_logs(resources: Path) -> None:
+    assert not list(resources.rglob("ci-job-log-*"))
+
+
 def _native_log(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -23,9 +27,14 @@ def _native_log(
     log_lines: int = 3,
     validate_only: str = "0",
     selected_job: str = JOB_ID,
+    retain_owned_log: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]], Path]:
     source = (ROOT / "make/30-ci-and-release.mk").read_text(encoding="utf-8")
     body = source.split("\nci-job-log:", 1)[1].split("\n\n", 1)[0]
+    if retain_owned_log:
+        cleanup = """trap 'rm -f "$$LOG"' EXIT INT TERM"""
+        assert body.count(cleanup) == 1
+        body = body.replace(cleanup, "trap ':' EXIT INT TERM", 1)
     recipe = tmp_path / "Makefile"
     recipe.write_text("CI_JOB_LOG_VALIDATE_ONLY ?= 0\nci-job-log:" + body + "\n", encoding="utf-8")
     scripts = tmp_path / "scripts"
@@ -91,7 +100,7 @@ def test_native_client_failure_is_fatal_and_retains_its_exit_code(
     assert f"Error {client_status}" in result.stderr
     assert "native GitHub client unavailable" in result.stdout + result.stderr
     assert len(calls) == (1 if failure_stage == "lookup" else 2)
-    assert not list(resources.glob("ci-job-log-*"))
+    _assert_no_owned_logs(resources)
 
 
 def test_empty_download_is_not_successful_log_evidence(
@@ -101,7 +110,7 @@ def test_empty_download_is_not_successful_log_evidence(
     assert result.returncode != 0, result.stdout + result.stderr
     assert "downloaded log is empty" in result.stdout
     assert len(calls) == 2
-    assert not list(resources.glob("ci-job-log-*"))
+    _assert_no_owned_logs(resources)
 
 
 def test_success_keeps_the_original_four_hundred_line_tail_and_owned_cleanup(
@@ -114,7 +123,7 @@ def test_success_keeps_the_original_four_hundred_line_tail_and_owned_cleanup(
     assert output == [f"line-{number}" for number in range(150, 550)]
     assert len(calls) == 2
     assert calls[1] == ["run", "view", "-R", "sandboxcom/gludd", "--log", f"--job={JOB_ID}"]
-    assert not list(resources.glob("ci-job-log-*"))
+    _assert_no_owned_logs(resources)
 
 
 @pytest.mark.parametrize("selected_job", ["", "not-a-job"])
@@ -143,3 +152,25 @@ def test_invalid_log_policy_fails_before_client_or_resource_work(
     assert result.returncode != 0
     assert "CI_JOB_LOG_VALIDATE_ONLY must be 0 or 1" in result.stdout
     assert calls == [] and not resources.exists()
+
+
+@pytest.mark.parametrize(
+    ("failure_stage", "client_status", "log_lines"),
+    [("", 0, 550), ("logs", 29, 3), ("", 0, 0)],
+)
+def test_cleanup_assertion_rejects_a_native_namespaced_log_leak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str, client_status: int, log_lines: int,
+) -> None:
+    """Only the isolated recipe neutralizes cleanup to expose an actual owned log."""
+    result, calls, resources = _native_log(
+        tmp_path, monkeypatch, failure_stage=failure_stage, client_status=client_status,
+        log_lines=log_lines, retain_owned_log=True,
+    )
+    assert len(calls) == 2
+    assert (result.returncode != 0) == bool(client_status or log_lines == 0)
+    leftovers = list(resources.rglob("ci-job-log-*"))
+    assert len(leftovers) == 1 and leftovers[0].is_file()
+    assert leftovers[0].parent != resources
+    with pytest.raises(AssertionError):
+        _assert_no_owned_logs(resources)

@@ -208,6 +208,29 @@ text, such as FAILED or an assertion message; a workflow display-step label can
 be absent from that raw payload. Use native pipeline-status/ci-await for CI
 readiness and preserve immutable failed run/SHA evidence.
 
+### Namespaced cleanup assertions must detect actual leaks — 2026-10-20
+
+Independent source review of exact53c1e2168 approves the production delta but
+finds a nonblocking proof gap: the new shortcut tests search only the parent
+GLUDD_RESOURCE_ROOT. Native resource_arbiter appends the project namespace, so
+a shallow glob can pass with an owned temporary log still present below it.
+The production EXIT/INT/TERM cleanup trap is already correct.
+
+Root centralizes the existing three cleanup assertions with recursive rglob.
+Three native negative controls neutralize that trap only in the isolated
+temporary recipe, retain the real namespaced resource owner, and prove an actual
+nested log exists after success, client failure and an empty download. The
+original shallow assertion first misses all three:3FAIL/8PASS4.09s, observed5.2s.
+After the recursive correction, the complete11-case shortcut and57-case fixture
+conformance owners pass68/8.62s, observed9.6s/rc0. Original status, client-call,
+400-line tail, plan/no-write and namespace requirements remain unchanged.
+Production recipes, cleanup, thresholds and CI authority do not change.
+
+Retain /tmp/gludd-v012-ci-log-cleanup-red.log and .xml,
+the equivalent green artifacts, and the source decision
+/tmp/gludd-v012-candidate-53c1e21-source-review.md. The test correction and local
+source approval do not establish a green canonical gate or hosted release proof.
+
 ### Exact job ownership without a run inventory lookup
 
 `ci-job-failure-context` resolves the supplied numeric `JOB` through
