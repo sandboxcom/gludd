@@ -4,14 +4,25 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
+import re
+import shutil
 import subprocess as subprocess
 import sys as sys
 import tomllib
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from importlib import import_module
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol, cast
+from urllib.parse import unquote, urlsplit
+from uuid import uuid4
 
 from general_ludd.util.owned_process import (
     OwnedProcessPolicy,
@@ -29,16 +40,15 @@ DEFAULT_BROWSER_ROOT = Path("/tmp/gludd-playwright-browsers")
 SUPPORTED_BROWSERS = frozenset({"chromium", "webkit"})
 RUN_LABELS = ("desktop-landscape", "compact-4x3")
 VIEWPORT_SIZE_ENV = "GLUDD_PRESENTATION_VIEWPORT_SIZE"
+JS_COVERAGE_DIR_ENV = "GLUDD_PRESENTATION_JS_COVERAGE_DIR"
+JS_COVERAGE_MANIFEST_ENV = "GLUDD_PRESENTATION_JS_COVERAGE_MANIFEST"
+CONTROLLER_RELATIVE = "docs/presentation/deck/presentation.js"
+JS_COVERAGE_CONFIG = "config/presentation_javascript_coverage.json"
 PROBE_TIMEOUT_SECONDS = 15
 PROBE_ACTION_TIMEOUT_MILLISECONDS = 5_000
 PROBE_TITLE = "gludd-presentation-browser-probe"
-PROBE_URL = (
-    "data:text/html,%3Ctitle%3Egludd-presentation-browser-probe%3C/title%3E"
-    "%3Ch1%3Eready%3C/h1%3E"
-)
-WEBKIT_MACOS_DEADLOCK_REFERENCE = (
-    "https://github.com/microsoft/playwright/issues/41870"
-)
+PROBE_URL = "data:text/html,%3Ctitle%3Egludd-presentation-browser-probe%3C/title%3E%3Ch1%3Eready%3C/h1%3E"
+WEBKIT_MACOS_DEADLOCK_REFERENCE = "https://github.com/microsoft/playwright/issues/41870"
 PROBE_PROCESS_POLICY = OwnedProcessPolicy(
     timeout_seconds=PROBE_TIMEOUT_SECONDS,
     shutdown_grace_seconds=2,
@@ -46,12 +56,9 @@ PROBE_PROCESS_POLICY = OwnedProcessPolicy(
     heartbeat_interval_seconds=5,
 )
 LAYOUT_CONTAINMENT_TEST = (
-    "tests/browser/test_presentation.py::"
-    "test_every_slide_keeps_visible_content_inside_the_reveal_canvas"
+    "tests/browser/test_presentation.py::test_every_slide_keeps_visible_content_inside_the_reveal_canvas"
 )
-PINNED_PRESENTATION_DEPENDENCIES = frozenset(
-    {"playwright==1.63.0", "pytest-playwright==0.9.0"}
-)
+PINNED_PRESENTATION_DEPENDENCIES = frozenset({"playwright==1.63.0", "pytest-playwright==0.9.0"})
 
 
 @dataclass(frozen=True)
@@ -77,6 +84,7 @@ class BrowserPlan:
     test_file: str
     timeout_seconds: int
     runs: tuple[ViewportRun, ...]
+    js_coverage: bool = False
 
     @property
     def command(self) -> tuple[str, ...]:
@@ -132,12 +140,17 @@ def build_plan(
     browser_root: Path,
     output_root: Path,
     timeout_seconds: int,
+    js_coverage: bool = False,
 ) -> BrowserPlan:
     """Build a bounded pytest-playwright invocation without executing it."""
     if browser not in SUPPORTED_BROWSERS:
         raise ValueError("the presentation contract requires Chromium or WebKit")
     if not 30 <= timeout_seconds <= 900:
         raise ValueError("browser timeout must be between 30 and 900 seconds")
+    if not isinstance(js_coverage, bool):
+        raise ValueError("JavaScript coverage must be an explicit boolean")
+    if js_coverage and browser != "chromium":
+        raise ValueError("native JavaScript coverage requires Chromium; WebKit remains uninstrumented")
     safe_browser_root = _safe_owned_tmp(browser_root, label="browser root")
     safe_output_root = _safe_owned_tmp(output_root, label="output root")
 
@@ -151,11 +164,7 @@ def build_plan(
         enforce_viewport: bool = False,
     ) -> ViewportRun:
         run_output = safe_output_root / label
-        plugin_arguments = (
-            ("-p", "scripts.run_presentation_browser_tests")
-            if enforce_viewport
-            else ()
-        )
+        plugin_arguments = ("-p", "scripts.run_presentation_browser_tests") if enforce_viewport else ()
         command = (
             sys.executable,
             "-m",
@@ -210,6 +219,7 @@ def build_plan(
         test_file=str(TEST_FILE.relative_to(ROOT)),
         timeout_seconds=timeout_seconds,
         runs=runs,
+        js_coverage=js_coverage,
     )
 
 
@@ -237,11 +247,606 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     import pytest
 
     width, height = viewport
-    marker = pytest.mark.browser_context_args(
-        viewport={"width": width, "height": height}
-    )
+    marker = pytest.mark.browser_context_args(viewport={"width": width, "height": height})
     for item in items:
         item.add_marker(marker)
+
+
+def _json_object(value: object, *, label: str) -> dict[str, object]:
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise RuntimeError(f"{label} must be a JSON object")
+    return cast(dict[str, object], value)
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    try:
+        return _json_object(json.loads(path.read_text(encoding="utf-8")), label=str(path))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"invalid or missing JavaScript coverage input: {path}") from exc
+
+
+def _write_json(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _verified_source(source_path: Path, expected_sha256: str) -> str:
+    try:
+        content = source_path.read_bytes()
+        if hashlib.sha256(content).hexdigest() != expected_sha256:
+            raise RuntimeError("JavaScript coverage candidate source changed")
+        return content.decode("utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise RuntimeError("JavaScript coverage candidate source is unreadable") from exc
+
+
+def _controller_records(payload: object) -> list[dict[str, object]]:
+    result = _json_object(payload, label="V8 coverage").get("result")
+    if not isinstance(result, list):
+        raise RuntimeError("V8 coverage result must be a list")
+    records: list[dict[str, object]] = []
+    for item in result:
+        record = _json_object(item, label="V8 script")
+        url = record.get("url")
+        if not isinstance(url, str):
+            raise RuntimeError("V8 script URL is missing")
+        try:
+            path = unquote(urlsplit(url).path)
+        except ValueError as exc:
+            raise RuntimeError("V8 script URL is malformed") from exc
+        if Path(path).name == "presentation.js":
+            records.append(record)
+    return records
+
+
+def normalize_javascript_coverage(
+    payload: object,
+    *,
+    source_path: Path,
+    expected_sha256: str,
+    sources: dict[str, str],
+) -> dict[str, object]:
+    """Validate provenance and retain V8 ranges unchanged for the mature converter."""
+    source = _verified_source(source_path, expected_sha256)
+    source_length = len(source.encode("utf-16-le")) // 2
+    records = _controller_records(payload)
+    if not records:
+        raise RuntimeError("no executed complete presentation controller coverage")
+    normalized: list[dict[str, object]] = []
+    for record in records:
+        url = record["url"]
+        assert isinstance(url, str)
+        parsed = urlsplit(url)
+        local_http = (
+            parsed.scheme == "http"
+            and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+            and parsed.username is None
+            and parsed.password is None
+        )
+        local_file = (
+            parsed.scheme == "file" and parsed.netloc in {"", "localhost"} and Path(unquote(parsed.path)).is_absolute()
+        )
+        if not (local_http or local_file):
+            raise RuntimeError("controller coverage has an unknown source origin")
+        script_id = record.get("scriptId")
+        if not isinstance(script_id, str) or sources.get(script_id) != source:
+            raise RuntimeError("controller coverage does not match the complete source")
+        functions = record.get("functions")
+        if not isinstance(functions, list) or not functions:
+            raise RuntimeError("controller coverage functions are missing")
+        complete_script = False
+        for item in functions:
+            function = _json_object(item, label="V8 function")
+            detailed = function.get("isBlockCoverage")
+            if not isinstance(detailed, bool):
+                raise RuntimeError("controller coverage must declare V8 block granularity")
+            if not isinstance(function.get("functionName"), str):
+                raise RuntimeError("controller coverage function name is missing")
+            ranges = function.get("ranges")
+            if not isinstance(ranges, list) or not ranges:
+                raise RuntimeError("controller coverage ranges are missing")
+            for item_range in ranges:
+                coverage_range = _json_object(item_range, label="V8 range")
+                start, end, count = (
+                    coverage_range.get("startOffset"),
+                    coverage_range.get("endOffset"),
+                    coverage_range.get("count"),
+                )
+                if not all(isinstance(value, int) and not isinstance(value, bool) for value in (start, end, count)):
+                    raise RuntimeError("controller coverage ranges must contain integers")
+                assert isinstance(start, int) and isinstance(end, int) and isinstance(count, int)
+                if not 0 <= start < end <= source_length or count < 0:
+                    raise RuntimeError("controller coverage range is outside the exact source")
+                complete_script |= start == 0 and end == source_length
+            if not detailed and len(ranges) != 1:
+                raise RuntimeError("function-only controller coverage has malformed non-block ranges")
+        if not complete_script:
+            raise RuntimeError("complete controller script range is missing")
+        normalized.append({**record, "url": str(source_path.resolve())})
+    return {"result": normalized}
+
+
+class CoverageSession(Protocol):
+    """The public CDP surface used by the existing Playwright fixture."""
+
+    def send(
+        self,
+        method: str,
+        params: dict[str, object] | None = None,
+    ) -> dict[str, object]: ...
+
+
+class CoveragePage(Protocol):
+    @property
+    def context(self) -> object: ...
+
+
+class CoverageSnapshots(Protocol):
+    def snapshot(self, reason: str) -> None: ...
+
+
+class JavaScriptCoverageCollector:
+    """Retain native snapshots; c8 alone merges ranges and calculates coverage."""
+
+    def __init__(
+        self,
+        session: CoverageSession,
+        *,
+        source_path: Path,
+        expected_sha256: str,
+        output_root: Path,
+        test_id: str,
+    ) -> None:
+        self.session = session
+        self.source_path = source_path
+        self.expected_sha256 = expected_sha256
+        self.output_root = output_root
+        self.test_id = test_id
+        self.identity = uuid4().hex
+        self.sequence = 0
+        self.started = False
+        self.finished = False
+
+    def start(self) -> None:
+        _verified_source(self.source_path, self.expected_sha256)
+        for directory in ("raw", "normalized"):
+            (self.output_root / directory).mkdir(parents=True, exist_ok=True)
+        self.session.send("Debugger.enable")
+        self.session.send("Profiler.enable")
+        self.session.send(
+            "Profiler.startPreciseCoverage",
+            {"callCount": True, "detailed": True},
+        )
+        self.started = True
+
+    def snapshot(self, reason: str) -> None:
+        if self.finished:
+            if reason.endswith("close"):
+                return
+            raise RuntimeError("JavaScript coverage session already finished")
+        if not self.started:
+            raise RuntimeError("JavaScript coverage session was not started")
+        self.sequence += 1
+        stem = f"{self.identity}-{self.sequence:04d}"
+        payload = self.session.send("Profiler.takePreciseCoverage")
+        raw_path = self.output_root / "raw" / f"{stem}.json"
+        raw = {
+            **payload,
+            "sources": {},
+            "source_sha256": self.expected_sha256,
+            "test_id": self.test_id,
+            "collector_id": self.identity,
+            "reason": reason,
+        }
+        _write_json(raw_path, raw)
+        _verified_source(self.source_path, self.expected_sha256)
+        sources: dict[str, str] = {}
+        records = _controller_records(payload)
+        for record in records:
+            script_id = record.get("scriptId")
+            if not isinstance(script_id, str):
+                raise RuntimeError("controller coverage script identifier is missing")
+            response = self.session.send("Debugger.getScriptSource", {"scriptId": script_id})
+            body = response.get("scriptSource")
+            if not isinstance(body, str):
+                raise RuntimeError("controller coverage script source is missing")
+            sources[script_id] = body
+        raw["sources"] = sources
+        _write_json(raw_path, raw)
+        # A deliberately blocked-CSP test can have no controller. The whole fresh
+        # invocation still requires real controller records before native reporting.
+        if records:
+            normalized = normalize_javascript_coverage(
+                payload,
+                source_path=self.source_path,
+                expected_sha256=self.expected_sha256,
+                sources=sources,
+            )
+            _write_json(self.output_root / "normalized" / f"{stem}.json", normalized)
+        if reason.endswith("close"):
+            self.session.send("Profiler.stopPreciseCoverage")
+            self.finished = True
+
+    def finish(self) -> None:
+        if self.finished:
+            return
+        try:
+            self.snapshot("teardown")
+        finally:
+            self.session.send("Profiler.stopPreciseCoverage")
+            self.finished = True
+
+
+@contextmanager
+def coverage_boundaries(page: CoveragePage, collector: CoverageSnapshots) -> Iterator[None]:
+    """Snapshot before the actual public calls can destroy a document/isolate."""
+    originals: list[tuple[object, str, Callable[..., object]]] = []
+
+    def before(original: Callable[..., object], reason: str) -> Callable[..., object]:
+        def invoke(*args: object, **kwargs: object) -> object:
+            collector.snapshot(reason)
+            return original(*args, **kwargs)
+
+        return invoke
+
+    try:
+        for owner, method, reason in (
+            (page, "goto", "goto"),
+            (page, "reload", "reload"),
+            (page, "close", "page.close"),
+            (page.context, "close", "context.close"),
+        ):
+            original = getattr(owner, method)
+            if not callable(original):
+                raise RuntimeError(f"coverage boundary is not callable: {reason}")
+            saved = cast(Callable[..., object], original)
+            originals.append((owner, method, saved))
+            setattr(owner, method, before(saved, reason))
+        yield
+    finally:
+        for owner, method, original in reversed(originals):
+            setattr(owner, method, original)
+
+
+def _validate_javascript_coverage_tool(*, require_installed: bool) -> str:
+    config = _read_json_object(ROOT / JS_COVERAGE_CONFIG)
+    required: dict[str, object] = {
+        "all": True,
+        "src": ["docs/presentation/deck"],
+        "include": [CONTROLLER_RELATIVE],
+        "exclude": [],
+        "extension": [".js"],
+        "lines": 85,
+        "branches": 85,
+        "per-file": False,
+        "skip-full": False,
+    }
+    if set(config) != {*required, "reporter"} or any(
+        type(config.get(key)) is not type(value) or config.get(key) != value for key, value in required.items()
+    ):
+        raise RuntimeError("JavaScript coverage config must select the complete controller and floors")
+    reporters = config.get("reporter")
+    if (
+        not isinstance(reporters, list)
+        or not all(isinstance(reporter, str) for reporter in reporters)
+        or set(reporters) != {"json", "json-summary", "lcov", "text"}
+    ):
+        raise RuntimeError("JavaScript coverage native reporters are incomplete")
+    manifest = _read_json_object(ROOT / ".opencode" / "package.json")
+    dependencies = _json_object(manifest.get("devDependencies"), label="Node devDependencies")
+    version = dependencies.get("c8")
+    if not isinstance(version, str) or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) is None:
+        raise RuntimeError("c8 must have an exact release pin")
+    lock = _read_json_object(ROOT / ".opencode" / "package-lock.json")
+    packages = _json_object(lock.get("packages"), label="Node locked packages")
+    root_package = _json_object(packages.get(""), label="Node locked root")
+    locked_dependencies = _json_object(root_package.get("devDependencies"), label="Node locked devDependencies")
+    locked_c8 = _json_object(packages.get("node_modules/c8"), label="Node locked c8")
+    if locked_dependencies.get("c8") != version or locked_c8.get("version") != version:
+        raise RuntimeError("c8 manifest and lock pins differ")
+    if not isinstance(locked_c8.get("integrity"), str) or not locked_c8["integrity"]:
+        raise RuntimeError("c8 lock integrity is missing")
+    if require_installed:
+        package_root = ROOT / ".opencode" / "node_modules" / "c8"
+        installed = _read_json_object(package_root / "package.json")
+        if installed.get("name") != "c8" or installed.get("version") != version:
+            raise RuntimeError("installed c8 does not match the exact lock pin")
+        executable = ROOT / ".opencode" / "node_modules" / ".bin" / "c8"
+        if (
+            not executable.is_file()
+            or not executable.resolve().is_relative_to(package_root.resolve())
+            or not os.access(executable, os.X_OK)
+        ):
+            raise RuntimeError("locked c8 executable is absent or outside its package")
+    return version
+
+
+class _NativeGitOwner(Protocol):
+    def git(self, root: Path, *args: str, optional: bool = False) -> str: ...
+
+
+def _native_source_ref() -> dict[str, object]:
+    """Reuse the public native Git owner, with package/flat-script imports."""
+    owner = cast(
+        _NativeGitOwner,
+        import_module("scripts.owned_git_checkpoint" if __package__ else "owned_git_checkpoint"),
+    )
+    commit = owner.git(ROOT, "rev-parse", "--verify", "HEAD^{commit}").strip()
+    tree = owner.git(ROOT, "rev-parse", "--verify", f"{commit}^{{tree}}").strip()
+    if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit) is None:
+        raise RuntimeError("native JavaScript coverage source ref is invalid")
+    if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", tree) is None:
+        raise RuntimeError("native JavaScript coverage source tree is invalid")
+    return {
+        "commit": commit,
+        "tree": tree,
+        "branch": owner.git(ROOT, "symbolic-ref", "--quiet", "--short", "HEAD", optional=True).strip(),
+        "tracked_status": owner.git(ROOT, "status", "--porcelain=v1", "-z", "--untracked-files=no"),
+    }
+
+
+def _javascript_tool_versions() -> dict[str, object]:
+    """Bind the selected runtime, without downloading or guessing tool versions."""
+    versions: dict[str, object] = {"python_version": sys.version.split()[0]}
+    for package, expected in (
+        ("playwright", "1.63.0"),
+        ("pytest-playwright", "0.9.0"),
+    ):
+        try:
+            actual = package_version(package)
+        except PackageNotFoundError as exc:
+            raise RuntimeError(f"missing pinned presentation runtime: {package}") from exc
+        if actual != expected:
+            raise RuntimeError(f"presentation runtime differs from its exact pin: {package}")
+        versions[package] = actual
+    node = shutil.which("node")
+    if node is None:
+        raise RuntimeError("locked c8 requires the prepared native Node runtime")
+    try:
+        completed = subprocess.run(
+            (node, "--version"),
+            cwd=ROOT,
+            timeout=30,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("native Node version identity is unavailable") from exc
+    actual_node = completed.stdout.strip()
+    if completed.returncode or re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", actual_node) is None:
+        raise RuntimeError("native Node version identity is invalid")
+    versions.update(
+        {
+            "node_executable": str(Path(node).resolve()),
+            "node_version": actual_node,
+        }
+    )
+    return versions
+
+
+def _require_javascript_source_unchanged(manifest_path: Path) -> None:
+    manifest = _read_json_object(manifest_path)
+    if manifest.get("source_ref") != _native_source_ref():
+        raise RuntimeError("JavaScript coverage native source ref changed")
+    if manifest.get("tool_versions") != _javascript_tool_versions():
+        raise RuntimeError("JavaScript coverage selected tool runtime changed")
+    version = _validate_javascript_coverage_tool(require_installed=True)
+    if manifest.get("c8_version") != version:
+        raise RuntimeError("JavaScript coverage installed tool changed")
+
+
+def _prepare_javascript_coverage(plan: BrowserPlan) -> tuple[Path, Path]:
+    version = _validate_javascript_coverage_tool(require_installed=True)
+    output = Path(plan.output_root) / "javascript-coverage"
+    if output.exists():
+        raise RuntimeError("JavaScript coverage output already exists; refuse stale evidence")
+    output.mkdir(parents=True)
+    source_path = (ROOT / CONTROLLER_RELATIVE).resolve()
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    manifest_path = output / "source.json"
+    _write_json(
+        manifest_path,
+        {
+            "schema_version": 1,
+            "source_path": str(source_path),
+            "source_relative_path": CONTROLLER_RELATIVE,
+            "source_sha256": source_sha256,
+            "c8_version": version,
+            "browser": plan.browser,
+            "source_ref": _native_source_ref(),
+            "tool_versions": _javascript_tool_versions(),
+            "c8_executable": str((ROOT / ".opencode" / "node_modules" / ".bin" / "c8").resolve()),
+            "source_authority": ("controller SHA-256; native HEAD and tracked modifications recorded separately"),
+        },
+    )
+    return output, manifest_path
+
+
+def _require_executed_javascript_coverage(output: Path, manifest_path: Path) -> Path:
+    manifest = _read_json_object(manifest_path)
+    source_path = (ROOT / CONTROLLER_RELATIVE).resolve()
+    digest = manifest.get("source_sha256")
+    if manifest.get("source_path") != str(source_path) or not isinstance(digest, str):
+        raise RuntimeError("JavaScript coverage source manifest is invalid")
+    _verified_source(source_path, digest)
+    files = sorted((output / "normalized").glob("*.json"))
+    if not files:
+        raise RuntimeError("no executed complete controller coverage was retained")
+    executed = False
+    browser_versions: set[str] = set()
+    # Detailed authority must come from another retained ScriptCov, not a coarse-only merge.
+    coarse_roots: dict[tuple[str, str, int, int], set[tuple[str, int]]] = {}
+    detailed_roots: dict[tuple[str, str, int, int], set[tuple[str, int]]] = {}
+    for path in files:
+        raw = _read_json_object(output / "raw" / path.name)
+        bodies = _json_object(raw.get("sources"), label="retained controller sources")
+        if not all(isinstance(body, str) for body in bodies.values()):
+            raise RuntimeError("retained controller source is invalid")
+        if raw.get("source_sha256") != digest:
+            raise RuntimeError("retained coverage has a stale source identity")
+        expected = normalize_javascript_coverage(
+            raw,
+            source_path=source_path,
+            expected_sha256=digest,
+            sources=cast(dict[str, str], bodies),
+        )
+        if _read_json_object(path) != expected:
+            raise RuntimeError("normalized coverage differs from retained native ranges")
+        for ordinal, record in enumerate(_controller_records(expected)):
+            canonical_source = record["url"]
+            assert isinstance(canonical_source, str)
+            native_record = (path.name, ordinal)
+            functions = record["functions"]
+            assert isinstance(functions, list)
+            for function in functions:
+                verified_function = _json_object(function, label="verified function")
+                ranges = verified_function["ranges"]
+                assert isinstance(ranges, list)
+                root = _json_object(ranges[0], label="verified function root")
+                if cast(int, root["count"]) > 0:
+                    span = (
+                        canonical_source,
+                        digest,
+                        cast(int, root["startOffset"]),
+                        cast(int, root["endOffset"]),
+                    )
+                    roots = detailed_roots if verified_function["isBlockCoverage"] is True else coarse_roots
+                    roots.setdefault(span, set()).add(native_record)
+                executed |= any(cast(int, _json_object(item, label="verified range")["count"]) > 0 for item in ranges)
+        collector_id = raw.get("collector_id")
+        if not isinstance(collector_id, str) or re.fullmatch(r"[0-9a-f]{32}", collector_id) is None:
+            raise RuntimeError("controller coverage collector identity is missing")
+        runtime = _read_json_object(output / f"runtime-{collector_id}.json")
+        browser_version = runtime.get("browser_version")
+        if (
+            runtime.get("browser") != "chromium"
+            or runtime.get("source_sha256") != digest
+            or runtime.get("source_manifest_sha256") != hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+            or not isinstance(browser_version, str)
+            or not browser_version
+        ):
+            raise RuntimeError("controller coverage browser/runtime binding is missing")
+        browser_versions.add(browser_version)
+    if not executed:
+        raise RuntimeError("no executed controller in the whole fresh coverage invocation")
+    if len(browser_versions) != 1:
+        raise RuntimeError("controller coverage changed its browser runtime")
+    missing = [
+        span
+        for span, records in coarse_roots.items()
+        if any(not (detailed_roots.get(span, set()) - {record}) for record in records)
+    ]
+    if missing:
+        spans = ", ".join(f"[{span[2]},{span[3]})" for span in sorted(missing))
+        raise RuntimeError(f"controller coverage lacks an executed detailed witness for coarse roots: {spans}")
+    _write_json(
+        output / "runtime.json",
+        {
+            "browser": "chromium",
+            "browser_version": next(iter(browser_versions)),
+            "source_ref": manifest.get("source_ref"),
+            "tool_versions": manifest.get("tool_versions"),
+        },
+    )
+    return source_path
+
+
+def report_javascript_coverage(output: Path, *, timeout_seconds: int) -> int:
+    """Use the locked native tool for conversion and both independent floors."""
+    executable = str(ROOT / ".opencode" / "node_modules" / ".bin" / "c8")
+    reports = output / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    common = (
+        "--merge-async=false",
+        "--config",
+        str(ROOT / JS_COVERAGE_CONFIG),
+        "--temp-directory",
+        str(output / "normalized"),
+        "--reports-dir",
+        str(reports),
+    )
+    phases = (
+        ("report", (executable, "report", *common)),
+        (
+            "aggregate",
+            (
+                executable,
+                "check-coverage",
+                *common,
+                "--lines",
+                "85",
+                "--branches",
+                "85",
+            ),
+        ),
+        (
+            "per-file",
+            (
+                executable,
+                "check-coverage",
+                *common,
+                "--lines",
+                "75",
+                "--branches",
+                "75",
+                "--per-file",
+            ),
+        ),
+    )
+    for phase, command in phases:
+        print(
+            f"presentation-browser phase=javascript-coverage-{phase} status=starting",
+            flush=True,
+        )
+        status: dict[str, object] = {
+            "phase": phase,
+            "command": command,
+            "cwd": str(ROOT),
+            "timeout_seconds": timeout_seconds,
+            "stdout": "inherited native observer/CI log",
+        }
+        try:
+            # Inherit native stdout/stderr so the existing run-watched/CI owner
+            # streams and retains them. Do not introduce another runner or tee.
+            completed = subprocess.run(command, cwd=ROOT, timeout=timeout_seconds, check=False)
+            code = completed.returncode
+        except subprocess.TimeoutExpired:
+            code = 124
+        except OSError as exc:
+            status["error"] = str(exc)
+            code = 127
+        status["exit_code"] = code
+        _write_json(output / f"c8-{phase}.json", status)
+        print(
+            f"presentation-browser phase=javascript-coverage-{phase} status=finished exit={code}",
+            flush=True,
+        )
+        if code:
+            return code
+    return 0
+
+
+def require_javascript_coverage_report(report_path: Path, *, source_path: Path) -> None:
+    """Require native metric presence; the c8 checks own percentage arithmetic."""
+    report = _read_json_object(report_path)
+    if set(report) != {"total", str(source_path.resolve())}:
+        raise RuntimeError("native coverage report must select only the complete controller")
+    for key in ("total", str(source_path.resolve())):
+        entry = _json_object(report.get(key), label=f"coverage report {key}")
+        for metric in ("lines", "branches"):
+            values = _json_object(entry.get(metric), label=f"coverage report {metric}")
+            for field in ("total", "covered", "skipped"):
+                value = values.get(field)
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    raise RuntimeError(f"native coverage {metric}.{field} is missing")
+            percent = values.get("pct")
+            if (
+                not isinstance(percent, (int, float))
+                or isinstance(percent, bool)
+                or not math.isfinite(percent)
+                or not 0 <= percent <= 100
+            ):
+                raise RuntimeError(f"native coverage {metric}.pct is missing")
 
 
 def validate_plan(plan: BrowserPlan) -> None:
@@ -256,9 +861,7 @@ def validate_plan(plan: BrowserPlan) -> None:
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise RuntimeError("presentation dependency profile is invalid") from exc
     dependencies = profile_data.get("project", {}).get("dependencies")
-    if not isinstance(dependencies, list) or not all(
-        isinstance(dependency, str) for dependency in dependencies
-    ):
+    if not isinstance(dependencies, list) or not all(isinstance(dependency, str) for dependency in dependencies):
         raise RuntimeError("presentation dependency profile has invalid dependencies")
     for requirement in sorted(PINNED_PRESENTATION_DEPENDENCIES):
         if requirement not in dependencies:
@@ -268,6 +871,8 @@ def validate_plan(plan: BrowserPlan) -> None:
     for run in plan.runs:
         if run.command[0] != sys.executable or "shell" in run.command:
             raise RuntimeError("presentation browser command is not a direct bounded argv")
+    if plan.js_coverage:
+        _validate_javascript_coverage_tool(require_installed=False)
 
 
 def _browser_label(browser: str) -> str:
@@ -314,9 +919,7 @@ def _require_browser_launchable(plan: BrowserPlan) -> None:
                 runtime.close()
     except PlaywrightError as exc:
         label = _browser_label(plan.browser)
-        raise RuntimeError(
-            f"{label} cannot launch and navigate the probe page"
-        ) from exc
+        raise RuntimeError(f"{label} cannot launch and navigate the probe page") from exc
 
 
 def _emit_probe_supervisor_event(event: str) -> None:
@@ -393,8 +996,7 @@ def _probe_failure_diagnostic(
 def probe_browser_runtime(plan: BrowserPlan) -> int:
     """Prove launch plus first-page readiness without letting Playwright hang."""
     print(
-        f"presentation-browser browser={plan.browser} "
-        "phase=launch-page-probe status=starting",
+        f"presentation-browser browser={plan.browser} phase=launch-page-probe status=starting",
         flush=True,
     )
     try:
@@ -410,8 +1012,7 @@ def probe_browser_runtime(plan: BrowserPlan) -> int:
         status = 1
     else:
         print(
-            f"presentation-browser browser={plan.browser} "
-            "phase=launch-page-probe status=finished exit=0",
+            f"presentation-browser browser={plan.browser} phase=launch-page-probe status=finished exit=0",
             flush=True,
         )
         return 0
@@ -448,9 +1049,7 @@ def run_startup_probe_only(plan: BrowserPlan) -> int:
         platform=sys.platform,
         reference=(
             WEBKIT_MACOS_DEADLOCK_REFERENCE
-            if failure_kind == "timeout"
-            and sys.platform == "darwin"
-            and plan.browser == "webkit"
+            if failure_kind == "timeout" and sys.platform == "darwin" and plan.browser == "webkit"
             else None
         ),
         schema_version=1,
@@ -500,8 +1099,7 @@ def install_browser(plan: BrowserPlan, *, with_dependencies: bool = False) -> in
         if with_dependencies:
             status = probe_browser_runtime(plan)
     print(
-        f"presentation-browser browser={plan.browser} phase=install "
-        f"status=finished exit={status}",
+        f"presentation-browser browser={plan.browser} phase=install status=finished exit={status}",
         flush=True,
     )
     return status
@@ -513,6 +1111,12 @@ def _execute_viewport_command(plan: BrowserPlan, run: ViewportRun) -> int:
     environment = os.environ.copy()
     environment["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
     environment["GLUDD_PRESENTATION_BROWSER_OUTPUT"] = run.output_root
+    environment.pop(JS_COVERAGE_DIR_ENV, None)
+    environment.pop(JS_COVERAGE_MANIFEST_ENV, None)
+    if plan.js_coverage:
+        coverage_dir = Path(plan.output_root).parent / "javascript-coverage"
+        environment[JS_COVERAGE_DIR_ENV] = str(coverage_dir)
+        environment[JS_COVERAGE_MANIFEST_ENV] = str(coverage_dir / "source.json")
     if run.enforce_viewport:
         environment[VIEWPORT_SIZE_ENV] = f"{run.viewport_width}x{run.viewport_height}"
     else:
@@ -551,15 +1155,14 @@ def _run_viewport_process(plan: BrowserPlan, run: ViewportRun) -> int:
 def run_plan(plan: BrowserPlan, *, run_label: str | None = None) -> int:
     """Run each viewport in an independently bounded owned process group."""
     validate_plan(plan)
-    selected_runs = tuple(
-        run for run in plan.runs if run_label is None or run.label == run_label
-    )
+    selected_runs = tuple(run for run in plan.runs if run_label is None or run.label == run_label)
     if not selected_runs:
         raise ValueError(f"unknown presentation run label: {run_label}")
     _require_browser_executable(plan)
     probe_status = probe_browser_runtime(plan)
     if probe_status != 0:
         return probe_status
+    coverage = _prepare_javascript_coverage(plan) if plan.js_coverage else None
     for run in selected_runs:
         print(
             f"presentation-browser browser={plan.browser} run={run.label} "
@@ -571,18 +1174,29 @@ def run_plan(plan: BrowserPlan, *, run_label: str | None = None) -> int:
             status = _run_viewport_process(plan, run)
         except (OwnedProcessTimeout, subprocess.TimeoutExpired):
             print(
-                f"presentation-browser browser={plan.browser} run={run.label} "
-                "phase=pytest status=timeout",
+                f"presentation-browser browser={plan.browser} run={run.label} phase=pytest status=timeout",
                 flush=True,
             )
             return 124
         print(
-            f"presentation-browser browser={plan.browser} run={run.label} "
-            f"phase=pytest status=finished exit={status}",
+            f"presentation-browser browser={plan.browser} run={run.label} phase=pytest status=finished exit={status}",
             flush=True,
         )
         if status != 0:
             return status
+    if coverage is not None:
+        output, manifest_path = coverage
+        source_path = _require_executed_javascript_coverage(output, manifest_path)
+        code = report_javascript_coverage(output, timeout_seconds=plan.timeout_seconds)
+        if code:
+            return code
+        require_javascript_coverage_report(output / "reports" / "coverage-summary.json", source_path=source_path)
+        manifest = _read_json_object(manifest_path)
+        digest = manifest.get("source_sha256")
+        if not isinstance(digest, str):
+            raise RuntimeError("JavaScript coverage source digest is missing")
+        _verified_source(source_path, digest)
+        _require_javascript_source_unchanged(manifest_path)
     return 0
 
 
@@ -604,6 +1218,7 @@ def main() -> None:
         action="store_true",
         help="install the pinned browser plus host libraries, then launch-probe it",
     )
+    parser.add_argument("--js-coverage", choices=("0", "1"), default="0")
     parser.add_argument("--browser", default="chromium")
     parser.add_argument("--browser-root", type=Path, default=DEFAULT_BROWSER_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
@@ -619,6 +1234,7 @@ def main() -> None:
         browser_root=args.browser_root,
         output_root=args.output_root,
         timeout_seconds=args.timeout_seconds,
+        js_coverage=args.js_coverage == "1",
     )
     if args.validate_only:
         validate_plan(plan)
