@@ -76,6 +76,7 @@ _WORKER_TASKS = frozenset(
         "typecheck",
         "ci-shard-supervisor",
         "test-supervisor",
+        "browser-test-driver",
         "python-worker",
         "self-improve",
         "self-improve-model-worker",
@@ -109,6 +110,7 @@ _TRACKED_PROCESS_TOKENS = (
     "run_ci_shards_parallel.py",
     "run_ci_shards_serial.py",
     "run_xdist_trace.py",
+    "run_presentation_browser_tests.py",
     "start_ci_shards_parallel_bg.py",
     "task_watchdog.py",
     "test_hook_runtime.py",
@@ -136,6 +138,13 @@ def _task_label(command: str) -> str:
         audit_execution is None or watchdog_source.start() < audit_execution.start()
     ):
         return "watchdog"
+    browser_driver = re.search(
+        r"(?:^|\s)(?:\S*/)?run_presentation_browser_tests\.py(?=\s|$)", command,
+    )
+    if browser_driver is not None and (
+        audit_execution is None or browser_driver.start() < audit_execution.start()
+    ):
+        return "browser-test-driver"
     if "audit_coverage.py" in command:
         return "coverage-audit"
     if "detect-secrets" in command:
@@ -221,12 +230,13 @@ def _command_mentions_path(command: str, path: Path) -> bool:
 
 
 def _owned_resource_roots(repository_roots: tuple[Path, ...]) -> tuple[Path, ...]:
-    """Derive the resource namespace for each registered checkout."""
+    """Derive exact resource and sibling toolchain roots for each checkout."""
     roots: list[Path] = []
     for repository_root in repository_roots:
         candidate = resource_root(repository_root)
-        if candidate not in roots:
-            roots.append(candidate)
+        for owned_root in (candidate, Path(f"{candidate}-toolchain")):
+            if owned_root not in roots:
+                roots.append(owned_root)
     return tuple(roots)
 
 

@@ -10,10 +10,16 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 import scripts.active_work_status as active_work_status
 from scripts.active_work_status import _task_label
+
+if TYPE_CHECKING:
+    from resource_arbiter import resource_root
+else:
+    from scripts.resource_arbiter import resource_root
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -484,7 +490,141 @@ def test_owned_resource_roots_are_deduplicated(monkeypatch: pytest.MonkeyPatch) 
 
     assert active_work_status._owned_resource_roots(
         (Path("/repo/gludd"), Path("/repo/gludd-worktree"))
-    ) == (Path("/tmp/gludd-resources/shared"),)
+    ) == (
+        Path("/tmp/gludd-resources/shared"),
+        Path("/tmp/gludd-resources/shared-toolchain"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    (
+        ("python scripts/run_presentation_browser_tests.py --browser webkit", "browser-test-driver"),
+        ("python scripts/run_presentation_browser_tests.py --label pytest", "browser-test-driver"),
+        ("pytest tests/unit/test_run_presentation_browser_tests.py", "unit-tests"),
+        ("pytest scripts/run_presentation_browser_tests.py", "pytest"),
+    ),
+)
+def test_browser_driver_classification_retains_audit_roles(command: str, expected: str) -> None:
+    assert active_work_status._task_label(command) == expected
+
+
+def test_shared_toolchain_process_table_uses_one_registered_native_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("GLUDD_RESOURCE_ROOT", str(tmp_path / "resources"))
+    monkeypatch.delenv("GLUDD_PROJECT_NAMESPACE", raising=False)
+    repositories = (tmp_path / "main", tmp_path / "registered-feature")
+    main_toolchain = Path(f"{resource_root(repositories[0])}-toolchain")
+    feature_toolchain = Path(f"{resource_root(repositories[1])}-toolchain")
+    process_table = "\n".join((
+        (
+            f"101 1 {main_toolchain}/ci-shards/python-3.12/bin/python -m pytest "
+            "tests/browser/test_presentation_playwright.py --browser webkit"
+        ),
+        (
+            f"102 1 {feature_toolchain}/ci-shards/python-3.11/bin/python "
+            "scripts/run_presentation_browser_tests.py --run --browser webkit"
+        ),
+    ))
+    calls: list[list[str]] = []
+
+    def native_snapshot(command: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append(command)
+        assert kwargs["timeout"] == 10 and kwargs["check"] is True
+        assert not kwargs.get("shell", False)
+        if command == ["git", "worktree", "list", "--porcelain"]:
+            return SimpleNamespace(stdout="\n".join(f"worktree {root}" for root in repositories))
+        assert command == ["ps", "-axo", "pid=,ppid=,command="]
+        return SimpleNamespace(stdout=process_table)
+
+    monkeypatch.setattr("scripts.active_work_status.subprocess.run", native_snapshot)
+
+    assert active_work_status.main(["--process-table"]) == 0
+    output = capsys.readouterr().out
+    assert [line.split()[:3] for line in output.splitlines()[1:]] == [
+        ["101", "1", "pytest"],
+        ["102", "1", "browser-test-driver"],
+    ]
+    assert calls == [
+        ["git", "worktree", "list", "--porcelain"],
+        ["ps", "-axo", "pid=,ppid=,command="],
+    ]
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_shared_toolchain_inventory_keeps_only_tracked_ancestry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GLUDD_RESOURCE_ROOT", str(tmp_path / "resources"))
+    monkeypatch.delenv("GLUDD_PROJECT_NAMESPACE", raising=False)
+    repository = tmp_path / "main"
+    toolchain = Path(f"{resource_root(repository)}-toolchain")
+    process_table = "\n".join((
+        "401 1 python scripts/run_presentation_browser_tests.py --run --browser webkit",
+        (
+            f"402 401 {toolchain}/ci-shards/python-3.12/bin/python -m pytest "
+            "tests/browser/test_presentation_playwright.py --browser webkit"
+        ),
+        "403 402 python -c from multiprocessing.spawn import spawn_main",
+        "501 1 python scripts/run_presentation_browser_tests.py --run --browser webkit",
+        f"601 1 untracked-wrapper --root={toolchain}",
+        "602 601 python -m pytest tests/unit/test_unrelated.py",
+    ))
+
+    processes = active_work_status._owned_processes_from_output(
+        process_table, repository_roots=(repository,),
+        resource_roots=active_work_status._owned_resource_roots((repository,)),
+    )
+
+    assert [process["pid"] for process in processes] == ["401", "402", "403"]
+    assert [process["task"] for process in processes] == [
+        "browser-test-driver", "pytest", "python-worker",
+    ]
+
+
+@pytest.mark.parametrize(
+    "foreign_suffix",
+    ("-toolchain-copy", "-toolchains", "-other-toolchain", "/../foreign-toolchain"),
+)
+def test_shared_toolchain_inventory_rejects_foreign_namespace_and_lookalikes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, foreign_suffix: str,
+) -> None:
+    monkeypatch.setenv("GLUDD_RESOURCE_ROOT", str(tmp_path / "resources"))
+    monkeypatch.delenv("GLUDD_PROJECT_NAMESPACE", raising=False)
+    repository = tmp_path / "main"
+    resource = resource_root(repository)
+    foreign_toolchain = Path(f"{resource}{foreign_suffix}").resolve()
+    processes = active_work_status._owned_processes_from_output(
+        (
+            f"701 1 {foreign_toolchain}/ci-shards/python-3.12/bin/python "
+            "-m pytest tests/browser/test_presentation_playwright.py --browser webkit\n"
+            f"702 1 {foreign_toolchain}/ci-shards/python-3.12/bin/python "
+            "scripts/run_presentation_browser_tests.py --run --browser webkit\n"
+            f"703 1 {resource.parent}/ci-shards/python-3.12/bin/python -m pytest tests/unit/test_a.py"
+        ),
+        repository_roots=(repository,),
+        resource_roots=active_work_status._owned_resource_roots((repository,)),
+    )
+
+    assert processes == []
+
+
+def test_browser_driver_is_counted_through_existing_worker_accounting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(active_work_status, "_active_gate_refresh_owner", lambda _namespace: None)
+    accounting = active_work_status._worker_accounting([
+        {"pid": "801", "ppid": "1", "task": "browser-test-driver", "command": "python driver"},
+        {"pid": "802", "ppid": "801", "task": "unit-tests", "command": "pytest tests/unit"},
+    ], "namespace")
+
+    assert accounting["observed_worker_count"] == 2
+    assert accounting["top_level_worker_count"] == 1
+    assert accounting["descendant_process_count"] == 1
+    assert accounting["leased_workers"] == [{
+        "pid": "801", "task": "browser-test-driver", "lease": "namespace:browser-test-driver:801",
+    }]
 
 
 def test_process_query_uses_registered_and_resource_roots(
