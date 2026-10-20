@@ -160,3 +160,28 @@ def test_main_accepts_the_repository_contract(
 
     assert main([str(contract)]) == 0
     assert "make-target-contract: PASS" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("position", ["before", "after"])
+def test_target_variables_cannot_replace_real_recipe_contract(tmp_path: Path, position: str) -> None:
+    """Native variable binding order cannot erase an owner's documented arguments."""
+    entrypoint = tmp_path / "Makefile"
+    binding = "proof: override UV := selected-runner\n"
+    recipe = 'proof:\n\t@echo "  proof SOURCE=$(SOURCE)"\n'
+    entrypoint.write_text(
+        binding + recipe if position == "before" else recipe + binding,
+        encoding="utf-8",
+    )
+    contract = {
+        "targets": [{
+            "name": "proof",
+            "make_variables": ["SOURCE"],
+            "behavior": "make proof SOURCE=HEAD",
+        }],
+    }
+    assert validate_contract(entrypoint, contract) == []
+
+
+def test_variable_only_declaration_does_not_invent_recipe_owner() -> None:
+    """A target-variable binding alone is not a documented executable owner."""
+    assert _stanzas("proof: override UV := selected-runner\n") == {}

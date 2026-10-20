@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-check_duplicate_targets.py
+"""Scan native Make sources for duplicate recipe owners.
 
 Scans the Makefile for duplicate target declarations at column 0.
 A target declared more than once (common when two branches independently add
@@ -33,11 +32,14 @@ else:
 
 TARGET_PATTERN = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_.-]*):")
 TARGET_VAR_ASSIGN_PATTERN = re.compile(
-    r"^[a-zA-Z_][a-zA-Z0-9_.-]*:\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(\?=|:=|\+=|=)"
+    r"^[a-zA-Z_][a-zA-Z0-9_.-]*:\s*"
+    r"(?:override\s+|export\s+|private\s+)?"
+    r"[A-Za-z_][A-Za-z0-9_.-]*\s*(\?=|:=|\+=|=)"
 )
 
 
 def extract_targets(makefile_path: Path) -> Counter[str]:
+    """Count declarations while excluding target-specific variable assignments."""
     targets: Counter[str] = Counter()
     for line in compose_makefile(makefile_path).splitlines():
         stripped = line.lstrip()
@@ -52,6 +54,7 @@ def extract_targets(makefile_path: Path) -> Counter[str]:
 
 
 def main() -> int:
+    """Return a failing native admission status for missing or duplicate owners."""
     repo_root = Path(__file__).resolve().parent.parent
     makefile_path = repo_root / "Makefile"
     if len(sys.argv) > 1:

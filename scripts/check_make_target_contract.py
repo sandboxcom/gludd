@@ -11,15 +11,23 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from scripts.check_make_help import HELP_TARGET_RE
-from scripts.makefile_layout import compose_makefile
+if TYPE_CHECKING:
+    from check_duplicate_targets import TARGET_VAR_ASSIGN_PATTERN
+
+    from scripts.check_make_help import HELP_TARGET_RE
+    from scripts.makefile_layout import compose_makefile
+else:
+    from scripts.check_duplicate_targets import TARGET_VAR_ASSIGN_PATTERN
+    from scripts.check_make_help import HELP_TARGET_RE
+    from scripts.makefile_layout import compose_makefile
 
 TARGET_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.-]*):")
 
 
 def load_contract(path: Path) -> dict[str, Any]:
+    """Load the existing target-list schema or refuse malformed metadata."""
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict) or not isinstance(payload.get("targets"), list):
         raise ValueError("contract must contain a targets list")
@@ -32,6 +40,8 @@ def _stanzas(makefile: str) -> dict[str, str]:
     current: str | None = None
     body: list[str] = []
     for line in lines:
+        if TARGET_VAR_ASSIGN_PATTERN.match(line):
+            continue
         match = TARGET_RE.match(line)
         if match:
             if current is not None:
@@ -58,6 +68,7 @@ def _help_lines(makefile: str) -> list[str]:
 
 
 def validate_contract(makefile_path: Path, contract: dict[str, Any]) -> list[str]:
+    """Report missing native owners, help entries and documented variable bindings."""
     makefile = compose_makefile(makefile_path)
     stanzas = _stanzas(makefile)
     help_lines = _help_lines(makefile)
@@ -109,6 +120,7 @@ def validate_contract(makefile_path: Path, contract: dict[str, Any]) -> list[str
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Return the fail-closed native contract validation status."""
     args = argv or sys.argv[1:]
     root = Path(__file__).resolve().parent.parent
     makefile = root / "Makefile"
