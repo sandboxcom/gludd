@@ -59,6 +59,11 @@ Select the installed environment belonging to the active checkout or its
 registered shared toolchain. An isolated worktree must not point at the canonical
 main checkout's .venv: its subprocess-confinement guard rejects that reference.
 Keep warnings fatal and preserve ordinary plugins and original assertions.
+For promoted selectors, check-gate-failure-promotions executes the manifest and
+Make wiring pins plus both exact roster pins. Its documented native example
+exposes a stale shared roster before the bounded runtime replay. The complete
+runtime-admission-scheduling and cold-start-selection owners also retain mutation
+checks for omitted, duplicated and widened selectors.
 When pytest parametrization changes, include the complete existing
 tests/unit/test_pytest_param_fixture_collisions.py owner with the changed
 test files. Names such as context are external Playwright fixtures; use a

@@ -736,7 +736,7 @@ check-gate-failure-promotions:
 		--manifest "$(GATE_FAILURE_PROMOTION_MANIFEST)" \
 		--repository-root "$(CURDIR)"
 	@$(MAKE) --no-print-directory test-files \
-		TESTFILES="tests/unit/test_gate_failure_promotion.py::test_repository_manifest_seeds_each_promoted_failure_family tests/unit/test_gate_failure_promotion.py::test_make_wiring_and_target_contract_are_explicit" \
+		TESTFILES="tests/unit/test_gate_failure_promotion.py::test_repository_manifest_seeds_each_promoted_failure_family tests/unit/test_gate_failure_promotion.py::test_make_wiring_and_target_contract_are_explicit tests/unit/test_runtime_admission_scheduling.py::test_runtime_admission_retains_entire_roster_and_fresh_help tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings" \
 		NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS="-W error -q -n 0 --maxprocesses 1 --timeout=30"
 
 _project-dispatch-integration:

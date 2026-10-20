@@ -26,6 +26,8 @@ FEATURE_DOC = ROOT / "docs" / "features" / "INTEGRATION_ADMISSION.md"
 STRUCTURAL_PROMOTION_NODES = (
     "tests/unit/test_gate_failure_promotion.py::test_repository_manifest_seeds_each_promoted_failure_family",
     "tests/unit/test_gate_failure_promotion.py::test_make_wiring_and_target_contract_are_explicit",
+    "tests/unit/test_runtime_admission_scheduling.py::test_runtime_admission_retains_entire_roster_and_fresh_help",
+    "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
 )
 
 EXPECTED_RUNTIME_PHASES = [
@@ -252,7 +254,10 @@ def _target_stanza(makefile: str, target: str) -> str:
 @pytest.mark.parametrize(
     "failed_owner",
     ("", *STRUCTURAL_PROMOTION_NODES, "validator"),
-    ids=("success", "manifest-pin-fails", "wiring-pin-fails", "validator-fails"),
+    ids=(
+        "success", "manifest-pin-fails", "wiring-pin-fails",
+        "roster-pin-fails", "cold-start-pin-fails", "validator-fails",
+    ),
 )
 def test_promotion_checker_executes_both_structural_pins_only_after_valid_manifest(
     tmp_path: Path,
@@ -2110,7 +2115,7 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "2 passed" in result.stdout
+    assert "4 passed" in result.stdout
     # The exact family roster is pinned above; the CLI must report that roster,
     # including newly mandated early regressions, without hard-coding an old size.
     family_count = len(json.loads(MANIFEST.read_text(encoding="utf-8"))["families"])

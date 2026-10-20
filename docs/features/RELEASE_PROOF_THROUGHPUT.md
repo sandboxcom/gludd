@@ -272,6 +272,43 @@ and executing runtimes differ. No latency, deadline-clearance or hosted gain
 is claimed. Actual original31290/60 repair remains required after integration.
 No release checkbox, full gate, hosted exact-SHA or deployment proof is supplied.
 
+## Original312 repair exposed a stale shared roster (2026-10-20)
+
+The normal guarded browser source commit is d929ce676b7413ff6125783ff9089cef5b6d7946:
+127656/127680 selected/collected,24deselected,0errors,58.13s; native collection65.2s.
+The independently inspected metadata source integrates as88b176db1a3125760c33e73da527c1740856a0bc.
+Its original31290/60 repair retains1FAIL/2022PASS61.65s, observed64.4s/rc2.
+The failing owner is test_real_admission_filters_only_never_selected_main_siblings;
+the static shared ROSTER omits the new manifest node. The main failure correctly
+prevents help/tail children and no native repair receipt is recorded. Preserve
+.gate-logs/observed/v012-runtime-repair312/v012-repair312-88b176db1-20261020.log.
+
+Root conforms that literal expected roster and its seven114-family count assertions,
+preserving every original entry/order, budget and safety assertion. Six additional
+mutation cases reuse both existing guards for omission/duplication/whole-file
+widening of the exact new selector. Their native quoted last-main boundary is
+handled like the existing last-tail boundary. No selector is removed or widened.
+
+The existing check-gate-failure-promotions owner now runs the original two pins
+plus both exact native roster pins, serially with the original30s test timeout.
+Tests-only failure injection first retains5FAIL/1PASS1.63s; the actual four-pin
+owner then retains2FAIL/2PASS1.70s against the unfixed roster. Preserve
+/tmp/gludd-v012-promotion-exact-roster-red.xml.
+The first complete replay retains7FAIL/267PASS61.97s, observed63.5s/rc2:
+six new fixture cases lacked the last-main quote and the original target-result
+assertion still expected two pins. Both literal fixture expectations now conform
+to the actual four-pin route, retaining every original assertion. Failed XML:
+/tmp/gludd-v012-promotion-exact-roster-complete.xml.
+Final complete three-owner replay passes274/74.85s, observed76.1s/rc0;
+XML:/tmp/gludd-v012-promotion-exact-roster-complete-final.xml. Native documented
+check-gate-failure-promotions passes114families and all four pins/1.99s.
+The original guide/session/objective owners pass46/2.80s; Ruff, strict three-file
+typing,268target contracts,1174targets/zero duplicates, line limits and locked
+Markdown pass. The guide codifies both cheap roster checks and complete owners.
+Original31290/60 replay, complete final gate and exact-SHA hosted proof remain
+pending; source acceptance supplies none of them. No budget, coverage, cleanup,
+hosted or promotion authority changes.
+
 ## Bounded current handoff with immutable history (2026-10-20)
 
 The mandatory SESSION.md had reached2498 lines with superseded objectives and

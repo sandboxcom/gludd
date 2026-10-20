@@ -34,6 +34,10 @@ PLUGIN_ISOLATION_SELECTORS = (
     "TestSubagentOutputClean::test_all_tool_execute_before_hooks_have_subagent_guard",
     "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler",
 )
+PRESENTATION_MANIFEST_SELECTOR = (
+    "tests/unit/test_presentation_browser_runner.py::"
+    "test_javascript_viewport_child_reads_the_actual_producer_manifest"
+)
 ROSTER = (
     "tests/unit/test_ci_batch_receipts.py::"
     "test_receipt_validation_refuses_unsafe_artifact_mode[2432]",
@@ -114,6 +118,7 @@ ROSTER = (
     "tests/unit/test_observer_retention_concurrency.py",
     "tests/unit/test_ci_collect_all_stress.py",
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
+    PRESENTATION_MANIFEST_SELECTOR,
 )
 
 
@@ -444,7 +449,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 113
+    assert len(families) == 114
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -662,7 +667,7 @@ def test_watchdog_handoff_exit_control_is_routed_once_in_third_child(tmp_path: P
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 113
+    assert len(payload["families"]) == 114
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -679,7 +684,7 @@ def test_native_watchdog_start_control_is_routed_once_in_third_child(tmp_path: P
         "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 113
+    assert len(payload["families"]) == 114
 
 
 def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(tmp_path: Path) -> None:
@@ -696,7 +701,7 @@ def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(
         "full_gate_phase": "test",
     }
     assert payload["families"][108] == expected
-    assert len(payload["families"]) == 113
+    assert len(payload["families"]) == 114
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -721,7 +726,7 @@ def test_watchdog_unit_log_namespace_guard_is_the_exact_new_third_child_node(tmp
         "id": "watchdog-unit-log-namespace", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(manifest["families"]) == 113
+    assert len(manifest["families"]) == 114
 
 
 def test_profile_composition_guard_is_once_in_third_child_with_original_bounds(tmp_path: Path) -> None:
@@ -767,7 +772,7 @@ def test_descendant_symlink_cleanup_is_selected_once_by_original_whole_owner(tmp
         "id": "ordinary-descendant-symlink-unlink", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(payload["families"]) == 113
+    assert len(payload["families"]) == 114
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -787,7 +792,7 @@ def _assert_native_setuid_input_first_route(
         "id": "native-setuid-input-realization", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(families) == 113 and families[112] == expected
+    assert len(families) == 114 and families[112] == expected
     assert [family for family in families if family["id"] == expected["id"]] == [expected]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     first_files = rows[0]["files"]

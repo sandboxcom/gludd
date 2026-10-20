@@ -83,7 +83,9 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
 
 
 @pytest.mark.parametrize(
-    "promoted_selector", (*APPROVED_PROMOTION_SELECTORS, *PLUGIN_ISOLATION_SELECTORS, *REVIEWED_FINALIZATION),
+    "promoted_selector",
+    (*APPROVED_PROMOTION_SELECTORS, *PLUGIN_ISOLATION_SELECTORS,
+     scheduling.PRESENTATION_MANIFEST_SELECTOR, *REVIEWED_FINALIZATION),
 )
 @pytest.mark.parametrize("mutation", ("omission", "duplication", "widening"))
 @pytest.mark.parametrize(
@@ -104,7 +106,7 @@ def test_admission_contracts_reject_mutated_promoted_selectors(
     """Exercise both unchanged guards through the real Make argument-capture harness."""
     original_stanza = scheduling._stanza
     owner_stanza = original_stanza(scheduling.OWNER)
-    suffix = '"' if promoted_selector == REVIEWED_FINALIZATION[-1] else " "
+    suffix = '"' if promoted_selector in (ROSTER[-1], REVIEWED_FINALIZATION[-1]) else " "
     selected = promoted_selector + suffix
     assert owner_stanza.count(selected) == 1
     if mutation == "omission":

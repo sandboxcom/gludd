@@ -27,6 +27,16 @@ release success is inferred from this source acceptance. Retained failures and
 receiving-checkout coverage are in
 [release throughput](RELEASE_PROOF_THROUGHPUT.md#receiving-checkout-browser-coverage-repair-2026-10-20).
 
+The first real312 repair on clean88b176db1 retains1FAIL/2022PASS61.65s:
+the shared literal roster had not included the new selector. The existing cheap
+check-gate-failure-promotions owner now retains its original two structural pins
+and also runs both exact roster pins, so that mismatch fails before the90s replay.
+All original assertions, serial execution and30s test timeout remain. Six new
+mutation cases exercise omitted, duplicated and widened coverage selectors;
+the shared roster and exact family counts conform to114 without dropping entries.
+See the retained native failures in
+[the repair record](RELEASE_PROOF_THROUGHPUT.md#original312-repair-exposed-a-stale-shared-roster-2026-10-20).
+
 ## Contract
 
 `make integration-admission` runs these existing targets in order and stops on
