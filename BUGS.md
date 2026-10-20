@@ -1,6 +1,6 @@
 # Process Bug Tracker
 
-All premature-stop incidents and process failures are tracked here.
+All premature-stop incidents and process failures are tracked here. 2026-10-20 S98.4: a locally reviewed/published candidate retains an EE index that now returns HEAD404/GET404; Build39511340747 fails both gates before shard fan-out. Existing native refresh records086f25b and separate exact-digest check passes0.4s; preserve the old failure, all eight unknown/censored shard intervals and exact YAML/lock assertions. ANSIBLE_EE_BASE_IMAGE_LIVENESS.md codifies checking actual availability again before guarded publication, explicit runtime alignment and remaining full-gate/hosted/deployment proofs. No missing manifest is masked by retries, mutable tags or a task tick.
 
 ## Incident Log
 

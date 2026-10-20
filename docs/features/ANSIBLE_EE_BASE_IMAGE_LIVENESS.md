@@ -661,3 +661,38 @@ client. This is the resource owner to close, not a reason to suppress warnings
 or replace the standard-library client. The practitioner report above remains
 motivation for method-specific coverage, not evidence of a leaked production
 connection or successful deployment.
+
+## Recheck a frozen candidate's served manifest — 2026-10-20
+
+Build `39511340747` on exact development
+`3b2fdc2274bf95aa5b7fd3a2d929286920d9daf1` rejects the pinned
+`4fdfb367402535024cd7703a67e4549ca3b0a0ee05081e06d89e24dce3a3827a`
+index in both Python gate jobs. The original native checker reproduces HEAD404
+and GET404 in0.8 observed seconds; retain
+`.gate-logs/v012-manifest-red-3b2fdc2-20261020.log`. Neither a source review nor
+an earlier successful availability probe establishes current registry retention.
+The immutable run summary retains all eight shard rows as unknown/censored:
+the failed barrier admits no shard timing or throughput claim.
+
+The existing actual refresh owner resolves
+`sha256:086f25bff2b5e44eaa6953c8165cf6c4dcb3af8018b37053b510c7d5d796613c`
+in0.5s. A separate actual exact-digest check passes in0.4s. The native writer
+changes only the base identity in the definition/lock and the definition hash;
+all other frozen inputs remain. The reviewed identity fixture adopts this
+independently observed digest while preserving both exact YAML/lock assertions.
+The old identity test first fails1/1; no assertion is removed or weakened. The complete original artifact, fallback and runtime-boundary owners then pass127/5.39s with warnings fatal; native seven-input runtime validation, Ruff, strict typing and Markdown pass. This pin-only repair changes no producer implementation or coverage policy.
+
+Before another guarded development repair push, run the existing owner with
+`ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0`; its mode1 output is an offline
+plan. Refresh only through `make refresh-ansible-base-image
+ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0`, then separately check the exact
+new pin. Align `VIRTUAL_ENV` with the selected `UV_PROJECT_ENVIRONMENT` in both
+outer/child Make contexts; do not silence UV's mismatch warning or use --active.
+Do not rerun the failed immutable hosted SHA or substitute a mutable tag.
+
+The earlier Docker forum HEAD404 report remains motivation for bounded method
+fallback, not evidence of the cause here. Both methods fail for this old pin;
+there is no basis to label the failure garbage collection or a transient event.
+A live new manifest is input evidence only. Full image build/offline warm,
+canonical release gate, exact-successor hosted CI, deployment acceptance and
+receipt-bound promotion remain required. All seven S98 tasks remain open.
