@@ -174,7 +174,7 @@ POST /admin/perm/escalation-request requires≥3 distinct alternatives_tried {ap
 
 ## CRITICAL: Human Todo System (bot→human task requests)
 
-Use HumanTodo, NOT logs/event errors/agent todos, for escalation, external actions, decisions, input or generic human blockers. File via general_ludd.agent.gludd_human_todo or POST /api/human-todos.
+Use HumanTodo, NOT logs/event errors/agent todos, for escalation, external actions, decisions, input or generic human blockers. File via general_ludd.agent.gludd_human_todo or POST /api/human-todos. Make-only sessions use human-todo-module with explicit HUMAN_TODO_ARGS_JSON and HUMAN_TODO_VALIDATE_ONLY: literal1 validates, literal0 applies through the same module; changed=true/id=null is a plan, not a filed request. Preserve a native API failure and never invent an ID when the daemon is unavailable.
 parent_agent_todo_id makes parent blocked_on_human/non-runnable; done→pending with human_resolution injected as human_input; dismissed→cancelled OR requeued with reason. CLI `gludd human-todo {list|show|done|dismiss|in-progress|comment|watch|stats}`. Keep separate from TodoModel/event/audit logs.
 
 ## CRITICAL: Don't Block Projects on Stalled Tasks

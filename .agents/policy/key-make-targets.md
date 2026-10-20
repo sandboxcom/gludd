@@ -139,6 +139,22 @@ receipt and validated candidate. Follow
 missing-proof records and
 [the release runbook](../../docs/RELEASE_RUNBOOK.md) for artifact/publication proof.
 
+### Human input and external blockers
+
+Use the existing HumanTodo module through the supported Make owner:
+
+```console
+make human-todo-module HUMAN_TODO_ARGS_JSON='{"title":"Make HumanTodo contract","body":"Validation only","agent_id":"gludd-release-staging","timeout":5}' HUMAN_TODO_VALIDATE_ONLY=1
+```
+
+Supply the real title/body, category, priority and known parent_agent_todo_id
+through the module's documented JSON arguments. Literal policy 0 sends the
+request; native API errors remain failures. Check mode's changed=true/id=null
+is validation, never a filed HumanTodo. Preserve the actual request ID when
+filing succeeds; do not invent one if the daemon is unavailable. Keep credentials
+out of request prose and shell arguments; use existing module authentication.
+This entrypoint grants no additional permission or release authority.
+
 ### Other supported work
 
 Use `make search PATTERN=regex SEARCH_PATH=directory-or-file` for bounded

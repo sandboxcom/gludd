@@ -1,3 +1,28 @@
+# Thin Make entrypoint for the existing HumanTodo collection module.
+HUMAN_TODO_ARGS_JSON ?=
+HUMAN_TODO_VALIDATE_ONLY ?= 1
+ifneq ($(filter human-todo-module,$(MAKECMDGOALS)),)
+override GLUDD_HUMAN_TODO_ARGS_JSON := $(value HUMAN_TODO_ARGS_JSON)
+override GLUDD_HUMAN_TODO_VALIDATE_ONLY := $(value HUMAN_TODO_VALIDATE_ONLY)
+export GLUDD_HUMAN_TODO_ARGS_JSON := $(value HUMAN_TODO_ARGS_JSON)
+export GLUDD_HUMAN_TODO_VALIDATE_ONLY := $(value HUMAN_TODO_VALIDATE_ONLY)
+unexport HUMAN_TODO_ARGS_JSON HUMAN_TODO_VALIDATE_ONLY
+endif
+.PHONY: human-todo-module
+human-todo-module:
+	@[ -n "$$GLUDD_HUMAN_TODO_ARGS_JSON" ] || { echo "HUMAN_TODO_ARGS_JSON must contain the existing module arguments" >&2; exit 2; }
+	@case "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" in 0|1) ;; *) echo "HUMAN_TODO_VALIDATE_ONLY must be literal 0 or 1" >&2; exit 2;; esac
+	@set -eu; \
+	human_todo_tmp=$$(mktemp -d /tmp/gludd-human-todo-XXXXXX); \
+	trap 'rm -rf "$$human_todo_tmp"' EXIT; \
+	human_todo_interpreter=$$($(UV) run python -c 'import json, sys; print(json.dumps({"ansible_python_interpreter": sys.executable}))'); \
+	if [ "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" = 1 ]; then set -- --check; else set --; fi; \
+	echo "[human-todo-module] starting validate_only=$$GLUDD_HUMAN_TODO_VALIDATE_ONLY"; \
+	ANSIBLE_HOME="$$human_todo_tmp" ANSIBLE_LOCAL_TEMP="$$human_todo_tmp/local" ANSIBLE_REMOTE_TEMP="$$human_todo_tmp/remote" \
+	$(UV) run ansible localhost --inventory localhost, --connection local --forks 1 \
+		--module-name general_ludd.agent.gludd_human_todo --args "$$GLUDD_HUMAN_TODO_ARGS_JSON" \
+		--extra-vars "$$human_todo_interpreter" "$$@"
+
 # --- Collection Tests ---
 # binary_re collection: 8 roles + 3 knowledge modules (fuzzing_strategies, obfuscation_techniques, prompt_injection_detector)
 test-binary-re:

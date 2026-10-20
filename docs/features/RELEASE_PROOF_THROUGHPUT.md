@@ -136,6 +136,48 @@ and validation before destination IO are Gludd text requirements, not upstream
 guarantees. These executable controls reduce dependence on model memory; they
 are not a benchmark proving equal performance across models.
 
+## Native HumanTodo entrypoint for real blockers (2026-10-20)
+
+The required HumanTodo route existed as general_ludd.agent.gludd_human_todo,
+but there was no named Make owner. A Make-only agent could not use it without
+inventing another HTTP client or violating its command contract.
+human-todo-module is a thin entrypoint to that same module, installed Ansible,
+a local connection and one fork. Its two documented public variables are
+HUMAN_TODO_ARGS_JSON and HUMAN_TODO_VALIDATE_ONLY. The latter defaults to 1;
+literal 0 applies. Make preserves literal JSON and selected policy under -e.
+The existing module owns schema, check mode, authentication, HTTP status and
+HumanTodo lifecycle; the wrapper adds no authority, daemon, dependency or store.
+
+The original routing reproduction retains 6 FAIL/4 PASS at
+/tmp/gludd-v012-human-todo-target-red.xml. All 20 expanded target controls and
+nine original module controls pass in 2.06s at
+/tmp/gludd-v012-human-todo-target-green.xml. Opposing ambient values, Make/shell
+canaries, invalid policy, exact native argv, one fork, interpreter identity,
+per-invocation namespaced Ansible temporary paths and cleanup on exit 0/7
+are exercised. The complete four-owner replay adds the existing target-contract
+and environment-documentation controls: 71 PASS in 5.06s at
+/tmp/gludd-v012-human-todo-complete-owners.xml; Ruff and strict typing pass.
+The native default contract example independently exits zero,
+reports changed=true and id=null, and writes no HumanTodo. It is validation
+only. A live API response with an actual ID is required to claim filing.
+
+The actual capacity request uses category=blocker, priority=high and three named
+native alternatives. Native apply returns changed=false and daemon error
+[Errno61] Connection refused, Make exit2, in 0.60s. No HumanTodo was filed and no
+ID is invented. The exact unsubmitted input is retained at
+/tmp/gludd-v012-capacity-human-todo-request.json; it is request configuration,
+not a generated current observation. No broader file access or unsafe cleanup
+is requested. The daemon endpoint must become available to file this request;
+capacity must actually change before final release admission is retried.
+
+The [official Ansible CLI guide](https://docs.ansible.com/projects/ansible/latest/command_guide/intro_adhoc.html)
+documents module invocation and JSON arguments; its quoting guidance supports
+literal transport. The [native configuration reference](https://docs.ansible.com/projects/ansible/latest/reference_appendices/config.html)
+documents Ansible home and temporary configuration. Existing firsthand workflow
+and recursive-Make findings above motivate this executable route; neither
+upstream documentation nor check mode supplies an actual human request or
+release proof.
+
 ## Native workflow repairs and retained decisions (2026-10-20)
 
 The release preparation audit found failures that additional instructions alone

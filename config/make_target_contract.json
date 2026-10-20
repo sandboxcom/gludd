@@ -2,6 +2,14 @@
   "version": 1,
   "targets": [
     {
+      "name": "human-todo-module",
+      "make_variables": [
+        "HUMAN_TODO_ARGS_JSON",
+        "HUMAN_TODO_VALIDATE_ONLY"
+      ],
+      "behavior": "make human-todo-module HUMAN_TODO_ARGS_JSON='{\"title\":\"Make HumanTodo contract\",\"body\":\"Validation only\",\"agent_id\":\"gludd-release-staging\",\"timeout\":5}' HUMAN_TODO_VALIDATE_ONLY=1"
+    },
+    {
       "name": "write-text-b64",
       "make_variables": ["FILE", "TEXT_B64"],
       "behavior": "make write-text-b64 FILE=/tmp/gludd-text-contract.txt TEXT_B64=YWxwaGEK"

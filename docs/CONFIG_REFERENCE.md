@@ -944,6 +944,27 @@ goals; do not configure them directly. Public inputs are unexported.
 | `GLUDD_TEXT_OLD_B64` | empty | OLD_B64 |
 | `GLUDD_TEXT_NEW_B64` | empty | NEW_B64 |
 
+## HumanTodo Make entrypoint
+
+make human-todo-module delegates to general_ludd.agent.gludd_human_todo through
+installed Ansible, local connection and one fork. HUMAN_TODO_ARGS_JSON contains
+the existing module's JSON arguments; HUMAN_TODO_VALIDATE_ONLY defaults to 1
+and accepts only literal 0 or 1. Check mode validates without writing: changed=true
+with id=null does not mean a request was filed. Actual mode retains the native
+API result or failure. Configure authentication through the existing module;
+the Make owner adds no privilege or request store.
+
+| Internal environment carrier | Default | Public input |
+| --- | --- | --- |
+| `GLUDD_HUMAN_TODO_ARGS_JSON` | empty, required | HUMAN_TODO_ARGS_JSON |
+| `GLUDD_HUMAN_TODO_VALIDATE_ONLY` | 1 | HUMAN_TODO_VALIDATE_ONLY |
+
+Both carriers use override and literal input; public values are unexported.
+Per-invocation /tmp/gludd-human-todo-* storage owns Ansible home/local/remote
+temporary paths and is removed on native success or failure. The selected
+installed interpreter is passed explicitly, avoiding discovery warnings.
+The target does not install dependencies or launch a daemon.
+
 ## Agent-context audit literal inputs
 
 `make audit-agent-context-size` uses the existing AB060 owner. Configure the
