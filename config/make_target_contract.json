@@ -2,6 +2,16 @@
   "version": 1,
   "targets": [
     {
+      "name": "write-text-b64",
+      "make_variables": ["FILE", "TEXT_B64"],
+      "behavior": "make write-text-b64 FILE=/tmp/gludd-text-contract.txt TEXT_B64=YWxwaGEK"
+    },
+    {
+      "name": "replace-text-b64",
+      "make_variables": ["FILE", "OLD_B64", "NEW_B64"],
+      "behavior": "make replace-text-b64 FILE=/tmp/gludd-text-contract.txt OLD_B64=YWxwaGEK NEW_B64=YmV0YQo="
+    },
+    {
       "name": "secrets-baseline-compact",
       "make_variables": ["SECRETS_BASELINE_FILE", "POLICY", "REPO_ROOT", "EXECUTABLE"],
       "behavior": "make secrets-baseline-compact SECRETS_BASELINE_FILE=.secrets.baseline POLICY=config/detect_secrets_baseline_policy.json REPO_ROOT=. EXECUTABLE=detect-secrets"

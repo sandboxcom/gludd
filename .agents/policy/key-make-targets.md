@@ -145,7 +145,12 @@ Use `make search PATTERN=regex SEARCH_PATH=directory-or-file` for bounded
 repository searches and `make show-lines FILE=path START=1 END=80` for slices.
 Use `make write-text-b64 FILE=path TEXT_B64=encoded` or
 `make replace-text-b64 FILE=path OLD_B64=encoded NEW_B64=encoded` for literal edits.
-Do not place shell interpolation in Make arguments.
+Use standard base64 containing valid UTF-8 without NUL; both inputs to a
+replacement are validated before the destination is opened. Invalid transport
+leaves existing bytes untouched. Make requires nonempty encoded fields and
+replacement requires exactly one match. The existing native text owner preserves
+write bytes and replacement newline behavior; it creates no temporary decoder
+files. Do not place shell interpolation in Make arguments.
 
 Setup through `make init`, dependency synchronization, packaging, Ansible,
 Terraform, secrets,

@@ -460,18 +460,31 @@ append-text:
 	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
 	@printf '%b' "$$TEXT" >> "$$FILE"
 
+# Capture literal text inputs before Make exports recursive command-line values.
+ifneq ($(filter write-text-b64 replace-text-b64,$(MAKECMDGOALS)),)
+override GLUDD_TEXT_FILE_PATH := $(value FILE)
+override GLUDD_TEXT_WRITE_B64 := $(value TEXT_B64)
+override GLUDD_TEXT_OLD_B64 := $(value OLD_B64)
+override GLUDD_TEXT_NEW_B64 := $(value NEW_B64)
+export GLUDD_TEXT_FILE_PATH := $(value FILE)
+export GLUDD_TEXT_WRITE_B64 := $(value TEXT_B64)
+export GLUDD_TEXT_OLD_B64 := $(value OLD_B64)
+export GLUDD_TEXT_NEW_B64 := $(value NEW_B64)
+unexport FILE TEXT_B64 OLD_B64 NEW_B64
+endif
+
 write-text-b64:
-	@[ -n "$(FILE)" ] || { echo "Usage: make write-text-b64 FILE=path TEXT_B64=base64"; exit 1; }
-	@[ -n "$(TEXT_B64)" ] || { echo "Usage: make write-text-b64 FILE=path TEXT_B64=base64"; exit 1; }
-	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
-	@TEXT_B64="$(TEXT_B64)" FILE_PATH="$(FILE)" $(PYTHON) -c "import base64, os; open(os.environ[\"FILE_PATH\"], \"wb\").write(base64.b64decode(os.environ[\"TEXT_B64\"]))"
+	@[ -n "$$GLUDD_TEXT_FILE_PATH" ] || { echo "Usage: make write-text-b64 FILE=path TEXT_B64=base64"; exit 1; }
+	@[ -n "$$GLUDD_TEXT_WRITE_B64" ] || { echo "Usage: make write-text-b64 FILE=path TEXT_B64=base64"; exit 1; }
+	@case "$$GLUDD_TEXT_FILE_PATH" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $$GLUDD_TEXT_FILE_PATH"; exit 1;; esac
+	@$(PYTHON) -c 'import os; from scripts.replace_text import write_text_b64; write_text_b64(os.environ["GLUDD_TEXT_FILE_PATH"], os.environ["GLUDD_TEXT_WRITE_B64"])'
 
 replace-text-b64:
-	@[ -n "$(FILE)" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
-	@[ -n "$(OLD_B64)" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
-	@[ -n "$(NEW_B64)" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
-	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
-	@OLD_TMP=$$(mktemp /tmp/gludd-old.XXXXXX); NEW_TMP=$$(mktemp /tmp/gludd-new.XXXXXX); 		OLD_B64="$(OLD_B64)" NEW_B64="$(NEW_B64)" OLD_TMP="$$OLD_TMP" NEW_TMP="$$NEW_TMP" $(PYTHON) -c "import base64, os; open(os.environ[\"OLD_TMP\"], \"wb\").write(base64.b64decode(os.environ[\"OLD_B64\"])); open(os.environ[\"NEW_TMP\"], \"wb\").write(base64.b64decode(os.environ[\"NEW_B64\"]))"; 		$(PYTHON) scripts/replace_text.py "$(FILE)" "$$OLD_TMP" "$$NEW_TMP"; RC=$$?; rm -f "$$OLD_TMP" "$$NEW_TMP"; exit $$RC
+	@[ -n "$$GLUDD_TEXT_FILE_PATH" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
+	@[ -n "$$GLUDD_TEXT_OLD_B64" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
+	@[ -n "$$GLUDD_TEXT_NEW_B64" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
+	@case "$$GLUDD_TEXT_FILE_PATH" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $$GLUDD_TEXT_FILE_PATH"; exit 1;; esac
+	@$(PYTHON) -c 'import os, sys; from scripts.replace_text import replace_text_b64; sys.exit(replace_text_b64(os.environ["GLUDD_TEXT_FILE_PATH"], os.environ["GLUDD_TEXT_OLD_B64"], os.environ["GLUDD_TEXT_NEW_B64"]))'
 
 fix-benchmark-mock:
 	@python3 -c "c=open('tests/unit/test_daemon_coverage_lift.py').read(); c=c.replace('class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_sf = MagicMock()','class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_session.commit = AsyncMock()\n        mock_sf = MagicMock()'); open('tests/unit/test_daemon_coverage_lift.py','w').write(c)"

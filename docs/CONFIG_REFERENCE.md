@@ -928,6 +928,22 @@ refuse before inspection; no process is signalled and no gate authority changes.
 | --- | --- | --- |
 | `GLUDD_ACTIVE_WORK_STATUS_PID` | empty | Make-owned literal carrier for `ACTIVE_WORK_STATUS_PID`, copied without recursive expansion and bound with override; do not set directly. The public variable is unexported. The existing producer validates positive native PID bounds, and missing/unavailable observations never reuse prior success. |
 
+## Make text transport
+
+Use the public FILE/TEXT_B64 or FILE/OLD_B64/NEW_B64 inputs documented by
+write-text-b64 and replace-text-b64. The existing native scripts/replace_text.py
+owner validates standard base64, UTF-8 and absence of NUL before destination IO.
+Make retains required nonempty fields, confined paths and exact-one replacement.
+The internal literal carriers below are derived with override only for these
+goals; do not configure them directly. Public inputs are unexported.
+
+| Internal environment carrier | Default | Public input |
+| --- | --- | --- |
+| `GLUDD_TEXT_FILE_PATH` | empty | FILE |
+| `GLUDD_TEXT_WRITE_B64` | empty | TEXT_B64 |
+| `GLUDD_TEXT_OLD_B64` | empty | OLD_B64 |
+| `GLUDD_TEXT_NEW_B64` | empty | NEW_B64 |
+
 ## Agent-context audit literal inputs
 
 `make audit-agent-context-size` uses the existing AB060 owner. Configure the

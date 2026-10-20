@@ -143,9 +143,11 @@ def test_base64_edit_targets_use_make_variables_not_shell_text_env() -> None:
     assert "printf" not in write_body
     assert "OLD_B64" in replace_body
     assert "NEW_B64" in replace_body
-    assert "mktemp /tmp/gludd-old." in replace_body
-    assert "mktemp /tmp/gludd-new." in replace_body
-    assert "scripts/replace_text.py" in replace_body
+    assert "from scripts.replace_text import replace_text_b64" in replace_body
+    assert "sys.exit(replace_text_b64(" in replace_body
+    assert "from scripts.replace_text import write_text_b64" in write_body
+    assert "mktemp" not in replace_body
+    assert "base64.b64decode" not in write_body + replace_body
 
 
 REPLACE_LINES = ROOT / "scripts" / "replace_lines.py"

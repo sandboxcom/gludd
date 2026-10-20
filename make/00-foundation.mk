@@ -558,8 +558,8 @@ help:
 		"  report-docs-drift     Enumerate hand-fixable markdown issues (tables, tabs, headers, links)" \
 		"  feature-spec-inventory  Inventory all Gludd feature specs + OpenCode behavioral specs (FORMAT=human|json)" \
 		"  migrate-test-env-writes  Rewrite test environment mutations to the guarded helper" \
-		"  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss" \
-		"  replace-text-b64      Exact old/new base64 replacement via scripts/replace_text.py" \
+		"  write-text-b64        Validate UTF-8 TEXT_B64 before writing FILE" \
+		"  replace-text-b64      Validate OLD_B64/NEW_B64 then replace exactly once" \
 		"  mkdir-p               Create an allowed workspace or /tmp/gludd-* directory" \
 		"  replace-lines         Replace an allowed file line range from NEW_FILE" \
 		"  worktree-state        Emit path-qualified current git worktree state as JSON" \

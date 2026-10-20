@@ -4,6 +4,22 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-20 - Literal edit transport could corrupt files before validation
+
+The original Make decoder accepted non-text bytes and could execute malformed
+Make/shell input before validation. A real encoding error exposed NUL source and
+an unreadable report. The native strict text owner validates before destination
+IO; both production targets now use literal internal carriers and that same
+owner. The corrected native Make reproduction is 40 FAIL/17 PASS before repair,
+then the 101 target/library cases pass. Final whole replay passes 156 cases with
+100% line and branch coverage under unchanged 85/75 thresholds; the existing
+environment audit requires explicit export assignments and is unchanged.
+Preserve the failed fixture and original
+structural-contract receipt separately. All original semantic assertions remain;
+only removed temporary-file checks conform to the native dispatch. See
+docs/features/RELEASE_PROOF_THROUGHPUT.md for source decisions, original user
+research, exact receipts and complete-owner coverage. No release task is closed.
+
 ### 2026-10-20 - Cleanup compatibility routes bypassed native evidence protection
 
 Legacy agent-cleanup/clean-stale-worktrees still forced removal and branch

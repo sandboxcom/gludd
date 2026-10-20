@@ -84,6 +84,58 @@ The live main-checkout gate and previously staged repairs are separate work.
 No full-gate, hosted, release-readiness or task-completion result follows from
 these documentation/source controls.
 
+## Validated literal text edits (2026-10-20)
+
+An agent-side encoding error produced NUL in Python source and invalid UTF-8 in
+a diagnostic report. The original collection/read failures remain evidence.
+The old write-text-b64 decoder could truncate an existing destination to an
+invalid byte and exit zero. The native library repair is staged as dd098f282;
+both production Make targets now dispatch that same scripts/replace_text.py
+owner. There is no second decoder, temporary payload file, dependency or CLI.
+
+Inputs use standard-library base64.b64decode(validate=True), strict UTF-8 and
+NUL refusal before opening the destination. Replacement validates both fields
+before any destination IO. Make captures literal public inputs with override,
+exports only its four documented internal carriers and unexports public values;
+neither Make expressions nor shell substitutions become executable input,
+including under -e. Keep required nonempty Make fields, path confinement,
+exactly-one-match replacement, original file mode, write bytes and replacement
+universal-newline behavior. The original three-path CLI remains supported.
+
+The production Make reproduction retains 40 failures and 17 passing controls
+in 4.84s at /tmp/gludd-v012-native-text-make-red-native.xml. Its earlier wrong-CWD
+fixture failure remains /tmp/gludd-v012-native-text-make-red.xml and is not
+project failure proof. The corrected fixture copies the actual native owner
+unchanged into a confined checkout. All 101 new target/library cases then pass
+in 4.98s at /tmp/gludd-v012-native-text-make-green.xml.
+
+The original owner separately retains 12 passes and one obsolete structural
+failure at /tmp/gludd-v012-text-original-contract-red.xml. Only assertions about
+the removed temporary decoder files conform to the native function dispatch;
+new assertions require that dispatch, returned failure status and absence of
+inline decoding. All original CLI, exact-match and guard assertions remain.
+The first whole replay retains 155 passes and one environment-documentation
+failure at /tmp/gludd-v012-native-text-production-coverage.xml. Explicit export
+assignments align the real Make bindings with the existing audit; no scanner,
+allowlist or assertion is weakened. Opposing ambient internal values under -e
+are also covered. Final whole replay passes all 156 cases in 15.61s at 100% line
+and branch coverage for the entire text owner, retaining 85/75 thresholds:
+.gate-logs/coverage-20261020T195344Z.json and
+/tmp/gludd-v012-native-text-production-final.xml. Ruff and strict four-file typing
+pass. The target contract passes 265 entries; both documented examples execute
+and the native read returns beta plus newline. These are focused source proofs;
+canonical full gate, exact-SHA hosted proof and release completion remain absent.
+
+The firsthand [Python user report from 2006](https://github.com/python/cpython/issues/43175)
+records non-alphabet characters being silently ignored; the migrated issue
+retains its 2010 resolution and discussion metadata.
+The [Python standard-library documentation](https://docs.python.org/3.11/library/base64.html#base64.b64decode)
+specifies that default decoding discards non-alphabet characters and
+validate=True rejects them. Reuse that mature implementation. UTF-8, NUL refusal
+and validation before destination IO are Gludd text requirements, not upstream
+guarantees. These executable controls reduce dependence on model memory; they
+are not a benchmark proving equal performance across models.
+
 ## Native workflow repairs and retained decisions (2026-10-20)
 
 The release preparation audit found failures that additional instructions alone
