@@ -1,0 +1,473 @@
+{
+  "$schema": "./typed-decision-adapter-contract-v1.schema.json",
+  "schema_version": "gludd.typed-decision-adapter-contract/v1",
+  "profiles": [
+    {
+      "profile_id": "openjev-0.1-external-example",
+      "example_only": true,
+      "profile_state": "disabled",
+      "source_pin": {
+        "repository": "https://github.com/razorback16/openjev",
+        "release": null,
+        "commit": "3e296f085ce88e5da3850288646b3429eb476774",
+        "source_archive_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "license": "Apache-2.0",
+        "reviewed_at": "2026-09-27"
+      },
+      "identity": {
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contract_version": "gludd.typed-decision/v1",
+        "backend_implementation": "razorback16/openjev",
+        "backend_protocol_version": "observed-2026-09-27",
+        "endpoint_trust": "hosted_https",
+        "server_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "model_revision": "openjev-0.1-example-pin",
+        "model_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "tokenizer_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "renderer_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "calibration_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "runtime_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "transport": {
+        "kind": "jev_http_external",
+        "path": "/v1/systemone",
+        "model_id": "openjev-0.1",
+        "auth": "bearer_secret_reference",
+        "tls_required": true,
+        "follow_redirects": false,
+        "extensions": []
+      },
+      "capabilities": {
+        "question_types": [
+          "choice",
+          "noul",
+          "score"
+        ],
+        "state_shapes": [
+          "string"
+        ],
+        "max_state_bytes": 65536,
+        "max_state_tokens": 4096,
+        "max_questions": 32,
+        "max_choice_options": 20,
+        "max_score_levels": 10,
+        "truncation": "reject_before_transport",
+        "images": false,
+        "confidence_semantics": "upstream_advisory_only"
+      },
+      "limits": {
+        "request_bytes": 131072,
+        "response_bytes": 131072,
+        "concurrency": 8,
+        "queue_depth": 32,
+        "deadline_ms": 5000,
+        "retry_attempts": 0
+      },
+      "batching": {
+        "enabled": false,
+        "max_batch_size": 1,
+        "max_wait_ms": 0,
+        "grouping_keys": [
+          "identity_fingerprint",
+          "schema_version",
+          "question_schema_digest",
+          "token_budget",
+          "calibration_digest",
+          "trust_sensitivity_class",
+          "deadline_bucket"
+        ]
+      },
+      "residency": {
+        "ownership": "external_endpoint",
+        "max_loaded_identities": 0,
+        "resident_byte_budget": 0,
+        "preload_identity_fingerprints": []
+      },
+      "redaction": {
+        "sanitizer_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+        "fail_closed_before_send": true,
+        "observer_mode": "read_only",
+        "result_mutation_allowed": false,
+        "external_forwarding_allowed": false
+      },
+      "compatibility": {
+        "normalization_version": "gludd.typed-decision-normalization/v1",
+        "request_schema_versions": [
+          "jev-systemone-observed-request/2026-09-27"
+        ],
+        "response_schema_versions": [
+          "jev-systemone-observed-response/2026-09-27"
+        ],
+        "migration_mode": "new_identity_only",
+        "unknown_major_action": "reject"
+      },
+      "update_policy": {
+        "owners": {
+          "compatibility": "typed-decision-compatibility-owner",
+          "security": "typed-decision-security-owner",
+          "evaluation": "typed-decision-evaluation-owner",
+          "lifecycle": "typed-decision-lifecycle-owner"
+        },
+        "check_cadence_days": 14,
+        "public_history_gate_days": 90,
+        "stable_release_gate": 2,
+        "independent_implementation_required": true,
+        "manual_promotion_only": true,
+        "reevaluate_on": [
+          "source",
+          "model",
+          "tokenizer",
+          "renderer",
+          "calibration",
+          "runtime",
+          "endpoint_trust",
+          "normalization",
+          "redaction"
+        ]
+      },
+      "rollout": {
+        "initial_state": "disabled",
+        "allowed_states": [
+          "disabled",
+          "shadow",
+          "canary_1",
+          "canary_5",
+          "canary_25"
+        ],
+        "max_canary_percent": 25,
+        "automatic_demotion": true,
+        "prior_identity_fingerprint": null
+      }
+    },
+    {
+      "profile_id": "laya-0.3.20-worker-example",
+      "example_only": true,
+      "profile_state": "disabled",
+      "source_pin": {
+        "repository": "https://github.com/NandhaKishorM/laya",
+        "release": "v0.3.20",
+        "commit": "0000000000000000000000000000000000000000",
+        "source_archive_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+        "license": "Apache-2.0",
+        "reviewed_at": "2026-09-27"
+      },
+      "identity": {
+        "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "contract_version": "gludd.typed-decision/v1",
+        "backend_implementation": "NandhaKishorM/laya",
+        "backend_protocol_version": "v0.3.20-example",
+        "endpoint_trust": "attested_local",
+        "server_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "model_revision": "convaiinnovations/laya-typed-decisions@example",
+        "model_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "tokenizer_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "renderer_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "calibration_digest": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+        "runtime_digest": "sha256:1313131313131313131313131313131313131313131313131313131313131313"
+      },
+      "transport": {
+        "kind": "model_worker_jev_http",
+        "path": "/v1/systemone",
+        "model_id": "laya-1.0",
+        "auth": "model_worker_lease",
+        "tls_required": false,
+        "follow_redirects": false,
+        "extensions": []
+      },
+      "capabilities": {
+        "question_types": [
+          "choice",
+          "noul",
+          "score"
+        ],
+        "state_shapes": [
+          "string"
+        ],
+        "max_state_bytes": 32768,
+        "max_state_tokens": 1024,
+        "max_questions": 32,
+        "max_choice_options": 20,
+        "max_score_levels": 10,
+        "truncation": "reject_before_transport",
+        "images": false,
+        "confidence_semantics": "upstream_advisory_only"
+      },
+      "limits": {
+        "request_bytes": 65536,
+        "response_bytes": 131072,
+        "concurrency": 4,
+        "queue_depth": 16,
+        "deadline_ms": 5000,
+        "retry_attempts": 0
+      },
+      "batching": {
+        "enabled": false,
+        "max_batch_size": 1,
+        "max_wait_ms": 0,
+        "grouping_keys": [
+          "identity_fingerprint",
+          "schema_version",
+          "question_schema_digest",
+          "token_budget",
+          "calibration_digest",
+          "trust_sensitivity_class",
+          "deadline_bucket"
+        ]
+      },
+      "residency": {
+        "ownership": "universal_model_worker",
+        "max_loaded_identities": 1,
+        "resident_byte_budget": 4294967296,
+        "preload_identity_fingerprints": [
+          "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      "redaction": {
+        "sanitizer_digest": "sha256:1414141414141414141414141414141414141414141414141414141414141414",
+        "fail_closed_before_send": true,
+        "observer_mode": "read_only",
+        "result_mutation_allowed": false,
+        "external_forwarding_allowed": false
+      },
+      "compatibility": {
+        "normalization_version": "gludd.typed-decision-normalization/v1",
+        "request_schema_versions": [
+          "jev-systemone-observed-request/2026-09-27"
+        ],
+        "response_schema_versions": [
+          "jev-systemone-observed-response/2026-09-27"
+        ],
+        "migration_mode": "new_identity_only",
+        "unknown_major_action": "reject"
+      },
+      "update_policy": {
+        "owners": {
+          "compatibility": "typed-decision-compatibility-owner",
+          "security": "typed-decision-security-owner",
+          "evaluation": "typed-decision-evaluation-owner",
+          "lifecycle": "typed-decision-lifecycle-owner"
+        },
+        "check_cadence_days": 14,
+        "public_history_gate_days": 90,
+        "stable_release_gate": 2,
+        "independent_implementation_required": true,
+        "manual_promotion_only": true,
+        "reevaluate_on": [
+          "source",
+          "model",
+          "tokenizer",
+          "renderer",
+          "calibration",
+          "runtime",
+          "endpoint_trust",
+          "normalization",
+          "redaction"
+        ]
+      },
+      "rollout": {
+        "initial_state": "disabled",
+        "allowed_states": [
+          "disabled",
+          "shadow",
+          "canary_1",
+          "canary_5",
+          "canary_25"
+        ],
+        "max_canary_percent": 25,
+        "automatic_demotion": true,
+        "prior_identity_fingerprint": null
+      }
+    }
+  ],
+  "normalization_examples": [
+    {
+      "name": "openjev-choice-normalization",
+      "profile_id": "openjev-0.1-external-example",
+      "upstream_request": {
+        "model": "openjev-0.1",
+        "state": "The dependency timed out once and recovered.",
+        "questions": {
+          "failure_kind": {
+            "type": "choice",
+            "instructions": "Classify the failure.",
+            "criteria": {
+              "configuration": "Configuration is invalid.",
+              "transient": "A dependency failed temporarily.",
+              "unknown": "Evidence is insufficient."
+            }
+          }
+        }
+      },
+      "upstream_response": {
+        "model": "openjev-0.1",
+        "answers": {
+          "failure_kind": {
+            "choice": "transient",
+            "probabilities": {
+              "configuration": 0.1,
+              "transient": 0.8,
+              "unknown": 0.1
+            },
+            "confidence": 0.64
+          }
+        },
+        "usage": {
+          "input_tokens": 48,
+          "output_tokens": 0
+        }
+      },
+      "expected": [
+        {
+          "normalization_version": "gludd.typed-decision-normalization/v1",
+          "request_id": "example-choice-1",
+          "identity_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "task_kind": "failure_classification",
+          "question_id": "failure_kind",
+          "kind": "choice",
+          "outcome": "transient",
+          "probabilities": [
+            {
+              "label": "configuration",
+              "probability": 0.1
+            },
+            {
+              "label": "transient",
+              "probability": 0.8
+            },
+            {
+              "label": "unknown",
+              "probability": 0.1
+            }
+          ],
+          "upstream_confidence": 0.64,
+          "disposition": "valid",
+          "reason_code": null
+        }
+      ]
+    },
+    {
+      "name": "laya-noul-normalization",
+      "profile_id": "laya-0.3.20-worker-example",
+      "upstream_request": {
+        "model": "laya-1.0",
+        "state": "The error disappeared after one retry.",
+        "questions": {
+          "is_transient": {
+            "type": "noul",
+            "instructions": "Is the failure transient?",
+            "criteria": {
+              "true": "Evidence supports a transient failure.",
+              "false": "Evidence supports a persistent failure."
+            }
+          }
+        }
+      },
+      "upstream_response": {
+        "model": "laya-1.0",
+        "answers": {
+          "is_transient": {
+            "noul": 0.8
+          }
+        },
+        "usage": {
+          "input_tokens": 36,
+          "output_tokens": 0
+        }
+      },
+      "expected": [
+        {
+          "normalization_version": "gludd.typed-decision-normalization/v1",
+          "request_id": "example-noul-1",
+          "identity_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "task_kind": "failure_classification",
+          "question_id": "is_transient",
+          "kind": "noul",
+          "outcome": true,
+          "probabilities": [
+            {
+              "label": "false",
+              "probability": 0.2
+            },
+            {
+              "label": "true",
+              "probability": 0.8
+            }
+          ],
+          "upstream_confidence": null,
+          "disposition": "valid",
+          "reason_code": null
+        }
+      ]
+    },
+    {
+      "name": "openjev-score-normalization",
+      "profile_id": "openjev-0.1-external-example",
+      "upstream_request": {
+        "model": "openjev-0.1",
+        "state": "The queue is growing but still processing work.",
+        "questions": {
+          "severity": {
+            "type": "score",
+            "instructions": "Score operational severity.",
+            "criteria": [
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        }
+      },
+      "upstream_response": {
+        "model": "openjev-0.1",
+        "answers": {
+          "severity": {
+            "score": 1.3,
+            "legend": {
+              "0": "low",
+              "1": "medium",
+              "2": "high"
+            },
+            "probabilities": {
+              "0": 0.1,
+              "1": 0.5,
+              "2": 0.4
+            },
+            "confidence": 0.14
+          }
+        },
+        "usage": {
+          "input_tokens": 42,
+          "output_tokens": 0
+        }
+      },
+      "expected": [
+        {
+          "normalization_version": "gludd.typed-decision-normalization/v1",
+          "request_id": "example-score-1",
+          "identity_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "task_kind": "failure_classification",
+          "question_id": "severity",
+          "kind": "score",
+          "outcome": 1.3,
+          "probabilities": [
+            {
+              "label": "0",
+              "probability": 0.1
+            },
+            {
+              "label": "1",
+              "probability": 0.5
+            },
+            {
+              "label": "2",
+              "probability": 0.4
+            }
+          ],
+          "upstream_confidence": 0.14,
+          "disposition": "valid",
+          "reason_code": null
+        }
+      ]
+    }
+  ]
+}
