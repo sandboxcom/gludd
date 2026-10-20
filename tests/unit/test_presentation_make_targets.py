@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+from typing import cast
 
+import pytest
+import yaml
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,6 +83,7 @@ def test_presentation_browser_target_has_explicit_owned_bounds() -> None:
             "PRESENTATION_BROWSER_ROOT",
             "PRESENTATION_BROWSER_OUTPUT",
             "PRESENTATION_BROWSER_TIMEOUT",
+            "PRESENTATION_BROWSER_JS_COVERAGE",
         ],
         "behavior": (
             "make presentation-browser-test "
@@ -82,7 +91,8 @@ def test_presentation_browser_target_has_explicit_owned_bounds() -> None:
             "PRESENTATION_BROWSER_ENGINES='chromium webkit' "
             "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers "
             "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser "
-            "PRESENTATION_BROWSER_TIMEOUT=600"
+            "PRESENTATION_BROWSER_TIMEOUT=600 "
+            "PRESENTATION_BROWSER_JS_COVERAGE=0"
         ),
     }
     assert "PRESENTATION_BROWSER_TIMEOUT=600" in pages_workflow
@@ -232,3 +242,292 @@ def test_presentation_pages_probe_is_bounded_and_read_only_by_default() -> None:
             "PRESENTATION_PAGES_PROBE_TIMEOUT=20"
         ),
     }
+
+
+
+def test_javascript_coverage_make_flag_is_optional_explicit_and_documented() -> None:
+    """The existing browser owner keeps default timing uninstrumented."""
+    fragment = (ROOT / "make" / "90-infrastructure-and-services.mk").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
+    assert "PRESENTATION_BROWSER_JS_COVERAGE ?= 0" in fragment
+    recipe = fragment.split("presentation-browser-test:", 1)[1].split("\n\n", 1)[0]
+    for directive in (
+        "override GLUDD_PRESENTATION_BROWSER_JS_COVERAGE := "
+        "$(value PRESENTATION_BROWSER_JS_COVERAGE)",
+        "export GLUDD_PRESENTATION_BROWSER_JS_COVERAGE := "
+        "$(value PRESENTATION_BROWSER_JS_COVERAGE)",
+        "unexport PRESENTATION_BROWSER_JS_COVERAGE",
+    ):
+        assert directive in fragment
+    assert 'case "$$GLUDD_PRESENTATION_BROWSER_JS_COVERAGE" in 0|1)' in recipe
+    assert '--js-coverage "$$GLUDD_PRESENTATION_BROWSER_JS_COVERAGE"' in recipe
+    assert "$(PRESENTATION_BROWSER_JS_COVERAGE)" not in recipe
+    assert "PRESENTATION_BROWSER_JS_COVERAGE" in makefile
+    contract = _contract("presentation-browser-test")
+    assert contract["make_variables"] == [
+        "PRESENTATION_BROWSER_VALIDATE_ONLY",
+        "PRESENTATION_BROWSER_ENGINES",
+        "PRESENTATION_BROWSER_ROOT",
+        "PRESENTATION_BROWSER_OUTPUT",
+        "PRESENTATION_BROWSER_TIMEOUT",
+        "PRESENTATION_BROWSER_JS_COVERAGE",
+    ]
+    assert "PRESENTATION_BROWSER_JS_COVERAGE=0" in str(contract["behavior"])
+
+
+def test_javascript_coverage_config_selects_whole_source_and_locked_native_tool() -> None:
+    """No function fragments or coverage-ignore rules can substitute for the file."""
+    config = json.loads(
+        (ROOT / "config" / "presentation_javascript_coverage.json").read_text(encoding="utf-8")
+    )
+    assert config["all"] is True
+    assert config["include"] == ["docs/presentation/deck/presentation.js"]
+    assert config["src"] == ["docs/presentation/deck"]
+    assert config["exclude"] == []
+    assert {"json", "json-summary", "lcov", "text"} <= set(config["reporter"])
+    manifest = json.loads((ROOT / ".opencode" / "package.json").read_text(encoding="utf-8"))
+    lock = json.loads((ROOT / ".opencode" / "package-lock.json").read_text(encoding="utf-8"))
+    version = manifest["devDependencies"]["c8"]
+    assert version
+    assert version[0].isdigit()
+    assert not any(character in version for character in "^~*<>=| ")
+    assert lock["packages"][""]["devDependencies"]["c8"] == version
+    assert lock["packages"]["node_modules/c8"]["version"] == version
+    assert lock["packages"]["node_modules/c8"]["integrity"]
+
+
+
+def _pages_validation_steps() -> list[dict[str, object]]:
+    """Use the existing mature YAML parser rather than inventing a workflow parser."""
+    payload: object = yaml.safe_load((ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    jobs = payload["jobs"]
+    assert isinstance(jobs, dict)
+    validate = jobs["validate"]
+    assert isinstance(validate, dict)
+    steps = validate["steps"]
+    assert isinstance(steps, list)
+    assert all(isinstance(step, dict) for step in steps)
+    return cast(list[dict[str, object]], steps)
+
+
+def test_pages_preserves_uninstrumented_matrix_before_chromium_coverage() -> None:
+    """Coverage is a separate required pass after both original engine contracts."""
+    steps = _pages_validation_steps()
+    acceptance = [
+        (index, step) for index, step in enumerate(steps)
+        if "make presentation-browser-test" in str(step.get("run", ""))
+        and "PRESENTATION_BROWSER_JS_COVERAGE=0" in str(step["run"])
+    ]
+    coverage = [
+        (index, step) for index, step in enumerate(steps)
+        if "make presentation-browser-test" in str(step.get("run", ""))
+        and "PRESENTATION_BROWSER_JS_COVERAGE=1" in str(step["run"])
+    ]
+    assert len(acceptance) == len(coverage) == 1
+    original_index, original = acceptance[0]
+    coverage_index, instrumented = coverage[0]
+    assert original_index < coverage_index
+    assert 'PRESENTATION_BROWSER_ENGINES="${{ matrix.browser }}"' in str(original["run"])
+    assert "PRESENTATION_BROWSER_TIMEOUT=600" in str(original["run"])
+    assert not original.get("if")
+    assert "matrix.browser == 'chromium'" in str(instrumented.get("if", ""))
+    assert "PRESENTATION_BROWSER_ENGINES=chromium" in str(instrumented["run"])
+    assert "PRESENTATION_BROWSER_TIMEOUT=600" in str(instrumented["run"])
+    assert (
+        "PRESENTATION_BROWSER_OUTPUT="
+        "/tmp/gludd-presentation-js-coverage"
+    ) in str(instrumented["run"])
+    assert not instrumented.get("continue-on-error")
+
+
+def test_pages_coverage_prepares_pinned_existing_node_owner_before_use() -> None:
+    """The coverage lane has no first-use download or floating Node action."""
+    steps = _pages_validation_steps()
+    setup = [
+        (index, step) for index, step in enumerate(steps)
+        if step.get("uses") == "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020"
+    ]
+    assert len(setup) == 1
+    node_index, node = setup[0]
+    options = node.get("with")
+    assert isinstance(options, dict)
+    assert str(options["node-version"]) == "26"
+    installs = [
+        (index, step) for index, step in enumerate(steps)
+        if "make node-deps-sync" in str(step.get("run", ""))
+    ]
+    assert len(installs) == 1
+    install_index, install = installs[0]
+    assert node_index < install_index
+    command = str(install["run"])
+    for value in (
+        "NODE_DEPS_VALIDATE_ONLY=0", "NODE_DEPS_NPM_USERCONFIG=/dev/null",
+        (
+            "NODE_DEPS_NPM_CACHE="
+            "/tmp/gludd-npm-cache-public-v1"
+        ),
+        "NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org",
+        "NODE_DEPS_NPM_UPDATE_NOTIFIER=false",
+    ):
+        assert value in command
+    instrumented_index = next(
+        index for index, step in enumerate(steps)
+        if "PRESENTATION_BROWSER_JS_COVERAGE=1" in str(step.get("run", ""))
+    )
+    assert install_index < instrumented_index
+    assert "npx " not in command
+
+
+def test_pages_coverage_artifact_is_retained_on_success_and_failure() -> None:
+    """Passing percentages remain reviewable rather than disappearing on success."""
+    steps = _pages_validation_steps()
+    retained = []
+    for step in steps:
+        options = step.get("with")
+        if isinstance(options, dict) and "/tmp/gludd-presentation-js-coverage" in str(options.get("path", "")):
+            retained.append(step)
+    assert len(retained) == 1
+    artifact = retained[0]
+    assert str(artifact.get("uses", "")).startswith("actions/upload-artifact@")
+    assert "always()" in str(artifact.get("if", ""))
+    assert "matrix.browser == 'chromium'" in str(artifact.get("if", ""))
+    options = artifact["with"]
+    assert isinstance(options, dict)
+    assert options["if-no-files-found"] == "error"
+    assert int(str(options["retention-days"])) >= 1
+
+
+def _run_native_presentation_flag(
+    tmp_path: Path, *, coverage_flag: str, flag_origin: str, validate_flag: str = "1",
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Exercise the real target, replacing only its UV child with an argv recorder."""
+    selected_make = shutil.which("make")
+    assert selected_make is not None
+    recorder = tmp_path / "record-uv.py"
+    calls = tmp_path / "uv-calls.jsonl"
+    carrier_makefile = tmp_path / "native-carriers.mk"
+    canary = "keep  two spaces PRESENTATION_BROWSER_JS_COVERAGE=opaque remain  exact"
+    carrier_makefile.write_text(
+        ".PHONY: refuse native-carriers\n"
+        "refuse:\n\t@exit 23\n"
+        "native-carriers:\n"
+        f"\t@{shlex.quote(sys.executable)} {shlex.quote(str(recorder))} native-carriers "
+        "'$(subst ','\"'\"',$(PRESENTATION_FLAG_CANARY))'\n",
+        encoding="utf-8",
+    )
+    inherited_names = (
+        "CI", "NPROC", "GLUDD_XDIST_WORKERS", "UV_PYTHON", "UV_PROJECT_ENVIRONMENT",
+        "UV_NO_SYNC", "UV_PYTHON_DOWNLOADS", "PYTHONPATH",
+    )
+    recorder.write_text(
+        "import json, os, subprocess, sys\n"
+        "from pathlib import Path\n"
+        "if sys.argv[1:2] == ['native-carriers']:\n"
+        "    print(json.dumps({'canary': sys.argv[2]}))\n"
+        "    raise SystemExit(0)\n"
+        f"native = subprocess.run([{selected_make!r}, '--no-print-directory', "
+        f"'-f', {str(carrier_makefile)!r}, 'refuse', 'native-carriers'], "
+        "check=False, capture_output=True, text=True, timeout=10)\n"
+        "assert native.returncode == 2, native.stdout + native.stderr\n"
+        "assert native.stdout, 'native Make lost inherited keep-going: ' + native.stderr\n"
+        "report = {'argv': sys.argv[1:], 'native': json.loads(native.stdout), "
+        "'flags': os.environ.get('MAKEFLAGS', ''), 'level': os.environ.get('MAKELEVEL', ''), "
+        f"'inherited': {{name: os.environ.get(name) for name in {inherited_names!r}}}}}\n"
+        f"with Path({str(calls)!r}).open('a', encoding='utf-8') as output:\n"
+        "    output.write(json.dumps(report) + '\\n')\n",
+        encoding="utf-8",
+    )
+    uv = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    engines = "chromium webkit" if coverage_flag == "0" else "chromium"
+    command = [
+        selected_make, "--no-print-directory", "--keep-going", "-f", str(ROOT / "Makefile"),
+        "presentation-browser-test", f"UV={uv}", f"PRESENTATION_FLAG_CANARY={canary}",
+        f"PRESENTATION_BROWSER_VALIDATE_ONLY={validate_flag}",
+        f"PRESENTATION_BROWSER_ENGINES={engines}",
+        f"PRESENTATION_BROWSER_ROOT={tmp_path / 'browser binaries'}",
+        f"PRESENTATION_BROWSER_OUTPUT={tmp_path / 'browser output'}",
+        "PRESENTATION_BROWSER_TIMEOUT=600",
+    ]
+    inherited = os.environ.copy()
+    environment = inherited.copy()
+    if flag_origin == "command-line":
+        command.append(f"PRESENTATION_BROWSER_JS_COVERAGE={coverage_flag}")
+    else:
+        assert flag_origin == "environment"
+        environment["PRESENTATION_BROWSER_JS_COVERAGE"] = coverage_flag
+    result = subprocess.run(
+        command, cwd=ROOT, env=environment, check=False, capture_output=True,
+        text=True, timeout=30,
+    )
+    assert os.environ == inherited
+    return result, calls
+
+
+@pytest.mark.parametrize("flag_origin", ("command-line", "environment"))
+@pytest.mark.parametrize("validate_flag", ("0", "1"))
+@pytest.mark.parametrize("coverage_flag", ("0", "1"))
+def test_native_make_routes_literal_javascript_coverage_flag_without_losing_carriers(
+    tmp_path: Path, coverage_flag: str, flag_origin: str, validate_flag: str,
+) -> None:
+    """Literal flags retain the original CLI, bounds, engines and recursive Make state."""
+    result, calls = _run_native_presentation_flag(
+        tmp_path, coverage_flag=coverage_flag, flag_origin=flag_origin,
+        validate_flag=validate_flag,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    samples = [
+        cast(dict[str, object], json.loads(line))
+        for line in calls.read_text(encoding="utf-8").splitlines()
+    ]
+    engines = ("chromium", "webkit") if coverage_flag == "0" else ("chromium",)
+    assert len(samples) == len(engines)
+    for sample, engine in zip(samples, engines, strict=True):
+        assert sample["argv"] == [
+            "run", "--extra", "presentation-test", "python",
+            "scripts/run_presentation_browser_tests.py",
+            "--validate-only" if validate_flag == "1" else "--run",
+            "--browser", engine,
+            "--browser-root", str(tmp_path / "browser binaries"),
+            "--output-root", str(tmp_path / "browser output" / engine),
+            "--timeout-seconds", "600", "--js-coverage", coverage_flag,
+        ]
+        assert sample["native"] == {
+            "canary": "keep  two spaces PRESENTATION_BROWSER_JS_COVERAGE=opaque remain  exact",
+        }
+        assert int(str(sample["level"])) >= 1
+        assert sample["flags"], "native Make flags disappeared"
+        assert sample["inherited"] == {
+            name: os.environ.get(name)
+            for name in (
+                "CI", "NPROC", "GLUDD_XDIST_WORKERS", "UV_PYTHON",
+                "UV_PROJECT_ENVIRONMENT", "UV_NO_SYNC", "UV_PYTHON_DOWNLOADS", "PYTHONPATH",
+            )
+        }
+
+
+@pytest.mark.parametrize("flag_origin", ("command-line", "environment"))
+@pytest.mark.parametrize("literal_form", (
+    "make-shell", "make-file", "shell-substitution", "backticks", "quote-breakout",
+))
+def test_native_make_refuses_javascript_coverage_text_before_evaluation_or_child(
+    tmp_path: Path, flag_origin: str, literal_form: str,
+) -> None:
+    """Invalid new-flag data must not execute while Make or its shell prepares validation."""
+    tripwire = tmp_path / "literal-flag-executed"
+    backtick = chr(96)
+    hostile_values = {
+        "make-shell": f"$(shell touch {tripwire})",
+        "make-file": f"$(file >{tripwire},unexpected)",
+        "shell-substitution": f"$$(touch {tripwire})",
+        "backticks": f"{backtick}touch {tripwire}{backtick}",
+        "quote-breakout": f'x"$$(touch {tripwire})"',
+    }
+    result, calls = _run_native_presentation_flag(
+        tmp_path, coverage_flag=hostile_values[literal_form], flag_origin=flag_origin,
+    )
+    detail = result.stdout + result.stderr
+    assert not tripwire.exists(), detail
+    assert not calls.exists(), detail
+    assert result.returncode != 0, detail
+    assert "PRESENTATION_BROWSER_JS_COVERAGE must be 0 or 1" in detail

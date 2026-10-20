@@ -2208,9 +2208,10 @@
         "PRESENTATION_BROWSER_ENGINES",
         "PRESENTATION_BROWSER_ROOT",
         "PRESENTATION_BROWSER_OUTPUT",
-        "PRESENTATION_BROWSER_TIMEOUT"
+        "PRESENTATION_BROWSER_TIMEOUT",
+        "PRESENTATION_BROWSER_JS_COVERAGE"
       ],
-      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=600"
+      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=600 PRESENTATION_BROWSER_JS_COVERAGE=0"
     },
     {
       "name": "presentation-browser-install",

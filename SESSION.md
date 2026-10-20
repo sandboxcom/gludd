@@ -1,3 +1,6 @@
+## S98.4 whole-controller coverage tooling - recorded base eb78ebd354539bc4d9d324899873db3969306515
+2026-10-19 branch agent-v012-pages-js-coverage-20261019:154PASS each311/312, whole-Python95.8line/90.1branch; browser/c8/review/commit/integration/gate/exact-CI pending. Root owns Git. [Full preserved entry and next Make actions](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#retained-integration-entry); no release tick.
+
 ## S98.4 source-contract admission support - recorded base da994299b3479fa074bc7a765766369c7e9692f5
 
 Branch agent-v012-profile-env-conformance-20261019 supports the v0.1.2 CI objective.

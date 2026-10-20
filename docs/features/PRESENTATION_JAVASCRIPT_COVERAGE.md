@@ -1,0 +1,513 @@
+# Presentation JavaScript coverage
+
+The existing presentation-browser-test owner gains opt-in whole-controller
+coverage. Ordinary Chromium and WebKit acceptance remains uninstrumented;
+its original cold/cached readiness assertions, five-second limit and bounded
+600-second commands remain required. Instrumented measurements do not prove
+a latency improvement and cannot substitute for those two-engine results.
+
+## Tool and collection boundary
+
+Use the Python Playwright public CDP session to collect Chromium precise V8
+block coverage, then the pinned mature c8 converter/report/check owner for
+Istanbul line and branch metrics. This measures V8-derived branch coverage,
+not WebKit execution, every AST condition or MC/DC. Existing Node tests extract
+functions and remain behavioral controls; their shifted offsets cannot count
+as coverage of the complete presentation.js file.
+
+The manifest binds the exact full controller bytes/hash, source root/ref and
+actual tool versions. Only known local served/file controller URLs may become
+the exact repository path after whole-source equality is verified. Retain raw
+CDP payloads and normalized V8 input separately. Snapshot before navigation,
+reload, page close and context close, preserving pre-destruction execution.
+
+Missing execution, malformed/stale/unowned data, changed served source,
+incomplete ranges, absent metrics, native tool failures and timeouts must fail.
+A zero-count placeholder from --all is not evidence that the controller ran.
+No hand-computed percentage or generated passing report is authoritative.
+
+The repository config selects the entire controller with --all and no coverage
+omits. Native c8 report and two independent checks require aggregate85% line
+AND85% branch, followed by75% line AND75% branch in every measured file.
+The current single-file scope makes the aggregate threshold stricter, while
+preserving the per-file contract for future expansion. No ignore pragmas or
+reduced floors are allowed. JSON, summary, LCOV and visible text reports remain.
+
+## Codified commands
+
+All work runs through Make. The safe default example is:
+
+```text
+make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=600 PRESENTATION_BROWSER_JS_COVERAGE=0
+```
+
+Run the original two-engine acceptance with VALIDATE_ONLY=0 and JS_COVERAGE=0.
+Then request the separate Chromium measurement:
+
+```text
+make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=0 PRESENTATION_BROWSER_ENGINES=chromium PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser-js PRESENTATION_BROWSER_TIMEOUT=600 PRESENTATION_BROWSER_JS_COVERAGE=1
+```
+
+JS_COVERAGE=1 with WebKit refuses explicitly. Default0 clears inherited coverage
+carriers. Only the enabled child receives the fresh owned coverage directory
+and manifest. Browser installation and locked Node tools retain their existing
+presentation-browser-install and node-deps-sync/relock/audit owners and explicit
+documented variables; no npx download, alternate runner or tool-path override.
+
+Internal GLUDD_PRESENTATION_JS_COVERAGE_DIR and
+GLUDD_PRESENTATION_JS_COVERAGE_MANIFEST are child-only producer carriers for
+the fresh owned directory and its source.json manifest. They are not caller
+overrides; default0 removes inherited copies. The runner binds actual native
+HEAD/tree, dirty-source distinction, full controller hash and selected tool
+versions at entry and rechecks source/ref at exit. The fixture separately
+records the actual browser version. Dirty source acceptance is never relabeled
+as a committed-SHA release receipt.
+
+
+## Python runner and fixture coverage
+
+The versioned config/coverage_presentation_browser.ini is a literal copy of the
+portable measured INI: branch and subprocess tracking, both complete Python
+files, no omitted lines. The existing coverage-files owner remains the only
+collector and native audit owner. A future agent can use this recipe with its
+registered CI runtime, keeping every target variable explicit:
+
+```text
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_presentation_browser_runner.py tests/unit/test_presentation_make_targets.py tests/unit/test_pages_presentation_resilience.py tests/unit/test_pytest_param_fixture_collisions.py::test_repository_parameters_do_not_shadow_external_pytest_fixtures tests/unit/test_presentation_browser_coverage_fixture.py -n 0 --maxprocesses 1' COVERAGE_CONFIG=config/coverage_presentation_browser.ini COVERAGE_REPORT=.gate-logs/coverage-presentation-browser.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
+```
+
+The actual retained runs used the identical external INI at
+/tmp/gludd-v012-pages-js-coverage-python.ini, with explicit registered311/312
+runtime variables and separate JUnit/output names in the command index. Copying
+the config is not a new test run. The new fixture controls exercise real fixture
+routing with fake public browser/session boundaries; they are Python coverage
+proof, not installed Chromium/CDP execution.
+
+## Primary references and firsthand reports
+
+The [c8 documentation](https://github.com/bcoe/c8#readme) and its
+[native report owner](https://github.com/bcoe/c8/blob/main/lib/report.js)
+describe whole-file inclusion, report conversion and threshold checks.
+[Python CDPSession](https://playwright.dev/python/docs/api/class-cdpsession),
+[Profiler precise coverage](https://chromedevtools.github.io/devtools-protocol/tot/Profiler/#method-startPreciseCoverage)
+and [Node coverage format](https://nodejs.org/api/cli.html#node_v8_coveragedir)
+define the collection and input boundary. These contracts do not establish
+that this project's controller has reached any percentage.
+
+Firsthand [c8 issue339](https://github.com/bcoe/c8/issues/339) discusses browser
+coverage input in2021, and [issue515](https://github.com/bcoe/c8/issues/515)
+discusses placeholders/comment reporting in2024. They explain why execution
+provenance and native conversion need separate checks; neither is evidence
+that today's project has the same defect. The existing research decision is
+/tmp/gludd-v012-pages-javascript-coverage-decision.md.
+
+Root's source review checks the actual
+[CDP protocol schema](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/js_protocol.pdl):
+FunctionCoverage carries a boolean per-function block flag, and taking precise
+coverage resets execution counters. Untouched functions and idle later deltas
+must remain truthful zero-count input, not disappear or invalidate prior
+execution. Session collection still requests detailed blocks; an invocation
+with no real complete-controller execution must fail. Firsthand
+[Playwright22268](https://github.com/microsoft/playwright/issues/22268)
+and the [converter maintainer's example](https://github.com/AriPerkkio/ast-v8-to-istanbul)
+illustrate zero-count functions. These references motivate native-format
+controls; they do not prove browser acceptance of the new collector.
+
+
+Root selects exact c8 12.0.0 from the
+[official releases](https://github.com/bcoe/c8/releases) and
+[package manifest](https://github.com/bcoe/c8/blob/main/package.json).
+The July2026 release supports Node20.19+,22.12+ and23+. Existing native
+node-deps-relock, node-deps-sync and node-deps-audit have now passed with
+explicit public-registry/config/cache/update settings:5.6s,3.8s and0.5s.
+Installed c8 and manifest/lock pins are12.0.0 with actual lock integrity;
+audit at level low finds zero vulnerabilities. The existing fresh relock
+re-resolves transitives and also updates msgpackr2.1.0 to2.1.1. No unchanged-
+transitive claim follows. Exact commands/native paths are
+/tmp/gludd-v012-pages-js-coverage-node-prerequisites.md.
+Native c8 conversion/threshold execution remains separate and unproved.
+
+## Source progress and takeover
+
+Single-writer branch agent-v012-pages-js-coverage-20261019 starts at
+eb78ebd354539bc4d9d324899873db3969306515, under S98.4. All implementation agents
+are complete; Root owns integration of the reviewed20-path scope. Current focused
+native ChromiumJS1 passes24 cases and whole-controller94.2line/88.75branch,
+including both independent floors, after V4 source-only approval. Normal guarded
+commit/development integration and final gate/exact-SHA proof remain pending.
+The separate product repair remains frozen on agent-v012-pages-cold-readiness-20261019.
+The chronological evidence below preserves superseded pending states and failures.
+
+Failing-first complete two-owner unit run collects68 cases with zero errors
+or skips:37FAIL/31PASS2.32s, native3.581s/rc2. Actual observer is
+v012-pages-js-coverage/red311-eb78ebd-20261019. Raw and JUnit are retained at
+/tmp/gludd-v012-pages-js-coverage-red311.log and .xml. All28 preexisting cases
+pass; three additive invalid-argument controls also pass because the old CLI
+rejects every new flag. Those three do not prove the new CLI. The37 failures
+expose absent opt-in/API/config and inherited carriers. The existing exact
+contract assertion adds only the new documented JS0 variable/example; it is
+intentional feature conformance, not a removed assertion.
+These failures remain historical and are not coverage measurements.
+
+The three existing-owner workflow routing controls retain3FAIL/0PASS1.14s,
+native2.219s/rc2 before Root workflow edits. Actual receipts are
+/tmp/gludd-v012-pages-js-coverage-workflow-red-report.md. Root then wires pinned
+Node26, existing locked node-deps-sync, explicit original JS0 matrix before a
+separate required Chromium JS1 run, and coverage artifacts retained on success
+and failure. Original20-minute job/600-second commands/timing assertions remain.
+Actual hosted execution of this wiring is still pending.
+
+The target contract checker passes254 entries, and the complete documented
+JS0/both-engine safe example passes through the real direct-file Make CLI,
+printing both original viewport plans. This is plan evidence only. Universal
+file-line limits and the initial13 changed-path registration checks pass.
+
+The first complete103-case unit/policy/inventory run fails only the unchanged
+help assertion:1FAIL/102PASS6.04s/native7.074rc2. Root restores the original
+help substring and appends the optional coverage description. Three existing
+environment controls expose1FAIL/2PASS3.19s/native4.497rc2 for the two missing
+reference rows. Root documents both internal/unset carriers in CONFIG_REFERENCE
+and registers that fourteenth source path. All14 changed paths are registered.
+
+Final same103-case union passes each actual runtime:3116.04s/native7.085rc0
+and registeredMain3127.61s/native8.846rc0. The same3 environment/pollution controls
+pass each:2.54s/native3.467rc0 and2.73s/native3.619rc0. All errors/skips are zero.
+Four-file strict and Ruff pass, native1.399rc0. Earlier namespace/typed-kwargs/
+style failures remain in the report; fixes add no Any or suppression. Existing
+six test type-ignore comments and old diagnostic Any annotations remain their
+recorded baseline, not newly cleaned claims. Exact scopes/commands/native paths:
+ /tmp/gludd-v012-pages-js-coverage-report.md and
+/tmp/gludd-v012-pages-js-coverage-evidence-index.md. Root reads native terminal
+statuses and actual103-case raw summary; authored source paths are frozen.
+
+The next finite assignment adds meaningful browser-fixture controls in
+tests/unit/test_presentation_browser_coverage_fixture.py and measures the
+complete runner and conftest using the existing coverage-files owner, no omits.
+TASKS registers this test and SESSION in the same single-writer branch, bringing
+the explicit scope to17 paths including the versioned whole-Python config.
+SESSION names recorded commit/ref, proof states and takeover actions; the
+successor manual current index is
+/tmp/gludd-v012-integration-fdeaa96-handoff.md. Earlier handoffs and the literal
+session entry below remain historical records. No generated observation was
+edited. Whole-file Python line/branch85aggregate75each remain required, along
+with genuine native browser/c8 proof.
+
+The first whole-Python measurement passes124cases but fails native aggregate
+branch77.5% against85%; line87.3%, both files>=75 and fixture100/100. That failed
+audit remains retained. Thirty additional meaningful runner controls exercise
+native tool/runtime/source/ref/prepare refusals; production runner and fixture
+bytes remain unchanged. Final same154cases pass each actual runtime:
+3119.02s/native10.721rc0 and31210.30s/native13.080rc0, errors/skips0.
+Both native audits report95.8line/90.1branch aggregate; runner95.3/89.4 and
+whole fixture100/100, unchanged85aggregate75each BOTH. Root reads actual native
+terminal JSON, full two-file audit and final raw summaries:
+coverage-files/20261019T222218Z-49531-335f28fc and
+coverage-files/20261019T222233Z-49627-2677f3f7, audits
+.gate-logs/coverage-20261019T222228Z.json and
+.gate-logs/coverage-20261019T222246Z.json. Exact literal command/evidence packet:
+ /tmp/gludd-v012-pages-js-coverage-python-report.md.
+This measured scope does not include JavaScript or installed browser execution.
+
+Native c8 report/checks, successor independent source review and normal guarded
+integration remain pending. Original uninstrumented browser acceptance has now
+passed as recorded below. The103-case acceptance was not a measured source
+percentage; the separate154-case native audit now is.
+The old branch base lacks later startup/product repairs; merge forward the
+actual reviewed development work before measuring the final combined controller.
+No source-only approval, fixture report or plan closes any release backlog item.
+Full gate, applicable exact-SHA CI, installed runtime, ZDD and promotion remain
+required. All19 release statuses and checkboxes stay open.
+
+## Actual browser acceptance and literal Make input repair
+
+Pinned native installation passed39.7s before the original JS0 suite.
+The original uninstrumented matrix then passed all36 browser cases:
+Chromium desktop17/267.18s and compact1/45.99s; WebKit desktop17/269.04s
+and compact1/43.83s. Cold/cached readiness was1.521/1.276s on Chromium
+and1.783/1.392s on WebKit, with the original five-second bound unchanged.
+Native observer v012-pages-browser-acceptance/original-js0-eb78ebd-20261019
+passedrc0/631.505s, termination_reasonnull. The retained raw log is
+/tmp/gludd-v012-pages-js-coverage-original-js0.log. This measures dirty
+Source25 at baseeb78; the separate Source24 product repair is not included.
+It establishes neither Linux hosted latency improvement nor exact-SHA release
+proof. Original selectors, assertions,600-second child bounds and both engines
+were retained. No rerun follows merely from a new report or source name.
+
+Independent V1 returned CHANGES REQUIRED for soleR1: interpolating the new
+public Make coverage flag could execute Make/shell text before binary refusal.
+Both original18-case native controls genuinely failed8 and passed10 on each
+runtime; every failure created the tripwire before the expected rejection.
+Root then captured only this new input through Make value/override/export,
+unexported the public spelling, and validated/forwarded the literal shell
+carrier GLUDD_PRESENTATION_BROWSER_JS_COVERAGE. Unrelated inherited Make and
+environment carriers remain intact. No production Python/controller changed.
+
+The same18 controls now pass each runtime. The full previous154 plus18 collects
+172PASS on each actual runtime, with zero errors/skips:3117.71s/native8.674s,
+3129.01s/native10.028s. Original3environment controls pass each; five-file
+strict/Ruff pass. Only the newly introduced structural raw-spelling assertion
+was conformed to the literal carrier, preserving its default/contract/matrix
+intent and all older assertions. No Python coverage replay is claimed.
+Both REDs, exact commands and all native statuses remain in
+/tmp/gludd-v012-pages-js-coverage-literal-flag-report.md and its evidence index.
+The frozen negative V1 review remains immutable; successor review is required.
+
+After the actual repair Root reran check-make-target-contract:254PASS.
+The complete documented safe JS0/both-engine validate-only example also passed
+through the real direct-file CLI, native0.171s, printing both original viewport
+plans. Plan mode is not browser evidence. Genuine Chromium JS1/CDP/native c8
+whole-controller measurement still remains. Every release checkbox stays open.
+
+Independent successor V2 approves source only; V1 remains unchanged. The first
+genuine JS1 measurement then FAILS native286.814s/rc2: all17 functional Chromium
+cases pass284.81s, but navigation/reload teardown rejects a positive-count
+isBlockCoverage:false native V8 record. Actual refusal is normalize line320,
+not a readiness assertion or native c8 threshold result. The runner correctly
+stops before compact acceptance/native reporting. No JavaScript percentage is
+established. Retain observer v012-pages-browser-coverage/
+instrumented-js1-eb78ebd-20261019, raw
+/tmp/gludd-v012-pages-js-coverage-instrumented-js1.log and its fresh raw/native
+payloads. Source-bound detailed branch authority must be repaired before a new
+attempt; removing refusal, forcing flags or inventing counts is not a repair.
+The separate source-format decision is
+/tmp/gludd-v012-pages-js-positive-function-coverage-decision.md.
+
+The selected repair retains native coarse records unchanged and admits branch
+reporting only when every positive coarse first-root span has a positive
+detailed native witness from a distinct retained ScriptCov, with exact verified
+source and offsets, in this fresh invocation. The existing reporting traversal
+owns this check before c8; no second scanner, persistent cache, synthesized
+range/count/flag or hand-computed metric is added. Witnesses must work in either
+file order; zero-root, containing, different-span/source or same-record-only
+data must refuse. Pin public --merge-async=false for all three native phases
+so the locked converter uses its batch detailed-preference path.
+
+The [CDP Profiler contract](https://chromedevtools.github.io/devtools-protocol/tot/Profiler/)
+and [V8 collection implementation](https://raw.githubusercontent.com/v8/v8/main/src/debug/debug-coverage.cc)
+explain per-function granularity. Firsthand
+[Playwright6707](https://github.com/microsoft/playwright/issues/6707)
+and [VS Code330740](https://github.com/microsoft/vscode/issues/330740)
+describe differing block information and profiler lifecycle effects. Neither
+proves the exact cause here or that an interfering profiler exists in this run.
+Installed c8 12.0.0, v8-to-istanbul9.3.0 and v8-coverage1.0.2 source semantics,
+actual native witnesses and the retained failure govern this bounded repair.
+
+Additive controls were initially authored without running them while Source26
+owned the serialized OS slot; that point-in-time authoring state is preserved
+in the decision history. Exact nodes are at
+/tmp/gludd-v012-pages-js-positive-function-authored-nodes.txt.
+Source26 is now genuinely committed and merged into development fdeaa96:
+source b503a6b, normal source and merge guards/fresh collection passed, source
+worktree safely retired with evidence archived. This is a separate ledger
+repair, with no hosted speedup or release completion claim.
+
+The corrected24-case R2 controls now run against the unchanged runner on each
+actual Python runtime:31122FAIL2PASS1.75s/native2.823rc2 and
+31222FAIL2PASS1.92s/native3.159rc2, errors/skips0. Seven positive coarse cases
+reach the old blanket refusal, fourteen negative cases already refuse but at
+the earlier boundary, and one exact argv case exposes missing batch mode.
+Malformed coarse-root0/positive-child and all-zero refusal already pass.
+The initial24FAIL/native3.426rc2 receipt includes sixteen new-fixture
+ROOT/TEST_FILE binding mistakes and remains retained; only that additive
+fixture binding was corrected before the meaningful pair. No negative-case
+RED is claimed as proof of unsafe old acceptance.
+
+The persistent report, native evidence index and actual commands are
+/tmp/gludd-v012-pages-js-positive-function-report.md and its companion files.
+The minimal existing-owner repair is implemented in the runner and its unit
+owner. The complete FIVE whole test owners, including the whole fixture
+collision owner rather than only its single inventory node, now pass252cases
+on each runtime:31115.53s/native17.738rc0 and31214.36s/native16.619rc0,
+errors/skips0 and no warnings. Native whole-two-file Python audits retain
+85aggregate75each for BOTH line and branch: aggregate95.9line/90.3branch,
+runner95.4/89.6, whole browser fixture100/100. Registered312 finite24 also
+passes1.48s/native2.721rc0 with explicit only-managed/protected install-dir
+carriers. Five-file strict typing and Ruff pass, native1.8s/rc0.
+
+The first311 finite24 pass used the incorrect312-only preference and emitted
+uv warnings. It is retained as diagnostic input, not warning-free acceptance.
+The corrected complete311 run restores the prior canonical caller settings;
+312 alone uses its required managed preference/install root. Actual RED312
+interpreter is established, while inheritance of its omitted preference/store
+inputs was not recorded and is not retroactively claimed.
+The two Python source files are frozen and their test slot is released. Root
+owns shared files/Git and the next genuine fresh public JS1/native c8 run after
+successor independent review. Native JavaScript percentages, guarded source
+integration and exact-SHA release proof remain pending. No checkbox changed.
+
+## Native branch floor failure and repair
+
+After V3 source-only approval, Root ran the actual fresh unchanged public JS1
+owner with explicit registered312 runtime settings and frozen source. Native
+v012-pages-browser-coverage/instrumented-js1-r2-eb78ebd-20261019 is terminal
+FAILEDrc2/332.034s, termination_reasonnull. Raw log:
+/tmp/gludd-v012-pages-js-coverage-instrumented-js1-r2.log. Exact actual command:
+/tmp/gludd-v012-pages-js-coverage-instrumented-r2-command.md.
+
+The complete original Chromium desktop17 cases PASS280.10s, including the
+previously failing teardown, then compact1PASS46.83s. Cold/cached readiness
+is1.804/2.170s under the unchanged five-second bound. The repaired corpus
+witness traversal succeeds, and genuine locked c8 report exits0. Its actual
+whole-controller report is87.11line/70.15branch, functions92.59, with no skipped
+lines/branches:776lines/676covered,191branches/134covered,54functions/50covered.
+Controller SHA remainsf39ee2499c1f530211d70519bd5738e64394964f437bd72ee4155a4d0d2c1842.
+
+Native aggregate check then exits1: branch70.15 below unchanged85. The separate
+per-file phase is NOT reached. This is measured failing JavaScript coverage,
+not absent measurement, successful floor acceptance or release completion.
+Original pre-R2 teardown failure remains separate and immutable.
+
+Actual native reports under
+/tmp/gludd-v012-pages-js-coverage-instrumented-js1-r2/chromium/javascript-coverage/reports/
+include coverage-summary.json, coverage-final.json and lcov.info. These existing
+native reporters are the gap checker; no new scanner or metric calculation is
+authorized. This failure led to the existing-owner design for meaningful browser
+checks of uncovered controller behavior, preserving every original assertion,
+whole-source scope, native witness checks,85/75 line/branch and600/20-minute
+bounds. No unchanged replay or product branch removal is justified by this
+coverage failure. Source24 remains frozen; completed backlog follows pipeline.
+
+The native-gap decision
+/tmp/gludd-v012-pages-js-native-branch-coverage-decision.md selects six grouped
+additions in the existing browser owner: viewer lifecycle/ranges/modes, real
+fallback navigation for endpoint/Ace faults, renderer rejection/recovery,
+malformed SVG/native deadline, actual CSP image refusal and broken-image
+revalidation. Original17 desktop assertions and compact selection remain.
+Native interactions are distinguished from explicit dependency/response fixtures;
+no clocks, Image, geometry/readiness getters, private state or error-list resets.
+
+R3 selected six PASS on Chromium48.25s/native49.365rc0 and
+WebKit52.71s/native53.763rc0. First Chromium-a1FAIL36.22s/native37.389rc2 is
+retained: Reveal consumed a NEW relative-hash fixture link. Only that authored
+href changed to an absolute same-document URL; real location.assign is unstubbed.
+Ruff passes after retained new-line-length failures; collision inventory1PASS.
+These browser passes precede only TYPE_CHECKING/value-preserving formatting and
+a typed cast matching the fixture's actual IPv4 server address. They are not a
+replay of final bytes or whole-matrix/coverage/release proof. Exact packet:
+/tmp/gludd-v012-pages-js-behavior-report.md, evidence-index and commands.
+
+Native strict-a/b first expose build_deck's preexisting package/flat duplicate
+vendor import. Root reuses the established TYPE_CHECKING flat/runtime-qualified
+pattern without changing either runtime import path. Strict-c then reveals17
+previously hidden errors in deck/vendor helpers and the original server fixture;
+/tmp/gludd-v012-pages-build-deck-import-strict-c.log retains this RED.
+TASKS additionally registers scripts/build_deck.py and
+scripts/vendor_presentation_assets.py before repair, extending declared scope
+from18 to20. The helper repair must keep runtime behavior, native checker
+settings and original tests; no Any/suppression/exclusion/proxy is authorized.
+[Existing typing rationale and firsthand issue context](RUNTIME_ADMISSION_THROUGHPUT.md)
+retain the same native module-identity policy. Final native strict/Ruff passes
+all three browser/helper files, observer1.629s/rc0. The unchanged six-owner
+cohort passes244 each on canonical3117.15s/native9.094s and registered
+Main3128.36s/native10.967s, zero warnings/errors/skips. Existing unchanged
+config/coverage_reveal_render_resilience.ini measures all five complete files:
+95.0line/87.3branch aggregate, build97.2/88.8 and vendor92.5/80.3; BOTH85aggregate
+and75each pass. Actual audits235009Z/235027Z and their native statuses/traces
+were read by Root. The precise metadata TypedDict and standard native handler
+constructor replace inaccurate annotations, preserving runtime data and native
+request forwarding; original runtime tests are unchanged. Packets:
+/tmp/gludd-v012-pages-helper-typing-report.md, evidence-index and commands.
+Native20-path registration, TASKS327/0 and10734-file line limits pass.
+Independent V4 APPROVED SOURCE ONLY was read by Root and passed locked Rumdl:
+/tmp/gludd-v012-pages-js-coverage-independent-review-v4.md. Root then froze all
+20 paths and ran ONE fresh complete public ChromiumJS1 command. Native observer
+v012-pages-browser-coverage/instrumented-js1-r3-eb78ebd-20261019 is terminal
+PASS/rc0/387.023s, termination_reasonnull. Desktop23PASS336.50s includes all
+original17 and six additions; originalcompact1PASS45.27s. Cold1.796/cached2.240
+remain below5, with original180s/600s/Pages20min unchanged.
+
+Genuine locked c8 report, aggregate85 and independent per-file75 each exit0.
+Wholecontroller native94.2line/88.75branch:776lines731covered,249branches221covered,
+54functions53covered, skipped0. R2's191-branch denominator is not reused.
+Root read actual coverage-summary, source.json, runtime.json and terminal native
+status. Controller SHA remainsf39ee2499c1f530211d70519bd5738e64394964f437bd72ee4155a4d0d2c1842;
+c8=12.0.0/Node26.0.0/Playwright1.63.0/Python3.12.15 and dirtyHEAD/tree/status are
+recorded separately. Native collectors, distinct witnesses and batch merging
+supply metrics; no flags/counts/ranges are fabricated. Exact actual command:
+/tmp/gludd-v012-pages-js-coverage-instrumented-r3-command.md. Native artifacts:
+/tmp/gludd-v012-pages-js-coverage-instrumented-js1-r3/chromium/javascript-coverage/.
+Original pre-R2 teardown and R2 branch-floor failures remain immutable FAILED.
+
+This passes focused dirty-source Chromium coverage, not committed exact-SHA
+release proof or a new whole JS0/WebKit matrix. Source24 controller repair stays
+excluded and still needs combined product acceptance after tooling integration.
+Normal source guards/commit/development integration, final full gate and exact-SHA
+hosted/release evidence remain pending; all release task statuses stay open.
+
+The first normal guarded commit then stops at the existing secrets hook before
+full collection: two public output/cache-path literals in NEW workflow tests
+are classified high-entropy. Native exec98118 rc2 and original bytes are retained:
+/tmp/gludd-v012-pages-js-coverage-commit-secrets-failure.md and its source copy.
+Only ordinary adjacent Python literal spelling changes; exact expected values,
+assertions and every production byte remain. No baseline/hook/allowlist/pragma/
+policy change. Whole Make/workflow owner29PASS on canonical3112.70s and
+registered3122.94s after this conformance; strict1/RuffPASS. Actual native logs/
+JUnits/statuses are /tmp/gludd-v012-pages-js-secrets-conformance-311 and312 stems.
+Those test-only receipts do not relabel earlier browser/coverage measurements.
+The same staged secrets owner then passes all three unchanged hooks. Normal
+full commit guards and fresh collection remain required.
+
+## Retained integration entry
+
+The following literal session entry is retained in this owning feature to avoid
+duplicating the detailed handoff in SESSION. It remains source/diagnostic history,
+not generated current state or release approval.
+
+```text
+## S98.4 whole-controller coverage tooling - recorded base eb78ebd354539bc4d9d324899873db3969306515
+
+Last updated2026-10-19. Branch agent-v012-pages-js-coverage-20261019 is the
+single source for optional native Chromium/CDP collection plus pinned c8
+whole-controller line/branch85aggregate75each proof. Existing uninstrumented
+Chromium/WebKit acceptance remains required with the same600s and<5s bounds.
+[Feature and exact Make actions](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md)
+record research, source identity, native owner and missing proofs. Root owns
+shared Make/config/workflow/Task/Session and all Git. compact_policy_conformance
+owns four Python runner/fixture/test files plus the meaningful new fixture
+control owner registered in TASKS. No parallel tooling implementation.
+
+Native relock/sync/audit passed; exact c8=12.0.0 installed/locked,146packages,
+LOW audit0vulnerabilities. The same103whole focused cases and3environment
+controls pass on actual3.11.14 and registeredMain3.12.15; strict4/Ruff pass.
+These do not establish measured Python/JavaScript coverage or real browser
+execution. Earlier failed receipts remain separate; no task checkbox changed.
+The complete154-case cohort now passes on both actual runtimes,0errors/0skips,
+with native whole-file Python coverage95.8line/90.1branch aggregate, runner
+95.3/89.4 and whole conftest100/100. Initial124PASS/77.5branch failure remains
+retained. Thirty meaningful runner controls close missing behavior coverage;
+production runner/fixture bytes did not change for this follow-up. Strict5 and
+Ruff pass. Literal portable config is now config/coverage_presentation_browser.ini,
+and the feature documents its existing coverage-files recipe;17source paths
+are registered. Measured commands used identical external INI bytes, not the
+new pathname. Native evidence and commands:
+ /tmp/gludd-v012-pages-js-coverage-python-report.md.
+Final browser/c8, source review, guarded commit, integration and exact-SHA
+release proof remain pending. No task checkbox changed.
+
+Main development is separately clean eb20128176e3533743c23d888e675df690b25814:
+reviewed Source23 native startup imports are merged. The actual original
+runtime-startup-diagnostic on registeredMain312 passed rc0/12.504s with
+1991+1+11 collected. It is collection/import diagnosis ONLY; CI=true was not
+set, native source binding is declared, captured import attribution remains
+unknown. The full native report is /tmp/gludd-v012-current-startup-eb20128-312.md.
+The original hosted90/60 timeout and WebKit cold5.001225731<5 remain unproved.
+The previous canonical gate was ABORTED, current gate UNKNOWN, no release tick.
+
+The subsequent current native execution diagnostic passes MAIN1991/62.75s and
+help1/1.13s, then tail2FAIL9PASS/6.85s; native75.117s/rc2. This is a retained
+diagnostic failure, not admission. Outer Make tracing carriers conflict with
+native focused child focus-<64hex> run identity. The shared trace also includes
+four intentionally failing child controls, not six release failures. Preserve
+.gate-logs/observed/v012-current-main-attribution/current-eb20128-312-20261019.json
+and its raw log; no passing artifact was authored. Native registered312 inspect
+then verifies correct managed-root configuration with mismatches=[] and no UV
+warning: v012-registered312-configuration/managed-root-eb20128-20261019 rc0/.7s.
+Future only-managed invocations must explicitly select the actual protected
+managed-python install root recorded in the runtime prerequisite index.
+
+External takeover /tmp/gludd-v012-integration-eb20128-handoff.md names current
+commit/ref/source versus focused/gate/CI states, slot ownership, protected
+checkpoints and next native Make actions. Generated current JSON belongs only
+to existing pipeline-status/ci-await/observer/registry producers. Pipeline and
+gate repairs precede preparing completed backlog items as the user requested.
+```
