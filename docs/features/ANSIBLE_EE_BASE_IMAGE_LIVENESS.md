@@ -693,6 +693,25 @@ Do not rerun the failed immutable hosted SHA or substitute a mutable tag.
 The earlier Docker forum HEAD404 report remains motivation for bounded method
 fallback, not evidence of the cause here. Both methods fail for this old pin;
 there is no basis to label the failure garbage collection or a transient event.
+The existing pre-publication runtime owner now invokes the same exact-digest
+checker in actual mode before its original90/60 observed replay and transport.
+It selects canonical Python311 without downloads/sync and aligns VIRTUAL_ENV,
+including when a caller supplies conflicting UV/runtime or validate-only inputs.
+Failure is terminal before observer/replay/Git; success executes exactly one
+native check and retains the original runtime/transport failure guards. Mode1
+remains offline with no environment acquisition. No second registry client,
+observer, proof cache, automatic refresh or timeout increase is introduced.
+
+All seven failing-first publication controls reproduce the previous missing
+check; the complete native publication/integration/manifest/artifact/fixture
+cohort passes223/38.45s with fatal warnings. Original legacy/forced publication,
+caller policy, transport failure and plan assertions remain, extended for the
+new prerequisite. The final complete publication/integration/guide/objective
+cohort also passes91/34.88s on canonical Python3.12.15 with fatal warnings.
+Native268target contracts,1174targets/0duplicates, strict
+fixture typing and Ruff pass; the documented offline behavior remains mutation
+free. These controls validate routing, not hosted success or a full gate.
+
 A live new manifest is input evidence only. Full image build/offline warm,
 canonical release gate, exact-successor hosted CI, deployment acceptance and
 receipt-bound promotion remain required. All seven S98 tasks remain open.

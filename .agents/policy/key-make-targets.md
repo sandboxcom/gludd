@@ -130,7 +130,15 @@ Use existing pipeline-status/ci-await owners for generated current CI evidence;
 select their full variables from the contract. Do not manually edit observation
 JSON or repeatedly poll status in place of repairing a known failure.
 
-A development repair push has its own native CI failure guard. Even when disk
+A development repair push has its own native CI failure guard. Its existing
+publication admission first verifies the exact pinned EE manifest through
+check-ansible-base-image mode0, then runs the original90/60 runtime replay.
+A failed availability check starts neither replay nor transport; it never
+refreshes silently. The owner's mode1 plan stays offline and creates no runtime.
+The owner aligns the selected canonical UV/VIRTUAL_ENV inputs in both child
+contexts, preserving caller overrides outside that admission. See
+[the served-image recovery](../../docs/features/ANSIBLE_EE_BASE_IMAGE_LIVENESS.md)
+for the native atomic refresh and independent exact-digest check. Even when disk
 blocks final release proof, inspect actual open families with ci-failure-status,
 then run their first evidence through ci-failure-repair in the exact clean
 descendant checkout. Select explicit full families and evidence matching their

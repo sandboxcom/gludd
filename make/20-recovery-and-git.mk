@@ -1319,7 +1319,7 @@ RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY ?= 0
 _runtime-publish-admission:
 	@case "$(RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo 'RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY must be 0 or 1'; exit 2;; esac
 	@if [ "$(RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY)" = 1 ]; then \
-		echo "RUNTIME-PUBLISH-ADMISSION-PLAN environment=$(RUNTIME_PUBLISH_ENVIRONMENT) max_seconds=90 quiet_seconds=60 profile=release exact_sha_resume=0 max_files_per_batch=16 gate_workers=1 observed_root=$(OBSERVED_ROOT) release_ready=false gate_evidence=false"; exit 0; \
+		echo "RUNTIME-PUBLISH-ADMISSION-PLAN environment=$(RUNTIME_PUBLISH_ENVIRONMENT) manifest_check=exact-pinned max_seconds=90 quiet_seconds=60 profile=release exact_sha_resume=0 max_files_per_batch=16 gate_workers=1 observed_root=$(OBSERVED_ROOT) release_ready=false gate_evidence=false"; exit 0; \
 	fi; \
 	runtime_environment="$(RUNTIME_PUBLISH_ENVIRONMENT)"; \
 	if [ -z "$$runtime_environment" ]; then \
@@ -1328,9 +1328,15 @@ _runtime-publish-admission:
 	fi; \
 	[ -x "$$runtime_environment/bin/python" ] || { echo "Runtime publication admission requires the existing canonical Python 3.11 environment: $$runtime_environment" >&2; exit 2; }; \
 	"$$runtime_environment/bin/python" -c 'import importlib.util, sys; sys.version_info[:2] == (3, 11) or sys.exit("runtime publication requires Python 3.11"); importlib.util.find_spec("pytest_playwright") is not None or sys.exit("runtime publication requires the installed Playwright pytest fixture plugin")' || exit $$?; \
+	$(MAKE) --no-print-directory check-ansible-base-image ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0 \
+		UV_PROJECT_ENVIRONMENT="$$runtime_environment" VIRTUAL_ENV="$$runtime_environment" \
+		UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never \
+		|| { manifest_rc=$$?; echo "Pinned Ansible base manifest admission failed (exit $$manifest_rc); runtime replay was not started; Git transport was not attempted." >&2; exit $$manifest_rc; }; \
 	runtime_run_id="batch-push-runtime-admission-$$$$"; \
-	UV_PROJECT_ENVIRONMENT="$$runtime_environment" UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never \
-	$(MAKE) --no-print-directory run-watched WORK_ITEM_ID="$(WORK_ITEM_ID)" UV_PROJECT_ENVIRONMENT="$$runtime_environment" \
+	UV_PROJECT_ENVIRONMENT="$$runtime_environment" VIRTUAL_ENV="$$runtime_environment" UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never \
+	$(MAKE) --no-print-directory run-watched WORK_ITEM_ID="$(WORK_ITEM_ID)" \
+		UV_PROJECT_ENVIRONMENT="$$runtime_environment" VIRTUAL_ENV="$$runtime_environment" \
+		UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never \
 		GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 \
 		CMD='$(MAKE) --no-print-directory _pytest-runtime-compatibility-admission' \
 		OBSERVED_LABEL=batch-push-runtime-admission RUN_ID="$$runtime_run_id" STALL_SECS=60 MAX_SECS=90 \

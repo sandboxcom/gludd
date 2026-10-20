@@ -39,6 +39,7 @@ def _publish(
     goal: str = "batch-push",
     validate_only: int = 0,
     runtime_state: str = "valid",
+    manifest_status: int = 0,
     gate_policy_context: str = "default",
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]], Path]:
     """Run actual Make recipes and observer, replacing only native test/Git boundaries."""
@@ -59,6 +60,11 @@ def _publish(
         "if args[:3] == ['run', 'python', 'scripts/stream_command.py']:\n"
         "    record('observer', args=args[3:], **context())\n"
         f"    os.execv(sys.executable, [sys.executable, {str(ROOT / 'scripts/stream_command.py')!r}, *args[3:]])\n"
+        "elif args[:3] == ['run', 'python', 'scripts/ansible_runtime_artifacts.py']:\n"
+        "    record('manifest', args=args[3:], environment=os.environ.get('UV_PROJECT_ENVIRONMENT'), "
+        "venv=os.environ.get('VIRTUAL_ENV'), no_sync=os.environ.get('UV_NO_SYNC'), "
+        "python=os.environ.get('UV_PYTHON'), downloads=os.environ.get('UV_PYTHON_DOWNLOADS'))\n"
+        f"    raise SystemExit({manifest_status})\n"
         "elif args[0] == 'test-files':\n"
         f"    phase = 'help' if args[1] == {HELP!r} else 'full'\n"
         "    record('runtime', phase=phase, files=args[1].split(), nproc=args[2], workers=args[3], flags=args[4], "
@@ -152,6 +158,8 @@ def _publish(
         + "\n\n"
         + _target(source, "run-watched")
         + "\n\n"
+        + _target(source, "check-ansible-base-image")
+        + "\n\n"
         + _target(source, OWNER)
         + "\n\n"
         + f'test-files:\n\t@{quoted_runner} test-files "$(TESTFILES)" "$(NPROC)" '
@@ -179,7 +187,9 @@ def _publish(
         environment.pop(name, None)
     command = [
         "make", "--no-print-directory", "-f", str(recipe), goal,
-        "UV_PROJECT_ENVIRONMENT=.venv", "probe=kept",
+        "UV_PROJECT_ENVIRONMENT=.venv", "VIRTUAL_ENV=.venv", "UV_NO_SYNC=0",
+        "UV_PYTHON=3.14", "UV_PYTHON_DOWNLOADS=automatic",
+        "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1", "probe=kept",
     ]
     conflict = dict(zip(names, ("native", "1", "32", "2"), strict=True))
     if gate_policy_context == "environment":
@@ -219,6 +229,14 @@ def _assert_owned_once(rows: list[dict[str, object]], phases: list[tuple[str, st
     assert len(identity) == 1
     assert "sys.version_info[:2] == (3, 11)" in str(identity[0]["args"])
     assert "pytest_playwright" in str(identity[0]["args"])
+    manifests = [row for row in rows if row["kind"] == "manifest"]
+    assert len(manifests) == 1
+    assert manifests[0]["args"] == ["check-base-image"]
+    assert str(manifests[0]["environment"]).endswith("fake-canonical-runtime")
+    assert manifests[0]["venv"] == manifests[0]["environment"]
+    assert (manifests[0]["no_sync"], manifests[0]["python"], manifests[0]["downloads"]) == (
+        "1", "3.11", "never",
+    )
     runtime = [row for row in rows if row["kind"] == "runtime"]
     assert [(row["phase"], row["workers"]) for row in runtime] == phases
     for row in runtime:
@@ -255,6 +273,7 @@ def test_green_runtime_owner_runs_once_before_normal_transport(tmp_path: Path, f
     _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
     assert [row["kind"] for row in rows] == [
         "runtime-identity",
+        "manifest",
         "observer",
         "runtime",
         "runtime",
@@ -287,6 +306,7 @@ def test_transport_failure_after_green_admission_never_records_success(tmp_path:
     _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
     assert [row["kind"] for row in rows] == [
         "runtime-identity",
+        "manifest",
         "observer",
         "runtime",
         "runtime",
@@ -344,6 +364,7 @@ def test_runtime_owner_plan_is_mutation_free_and_has_no_transport(tmp_path: Path
     assert result.returncode == 0, result.stdout + result.stderr
     assert rows == [] and not observed.exists()
     assert "max_seconds=90 quiet_seconds=60" in result.stdout
+    assert "manifest_check=exact-pinned" in result.stdout
     assert "profile=release exact_sha_resume=0 max_files_per_batch=16 gate_workers=1" in result.stdout
     assert "release_ready=false gate_evidence=false" in result.stdout
 
@@ -388,3 +409,19 @@ def test_runtime_publish_owner_has_documented_mutation_free_contract(tmp_path: P
         encoding="utf-8",
     )
     assert validate_contract(standalone, {"targets": [entry]}) == []
+
+
+@pytest.mark.parametrize("manifest_status", (1, 2, 124))
+@pytest.mark.parametrize("forced", (False, True))
+def test_unavailable_exact_manifest_stops_before_runtime_and_transport(
+    tmp_path: Path, manifest_status: int, forced: bool,
+) -> None:
+    result, rows, observed = _publish(
+        tmp_path, manifest_status=manifest_status, forced=forced,
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert [row["kind"] for row in rows] == ["runtime-identity", "manifest"]
+    assert rows[-1]["args"] == ["check-base-image"]
+    assert not observed.exists(), "a failed prerequisite must not start expensive proof"
+    assert "Pinned Ansible base manifest admission failed" in result.stdout + result.stderr
+    assert "Git transport was not attempted" in result.stdout + result.stderr
