@@ -61,6 +61,7 @@ def browser_events(page: Any) -> dict[str, list[str]]:
         })();
         """
     )
+
     def record_console(message: Any) -> None:
         if message.type != "error":
             return
@@ -75,12 +76,11 @@ def browser_events(page: Any) -> dict[str, list[str]]:
     )
     page.on(
         "response",
-        lambda response: events["http_failures"].append(f"{response.status} {response.url}")
-        if response.status >= 400
-        else None,
+        lambda response: (
+            events["http_failures"].append(f"{response.status} {response.url}") if response.status >= 400 else None
+        ),
     )
     return events
-
 
 
 @pytest.fixture(autouse=True)
@@ -89,7 +89,10 @@ def _retain_presentation_javascript_coverage(
     browser_name: str,
     request: pytest.FixtureRequest,
 ) -> Generator[None, None, None]:
-    """The original page fixture remains unchanged unless the runner opts in."""
+    """Autouse: every browser test that runs under JS coverage must attach the
+    collector before the page is used and flush it after the test, without each
+    test declaring the fixture explicitly. This is a process-wide coverage
+    boundary managed by the fixture lifecycle."""
     directory = os.environ.get(browser_runner.JS_COVERAGE_DIR_ENV)
     manifest_name = os.environ.get(browser_runner.JS_COVERAGE_MANIFEST_ENV)
     if directory is None and manifest_name is None:
@@ -112,20 +115,29 @@ def _retain_presentation_javascript_coverage(
     ):
         raise RuntimeError("JavaScript coverage source manifest is invalid")
     session = cast(
-        browser_runner.CoverageSession, page.context.new_cdp_session(page),
+        browser_runner.CoverageSession,
+        page.context.new_cdp_session(page),
     )
     collector = browser_runner.JavaScriptCoverageCollector(
-        session, source_path=source_path, expected_sha256=digest,
-        output_root=output, test_id=request.node.nodeid,
+        session,
+        source_path=source_path,
+        expected_sha256=digest,
+        output_root=output,
+        test_id=request.node.nodeid,
     )
     browser = page.context.browser
     if browser is None:
         raise RuntimeError("JavaScript coverage browser identity is unavailable")
-    browser_runner._write_json(output / f"runtime-{collector.identity}.json", {
-        "browser": browser_name, "browser_version": browser.version,
-        "source_sha256": digest, "test_id": request.node.nodeid,
-        "source_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
-    })
+    browser_runner._write_json(
+        output / f"runtime-{collector.identity}.json",
+        {
+            "browser": browser_name,
+            "browser_version": browser.version,
+            "source_sha256": digest,
+            "test_id": request.node.nodeid,
+            "source_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        },
+    )
     collector.start()
     with browser_runner.coverage_boundaries(page, collector):
         try:

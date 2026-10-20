@@ -524,6 +524,7 @@ def test_fixture_parameters_match_dependencies() -> None:
         "testrun_uid",
         "worker_id",
         "page",  # pytest-playwright fixture used by presentation browser tests.
+        "browser_name",  # pytest-playwright fixture used by presentation browser tests.
         "recwarn",
         "doctest_namespace",
     }
