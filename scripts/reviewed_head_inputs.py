@@ -514,7 +514,7 @@ def _candidate_adapter_hashes(root: Path, sha: str) -> dict[str, str]:
         if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
             raise ValueError(failure)
         tree = receipt_owner._git(root, "ls-tree", "-z", sha, "--", *_ADAPTER_PATHS)
-        hashes: dict[str, str] = {}
+        adapters: dict[str, str] = {}
         for entry in tree.split(b"\0"):
             if not entry:
                 continue
@@ -522,16 +522,31 @@ def _candidate_adapter_hashes(root: Path, sha: str) -> dict[str, str]:
             mode, kind, identity = metadata.split()
             path = raw_path.decode("ascii")
             if (mode not in {b"100644", b"100755"} or kind != b"blob" or path not in _ADAPTER_PATHS
-                    or _ADAPTER_PATHS[path] in hashes):
+                    or path in adapters):
                 raise ValueError(failure)
             blob = identity.decode("ascii")
-            size = int(receipt_owner._git(root, "cat-file", "-s", blob))
-            if not 0 < size <= 1_048_576:
+            if re.fullmatch(r"[0-9a-f]{40}", blob) is None:
                 raise ValueError(failure)
-            hashes[_ADAPTER_PATHS[path]] = _digest(receipt_owner._git(root, "cat-file", "blob", blob))
-        if set(hashes) != set(_ADAPTER_PATHS.values()):
+            adapters[path] = blob
+        if set(adapters) != set(_ADAPTER_PATHS):
             raise ValueError(failure)
-        return hashes
+        metadata_rows = receipt_owner._git(
+            root, "cat-file", "--batch-check",
+            input_bytes=("\n".join(adapters.values()) + "\n").encode("ascii"),
+        ).split(b"\n")
+        if len(metadata_rows) != len(adapters) + 1 or metadata_rows[-1] != b"":
+            raise ValueError(failure)
+        for blob, metadata in zip(adapters.values(), metadata_rows[:-1], strict=True):
+            identity, kind, raw_size = metadata.split(b" ")
+            if (identity != blob.encode("ascii") or kind != b"blob"
+                    or re.fullmatch(rb"[0-9]+", raw_size) is None):
+                raise ValueError(failure)
+            if not 0 < int(raw_size) <= 1_048_576:
+                raise ValueError(failure)
+        return {
+            _ADAPTER_PATHS[path]: _digest(receipt_owner._git(root, "cat-file", "blob", blob))
+            for path, blob in adapters.items()
+        }
     except (OSError, UnicodeError, ValueError):
         raise ValueError(failure) from None
 

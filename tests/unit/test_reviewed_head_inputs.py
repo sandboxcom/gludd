@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -532,6 +533,239 @@ def test_candidate_adapter_binding_requires_real_ordinary_git_blobs(
 @pytest.mark.parametrize("sha", ["HEAD", "-h", "a" * 39, "A" * 40, "0" * 40])
 def test_candidate_adapter_binding_refuses_nonexact_or_unavailable_objects(tmp_path: Path, sha: str) -> None:
     root, _spec = _fixture(tmp_path)
+    with pytest.raises(ValueError, match="candidate provenance adapter blob"):
+        inputs._candidate_adapter_hashes(root, sha)
+
+
+_ADAPTER_FILES = ("scripts/reviewed_head_inputs.py", "scripts/stream_command.py")
+_ADAPTER_BODIES = (b"\x00producer\n\xffbinary\r\n", b"observer\x00\n\x80binary\r\n")
+
+
+def _adapter_repository(
+    tmp_path: Path, *, shared_blob: bool = False, object_format: str = "sha1",
+) -> tuple[Path, str, tuple[str, str]]:
+    root = _clean_repository(tmp_path, object_format)
+    for index, name in enumerate(_ADAPTER_FILES):
+        path = root / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(_ADAPTER_BODIES[0 if shared_blob else index])
+        path.chmod(0o755 if index else 0o644)
+    _git(root, "add", "scripts")
+    _git(root, "commit", "-m", "ordinary binary adapter fixtures")
+    sha = _git(root, "rev-parse", "HEAD")
+    identities = tuple(_git(root, "rev-parse", f"{sha}:{name}") for name in _ADAPTER_FILES)
+    return root, sha, (identities[0], identities[1])
+
+
+@pytest.mark.parametrize("shared_blob", (False, True))
+def test_candidate_adapter_metadata_uses_four_real_git_launches_per_fresh_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shared_blob: bool,
+) -> None:
+    root, sha, identities = _adapter_repository(tmp_path, shared_blob=shared_blob)
+    native_run = subprocess.run
+    launches: list[tuple[tuple[str, ...], bytes | None]] = []
+
+    def launched(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        assert command[:3] == ["git", "-C", str(root)]
+        assert set(kwargs) == {"input", "capture_output", "check"}
+        stdin = kwargs["input"]
+        assert isinstance(stdin, bytes) or stdin is None
+        launches.append((tuple(command[3:]), stdin))
+        return native_run(
+            command, input=stdin, capture_output=kwargs["capture_output"] is True,
+            check=kwargs["check"] is True,
+        )
+
+    monkeypatch.setattr("scripts.build_reviewed_head_integration_receipt.subprocess.run", launched)
+    expected = {
+        "producer_sha256": hashlib.sha256(_ADAPTER_BODIES[0]).hexdigest(),
+        "observer_sha256": hashlib.sha256(_ADAPTER_BODIES[0 if shared_blob else 1]).hexdigest(),
+    }
+    for _fresh_boundary in range(2):
+        start = len(launches)
+        assert inputs._candidate_adapter_hashes(root, sha) == expected
+        assert launches[start:] == [
+            (("ls-tree", "-z", sha, "--", *_ADAPTER_FILES), None),
+            (("cat-file", "--batch-check"), ("\n".join(identities) + "\n").encode("ascii")),
+            (("cat-file", "blob", identities[0]), None),
+            (("cat-file", "blob", identities[1]), None),
+        ]
+
+
+@pytest.mark.parametrize("body_size", (1, 1_048_576))
+def test_candidate_adapter_metadata_preserves_both_inclusive_size_bounds(
+    tmp_path: Path, body_size: int,
+) -> None:
+    root, _sha, _identities = _adapter_repository(tmp_path)
+    body = b"\x00" * body_size
+    (root / _ADAPTER_FILES[1]).write_bytes(body)
+    _git(root, "add", _ADAPTER_FILES[1])
+    _git(root, "commit", "-m", "native adapter size boundary")
+    sha = _git(root, "rev-parse", "HEAD")
+    assert inputs._candidate_adapter_hashes(root, sha) == {
+        "producer_sha256": hashlib.sha256(_ADAPTER_BODIES[0]).hexdigest(),
+        "observer_sha256": hashlib.sha256(body).hexdigest(),
+    }
+
+
+def test_candidate_adapter_metadata_preserves_native_replacements_and_binary_bodies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, sha, identities = _adapter_repository(tmp_path)
+    replacement_path = tmp_path / "replacement.bin"
+    replacement_path.write_bytes(b"\xffeffective replacement\x00\nwith a different size\n")
+    replacement = _git(root, "hash-object", "-w", str(replacement_path))
+    assert replacement != identities[1]
+    _git(root, "replace", identities[1], replacement)
+    for use_replacements, no_replace in ((True, False), (True, True), (False, False), (True, False)):
+        _git(root, "config", "core.useReplaceRefs", str(use_replacements).lower())
+        if no_replace:
+            monkeypatch.setenv("GIT_NO_REPLACE_OBJECTS", "1")
+        else:
+            monkeypatch.delenv("GIT_NO_REPLACE_OBJECTS", raising=False)
+        metadata = receipt_owner._git(
+            root, "cat-file", "--batch-check", input_bytes=(identities[1] + "\n").encode("ascii"),
+        ).split()
+        expected: dict[str, str] = {}
+        for name, identity in zip(("producer_sha256", "observer_sha256"), identities, strict=True):
+            size = int(receipt_owner._git(root, "cat-file", "-s", identity))
+            assert 0 < size <= 1_048_576
+            body = receipt_owner._git(root, "cat-file", "blob", identity)
+            expected[name] = hashlib.sha256(body).hexdigest()
+        assert metadata == [
+            identities[1].encode("ascii"), b"blob",
+            str(len(replacement_path.read_bytes()) if use_replacements and not no_replace
+                else len(_ADAPTER_BODIES[1])).encode("ascii"),
+        ]
+        assert inputs._candidate_adapter_hashes(root, sha) == expected
+
+
+@pytest.mark.parametrize("replacement_kind", ("empty", "oversized", "tree"))
+def test_candidate_adapter_metadata_refuses_ineligible_effective_replacement_before_bodies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replacement_kind: str,
+) -> None:
+    root, sha, identities = _adapter_repository(tmp_path)
+    monkeypatch.delenv("GIT_NO_REPLACE_OBJECTS", raising=False)
+    _git(root, "config", "core.useReplaceRefs", "true")
+    replacement_path = tmp_path / "ineligible.bin"
+    replacement_path.write_bytes(b"" if replacement_kind == "empty" else b"x" * 1_048_577)
+    replacement = (_git(root, "rev-parse", f"{sha}^{{tree}}") if replacement_kind == "tree"
+                   else _git(root, "hash-object", "-w", str(replacement_path)))
+    _git(root, "replace", "-f", identities[1], replacement)
+    native_git = receipt_owner._git
+    bodies: list[str] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        if arguments[:2] == ("cat-file", "blob"):
+            bodies.append(arguments[-1])
+        return native_git(repository, *arguments, input_bytes=input_bytes)
+
+    monkeypatch.setattr(receipt_owner, "_git", recorded)
+    with pytest.raises(ValueError, match="candidate provenance adapter blob"):
+        inputs._candidate_adapter_hashes(root, sha)
+    assert bodies == []
+
+
+@pytest.mark.parametrize("batch_fault", (
+    "missing", "ambiguous", "empty", "missing-row", "extra-row", "duplicate-row",
+    "unexpected-oid", "reordered", "wrong-type", "invalid-size", "negative-size",
+    "zero-size", "oversized", "signed-size", "spaced-size", "nul", "non-ascii",
+    "unterminated", "crlf", "failure",
+))
+def test_candidate_adapter_metadata_refuses_invalid_complete_response_before_bodies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, batch_fault: str,
+) -> None:
+    root, sha, identities = _adapter_repository(tmp_path)
+    native_git = receipt_owner._git
+    valid = native_git(
+        root, "cat-file", "--batch-check", input_bytes=("\n".join(identities) + "\n").encode("ascii"),
+    )
+    first, second = valid.splitlines()
+    fields = second.split(b" ")
+    alternate_size = {
+        "invalid-size": b"NaN", "negative-size": b"-1", "zero-size": b"0",
+        "oversized": b"1048577", "signed-size": b"+17", "spaced-size": b" 17",
+    }
+    replacement_row = {
+        "missing": fields[0] + b" missing", "ambiguous": fields[0] + b" ambiguous",
+        "duplicate-row": first, "unexpected-oid": b"0" * 40 + b" blob 17",
+        "wrong-type": fields[0] + b" tree " + fields[2],
+        "nul": second + b"\x00", "non-ascii": second + b"\xff",
+    }.get(batch_fault, b" ".join((*fields[:2], alternate_size.get(batch_fault, fields[2]))))
+    response = first + b"\n" + replacement_row + b"\n"
+    if batch_fault == "empty":
+        response = b""
+    elif batch_fault == "missing-row":
+        response = first + b"\n"
+    elif batch_fault == "extra-row":
+        response += second + b"\n"
+    elif batch_fault == "reordered":
+        response = second + b"\n" + first + b"\n"
+    elif batch_fault == "unterminated":
+        response = response[:-1]
+    elif batch_fault == "crlf":
+        response = response.replace(b"\n", b"\r\n")
+    bodies: list[str] = []
+
+    def substituted(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        if arguments == ("cat-file", "--batch-check"):
+            assert input_bytes == ("\n".join(identities) + "\n").encode("ascii")
+            if batch_fault == "failure":
+                raise OSError("native metadata unavailable")
+            return response
+        if arguments[:2] == ("cat-file", "blob"):
+            bodies.append(arguments[-1])
+        return native_git(repository, *arguments, input_bytes=input_bytes)
+
+    monkeypatch.setattr(receipt_owner, "_git", substituted)
+    with pytest.raises(ValueError, match="candidate provenance adapter blob"):
+        inputs._candidate_adapter_hashes(root, sha)
+    assert bodies == []
+
+
+@pytest.mark.parametrize("tree_fault", ("missing", "duplicate", "unexpected", "bad-oid", "bad-mode"))
+def test_candidate_adapter_metadata_validates_all_tree_entries_before_any_metadata_or_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tree_fault: str,
+) -> None:
+    root, sha, _identities = _adapter_repository(tmp_path)
+    native_git = receipt_owner._git
+    first, second, _terminal = native_git(
+        root, "ls-tree", "-z", sha, "--", *_ADAPTER_FILES,
+    ).split(b"\x00")
+    if tree_fault == "missing":
+        response = first + b"\x00"
+    elif tree_fault == "duplicate":
+        response = first + b"\x00" + first + b"\x00"
+    elif tree_fault == "unexpected":
+        response = first + b"\x00" + second.replace(b"stream_command.py", b"unreviewed.py") + b"\x00"
+    elif tree_fault == "bad-oid":
+        response = first + b"\x00" + second.replace(second.split()[2], b"f" * 39) + b"\x00"
+    else:
+        response = first + b"\x00" + second.replace(b"100755", b"120000") + b"\x00"
+    reads: list[tuple[str, ...]] = []
+
+    def substituted(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        if arguments[0] == "ls-tree":
+            return response
+        reads.append(arguments)
+        return native_git(repository, *arguments, input_bytes=input_bytes)
+
+    monkeypatch.setattr(receipt_owner, "_git", substituted)
+    with pytest.raises(ValueError, match="candidate provenance adapter blob"):
+        inputs._candidate_adapter_hashes(root, sha)
+    assert reads == []
+
+
+def test_candidate_adapter_metadata_keeps_exact_sha1_candidate_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, sha, _identities = _adapter_repository(tmp_path, object_format="sha256")
+    assert len(sha) == 64
+
+    def refused(_repository: Path, *_arguments: str, input_bytes: bytes | None = None) -> bytes:
+        pytest.fail("ineligible candidate reached native Git")
+
+    monkeypatch.setattr(receipt_owner, "_git", refused)
     with pytest.raises(ValueError, match="candidate provenance adapter blob"):
         inputs._candidate_adapter_hashes(root, sha)
 
