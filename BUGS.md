@@ -4,6 +4,11 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-20 - Focused source acceptance hid actionable CI repair preconditions
+
+A clean-source handoff stopped at capacity while three native CI families still lacked repair receipts. The stop hook continued S98.4; the native push guard refused before transport. Its first repair-owned311 replay retains87FAIL/1932PASS, mostly a fresh package import from the observer into kill_owned_gate, plus source handoff-token and Make declaration-spacing failures. Ordinary warmed pytest imports had hidden the transitive boundary. Preserve that native failure and every original assertion; root repairs the two source-format inputs and codifies the existing guarded repair path in AGENTS.md and the mandatory Make guide, while the isolated source owner adds fresh package/flat controls and the explicit sibling binding. Exact source, counts, command policy, evidence path and remaining312/WebKit/full-gate/hosted/deployment obligations are in RELEASE_PROOF_THROUGHPUT.md. All19release records remain open; capacity and source focus never create a repair receipt.
+
+
 ### 2026-10-20 - Ranged text edits masked errors and changed executable mode
 
 The native replace-lines wrapper returned zero after a missing-input/range failure because it still moved the temporary copy and cleared the trap. A valid edit also replaced executable permissions with mode 0600. Five confined cases reproduce those failures and Make/shell evaluation before repair. Local failure handling, metadata-preserving copy and literal carriers retain the same native helper, adjacent publication and all original assertions. Complete editor, contract and environment owners pass 65 cases. Native failures, exact receipts, the real example and the long-lived user report are versioned in RELEASE_PROOF_THROUGHPUT.md. No release task is closed by source acceptance.

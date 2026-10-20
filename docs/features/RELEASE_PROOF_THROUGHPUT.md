@@ -15,6 +15,52 @@ Reuse the existing Make owners, failure-promotion manifest, CI failure ledger,
 readiness checker, and observed gate. No additional scanner, runner, daemon,
 dependency resolver, or proof cache is introduced.
 
+## Repair-owned development evidence before an environment-only handoff (2026-10-20)
+
+The stop challenge correctly continued S98.4 after a clean-source handoff.
+Capacity still blocks final release proof, but it does not excuse missing
+repair-owned evidence for an otherwise permitted development repair push.
+Native work-item status retains S98.4, release_ready=false and gate_evidence=false.
+The existing batch-push guard freshly verifies ahead159/behind0 at immutable
+1fd5fda8241346c41e7c5d9a3348a8473c3df439, then refuses three open families:
+Pages WebKit family=89b7005f13dc5d2675e9addd2b900acb1581eb681467db7bc5a3e45ceb8e9f4d,
+Python3.12 gate family=ce0164d707f6d521ab1269146bd7541dee47e0ad74355556f785c3f0ad9936e2,
+and Python3.11 gate family=cf5b089df8ad5c0921ed70ee9d01916f40baeacd98f086caf110f7f139404596.
+No transport occurs and no hosted success is inferred.
+
+Use ci-failure-status to select each actual full family and ci-failure-repair
+to execute its first evidence in the exact clean descendant checkout.
+The repair owner accepts a plain public Make evidence target; an underscore
+target is rejected before a child or receipt exists. For the actual workflow's
+internal runtime admission, select run-watched and put its unchanged
+make _pytest-runtime-compatibility-admission command in the quoted CMD evidence
+variable. Preserve original90s total/60s quiet, three2/1/1 children, release/0/16/1,
+fatal warnings, installed selected runtime and all original checks.
+The existing CI_FAILURE_LEDGER feature documents exact selection/argv and
+fresh-checkout/fingerprint authority. Do not use collection, a plan, another
+family's focused test or a default all-open selection as repair proof.
+
+The first repair-owned311 execution on1fd5fda records87FAIL/1932PASS59.80s,
+observed rc2/62.9s; no receipt is issued. Immutable native evidence:
+.gate-logs/observed/v012-runtime-repair311/v012-repair311-1fd5fda-20261020.log.
+Most failures share pipeline_status -> active_work_status -> kill_owned_gate's
+bare resource_arbiter import in a fresh package process. Ordinary warmed pytest
+imports hid that boundary. Two other actual inputs are a handoff hash joined
+to its prefix (the legacy reader instead selects a numeric gate timestamp)
+and adjacent target-specific declarations violating original blank-line syntax.
+Root retains every original assertion, separates all four declarations without
+changing UV/MAKEFLAGS values and exposes the existing source hash as a token.
+All48 original syntax/parser/guide/session cases pass2.97s; contracts268 and
+unique targets1174/0duplicates pass. Original runtime failure remains retained.
+
+The isolated source owner adds fresh package/flat native observer coverage and
+repairs only the proven sibling binding. Root integrates its accepted source
+before another repair-owned311 execution;312 needs its own actual installed
+runtime and WebKit its actual browser owner. These remain missing proofs,
+alongside final capacity admission, full gate, exact-SHA CI and deployment.
+All19release records stay open. The mandatory guide and AGENTS.md now expose
+this existing guarded route so a smaller model does not stop at source receipts.
+
 ## Model-independent release operating path (2026-10-20)
 
 The mandatory [.agents Make guide](../../.agents/policy/key-make-targets.md)

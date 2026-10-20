@@ -97,6 +97,17 @@ Use existing pipeline-status/ci-await owners for generated current CI evidence;
 select their full variables from the contract. Do not manually edit observation
 JSON or repeatedly poll status in place of repairing a known failure.
 
+A development repair push has its own native CI failure guard. Even when disk
+blocks final release proof, inspect actual open families with ci-failure-status,
+then run their first evidence through ci-failure-repair in the exact clean
+descendant checkout. Select explicit full families and evidence matching their
+actual failures. For a workflow's internal target, use public run-watched as the
+evidence target and its unchanged Make command as the quoted CMD evidence
+variable; preserve original timeout, worker and runtime policy. Read
+[the native repair workflow](../../docs/features/CI_FAILURE_LEDGER.md#repair-workflow)
+for every required argument. A local repair receipt can permit a development
+push; it does not supply hosted success, deployment acceptance or release proof.
+
 ### Commit, integrate and promote through their owners
 
 `make agent-worktree-dev BRANCH=feature-name` creates an isolated branch from
