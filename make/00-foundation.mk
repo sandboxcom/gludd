@@ -855,6 +855,7 @@ help:
 		"" \
 		"  --- CI ---" \
 		"  ci-kill-zombie          cancel a CI run via gh run cancel" \
+		"  ci-job-log             tail one job with native client failures fatal (RUN, JOB, CI_JOB_LOG_VALIDATE_ONLY=0|1)" \
 		"  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN, BEFORE, AFTER, MAX_MATCHES)" \
 		"  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" \
 		"  ci-artifact-context     bounded context from one downloaded exact-run artifact (RUN, ARTIFACT, CI_ARTIFACT_FILE, PATTERN, BEFORE, AFTER, MAX_MATCHES, CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)" \

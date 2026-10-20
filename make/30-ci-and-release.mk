@@ -1110,12 +1110,25 @@ ci-watch:
 # last 400 lines, since -v pytest output across a 30-min hang can be huge) so
 # we can see the LAST thing that printed before the job was cut off.
 # Usage: make ci-job-log RUN=<run-id> JOB=<job-name-substring>
+CI_JOB_LOG_VALIDATE_ONLY ?= 0
 ci-job-log:
-	@if [ -z "$(RUN)" ] || [ -z "$(JOB)" ]; then echo "Usage: make ci-job-log RUN=<run-id> JOB=<job-name-substring>"; exit 1; fi
-	@JID=$$(gh run view -R sandboxcom/gludd $(RUN) --json jobs --jq ".jobs[] | select(.name | contains(\"$(JOB)\")) | .databaseId" | head -1); \
-	if [ -z "$$JID" ]; then echo "no job matching '$(JOB)' found in run $(RUN)"; exit 1; fi; \
+	@case "$(RUN)" in ''|*[!0-9]*) echo "RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@[ -n "$(JOB)" ] || { echo "Usage: make ci-job-log RUN=<run-id> JOB=<job-name-substring>"; exit 2; }
+	@case "$(CI_JOB_LOG_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_JOB_LOG_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@if [ "$(CI_JOB_LOG_VALIDATE_ONLY)" = 1 ]; then echo "CI-JOB-LOG VALIDATED run=$(RUN) job=$(JOB) tail_lines=400 release_ready=false gate_evidence=false"; exit 0; fi; \
+	JID=$$(gh run view -R sandboxcom/gludd "$(RUN)" --json jobs --jq "first(.jobs[] | select(.name | contains(\"$(JOB)\"))) | .databaseId // empty"); \
+	LOOKUP_RC=$$?; if [ "$$LOOKUP_RC" -ne 0 ]; then echo "ci-job-log: job lookup failed rc=$$LOOKUP_RC"; exit "$$LOOKUP_RC"; fi; \
+	case "$$JID" in ''|*[!0-9]*) echo "no valid job matching '$(JOB)' found in run $(RUN)"; exit 1 ;; esac; \
+	RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )" || exit $$?; \
+	mkdir -p "$$RESOURCE_ROOT" || exit $$?; \
+	LOG=$$(mktemp "$$RESOURCE_ROOT/ci-job-log-$(RUN)-$$JID.XXXXXX") || exit $$?; \
+	trap 'rm -f "$$LOG"' EXIT INT TERM; \
 	echo "--- job id: $$JID ---"; \
-	gh run view -R sandboxcom/gludd --log --job=$$JID 2>&1 | tail -400 || echo "ci-job-log-failed"
+	gh run view -R sandboxcom/gludd --log --job=$$JID > "$$LOG" 2>&1; LOG_RC=$$?; \
+	tail -400 "$$LOG"; TAIL_RC=$$?; \
+	if [ "$$LOG_RC" -ne 0 ]; then echo "ci-job-log: native log fetch failed rc=$$LOG_RC; use ci-job-failure-context for a completed job in an active workflow"; exit "$$LOG_RC"; fi; \
+	if [ "$$TAIL_RC" -ne 0 ]; then exit "$$TAIL_RC"; fi; \
+	if [ ! -s "$$LOG" ]; then echo "ci-job-log: downloaded log is empty"; exit 1; fi
 
 CI_JOB_CONTEXT_VALIDATE_ONLY ?= 0
 ci-job-failure-context:

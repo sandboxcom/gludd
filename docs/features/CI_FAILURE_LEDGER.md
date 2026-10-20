@@ -172,6 +172,42 @@ log, missing literal pattern, invalid numeric bound, or run/job mismatch fails
 closed. `BEFORE`, `AFTER`, and `MAX_MATCHES` bound output without silently
 discarding later independent failure batches.
 
+### Legacy tail status is evidence about retrieval — 2026-10-20
+
+While Pages39511340719 still had an active sibling, the old ci-job-log shortcut
+prints the client's unavailable-log message but returns0: tail and a fallback
+echo mask the native failure. The exact numeric job-context owner retrieves the
+completed WebKit job118932830925 and exposes cold5.614s against5. These are
+separate retrieval and product outcomes; a successful log fetch never makes the
+job green.
+
+The existing shortcut now preserves metadata and log-client exit codes, rejects
+empty/malformed job identities and empty downloads, and retains its original
+400-line tail. Metadata selection uses the maintained client's first-match jq
+filter without an exit-masking shell pipeline. An owned temporary under the
+existing resource namespace is removed on every exit; native errors remain
+visible. CI_JOB_LOG_VALIDATE_ONLY=1 is an offline plan;0 retains actual retrieval.
+The help/contract example is `make ci-job-log RUN=1 JOB=gate
+CI_JOB_LOG_VALIDATE_ONLY=1`.
+
+All eight new native controls first produce6FAIL/2PASS. The intermediate whole
+owner passes102 but correctly rejects the missing help entry; preserve
+/tmp/gludd-v012-ci-job-log-status-green.xml as failed history. After wiring help,
+all103 native status, exact-job binding, hosted-tooling, fixture and Make-guide
+cases pass11.55s with fatal warnings. Ruff/strict and269target contracts pass;
+the offline example remains mutation free. Actual terminal retrieval for the
+same WebKit job returns0 and the original400-line tail. This proves retrieval,
+not repaired readiness or a green canonical gate.
+
+The [maintained CLI manual](https://cli.github.com/manual/gh_run_view) documents
+ZIP-log association limits and its per-job API fallback. The long-lived
+[CLI user report4575](https://github.com/cli/cli/issues/4575), already retained in
+practitioner findings, describes waiting for siblings. Keep using the existing
+exact-job API context owner for that boundary. PATTERN selects actual raw log
+text, such as FAILED or an assertion message; a workflow display-step label can
+be absent from that raw payload. Use native pipeline-status/ci-await for CI
+readiness and preserve immutable failed run/SHA evidence.
+
 ### Exact job ownership without a run inventory lookup
 
 `ci-job-failure-context` resolves the supplied numeric `JOB` through

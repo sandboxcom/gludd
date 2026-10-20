@@ -129,6 +129,14 @@ historical green output as current proof.
 Use existing pipeline-status/ci-await owners for generated current CI evidence;
 select their full variables from the contract. Do not manually edit observation
 JSON or repeatedly poll status in place of repairing a known failure.
+For a completed job whose sibling is still running, use ci-job-failure-context
+with its exact numeric run/job binding and a raw assertion pattern. Its contract
+example sets RUN=1 JOB=1 PATTERN=FAILED BEFORE=2 AFTER=4 MAX_MATCHES=5
+CI_JOB_CONTEXT_VALIDATE_ONLY=1; actual mode0 fetches the authenticated job log.
+PATTERN matches raw text, which can omit workflow display-step labels. The
+legacy400-line ci-job-log shortcut now preserves native retrieval errors; its
+safe offline example is make ci-job-log RUN=1 JOB=gate
+CI_JOB_LOG_VALIDATE_ONLY=1. Retrieval success grants no CI or release proof.
 
 A development repair push has its own native CI failure guard. Its existing
 publication admission first verifies the exact pinned EE manifest through

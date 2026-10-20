@@ -636,6 +636,15 @@
       "behavior": "make replay-codex-file-changes CODEX_REPLAY_DB=/tmp/gludd-codex-history.sqlite CODEX_REPLAY_RECORDED_REPO=. CODEX_REPLAY_THREAD_ID=00000000-0000-0000-0000-000000000000 CODEX_REPLAY_START=1 CODEX_REPLAY_END=1 CODEX_REPLAY_APPLY=0 CODEX_REPLAY_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-job-log",
+      "make_variables": [
+        "RUN",
+        "JOB",
+        "CI_JOB_LOG_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-job-log RUN=1 JOB=gate CI_JOB_LOG_VALIDATE_ONLY=1"
+    },
+    {
       "name": "ci-job-failure-context",
       "make_variables": [
         "RUN",
