@@ -1679,6 +1679,34 @@ def _assert_complete_early_runtime_cohort(
     assert payload["full_gate_required"] is True
 
 
+def test_presentation_manifest_failure_executes_in_existing_early_owner() -> None:
+    """A missing native child manifest must fail before costly browser acceptance."""
+    node = (
+        "tests/unit/test_presentation_browser_runner.py::"
+        "test_javascript_viewport_child_reads_the_actual_producer_manifest"
+    )
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    family = next(
+        (item for item in payload["families"] if item["id"] == "presentation-js-coverage-child-manifest"),
+        None,
+    )
+    assert family == {
+        "id": "presentation-js-coverage-child-manifest",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    assert node in executable
+    assert executable.count("test-files") == 3
+    assert 'NPROC=2 GLUDD_XDIST_WORKERS=2 PYTEST_ARGS="-W error -q -n 2 --maxprocesses 2 ' in executable
+    phases = payload["runtime_contract"]["phases"]
+    assert len(phases) == 21 and sum(phase["max_seconds"] for phase in phases) == 2850
+    assert payload["full_gate_required"] is True
+
+
 def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
 
@@ -1797,6 +1825,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "selected-profile-jsonpointer-composition",
         "ordinary-descendant-symlink-unlink",
         "native-setuid-input-realization",
+        "presentation-js-coverage-child-manifest",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2044,7 +2073,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_observer_retention_concurrency.py "
         "tests/unit/test_ci_collect_all_stress.py "
         "tests/unit/test_admission_cold_start_selection.py::"
-        'test_real_admission_filters_only_never_selected_main_siblings"' in runtime_compatibility_owner
+        "test_real_admission_filters_only_never_selected_main_siblings "
+        "tests/unit/test_presentation_browser_runner.py::"
+        'test_javascript_viewport_child_reads_the_actual_producer_manifest"' in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
     assert "-n 0" in runtime_compatibility_owner
@@ -2124,7 +2155,7 @@ def test_profile_composition_failure_has_one_exact_native_admission_family() -> 
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
     assert payload["families"][110] == expected
-    assert len(payload["families"]) == 113
+    assert len(payload["families"]) == 114
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     assert owner.count(expected["node"]) == 1
 
@@ -2143,7 +2174,7 @@ def test_ordinary_descendant_links_have_one_exact_native_admission_family() -> N
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
     assert payload["families"][111] == expected
-    assert len(payload["families"]) == 113
+    assert len(payload["families"]) == 114
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     first_files = owner.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert first_files.count("tests/unit/test_clean_stale_resource_namespaces.py") == 1
@@ -2165,7 +2196,7 @@ def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None
         "full_gate_phase": "test",
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
-    assert len(payload["families"]) == 113 and payload["families"][112] == expected
+    assert len(payload["families"]) == 114 and payload["families"][112] == expected
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     arguments = re.findall(r'TESTFILES="([^"]*)"', owner)
     assert len(arguments) == 3 and arguments[0].split()[0] == expected["node"]

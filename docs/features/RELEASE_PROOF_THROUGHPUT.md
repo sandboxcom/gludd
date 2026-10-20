@@ -176,6 +176,116 @@ passes34/4.67s, no skips. The earlier101PASS/1schemaFAIL remains in
 Real protected WebKit, ChromiumJS0/JS1-c8,312repair, full gate, hosted exact-SHA,
 deployment and promotion remain missing. All release records remain open.
 
+## Receiving-checkout browser coverage repair (2026-10-20)
+
+The native repair-owned WebKit replay on clean156eb240db478515d5106fa976e42ee58de2df86
+passes23desktop/312.10s and1compact/43.58s, observed362.52s/rc0.
+Cold1.727s/cached1.421s remain below5. The ledger records only its selected
+family locally repaired. Native log:
+.gate-logs/observed/presentation-browser-webkit/20261020T214148Z-114-6368b67b.log.
+The same clean source passes ChromiumJS0:23desktop/312.94s,1compact/44.48s,
+native365.8s/rc0; cold1.510s/cached1.292s. Native log:
+.gate-logs/observed/presentation-browser-chromium/20261020T214803Z-5768-ead36536.log.
+
+Fresh JS1 instead retains23setupERROR/3.30s, native5.5s/rc1; compact and c8
+never execute. Log:
+.gate-logs/observed/presentation-browser-chromium/20261020T215418Z-24992-f5679d49.log.
+The real producer writes chromium/javascript-coverage/source.json; the viewport
+child incorrectly derives it from BrowserPlan.output_root.parent. Root changes
+that single runtime path to the same output_root used by the producer. No controller,
+browser assertion, collector behavior, dependency, watchdog or timeout changes.
+The final native docstring owner exposes nine missing public API descriptions;
+source documentation now names existing CDP/source/lifecycle contracts without
+changing those operations. Original assertions remain unchanged.
+Four real Python-child controls cover both viewports with JS0/JS1, actual producer
+JSON, source hash, paths containing spaces and inherited stale carriers:
+tests-only2FAIL/2PASS1.27s precedes4PASS. RED XML:
+/tmp/gludd-v012-js-manifest-routing-red.xml.
+
+Immutable50c85a846c2ef591ac8379cd215de59f8adb0e4e contains original JavaScript
+runner controls absent from receiving156eb24. Root recovers their complete block
+into tests/unit/test_presentation_javascript_runner.py; original controller,
+witness, raw/normalized parity, threshold and failure/order assertions remain.
+Only fake browser supervision seams and fixture output shape conform to the
+current native owner; its outer600s assertion is retained at that owner and
+the existing610s child fallback is checked separately. Existing runner strict
+typing also receives direct public types, TypedDict inputs and typed callbacks;
+all original runtime assertions remain. No suppression or Any is added.
+
+Retain initial2fixtureFAIL/278PASS11.97s and failed coverage2FAIL/278PASS17.30s.
+Correct complete six-owner311 coverage passes280/18.35s, native20.3s/rc0,
+whole two-file96.3line/90.3branch; runner95.9/89.6 and conftest100/100 satisfy
+unchanged85aggregate/75each. Audit:.gate-logs/coverage-20261020T220133Z.json.
+The same complete312 owners pass280/13.18s,0skip. Exact focused312 XML:
+/tmp/gludd-v012-js-manifest-recovered-final312.xml.
+After final type-only fixture conformance, the documented browser scope passes
+224 cases on311/16.57s and312/12.79s. The larger earlier280-case scope additionally
+includes the complete57-case fixture-collision owner instead of its single
+repository node. Current native coverage again measures96.3line/90.3branch,
+runner95.9/89.6 and conftest100/100, audit
+.gate-logs/coverage-20261020T221227Z.json; observed18.5s/rc0.
+Current312 XML:/tmp/gludd-v012-browser-receiving-final312.xml.
+After the public docstrings conform, current311 coverage passes224/16.72s,
+observed18.7s/rc0, at96.4line/90.3branch; runner96.0/89.6 and conftest100/100.
+Audit:.gate-logs/coverage-20261020T221409Z.json. Ruff, strict four-file typing and
+native docstrings pass. The complete original session/objective/guide/collision
+owners pass103/6.91s, XML:/tmp/gludd-v012-receiving-guide-session-final.xml.
+Native failure mapping114+two structural controls, contracts268,1174targets/zero
+duplicates,264resource owners and all seven Markdown files pass. The documented
+integration-admission example validates all21phases/2850s only; it is not gate proof.
+
+The existing early runtime owner now selects the cheap four-case native manifest
+node in its original first child. Mapping/roster tests fail2 first; all original
+exact roster/count assertions conform to one additional family without removing
+any selector, safety assertion or original family. Intermediate missing-recipe
+7FAIL/139PASS and stale schema5FAIL/141PASS remain failed evidence.
+The complete promotion/Make-audit/syntax/contract owners then pass146/8.54s,
+XML:/tmp/gludd-v012-js-manifest-admission-routing-final-complete.xml.
+Current114families retain the original113, three2/1/1 children,90total/60quiet,
+21phases/2850ceiling and mandatory full gate. The Make guide now requires
+receiving-checkout whole-owner/coverage acceptance and describes the actual
+diagnostic PYTEST_ADDOPTS child-plugin pitfall. Existing enforcement remains.
+
+## Accepted bounded candidate-adapter metadata enhancement (2026-10-20)
+
+Root independently inspects exact edc52adff1ac14481bc69be25f4d717656b86ec7,
+two files only, before integration. It reuses ordinary native Git batch-check
+metadata for the two candidate blobs, validates all paths and complete ordered
+metadata before bodies, and retains both binary body reads/content hashes,
+replacement/configuration views and independent freshness/signature fences.
+[Git's native manual](https://git-scm.com/docs/git-cat-file) and
+[the maintainer's2021 replacement fix](https://git.powerel.org/kernel/git/commit/5c5b29b459dd6e169c9114910adca9203532f7d7)
+support ordinary-input parity; the long-lived
+[community discussion](https://stackoverflow.com/questions/1595631/how-to-get-a-list-of-all-blobs-in-a-repository-in-git/70162248)
+is discovery context. Native replacement fixtures provide application evidence.
+
+Real failing-first call-count controls prove5-to4 launches per fresh operation,
+including shared OIDs. Complete380PASS/317.44s, native319.4s/rc0, whole producer
+95.4line/89.6branch, Ruff/strict and fresh127572/127596collection/0errors pass.
+The initial1FAIL/379PASS was the caller's inherited diagnostic -n flag in an
+intentionally plugin-isolated child; removing only that input passes the same
+original assertion. The failed native log and exact changed input remain in
+/tmp/gludd-v012-adapter-metadata-batch-report.md.
+The three-control source profile records551subprocess/271receipt-Git calls
+versus the earlier Main560/280, but cumulative time rises8.228s versus4.543s
+and executing runtimes differ. No latency, deadline-clearance or hosted gain
+is claimed. Actual original31290/60 repair remains required after integration.
+No release checkbox, full gate, hosted exact-SHA or deployment proof is supplied.
+
+## Bounded current handoff with immutable history (2026-10-20)
+
+The mandatory SESSION.md had reached2498 lines with superseded objectives and
+historical Next Steps mixed into the current release handoff. Root replaces it
+with a short current-source/owner/evidence/blocker/action record. Its entire prior
+body remains verbatim at156eb240db478515d5106fa976e42ee58de2df86, retrievable by the
+copyable native git-show-file-to command in SESSION. TASKS and native milestone
+owners retain outstanding work; historical records grant no current success.
+No generated observation, stop condition, coverage floor or retained proof changes.
+Original session-persistence/objective tests remain the verification owners and
+pass in the complete103-case cohort above. The current TASKS preamble now names
+seven native milestone items and labels older19-item source counts as history;
+no checkbox or status is changed.
+
 ## Model-independent release operating path (2026-10-20)
 
 The mandatory [.agents Make guide](../../.agents/policy/key-make-targets.md)

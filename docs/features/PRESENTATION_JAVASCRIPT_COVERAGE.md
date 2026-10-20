@@ -38,14 +38,14 @@ reduced floors are allowed. JSON, summary, LCOV and visible text reports remain.
 All work runs through Make. The safe default example is:
 
 ```text
-make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=600 PRESENTATION_BROWSER_JS_COVERAGE=0
+make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=600 PRESENTATION_BROWSER_JS_COVERAGE=0 OBSERVED_ROOT=/tmp/gludd-presentation-observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=1200 OBSERVED_RETAIN_RUNS=20
 ```
 
 Run the original two-engine acceptance with VALIDATE_ONLY=0 and JS_COVERAGE=0.
 Then request the separate Chromium measurement:
 
 ```text
-make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=0 PRESENTATION_BROWSER_ENGINES=chromium PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser-js PRESENTATION_BROWSER_TIMEOUT=600 PRESENTATION_BROWSER_JS_COVERAGE=1
+make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=0 PRESENTATION_BROWSER_ENGINES=chromium PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser-js PRESENTATION_BROWSER_TIMEOUT=600 PRESENTATION_BROWSER_JS_COVERAGE=1 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=1200 OBSERVED_RETAIN_RUNS=20
 ```
 
 JS_COVERAGE=1 with WebKit refuses explicitly. Default0 clears inherited coverage
@@ -64,6 +64,37 @@ records the actual browser version. Dirty source acceptance is never relabeled
 as a committed-SHA release receipt.
 
 
+## Receiving checkout: actual producer manifest and recovered original controls
+
+On clean156eb240d both original JS0 engines pass their complete23desktop+1compact
+lanes. Fresh JS1 fails23setups/5.5native seconds before any c8 report: the viewport
+consumer looks one directory above the manifest the producer actually creates.
+The native source manifest retains complete controller
+b8da13d77eee1e5dcc41c88286a5fc5e7e9490daa1f072727d861b6373b8c661,
+clean156eb240db478515d5106fa976e42ee58de2df86, Node26.0.0/c8 12.0.0,
+Playwright1.63.0 and Python3.12.15. Preserve that failed output and native log;
+no coverage metric is produced by it.
+
+Root aligns the child with BrowserPlan.output_root/javascript-coverage. Four
+real child-process cases first fail2/pass2, then consume the actual producer JSON
+and source digest for both viewports; JS0 clears inherited stale carriers.
+Original JavaScript runner tests from immutable50c85a846c2ef591ac8379cd215de59f8adb0e4e
+are recovered into tests/unit/test_presentation_javascript_runner.py. Keep that
+complete owner in the Python coverage recipe below. Existing supervisor policy
+remains600s external/610s child fallback, with original assertions retained at
+the correct owner. No source omission, synthesized ranges, new collector or
+weaker floor is introduced.
+
+Complete six-owner311 coverage passes280cases, aggregate96.3line/90.3branch,
+runner95.9/89.6 and whole conftest100/100. Native audit:
+.gate-logs/coverage-20261020T220133Z.json. Complete312 acceptance passes280/13.18s.
+The cheap manifest control is promoted into the original early owner as family
+presentation-js-coverage-child-manifest:114families, unchanged three2/1/1 children,
+90/60 and full-gate requirement. Original failures and exact follow-up proof are
+recorded in [release throughput](RELEASE_PROOF_THROUGHPUT.md#receiving-checkout-browser-coverage-repair-2026-10-20).
+These source receipts do not supply the still-required fresh committed JS1/CDP/c8,
+full gate, exact-SHA hosted CI, deployment or release proof.
+
 ## Python runner and fixture coverage
 
 The versioned config/coverage_presentation_browser.ini is a literal copy of the
@@ -73,13 +104,19 @@ collector and native audit owner. A future agent can use this recipe with its
 registered CI runtime, keeping every target variable explicit:
 
 ```text
-make coverage-files COVERAGE_TESTFILES='tests/unit/test_presentation_browser_runner.py tests/unit/test_presentation_make_targets.py tests/unit/test_pages_presentation_resilience.py tests/unit/test_pytest_param_fixture_collisions.py::test_repository_parameters_do_not_shadow_external_pytest_fixtures tests/unit/test_presentation_browser_coverage_fixture.py -n 0 --maxprocesses 1' COVERAGE_CONFIG=config/coverage_presentation_browser.ini COVERAGE_REPORT=.gate-logs/coverage-presentation-browser.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_presentation_browser_runner.py tests/unit/test_presentation_javascript_runner.py tests/unit/test_presentation_make_targets.py tests/unit/test_pages_presentation_resilience.py tests/unit/test_pytest_param_fixture_collisions.py::test_repository_parameters_do_not_shadow_external_pytest_fixtures tests/unit/test_presentation_browser_coverage_fixture.py -n 0 --maxprocesses 1' COVERAGE_CONFIG=config/coverage_presentation_browser.ini COVERAGE_REPORT=.gate-logs/coverage-presentation-browser.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
 ```
 
-The actual retained runs used the identical external INI at
-/tmp/gludd-v012-pages-js-coverage-python.ini, with explicit registered311/312
-runtime variables and separate JUnit/output names in the command index. Copying
-the config is not a new test run. The new fixture controls exercise real fixture
+Earlier retained runs used the identical external INI at
+/tmp/gludd-v012-pages-js-coverage-python.ini. The current documented recipe uses
+the versioned config directly and passes224 cases on311/16.57s and312/12.79s;
+audit .gate-logs/coverage-20261020T221227Z.json retains96.3line/90.3branch.
+Final public API docstrings then pass the native description owner; current311
+coverage passes224/16.72s, observed18.7s/rc0, with aggregate96.4line/90.3branch,
+runner96.0/89.6 and conftest100/100. Audit:
+.gate-logs/coverage-20261020T221409Z.json. No collector operation changes.
+Registered runtime variables and separate JUnit/output names remain explicit.
+The new fixture controls exercise real fixture
 routing with fake public browser/session boundaries; they are Python coverage
 proof, not installed Chromium/CDP execution.
 

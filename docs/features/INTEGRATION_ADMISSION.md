@@ -14,6 +14,19 @@ that the branch cleared the deterministic, comparatively cheap failure classes
 listed below. Release evidence still requires the normal exact-head gate and
 hosted checks after integration.
 
+## Native coverage-manifest promotion (2026-10-20)
+
+Current114families include the original113 plus
+presentation-js-coverage-child-manifest. Its four cheap real producer/child cases
+run in the original first runtime child and cover both viewports with JS0/JS1,
+actual manifest/source hashes and inherited stale carriers. Two routing/roster
+controls fail before wiring; complete promotion/Make owners pass146/8.54s.
+The original three2/1/1 children,90total/60quiet,21phases/2850ceiling, fatal warnings,
+85/75, ZDD and exact full gate remain mandatory. No real browser, c8, hosted or
+release success is inferred from this source acceptance. Retained failures and
+receiving-checkout coverage are in
+[release throughput](RELEASE_PROOF_THROUGHPUT.md#receiving-checkout-browser-coverage-repair-2026-10-20).
+
 ## Contract
 
 `make integration-admission` runs these existing targets in order and stops on
@@ -462,10 +475,11 @@ listener or daemon, changes no schema or durable runtime state, and launches no
 browser in its static browser phase. All temporary browser paths remain under
 the caller-supplied `/tmp/gludd-*` namespace.
 
-Rollout is additive: branches may adopt the target before entering the existing
-gate queue. Rollback removes the target, promotion manifest and checker,
-contract record, focused tests, and this document; it requires no service
-restart, data migration, or traffic cutover.
+Rollout is additive: branches use the existing admission owner before entering
+the gate queue. Repair the reported input on its owning branch and retain the
+promotion manifest, checker, contract, regression tests and mandatory full gate.
+This control-plane repair requires no service restart, data migration or traffic
+cutover; rollback preserves the same guardrail and proof requirements.
 
 ## Public hook bootstrap index
 

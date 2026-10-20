@@ -950,6 +950,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "presentation-js-coverage-child-manifest",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_presentation_browser_runner.py::test_javascript_viewport_child_reads_the_actual_producer_manifest",
+      "full_gate_phase": "test"
     }
   ]
 }

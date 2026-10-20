@@ -116,6 +116,15 @@ push; it does not supply hosted success, deployment acceptance or release proof.
 
 ### Commit, integrate and promote through their owners
 
+After integration, accept the complete changed owners and registered whole-file
+coverage in the receiving checkout. Source-branch receipts do not prove that an
+overlapping merge retained every test. Compare the tested immutable files through
+make git-show-file-to before repairing an overlap; preserve original cases and
+assertions. Keep diagnostic pytest flags in the selected owner rather than an
+ambient PYTEST_ADDOPTS inherited by deliberately plugin-isolated fixture children.
+The coverage-files owner is already serial. A refused edit must be repaired before
+starting its dependent verification; native nonzero status remains authoritative.
+
 `make agent-worktree-dev BRANCH=feature-name` creates an isolated branch from
 development. For a bounded source repair, use
 `make ship-commit-files FILES='explicit paths' MSG='one tested change' PUSH=0`;

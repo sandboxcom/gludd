@@ -372,16 +372,26 @@ class CoverageSession(Protocol):
         self,
         method: str,
         params: dict[str, object] | None = None,
-    ) -> dict[str, object]: ...
+    ) -> dict[str, object]:
+        """Send one public CDP method and return its native response."""
+        ...
 
 
 class CoveragePage(Protocol):
+    """Expose the public page context needed for lifecycle snapshots."""
+
     @property
-    def context(self) -> object: ...
+    def context(self) -> object:
+        """Return the context whose close boundary must retain coverage."""
+        ...
 
 
 class CoverageSnapshots(Protocol):
-    def snapshot(self, reason: str) -> None: ...
+    """Expose snapshots without coupling lifecycle wrapping to a collector."""
+
+    def snapshot(self, reason: str) -> None:
+        """Retain execution evidence before the named lifecycle boundary."""
+        ...
 
 
 class JavaScriptCoverageCollector:
@@ -396,6 +406,7 @@ class JavaScriptCoverageCollector:
         output_root: Path,
         test_id: str,
     ) -> None:
+        """Bind one test's native session to its exact source and artifact root."""
         self.session = session
         self.source_path = source_path
         self.expected_sha256 = expected_sha256
@@ -407,6 +418,7 @@ class JavaScriptCoverageCollector:
         self.finished = False
 
     def start(self) -> None:
+        """Verify source identity and begin detailed native execution coverage."""
         _verified_source(self.source_path, self.expected_sha256)
         for directory in ("raw", "normalized"):
             (self.output_root / directory).mkdir(parents=True, exist_ok=True)
@@ -419,6 +431,7 @@ class JavaScriptCoverageCollector:
         self.started = True
 
     def snapshot(self, reason: str) -> None:
+        """Persist native ranges and verified source before a lifecycle change."""
         if self.finished:
             if reason.endswith("close"):
                 return
@@ -467,6 +480,7 @@ class JavaScriptCoverageCollector:
             self.finished = True
 
     def finish(self) -> None:
+        """Retain teardown execution and stop the native profiler once."""
         if self.finished:
             return
         try:
@@ -1114,7 +1128,7 @@ def _execute_viewport_command(plan: BrowserPlan, run: ViewportRun) -> int:
     environment.pop(JS_COVERAGE_DIR_ENV, None)
     environment.pop(JS_COVERAGE_MANIFEST_ENV, None)
     if plan.js_coverage:
-        coverage_dir = Path(plan.output_root).parent / "javascript-coverage"
+        coverage_dir = Path(plan.output_root) / "javascript-coverage"
         environment[JS_COVERAGE_DIR_ENV] = str(coverage_dir)
         environment[JS_COVERAGE_MANIFEST_ENV] = str(coverage_dir / "source.json")
     if run.enforce_viewport:

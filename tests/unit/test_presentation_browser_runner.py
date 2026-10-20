@@ -2,17 +2,31 @@
 
 from __future__ import annotations
 
+import json
 import multiprocessing
 import subprocess
 import sys
 import threading
 import time
 from dataclasses import replace
+from multiprocessing.process import BaseProcess
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import TYPE_CHECKING, TypedDict
 
 import pytest
-from scripts import run_presentation_browser_tests as runner
+
+from general_ludd.util.owned_process import OwnedProcessPolicy, OwnedProcessTimeout
+
+if TYPE_CHECKING:
+    import run_presentation_browser_tests as runner
+else:
+    from scripts import run_presentation_browser_tests as runner
+
+
+class _BrowserRoots(TypedDict):
+    browser_root: Path
+    output_root: Path
 
 
 def _wedge_startup_probe(_plan: runner.BrowserPlan) -> None:
@@ -29,7 +43,7 @@ def _wedge_viewport_command(
     return 0
 
 
-def _owned_probe_children(name: str) -> list[multiprocessing.Process]:
+def _owned_probe_children(name: str) -> list[BaseProcess]:
     return [child for child in multiprocessing.active_children() if child.name == name]
 
 
@@ -233,7 +247,7 @@ def test_timeout_returns_observable_124(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(runner, "probe_browser_runtime", lambda _plan: 0)
 
     def timeout(_plan: runner.BrowserPlan, _run: runner.ViewportRun) -> int:
-        raise runner.OwnedProcessTimeout("owned process deadline exceeded")
+        raise OwnedProcessTimeout("owned process deadline exceeded")
 
     monkeypatch.setattr(runner, "_run_viewport_process", timeout)
 
@@ -253,11 +267,12 @@ def test_run_plan_executes_both_viewports_with_each_process_bounded(
     monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
     monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: None)
     probed: list[runner.BrowserPlan] = []
-    monkeypatch.setattr(
-        runner,
-        "probe_browser_runtime",
-        lambda selected_plan: probed.append(selected_plan) or 0,
-    )
+
+    def probe(selected_plan: runner.BrowserPlan) -> int:
+        probed.append(selected_plan)
+        return 0
+
+    monkeypatch.setattr(runner, "probe_browser_runtime", probe)
     captured: list[tuple[runner.BrowserPlan, runner.ViewportRun]] = []
 
     def complete(
@@ -291,11 +306,12 @@ def test_run_plan_can_focus_one_viewport_without_weakening_the_default(
     monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: None)
     monkeypatch.setattr(runner, "probe_browser_runtime", lambda _plan: 0)
     captured: list[runner.ViewportRun] = []
-    monkeypatch.setattr(
-        runner,
-        "_run_viewport_process",
-        lambda _plan, selected_run: captured.append(selected_run) or 0,
-    )
+
+    def complete_focus(_plan: runner.BrowserPlan, selected_run: runner.ViewportRun) -> int:
+        captured.append(selected_run)
+        return 0
+
+    monkeypatch.setattr(runner, "_run_viewport_process", complete_focus)
 
     assert runner.run_plan(plan, run_label="compact-4x3") == 0
     assert captured == [plan.runs[1]]
@@ -343,6 +359,52 @@ def test_viewport_command_sets_engine_artifacts_and_css_viewport(
     ]
 
 
+@pytest.mark.parametrize("coverage_enabled", (False, True))
+@pytest.mark.parametrize("run_label", runner.RUN_LABELS)
+def test_javascript_viewport_child_reads_the_actual_producer_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, coverage_enabled: bool, run_label: str,
+) -> None:
+    """Both native child lanes consume the real producer output, clearing stale inputs."""
+    plan = runner.build_plan(
+        browser="chromium", browser_root=tmp_path / "browser binaries",
+        output_root=tmp_path / "engine output" / "chromium",
+        timeout_seconds=30, js_coverage=coverage_enabled,
+    )
+    monkeypatch.setenv(runner.JS_COVERAGE_DIR_ENV, "/tmp/gludd-stale-coverage-directory")
+    monkeypatch.setenv(runner.JS_COVERAGE_MANIFEST_ENV, "/tmp/gludd-stale-coverage-manifest")
+    monkeypatch.setattr(runner, "_validate_javascript_coverage_tool", lambda **_kwargs: "12.0.0")
+    monkeypatch.setattr(runner, "_native_source_ref", lambda: {"head": "c" * 40})
+    monkeypatch.setattr(runner, "_javascript_tool_versions", lambda: {})
+    output = Path(plan.output_root) / "javascript-coverage"
+    if coverage_enabled:
+        actual_output, manifest = runner._prepare_javascript_coverage(plan)
+        assert actual_output == output and manifest.is_file()
+    child = tmp_path / "consume_coverage_manifest.py"
+    child.write_text(
+        "import hashlib, json, os, sys\n"
+        "from pathlib import Path\n"
+        "directory_key, manifest_key, expected, enabled = sys.argv[1:]\n"
+        "if enabled == '1':\n"
+        "    assert os.environ[directory_key] == expected\n"
+        "    path = Path(os.environ[manifest_key])\n"
+        "    assert path == Path(expected) / 'source.json'\n"
+        "    payload = json.loads(path.read_text(encoding='utf-8'))\n"
+        "    source = Path(payload['source_path'])\n"
+        "    assert payload['source_sha256'] == hashlib.sha256(source.read_bytes()).hexdigest()\n"
+        "else:\n"
+        "    assert directory_key not in os.environ and manifest_key not in os.environ\n",
+        encoding="utf-8",
+    )
+    lane = next(run for run in plan.runs if run.label == run_label)
+    native_lane = replace(
+        lane, command=(
+            sys.executable, str(child), runner.JS_COVERAGE_DIR_ENV,
+            runner.JS_COVERAGE_MANIFEST_ENV, str(output), "1" if coverage_enabled else "0",
+        ),
+    )
+    assert runner._execute_viewport_command(plan, native_lane) == 0
+
+
 def test_viewport_process_uses_the_shared_owned_supervisor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -371,7 +433,7 @@ def test_viewport_process_uses_the_shared_owned_supervisor(
     assert captured["args"] == (plan, viewport_run)
     assert captured["process_name"] == "gludd-presentation-webkit-compact-4x3"
     policy = captured["policy"]
-    assert isinstance(policy, runner.OwnedProcessPolicy)
+    assert isinstance(policy, OwnedProcessPolicy)
     assert policy.timeout_seconds == 30
     assert policy.shutdown_grace_seconds == 5
 
@@ -396,7 +458,7 @@ def test_viewport_timeout_reaps_the_exact_owned_process(
     monkeypatch.setattr(
         runner,
         "_viewport_process_policy",
-        lambda _plan: runner.OwnedProcessPolicy(
+        lambda _plan: OwnedProcessPolicy(
             timeout_seconds=0.5,
             shutdown_grace_seconds=0.25,
             poll_interval_seconds=0.05,
@@ -405,7 +467,7 @@ def test_viewport_timeout_reaps_the_exact_owned_process(
     )
     started = time.monotonic()
 
-    with pytest.raises(runner.OwnedProcessTimeout, match="deadline exceeded"):
+    with pytest.raises(OwnedProcessTimeout, match="deadline exceeded"):
         runner._run_viewport_process(plan, viewport_run)
 
     assert time.monotonic() - started < 3.0
@@ -457,11 +519,11 @@ def test_browser_install_with_dependencies_uses_the_locked_runtime_and_launch_pr
     binaries: list[runner.BrowserPlan] = []
     launches: list[runner.BrowserPlan] = []
     monkeypatch.setattr(runner, "_require_browser_executable", binaries.append)
-    monkeypatch.setattr(
-        runner,
-        "probe_browser_runtime",
-        lambda selected_plan: launches.append(selected_plan) or 0,
-    )
+    def probe_install(selected_plan: runner.BrowserPlan) -> int:
+        launches.append(selected_plan)
+        return 0
+
+    monkeypatch.setattr(runner, "probe_browser_runtime", probe_install)
     captured: list[tuple[tuple[str, ...], str]] = []
 
     def complete(
@@ -528,7 +590,7 @@ def test_plan_rejects_unbounded_timeout() -> None:
 
 def test_plan_rejects_wrong_browser_and_short_timeout() -> None:
     """The runner cannot silently change engine or drop its lower bound."""
-    common = {
+    common: _BrowserRoots = {
         "browser_root": Path("/tmp/gludd-browser-unit"),
         "output_root": Path("/tmp/gludd-presentation-unit"),
     }
@@ -719,7 +781,7 @@ def test_webkit_probe_timeout_emits_one_typed_macos_root_cause(
     monkeypatch.setattr(runner.sys, "platform", "darwin")
 
     def timeout(_plan: runner.BrowserPlan) -> None:
-        raise runner.OwnedProcessTimeout("owned process deadline exceeded")
+        raise OwnedProcessTimeout("owned process deadline exceeded")
 
     monkeypatch.setattr(runner, "_run_probe_process", timeout)
 
@@ -731,7 +793,7 @@ def test_webkit_probe_timeout_emits_one_typed_macos_root_cause(
         if '"event": "presentation-browser-root-cause"' in line
     ]
     assert len(diagnostics) == 1
-    payload = runner.json.loads(diagnostics[0])
+    payload = json.loads(diagnostics[0])
     assert payload == {
         "action": (
             "Keep the WebKit acceptance red; compare system Safari with "
@@ -838,7 +900,7 @@ def test_probe_process_error_is_one_generic_typed_failure(
 
     diagnostics = capsys.readouterr().err.splitlines()
     assert len(diagnostics) == 1
-    payload = runner.json.loads(diagnostics[0])
+    payload = json.loads(diagnostics[0])
     assert payload["detail"] == "driver failed"
     assert payload["failure_kind"] == "process-error"
     assert payload["reference"] is None
@@ -870,7 +932,7 @@ def test_startup_probe_only_emits_content_free_success_evidence(
     captured = capsys.readouterr()
     assert captured.err == ""
     assert validated == [plan]
-    assert runner.json.loads(captured.out) == {
+    assert json.loads(captured.out) == {
         "browser": "chromium",
         "event": "presentation-browser-startup-probe",
         "exit_code": 0,
@@ -887,7 +949,7 @@ def test_startup_probe_only_emits_content_free_success_evidence(
 @pytest.mark.parametrize(
     ("failure", "expected_kind", "expected_exit"),
     [
-        (runner.OwnedProcessTimeout("private timeout content"), "timeout", 124),
+        (OwnedProcessTimeout("private timeout content"), "timeout", 124),
         (RuntimeError("private driver content"), "process-error", 1),
     ],
 )
@@ -924,7 +986,7 @@ def test_startup_probe_only_failure_evidence_never_echoes_content(
     rendered = captured.out + captured.err
     assert "private timeout content" not in rendered
     assert "private driver content" not in rendered
-    assert runner.json.loads(captured.out) == {
+    assert json.loads(captured.out) == {
         "browser": "webkit",
         "event": "presentation-browser-startup-probe",
         "exit_code": expected_exit,
@@ -957,7 +1019,7 @@ def test_startup_probe_timeout_reaps_the_exact_owned_child(
     monkeypatch.setattr(
         runner,
         "PROBE_PROCESS_POLICY",
-        runner.OwnedProcessPolicy(
+        OwnedProcessPolicy(
             timeout_seconds=0.5,
             shutdown_grace_seconds=0.25,
             poll_interval_seconds=0.05,
@@ -966,7 +1028,7 @@ def test_startup_probe_timeout_reaps_the_exact_owned_child(
     )
     started = time.monotonic()
 
-    with pytest.raises(runner.OwnedProcessTimeout, match="deadline exceeded"):
+    with pytest.raises(OwnedProcessTimeout, match="deadline exceeded"):
         runner._run_probe_process(plan)
 
     assert time.monotonic() - started < 3.0
@@ -1062,11 +1124,12 @@ def test_main_dispatches_each_explicit_mode(monkeypatch: pytest.MonkeyPatch) -> 
     assert installed_with_deps.value.code == 29
 
     selected_labels: list[str | None] = []
-    monkeypatch.setattr(
-        runner,
-        "run_plan",
-        lambda _plan, *, run_label=None: selected_labels.append(run_label) or 23,
-    )
+
+    def execute(_plan: runner.BrowserPlan, *, run_label: str | None = None) -> int:
+        selected_labels.append(run_label)
+        return 23
+
+    monkeypatch.setattr(runner, "run_plan", execute)
     monkeypatch.setattr(runner.sys, "argv", ["runner", "--run"])
     with pytest.raises(SystemExit) as run:
         runner.main()
