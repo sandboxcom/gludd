@@ -635,6 +635,10 @@ help:
 		"  check-make-target-contract  Validate target variables, help, and behavioral examples" \
 		"  check-generated-artifact-hygiene  Validate tracked generated Markdown/JSON/YAML postconditions" \
 		"  active-work-status    Emit auditable work status, or inspect one PID read-only (ACTIVE_WORK_STATUS_PID)" \
+		"  watchdog-start        Acknowledge agent startup (WATCHDOG_START_VALIDATE_ONLY=0 default, 1 plans)" \
+		"  watchdog-stop         Verify and drain agent daemon (WATCHDOG_VALIDATE_ONLY=1 default, 0 applies)" \
+		"  agent-watchdog-stop   Alias for watchdog-stop with the same policy" \
+		"  watchdog-auto         Start both verified watchdogs (WATCHDOG_AUTO_VALIDATE_ONLY=0 default, 1 plans)" \
 		"  task-watchdog-start   Acknowledge detached startup (TASK_WATCHDOG_START_VALIDATE_ONLY=0 default, 1 plans)" \
 		"  task-watchdog-stop    Verify and drain this checkout daemon (TASK_WATCHDOG_VALIDATE_ONLY=1 default, 0 applies)" \
 		"  ps                    Report repository-owned test, audit, and supervisor processes" \

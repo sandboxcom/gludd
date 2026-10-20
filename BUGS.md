@@ -4,6 +4,20 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-20 - Long-lived UV watchdog blocked safe cache cleanup
+
+The real native PID diagnostic identified the project agent-watchdog UV wrapper;
+the original status pointer was missing. Existing native lease verification now
+owns stop/start through the shared acknowledged lifecycle. Original failing
+controls reproduce false adoption before readiness and partial publication
+faults. The source owner passes452 whole-owner cases with94.7/89.7 line/branch
+coverage and fresh0-error collection. Native Make default/alias/literal controls
+plus complete task/environment/guide owners pass249 cases. Preserve original
+upstream user issue16112 and all failed receipts in GATE_RESOURCE_LIFECYCLE.md.
+The legacy stop plan is verified without signals; actual handoff and capacity
+clearance still require native measurements. Do not force UV cleanup, remove
+unverified locks, shorten retention or waive disk/full-gate/exact-SHA guards.
+
 ### 2026-10-20 - Source staging exposed false green workflow checks
 
 Default TAG admitted an old runbook, and contract parsing lost recipes beside

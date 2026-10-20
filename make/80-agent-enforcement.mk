@@ -1,7 +1,16 @@
 # --- Agent watchdog daemon (10s poll, resets streak counter) ---
+WATCHDOG_START_VALIDATE_ONLY ?= 0
+unexport WATCHDOG_START_VALIDATE_ONLY
+override _WATCHDOG_START_VALIDATE_ARG := invalid
+ifeq ($(value WATCHDOG_START_VALIDATE_ONLY),0)
+override _WATCHDOG_START_VALIDATE_ARG := 0
+endif
+ifeq ($(value WATCHDOG_START_VALIDATE_ONLY),1)
+override _WATCHDOG_START_VALIDATE_ARG := 1
+endif
 watchdog-start:
-	@echo "Starting agent watchdog (10s poll)..."
-	@nohup $(UV) run python3 scripts/agent_watchdog.py > .gate-logs/watchdog.log 2>&1 & echo $$! > .gate-logs/watchdog.pid; echo "watchdog PID=$$(cat .gate-logs/watchdog.pid)"
+	@# WATCHDOG_START_VALIDATE_ONLY: acknowledge actual startup, or plan with literal 1.
+	@$(UV) run python3 scripts/agent_watchdog.py --start --validate-only $(_WATCHDOG_START_VALIDATE_ARG)
 
 watchdog-status:
 	@echo "=== Watchdog status ==="
@@ -14,11 +23,21 @@ watchdog-status:
 	@echo "--- Last 15 log lines ---"
 	@tail -15 .gate-logs/watchdog.log 2>/dev/null || echo "No log yet"
 
+WATCHDOG_VALIDATE_ONLY ?= 1
+unexport WATCHDOG_VALIDATE_ONLY
+override _WATCHDOG_STOP_VALIDATE_ARG := invalid
+ifeq ($(value WATCHDOG_VALIDATE_ONLY),0)
+override _WATCHDOG_STOP_VALIDATE_ARG := 0
+endif
+ifeq ($(value WATCHDOG_VALIDATE_ONLY),1)
+override _WATCHDOG_STOP_VALIDATE_ARG := 1
+endif
 watchdog-stop:
-	@$(UV) run python3 scripts/agent_watchdog.py --stop
-	@rm -f .gate-logs/watchdog.pid
+	@# WATCHDOG_VALIDATE_ONLY: plan by default; literal 0 verifies and drains.
+	@$(UV) run python3 scripts/agent_watchdog.py --stop --validate-only $(_WATCHDOG_STOP_VALIDATE_ARG)
 
 agent-watchdog-stop: watchdog-stop
+	@# WATCHDOG_VALIDATE_ONLY is owned and validated by watchdog-stop.
 
 watchdog-read:
 	@if [ -f /tmp/gludd-continue.txt ]; then \
@@ -29,16 +48,19 @@ watchdog-read:
 		echo "No watchdog directives (file absent)"; \
 	fi
 
+WATCHDOG_AUTO_VALIDATE_ONLY ?= 0
+unexport WATCHDOG_AUTO_VALIDATE_ONLY
+override _WATCHDOG_AUTO_VALIDATE_ARG := invalid
+ifeq ($(value WATCHDOG_AUTO_VALIDATE_ONLY),0)
+override _WATCHDOG_AUTO_VALIDATE_ARG := 0
+endif
+ifeq ($(value WATCHDOG_AUTO_VALIDATE_ONLY),1)
+override _WATCHDOG_AUTO_VALIDATE_ARG := 1
+endif
 watchdog-auto:
-	@echo "Starting auto-watchdog (persists across sessions)..."
-	@if [ -f .gate-logs/watchdog.pid ] && kill -0 $$(cat .gate-logs/watchdog.pid) 2>/dev/null; then \
-		echo "Agent watchdog already running PID=$$(cat .gate-logs/watchdog.pid)"; \
-	else \
-		nohup $(UV) run python3 scripts/agent_watchdog.py > .gate-logs/watchdog.log 2>&1 & \
-		echo $$! > .gate-logs/watchdog.pid; \
-		echo "Agent watchdog started PID=$$!"; \
-	fi
-	@$(MAKE) --no-print-directory task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=0
+	@# WATCHDOG_AUTO_VALIDATE_ONLY: both existing owners share the explicit policy.
+	@$(MAKE) --no-print-directory watchdog-start WATCHDOG_START_VALIDATE_ONLY=$(_WATCHDOG_AUTO_VALIDATE_ARG)
+	@$(MAKE) --no-print-directory task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=$(_WATCHDOG_AUTO_VALIDATE_ARG)
 
 watchdog-log:
 	@tail -50 .gate-logs/watchdog.log 2>/dev/null || echo "No log yet"

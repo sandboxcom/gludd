@@ -1694,7 +1694,8 @@ def test_native_start_target_contract_and_auto_reuse_owner() -> None:
     assert entry["behavior"] == "make task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=1"
     source = (root / "make/80-agent-enforcement.mk").read_text(encoding="utf-8")
     auto = source.split("\nwatchdog-auto:\n", 1)[1].split("\n\n", 1)[0]
-    assert "task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=0" in auto
+    assert "task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=$(_WATCHDOG_AUTO_VALIDATE_ARG)" in auto
+    assert "WATCHDOG_AUTO_VALIDATE_ONLY ?= 0" in source
     assert "nohup $(UV) run python3 scripts/task_watchdog.py" not in source
 
 

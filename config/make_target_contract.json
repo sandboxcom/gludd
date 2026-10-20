@@ -2360,6 +2360,26 @@
       "behavior": "make worktree-cleanup-merged"
     },
     {
+      "name": "watchdog-start",
+      "make_variables": ["WATCHDOG_START_VALIDATE_ONLY"],
+      "behavior": "make watchdog-start WATCHDOG_START_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "watchdog-stop",
+      "make_variables": ["WATCHDOG_VALIDATE_ONLY"],
+      "behavior": "make watchdog-stop WATCHDOG_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "agent-watchdog-stop",
+      "make_variables": ["WATCHDOG_VALIDATE_ONLY"],
+      "behavior": "make agent-watchdog-stop WATCHDOG_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "watchdog-auto",
+      "make_variables": ["WATCHDOG_AUTO_VALIDATE_ONLY"],
+      "behavior": "make watchdog-auto WATCHDOG_AUTO_VALIDATE_ONLY=1"
+    },
+    {
       "name": "task-watchdog-stop",
       "make_variables": [
         "TASK_WATCHDOG_VALIDATE_ONLY"

@@ -45,6 +45,57 @@ installed-Python startup, actual PID/readiness acknowledgment, verified child
 drain and natural supervisor exit; do not force cache access or signal from a
 diagnostic alone. Real handoff and changed-capacity cleanup remain pending.
 
+### Acknowledged agent-watchdog handoff (2026-10-20)
+
+Source 1c2918edb189d672f2ee6f72ec0a1b62619764f2 is integrated as0e71b1ae5.
+The shared task-watchdog owner now accepts the agent specification; it launches
+the installed interpreter directly, retains its startup lock through actual
+acknowledgment, and uses the existing namespaced lease as authority. The actual
+child PID is published at .gate-logs/watchdog.pid. A checked one-byte integer
+ready transition preserves valid lease JSON; interrupted/failed fsync, log flush,
+PID publication, changed tokens/inodes and old matching pointers cannot admit an
+unacknowledged child. Legacy stop verifies the native lease even without that
+convenience pointer and waits for the UV parent to exit naturally.
+
+The eight complete source test owners pass452 cases at94.7% line/89.7% branch,
+each above91.4% line/85.4% branch, with original85/75 thresholds. Preserved RED
+controls include actual SIGTERM, interrupted creator, duplicate fields,
+publication faults and the native macOS TMPDIR alias. The source commit retains
+fresh127157-test collection with0 errors. Its full report and exact commands are
+/tmp/gludd-v012-agent-watchdog-lifecycle-report.md; source-only proof grants no
+capacity, gate or CI authority.
+
+Make exposes WATCHDOG_START_VALIDATE_ONLY=0 and WATCHDOG_AUTO_VALIDATE_ONLY=0
+as their established actual-start defaults; literal1 plans. Shutdown and its
+agent-watchdog-stop alias use WATCHDOG_VALIDATE_ONLY=1 by default, literal0
+applies. Invalid policy is passed as the fixed word invalid without evaluation;
+public policy variables are not exported. The 36 original negative controls
+fail before repair; the expanded native default/alias/literal checks and whole
+task/environment/guide owners pass249 cases. No background UV shell launcher
+remains. The real legacy stop plan passes without writes or signals.
+The integrated eleven-owner replay passes550 tests in27.87s; native audit
+.gate-logs/coverage-20261020T192002Z.json retains94.7line/89.7branch and both
+per-file thresholds. Its first combined attempt retains549PASS/1FAIL for two
+undocumented startup variables; CONFIG_REFERENCE.md now documents the actual
+native-only paths. Existing legacy non-detached identity correctly refuses the
+start/auto plan until the verified stop handoff; refusal never creates a second
+daemon. Exact XML is /tmp/gludd-v012-integrated-watchdog-final-coverage.xml.
+
+For a verified legacy owner, use this sequence after source integration:
+
+```bash
+make watchdog-stop WATCHDOG_VALIDATE_ONLY=1
+make watchdog-stop WATCHDOG_VALIDATE_ONLY=0
+make watchdog-auto WATCHDOG_AUTO_VALIDATE_ONLY=0
+make watchdog-start WATCHDOG_START_VALIDATE_ONLY=1
+```
+
+A refusal preserves ownership evidence and stops this sequence. Never signal a
+supervisor from a diagnostic CWD. The native child drain and natural parent exit
+must precede new direct-Python startup; re-establish both watchdogs immediately.
+Only after actual supervisor absence changes the blocking input may the existing
+disk cleanup run again. Real handoff and capacity clearance remain pending.
+
 ### Bounded shared-UV cleanup phase diagnostics
 
 The2026-10-19 disk repair reclaimed241,812,053 and237,600,576 bytes of

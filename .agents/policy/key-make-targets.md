@@ -25,6 +25,12 @@ its frozen candidate: do not edit that checkout, change its index or move its
 HEAD during proof. Use an isolated development-based worktree for disjoint
 repairs; record branch, base SHA, task and file ownership before editing.
 Unknown ownership needs investigation through existing owners, not another gate.
+For a legacy watchdog holding the UV cache, use the verified watchdog-stop plan
+with WATCHDOG_VALIDATE_ONLY=1, then its actual mode0 only after verification.
+Immediately restore both guards with watchdog-auto WATCHDOG_AUTO_VALIDATE_ONLY=0.
+The same startup owner plans with WATCHDOG_START_VALIDATE_ONLY=1; auto plans both
+with WATCHDOG_AUTO_VALIDATE_ONLY=1. Refusal preserves evidence and blocks the
+handoff; PID diagnostics alone never authorize termination.
 
 ### Choose the next action from evidence
 

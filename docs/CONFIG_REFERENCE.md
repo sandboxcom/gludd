@@ -349,6 +349,8 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_TASK_STALE_FILE` | Auto-indexed (see source) | `/tmp/gludd-task-stale.json` | optional | `scripts/run_ci_shards_parallel.py:31` |
 | `GLUDD_TASK_TIMEOUT_MS` | Auto-indexed (see source) | — | optional | `scripts/audit_observability.py:858` |
 | `GLUDD_TASK_TRACKING_ENFORCE` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:3451` |
+| `GLUDD_AGENT_WATCHDOG_LOG` | Native startup owner only | `.gate-logs/watchdog.log` | optional | `scripts/watchdog_components/lifecycle.py`: checked readiness output; only the canonical checkout path is accepted. Do not set manually. |
+| `GLUDD_AGENT_WATCHDOG_PID` | Native startup owner only | `.gate-logs/watchdog.pid` | optional | `scripts/watchdog_components/lifecycle.py`: actual child PID after checked readiness; the namespaced lease remains authority. Do not set manually. |
 | `GLUDD_TASK_WATCHDOG_LOG` | Auto-indexed (see source) | — | optional | `scripts/task_watchdog.py:67` |
 | `GLUDD_TASK_WATCHDOG_PID` | Auto-indexed (see source) | — | optional | `scripts/task_watchdog.py:64` |
 | `GLUDD_TASK_WATCHDOG_POLL` | Auto-indexed (see source) | `5` | optional | `scripts/task_watchdog.py:72` |
