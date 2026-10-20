@@ -1,0 +1,1620 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gludd.dev/schemas/typed-decision-artifact-v1.schema.json",
+  "title": "Gludd typed-decision artifact v1",
+  "description": "Provider-neutral, recommendation-only artifacts for typed decisions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "kind",
+    "artifact_id",
+    "created_at",
+    "correlation",
+    "task",
+    "provenance",
+    "security",
+    "payload",
+    "extensions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "gludd.typed-decision.artifact"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "kind": {
+      "enum": [
+        "task_profile",
+        "backend_identity",
+        "request",
+        "result",
+        "batch_plan",
+        "residency_plan",
+        "redaction_receipt",
+        "replay_receipt",
+        "evidence_receipt",
+        "promotion_receipt",
+        "migration_receipt"
+      ]
+    },
+    "artifact_id": {
+      "$ref": "#/$defs/safeIdentifier"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correlation": {
+      "$ref": "#/$defs/correlation"
+    },
+    "task": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/task"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "security": {
+      "$ref": "#/$defs/security"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9+.-]*:[^\\s]{1,240}$"
+      },
+      "additionalProperties": true,
+      "maxProperties": 32
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "task_profile"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "task": {
+            "$ref": "#/$defs/task"
+          },
+          "payload": {
+            "$ref": "#/$defs/taskProfilePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "backend_identity"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/backendIdentityPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "request"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "task": {
+            "$ref": "#/$defs/task"
+          },
+          "payload": {
+            "$ref": "#/$defs/requestPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "result"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "task": {
+            "$ref": "#/$defs/task"
+          },
+          "payload": {
+            "$ref": "#/$defs/resultPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "batch_plan"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "task": {
+            "$ref": "#/$defs/task"
+          },
+          "payload": {
+            "$ref": "#/$defs/batchPlanPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "residency_plan"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/residencyPlanPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "redaction_receipt"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/redactionReceiptPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "replay_receipt"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/replayReceiptPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "evidence_receipt"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/evidenceReceiptPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "promotion_receipt"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/promotionReceiptPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "migration_receipt"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/migrationReceiptPayload"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "safeIdentifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "artifactReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "digest",
+        "role"
+      ],
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "role": {
+          "$ref": "#/$defs/safeIdentifier"
+        }
+      }
+    },
+    "schemaReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uri",
+        "digest"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "idempotency_key",
+        "run_id",
+        "parent_artifacts"
+      ],
+      "properties": {
+        "request_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/safeIdentifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "idempotency_key": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/safeIdentifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent_artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifactReference"
+          },
+          "maxItems": 32,
+          "uniqueItems": true
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "profile_version",
+        "profile_digest",
+        "domain",
+        "task_kind",
+        "collection",
+        "decision_type",
+        "impact_ceiling",
+        "acceptance_checks",
+        "input_schema",
+        "output_schema"
+      ],
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{2,127}$"
+        },
+        "profile_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "profile_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "domain": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+        },
+        "task_kind": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "collection": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+        },
+        "decision_type": {
+          "enum": [
+            "choice",
+            "score",
+            "noul",
+            "mixed"
+          ]
+        },
+        "impact_ceiling": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "read_source",
+              "write_artifact"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true
+        },
+        "acceptance_checks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true
+        },
+        "input_schema": {
+          "$ref": "#/$defs/schemaReference"
+        },
+        "output_schema": {
+          "$ref": "#/$defs/schemaReference"
+        }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component",
+        "version",
+        "code_digest"
+      ],
+      "properties": {
+        "component": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "code_digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "uri",
+        "content_digest",
+        "retrieved_at",
+        "license",
+        "review_state"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "uri": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        },
+        "content_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "review_state": {
+          "enum": [
+            "approved",
+            "restricted",
+            "rejected",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "predicate_type",
+        "subject_digest",
+        "attestation_digest",
+        "verification_state"
+      ],
+      "properties": {
+        "predicate_type": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        },
+        "subject_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "attestation_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "verification_state": {
+          "enum": [
+            "verified",
+            "unverified",
+            "invalid"
+          ]
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "used_artifacts",
+        "sources",
+        "attestations"
+      ],
+      "properties": {
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "used_artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifactReference"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          },
+          "maxItems": 64
+        },
+        "attestations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attestation"
+          },
+          "maxItems": 32
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_scope",
+        "classification",
+        "content_state",
+        "redaction_profile_digest",
+        "persist",
+        "retention_class",
+        "secret_scan",
+        "authority"
+      ],
+      "properties": {
+        "project_scope": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "classification": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ]
+        },
+        "content_state": {
+          "enum": [
+            "inline_reviewed",
+            "redacted",
+            "digest_only"
+          ]
+        },
+        "redaction_profile_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "persist": {
+          "type": "boolean"
+        },
+        "retention_class": {
+          "enum": [
+            "transient",
+            "evaluation",
+            "audit"
+          ]
+        },
+        "secret_scan": {
+          "enum": [
+            "passed",
+            "not_applicable",
+            "failed"
+          ]
+        },
+        "authority": {
+          "const": "recommendation_only"
+        }
+      }
+    },
+    "taskProfilePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_state",
+        "routing_inputs",
+        "fallback_profile_id",
+        "eligible_backend_capabilities",
+        "policy_digest"
+      ],
+      "properties": {
+        "profile_state": {
+          "enum": [
+            "draft",
+            "evaluation",
+            "admitted",
+            "retired"
+          ]
+        },
+        "routing_inputs": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "task_profile",
+              "trusted_language_hint",
+              "trusted_domain_hint",
+              "operator_route"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true
+        },
+        "fallback_profile_id": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.-]{2,127}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "eligible_backend_capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/safeIdentifier"
+          },
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "backendIdentityPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity_fingerprint",
+        "contract_version",
+        "implementation",
+        "protocol_version",
+        "endpoint_trust_class",
+        "server_code_digest",
+        "container_digest",
+        "model_revision",
+        "model_artifact_digest",
+        "tokenizer_digest",
+        "renderer_digest",
+        "scoring_contract_digest",
+        "calibration_artifact_digest",
+        "runtime_digest",
+        "capabilities"
+      ],
+      "properties": {
+        "identity_fingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "contract_version": {
+          "const": "1.0.0"
+        },
+        "implementation": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "protocol_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "endpoint_trust_class": {
+          "enum": [
+            "hosted_https",
+            "attested_local"
+          ]
+        },
+        "server_code_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "container_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "model_artifact_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "tokenizer_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "renderer_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "scoring_contract_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "calibration_artifact_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/safeIdentifier"
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true
+        }
+      }
+    },
+    "choiceOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "description"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "choiceQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "instructions",
+        "options"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "type": {
+          "const": "choice"
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/choiceOption"
+          },
+          "minItems": 2,
+          "maxItems": 255
+        }
+      }
+    },
+    "scoreQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "instructions",
+        "levels"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "type": {
+          "const": "score"
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "minItems": 2,
+          "maxItems": 10
+        }
+      }
+    },
+    "noulQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "instructions",
+        "true_criteria",
+        "false_criteria"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "type": {
+          "const": "noul"
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "true_criteria": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "false_criteria": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "question": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/choiceQuestion"
+        },
+        {
+          "$ref": "#/$defs/scoreQuestion"
+        },
+        {
+          "$ref": "#/$defs/noulQuestion"
+        }
+      ]
+    },
+    "requestBounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_bytes",
+        "state_tokens",
+        "question_count",
+        "option_count",
+        "deadline_ms"
+      ],
+      "properties": {
+        "state_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "state_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32768
+        },
+        "question_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "option_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "deadline_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120000
+        }
+      }
+    },
+    "requestPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_encoding",
+        "state",
+        "state_digest",
+        "question_schema_digest",
+        "questions",
+        "bounds",
+        "backend_identity_digest",
+        "policy_digest",
+        "redaction_receipt"
+      ],
+      "properties": {
+        "state_encoding": {
+          "enum": [
+            "inline_reviewed",
+            "redacted",
+            "digest_only"
+          ]
+        },
+        "state": {},
+        "state_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "question_schema_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/question"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "bounds": {
+          "$ref": "#/$defs/requestBounds"
+        },
+        "backend_identity_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "redaction_receipt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/artifactReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "choiceAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "selected",
+        "probabilities",
+        "confidence",
+        "probability_semantics",
+        "confidence_semantics"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "type": {
+          "const": "choice"
+        },
+        "selected": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+        },
+        "probabilities": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minProperties": 2,
+          "maxProperties": 255
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "probability_semantics": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        },
+        "confidence_semantics": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "uri",
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "scoreAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "score",
+        "probabilities",
+        "probability_semantics"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "type": {
+          "const": "score"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "probabilities": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 10
+        },
+        "probability_semantics": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        }
+      }
+    },
+    "noulAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "probability_true",
+        "probability_semantics"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "type": {
+          "const": "noul"
+        },
+        "probability_true": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "probability_semantics": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        }
+      }
+    },
+    "answer": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/choiceAnswer"
+        },
+        {
+          "$ref": "#/$defs/scoreAnswer"
+        },
+        {
+          "$ref": "#/$defs/noulAnswer"
+        }
+      ]
+    },
+    "resultPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_artifact",
+        "backend_identity_digest",
+        "status",
+        "answers",
+        "reason_code",
+        "latency_ms",
+        "transport_attempt",
+        "calibration_artifact_digest"
+      ],
+      "properties": {
+        "request_artifact": {
+          "$ref": "#/$defs/artifactReference"
+        },
+        "backend_identity_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "status": {
+          "enum": [
+            "recommend",
+            "abstain",
+            "invalid",
+            "unavailable"
+          ]
+        },
+        "answers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/answer"
+          },
+          "maxItems": 64
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "latency_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 120000
+        },
+        "transport_attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "calibration_artifact_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "batchPlanPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group_key_digest",
+        "backend_identity_digest",
+        "question_schema_digest",
+        "calibration_artifact_digest",
+        "project_scope",
+        "classification",
+        "deadline_bucket_ms",
+        "max_wait_ms",
+        "request_artifacts"
+      ],
+      "properties": {
+        "group_key_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "backend_identity_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "question_schema_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "calibration_artifact_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project_scope": {
+          "$ref": "#/$defs/safeIdentifier"
+        },
+        "classification": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ]
+        },
+        "deadline_bucket_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120000
+        },
+        "max_wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "request_artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifactReference"
+          },
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true
+        }
+      }
+    },
+    "residencyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend_identity_digest",
+        "action",
+        "artifact_bytes",
+        "measured_resident_bytes",
+        "lease_count",
+        "reason"
+      ],
+      "properties": {
+        "backend_identity_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "action": {
+          "enum": [
+            "preload",
+            "keep",
+            "evict"
+          ]
+        },
+        "artifact_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "measured_resident_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lease_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        }
+      }
+    },
+    "residencyPlanPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan_digest",
+        "mode",
+        "capacity_bytes",
+        "reserve_bytes",
+        "measured_free_bytes",
+        "entries"
+      ],
+      "properties": {
+        "plan_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "mode": {
+          "enum": [
+            "advisory",
+            "enforced"
+          ]
+        },
+        "capacity_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reserve_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "measured_free_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/residencyEntry"
+          },
+          "maxItems": 64
+        }
+      }
+    },
+    "redactionReceiptPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_digest",
+        "redacted_digest",
+        "profile_digest",
+        "status",
+        "redaction_count",
+        "categories",
+        "bytes_sent"
+      ],
+      "properties": {
+        "source_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "redacted_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "profile_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "blocked",
+            "failed"
+          ]
+        },
+        "redaction_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "bytes_sent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        }
+      }
+    },
+    "replayReceiptPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "request_artifact",
+        "recorded_result_artifact",
+        "replayed_result_artifact",
+        "transport_called",
+        "deterministic_match",
+        "comparison_digest",
+        "reason_code"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "validate",
+            "offline_compare"
+          ]
+        },
+        "request_artifact": {
+          "$ref": "#/$defs/artifactReference"
+        },
+        "recorded_result_artifact": {
+          "$ref": "#/$defs/artifactReference"
+        },
+        "replayed_result_artifact": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/artifactReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transport_called": {
+          "const": false
+        },
+        "deterministic_match": {
+          "type": "boolean"
+        },
+        "comparison_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        }
+      }
+    },
+    "evidenceReceiptPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity_fingerprint",
+        "corpus_manifest_digest",
+        "evaluation_report_digest",
+        "metrics",
+        "disposition"
+      ],
+      "properties": {
+        "identity_fingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "corpus_manifest_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "evaluation_report_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "metrics": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "number"
+          },
+          "maxProperties": 64
+        },
+        "disposition": {
+          "enum": [
+            "reject",
+            "shadow_only",
+            "canary_eligible"
+          ]
+        }
+      }
+    },
+    "promotionReceiptPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from_stage",
+        "to_stage",
+        "backend_identity_digest",
+        "task_profile_digest",
+        "evidence_artifact",
+        "approval_digest",
+        "rollback_stage",
+        "rollback_identity_digest",
+        "automatic_forward_promotion"
+      ],
+      "properties": {
+        "from_stage": {
+          "enum": [
+            "disabled",
+            "shadow",
+            "canary_1",
+            "canary_5",
+            "canary_25"
+          ]
+        },
+        "to_stage": {
+          "enum": [
+            "disabled",
+            "shadow",
+            "canary_1",
+            "canary_5",
+            "canary_25"
+          ]
+        },
+        "backend_identity_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "task_profile_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "evidence_artifact": {
+          "$ref": "#/$defs/artifactReference"
+        },
+        "approval_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "rollback_stage": {
+          "enum": [
+            "disabled",
+            "shadow",
+            "canary_1",
+            "canary_5"
+          ]
+        },
+        "rollback_identity_digest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "automatic_forward_promotion": {
+          "const": false
+        }
+      }
+    },
+    "migrationReceiptPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_artifact",
+        "source_schema_version",
+        "target_artifact",
+        "target_schema_version",
+        "migrator_digest",
+        "lossless",
+        "reason_code"
+      ],
+      "properties": {
+        "source_artifact": {
+          "$ref": "#/$defs/artifactReference"
+        },
+        "source_schema_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "target_artifact": {
+          "$ref": "#/$defs/artifactReference"
+        },
+        "target_schema_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "migrator_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "lossless": {
+          "type": "boolean"
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        }
+      }
+    }
+  }
+}
