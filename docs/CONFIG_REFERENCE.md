@@ -915,6 +915,17 @@ timing absent from the original producer. Archives keep original status paths
 verbatim and replay through manifest role/path/hash mappings without fallback.
 No diagnostic surface grants admission, gate, hosted or release authority.
 
+## Active-work PID diagnostic literal input
+
+Use make active-work-status ACTIVE_WORK_STATUS_PID= with an empty value for the
+ordinary status schema. An explicit positive ASCII PID selects one bounded native
+process row, with existing ownership and separate CWD evidence. Invalid values
+refuse before inspection; no process is signalled and no gate authority changes.
+
+| Carrier | Default | Public Make input and ownership |
+| --- | --- | --- |
+| `GLUDD_ACTIVE_WORK_STATUS_PID` | empty | Make-owned literal carrier for `ACTIVE_WORK_STATUS_PID`, copied without recursive expansion and bound with override; do not set directly. The public variable is unexported. The existing producer validates positive native PID bounds, and missing/unavailable observations never reuse prior success. |
+
 ## Agent-context audit literal inputs
 
 `make audit-agent-context-size` uses the existing AB060 owner. Configure the

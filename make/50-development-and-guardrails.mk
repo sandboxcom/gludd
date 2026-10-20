@@ -655,8 +655,16 @@ check-duplicate-targets:
 check-make-target-contract:
 	@$(UV) run python -m scripts.check_make_target_contract
 
+ACTIVE_WORK_STATUS_PID ?=
+override GLUDD_ACTIVE_WORK_STATUS_PID := $(value ACTIVE_WORK_STATUS_PID)
+export GLUDD_ACTIVE_WORK_STATUS_PID := $(value ACTIVE_WORK_STATUS_PID)
+unexport ACTIVE_WORK_STATUS_PID
 active-work-status:
-	@UV=echo $(SYSTEM_PYTHON) scripts/active_work_status.py
+	@if [ -n "$$GLUDD_ACTIVE_WORK_STATUS_PID" ]; then \
+		UV=echo $(SYSTEM_PYTHON) scripts/active_work_status.py --inspect-pid "$$GLUDD_ACTIVE_WORK_STATUS_PID"; \
+	else \
+		UV=echo $(SYSTEM_PYTHON) scripts/active_work_status.py; \
+	fi
 
 # --- Help target coverage: prevent hidden public Make targets ---
 check-make-help:
