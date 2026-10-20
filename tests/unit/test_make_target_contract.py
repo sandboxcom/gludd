@@ -144,11 +144,37 @@ def test_patch_equivalence_target_uses_git_cherry() -> None:
     assert "unique" in result.stdout
 
 
+def test_enforcement_reference_respects_the_current_root_floor_policy() -> None:
+    policy = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    reference = (ROOT / ".agents/policy/enforcement-plugins.md").read_text(encoding="utf-8")
+    current = "default adaptive minimum0, hard maximum3"
+    assert current in policy
+    assert current in reference
+    assert "ALL non-dispatch tools when <3" not in reference
+    assert "until >=3 dispatches made" not in reference
+    assert "GLUDD_FLOOR_ENFORCE=0 make" not in reference
+
+
+def test_enforcement_reference_preserves_native_verification_and_restart() -> None:
+    reference = (ROOT / ".agents/policy/enforcement-plugins.md").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
+    for owner in (
+        "list-plugins", "test-hook-runtime", "verify-plugin-manifest",
+        "verify-enforcement", "check-node-v26-compat",
+    ):
+        assert f"`make {owner}`" in reference
+        assert f"\n{owner}:" in makefile
+    assert "restart" in reference.lower()
+    assert "do not disable" in reference.lower()
+    assert "hasRealPendingWork" in reference
+
+
 def test_key_make_targets_recommends_guarded_release_owners() -> None:
     """Keep the mandatory first read consistent with release promotion policy."""
     guidance = (ROOT / ".agents/policy/key-make-targets.md").read_text(encoding="utf-8")
     for owner in (
         "release-proof-admission",
+        "gate-background-observed",
         "development-merge-forward",
         "release-promote",
         "check-make-target-contract",
@@ -174,7 +200,10 @@ def test_key_make_targets_release_examples_use_declared_variables() -> None:
     """Catch stale copyable examples when the executable target contract changes."""
     guidance = (ROOT / ".agents/policy/key-make-targets.md").read_text(encoding="utf-8")
     contract = load_contract(ROOT / "config/make_target_contract.json")
-    names = {"release-proof-admission", "development-merge-forward", "release-promote", "test-files"}
+    names = {
+        "release-proof-admission", "gate-background-observed",
+        "development-merge-forward", "release-promote", "test-files",
+    }
     for entry in contract["targets"]:
         if entry["name"] not in names:
             continue

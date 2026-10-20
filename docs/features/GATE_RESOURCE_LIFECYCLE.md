@@ -19,6 +19,32 @@ lower worker count instead of staying stopped.
 
 ## Contract
 
+### Native cache-lock owner discovery (2026-10-20)
+
+Actual disk-cleanup-preflight with validate-only0/dry-run0/grace1800 removes16
+eligible entries, including regenerable worktree caches/bytecode, with0 errors.
+A no-progress pass removes0; native refusal remains rc1 at96% against95%.
+Stale namespace planning at unchanged24-hour grace finds39 candidates and0
+reclaimable. Preserve live namespaces, hardlink safety, checkpoints and evidence.
+
+The existing native status producer now accepts an optional positive PID through
+make active-work-status ACTIVE_WORK_STATUS_PID=68501. One fresh bounded native
+row identifies uv run python3 scripts/agent_watchdog.py, PPID1, repository CWD.
+CWD is separate evidence: ownership remains unverified and no kill/gate authority
+is granted. Default status/table behavior remains unchanged; malformed or
+unavailable inspection never reuses prior success. Native whole-file94-case
+coverage clears85/75 at94.8% line/91.2% branch. Literal Make transport and the
+unchanged environment audit pass45 cases after correcting the actual export form.
+
+The [original upstream report16112](https://github.com/astral-sh/uv/issues/16112)
+reproduces cleanup waiting for a live uv run child.
+[Upstream cache safety](https://docs.astral.sh/uv/concepts/cache/) preserves the
+lock for active work. Repair the actual long-lived watchdog launcher through
+its existing acknowledged lifecycle and namespaced native lease. Keep direct
+installed-Python startup, actual PID/readiness acknowledgment, verified child
+drain and natural supervisor exit; do not force cache access or signal from a
+diagnostic alone. Real handoff and changed-capacity cleanup remain pending.
+
 ### Bounded shared-UV cleanup phase diagnostics
 
 The2026-10-19 disk repair reclaimed241,812,053 and237,600,576 bytes of

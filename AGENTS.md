@@ -497,7 +497,7 @@ Checking ci-status more than3 times in a row without code changes is a stop patt
 
 ## CRITICAL: CI Wait Productivity (DC.1)
 
-During CI waits, advance release-related work: fix tests, write structural tests, update docs or investigate slow shards. Dispatch only concrete independent deliverables; zero subagents is valid when none exist. CI waiting never justifies filler. Use up to three useful owners.
+During CI waits, advance release-related work: fix tests, write structural tests, update docs or investigate slow shards. Dispatch subagents for concrete independent deliverables when useful; zero subagents is valid when none exist. CI waiting never justifies filler. Use up to three useful owners.
 
 ## CRITICAL: Polling CI Is Not Work (DC.2)
 

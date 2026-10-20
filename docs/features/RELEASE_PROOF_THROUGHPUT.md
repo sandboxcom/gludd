@@ -61,8 +61,10 @@ shows command-line carriers surviving into child Make despite a parent export.
 The [GNU Make manual](https://www.gnu.org/software/make/manual/make.html)
 documents recursive variable and option propagation. Gludd retains its existing
 native carrier tests and literal argv owners; the guide supplies every declared
-variable in its release examples. The report's suggested flag rewrites are not
-adopted. Neither reference supplies Gludd release proof or measured model parity.
+variable in its release examples. Native regression evidence below requires
+scoped use of GNU Make's own MFLAGS and MAKEOVERRIDES; no shell parser or broad
+carrier deletion is introduced. Neither reference supplies Gludd release proof
+or measured model parity.
 
 Lower-capability models have the same executable path and failure messages.
 Comparable success still requires actual complete-owner and release evidence;
@@ -81,6 +83,192 @@ through existing mkdir-p/copy-file owners; no environment sync or new daemon.
 The live main-checkout gate and previously staged repairs are separate work.
 No full-gate, hosted, release-readiness or task-completion result follows from
 these documentation/source controls.
+
+## Native workflow repairs and retained decisions (2026-10-20)
+
+The release preparation audit found failures that additional instructions alone
+could not prevent. Repair the existing executable owners and retain their
+original assertions. This support remains owned by S98.4; source acceptance
+does not close a release task or authorize master promotion.
+
+| Actual failure | Existing owner repaired | Decision and regression |
+| --- | --- | --- |
+| Empty TAG admitted the v0.1.1 runbook; argument-bearing and fenced commands were missed; only the include-only root Makefile was read | check_runbook_currency.py | Resolve project.version even without TAG, require one explicit active release marker, validate explicit tags, and compose the native Make fragments. |
+| A target-specific variable after a recipe erased its contract; a variable alone invented an owner | check_make_target_contract.py | Reuse the duplicate-target owner's assignment pattern and retain actual recipe bodies in either declaration order. |
+| Valid override/export/private assignments counted as duplicate recipes | check_duplicate_targets.py | Exclude variable assignments while preserving real duplicate detection across native fragments and all failing exit statuses. |
+| Ambient UV and deferred parent flags displaced selected native inputs under recursive -e | Existing duplicate-code, collection and admission Make owners | Bind selected UV at the target; re-export native MFLAGS plus MAKEOVERRIDES only at affected owners, retaining literal canaries and unrelated-consumer isolation. |
+| A prior repair removed the omitted-UV negative control | Original precommit-quality owner | Restore all six owned/omitted/opposite cases and every original assertion; isolate only unrelated outer Make flags in the synthetic fixture. |
+| Generated ledger notes lost operator, safety, disabled-default and incomplete-proof boundaries | release_page_notes.py and both original test owners | Preserve the original structural assertions and derive the full preview from the versioned integration manifest, alongside ledger inventory. |
+| Public-looking source prefixes could grant automatic secret review | Native baseline manager and exact public-review CLI | Review only six fixed filename/detector/digest identities; reject missing, duplicate, malformed or conflicting inputs and publish atomically. |
+
+The runbook controls first produce14 failures. Complete release-pipeline and
+runbook owners then pass299 cases. The first coverage replay still fails the
+unchanged aggregate branch floor at78.6%; six missing metadata/tag failure
+controls raise whole-file coverage to98.1% lines/92.9% branches. Explicit and
+empty-TAG native AC013 executions both identify active v0.1.2 and resolve every
+documented owner. A native run catches a nonexistent collection-interop helper
+in the initial draft; the corrected runbook invokes the complete existing
+collection-interop test owner and preserves its actual repository graph check.
+
+The duplicate-declaration controls first retain13FAIL/4PASS, then17PASS.
+The contract checker retains3FAIL/7PASS before its repair; the complete
+contract, promotion and disk-admission replay passes152 cases plus37subtests.
+The original precommit owner retains41 cases, including all six negative/
+positive carrier controls. A subsequent combined replay retains522PASS/1FAIL:
+the logical-Makefile audit identifies a synthetic fixture variable that aliases
+a different function's project reader. Naming that argv-derived fixture
+probe_makefile conforms to the existing reader policy; no assertion or guard
+is removed.
+
+The final nine-owner native coverage replay passes523 cases, no skips, on
+CPython3.11.14 with fatal warnings and serial pytest. Observer:
+coverage-files/20261020T183132Z-81710-ea40cdda;73.79s body/75.6s observed.
+Native audit .gate-logs/coverage-20261020T183247Z.json records97.5% aggregate
+line/95.1% branch coverage. Full-file line/branch pairs are93.0/94.4 for the
+duplicate owner,99.0/96.0 for the contract owner, and98.1/92.9 for AC013.
+All original85% aggregate/75% individual line and branch floors remain.
+Ruff, strict five-file typing, production docstrings,255 target contracts and
+the duplicate-code behavioral plan pass. A temporary type-check failure from
+mixed flat/package module identities is repaired in typing-only imports;
+runtime script and package entry points remain available.
+
+The admission fixture also had a hardcoded desired UV declaration, so production
+could lose its binding while tests remained green. Two production-mutation
+controls fail first. Read the actual binding and recipe from one composed native
+snapshot; retain distinct omitted and opposite cases. All36 complete admission
+cases then pass in5.36s with fatal warnings. Two further guide controls fail first
+until the mandatory recipe names gate-background-observed and its full explicit
+release/0/16/1 inputs; the complete nine-case guide owner passes in1.95s.
+Its validate-only behavioral example reports gate_evidence=false.
+
+The existing public-review Make recipe passed an unsupported --tasks argument;
+the native CLI refuses rc2. Correct it to baseline/policy argv, document both
+native compaction and review contracts, and remove three uncommitted inline
+Python debugging helpers after preserving their prior source. Existing
+scan-secrets already owns inventory. Both native behaviors then preserve1352
+findings/390files and the scanner-settings digest;257 declared contracts and
+1173 target declarations pass with zero duplicates. No new identity is reviewed.
+
+The mandatory enforcement reference also retained a three-agent minimum and
+quick examples that disabled guards, contradicting root precedence. Two new
+controls fail first. The current reference derives its roster from list-plugins,
+states the existing adaptive0/maximum3 policy and preserves native verification,
+code-restart and fundamental pending-work protection. The complete existing
+guide/contract owner passes11 cases in1.98s. Historical inventories remain in
+the versioned policy source/Git history; no plugin TypeScript or guard is changed.
+
+Bounded process diagnosis extends active_work_status rather than adding another
+observer. Initial20FAIL/13PASS and native-parent bound2FAIL precede complete
+94PASS/0SKIP,94.8% line/91.2% branch full-file coverage; native audit
+.gate-logs/coverage-20261020T184602Z.json retains85/75 on both metrics. Source
+005fed3 lands as7e8359357. Make literal transport controls pass14 cases under
+ordinary and environment-override Make, including expression/backtick/quote/
+newline sentries and no public-variable export. The original reverse environment
+audit first retains1FAIL/44PASS: a split export is not the established consumed
+carrier form. Reuse the existing override plus literal export assignment pattern;
+all45 complete transport/environment cases then pass in2.69s. No audit is weakened.
+Native default and requested-PID behavioral examples and257 contracts pass.
+
+Source commits50e1fb9, d9d95c0,01fcf50,4776423 and2f1e923 retain independent small
+parser, runner, runbook, status-contract and PID-wiring changes. Each normal
+source owner passes content/index/secret/clone guards and fresh collection with
+0errors; latest127188/127212 has24 deselected. These overlapping focused scopes
+are not a unique project-wide test total, full gate or exact-SHA hosted proof.
+
+The current [release runbook](../RELEASE_RUNBOOK.md) now follows v0.1.2 through
+real admission, native source review and combined acceptance, the observed
+outer canonical release gate, receipt finalization, exact-SHA hosted CI,
+readiness, canonical-main promotion and artifact verification. The
+[same-directory v0.1.1 archive](../RELEASE_RUNBOOK_V011.md) preserves historical
+procedure and exceptions. Both retain all28 categories/30 minimum assets,
+15smoke checks, signatures, immutable rollback, ZDD and failed-proof boundaries.
+Original documentation, pipeline, deck and complete interop owners pass322
+cases in the runbook branch; both files pass locked Markdown lint.
+
+The release-note owner restores five genuine missing source contracts/schema
+from their original Git objects. Only22 trailing ASCII spaces on11 metadata
+lines in three documents change; the remaining two artifacts are byte-exact.
+Provenance and failed snapshots are retained in
+/tmp/gludd-v012-release-note-integrity-report.md. Both complete original note
+owners pass56 cases with98.7% line/97.3% branch coverage. The normal clone guard
+rejects the initial adjacent-string representation; one multiline literal
+preserves byte-exact generated output and passes that guard. A separate
+collection refusal identifies an outer run-watched CMD containing a canonical
+checkout path. Direct ship-commit-files retains native observed collection
+without forwarding that unrelated wrapper carrier.
+
+Public-source review is explicit, not inferred from AST or prefixes. Baseline
+prerequisites cbac69d,572489c and d93a680 retain six original fixture reviews,
+eight native findings for public audit-identity literals, and six generated
+release-snapshot identities respectively. Each passes49 baseline controls and
+fresh zero-error collection before commit. Native compaction records1352
+findings in390files with unchanged scanner settings. The public-review helper
+passes97 complete cases at98.8% line/96.5% branch coverage and cannot authorize
+those additional findings. Unknown identities remain unknown. Native scan
+inventory is diagnostic only; read-only admission supplies the actual verdict.
+
+A normal source commit also exposes a missing registered owner for preserved
+checkpoint db4b17f. Restore the original pages-cold-readiness branch/path, then
+apply the existing native checkpoint-owner retention lock. Do not pop, apply,
+drop or relabel that saved work. Five original checkpoints then verify with
+unowned0. A later owned two-file integration checkpoint retains both versions
+while the guide lands; reconcile only the named TASKS overlap. The native
+guard now verifies all six checkpoints with unowned0. This is source recovery,
+not gate, hosted or release evidence.
+
+One parser-source commit attempt captures a real transient index.lock failure
+from its first git write-tree. Fresh collection passes127132/127156 with24
+deselected and0errors, but comparison correctly refuses the empty snapshot;
+no commit is made. The existing owner did not propagate either snapshot's
+native status, needlessly spending that collection. Three failing-first controls
+cover first, second and both failures; the last reproduces a false successful
+harmless capture commit when both snapshots are empty. Propagate each native
+status immediately in the existing recipe. Keep current-tree drift, all guards
+and one fresh collection on the successful path; never delete an unknown lock
+or retry while the same failing input remains. Evidence:
+/tmp/gludd-v012-commit-tree-capture-red.xml. All38 complete native collection/
+commit-owner cases then pass in17.93s; the corrected real source commits retain
+one fresh collection and unchanged staged-tree authority.
+
+Serialize source commits and their temporary pre-commit stashing with checks
+in the same checkout. A parallel check can otherwise inspect restored HEAD
+bytes instead of the intended working tree. Preserve such observations as
+transient failures, then validate the actual restored inputs. Use another
+isolated checkout for independent work; do not add an observer or cache.
+
+The earlier native-profile gate remains FAILED in
+.gate-logs/gate-20261020173636-0d36c909.log. Its exact FIFO trace node reaches a
+LangSmith deprecation during fresh plugin discovery on CPython3.14 before its
+original assertion;624 sibling cases pass. Do not disable plugins, filter the
+warning, waive the assertion or substitute that native profile for canonical
+release proof. The actual final release runtime/profile, full gate and hosted
+SHA still need proof. Disk measurement subsequently reaches96% against95%.
+The actual existing disk-cleanup-preflight runs with dry-run0 and grace1800,
+removes16 eligible entries with zero cleanup errors, then refuses rc1 because
+disk remains96%. A second no-progress pass removes0; retained evidence, live
+owners and checkpoint locks remain protected. Shared UV cache pruning is
+withheld for actual active PID68501. Existing stale-resource namespace planning
+finds39 candidates and0 reclaimable at the unchanged24-hour grace. Do not force
+pruning, shorten grace, signal an unknown process, raise95%, or retry unchanged
+admission/full proof. Extend the existing active-work producer with a bounded
+read-only PID input to identify that actor before choosing an ownership-safe
+remedy; diagnostic visibility grants no cleanup or kill authority.
+
+Actual make active-work-status ACTIVE_WORK_STATUS_PID=68501 identifies
+uv run python3 scripts/agent_watchdog.py, PPID1, CWD this repository. The native
+diagnostic correctly leaves ownership unverified: CWD alone is not a termination
+receipt. Existing watchdog-status reports no convenience PID file while the
+old watchdog log is live. The next repair belongs to the existing acknowledged
+watchdog lifecycle and native namespaced lease; it must launch installed Python
+directly and preserve checked startup/identity/drain authority.
+
+The [original upstream user report16112](https://github.com/astral-sh/uv/issues/16112)
+from2025-10-03 reproduces prune/clean waiting behind an open uv run child.
+[Current upstream cache documentation](https://docs.astral.sh/uv/concepts/cache/)
+confirms exclusive cleanup waits and its bounded timeout; it prohibits direct
+cache modification. These findings support fixing the long-lived wrapper and
+using the existing native cleanup owner. They do not authorize force, broad
+process kills, changed95% policy or removal of live environments/evidence.
 
 ## Mechanical scheduling admission
 

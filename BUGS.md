@@ -4,6 +4,62 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-20 - Source staging exposed false green workflow checks
+
+Default TAG admitted an old runbook, and contract parsing lost recipes beside
+target-specific assignments. Native negative controls now enforce project-version
+binding, composed fragments, declaration order and real duplicate detection.
+The Make carrier repair had also dropped an omitted-input control and hardcoded
+the desired admission binding in its fixture. Restore every original assertion
+and distinct mutation, then derive the fixture from one actual source snapshot.
+The retained coverage replay passes523 cases at97.5% line/95.1% branch; subsequent
+production-binding controls pass36 complete admission cases and9 guide cases.
+The owning release-throughput feature retains every failure and exact receipt.
+
+A broken public-review recipe passed unsupported --tasks; actual CLI rc2 exposed
+it before contract registration. Its corrected baseline/policy interface and
+native canonicalization retain1352 findings/390files, with257 contracts and0
+duplicate targets. Three uncommitted inline debug helpers are preserved outside
+the tree and superseded by existing native owners. Public-source prefixes never
+grant review authority; six exact reviewed identities remain the fixed limit.
+
+Source commits must serialize with checks in their checkout because pre-commit
+temporarily stashes unrelated working files. Preserve transient failures rather
+than treating restored HEAD bytes as intended input. A second missing original
+checkpoint owner is recovered through native registered-worktree retention;
+all six preserved checkpoints verify with unowned0.
+
+The next normal source attempt exposes native index.lock contention. Collection
+passes127132/127156 with24 deselected/0errors, then the native tree comparison
+correctly refuses. First/second/both capture failures reproduce3 failing controls;
+both missing statuses can falsely pass a harmless captured commit. Propagate each
+git write-tree status before further work, preserving drift checks, guard scope
+and fresh collection. No lock is manually deleted and no mixed commit is made.
+
+The mandatory enforcement reference still instructed a three-agent minimum and
+suggested disabling checks despite the root zero-floor/max-three precedence.
+Two controls fail first; the complete existing guide owner then passes11 cases.
+The reference now uses the native current roster, keeps restart/verification and
+hasRealPendingWork, and retains historical policy as history. No hook is disabled
+or edited.
+
+Bounded existing-producer PID inspection passes94 complete cases at94.8% line/
+91.2% branch; Make transport plus the unchanged reverse environment audit retains
+1FAIL/44PASS for a split export before the established literal export form fixes
+the actual source. All45 cases then pass. Actual PID68501 is the old UV watchdog
+supervisor with repository CWD; the diagnostic intentionally grants no kill
+authority. Legacy status lacks a PID file while the watchdog remains live.
+Fix its existing acknowledged lifecycle/lease and retain the original capacity
+failure; the owning feature links the original upstream cache-lock user report.
+
+Actual safe cleanup removes16 entries with0 cleanup errors but cannot satisfy
+the95% disk policy: measured96%, rc1. The shared UV cache is protected by actual
+active PID68501;39 stale namespace candidates yield0 reclaimable. Continue
+bounded source work and identify the process through the existing diagnostic
+producer. Do not weaken retention, fabricate ownership or retry expensive proof
+without changed capacity. The prior native-profile FIFO failure and canonical
+release gate, exact-SHA hosted CI and promotion remain open.
+
 ### 2026-10-20 - Mandatory Make guide disagreed with release owners
 
 The first-read target guide recommended direct master merges, shared-history

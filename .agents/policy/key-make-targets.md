@@ -14,6 +14,11 @@ SHA and staged/unstaged paths; `make all-worktree-state` includes other checkout
 Use `make active-work-status`, `make ps` and `make disk` to identify existing
 owners, subprocesses, worker capacity and disk use. `make ps-gludd` covers
 namespaced daemons only. Model-agent status is separate from process PIDs.
+If an existing owner names a blocking OS process, inspect that exact positive PID
+with make active-work-status ACTIVE_WORK_STATUS_PID=12345 (substitute its measured
+PID). This bounded read-only diagnostic grants no gate or termination authority;
+CWD evidence alone does not establish project ownership. Empty
+ACTIVE_WORK_STATUS_PID retains the ordinary status schema.
 
 Preserve existing staged work and immutable failure evidence. A live gate owns
 its frozen candidate: do not edit that checkout, change its index or move its
@@ -67,10 +72,13 @@ holds the candidate or resources:
 
 ```bash
 make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 WORK_ITEM_ID=S98.4 OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20
-make gate GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1
+make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=0 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 WORK_ITEM_ID=S98.4
 ```
 
-Use the installed canonical release runtime and the complete gate. Preserve
+The observed owner runs the canonical make gate policy and records the outer
+lifecycle required by native receipt finalization. Run it once; a second gate
+cannot manufacture missing evidence. Use the installed canonical release runtime
+and the complete gate. Preserve
 85% aggregate and 75% per-file line and branch coverage, fatal warnings, ZDD,
 cleanup and exact-SHA promotion requirements. The native gate owns .gate-status
 and its authenticated evidence. Resume only through the existing authenticated
@@ -89,6 +97,11 @@ JSON or repeatedly poll status in place of repairing a known failure.
 development. For a bounded source repair, use
 `make ship-commit-files FILES='explicit paths' MSG='one tested change' PUSH=0`;
 its native content, index-scope and fresh collection guards still apply.
+Serialize the commit and other checks in that checkout: pre-commit can temporarily
+stash unstaged files. Wait for its terminal result before inspecting the same
+checkout, or use an isolated checkout. The source owner already streams observed
+collection; an outer run-watched CMD must not carry another checkout's paths
+into its test environment.
 `make git-commit MSG='one tested change'` additionally requires a fresh green
 gate. Keep each small tested change in its own commit.
 Before a push, `make verify-state` must identify the intended current branch.

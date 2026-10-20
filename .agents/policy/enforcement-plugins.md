@@ -1,52 +1,57 @@
-## CRITICAL: Enforcement Plugin Reference (Session-Start Self-Awareness)
+## CRITICAL: Enforcement Plugin Reference
 
-Before making ANY tool call, the agent MUST know which plugins are active and what they block. Run `make list-plugins` at session start for the current roster.
+Read this before plugin or enforcement work. The root
+[AGENTS.md](../../AGENTS.md) owns policy and precedence; the
+[key Make guide](key-make-targets.md) owns the ordered operating path.
+Run `make list-plugins` for the current registered roster, hook families and
+configuration knobs. Registration order in opencode.json determines hook order.
 
-### Plugin Tool-Execute Blocks (in priority order)
+### Current dispatch policy
 
-Plugins fire in opencode.json registration order. Earlier plugins win on ties.
+The controlling cost-efficiency rule is default adaptive minimum0, hard maximum3,
+with an operator floor0..3. Focused inline work is valid. Historical three-agent
+floors and streak descriptions cannot raise that minimum or justify filler.
+A configured positive floor applies only within the root policy's useful-work,
+release-priority, resource and ownership limits.
 
-| Plugin | What it blocks | Disable via |
-|--------|---------------|-------------|
-| enforce-context.ts | ALL tools when SESSION.md stale >24h (↳ reads excluded) | GLUDD_CONTEXT_ENFORCE=0 |
-| enforce-multitask.ts | ALL non-dispatch tools when <3 dispatches (↳ reads excluded) | GLUDD_MULTITASK_FLOOR_ENFORCE=0 |
-| enforce-delegate.ts | edit/write/bash after 2 consecutive calls; read-grind after serial reads | GLUDD_MAINTHREAD_STREAK_ENFORCE=0 |
-| enforce-floor.ts | ALL non-dispatch tools after 5 calls in 30s (↳ reads excluded) | GLUDD_FLOOR_ENFORCE=0 |
-| enforce-session-start.ts | edit/write/bash until >=3 dispatches made | GLUDD_SESSION_START_ENFORCE=0 |
-| enforce-make.ts | non-make bash commands | (hard-coded ON) |
-| enforce-clean-tree.ts | task/agent dispatch on dirty git tree | GLUDD_CLEAN_TREE_ENFORCE=0 |
-| enforce-tdd.ts | edit/write to src/ when no test file exists | GLUDD_TDD_ENFORCE=0 |
-| enforce-no-suppressions.ts | edit/write with # noqa / # type: ignore | GLUDD_NO_SUPPRESSIONS_ENFORCE=0 |
-| enforce-no-wait.ts | bash sleep/ci-wait/gate-tail on main thread | GLUDD_NO_WAIT_ENFORCE=0 |
-| enforce-deadline.ts | task dispatch past timeout (5min default) | GLUDD_TASK_DEADLINE_ENFORCE=0 |
-| enforce-depth.ts | task/agent dispatch exceeding depth limit | GLUDD_DEPTH_ENFORCE=0 |
-| enforce-enhancement-ratio.ts | task/agent dispatch when fix% > 50% | GLUDD_ENHANCEMENT_RATIO_ENFORCE=0 |
-| enforce-batch-push.ts | bash push while CI pending | GLUDD_BATCH_PUSH_ENFORCE=0 |
-| enforce-branch-discipline.ts | bash push/merge from worktree | GLUDD_BRANCH_DISCIPLINE_ENFORCE=0 |
-| enforce-worktree.ts | bash push/merge/tag from inside worktree | GLUDD_WORKTREE_ENFORCE=0 |
-| enforce-deletion-gate.ts | edit/write that deletes files | GLUDD_DELETION_GATE_ENFORCE=0 |
-| enforce-objective.ts | edit/write/bash when PRIMARY OBJECTIVE unmet | GLUDD_OBJECTIVE_ENFORCE=0 |
-| enforce-verified-claims.ts | bash push without verification | GLUDD_VERIFIED_CLAIMS_ENFORCE=0 |
-| enforce-commit-lock.ts | concurrent git operations | GLUDD_COMMIT_LOCK_ENFORCE=0 |
-| enforce-task-tracking.ts | edit/write to src/ when TASKS.md unchanged | GLUDD_TASK_TRACKING_ENFORCE=0 |
-| enforce-test-integrity.ts | edit/write with CI anti-patterns | GLUDD_TEST_INTEGRITY_ENFORCE=0 |
+Before mutations, read tracking state and establish ownership through the native
+owners. A roster entry is not proof that its host loaded the current code.
+Report model-agent names/status separately from actual native subprocess PIDs.
 
-### Text-Output Plugins (fire on response, not on tool calls)
+### Diagnose a block through its owner
 
-| Plugin | What it blocks | Disable via |
-|--------|---------------|-------------|
-| enforce-stop.ts | text-only responses when work pending | (hard-coded ON) |
-| enforce-anti-essay.ts | essay-length responses when work pending | GLUDD_ANTI_ESSAY_ENFORCE=0 |
-| enforce-audit.ts | done-words in text when work pending | GLUDD_AUDIT_ENFORCE=0 |
+Read the actual denial and identify its failing input. Use permitted read paths
+to inspect that input; read-exempt hooks do not confer access outside the five
+authorized prefixes. Retain failed evidence and repair the implementation or
+configuration that caused the denial.
 
-### Quick Reference
+Do not disable or weaken a guard to get past noise, an error or friction.
+Do not add another observer, runner, daemon or cache. Use the existing
+Make owner and the root guardrail-integrity recovery rules. A documented
+configuration knob is not blanket authorization to turn off enforcement.
+The `hasRealPendingWork` protection remains active through all recovery paths;
+empty todos or a heuristic reset cannot erase pending task/gate/CI evidence.
 
-```bash
-make list-plugins              # Full roster with hooks and block conditions
-GLUDD_FLOOR_ENFORCE=0 make ... # Temporarily disable floor enforcement
-GLUDD_SESSION_START_ENFORCE=0  # Disable session-start gate (Q&A sessions)
-GLUDD_MAINTHREAD_STREAK_ENFORCE=0  # Disable delegate streak block
-make verify-enforcement        # Check all plugins are healthy
-```
+The [versioned policy source](../../docs/AGENT_POLICY_V1_SOURCE_3583000.md)
+retains historical plugin tables and incident context. Those inventories and
+old disable examples are historical evidence, not the current operating recipe.
 
-**Key insight:** plugins that only block `edit/write/bash` or `task/agent` do NOT block `read`/`grep`/`glob` calls. The agent can always read files to diagnose blocked edits. Plugins marked "↳ reads excluded" explicitly skip read tools.
+### Verify code and runtime activation separately
+
+After a plugin change, run the relevant failing-first behavioral owner and
+`make test-hook-runtime`. Run `make check-node-v26-compat` for native stripping,
+`make verify-plugin-manifest` for registration/source correspondence, and
+`make verify-enforcement` for the existing enforcement checks. Preserve each
+owner's native exit status and failure logs; structural checks alone are
+insufficient behavioral evidence.
+
+Any .opencode/plugin/*.ts code edit requires an application restart. Inform the
+user and continue under the existing loaded behavior until that restart.
+Compiled /tmp modules are loaded at startup; hot-module fallback or state reload
+does not remove this duty. State-only tuning may use its documented native
+reload owner; it does not activate changed plugin source.
+
+After restart, attempt a text-only response once to verify actual enforcement.
+If it succeeds while real work is pending, investigate rather than claiming the
+hook works. Runtime activation, source acceptance, full gate and exact-SHA CI
+remain distinct evidence. Follow the root release and completion gates.
