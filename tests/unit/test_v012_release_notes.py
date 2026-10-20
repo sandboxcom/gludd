@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+import pytest
+from scripts.release_page_notes import build_release_page_notes, load_release_ledger
 
 ROOT = Path(__file__).parent.parent.parent
 NOTES = ROOT / "docs" / "releases" / "v0.1.2.md"
@@ -158,3 +162,29 @@ def test_release_notes_do_not_claim_unproved_completion() -> None:
         "live laya integration",
     ):
         assert unsupported_claim not in lowered
+
+
+@pytest.mark.parametrize(
+    "original_contract",
+    [
+        test_release_status_is_machine_readable_and_matches_manifest,
+        test_release_notes_retain_all_user_and_operator_boundaries,
+        test_every_normative_claim_has_a_manifest_contract_or_runbook_link,
+        test_release_notes_do_not_claim_unproved_completion,
+    ],
+    ids=["status", "operator-boundaries", "claim-links", "no-unproved-completion"],
+)
+def test_generator_retains_original_release_note_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    original_contract: Callable[[], None],
+) -> None:
+    ledger = load_release_ledger(
+        ROOT / "config" / "v012_completed_backlog_reconciliation.json",
+        "v0.1.2",
+    )
+    generated = tmp_path / "v0.1.2.md"
+    generated.write_text(build_release_page_notes(ledger), encoding="utf-8")
+    monkeypatch.setitem(globals(), "NOTES", generated)
+
+    original_contract()

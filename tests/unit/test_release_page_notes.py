@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 from scripts.makefile_layout import compose_makefile
@@ -113,11 +116,11 @@ def test_build_notes_is_deterministic_categorized_and_unreleased(tmp_path: Path)
 )
 def test_load_release_ledger_fails_closed(
     tmp_path: Path,
-    mutation: object,
+    mutation: Callable[[dict[str, object]], object],
     message: str,
 ) -> None:
     payload = _ledger()
-    mutation(payload)  # type: ignore[operator]
+    mutation(payload)
 
     with pytest.raises(ReleaseNotesError, match=message):
         load_release_ledger(_write_ledger(tmp_path, payload), "v0.1.2")
@@ -787,3 +790,168 @@ def test_release_publication_uses_v012_page_and_safe_other_tag_fallback() -> Non
     assert 'if [ "$(TAG)" = "v0.1.2" ]' in release_create
     assert '--notes-file "docs/releases/v0.1.2.md"' in release_create
     assert '--notes "Release $(TAG) (manual single-binary draft' in release_create
+
+
+def _integration_inventory() -> dict[str, object]:
+    source = (ROOT / "docs/releases/v0.1.2-integration-manifest.md").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r"<!-- v012-integration-inventory:start -->\s*```json\s*(.*?)\s*"
+        r"```\s*<!-- v012-integration-inventory:end -->",
+        source,
+        re.DOTALL,
+    )
+    assert match is not None
+    decoded: object = json.loads(match.group(1))
+    assert isinstance(decoded, dict)
+    return cast(dict[str, object], decoded)
+
+
+def _inventory_record(value: object) -> dict[str, object]:
+    assert isinstance(value, dict)
+    return cast(dict[str, object], value)
+
+
+def _write_integration_manifest(tmp_path: Path, inventory: object) -> Path:
+    path = tmp_path / "integration-manifest.md"
+    path.write_text(
+        "<!-- v012-integration-inventory:start -->\n"
+        "```json\n"
+        + json.dumps(inventory)
+        + "\n```\n<!-- v012-integration-inventory:end -->\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "schema",
+        "manifest-commit",
+        "combined-proof",
+        "unknown-stream",
+        "missing-stream",
+        "stream-object",
+        "head",
+        "missing-head",
+        "source-status",
+        "proof-status",
+        "integration-status",
+    ],
+)
+def test_v012_render_refuses_unrecognized_manifest_authority(
+    tmp_path: Path, fault: str
+) -> None:
+    inventory = _integration_inventory()
+    streams = _inventory_record(inventory["streams"])
+    natural = _inventory_record(streams["natural_language_config"])
+    if fault == "schema":
+        inventory["schema_version"] = True
+    elif fault == "manifest-commit":
+        inventory["manifest_base"] = "short"
+    elif fault == "combined-proof":
+        inventory["combined_release_proof"] = "passed"
+    elif fault == "unknown-stream":
+        streams["unreviewed_stream"] = dict(natural)
+    elif fault == "missing-stream":
+        streams.pop("natural_language_config")
+    elif fault == "stream-object":
+        streams["natural_language_config"] = []
+    elif fault == "head":
+        natural["head"] = "short"
+    elif fault == "missing-head":
+        natural.pop("head")
+    elif fault == "source-status":
+        natural["status"] = "released"
+    elif fault == "proof-status":
+        natural["proof_status"] = "complete"
+    else:
+        natural["integration_status"] = "integrated"
+    manifest = _write_integration_manifest(tmp_path, inventory)
+    ledger = load_release_ledger(_write_ledger(tmp_path, _ledger()), "v0.1.2")
+
+    with pytest.raises(ReleaseNotesError, match="integration manifest"):
+        build_release_page_notes(ledger, integration_manifest=manifest)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "no inventory block",
+        "<!-- v012-integration-inventory:start -->\n```json\n{\n```\n"
+        "<!-- v012-integration-inventory:end -->",
+        "<!-- v012-integration-inventory:start -->\n```json\n"
+        '{"schema_version": 1, "schema_version": 1}\n```\n'
+        "<!-- v012-integration-inventory:end -->",
+    ],
+    ids=["missing-block", "malformed-json", "duplicate-json-key"],
+)
+def test_v012_render_refuses_invalid_manifest_encoding(
+    tmp_path: Path, source: str
+) -> None:
+    manifest = tmp_path / "integration-manifest.md"
+    manifest.write_text(source, encoding="utf-8")
+    ledger = load_release_ledger(_write_ledger(tmp_path, _ledger()), "v0.1.2")
+
+    with pytest.raises(ReleaseNotesError):
+        build_release_page_notes(ledger, integration_manifest=manifest)
+
+
+def test_v012_render_refuses_ambiguous_manifest_blocks(tmp_path: Path) -> None:
+    manifest = _write_integration_manifest(tmp_path, _integration_inventory())
+    source = manifest.read_text(encoding="utf-8")
+    manifest.write_text(source + source, encoding="utf-8")
+    ledger = load_release_ledger(_write_ledger(tmp_path, _ledger()), "v0.1.2")
+
+    with pytest.raises(ReleaseNotesError, match="exactly one"):
+        build_release_page_notes(ledger, integration_manifest=manifest)
+
+
+def test_v012_render_binds_every_stream_without_mutating_manifest(tmp_path: Path) -> None:
+    inventory = _integration_inventory()
+    streams = _inventory_record(inventory["streams"])
+    natural = _inventory_record(streams["natural_language_config"])
+    natural["head"] = "e" * 40
+    manifest = _write_integration_manifest(tmp_path, inventory)
+    before = manifest.stat()
+    source = manifest.read_bytes()
+    ledger = load_release_ledger(_write_ledger(tmp_path, _ledger()), "v0.1.2")
+
+    rendered = build_release_page_notes(ledger, integration_manifest=manifest)
+    assert rendered == build_release_page_notes(ledger, integration_manifest=manifest)
+    match = re.search(
+        r"<!-- v012-release-status:start -->\s*```json\s*(.*?)\s*```",
+        rendered,
+        re.DOTALL,
+    )
+    assert match is not None
+    status = _inventory_record(json.loads(match.group(1)))
+    assert status["combined_release_proof"] == inventory["combined_release_proof"]
+    assert status["manifest_commit"] == inventory["manifest_base"]
+    released_streams = _inventory_record(status["streams"])
+    assert set(released_streams) == set(streams)
+    for name, manifest_stream in streams.items():
+        expected = _inventory_record(manifest_stream)
+        actual = _inventory_record(released_streams[name])
+        for field in ("head", "status", "proof_status", "integration_status"):
+            assert actual[field] == expected[field]
+    assert rendered.count("<!-- v012-release-status:start -->") == 1
+    assert manifest.read_bytes() == source
+    after = manifest.stat()
+    assert (before.st_ino, before.st_mtime_ns) == (after.st_ino, after.st_mtime_ns)
+
+
+def test_other_release_does_not_acquire_v012_manifest_authority(tmp_path: Path) -> None:
+    payload = _ledger()
+    payload["release"] = "v0.2.0"
+    ledger = load_release_ledger(_write_ledger(tmp_path, payload), "v0.2.0")
+
+    rendered = build_release_page_notes(
+        ledger, integration_manifest=tmp_path / "absent-manifest.md"
+    )
+
+    assert rendered.startswith("# Gludd v0.2.0\n")
+    assert "<!-- v012-release-status:start -->" not in rendered
+    assert "**Status: Unreleased.**" in rendered
