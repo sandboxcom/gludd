@@ -760,8 +760,11 @@ help:
 		"  --- Secrets + Security ---" \
 		"  secrets-scan          Scan for secrets against baseline (read-only; GLUDD_WORKER_LIMIT, ARGS)" \
 		"  secrets-scrub         Interactive secret audit + scrub" \
+		"  check-runbook-currency Bind the active release runbook to project version and native Make owners (TAG)" \
 		"  secrets-baseline      Refresh and verify canonical .secrets.baseline" \
 		"  secrets-baseline-check Verify canonical .secrets.baseline without mutation (SECRETS_BASELINE_FILE, POLICY, REPO_ROOT, EXECUTABLE)" \
+		"  secrets-baseline-compact Canonicalize existing findings through the native baseline owner (SECRETS_BASELINE_FILE, POLICY, REPO_ROOT, EXECUTABLE)" \
+		"  secrets-baseline-audit-public Apply only six fixed public finding reviews (SECRETS_BASELINE_FILE, POLICY)" \
 		"  check-secrets-files   Native read-only hook on explicit files (SECRETS_FILES, SECRETS_BASELINE_FILE)" \
 		"  git-unstage-files     Remove explicit files from index, preserving content (FILES)" \
 		"  scan-secrets          Alias for secrets-scan (GLUDD_WORKER_LIMIT, ARGS)" \

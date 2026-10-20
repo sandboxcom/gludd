@@ -140,6 +140,16 @@ secrets-baseline:
 secrets-baseline-check:
 	@$(UV) run python scripts/manage_secrets_baseline.py check --baseline "$(SECRETS_BASELINE_FILE)" --policy "$(POLICY)" --repo-root "$(REPO_ROOT)" --executable "$(EXECUTABLE)"
 
+# secrets-baseline-compact: canonicalize the existing baseline without scanning.
+secrets-baseline-compact:
+	@$(UV) run python scripts/manage_secrets_baseline.py compact --baseline "$(SECRETS_BASELINE_FILE)" --policy "$(POLICY)" --repo-root "$(REPO_ROOT)" --executable "$(EXECUTABLE)"
+
+# Public reviews are fixed filename/detector/digest identities in the native owner.
+# Unknown findings retain their review state; no source-derived review authority.
+.PHONY: secrets-baseline-compact secrets-baseline-audit-public
+secrets-baseline-audit-public:
+	@$(UV) run python scripts/audit_public_secrets.py --baseline "$(SECRETS_BASELINE_FILE)" --policy "$(POLICY)"
+
 # security-audit: all phases emit bounded JSON heartbeats and timings. The
 # detect-secrets child is deliberately silenced so credential values cannot be
 # copied into terminals or CI logs; only its exit status and timing are exposed.
@@ -374,10 +384,10 @@ ship-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _
 				exit 1; \
 			fi; \
 		fi; \
-		STAGED_TREE=$$(git write-tree); \
+		STAGED_TREE=$$(git write-tree) || exit $$?; \
 		echo "Running pre-commit collection check..."; \
 		$(MAKE) --no-print-directory test-count || exit $$?; \
-		CURRENT_TREE=$$(git write-tree); \
+		CURRENT_TREE=$$(git write-tree) || exit $$?; \
 		if [ "$$CURRENT_TREE" != "$$STAGED_TREE" ]; then \
 			echo "BLOCKED: staged index changed during preflight; refusing mixed commit." >&2; \
 			echo "Expected staged tree: $$STAGED_TREE" >&2; \

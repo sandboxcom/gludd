@@ -2,6 +2,21 @@
   "version": 1,
   "targets": [
     {
+      "name": "secrets-baseline-compact",
+      "make_variables": ["SECRETS_BASELINE_FILE", "POLICY", "REPO_ROOT", "EXECUTABLE"],
+      "behavior": "make secrets-baseline-compact SECRETS_BASELINE_FILE=.secrets.baseline POLICY=config/detect_secrets_baseline_policy.json REPO_ROOT=. EXECUTABLE=detect-secrets"
+    },
+    {
+      "name": "secrets-baseline-audit-public",
+      "make_variables": ["SECRETS_BASELINE_FILE", "POLICY"],
+      "behavior": "make secrets-baseline-audit-public SECRETS_BASELINE_FILE=.secrets.baseline POLICY=config/detect_secrets_baseline_policy.json"
+    },
+    {
+      "name": "check-runbook-currency",
+      "make_variables": ["TAG"],
+      "behavior": "make check-runbook-currency TAG=v0.1.2"
+    },
+    {
       "name": "agent-worktree-retain",
       "make_variables": [
         "BRANCH",

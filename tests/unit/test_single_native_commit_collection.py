@@ -71,6 +71,10 @@ elif args == ["write-tree"]:
     counter = Path(os.environ["CAPTURE_LOG"] + ".trees")
     count = int(counter.read_text() if counter.exists() else "0") + 1
     counter.write_text(str(count))
+    failure = os.environ.get("TREE_FAILURE")
+    if failure == "both" or failure == ("first" if count == 1 else "second"):
+        print("fixture git write-tree refused", file=sys.stderr)
+        raise SystemExit(73)
     print("changed-tree" if count > 1 and os.environ.get("INDEX_DRIFT") == "1" else "staged-tree")
 elif args == ["diff", "--cached", "--quiet"]:
     raise SystemExit(1)
@@ -313,6 +317,18 @@ def test_collection_failure_refuses_commit_and_preserves_bounded_diagnostics(tmp
     tails = [event["args"] for event in events if event["kind"] == "tail"]
     assert len(tails) == 1 and tails[0][tails[0].index("--tail") + 1] == "80"
     assert sum(event["args"] == ["write-tree"] for event in events) == 1
+
+
+@pytest.mark.parametrize("failure", ["first", "second", "both"])
+def test_failed_native_tree_capture_refuses_before_unnecessary_work(tmp_path: Path, failure: str) -> None:
+    result, events = _run(tmp_path, state={"TREE_FAILURE": failure})
+    assert result.returncode != 0
+    assert "fixture git write-tree refused" in result.stderr
+    assert "Error 73" in result.stderr
+    assert not _commits(events)
+    assert len(_observes(events)) == (1 if failure == "second" else 0)
+    assert "staged index changed" not in result.stderr
+    assert sum(event["args"] == ["write-tree"] for event in events) == (2 if failure == "second" else 1)
 
 
 def test_success_tail_failure_also_refuses_commit(tmp_path: Path) -> None:
