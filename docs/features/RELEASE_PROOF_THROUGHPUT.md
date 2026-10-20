@@ -53,10 +53,19 @@ changing UV/MAKEFLAGS values and exposes the existing source hash as a token.
 All48 original syntax/parser/guide/session cases pass2.97s; contracts268 and
 unique targets1174/0duplicates pass. Original runtime failure remains retained.
 
-The isolated source owner adds fresh package/flat native observer coverage and
-repairs only the proven sibling binding. Root integrates its accepted source
-before another repair-owned311 execution;312 needs its own actual installed
-runtime and WebKit its actual browser owner. These remain missing proofs,
+The isolated source owner commits 9016ca9e8ed019823872db8b868698a7fd2d4de6;
+Root integrates its two-line binding and12 fresh package/flat native controls
+as8344287f7. Native RED7FAIL/5PASS precedes12PASS. Complete ten-owner acceptance
+passes269/0skip; unchanged whole kill_owned_gate.py coverage passes92.8% line
+and91.1% branch under85/75, audit20261020T204425Z. Ruff/strict2files pass;
+source collection127236/127260,24deselected/0errors, remains distinct from Main.
+Exact commands and terminal source evidence are in
+/tmp/gludd-v012-observer-import-repair.md. The three source-format fixes retain
+original assertions: Make146b5e8 and handoff8e9947e each have native zero-error
+collection. Native read-only inspection also verifies Main's registered
+ci-shards/python-3.12 slot as CPython3.12.15/ci, zero mismatches; no environment
+is acquired or changed. Another repair-owned311 execution needs this actual
+changed source;312 needs its own runtime and WebKit its actual browser owner. These remain missing proofs,
 alongside final capacity admission, full gate, exact-SHA CI and deployment.
 All19release records stay open. The mandatory guide and AGENTS.md now expose
 this existing guarded route so a smaller model does not stop at source receipts.
