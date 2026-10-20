@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Protocol, TypeVar, runtime_checkable
 
+from general_ludd.execution.adapter_protocols import (
+    CallableAdapterProtocol,
+    require_runtime_adapter,
+)
 from general_ludd.self_improve.codex_comparison import CodexReference
 from general_ludd.self_improve.managed_runner import (
     AttemptResult,
@@ -18,7 +22,11 @@ from general_ludd.self_improve.private_policy import SelfImproveRuntimePolicyGua
 _RunnerT = TypeVar("_RunnerT", contravariant=True)
 
 
-class ManagedAttemptEvaluator(Protocol[_RunnerT]):
+@runtime_checkable
+class ManagedAttemptEvaluator(
+    CallableAdapterProtocol[..., AttemptResult],
+    Protocol[_RunnerT],
+):
     """Evaluate one immutable plan-bound proposal with an owned runner."""
 
     def __call__(
@@ -52,6 +60,11 @@ def evaluate_policy_bound_managed_proposal(
     """Recheck project policy immediately around one managed evaluation."""
     if merge:
         raise ValueError("managed self-improvement cannot merge a live branch")
+    require_runtime_adapter(
+        evaluator,
+        CallableAdapterProtocol,
+        boundary="managed attempt evaluator",
+    )
     proposal_paths = tuple(
         sorted(
             {
