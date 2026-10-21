@@ -129,7 +129,9 @@ def _task_label(command: str) -> str:
     if "stream_command.py" in command:
         return "observed-command"
     # An audit may name watchdog code; watchdog arguments may name an audit.
-    watchdog_source = re.search(r"(?:task|agent)_watchdog\.py", command)
+    watchdog_source = re.search(
+        r"(?:^|\s)(?:[^\s=]*/)?(?:task|agent)_watchdog\.py(?=\s|$)", command,
+    )
     audit_execution = re.search(
         r"(?:^|\s)(?:\S*/)?(?:pytest|-mpytest|mypy|detect-secrets|audit_coverage\.py)(?=\s|$)",
         command,
@@ -240,6 +242,19 @@ def _owned_resource_roots(repository_roots: tuple[Path, ...]) -> tuple[Path, ...
     return tuple(roots)
 
 
+def _is_tracked_command(command: str) -> bool:
+    """Match tracked command words without promoting directory-name substrings."""
+    for token in _TRACKED_PROCESS_TOKENS:
+        suffix = r"(?=\s|$)"
+        if token == "multiprocessing":
+            suffix = r"(?=[.\s]|$)"
+        elif token == "make gate":
+            suffix = r"(?=[-\s]|$)"
+        if re.search(rf"(?:^|\s)(?:[^\s=]*/)?{re.escape(token)}{suffix}", command):
+            return True
+    return False
+
+
 def _owned_processes_from_output(
     output: str,
     *,
@@ -253,7 +268,7 @@ def _owned_processes_from_output(
         if len(fields) != 3:
             continue
         pid, ppid, command = fields
-        if not any(token in command for token in _TRACKED_PROCESS_TOKENS):
+        if not _is_tracked_command(command):
             continue
         candidates.append(
             {"pid": pid, "ppid": ppid, "command": command, "task": _task_label(command)}
@@ -642,7 +657,6 @@ def _active_gate_refresh_owner(_namespace: str) -> str | None:
 
 def _safe_bounded_text(value: str, *, limit: int) -> str:
     """Replace control characters and truncate one diagnostic string."""
-
     safe = "".join(character if character.isprintable() else "?" for character in value)
     if len(safe) <= limit:
         return safe
@@ -653,7 +667,6 @@ def _collection_lease_observability(
     processes: list[dict[str, str]],
 ) -> dict[str, object]:
     """Return bounded holder and waiter evidence for the canonical lease."""
-
     try:
         path = default_collection_lock(ROOT)
         inspection = inspect_lease(path)

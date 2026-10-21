@@ -584,6 +584,19 @@ def test_shared_toolchain_inventory_keeps_only_tracked_ancestry(
 
 
 @pytest.mark.parametrize(
+    "directory_name",
+    ("pytest", "mypy", "agent_watchdog.py", "run_presentation_browser_tests.py"),
+)
+def test_process_inventory_does_not_promote_resource_directory_names(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, directory_name: str,
+) -> None:
+    """A directory spelling cannot turn an unrelated wrapper into a tracked task."""
+    test_shared_toolchain_inventory_keeps_only_tracked_ancestry(
+        monkeypatch, tmp_path / directory_name,
+    )
+
+
+@pytest.mark.parametrize(
     "foreign_suffix",
     ("-toolchain-copy", "-toolchains", "-other-toolchain", "/../foreign-toolchain"),
 )
