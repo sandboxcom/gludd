@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import subprocess
@@ -133,3 +134,69 @@ def test_ordinary_pruning_cannot_bypass_native_retirement_protections(
     assert git(root, "show-ref") == before_refs
     if protection == "unknown-data":
         assert (target / "operator.secret").read_bytes() == b"preserve unknown ignored data"
+
+
+@pytest.mark.parametrize("environment_overrides", [False, True])
+def test_cleanup_alias_plans_the_real_registered_native_retirement(
+    checkout: tuple[Path, Path, Path], environment_overrides: bool,
+) -> None:
+    root, target, registry = checkout
+    before_refs = git(root, "show-ref")
+    head = git(target, "rev-parse", "HEAD").strip()
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key not in {"MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS", "MAKELEVEL"}
+    }
+    environment.update({
+        "PYTHONPATH": str(ROOT), "UV_PROJECT_ENVIRONMENT": sys.prefix,
+        "VIRTUAL_ENV": sys.prefix, "UV_PYTHON": sys.executable,
+        "UV_NO_SYNC": "1", "UV_PYTHON_DOWNLOADS": "never",
+    })
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", *(["-e"] if environment_overrides else []),
+            "-f", str(ROOT / "make/40-cross-version-and-worktrees.mk"), "agent-cleanup",
+            "BRANCH=feature/retired", f"WORKTREE={target}", f"ACTIVE_WORKSTREAM_REGISTRY={registry}",
+            "AGENT_CLEANUP_VALIDATE_ONLY=1", "UV=uv",
+        ],
+        cwd=root, env=environment, check=False, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout.splitlines()[-1]) == {
+        "branch": "feature/retired", "worktree": str(target), "head": head,
+        "validate_only": True, "native_ownership_verified": 1, "status": "planned",
+    }
+    assert target.is_dir()
+    assert (target / ".gate-logs/failed-proof.log").read_bytes() == b"FAILED original proof\n"
+    assert (target / ".gludd/historical.json").read_bytes() == b'{"state":"failed"}\n'
+    assert git(root, "show-ref") == before_refs
+    assert str(target) in git(root, "worktree", "list", "--porcelain")
+    assert not archive(root).exists()
+    assert not registry.exists()
+
+
+@pytest.mark.parametrize("environment_flag", ["-e", "--environment-overrides"])
+@pytest.mark.parametrize("python_mode", ["0", "1"])
+@pytest.mark.parametrize("make_mode", ["0", "1"])
+def test_alias_controller_requires_matching_native_retirement_mode(
+    checkout: tuple[Path, Path, Path], environment_flag: str, python_mode: str, make_mode: str,
+) -> None:
+    root, target, _registry = checkout
+    records = list(controller_fixture(checkout))
+    records[0] = replace(records[0], argv=(*records[0].argv[:-1], python_mode))
+    records[1] = replace(records[1], argv=(*records[1].argv[:3], *records[0].argv[1:]))
+    records[2] = replace(records[2], argv=(
+        records[2].argv[0], environment_flag,
+        "-f", str(ROOT / "make/40-cross-version-and-worktrees.mk"), "agent-cleanup",
+        f"AGENT_CLEANUP_VALIDATE_ONLY={make_mode}", "BRANCH=feature/retired", f"WORKTREE={target}",
+    ))
+    selected = tuple(records)
+    if python_mode == make_mode:
+        assert prune_worktrees_safe._validate_retirement_controllers(
+            selected, root=root, worktree=target, branch="feature/retired",
+        ) == selected
+    else:
+        with pytest.raises(ValueError, match="does not bind selected owner"):
+            prune_worktrees_safe._validate_retirement_controllers(
+                selected, root=root, worktree=target, branch="feature/retired",
+            )

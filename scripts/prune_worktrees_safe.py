@@ -330,7 +330,7 @@ def _validate_retirement_controllers(
         assignments[key] = value
     if target == "agent-cleanup":
         fragment = source / "make/40-cross-version-and-worktrees.mk"
-        policy_key, policy_value = "AGENT_CLEANUP_VALIDATE_ONLY", "0"
+        policy_key, policy_value = "AGENT_CLEANUP_VALIDATE_ONLY", request.retire_validate_only
     else:
         fragment = source / "make/30-ci-and-release.mk"
         policy_key, policy_value = "WT_PRUNE_RETIRE_MERGED", "1"
