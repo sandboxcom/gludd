@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import FrameType
 from typing import Any
 
 from . import lifecycle
@@ -36,23 +37,35 @@ def _cli_classification(runtime: Any, argv: list[str]) -> int:
 
 
 def main(runtime: Any, argv: list[str] | None = None) -> int:
+    """Defer shutdown through lease acquisition, then run the owned watchdog."""
     if argv is None:
         argv = runtime.sys.argv[1:]
     if any(arg.split("=", 1)[0] in {"--start", "--stop", "--validate-only"} for arg in argv):
         return lifecycle.dispatch(runtime, argv)
     if argv and any(a.startswith("--") or not a.startswith("-") for a in argv):
         return int(runtime._cli_classification(argv))
-    lease = runtime.acquire_watchdog_lock()
-    if lease is None:
-        runtime._log(
-            "watchdog already running for namespace "
-            f"{runtime.project_namespace(runtime._WORKSPACE)}; refusing duplicate"
-        )
-        return 0
     pointer = None
+    lease = None
     previous_handler = None
+    termination_requested = False
+
+    def defer_termination(_signum: int, _frame: FrameType | None) -> None:
+        """Retain shutdown until acquisition returns into the cleanup boundary."""
+        nonlocal termination_requested
+        termination_requested = True
+
     try:
-        previous_handler = lifecycle.install_termination_handler()
+        previous_handler = runtime.signal.signal(runtime.signal.SIGTERM, defer_termination)
+        lease = runtime.acquire_watchdog_lock()
+        if lease is None:
+            runtime._log(
+                "watchdog already running for namespace "
+                f"{runtime.project_namespace(runtime._WORKSPACE)}; refusing duplicate"
+            )
+            return 0
+        lifecycle.install_termination_handler()
+        if termination_requested:
+            return 0
         runtime._log(f"watchdog started — poll={runtime.POLL_SECS}s, threshold={runtime.STREAK_THRESHOLD}")
         runtime._check_plugin_liveness_on_startup()
         pointer = lifecycle.configured_pointer(runtime)

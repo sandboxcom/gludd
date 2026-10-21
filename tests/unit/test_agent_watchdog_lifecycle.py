@@ -115,6 +115,49 @@ def test_native_sigterm_releases_the_actual_lease(tmp_path: Path) -> None:
         child.communicate(timeout=5)
 
 
+@pytest.mark.parametrize("phase", ("fsync", "acquire-return"))
+def test_native_sigterm_during_acquisition_releases_the_actual_lease(
+    tmp_path: Path, phase: str,
+) -> None:
+    """Deliver the real signal while the native creator still owns acquisition."""
+    root, environment = _confined_source(tmp_path)
+    script = root / "scripts/agent_watchdog.py"
+    if phase == "fsync":
+        instrumentation = (
+            "    _fixture_fsync = os.fsync\n"
+            "    def _signal_during_fsync(fd):\n"
+            "        _fixture_fsync(fd)\n"
+            "        os.kill(os.getpid(), signal.SIGTERM)\n"
+            "    os.fsync = _signal_during_fsync\n"
+        )
+    else:
+        instrumentation = (
+            "    _fixture_acquire = acquire_watchdog_lock\n"
+            "    def _signal_before_acquire_returns():\n"
+            "        _lease = _fixture_acquire()\n"
+            "        os.kill(os.getpid(), signal.SIGTERM)\n"
+            "        return _lease\n"
+            "    acquire_watchdog_lock = _signal_before_acquire_returns\n"
+        )
+    original = "    raise SystemExit(main())\n"
+    content = script.read_text(encoding="utf-8")
+    assert content.count(original) == 1
+    script.write_text(content.replace(original, instrumentation + original), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(script)], cwd=root, env=environment,
+        capture_output=True, text=True, check=False, timeout=12,
+    )
+
+    assert not list((tmp_path / "resources").rglob("agent-watchdog.lock")), (
+        f"SIGTERM during {phase} retained the native lease: "
+        f"rc={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (root / ".gate-logs/watchdog.pid").exists()
+    assert "agent_watchdog started:" not in result.stdout
+
+
 def test_native_start_acknowledges_one_child_and_stop_drains(tmp_path: Path) -> None:
     root, environment = _confined_source(tmp_path)
     command = [sys.executable, str(root / "scripts/agent_watchdog.py")]
