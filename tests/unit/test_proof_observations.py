@@ -131,7 +131,7 @@ def test_make_status_and_waiter_use_automatic_producer_outputs() -> None:
     assert "--snapshot-output" in status
     assert "PIPELINE_STATUS_OUTPUT" in status
     assert '--failure-ledger "$(PIPELINE_STATUS_FAILURE_LEDGER)"' in status
-    assert '--ledger-observation-exit-code "$$OBSERVE_RC"' in status
+    assert "--observe-ledger" in status
 
 
 def test_heartbeat_reuses_snapshot_producer_and_does_not_handwrite_json() -> None:

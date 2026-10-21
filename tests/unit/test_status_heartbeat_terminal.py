@@ -77,6 +77,7 @@ def _fixture(
         + "active_work_status.collect_status = lambda: {'open_task_ids': [], 'git': {'head': 'fixture'}}\n"
         + "automatic_disk_cleanup.inspect_usage = lambda: automatic_disk_cleanup.DiskSnapshot(0.0, 80.0)\n"
         + "ci_failure_ledger.fetch_run = detail\n"
+        + "ci_failure_ledger.main = lambda argv: 1 if case == 'ledger-error' else 0\n"
         + "ci_check_cooldown.load_history = lambda: {}\n"
         + "if case == 'guidance-error': ci_failure_ledger.build_repair_guidance = unavailable\n"
         + "if case == 'history-error': ci_check_cooldown.load_history = unavailable\n"
