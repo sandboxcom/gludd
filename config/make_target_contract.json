@@ -1832,9 +1832,9 @@
         "LOG",
         "OBSERVED_ROOT",
         "OBSERVED_HEARTBEAT_SECS",
-        "OBSERVED_RETAIN_RUNS"
+        "OBSERVED_RETAIN_RUNS", "RUN_WATCHED_PYTEST_TRACE"
       ],
-      "behavior": "make run-watched WORK_ITEM_ID='' CMD='printf observed-contract' OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched STALL_SECS=180 MAX_SECS=3600 LOG=.gate-logs/observed/run-watched/contract.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_RETAIN_RUNS=20"
+      "behavior": "make run-watched WORK_ITEM_ID='' CMD='printf observed-contract' OBSERVED_LABEL=run-watched RUN_ID='' STALL_SECS=180 MAX_SECS=3600 LOG='' OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_RETAIN_RUNS=20 RUN_WATCHED_PYTEST_TRACE=1"
     },
     {
       "name": "test-count",

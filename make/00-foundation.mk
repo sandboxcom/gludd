@@ -41,6 +41,11 @@ export GLUDD_CACHE_RESOURCE_VALIDATE_ONLY := $(value CACHE_RESOURCE_VALIDATE_ONL
 unexport CACHE_RESOURCE_ROOT CACHE_RESOURCE_LIMIT CACHE_RESOURCE_CANDIDATE CACHE_RESOURCE_VALIDATE_ONLY
 endif
 
+# Keep the opt-in watcher flag literal before native startup/export expansion.
+RUN_WATCHED_PYTEST_TRACE ?= 0
+override RUN_WATCHED_PYTEST_TRACE := $(value RUN_WATCHED_PYTEST_TRACE)
+export RUN_WATCHED_PYTEST_TRACE
+
 # This one-shot mode is selected only by the owning file-defined alias.
 unexport _TEST_FILES_CPROFILE
 ifneq ($(filter command line environment override,$(origin _TEST_FILES_CPROFILE)),)

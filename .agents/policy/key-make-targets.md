@@ -150,6 +150,32 @@ Keep its index/shard bytes, SHA and original line-count assertions intact; curre
 operational changes belong in the owning feature/AGENTS/this guide. Include the
 complete tests/unit/test_behavioral_spec_shards.py owner when this boundary is touched.
 
+### Bind native traces before the next admitted pytest run
+
+Use RUN_WATCHED_PYTEST_TRACE=1 with the existing run-watched owner when a new
+admitted pytest diagnostic needs an owned trace. Mode0 preserves ordinary
+behavior and any inherited trace context; it allocates no additional trace.
+The public flag is literal0|1, with defined-empty/invalid input refused before
+child execution. Publication admission owns mode1 for both prerequisite/runtime
+watchers; a caller's mode0 cannot disable those bindings. Bounds, workers,
+selectors, retention and proof authority stay unchanged.
+
+The native producer already generates fresh identities and paths when RUN_ID and
+LOG are explicitly empty. This repeatable non-pytest behavioral example exercises
+allocation; an empty trace has no pytest or release-evidence meaning:
+
+~~~console
+make run-watched WORK_ITEM_ID='' CMD='printf observed-contract' OBSERVED_LABEL=run-watched RUN_ID='' STALL_SECS=180 MAX_SECS=3600 LOG='' OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_RETAIN_RUNS=20 RUN_WATCHED_PYTEST_TRACE=1 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+Read the native status's actual trace_path and run_id, then pass those exact
+values to test-xdist-trace-summary with explicit timing/memory booleans. A null
+trace on an older failed receipt stays null; never fabricate or rewrite it.
+The [publication trace record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#retain-a-native-trace-for-publication-admission-2026-10-21)
+retains the witnessed gap and source acceptance separately from timeout cause.
+Do not repeat an unchanged failed admission/publication or final gate merely to
+obtain a new trace. Preserve prerequisites and use bounded source acceptance.
+
 ### Attribute a runtime timeout before changing source
 
 Read the retained native failure and preserve its exact failing input. A

@@ -1257,3 +1257,166 @@ reviewed candidate and obtain the canonical full gate, global85/75 BOTH,
 exact-SHA all-shard CI/attestation, deployment and guarded promotion. All seven
 S98 tasks remain unchecked; no master merge, tag or release is authorized by
 these local receipts.
+
+
+## Retain a native trace for publication admission (2026-10-21)
+
+S98.4 source base845d65a3ef3e4ae40c61b144d9ae7718d2ad1506 has exact independent
+APPROVE SOURCE ONLY at /tmp/gludd-v012-cache-policy-845d65a-source-review.md,
+fully read by Root. Normal hooks retain235 operating passes,0 new clones,six
+checkpoints and fresh128437selected/128461collected,24deselected/0errors46.00s/
+native51.1s. All16 cache-policy paths are committed and clean; that support does
+not supply publication, final gate, exact-SHA hosted/deployment or release proof.
+
+The original actual failed owner is still batch-push-runtime-admission-60907.
+Native immutable JSON reports timed_out/exit124/90.554s,quiet1.247s, inactive,
+max-runtime-timeout and trace_path:null. Its main2304PASS83.79s plusHELP1PASS0.56s
+and unfinished eleven-tail child remain unchanged. A separate successful trace
+cannot establish where this failed run spent time. The existing run-watched
+facade does not expose stream_command's existing --pytest-trace option, leaving
+no owned per-test trace for that publication invocation. This is a concrete
+observability gap, not a proven timeout cause.
+
+The bounded continuation reads the retained successful3cbb trace with the actual
+native test-xdist-trace-summary TIMINGS1/MEMORY1 owner:4616events,2304finished,
+2304valid timing pairs,zero issues/failures/unfinished nodes, native0.1s reader.
+Raw output is /tmp/gludd-v012-retained-main-timing-845d65a.log. Largest module rows
+are heartbeat7.940412s/18cases ongw1 and7.792659s/21cases ongw0; fixture-inventory
+is5.378472s/32cases ongw1, including one5.322082s protocol. These are overlapping
+wall spans from the DIFFERENT successful main-only diagnostic, not CPU or the
+failed publication's timing. No source optimization is selected from this alone.
+
+### Native binding and preserved authority
+
+The existing run-watched facade now exposes literal RUN_WATCHED_PYTEST_TRACE=0|1,
+default0. Mode1 requests the existing observer's --pytest-trace option;
+mode0 preserves ordinary behavior, including any inherited trace context,
+and allocates no additional trace. Defined-empty/invalid modes refuse before
+child execution. The foundation freezes the raw new boolean before eager Make
+export/startup; the native shell validates it without evaluating caller data as
+Make code. Native controls exercise late literal target/inherited contexts.
+
+The same existing _runtime-publish-admission owner pins mode1 on its
+prerequisite and runtime watchers. The existing stream_command producer already
+allocates an exclusive trace path, publishes it in its native status, exports its
+owned path/run ID before handoff and retains unsuccessful evidence. Reuse that
+owner and trace plugin; add no observer, runner, cache, parser, daemon or global
+live-memory probe. Keep exact argv, native child exit/stderr, logging, cleanup,
+retention, source identity and all status/proof semantics. Generic mode0 stays
+compatible. Empty traces for commands without pytest are not test-run evidence.
+
+This changes diagnostic configuration only. It does not prove a throughput repair
+or authorize another unchanged actual publication, startup or final gate. Native
+failing-first tests, complete relevant owners, contract/behavior/static checks,
+normal source commit/collection and independent source review remain required.
+Original90total/60quiet,three children2/1/1,142predecessor families,21phases2850,
+fatal warnings,ZDD,85/75 BOTH,checkpoint/cleanup and promotion gates remain.
+
+### Practitioner evidence and diagnostic limits
+
+The current [pytest-xdist known limitations](https://pytest-xdist.readthedocs.io/en/latest/known-limitations.html)
+explain that ordinary -s does not forward worker standard streams through execnet.
+Adding console flags therefore does not establish complete worker observability.
+The native trace preserves worker/run/node identity separately from console text.
+
+Firsthand [issue110](https://github.com/pytest-dev/pytest-xdist/issues/110), opened
+2017-01-11, describes a run with output from one remaining worker and three worker
+processes alive for more than13hours. Maintainers request concrete versions and
+reproduction data; a2018 respondent reports intermittent Jenkins/local hangs.
+[Issue784](https://github.com/pytest-dev/pytest-xdist/issues/784), opened2022-05-30,
+provides a loadfile/crashed-worker reproduction and reports ten-minute silent CI
+timeouts. These are long-lived observability/reproduction problems, not evidence
+that either upstream defect caused Gludd's current failure. Keep Gludd's actual
+workers, scheduler, plugins and original assertions; adopt no thread/worker-
+restart workaround or parallelism reduction on analogy alone.
+
+
+### Native publication trace controls fail first
+
+Root adds five controls to the existing tests/unit/test_runtime_publish_admission.py
+owner, preserving every old case/assertion and extending its existing native
+boundary recorder with only owned trace path/run ID/truncate fields. Success
+cases cover default and caller environment/CLI mode0; both prerequisite/runtime
+watchers must request exactly one native --pytest-trace before the command
+separator, publish their own trace path and pass that identity to their original
+children. Full/help failure cases preserve no-transport/no-verdict checks and
+require retained native failed trace artifacts. Fake test children establish
+routing/identity/retention only; they are not a real pytest/full-budget run.
+
+Before production changes, all five fail in6.99s/native8.1s: the prerequisite
+observer has zero trace options and both failed-runtime trace paths areNone.
+Preserve /tmp/gludd-v012-publication-trace-binding-red311.{log,xml}. No original
+assertion, trace producer, deadline, worker, selector, cleanup or proof gate is
+changed by those test additions.
+
+After the native binding, all five publication controls pass5.74s/native6.6s.
+Preserve /tmp/gludd-v012-publication-trace-binding-green311.{log,xml}. The complete
+publication/observer/observability owners pass136/66.71s/native68.1s on311,
+/tmp/gludd-v012-publication-trace-complete311.{log,xml}; no original case is
+removed or skipped. This covers native teardown/retention along with fake-boundary
+publication routing; it is not actual publication or final-gate evidence.
+
+### Confined generic option acceptance and repeatable behavior
+
+The independently produced tests/unit/test_run_watched_trace.py contains35
+additive cases. The retained pre-change two-case probe is1FAIL/1PASS0.60s:
+requested1 lacks --pytest-trace while default0 passes. The exact recipe and
+initial test postimage remain /tmp/gludd-v012-watched-trace-base-admission.mk and
+/tmp/gludd-v012-watched-trace-baseline-tests.py; native XML is
+/tmp/gludd-v012-watched-trace-baseline-red.xml. Recorder spans0.04s/0.03s are
+fixture diagnostics only, not observer/publication performance.
+
+Root fully reads the deliverable and decision at
+/tmp/gludd-v012-watched-trace-receiving-decision.md, receives its exact35 cases
+canonically and obtains35PASS4.46s/native5.4s on311, retained as
+/tmp/gludd-v012-watched-trace-complete311.{log,xml}. Synthetic HOME/TMPDIR and
+private environment repr confine artifacts. Real Make controls cover ordinary/-e
+CLI/environment tripwires, empty/invalid refusal and direct/inherited/mixed late
+literal values. Real observer cases extract the actual recipe, validate the UV
+prefix and exec the unchanged observer in a synthetic CWD; they retain owned
+path/run ID before handoff, inherited-parent behavior under0, original exit7,
+owned timeout124, trace/log/status and actual child exit. Fixture=true trace lines
+are deliberately distinct from real pytest protocol evidence.
+
+Only the cheap exact enabled-argv case joins the existing runtime roster after
+all142 predecessor families;34 other cases remain full acceptance. Independent
+manifest/order/roster pins fail3/0.88s/native1.7s before manifest/Make wiring,
+/tmp/gludd-v012-watched-trace-routing-red.{log,xml}. The unchanged canonical
+check-gate-failure-promotions owner then passes143families,21phases2850 and all
+six executable pins1.54s. No phase, selector predecessor, worker or budget is
+removed or widened. This proves routing, not an actual90/60 admission replay.
+
+The target contract and mandatory guide set every watched variable explicitly.
+Empty RUN_ID/LOG deliberately select the producer's existing automatic identity
+and log path, so repeated examples need no manual fixture or edited ID. The
+actual non-pytest example passes0.013s with native generated run ID
+20261021T150054Z-82331-a50b9d31. Its immutable receipt and allocated trace live
+under .gate-logs/observed/run-watched/ with that exact basename. The native
+summary reports0events/0started/0finished/0issues; this is allocation/readability
+proof only. Earlier contract-run-watched-trace-845d65a allocation remains retained.
+Never overwrite an old receipt or invent a non-null trace for60907. The
+publication plan now explicitly prints pytest_trace=1 while retaining all
+canonical policy fields and release_ready=false/gate_evidence=false.
+
+### Complete compatibility and routing receipts
+
+The complete thirteen-owner312 cohort passes679/110.00s/native112.0s:
+508 unchanged cache/summary/timing/fixture/cancellation/environment/readonly
+compatibility cases,35 generic trace cases and136 publication/observer/
+observability cases. Raw receipts are
+/tmp/gludd-v012-trace-compat-observer312.{log,xml}. Complete311 compatibility
+passes508/48.43s/native50.303s in
+/tmp/gludd-v012-trace-compat311.{log,xml}; its exact native JSON records rc0/passed.
+These controls exercise the new foundation export against existing consumers.
+
+Whole seven-owner311 routing passes456/125.49s/native126.7s in
+/tmp/gludd-v012-trace-routing311.{log,xml}. Complete six-owner312 routing core
+passes384/86.97s/native88.4s in
+/tmp/gludd-v012-trace-routing-core312.{log,xml}. Its72 publication-owner cases
+already passed in679 and are not unnecessarily repeated. All original cases,
+assertions and fatal warnings remain; zero skip/collection errors. At most two
+execution/testing owners run together; these broader acceptance watches are
+explicitly separate from the original admission's unchanged90total/60quiet.
+No Python production owner, coverage floor or coverage configuration changes.
+Final operating/static/normal commit/source-review evidence remains distinct
+from full gate, exact-SHA hosted/deployment and guarded promotion.

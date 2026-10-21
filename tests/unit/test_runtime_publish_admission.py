@@ -46,6 +46,7 @@ def _publish(
     promotion_status: int = 0,
     pins_status: int = 0,
     gate_policy_context: str = "default",
+    watched_trace_caller_mode: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]], Path]:
     """Run actual Make recipes and observer, replacing only native test/Git boundaries."""
     trace = tmp_path / "trace.jsonl"
@@ -61,7 +62,10 @@ def _publish(
         "    return dict(policy=[os.environ.get(name) for name in names], "
         "sentinel=os.environ.get('probe'), venv=os.environ.get('VIRTUAL_ENV'), "
         "downloads=os.environ.get('UV_PYTHON_DOWNLOADS'), "
-        "makeflags=os.environ.get('MAKEFLAGS'), makeoverrides=os.environ.get('MAKEOVERRIDES'))\n"
+        "makeflags=os.environ.get('MAKEFLAGS'), makeoverrides=os.environ.get('MAKEOVERRIDES'), "
+        "trace_path=os.environ.get('GLUDD_XDIST_TRACE_LOG'), "
+        "trace_run_id=os.environ.get('GLUDD_XDIST_TRACE_RUN_ID'), "
+        "trace_truncate=os.environ.get('GLUDD_XDIST_TRACE_TRUNCATE'))\n"
         "args = sys.argv[1:]\n"
         "if args[:3] == ['run', 'python', 'scripts/stream_command.py']:\n"
         "    record('observer', args=args[3:], environment=os.environ.get('UV_PROJECT_ENVIRONMENT'), "
@@ -207,6 +211,8 @@ def _publish(
         "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1", "probe=kept",
         "GATE_FAILURE_PROMOTION_MANIFEST=/tmp/gludd-untrusted-override.json",
     ]
+    if watched_trace_caller_mode is not None:
+        command.append("RUN_WATCHED_PYTEST_TRACE=" + watched_trace_caller_mode)
     conflict = dict(zip(names, ("native", "1", "32", "2"), strict=True))
     if gate_policy_context == "environment":
         environment.update(conflict)
@@ -680,3 +686,60 @@ def test_hosted_native_stages_stop_at_first_failure(
                 assert row["policy"] == ["release", "0", "16", "1"]
     if stage:
         assert not any(row["kind"] == "verify-remote" for row in rows)
+
+
+@pytest.mark.parametrize("watched_trace_origin", ["default", "environment", "command-line"])
+def test_publication_observers_own_fresh_native_trace_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, watched_trace_origin: str,
+) -> None:
+    monkeypatch.delenv("RUN_WATCHED_PYTEST_TRACE", raising=False)
+    if watched_trace_origin == "environment":
+        monkeypatch.setenv("RUN_WATCHED_PYTEST_TRACE", "0")
+    result, rows, observed = _publish(
+        tmp_path, watched_trace_caller_mode="0" if watched_trace_origin == "command-line" else None,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
+    for label, child_kind in (
+        ("batch-push-prerequisite-admission", "prerequisite-pins"),
+        ("batch-push-runtime-admission", "runtime"),
+    ):
+        arguments = _observer_arguments(rows, label)
+        assert arguments.count("--pytest-trace") == 1
+        assert arguments.index("--pytest-trace") < arguments.index("--")
+        status = json.loads((observed / label / "current.json").read_text(encoding="utf-8"))
+        trace_path = status["trace_path"]
+        assert isinstance(trace_path, str)
+        assert Path(trace_path).is_file()
+        assert Path(trace_path).parent == observed / label
+        assert Path(trace_path).name == status["run_id"] + ".pytest.jsonl"
+        children = [row for row in rows if row["kind"] == child_kind]
+        assert len(children) == (3 if child_kind == "runtime" else 1)
+        for child in children:
+            assert child["trace_path"] == trace_path
+            assert child["trace_run_id"] == status["run_id"]
+            assert child["trace_truncate"] == "0"
+
+
+@pytest.mark.parametrize("watched_trace_failure", ["full", "help"])
+def test_failed_publication_observer_retains_its_owned_native_trace(
+    tmp_path: Path, watched_trace_failure: str,
+) -> None:
+    result, rows, observed = _publish(
+        tmp_path, failure=watched_trace_failure, watched_trace_caller_mode="0",
+    )
+    assert result.returncode != 0
+    assert not any(row["kind"] in {"transport", "verdict", "verify-remote"} for row in rows)
+    status = json.loads(
+        (observed / "batch-push-runtime-admission" / "current.json").read_text(encoding="utf-8")
+    )
+    assert status["state"] == "failed"
+    assert status["exit_code"] != 0
+    trace_path = status["trace_path"]
+    assert isinstance(trace_path, str)
+    assert Path(trace_path).is_file()
+    assert Path(trace_path).name == status["run_id"] + ".pytest.jsonl"
+    assert Path(trace_path).parent == observed / "batch-push-runtime-admission"
+    runtime = [row for row in rows if row["kind"] == "runtime"]
+    assert len(runtime) == (1 if watched_trace_failure == "full" else 2)
+    assert all(row["trace_path"] == trace_path for row in runtime)
