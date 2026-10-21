@@ -299,6 +299,12 @@ retains failing-first controls, safe argument transport and full-source proof.
 Keep patch equivalence, actual ancestry, cleanup eligibility and authenticated
 release proof distinct. Follow the existing release/promotion owners above.
 
+Legacy wt-reap and direct force/unlock removal aliases are retired; historical
+presence audits do not authorize their use. The existing cleanup owners below
+retain native ownership, integration, locks, ignored proof and rollback.
+Make -n/-q can execute an entire recursive recipe line; they are not a mutation
+barrier. Use the owner's explicit validation mode and retained native tests.
+
 ### Other supported work
 
 Use `make search PATTERN=regex SEARCH_PATH=directory-or-file` for bounded

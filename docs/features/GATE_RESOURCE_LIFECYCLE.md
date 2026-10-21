@@ -2320,3 +2320,85 @@ observation, not an exact reclaimed-byte attribution or95% clearance.
 Keep the original03966 Pages materialization under its native ancestry refusal,
 the locked gate-admission owner, dirty/unknown work and all checkpoints.
 No unchanged final-admission/full-gate retry follows from disk still97%.
+
+## Remaining legacy cleanup paths (2026-10-20)
+
+The coupled review at clean 6dca495 finds five more unregistered recipes with
+only historical documentation callers: wt-remove, wt-remove-many,
+wt-remove-locked, wt-remove-locked-many and wt-reap. They directly force-remove
+materializations; locked variants first unlock. The reap also copies through
+wt-sync using a hardcoded Main glob and removes after that child returns.
+Neither a name filter nor whole-file copying proves native integration,
+completed ownership or preserved ignored evidence.
+
+Sixteen new confined cases reuse the existing real registered Git fixture:
+four selected aliases, ordinary Make/-e and unlocked/locked owners. Each target
+contains dirty uncommitted source plus the original ignored failure/history.
+Native refs, registration (including lock reason), all source/evidence bytes,
+archive and registry are compared before/after. A separate static fragment
+inventory covers automatic reap and direct force/unlock exposure. The hardcoded
+reap is never invoked against live paths, including with query/dry-run flags.
+All 35 prior preservation cases and 30 routing assertions remain unchanged.
+
+The first native receipt is 17 failures /35 deselected in 3.73s, observed4.8s:
+12 cases destroy the confined dirty checkout and proof; four locked refusals
+preserve it but falsely return0. Raw /tmp/gludd-v012-legacy-cleanup-paths-red.log
+and .xml retain each actual outcome. Removing only the five unused recipes
+keeps existing native agent-cleanup/wt-prune-safe owners and their full fences.
+No replacement alias, parser, cache, unlock, force option or cleanup exception
+is introduced.
+
+One literal edit initially supplies an empty encoded replacement; the existing
+text owner refuses it before IO. Only the first removal block has changed, so
+the intermediate replay correctly retains 13 failures /4 passes in 3.59s,
+observed4.7s. Its filename /tmp/gludd-v012-legacy-cleanup-paths-green.log/.xml
+records an attempted replay, not a green result. Root supplies a nonempty
+native-owner comment for the second block, then uses a distinct final receipt:
+all17 pass in3.34s, observed4.3s, /35deselected. Preserve every intermediate.
+
+Five complete owners then pass 249 cases on311 in49.01s and on312 in46.98s
+(observed50.2s), fatal warnings/no skips. Unchanged coverage_workstream_prune.ini
+measures both whole production files: aggregate93.5line/85.8branch,
+prune92.0/84.4 and registry98.9/95.0. Native audit
+.gate-logs/coverage-20261021T032536Z.json passes85/75 BOTH for all2 files;
+the full report is .gate-logs/coverage-legacy-cleanup-paths-6dca495.json.
+Ruff and complete strict preservation typing pass. Native contracts retain270;
+lint-make reports1161 definitions/zero duplicates,9CI/12local parity and help0.
+Eleven whole documentation/Make syntax/layout/target owners pass165 cases in
+22.25s, observed23.3s, /tmp/gludd-v012-legacy-cleanup-doc-make.log/.xml.
+Eight Markdown files and the unchanged line guard pass; native task-ledger
+validation remains188checked/139unchecked with no issues.
+
+The exact311 coverage command uses the five complete COVERAGE_TESTFILES from
+the preceding command, unchanged config/floors/bounds/runtime, and
+COVERAGE_REPORT=.gate-logs/coverage-legacy-cleanup-paths-6dca495.json.
+The312 public run-watched replay uses those same five complete TESTFILES,
+-q -W error -n0, WORK_ITEM_ID=S98.4,180total/60quiet,15sheartbeat/20retained,
+labelv012-legacy-cleanup-paths and
+RUN_ID=v012-legacy-cleanup-whole312-6dca495-20261021.
+Both outer/child select installed python-3.12,UV_PYTHON=3.12.15 and the same
+explicit no-sync/no-download policy. Raw /tmp/gludd-v012-legacy-cleanup-paths-whole312.log/.xml
+and the native311 observed coverage log retain complete commands and results.
+
+Research checks the [GNU recursive recipe contract](https://www.gnu.org/software/make/manual/make.html#MAKE-Variable)
+and [firsthand2018 dry-run execution report](https://stackoverflow.com/questions/53701623/why-make-dry-run-with-make-in-a-recipe-result-in-an-error).
+The reporter's recipe executes a failing command despite dry-run when its
+line references MAKE. The indexed official manual confirms recursive lines
+also execute under -n/-q; direct section fetches time out. These flags supply
+no mutation barrier. This supports static inventory for the hardcoded reap,
+while native confined fixtures establish the actual Gludd failures.
+The two historical audit documents now point to current native owners.
+
+Root also assesses the three old staged files in v012-merge-continuation.
+Their postimage blob prefixes match committed repairs: deadline3ca785cd4 and
+shared-checkpointd973ccccc in7aee0bd83b98052a72dfe2c8a67c0d47c8c04ba3;
+item-retention146aa7111 in3a1ea1b09c20b38488bf2fcd7b77ac6371397543.
+Native git-is-ancestor reports exit0 for both commits into6dca495.
+Their fixture registration/retention changes are already integrated; no duplicate
+implementation or ancestry-only merge is needed. Preserve the dirty old owner.
+
+Review proof confined to Main is exposed with existing copy-file using relative
+source paths and /tmp/gludd-* destinations; peer confinement refusals remain.
+Normal fresh collection/commit, exact-source review and publication remain
+separate. Capacity97%, full gate, exact-SHA hosted/deployment, guarded promotion
+and all seven task closures are unchanged obligations.

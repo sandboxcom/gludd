@@ -1,5 +1,7 @@
 # Batch-4 Worktree Merge-Safety Map
 
+2026-10-20 current procedure: the legacy wt-reap/wt-remove-many/wt-remove/wt-remove-locked/wt-remove-locked-many paths are retired after native preservation failures. Keep this audit as historical evidence; use the [mandatory Make guide](../../.agents/policy/key-make-targets.md#other-supported-work) and [measured cleanup decision](../features/GATE_RESOURCE_LIFECYCLE.md#remaining-legacy-cleanup-paths-2026-10-20). No old presence verdict or command authorizes force removal/unlocking.
+
 Read-only audit produced 2026-06-16 to make `make wt-reap` of the pending agent
 worktrees predictable. Grounds: `make git-status` (main working tree), `make
 git-where` (canonical `git worktree list`), and `make wt-changed SRC=<wt>` per

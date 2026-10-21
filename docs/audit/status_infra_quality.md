@@ -1,5 +1,7 @@
 # Status Audit — Infra / Quality Issues (#35, #36, #37, #39, #40, #47, #62, #67, #68)
 
+2026-10-20 current procedure: the legacy wt-reap/wt-remove-many/wt-remove/wt-remove-locked/wt-remove-locked-many paths are retired after native preservation failures. Keep this audit as historical evidence; use the [mandatory Make guide](../../.agents/policy/key-make-targets.md#other-supported-work) and [measured cleanup decision](../features/GATE_RESOURCE_LIFECYCLE.md#remaining-legacy-cleanup-paths-2026-10-20). No old presence verdict or command authorizes force removal/unlocking.
+
 Read-only verification pass, 2026-06-16. Method: direct Read of the Makefile, configs,
 CI workflow, source, and tests. No `make`/pytest was run (read-only, make-only repo), so
 "green" claims below are about **presence + wiring of the gate**, not a freshly executed

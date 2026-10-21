@@ -230,3 +230,57 @@ def test_retired_force_alias_cannot_remove_registered_worktree_or_ignored_proof(
     assert not registry.exists()
     assert result.returncode != 0
     assert "No rule to make target" in result.stderr
+
+
+def _legacy_cleanup_state(checkout: tuple[Path, Path, Path]) -> dict[str, object]:
+    root, target, registry = checkout
+    return {
+        "refs": git(root, "show-ref"),
+        "registration": git(root, "worktree", "list", "--porcelain"),
+        "failed": (target / ".gate-logs/failed-proof.log").read_bytes(),
+        "history": (target / ".gludd/historical.json").read_bytes(),
+        "uncommitted": (target / "uncommitted-source.txt").read_bytes(),
+        "archive_exists": archive(root).exists(),
+        "registry": registry.read_bytes() if registry.exists() else None,
+    }
+
+
+@pytest.mark.parametrize("environment_overrides", [False, True])
+@pytest.mark.parametrize("native_lock", [False, True])
+@pytest.mark.parametrize(
+    "legacy_cleanup_target",
+    ["wt-remove", "wt-remove-many", "wt-remove-locked", "wt-remove-locked-many"],
+)
+def test_retired_cleanup_paths_preserve_dirty_source_locks_and_ignored_proof(
+    checkout: tuple[Path, Path, Path], environment_overrides: bool,
+    native_lock: bool, legacy_cleanup_target: str,
+) -> None:
+    root, target, _registry = checkout
+    (target / "uncommitted-source.txt").write_bytes(b"retained uncommitted source\n")
+    if native_lock:
+        git(root, "worktree", "lock", "--reason", "retained native owner", str(target))
+    before = _legacy_cleanup_state(checkout)
+    inherited = {
+        name: value for name, value in os.environ.items()
+        if name not in {"MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS", "MAKELEVEL"}
+    }
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", *(["-e"] if environment_overrides else []),
+            "-f", str(ROOT / "make/30-ci-and-release.mk"), legacy_cleanup_target,
+            f"SRC={target}", f"SRCS={target}",
+        ],
+        cwd=root, env=inherited, check=False, capture_output=True, text=True, timeout=30,
+    )
+    assert target.is_dir(), result.stdout + result.stderr
+    assert _legacy_cleanup_state(checkout) == before, result.stdout + result.stderr
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "No rule to make target" in result.stderr
+
+
+def test_cleanup_fragment_has_no_automatic_reap_or_direct_force_unlock() -> None:
+    # Recursive Make lines can execute under query/dry-run flags; never invoke the live reap.
+    source = (ROOT / "make/30-ci-and-release.mk").read_text(encoding="utf-8")
+    assert "\nwt-reap:" not in source
+    assert "git worktree remove --force" not in source
+    assert "git worktree unlock" not in source

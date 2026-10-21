@@ -762,54 +762,14 @@ wt-apply:
 		&& echo "wt-apply OK (3-way): $(FILES)" \
 		|| { echo "wt-apply CONFLICT/FAIL — patch at /tmp/gludd-wt-apply.patch; resolve by hand"; exit 1; }
 
-# Bulk force-remove integrated worktrees (reclaims source + ~320MB venv each).
-# Only call with worktrees whose work is already synced/applied into main.
-# Usage: make wt-remove-many SRCS='wt1 wt2 ...'
-wt-remove-many:
-	@[ -n "$(SRCS)" ] || { echo "Usage: make wt-remove-many SRCS='wt1 wt2 ...'"; exit 1; }
-	@for wt in $(SRCS); do git worktree remove --force "$$wt" 2>/dev/null && echo "  removed: $$wt" || echo "  skip/fail: $$wt"; done
-	@echo "wt-remove-many done"
-
-# Drain the WHOLE integrate+reclaim lane (#62) in one command: for every agent
-# worktree, wt-sync its uncommitted changes into main (clobber-guarded) then
-# reclaim it. Skip any worktree whose id contains a KEEP token (still-running
-# agents) so live work is never destroyed. This is the standing loop that keeps
-# the orchestrator from falling behind completed subagents.
-# Usage: make wt-reap KEEP='a86c88e5 ae182e55'   (KEEP optional)
-wt-reap:
-	@keep="$(KEEP)"; reaped=0; kept=0; \
-	for wt in /Users/shawnwilson/gludd/.claude/worktrees/agent-*; do \
-		[ -d "$$wt" ] || continue; \
-		id=$$(basename "$$wt"); skip=0; \
-		for k in $$keep; do case "$$id" in *$$k*) skip=1;; esac; done; \
-		if [ "$$skip" = 1 ]; then echo "  KEEP (running): $$id"; kept=$$((kept+1)); continue; fi; \
-		echo "=== reap $$id ==="; \
-		$(MAKE) --no-print-directory wt-sync SRC="$$wt"; \
-		git worktree remove --force "$$wt" 2>/dev/null && { echo "  reclaimed $$id"; reaped=$$((reaped+1)); } || echo "  (reclaim skip $$id)"; \
-	done; \
-	echo "wt-reap done: reaped $$reaped, kept $$kept running; run 'make test-count' when the tree is quiet"
+# Retirement uses the existing native agent-cleanup/wt-prune-safe owners.
 
 # Read-only: list a worktree's uncommitted changed files (for planning a sync).
 wt-changed:
 	@[ -n "$(SRC)" ] || { echo "Usage: make wt-changed SRC=<worktree-root>"; exit 1; }
 	@cd "$(SRC)" && { git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u | grep -vE '^(\.venv/|REDTEAM_|.*\.log$$)' || echo "(no tracked/untracked changes)"
 
-# Tear down an integrated/redundant agent worktree (reclaims its source + frees
-# the branch). --force because agent worktrees carry uncommitted (already-synced)
-# changes. Usage: make wt-remove SRC=<worktree-root>
-wt-remove:
-	@[ -n "$(SRC)" ] || { echo "Usage: make wt-remove SRC=<worktree-root>"; exit 1; }
-	@git worktree remove --force "$(SRC)" 2>/dev/null && echo "removed: $(SRC)" || echo "remove skipped/failed: $(SRC)"
-
-# Unlock and force-remove a LOCKED agent worktree. Usage: make wt-remove-locked SRC=<worktree-root>
-wt-remove-locked:
-	@[ -n "$(SRC)" ] || { echo "Usage: make wt-remove-locked SRC=<worktree-root>"; exit 1; }
-	@git worktree unlock "$(SRC)" 2>/dev/null || true; git worktree remove --force "$(SRC)" && echo "removed: $(SRC)" || echo "remove failed: $(SRC)"
-# Bulk force-remove locked worktrees. Usage: make wt-remove-locked-many SRCS='wt1 wt2 ...'
-wt-remove-locked-many:
-	@[ -n "$(SRCS)" ] || { echo "Usage: make wt-remove-locked-many SRCS='wt1 wt2 ...'"; exit 1; }
-	@for wt in $(SRCS); do git worktree unlock "$$wt" 2>/dev/null || true; git worktree remove --force "$$wt" && echo "  removed: $$wt" || echo "  fail: $$wt"; done
-	@echo "wt-remove-locked-many done"
+# Native locks and ignored evidence stay under the existing cleanup owners.
 
 # Reclaim disk safely: remove every CLEAN worktree (git refuses any with
 # uncommitted changes, so dirty/unsynced ones are preserved). Branch refs always
