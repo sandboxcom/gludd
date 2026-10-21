@@ -2201,3 +2201,71 @@ For later selected-owner cleanup:
 5. Measure disk again. A plan, a removal or a new HEAD does not itself prove the95% capacity prerequisite.
 
 The prior Git manual and firsthand2018/2026 ignored-data/recovery reports above remain relevant to preservation. They provide no diagnosis of this internal mode mismatch and no expanded deletion authority. Source acceptance is separate from actual retirement, capacity, final admission, full gate, exact-SHA CI, deployment and all seven open release tasks.
+
+## Retired legacy force-prune entrypoint (2026-10-20)
+
+During the next native cleanup review, Root found wt-prune-force-merged at
+make/30-ci-and-release.mk:861. The unregistered, unused recipe enumerated all
+linked checkouts and force-removed master ancestors using only two pathname
+exceptions. It bypassed ignored-proof archival and native lock, checkpoint,
+process and logical-owner authority. Its sole external reference was the old
+target-existence audit in docs/audit/status_infra_quality.md. That historical
+audit is preserved with a dated current-procedure correction.
+
+Two additive cases reuse the complete existing registered native Git fixture.
+They add an actual master integration ref, execute the original production
+Make fragment in ordinary Make and -e, and require unchanged target, ignored
+failure/history bytes, refs, registration, registry and archive. The original33
+preservation cases and all30 routing assertions remain unchanged.
+
+The actual RED is2FAIL/33deselected1.42s, observed2.4s/rc2:
+both routes print "removed (merged HEAD)" for the confined fixture and destroy
+its ignored proof. No live project checkout executes that legacy recipe.
+Retain /tmp/gludd-v012-legacy-force-alias-red.log and matching .xml.
+Removing the unused recipe makes the same calls refuse natively with
+"No rule to make target"; both controls pass1.66s, observed2.8s/rc0.
+Retain /tmp/gludd-v012-legacy-force-alias-green.log and matching .xml.
+
+Supported cleanup remains the existing agent-cleanup/wt-prune-safe native owner.
+No alias, force option, parser, observer, dependency or cleanup exception is
+added. A historical existence verdict cannot authorize bypassing current policy.
+Native contract validation passes269 targets; duplicate detection now reports
+1166 definitions/zero duplicates. lint-make passes9CI/12local phase parity and
+the actual Make help parse. The documented absent-owner agent-cleanup plan
+correctly refuses rc2 at canonical linked-checkout identity; it grants no
+valid-owner, removal or capacity proof.
+
+Five complete owners pass232 cases on311 in53.08s, observed55.2s/rc0, and
+on312 in40.15s, observed42.3s/rc0, with fatal warnings and no skips.
+Unchanged config/coverage_workstream_prune.ini includes both whole production
+files:93.5line/85.8branch aggregate, prune92.0/84.4, registry98.9/95.0.
+85%aggregate/75%each-file BOTH pass. Native audit is
+.gate-logs/coverage-20261021T025645Z.json; full measured report is
+.gate-logs/coverage-legacy-force-alias-0650c12.json.
+Ruff and complete strict preservation typing pass; the full Make contract test
+owner passes11/2.35s, /tmp/gludd-v012-legacy-force-contract-owner.xml.
+The original230-case receiving repair is separately committed in
+0650c124f7246736dcac52da84be4ce25b909eaf after fresh127848/127872 collection,
+24deselected/zero errors48.65s, native53.9s. No old failure is relabeled.
+
+The complete current coverage command is:
+
+~~~console
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_workstream_prune.py tests/unit/test_worktree_retirement.py tests/unit/test_worktree_prune_preservation.py tests/unit/test_worktree_cleanup_targets.py tests/unit/test_pytest_param_fixture_collisions.py' COVERAGE_CONFIG=config/coverage_workstream_prune.ini COVERAGE_REPORT=.gate-logs/coverage-legacy-force-alias-0650c12.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+The312 whole-owner replay uses the same five TESTFILES with -q -W error -n0
+through public run-watched,180total/60quiet,15sheartbeat/20retained,
+WORK_ITEM_ID=S98.4, labelv012-legacy-force-alias and
+runv012-legacy-force-whole312-0650c12-20261021.
+Both outer and child select the installed python-3.12 environment and
+UV_PYTHON=3.12.15/UV_NO_SYNC=1/UV_PYTHON_DOWNLOADS=never.
+Raw /tmp/gludd-v012-legacy-force-alias-whole312.log and its .xml retain proof.
+
+A distinct canonical plan for codex-v012-pages-cold-render-20261020 correctly
+refuses "unmerged worktree cannot be retired" after verifying all six
+checkpoints/unowned0. Keep that source/ref and investigate its integration
+history; implementation-looking bytes do not establish native ancestry.
+The old gate-admission owner remains Git-locked. No live removal, reclaimed
+bytes, capacity clearance, full gate, exact-SHA hosted/deployment, promotion or
+release-task closure follows from these repairs.

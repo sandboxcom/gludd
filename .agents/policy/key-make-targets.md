@@ -334,3 +334,6 @@ removal or new HEAD does not establish capacity clearance. Preserve dirty,
 unknown and checkpoint-owned work. The [owning resource record](../../docs/features/GATE_RESOURCE_LIFECYCLE.md#native-alias-plan-and-apply-must-bind-the-same-request-2026-10-20)
 retains actual failures and complete-source proof. A target name, dry run or old
 threshold in prose is not evidence that current policy admits an action.
+The unused wt-prune-force-merged entrypoint has been removed after real native
+fixtures reproduced ignored-proof loss. Its historical existence audit grants
+no current authority; use the same supported plan/retirement owners above.

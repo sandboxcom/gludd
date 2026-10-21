@@ -177,6 +177,13 @@ Both scenarios are present with real verify logic (not stubs):
 
 ## #62 — standing integrate+reclaim loop (wt-reap / wt-sync-all) — DONE
 
+2026-10-20 operating correction: this section records a historical target-existence
+audit. It grants no current cleanup authority. The unused wt-prune-force-merged
+entrypoint is removed after real registered-fixture controls reproduce ignored
+proof loss. Use the existing guarded selected-owner plan and retirement
+[procedure](../features/GATE_RESOURCE_LIFECYCLE.md#retired-legacy-force-prune-entrypoint-2026-10-20).
+The original evidence and verdict below remain historical.
+
 Evidence (all `Makefile`):
 - `wt-reap:` (`:771-782`) — "Drain the WHOLE integrate+reclaim lane (#62) in one command": for every
   agent worktree it `wt-sync`s (clobber-guarded) then `git worktree remove --force`, honoring a

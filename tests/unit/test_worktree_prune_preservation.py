@@ -200,3 +200,33 @@ def test_alias_controller_requires_matching_native_retirement_mode(
             prune_worktrees_safe._validate_retirement_controllers(
                 selected, root=root, worktree=target, branch="feature/retired",
             )
+
+
+@pytest.mark.parametrize("environment_overrides", [False, True])
+def test_retired_force_alias_cannot_remove_registered_worktree_or_ignored_proof(
+    checkout: tuple[Path, Path, Path], environment_overrides: bool,
+) -> None:
+    root, target, registry = checkout
+    git(root, "branch", "master")
+    before_refs = git(root, "show-ref")
+    before_registration = git(root, "worktree", "list", "--porcelain")
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key not in {"MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS", "MAKELEVEL"}
+    }
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", *(["-e"] if environment_overrides else []),
+            "-f", str(ROOT / "make/30-ci-and-release.mk"), "wt-prune-force-merged",
+        ],
+        cwd=root, env=environment, check=False, capture_output=True, text=True, timeout=30,
+    )
+    assert target.is_dir(), result.stdout + result.stderr
+    assert (target / ".gate-logs/failed-proof.log").read_bytes() == b"FAILED original proof\n"
+    assert (target / ".gludd/historical.json").read_bytes() == b'{"state":"failed"}\n'
+    assert git(root, "show-ref") == before_refs
+    assert git(root, "worktree", "list", "--porcelain") == before_registration
+    assert not archive(root).exists()
+    assert not registry.exists()
+    assert result.returncode != 0
+    assert "No rule to make target" in result.stderr
