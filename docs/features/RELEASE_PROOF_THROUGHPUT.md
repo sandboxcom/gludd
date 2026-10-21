@@ -39,6 +39,13 @@ preserves both JS0 engines, then dependent JS1, original20-minute budgets,
 controls fail7/39PASS before repair, then whole five-owner acceptance165PASS6.74s.
 Separate setup cost is explicit; peak concurrency stays2. Source-only review,
 actual successor hosted coverage and deployment remain pending. Runtime311 remains open.
+Independent source decision approves7dcd1dd at
+/tmp/gludd-v012-candidate-7dcd1dd-source-review.md. Native ci-failure-repair
+records its Pages family locally repaired after complete232PASS7.11s at that
+clean exact source, not hosted-resolved. Commit collection127777/127801,
+24deselected/0errors47.34s/native52.7s supplies no full gate. The isolated
+pipeline-status process-cost enhancement remains the next active repair;
+Root owns its single Make writer and final receiving proof.
 
 ## Problem and decision
 

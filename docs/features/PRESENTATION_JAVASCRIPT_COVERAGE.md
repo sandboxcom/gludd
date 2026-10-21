@@ -96,6 +96,15 @@ high entropy; splitting the same literal preserves its exact assertion without
 an allowlist or suppression. These are focused source checks; fresh collection,
 source review and hosted acceptance retain their separate meanings.
 
+Normal guarded source commit7dcd1dd053bf6e72f09d9bb009e843fec28d7641 retains
+fresh127777/127801collection,24deselected/0errors47.34s/native52.7s. Independent
+/tmp/gludd-v012-candidate-7dcd1dd-source-review.md approves SOURCE ONLY. From
+that exact clean source, existing ci-failure-repair executes all six complete
+workflow/security owners:232PASS7.11s, /tmp/gludd-v012-pages-family-repair.xml,
+then records only family8696e230 locally repaired. This source-level workflow
+receipt does not prove the hosted budget, actual c8 coverage or deployment;
+those still require all three original passes on the exact published successor.
+
 ## Measured clean53c1e21 image pipeline (2026-10-20)
 
 The serial Mermaid/image-completion product is integrated at
