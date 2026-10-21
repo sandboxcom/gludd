@@ -21,6 +21,10 @@ from tests.unit.test_observed_command import _command, _current_status
 EXPECTED_FAMILY_COUNT = 136
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
+EXPECTED_MAIN_PYTEST_FLAGS = (
+    f"-W error -q -n 2 --maxprocesses 2 --ignore-glob={ROOT / 'tests' / '*'} "
+    "-o verbosity_test_cases=-2 --durations=20 --durations-min=0"
+)
 HELP = "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries"
 APPROVED_PROMOTION_SELECTORS = (
     "tests/unit/test_env_var_audit_deep.py::TestGLUDDNamingConvention::test_no_trailing_underscore",
@@ -505,7 +509,7 @@ def _assert_native_git_metadata_query_count_route(
         ("2", "2"), ("1", "1"), ("1", "1"),
     ]
     assert [row["flags"] for row in rows] == [
-        f"-W error -q -n 2 --maxprocesses 2 --ignore-glob={ROOT / 'tests' / '*'} -o verbosity_test_cases=-2",
+        EXPECTED_MAIN_PYTEST_FLAGS,
         "-W error -q -n 0 --maxprocesses 1",
         f"-W error -q -n 0 --maxprocesses 1 --ignore-glob={ROOT / 'tests' / '*'}",
     ]
@@ -848,7 +852,7 @@ def _assert_native_setuid_input_first_route(
         ("2", "2"), ("1", "1"), ("1", "1"),
     ]
     assert [row["flags"] for row in rows] == [
-        f"-W error -q -n 2 --maxprocesses 2 --ignore-glob={ROOT / 'tests' / '*'} -o verbosity_test_cases=-2",
+        EXPECTED_MAIN_PYTEST_FLAGS,
         "-W error -q -n 0 --maxprocesses 1",
         f"-W error -q -n 0 --maxprocesses 1 --ignore-glob={ROOT / 'tests' / '*'}",
     ]

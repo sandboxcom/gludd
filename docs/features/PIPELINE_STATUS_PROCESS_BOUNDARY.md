@@ -241,3 +241,145 @@ fatal warnings; /tmp/gludd-v012-c0a4-hosted-failure-handoff.xml and its.log reta
 the native result. Locked Markdown reports no issues in all six files; native
 snapshot validation, task-ledger validation and unchanged<2500 line guards pass.
 No production/test source, policy bound or checkbox changes in this record.
+
+## Bounded native admission phase timings (2026-10-21)
+
+This diagnostic change reuses pytest9.1.1's built-in reporter in the existing
+main test-files child: --durations=20 --durations-min=0. It prints at most20
+already measured phase durations before the later child can exhaust the
+original outer budget. The fresh HELP and reviewed-head children keep their
+original flags. Every selector/order, three top-level children,2/1/1 workers,
+fatal warnings,90total/60quiet,21phases2850,136families and full-gate/coverage/
+ZDD/cleanup/promotion requirements remain.
+
+The [official reporter contract](https://docs.pytest.org/en/latest/how-to/usage.html#profiling-test-execution-duration)
+and [exact9.1.1 implementation](https://github.com/pytest-dev/pytest/blob/9.1.1/src/_pytest/runner.py)
+show that this uses existing reports. No new plugin, subprocess observer,
+profiling daemon, test ordering or previous-run timing data is introduced.
+The zero display minimum controls visibility, not a test threshold or timeout.
+
+| Native phase | Meaning and limit |
+| --- | --- |
+| setup | Fixture/setup wall time; shared setup can be attributed to its first consumer. |
+| call | Test-body wall time, including child waits; not child CPU. |
+| teardown | Cleanup wall time; scoped teardown can belong to its final consumer. |
+
+The firsthand [June2021 fixture-attribution report8741](https://github.com/pytest-dev/pytest/issues/8741)
+remains open and has later reproductions. It explains why phase labels matter;
+it does not diagnose this project's hosted timeout. Collection, worker startup,
+cold imports and censored later work are outside the per-case phase report.
+
+An immutable native job-context query for c0a4bf5/39559012239/job119085557368
+finds observed-start07:01:04.812832Z, first pytest header07:01:25.243168Z and
+workers/inventory07:01:25.244674Z. That roughly20.4-second interval is time to
+observed output; buffering and startup/collection phases are not separated.
+It is not measured import CPU. Retrieve it with the existing owner:
+
+~~~console
+make ci-job-failure-context RUN=39559012239 JOB=119085557368 PATTERN='2 workers [2078 items]' BEFORE=25 AFTER=8 MAX_MATCHES=1 CI_JOB_CONTEXT_VALIDATE_ONLY=0
+~~~
+
+Select the installed outer311 tuple from SESSION for that native command.
+The separate [UV compilation contract](https://docs.astral.sh/uv/reference/settings/#compile-bytecode)
+documents deferred bytecode compilation and ignored compilation errors;
+[its compatibility notes](https://github.com/astral-sh/uv/blob/main/docs/pip/compatibility.md#bytecode-compilation)
+also describe warning suppression. Actual hosted bytecode availability and
+benefit are unmeasured here. No bytecode, dependency or warning-policy change
+is adopted on that hypothesis.
+
+### Preserve failing-first controls and independently declared expectations
+
+The first six-case prototype retains6FAIL13.27s/native14.4s:
+one real missing-flag failure and five fixture-context failures. The temporary
+tests lacked explicit project configuration and duplicated the helper's flag
+prefix, so external Molecule discovery and header assumptions differed from the
+real main child. Correct the new fixture to use the actual pyproject and exact
+one-copy helper prefix; no warning is filtered or original assertion altered.
+
+That changed-input control retains5FAIL/1PASS16.12s/native17.0s with unchanged
+production Make. Only actual reporter absence fails; import failure correctly
+produces no invented duration report. Raw logs/XML are
+/tmp/gludd-v012-runtime-duration-red311.* and
+/tmp/gludd-v012-runtime-duration-context-red311.*.
+After the two native flags, all six cases pass22.72s/native24.0s in
+/tmp/gludd-v012-runtime-duration-green311.*.
+
+The five complete native behavioral cases compare the same real two-worker
+invocation with/without those two reporter options. They retain success,
+assertion failure, fatal UserWarning, setup error and import/collection error,
+native totals/status, actual plugin fixtures and clean stderr/ordinary Make
+failure propagation. They require setup/call/teardown labels for executed tests
+and no fabricated timing when collection fails. The separate cheap guard uses
+the actual Make stanza to require those options once in main, the same three
+child PIDs/order and original2/1/1 policy.
+
+The initial whole six-owner runs retain84FAIL/287PASS on each runtime:
+31185.24s/native86.4s and31289.77s/native91.0s. All84 derive from the intended
+reporter addition missing in independently literal command expectations.
+The old native four-pin checker still passes4/1.41s, exposing its missing
+full-command coverage. Preserve /tmp/gludd-v012-runtime-duration-whole311.*
+and its312 sibling; passing new controls did not supersede those failures.
+
+Conform the exact expectations to this observability change. Eighteen Make
+stanza comparisons share independently declared EXPECTED_MAIN_MAKE_INVOCATION;
+the two native argv comparisons share independently declared
+EXPECTED_MAIN_PYTEST_FLAGS with its actual Root path. Both include every original argument plus the two diagnostic
+flags. Neither is derived from the producer. Every original comparison,
+selector, outcome and mutation assertion remains, with no normalization that
+discards unknown options.
+
+The existing early checker retains its original four pins and appends the
+existing native-Git full-argv case and canonical-profile full-Make case.
+Each independently declared form is exercised before expensive runtime proof.
+The native routing test adds failure cases for both new pins while retaining
+all original validator/order/status/one-worker/30-second contracts. Before
+wiring, it records7FAIL/1PASS1.28s/native2.1s; after wiring,8PASS1.03s/native1.8s.
+Raw logs/XML: /tmp/gludd-v012-runtime-duration-pins-{red,green}311.*.
+The actual native checker then passes all six pins1.73s with136families,
+21phases2850 and full_gate=gate required=true.
+
+The first final373-case cohorts retain1FAIL/372PASS on each runtime:
+31198.99s/native100.3s and312104.17s/native105.5s. The sole failure is the actual
+native-boundary test's duplicate hard-coded4-pass expectation after the checker
+correctly executes six pins. Bind its word-bounded native total to the separate
+expected STRUCTURAL_PROMOTION_NODES roster, preserving every full-gate/manifest
+assertion. The exact native boundary case then passes1/3.61s/native4.6s on311
+and1/3.84s/native4.8s on312. Retain the failed final-whole311/312 and successor
+count-green311/312 raw logs/XML under /tmp/gludd-v012-runtime-duration-*.
+A failed file named final-whole remains failed; it is never relabeled green.
+
+Strict typing first refuses duplicate scripts.ci_named_shard_files versus flat
+ci_named_shard_files. The shared native helper's existing flat stream imports
+expose the old workflow-test package import. Conform only that test's static
+TYPE_CHECKING binding to the established src:scripts/explicit-package-bases
+context; its real runtime package import and all SHARDS assertions remain.
+Final strict scope passes all four changed Python files; Ruff passes.
+Native Make contract271,1161targets/zero duplicates and9CI/12local parity pass.
+
+Final same-six-owner acceptance passes373cases/zero skips/errors on each runtime:
+31183.71s/native84.9s and31288.23s/native89.3s, with fatal warnings. Raw logs/XML
+remain /tmp/gludd-v012-runtime-duration-whole-v2-311.* and its312 sibling.
+The six complete owners are test_ci_workflow_integrity, test_runtime_admission_durations,
+test_runtime_admission_scheduling, test_gate_failure_promotion,
+test_integration_admission_target and test_admission_cold_start_selection, all
+under tests/unit. They run through test-files under the existing watched owner
+with180total/60quiet, serial parent and explicitly bounded two-worker native
+children. This is focused source acceptance. The original three-child90/60
+admission, full gate/85-75 BOTH coverage and exact-SHA hosted/deployment proof
+remain separate. The changed public checker already
+executes its documented actual example with six passing pins:
+
+~~~console
+make check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json
+~~~
+
+Use the installed outer runtime tuple from SESSION. This actual behavior and
+the271-target catalog validation retain their different authority. These changes supply diagnostics and earlier contract
+failure detection; they do not establish a hosted timeout repair, release
+readiness, full-gate coverage or any task closure.
+
+The five existing operating-document owners pass144cases5.90s/native6.8s,
+zero skips/errors/fatal warnings, with raw/XML at
+/tmp/gludd-v012-runtime-duration-operating.*. Locked Markdown passes all six
+changed documents; native snapshot structure and line-budget checks pass.
+These receipts precede the ordinary source commit and its fresh collection.

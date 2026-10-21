@@ -9,6 +9,12 @@ manifest. The target composes existing repository checks; it does not add
 another linter, test runner, timer, YAML parser, browser launcher, or
 task-ledger implementation.
 
+Current S98.4 diagnostics retain136families and the original runtime policy.
+The checker preserves its four established pins and adds both full-command
+expectations; main emits bounded native phase timings. The
+[measured decision and failure history](PIPELINE_STATUS_PROCESS_BOUNDARY.md#bounded-native-admission-phase-timings-2026-10-21)
+own current commands, negative controls and proof limits.
+
 The admission path does not replace the full gate. A passing result means only
 that the branch cleared the deterministic, comparatively cheap failure classes
 listed below. Release evidence still requires the normal exact-head gate and

@@ -155,6 +155,12 @@ differences of group medians; reject unrelated micro-optimizations explicitly.
 Real UV supervises its Python child. A fake exec launcher, runpy or the bootstrap
 PYTHON alias does not prove that lifecycle; preserve native runtime selection,
 fresh observations and every original assertion while assessing a fixture repair.
+The [native duration contract](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#bounded-native-admission-phase-timings-2026-10-21)
+uses pytest's bounded20-row setup/call/teardown report in the existing main
+child. It does not measure collection/startup or child CPU. Independently
+specified Make/native argv expectations retain every argument; their two shared
+constants and both original guard cases now enter the early six-pin checker.
+Preserve the prior four pins, failure propagation and original runtime bounds.
 
 ### Preserve producer status and measurement meaning
 

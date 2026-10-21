@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shlex
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import yaml
@@ -164,7 +165,10 @@ class TestTestShardStructure:
         ]
 
     def test_oversized_unit_3_is_partitioned_without_overlap(self) -> None:
-        from scripts.ci_named_shard_files import SHARDS
+        if TYPE_CHECKING:
+            from ci_named_shard_files import SHARDS
+        else:
+            from scripts.ci_named_shard_files import SHARDS
 
         assert SHARDS["unit-3a"][0] == ("tests/unit/test_[n-r]*.py",)
         assert SHARDS["unit-3b"][0] == (
@@ -652,3 +656,21 @@ def test_gate312_guard_is_promoted_before_fanout(tmp_path: pathlib.Path) -> None
         if item["target"] == "_pytest-runtime-compatibility-admission"
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+
+
+def test_hosted_runtime_main_reports_native_durations_without_new_children(tmp_path: pathlib.Path) -> None:
+    from tests.unit.test_runtime_admission_scheduling import _capture_owner
+
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
+    assert len({row["pid"] for row in rows}) == 3
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    main_flags = shlex.split(str(rows[0]["flags"]))
+    assert main_flags.count("--durations=20") == 1
+    assert main_flags.count("--durations-min=0") == 1
+    for row in rows[1:]:
+        assert not any(
+            flag.startswith(("--durations=", "--durations-min="))
+            for flag in shlex.split(str(row["flags"]))
+        )
