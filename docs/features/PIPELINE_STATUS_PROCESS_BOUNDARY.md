@@ -701,3 +701,167 @@ loads consume1.971s. Historical focus and finalization calls consume2.832s and
 adds cost, and child CPU/cold start remain unobserved. This changed diagnostic
 workload records no runtime-family receipt and does not reverse the actual
 outer311 timeout. It justifies neither a teardown cause nor a new optimization.
+
+## Observed job progress beside workflow status (2026-10-21)
+
+Published development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83 has independent
+SOURCE ONLY approval, original local runtime receipts with 2120 passes on each
+version (311/native 85.3s; 312/native 87.4s), and ordinary guarded publication.
+Publication admission separately passes 2120/native 73.9s; verify-remote returns
+VERIFIED for that exact branch/SHA. Preserve the actual 780145f timeout, stale
+receipt contradiction and declined hypotheses above. The authority repair's
+complete evidence remains in
+[its owning record](CI_FAILURE_LEDGER.md#durable-admitted-attempt-authority-2026-10-21).
+These receipts establish neither the full gate nor hosted/deployment success.
+
+Root repeated a documented interpretation error: Build 39587418003's workflow
+row said queued, so it was described as entirely waiting. The existing native
+snapshot already showed gate311 in_progress and its original runtime step
+successful. The retained 10:57:04 UTC snapshot shows Smoke test active after Test
+collection check succeeded; an earlier live observation had collection active.
+Keep /tmp/gludd-v012-pipeline-job-progress-discovery-2f6ad0d.json as historical
+native evidence. The earlier c0a4bf5 record already warned against this inference.
+A prose warning buried in history did not prevent recurrence.
+
+Reuse scripts/pipeline_status.py's existing publication boundary. After exact
+run/SHA/branch/workflow/event and job/step validation, PIPELINE-JOBS prints the
+complete observed job count and all 15 state counts, including zeros. At most
+eight PIPELINE-JOB-PROGRESS rows show active, failed or unknown jobs, with active
+jobs first. Rows identify current/problem step, latest successful step and active
+step count. Unknown/missing/ambiguous data remains explicit; multiple candidate
+steps need unique positive integer ordinals for a latest-step claim. Success,
+skipped, neutral and cancelled remain distinct.
+
+Names use the existing bounded-text helper and ASCII JSON quoting; oversized
+names carry an explicit [truncated] marker. progress_omitted and
+PIPELINE-JOBS-TRUNCATED account for eligible rows beyond eight; summary-only
+successful/queued jobs remain counted without inflating omissions. Full native
+JSON retains the original payload, ordering and omitted rows. No extra network
+query, dependency, snapshot field/schema, observer, cache or daemon is added.
+Invalid identity or malformed containers fail before progress output. Plan-only,
+absent-workflow and publication-disabled paths emit no view.
+
+This projection is diagnostic. A successful step does not establish successful
+job/workflow, terminal exact-SHA CI or release proof. Existing current-success
+invalidation, ledger ordering, failure/publication fences and release_ready=false
+behavior remain. Read both workflow authority and observed job detail; do not
+cancel, rerun or attribute a cause from a queued label or last visible step.
+
+Root integrated tests before implementation. Canonical focused routing and new
+behavior first fail 31/pass 12 in 2.05s, then pass 43 in 1.71s/native 2.7s with
+the code, unchanged fatal warnings and serial pytest. Preserve
+/tmp/gludd-v012-pipeline-job-progress-canonical-{red,green}.xml/log and native
+v012-job-progress-canonical-red-2f6ad0d-20261021 and
+v012-job-progress-canonical-green-receiving-2f6ad0d-20261021. The confined proposal
+separately passes 190 on both installed versions: 38 additive cases, 93 unchanged
+exact-SHA cases and 59 complete fixture-namespace controls.
+
+Canonical receiving then passes all TEN complete owners on each runtime:
+616 passes on 311 in 28.15s/native 29.2s, and 616 passes on 312 in 37.00s/native
+38.4s, without skips or errors. The ten owners are pipeline_status_job_progress,
+pipeline_status_inprocess_ledger, pipeline_status_exact_sha,
+status_heartbeat_terminal, pipeline_status_ssh_transport, ci_failure_ledger,
+proof_observations, require_ci_green, require_ci_green_detect_branch and
+pytest_param_fixture_collisions (each tests/unit/test_<name>.py). Retain
+/tmp/gludd-v012-job-progress-whole-{311,312}.xml/log and the matching dated
+v012-job-progress-whole-{311,312} run IDs.
+
+Whole-source coverage uses the SAME ten complete owners and unchanged registered
+config/coverage_pipeline_status.ini, including all of pipeline_status.py AND
+require_ci_green.py. All 616 pass in 52.35s/native 55.0s. Native audit
+.gate-logs/coverage-20261021T112312Z.json passes unchanged 85/75 BOTH: aggregate
+98.8% lines/97.5% branches; pipeline_status.py 98.6/97.1 and require_ci_green.py
+100/100. Raw measured report: .gate-logs/coverage-pipeline-job-progress-20261021.json.
+
+The new whole test owner is registered exactly once in the FIRST existing
+runtime child, immediately after the old exact-SHA owner. The new
+pipeline-observed-job-progress family makes 137 total; all 136 predecessors and
+their selector order remain. Its deterministic basic node is
+tests/unit/test_pipeline_status_job_progress.py::test_original_native_queued_workflow_displays_its_active_gate_and_actual_steps.
+Independent count/roster pins change only for this additive owner; new routing
+assertions retain all three children, 90/60 and 2/1/1, 21 phases/2850 and required
+full gate. No old selector or assertion is removed or weakened. The actual
+documented check-gate-failure-promotions example passes all six nodes; native
+check-make-target-contract passes all 271 target contracts.
+
+A confined Ruff I001 result exposed package-context dependence: an exported flat
+source lacked the real scripts/__init__.py. Adding the immutable actual package
+initializer to that fixture resolves classification with production imports
+unchanged. Use the original package/config context for confined static checks,
+then repeat native checks in the receiving checkout. Canonical Ruff passes all
+four changed Python files. Reformatting unchanged imports or suppressing lint
+would conceal the fixture input gap.
+
+Practitioner research read on 2026-10-21 complements the captured payload:
+
+- [GitHub's workflow-jobs REST contract](https://docs.github.com/en/rest/actions/workflow-jobs)
+  exposes jobs and step status/conclusion fields. Reuse the validated fetch.
+- [Community discussion 139586](https://github.com/orgs/community/discussions/139586)
+  contains a September 2024 firsthand, unanswered report of returned step metadata
+  lagging an active job. These fields describe an observation, not a verdict.
+- [Community discussion 53266](https://github.com/orgs/community/discussions/53266)
+  contains April 2023 reports of status-filtered listings omitting active runs
+  visible without filtering, including recurrence after transient recovery.
+
+Those reports do not diagnose this Gludd run or identify an upstream cause.
+The local conclusion follows the retained native workflow/job payload.
+
+Molecule 39587418143 passes all six jobs for exact 2f6ad0d, verified by native
+ci-run-summary. The bounded Build ci-await ends pending/native 181.9s/rc2.
+The four-tick, 300-second status-heartbeat ends at COUNT/native 932.3s/rc0 with
+Build/Pages pending; COUNT exhaustion is not terminal CI success. A later native
+pipeline-status observation passes Pages 39587418149, retains Build pending and
+prints five active Build jobs, 16 successful, five queued and two skipped.
+Retain /tmp/gludd-v012-job-progress-native-view-2f6ad0d.json as historical native
+evidence; its release_ready=false and hard_blocked=true remain. The new projection
+does not turn this receiving checkout into an immutable candidate proof.
+
+Complete admission/workflow acceptance passes 447 on each runtime: 311 in
+120.20s/native 121.3s and 312 in 124.23s/native 125.9s, without skips/errors.
+Retain /tmp/gludd-v012-job-progress-routing-{311,312}.xml/log and matching dated
+native run IDs. The seven whole owners are gate_failure_promotion,
+runtime_admission_scheduling, admission_cold_start_selection,
+integration_admission_target, runtime_publish_admission, ci_workflow_integrity
+and make_target_contract. Separate strict checks for source and each changed
+test owner, explicit script docstrings, Make duplicate/parity, task registration,
+resource ownership and tracked-file line limits all pass.
+
+The eight complete operating/doc owners pass 235 in 82.62s/native 83.6s with
+fatal warnings and no skips/errors. They are status_snapshot,
+session_persistence_integration, branch_discipline_checks, markdown_docs_deep,
+task_ledger_validation, make_target_contract, oversized_document_splits and
+guardrails. The native status-snapshot producer first regenerates the retained
+19-line gate region; its old noncanonical FAIL remains distinct from candidate
+proof. Retain /tmp/gludd-v012-job-progress-operating-311-visible.xml/log and
+v012-job-progress-operating-311-visible-20261021.
+
+Preserve the FIRST operating attempt: v012-job-progress-operating-311-20261021
+and /tmp/gludd-v012-job-progress-operating-311.log end in quiet-output-timeout,
+rc124/native 69.522s, quiet 60.562s, active:false and trace_path:null. Its dot-only
+output establishes no failing assertion or exact blocked node. Root had selected
+a general diagnostic silence limit of60, although the guardrail owner captures
+full-suite test-count (existing600s child/660s test) and Ansible checks. The next
+invocation uses verbose case output and documented general STALL_SECS=180,
+retaining MAX_SECS=240, all eight owners and original assertions. It passes235;
+its native durations record collection53.83s and Ansible15.81s. These measurements
+do not attribute the earlier quiet interval or establish a performance change.
+No source/test budget is changed; original runtime admission stays90/60.
+
+After recording receipts and guidance, all 50 complete Markdown/Make-contract/
+session-persistence cases pass in 5.10s. Locked-config Markdown lint passes all
+six changed documents. All six native Node compatibility checks pass in 8.39s;
+no plugin source changes or restart is involved. Preserve
+/tmp/gludd-v012-job-progress-docs-final.xml. These remain receiving checks, not
+an exact-SHA full gate or release proof.
+
+A separate follow-up decision at /tmp/gludd-v012-queued-cancellation-decision.md
+identifies a required narrow repair: retire legacy bulk cancellation based on
+queued status, while retaining explicit single-run emergency intent, literal
+inputs and native failure propagation. Root owns its separate receiving/commit;
+no live run is cancelled during this assessment.
+
+Capacity remains 97 percent against 95. Its HumanTodo is UNFILED after actual API
+refusal; a host-space question is pending. No task tick, final sealing, combined
+replay/full gate, exact-successor CI/deployment or promotion follows. Normal
+guarded commit/fresh collection and independent exact-successor review still
+require their own actual receipts.

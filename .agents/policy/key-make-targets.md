@@ -115,6 +115,9 @@ focused behavior alone does not establish fixture-namespace conformance.
 `make typecheck-scope FILES='path1.py path2.py'` provide focused checks.
 Run them as separate Make invocations; the FILES/stray-goal guard rejects mixing
 path-carrying targets. Keep that refusal and use each documented native owner.
+For confined static checks, preserve the original package initializer and config.
+A flat export can change import classification; receiving checks run in the actual
+package layout. Keep original imports and lint rules while repairing fixture input.
 The commit docstring guard scopes src and can report SKIP for script-only changes.
 Native make lint-docstrings DOCSTRING_FILES='scripts/changed_owner.py' checks that
 script explicitly; a commit-guard SKIP is distinct from script docstring acceptance.
@@ -125,6 +128,13 @@ cohorts after a live/unlocated refusal and retain its actual PID/CWD diagnostic.
 The initial cause may remain unproven; never relax the ownership fence.
 `make lint`, `make collect-check` and `make test-count` remain required
 by the commit/completion policy. A focused pass is not a green full gate.
+The operating guardrail owner itself invokes full-suite collection and Ansible
+checks. Use visible case output and that diagnostic watcher's documented limits;
+the general run-watched contract uses STALL_SECS=180. A retained quiet timeout
+without terminal pytest evidence is not an assertion failure. Keep the ORIGINAL
+runtime admission's 90total/60quiet limits separate and unchanged; the
+[job-progress record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#observed-job-progress-beside-workflow-status-2026-10-21)
+retains the actual configuration refusal and complete receiving proof.
 The routed docs/specs/BEHAVIORAL_SPECS.md corpus is pinned historical source.
 Keep its index/shard bytes, SHA and original line-count assertions intact; current
 operational changes belong in the owning feature/AGENTS/this guide. Include the
@@ -269,6 +279,14 @@ historical green output as current proof.
 Use existing pipeline-status/ci-await owners for generated current CI evidence;
 select their full variables from the contract. Do not manually edit observation
 JSON or repeatedly poll status in place of repairing a known failure.
+Workflow-level queued can coexist with active jobs. Read the observed job-state
+counts and bounded active/failed step rows from the existing pipeline-status
+snapshot. Success on a step does not establish job or workflow success; complete
+native JSON retains omitted display rows. This projection is diagnostic, with
+unchanged terminal exact-SHA and failure/publication fences. The
+[job-progress record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#observed-job-progress-beside-workflow-status-2026-10-21)
+retains the repeated interpretation error and executable controls.
+
 For a completed job whose sibling is still running, use ci-job-failure-context
 with its exact numeric run/job binding and a raw assertion pattern. Its contract
 example sets RUN=1 JOB=1 PATTERN=FAILED BEFORE=2 AFTER=4 MAX_MATCHES=5

@@ -46,6 +46,11 @@ DEFAULT_REMOTE = "sandboxcom"
 DEFAULT_REQUIRED_WORKFLOWS = ("Build and Release", "Molecule Tests")
 SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 NON_TERMINAL = {"in_progress", "pending", "queued", "requested", "waiting"}
+_JOB_FAILURE_STATES = ("failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale")
+_JOB_TERMINAL_STATES = ("success", *_JOB_FAILURE_STATES, "neutral", "skipped")
+_JOB_PROGRESS_STATES = ("queued", "pending", "requested", "waiting", "in_progress", *_JOB_TERMINAL_STATES, "unknown")
+_JOB_PROGRESS_LIMIT = 8
+_JOB_PROGRESS_NAME_LIMIT = 64
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -358,6 +363,89 @@ def _terminal_verdict(
     return "failure" if summary.failures else "success"
 
 
+def _job_progress_state(record: dict[str, object]) -> str:
+    """Classify diagnostic metadata without changing observation acceptance."""
+    status, conclusion = record.get("status"), record.get("conclusion")
+    if isinstance(status, str) and status in NON_TERMINAL and conclusion in ("", None):
+        return status
+    if status == "completed" and isinstance(conclusion, str) and conclusion in _JOB_TERMINAL_STATES:
+        return conclusion
+    return "unknown"
+
+
+def _job_progress_name(value: object) -> str:
+    """Reuse bounded native control sanitization and inert standard JSON quoting."""
+    if not isinstance(value, str) or not value:
+        return "unknown"
+    safe = active_work_status._safe_bounded_text(
+        value[:_JOB_PROGRESS_NAME_LIMIT + 1], limit=_JOB_PROGRESS_NAME_LIMIT,
+    )
+    quoted = json.dumps(safe, ensure_ascii=True)
+    return quoted + ("[truncated]" if len(value) > _JOB_PROGRESS_NAME_LIMIT else "")
+
+
+def _latest_job_step(steps: Sequence[dict[str, object]]) -> str:
+    """Select only an unambiguous last step, never an arbitrary array position."""
+    if not steps:
+        return "none"
+    if len(steps) == 1:
+        return _job_progress_name(steps[0].get("name"))
+    numbered: list[tuple[int, dict[str, object]]] = []
+    for step in steps:
+        number = step.get("number")
+        if type(number) is not int or number <= 0:
+            return "unknown"
+        numbered.append((number, step))
+    if len({number for number, _step in numbered}) != len(numbered):
+        return "unknown"
+    return _job_progress_name(max(numbered, key=lambda item: item[0])[1].get("name"))
+
+
+def _job_step_progress(job: dict[str, object], state: str) -> tuple[str, str, int]:
+    """Describe known current/problem and successful steps with explicit unknowns."""
+    steps = job.get("steps")
+    if not isinstance(steps, list):
+        return "unknown", "unknown", 0
+    active = [step for step in steps if _job_progress_state(step) == "in_progress"]
+    successful = [step for step in steps if _job_progress_state(step) == "success"]
+    if active:
+        current = _job_progress_name(active[0].get("name")) if len(active) == 1 else "unknown"
+    elif state in _JOB_FAILURE_STATES:
+        failed = [step for step in steps if _job_progress_state(step) in _JOB_FAILURE_STATES]
+        current = _latest_job_step(failed) if failed else "unknown"
+    else:
+        current = "unknown"
+    return current, _latest_job_step(successful), len(active)
+
+
+def _job_progress_lines(run: WorkflowRun, jobs: Sequence[dict[str, object]]) -> tuple[str, ...]:
+    """Render complete counts and bounded active/failed/unknown rows from one payload."""
+    groups: dict[str, list[dict[str, object]]] = {state: [] for state in _JOB_PROGRESS_STATES}
+    for job in jobs:
+        groups[_job_progress_state(job)].append(job)
+    candidates = [
+        (state, job)
+        for state in ("in_progress", *_JOB_FAILURE_STATES, "unknown")
+        for job in groups[state]
+    ]
+    shown = min(len(candidates), _JOB_PROGRESS_LIMIT)
+    omitted = len(candidates) - shown
+    counts = " ".join(f"{state}={len(groups[state])}" for state in _JOB_PROGRESS_STATES)
+    lines = [
+        f"PIPELINE-JOBS run={run.run_id} workflow={_job_progress_name(run.workflow)} "
+        f"total={len(jobs)} {counts} progress_shown={shown} progress_omitted={omitted}"
+    ]
+    for state, job in candidates[:shown]:
+        current, latest_success, active_steps = _job_step_progress(job, state)
+        lines.append(
+            f"PIPELINE-JOB-PROGRESS run={run.run_id} state={state} job={_job_progress_name(job.get('name'))} "
+            f"current={current} latest_success={latest_success} active_steps={active_steps}"
+        )
+    if omitted:
+        lines.append(f"PIPELINE-JOBS-TRUNCATED run={run.run_id} omitted={omitted} limit={_JOB_PROGRESS_LIMIT}")
+    return tuple(lines)
+
+
 def _publish_snapshot(
     args: argparse.Namespace, summary: PipelineSummary | None,
     *, sha: str | None, error: str | None = None,
@@ -436,6 +524,8 @@ def _publish_snapshot(
                     "steps": [step.get("name") for step in job.get("steps", [])
                               if isinstance(step, dict) and step.get("conclusion") == "failure"],
                 } for job in jobs if job.get("conclusion") == "failure")
+                for line in _job_progress_lines(run, jobs):
+                    print(line, flush=True)
     except (OSError, ValueError, subprocess.SubprocessError, ci_failure_ledger.LedgerError,
             automatic_disk_cleanup.DiskInspectionError) as exc:
         errors.append(str(exc))

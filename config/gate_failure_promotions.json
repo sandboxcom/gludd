@@ -1111,6 +1111,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "pipeline-observed-job-progress",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_pipeline_status_job_progress.py::test_original_native_queued_workflow_displays_its_active_gate_and_actual_steps",
+      "full_gate_phase": "test"
     }
   ]
 }

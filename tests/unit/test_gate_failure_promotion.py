@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 136
+EXPECTED_FAMILY_COUNT = 137
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1844,6 +1844,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "importtime-native-numeric-columns",
         "importtime-failed-child-status",
         "importtime-missing-data-failure",
+        "pipeline-observed-job-progress",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2037,7 +2038,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_ci_verdict_all_required.py "
         "tests/unit/test_ci_verdict_structural_repair.py "
         "tests/unit/test_secrets_baseline_compaction.py "
-        "tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_status_heartbeat_terminal.py "
+        "tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_pipeline_status_job_progress.py "
+        "tests/unit/test_status_heartbeat_terminal.py "
         "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py "
         "tests/unit/test_make_help_audit.py "
@@ -2404,4 +2406,33 @@ def test_hosted_failures_have_exact_early_routes(
     phase = next(item for item in phases if item["name"] == "pytest-runtime-compatibility")
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert len(phases) == 21 and sum(item["max_seconds"] for item in phases) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+def test_pipeline_job_progress_has_one_whole_owner_before_fanout() -> None:
+    """Replay the complete diagnostic owner once under the original runtime policy."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    file = "tests/unit/test_pipeline_status_job_progress.py"
+    node = f"{file}::test_original_native_queued_workflow_displays_its_active_gate_and_actual_steps"
+    expected = {
+        "id": "pipeline-observed-job-progress",
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
+    arguments = re.findall(r'TESTFILES="([^"]*)"', owner)
+    assert len(arguments) == 3
+    selectors = [argument.split() for argument in arguments]
+    assert selectors[0].count(file) == 1
+    assert all(not selector.startswith(f"{file}::") for selector in selectors[0])
+    assert file not in selectors[1] + selectors[2]
+    assert node in owner
+    phase = next(
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
