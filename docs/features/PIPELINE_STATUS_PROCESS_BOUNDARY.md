@@ -1477,3 +1477,39 @@ exactly one trace option when enabled. All sessions are drained before subsequen
 static/operating/normal Git work. No Python production/coverage policy changes,
 new admission node or broader compatibility replay are needed for this two-line
 argument correction; existing foundation/roster inputs are unchanged.
+
+### Accepted source805 and explicit release continuation
+
+Independent exact805b2da6e3520df7ad6333c2f97717801823fe12 review returns APPROVE
+SOURCE ONLY at /tmp/gludd-v012-watched-trace-805b2da-source-review.md, fully read
+by Root. Native readback and locked Markdown1file/9ms pass. The eight-path
+successor contains86insertions/9deletions and exactly the proposed two-line
+repair/two-case appendix. Reviewer independently reads both173-pass runtime
+logs and the235-pass operating log. Rejected427 and approved845 remain distinct.
+
+Normal805 hooks retain zero new clones,six owned checkpoints/unowned0 and fresh
+128479selected/128503collected,24deselected/zero errors45.82s/native51.2s.
+Native git-log/worktree-state bind exact805 and clean source. Final source
+Ruff/strict,274contracts/actual generated-ID behavior,143families/six pins1.59s,
+1157unique Make targets,9CI12local parity,8-path registration,lineguard,
+Markdown6files/27ms and SESSION structure pass. These source/collection receipts
+do not replace the canonical full gate or original-budget runtime proof.
+
+This tracking-only successor fixes the independent nonblocking historical
+collection pointer:845 has128437/128461,427128477/128501 and805128479/128503.
+It records completed source receiving, preserving all old receipts and missing
+proof, so another model does not repeat the repaired investigation. No
+implementation, test, selector, profile, deadline or coverage policy changes.
+
+Actual capacity remains the prerequisite: last native97percent/6.9GiB exceeds95,
+and the existing39-candidate namespace plan has0reclaimable at24hours. Capacity
+HumanTodo remains UNFILED after actual API refusal/no ID; host input unanswered.
+Source/trace work supplies no missing volume headroom or cause for60907's
+124/90.554s publication failure. No unchanged admission/publication/startup/full
+gate is replayed. After real host capacity changes, use native
+release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 WORK_ITEM_ID=S98.4
+OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20 with the guide's installed
+runtime. Only admitted work can reach existing diagnostic/final-proof owners.
+Full canonical gate/global85/75 BOTH, exact-SHA all-shard CI/attestation,
+deployment and guarded promotion remain missing. All seven S98 rows stay open;
+no master merge,tag or release follows from source-only approval.
