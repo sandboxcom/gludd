@@ -53,10 +53,23 @@ a full gate, CI result, deployment proof or permission to close a task.
 
 ### Run focused checks with explicit inputs
 
+Select the installed registered runtime before the outer Make invocation,
+including Git targets with Python prerequisites. For example, git-checkout calls
+_gate-mutation-guard, which invokes UV. Omitting runtime selection on the2e9
+repair checkout made UV announce CPython3.14 and creation of .venv; no dependency
+installation was requested. Align UV_PROJECT_ENVIRONMENT and VIRTUAL_ENV to the
+registered311 toolchain, with UV_NO_SYNC=1, UV_PYTHON=3.11 and
+UV_PYTHON_DOWNLOADS=never, for this release's Git/helper and child operations.
+The current SESSION identifies that installed environment; reuse it before
+running a command rather than allowing an implicit environment acquisition.
+SESSION's existing parser expects the local Last Updated date and a leading
+numeric Total tests count. Keep UTC measurement dates and source provenance in
+the accompanying prose; the complete persistence owner exercises those fields.
+
 This is a safe contract example, not the complete acceptance scope for a change:
 
 ```bash
-make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=.venv
+make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
 ```
 
 Select the installed environment belonging to the active checkout or its

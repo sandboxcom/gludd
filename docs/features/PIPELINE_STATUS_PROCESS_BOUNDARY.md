@@ -81,7 +81,7 @@ measurement, separately from source576/57.97s/native60.6s. Ruff passes all six
 changed Python files; strict canonical scopes2/1/3 pass. Five complete doc/source
 boundary owners pass73/3.94s, with native XML at
 /tmp/gludd-v012-pipeline-receiving-doc-contracts-final.xml. Normal receiving
-commit collection follows. The exact receiving coverage command is:
+commit collection is recorded below. The exact receiving coverage command is:
 
 ```console
 make coverage-files COVERAGE_TESTFILES='tests/unit/test_pipeline_status_inprocess_ledger.py tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_status_heartbeat_terminal.py tests/unit/test_pipeline_status_ssh_transport.py tests/unit/test_ci_failure_ledger.py tests/unit/test_proof_observations.py tests/unit/test_require_ci_green.py tests/unit/test_require_ci_green_detect_branch.py tests/unit/test_pytest_param_fixture_collisions.py' COVERAGE_CONFIG=config/coverage_pipeline_status.ini COVERAGE_REPORT=.gate-logs/coverage-pipeline-status-receiving-4a10517.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
@@ -94,6 +94,20 @@ source decisions, raw profiles and six owned checkpoints. First clean receiving
 runtime-family acceptance belongs to ci-failure-repair with public run-watched
 and unchanged internal Make admission as CMD. Original selectors,2/1/1 workers,
 90total/60quiet, warning/coverage/ZDD/cleanup and promotion policy remain.
+Receiving merge2e9d6d4b0f90e5526728174b495d33cb02c843df has independent
+APPROVE SOURCE ONLY in /tmp/gludd-v012-candidate-2e9d6d4-source-review.md.
+Its normal commit freshly collects127836/127860,24deselected,0errors48.50s,
+native53.6s. The actual original90/60 ci-failure-repair then passes all
+main2023/75.96s, help1/1.00s and tail11/8.52s, including the final lock assertion,
+but the enclosing owner times out124/90.57s (stream90.6s), Make wrapper2.
+No runtime family receipt is issued. Raw native evidence remains
+.gate-logs/observed/v012-runtime-family-repair/v012-runtime-family-2e9d6d4-20261021.log;
+observed-status reports active:false, timed_out, trace_path:null.
+Passing component counts do not override the owner. No measured cause is
+assigned to the last test or cleanup. A new exact-roster public cProfile/trace
+diagnosis is diagnostic-only and must justify a changed input before replay.
+The unchanged90/60/2-1-1 proof remains with the native repair owner.
+
 This receiving focus and source approval close none of the seven tasks.
 Capacity admission, complete canonical gate, original-family proof,
 exact-SHA hosted/deployment acceptance and normal promotion remain pending.
@@ -101,3 +115,22 @@ exact-SHA hosted/deployment acceptance and normal promotion remain pending.
 The initial combined RUNTIME document fails its unchanged line guard at2549.
 This separate feature preserves that history and its<2500 limit. Retained manual
 native failure copy: /tmp/gludd-v012-pipeline-doc-line-limit-red.txt.
+
+### Parser-compatible current handoff
+
+The2e9 followup initially uses the UTC21 date while the host remains local20,
+and inserts receiving prose before the Total tests number. The five complete
+handoff owners retain2FAIL/69PASS/2SKIP5.24s at
+/tmp/gludd-v012-runtime-failure-handoff-owners.xml. Root restores the local
+Last Updated date and leading numeric test count; UTC measurement context and
+source provenance stay explicit in adjacent prose. The mandatory Make guide
+now describes these existing parser inputs and selects installed311 for its
+actual focused-check example. Tests and parser assertions are unchanged.
+The same complete five owners then pass73/3.75s with no skips/errors;
+/tmp/gludd-v012-runtime-failure-handoff-owners-green.xml retains the result.
+
+The first normal five-document commit then fails the unchanged line guard:
+BUGS.md has2501lines. Moving this new incident detail here retains its dated
+BUGS index entry, every previous incident and the original<2500 limit.
+/tmp/gludd-v012-runtime-handoff-line-limit-red.txt is a labeled manual copy
+of that native failure, not a generated current observation.
