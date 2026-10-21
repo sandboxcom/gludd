@@ -1,7 +1,7 @@
 # Durable xdist Trace Summaries
 
 Status: implemented for the beta4 diagnostic workflow. Last reviewed:
-2026-10-20.
+2026-10-21.
 
 ## Purpose
 
@@ -98,7 +98,7 @@ its count, and summaries can select one run from an append-only log:
 
 ```console
 make test-xdist-trace-summary LOG=/tmp/gludd-xdist-progress.log \
-  RUN_ID=20260902T120000Z-1234-abcd1234
+  RUN_ID=20260902T120000Z-1234-abcd1234 TRACE_SUMMARY_TIMINGS=0 TRACE_SUMMARY_MEMORY=0
 ```
 
 The reporting modes are deliberately separate:
@@ -116,7 +116,7 @@ The reporting modes are deliberately separate:
 The existing Make target keeps its compact default:
 
 ```console
-make test-xdist-trace-summary LOG=/tmp/gludd-beta4-full-trace-rerun.log
+make test-xdist-trace-summary LOG=/tmp/gludd-beta4-full-trace-rerun.log RUN_ID='' TRACE_SUMMARY_TIMINGS=0 TRACE_SUMMARY_MEMORY=0
 ```
 
 The script-level flags are intended for a diagnostic consumer that needs a
@@ -131,7 +131,7 @@ another namespaced run writes a different log.
 The existing summary owner optionally ranks the retained START/FINISH spans:
 
 ```console
-make test-xdist-trace-summary LOG=/tmp/gludd-xdist-progress.log RUN_ID=selected-run TRACE_SUMMARY_TIMINGS=1
+make test-xdist-trace-summary LOG=/tmp/gludd-xdist-progress.log RUN_ID=selected-run TRACE_SUMMARY_TIMINGS=1 TRACE_SUMMARY_MEMORY=0
 ```
 
 Set TRACE_SUMMARY_TIMINGS=0 for the unchanged compact default. Only0/1 are
@@ -340,3 +340,198 @@ bounded diagnostics but do not establish the root cause of Gludd's worker exit.
   2023-02-12, describes CI output becoming impractical for a suite with more
   than 100,000 tests. Failures-only output and opt-in memory collections address
   the same operational need without discarding the underlying JSONL evidence.
+
+## Bounded memory view and literal Make inputs (2026-10-21)
+
+The existing reader already implements --include-memory. The Make-only workflow
+now exposes it through TRACE_SUMMARY_MEMORY=0|1, independently of the existing
+timing option. Both default to0, preserving the original compact projection.
+For an existing retained trace, set every public input explicitly:
+
+~~~console
+make test-xdist-trace-summary LOG=/tmp/gludd-xdist-progress.log RUN_ID=selected-run TRACE_SUMMARY_TIMINGS=1 TRACE_SUMMARY_MEMORY=1
+~~~
+
+Select the installed UV/VIRTUAL_ENV tuple from the mandatory Make guide. This
+is a read-only diagnostic of retained evidence, not another test/admission run.
+The native CLI, parser, unit normalization, failure/unfinished evidence and
+bounded25-row memory list are reused unchanged. No Python production bytes,
+package, profiler, observer, scanner, daemon or cache are added.
+Memory is the producer's process high-water RSS, grouped by its existing worker
+label. It is not current physical pressure, child-process allocation, CPU time
+or an aggregate of simultaneous processes. Select the exact run; use timing
+PID/run/worker rows when process identity matters or workers restart.
+
+### Preserve data before startup and native argv
+
+The old facade interpolated LOG and RUN_ID into command text and left new
+memory input unvalidated. Actual controlled native Make tests reproduce
+sentinel execution from Make/shell payloads and splitting a path with spaces.
+Fifty-four new cases first report40FAIL/14PASS in3.78s/native4.7s. All old timing
+and reader cases remain unchanged. The repair follows the existing
+[Make export/expansion research](PIPELINE_STATUS_PROCESS_BOUNDARY.md#explicit-cancellation-with-literal-inputs-2026-10-21),
+including the firsthand2017 help-make thread and GNU4.4 export contract; that
+research is context, not a claim of a GNU4.4 binary replay here.
+
+Foundation captures raw LOG, RUN_ID and both boolean values with override-owned
+private exports before eager startup shell expansion for the explicit summary
+goal, where it unexports the public values. Both default flags are defined
+outside that conditional. Separate private-name exports and recursive
+target-specific overrides bind the recipe's actual context, including inherited
+LOG/RUN_ID and both flags; they do not freeze earlier global inputs. Private
+environment/command-line carriers cannot replace direct public inputs, including
+under native Make -e. The recipe builds
+positional arguments from quoted private data, accepts only literal0/1, inserts
+-- before the single log path and delegates to the original native CLI.
+Empty LOG still selects the old default; empty RUN_ID still omits filtering.
+An invalid flag refuses before a child. Native failures7/124/143 retain stderr
+and ordinary Make rc2; unrelated goals retain their inputs. There is no eval,
+raw public interpolation, policy bypass or replacement reader.
+
+The same54 cases then pass in5.28s/native6.4s, fatal warnings, with both ordinary
+and -e contexts. They cover combined/default projection argv, malformed flags,
+Make/shell payloads in every public input, ambient/CLI private spoofing, native
+failure/status and unrelated-goal preservation. Raw canonical RED/GREEN logs/XML
+are /tmp/gludd-v012-trace-summary-inputs-canonical-{red,green}311.*.
+
+### Preserve prerequisite and target-specific compatibility
+
+Independent native review retains a genuine regression before commit: the
+committed recipe's ordinary/inherited alias succeeds, but the first new facade
+returns2 because MAKECMDGOALS omits prerequisites. Mixed alias plus explicit goal
+returns0 while selecting the WRONG global LOG/RUN_ID. Installed GNU Make3.81
+also rejects both combined target-level override/export spellings. The compatible
+repair keeps early direct-goal protection, moves only flag defaults outside its
+conditional, and uses separate private-name exports plus recursive target-level
+overrides. No global public unexport or data eval is introduced.
+
+Eight persisted native cases first fail8/1.02s/native1.9s. They cover ordinary
+alias/default flags, inherited alias, mixed goals and direct target-specific
+context under ordinary/-e Make, preserving all54 prior case IDs/assertions.
+The first repaired replay retains2FAIL/60PASS in3.69s/native4.5s: the new test
+had assumed inherited public export values instead of native Make semantics.
+A separate minimal native export-control fixture supplies that expectation
+without assuming a Make version. Exact recipe argv, the original direct public
+unexport assertions and unrelated-input assertions remain intact. Raw failures
+are /tmp/gludd-v012-trace-summary-alias-{red,green}311.*; the latter name records
+a failed attempt, not a passing receipt.
+
+The independent proposal and exact syntax witnesses are retained at
+/tmp/gludd-v012-trace-summary-alias-compatibility-decision.md and
+/tmp/gludd-v012-trace-summary-alias-compatibility.patch. This is worktree
+compatibility research, not exact-SHA source approval. The production bindings
+live in make/00-foundation.mk and make/10-observability-and-tests.mk.
+GNU's [goals](https://www.gnu.org/software/make/manual/html_node/Goals.html),
+[target-specific values](https://www.gnu.org/software/make/manual/html_node/Target_002dspecific.html)
+and [raw value access](https://www.gnu.org/software/make/manual/html_node/Value-Function.html)
+explain the distinction; compatible syntax is measured on3.81. The direct-goal
+literal guarantee does not establish hostile alias safety during startup/export
+expansion. GNU4.4 documentation is context, not an installed-binary replay.
+
+The initial complete five-owner receiving scope was:
+
+- tests/unit/test_trace_summary_make_inputs.py
+- tests/unit/test_xdist_trace_timings.py
+- tests/unit/test_xdist_trace_diagnostics.py
+- tests/unit/test_pytest_param_fixture_collisions.py
+- tests/unit/test_ci_cancel_contract.py
+
+Its311 receipt passes321/17.70s/native18.6s;312 passes321/20.34s/native21.6s,
+without skips/errors. Raw whole-owner logs/XML are
+/tmp/gludd-v012-trace-summary-whole-{311,312}.*. No complete owner or original
+assertion is replaced by the focused54-case result. After the alias correction,
+the complete62-case input owner plus those other four owners and both
+`test_env_var_audit_deep.py`/`test_make_readonly_version.py` pass380 on each
+runtime:311/22.08s/native23.6s,312/23.39s/native25.0s. They retain fatal warnings,
+no skips/errors and all original assertions. Raw final logs/XML are
+/tmp/gludd-v012-trace-summary-final-compat-{311,312}.*.
+
+The canonical target contract passes272 targets; Make lint retains1160 unique
+targets,9CI/12local phases. The documented actual producer example passes one
+case/1.20s; its actual compact summary reports7events/1started/1finished,
+no failures/unfinished nodes and no optional arrays. A separate actual memory1
+request successfully reads the existing2304-case trace below.
+
+Three independent routing pins fail first in0.95s/native1.9s, then pass in1.44s/
+native2.3s after appending family trace-summary-literal-inputs after all140
+predecessors. One observed backtick/LOG native case joins the first original
+child. The remaining61 input controls stay in full acceptance; no whole62-case owner
+is added to the tight admission. Retain three children2/1/1,90total/60quiet,
+21phases2850, fatal warnings, full gate,85aggregate/75each-file BOTH, ZDD,
+cleanup, exact-SHA and promotion authority. The actual canonical checker first
+reports1FAIL/5PASS in2.14s: the second independent literal TESTFILES pin still
+lacks the added node. Append that same token without dropping an assertion or
+predecessor; the full checker then passes6/1.68s/native3.2s and141families.
+A preliminary manifest PASS did not constitute the whole checker result.
+The complete seven routing/workflow owners pass451 on311 in115.80s/native116.8s
+and312 in121.48s/native123.5s. Raw logs/XML are
+/tmp/gludd-v012-trace-summary-routing-whole-{311,312}.*. These general180/240
+watched source checks retain separate identities from the original90/60 runtime.
+The final alias-compatible postimage repeats those complete owners:451PASS on311
+in126.81s/native128.1s and312 in129.60s/native130.8s; final-routing-{311,312}
+logs/XML share the /tmp/gludd-v012-trace-summary- prefix. They add no runtime or
+publication receipt.
+
+Source verification retains the first universal-line-limit refusal:
+BUGS.md2505lines. Reflowing one nine-line historical paragraph preserves its
+wording and evidence while bringing it to2497; the native worktree check passes
+all10825 tracked paths under the same strict limit. The first whole operating
+replay also retains that original lint input:1FAIL/234PASS97.14s/native98.2s,
+/tmp/gludd-v012-trace-summary-operating-311.{log,xml}. No test changes follow.
+The final complete eight-owner replay uses
+/tmp/gludd-v012-trace-summary-final-operating-311.{log,xml}; its native terminal
+record owns the fresh result. Root's static command loop also advanced after yielded launch
+results instead of draining each session first. All yielded sessions were then
+drained with their original exit statuses. The mandatory Make guide now states
+the existing two-owner/session-draining rule at that exact tool boundary; no
+new daemon, observer, bypass or blanket restriction is added.
+
+The postimage passes Ruff for all three changed test scopes and strict checking
+for each separately,272 native target contracts,1160 unique targets/9CI12local
+parity and13-path task registration. The actual canonical promotion checker
+passes all6 in2.30s after the alias correction, preserving141families and every
+original bound. The documented native compact summary again reports the same
+7events/1finished/no failures or unfinished nodes with both optional views0.
+These are source/behavior checks; current collection, normal Git hooks, independent
+exact-SHA source review and final gate/CI retain their respective authority.
+
+### Child imports and retained memory do not establish the timeout cause
+
+A separate single-case native diagnostic reuses the original heartbeat fixture
+and preserves exact successful terminal/snapshot assertions. Git/GitHub/capacity
+inputs remain the original fixture data, not current project observations. It adds only
+CPython PYTHONPROFILEIMPORTTIME=1 in that fixture child. The generated driver is
+.gate-logs/test_gludd_heartbeat_import_probe.py; this is a diagnostic artifact,
+not a new production runner. On source d84dd822d34460c44d6443b652ad5110ede8074a,
+it passes1/0.97s/native1.8s under a separate90/60 watcher. Raw stdout/stderr,
+observed log and XML use /tmp/gludd-v012-heartbeat-child-imports-d84dd82-311.*.
+The existing heartbeat merges child stderr with stdout before tee, so the native
+import rows are in stdout; empty captured stderr does not mean absent imports.
+
+Cumulative native rows are pipeline_status38917microseconds,
+active_work_status18504, automatic_disk_cleanup6887, ci_failure_ledger878,
+proof_observations1287 and stream_command885. These nested intervals overlap;
+do not sum them or call them CPU. The fixture uses its original Python UV shim,
+so this does not measure the real UV supervisor or original admission startup.
+It does not explain the actual83.79s publication main interval. An import
+refactor is declined on this evidence.
+
+The actual new Make memory view reuses the retained main trace from clean3cbb,
+/tmp/gludd-v012-main-trace-3cbbfd0-311.jsonl, exact run ID
+v012-main-trace-3cbbfd0-311-20261021. It retains4616events/2304finished/no failures
+or unfinished nodes, legacy RSS unit bytes, and peak194528KiB for gw0,
+192816KiB for gw1 and97296KiB for controller. The largest collection increases
+are55440/55536KiB; the fixture-inventory finish increases15344KiB on gw1.
+These are high-water measurements from the separate successful diagnostic,
+not current load or proof of memory pressure during the failed publication.
+Native timing rows bind that trace's two worker PIDs72564/72565, with no timing
+issues; the original source trace is read, not rewritten.
+
+The [actual publication failure](PIPELINE_STATUS_PROCESS_BOUNDARY.md#reviewed-source-blocked-at-publication-deadline-2026-10-21)
+still blocks transport. This diagnostic/input repair changes no proven cause
+of its90.554s timeout. Disk97percent/6.8GiB still exceeds95; the existing capacity
+HumanTodo remains UNFILED after API refusal, with host-space input unanswered.
+Do not replay unchanged publication/startup/final admission because a diagnostic
+passes or HEAD changes. Fresh full gate/global coverage, all-shard exact-SHA CI,
+deployment acceptance and guarded promotion remain pending. All seven S98
+release items stay unchecked.

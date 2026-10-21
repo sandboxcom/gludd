@@ -10,6 +10,13 @@ a misleading secret-scanner label. The [owning catalog record](../../docs/featur
 retains native checks and footer conformance. Static discovery and dry-run
 checks do not replace the documented actual behavior command.
 
+If a tool returns a session ID, drain that exact session to a terminal exit
+before starting the next command in a sequential batch. Awaiting a launch result
+does not await the launched process. Count yielded processes toward the existing
+two-owner execution/testing limit; quiesce every checkout reader and model owner
+before normal Git hooks can stash files. A static-check batch is still subject
+to these rules.
+
 ### Establish current state before changing it
 
 Read current tracking views together before work:
@@ -148,9 +155,19 @@ complete tests/unit/test_behavioral_spec_shards.py owner when this boundary is t
 Read the retained native failure and preserve its exact failing input. A
 test-files-cprofile controller profile can mostly measure waiting for xdist
 workers; cumulative rows overlap. Use the existing test-xdist-trace-summary
-with LOG, RUN_ID and TRACE_SUMMARY_TIMINGS=1 to rank already recorded protocol
-spans by exact run/worker/PID. It rejects ambiguous intervals and preserves
-failure evidence. Wall spans include fixtures and child waits; worker totals
+with LOG, RUN_ID, TRACE_SUMMARY_TIMINGS=1 and explicit TRACE_SUMMARY_MEMORY=0
+or1 to rank already recorded protocol
+spans by exact run/worker/PID. Set memory1 when the retained high-water RSS
+view is useful; it reuses the same reader, not a live-memory probe. The
+[memory/input record](../../docs/features/XDIST_TRACE_SUMMARY.md#bounded-memory-view-and-literal-make-inputs-2026-10-21)
+retains native literal LOG/RUN_ID transport, early scoped capture, exact boolean
+validation and actual argv/status evidence. The installed GNU Make3.81 controls
+preserve aliases and inherited/target-specific inputs through separate private
+exports and deferred target-context values. Direct-goal literal protection does
+not establish hostile alias safety during startup/export expansion; GNU4.4
+context is documented separately from measured binary behavior.
+The reader rejects ambiguous timing
+intervals and preserves failure evidence. Wall spans include fixtures and child waits; worker totals
 overlap and supply no CPU, gate, CI-repair or release verdict. Mode0 keeps
 compact output. Read the [measured boundary and commands](../../docs/features/XDIST_TRACE_SUMMARY.md#validated-test-protocol-wall-spans-v012)
 before choosing a production repair. Do not widen deadlines, alter selectors,

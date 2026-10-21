@@ -1139,6 +1139,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_replace_lines_make_target.py::test_replace_lines_target_forwards_all_documented_variables",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "trace-summary-literal-inputs",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_trace_summary_make_inputs.py::test_summary_public_inputs_never_execute_make_or_shell_data[backticks-LOG-False]",
+      "full_gate_phase": "test"
     }
   ]
 }

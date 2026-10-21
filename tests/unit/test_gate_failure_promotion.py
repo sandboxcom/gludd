@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 140
+EXPECTED_FAMILY_COUNT = 141
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1848,6 +1848,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ci-cancel-request-contract",
         "release-proof-production-runner-binding",
         "line-edit-literal-forwarding",
+        "trace-summary-literal-inputs",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2045,6 +2046,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_ci_cancel_contract.py "
         "tests/unit/test_release_proof_admission_target.py tests/unit/test_replace_lines_make_target.py "
         "tests/unit/test_native_line_edit_targets.py "
+        "tests/unit/test_trace_summary_make_inputs.py::"
+        "test_summary_public_inputs_never_execute_make_or_shell_data[backticks-LOG-False] "
         "tests/unit/test_status_heartbeat_terminal.py "
         "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py "
@@ -2453,4 +2456,27 @@ def test_pipeline_runtime_owners_keep_one_whole_route_before_fanout(
         item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+def test_trace_summary_literal_guard_keeps_one_native_case_before_fanout() -> None:
+    """Promote the observed injection as one bounded native case before fanout."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    node = ("tests/unit/test_trace_summary_make_inputs.py::"
+            "test_summary_public_inputs_never_execute_make_or_shell_data[backticks-LOG-False]")
+    expected = {"id": "trace-summary-literal-inputs",
+                "owner_target": "_pytest-runtime-compatibility-admission",
+                "node_kind": "pytest_node", "node": node, "full_gate_phase": "test"}
+    assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
+    selectors = [argument.split() for argument in re.findall(r'TESTFILES="([^"]*)"', owner)]
+    assert len(selectors) == 3 and selectors[0].count(node) == 1
+    assert node.split("::", 1)[0] not in selectors[0]
+    assert not any(selector.startswith(node.split("::", 1)[0]) for selector in selectors[1] + selectors[2])
+    phase = next(item for item in payload["runtime_contract"]["phases"]
+                 if item["name"] == "pytest-runtime-compatibility")
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True

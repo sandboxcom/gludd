@@ -9,6 +9,21 @@ export GLUDD_CI_CANCEL_VALIDATE_ONLY := $(value CI_CANCEL_VALIDATE_ONLY)
 unexport RUN CI_CANCEL_VALIDATE_ONLY
 endif
 
+# Capture trace-summary data before native startup shell expansion.
+TRACE_SUMMARY_TIMINGS ?= 0
+TRACE_SUMMARY_MEMORY ?= 0
+ifneq ($(filter test-xdist-trace-summary,$(MAKECMDGOALS)),)
+override GLUDD_TRACE_SUMMARY_LOG := $(value LOG)
+override GLUDD_TRACE_SUMMARY_RUN_ID := $(value RUN_ID)
+override GLUDD_TRACE_SUMMARY_TIMINGS := $(value TRACE_SUMMARY_TIMINGS)
+override GLUDD_TRACE_SUMMARY_MEMORY := $(value TRACE_SUMMARY_MEMORY)
+export GLUDD_TRACE_SUMMARY_LOG := $(value LOG)
+export GLUDD_TRACE_SUMMARY_RUN_ID := $(value RUN_ID)
+export GLUDD_TRACE_SUMMARY_TIMINGS := $(value TRACE_SUMMARY_TIMINGS)
+export GLUDD_TRACE_SUMMARY_MEMORY := $(value TRACE_SUMMARY_MEMORY)
+unexport LOG RUN_ID TRACE_SUMMARY_TIMINGS TRACE_SUMMARY_MEMORY
+endif
+
 # This one-shot mode is selected only by the owning file-defined alias.
 unexport _TEST_FILES_CPROFILE
 ifneq ($(filter command line environment override,$(origin _TEST_FILES_CPROFILE)),)
@@ -562,7 +577,7 @@ help:
 		"  integration-admission  Fail-fast feature-branch checks before the full gate" \
 		"  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)" \
 		"  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace (LOG, TESTPATH, PYTEST_ARGS, RUN_ID)" \
-		"  test-xdist-trace-summary  Summarize durable trace/run; optional wall spans (LOG, RUN_ID, TRACE_SUMMARY_TIMINGS=0|1)" \
+		"  test-xdist-trace-summary  Summarize trace/run; optional wall/memory views (LOG, RUN_ID, TRACE_SUMMARY_TIMINGS=0|1, TRACE_SUMMARY_MEMORY=0|1)" \
 		"  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)" \
 		"  check-make-help       Verify every public Makefile target is listed by make help" \
 		"  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints" \
