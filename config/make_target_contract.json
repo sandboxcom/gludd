@@ -1873,9 +1873,10 @@
       "name": "test-xdist-trace-summary",
       "make_variables": [
         "LOG",
-        "RUN_ID"
+        "RUN_ID",
+        "TRACE_SUMMARY_TIMINGS"
       ],
-      "behavior": "make test-xdist-trace-summary LOG=/tmp/gludd-xdist-contract.jsonl RUN_ID=contract-run"
+      "behavior": "make test-xdist-trace-summary LOG=/tmp/gludd-xdist-contract.jsonl RUN_ID=contract-run TRACE_SUMMARY_TIMINGS=0"
     },
     {
       "name": "validate-ansible-runtime-boundary",

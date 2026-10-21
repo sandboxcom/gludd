@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -90,6 +93,150 @@ def _rss_bytes(
 
 def _as_kib(value: int) -> int:
     return value // 1024
+
+
+@dataclass(frozen=True)
+class _ProtocolSpan:
+    stream: tuple[str, str, int]
+    nodeid: str
+    seconds: float
+
+
+@dataclass
+class _TimingTotal:
+    paired_count: int = 0
+    seconds: float = 0.0
+
+    def add(self, span: _ProtocolSpan) -> None:
+        self.paired_count += 1
+        self.seconds += span.seconds
+
+
+def _timing_stream(event: Mapping[str, object]) -> tuple[str, str, int] | None:
+    run_id, worker, pid = event.get("run_id"), event.get("worker"), event.get("pid")
+    if (
+        isinstance(run_id, str) and run_id
+        and isinstance(worker, str) and worker
+        and isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+    ):
+        return run_id, worker, pid
+    return None
+
+
+def _timing_timestamp(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        timestamp = float(value)
+    except OverflowError:
+        return None
+    return timestamp if math.isfinite(timestamp) and timestamp >= 0 else None
+
+
+def _timing_rows(spans: Sequence[_ProtocolSpan], limit: int) -> dict[str, object]:
+    modules: dict[tuple[str, str, int, str], _TimingTotal] = {}
+    workers: dict[tuple[str, str, int], _TimingTotal] = {}
+    for span in spans:
+        module = (*span.stream, span.nodeid.partition("::")[0])
+        modules.setdefault(module, _TimingTotal()).add(span)
+        workers.setdefault(span.stream, _TimingTotal()).add(span)
+    return {
+        "slowest_tests": [
+            {
+                "run_id": span.stream[0], "worker": span.stream[1],
+                "pid": span.stream[2], "nodeid": span.nodeid,
+                "test_protocol_seconds": round(span.seconds, 6),
+            }
+            for span in sorted(
+                spans, key=lambda span: (-span.seconds, span.stream, span.nodeid)
+            )[:limit]
+        ],
+        "modules": [
+            {
+                "run_id": module[0], "worker": module[1], "pid": module[2],
+                "module": module[3], "paired_count": total.paired_count,
+                "test_protocol_seconds": round(total.seconds, 6),
+            }
+            for module, total in sorted(
+                modules.items(), key=lambda item: (-item[1].seconds, item[0])
+            )[:limit]
+        ],
+        "workers": [
+            {
+                "run_id": stream[0], "worker": stream[1], "pid": stream[2],
+                "paired_count": total.paired_count,
+                "test_protocol_seconds": round(total.seconds, 6),
+            }
+            for stream, total in sorted(
+                workers.items(), key=lambda item: (-item[1].seconds, item[0])
+            )[:limit]
+        ],
+    }
+
+
+def _trace_timings(events: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    """Pair serial test protocols; wall spans include fixtures and child waits."""
+    pending: dict[tuple[str, str, int], dict[str, float | None]] = {}
+    last_finish: dict[tuple[str, str, int], float] = {}
+    spans: list[_ProtocolSpan] = []
+    issues: list[dict[str, object]] = []
+
+    def reject(reason: str, event: Mapping[str, object]) -> None:
+        issues.append({
+            "reason": reason,
+            **{key: event.get(key) for key in ("run_id", "worker", "pid", "nodeid")},
+        })
+
+    for event in events:
+        kind = event.get("event")
+        if kind == "PARSE_ERROR":
+            reject("parse_error", event)
+        if kind not in ("START", "FINISH"):
+            continue
+        stream, nodeid = _timing_stream(event), event.get("nodeid")
+        if stream is None or not isinstance(nodeid, str) or not nodeid:
+            reject("invalid_identity", event)
+            continue
+        timestamp = _timing_timestamp(event.get("timestamp"))
+        if timestamp is None:
+            reject("invalid_timestamp", event)
+        active = pending.setdefault(stream, {})
+        if kind == "START":
+            if active:
+                reject("overlapping_start", event)
+                # Neither overlapping protocol has an unambiguous serial span.
+                for node in active:
+                    active[node] = None
+                timestamp = None
+            elif timestamp is not None and timestamp < last_finish.get(stream, 0):
+                reject("overlapping_interval", event)
+                timestamp = None
+            active[nodeid] = timestamp
+        elif nodeid not in active:
+            reject("unmatched_finish", event)
+        else:
+            started = active.pop(nodeid)
+            if timestamp is not None:
+                if started is not None:
+                    if timestamp < started:
+                        reject("negative_duration", event)
+                    else:
+                        spans.append(_ProtocolSpan(stream, nodeid, timestamp - started))
+                last_finish[stream] = max(last_finish.get(stream, 0), timestamp)
+    for stream, active in pending.items():
+        for nodeid in active:
+            reject("unfinished_start", {
+                "run_id": stream[0], "worker": stream[1],
+                "pid": stream[2], "nodeid": nodeid,
+            })
+    limit = 25
+    return {
+        "authority": "diagnostic-only", "gate_evidence": False, "release_ready": False,
+        "clock": "wall", "scope": "test-protocol",
+        "aggregation": "sum-of-paired-test-protocol-wall-seconds",
+        "paired_count": len(spans), "issue_count": len(issues),
+        "limit": limit, "issues": issues[:limit], **_timing_rows(spans, limit),
+    }
 
 
 def summarize_log(
@@ -195,6 +342,7 @@ def summarize_log(
         "legacy_rss_input_unit": resolved_legacy_unit,
         "memory_by_worker": dict(sorted(memory_by_worker.items())),
         "largest_rss_increases": largest_rss_increases[:25],
+        "timings": _trace_timings(events),
     }
     if run_id is not None:
         summary["run_id"] = run_id
@@ -202,18 +350,22 @@ def summarize_log(
 
 
 def _selected_summary(
-    summary: dict[str, Any], keys: tuple[str, ...], *, include_memory: bool
+    summary: dict[str, Any], keys: tuple[str, ...], *,
+    include_memory: bool, include_timings: bool,
 ) -> dict[str, Any]:
     selected = {key: summary[key] for key in keys}
     if "run_id" in summary:
         selected["run_id"] = summary["run_id"]
     if include_memory:
         selected.update({key: summary[key] for key in _MEMORY_KEYS})
+    if include_timings:
+        selected["timings"] = summary["timings"]
     return selected
 
 
 def compact_summary(
-    summary: dict[str, Any], *, include_memory: bool = False
+    summary: dict[str, Any], *, include_memory: bool = False,
+    include_timings: bool = False,
 ) -> dict[str, Any]:
     """Return complete failure/crash evidence without verbose tracebacks."""
     keys = (
@@ -227,11 +379,14 @@ def compact_summary(
         "unfinished",
         "last_by_worker",
     )
-    return _selected_summary(summary, keys, include_memory=include_memory)
+    return _selected_summary(
+        summary, keys, include_memory=include_memory, include_timings=include_timings
+    )
 
 
 def failures_only_summary(
-    summary: dict[str, Any], *, include_memory: bool = False
+    summary: dict[str, Any], *, include_memory: bool = False,
+    include_timings: bool = False,
 ) -> dict[str, Any]:
     """Return concise failure and incomplete-test evidence for long trace runs."""
     keys = (
@@ -241,7 +396,9 @@ def failures_only_summary(
         "failure_nodeids",
         "unfinished",
     )
-    return _selected_summary(summary, keys, include_memory=include_memory)
+    return _selected_summary(
+        summary, keys, include_memory=include_memory, include_timings=include_timings
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -251,6 +408,7 @@ def main(argv: list[str] | None = None) -> int:
     output_mode.add_argument("--verbose", action="store_true")
     output_mode.add_argument("--failures-only", action="store_true")
     parser.add_argument("--include-memory", action="store_true")
+    parser.add_argument("--include-timings", action="store_true")
     parser.add_argument(
         "--run-id",
         type=_validated_run_id,
@@ -273,9 +431,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.verbose:
         output = summary
     elif args.failures_only:
-        output = failures_only_summary(summary, include_memory=args.include_memory)
+        output = failures_only_summary(
+            summary, include_memory=args.include_memory, include_timings=args.include_timings
+        )
     else:
-        output = compact_summary(summary, include_memory=args.include_memory)
+        output = compact_summary(
+            summary, include_memory=args.include_memory, include_timings=args.include_timings
+        )
     print(json.dumps(output, indent=2, sort_keys=True))
     return 0
 

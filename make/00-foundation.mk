@@ -547,7 +547,7 @@ help:
 		"  integration-admission  Fail-fast feature-branch checks before the full gate" \
 		"  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)" \
 		"  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace (LOG, TESTPATH, PYTEST_ARGS, RUN_ID)" \
-		"  test-xdist-trace-summary  Summarize one durable trace/run (LOG, RUN_ID)" \
+		"  test-xdist-trace-summary  Summarize durable trace/run; optional wall spans (LOG, RUN_ID, TRACE_SUMMARY_TIMINGS=0|1)" \
 		"  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)" \
 		"  check-make-help       Verify every public Makefile target is listed by make help" \
 		"  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints" \

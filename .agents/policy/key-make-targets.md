@@ -75,6 +75,19 @@ focused behavior alone does not establish fixture-namespace conformance.
 `make lint`, `make collect-check` and `make test-count` remain required
 by the commit/completion policy. A focused pass is not a green full gate.
 
+### Attribute a runtime timeout before changing source
+
+Read the retained native failure and preserve its exact failing input. A
+test-files-cprofile controller profile can mostly measure waiting for xdist
+workers; cumulative rows overlap. Use the existing test-xdist-trace-summary
+with LOG, RUN_ID and TRACE_SUMMARY_TIMINGS=1 to rank already recorded protocol
+spans by exact run/worker/PID. It rejects ambiguous intervals and preserves
+failure evidence. Wall spans include fixtures and child waits; worker totals
+overlap and supply no CPU, gate, CI-repair or release verdict. Mode0 keeps
+compact output. Read the [measured boundary and commands](../../docs/features/XDIST_TRACE_SUMMARY.md#validated-test-protocol-wall-spans-v012)
+before choosing a production repair. Do not widen deadlines, alter selectors,
+cache test fixtures or add another observer to obtain a pass.
+
 ### Cleanup, pinned browser prefetch and acceptance
 
 The native pressure policy may reclaim the exact idle Playwright cache after

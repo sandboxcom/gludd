@@ -928,6 +928,17 @@ refuse before inspection; no process is signalled and no gate authority changes.
 | --- | --- | --- |
 | `GLUDD_ACTIVE_WORK_STATUS_PID` | empty | Make-owned literal carrier for `ACTIVE_WORK_STATUS_PID`, copied without recursive expansion and bound with override; do not set directly. The public variable is unexported. The existing producer validates positive native PID bounds, and missing/unavailable observations never reuse prior success. |
 
+## Trace-summary timing literal input
+
+Use make test-xdist-trace-summary with LOG, RUN_ID and TRACE_SUMMARY_TIMINGS=0
+for the existing compact default, or1 for bounded validated wall spans. The
+[owning feature](features/XDIST_TRACE_SUMMARY.md#validated-test-protocol-wall-spans-v012)
+defines pairing, clock limitations and diagnostic-only authority.
+
+| Carrier | Default | Public Make input and ownership |
+| --- | --- | --- |
+| `GLUDD_TRACE_SUMMARY_TIMINGS` | `0` | Make-owned literal carrier for `TRACE_SUMMARY_TIMINGS`, bound with override without recursive expansion; do not set directly. The public variable is unexported. Only exact0/1 select a constant native CLI flag; invalid text remains inert and refuses before the report child. |
+
 ## Make text transport
 
 Use the public FILE/TEXT_B64 or FILE/OLD_B64/NEW_B64 inputs documented by

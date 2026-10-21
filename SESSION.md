@@ -1,57 +1,76 @@
 # Current release handoff
 
-Last Updated: 2026-10-20.
-Recorded source base: development `e43a8ae4679eaecc6832b60bff82fe05e0e79b81`; six local repair commits descend from published3b2fdc2. Native worktree-state owns current HEAD and cleanliness.
-Total tests: 127723 selected /127747 collected,24 deselected,0 collection errors in49.28s; native54.6s/rc0 at that source base. This is fresh commit collection, not a canonical gate.
+Last Updated: 2026-10-20 (UTC21 measurements).
+Recorded source base: development `6ec94ab4daf59e45b44720a44ffca19b2e7d0b23`, published and remote-verified. Native worktree-state owns current HEAD/index/cleanliness.
+Total tests: 127723 selected /127747 collected,24 deselected,0 collection errors at that published source; current supporting source requires fresh native commit collection.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
-Continue S98.4 and all seven active S98.1-S98.7 items. Native milestone status excludes132 additional backlog items from this stop gate. All seven remain open. Preserve85% aggregate/75% each-file line AND branch coverage, fatal warnings, ZDD, cleanup, retention and exact-SHA promotion.
+Continue S98.4 and all seven active S98.1-S98.7 items. Native milestone status excludes132 backlog items from this stop gate. All seven remain unchecked. Preserve85% aggregate/75% each-file line AND branch coverage, fatal warnings, ZDD, cleanup, retention and exact-SHA promotion.
 
-Root owns shared Make/config/AGENTS/docs/tracking, integration, publication and proof. Both model agents are quiescent. Their earlier workstreams are unregistered; source branches/worktrees, six owned checkpoints and immutable failures remain. Model-agent status is separate from OS PIDs. Native ps must identify current test/audit children; ps-gludd only covers namespaced daemons.
+Root owns shared Make/config/AGENTS/docs/tracking, code integration, publication and proof. Both model agents are quiescent; their source workstreams are unregistered. Preserve branches/worktrees, six owned checkpoints and immutable failures. Model-agent names/status are separate from native OS process PIDs.
 
-## Current source and measured acceptance
+## Exact published evidence and active blocker
 
-- Published source is3b2fdc2274bf95aa5b7fd3a2d929286920d9daf1. Its normal guarded311 publication replay passed2023+1+11/81.5s and remote verification passed. Exact hosted Build39511340747 fails both pinned-manifest checks(HEAD404/GET404); Pages39511340719 fails WebKit job118932830925 at cold5.614311s<5(1FAIL/22PASS434.49s, observed437.9s), Chromium passes and deploy skips. Molecule39511340718 passes all six jobs. Preserve all eight unknown/censored Build shard intervals.
-- Source9eee26ae6cc79dafca4d0aec179d4e9f3e3363b4 refreshes the existing pin/lock to independently served086f25bff2b5e44eaa6953c8165cf6c4dcb3af8018b37053b510c7d5d796613c; actual separate exact-digest check passes0.4s. Both original equality assertions remain;127whole artifact/fallback/boundary cases pass5.39s. It is input repair, not image assembly or hosted proof.
-- Sourcefc0e24d6d9a73ab59b200e2cefeee37cf4338860 makes existing publication admission verify that exact native manifest before unchanged90/60 runtime replay and transport. Seven failing-first controls precede223whole cases/38.45s on311 and91publication/integration/guide/objective cases/34.88s on312. Offline plan remains offline; conflicting outer UV inputs cannot bypass actual canonical311 children.
-- Source84199e3f1a2ca1cb55e991d8640c4b4bcf54395c binds hermetic Azure coverage to the original manifest outcome while preserving coverage after later lint failure: RED1/5PASS then133PASS4.43s. Native exact-pin evidence records both manifest families locally repaired at84199e3; hosted-resolved remains false.
-- Source86e3b4b1eecd5954c9ac68a0cf1ba4c28e74c5b6 preserves native legacy ci-job-log retrieval status, rejects empty/malformed data and keeps400lines. RED6/2PASS, intermediate native missing-help failure, then103PASS11.55s. Actual offline contract and terminal retrieval pass. Retrieval success is not CI success. Native269target contracts,1174unique targets/0duplicates, strict/Ruff/Make parity pass.
-- Source03966b6d905cb8eb6dde118f3297f54993abb76f integrates as53c1e2168c1c084f236b85818a3595a13d3b44d3: public Mermaid layouts remain serial while validated image completions proceed independently with original deadlines, immediate failure handling and final all-image/geometry fence. RED5FAIL/2PASS precedes114PASS in source and receiving114PASS8.08s/observed9.0s. The original browser file is unchanged.
-- Exact clean53c1e21 passes complete original WebKitJS0 23+1/353.3s, cold1.500/cached1.269; ChromiumJS0 23+1/361.0s, cold1.432/cached1.258. Separate ChromiumJS1 23+1/388.5s measures native c8 whole-controller94.17line/88.3branch:744/790lines,219/248branches,54/55functions,0skipped;85aggregate/75each line AND branch checks both0. Source/runtime bind tree5a806a9b8835e9e8d90a53f5e97f6112cdee7c91 and controller c3b53f288338a1747a86d04559cabff2f7bc843f6d656a11c8007da238780105. Actual native records/logs are in PRESENTATION_JAVASCRIPT_COVERAGE.md.
-- Independent source review APPROVES exact53c1e21 against5b77f02, source only: /tmp/gludd-v012-candidate-53c1e21-source-review.md. It identifies a shallow cleanup-test gap. Separate sourcee43a8ae4679eaecc6832b60bff82fe05e0e79b81 changes only those assertions and three native leak controls plus tracking:3FAIL/8PASS4.09s then complete shortcut/fixture68PASS8.62s, observed9.6s; Ruff/strict/Markdown/limits pass. Production trap/status/tail remain unchanged. This successor does not relabel the browser receipts' exact SHA.
-- Native local CI ledger now reports open0/repaired14/resolved37/runs142. WebKit family89b7005f has actual full53c1e21 local repair evidence; both manifest families have84199e3. Repaired is awaiting hosted resolution, not a green replacement workflow.
+Normal guarded seven-commit publication advances3b2fdc2 to6ec94ab. Exact served086f25b manifest check and original2023+1+11 runtime admission pass75.1s before transport; verify-remote reports VERIFIED development@6ec94ab4daf59e45b44720a44ffca19b2e7d0b23. No force/no-verify/master path is used. Manual historical receipt is /tmp/gludd-v012-publication-6ec94ab-evidence.md; generated current JSON belongs only to native producers.
 
-Earlier clean5b77f02 proof remains historical: original312 repair2023+1+11/78.3s, receiving metadata380PASS95.4line/89.6branch, ChromiumJS1 23+1/390.5s at94.2line/88.3branch, and source-only approval. Do not use its older controller hash or local timing for the image-pipeline successor.
+Exact hosted Build39519193318 is FAILURE. Gate311 job118958621444 passes the manifest, main2023/73.87s, isolated help1/1.62s and ten tail cases, then expires124/90.6s at the final JSON-pointer lock assertion. That last node does not establish cumulative causality. Its separate hermetic Azure diagnostic passes95.0s but cannot repair runtime admission. Raw failure context is /tmp/gludd-v012-build-39519193318-runtime311-context.log.
 
-The final whole Make-guide/session/objective/Pages-documentation cohort passes56cases/3.02s with fatal warnings; make check-node-v26-compat passes6/9.29s. Locked Markdown checking passes all7 changed records and native file-line limits pass. These are source/documentation checks, not the missing canonical gate.
+Gate312 job118958621454 is PASS: original runtime admission89.5s, tail11/9.20s and fresh127723/127747collection,24deselected/0errors203.01s/native216.3s. The overall Build still fails, all eight canonical shards skip and their durations remain unknown/censored. Immutable ci-run-summary SHARD_TIMINGS=1 owns hosted timing; no hosted improvement is claimed.
 
-## Exact next action and remaining blocker
+Molecule39519193450 is SUCCESS with all six jobs PASS. Pages39519193335 has WebKit job118958594081 PASS and Chromium job118958593666 still in progress at the last native summary. These exact-SHA hosted observations do not supply public deployment or final release proof. Query their terminal successor state through existing native owners, never an unchanged hosted rerun.
 
-Finish/check this documentation handoff, retain fresh collection before its normal guarded source commit, then run `make verify-state`. From the clean development checkout run normal `make batch-push COMMIT_THRESHOLD=5 WORK_ITEM_ID=S98.4` with the selected registered311 runtime carriers. No force, no no-verify path and no master push. The native owner must freshly check the exact manifest and original90/60 runtime replay; do not pre-run an identical diagnostic or repeat an unchanged failed input. Batch the known independent repairs before one hosted successor.
+Native pipeline-status last records ledger open1/repaired11/resolved39/runs143, current release_ready=false/gate_evidence=false and hard capacity blockage. Required actual repair input remains311 runtime cost; the same-source local75.1s pass is not a repair of a new hosted timeout.
 
-Use make verify-remote with the actual full published SHA, then native pipeline-status/ci-await to write current exact-SHA observations. Pending/lookup-error/timeout invalidate prior current success. Never edit generated current JSON. Use ci-run-summary with SHARD_TIMINGS=1 for the actual immutable Build run, retaining all eight intervals/censored/unknown states. The timing report supplies diagnostic evidence only.
+## Current coupled diagnostic support
 
-Latest measured disk is97%,7.1GiB available, above the unchanged95% ceiling. Final release admission/gate remains blocked. Last actual native cleanup removes6027peer-bytecode files/240549715bytes, three disposable caches, idle Playwright7834entries and11UV files/12.2KiB, then makes0progress at96%. Idle browser eviction is allowed by existing pressure policy; no cleanup guard changes. Pinned restore passes36.0s; the aligned already-installed replay passes1.7s with no UV warning/download. Do not cycle cleanup/install or retry unchanged final admission. Preserve source refs/locks, checkpoints and failed evidence.
+Root extends only the existing scripts/summarize_xdist_trace.py owner and test-xdist-trace-summary option/help/contract, with tests/unit/test_xdist_trace_timings.py. TRACE_SUMMARY_TIMINGS=0 keeps compact output;1 ranks validated protocol wall spans. Literal override-owned GLUDD_TRACE_SUMMARY_TIMINGS prevents shell evaluation; invalid values refuse before the report child. Exact run/worker/PID/node pairing preserves repeated serial occurrences, parameters/groups, failures, unfinished tests and per-process module totals. Invalid clocks/identity, overlaps and unmatched events remain issues. Arrays cap25 with complete counts. No observer/cache/runner/service is added.
 
-The capacity HumanTodo request remains unsubmitted: native apply returns connection refused at the existing daemon endpoint, no ID. Preserve /tmp/gludd-v012-capacity-human-todo-request.json; do not invent a filed task or start unrelated infrastructure under pressure.
+Initial45cases retain44FAIL/1PASS1.55s/native2.7s. Added module/process-isolation control fails1/0.79s against intermediate global module totals. A separate backtick witness fails1/1.29s before literal transport. Final47controls plus all original diagnostic/fixture/Make-contract/session/objective owners pass201/9.90s/native10.9s. Ruff and strict2files pass;269target contracts, documented mode0 behavior and1174targets/0duplicates pass.
 
-Read [.agents/policy/key-make-targets.md](.agents/policy/key-make-targets.md) and select every documented variable from config/make_target_contract.json. Choose the installed runtime belonging to this checkout/registered toolchain and align VIRTUAL_ENV with UV_PROJECT_ENVIRONMENT in outer and child owners. The canonical release path already verifies a fresh all-shard Python3.11 exact-SHA attestation; no alternate runtime/gate producer is needed. Serialize commit hooks and same-checkout reads/edits/tests; proof source stays frozen until native terminal result.
+The existing four-file coverage profile initially executes290PASS/28.20s but rejects70% aggregate because startup paths need their whole owners. Preserve that failed receipt. Expanded same-profile12-owner replay passes431/70.85s/native73.0s:91.5line/85.5branch aggregate, every complete file above75% both. Entire summarizer98.2line/95.6branch. Immutable audit .gate-logs/coverage-20261021T002239Z.json; original config scope/floors unchanged. Later Make/test-layout edits do not alter the measured Python bytes.
 
-After actual capacity changes, the required final admission is:
+Locked Markdown and native file-line checks pass for the changed records. AGENTS, Make guide, CONFIG_REFERENCE and XDIST_TRACE_SUMMARY codify exact option semantics, full coverage recipe, failures and primary/firsthand upstream research. Current supporting source still needs its normal guarded commit/fresh collection and source review; no full gate or CI-family repair follows from diagnostic support.
+
+## Retained runtime attribution and exact next action
+
+Original unchanged main/tail diagnostic profiles are:
+.gate-logs/test-files-cprofile/profile-82867-e1377694a456ce79 and profile-91748-806f15bfe5ddfda0 (report.txt,pytest.pstats,trace.jsonl).
+Main2023PASS61.24s/native64.1s; tail11PASS11.90s/native12.8s, with180s diagnostic cap only. Local macOS311.14/Hypothesis default differs from hosted Linux311.17/ci. No profile is established as the cause.
+
+Controller main cProfile measures61.196s, mostly60.101s thread-lock waits for worker messages; overlapping cumulative rows must not be added. Native new read-only summary pairs2023/2023 with0issues, gw0/82870 spans51.793266s and gw1/82871 spans52.239549s. Largest module cost is status-heartbeat:8.014915s/15cases and9.793082s/24cases respectively. Largest individual fixture-inventory span5.463142s. Tail reviewed-head3spans/7.281170s, lock1/2.428635s and watchdog7/0.371636s. These include fixtures/child waits, exclude unrecorded cold startup and provide no CPU or combined elapsed measurement.
+
+Literal unchanged native summary output is /tmp/gludd-v012-main-trace-timings.txt and /tmp/gludd-v012-tail-trace-timings.txt. The measured decision, exact commands and rejected speculative Git batching are /tmp/gludd-v012-hosted-runtime-cost-decision.md. Agent deliverable is a persisted decision, not a pending source change.
+
+After the guarded diagnostic commit, use the existing Make/stdlib import-time diagnostic route on the actual pipeline-status owner to attribute the identified heartbeat child startup. Preserve its actual plan-only semantics and raw log; no new observer/parser/cache or gate authority. Select a production repair only from measured native costs, write a failing-first counted behavior witness and preserve all fresh observations, failure fences, original2023+1+11 selectors,2/1/1 workers and90total/60quiet bounds. Do not alter the final lock assertion or cache its test-only TOML reads.
+
+Before another hosted push, batch all known independent actual repairs, run their complete owners/85-75 coverage, fresh collection and independent source review. Run first actual family acceptance through ci-failure-repair with exact full families and matching existing evidence owner; then normal guarded publication. No publication for diagnostic source alone while the unchanged311 family remains open.
+
+## Capacity and final proof obligations
+
+Last measured disk97%,7.1GiB available, exceeds the unchanged95% ceiling. Final release admission/gate remains blocked. Earlier actual native cleanup removes6027peer bytecode files/240549715bytes, three disposable caches, idle Playwright7834entries and11UV files/12.2KiB, then0progress at96%. Existing policy permits idle pinned-browser eviction. Restore passes36.0s; aligned already-installed replay1.7s has no warning/download. No cleanup/install loop or unchanged final-admission retry.
+
+The capacity HumanTodo request remains unsubmitted: native apply returns connection refused, no ID. Preserve /tmp/gludd-v012-capacity-human-todo-request.json. Do not invent a filed task or start unrelated infrastructure under pressure. Preserve all source refs, locks, evidence, protected interpreter dependencies and six native checkpoints.
+
+After the actual capacity prerequisite changes, use:
 
 ```bash
 make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 WORK_ITEM_ID=S98.4 OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20
+make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=0 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 WORK_ITEM_ID=S98.4
 ```
 
-Final combined acceptance, canonical release gate, genuine reviewed-head receipt, exact-SHA hosted CI, deployment and promotion remain missing. No task tick follows from local browser/c8, source review, collection or local family repair. The Make guide contains the canonical gate and receipt-bound promotion arguments.
+Canonical release already verifies a fresh all-shard311 exact-SHA attestation. Final frozen-candidate review/combined acceptance, complete gate, genuine reviewed-head receipt, exact-SHA hosted CI, deployment and guarded promotion remain missing. Old noncanonical native-profile .gate-status FAIL stays failed. No TASKS tick follows from focused support or partial hosted success.
 
-## Retained decisions and history
+Read [.agents/policy/key-make-targets.md](.agents/policy/key-make-targets.md); obtain actual target/variables from config/make_target_contract.json. Use registered checkout-owned runtimes and align VIRTUAL_ENV with UV_PROJECT_ENVIRONMENT in outer and child owners. Serialize Git hooks and same-checkout reads/edits/tests; never mutate a live proof candidate.
 
-The [release proof record](docs/features/RELEASE_PROOF_THROUGHPUT.md), [deck design](docs/presentation/DESIGN_revealjs_deck.md), [browser coverage feature](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md), [EE feature](docs/features/ANSIBLE_EE_BASE_IMAGE_LIVENESS.md), [CI ledger feature](docs/features/CI_FAILURE_LEDGER.md) and [resource lifecycle record](docs/features/GATE_RESOURCE_LIFECYCLE.md) codify decisions, failed experiments, firsthand reports and measured source receipts. The mandatory Make guide exposes the ordered path for the next model.
+## Retained product source and history
 
-The complete prior2498-line SESSION remains verbatim at immutable156eb240db478515d5106fa976e42ee58de2df86. TASKS and native milestone owners retain outstanding work; old objectives/Next Steps are historical comparisons. Retrieve without expanding mandatory startup context:
+Published repairs are9eee26ae6 (EE pin),fc0e24d6 (publication manifest prerequisite),84199e3f (workflow outcome),86e3b4b1 (native log errors),53c1e2168 (serial Mermaid/image completions),e43a8ae4 (recursive real cleanup witnesses) and6ec94ab4 (receiving proof/model workflow docs).
+
+Independent source-only approval is /tmp/gludd-v012-candidate-53c1e21-source-review.md. Clean53c1e21 receiving browser proof retains WebKitJS0/ChromiumJS0/ChromiumJS1 original23+1 cases at353.3/361.0/388.5s, with whole-controller94.17line/88.3branch and exact clean provenance. Its later hosted WebKit PASS is separate. Prior failures, source reviews, coverage and rejected experiments remain in the owning feature records.
+
+The complete prior handoff is immutable at6ec94ab4daf59e45b44720a44ffca19b2e7d0b23; the older2498-line historical SESSION is156eb240db478515d5106fa976e42ee58de2df86. Retrieve history without enlarging mandatory startup context:
 
 ```bash
-make git-show-file-to SHA=156eb240db478515d5106fa976e42ee58de2df86 FILE=SESSION.md OUT=/tmp/gludd-v012-session-history-156eb24.md
+make git-show-file-to SHA=6ec94ab4daf59e45b44720a44ffca19b2e7d0b23 FILE=SESSION.md OUT=/tmp/gludd-v012-session-history-6ec94ab.md
 ```

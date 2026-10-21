@@ -1,5 +1,29 @@
 # Release Proof Throughput
 
+## Published6ec94ab runtime failure and retained attribution
+
+Normal guarded publication verifies development6ec94ab4daf59e45b44720a44ffca19b2e7d0b23
+after exact served-manifest and2023+1+11/75.1s local admission. Exact Build
+39519193318 then fails311 admission at124/90.6s after2023/73.87s,help1/1.62s
+and ten tail passes. Its312 lane passes89.5s and fresh127723/127747collection,
+24deselected/0errors; the overall Build still fails and all eight shards remain
+censored/unknown. Native pipeline-status records open1/repaired11/resolved39,
+runs143. A new HEAD or the same-source local pass cannot repair this input.
+
+Root owns the coupled diagnostic enhancement on development: extend the existing
+summary with opt-in validated wall spans, retain original counts/failures and
+separate exact run/worker/PID module totals. The [owning feature](XDIST_TRACE_SUMMARY.md#validated-test-protocol-wall-spans-v012)
+codifies47new controls, initial44FAIL/1PASS, repeated-module isolation RED,
+literal-option shell witness, final201PASS9.90s, and unchanged four-file native
+coverage431PASS70.85s at91.5line/85.5branch; summarizer98.2/95.6.
+The failed290-case70% aggregate receipt remains failed; the final cohort adds
+existing complete startup/retention owners without changing scope or floors.
+Main/tail raw profiles and native summaries are retained; parent waiting is
+not worker CPU and cross-worker sums are not combined elapsed time.
+Actual hosted311 cost repair, original90/60 family evidence, independent final
+review/full gate, exact-SHA CI, deployment and promotion remain missing.
+Disk97% still blocks expensive final release proof; no unchanged retry.
+
 ## Problem and decision
 
 Repeated source resealing, partial replays, and metadata repairs consumed work

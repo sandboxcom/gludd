@@ -235,8 +235,13 @@ test-nodeids:
 test-xdist-trace:
 	@GLUDD_XDIST_TRACE_RUN_ID="$(or $(RUN_ID),xdist-$${ID:-$$$$})" $(UV) run python scripts/run_xdist_trace.py --log "$(or $(LOG),/tmp/gludd-xdist-progress.log)" --basetemp "/tmp/gludd-xdist-trace-$${ID:-$$$$}" -- $(or $(TESTPATH),tests/) $(_XD) -q --max-worker-restart=0 -p scripts.xdist_trace_plugin $(PYTEST_ARGS)
 
+TRACE_SUMMARY_TIMINGS ?= 0
+override GLUDD_TRACE_SUMMARY_TIMINGS := $(value TRACE_SUMMARY_TIMINGS)
+export GLUDD_TRACE_SUMMARY_TIMINGS := $(value TRACE_SUMMARY_TIMINGS)
+unexport TRACE_SUMMARY_TIMINGS
 test-xdist-trace-summary:
-	@$(UV) run python scripts/summarize_xdist_trace.py $(if $(RUN_ID),--run-id "$(RUN_ID)",) $(or $(LOG),/tmp/gludd-xdist-progress.log)
+	@case "$$GLUDD_TRACE_SUMMARY_TIMINGS" in 0) timing_arg= ;; 1) timing_arg=--include-timings ;; *) echo "TRACE_SUMMARY_TIMINGS must be 0 or 1" >&2; exit 2 ;; esac; \
+	$(UV) run python scripts/summarize_xdist_trace.py $(if $(RUN_ID),--run-id "$(RUN_ID)",) $$timing_arg $(or $(LOG),/tmp/gludd-xdist-progress.log)
 
 test-count-e2e:
 	@find tests/e2e -name 'test_*.py' | wc -l | xargs echo "e2e test files:"

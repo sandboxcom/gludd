@@ -1,7 +1,7 @@
 # Durable xdist Trace Summaries
 
 Status: implemented for the beta4 diagnostic workflow. Last reviewed:
-2026-09-03.
+2026-10-20.
 
 ## Purpose
 
@@ -125,6 +125,124 @@ same trace: node IDs retain their first-seen order, workers are sorted, memory
 increases are ordered largest first, and no reporting mode deletes the source
 log. That read-only lifecycle preserves zero-downtime diagnostic evidence while
 another namespaced run writes a different log.
+
+## Validated test-protocol wall spans (v0.1.2)
+
+The existing summary owner optionally ranks the retained START/FINISH spans:
+
+```console
+make test-xdist-trace-summary LOG=/tmp/gludd-xdist-progress.log RUN_ID=selected-run TRACE_SUMMARY_TIMINGS=1
+```
+
+Set TRACE_SUMMARY_TIMINGS=0 for the unchanged compact default. Only0/1 are
+accepted. The script's equivalent flag is --include-timings; it also works
+with --failures-only. Verbose output includes the full timing diagnostic.
+
+Pairing requires exact nonempty run ID, worker label, positive process PID and
+full node ID. Repeated serial occurrences remain separate. Module and worker
+totals retain the same run/worker/PID identity, including restarted workers;
+parameters and @group suffixes stay intact in node rows. Missing identity,
+non-finite/invalid timestamps, duplicate or overlapping STARTs, unmatched
+FINISH, unfinished START and backward/overlapping intervals produce issues.
+Ambiguous spans are excluded. Counts and original failure/incomplete evidence
+remain available; source traces are never modified.
+
+Each diagnostic array is capped at25, with full paired/issue counts and stable
+ordering. The clock is the producer's time.time wall clock. These protocol
+spans include setup, fixtures, call, teardown and child waits. They exclude
+unrecorded cold startup; parallel workers overlap. Neither cumulative profiler
+rows nor module/worker sums are CPU measurements or a combined elapsed time.
+The diagnostic explicitly retains authority=diagnostic-only,
+gate_evidence=false and release_ready=false. Its exit0 means report retrieval,
+never passing pytest, repaired CI or release readiness.
+
+The separate maintained-tool research selected the existing stdlib JSON,
+cProfile/pstats and pytest-xdist trace producers. No parser, profiler package,
+runner, daemon, observer or cache is added.
+[Python's profiler reference](https://docs.python.org/3.11/library/profile.html)
+distinguishes self time from cumulative time, which includes called functions.
+The firsthand October2018
+[xdist collection-efficiency report](https://github.com/pytest-dev/pytest-xdist/issues/353)
+describes an idle controller while workers collect and explicitly seeks worker
+profiles. This long-lived report supports measuring the actual process; it
+does not diagnose Gludd's current timeout or justify disabling plugins.
+
+### Measured attribution before selecting a repair
+
+Published development6ec94ab4daf59e45b44720a44ffca19b2e7d0b23 has hosted Build
+39519193318. Its311 job118958621444 passes2023main/73.87s, separate help1/1.62s
+and ten tail cases, then the native90/60 observer times out124/90.6s during the
+last lock assertion. The312 job118958621454 passes the complete admission in
+89.5s and fresh127723/127747collection,24deselected/0errors. The failed311 lane
+blocks all eight canonical shards. Preserve their censored/unknown intervals;
+neither the312 lane nor the diagnostic Azure coverage supplies a green Build.
+
+The exact-source local diagnostic uses registered macOS311.14/default
+Hypothesis; hosted311.17/Linux uses built-in ci. These uncontrolled environments
+cannot establish a latency improvement or the Hypothesis profile as a cause.
+Main diagnostic2023PASS61.24s/native64.1s measures61.196s of parent profile,
+including60.101s lock waits for worker messages. The complete unchanged tail
+passes11/11.90s/native12.8s. Both use a180s diagnostic cap and confer no90/60
+repair receipt.
+
+Read-only summary of the original main trace pairs2023/2023 with0issues;
+worker82870/gw0 has962spans/51.793266s and82871/gw1 has1061/52.239549s.
+Heartbeat module spans are8.014915s/15cases and9.793082s/24cases respectively.
+The largest individual span is the original fixture-inventory guard5.463142s.
+These are protocol observations, not a proven production hotspot. The tail
+pairs11/11 with0issues: reviewed-head3spans/7.281170s, lock invariant1/2.428635s
+and watchdog7/0.371636s. Do not weaken the lock assertion or add a test-only
+TOML cache because it printed last.
+
+Native raw profiles are .gate-logs/test-files-cprofile/
+profile-82867-e1377694a456ce79 and profile-91748-806f15bfe5ddfda0
+(report.txt,pytest.pstats,trace.jsonl). Literal unchanged native summary output
+is retained as /tmp/gludd-v012-main-trace-timings.txt and
+/tmp/gludd-v012-tail-trace-timings.txt. The exact measured commands, limits,
+production cumulative rows and rejected speculative Git batching are retained
+in /tmp/gludd-v012-hosted-runtime-cost-decision.md. Summarize these retained
+traces through the owner; no2023-case rerun is needed to recover their ranking.
+
+The new45-case matrix first records44FAIL/1PASS1.55s/native2.7s.
+An added repeated-node/process-isolation control then fails1/0.79s against the
+intermediate global module aggregation. Only the existing summary owner and
+its option/help/contract change; original trace assertions stay intact.
+Initial three-owner acceptance passes153/7.90s/native8.9s. The four-file
+coverage replay passes290tests/28.20s but correctly rejects70% aggregate:
+stream_command's existing startup paths require their complete owners.
+That failed receipt remains failed; the successor adds those whole owners
+without omitting any production file or lowering85aggregate/75each BOTH.
+Final measurement and exact source commit are recorded with the receiving
+handoff; none of this diagnostic support closes S98.4.
+
+Final unchanged four-file coverage then passes431/70.85s/native73.0s:
+91.5% aggregate lines/85.5% branches, every file above75% both; complete
+summarizer98.2%/95.6%. Native immutable audit is
+.gate-logs/coverage-20261021T002239Z.json. Its source scope is unchanged from the
+failed290-case attempt. No covered line or production file was omitted.
+
+A further native negative witness catches backtick execution inside the new
+Make option before commit:1FAIL/1.29s. Make now transports that literal through
+the override-owned GLUDD_TRACE_SUMMARY_TIMINGS carrier and selects only a
+constant validated CLI flag; the public variable is unexported. No raw value
+enters shell command text. The final47-case timing matrix plus whole original
+diagnostic, fixture, Make-contract, session and objective owners passes201
+cases/9.90s/native10.9s. Ruff, strict2files,269target contracts,1174targets/0
+duplicates and the documented mode0 behavioral example pass. These later
+Make/test-layout changes do not alter the measured summarizer Python bytes.
+
+Reproduce the complete registered profile with the installed checkout-owned
+runtime selected explicitly; align VIRTUAL_ENV with UV_PROJECT_ENVIRONMENT:
+
+```console
+make coverage-files \
+  COVERAGE_TESTFILES='tests/unit/test_observed_command.py tests/unit/test_xdist_trace_diagnostics.py tests/unit/test_xdist_trace_timings.py tests/unit/test_gate_refresh_streaming.py tests/unit/test_observability_guardrails.py tests/unit/test_active_work_status.py tests/unit/test_active_work_resource_observability.py tests/unit/test_pytest_param_fixture_collisions.py tests/unit/test_runtime_startup_diagnostic.py tests/unit/test_observer_retention_concurrency.py tests/unit/test_item_progress_retention.py tests/unit/test_owned_grandchild_cleanup.py -n 0 --maxprocesses 1' \
+  COVERAGE_CONFIG=config/coverage_observed_command.ini \
+  COVERAGE_REPORT=.gate-logs/coverage-v012-trace-timings-complete.json \
+  COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 \
+  OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=10 \
+  OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
+```
 
 ## RSS Unit Contract
 
