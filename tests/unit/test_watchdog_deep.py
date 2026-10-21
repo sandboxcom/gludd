@@ -16,7 +16,10 @@ import os
 import signal
 import sys
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn, cast
 from unittest.mock import patch
 
 import pytest
@@ -114,6 +117,194 @@ def _aw_env(monkeypatch, tmp_path: Path, *, streak_count: int = 0, streak_mtime_
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. HEARTBEAT MONITORING
 # ═══════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True)
+class HeartbeatSource:
+    key: str
+    sources: tuple[str, ...]
+    tasks: bool = False
+    ratchet: int = 0
+    gate_red: bool = False
+    gate_running: bool = False
+    ci_pending: bool = False
+    ci_run_id: str | None = None
+    pending: bool = True
+    local_latch: bool = True
+
+
+_HEARTBEAT_SOURCES = (
+    HeartbeatSource("tasks", ("TASKS.md",), tasks=True),
+    HeartbeatSource("ratchet", ("ratchet",), ratchet=2),
+    HeartbeatSource("red-gate", ("gate",), gate_red=True),
+    HeartbeatSource("running-gate", ("gate-running",), gate_running=True),
+    HeartbeatSource("ci", ("CI(run=42)",), ci_pending=True, ci_run_id="42", local_latch=False),
+    HeartbeatSource(
+        "all", ("TASKS.md", "ratchet", "gate", "gate-running", "CI(run=42)"),
+        tasks=True, ratchet=2, gate_red=True, gate_running=True, ci_pending=True, ci_run_id="42",
+    ),
+    HeartbeatSource("none", (), pending=False, local_latch=False),
+)
+
+
+def _heartbeat_record(path: Path) -> dict[str, object]:
+    value: object = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
+    return cast(dict[str, object], value)
+
+
+def _assert_verbose_heartbeat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, heartbeat_source: HeartbeatSource,
+    heartbeat_age: float | None, *, heartbeat_verbose: bool,
+) -> None:
+    """Exercise the actual complete cycle with only unrelated external seams inert."""
+    setup = cast(Callable[[pytest.MonkeyPatch, Path], None], _aw_env)
+    setup(monkeypatch, tmp_path)
+    source = heartbeat_source
+    stamp = "2026-10-21T00:00:00+00:00"
+    monkeypatch.setattr(aw, "_now", lambda: stamp)
+    monkeypatch.setattr(aw, "_streak_mtime_age_seconds", lambda: heartbeat_age)
+    monkeypatch.setattr(aw, "HEARTBEAT_VERBOSE", heartbeat_verbose)
+    monkeypatch.setattr(aw, "HIBERNATION_MARKER", tmp_path / "hibernating")
+    monkeypatch.setattr(aw, "_POLL_CYCLE_COUNT", 40)
+    monkeypatch.setattr(aw, "_POLL_CYCLE_PRUNE_INTERVAL", 1000)
+    monkeypatch.setattr(aw, "_gate_background_running", lambda: source.gate_running)
+    monkeypatch.setattr(aw, "_ci_is_pending_or_red", lambda: (source.ci_pending, source.ci_run_id))
+    monkeypatch.setattr(aw, "_is_force_dispatch_active", lambda: False)
+    (tmp_path / "TASKS.md").write_text(
+        "- [ ] fixture task\n" if source.tasks else "- [x] fixture task\n", encoding="utf-8",
+    )
+    (tmp_path / "ratchet.yml").write_text(
+        "first: pending\nsecond: pending\n" if source.ratchet else "# empty\n", encoding="utf-8",
+    )
+    gate_text = "=== gate fixture ===\nunit: FAIL\n" if source.gate_red else "unit: PASS\n"
+    (tmp_path / ".gate-status").write_text(gate_text, encoding="utf-8")
+    retained_ci = "retained historical CI evidence\n"
+    (tmp_path / ".ci-status").write_text(retained_ci, encoding="utf-8")
+    (tmp_path / "false-maxout.json").write_text('{"count":3,"ts":0}', encoding="utf-8")
+    unexpected: list[str] = []
+    secrets_calls: list[str] = []
+
+    def forbidden_command(*_args: object, **_kwargs: object) -> NoReturn:
+        unexpected.append("external-command-or-default-scanner")
+        raise AssertionError("Heartbeat source fixture refuses all external commands")
+
+    def no_finding(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    def no_task_anomalies() -> dict[str, object]:
+        return {"tasks": [], "anomalies": [], "stalled": [], "ts": stamp}
+
+    def no_anomaly_list(*_args: object) -> list[object]:
+        return []
+
+    def injected_secrets_check() -> None:
+        secrets_calls.append("injected")
+        return None
+
+    monkeypatch.setattr(aw.subprocess, "run", forbidden_command)
+    monkeypatch.setattr(aw.subprocess, "Popen", forbidden_command)
+    monkeypatch.setattr(aw, "_check_secrets_committed", forbidden_command)
+    monkeypatch.setattr(aw, "check_task_anomalies", no_task_anomalies)
+    monkeypatch.setattr(aw, "check_agent_stalled", lambda: False)
+    monkeypatch.setattr(aw, "_detect_ci_loop", lambda: False)
+    monkeypatch.setattr(aw, "_detect_ci_true_stall", lambda: False)
+    for name in (
+        "check_task_timings", "_check_ci_stall", "_check_push_stalled",
+        "_check_task_anomaly_300s", "_check_ci_pending_stall", "_check_push_health",
+        "_detect_stalled_push", "_check_under_floor_dispatch", "_check_ci_red_after_tag_push",
+        "_check_release_completeness", "_check_stale_release", "_auto_reengage_enforcement",
+    ):
+        monkeypatch.setattr(aw, name, no_finding)
+    monkeypatch.setattr(aw, "_check_timing_anomalies", no_anomaly_list)
+    monkeypatch.setattr(aw, "_detect_history_anomalies", no_anomaly_list)
+    result: object = aw.check_and_reset(secrets_check=injected_secrets_check)
+    assert unexpected == []
+    assert secrets_calls == ["injected"]
+    assert isinstance(result, dict)
+    assert result == {
+        "ts": stamp, "streak": 0, "pending_todos": [], "reset_applied": False,
+        "hibernating": False, "stop_detected": False,
+    }
+    heartbeat = _heartbeat_record(tmp_path / "heartbeat.json")
+    assert set(heartbeat) == {
+        "ts", "epoch", "poll_cycle", "streak", "mtime_age_s", "has_pending_work",
+        "tasks_md_unchecked", "ratchet_entries", "gate_status_red", "ci_pending_or_red",
+        "ci_run_id", "pending_todo_count", "stop_count",
+    }
+    assert heartbeat["ts"] == stamp
+    assert isinstance(heartbeat["epoch"], (int, float)) and heartbeat["epoch"] > 0
+    assert heartbeat["poll_cycle"] == 41
+    assert heartbeat["streak"] == 0
+    assert heartbeat["mtime_age_s"] == (round(heartbeat_age, 1) if heartbeat_age else None)
+    assert heartbeat["has_pending_work"] is source.pending
+    assert heartbeat["tasks_md_unchecked"] is source.tasks
+    assert heartbeat["ratchet_entries"] == source.ratchet
+    assert heartbeat["gate_status_red"] is source.gate_red
+    assert heartbeat["ci_pending_or_red"] is source.ci_pending
+    assert heartbeat["ci_run_id"] == source.ci_run_id
+    assert heartbeat["pending_todo_count"] == 0
+    assert heartbeat["stop_count"] == 0
+    assert aw._pending_work_exists() is source.local_latch
+    assert aw._POLL_CYCLE_COUNT == 41
+    expected_counter = (0 if heartbeat_age is not None else 4) if source.pending else 3
+    assert _heartbeat_record(tmp_path / "false-maxout.json")["count"] == expected_counter
+    assert _heartbeat_record(tmp_path / "stop-count.json")["count"] == 0
+    assert _heartbeat_record(tmp_path / "streak.json") == {"count": 0, "last_tool": "write"}
+    assert not (tmp_path / "continue-directive.json").exists()
+    assert not (tmp_path / "pure-idle.txt").exists()
+    assert (tmp_path / "activity.json").exists() is (heartbeat_age is not None)
+    assert (tmp_path / ".gate-status").read_text(encoding="utf-8") == gate_text
+    ci_text = (tmp_path / ".ci-status").read_text(encoding="utf-8")
+    if source.ci_pending:
+        lines = ci_text.splitlines()
+        assert len(lines) == 3
+        assert lines[0].startswith("=== CI ") and lines[0].endswith(" ===")
+        assert lines[1:] == ["CI FAIL pending (run 42)", "suggested_action: wait_for_ci"]
+    else:
+        assert ci_text == retained_ci
+    state = _heartbeat_record(tmp_path / "orchestrator.json")
+    assert state["tasks_md_unchecked"] is source.tasks
+    assert state["ratchet_entries"] == source.ratchet
+    assert state["gate_status_red"] is source.gate_red
+    assert state["ci_pending_or_red"] is source.ci_pending
+    assert state["ci_run_id"] == source.ci_run_id
+    assert state["agent_active"] is (heartbeat_age is not None)
+    assert state["stop_detected"] is False
+    log = tmp_path / "reset.log"
+    if heartbeat_verbose and source.pending:
+        suffix = f" mtime_age={heartbeat_age:.0f}s" if heartbeat_age else ""
+        assert log.read_text(encoding="utf-8") == (
+            f"[{stamp}] watchdog: pending work detected \u2014 sources={list(source.sources)}{suffix}\n"
+        )
+    else:
+        assert not log.exists()
+
+
+class TestVerboseHeartbeatSourceAttribution:
+    @pytest.mark.parametrize("heartbeat_source", _HEARTBEAT_SOURCES, ids=lambda item: item.key)
+    @pytest.mark.parametrize("heartbeat_age", [2.4, None], ids=["recent", "missing-mtime"])
+    def test_verbose_sources_preserve_current_pending_state(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        heartbeat_source: HeartbeatSource, heartbeat_age: float | None,
+    ) -> None:
+        _assert_verbose_heartbeat(
+            tmp_path, monkeypatch, heartbeat_source, heartbeat_age, heartbeat_verbose=True,
+        )
+
+    def test_zero_mtime_keeps_legacy_suffix_and_heartbeat_semantics(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _assert_verbose_heartbeat(
+            tmp_path, monkeypatch, _HEARTBEAT_SOURCES[5], 0.0, heartbeat_verbose=True,
+        )
+
+    def test_quiet_heartbeat_preserves_pending_latch_without_log(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _assert_verbose_heartbeat(
+            tmp_path, monkeypatch, _HEARTBEAT_SOURCES[5], None, heartbeat_verbose=False,
+        )
 
 
 class TestHeartbeatMonitoring:

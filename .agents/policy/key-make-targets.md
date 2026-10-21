@@ -60,6 +60,26 @@ The same startup owner plans with WATCHDOG_START_VALIDATE_ONLY=1; auto plans bot
 with WATCHDOG_AUTO_VALIDATE_ONLY=1. Refusal preserves evidence and blocks the
 handoff; PID diagnostics alone never authorize termination.
 
+The coverage-files owner automatically captures physical pwd -P and exports
+private GLUDD_COVERAGE_SOURCE_ROOT for the existing watchdog profile. Children
+retain that identity across CWD changes; the required variable is not a caller
+setting. The complete107-case owner and unchanged472-case contract example retain
+all canonical files, subprocess branch measurement and85/75 BOTH. Keep fixed
+nested Make acceptance commands in outer single quotes, with double-quoted child
+TESTFILES/PYTEST_ARGS and both installed runtime tuples explicit. The native
+operating receipt in the source record retains the actual working argv.
+
+For an external temporary pytest fixture, keep -c pointed at the project config
+and pass both --rootdir and --confcutdir as the same physical owned fixture root.
+The actual child must assert both boundaries; preserve loaded plugins, fixture/
+conftest inventories, original outcomes and fatal warnings. A configured root
+outside the fixture can make pytest walk unrelated temporary ancestors. Retain
+that native failure and repair collection scope before replaying. Native lifecycle
+checks additionally need process inspection: /bin/ps or sysctl denial is failed
+proof; use the authorized host Make execution boundary with identity/cleanup
+requirements intact. The [source record](../../docs/features/COVERAGE_SOURCE_IDENTITY.md)
+retains both distinct incidents and exact negative/positive receipts.
+
 ### Choose the next action from evidence
 
 | Current input | Next action |

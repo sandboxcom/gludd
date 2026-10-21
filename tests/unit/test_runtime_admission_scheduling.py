@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 144
+EXPECTED_FAMILY_COUNT = 145
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -90,6 +90,8 @@ ROSTER = (
     "tests/unit/test_run_watched_trace.py::"
     "test_native_trace_option_preserves_default_off_and_exact_on_argv[enabled]",
     "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_entries[disk]",
+    "tests/unit/test_ci_named_shard_files.py::"
+    "test_coverage_files_exports_physical_checkout_to_changed_cwd_children[False-command-line]",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
@@ -350,8 +352,11 @@ def test_two_worker_native_admission_keeps_warnings_fatal(tmp_path: Path) -> Non
 def test_compact_native_reporting_preserves_inventory_failures_and_terminal_totals(tmp_path: Path, mode: str) -> None:
     """Change only native per-case verbosity in otherwise identical two-worker children."""
     (tmp_path / "conftest.py").write_text(
-        "import os\nimport pytest\nfrom tests.conftest import pytest_collection_modifyitems\n"
+        "import os\nfrom pathlib import Path\nimport pytest\n"
+        "from tests.conftest import pytest_collection_modifyitems\n"
         "def pytest_configure(config):\n"
+        "    assert config.rootpath.resolve() == Path(__file__).resolve().parent\n"
+        "    assert Path(config.getoption('confcutdir')).resolve() == Path(__file__).resolve().parent\n"
         "    if not hasattr(config, 'workerinput'):\n"
         "        assert config.get_verbosity() == 1\n"
         "        expected = -2 if os.environ['GLUDD_COMPACT_REPORT_VARIANT'] == 'compact' else 1\n"
@@ -407,7 +412,10 @@ def test_compact_native_reporting_preserves_inventory_failures_and_terminal_tota
             "GLUDD_COMPACT_REPORT_VARIANT": variant,
             "GLUDD_XDIST_TRACE_RUN_ID": variant, "COLD_START_SNAPSHOT_ROOT": str(snapshots),
         }
-        options = ["-c", str(ROOT / "pyproject.toml")]
+        options = [
+            "-c", str(ROOT / "pyproject.toml"),
+            "--rootdir", str(tmp_path.resolve()), "--confcutdir", str(tmp_path.resolve()),
+        ]
         if variant == "compact":
             options.extend(("-o", "verbosity_test_cases=-2"))
         result = _native_test_files(

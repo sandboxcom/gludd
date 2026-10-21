@@ -1167,6 +1167,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_entries[disk]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "coverage-native-source-identity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_named_shard_files.py::test_coverage_files_exports_physical_checkout_to_changed_cwd_children[False-command-line]",
+      "full_gate_phase": "test"
     }
   ]
 }

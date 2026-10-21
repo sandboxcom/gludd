@@ -5,17 +5,21 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 import re
+import shlex
 import signal
+import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import yaml
 from coverage import Coverage
+from coverage.exceptions import CoverageException
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -2012,3 +2016,242 @@ def test_first_failure_rc_is_terminal_for_the_bounded_plan(
     assert launched == ["unit-1a1:batch-001"]
     assert "'unit-1a1:batch-001': 6" in output
     assert "unit-1a1:batch-002" not in output
+
+
+def _coverage_source_profile_path() -> Path:
+    return ROOT / "config" / "coverage_agent_watchdog_split.ini"
+
+
+def _coverage_source_makefile_text() -> str:
+    return compose_makefile(ROOT / "Makefile")
+
+
+def test_watchdog_coverage_requires_the_native_checkout_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GLUDD_COVERAGE_SOURCE_ROOT", raising=False)
+    with pytest.raises(CoverageException, match="GLUDD_COVERAGE_SOURCE_ROOT"):
+        Coverage(config_file=str(_coverage_source_profile_path()))
+
+
+def test_watchdog_coverage_keeps_the_complete_canonical_branch_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_root = tmp_path / "canonical checkout"
+    source_root.mkdir()
+    monkeypatch.setenv("GLUDD_COVERAGE_SOURCE_ROOT", str(source_root))
+    profile = _coverage_source_profile_path()
+    coverage = Coverage(config_file=str(profile))
+
+    assert coverage.get_option("run:include") == [
+        str(source_root / "scripts" / "agent_watchdog.py"),
+        str(source_root / "scripts" / "watchdog_components" / "*.py"),
+    ]
+    assert coverage.get_option("run:branch") is True
+    assert coverage.get_option("run:parallel") is True
+    assert coverage.get_option("run:patch") == ["subprocess"]
+    assert coverage.get_option("run:omit") == []
+    assert coverage.get_option("report:omit") is None
+    assert "[paths]" not in profile.read_text(encoding="utf-8")
+
+
+def test_watchdog_coverage_separates_altered_copies_across_native_children(
+    tmp_path: Path,
+) -> None:
+    canonical = tmp_path / "canonical checkout"
+    altered = tmp_path / "altered native-agent"
+    reporting = tmp_path / "unrelated reporting cwd"
+    reporting.mkdir()
+    relative_paths = [
+        Path("scripts/agent_watchdog.py"),
+        *sorted(
+            path.relative_to(ROOT)
+            for path in (ROOT / "scripts" / "watchdog_components").glob("*.py")
+        ),
+    ]
+    assert len(relative_paths) > 1
+    canonical_body = (
+        "def choose(flag):\n"
+        "    if flag:\n"
+        "        return 'child'\n"
+        "    return 'parent'\n"
+    )
+    altered_body = canonical_body + "\ndef unexecuted_altered_body():\n    return 99\n"
+    for relative_path in relative_paths:
+        for root, body in ((canonical, canonical_body), (altered, altered_body)):
+            target = root / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8")
+        assert (canonical / relative_path).read_bytes() != (
+            altered / relative_path
+        ).read_bytes()
+
+    driver = tmp_path / "driver.py"
+    child = tmp_path / "child.py"
+    record = tmp_path / "child-record.json"
+    child.write_text(
+        "import json, os, pathlib, runpy, sys\n"
+        "canonical, altered, record, *paths = sys.argv[1:]\n"
+        "for relative in paths:\n"
+        "    runpy.run_path(str(pathlib.Path(canonical) / relative))['choose'](True)\n"
+        "    runpy.run_path(str(pathlib.Path(altered) / relative))['choose'](False)\n"
+        "pathlib.Path(record).write_text(json.dumps({\n"
+        "    'root': os.environ.get('GLUDD_COVERAGE_SOURCE_ROOT'),\n"
+        "    'cwd': str(pathlib.Path.cwd()),\n"
+        "}), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    driver.write_text(
+        "import pathlib, runpy, subprocess, sys\n"
+        "canonical, altered, child, record, *paths = sys.argv[1:]\n"
+        "for relative in paths:\n"
+        "    runpy.run_path(str(pathlib.Path(canonical) / relative))['choose'](False)\n"
+        "subprocess.run([sys.executable, child, canonical, altered, record, *paths],\n"
+        "               cwd=altered, check=True)\n",
+        encoding="utf-8",
+    )
+    data_file = tmp_path / ".coverage-native"
+    report_file = tmp_path / "native-coverage.json"
+    profile = _coverage_source_profile_path()
+    environment = os.environ.copy()
+    environment.update(
+        GLUDD_COVERAGE_SOURCE_ROOT=str(canonical),
+        COVERAGE_FILE=str(data_file),
+    )
+    command = [sys.executable, "-m", "coverage"]
+    actions = [
+        [
+            "run",
+            f"--rcfile={profile}",
+            str(driver),
+            str(canonical),
+            str(altered),
+            str(child),
+            str(record),
+            *(str(path) for path in relative_paths),
+        ],
+        ["combine", f"--rcfile={profile}"],
+        ["json", f"--rcfile={profile}", "-o", str(report_file)],
+    ]
+    for action in actions:
+        result = subprocess.run(
+            [*command, *action],
+            cwd=reporting,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    child_record = json.loads(record.read_text(encoding="utf-8"))
+    assert child_record == {"root": str(canonical), "cwd": str(altered)}
+    document = cast(dict[str, object], json.loads(report_file.read_text(encoding="utf-8")))
+    measured = cast(dict[str, dict[str, object]], document["files"])
+    assert {Path(name).resolve() for name in measured} == {
+        canonical / path for path in relative_paths
+    }
+    for details in measured.values():
+        summary = cast(dict[str, int | float], details["summary"])
+        assert summary["num_branches"] == 2
+        assert summary["covered_branches"] == 2
+        assert summary["missing_branches"] == 0
+        assert summary["percent_covered"] == 100.0
+        assert details["missing_lines"] == []
+
+
+@pytest.mark.parametrize("coverage_root_origin", ["absent", "environment", "command-line"])
+@pytest.mark.parametrize("coverage_make_environment_override", [False, True])
+def test_coverage_files_exports_physical_checkout_to_changed_cwd_children(
+    tmp_path: Path,
+    coverage_root_origin: str,
+    coverage_make_environment_override: bool,
+) -> None:
+    checkout = tmp_path / "physical checkout"
+    checkout.mkdir()
+    link = tmp_path / "symlink checkout"
+    link.symlink_to(checkout, target_is_directory=True)
+    child_cwd = tmp_path / "unrelated child cwd"
+    child_cwd.mkdir()
+    record = tmp_path / "make-root-record.json"
+    recorder = tmp_path / "record_uv.py"
+    recorder.write_text(
+        "import json, os, pathlib, subprocess, sys\n"
+        "child = subprocess.run([sys.executable, '-c',\n"
+        "    'import json,os,pathlib; print(json.dumps({"
+        "\"root\":os.environ.get(\"GLUDD_COVERAGE_SOURCE_ROOT\"),"
+        "\"cwd\":str(pathlib.Path.cwd())}))'],\n"
+        "    cwd=os.environ['GLUDD_COVERAGE_TEST_CHILD_CWD'],\n"
+        "    capture_output=True, text=True, check=True)\n"
+        "pathlib.Path(os.environ['GLUDD_COVERAGE_TEST_RECORD']).write_text(\n"
+        "    json.dumps({'root': os.environ.get('GLUDD_COVERAGE_SOURCE_ROOT'),\n"
+        "                'cwd': str(pathlib.Path.cwd()),\n"
+        "                'argv': sys.argv[1:], 'child': json.loads(child.stdout)}),\n"
+        "    encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    makefile = _coverage_source_makefile_text()
+    assert makefile.count("\ncoverage-files:\n") == 1
+    recipe = makefile.split("\ncoverage-files:\n", 1)[1].split("\n\n", 1)[0]
+    (checkout / "Makefile").write_text(
+        ".PHONY: coverage-files\ncoverage-files:\n" + recipe + "\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    for key in (
+        "MAKEFLAGS",
+        "MFLAGS",
+        "MAKEOVERRIDES",
+        "MAKELEVEL",
+        "GLUDD_COVERAGE_SOURCE_ROOT",
+    ):
+        environment.pop(key, None)
+    environment.update(
+        GLUDD_COVERAGE_TEST_CHILD_CWD=str(child_cwd),
+        GLUDD_COVERAGE_TEST_RECORD=str(record),
+    )
+    if coverage_root_origin == "environment":
+        environment["GLUDD_COVERAGE_SOURCE_ROOT"] = "/wrong environmental checkout"
+    argv = ["make", "-C", str(link)]
+    if coverage_make_environment_override:
+        argv.append("-e")
+    argv.extend(
+        [
+            "coverage-files",
+            f"UV={shlex.quote(sys.executable)} {shlex.quote(str(recorder))}",
+            "COVERAGE_TESTFILES=tests/unit/synthetic.py",
+            f"COVERAGE_CONFIG={_coverage_source_profile_path()}",
+            f"COVERAGE_REPORT={tmp_path / 'unused-report.json'}",
+            "COVERAGE_AGGREGATE_MIN=85",
+            "COVERAGE_PER_FILE_MIN=75",
+            "OBSERVED_ROOT=.gate-logs/observed",
+            "OBSERVED_HEARTBEAT_SECS=1",
+            "OBSERVED_QUIET_SECS=30",
+            "OBSERVED_MAX_SECS=60",
+            "OBSERVED_RETAIN_RUNS=1",
+        ]
+    )
+    if coverage_root_origin == "command-line":
+        argv.append("GLUDD_COVERAGE_SOURCE_ROOT=/wrong command-line checkout")
+    result = subprocess.run(
+        argv,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    observed = json.loads(record.read_text(encoding="utf-8"))
+    assert observed["root"] == str(checkout.resolve())
+    assert observed["cwd"] == str(checkout.resolve())
+    assert observed["child"] == {
+        "root": str(checkout.resolve()),
+        "cwd": str(child_cwd.resolve()),
+    }
+    assert observed["argv"][:3] == ["run", "python", "scripts/stream_command.py"]
+    assert "--pytest-trace" in observed["argv"]
+    assert "--quiet-secs" in observed["argv"]
+    assert "--max-secs" in observed["argv"]

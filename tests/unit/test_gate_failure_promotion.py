@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 144
+EXPECTED_FAMILY_COUNT = 145
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1850,6 +1850,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "line-edit-literal-forwarding",
         "trace-summary-literal-inputs",
         "cache-policy-home-and-proof-boundary", "watched-pytest-trace-native-argv", "disk-native-temp-size-ordering",
+        "coverage-native-source-identity",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2054,6 +2055,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_run_watched_trace.py::"
         "test_native_trace_option_preserves_default_off_and_exact_on_argv[enabled] "
         "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_entries[disk] "
+        "tests/unit/test_ci_named_shard_files.py::"
+        "test_coverage_files_exports_physical_checkout_to_changed_cwd_children[False-command-line] "
         "tests/unit/test_status_heartbeat_terminal.py "
         "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py "
