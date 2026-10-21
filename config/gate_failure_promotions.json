@@ -1125,6 +1125,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_cancel_contract.py::test_default_and_explicit_plan_are_offline_and_preserve_proof",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "release-proof-production-runner-binding",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_release_proof_admission_target.py::test_admission_probe_cannot_invent_production_runner_binding",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "line-edit-literal-forwarding",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_replace_lines_make_target.py::test_replace_lines_target_forwards_all_documented_variables",
+      "full_gate_phase": "test"
     }
   ]
 }

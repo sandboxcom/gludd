@@ -1029,3 +1029,103 @@ It identifies TWO failures:
 - batch29: test_replace_lines_make_target.py::test_replace_lines_target_forwards_all_documented_variables requires an old direct-Make FILE token despite the quoted private literal carrier;244 other cases pass in26.70s.
 
 Both are required follow-up repairs before another hosted push. Preserve the original negative assertion, every forwarding requirement and literal-input protection. Final cancellation receiving also passes five whole doc/contract/session owners104/5.40s after operating235. These source receipts do not close S98.4 or replace final gate, exact-source runtime, exact-SHA CI/deployment or capacity prerequisites.
+
+
+## Published unit-3a assertion repair (2026-10-21)
+
+Local cancellation697f5ccdc20b4959997f98835adb38764bb11953 passes normal guarded
+collection128276/128300,24deselected,zero errors46.94s/native53.4s. Independent
+SOURCE ONLY approval versus0d7b877 is retained at
+/tmp/gludd-v012-ci-cancel-697f5cc-source-review.md and fully read by Root.
+That exact source remains unpublished and has no own original-runtime/full-gate,
+hosted/deployment or release proof. The actual published-base job failures and
+nonterminal all-eight diagnostic above remain immutable evidence.
+
+The release-proof probe extracts no real production UV declaration after a
+missing-binding mutation, then supplies its own global/argv selected values.
+That replacement can keep its positive path green and makes the original
+negative context dependent. Require exactly one real extracted declaration
+BEFORE writing the fixture or starting a child; then preserve the extracted
+binding unchanged. An opposite binding still reaches real Make and must fail
+through the original assertions. Do not change production UV defaults to repair
+a fixture that invents its input.
+
+Retain all36 original cases/names/assertions. Six additive cases exercise
+missing/duplicate declarations and valid-one positives, each with/without native
+focus. Negative cases require refusal before Makefile, selected UV, phase log,
+watch output or item-progress artifacts exist; positives retain real native
+phases/focus and exactly one declaration. These cases use the existing Pytest
+source mutation and native subprocess path, with no subprocess mocks. New
+runner_binding_* parameters conform to the existing namespace inventory.
+
+Root receives the tests-first postimage before the helper correction. Actual
+canonical42 records4FAIL/38PASS6.60s/native7.3s, then42PASS5.19s/native5.8s.
+Retain /tmp/gludd-v012-runner-binding-canonical-{red,green}.xml/log and matching
+native v012-runner-binding-canonical-{red,green}-20261021 records. No original
+assertion or native opposite-binding outcome is removed.
+
+The separate existing line-forwarding case requires stale direct-Make tokens
+and a pre-metadata copy shape. It fails canonically1/0.70s before conformance.
+Keep its exact name and FILE/START/END/NEW_FILE forwarding requirements. Pin all
+four actual raw-value/override/export bindings, public unexport, quoted native
+arguments in positional order, mode-preserving copy, atomic move and no fixed
+scratch path. Restoring unsafe interpolation would violate the literal-input
+contract. The production edit algorithm and10 native permission/failure/hostile
+controls remain unchanged. Canonical conformance passes1/0.90s; the three whole
+line owners pass24 on311/1.92s/native2.8s and312/2.27s/native3.3s. Preserve
+/tmp/gludd-v012-line-forwarding-canonical-{red,green}.xml and
+/tmp/gludd-v012-line-forwarding-whole-{311,312}.xml/log.
+
+Reuse the existing native Make composer, Pytest monkeypatch and literal carrier;
+no new parser, dependency, scanner, daemon, observer or cache. Prior GNU export
+research and practitioner context above still apply; this test-conformance
+repair makes no new Make-version binary or performance claim.
+
+Append exactly two failure families after all138 predecessors:
+release-proof-production-runner-binding and line-edit-literal-forwarding.
+Complete existing binding42, forwarding1 and native-line10 owners each appear
+once in the first original runtime child. The previous independent roster and
+ordered family assertions remain; their existing whole-route table now covers
+the two new families as well as the two predecessors. Six routing cases first
+fail6/0.97s, then pass6/1.38s. Actual check-gate-failure-promotions passes all
+six pins/2.20s with140families; native Make duplicate/parity passes1160 unique
+targets and9CI/12local phases. Current line limits pass. Original three children,
+2/1/1,90total60quiet,21phases2850,fatal warnings,full gate,ZDD,cleanup and85/75
+aggregate/per-file line AND branch authority remain.
+
+Complete five-owner receiving includes the binding and all three line owners
+plus the whole parameter-inventory owner. It passes125 on311 in12.00s/native
+12.9s and125 on312 in13.08s/native14.2s, with fatal warnings/no skips/errors.
+Complete seven-owner admission/workflow routing passes450 on311 in127.38s/
+native128.8s and450 on312 in120.14s/native121.4s. All eight operating/doc owners
+pass235 in95.70s/native97.2s; native task registration passes all12 changed paths.
+Normal commit/fresh collection, exact-successor review
+and original-budget runtime/publication require their own actual receipts.
+
+The confined agent's earlier green311-named log is actually a collection failure:
+pytest traverses broad TMP ancestry and hits protected codex-daemon-501,
+0collected/1ERROR0.17s, watcher rc2/native1.0s. Preserve the failed artifact,
+not a green claim. The dedicated-driver launch also records a missing-parent
+write refusal and a mistakenly continued dependent launch (zero tests); its
+parent/create/copy/readback repair is retained. Canonical private-TMP placement
+and then explicit rootdir still record0collected/1ERROR0.17s; no confined GREEN
+or312 receipt is claimed. Remaining duplicate probes are CANCELLED after Root's
+actual receiving passes on BOTH runtimes. All raw prefixes/changed inputs are
+retained in /tmp/gludd-v012-runner-binding-decision.md, fully read by Root.
+No skip, plugin disabling, assertion change or permission escalation is used.
+Root's canonical repo path is the successful changed context; no exact deeper
+cause beyond the observed ancestor traversal is inferred.
+
+Final five complete doc/contract/session owners pass104/5.51s, retaining
+/tmp/gludd-v012-hosted-unit3a-final-docs-311.xml. Separate Root strict scopes pass
+for all four changed test files; full Ruff runs
+inside the green operating owner. Native264 resource owners and fresh Node6/
+10.51s pass. The further native published-base snapshot still has Build pending,
+with21 successful/three active/one queued/one failed/two skipped and proof state
+failure. Its native current JSON owns the timestamp; no terminal or exact-successor
+hosted proof follows. All model contributors are terminal/quiescent before hooks.
+
+Source-only approval and focused checks never close S98.4. Disk97percent still
+exceeds95; the HumanTodo remains UNFILED after API refusal with host-space input
+pending. No unchanged capacity/admission retry, final candidate seal, full gate,
+exact-SHA hosted/deployment claim, master merge or release tag follows.

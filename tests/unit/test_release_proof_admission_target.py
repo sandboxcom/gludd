@@ -56,10 +56,12 @@ def _run(
     uv = "true"
     source = compose_makefile(ROOT / "Makefile")
     recipe = _recipe(source)
-    binding = "\n".join(
+    bindings = [
         line for line in source.splitlines()
         if line.startswith("release-proof-admission: override UV :=")
-    )
+    ]
+    assert len(bindings) == 1, "Expected exactly one production release-proof-admission UV binding"
+    binding = bindings[0]
     if native_focus:
         selected_uv = tmp_path / "selected-uv"
         selected_uv.write_text(
@@ -423,3 +425,50 @@ def test_real_owner_keeps_live_capacity_read_only_and_release_policy_fixed() -> 
     assert "GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1" in owner
     assert "RESOURCE_OWNERSHIP_WRITE=0" in owner
     assert "release-promote" not in owner and "git " not in owner
+
+
+@pytest.mark.parametrize("runner_binding_native_focus", [False, True])
+@pytest.mark.parametrize("runner_binding_kind", ["owned", "missing", "duplicate"])
+def test_admission_fixture_requires_one_real_binding_before_native_children(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    runner_binding_native_focus: bool, runner_binding_kind: str,
+) -> None:
+    """Require genuine production input before adding the fixture's selected UV."""
+    native_compose = compose_makefile
+    native_run = subprocess.run
+    declaration = "release-proof-admission: override UV := $(UV)"
+
+    def changed_source(path: Path) -> str:
+        source = native_compose(path)
+        assert source.count(declaration) == 1
+        if runner_binding_kind == "owned":
+            return source
+        replacement = "" if runner_binding_kind == "missing" else declaration + "\n" + declaration
+        return source.replace(declaration, replacement)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(sys.modules[__name__], "compose_makefile", changed_source)
+        if runner_binding_kind == "owned":
+            result = _run(
+                tmp_path, native_focus=runner_binding_native_focus, task="F12.1" if runner_binding_native_focus else "",
+            )
+            assert result.returncode == 0, result.stdout + result.stderr
+            assert (tmp_path / "phases.log").read_text().splitlines() == list(PHASES)
+            assert (tmp_path / "runtime-watch").exists()
+            assert (tmp_path / "Makefile").read_text().count(declaration) == 1
+            if runner_binding_native_focus:
+                assert (tmp_path / ".gludd/item-progress.json").exists()
+        else:
+            with pytest.raises(
+                AssertionError, match="exactly one production release-proof-admission UV binding",
+            ):
+                _run(
+                    tmp_path, native_focus=runner_binding_native_focus,
+                    task="F12.1" if runner_binding_native_focus else "",
+                )
+            assert not (tmp_path / "Makefile").exists()
+            assert not (tmp_path / "selected-uv").exists()
+            assert not (tmp_path / "phases.log").exists()
+            assert not (tmp_path / "runtime-watch").exists()
+            assert not (tmp_path / ".gludd").exists()
+    assert subprocess.run is native_run

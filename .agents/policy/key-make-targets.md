@@ -300,6 +300,10 @@ and public unexport precede startup shell expansion; unrelated goals retain thei
 inputs. The [cancellation record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#explicit-cancellation-with-literal-inputs-2026-10-21)
 retains whole-owner/native-bootstrap controls and Make-version research.
 
+The immutable ci-run-summary owner with CI_RUN_SUMMARY_SHARD_TIMINGS=1 retains the exact run/SHA, all eight shard source job IDs and pending/censored intervals. Its nonterminal diagnostic can supply the numeric job binding for failure context; final timing comparisons and proof still require terminal evidence. No search or ad hoc parser over a current JSON snapshot replaces the native authority.
+
+For production-binding mutation probes, the existing fixture extracts exactly one real declaration before fixture defaults or a child. Missing/duplicate declarations refuse; valid-one positives and the original opposite-binding native-Make controls remain. Existing text-forwarding source pins follow the complete raw-value/export/unexport/quoted-argv chain and retain atomic copy/move intent. The [hosted assertion record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#published-unit-3a-assertion-repair-2026-10-21) binds the actual failures, original cases and whole-owner acceptance.
+
 For a completed job whose sibling is still running, use ci-job-failure-context
 with its exact numeric run/job binding and a raw assertion pattern. Its contract
 example sets RUN=1 JOB=1 PATTERN=FAILED BEFORE=2 AFTER=4 MAX_MATCHES=5

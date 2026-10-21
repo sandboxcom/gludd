@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 138
+EXPECTED_FAMILY_COUNT = 140
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1846,6 +1846,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "importtime-missing-data-failure",
         "pipeline-observed-job-progress",
         "ci-cancel-request-contract",
+        "release-proof-production-runner-binding",
+        "line-edit-literal-forwarding",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2041,6 +2043,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_secrets_baseline_compaction.py "
         "tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_pipeline_status_job_progress.py "
         "tests/unit/test_ci_cancel_contract.py "
+        "tests/unit/test_release_proof_admission_target.py tests/unit/test_replace_lines_make_target.py "
+        "tests/unit/test_native_line_edit_targets.py "
         "tests/unit/test_status_heartbeat_terminal.py "
         "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py "
@@ -2416,6 +2420,10 @@ def test_hosted_failures_have_exact_early_routes(
      "test_original_native_queued_workflow_displays_its_active_gate_and_actual_steps"),
     ("ci-cancel-request-contract", "tests/unit/test_ci_cancel_contract.py",
      "test_default_and_explicit_plan_are_offline_and_preserve_proof"),
+    ("release-proof-production-runner-binding", "tests/unit/test_release_proof_admission_target.py",
+     "test_admission_probe_cannot_invent_production_runner_binding"),
+    ("line-edit-literal-forwarding", "tests/unit/test_replace_lines_make_target.py",
+     "test_replace_lines_target_forwards_all_documented_variables"),
 ))
 def test_pipeline_runtime_owners_keep_one_whole_route_before_fanout(
     promoted_family: str, owner_test_file: str, promoted_basic_test: str,
