@@ -218,6 +218,53 @@ def test_owned_process_inventory_spans_registered_roots_and_resource_roots() -> 
     assert processes[1]["task"] == "ci-shard-supervisor"
 
 
+@pytest.mark.parametrize("module_prefix", ("-m ", "-m"), ids=("spaced", "compact"))
+@pytest.mark.parametrize(
+    ("module_arguments", "expected_task"),
+    (
+        ("pytest tests/unit/test_main.py", "unit-tests"),
+        ("mypy scripts/tool.py", "typecheck"),
+        ("pytest scripts/task_watchdog.py", "pytest"),
+        ("mypy scripts/task_watchdog.py", "typecheck"),
+        ("mypy scripts/run_presentation_browser_tests.py", "typecheck"),
+        ("llama_cpp.server --port 12001", "local-inference"),
+        ("multiprocessing.spawn", "python-worker"),
+        ("general_ludd.cli daemon start", "e2e-daemon"),
+    ),
+    ids=(
+        "pytest", "mypy", "pytest-watchdog-audit", "mypy-watchdog-audit",
+        "mypy-browser-audit", "local-inference", "python-worker", "daemon",
+    ),
+)
+def test_process_inventory_preserves_python_module_argument_forms(
+    module_prefix: str, module_arguments: str, expected_task: str,
+) -> None:
+    """Both Python module argument forms preserve owned process visibility."""
+    processes = active_work_status._owned_processes_from_output(
+        f"101 1 /repo/gludd/.venv/bin/python {module_prefix}{module_arguments}",
+        repository_roots=(Path("/repo/gludd"),),
+        resource_roots=(Path("/tmp/gludd-resources/gludd-a1b2"),),
+    )
+
+    assert [process["pid"] for process in processes] == ["101"]
+    assert [process["task"] for process in processes] == [expected_task]
+
+
+@pytest.mark.parametrize(
+    "module_argument",
+    ("-mpytest-copy", "-mmypy-extra", "-mnotpytest", "-mllama_cpp.server-copy"),
+)
+def test_process_inventory_rejects_module_name_lookalikes(module_argument: str) -> None:
+    """Compact module syntax must retain complete tracked-name boundaries."""
+    processes = active_work_status._owned_processes_from_output(
+        f"101 1 /repo/gludd/.venv/bin/python {module_argument}",
+        repository_roots=(Path("/repo/gludd"),),
+        resource_roots=(Path("/tmp/gludd-resources/gludd-a1b2"),),
+    )
+
+    assert processes == []
+
+
 def test_owned_process_inventory_uses_path_boundaries() -> None:
     """A checkout-name prefix must not admit another project's worker."""
 

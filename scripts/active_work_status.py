@@ -133,7 +133,7 @@ def _task_label(command: str) -> str:
         r"(?:^|\s)(?:[^\s=]*/)?(?:task|agent)_watchdog\.py(?=\s|$)", command,
     )
     audit_execution = re.search(
-        r"(?:^|\s)(?:\S*/)?(?:pytest|-mpytest|mypy|detect-secrets|audit_coverage\.py)(?=\s|$)",
+        r"(?:^|\s)(?:\S*/)?(?:(?:-m)?(?:pytest|mypy)|detect-secrets|audit_coverage\.py)(?=\s|$)",
         command,
     )
     if watchdog_source is not None and (
@@ -250,7 +250,7 @@ def _is_tracked_command(command: str) -> bool:
             suffix = r"(?=[.\s]|$)"
         elif token == "make gate":
             suffix = r"(?=[-\s]|$)"
-        if re.search(rf"(?:^|\s)(?:[^\s=]*/)?{re.escape(token)}{suffix}", command):
+        if re.search(rf"(?:^|\s)(?:[^\s=]*/)?(?:-m)?{re.escape(token)}{suffix}", command):
             return True
     return False
 

@@ -167,6 +167,46 @@ controls provide that proof. [Coverage.py source selection](https://coverage.rea
 and [required environment substitution](https://coverage.readthedocs.io/en/7.13.4/config.html#environment-variables)
 own checkout binding. No coverage exclusions or custom source resolver are added.
 
+## Preserve attached Python module arguments (2026-10-21 UTC)
+
+Independent immutable7774..edd9 source review returns REQUEST CHANGES:
+the new command-word filter loses owned python -mpytest processes. Preserve
+/tmp/gludd-v012-repair-edd9a03-source-review.md and its external native witness,
+which compares both revisions and both spaced/attached forms:1FAIL/3PASS0.30s.
+That artifact approves no receiving, gate, CI, deployment or task completion.
+
+Add bounded positive controls for spaced/attached pytest, mypy, local inference,
+multiprocessing and daemon modules, plus complete-name negatives. The first
+Main replay retains5FAIL/13PASS1.30s/native2.5s in
+/tmp/gludd-v012-compact-module-red.log/XML. An optional attached -m in the existing
+complete-word matcher restores these forms without reverting directory matching.
+Extend the controls to audits that name real watchdog/browser scripts. A second
+RED retains2FAIL/22PASS1.04s/native2.0s: compact mypy is visible but gets the
+script's role. Preserve /tmp/gludd-v012-compact-module-label-red.log/XML.
+Recognize the same optional -m for both pytest and mypy in the existing audit-role
+regex; retain script/audit order and all ownership/ancestry conditions.
+
+The four complete active-work, resource-observability, snapshot and parameter-
+collision owners pass183 on3118.11s/native9.2s and3129.28s/native10.5s, with fatal
+warnings and zero skips/errors. Preserve
+/tmp/gludd-v012-compact-module-whole-3.11.log/XML and312 equivalent. Ruff,
+separate strict source/test scopes and explicit script docstrings pass.
+The original directory-spelling negatives, foreign/lookalike exclusions and
+tracked-only ancestry assertions remain unchanged. No new parser, process owner,
+observation cache, suppression or lower coverage threshold is introduced.
+
+The [Python module option](https://docs.python.org/3.11/using/cmdline.html#cmdoption-m)
+defines module execution; the pinned [CPython3.11.14 option parser](https://raw.githubusercontent.com/python/cpython/v3.11.14/Python/getopt.c)
+declares m with an argument and consumes attached text before the next argv
+element. This explains the compatibility requirement; native regression controls
+supply the project proof. The complete13-owner coverage checkpoint passes603/
+25.43s/native27.3s, measuring91.9line/88.1branch aggregate and all five complete
+files above75 for BOTH metrics. Preserve .gate-logs/coverage-20261021T051844Z.json,
+.gate-logs/coverage-v012-compact-module.json and
+/tmp/gludd-v012-compact-module-coverage.xml. The current checkout is still dirty;
+this is source acceptance, not a clean repair receipt. Guarded collection/commit
+and an immutable successor source decision remain separate.
+
 ## Hosted worker and document failures move into existing admission (2026-10-21 UTC)
 
 The first six-repair checkpoint total120 retains all114 original families plus six exact hosted
