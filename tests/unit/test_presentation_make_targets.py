@@ -304,41 +304,49 @@ def test_javascript_coverage_config_selects_whole_source_and_locked_native_tool(
 
 
 
-def _pages_validation_steps() -> list[dict[str, object]]:
+def _pages_job(job_name: str) -> dict[str, object]:
     """Use the existing mature YAML parser rather than inventing a workflow parser."""
     payload: object = yaml.safe_load((ROOT / ".github" / "workflows" / "pages.yml").read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     jobs = payload["jobs"]
     assert isinstance(jobs, dict)
-    validate = jobs["validate"]
-    assert isinstance(validate, dict)
-    steps = validate["steps"]
+    job = jobs[job_name]
+    assert isinstance(job, dict)
+    return cast(dict[str, object], job)
+
+
+def _pages_job_steps(job_name: str) -> list[dict[str, object]]:
+    steps = _pages_job(job_name)["steps"]
     assert isinstance(steps, list)
     assert all(isinstance(step, dict) for step in steps)
     return cast(list[dict[str, object]], steps)
 
 
 def test_pages_preserves_uninstrumented_matrix_before_chromium_coverage() -> None:
-    """Coverage is a separate required pass after both original engine contracts."""
-    steps = _pages_validation_steps()
+    """A separate dependent job preserves every original pass and its deadline."""
+    validation_steps = _pages_job_steps("validate")
+    coverage_job = _pages_job("javascript-coverage")
+    coverage_steps = _pages_job_steps("javascript-coverage")
+    assert coverage_job["needs"] == "validate"
+    assert not coverage_job.get("if")
+    assert not coverage_job.get("continue-on-error")
     acceptance = [
-        (index, step) for index, step in enumerate(steps)
+        step for step in validation_steps
         if "make presentation-browser-test" in str(step.get("run", ""))
-        and "PRESENTATION_BROWSER_JS_COVERAGE=0" in str(step["run"])
     ]
     coverage = [
-        (index, step) for index, step in enumerate(steps)
+        step for step in coverage_steps
         if "make presentation-browser-test" in str(step.get("run", ""))
-        and "PRESENTATION_BROWSER_JS_COVERAGE=1" in str(step["run"])
     ]
     assert len(acceptance) == len(coverage) == 1
-    original_index, original = acceptance[0]
-    coverage_index, instrumented = coverage[0]
-    assert original_index < coverage_index
+    original = acceptance[0]
+    instrumented = coverage[0]
+    assert "PRESENTATION_BROWSER_JS_COVERAGE=0" in str(original["run"])
     assert 'PRESENTATION_BROWSER_ENGINES="${{ matrix.browser }}"' in str(original["run"])
     assert "PRESENTATION_BROWSER_TIMEOUT=600" in str(original["run"])
     assert not original.get("if")
-    assert "matrix.browser == 'chromium'" in str(instrumented.get("if", ""))
+    assert not instrumented.get("if")
+    assert "PRESENTATION_BROWSER_JS_COVERAGE=1" in str(instrumented["run"])
     assert "PRESENTATION_BROWSER_ENGINES=chromium" in str(instrumented["run"])
     assert "PRESENTATION_BROWSER_TIMEOUT=600" in str(instrumented["run"])
     assert (
@@ -350,7 +358,7 @@ def test_pages_preserves_uninstrumented_matrix_before_chromium_coverage() -> Non
 
 def test_pages_coverage_prepares_pinned_existing_node_owner_before_use() -> None:
     """The coverage lane has no first-use download or floating Node action."""
-    steps = _pages_validation_steps()
+    steps = _pages_job_steps("javascript-coverage")
     setup = [
         (index, step) for index, step in enumerate(steps)
         if step.get("uses") == "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020"
@@ -388,7 +396,7 @@ def test_pages_coverage_prepares_pinned_existing_node_owner_before_use() -> None
 
 def test_pages_coverage_artifact_is_retained_on_success_and_failure() -> None:
     """Passing percentages remain reviewable rather than disappearing on success."""
-    steps = _pages_validation_steps()
+    steps = _pages_job_steps("javascript-coverage")
     retained = []
     for step in steps:
         options = step.get("with")
@@ -398,7 +406,8 @@ def test_pages_coverage_artifact_is_retained_on_success_and_failure() -> None:
     artifact = retained[0]
     assert str(artifact.get("uses", "")).startswith("actions/upload-artifact@")
     assert "always()" in str(artifact.get("if", ""))
-    assert "matrix.browser == 'chromium'" in str(artifact.get("if", ""))
+    assert not _pages_job("javascript-coverage").get("strategy")
+    assert artifact["if"] == "always()"
     options = artifact["with"]
     assert isinstance(options, dict)
     assert options["if-no-files-found"] == "error"

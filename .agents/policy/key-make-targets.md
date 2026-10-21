@@ -120,6 +120,14 @@ The pinned restoration recipe explicitly aligns VIRTUAL_ENV with the selected
 UV_PROJECT_ENVIRONMENT in both outer and child owners; use a fresh run identity
 only when restoration is actually needed.
 
+A cancelled hosted browser job needs its actual check-run annotation and raw
+context before a budget change. The existing ci-checkrun-anno helper can expose
+annotations, but its legacy retrieval exit0 grants no CI verdict. The
+[Pages feature record](../../docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#hosted-job-budget-and-required-ordering-2026-10-21-utc)
+records exact commands, the verified20-minute cancellation and dependency graph.
+The original JS0 matrix precedes separate ChromiumJS1; deployment requires both.
+Keep child deadlines distinct from the enclosing job budget.
+
 ### Admit and prove a release candidate
 
 First inspect the existing admission plan:

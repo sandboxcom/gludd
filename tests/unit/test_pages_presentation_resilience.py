@@ -56,8 +56,58 @@ def test_pages_matrix_diagnostics_are_unique_and_all_engines_gate_one_artifact()
     )
     assert upload["with"]["name"] == "gludd-pages-deck"
     assert upload["with"]["path"] == "docs/presentation/deck"
-    assert jobs["deploy"]["needs"] == "validate"
+    assert jobs["deploy"]["needs"] == ["validate", "javascript-coverage"]
     assert "always()" not in jobs["deploy"]["if"]
+
+
+def test_pages_coverage_has_one_original_bounded_pass_after_both_engines() -> None:
+    """The verified outer-job timeout must not consume two browser passes."""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    coverage = jobs["javascript-coverage"]
+    assert coverage["needs"] == "validate"
+    assert coverage["timeout-minutes"] == jobs["validate"]["timeout-minutes"] == 20
+    assert not coverage.get("if")
+    assert not coverage.get("strategy")
+    assert not coverage.get("continue-on-error")
+    steps = coverage["steps"]
+    commands = [step["run"] for step in steps if "run" in step]
+    owners = (
+        "make node-deps-sync", "make sync", "make vendor-presentation-assets",
+        "make deck-build", "make presentation-browser-install-deps",
+        "make presentation-browser-install ", "make presentation-browser-test",
+    )
+    positions = [next(index for index, command in enumerate(commands) if owner in command) for owner in owners]
+    assert positions == sorted(positions)
+    sync = commands[positions[1]]
+    for value in (
+        "DEPENDENCY_PROFILE_SET=ci", "DEPENDENCY_PROFILE_ENVIRONMENT=.venv",
+        "DEPENDENCY_PROFILE_PYTHON=3.11", "DEPENDENCY_PROFILE_VALIDATE_ONLY=0",
+    ):
+        assert value in sync
+    assert "PRESENTATION_VENDOR_VALIDATE_ONLY=1" in commands[positions[2]]
+    for index in positions[4:]:
+        assert "PRESENTATION_BROWSER_ENGINES=chromium" in commands[index]
+        assert "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers" in commands[index]
+        assert (
+            "PRESENTATION_BROWSER_OUTPUT="
+            "/tmp/gludd-presentation-js-coverage"
+        ) in commands[index]
+    for index in positions[4:6]:
+        assert "PRESENTATION_BROWSER_INSTALL_TIMEOUT=600" in commands[index]
+    assert "PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0" in commands[positions[4]]
+    assert "PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0" in commands[positions[5]]
+    assert "PRESENTATION_BROWSER_VALIDATE_ONLY=0" in commands[positions[6]]
+    assert "PRESENTATION_BROWSER_TIMEOUT=600" in commands[positions[6]]
+    assert "PRESENTATION_BROWSER_JS_COVERAGE=1" in commands[positions[6]]
+    assert not any(step.get("continue-on-error") for step in steps)
+
+
+def test_pages_jobs_pin_the_measured_runner_instead_of_migrating_implicitly() -> None:
+    """The hosted Ubuntu migration notice must not silently change native inputs."""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    for job in workflow["jobs"].values():
+        assert job["runs-on"] == "ubuntu-24.04"
 
 
 def test_pages_validates_development_and_pull_requests_before_upload() -> None:
@@ -94,8 +144,8 @@ def test_pages_uses_node24_setup_python() -> None:
     """The Pages lane must not emit GitHub's Node 20 deprecation warning."""
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert workflow.count(f"actions/setup-python@{SETUP_PYTHON_V7_SHA}") == 2
-    assert workflow.count("# v7.0.0 (node24)") == 2
+    assert workflow.count(f"actions/setup-python@{SETUP_PYTHON_V7_SHA}") == 3
+    assert workflow.count("# v7.0.0 (node24)") == 3
     assert "a26af69be951a213d495a4c3e4e4022e16d87065" not in workflow
 
 

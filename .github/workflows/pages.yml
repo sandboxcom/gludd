@@ -41,7 +41,7 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -55,20 +55,7 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0 (node24)
         with:
           python-version: '3.11'
-      - name: Set up pinned Node for JavaScript coverage
-        if: matrix.browser == 'chromium'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # existing pinned Node 26 owner
-        with:
-          node-version: '26'
-      - name: Install locked JavaScript coverage tools
-        if: matrix.browser == 'chromium'
-        run: >-
-          make node-deps-sync
-          NODE_DEPS_VALIDATE_ONLY=0
-          NODE_DEPS_NPM_USERCONFIG=/dev/null
-          NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1
-          NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org
-          NODE_DEPS_NPM_UPDATE_NOTIFIER=false
+
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Install locked dependencies
@@ -107,24 +94,7 @@ jobs:
           PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser
           PRESENTATION_BROWSER_TIMEOUT=600
           PRESENTATION_BROWSER_JS_COVERAGE=0
-      - name: Measure complete controller JavaScript coverage
-        if: matrix.browser == 'chromium'
-        run: >-
-          make presentation-browser-test
-          PRESENTATION_BROWSER_VALIDATE_ONLY=0
-          PRESENTATION_BROWSER_ENGINES=chromium
-          PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers
-          PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-js-coverage
-          PRESENTATION_BROWSER_TIMEOUT=600
-          PRESENTATION_BROWSER_JS_COVERAGE=1
-      - name: Retain complete controller coverage evidence
-        if: always() && matrix.browser == 'chromium'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # existing v6.0.0
-        with:
-          name: presentation-javascript-coverage-${{ github.run_attempt }}
-          path: /tmp/gludd-presentation-js-coverage
-          if-no-files-found: error
-          retention-days: 7
+
       - name: Retain presentation browser diagnostics
         if: failure() || cancelled()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
@@ -142,8 +112,80 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  deploy:
+  # Each complete browser pass retains its own original 20-minute job budget.
+  # Coverage runs only after both uninstrumented engines pass; see the feature record.
+  javascript-coverage:
     needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0 (node24)
+        with:
+          python-version: '3.11'
+      - name: Set up pinned Node for JavaScript coverage
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # existing pinned Node 26 owner
+        with:
+          node-version: '26'
+      - name: Install locked JavaScript coverage tools
+        run: >-
+          make node-deps-sync
+          NODE_DEPS_VALIDATE_ONLY=0
+          NODE_DEPS_NPM_USERCONFIG=/dev/null
+          NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1
+          NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org
+          NODE_DEPS_NPM_UPDATE_NOTIFIER=false
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Install locked dependencies
+        run: >-
+          make sync
+          DEPENDENCY_PROFILE_SET=ci
+          DEPENDENCY_PROFILE_ENVIRONMENT=.venv
+          DEPENDENCY_PROFILE_PYTHON=3.11
+          DEPENDENCY_PROFILE_VALIDATE_ONLY=0
+      - name: Verify vendored presentation assets
+        run: make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1
+      - name: Build exact Pages directory
+        run: make deck-build
+      - name: Install and launch-probe pinned browser system dependencies
+        run: >-
+          make presentation-browser-install-deps
+          PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0
+          PRESENTATION_BROWSER_ENGINES=chromium
+          PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers
+          PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-js-coverage
+          PRESENTATION_BROWSER_INSTALL_TIMEOUT=600
+      - name: Install pinned browsers
+        run: >-
+          make presentation-browser-install
+          PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0
+          PRESENTATION_BROWSER_ENGINES=chromium
+          PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers
+          PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-js-coverage
+          PRESENTATION_BROWSER_INSTALL_TIMEOUT=600
+      - name: Measure complete controller JavaScript coverage
+        run: >-
+          make presentation-browser-test
+          PRESENTATION_BROWSER_VALIDATE_ONLY=0
+          PRESENTATION_BROWSER_ENGINES=chromium
+          PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers
+          PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-js-coverage
+          PRESENTATION_BROWSER_TIMEOUT=600
+          PRESENTATION_BROWSER_JS_COVERAGE=1
+      - name: Retain complete controller coverage evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # existing v6.0.0
+        with:
+          name: presentation-javascript-coverage-${{ github.run_attempt }}
+          path: /tmp/gludd-presentation-js-coverage
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    needs: [validate, javascript-coverage]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       contents: read
@@ -152,7 +194,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout probe and workflow contracts

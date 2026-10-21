@@ -31,9 +31,14 @@ owner. Complete437PASS71.34s/native73.4s measures unchanged four-file
 91.5line/85.6branch, summarizer98.3/95.8; no release authority follows.
 Native terminal6ec observations now record open2/repaired10/resolved40/runs145:
 WebKit23+1PASS416.52/51.18s/native472.4s and all six Molecule jobs pass, but
-Pages Chromium is cancelled during JS1 and deploy skips. Cancellation cause
-still needs native annotation evidence; do not infer manual cancellation or
-alter budgets from the bare cancelled status. Runtime311 remains open.
+Pages Chromium is cancelled during JS1 and deploy skips. Native annotation now identifies the unchanged20m0s job limit, and actual
+Ubuntu24.04.5 context establishes its runner baseline. The
+[Pages feature decision](PRESENTATION_JAVASCRIPT_COVERAGE.md#hosted-job-budget-and-required-ordering-2026-10-21-utc)
+preserves both JS0 engines, then dependent JS1, original20-minute budgets,
+600s children,85/75 coverage and required deployment predecessors. Parsed-YAML
+controls fail7/39PASS before repair, then whole five-owner acceptance165PASS6.74s.
+Separate setup cost is explicit; peak concurrency stays2. Source-only review,
+actual successor hosted coverage and deployment remain pending. Runtime311 remains open.
 
 ## Problem and decision
 

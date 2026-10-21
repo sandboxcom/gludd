@@ -33,6 +33,69 @@ The current single-file scope makes the aggregate threshold stricter, while
 preserving the per-file contract for future expansion. No ignore pragmas or
 reduced floors are allowed. JSON, summary, LCOV and visible text reports remain.
 
+## Hosted job budget and required ordering (2026-10-21 UTC)
+
+Exact published6ec94ab4daf59e45b44720a44ffca19b2e7d0b23 Pages run39519193335
+ends CANCELLED. WebKit118958594081 passes the original23+1 cases in
+416.52+51.18s/native472.4s. Chromium118958593666 passes JS0, then cancels
+during JS1. Its native check-run annotation explicitly reports the job exceeded
+20m0s; the bare operation-canceled log alone did not establish that cause.
+Retain that failed run and open family8696e2300442bfa9c976296ceaae3cd691a31b38bee20b39c82d87250bf82b59.
+
+The original20-minute job combined setup with two complete Chromium passes.
+Each browser command retains its600-second bound; those child bounds do not
+reserve time inside the enclosing job. The repair keeps the original two-engine
+JS0 matrix, fail-fast:false, max-parallel:2 and20-minute jobs. A separate
+javascript-coverage job needs the entire validate matrix before executing the
+complete ChromiumJS1 pass with its own unchanged20-minute budget. Deployment
+needs both validate and javascript-coverage. Default success dependencies keep
+failures and cancellations blocking; no always condition or error waiver grants
+deployment. Only evidence retention uses always(), preserving error-on-missing
+coverage artifacts and7-day retention.
+
+The coverage job repeats the existing pinned checkout/Python/Node/uv setup,
+locked ci profile, native vendor verification/build and pinned Chromium install
+owners. Extra setup is the explicit cost of preserving the complete original
+passes and ordering. Peak hosted concurrency stays at twoJS0 jobs, then oneJS1
+job. No new runner service, observer, cache or local browser replay is needed
+for this workflow-only source change. Whole-controller bytes, original browser
+assertions,5s readiness,600s commands and85/75 line AND branch floors are unchanged.
+Exact-successor hosted execution, full gate and public deployment remain pending.
+
+The failed job's actual image is ubuntu-24.04, Ubuntu24.04.5,
+version20261012.334.1. Its annotation also warns of ubuntu-latest migration;
+the [official runner-image notice](https://github.com/actions/runner-images/issues/14748)
+has an evolving rollout schedule. All Pages jobs now pin the measured
+ubuntu-24.04 baseline. This pin avoids implicit distribution migration; it does
+not freeze every image package or claim the newer distribution is defective.
+
+Use the existing native owners for this retained failure:
+
+```text
+make ci-checkrun-anno CHECK=118958593666 PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python
+make ci-job-failure-context RUN=39519193335 JOB=118958593666 PATTERN='24.04' BEFORE=3 AFTER=3 MAX_MATCHES=2 CI_JOB_CONTEXT_VALIDATE_ONLY=0 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+```
+
+The legacy annotation helper's exit0 is retrieval-only and masks some client
+failures. Read the actual returned annotation; it never supplies CI success.
+Do not create another status producer or infer a repair from that exit status.
+
+Primary [GitHub job-timeout documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes)
+defines whole-job cancellation, and [needs documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds)
+defines required predecessor success. The firsthand
+[community cancellation discussion59873](https://github.com/orgs/community/discussions/59873),
+opened2023 and still receiving2026 reports, describes similar generic messages
+under different configured limits. It supports annotation-first investigation;
+it does not establish Gludd's cause or authorize a retry. Parsed-YAML regression
+controls first reject the old topology7FAIL/39PASS4.23s. The initial edit also
+retains6FAIL/40PASS4.32s including two obsolete helper-name errors; an intermediate
+duplicate-pass witness catches1FAIL/164PASS6.59s before source cleanup.
+Final complete five-owner acceptance passes165/6.74s, Ruff and strict2-file typing.
+The normal secret hook first refuses a public output-path test literal as
+high entropy; splitting the same literal preserves its exact assertion without
+an allowlist or suppression. These are focused source checks; fresh collection,
+source review and hosted acceptance retain their separate meanings.
+
 ## Measured clean53c1e21 image pipeline (2026-10-20)
 
 The serial Mermaid/image-completion product is integrated at
