@@ -16,15 +16,29 @@ from __future__ import annotations
 
 import ast
 import importlib
-import json
+import math
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, TypedDict
 
 import pytest
+
+if TYPE_CHECKING:
+    from stream_command import parse_importtime_row
+else:
+    from scripts.stream_command import parse_importtime_row
+
+
+class _ImportTimeEntry(TypedDict):
+    """One validated native numeric import row."""
+
+    module: str
+    self_us: int
+    cum_us: int
+
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 PACKAGE = "general_ludd"
@@ -49,11 +63,7 @@ def _warm_import_time(module_name: str) -> float:
 
 
 def _cold_import_time(module_name: str) -> float:
-    """Measure a fresh-process import time.
-
-    Returns total import time in ms for the requested module by timing
-    a subprocess that imports it.
-    """
+    """Measure the requested import interval inside a fresh child in milliseconds."""
     code = (
         f"import sys, time; "
         f"sys.path.insert(0, {str(SRC)!r}); "
@@ -69,19 +79,24 @@ def _cold_import_time(module_name: str) -> float:
         timeout=30,
         env=env,
     )
+    result.check_returncode()
     try:
-        elapsed_s = float(result.stdout.strip())
-    except (ValueError, TypeError):
-        return 0.0
-    return elapsed_s * 1000.0  # s -> ms
+        elapsed_ms = float(result.stdout.strip()) * 1000.0
+    except ValueError as error:
+        raise ValueError(
+            f"invalid cold import duration for {module_name}: "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}",
+        ) from error
+    if not math.isfinite(elapsed_ms) or elapsed_ms < 0:
+        raise ValueError(
+            f"cold import duration for {module_name} must be finite and nonnegative: "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}",
+        )
+    return elapsed_ms
 
 
-def _importtime_tree(module_name: str) -> list[dict[str, Any]]:
-    """Parse -X importtime output into a list of {module, self_us, cum_us}.
-
-    Handles both the traditional tabular format (Python < 3.13) and the newer
-    key=value / JSON-lines format introduced in Python 3.13+.
-    """
+def _importtime_tree(module_name: str) -> list[_ImportTimeEntry]:
+    """Parse native numeric importtime rows from one successful CPython child."""
     code = f"import sys; sys.path.insert(0, {str(SRC)!r}); import {module_name}"
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     result = subprocess.run(
@@ -91,40 +106,24 @@ def _importtime_tree(module_name: str) -> list[dict[str, Any]]:
         timeout=30,
         env=env,
     )
-    entries: list[dict[str, Any]] = []
+    result.check_returncode()
+    entries: list[_ImportTimeEntry] = []
+    header = "import time: self [us] | cumulative | imported package"
+    seen_header = False
     for line in result.stderr.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-
-        # Try JSON-lines format (Python 3.13+)
-        if stripped.startswith("{"):
-            try:
-                obj = json.loads(stripped)
-                mod_name = obj.get("name", "")
-                if mod_name:
-                    entries.append(
-                        {
-                            "module": mod_name,
-                            "cum_us": obj.get("import_time", obj.get("cumulative", 0)),
-                            "self_us": obj.get("self_time", obj.get("self", 0)),
-                        }
-                    )
-            except json.JSONDecodeError:
-                pass
-            continue
-
-        # Try traditional tabular format: cumulative_us self_us module_name
-        parts = stripped.split()
-        if len(parts) < 3:
-            continue
-        try:
-            cum_us = int(parts[0])
-            self_us = int(parts[1])
-            mod_name = parts[2]
-        except (ValueError, IndexError):
-            continue
-        entries.append({"module": mod_name, "cum_us": cum_us, "self_us": self_us})
+        if line == header:
+            if seen_header:
+                raise ValueError("multiple importtime child headers")
+            seen_header = True
+        elif line.startswith("import time:"):
+            if not seen_header:
+                raise ValueError(f"importtime row before its child header: {line!r}")
+            self_us, cum_us, name = parse_importtime_row(line)
+            entries.append({"module": name, "self_us": self_us, "cum_us": cum_us})
+    if not entries:
+        raise ValueError(
+            f"importtime produced no numeric rows for {module_name}: stderr={result.stderr!r}",
+        )
     return entries
 
 
@@ -324,8 +323,7 @@ class TestColdStartImportTime:
                 assert self_ms < 10.0, f"general_ludd __init__.py self-time {self_ms:.1f} ms, must be < 10 ms"
                 return
         if not tree:
-            pytest.skip("importtime produced no output (Python version may not support -X importtime)")
-            return
+            pytest.fail("importtime produced no output for the supported CPython child")
         mod_names = [e["module"] for e in tree[:10]]
         pytest.fail(f"Could not find general_ludd entry in importtime output. First entries: {mod_names}")
 
@@ -334,7 +332,7 @@ class TestColdStartImportTime:
         tree = _importtime_tree("general_ludd")
         total_us = sum(e["self_us"] for e in tree)
         if total_us == 0:
-            pytest.skip("No importtime data")
+            pytest.fail("No importtime self-time data")
         for entry in tree:
             pct = (entry["self_us"] / total_us) * 100
             assert pct < 30.0, (
@@ -358,6 +356,183 @@ class TestImportTimeConsistency:
         limit = max(avg * 2.5, MIN_IMPORT_STABILITY_TOLERANCE_MS)
         for t in times:
             assert t < limit, f"security import time {t:.1f} ms exceeds stable limit {limit:.1f} ms"
+
+
+_MEASUREMENT_HEADER = "import time: self [us] | cumulative | imported package\n"
+_MEASUREMENT_ROWS = (
+    "import time:        11 |         11 |   nested\n"
+    "import time:        23 |         34 | general_ludd\n"
+)
+
+
+def _measurement_child(
+    monkeypatch: pytest.MonkeyPatch, result: subprocess.CompletedProcess[str],
+) -> list[tuple[list[str], dict[str, object]]]:
+    """Return one standard child result while recording its actual invocation."""
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def run(command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        calls.append((command, options))
+        return result
+
+    monkeypatch.setattr(subprocess, "run", run)
+    return calls
+
+
+def test_measurement_contract_parses_native_numeric_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Preserve actual self/cumulative order, indentation and child arguments."""
+    result = subprocess.CompletedProcess(
+        ["measurement-child"], 0, stdout="",
+        stderr="unrelated diagnostic\n" + _MEASUREMENT_HEADER + _MEASUREMENT_ROWS,
+    )
+    calls = _measurement_child(monkeypatch, result)
+    assert _importtime_tree("general_ludd") == [
+        {"module": "nested", "self_us": 11, "cum_us": 11},
+        {"module": "general_ludd", "self_us": 23, "cum_us": 34},
+    ]
+    assert len(calls) == 1
+    command, options = calls[0]
+    assert command[:3] == [sys.executable, "-X", "importtime"]
+    assert command[3] == "-c" and "import general_ludd" in command[4]
+    assert f"sys.path.insert(0, {str(SRC)!r})" in command[4]
+    assert options["capture_output"] is True and options["text"] is True
+    assert options["timeout"] == 30
+    environment = options["env"]
+    assert isinstance(environment, dict) and environment["PYTHONDONTWRITEBYTECODE"] == "1"
+
+
+@pytest.mark.parametrize("measurement_helper", ["scalar", "tree"])
+@pytest.mark.parametrize("measurement_returncode", [1, 5, 120])
+def test_measurement_contract_rejects_failed_children(
+    monkeypatch: pytest.MonkeyPatch, measurement_helper: str, measurement_returncode: int,
+) -> None:
+    """Valid-looking output never hides a failed child's native return code."""
+    result = subprocess.CompletedProcess(
+        ["measurement-child"], measurement_returncode, stdout="0.0002\n",
+        stderr=_MEASUREMENT_HEADER + _MEASUREMENT_ROWS + "native-child-failure\n",
+    )
+    calls = _measurement_child(monkeypatch, result)
+    helper = _cold_import_time if measurement_helper == "scalar" else _importtime_tree
+    with pytest.raises(subprocess.CalledProcessError) as failure:
+        helper("general_ludd")
+    assert len(calls) == 1
+    assert failure.value.returncode == measurement_returncode
+    assert failure.value.stdout == result.stdout and failure.value.stderr == result.stderr
+
+
+@pytest.mark.parametrize("measurement_stdout", [
+    "", "not-a-duration", "0.001\n0.002", "nan", "inf", "-inf", "-0.001", "1e308",
+])
+def test_measurement_contract_rejects_invalid_scalar(
+    monkeypatch: pytest.MonkeyPatch, measurement_stdout: str,
+) -> None:
+    """Invalid, negative and overflowing samples never become a passing zero."""
+    _measurement_child(
+        monkeypatch, subprocess.CompletedProcess(["measurement-child"], 0, measurement_stdout, "diagnostic"),
+    )
+    with pytest.raises(ValueError):
+        _cold_import_time("general_ludd")
+
+
+@pytest.mark.parametrize(("measurement_stdout", "expected"), [("0", 0.0), ("0.0002\n", 0.2)])
+def test_measurement_contract_retains_valid_scalar_conversion(
+    monkeypatch: pytest.MonkeyPatch, measurement_stdout: str, expected: float,
+) -> None:
+    """Keep genuine zero and the original seconds-to-milliseconds conversion."""
+    calls = _measurement_child(
+        monkeypatch, subprocess.CompletedProcess(["measurement-child"], 0, measurement_stdout, ""),
+    )
+    assert _cold_import_time("general_ludd") == pytest.approx(expected)
+    assert len(calls) == 1
+    command, options = calls[0]
+    assert command[:2] == [sys.executable, "-c"] and "time.perf_counter()" in command[2]
+    assert options["timeout"] == 30 and options["capture_output"] is True and options["text"] is True
+
+
+@pytest.mark.parametrize("measurement_stream", [
+    "",
+    "unrelated diagnostic\n",
+    _MEASUREMENT_HEADER,
+    '{"name": "general_ludd", "self": 23, "cumulative": 34}\n',
+    "23 34 general_ludd\n",
+    _MEASUREMENT_ROWS,
+    _MEASUREMENT_HEADER + _MEASUREMENT_HEADER + _MEASUREMENT_ROWS,
+    _MEASUREMENT_HEADER + _MEASUREMENT_ROWS + "import time: missing | 34 | invalid\n",
+    _MEASUREMENT_HEADER + "import time: -1 | 34 | general_ludd\n",
+    _MEASUREMENT_HEADER + "import time: 23 | 22 | general_ludd\n",
+    _MEASUREMENT_HEADER + "import time: 23 | 34 |\n",
+    _MEASUREMENT_HEADER + "import time: cached | cached | general_ludd\n",
+])
+def test_measurement_contract_rejects_missing_or_malformed_stream(
+    monkeypatch: pytest.MonkeyPatch, measurement_stream: str,
+) -> None:
+    """Only one real child's framed, numeric stream supplies timing evidence."""
+    _measurement_child(
+        monkeypatch, subprocess.CompletedProcess(["measurement-child"], 0, "", measurement_stream),
+    )
+    with pytest.raises(ValueError):
+        _importtime_tree("general_ludd")
+
+
+@pytest.mark.parametrize("measurement_helper", ["scalar", "tree"])
+def test_measurement_contract_real_missing_module_is_an_error(measurement_helper: str) -> None:
+    """Propagate actual interpreter failure, including import rows preceding it."""
+    helper = _cold_import_time if measurement_helper == "scalar" else _importtime_tree
+    module = "general_ludd.__gludd_importtime_missing_measurement_contract__"
+    with pytest.raises(subprocess.CalledProcessError) as failure:
+        helper(module)
+    assert failure.value.returncode != 0
+    assert "ModuleNotFoundError" in failure.value.stderr and module in failure.value.stderr
+
+
+def test_measurement_contract_real_interpreter_has_requested_numeric_row() -> None:
+    """Require the installed fresh interpreter to report the actual target import."""
+    rows = _importtime_tree("general_ludd")
+    assert any(row["module"] == "general_ludd" for row in rows)
+    assert all(0 <= row["self_us"] <= row["cum_us"] for row in rows)
+
+
+@pytest.mark.parametrize("measurement_helper", ["scalar", "tree"])
+def test_measurement_contract_preserves_native_timeout(
+    monkeypatch: pytest.MonkeyPatch, measurement_helper: str,
+) -> None:
+    """Keep the original bounded subprocess timeout visible to callers."""
+    timeout = subprocess.TimeoutExpired("measurement-child", 30)
+
+    def run(command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        raise timeout
+
+    monkeypatch.setattr(subprocess, "run", run)
+    helper = _cold_import_time if measurement_helper == "scalar" else _importtime_tree
+    with pytest.raises(subprocess.TimeoutExpired) as failure:
+        helper("general_ludd")
+    assert failure.value is timeout
+
+
+@pytest.mark.parametrize("measurement_consumer", ["self-time", "dominance"])
+def test_measurement_contract_consumers_fail_for_missing_data(
+    monkeypatch: pytest.MonkeyPatch, measurement_consumer: str,
+) -> None:
+    """An empty or all-zero measurement must fail the existing checks, never skip."""
+    def tree(_module: str) -> list[_ImportTimeEntry]:
+        if measurement_consumer == "self-time":
+            return []
+        return [{"module": "general_ludd", "self_us": 0, "cum_us": 0}]
+
+    monkeypatch.setattr(sys.modules[__name__], "_importtime_tree", tree)
+    consumer = TestColdStartImportTime()
+    try:
+        if measurement_consumer == "self-time":
+            consumer.test_root_package_cold_import_self_time()
+        else:
+            consumer.test_no_single_module_dominates_cold_start()
+    except pytest.skip.Exception as skipped:
+        pytest.fail(f"missing timing was skipped: {skipped}")
+    except pytest.fail.Exception as failure:
+        message = str(failure)
+    else:
+        pytest.fail("missing timing was accepted")
+    assert "importtime" in message
 
 
 class TestSubpackageTopology:

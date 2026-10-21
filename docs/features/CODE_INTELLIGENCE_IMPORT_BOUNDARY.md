@@ -75,7 +75,11 @@ The earlier broader14-owner replay passes514 with2skips on BOTH runtimes
 expose a separate measurement defect: their helper cannot parse actual CPython
 output. Preserve those results and repair the helper; never call that run
 zero-skips or use missing timing as success. The package's changed owners pass
-without those skips. Full current consumer replay follows the measurement repair.
+without those skips. After [repairing the measurement consumers](IMPORT_TIME_MEASUREMENT_INTEGRITY.md),
+the complete15-owner current replay passes649 cases on31115.84s/native17.2s
+and31218.96s/native20.4s, fatal warnings/zero skips/errors;
+/tmp/gludd-v012-import-consumers-final-311.log/XML and312 equivalent. That owning
+record retains the exact complete scope and all32 new false-green REDs.
 
 Reproduce focused behavior with the installed canonical environment from SESSION:
 

@@ -99,6 +99,59 @@ thresholds and the full original denominator. Missing or all-zero attribution
 must fail. Real timing failures require measured source repair; they never
 justify a skip, changed denominator or relaxed limit.
 
+## Fail closed in the existing measurement consumers
+
+Thirty-six additive controls retain32FAIL/4PASS1.03s/native1.9s before changing
+the old helpers; /tmp/gludd-v012-importtime-consumer-red.log/XML. Assertions sit
+outside recorder callbacks and use standard CompletedProcess results. They cover
+actual numeric parsing/column order, native child errors1/5/120 with valid-looking
+output, invalid/negative/nonfinite/overflowing scalars, valid zero/conversion,
+missing/partial/duplicate/unframed/cached streams, actual missing-module failure,
+real successful target rows, timeout propagation and consumers' empty/zero data.
+
+Both helpers now check the child's original return code. The scalar helper
+validates the converted milliseconds, including overflow, and retains stdout/
+stderr in invalid-sample diagnostics. The attribution helper reuses the native
+numeric row function and TypedDict fields, requires one header and numeric rows,
+and refuses partial malformed data. The two missing-data skips become failures.
+Every original timing threshold, denominator, target lookup, fresh-child argv,
+source path, bytecode policy and timeout remains. No environment or dependency
+acquisition, test skip, fallback zero or second parsing implementation is added.
+
+Complete import-time and startup owners pass310/3.37s/native4.3s on311 with
+fatal warnings and zero skips/errors, including the original timing assertions;
+ /tmp/gludd-v012-importtime-consumer-green-311.log/XML. The broader supported-
+runtime replay retains every previous14 import/export/extractor/facts owner
+and adds the complete changed startup owner. Use this literal complete set:
+
+~~~text
+tests/unit/test_code_intelligence_import_boundary.py
+tests/unit/test_package_reexports.py
+tests/unit/test_init_files_deep.py
+tests/unit/test_code_intelligence.py
+tests/unit/test_code_intel_adversarial.py
+tests/unit/test_extractor_coverage.py
+tests/unit/test_introspect.py
+tests/unit/test_secure_xml.py
+tests/unit/test_traces_facet_no_leak.py
+tests/unit/test_routers_facts_deep.py
+tests/unit/test_router_to_thread_behavior.py
+tests/unit/test_router_to_thread_behavior_round2.py
+tests/unit/test_import_time_deep.py
+tests/unit/test_pytest_param_fixture_collisions.py
+tests/unit/test_runtime_startup_diagnostic.py
+~~~
+
+The native command is test-files with that complete TESTFILES set and
+PYTEST_ARGS='-q -W error -n 0 --tb=short', inside the existing run-watched owner
+with STALL_SECS=60/MAX_SECS=180, explicit fresh LOG/RUN_ID, WORK_ITEM_ID=S98.4
+and the same installed outer/child runtime. The complete15-owner replay passes
+649 on31115.84s/native17.2s and31218.96s/native20.4s, fatal warnings and zero
+skips/errors; /tmp/gludd-v012-import-consumers-final-311.log/XML and312 equivalent.
+This includes both formerly skipped original checks at their unchanged thresholds.
+These source acceptance bounds do not change original90/60 admission or final
+release proof. No product source changes after the separately accepted decoder.
+
 ## Primary and firsthand research
 
 [Python311](https://docs.python.org/3.11/using/cmdline.html#cmdoption-X) and
