@@ -33,6 +33,62 @@ The current single-file scope makes the aggregate threshold stricter, while
 preserving the per-file contract for future expansion. No ignore pragmas or
 reduced floors are allowed. JSON, summary, LCOV and visible text reports remain.
 
+## Preserve absent worker inputs at the native Make boundary (2026-10-21 UTC)
+
+Hosted Build39533219987 at published6161e102eee998bf94407457ad3dde5d0e4ad459
+fails unit-3a job119007635541 in all eight original literal-flag carrier controls:
+the child receives NPROC="" when the caller had no NPROC. The failing assertions
+remain unchanged. Unconditional export NPROC and export GLUDD_XDIST_WORKERS in
+make/00-foundation.mk materialize absent inputs as defined-empty environment
+values. Export each only when its native Make origin differs from undefined.
+Keep defined-empty, explicit environment and command-line values and the
+existing adaptive worker calculation. Do not override command-line precedence.
+
+The additional24 native controls vary both worker names, absent/empty/3, public
+coverage-flag origin and validate-only/apply routing. They call the original
+carrier-control body, retaining its full argv, exact double-space canary,
+keep-going refusal, engine count and eight inherited-value assertions. Only
+these fresh-caller fixtures clear MAKEFLAGS, MAKEOVERRIDES, MFLAGS and MAKELEVEL
+in their scoped monkeypatch. The original eight cases still inherit actual
+release NPROC=2/GLUDD_XDIST_WORKERS=2 carriers. Never globally clear transport
+variables in production or weaken the original inherited-value assertions.
+
+The controlled failing-first replay under actual release worker arguments retains
+8FAIL/24PASS12.18s/native13.5s in
+/tmp/gludd-v012-worker-export-controlled-red.log and its XML. Restoring the
+conditional export yields32PASS8.19s/native9.2s in
+/tmp/gludd-v012-worker-export-final.log and its XML. The earlier fresh-caller
+replay passed32; the intermediate release-carrier replay failed24/pass8 because
+the new fixture still inherited command-line overrides. Both immutable logs
+remain: /tmp/gludd-v012-worker-export-green.log and
+/tmp/gludd-v012-worker-export-release-carriers.log. The controlled red proves
+that isolating the new caller fixture still detects the production defect.
+
+Whole presentation-Make, parameter/fixture audit and three Make structure owners
+then pass172 cases with fatal warnings, no skips and NPROC=2/GLUDD_XDIST_WORKERS=2
+on both supported runtimes:31134.31s/native35.3s,31237.15s/native38.4s.
+Retain /tmp/gludd-v012-worker-owner-3.11.log and
+/tmp/gludd-v012-worker-owner-3.12.log plus their XML. These are focused source
+acceptance, not a full gate, JavaScript measurement, deployment or exact-SHA CI.
+
+The combined22-owner source replay, including the original Markdown link
+checks and the unchanged historical-corpus owner, passes745 cases on each runtime:
+311123.90s/native125.7s and312130.92s/native133.4s, fatal warnings/zero skips.
+Retain /tmp/gludd-v012-three-hosted-final-3.11.log and
+/tmp/gludd-v012-three-hosted-final-3.12.log plus XML. This is focused source proof;
+the final hosted run is failure, and all required exact-SHA/full-gate proofs remain.
+
+[GNU's environment contract](https://www.gnu.org/software/make/manual/html_node/Environment.html)
+and [recursive variable contract](https://www.gnu.org/software/make/manual/make.html#Variables_002fRecursion)
+explain environment initialization, explicit exports and command-line transport.
+A [firsthand September2021 help-make discussion](https://lists.gnu.org/archive/html/help-make/2021-09/msg00010.html)
+reproduces surprising origin/precedence under -e and identifies MAKEFLAGS as the
+command-line carrier. Direct page fetches timed out; indexed thread content and
+GNU contracts were retrieved. This supports the fixture isolation decision;
+the actual project red/green replay establishes this specific export defect.
+Use native origin conditionals compatible with the existing Make toolchain;
+no new parser, library, runner, cache or worker pool is needed.
+
 ## Hosted job budget and required ordering (2026-10-21 UTC)
 
 Exact published6ec94ab4daf59e45b44720a44ffca19b2e7d0b23 Pages run39519193335

@@ -342,10 +342,14 @@ override SYSTEM_PYTHON := /usr/bin/python3
 UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
-# Export xdist worker-count overrides so command-line NPROC=/GLUDD_XDIST_WORKERS= reach
-# the adaptive_test.py subprocess used by the gate.
+# Forward explicit worker overrides while preserving absent versus defined-empty inputs.
+# Command-line/environment values still reach adaptive_test.py and other native children.
+ifneq ($(origin NPROC),undefined)
 export NPROC
+endif
+ifneq ($(origin GLUDD_XDIST_WORKERS),undefined)
 export GLUDD_XDIST_WORKERS
+endif
 # Worker count: env GLUDD_XDIST_WORKERS overrides (CI sets it so the suite isn't run on a
 # single worker — a 4-vCPU runner's cpu//4=1 made the gate sit ~38min near the
 # 40min wall). Local default stays cpu//4. Accepts an int or "auto".

@@ -575,6 +575,27 @@ def test_native_make_routes_literal_javascript_coverage_flag_without_losing_carr
         }
 
 
+@pytest.mark.parametrize("worker_variable", ("NPROC", "GLUDD_XDIST_WORKERS"))
+@pytest.mark.parametrize("worker_value", (None, "", "3"))
+@pytest.mark.parametrize("flag_origin", ("command-line", "environment"))
+@pytest.mark.parametrize("validate_flag", ("0", "1"))
+def test_native_browser_preserves_unset_empty_and_explicit_worker_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker_variable: str,
+    worker_value: str | None, flag_origin: str, validate_flag: str,
+) -> None:
+    """Reuse every original carrier assertion under explicit caller environments."""
+    # This new matrix owns a fresh caller; the original cases retain ambient CLI carriers.
+    for make_transport in ("MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS", "MAKELEVEL"):
+        monkeypatch.delenv(make_transport, raising=False)
+    if worker_value is None:
+        monkeypatch.delenv(worker_variable, raising=False)
+    else:
+        monkeypatch.setenv(worker_variable, worker_value)
+    test_native_make_routes_literal_javascript_coverage_flag_without_losing_carriers(
+        tmp_path, coverage_flag="0", flag_origin=flag_origin, validate_flag=validate_flag,
+    )
+
+
 @pytest.mark.parametrize("flag_origin", ("command-line", "environment"))
 @pytest.mark.parametrize("literal_form", (
     "make-shell", "make-file", "shell-substitution", "backticks", "quote-breakout",
