@@ -14,9 +14,162 @@ that the branch cleared the deterministic, comparatively cheap failure classes
 listed below. Release evidence still requires the normal exact-head gate and
 hosted checks after integration.
 
+## Remaining hosted failures and native readiness repairs (2026-10-21 UTC)
+
+Terminal Build39533219987 at published6161 records6failed/20passed/4skipped
+jobs. Both gate jobs pass; failed canonical shards are unit-1a1, unit-1b,
+unit-1d, unit-2, unit-3a and unit-3b. Other and unit-1a2 pass. Native
+pipeline-status records failure/release_ready=false and ledger open6/repaired3/
+resolved44/runs148. Exact Pages39533219986 and Molecule39533220002 succeed;
+development deployment skips. These identities do not establish successor proof.
+
+Unit-1b119007635429 fails private protocol introspection. The test uses the
+existing locked public compatibility API while preserving exact members and
+behavior; [the protocol feature](SELF_IMPROVEMENT_RUNTIME_PROTOCOLS.md#public-protocol-introspection-on-supported-runtimes-2026-10-21-utc)
+retains alternatives and firsthand sources. Unit-3b119007635395 fails missing
+SESSION gate markers. [The snapshot feature](STATUS_SNAPSHOT_PORTABILITY.md#preserve-and-validate-the-native-handoff-region-2026-10-21-utc)
+owns validated/idempotent rendering and native regeneration of the retained FAIL.
+
+Unit-1a1 job119007635788 exposes three distinct classes. Its process inventory
+incorrectly includes601/602 because a parent directory contains pytest. Four
+new directory-spelling cases reuse the unchanged tracked-ancestry oracle and
+all fail before repair. Match complete tracked command words and watchdog
+script roles; directories cannot seed ownership or relabel the real pytest child.
+Native ancestry, registered/resource roots and diagnostic-only authority remain.
+
+The original SIGTERM test passes locally but the hosted failure retains a lock.
+Two deterministic real-child controls signal during native fsync and immediately
+before acquisition returns. Both terminate -15 with retained lock files before
+repair. Install a nonthrowing SIGTERM recorder before acquisition, inside the
+existing cleanup boundary; after acquisition, restore normal immediate unwinding
+and honor any recorded shutdown before readiness. A lease acquired during that
+window reaches the original release finally. Prior handlers, duplicate refusal,
+readiness, replaced-owner protection and all original assertions remain. This
+changes the existing CLI lifecycle, not a second supervisor or lease authority.
+
+The same shard's older worktree tests demand raw removal and branch deletion.
+The recipe check now requires the native retirement facade and explicit mode/
+ownership inputs. The lifecycle reuses the existing real-Git fixture/helper in
+ordinary Make and -e: actual selected removal, identical complete show-ref and
+exact ignored FAILED proof bytes in the native archive. Creation assertions stay
+intact. This conforms tests to retained-ref instructions; it grants no new cleanup
+eligibility and changes no production retirement policy.
+
+Retain /tmp/gludd-v012-remaining-hosted-red.log/XML:3FAIL/2PASS1.40s/native2.4s;
+the ancestry and original SIGTERM nodes passed in that local shape. Preserve
+/tmp/gludd-v012-native-boundaries-red.log/XML:6FAIL1.27s/native2.2s, four path
+cases plus both acquisition signals. The first four-owner repair replay retains
+1FAIL/143PASS8.52s/native9.5s: ownership is corrected but the watchdog label still
+matches a directory substring. Tighten that original script-role regex too;
+preserve /tmp/gludd-v012-native-repairs-whole-3.11.log/XML. Five whole owners
+then pass172 on31112.48s/native13.8s and31210.66s/native12.0s, fatal warnings/
+zero skips, in /tmp/gludd-v012-native-repairs-final-3.11.log/XML and312 equivalent.
+
+A broader13-owner coverage replay retains1FAIL/576PASS25.07s/native26.7s:
+native startup conservatively refuses a matching live or unlocated watchdog.
+It does not identify its PID. Two additive context controls fail2/1.16s/native2.2s
+before the same refusal is enriched with blocking PID/current PID/parent/CWD.
+No ownership condition or signal authority changes. Preserve
+/tmp/gludd-v012-watchdog-refusal-red.log/XML and the native coverage-files run
+20261021T042741Z-61313-fec65cd6. After both native lifecycle cohorts terminate,
+make ps shows only the existing project watchdogs29001/39922. Serialize subsequent
+native lifecycle cohorts; no source claim identifies the first refusal's cause.
+The receiving exact-SHA CI and full gate must still exercise that boundary.
+
+The next actual13-owner replay passes579/24.49s/native26.2s but coverage fails49%:
+unanchored */scripts patterns include deliberately modified fixture copies.
+Preserve /tmp/gludd-v012-native-readiness-serial-coverage.xml and native run
+20261021T043040Z-64611-92ce81e6. Bind config/coverage_v012_readiness.ini to the
+existing invocation's PWD through Coverage.py's required environment interpolation.
+Run from the selected checkout root. Missing PWD refuses configuration. The scope
+contains each of five complete real production files, with no omit, exclusion,
+partial-file slice or threshold reduction; fixture copies are not product source.
+This uses the existing coverage-files owner and its ordinary inherited environment,
+without a new Make target, parser, variable export, observer or cache.
+
+The bound replay passes579/24.92s/native26.9s. Native audit
+.gate-logs/coverage-20261021T043437Z.json measures91.9line/88.1branch aggregate;
+active-work85.5/83.2, snapshot98.4/95.0, task-watchdog95.3/90.5,
+watchdog-CLI92.3/92.9 and adapter-protocols100/100. All five whole files pass
+unchanged85aggregate/75each independently for BOTH metrics. Full report is
+.gate-logs/coverage-v012-native-readiness-bound-975e5ad.json;
+XML is /tmp/gludd-v012-native-readiness-bound-coverage.xml.
+This focused five-file scope is not global release coverage or full-gate proof.
+
+Ten new exact early routes retain10FAIL/6PASS1.25s/native2.2s before wiring in
+/tmp/gludd-v012-remaining-routes-red.log/XML. The current130-family manifest keeps
+all120 prior records/order/selectors, the first setuid selector, three2/1/1
+children, original90total/60quiet and21phases2850. Original exact family/index,
+full literal wiring and roster/mutation assertions remain. Each test module now
+uses one independent literal EXPECTED_FAMILY_COUNT=130; never derive it from the
+manifest under test. This removes repeated expected-count edits without losing
+the independent inventory oracle. Native documented promotion check passes its
+original four pins4/2.16s. Actual130-family bounded execution remains pending.
+
+Strict scopes expose10 older worktree-test and15 older snapshot-test errors.
+Complete return/fixture annotations and narrow list/string values preserve all
+original behavioral assertions; source/test strict checks and Ruff pass without
+suppression. Root also starts replacement typecheck pairs after yielded launch
+responses; all nine sessions are drained and native ps shows only existing
+watchdogs29001/39922. The guide now requires terminal results before replacement.
+No live-model or audit idleness is inferred from daemon-only output.
+
+The unchanged less-than2500 guard rejects the new BUGS incident at2540lines.
+Keep its dated synopsis as a compact index here and in the existing feature/
+guide records; retain the entire old Incident Log. The pre-index manual history
+is /tmp/gludd-v012-bugs-before-incident-index-975e5ad.md. No size limit or original
+history is relaxed. The compact SESSION likewise preserves its full prior manual
+history before native regeneration of the actual failed gate region.
+
+The first35-owner combined checkpoint passes1334/142.95s/native145.5s on311,
+fatal warnings and zero skips/errors; preserve
+/tmp/gludd-v012-all-hosted-repairs-3.11.log and XML. Native readback of the bounded
+SESSION is3184tokens, below the6500-token tool bound. That checkpoint precedes the
+following four additional invalid-region controls.
+
+Source review identifies accepted inline markers that would let rendering consume
+surrounding prose. Four explicit prefix/suffix cases retain4FAIL/7PASS1.06s/
+native2.0s in /tmp/gludd-v012-session-inline-red.log/XML. Require standalone marker
+lines through the same shared renderer; whole snapshot owner32PASS1.00s/native1.9s
+in /tmp/gludd-v012-session-inline-green.log/XML. Refine the new session-invalid-
+region-validation family from its first parameter to that exact whole11-case
+function, retaining130 families and every prior120 selector. No whole-file
+widening. One routing control retains1FAIL/15PASS1.11s/native2.0s before wiring
+in /tmp/gludd-v012-session-inline-route-red.log/XML; the full literal roster and
+wiring oracle change together. Actual original90/60 execution remains pending.
+
+The updated35-owner312 replay passes1338/142.92s/native145.5s with fatal
+warnings and zero skips/errors, including all four inline cases and refined
+routing. Preserve /tmp/gludd-v012-all-hosted-repairs-3.12.log and XML. The
+corresponding311 checkpoint remains1334 plus the later complete32-case snapshot
+owner; do not relabel it1338. First clean repair-owned receiving execution must
+cover the complete successor scope and five-file coverage. The refined native
+documented promotion checker passes all four original pins4/2.02s. Native
+270contracts,1161targets/0duplicates,9CI/12local parity and188checked/139unchecked
+ledger validation pass. No task tick, full gate, hosted or deployment follows.
+
+The current commit docstring guard scopes src and reports SKIP for script-only
+changes. The mandatory guide names the existing explicit lint-docstrings owner;
+that SKIP supplies no script-docstring acceptance.
+
+Final docstring checks expose seven older issues in the four touched source
+owners: five missing public function/method descriptions and two blank lines
+after docstrings. Supply the descriptions/remove only those blanks; the native
+complete docstring check passes. These final documentary edits and standalone-
+marker change still require clean receiving coverage and exact-SHA CI.
+
+Primary [Python signal rules](https://docs.python.org/3.11/library/signal.html#note-on-signal-handlers-and-exceptions)
+explain why throwing during acquisition can bypass cleanup registration.
+The firsthand2018 [CPython78667 report](https://github.com/python/cpython/issues/78667)
+describes resource-state corruption when asynchronous exceptions cross an acquire/
+finally gap; it is related history, not proof of this lease bug. The native signal
+controls provide that proof. [Coverage.py source selection](https://coverage.readthedocs.io/en/7.13.4/source.html)
+and [required environment substitution](https://coverage.readthedocs.io/en/7.13.4/config.html#environment-variables)
+own checkout binding. No coverage exclusions or custom source resolver are added.
+
 ## Hosted worker and document failures move into existing admission (2026-10-21 UTC)
 
-Current manifest total120 retains all114 original families plus six exact hosted
+The first six-repair checkpoint total120 retains all114 original families plus six exact hosted
 worker/link/B24 nodes. Unit-1d's two older raw-removal/branch-delete assumptions
 now exercise real native retirement, retaining refs and ignored failure proof.
 Two additional routing controls retain2FAIL1.08s/native2.0s before wiring. The
@@ -112,7 +265,7 @@ repair and GNU/firsthand research live in
 [the owning feature](PRESENTATION_JAVASCRIPT_COVERAGE.md#preserve-absent-worker-inputs-at-the-native-make-boundary-2026-10-21-utc).
 The first118-family admission manifest/first runtime child adds four exact nodes,
 with4FAIL before wiring and9PASS afterward, retaining all114 prior families.
-Current120-family routing adds unit-1d's real native B24 conformance without
+That120-family checkpoint adds unit-1d's real native B24 conformance without
 changing original90/60/2-1-1/21-phase limits. The whole Markdown owner must also
 replay: generic Markdown formatting and eight documentation architecture owners
 did not exercise these link assertions. No CI job, full gate, required deployment

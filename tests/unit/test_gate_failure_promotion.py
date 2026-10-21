@@ -19,6 +19,8 @@ import pytest
 import yaml
 from scripts.makefile_layout import compose_makefile
 
+# Independent expected inventory: never derive this value from the manifest under test.
+EXPECTED_FAMILY_COUNT = 130
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1837,6 +1839,16 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "repository-document-link-containment",
         "branch-discipline-selected-retirement",
         "branch-discipline-release-evidence-retention",
+        "protocol-method-only-public-members",
+        "session-gate-region-markers",
+        "session-invalid-region-validation",
+        "session-gate-region-idempotence",
+        "process-inventory-command-boundaries",
+        "watchdog-acquisition-sigterm",
+        "watchdog-native-ready-and-drain",
+        "agent-cleanup-native-delegation",
+        "agent-cleanup-retained-ref-retirement",
+        "watchdog-absence-refusal-context",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2099,7 +2111,27 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree "
         "tests/unit/test_branch_discipline_checks.py::"
         "TestWorktreeCleanupAfterMerge::"
-        'test_agent_cu_preserves_branch_and_release_evidence"' in runtime_compatibility_owner
+        "test_agent_cu_preserves_branch_and_release_evidence "
+        "tests/unit/test_execution_adapter_protocols.py::"
+        "test_core_protocols_do_not_claim_data_member_validation "
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
+        "test_session_md_has_markers "
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
+        "test_validation_refuses_invalid_session_structure_without_writes "
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
+        "test_repeated_native_rewrite_keeps_one_header_and_surrounding_handoff[absent] "
+        "tests/unit/test_active_work_status.py::"
+        "test_process_inventory_does_not_promote_resource_directory_names[pytest] "
+        "tests/unit/test_agent_watchdog_lifecycle.py::"
+        "test_native_sigterm_during_acquisition_releases_the_actual_lease[fsync] "
+        "tests/unit/test_agent_watchdog_lifecycle.py::"
+        "test_native_start_acknowledges_one_child_and_stop_drains "
+        "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeRecipeShape::"
+        "test_agent_cleanup_delegates_to_registered_native_retirement "
+        "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeLifecycle::"
+        "test_agent_cleanup_removes_worktree[False] "
+        "tests/unit/test_task_watchdog.py::"
+        "test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True]\"" in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
     assert "-n 0" in runtime_compatibility_owner
@@ -2179,7 +2211,7 @@ def test_profile_composition_failure_has_one_exact_native_admission_family() -> 
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
     assert payload["families"][110] == expected
-    assert len(payload["families"]) == 120
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     assert owner.count(expected["node"]) == 1
 
@@ -2198,7 +2230,7 @@ def test_ordinary_descendant_links_have_one_exact_native_admission_family() -> N
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
     assert payload["families"][111] == expected
-    assert len(payload["families"]) == 120
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     first_files = owner.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert first_files.count("tests/unit/test_clean_stale_resource_namespaces.py") == 1
@@ -2220,7 +2252,7 @@ def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None
         "full_gate_phase": "test",
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
-    assert len(payload["families"]) == 120 and payload["families"][112] == expected
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT and payload["families"][112] == expected
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     arguments = re.findall(r'TESTFILES="([^"]*)"', owner)
     assert len(arguments) == 3 and arguments[0].split()[0] == expected["node"]
@@ -2264,6 +2296,55 @@ def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None
             "tests/unit/test_branch_discipline_checks.py::"
             "TestWorktreeCleanupAfterMerge::test_agent_cu_preserves_branch_and_release_evidence",
         ),
+        (
+            "protocol-method-only-public-members",
+            "tests/unit/test_execution_adapter_protocols.py::"
+            "test_core_protocols_do_not_claim_data_member_validation",
+        ),
+        (
+            "session-gate-region-markers",
+            "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_session_md_has_markers",
+        ),
+        (
+            "session-invalid-region-validation",
+            "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
+            "test_validation_refuses_invalid_session_structure_without_writes",
+        ),
+        (
+            "session-gate-region-idempotence",
+            "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
+            "test_repeated_native_rewrite_keeps_one_header_and_surrounding_handoff[absent]",
+        ),
+        (
+            "process-inventory-command-boundaries",
+            "tests/unit/test_active_work_status.py::"
+            "test_process_inventory_does_not_promote_resource_directory_names[pytest]",
+        ),
+        (
+            "watchdog-acquisition-sigterm",
+            "tests/unit/test_agent_watchdog_lifecycle.py::"
+            "test_native_sigterm_during_acquisition_releases_the_actual_lease[fsync]",
+        ),
+        (
+            "watchdog-native-ready-and-drain",
+            "tests/unit/test_agent_watchdog_lifecycle.py::"
+            "test_native_start_acknowledges_one_child_and_stop_drains",
+        ),
+        (
+            "agent-cleanup-native-delegation",
+            "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeRecipeShape::"
+            "test_agent_cleanup_delegates_to_registered_native_retirement",
+        ),
+        (
+            "agent-cleanup-retained-ref-retirement",
+            "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeLifecycle::"
+            "test_agent_cleanup_removes_worktree[False]",
+        ),
+        (
+            "watchdog-absence-refusal-context",
+            "tests/unit/test_task_watchdog.py::"
+            "test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True]",
+        ),
     ),
 )
 def test_hosted_failures_have_exact_early_routes(
@@ -2279,7 +2360,7 @@ def test_hosted_failures_have_exact_early_routes(
         "full_gate_phase": "test",
     }
     assert [family for family in payload["families"] if family["id"] == family_id] == [expected]
-    assert len(payload["families"]) == 120
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     arguments = re.findall(r'TESTFILES="([^"]*)"', owner)
     assert len(arguments) == 3

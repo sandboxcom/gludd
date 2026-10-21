@@ -17,6 +17,8 @@ from scripts import makefile_layout
 
 from tests.unit.test_observed_command import _command, _current_status
 
+# Independent expected inventory: never derive this value from the manifest under test.
+EXPECTED_FAMILY_COUNT = 130
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 HELP = "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries"
@@ -130,6 +132,26 @@ ROSTER = (
     "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree",
     "tests/unit/test_branch_discipline_checks.py::"
     "TestWorktreeCleanupAfterMerge::test_agent_cu_preserves_branch_and_release_evidence",
+    "tests/unit/test_execution_adapter_protocols.py::"
+    "test_core_protocols_do_not_claim_data_member_validation",
+    "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
+    "test_session_md_has_markers",
+    "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
+    "test_validation_refuses_invalid_session_structure_without_writes",
+    "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
+    "test_repeated_native_rewrite_keeps_one_header_and_surrounding_handoff[absent]",
+    "tests/unit/test_active_work_status.py::"
+    "test_process_inventory_does_not_promote_resource_directory_names[pytest]",
+    "tests/unit/test_agent_watchdog_lifecycle.py::"
+    "test_native_sigterm_during_acquisition_releases_the_actual_lease[fsync]",
+    "tests/unit/test_agent_watchdog_lifecycle.py::"
+    "test_native_start_acknowledges_one_child_and_stop_drains",
+    "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeRecipeShape::"
+    "test_agent_cleanup_delegates_to_registered_native_retirement",
+    "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeLifecycle::"
+    "test_agent_cleanup_removes_worktree[False]",
+    "tests/unit/test_task_watchdog.py::"
+    "test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True]",
 )
 
 
@@ -460,7 +482,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 120
+    assert len(families) == EXPECTED_FAMILY_COUNT
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -678,7 +700,7 @@ def test_watchdog_handoff_exit_control_is_routed_once_in_third_child(tmp_path: P
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 120
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -695,7 +717,7 @@ def test_native_watchdog_start_control_is_routed_once_in_third_child(tmp_path: P
         "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 120
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
 
 
 def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(tmp_path: Path) -> None:
@@ -712,7 +734,7 @@ def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(
         "full_gate_phase": "test",
     }
     assert payload["families"][108] == expected
-    assert len(payload["families"]) == 120
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -737,7 +759,7 @@ def test_watchdog_unit_log_namespace_guard_is_the_exact_new_third_child_node(tmp
         "id": "watchdog-unit-log-namespace", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(manifest["families"]) == 120
+    assert len(manifest["families"]) == EXPECTED_FAMILY_COUNT
 
 
 def test_profile_composition_guard_is_once_in_third_child_with_original_bounds(tmp_path: Path) -> None:
@@ -783,7 +805,7 @@ def test_descendant_symlink_cleanup_is_selected_once_by_original_whole_owner(tmp
         "id": "ordinary-descendant-symlink-unlink", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(payload["families"]) == 120
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -803,7 +825,7 @@ def _assert_native_setuid_input_first_route(
         "id": "native-setuid-input-realization", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(families) == 120 and families[112] == expected
+    assert len(families) == EXPECTED_FAMILY_COUNT and families[112] == expected
     assert [family for family in families if family["id"] == expected["id"]] == [expected]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     first_files = rows[0]["files"]

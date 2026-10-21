@@ -999,6 +999,76 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_preserves_branch_and_release_evidence",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "protocol-method-only-public-members",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_execution_adapter_protocols.py::test_core_protocols_do_not_claim_data_member_validation",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "session-gate-region-markers",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_session_md_has_markers",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "session-invalid-region-validation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_validation_refuses_invalid_session_structure_without_writes",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "session-gate-region-idempotence",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_repeated_native_rewrite_keeps_one_header_and_surrounding_handoff[absent]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "process-inventory-command-boundaries",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_active_work_status.py::test_process_inventory_does_not_promote_resource_directory_names[pytest]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-acquisition-sigterm",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_agent_watchdog_lifecycle.py::test_native_sigterm_during_acquisition_releases_the_actual_lease[fsync]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-native-ready-and-drain",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_agent_watchdog_lifecycle.py::test_native_start_acknowledges_one_child_and_stop_drains",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "agent-cleanup-native-delegation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeRecipeShape::test_agent_cleanup_delegates_to_registered_native_retirement",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "agent-cleanup-retained-ref-retirement",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeLifecycle::test_agent_cleanup_removes_worktree[False]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-absence-refusal-context",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_task_watchdog.py::test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True]",
+      "full_gate_phase": "test"
     }
   ]
 }
