@@ -606,3 +606,76 @@ its historical viewBox-size/relayout problem is marked FIXED with an August2025
 landing. These retained reports justify preserving real geometry checks across
 engines; neither explains the2026cold timing or this local repeated-summary
 work. No currently unresolved upstream defect is inferred from those histories.
+
+### Serial layout and independent image completion — 2026-10-20
+
+The actual Pages failure is run39511340719/job118932830925 at published
+3b2fdc2274bf95aa5b7fd3a2d929286920d9daf1: WebKit cold5.614311s against the
+unchanged5s assertion,1FAIL/22PASS434.49s, observed437.9s. Preserve its failed
+source, trace and CI-family row. Earlier local timing does not clear it.
+
+Source03966b6d905cb8eb6dde118f3297f54993abb76f is reviewed and integrated as
+53c1e2168c1c084f236b85818a3595a13d3b44d3. Only presentation.js and the new
+seven-case test_mermaid_image_pipeline_runtime.py owner change. The original
+browser file is restored byte for byte from84199e3. Each public Mermaid call
+still finishes serially. Once its SVG passes every original check and is
+serialized into a live image, the next layout may start while that image
+completes through the original bounded readiness owner.
+
+Each completion keeps that chart's original10s deadline, catches rejection
+immediately, validates viewport/visual geometry and publishes its own state.
+Source stays visible until actual image success; failures remain readable
+while peers are pending. Join every completion before original batch summary,
+final visible-geometry validation and readiness. Keep fonts.ready, stage/scratch
+cleanup and refresh revalidation. No vendor, renderer, dependency, observer or
+cache is added. Original5s/600s bounds and all geometry assertions remain.
+
+The new production-function controls first retain5FAIL/2PASS, then114PASS/7.57s
+in the isolated source checkout. Source collection127736collected,
+24deselected/0errors precedes its normal guarded two-file commit. The same
+complete receiving five-owner cohort passes114/8.08s, observed9.0s/rc0.
+It includes the original SVG-readiness, Reveal-resilience, Pages-resilience and
+fixture-conformance owners. New cases cover3/28charts, reversed completion,
+immediate source/image-timeout/image-geometry failure with peers pending,
+peak one Mermaid call, unchanged individual deadlines, cleanup and refresh
+without rerender. Native syntax, Ruff and strict typing retain their scope.
+
+The complete unchanged receiving JS0 suites at clean53c1e21 pass:
+WebKit23desktop/304.43s plus1compact/43.98s, observed353.3s/rc0,
+cold1.500s/cached1.269s; Chromium23/311.17s plus1/45.77s,
+observed361.0s/rc0, cold1.432s/cached1.258s. The native ledger records WebKit
+family89b7005f locally repaired at the full53c1e21 SHA, not hosted-resolved.
+Separate complete ChromiumJS1 passes23/333.21s plus1/47.87s,
+observed388.5s/rc0, whole-controller94.17line/88.3branch under unchanged
+85aggregate/75each line AND branch floors. Source/runtime provenance and exact
+native logs are recorded in [JavaScript coverage](../features/PRESENTATION_JAVASCRIPT_COVERAGE.md).
+These distinct local timings do not establish a hosted latency improvement.
+
+The [public Mermaid API](https://mermaid.js.org/config/setup/mermaid/interfaces/Mermaid.html)
+returns SVG asynchronously. The firsthand May2023
+[mermaid-js/mermaid#4369](https://github.com/mermaid-js/mermaid/issues/4369)
+and maintainer replies distinguish the public queue from unsafe lower-API
+parallel calls. Keep the public API and serial Mermaid work. The July2021
+[mermaid-js/mermaid#2169](https://github.com/mermaid-js/mermaid/issues/2169)
+motivates measuring DOM/layout reads; it does not diagnose Gludd's failure.
+[Native image readiness](https://developer.mozilla.org/en-US/docs/Web/API/HTMLImageElement/decode)
+is asynchronous; the repair retains the existing load/error/poll owner instead
+of adding a replacement decoder. Root re-reads these primary reports.
+
+The startup-overlap experiment is removed: actual fonts.ready332–827ms,
+Reveal returned332ms/resolved839ms, first render905ms. The required font fence
+prevents useful startup overlap. Baseline profiles show28calls spanning925ms;
+the final image pipeline profile spans728ms, cold1.715s/cached1.315s.
+These are separate local diagnostics, not a statistically established gain.
+The final profile retains all28charts,1422getBBox reads/112ms and816rect reads/54ms;
+no reduced-read claim follows.
+
+Retain /tmp/gludd-v012-pages-cold-render-report.md, baseline2/3, overlap/font
+profiles and image-pipeline red/green/profile/original logs. The initial
+diagnostic carrier error(1ERROR/12.21s) is setup history, not rendering RED.
+The abandoned prototype's7FAIL/2PASS and116PASS are historical only.
+Temporary browser instrumentation is absent from integrated source.
+Source-only independent approval at53c1e21, local browser/c8 and repaired
+families do not close S98.4. Final capacity admission, combined acceptance,
+canonical gate, reviewed-head receipt, exact-SHA hosted/deployment proof and
+promotion remain pending. Do not retry unchanged capacity failure.

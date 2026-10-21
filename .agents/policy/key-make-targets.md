@@ -97,6 +97,16 @@ registered CI runtime first. Browser restoration is not capacity clearance.
 A final admission still over95% remains blocked; do not cycle cleanup/install or
 repeat unchanged final proof. No cleanup, ZDD, retention or coverage guard changes.
 
+A changed presentation controller needs the complete original JS0 acceptance
+for Chromium and WebKit, run serially, followed by the separate actual Chromium
+JS1 measurement. Keep both coverage flags explicit, the source frozen/clean,
+the original5s/600s bounds and whole-controller85/75 line AND branch checks.
+Extracted-function tests and diagnostic profiles supply different evidence.
+Use the [existing browser commands and provenance record](../../docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#codified-commands).
+The pinned restoration recipe explicitly aligns VIRTUAL_ENV with the selected
+UV_PROJECT_ENVIRONMENT in both outer and child owners; use a fresh run identity
+only when restoration is actually needed.
+
 ### Admit and prove a release candidate
 
 First inspect the existing admission plan:
@@ -120,7 +130,9 @@ cannot manufacture missing evidence. Use the installed canonical release runtime
 and the complete gate. Preserve
 85% aggregate and 75% per-file line and branch coverage, fatal warnings, ZDD,
 cleanup and exact-SHA promotion requirements. The native gate owns .gate-status
-and its authenticated evidence. Resume only through the existing authenticated
+and its authenticated evidence. Its canonical release path already requires a
+fresh all-shard Python3.11 attestation bound to the exact candidate SHA; keep
+that native producer rather than adding a parallel runtime/gate wrapper. Resume only through the existing authenticated
 resume owner after it verifies current source, index and policy; do not relabel
 historical green output as current proof.
 

@@ -33,6 +33,54 @@ The current single-file scope makes the aggregate threshold stricter, while
 preserving the per-file contract for future expansion. No ignore pragmas or
 reduced floors are allowed. JSON, summary, LCOV and visible text reports remain.
 
+## Measured clean53c1e21 image pipeline (2026-10-20)
+
+The serial Mermaid/image-completion product is integrated at
+53c1e2168c1c084f236b85818a3595a13d3b44d3. Its decision, immediate failure and
+deadline invariants, retained diagnostic profiles and long-lived practitioner
+research are in the [owning deck design](../presentation/DESIGN_revealjs_deck.md#serial-layout-and-independent-image-completion--2026-10-20).
+The original browser file and all5s/600s assertions remain unchanged.
+
+The receiving checkout stays clean/frozen through three separate serial owners:
+
+| Native owner | Complete original acceptance | Measured readiness |
+|---|---|---|
+| WebKitJS0 |23desktop/304.43s +1compact/43.98s; observed353.3s/rc0 |cold1.500s/cached1.269s |
+| ChromiumJS0 |23desktop/311.17s +1compact/45.77s; observed361.0s/rc0 |cold1.432s/cached1.258s |
+| ChromiumJS1 |23desktop/333.21s +1compact/47.87s; observed388.5s/rc0 |instrumented cold1.728s/cached2.150s |
+
+Native c8 reports94.17% line and88.3% branch:744/790lines,219/248branches,
+54/55functions,0skipped. Both independent85aggregate and75each-file line AND
+branch checks exit0. No omitted source, synthetic ranges, lower floor or
+latency-improvement claim follows. JS1 remains separate from JS0 timing proof.
+
+Actual source.json and runtime.json bind clean53c1e2168,
+tree5a806a9b8835e9e8d90a53f5e97f6112cdee7c91 and complete controller
+c3b53f288338a1747a86d04559cabff2f7bc843f6d656a11c8007da238780105.
+The native summary is
+/tmp/gludd-v012-chromium-js1-53c1e21/chromium/javascript-coverage/reports/coverage-summary.json.
+Runtime is Chromium153.0.8010.12, Node26.0.0/c8 12.0.0,
+Playwright1.63.0, pytest-playwright0.9.0 and Python3.12.15. Root reads all three
+native records before claiming these metrics.
+
+Retained automatic observer logs are under .gate-logs/observed:
+presentation-browser-webkit/20261020T233332Z-58588-023e4bfc.log,
+presentation-browser-chromium/20261020T233933Z-61300-eaf1b647.log and
+presentation-browser-chromium/20261020T234732Z-63823-e65c9917.log.
+The public ci-failure-repair owner records exactly WebKit family89b7005f
+locally repaired at full53c1e21 after the complete JS0 pass. Native ledger
+open0/repaired14/resolved37/runs142 does not mean hosted-resolved.
+
+Source-only independent approval is retained at
+/tmp/gludd-v012-candidate-53c1e21-source-review.md. Its nonblocking cleanup-test
+gap is separately repaired at e43a8ae4679eaecc6832b60bff82fe05e0e79b81 after
+3FAIL/8PASS then68PASS and fresh127723/127747collection,24deselected/0errors.
+That test-only successor does not relabel the browser receipts' exact SHA.
+Final capacity admission/full gate, combined acceptance, genuine integration
+receipt, exact-SHA hosted/deployment proof and promotion remain missing.
+Latest native disk is97%,7.1GiB available, above the unchanged95% ceiling.
+All seven release items stay open.
+
 ## Measured clean5b77f02 controller (2026-10-20)
 
 The repaired public JS1 target passes all23desktop cases/334.76s and the compact
@@ -90,7 +138,7 @@ preflight, before acceptance. It retains the original installer bounds and
 existing pinned downloads; no alternate driver, warning suppression or sync.
 
 ```text
-make run-watched CMD='make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0 PRESENTATION_BROWSER_ENGINES="chromium webkit" PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-v012-browser-restore-aligned-5b77f02 PRESENTATION_BROWSER_INSTALL_TIMEOUT=600 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never' OBSERVED_LABEL=v012-browser-prefetch-aligned RUN_ID=v012-browser-prefetch-aligned-5b77f02-20261020 STALL_SECS=60 MAX_SECS=1200 LOG=.gate-logs/observed/v012-browser-prefetch-aligned/v012-browser-prefetch-aligned-5b77f02-20261020.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=10 OBSERVED_RETAIN_RUNS=20 WORK_ITEM_ID=S98.4 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never
+make run-watched CMD='make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0 PRESENTATION_BROWSER_ENGINES="chromium webkit" PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-v012-browser-restore-aligned-5b77f02 PRESENTATION_BROWSER_INSTALL_TIMEOUT=600 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never' OBSERVED_LABEL=v012-browser-prefetch-aligned RUN_ID=v012-browser-prefetch-aligned-5b77f02-20261020 STALL_SECS=60 MAX_SECS=1200 LOG=.gate-logs/observed/v012-browser-prefetch-aligned/v012-browser-prefetch-aligned-5b77f02-20261020.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=10 OBSERVED_RETAIN_RUNS=20 WORK_ITEM_ID=S98.4 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never
 ```
 
 Use a fresh retained run identity for a genuinely needed later restoration.

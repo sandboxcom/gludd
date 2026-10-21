@@ -15,6 +15,71 @@ Reuse the existing Make owners, failure-promotion manifest, CI failure ledger,
 readiness checker, and observed gate. No additional scanner, runner, daemon,
 dependency resolver, or proof cache is introduced.
 
+## Current repair batch and repeatable evidence (2026-10-20)
+
+The published development3b2fdc2274bf95aa5b7fd3a2d929286920d9daf1 remains failed:
+Build39511340747 fails both exact EE manifest prerequisites, Pages39511340719
+fails WebKit cold5.614311s<5, and all six Molecule39511340718 jobs pass.
+Both build lanes stop before shard fan-out. The immutable timing summary keeps
+all eight intervals unknown/censored; this run establishes no hosted gain.
+
+Native local repair changes the actual inputs before another hosted run.
+9eee26ae6 refreshes the exact native EE digest/lock and preserves both identity
+assertions after127whole cases. fc0e24d makes existing publication check that
+exact served pin before the original90/60 runtime replay;7failing-first controls
+precede223PASS311 and91PASS312. 84199e3 binds hermetic Azure coverage to the
+original manifest outcome while retaining coverage after lint failure:
+RED1/5PASS, then133PASS. The owning
+[EE feature](ANSIBLE_EE_BASE_IMAGE_LIVENESS.md) retains exact digest, commands,
+primary status semantics, community history and missing image/hosted proofs.
+
+86e3b4b preserves native legacy job-log status and the original400-line tail:
+RED6/2PASS, intermediate103-case missing-help failure, then103PASS11.55s.
+The existing target's offline contract/help and real terminal fetch pass.
+Independent source review of53c1e2168 approves the six-commit delta against
+5b77f02, source only. It identifies a shallow cleanup-test proof gap.
+Root's separate e43a8ae4679eaecc6832b60bff82fe05e0e79b81 fixes that gap:
+three actual namespaced leak witnesses fail first3/8PASS4.09s, then the complete
+shortcut/fixture union passes68/8.62s, observed9.6s. Production trap/status/tail
+remain unchanged. Fresh collection is127723selected/127747collected,
+24deselected/0errors49.28s, observed54.6s/rc0. Retain the independent source
+decision at /tmp/gludd-v012-candidate-53c1e21-source-review.md and the
+[CI evidence feature](CI_FAILURE_LEDGER.md); this is not a canonical gate.
+
+The isolated Pages product03966b6 integrates at53c1e2168. Keep public Mermaid
+layout serial while already-validated image completions proceed independently
+with the original deadline, immediate rejection handlers and final all-image
+geometry fence. New controls first retain5FAIL/2PASS, then complete114PASS.
+The receiving complete cohort passes114/8.08s, native9.0s. Full uninstrumented
+WebKit23+1 passes353.3s, cold1.500/cached1.269; Chromium23+1 passes361.0s,
+cold1.432/cached1.258. Separate complete ChromiumJS1 passes388.5s and native
+whole-controller c8 measures94.17line/88.3branch, both85aggregate/75each checks0.
+The [deck design](../presentation/DESIGN_revealjs_deck.md#serial-layout-and-independent-image-completion--2026-10-20)
+and [coverage feature](PRESENTATION_JAVASCRIPT_COVERAGE.md) retain immutable logs,
+exact clean source/tree/controller provenance, rejected font/startup experiment
+and firsthand Mermaid API/layout findings. No diagnostic is hosted throughput.
+
+The native ledger now reports open0/repaired14/resolved37/runs142; manifest
+families have84199e3 receipts and WebKit has53c1e2168, awaiting hosted resolution.
+Root owns the normal guarded batched development push and native exact-SHA
+pipeline-status/ci-await observations. No force, master publication, second
+observer or handwritten current JSON is introduced. The mandatory Make guide
+now exposes complete JS0 before JS1 and explicit outer/child VIRTUAL_ENV.
+The canonical release path already requires a fresh all-shard Python3.11
+exact-SHA attestation, so no alternate runtime/gate owner is needed.
+
+Final whole guide/session/objective/Pages guidance acceptance passes56/3.02s;
+native Nodev26 compatibility passes6/9.29s, locked Markdown7files and universal
+file-line limits pass. No full-gate authority follows from these focused checks.
+
+Latest native disk97%,7.1GiB available still exceeds95%; do not repeat unchanged
+final admission/gate or cycle browser cleanup/install. Preserve six checkpoints,
+refs, locks, failed evidence and the unsubmitted capacity HumanTodo configuration
+(connection refused, no ID). After capacity actually changes, use the real
+release-proof-admission from the guide, then freeze once for source review,
+combined acceptance, canonical gate, genuine receipt and exact-SHA hosted and
+deployment proof before promotion. All seven S98.1-S98.7 items remain open.
+
 ## Repair-owned development evidence before an environment-only handoff (2026-10-20)
 
 The stop challenge correctly continued S98.4 after a clean-source handoff.
