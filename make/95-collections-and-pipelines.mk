@@ -325,7 +325,11 @@ codex-system-skill-read:
 list-files:
 	@[ -n "$(DIR)" ] || { echo "Usage: make list-files DIR=path"; exit 1; }
 	@case "$(DIR)" in /*|*..*) echo "Refusing path outside workspace: $(DIR)"; exit 1;; esac
-	@/usr/bin/find "$(DIR)" \( -path '*/.git' -o -path '*/.venv' -o -path '*/.mypy_cache' -o -path '*/.pytest_cache' -o -path '*/.gate-logs' \) -prune -o -type f -print | /usr/bin/sort
+	@LISTING="$$(/usr/bin/mktemp /tmp/gludd-list-files.XXXXXX)" || exit $$?; \
+	trap '/bin/rm -f "$$LISTING"' EXIT HUP INT TERM; \
+	if /usr/bin/find "$(DIR)" \( -path '*/.git' -o -path '*/.venv' -o -path '*/.mypy_cache' -o -path '*/.pytest_cache' -o -path '*/.gate-logs' \) -prune -o -type f -print > "$$LISTING"; then \
+		/usr/bin/sort "$$LISTING"; \
+	else RC=$$?; exit "$$RC"; fi
 
 export GLUDD_SEARCH_PATTERN := $(value PATTERN)
 export GLUDD_SEARCH_PATH := $(value SEARCH_PATH)

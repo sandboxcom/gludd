@@ -566,6 +566,7 @@ help:
 		"  replace-text-b64      Validate OLD_B64/NEW_B64 then replace exactly once" \
 		"  mkdir-p               Create an allowed workspace or /tmp/gludd-* directory" \
 		"  replace-lines         Replace an allowed file line range from NEW_FILE" \
+		"  list-files            List sorted relative DIR files; preserve native find failures and generated-directory pruning" \
 		"  worktree-state        Emit path-qualified current git worktree state as JSON" \
 		"  verify-state          Read working tree, HEAD, remote and exact-SHA CI with the selected project runtime; does not install dependencies" \
 		"  all-worktree-state    Emit path-qualified state for every registered worktree" \
