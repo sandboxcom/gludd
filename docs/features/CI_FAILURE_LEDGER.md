@@ -24,8 +24,9 @@ terminal failure -> open -> repaired -> resolved
 - `open` means the failure was observed but no successful local repair evidence
   has been recorded. Every open family blocks the next push.
 - `repaired` means a newer descendant commit passed an exact `make` evidence
-  target. A repaired family permits a descendant push, but it is not described
-  as hosted-green.
+  target, with no later admitted attempt invalidating that current receipt.
+  A repaired family permits a descendant push, but it is not described as
+  hosted-green.
 - `resolved` means a later hosted run at a different exact SHA completed the
   matching workflow/job successfully.
 - Observing the same terminal run again is an idempotent no-op. Different data
@@ -95,11 +96,47 @@ from and descend from the most recent failed SHA for every selected family.
 Selection admission now precedes the evidence child. Unknown or resolved
 families, an empty selection, the failed SHA itself, and a non-descendant repair
 SHA all refuse execution without launching evidence or changing the ledger.
-Mixed valid and invalid selections fail together. After a successful child,
-the owner still rechecks the exact clean checkout, revalidates the selection,
-and compares the original selected-family fingerprints under the existing
-private ledger lock before publishing receipts. Concurrent sibling observations
-and receipts remain intact.
+Mixed valid and invalid selections fail together. The owner then reacquires the
+existing private ledger lock and compares every selected-family fingerprint.
+Only after that complete admission does one atomic write move all selected
+families to open and remove current repair authority BEFORE evidence starts.
+The prior receipt is retained in repair_attempts as previous_repair, alongside
+the new unique attempt ID, candidate SHA, exact evidence command and start time.
+This is admitted-attempt history; terminal evidence stays with its native owner.
+
+A failed, timed-out, interrupted or failed-postcheck attempt therefore never
+restores old success. The admitted family remains open and blocks push unless
+newer independent evidence changes it; the failed owner never overwrites that
+newer authority. An interruption
+before the child starts also fails closed after admission. The lock covers short
+ledger transactions, never child execution. Invalid selection, malformed input,
+invalid checkout, pre-admission transaction refusal and validate-only planning
+launch nothing and do not change the ledger. If admission publication fails
+after atomic replacement, the persisted invalidation stays fail closed and no
+evidence starts; an IO error is not permission to restore old authority.
+
+After a successful child, the owner still rechecks the exact clean checkout,
+revalidates the selection and compares every POST-invalidation selected-family
+fingerprint under that same private lock before publishing receipts. The unique
+attempt identity makes even identical overlapping attempts conflict. A newer
+failed attempt cannot be overwritten by an older successful child. Multi-family
+publication remains atomic; unrelated observations and newer same-family hosted
+success/repair/failure evidence remain intact. The existing writer, three family
+statuses, 2MiB bound, private permissions and native push guard stay authoritative.
+
+| Boundary | Current repair authority | Required result |
+| --- | --- | --- |
+| Invalid or plan-only request | Existing receipt unchanged | No evidence starts |
+| Fully admitted attempt | Open; old receipt retained only in history | Push refuses while evidence runs |
+| Nonzero, timeout, signal or postcheck failure | No restoration of old receipt | Preserve native failure and newer independent evidence; repair actual input |
+| Successful child with changed selected family | No receipt from that child | Preserve newer evidence; refuse stale publication |
+| Successful child, exact clean SHA and unchanged admitted fingerprints | New repaired receipt | Descendant push may pass remaining guards |
+
+This lifecycle repairs the actual stale-receipt incident recorded in
+[the process-boundary feature](PIPELINE_STATUS_PROCESS_BOUNDARY.md#failed-new-repair-must-invalidate-older-authority-2026-10-21).
+A zero-open count from an older owner cannot override a known later failed
+attempt. Never manually migrate current JSON, infer hosted resolution, or claim
+a runtime speed improvement from an authority repair.
 
 Do not run an expensive admission first and then repeat it to obtain its repair
 receipt. Select that admission as `CI_REPAIR_EVIDENCE_TARGET` for the first
@@ -779,3 +816,122 @@ This is a control-plane ZDD change: serving processes are not restarted and
 active owners retain their loaded code. Normal source rollback retains failure
 history. Focused acceptance provides no full-gate, hosted, deployment or release
 authority and does not establish a throughput improvement.
+
+## Durable admitted-attempt authority (2026-10-21)
+
+The actual780145f runtime/ledger contradiction and read-only native guard
+reproduction are retained in the
+[process-boundary incident](PIPELINE_STATUS_PROCESS_BOUNDARY.md#failed-new-repair-must-invalidate-older-authority-2026-10-21).
+The confined proposal is /tmp/gludd-v012-repair-attempt-invalidation-decision.md.
+Root receives all four postimages through copy-file; no actual operational
+ledger or generated current observation is manually migrated.
+
+The native source change adds the pre-evidence locked fingerprint comparison,
+one existing atomic invalidation write, and post-invalidation fingerprints.
+The previous final clean-source/selection/fingerprint transaction remains.
+One fresh stdlib UUID distinguishes overlapping attempts even when command,
+SHA and timestamp are identical. Neither UUID nor history is proof authority.
+The open status and removed repair key are understood by the existing guard;
+no schema version, family status, writer, observer, cache or serving daemon is
+added. The lock is never held across evidence execution.
+
+Preserve these failing-first native artifacts:
+
+| Input | Actual result | Retained XML prefix /tmp/gludd-v012-repair-attempt-invalidation- |
+| --- | --- | --- |
+| Immutable780, initial authority controls | 15FAIL/1PASS,18deselected,1.12s | red.xml |
+| Immutable780, final-write/reconciliation controls | 10FAIL,34deselected,0.38s | additional-red.xml |
+| Immutable780, admission publication faults | 2FAIL,45deselected,1.41s | publication-red.xml |
+| Candidate source, original failed child byte assertions | 2FAIL,20deselected,0.78s | child-environment-red.xml |
+
+All234 original unit cases and18 original concurrency cases remain. The latter
+adds29 cases covering running/failed authority,124/signals/start errors,
+pre-child interruption, failed postchecks, eventual success, identical
+overlapping attempts, multi-family admission/publication, malformed history,
+before/after-replace faults, reconciliation and independent selected-family
+success/repair/failure preservation. Fresh signal fixtures drain only their
+own child, escalating on their bounded communicate timeout before re-raising.
+Cleanup checks the real temporary-file prefix and excludes only the stable
+native lock; an actual retained prefix-file negative witness must be rejected.
+
+Old byte-equality expectations conform only AFTER fully admitted execution:
+retain every pre-existing field and allow the explicit admission history and
+authority transition. Root strengthens the two original unit probes with a
+deep-copy projection removing only new history, then full prior-ledger equality.
+The native failed child cases compare the complete ledger with only selected
+authority/history changes allowed. Before-admission byte equality, invalid
+selection and all argv/environment/checkout assertions remain. The original22
+child cases keep their open-family inputs; four additive prior_repair cases
+exercise old receipts on both success and failure.
+
+The confined complete366-case set passes on311/9.55s and312/13.09s, zero
+skips/errors, before receiving. Root's canonical receiving scope is the SAME
+nine COMPLETE owners:
+
+~~~text
+tests/unit/test_ci_failure_ledger.py
+tests/unit/test_ci_failure_ledger_concurrency.py
+tests/unit/test_ci_repair_child_environment.py
+tests/unit/test_pytest_param_fixture_collisions.py
+tests/unit/test_pipeline_status_exact_sha.py
+tests/unit/test_pipeline_status_inprocess_ledger.py
+tests/unit/test_status_heartbeat_terminal.py
+tests/unit/test_proof_observations.py
+tests/unit/test_release_readiness.py
+~~~
+
+Through run-watched/test-files, serial pytest, fatal warnings and focused240/60:
+311 passes704/47.16s/native48.6s;312 passes703/45.55s/native46.9s with ONE
+unchanged canonical311-only skip. Retain
+/tmp/gludd-v012-repair-attempt-receiving-{311,312}.log/XML. A separate exact-node
+312 -rs diagnostic confirms the original release-readiness worktree check
+requires the311 toolchain; its XML is
+/tmp/gludd-v012-repair-attempt-readiness-runtime-skip.xml. That check passes in
+the full311 receiving replay. No skip condition or assertion is relaxed.
+
+Canonical Ruff passes all four changed code files; strict source and each of
+three test scopes pass separately. Explicit script docstring and native
+tracked-file line guards pass. Root's registered whole-file coverage uses:
+
+~~~console
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_ci_failure_ledger.py tests/unit/test_ci_failure_ledger_concurrency.py tests/unit/test_ci_repair_child_environment.py' COVERAGE_CONFIG=config/coverage_ci_failure_ledger.ini COVERAGE_REPORT=.gate-logs/coverage-ci-repair-attempt-invalidation.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=240 OBSERVED_RETAIN_RUNS=20 WORK_ITEM_ID=S98.4 NPROC=2 GLUDD_XDIST_WORKERS=2 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+All307core cases pass10.16s/native12.0s with no skips/errors. The unchanged
+profile measures the complete single canonical source file at96.9line/93.8branch,
+349/372branches. Audit .gate-logs/coverage-20261021T102745Z.json has passed:true,
+pytest_exit_code:0, one file and zero below75 BOTH; source JSON is the report
+above. Coverage's Combined20files/skipped52 describes data fragments, not test
+skips. These focused metrics are not global gate coverage or release acceptance.
+
+[Official FileLock documentation](https://py-filelock.readthedocs.io/en/latest/)
+supports the existing bounded context manager. The
+[Python311 uuid4 API](https://docs.python.org/3.11/library/uuid.html#uuid.uuid4)
+provides mature attempt distinction without a dependency. The firsthand
+[file-locking discussion begun in2009](https://stackoverflow.com/questions/489861/locking-a-file-in-python),
+updated2024, records portability, stale markers and flush/truncation hazards
+in custom locking. Reuse the existing FileLock and fsync/atomic writer; no
+forum implementation is copied. Application inference: process exclusion while
+a lock is held cannot represent durable invalidation after it is released, so
+the invalidation must be committed before evidence starts.
+
+This repairs the existing fail-closed proof rule rather than introducing a new
+permission layer. New invocations use the source; serving processes need no
+restart and active owners retain their loaded code. Normal source rollback
+preserves ledger history; existing guarded review/tests still apply. No TS
+enforcement plugin is edited. Original selectors/order/2-1-1,90/60,
+136families/21phases2850,85/75 BOTH, cleanup/retention and ZDD remain unchanged.
+Normal commit/fresh collection, independent exact clean-SHA source review,
+FIRST original receiving receipts, full gate, hosted and deployment proof remain
+separate. The real failed311 prerequisite still blocks publication until those
+native owners supply the required successor evidence.
+
+Final receiving operating checks include eight complete documentation/contract/
+guardrail owners and pass235/92.42s/native93.6s, zero skips/errors under fatal
+warnings. Retain /tmp/gludd-v012-repair-attempt-operating-final.log/XML.
+The existing guardrail owner includes native repository collection, lint and
+Ansible syntax; its terminal pass is focused harness acceptance, not full gate.
+Seven changed documents pass locked Markdown27ms. The native six-pin checker
+passes6/1.66s with136families/21phases2850 and full_gate=gate/required:true.
+Native disk remains97percent/7.1GiB free after coverage: final admission is still
+blocked, with no unchanged cleanup/final-gate retry.

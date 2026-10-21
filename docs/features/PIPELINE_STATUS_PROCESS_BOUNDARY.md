@@ -605,3 +605,99 @@ on each runtime in two bounded cohorts. Unchanged seven-file coverage passes
 419/103.76s/native105.5s at96.5line/91.4branch, all files above75 BOTH.
 No original successor90/60, independent clean-SHA source approval, hosted,
 full-gate or deployment receipt is inferred from these focused measurements.
+
+## Failed new repair must invalidate older authority (2026-10-21)
+
+Normal780145fc565f193afb89ec2225dd0dd3fd8d5539 commits the typed native
+inventory change with128098selected/128122collected,24deselected, zero collection
+errors47.42s/native52.6s. Independent SOURCE ONLY approval versus exactc0a4bf5
+is retained in /tmp/gludd-v012-repair-780145f-source-review.md. Four genuine
+local commits remain unpublished. The separate native pinned EE availability
+check passes mode0/0.4s against the unchanged exact digest; it is not transport,
+runtime-family, gate or deployment proof.
+
+Both FIRST original successor executions are repair-owned and serialized at the
+same clean780145f SHA, with unchanged selectors/order, three children,2/1/1 and
+90total/60quiet limits:
+
+- Python312 passes main2079/64.13s, freshHELP1/0.69s and tail11/8.35s.
+  All2091pass/native77.6s/rc0; CI_FAILURE_REPAIR_RECORDED binds the full SHA and
+  exact312 family. Retain /tmp/gludd-v012-runtime-780145f-312.log and native
+  v012-runtime-780145f-312-20261021.
+- Python311 passes main2079/71.03s and freshHELP1/0.66s. All eleven tail nodes
+  print PASS, including the final lock-requirement node, but pytest supplies no
+  terminal summary/exit before the watcher times out. Native observed-status
+  records timed_out/active:false/exit124/elapsed90.528s,
+  termination_reason=max-runtime-timeout, quiet0.622s and trace_path:null.
+  Enclosing repair/Make returns2 and records NO new311 receipt. Retain
+  /tmp/gludd-v012-runtime-780145f-311.log and native
+  v012-runtime-780145f-311-20261021. Passing markers are not terminal2091 proof.
+
+No assertion failure or worker trace is recorded. The last visible node is not
+an attributed cause; neither parent cumulative timings nor elapsed-time changes
+identify child CPU, cold startup or capacity clearance.
+
+After that actual311 failure, native ci-failure-status nevertheless returns0
+with open0/repaired11/resolved42/runs154. The existing _command_repair runs
+evidence and raises on nonzero exit BEFORE any ledger mutation. guard_push
+accepts an ancestral repaired SHA, so311's older successful5b25 receipt remains
+current authority. One actual read-only native guard reproduction then runs
+ci-failure-push-guard with the real ledger, branch development, explicit full
+780145fc565f193afb89ec2225dd0dd3fd8d5539 HEAD and validate-only0. It prints
+CI_FAILURE_PUSH_GUARD_PASS/exit0 in0.162s despite that later failed311 watcher.
+Main has only manual documentation edits at this observation; the repair-owner
+source is still unchanged. This is a fail-open lifecycle gap, not clean-source,
+transport or hosted authority. No push occurs. Root blocks publication despite
+the zero-open count and does not manually modify the actual ledger or generated
+current observations.
+
+The concrete repair belongs in that same private-lock/atomic-writer owner:
+fully admit the exact clean selected attempt first, then durably invalidate old
+current authority before evidence starts. Preserve the old receipt within non-authoritative admitted-attempt history.
+The existing evidence owner retains terminal outcomes; an interrupted attempt
+must not fabricate a result. Running, failed, timed-out,
+interrupted or failed-postcheck attempts must not reuse the old receipt to pass
+the push guard. Validate-only, invalid selection and prelaunch refusal remain
+nonmutating. An actual successful clean exact-SHA attempt may restore repaired
+only after the existing final selected-family freshness/concurrency fence;
+unrelated or newer evidence must survive. No second observer/cache, status
+service, process supervisor or ledger writer is needed.
+
+The source/test proposal is confined to /tmp under task-spec
+ci-repair-attempt-invalidation-780145f. Failing-first CLI, ledger and guard
+controls, complete owner acceptance, whole-file85/75 BOTH coverage and normal
+commit guards are still required before integration claims. This is a
+proof-authority fix, not a measured timeout-performance repair or permission to
+repeat unchanged780145f. Source review and local receipt never replace hosted
+success, deployment acceptance or any S98 completion proof.
+
+One additional timing hypothesis is explicitly declined: the earlier parent
+profile's75 TOML loads/2.902s occur in the dependency-profile TEST's own
+selected-profile assertion loop and direct stdlib tomllib _load(uv.lock).
+That is not demonstrated redundant production IO. Keep its full lock matrix,
+direct parser checks and original assertions; no production parser/cache
+change or test rewrite follows from that profile. The existing production
+profile reader already snapshots its own text. The earlier declined lazy
+exports, UV fixtures and full AST inventory remain declined for their recorded
+measured reasons.
+
+Canonical receiving of the authority repair subsequently passes704 on311 and
+703 plus one unchanged311-only skip on312; registered whole-ledger coverage
+passes307 at96.9line/93.8branch above85/75 BOTH. The
+[owning repair record](CI_FAILURE_LEDGER.md#durable-admitted-attempt-authority-2026-10-21)
+retains exact full owners, original-input preservation, raw REDs, research,
+native audit, cleanup negative witness and separate commit/original-proof limits.
+This does not invalidate the actual failed780 watcher or authorize transport.
+
+A separate current311 eleven-tail diagnostic runs the SAME original eleven
+nodes, serial parent, fatal warnings and native test-files-cprofile under90/60.
+It passes11/10.93s/native12.1s/rc0; retain
+/tmp/gludd-v012-tail-after-inventory-profile-311.log/XML and
+.gate-logs/test-files-cprofile/profile-6755-1763df618bd02835/report.txt.
+The10.672-second process-local parent profile records519subprocess.run/4.535s,
+271receipt Git calls/1.942s and14prepare_inputs/2.361s. The test's75TOML
+loads consume1.971s. Historical focus and finalization calls consume2.832s and
+2.679s; teardown rows round to0.00s. Cumulative rows overlap, instrumentation
+adds cost, and child CPU/cold start remain unobserved. This changed diagnostic
+workload records no runtime-family receipt and does not reverse the actual
+outer311 timeout. It justifies neither a teardown cause nor a new optimization.

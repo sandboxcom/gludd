@@ -199,11 +199,19 @@ def _native_fixture(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("returncode", [0, 9])
 @pytest.mark.parametrize("explicit_child_ledger", [False, True])
+@pytest.mark.parametrize("prior_repair", [False, True])
 def test_native_make_repair_detaches_owner_inputs_but_preserves_explicit_child_policy(
-    tmp_path: Path, returncode: int, explicit_child_ledger: bool,
+    tmp_path: Path, returncode: int, explicit_child_ledger: bool, prior_repair: bool,
 ) -> None:
     path = tmp_path / "owner-ledger.json"
     families = _seed(path)
+    if prior_repair:
+        previous = owner.read_ledger(path)
+        owner.record_repair(
+            previous, [families["selected"]], repair_sha=REPAIR_SHA, evidence="make previous-evidence",
+            recorded_at="previous-success", is_ancestor=lambda _old, _new: True,
+        )
+        owner.write_ledger(path, previous)
     before = path.read_bytes()
     _native_fixture(tmp_path)
     child_ledger = tmp_path / "explicit-child-ledger.json"
@@ -247,8 +255,27 @@ def test_native_make_repair_detaches_owner_inputs_but_preserves_explicit_child_p
         assert child["CI_FAILURE_REPOSITORY"] == "sandboxcom/preserved"
         assert child["CI_REPAIR_UNRELATED"] == "not an owner input"
     persisted = owner.read_ledger(path)
+    original = json.loads(before)
+    assert persisted["runs"] == original["runs"]
+    assert persisted["families"][families["sibling"]] == original["families"][families["sibling"]]
+    selected = persisted["families"][families["selected"]]
+    assert len(selected["repair_attempts"]) == 1
+    attempt = selected["repair_attempts"][0]
+    if prior_repair:
+        assert attempt["previous_repair"] == original["families"][families["selected"]]["repair"]
+    else:
+        assert "previous_repair" not in attempt
+    assert attempt["sha"] == REPAIR_SHA
+    assert attempt["evidence"] == shlex.join(["make", "evidence-probe", *evidence_vars])
+    assert attempt["started_at"] and len(attempt["id"]) == 32
     if returncode:
-        assert path.read_bytes() == before
+        expected = json.loads(before)
+        expected_selected = expected["families"][families["selected"]]
+        expected_selected["status"] = "open"
+        expected_selected.pop("repair", None)
+        expected_selected["repair_attempts"] = selected["repair_attempts"]
+        assert persisted == expected, "failed evidence may change only selected admission authority/history"
+        assert "repair" not in selected
         assert {family["status"] for family in persisted["families"].values()} == {"open"}
     else:
         assert persisted["families"][families["selected"]]["repair"]["sha"] == REPAIR_SHA

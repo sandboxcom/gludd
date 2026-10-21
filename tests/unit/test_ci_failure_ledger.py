@@ -766,7 +766,7 @@ def _repair_cli_probe(
     ledger = module.new_ledger()
     module.observe_payload(ledger, _failed_payload(), observed_at="first")
     module.write_ledger(path, ledger)
-    original = path.read_bytes()
+    original = module.read_ledger(path)
     calls: list[list[str]] = []
 
     def successful(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -774,7 +774,16 @@ def _repair_cli_probe(
             return subprocess.CompletedProcess(command, 0, json.dumps({
                 "path": str(ROOT), "head": SHA_REPAIR, "is_clean": True, "dirty_count": 0,
             }), "")
-        assert path.read_bytes() == original, "receipt must follow successful evidence"
+        admitted = module.read_ledger(path)
+        retained = deepcopy(admitted)
+        for family in retained["families"].values():
+            family.pop("repair_attempts", None)
+        assert retained == original, "admission must preserve every existing ledger field"
+        assert admitted["runs"] == original["runs"]
+        assert all(
+            family["status"] == "open" and "repair" not in family
+            for family in admitted["families"].values()
+        ), "receipt must follow successful evidence"
         assert kwargs["cwd"] == ROOT
         assert kwargs["check"] is False
         assert kwargs.get("shell", False) is False
@@ -941,7 +950,16 @@ def test_cli_repair_refuses_evidence_from_a_different_or_unverified_checkout(
     monkeypatch.setattr(module.subprocess, "run", current_checkout)
     assert module.main(command) == 2
     assert calls == ([] if phase == "before" else [["make", "test-files"]])
-    assert path.read_bytes() == original
+    if phase == "before":
+        assert path.read_bytes() == original
+    else:
+        admitted = module.read_ledger(path)
+        retained = deepcopy(admitted)
+        for family in retained["families"].values():
+            family.pop("repair_attempts", None)
+        assert retained == json.loads(original), "postcheck failure must preserve every prior field"
+        assert admitted["runs"] == json.loads(original)["runs"]
+        assert all(len(family["repair_attempts"]) == 1 for family in admitted["families"].values())
     assert all(family["status"] == "open" for family in module.read_ledger(path)["families"].values())
 
 

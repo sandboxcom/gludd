@@ -1358,6 +1358,28 @@ def _repair_evidence_environment(inherited: dict[str, str]) -> dict[str, str]:
     return child
 
 
+def _invalidate_repair_authority(
+    ledger: dict[str, Any], family_ids: Sequence[str], *, repair_sha: str, evidence: str,
+) -> None:
+    """Retain old receipts as history before an admitted attempt can run evidence."""
+    from uuid import uuid4
+
+    attempt_id, started_at = uuid4().hex, _now()
+    families = cast(dict[str, Any], ledger["families"])
+    for family_id in family_ids:
+        family = families[family_id]
+        history = family.get("repair_attempts", [])
+        if not isinstance(history, list):
+            raise LedgerError(f"family {family_id} repair attempts must be a list")
+        attempt: dict[str, object] = {
+            "id": attempt_id, "sha": repair_sha, "evidence": evidence, "started_at": started_at,
+        }
+        if "repair" in family:
+            attempt["previous_repair"] = family.pop("repair")
+        family["repair_attempts"] = [*history, attempt]
+        family["status"] = "open"
+
+
 def _command_repair(args: argparse.Namespace) -> int:
     if FULL_SHA.fullmatch(args.sha) is None:
         raise LedgerError("repair SHA must be a full lowercase 40-character hash")
@@ -1389,6 +1411,22 @@ def _command_repair(args: argparse.Namespace) -> int:
     validate_repair_selection(
         ledger, selected, repair_sha=args.sha, evidence=shlex.join(command), is_ancestor=_git_is_ancestor,
     )
+    selected_fingerprints = {
+        family_id: _digest(families.get(family_id)) for family_id in selected
+    }
+    with _locked_ledger(args.ledger) as current:
+        current_families = cast(dict[str, Any], current["families"])
+        for family_id in selected:
+            if _digest(current_families.get(family_id)) != selected_fingerprints[family_id]:
+                raise LedgerError(
+                    f"family {family_id} changed before repair evidence started; rerun its admission"
+                )
+        _invalidate_repair_authority(
+            current, selected, repair_sha=args.sha, evidence=shlex.join(command),
+        )
+        write_ledger(args.ledger, current)
+        ledger = current
+    families = cast(dict[str, Any], ledger["families"])
     selected_fingerprints = {
         family_id: _digest(families.get(family_id)) for family_id in selected
     }

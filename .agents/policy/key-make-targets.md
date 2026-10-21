@@ -315,6 +315,15 @@ before its next original-budget replay. Never infer worker timing from the last
 visible node or a null trace_path. The existing native observer owns the terminal
 reason and timing; no second observer/cache is needed.
 
+An admitted new repair attempt must invalidate older current repair authority
+before its evidence starts and retain old success as history. A running, failed,
+timed-out, interrupted or failed-postcheck attempt cannot inherit an ancestral
+receipt to permit publication. Invalid/plan-only requests remain nonmutating;
+only successful exact clean-source evidence and the native final concurrency
+fence can restore authority. Use the same ledger owner, not manual JSON edits.
+The [attempt incident](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#failed-new-repair-must-invalidate-older-authority-2026-10-21)
+retains the real zero-open/stale-receipt contradiction and proof limits.
+
 Keep batch-push's default COMMIT_THRESHOLD=5. For a coherent genuine CI repair
 batch below five, release rule6 permits the existing ordinary git-push-sandboxcom
 owner with all native guards and normal Git hooks. First obtain the actual
