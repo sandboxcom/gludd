@@ -1052,6 +1052,16 @@ def _startup_inputs(
     return status, files
 
 
+def parse_importtime_row(line: str) -> tuple[int, int, str]:
+    """Decode one numeric CPython importtime row without session inference."""
+    import re
+
+    row = re.fullmatch(r"import time:\s*([0-9]+)\s*\|\s*([0-9]+)\s*\|\s*(\S.*)", line)
+    if row is None or int(row[2]) < int(row[1]):
+        raise ValueError("malformed importtime self/cumulative columns")
+    return int(row[1]), int(row[2]), row[3].strip()
+
+
 def _startup_imports(data: bytes) -> list[dict[str, Any]]:
     """Parse three sequential visible import/session/collection segments only."""
     import re
@@ -1069,10 +1079,7 @@ def _startup_imports(data: bytes) -> list[dict[str, Any]]:
         elif line.startswith("import time:"):
             if current is None or stage != "imports":
                 raise ValueError("import row outside its visible pre-header segment")
-            row = re.fullmatch(r"import time:\s*([0-9]+)\s*\|\s*([0-9]+)\s*\|\s*(\S.*)", line)
-            if row is None or int(row[2]) < int(row[1]):
-                raise ValueError("malformed importtime self/cumulative columns")
-            current["rows"].append((int(row[1]), int(row[2]), row[3].strip()))
+            current["rows"].append(parse_importtime_row(line))
         elif "test session starts" in line:
             if current is None or stage != "imports" or not current["rows"]:
                 raise ValueError("missing or interleaved session imports")

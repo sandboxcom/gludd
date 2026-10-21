@@ -22,6 +22,62 @@ else:
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize(
+    ("row_text", "expected"),
+    [
+        ("import time: 0 | 0 | builtin", (0, 0, "builtin")),
+        ("import time:        23 |         34 |   package.module", (23, 34, "package.module")),
+        ("import time:\t11\t|\t34\t|\tpackage.module  ", (11, 34, "package.module")),
+    ],
+)
+def test_canonical_importtime_row_preserves_numeric_columns(
+    row_text: str, expected: tuple[int, int, str],
+) -> None:
+    """Decode native self-first microseconds independently of stream framing."""
+    assert owner.parse_importtime_row(row_text) == expected
+
+
+@pytest.mark.parametrize("row_text", [
+    "",
+    "import time: self [us] | cumulative | imported package",
+    "23 34 package.module",
+    '{"name": "package.module", "self": 23, "cumulative": 34}',
+    "import time: -1 | 34 | package.module",
+    "import time: 1 | -34 | package.module",
+    "import time: 23.0 | 34 | package.module",
+    "import time: 23 | 22 | package.module",
+    "import time: cached | cached | package.module",
+    "import time: 23 | 34 |",
+    "import time: 23 | 34 |   ",
+    "import time: 23 | missing | package.module",
+])
+def test_canonical_importtime_row_refuses_invalid_measurement(row_text: str) -> None:
+    """Missing, cached, invented and malformed cells never become numeric evidence."""
+    with pytest.raises(ValueError, match="malformed importtime"):
+        owner.parse_importtime_row(row_text)
+
+
+def test_startup_segments_use_canonical_importtime_row_decoder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the original framing owner and delegate each admitted row exactly once."""
+    decode = owner.parse_importtime_row
+    calls: list[str] = []
+
+    def record(line: str) -> tuple[int, int, str]:
+        calls.append(line)
+        return decode(line)
+
+    monkeypatch.setattr(owner, "parse_importtime_row", record)
+    segments = owner._startup_imports(_segments().encode())
+    assert len(segments) == 3
+    assert calls == [
+        line for line in _segments().splitlines()
+        if line.startswith("import time:") and not line.startswith("import time: self")
+    ]
+    assert [segment["rows"] for segment in segments] == [
+        [(11, 11, "nested"), (23, 34, "parent")],
+    ] * 3
+
+
 def _segments() -> str:
     return "".join(
         "import time: self [us] | cumulative | imported package\n"
@@ -252,6 +308,7 @@ def test_real_make_startup_surfaces_are_registered_readonly_and_literal(
     destination = tmp_path / "archive"
     base = [
         "OBSERVED_LABEL=profile", "RUN_ID=run-1",
+        f"LOG={repository / '.gate-logs/imports.log'}",
         "RUNTIME_DIAGNOSTIC_SOURCE_SHA=" + "f" * 40,
     ]
     for target, arguments in (
