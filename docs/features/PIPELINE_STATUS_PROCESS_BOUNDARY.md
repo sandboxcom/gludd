@@ -1129,3 +1129,131 @@ Source-only approval and focused checks never close S98.4. Disk97percent still
 exceeds95; the HumanTodo remains UNFILED after API refusal with host-space input
 pending. No unchanged capacity/admission retry, final candidate seal, full gate,
 exact-SHA hosted/deployment claim, master merge or release tag follows.
+
+## Reviewed source blocked at publication deadline (2026-10-21)
+
+This is dated manual history, not a replacement for native current observations.
+Root retains clean development source3cbbfd09139a52535f21882103052206b779c842,
+parent697f5ccdc20b4959997f98835adb38764bb11953; published/remote-VERIFIED
+source remains2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83. Normal guarded3cbb
+commit accepts all12 paths, zero new clones, Ruff, six unchanged owned checkpoints
+and128284selected/128308collected,24deselected, zero collection errors in46.88s,
+native52.0s. Root fully reads the independent SOURCE ONLY review at
+/tmp/gludd-v012-hosted-unit3a-3cbbfd0-source-review.md: no blocking defect and
+no postimage edit. Both model contributors are completed/quiescent.
+
+### Exact local runtime and publication are distinct receipts
+
+The actual pinned EE manifest check and separate six-node prerequisite pass
+on clean3cbb. Both original runtime proofs run alone through ci-failure-repair
+and public run-watched, unchanged release/0/16/1,140families, three children
+with2/1/1 workers and90total/60quiet. Each records its full selected family/SHA.
+
+| Runtime | Main | Fresh HELP | Original tail | Native terminal |
+| --- | --- | --- | --- | --- |
+| Python3.11 |2304PASS/68.93s|1PASS/0.54s|11PASS/8.06s|2316PASS/81.9s/rc0|
+| Python3.12.15 |2304PASS/71.44s|1PASS/0.71s|11PASS/8.67s|2316PASS/85.7s/rc0|
+
+Retain /tmp/gludd-v012-runtime-3cbbfd0-{311,312}.log and their dated native
+run identities. No assertion, warning, selector, plugin or timeout is weakened.
+Native verify-state confirms clean development and exactly three genuine
+unpushed commits. Its missing hosted evidence for3cbb is expected before transport.
+
+The first ordinary guarded push stops at AA032, before prerequisite/runtime
+or Git transport: the preceding published2f lacks a recorded CI verdict. Native
+pipeline-status then observes all exact2f workflows terminal and itself records
+the failed verdict. This observation addresses the history latch; it does not
+claim green CI. A second ci-verdict-safe call, manual history edit or cooldown
+bypass would be redundant. If that native terminal-record marker is absent,
+follow the guard's exact previous-SHA recovery through its documented owner.
+
+Terminal metadata reopens the known unit-3a family44460cfa32ebd464eb614e2721e1724b269637050044bb5fbd1f488bfcf21d3c.
+That changed fingerprint requires fresh repair binding, not copied success.
+The existing ci-failure-repair reruns all five whole compatibility owners on
+clean exact3cbb:125PASS/11.82s/native12.9s/rc0, fatal warnings, no skips/errors;
+/tmp/gludd-v012-unit3a-terminal-3cbbfd0-311.xml and matching.log. Native ledger
+then reports open0/repaired4/resolved49/runs157. Local repair authority remains
+separate from hosted success. Both old runtime families resolve through2f's
+actual successful hosted gates.
+
+The next ordinary publication attempt passes fresh pull ahead3/behind0,
+history/CI/stash/restart guards, six retained checkpoints and actual pinned EE.
+Its prerequisite passes6/2.18s/native3.9s. Its original runtime instead reaches
+90.554s/rc124: main2304PASS/83.79s, fresh HELP1PASS/0.56s, then the unchanged
+eleven-tail child starts without a terminal result. Native watcher
+batch-push-runtime-admission-60907 reports max-runtime-timeout, inactive,
+trace_path=null; retain its exact JSON/log under
+.gate-logs/observed/batch-push-runtime-admission/. Git transport was not attempted.
+The earlier81.9s/85.7s passes do not waive this actual publication failure.
+
+### Terminal hosted timings retain all eight source rows
+
+Immutable ci-run-summary RUN=39587418003 with
+CI_RUN_SUMMARY_SHARD_TIMINGS=1 binds full2f and terminal failure:30jobs,
+25success/1failure/4skipped, zero active. Only unit-3a fails. Molecule39587418143
+and Pages39587418149 succeed; Pages validation is not deployment acceptance.
+Coverage and release_source_proof remain skipped. The diagnostic gate barrier
+is successful gate3.12/job119179699827, completed2026-10-21T11:03:05Z.
+
+| Shard | Source job | Gate-to-start seconds | Test seconds | State | Censored |
+| --- | --- | --- | --- | --- | --- |
+| unit-1a1 |119185158495|5377|375|success|false|
+| unit-1a2 |119185158443|4868|465|success|false|
+| unit-1b |119185158277|3063|2410|success|false|
+| unit-1d |119185158371|3504|1327|success|false|
+| unit-2 |119185158441|3|2942|success|false|
+| unit-3a |119185158396|3|3016|failed|true|
+| unit-3b |119185158329|2988|2803|success|false|
+| other |119185158270|3|3452|success|false|
+
+All intervals are known; the failed duration remains censored. Preserve earlier
+pending/censored observations as dated history. The report's authority stays
+diagnostic-only, gate_evidence=false/release_ready=false; it grants no performance
+improvement, current-candidate gate or release proof.
+
+### Diagnostic attribution and bounded continuation
+
+A separate test-xdist-trace run copies every original main selector/order,
+2workers, fatal warnings, original plugins and cold-selection flags, and adds
+only the existing trace plugin. It passes2304/68.47s/native70.9s/rc0, using the
+general diagnostic watcher180quiet/240total. That budget applies to this main-only
+diagnostic, never the original three-child90/60 proof. Its raw trace is
+/tmp/gludd-v012-main-trace-3cbbfd0-311.jsonl; stdout is the matching.stdout.log.
+The read-only test-xdist-trace-summary with exact RUN_ID
+v012-main-trace-3cbbfd0-311-20261021 and TRACE_SUMMARY_TIMINGS=1 reports
+2304paired/zeroissues, zero failures/unfinished nodes. Workers72565/gw1 and
+72564/gw0 measure59.045718s/930cases and59.017241s/1374cases respectively.
+These overlapping protocol spans include fixtures and waits, excluding cold
+startup; they are not CPU or a combined duration. No worker stall is established.
+The same whole main workload's faster separate result does not diagnose the
+publication83.79s interval or clear its failed owner. No unchanged publication
+retry follows. No fixture cache, selector reduction, ordering change, extra
+worker/observer, widened budget or speculative production optimization is adopted.
+
+The existing [phase-attribution research](#bounded-native-admission-phase-timings-2026-10-21),
+including firsthand pytest8741 and official pytest/xdist contracts, remains the
+applicable context, not a measured cause. The existing atomic JSON owner is
+stdlib-only at import; extracting it or adding lazy exports without a measured
+benefit is declined. Native startup diagnostics themselves require actual capacity
+admission; a new name, source SHA or elapsed time does not clear that prerequisite.
+
+Native process/active-work owners find only existing watchdogs29001/39922,
+no observer descendants/workers and an available collection lease. No agent PID
+is invented. Native check-system-load reports2.92/3.61/3.79,8CPU,0.36x,OK.
+Native disk reports97percent/6.8GiB free: Main .git551MiB, .gate-logs217MiB,
+.venv626MiB and scratch worktrees1.4GiB. Repacking the small object store cannot
+supply the missing volume headroom; no speculative reclamation is attempted.
+The original volume ceiling95 remains. Capacity HumanTodo is still UNFILED after
+API refusal/no ID and the existing host-space question has no answer.
+
+Root's complete historical decision is
+/tmp/gludd-v012-hosted-unit3a-receiving-decision.md. Preserve all negative receipts,
+protected refs/checkpoints and old native-profile FAIL. This documentation-only
+handoff successor cannot repair the runtime deadline. Before another original
+replay, identify and change the actual failing input through the existing
+native diagnostic/repair owners. Before startup/final combined/full-gate proof,
+clear actual capacity and run the real release-proof-admission. Then freeze one
+reviewed candidate and obtain the canonical full gate, global85/75 BOTH,
+exact-SHA all-shard CI/attestation, deployment and guarded promotion. All seven
+S98 tasks remain unchecked; no master merge, tag or release is authorized by
+these local receipts.

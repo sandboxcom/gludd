@@ -350,6 +350,18 @@ before its next original-budget replay. Never infer worker timing from the last
 visible node or a null trace_path. The existing native observer owns the terminal
 reason and timing; no second observer/cache is needed.
 
+Before a repair push, use the existing pipeline-status owner for the exact
+previous published SHA and inspect its terminal-record marker. A recorded failed
+verdict satisfies the history-observation latch without supplying green CI.
+If that marker is present, do not repeat ci-verdict-safe or edit history by hand;
+otherwise follow the guard's exact previous-SHA recovery. Terminal job enrichment
+can reopen a family with a changed fingerprint: obtain fresh evidence through
+ci-failure-repair for that actual input before guard reevaluation. The
+[publication record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#reviewed-source-blocked-at-publication-deadline-2026-10-21)
+retains this sequence, both local original passes and the later failed90/60
+publication. Its faster main-only trace is diagnostic, with all selectors,
+worker identities and proof limits retained; it does not clear publication.
+
 An admitted new repair attempt must invalidate older current repair authority
 before its evidence starts and retain old success as history. A running, failed,
 timed-out, interrupted or failed-postcheck attempt cannot inherit an ancestral
