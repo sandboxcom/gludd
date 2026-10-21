@@ -16,6 +16,12 @@ from pathlib import Path
 import pytest
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_worktree_prune_preservation import (
+    test_cleanup_alias_applies_the_real_registered_native_retirement as _assert_native_retirement,
+)
+
+pytest_plugins = ("tests.unit.test_worktree_retirement",)
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
@@ -38,22 +44,22 @@ def _recipe(target: str) -> str:
 class TestAgentWorktreeTargetsExist:
     """The four worktree-per-subagent targets must be present in the Makefile."""
 
-    def test_agent_worktree_target_exists(self):
+    def test_agent_worktree_target_exists(self) -> None:
         assert "agent-worktree:" in _content(), (
             "Makefile missing 'agent-worktree:' target"
         )
 
-    def test_agent_merge_target_exists(self):
+    def test_agent_merge_target_exists(self) -> None:
         assert "agent-merge:" in _content(), (
             "Makefile missing 'agent-merge:' target"
         )
 
-    def test_agent_cleanup_target_exists(self):
+    def test_agent_cleanup_target_exists(self) -> None:
         assert "agent-cleanup:" in _content(), (
             "Makefile missing 'agent-cleanup:' target"
         )
 
-    def test_agent_worktree_list_target_exists(self):
+    def test_agent_worktree_list_target_exists(self) -> None:
         assert "agent-worktree-list:" in _content(), (
             "Makefile missing 'agent-worktree-list:' target"
         )
@@ -62,47 +68,46 @@ class TestAgentWorktreeTargetsExist:
 class TestAgentWorktreeRecipeShape:
     """Recipe bodies enforce the documented contract."""
 
-    def test_agent_worktree_uses_git_worktree_add(self):
+    def test_agent_worktree_uses_git_worktree_add(self) -> None:
         recipe = _recipe("agent-worktree")
         assert "git worktree add" in recipe, (
             "agent-worktree must invoke `git worktree add` to create the checkout"
         )
 
-    def test_agent_worktree_writes_worktree_path_marker(self):
+    def test_agent_worktree_writes_worktree_path_marker(self) -> None:
         recipe = _recipe("agent-worktree")
         assert "WORKTREE_PATH=" in recipe, (
             "agent-worktree must print WORKTREE_PATH=<path> for the caller"
         )
 
-    def test_agent_worktree_uses_quarantine_dir(self):
+    def test_agent_worktree_uses_quarantine_dir(self) -> None:
         recipe = _recipe("agent-worktree")
         assert "/tmp/gludd-worktrees/" in recipe, (
             "agent-worktree must place worktrees under /tmp/gludd-worktrees/ "
             "(not inside the shared master checkout)"
         )
 
-    def test_agent_worktree_requires_branch_arg(self):
+    def test_agent_worktree_requires_branch_arg(self) -> None:
         recipe = _recipe("agent-worktree")
         assert "$(BRANCH)" in recipe, (
             "agent-worktree must consume a BRANCH=<name> argument"
         )
 
-    def test_agent_merge_uses_no_ff(self):
+    def test_agent_merge_uses_no_ff(self) -> None:
         recipe = _recipe("agent-merge")
         assert "--no-ff" in recipe, (
             "agent-merge must use --no-ff (preserves branch topology per ORCHESTRATION.md)"
         )
 
-    def test_agent_cleanup_removes_worktree_and_branch(self):
+    def test_agent_cleanup_delegates_to_registered_native_retirement(self) -> None:
         recipe = _recipe("agent-cleanup")
-        assert "git worktree remove" in recipe, (
-            "agent-cleanup must remove the worktree"
-        )
-        assert "git branch -d" in recipe, (
-            "agent-cleanup must delete the branch"
-        )
+        assert "scripts.prune_worktrees_safe --retire-merged" in recipe
+        assert "--branch" in recipe and "--worktree" in recipe
+        assert "ACTIVE_WORKSTREAM_REGISTRY" in recipe
+        assert "--retire-validate-only" in recipe
+        assert "AGENT_CLEANUP_VALIDATE_ONLY" in recipe
 
-    def test_agent_worktree_list_is_readonly(self):
+    def test_agent_worktree_list_is_readonly(self) -> None:
         recipe = _recipe("agent-worktree-list")
         assert "git worktree list" in recipe, (
             "agent-worktree-list must invoke `git worktree list`"
@@ -238,57 +243,11 @@ class TestAgentWorktreeLifecycle:
             f"worktree {wt} not registered in `git worktree list`:\n{listing.stdout}"
         )
 
+    @pytest.mark.parametrize("environment_overrides", (False, True))
     def test_agent_cleanup_removes_worktree(
         self,
-        lifecycle_repo: tuple[Path, str],
+        checkout: tuple[Path, Path, Path],
+        environment_overrides: bool,
     ) -> None:
-        repo, branch = lifecycle_repo
-        # Create first, then clean up.
-        create = subprocess.run(
-            [
-                "make",
-                "--no-print-directory",
-                "agent-worktree",
-                f"BRANCH={branch}",
-                "UV=true",
-                f"ACTIVE_WORKSTREAM_REGISTRY={repo / '.active-workstreams.json'}",
-            ],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-        )
-        assert create.returncode == 0, f"setup agent-worktree failed: {create.stderr}"
-        wt = Path("/tmp/gludd-worktrees") / branch
-        assert wt.exists(), "precondition: worktree should exist before cleanup"
-
-        cleanup = subprocess.run(
-            [
-                "make",
-                "--no-print-directory",
-                "agent-cleanup",
-                f"BRANCH={branch}",
-                "UV=true",
-                f"ACTIVE_WORKSTREAM_REGISTRY={repo / '.active-workstreams.json'}",
-            ],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-        )
-        assert cleanup.returncode == 0, (
-            f"agent-cleanup failed (rc={cleanup.returncode}):\n"
-            f"stdout={cleanup.stdout}\nstderr={cleanup.stderr}"
-        )
-        assert not wt.exists(), (
-            f"agent-cleanup did not remove worktree path {wt}"
-        )
-        # Branch is deleted too.
-        branch_check = subprocess.run(
-            ["git", "rev-parse", "--verify", branch],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert branch_check.returncode != 0, (
-            f"agent-cleanup did not delete branch {branch}"
-        )
+        """Apply real retirement while retaining refs and original failure proof."""
+        _assert_native_retirement(checkout, environment_overrides=environment_overrides)
