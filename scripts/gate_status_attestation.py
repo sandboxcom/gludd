@@ -59,19 +59,53 @@ def _git_blob_id(data: bytes, object_format: str) -> str:
     return digest.hexdigest()
 
 
+def _index_entry(record: bytes) -> tuple[str, tuple[str, str]]:
+    metadata, raw_path = record.split(b"\t", 1)
+    mode, object_id, stage = metadata.decode("ascii").split()
+    if stage != "0":
+        raise RuntimeError("cannot attest an index with unresolved merge entries")
+    return os.fsdecode(raw_path), (mode, object_id)
+
+
 def _index_entries(repo_root: Path) -> dict[str, tuple[str, str]]:
     entries: dict[str, tuple[str, str]] = {}
     raw = _run_git(repo_root, "ls-files", "--stage", "-z")
     for record in raw.split(b"\0"):
+        if record:
+            path, entry = _index_entry(record)
+            entries[path] = entry
+    return entries
+
+
+def _worktree_inventory(repo_root: Path) -> tuple[dict[str, tuple[str, str]], list[str]]:
+    raw = _run_git(
+        repo_root, "ls-files", "--cached", "--others", "--exclude-standard", "--stage", "-t", "-z",
+    )
+    if raw and not raw.endswith(b"\0"):
+        raise RuntimeError("malformed Git worktree inventory")
+    index: dict[str, tuple[str, str]] = {}
+    paths: list[str] = []
+    seen: set[str] = set()
+    for record in raw.split(b"\0"):
         if not record:
             continue
-        metadata, raw_path = record.split(b"\t", 1)
-        mode, object_id, stage = metadata.decode("ascii").split()
-        if stage != "0":
-            raise RuntimeError("cannot attest an index with unresolved merge entries")
-        path = os.fsdecode(raw_path)
-        entries[path] = (mode, object_id)
-    return entries
+        tag, separator, payload = record.partition(b" ")
+        if separator != b" ":
+            raise RuntimeError("malformed Git worktree inventory")
+        if tag == b"?":
+            path = os.fsdecode(payload)
+        elif tag in {b"H", b"S", b"M"}:
+            path, entry = _index_entry(payload)
+            if tag == b"M":
+                raise RuntimeError("cannot attest an index with unresolved merge entries")
+            index[path] = entry
+        else:
+            raise RuntimeError("malformed Git worktree inventory")
+        if not path or path in seen:
+            raise RuntimeError("malformed Git worktree inventory")
+        seen.add(path)
+        paths.append(path)
+    return index, paths
 
 
 def _state_digest(
@@ -123,7 +157,11 @@ def repository_state_id(
             raise ValueError("invalid native metadata")
     except ValueError:
         raise RuntimeError("malformed Git repository identity") from None
-    index = _index_entries(root)
+    if source == "worktree":
+        index, paths = _worktree_inventory(root)
+    else:
+        index = _index_entries(root)
+        paths = []
     if not include_head:
         head = ""
     if exclude_bookkeeping:
@@ -133,19 +171,8 @@ def repository_state_id(
     if source != "worktree":
         raise ValueError(f"unknown repository state source: {source}")
 
-    raw_paths = _run_git(
-        root,
-        "ls-files",
-        "--cached",
-        "--others",
-        "--exclude-standard",
-        "-z",
-    )
     entries: dict[str, tuple[str, str]] = {}
-    for raw_path in raw_paths.split(b"\0"):
-        if not raw_path:
-            continue
-        path = os.fsdecode(raw_path)
+    for path in paths:
         if exclude_bookkeeping and path in _BOOKKEEPING_PATHS:
             continue
         full_path = root / path

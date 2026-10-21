@@ -753,3 +753,128 @@ recipe shell. GNU documents expansion side effects when exporting variables;
 the indexed full manual supplies that section after its direct page times out.
 These sources support immediate same-shell capture and literal inputs. They
 supply no Gludd failure diagnosis beyond the native witnesses above.
+
+## Fresh typed worktree inventory (2026-10-21)
+
+The original5b25b9f31290/60 replay times out after a passing main and HELP;
+no312 repair receipt exists. Root accepts a bounded source enhancement for
+receiving validation: fuse the two inventory queries inside the EXISTING
+repository_state_id worktree path, retaining every separate identity call and
+before/after source/ref/authentication fence. This is a query-count reduction,
+not evidence that the original admission or hosted deadline now passes.
+
+The [Git manual](https://git-scm.com/docs/git-ls-files) documents staged metadata,
+typed status prefixes and verbatim NUL-delimited paths. A
+[firsthand2020 exclusion report](https://stackoverflow.com/questions/61116160/is-git-ls-files-others-exclude-standard-equal-to-merge-git-ls-files-oth)
+shows why untracked selection and ignore filtering must remain distinct.
+Keep --cached, --others and --exclude-standard together. The report supplies
+compatibility context, not a Gludd diagnosis or performance measurement.
+
+Native conformance verifies the exact combined --stage/-t/-z command onSHA1
+andSHA256: tracked metadata bytes and full pathname order equal both old
+queries. Consume the status tag before the payload; an untracked filename can
+look exactly like a staged row. H/S/M rows reuse the existing extracted
+stage decoder; ? payloads remain complete filenames. Index-only source keeps
+its original query, and unknown-source refusal keeps index validation first.
+Malformed framing/tags/duplicate paths and unresolved stages refuse before
+body reads.
+
+Full current bytes, indexed/executable modes, deleted entries, ignore rules,
+symlinks, initialized/uninitialized gitlinks, fresh child HEAD, both head
+options and fixed bookkeeping options retain the old digest behavior. Native
+root/object format/HEAD and inventory refresh per invocation. No result is
+shared across callers or entry/exit boundaries; no persistent Git process,
+dependency, filter, proof cache or new observer is introduced.
+
+Retained proposal evidence at /tmp/gludd-v012-worktree-inventory-fusion-decision.md:
+
+- Native format first retains4ERROR0.88s: macOS refuses creation of live
+  non-UTF8 filenames with OSError92. Native index-info and separate raw decoder
+  controls replace only that unsupported setup, then4PASS0.68s. Live Linux
+  non-UTF8 regular/symlink behavior remains locally unproved.
+- Existing native count guard against immutable old source retains2FAIL2PASS
+  0.67s: worktree cases require2calls but observe3; index cases remain2.
+  Digest assertions precede count assertions. No original test assertion is
+  weakened; only exact query count/argv conform to the actual source change.
+- The independent frozen test oracle uses the old separate queries and direct
+  blob/state byte hashes, with an external cross-check against the exact old
+  module. Full confined bridge owners pass76 on3115.62s and3126.23s, zero skips/
+  errors under fatal warnings; original source/test bodies are AST-pinned.
+- Seven fresh warm-fixture pairs per runtime/format record3old versus2new
+  Git calls. Median paired wall saving is5.513-6.228ms/call. These include waits/
+  filesystem effects, not child CPU/cold imports. Do not extrapolate to receipt
+  or admission time; the original90/60 owner must measure that separately.
+
+Root copies the exact source/test postimages into Main. Canonical Ruff and
+separate strict whole-source/whole-test invocations pass. A combined strict
+scope first refuses duplicate flat/package module names; separate scopes
+retain strictness without config, stub, overlay or suppression changes.
+Canonical complete consumer acceptance passes824 on each runtime as recorded
+below. The UNCHANGED seven-file config/coverage_gate_admission_resume.ini profile
+also passes419cases103.76s/native105.5s. Native audit reports96.5line/91.4branch
+aggregate, all seven files above75 BOTH; the complete changed identity owner
+measures96.9line/94.0branch. Source report is
+.gate-logs/coverage-worktree-inventory-fusion.json; audit is
+.gate-logs/coverage-20261021T094136Z.json. This is the registered focused scope,
+not global/full-gate or deployment acceptance.
+
+The exact separate coverage command retains the existing serial/trace producer,
+full seven-file configuration and both85/75 metrics. Its native run ID is
+20261021T093951Z-69180-7d14f4cf. Fragment-combine counts are coverage-data files,
+not skipped pytest cases.
+
+~~~console
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_gate_status_attestation.py tests/unit/test_item_progress.py tests/unit/test_item_progress_retention.py tests/unit/test_gate_progress.py tests/unit/test_gate_preflight_aggregation.py tests/unit/test_gate_background_targets.py tests/unit/test_release_proof_admission_target.py' COVERAGE_CONFIG=config/coverage_gate_admission_resume.ini COVERAGE_REPORT=.gate-logs/coverage-worktree-inventory-fusion.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_QUIET_SECS=120 OBSERVED_MAX_SECS=600 OBSERVED_RETAIN_RUNS=20 WORK_ITEM_ID=S98.4 NPROC=1 GLUDD_XDIST_WORKERS=1 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+Both85aggregate/75each-file line AND branch floors, ZDD/retention, original
+selectors/order/2-1-1/90-60/136families/21phases2850, full gate, exact-SHA hosted/
+deployment and promotion authority remain unchanged.
+
+### Receiving scope after the bounded nine-owner timeout
+
+The first canonical312 receiving command selects all nine complete owners,
+collects708 and continues emitting passing dots, but its watcher times out
+rc124/native240.5s before terminal pytest/JUnit. Retain
+/tmp/gludd-v012-inventory-fusion-receiving-312.log and native run
+v012-inventory-fusion-receiving-312-20261021. No assertion failure is recorded,
+and no complete nine-owner or coverage acceptance is claimed.
+
+The changed input is the focused workload: separate the two complete receipt
+producer owners, test_reviewed_head_inputs and
+test_build_reviewed_head_integration_receipt, from the seven complete gate/
+attestation/progress consumers. Retain every original owner and assertion,
+the same240total/60quiet cap for each cohort, both selected runtimes and
+separate native logs/XML. Also run the complete parameter-collision guard.
+The unchanged registered coverage profile remains a separate instrumented
+measurement. This partition changes focused work, not the original release
+admission's selectors/workers/90-60, full gate or exact-SHA proof authority.
+
+The changed312 workload now obtains terminal receipts for every required owner:
+producer cohort289PASS170.25s/native173.6s; consumer cohort535PASS87.24s/native
+90.1s. The latter retains all seven consumers and adds the complete57-case
+parameter-collision guard plus four complete documentation/contract/marker
+owners. Total824, zero skips/errors under fatal warnings. Logs/XML are
+/tmp/gludd-v012-inventory-fusion-producers-312.* and its consumers-312 sibling.
+These two240/60 receipts do not turn the earlier censored708 run into success,
+clear the separate original90/60, or supply coverage/hosted/task authority.
+
+Exact recorded312 selections and native bounds follow. For a genuinely changed
+input use fresh run/log/XML identities; never replay an unchanged failed input
+or overwrite these receipts. The311 commands retain both complete selections,
+all flags and bounds, replacing both runtime paths with python-3.11, UV_PYTHON
+with3.11 and each312 artifact/run suffix with311. Its producer cohort now passes
+289/154.89s/native158.1s; its complete consumer cohort passes535/82.28s/native
+85.2s. Thus the SAME fourteen complete owners pass824 on EACH runtime,
+zero skips/errors, while the earlier nine-owner timeout remains failed evidence.
+
+Final static checks retain Ruff and separate strict source/test PASS, seven
+Markdown files PASS27ms,10823tracked files below the unchanged line limit, and
+check-node-v26-compat6PASS9.54s. Native disk97percent/7.1GiB remains a final-proof
+blocker; load2.08/8CPUs/0.26x is OK. No new daemon is started. Source acceptance
+still requires the normal guarded commit/fresh collection and independent exact
+successor source decision, then original90/60 repair-owned receiving proof.
+
+~~~console
+make run-watched WORK_ITEM_ID=S98.4 CMD='make test-files TESTFILES="tests/unit/test_reviewed_head_inputs.py tests/unit/test_build_reviewed_head_integration_receipt.py" PYTEST_ARGS="-q -W error -n 0 -o verbosity_test_cases=-2 --durations=20 --durations-min=0 --tb=short --junitxml=/tmp/gludd-v012-inventory-fusion-producers-312.xml" NPROC=2 GLUDD_XDIST_WORKERS=2 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never' OBSERVED_LABEL=v012-inventory-fusion-producers-312 RUN_ID=v012-inventory-fusion-producers-312-20261021 STALL_SECS=60 MAX_SECS=240 LOG=/tmp/gludd-v012-inventory-fusion-producers-312.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_RETAIN_RUNS=20 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never
+make run-watched WORK_ITEM_ID=S98.4 CMD='make test-files TESTFILES="tests/unit/test_gate_status_attestation.py tests/unit/test_item_progress.py tests/unit/test_item_progress_retention.py tests/unit/test_gate_progress.py tests/unit/test_gate_preflight_aggregation.py tests/unit/test_gate_background_targets.py tests/unit/test_release_proof_admission_target.py tests/unit/test_pytest_param_fixture_collisions.py tests/unit/test_make_target_contract.py tests/unit/test_session_persistence_integration.py tests/unit/test_status_snapshot.py tests/unit/test_oversized_document_splits.py" PYTEST_ARGS="-q -W error -n 0 -o verbosity_test_cases=-2 --durations=20 --durations-min=0 --tb=short --junitxml=/tmp/gludd-v012-inventory-fusion-consumers-312.xml" NPROC=2 GLUDD_XDIST_WORKERS=2 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never' OBSERVED_LABEL=v012-inventory-fusion-consumers-312 RUN_ID=v012-inventory-fusion-consumers-312-20261021 STALL_SECS=60 MAX_SECS=240 LOG=/tmp/gludd-v012-inventory-fusion-consumers-312.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_RETAIN_RUNS=20 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never
+~~~

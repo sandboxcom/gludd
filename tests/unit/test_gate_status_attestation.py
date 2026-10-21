@@ -632,17 +632,16 @@ def test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests
                 exclude_bookkeeping=exclude_bookkeeping,
             )
             assert actual == expected
-            assert len(calls) == (3 if source == "worktree" else 2), calls
+            assert len(calls) == 2, calls
             assert calls[0] == (
                 nested,
                 ("rev-parse", "--show-toplevel", "--show-object-format", "HEAD"),
             )
-            assert calls[1] == (repo, ("ls-files", "--stage", "-z"))
-            if source == "worktree":
-                assert calls[2] == (
-                    repo,
-                    ("ls-files", "--cached", "--others", "--exclude-standard", "-z"),
-                )
+            assert calls[1] == (
+                repo,
+                ("ls-files", "--cached", "--others", "--exclude-standard", "--stage", "-t", "-z")
+                if source == "worktree" else ("ls-files", "--stage", "-z"),
+            )
 
 
 def test_batched_metadata_does_not_survive_content_index_or_head_mutations(
@@ -753,3 +752,279 @@ def test_batched_metadata_keeps_native_git_failure_for_an_unborn_head(tmp_path: 
     attestation._run_git(repo, "init", "-q")
     with pytest.raises(RuntimeError, match=r"git rev-parse .* failed"):
         repository_state_id(repo, source="index")
+
+
+def _legacy_worktree_state(
+    repo: Path, *, include_head: bool = True, exclude_bookkeeping: bool = False,
+) -> str:
+    """Frozen pre-fusion byte oracle: separate stage/path queries and direct hashes."""
+    raw_root, raw_format, raw_head, tail = attestation._run_git(
+        repo, "rev-parse", "--show-toplevel", "--show-object-format", "HEAD",
+    ).rsplit(b"\n", 3)
+    assert tail == b""
+    root = Path(os.fsdecode(raw_root).strip())
+    object_format = raw_format.decode("ascii").strip()
+    head = raw_head.decode("ascii").strip() if include_head else ""
+    index: dict[str, tuple[str, str]] = {}
+    for record in attestation._run_git(root, "ls-files", "--stage", "-z").split(b"\0"):
+        if not record:
+            continue
+        metadata, raw_path = record.split(b"\t", 1)
+        mode, object_id, stage = metadata.decode("ascii").split()
+        if stage != "0":
+            raise RuntimeError("cannot attest an index with unresolved merge entries")
+        index[os.fsdecode(raw_path)] = (mode, object_id)
+    raw_paths = attestation._run_git(root, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+    entries: dict[str, tuple[str, str]] = {}
+    for raw_path in raw_paths.split(b"\0"):
+        if not raw_path:
+            continue
+        path = os.fsdecode(raw_path)
+        if exclude_bookkeeping and path in {"TASKS.md", "BUGS.md", "SESSION.md"}:
+            continue
+        full_path = root / path
+        indexed_mode, indexed_object_id = index.get(path, ("", ""))
+        if indexed_mode == "160000":
+            object_id = indexed_object_id
+            if full_path.is_dir() and (full_path / ".git").exists():
+                object_id = attestation._run_git(full_path, "rev-parse", "HEAD").decode("ascii").strip()
+            entries[path] = (indexed_mode, object_id)
+            continue
+        if not full_path.exists() and not full_path.is_symlink():
+            continue
+        if full_path.is_symlink():
+            data = os.fsencode(os.readlink(full_path))
+            mode = "120000"
+        elif full_path.is_file():
+            data = full_path.read_bytes()
+            if indexed_mode in {"100644", "100755"}:
+                mode = indexed_mode
+            else:
+                mode = "100755" if full_path.stat().st_mode & 0o100 else "100644"
+        else:
+            raise RuntimeError(f"unsupported repository entry: {path}")
+        blob = hashlib.new(object_format)
+        blob.update(f"blob {len(data)}\0".encode())
+        blob.update(data)
+        entries[path] = (mode, blob.hexdigest())
+    digest = hashlib.sha256()
+    digest.update(b"gludd-gate-state-v1\0")
+    digest.update(head.encode("ascii") + b"\0" + object_format.encode("ascii") + b"\0")
+    for path in sorted(entries, key=os.fsencode):
+        mode, object_id = entries[path]
+        digest.update(os.fsencode(path) + b"\0" + mode.encode("ascii") + b"\0" + object_id.encode("ascii") + b"\0")
+    return digest.hexdigest()
+
+
+def _assert_legacy_options(repo: Path) -> None:
+    for include_head in (True, False):
+        for exclude_bookkeeping in (False, True):
+            assert repository_state_id(
+                repo, include_head=include_head, exclude_bookkeeping=exclude_bookkeeping,
+            ) == _legacy_worktree_state(
+                repo, include_head=include_head, exclude_bookkeeping=exclude_bookkeeping,
+            )
+
+
+def _native_index_input(repo: Path, data: bytes) -> None:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "update-index", "-z", "--index-info"],
+        input=data, capture_output=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_worktree_fusion_matches_legacy_bytes_for_mixed_native_inventory(
+    native_metadata_repository: tuple[Path, str, str],
+) -> None:
+    repo, _object_format, _head = native_metadata_repository
+    _assert_legacy_options(repo)
+    (repo / ".gitignore").write_text("ignored-*\n", encoding="utf-8")
+    (repo / "deleted").write_bytes(b"deleted")
+    executable = repo / "executable"
+    executable.write_bytes(b"run\0entire file")
+    executable.chmod(0o755)
+    (repo / "tracked-link").symlink_to("tracked.txt")
+    attestation._run_git(repo, "add", "--", ".gitignore", "deleted", "executable", "tracked-link")
+    attestation._run_git(repo, "commit", "-q", "-m", "mixed fixture")
+    attestation._run_git(repo, "update-index", "--skip-worktree", "executable")
+    attestation._run_git(repo, "update-index", "--assume-unchanged", "tracked.txt")
+    (repo / "tracked.txt").write_bytes(b"dirty\0current full bytes\n")
+    (repo / "deleted").unlink()
+    (repo / "SESSION.md").write_bytes(b"changed bookkeeping")
+    for name in (
+        b"100644 " + b"a" * 40 + b" 0\tstage-looking",
+        b"H 100755 " + b"b" * 64 + b" 0\tH-looking",
+        b"? another", b"S prefix", b"tab\tname", b"line\nname", b"unicode-\xce\xbb",
+    ):
+        (repo / os.fsdecode(name)).write_bytes(b"untracked\0full bytes")
+    (repo / "untracked-link").symlink_to("missing-target")
+    (repo / "ignored-hidden").write_bytes(b"must remain excluded")
+    _assert_legacy_options(repo)
+
+
+@pytest.mark.parametrize("tag", (b"H", b"S", b"?"))
+def test_worktree_inventory_raw_non_utf8_paths_are_lossless(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tag: bytes,
+) -> None:
+    raw_path = b"H 100644 " + b"f" * 64 + b" 0\tpath-\xff\nline"
+    row = tag + b" " + (
+        raw_path if tag == b"?" else b"100644 " + b"a" * 40 + b" 0\t" + raw_path
+    ) + b"\0"
+    calls: list[tuple[str, ...]] = []
+
+    def inventory(_repo: Path, *arguments: str) -> bytes:
+        calls.append(arguments)
+        return row
+
+    monkeypatch.setattr(attestation, "_run_git", inventory)
+    index, paths = attestation._worktree_inventory(tmp_path)
+    assert [os.fsencode(path) for path in paths] == [raw_path]
+    assert index == ({} if tag == b"?" else {os.fsdecode(raw_path): ("100644", "a" * 40)})
+    assert calls == [("ls-files", "--cached", "--others", "--exclude-standard", "--stage", "-t", "-z")]
+
+
+def test_native_non_utf8_index_preserves_old_digest_or_native_error(
+    native_metadata_repository: tuple[Path, str, str],
+) -> None:
+    repo, _object_format, _head = native_metadata_repository
+    object_id = attestation._run_git(repo, "rev-parse", "HEAD:tracked.txt").strip()
+    _native_index_input(repo, b"100644 " + object_id + b"\tindex-\xff\0")
+    try:
+        expected = _legacy_worktree_state(repo)
+    except OSError as original:
+        with pytest.raises(type(original)) as current:
+            repository_state_id(repo)
+        assert current.value.errno == original.errno
+        assert current.value.filename == original.filename
+    else:
+        assert repository_state_id(repo) == expected
+    staged = attestation._index_entries(repo)
+    assert os.fsdecode(b"index-\xff") in staged
+
+
+def test_worktree_fusion_preserves_initialized_gitlink_and_fresh_child_head(
+    native_metadata_repository: tuple[Path, str, str],
+) -> None:
+    repo, object_format, _head = native_metadata_repository
+    child = repo / "child"
+    child.mkdir()
+    for arguments in (
+        ("init", "-q", f"--object-format={object_format}"),
+        ("config", "user.email", "gitlink@example.invalid"),
+        ("config", "user.name", "Gitlink"),
+    ):
+        attestation._run_git(child, *arguments)
+    (child / "content").write_bytes(b"child")
+    attestation._run_git(child, "add", "content")
+    attestation._run_git(child, "commit", "-q", "-m", "child initial")
+    child_head = attestation._run_git(child, "rev-parse", "HEAD").decode("ascii").strip()
+    attestation._run_git(repo, "update-index", "--add", "--cacheinfo", f"160000,{child_head},child")
+    _assert_legacy_options(repo)
+    before = repository_state_id(repo)
+    attestation._run_git(child, "commit", "--allow-empty", "-q", "-m", "child changed")
+    _assert_legacy_options(repo)
+    assert repository_state_id(repo) != before
+    assert repository_state_id(repo, source="index") != repository_state_id(repo)
+
+
+def test_worktree_fusion_preserves_native_unmerged_refusal(
+    native_metadata_repository: tuple[Path, str, str],
+) -> None:
+    repo, _object_format, _head = native_metadata_repository
+    object_id = attestation._run_git(repo, "rev-parse", "HEAD:tracked.txt").strip()
+    _native_index_input(
+        repo, b"".join(
+            b"100644 " + object_id + b" " + str(stage).encode("ascii") + b"\tconflict\0"
+            for stage in (1, 2, 3)
+        ),
+    )
+    with pytest.raises(RuntimeError, match="unresolved merge") as original:
+        _legacy_worktree_state(repo)
+    for source in ("worktree", "index"):
+        with pytest.raises(RuntimeError) as current:
+            repository_state_id(repo, source=source)
+        assert str(current.value) == str(original.value)
+
+
+@pytest.mark.parametrize(
+    ("invalid_row", "expected_error"),
+    (
+        (b"Q name\0", RuntimeError),
+        (b"Hmissing-separator\0", RuntimeError),
+        (b"? \0", RuntimeError),
+        (b"? same\0? same\0", RuntimeError),
+        (b"? missing-terminator", RuntimeError),
+        (b"H no-stage-fields\0", ValueError),
+        (b"H 100644 " + b"a" * 40 + b" 2\tconflict\0", RuntimeError),
+        (b"M 100644 " + b"a" * 40 + b" 0\tconflict\0", RuntimeError),
+        (b"H 100644 \xff 0\tpath\0", UnicodeDecodeError),
+    ),
+)
+def test_worktree_fusion_refuses_invalid_producer_before_body_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    invalid_row: bytes, expected_error: type[Exception],
+) -> None:
+    read_paths: list[Path] = []
+    metadata = os.fsencode(tmp_path) + b"\nsha1\n" + b"a" * 40 + b"\n"
+
+    def producer(_repo: Path, *arguments: str) -> bytes:
+        return metadata if arguments[0] == "rev-parse" else invalid_row
+
+    def body(path: Path) -> bytes:
+        read_paths.append(path)
+        return b"body"
+
+    monkeypatch.setattr(attestation, "_run_git", producer)
+    monkeypatch.setattr(Path, "read_bytes", body)
+    with pytest.raises(expected_error):
+        repository_state_id(tmp_path)
+    assert read_paths == []
+
+
+def test_worktree_fusion_preserves_native_inventory_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata = os.fsencode(tmp_path) + b"\nsha1\n" + b"a" * 40 + b"\n"
+    commands: list[list[str]] = []
+
+    def failed_inventory(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        commands.append(command)
+        if "rev-parse" in command:
+            return SimpleNamespace(returncode=0, stdout=metadata, stderr=b"")
+        return SimpleNamespace(returncode=17, stdout=b"", stderr=b"native inventory fatal")
+
+    monkeypatch.setattr(attestation.subprocess, "run", failed_inventory)
+    with pytest.raises(RuntimeError, match="native inventory fatal"):
+        repository_state_id(tmp_path)
+    assert len(commands) == 2
+    assert commands[-1][3:] == [
+        "ls-files", "--cached", "--others", "--exclude-standard", "--stage", "-t", "-z",
+    ]
+
+
+def test_unknown_source_keeps_metadata_and_index_error_order(
+    native_metadata_repository: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, _object_format, _head = native_metadata_repository
+    actual_git = attestation._run_git
+    calls: list[tuple[str, ...]] = []
+
+    def observe(root: Path, *arguments: str) -> bytes:
+        calls.append(arguments)
+        return actual_git(root, *arguments)
+
+    monkeypatch.setattr(attestation, "_run_git", observe)
+    with pytest.raises(ValueError, match="unknown repository state source: unknown"):
+        repository_state_id(repo, source="unknown")
+    expected_queries = [
+        ("rev-parse", "--show-toplevel", "--show-object-format", "HEAD"),
+        ("ls-files", "--stage", "-z"),
+    ]
+    assert calls == expected_queries
+    object_id = actual_git(repo, "rev-parse", "HEAD:tracked.txt").strip()
+    _native_index_input(repo, b"100644 " + object_id + b" 2\tconflict\0")
+    calls.clear()
+    with pytest.raises(RuntimeError, match="unresolved merge"):
+        repository_state_id(repo, source="unknown")
+    assert calls == expected_queries

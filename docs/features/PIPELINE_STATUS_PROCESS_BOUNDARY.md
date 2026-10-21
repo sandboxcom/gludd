@@ -516,3 +516,92 @@ The complete67-case publication owner then passes on31156.22s/native57.3s
 and31256.44s/native57.5s, zero skips/errors/fatal warnings, under watched90/60.
 Raw logs/XML remain /tmp/gludd-v012-prerequisite-publication-argv-311.* and its
 312 sibling. Ruff and strict owner typing pass the changed exact assertion.
+
+## Original receiving deadline still fails on312 (2026-10-21)
+
+Normal source5b25b9f163784163e6edbb931946eed6adcdec37 freshly collects
+128075selected/128099collected,24deselected/zero errors51.11s/native56.5s.
+Independent SOURCE ONLY approval versus exactc0a4bf5 is retained in
+/tmp/gludd-v012-repair-5b25b9f-source-review.md. All three genuine local commits
+remain unpublished. Source approval does not supply the original runtime proof.
+
+The FIRST successor311 execution is repair-owned and passes all three original
+children: main2079/61.37s, freshHELP1/0.53s, tail11/8.39s, outer74.5s/rc0.
+Native CI_FAILURE_REPAIR_RECORDED binds the full5b25 SHA and exact311 family.
+Raw log is /tmp/gludd-v012-runtime-5b25b9f-311.log; native run ID is
+v012-runtime-5b25b9f-311-20261021.
+
+The FIRST312 execution is then serialized through the same repair owner.
+Main2079/73.56s and freshHELP1/0.88s pass. The eleven-case tail passes its first
+historical-focus node, then is censored during finalization. Native observed-status
+records timed_out/active:false/exit124/elapsed90.523s,
+termination_reason=max-runtime-timeout, quiet5.174s and trace_path:null.
+The enclosing Make/repair returns2 and records NO312 receipt.
+Retain /tmp/gludd-v012-runtime-5b25b9f-312.log and native run
+v012-runtime-5b25b9f-312-20261021. Do not attribute the timeout to the last
+visible node, infer all-tail success, or invent missing worker spans.
+Native ci-failure-status now reports open1/repaired10/resolved42/runs154;
+the312 family remains OPEN. Its actual failed input must change before replay.
+
+The independent review also identifies existing ordinary git-push-sandboxcom
+as a guarded development-repair route for a coherent genuine repair batch.
+The default batch-push threshold5 stays unchanged; its below-threshold result
+is nonpublication, never transport evidence. The ordinary owner retains
+clean-tree, test-disabled, CI-failure/rate/in-flight/cooldown, stash/pull/history/
+audit/restart prerequisites, complete image/checker/original-runtime admission
+and normal Git hooks. No force, -nv, threshold change or artificial commit is
+authorized. BOTH real successor runtime receipts and native guards must permit
+transport. The failed312 receipt currently blocks that proposal; no push occurs.
+
+The separate finalization-only312 profile passes1/5.80s/native6.9s under the
+existing90/60 diagnostic owner. Its native parent profile is5.594s; call3.800s,
+collection1.337s,231subprocess.run/2.147s, six prepare_inputs/1.438s and
+121receipt Git calls/1.145s. Cumulative rows overlap. Child CPU and cold startup
+remain unobserved. Raw/XML remain
+/tmp/gludd-v012-reviewed-finalization-profile-312.*; native report is
+.gate-logs/test-files-cprofile/profile-77282-2e8f8409c45ff23f/report.txt.
+Every fresh source/ref/topology/signature check remains; no cache or test rewrite
+is adopted from a last-visible-node hypothesis.
+
+Two measured real-child regression cases are also profiled together on312:
+both pass5.08s/native6.0s, call2.407s and1.634s. The existing runner waits for
+five real children. Parent queue/thread waits overlap:7.302s cumulative exceeds
+the4.827s profiler total and cannot be summed or called child CPU.
+Worker-reset import setup is0.385s; no expensive workspace copy is demonstrated.
+Retain /tmp/gludd-v012-native-child-profile-312.log/XML and native report
+.gate-logs/test-files-cprofile/profile-79116-69d03cd72f733804/report.txt.
+No supervisor, cleanup, warning/failure assertion or child is removed.
+
+The separate source-inventory proposal is explicitly declined and retained in
+/tmp/gludd-v012-source-inventory-enhancement-decision.md. Its owning
+[fixture-audit record](PYTEST_PARAMETER_FIXTURE_COLLISION_GUARD.md#bounded-current-source-inventory-proposal-declined-2026-10-21)
+keeps the single current audit, full4157-source parse, field/owner/GC contracts
+and primary/firsthand research. There is no source or test patch from that owner.
+
+Root's next concrete hypothesis combines typed tracked/untracked inventory in
+the EXISTING native repository-identity owner, without sharing facts across
+identity calls. It requires actual Git CLI conformance, an independent old-source
+digest oracle and a failing-first query-count guard before any integration.
+Unknown benefit is not a speed claim. Original90/60, selectors/order/2-1-1,
+136families/21phases2850,85/75BOTH, ZDD/retention and final promotion stay intact.
+
+The current handoff, top tracking indexes and mandatory Make guide now distinguish
+published c0a4bf5 from source-reviewed5b25b9f and its actual311/312 receiving
+results. Prior full indexes remain immutable at5b25; checklist/criteria and all
+Incident Log entries below them are unchanged. On these six documentation files,
+Markdown passes26ms and the native tracked line-limit check passes10823files.
+Five complete existing documentation/contract/attestation-marker/guardrail owners
+pass132cases76.88s/native78.0s, zero skips/errors under fatal warnings:
+/tmp/gludd-v012-receiving-handoff-operating.log and matching XML. The unchanged
+full guardrail owner includes native collection, lint and Ansible syntax children;
+this receipt is focused operating-document acceptance, not release admission,
+full gate, capacity clearance or exact-SHA hosted proof.
+
+Root subsequently integrates the bounded typed native inventory change.
+[Its source/receiving decision](NATIVE_REVIEWED_HEAD_INPUTS.md#fresh-typed-worktree-inventory-2026-10-21)
+retains old-source RED2FAIL2PASS, native format conformance and the failed
+708-case240.5s focus, followed by the SAME fourteen complete owners/824PASS
+on each runtime in two bounded cohorts. Unchanged seven-file coverage passes
+419/103.76s/native105.5s at96.5line/91.4branch, all files above75 BOTH.
+No original successor90/60, independent clean-SHA source approval, hosted,
+full-gate or deployment receipt is inferred from these focused measurements.

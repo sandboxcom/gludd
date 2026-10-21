@@ -309,6 +309,22 @@ The documented validate-only behavior remains offline planning; its fabricated
 PASS rows grant no native repair, CI, gate or release authority. A local repair receipt can permit a development
 push; it does not supply hosted success, deployment acceptance or release proof.
 
+Passing component tests or SOURCE ONLY review cannot clear an outer runtime
+timeout: retain the failed watcher receipt and require an actual changed input
+before its next original-budget replay. Never infer worker timing from the last
+visible node or a null trace_path. The existing native observer owns the terminal
+reason and timing; no second observer/cache is needed.
+
+Keep batch-push's default COMMIT_THRESHOLD=5. For a coherent genuine CI repair
+batch below five, release rule6 permits the existing ordinary git-push-sandboxcom
+owner with all native guards and normal Git hooks. First obtain the actual
+repair-owned receiving receipts, verify-state and select the documented ledger,
+full SHA, branch, selected runtime and release-policy variables. A threshold
+nonpublication is not a transport result; do not change the threshold, manufacture
+commits, force or skip hooks. verify-remote and exact-SHA native hosted observations
+remain separate. [The receiving decision](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#original-receiving-deadline-still-fails-on312-2026-10-21)
+retains the failed prerequisite and the source-only publication-route decision.
+
 The edd9 receiving attempt instrumented all35 complete repair owners and timed
 out at240.6s during the final worktree owner; it recorded no repair receipt.
 For its successor, retain all35 owners in test-files under run-watched with the
@@ -334,6 +350,13 @@ assertions. Keep diagnostic pytest flags in the selected owner rather than an
 ambient PYTEST_ADDOPTS inherited by deliberately plugin-isolated fixture children.
 The coverage-files owner is already serial. A refused edit must be repaired before
 starting its dependent verification; native nonzero status remains authoritative.
+
+When a script is also imported as scripts.<name>, use separate typecheck-scope
+invocations for its source and its complete test owner. A combined scope can
+refuse the same file under flat/package module names before checking. The
+[native inventory decision](../../docs/features/NATIVE_REVIEWED_HEAD_INPUTS.md#fresh-typed-worktree-inventory-2026-10-21)
+retains the actual refusal and strict individual PASS receipts. Select the same
+installed runtime for both; no package-layout or suppression change is needed.
 
 `make agent-worktree-dev BRANCH=feature-name` creates an isolated branch from
 development. For a bounded source repair, use

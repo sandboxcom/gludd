@@ -213,3 +213,34 @@ These are measurements of their respective owners, not a causal attribution of
 the whole elapsed difference to type binding or a final hosted-success claim.
 Capacity clearance, complete gate, exact-SHA all-workflow/deployment proof and
 normal promotion remain separate. All seven task closures remain open.
+
+## Bounded current source-inventory proposal declined (2026-10-21)
+
+At exact5b25b9f163784163e6edbb931946eed6adcdec37, the existing public
+test-files-cprofile owner profiles only the original repository-parameter
+inventory case on installed CPython3.12.15 under run-watched90/60. It passes1
+in8.60s, observed9.594s. The process-local profile records one shared audit,
+4157_source_findings calls, native ast.parse3.486s cumulative, declaration
+traversal1.914s cumulative/0.964self and alias discovery0.034s cumulative.
+Cumulative rows overlap; instrumentation and other process activity are included.
+
+No new redundant scan or safely removable cost is demonstrated. Root explicitly
+declines the additional integration and retains the concrete decision/artifacts.
+The current native parser, statement-only LIFO/owner walker, live fields,
+per-file tree/GC ownership and fresh providers remain unchanged. No additional
+source/test patch or invented performance RED is justified by this sample.
+
+The [stdlib AST contract](https://docs.python.org/3.12/library/ast.html#ast.parse)
+already provides the native AST-only parser. The existing
+[firsthand2024 CPython123373 report](https://github.com/python/cpython/issues/123373)
+also explains why a queue-based generic walk is not a substitute for the
+project's explicit order/context contract.
+
+Decision/raw evidence: /tmp/gludd-v012-source-inventory-enhancement-decision.md,
+/tmp/gludd-v012-source-inventory-profile-5b25.txt,
+/tmp/gludd-v012-source-inventory-profile-5b25.log and matching XML.
+The initial external observed-root refusal is retained separately as manual
+namespace evidence; the corrected command uses .gate-logs/observed without
+changing ownership policy. Original31290.5s failure, missing repair receipt,
+full-gate/exact-SHA hosted/deployment proof and task closures remain unchanged.
+This diagnostic supplies no runtime speed attribution or release authority.
