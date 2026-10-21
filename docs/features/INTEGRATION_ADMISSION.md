@@ -14,6 +14,10 @@ The checker preserves its four established pins and adds both full-command
 expectations; main emits bounded native phase timings. The
 [measured decision and failure history](PIPELINE_STATUS_PROCESS_BOUNDARY.md#bounded-native-admission-phase-timings-2026-10-21)
 own current commands, negative controls and proof limits.
+The [frontend prerequisite contract](PIPELINE_STATUS_PROCESS_BOUNDARY.md#run-canonical-prerequisites-before-runtime-proof-2026-10-21)
+keeps the hosted and publication image/checker/runtime order explicit. Reuse the
+same canonical checker before each unchanged original90/60 runtime replay;
+retain separate stage logs, failure propagation and the offline publication plan.
 
 The admission path does not replace the full gate. A passing result means only
 that the branch cleared the deterministic, comparatively cheap failure classes

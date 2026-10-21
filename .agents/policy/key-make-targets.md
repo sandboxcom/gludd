@@ -278,11 +278,17 @@ legacy400-line ci-job-log shortcut now preserves native retrieval errors; its
 safe offline example is make ci-job-log RUN=1 JOB=gate
 CI_JOB_LOG_VALIDATE_ONLY=1. Retrieval success grants no CI or release proof.
 
-A development repair push has its own native CI failure guard. Its existing
+A development repair push has its own native CI failure guard. Hosted and
 publication admission first verifies the exact pinned EE manifest through
-check-ansible-base-image mode0, then runs the original90/60 runtime replay.
-A failed availability check starts neither replay nor transport; it never
-refreshes silently. The owner's mode1 plan stays offline and creates no runtime.
+check-ansible-base-image mode0, then runs check-gate-failure-promotions with the
+literal canonical manifest through a separate90/60 watched stage, then the
+unchanged original90/60 runtime replay. The hosted prerequisite label is
+ci-gate-failure-promotions; publication uses batch-push-prerequisite-admission.
+Each owns its failure log and heartbeat. A failed image or canonical contract
+check starts neither runtime replay nor transport; no silent refresh follows.
+The [prerequisite parity record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#run-canonical-prerequisites-before-runtime-proof-2026-10-21)
+retains routing controls and distinguishes recorder tests from actual checks.
+The owner's mode1 plan names both budgets but stays offline and creates no runtime.
 The owner aligns the selected canonical UV/VIRTUAL_ENV inputs in both child
 contexts, preserving caller overrides outside that admission. See
 [the served-image recovery](../../docs/features/ANSIBLE_EE_BASE_IMAGE_LIVENESS.md)

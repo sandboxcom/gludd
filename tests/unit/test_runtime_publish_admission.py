@@ -8,13 +8,16 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 import pytest
+import yaml
 from scripts import makefile_layout
 from scripts.check_make_target_contract import validate_contract
 
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 RECOVERY_PATH = ROOT / "make/20-recovery-and-git.mk"
+WORKFLOW_PATH = ROOT / ".github/workflows/build.yml"
 PIPELINES_PATH = ROOT / "make/95-collections-and-pipelines.mk"
 GUARDRAILS_PATH = ROOT / "make/50-development-and-guardrails.mk"
 CONTRACT_PATH = ROOT / "config/make_target_contract.json"
@@ -40,6 +43,8 @@ def _publish(
     validate_only: int = 0,
     runtime_state: str = "valid",
     manifest_status: int = 0,
+    promotion_status: int = 0,
+    pins_status: int = 0,
     gate_policy_context: str = "default",
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]], Path]:
     """Run actual Make recipes and observer, replacing only native test/Git boundaries."""
@@ -54,23 +59,31 @@ def _publish(
         "names = ('GATE_TEST_PROFILE', 'GATE_EXACT_SHA_RESUME', 'GATE_MAX_FILES_PER_BATCH', 'GATE_BATCH_WORKERS')\n"
         "def context():\n"
         "    return dict(policy=[os.environ.get(name) for name in names], "
-        "sentinel=os.environ.get('probe'), "
+        "sentinel=os.environ.get('probe'), venv=os.environ.get('VIRTUAL_ENV'), "
+        "downloads=os.environ.get('UV_PYTHON_DOWNLOADS'), "
         "makeflags=os.environ.get('MAKEFLAGS'), makeoverrides=os.environ.get('MAKEOVERRIDES'))\n"
         "args = sys.argv[1:]\n"
         "if args[:3] == ['run', 'python', 'scripts/stream_command.py']:\n"
-        "    record('observer', args=args[3:], **context())\n"
+        "    record('observer', args=args[3:], environment=os.environ.get('UV_PROJECT_ENVIRONMENT'), "
+        "no_sync=os.environ.get('UV_NO_SYNC'), python=os.environ.get('UV_PYTHON'), **context())\n"
         f"    os.execv(sys.executable, [sys.executable, {str(ROOT / 'scripts/stream_command.py')!r}, *args[3:]])\n"
         "elif args[:3] == ['run', 'python', 'scripts/ansible_runtime_artifacts.py']:\n"
         "    record('manifest', args=args[3:], environment=os.environ.get('UV_PROJECT_ENVIRONMENT'), "
         "venv=os.environ.get('VIRTUAL_ENV'), no_sync=os.environ.get('UV_NO_SYNC'), "
         "python=os.environ.get('UV_PYTHON'), downloads=os.environ.get('UV_PYTHON_DOWNLOADS'))\n"
         f"    raise SystemExit({manifest_status})\n"
+        "elif args[:4] == ['run', 'python', '-m', 'scripts.check_gate_failure_promotions']:\n"
+        "    record('promotions', args=args[4:], environment=os.environ.get('UV_PROJECT_ENVIRONMENT'), "
+        "no_sync=os.environ.get('UV_NO_SYNC'), python=os.environ.get('UV_PYTHON'), **context())\n"
+        f"    raise SystemExit({promotion_status})\n"
         "elif args[0] == 'test-files':\n"
         f"    phase = 'help' if args[1] == {HELP!r} else 'full'\n"
-        "    record('runtime', phase=phase, files=args[1].split(), nproc=args[2], workers=args[3], flags=args[4], "
+        "    if '::test_repository_manifest_seeds_each_promoted_failure_family' in args[1]: phase = 'pins'\n"
+        "    record('prerequisite-pins' if phase == 'pins' else 'runtime', phase=phase, "
+        "files=args[1].split(), nproc=args[2], workers=args[3], flags=args[4], "
         "environment=os.environ.get('UV_PROJECT_ENVIRONMENT'), no_sync=os.environ.get('UV_NO_SYNC'), "
         "python=os.environ.get('UV_PYTHON'), **context())\n"
-        f"    raise SystemExit(1 if phase == {failure!r} else 0)\n"
+        f"    raise SystemExit({pins_status} if phase == 'pins' else (1 if phase == {failure!r} else 0))\n"
         "elif args[0] == 'record-verdict': record('verdict', **context())\n"
         "elif args[0] == 'verify-remote': record('verify-remote')\n"
         "else: raise AssertionError(args)\n",
@@ -160,6 +173,8 @@ def _publish(
         + "\n\n"
         + _target(source, "check-ansible-base-image")
         + "\n\n"
+        + _target(source, "check-gate-failure-promotions")
+        + "\n\n"
         + _target(source, OWNER)
         + "\n\n"
         + f'test-files:\n\t@{quoted_runner} test-files "$(TESTFILES)" "$(NPROC)" '
@@ -190,6 +205,7 @@ def _publish(
         "UV_PROJECT_ENVIRONMENT=.venv", "VIRTUAL_ENV=.venv", "UV_NO_SYNC=0",
         "UV_PYTHON=3.14", "UV_PYTHON_DOWNLOADS=automatic",
         "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1", "probe=kept",
+        "GATE_FAILURE_PROMOTION_MANIFEST=/tmp/gludd-untrusted-override.json",
     ]
     conflict = dict(zip(names, ("native", "1", "32", "2"), strict=True))
     if gate_policy_context == "environment":
@@ -214,8 +230,9 @@ def _publish(
 
 def _assert_owned_once(rows: list[dict[str, object]], phases: list[tuple[str, str]]) -> None:
     observers = [row for row in rows if row["kind"] == "observer"]
-    assert len(observers) == 1
-    arguments = observers[0]["args"]
+    assert len(observers) == 2
+    _assert_prerequisite_once(rows)
+    arguments = _observer_arguments(rows, "batch-push-runtime-admission")
     assert isinstance(arguments, list)
     for name, value in (
         ("--label", "batch-push-runtime-admission"),
@@ -275,6 +292,9 @@ def test_green_runtime_owner_runs_once_before_normal_transport(tmp_path: Path, f
         "runtime-identity",
         "manifest",
         "observer",
+        "promotions",
+        "prerequisite-pins",
+        "observer",
         "runtime",
         "runtime",
         "runtime",
@@ -307,6 +327,9 @@ def test_transport_failure_after_green_admission_never_records_success(tmp_path:
     assert [row["kind"] for row in rows] == [
         "runtime-identity",
         "manifest",
+        "observer",
+        "promotions",
+        "prerequisite-pins",
         "observer",
         "runtime",
         "runtime",
@@ -365,13 +388,15 @@ def test_runtime_owner_plan_is_mutation_free_and_has_no_transport(tmp_path: Path
     assert rows == [] and not observed.exists()
     assert "max_seconds=90 quiet_seconds=60" in result.stdout
     assert "manifest_check=exact-pinned" in result.stdout
+    assert "prerequisite_check=check-gate-failure-promotions" in result.stdout
+    assert "prerequisite_max_seconds=90 prerequisite_quiet_seconds=60" in result.stdout
     assert "profile=release exact_sha_resume=0 max_files_per_batch=16 gate_workers=1" in result.stdout
     assert "release_ready=false gate_evidence=false" in result.stdout
 
 
 def _assert_release_runtime_policy(rows: list[dict[str, object]]) -> None:
     observed = [row for row in rows if row["kind"] in {"observer", "runtime"}]
-    assert len(observed) == 4
+    assert len(observed) == 5
     for row in observed:
         assert row["policy"] == ["release", "0", "16", "1"], row
         assert row["sentinel"] == "kept", row
@@ -425,3 +450,233 @@ def test_unavailable_exact_manifest_stops_before_runtime_and_transport(
     assert not observed.exists(), "a failed prerequisite must not start expensive proof"
     assert "Pinned Ansible base manifest admission failed" in result.stdout + result.stderr
     assert "Git transport was not attempted" in result.stdout + result.stderr
+
+
+SIX_PREREQUISITE_PINS = [
+    "tests/unit/test_gate_failure_promotion.py::test_repository_manifest_seeds_each_promoted_failure_family",
+    "tests/unit/test_gate_failure_promotion.py::test_make_wiring_and_target_contract_are_explicit",
+    "tests/unit/test_runtime_admission_scheduling.py::test_runtime_admission_retains_entire_roster_and_fresh_help",
+    "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
+    "tests/unit/test_runtime_admission_scheduling.py::test_native_git_metadata_query_count_executes_once_in_first_cohort",
+    "tests/unit/test_gate_failure_promotion.py::test_async_canonical_profile_contract_fails_in_compatibility_admission_first",
+]
+
+
+def _observer_arguments(rows: list[dict[str, object]], label: str) -> list[str]:
+    matches = [
+        row["args"] for row in rows
+        if row["kind"] == "observer" and isinstance(row["args"], list) and label in row["args"]
+    ]
+    assert len(matches) == 1, rows
+    arguments = matches[0]
+    assert isinstance(arguments, list) and all(isinstance(value, str) for value in arguments)
+    return cast(list[str], arguments)
+
+
+def _assert_prerequisite_once(
+    rows: list[dict[str, object]], *, label: str = "batch-push-prerequisite-admission",
+) -> None:
+    arguments = _observer_arguments(rows, label)
+    for name, value in (
+        ("--label", label), ("--quiet-secs", "60"), ("--max-secs", "90"),
+        ("--heartbeat-secs", "10"),
+    ):
+        assert arguments[arguments.index(name) + 1] == value
+    assert arguments[-2:] == [
+        "check-gate-failure-promotions",
+        "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json",
+    ]
+    promotions = [row for row in rows if row["kind"] == "promotions"]
+    pins = [row for row in rows if row["kind"] == "prerequisite-pins"]
+    assert len(promotions) == len(pins) == 1
+    metadata = promotions[0]["args"]
+    assert isinstance(metadata, list)
+    assert metadata[:3] == ["--manifest", "config/gate_failure_promotions.json", "--repository-root"]
+    assert len(metadata) == 4 and Path(str(metadata[3])).is_absolute()
+    assert pins[0]["files"] == SIX_PREREQUISITE_PINS
+    assert (pins[0]["nproc"], pins[0]["workers"]) == ("1", "1")
+    assert shlex.split(str(pins[0]["flags"])) == [
+        "-W", "error", "-q", "-n", "0", "--maxprocesses", "1", "--timeout=30",
+    ]
+    for row in rows:
+        if row["kind"] in {"observer", "promotions", "prerequisite-pins", "runtime"}:
+            assert row["environment"] == row["venv"]
+            assert (row["no_sync"], row["python"], row["downloads"]) == ("1", "3.11", "never")
+    run_ids = []
+    for row in rows:
+        if row["kind"] == "observer":
+            argv = row["args"]
+            assert isinstance(argv, list)
+            run_ids.append(argv[argv.index("--run-id") + 1])
+    assert len(set(run_ids)) == len(run_ids)
+
+
+def _hosted_steps() -> list[dict[str, object]]:
+    workflow = cast(dict[str, object], yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8")))
+    jobs = cast(dict[str, object], workflow["jobs"])
+    gate = cast(dict[str, object], jobs["gate"])
+    return cast(list[dict[str, object]], gate["steps"])
+
+
+def _hosted(
+    tmp_path: Path, *, manifest_status: int = 0, promotion_status: int = 0,
+    pins_status: int = 0, failure: str = "",
+) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]], Path]:
+    plan, rows, _ = _publish(
+        tmp_path, goal=PUBLISH_OWNER, validate_only=1, manifest_status=manifest_status,
+        promotion_status=promotion_status, pins_status=pins_status, failure=failure,
+    )
+    assert plan.returncode == 0 and rows == [], plan.stdout + plan.stderr
+    steps = _hosted_steps()
+    names = [
+        "Verify pinned Ansible base manifest", "Canonical promotion prerequisite admission",
+        "Known runtime and handoff regression admission",
+    ]
+    stages = [next(step for step in steps if step.get("name") == name) for name in names]
+    recipe = tmp_path / "Makefile"
+    chunks = ["\nhosted-probe:\n"]
+    for index, stage in enumerate(stages):
+        environment = cast(dict[str, str], stage.get("env", {}))
+        bindings = []
+        for name, value in environment.items():
+            expanded = value.replace("${{ github.workspace }}", str(tmp_path))
+            expanded = expanded.replace("${{ matrix.python-version }}", "3.11")
+            bindings.append(f"{name}={shlex.quote(expanded)}")
+        chunks.append(f"\t@$(MAKE) --no-print-directory _hosted_{index} {' '.join(bindings)}\n")
+    chunks.append("\t@$(MAKE) --no-print-directory verify-remote\n")
+    for index, stage in enumerate(stages):
+        body = str(stage["run"]).rstrip()
+        for expression, value in (
+            ("${{ github.run_id }}", "4242"), ("${{ github.run_attempt }}", "3"),
+            ("${{ matrix.python-version }}", "3.11"),
+        ):
+            body = body.replace(expression, value)
+        body = body.replace("$", "$$").replace("make ", "$(MAKE) ")
+        chunks.append(f"\n_hosted_{index}:\n\t@" + body.replace("\n", "\n\t") + "\n")
+    recipe.write_text(recipe.read_text(encoding="utf-8") + "".join(chunks), encoding="utf-8")
+    environment = dict(
+        os.environ, UV_PROJECT_ENVIRONMENT=str(tmp_path / ".venv"),
+        VIRTUAL_ENV=str(tmp_path / ".venv"), UV_NO_SYNC="1", UV_PYTHON="3.11",
+        UV_PYTHON_DOWNLOADS="never", MAKEFLAGS="", MFLAGS="", MAKELEVEL="0",
+    )
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-f", str(recipe), "hosted-probe"],
+        cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=20,
+    )
+    trace = tmp_path / "trace.jsonl"
+    rows = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()] if trace.exists() else []
+    return result, rows, tmp_path / ".gate-logs/observed"
+
+
+@pytest.mark.parametrize("forced", (False, True))
+@pytest.mark.parametrize("stage", ("manifest-parser", "six-pins"))
+@pytest.mark.parametrize("native_status", (1, 2, 124))
+def test_canonical_prerequisite_failure_blocks_runtime_and_transport(
+    tmp_path: Path, forced: bool, stage: str, native_status: int,
+) -> None:
+    result, rows, observed = _publish(
+        tmp_path, forced=forced,
+        promotion_status=native_status if stage == "manifest-parser" else 0,
+        pins_status=native_status if stage == "six-pins" else 0,
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert [row["kind"] for row in rows] == [
+        "runtime-identity", "manifest", "observer", "promotions",
+        *(["prerequisite-pins"] if stage == "six-pins" else []),
+    ]
+    _observer_arguments(rows, "batch-push-prerequisite-admission")
+    assert not any(row["kind"] in {"runtime", "transport", "verdict"} for row in rows)
+    assert "Canonical promotion prerequisite failed" in result.stdout + result.stderr
+    assert "runtime replay was not started; Git transport was not attempted" in result.stdout + result.stderr
+    assert list((observed / "batch-push-prerequisite-admission").rglob("*.json"))
+    assert not (observed / "batch-push-runtime-admission").exists()
+    assert f"Error {native_status}" in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("policy_context", ("default", "environment", "command-line", "opaque-overrides"))
+def test_canonical_prerequisite_owns_environment_policy_and_stage_identity(
+    tmp_path: Path, policy_context: str,
+) -> None:
+    result, rows, observed = _publish(tmp_path, gate_policy_context=policy_context)
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
+    _assert_release_runtime_policy(rows)
+    for row in rows:
+        if row["kind"] in {"promotions", "prerequisite-pins"}:
+            assert row["policy"] == ["release", "0", "16", "1"]
+    for label in ("batch-push-prerequisite-admission", "batch-push-runtime-admission"):
+        assert list((observed / label).rglob("*.json"))
+    assert [row["kind"] for row in rows] == [
+        "runtime-identity", "manifest", "observer", "promotions", "prerequisite-pins",
+        "observer", "runtime", "runtime", "runtime", "transport", "verdict",
+    ]
+
+
+def test_hosted_canonical_prerequisite_has_exact_order_bounds_and_environment() -> None:
+    steps = _hosted_steps()
+    names = [step.get("name") for step in steps]
+    image = names.index("Verify pinned Ansible base manifest")
+    checker = names.index("Canonical promotion prerequisite admission")
+    runtime = names.index("Known runtime and handoff regression admission")
+    assert image + 1 == checker and checker + 1 == runtime
+    stage = steps[checker]
+    assert stage.get("if") is None and stage.get("continue-on-error") is None
+    assert stage["env"] == {
+        "UV_PROJECT_ENVIRONMENT": "${{ github.workspace }}/.venv",
+        "VIRTUAL_ENV": "${{ github.workspace }}/.venv",
+        "UV_NO_SYNC": "1", "UV_PYTHON": "${{ matrix.python-version }}",
+        "UV_PYTHON_DOWNLOADS": "never", "GATE_TEST_PROFILE": "release",
+        "GATE_EXACT_SHA_RESUME": "0", "GATE_MAX_FILES_PER_BATCH": "16",
+        "GATE_BATCH_WORKERS": "1",
+    }
+    body = str(stage["run"])
+    assert "check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json" in body
+    assert [
+        token.partition("=")[2] for token in shlex.split(body)
+        if token.partition("=")[0] == "OBSERVED_LABEL"
+    ] == ["ci-gate-failure-promotions"]
+    assert "STALL_SECS=60 MAX_SECS=90" in body
+    assert "OBSERVED_HEARTBEAT_SECS=10" in body
+    assert "OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2" in body
+    assert "LOG=.gate-logs/ci-gate-failure-promotions.log" in body
+    assert "${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}" in body
+    assert "=== CI PHASE:" not in body
+
+
+@pytest.mark.parametrize("stage", ("manifest", "manifest-parser", "six-pins", "runtime", ""))
+def test_hosted_native_stages_stop_at_first_failure(
+    tmp_path: Path, stage: str,
+) -> None:
+    result, rows, observed = _hosted(
+        tmp_path, manifest_status=17 if stage == "manifest" else 0,
+        promotion_status=17 if stage == "manifest-parser" else 0,
+        pins_status=17 if stage == "six-pins" else 0,
+        failure="full" if stage == "runtime" else "",
+    )
+    assert (result.returncode == 0) is (stage == ""), result.stdout + result.stderr
+    expected = ["manifest"]
+    if stage != "manifest":
+        expected += ["observer", "promotions"]
+        if stage != "manifest-parser":
+            expected += ["prerequisite-pins"]
+            if stage != "six-pins":
+                expected += ["observer", "runtime"]
+                if stage != "runtime":
+                    expected += ["runtime", "runtime", "verify-remote"]
+    assert [row["kind"] for row in rows] == expected
+    if stage in {"", "runtime"}:
+        _assert_prerequisite_once(rows, label="ci-gate-failure-promotions")
+        arguments = _observer_arguments(rows, "ci-runtime-regression-admission")
+        assert arguments[-1] == OWNER
+        assert arguments[arguments.index("--max-secs") + 1] == "90"
+        assert arguments[arguments.index("--quiet-secs") + 1] == "60"
+        runtime = [row for row in rows if row["kind"] == "runtime"]
+        assert [(row["nproc"], row["workers"]) for row in runtime] == (
+            [("2", "2")] if stage == "runtime" else [("2", "2"), ("1", "1"), ("1", "1")]
+        )
+        assert list((observed / "ci-gate-failure-promotions").rglob("*.json"))
+        for row in rows:
+            if row["kind"] in {"promotions", "prerequisite-pins"}:
+                assert row["policy"] == ["release", "0", "16", "1"]
+    if stage:
+        assert not any(row["kind"] == "verify-remote" for row in rows)

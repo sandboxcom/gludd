@@ -253,6 +253,27 @@ jobs:
         run: |
           echo "=== CI PHASE: ansible-base-manifest ==="
           make check-ansible-base-image ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0
+      - name: Canonical promotion prerequisite admission
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv
+          UV_NO_SYNC: "1"
+          UV_PYTHON: ${{ matrix.python-version }}
+          UV_PYTHON_DOWNLOADS: never
+          GATE_TEST_PROFILE: release
+          GATE_EXACT_SHA_RESUME: "0"
+          GATE_MAX_FILES_PER_BATCH: "16"
+          GATE_BATCH_WORKERS: "1"
+        run: |
+          # Required canonical prerequisite; its observer owns phase visibility.
+          make run-watched \
+            CMD='make check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json' \
+            RUN_ID="prerequisite-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}" \
+            OBSERVED_LABEL=ci-gate-failure-promotions \
+            STALL_SECS=60 MAX_SECS=90 \
+            LOG=.gate-logs/ci-gate-failure-promotions.log \
+            OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2 \
+            OBSERVED_HEARTBEAT_SECS=10
       - name: Known runtime and handoff regression admission
         run: |
           echo "=== CI PHASE: runtime-regression-admission ==="

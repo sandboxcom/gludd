@@ -383,3 +383,136 @@ zero skips/errors/fatal warnings, with raw/XML at
 /tmp/gludd-v012-runtime-duration-operating.*. Locked Markdown passes all six
 changed documents; native snapshot structure and line-budget checks pass.
 These receipts precede the ordinary source commit and its fresh collection.
+Normal source commit5d22b361117081fbee11e79e1d1e1231dc10eb1c then retains fresh
+collection128053selected/128077collected,24deselected/zero errors47.41s/native52.6s.
+That commit and collection do not supply runtime-family or hosted repair proof.
+
+## Run canonical prerequisites before runtime proof (2026-10-21)
+
+At clean5d22b36, source inspection identifies an admission parity gap.
+integration-admission already runs check-gate-failure-promotions before expensive
+runtime proof; both the hosted gate and _runtime-publish-admission omit it.
+The checker now has six independent manifest/roster/full-command pins. A model
+can therefore reach the expensive original replay through either frontend
+without first checking its complete deterministic command contract.
+
+Reuse the existing checker and run-watched owner in each frontend, after the
+exact served-image check and before the unchanged original runtime step.
+Give the prerequisite its own90total/60quiet/10heartbeat budget and log:
+hosted step Canonical promotion prerequisite admission uses
+ci-gate-failure-promotions; publication uses batch-push-prerequisite-admission.
+The checker command names the literal canonical
+GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json.
+Do not add a runner, cache, alternative manifest, extra runtime child, or warmup.
+The canonical admission remains21phases2850; original replay remains the same
+three children2/1/1 under90total/60quiet. The separately identified prerequisite
+does not extend that runtime budget or establish a throughput improvement.
+
+Both frontend stages must propagate a failed checker and preserve its observed
+evidence before runtime or transport starts. Publication's existing selected
+canonical311 environment and release policy also apply to the checker, including
+conflicting caller settings; ordinary caller context after admission stays intact.
+The offline publication plan must name the prerequisite and retain all existing
+manifest/runtime/policy/no-proof fields without probing an absent environment,
+running checks, creating logs, or contacting Git.
+
+[GitHub's current status-function contract](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)
+documents implicit success() gating. The separate required workflow step uses
+that ordinary ordering without an if override or continue-on-error.
+[The runner's accepted outcome/conclusion decision](https://github.com/actions/runner/blob/main/docs/adrs/0274-step-outcome-and-conclusion.md)
+explains how continue-on-error can turn a failed outcome into a successful final
+conclusion. Keep the existing required-failure semantics.
+As longstanding practitioner context,
+[GitHub Community discussion26885](https://github.com/orgs/community/discussions/26885)
+(September2020) describes why exit0 continues later steps and actual failure
+skips them by default. This supports explicit native failure propagation;
+it is not an attributed cause of the c0a4bf5 runtime timeout.
+
+Root accepts the concrete proposal from
+/tmp/gludd-v012-prerequisite-parity-decision.md and integrates its three literal
+postimages through copy-file. The base two controls retain2FAIL1.40s:
+publication ignores injected checker failure17 and still records transport,
+while hosted source lacks the required stage. Candidate confined controls pass
+29/20.06s; one Ruff E501 expression is reflowed, then all29pass19.64s.
+Both native base/final XML receipts and the unapplied proposal patch remain
+under /tmp/gludd-v012-prerequisite-parity-*; final per-case recorder traces are
+not falsely represented as the original RED capture. All original test
+functions/decorators/assertions remain, with genuine stage-count/order and
+offline-plan conformance. This is proposal acceptance, not independent source
+review. Root is the sole Main writer; the proposal owner is quiescent before
+integration and ordinary serialized Git hooks.
+
+Confined recipe/recorder tests exercise routing and failure boundaries. They
+must retain every existing runtime, selected-environment, manifest, policy,
+forced/legacy publication, no-bypass and offline-plan assertion, adding the new
+stage before the existing observer. Such tests do not execute the real six-pin
+checker or original test roster; run the documented native checker separately.
+Whole-owner acceptance, original repair-owned90/60 receipts, exact-SHA hosted
+execution and final gate/deployment proof keep their distinct authority.
+
+Receiving acceptance runs the same seven COMPLETE owners on both installed
+runtimes: test_runtime_publish_admission, test_integration_admission_target,
+test_ci_workflow_integrity, test_gate_failure_promotion,
+test_runtime_admission_scheduling, test_admission_cold_start_selection and
+test_pytest_param_fixture_collisions, all under tests/unit. Native results are
+494PASS/zero skips/errors on311144.05s/native145.4s and312152.21s/native153.6s,
+with fatal warnings, serial parents and bounded native children. Both existing
+watched owners retain180total/60quiet for this focused scope; these receipts
+are not the original90/60 runtime family. Raw logs/XML remain
+/tmp/gludd-v012-prerequisite-whole-311.* and its312 sibling.
+
+The ACTUAL canonical prerequisite executes through run-watched90/60 with the
+same installed311/release policy, literal manifest and heartbeat10. Native
+manifest validation retains136families/21phases2850/full_gate required=true;
+all six exact pins pass1.48s/native2.6s. Preserve
+/tmp/gludd-v012-prerequisite-native.log and native observed run
+v012-prerequisite-native-5d22-20261021. The documented actual mode1 publication
+example also exits0 with the absent /tmp/gludd-runtime-publish-absent environment,
+WORK_ITEM_ID empty and OBSERVED_ROOT=/tmp/gludd-runtime-publish-contract-observed;
+it names separate prerequisite/runtime budgets and false proof fields. That is
+actual offline planning, never runtime or publication acceptance.
+Make catalog271,1161targets/zero duplicates and9CI/12local parity pass; Ruff and
+strict typing pass the complete changed test owner. Original repair-owned90/60,
+exact-SHA hosted, full-gate/global coverage and deployment proof remain pending.
+
+A separate original-tail diagnostic at5d22 executes all eleven original cases
+with test-files-cprofile, serial parent, fatal warnings and the same installed311
+runtime/release policy, under run-watched90/60. It passes11/17.35s/native18.7s.
+This instrumented local diagnostic is not an original runtime-family receipt.
+The native16.925-second parent profile records554subprocess.run calls/8.575s,
+including271 review-receipt Git calls/3.601s; cumulative rows overlap.
+Fourteen prepare_inputs calls consume4.786s. Finalization and historical focus
+calls consume4.877s/4.848s; the selected lock-requirement test consumes2.916s,
+with75 TOML loads/2.902s. These values include instrumentation and concurrent
+confined recorder acceptance; child CPU and cold start remain unobserved.
+Retain /tmp/gludd-v012-reviewed-tail-profile-5d22.log/XML and the native
+.gate-logs/test-files-cprofile/profile-83892-5f6eab3d7d69953e/report.txt.
+The next source hypothesis must preserve fresh Git observations, exact candidate
+blobs/signatures, original test assertions and full lock coverage. This profile
+does not authorize caching across proof boundaries, fabricated Git, weaker tests,
+changed selectors, larger budgets, or claiming the hosted timeout repaired.
+
+Final handoff acceptance runs the same five complete operating-document owners
+after tracking edits: status_snapshot, session_persistence_integration,
+branch_discipline_checks, markdown_docs_deep and task_ledger_validation.
+All144pass6.35s/native7.3s with zero skips/errors/fatal warnings;
+retain /tmp/gludd-v012-prerequisite-operating-final.log/XML.
+Locked Markdown checks all seven changed documents; native tracked-file line
+limits pass10823files below2500. These precede normal commit/fresh collection
+and grant no gate, exact-SHA CI, deployment or task-completion authority.
+
+The first ordinary commit refuses before collection: detect-secrets classifies
+the new public OBSERVED_LABEL substring assertion at original line634 as a
+Base64 High Entropy String. The failed commit remains evidence; HEAD does not
+move and ten selected paths remain staged. Replace that assertion with existing
+stdlib shlex tokenization and an independently expected singleton assignment
+value. It now rejects missing, duplicate and differing labels while retaining
+the identical intended public label. No scanner configuration, baseline,
+allowlist, suppression comment, native recipe or runtime assertion changes.
+Run the complete publication owner on both runtimes and repeat ordinary lint,
+strict typing and commit guards against this changed assertion; never bypass
+the scanner or treat the earlier refused commit as a commit receipt.
+The complete67-case publication owner then passes on31156.22s/native57.3s
+and31256.44s/native57.5s, zero skips/errors/fatal warnings, under watched90/60.
+Raw logs/XML remain /tmp/gludd-v012-prerequisite-publication-argv-311.* and its
+312 sibling. Ruff and strict owner typing pass the changed exact assertion.
