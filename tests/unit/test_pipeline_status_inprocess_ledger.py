@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
@@ -27,6 +28,21 @@ else:
 
 SHA = "a" * 40
 OTHER_SHA = "b" * 40
+
+
+class _FlushFaultOutput(io.StringIO):
+    def __init__(self, label: str, attempts: list[str]) -> None:
+        super().__init__()
+        self.label = label
+        self.attempts = attempts
+        self.fail_next = False
+
+    def flush(self) -> None:
+        self.attempts.append(self.label)
+        if self.fail_next:
+            self.fail_next = False
+            raise OSError(f"fixture {self.label} flush unavailable")
+        super().flush()
 
 
 @pytest.mark.parametrize(("ledger_rc", "status_rc"), [(0, 0), (5, 0), (0, 7), (5, 7)])
@@ -330,6 +346,232 @@ def test_ledger_output_is_flushed_before_the_next_native_observation(
     assert observed[0][1].startswith("LEDGER-DIAGNOSTIC\n")
     if ledger_error:
         assert "RuntimeError: ledger failed after output" in observed[0][1]
+
+
+@pytest.mark.parametrize("broken_stream_name", ["stdout", "stderr", "both"])
+@pytest.mark.parametrize("cleanup_stage", ["ledger", "status"])
+@pytest.mark.parametrize("ledger_code", [0, 5])
+def test_cleanup_failure_attempts_both_streams_and_preserves_native_precedence(
+    monkeypatch: pytest.MonkeyPatch, broken_stream_name: str, cleanup_stage: str, ledger_code: int,
+) -> None:
+    attempts: list[str] = []
+    output = _FlushFaultOutput("stdout", attempts)
+    errors = _FlushFaultOutput("stderr", attempts)
+    phases: list[str] = []
+    observer_codes: list[int] = []
+
+    def arm() -> None:
+        output.fail_next = broken_stream_name in {"stdout", "both"}
+        errors.fail_next = broken_stream_name in {"stderr", "both"}
+
+    def ledger(argv: Sequence[str] | None = None) -> int:
+        phases.append("ledger")
+        if cleanup_stage == "ledger":
+            arm()
+        return ledger_code
+
+    def status(args: argparse.Namespace) -> int:
+        phases.append("status")
+        observer_codes.append(args.ledger_observation_exit_code)
+        if cleanup_stage == "status":
+            arm()
+        return 7
+
+    result: int | None = None
+    raised = ""
+    with monkeypatch.context() as scoped:
+        scoped.setattr(sys, "stdout", output)
+        scoped.setattr(sys, "stderr", errors)
+        scoped.setattr(ci_failure_ledger, "main", ledger)
+        scoped.setattr(owner, "_status", status)
+        try:
+            result = owner.main(["--observe-ledger"])
+        except OSError as exc:
+            raised = str(exc)
+
+    assert raised == ""
+    assert phases == ["ledger", "status"]
+    assert attempts == ["stdout", "stderr", "stdout", "stderr"]
+    assert observer_codes == [120 if cleanup_stage == "ledger" else ledger_code]
+    assert result == (120 if cleanup_stage == "ledger" else ledger_code or 120)
+    assert f"fixture {broken_stream_name if broken_stream_name != 'both' else 'stdout'}" in errors.getvalue()
+
+
+@pytest.mark.parametrize("broken_stream_name", ["stdout", "stderr"])
+def test_cleanup_failure_replaces_prior_success_without_authorizing_terminal_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, broken_stream_name: str,
+) -> None:
+    snapshot = tmp_path / "current.json"
+    identity = {"repo": owner.DEFAULT_REPO, "branch": owner.DEFAULT_BRANCH, "sha": SHA}
+    write_snapshot(snapshot, producer="pipeline-status", identity=identity, state="success", evidence={})
+    attempts: list[str] = []
+    output = _FlushFaultOutput("stdout", attempts)
+    errors = _FlushFaultOutput("stderr", attempts)
+    output.fail_next = broken_stream_name == "stdout"
+    errors.fail_next = broken_stream_name == "stderr"
+    phases: list[str] = []
+    recorded: list[tuple[object, ...]] = []
+    runs = [
+        dict(workflowName=name, databaseId=number, headSha=SHA, headBranch=owner.DEFAULT_BRANCH,
+             status="completed", conclusion="success", event="push",
+             createdAt="2026-10-20T00:00:00Z", url="")
+        for number, name in enumerate(owner.DEFAULT_REQUIRED_WORKFLOWS, start=1)
+    ]
+
+    def ledger(argv: Sequence[str] | None = None) -> int:
+        phases.append("ledger")
+        return 5
+
+    def query(sha: str, *, repo: str) -> list[dict[str, object]]:
+        phases.append("status")
+        return runs
+
+    def detail(run_id: int, repository: str) -> dict[str, object]:
+        return dict(next(run for run in runs if run["databaseId"] == run_id), jobs=[])
+
+    monkeypatch.setattr(ci_failure_ledger, "main", ledger)
+    monkeypatch.setattr(ci_failure_ledger, "fetch_run", detail)
+    monkeypatch.setattr(owner, "fetch_runs", query)
+    monkeypatch.setattr(active_work_status, "collect_status", lambda: {
+        "open_task_ids": [], "git": {"head": SHA},
+    })
+    monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage",
+                        lambda: automatic_disk_cleanup.DiskSnapshot(0.0, 80.0))
+    monkeypatch.setattr(ci_check_cooldown, "cmd_record_verdict", lambda *args: recorded.append(args))
+    with monkeypatch.context() as scoped:
+        scoped.setattr(sys, "stdout", output)
+        scoped.setattr(sys, "stderr", errors)
+        result = owner.main([
+            "--observe-ledger", "--remote-only", "--sha", SHA,
+            "--failure-ledger", str(tmp_path / "ledger.json"), "--snapshot-output", str(snapshot),
+        ])
+
+    assert result == 120
+    assert phases == ["ledger", "status"]
+    assert attempts[:2] == ["stdout", "stderr"]
+    current = read_snapshot(snapshot, producer="pipeline-status", identity=identity)
+    assert current["state"] == "lookup_error"
+    assert current["evidence"]["errors"] == ["failure-ledger observation failed rc=120"]
+    assert current["release_ready"] is False
+    assert current["gate_evidence"] is False
+    assert recorded == []
+    assert "PIPELINE-TERMINAL-OBSERVED" not in output.getvalue()
+
+
+@pytest.mark.parametrize("fault_kind", ["exit-message", "traceback"])
+def test_report_write_failure_retains_native_child_code_and_runs_status(
+    monkeypatch: pytest.MonkeyPatch, fault_kind: str,
+) -> None:
+    class ReportFailure(io.StringIO):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_next = True
+
+        def write(self, text: str) -> int:
+            if self.fail_next:
+                self.fail_next = False
+                raise OSError("fixture report write unavailable")
+            return super().write(text)
+
+    native_source = (
+        "import io, sys\n"
+        "class ReportFailure(io.StringIO):\n"
+        "    def __init__(self): super().__init__(); self.fail_next = True\n"
+        "    def write(self, text):\n"
+        "        if self.fail_next:\n"
+        "            self.fail_next = False\n"
+        "            raise OSError('fixture report write unavailable')\n"
+        "        return super().write(text)\n"
+        "sys.stderr = ReportFailure()\n"
+        + ("raise SystemExit('fixture exit')\n" if fault_kind == "exit-message"
+           else "raise RuntimeError('fixture observer')\n")
+    )
+    native = subprocess.run([sys.executable, "-W", "error", "-c", native_source],
+                            text=True, capture_output=True, check=False, timeout=15)
+    phases: list[str] = []
+    observer_codes: list[int] = []
+
+    def ledger(argv: Sequence[str] | None = None) -> NoReturn:
+        phases.append("ledger")
+        if fault_kind == "exit-message":
+            raise SystemExit("fixture exit")
+        raise RuntimeError("fixture observer")
+
+    def status(args: argparse.Namespace) -> int:
+        phases.append("status")
+        observer_codes.append(args.ledger_observation_exit_code)
+        return 0
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(sys, "stderr", ReportFailure())
+        scoped.setattr(ci_failure_ledger, "main", ledger)
+        scoped.setattr(owner, "_status", status)
+        result = owner.main(["--observe-ledger"])
+
+    assert native.returncode == 1
+    assert phases == ["ledger", "status"]
+    assert observer_codes == [native.returncode]
+    assert result == native.returncode
+
+
+@pytest.mark.parametrize("closed_stream_name", ["stdout", "stderr"])
+def test_closed_standard_stream_is_not_flushed(
+    monkeypatch: pytest.MonkeyPatch, closed_stream_name: str,
+) -> None:
+    attempts: list[str] = []
+    closed = _FlushFaultOutput(closed_stream_name, attempts)
+    closed.close()
+    with monkeypatch.context() as scoped:
+        scoped.setattr(sys, closed_stream_name, closed)
+        result = owner._cli_exit_code(lambda: 0)
+    assert result == 0
+    assert attempts == []
+
+
+def test_cleanup_diagnostic_failure_still_attempts_both_streams_and_runs_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts: list[str] = []
+    reports: list[str] = []
+    observer_codes: list[int] = []
+    output = _FlushFaultOutput("stdout", attempts)
+    errors = _FlushFaultOutput("stderr", attempts)
+    output.fail_next = errors.fail_next = True
+
+    def blocked_report(exc: BaseException, **kwargs: object) -> NoReturn:
+        reports.append(str(exc))
+        raise OSError("fixture cleanup diagnostic unavailable")
+
+    def status(args: argparse.Namespace) -> int:
+        observer_codes.append(args.ledger_observation_exit_code)
+        return 7
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(sys, "stdout", output)
+        scoped.setattr(sys, "stderr", errors)
+        scoped.setattr(traceback, "print_exception", blocked_report)
+        scoped.setattr(ci_failure_ledger, "main", lambda argv: 5)
+        scoped.setattr(owner, "_status", status)
+        result = owner.main(["--observe-ledger"])
+
+    assert result == 120
+    assert observer_codes == [120]
+    assert attempts == ["stdout", "stderr", "stdout", "stderr"]
+    assert reports == ["fixture stdout flush unavailable", "fixture stderr flush unavailable"]
+
+
+@pytest.mark.parametrize("absent_stream_name", ["stdout", "stderr"])
+@pytest.mark.parametrize("absence_kind", ["none", "deleted"])
+def test_absent_standard_stream_does_not_turn_completion_into_an_error(
+    monkeypatch: pytest.MonkeyPatch, absent_stream_name: str, absence_kind: str,
+) -> None:
+    with monkeypatch.context() as scoped:
+        if absence_kind == "none":
+            scoped.setattr(sys, absent_stream_name, None)
+        else:
+            scoped.delattr(sys, absent_stream_name)
+        result = owner._cli_exit_code(lambda: 0)
+    assert result == 0
 
 
 def test_observer_and_legacy_exit_carrier_cannot_conflict(

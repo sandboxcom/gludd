@@ -537,8 +537,8 @@ def _observe_ledger(args: argparse.Namespace) -> int:
     return ci_failure_ledger.main(argv)
 
 
-def _cli_exit_code(command: Callable[[], int]) -> int:
-    """Retain each former CLI child's exit status and visible exception traceback."""
+def _command_exit_code(command: Callable[[], int]) -> int:
+    """Normalize explicit exits and report unexpected command exceptions."""
     try:
         return command()
     except SystemExit as exc:
@@ -551,9 +551,27 @@ def _cli_exit_code(command: Callable[[], int]) -> int:
     except Exception:
         traceback.print_exc()
         return 1
+
+
+def _cli_exit_code(command: Callable[[], int]) -> int:
+    """Complete both stream flushes and retain CPython's cleanup failure code 120."""
+    result = 1
+    try:
+        result = _command_exit_code(command)
+    except Exception:
+        result = 1
     finally:
-        sys.stdout.flush()
-        sys.stderr.flush()
+        for stream in (getattr(sys, "stdout", None), getattr(sys, "stderr", None)):
+            try:
+                if stream is not None and not getattr(stream, "closed", False):
+                    stream.flush()
+            except Exception as exc:
+                result = 120
+                try:
+                    traceback.print_exception(exc, file=sys.stderr)
+                except Exception:
+                    result = 120
+    return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:
