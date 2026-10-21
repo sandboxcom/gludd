@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
+import os
+import subprocess
+import sys
+import uuid
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from scripts.watchdog_components.types import ReleaseData
+if TYPE_CHECKING:
+    from watchdog_components.types import ReleaseData
+else:
+    from scripts.watchdog_components.types import ReleaseData
 
 
 def _check_stale_release(runtime: Any) -> dict[str, object] | None:
@@ -155,6 +163,46 @@ def _get_tags_with_commits(runtime: Any) -> list[tuple[str, str]]:
         return []
 
 
+def _run_secrets_scan(workspace: Path) -> subprocess.CompletedProcess[str]:
+    """Reuse native observation, owned-session cleanup and the selected runtime."""
+    if TYPE_CHECKING:
+        from stream_command import _load_status, stream_command
+    else:
+        from scripts.stream_command import _load_status, stream_command
+
+    root = workspace / ".gate-logs" / "observed"
+    directory = root / "watchdog-secrets"
+    if any(path.is_symlink() for path in (root.parent, root, directory)):
+        raise ValueError("secrets-scan evidence namespace must not be a symlink")
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory.chmod(0o700)
+    run_id = f"scan-{uuid.uuid4().hex}"
+    log_path = directory / f"{run_id}.log"
+    environment = {
+        **os.environ, "UV_NO_SYNC": "1", "UV_PYTHON_DOWNLOADS": "never",
+        "UV_PYTHON": sys.executable, "UV_PROJECT_ENVIRONMENT": sys.prefix,
+        "VIRTUAL_ENV": sys.prefix,
+    }
+    command = ["make", "secrets-scan"]
+    code = stream_command(
+        command, log_path, observed_root=root, label="watchdog-secrets", run_id=run_id,
+        heartbeat_seconds=15, quiet_seconds=0, max_seconds=60, quiet=True,
+        retain_runs=20, environment=environment, cwd=str(workspace),
+    )
+    if code in {130, 143}:
+        reason = _load_status(root, "watchdog-secrets", run_id=run_id).get("termination_reason")
+        signal_name = "SIGINT" if code == 130 else "SIGTERM"
+        if reason == f"observer-signal:{signal_name}":
+            raise SystemExit(code)
+    if code == 124:
+        raise subprocess.TimeoutExpired(command, 60)
+    if code == 125:
+        raise RuntimeError(f"native secrets-scan observer failed; evidence: {directory}")
+    with log_path.open("rb") as output:
+        snippet = output.read(500).decode("utf-8", errors="replace")
+    return subprocess.CompletedProcess(command, code, stdout=snippet, stderr="")
+
+
 def _check_secrets_committed(runtime: Any) -> dict[str, object] | None:
     """Periodically scan for secrets committed to tracked files.
 
@@ -164,9 +212,7 @@ def _check_secrets_committed(runtime: Any) -> dict[str, object] | None:
     if not runtime._should_run_check("secrets_scan", cooldown_secs=runtime.SECRETS_SCAN_COOLDOWN_SECS):
         return None
     try:
-        result = runtime.subprocess.run(
-            ["make", "secrets-scan"], capture_output=True, text=True, timeout=60, cwd=str(runtime._WORKSPACE)
-        )
+        result = _run_secrets_scan(Path(runtime._WORKSPACE))
         runtime._mark_check_run("secrets_scan")
         output = result.stdout + result.stderr
         if result.returncode != 0:
@@ -183,14 +229,23 @@ def _check_secrets_committed(runtime: Any) -> dict[str, object] | None:
             runtime.json.dumps({"ts": runtime.time.time(), "violation": False})
         )
         return None
+    except (KeyboardInterrupt, SystemExit):
+        runtime._mark_check_run("secrets_scan")
+        interrupted_data = {"ts": runtime.time.time(), "violation": None, "reason": "interrupted"}
+        runtime.Path(runtime.SECRETS_VIOLATION_FILE).write_text(runtime.json.dumps(interrupted_data))
+        raise
     except runtime.subprocess.TimeoutExpired:
         runtime._mark_check_run("secrets_scan")
         runtime._log("SECRETS SCAN TIMEOUT: >60s")
-        return {"ts": runtime.time.time(), "violation": None, "reason": "timeout"}
+        timeout_data = {"ts": runtime.time.time(), "violation": None, "reason": "timeout"}
+        runtime.Path(runtime.SECRETS_VIOLATION_FILE).write_text(runtime.json.dumps(timeout_data))
+        return timeout_data
     except Exception as e:
         runtime._mark_check_run("secrets_scan")
         runtime._log(f"_check_secrets_committed error: {e}")
-        return None
+        error_data = {"ts": runtime.time.time(), "violation": None, "reason": "scan-error"}
+        runtime.Path(runtime.SECRETS_VIOLATION_FILE).write_text(runtime.json.dumps(error_data))
+        return error_data
 
 
 def _get_tags(runtime: Any) -> list[str]:

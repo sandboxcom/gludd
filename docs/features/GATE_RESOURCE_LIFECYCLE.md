@@ -19,6 +19,13 @@ lower worker count instead of staying stopped.
 
 ## Contract
 
+### Watchdog secrets-scan process ownership (2026-10-21)
+
+The [dedicated lifecycle record](WATCHDOG_SECRETS_LIFECYCLE.md) retains native
+orphan ancestry, failing-first controls, safe fixture defaults, source coverage
+identity and the original60-second scan budget. Source acceptance, daemon
+activation and release proof remain distinct; all ownership/ZDD guards remain.
+
 ### Measured cleanup and browser prefetch order (2026-10-20)
 
 After completed source proof and retired peer testing, native preflight removes

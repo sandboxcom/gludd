@@ -60,6 +60,15 @@ The same startup owner plans with WATCHDOG_START_VALIDATE_ONLY=1; auto plans bot
 with WATCHDOG_AUTO_VALIDATE_ONLY=1. Refusal preserves evidence and blocks the
 handoff; PID diagnostics alone never authorize termination.
 
+For watchdog secrets lifecycle work, reuse the existing stream_command owner,
+60-second scan budget, 300-second cooldown and installed parent interpreter.
+Tests confine command workspace and state by default, then mock the actual scan
+adapter before invoking the legacy integration path. Mocking only subprocess.run
+no longer intercepts that path. Timeout/signal controls use synthetic Make and
+bounded descendants; no test reaches the host scanner. The [lifecycle record](../../docs/features/WATCHDOG_SECRETS_LIFECYCLE.md)
+retains original failed receipts and the owned activation sequence. A native
+source test result does not activate a daemon already running older code.
+
 The coverage-files owner automatically captures physical pwd -P and exports
 private GLUDD_COVERAGE_SOURCE_ROOT for the existing watchdog profile. Children
 retain that identity across CWD changes; the required variable is not a caller
@@ -90,6 +99,15 @@ retains both distinct incidents and exact negative/positive receipts.
 | Source is reviewed and prerequisites pass | Freeze one candidate for combined acceptance, full gate and exact-SHA hosted CI. |
 | Local or hosted proof fails | Preserve its receipt and log; change the actual failing input before retrying. |
 | Gate and required exact-SHA proofs pass | Record task evidence and use the guarded promotion owner from the canonical main checkout. |
+
+Use a single guarded public Make target per invocation. For example,
+lint-markdown treats additional target names as stray unquoted goals; batch
+separate invocations in the transport and drain every yielded process. The
+complete operating/documentation cohort captures a real test-count child:
+retain its established180-second quiet/240-second total helper limits. A caller
+mistakenly using60quiet retained an actual69.938s timeout and orphaned collection
+receipt; that failure is not236-case acceptance. These helper limits do not
+change the original runtime/publication90total/60quiet policy.
 
 Source review, focused acceptance, collection, plan mode and scheduling admission
 have distinct meanings. A plan reports `gate_evidence=false`; it never supplies

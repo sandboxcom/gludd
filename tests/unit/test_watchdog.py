@@ -46,8 +46,9 @@ aw = _load_module()
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _setup_aw_env(monkeypatch, tmp_path: Path):
-    """Redirect all watchdog file paths into tmp_path for isolation."""
+def _setup_aw_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Redirect watchdog state and command workspace into the same fixture."""
+    monkeypatch.setattr(aw, "_WORKSPACE", tmp_path)
     monkeypatch.setattr(aw, "STREAK_FILE", str(tmp_path / "streak.json"))
     monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(tmp_path / "multitask-state.json"))
     monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(tmp_path / "watchdog-activity.json"))
@@ -267,40 +268,44 @@ class TestReleaseCompleteness:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _mock_secrets_observer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *,
+    stdout: str = "", stderr: str = "", returncode: int = 0,
+) -> list[tuple[list[str], Path, dict[str, object]]]:
+    """Conform only the old adapter mock; keep all scanner work in the fixture."""
+    monkeypatch.setattr(aw, "_WORKSPACE", tmp_path)
+    calls: list[tuple[list[str], Path, dict[str, object]]] = []
+
+    def observed(command: list[str], log_path: Path, **options: object) -> int:
+        calls.append((command, log_path, options))
+        log_path.write_text(stdout + stderr, encoding="utf-8")
+        return returncode
+
+    monkeypatch.setattr(importlib.import_module("scripts.stream_command"), "stream_command", observed)
+    return calls
+
+
 class TestSecretsCommitted:
     def test_clean_scan_writes_no_violation(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         _setup_aw_env(monkeypatch, tmp_path)
-        calls = []
-
-        def _run(cmd, **kwargs):
-            calls.append((cmd, kwargs))
-            return type("R", (), {
-                "stdout": "No secrets found\n",
-                "stderr": "",
-                "returncode": 0,
-            })()
-
-        monkeypatch.setattr(aw.subprocess, "run", _run)
+        calls = _mock_secrets_observer(monkeypatch, tmp_path, stdout="No secrets found\n")
         result = aw._check_secrets_committed()
         assert result is None
-        assert calls == [
-            (["make", "secrets-scan"], {
-                "capture_output": True,
-                "text": True,
-                "timeout": 60,
-                "cwd": str(aw._WORKSPACE),
-            })
-        ]
+        assert len(calls) == 1
+        command, _log_path, options = calls[0]
+        assert command == ["make", "secrets-scan"]
+        assert options["cwd"] == str(aw._WORKSPACE)
+        assert options["max_seconds"] == 60
+        assert options["quiet"] is True
+        assert options["quiet_seconds"] == 0
         data = json.loads((tmp_path / "secrets-violation.json").read_text())
         assert data["violation"] is False
 
     def test_secrets_found_writes_violation(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         _setup_aw_env(monkeypatch, tmp_path)
-        monkeypatch.setattr(aw.subprocess, "run", lambda cmd, **kwargs: type("R", (), {
-            "stdout": "SECRET FOUND: AWS key in src/leak.py\n",
-            "stderr": "",
-            "returncode": 1,
-        })())
+        _mock_secrets_observer(
+            monkeypatch, tmp_path, stdout="SECRET FOUND: AWS key in src/leak.py\n", returncode=1,
+        )
         result = aw._check_secrets_committed()
         assert result is not None
         assert result["violation"] is True
@@ -310,12 +315,7 @@ class TestSecretsCommitted:
 
     def test_scan_timeout_records_reason(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         _setup_aw_env(monkeypatch, tmp_path)
-        import subprocess as sp
-
-        def _raise_timeout(cmd, **kwargs):
-            raise sp.TimeoutExpired(cmd, 60)
-
-        monkeypatch.setattr(aw.subprocess, "run", _raise_timeout)
+        _mock_secrets_observer(monkeypatch, tmp_path, returncode=124)
         result = aw._check_secrets_committed()
         assert result is not None
         assert result["violation"] is None
@@ -546,6 +546,9 @@ class TestCheckAndResetIntegration:
             "stderr": "",
             "returncode": 1,
         })())
+        _mock_secrets_observer(
+            monkeypatch, tmp_path, stdout="SECRET FOUND in secrets.py\n", returncode=1,
+        )
 
         (tmp_path / "streak.json").write_text('{"count": 0, "last_tool": "write"}')
         (tmp_path / "streak.json").touch()
@@ -605,9 +608,7 @@ class TestStateFilesForEnforceStop:
 
     def test_secrets_violation_file_schema(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         _setup_aw_env(monkeypatch, tmp_path)
-        monkeypatch.setattr(aw.subprocess, "run", lambda cmd, **kwargs: type("R", (), {
-            "stdout": "", "stderr": "", "returncode": 0,
-        })())
+        _mock_secrets_observer(monkeypatch, tmp_path)
 
         aw._check_secrets_committed()
         data = json.loads((tmp_path / "secrets-violation.json").read_text())
@@ -624,3 +625,11 @@ class TestStateFilesForEnforceStop:
         assert "ts" in data
         assert "stale" in data
         assert isinstance(data["stale"], bool)
+
+
+def test_watchdog_fixture_confines_command_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missed adapter mock must never select the host repository as CWD."""
+    _setup_aw_env(monkeypatch, tmp_path)
+    assert tmp_path == aw._WORKSPACE

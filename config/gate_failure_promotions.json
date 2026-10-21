@@ -1174,6 +1174,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_ci_named_shard_files.py::test_coverage_files_exports_physical_checkout_to_changed_cwd_children[False-command-line]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-secrets-owned-timeout",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_watchdog_secrets_lifecycle.py::test_native_scan_owns_terminal_receipt_and_descendants[timeout-124-timed_out]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-scan-fixture-workspace",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace",
+      "full_gate_phase": "test"
     }
   ]
 }
