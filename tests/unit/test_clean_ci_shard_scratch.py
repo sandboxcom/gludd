@@ -474,10 +474,10 @@ def test_remove_tree_tolerates_restrictive_mode_repair_failure(
     candidate.mkdir()
     (candidate / "result.bin").write_bytes(b"result")
 
-    def fail_chmod(*args: object, **kwargs: object) -> None:
+    def fail_fchmod(*args: object, **kwargs: object) -> None:
         raise PermissionError("simulated chmod race")
 
-    monkeypatch.setattr(module.os, "chmod", fail_chmod)
+    monkeypatch.setattr(module.os, "fchmod", fail_fchmod)
 
     module._remove_tree(candidate)
 
@@ -705,3 +705,236 @@ def test_orphan_cleanup_cli_requires_explicit_delete_flag(
     output = capsys.readouterr().out
     assert f"eligible {candidate}" in output
     assert "eligible=1 removed=0 skipped=0" in output
+
+
+@pytest.mark.parametrize("link_kind", ["file", "directory"])
+def test_stale_scratch_nested_symlink_preserves_external_target_modes(
+    tmp_path: Path, link_kind: str
+) -> None:
+    module = _load_module()
+    outside = tmp_path / "retained-evidence"
+    outside.mkdir(mode=0o750)
+    outside.chmod(0o750)
+    evidence = outside / "proof.txt"
+    evidence.write_bytes(b"retained release proof")
+    evidence.chmod(0o640)
+    stale = tmp_path / "gludd-test-nested-symlink"
+    stale.mkdir()
+    nested = stale / "nested"
+    nested.mkdir()
+    target = evidence if link_kind == "file" else outside
+    (nested / "retained-link").symlink_to(
+        target, target_is_directory=link_kind == "directory"
+    )
+    original_directory_mode = outside.stat().st_mode
+    original_evidence_mode = evidence.stat().st_mode
+    _age_path(stale, 7200)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert result == {"removed": [str(stale)], "skipped": []}
+    assert not stale.exists()
+    assert evidence.read_bytes() == b"retained release proof"
+    assert outside.stat().st_mode == original_directory_mode
+    assert evidence.stat().st_mode == original_evidence_mode
+
+
+def test_stale_scratch_refuses_unreadable_real_directory(tmp_path: Path) -> None:
+    module = _load_module()
+    stale = tmp_path / "gludd-test-restrictive-directories"
+    stale.mkdir()
+    nested = stale / "nested"
+    nested.mkdir()
+    (nested / "result.txt").write_bytes(b"regenerable result")
+    nested.chmod(0o000)
+    stale.chmod(0o500)
+    _age_path(stale, 7200)
+    can_traverse = os.access(nested, os.R_OK | os.X_OK)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    if can_traverse:
+        assert result == {"removed": [str(stale)], "skipped": []}
+        assert not stale.exists()
+    else:
+        assert result == {"removed": [], "skipped": [f"{stale}:removal-failed"]}
+        assert stale.is_dir()
+        nested.chmod(0o700)
+        assert (nested / "result.txt").read_bytes() == b"regenerable result"
+
+
+def test_stale_scratch_removes_readable_readonly_real_directories(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    stale = tmp_path / "gludd-test-readonly-directories"
+    stale.mkdir()
+    nested = stale / "nested"
+    nested.mkdir()
+    (nested / "result.txt").write_bytes(b"regenerable result")
+    nested.chmod(0o500)
+    stale.chmod(0o500)
+    _age_path(stale, 7200)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert result == {"removed": [str(stale)], "skipped": []}
+    assert not stale.exists()
+
+
+@pytest.mark.parametrize("capability", ["fwalk", "fchmod", "safe-rmtree"])
+def test_stale_scratch_refuses_missing_safe_removal_capability(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capability: str
+) -> None:
+    module = _load_module()
+    stale = tmp_path / "gludd-test-required-safe-api"
+    stale.mkdir(mode=0o500)
+    original_mode = stale.stat().st_mode
+    _age_path(stale, 7200)
+    if capability == "safe-rmtree":
+        monkeypatch.setattr(module.shutil.rmtree, "avoids_symlink_attacks", False)
+    else:
+        monkeypatch.setattr(module.os, capability, None)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert result == {"removed": [], "skipped": [f"{stale}:removal-failed"]}
+    assert stale.stat().st_mode == original_mode
+
+
+def test_stale_scratch_refuses_unsupported_native_walk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module()
+    stale = tmp_path / "gludd-test-unsupported-native-walk"
+    stale.mkdir()
+    (stale / "proof.txt").write_bytes(b"keep on refusal")
+    _age_path(stale, 7200)
+
+    def unavailable_fwalk(
+        *_args: object, **_kwargs: object
+    ) -> Iterator[tuple[str, list[str], list[str], int]]:
+        raise NotImplementedError("native descriptor walk unavailable")
+
+    monkeypatch.setattr(module.os, "fwalk", unavailable_fwalk)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert result == {"removed": [], "skipped": [f"{stale}:removal-failed"]}
+    assert (stale / "proof.txt").read_bytes() == b"keep on refusal"
+
+
+def test_stale_scratch_swap_before_native_open_preserves_external_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module()
+    stale = tmp_path / "gludd-test-swapped-nested-directory"
+    stale.mkdir()
+    nested = stale / "nested"
+    nested.mkdir()
+    outside = tmp_path / "retained-evidence"
+    outside.mkdir()
+    outside.chmod(0o750)
+    evidence = outside / "proof.txt"
+    evidence.write_bytes(b"retain original bytes")
+    evidence.chmod(0o640)
+    directory_mode = outside.stat().st_mode
+    evidence_mode = evidence.stat().st_mode
+    original_open = os.open
+    swapped = False
+    _age_path(stale, 7200)
+
+    def swap_then_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        if os.fsdecode(path) == "nested" and dir_fd is not None and not swapped:
+            nested.rmdir()
+            nested.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(module.os, "open", swap_then_open)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert swapped
+    assert result in (
+        {"removed": [str(stale)], "skipped": []},
+        {"removed": [], "skipped": [f"{stale}:removal-failed"]},
+    )
+    assert outside.stat().st_mode == directory_mode
+    assert evidence.stat().st_mode == evidence_mode
+    assert evidence.read_bytes() == b"retain original bytes"
+
+
+def test_stale_scratch_swap_before_descriptor_chmod_preserves_external_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module()
+    stale = tmp_path / "gludd-test-swapped-chmod-ancestor"
+    stale.mkdir()
+    nested = stale / "nested"
+    nested.mkdir()
+    nested_inode = nested.stat().st_ino
+    outside = tmp_path / "retained-evidence"
+    outside.mkdir()
+    outside.chmod(0o750)
+    evidence = outside / "proof.txt"
+    evidence.write_bytes(b"retain original bytes")
+    evidence.chmod(0o640)
+    directory_mode = outside.stat().st_mode
+    evidence_mode = evidence.stat().st_mode
+    original_fchmod = os.fchmod
+    swapped = False
+    _age_path(stale, 7200)
+
+    def swap_then_fchmod(descriptor: int, mode: int) -> None:
+        nonlocal swapped
+        if os.fstat(descriptor).st_ino == nested_inode and not swapped:
+            nested.rename(stale / "detached")
+            nested.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        original_fchmod(descriptor, mode)
+
+    monkeypatch.setattr(module.os, "fchmod", swap_then_fchmod)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert swapped
+    assert result == {"removed": [str(stale)], "skipped": []}
+    assert outside.stat().st_mode == directory_mode
+    assert evidence.stat().st_mode == evidence_mode
+    assert evidence.read_bytes() == b"retain original bytes"

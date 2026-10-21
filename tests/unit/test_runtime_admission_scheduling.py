@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 148
+EXPECTED_FAMILY_COUNT = 149
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -96,6 +96,7 @@ ROSTER = (
     "test_native_scan_owns_terminal_receipt_and_descendants[timeout-124-timed_out]",
     "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace",
     "tests/unit/test_task_watchdog.py::test_terminal_status_cap_preserves_native_gate_protection[absent-64]",
+    "tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_target_modes[file]",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
@@ -933,3 +934,43 @@ def test_native_setuid_input_routing_rejects_contract_mutations(tmp_path: Path, 
         payload["families"][112]["node"] = node.replace("[2432]", "[420]")
     with pytest.raises(AssertionError):
         _assert_native_setuid_input_first_route(payload, rows)
+
+
+def test_scratch_symlink_permission_failure_has_one_exact_native_route(
+    tmp_path: Path,
+) -> None:
+    """Retain the real permission witness once before the existing fanout."""
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    node = (
+        "tests/unit/test_clean_ci_shard_scratch.py::"
+        "test_stale_scratch_nested_symlink_preserves_external_target_modes[file]"
+    )
+    expected = {
+        "id": "scratch-nested-symlink-permissions",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
+    assert payload["families"][-1] == expected
+    assert payload["families"][-2]["id"] == "watchdog-empty-observer-projection"
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
+    selectors = re.findall(r"TESTFILES=\"([^\"]*)\"", _stanza(OWNER))
+    assert len(selectors) == 3
+    arguments = [selector.split() for selector in selectors]
+    assert arguments[0].count(node) == 1
+    assert node not in arguments[1] + arguments[2]
+    assert all(node.split("::", 1)[0] not in selection for selection in arguments)
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    phase = next(
+        item for item in payload["runtime_contract"]["phases"]
+        if item["name"] == "pytest-runtime-compatibility"
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True

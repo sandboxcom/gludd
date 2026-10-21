@@ -11,10 +11,10 @@ import shutil
 import stat
 import subprocess
 import time
-from collections.abc import Callable
-from contextlib import suppress
+from collections.abc import Callable, Generator
+from contextlib import closing, suppress
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     import check_disk_usage
@@ -78,13 +78,31 @@ def is_stale(path: Path, *, now: float, min_age_seconds: int) -> bool:
 
 
 def _remove_tree(path: Path) -> None:
-    """Remove stale scratch even when a test left a restrictive mode behind."""
-    for root, dirs, files in os.walk(path, topdown=True, onerror=lambda _error: None):
-        for name in (*dirs, *files):
-            with suppress(OSError):
-                os.chmod(Path(root) / name, 0o700)
-        with suppress(OSError):
-            os.chmod(root, 0o700)
+    """Remove scratch without changing permissions through symlink paths."""
+    if (
+        getattr(shutil.rmtree, "avoids_symlink_attacks", False) is not True
+        or not callable(getattr(os, "fwalk", None))
+        or not callable(getattr(os, "fchmod", None))
+    ):
+        raise OSError("symlink-resistant scratch cleanup is unavailable")
+
+    def raise_walk_error(error: OSError) -> None:
+        """Retain directory inspection failures instead of skipping them."""
+        raise error
+
+    try:
+        walk = cast(
+            Generator[tuple[str, list[str], list[str], int], None, None],
+            os.fwalk(
+                path, topdown=True, onerror=raise_walk_error, follow_symlinks=False
+            ),
+        )
+        with closing(walk) as directories:
+            for _root, _dirs, _files, root_fd in directories:
+                with suppress(OSError):
+                    os.fchmod(root_fd, 0o700)
+    except NotImplementedError as error:
+        raise OSError("native descriptor scratch cleanup is unavailable") from error
     shutil.rmtree(path)
 
 

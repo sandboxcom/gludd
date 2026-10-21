@@ -91,8 +91,10 @@ redundant-operation witness in the actual native owner; another sample of the
 same wrapper is not such a witness. Do not drop required scanning, fixtures,
 baseline checks or original selectors.
 
-Actual97percent volume use remains above95. Original60907's failing input
-remains unresolved. Only actual prerequisite clearance and a named changed
+At this measured9ac diagnostic boundary, volume use is97percent against95.
+Later native cleanup reaches96percent/8.1GiB free and remains over95; current
+capacity and retention evidence belongs to SESSION.md and the owning cache
+feature. Original60907's failing input remains unresolved. Only actual prerequisite clearance and a named changed
 runtime input permit the existing release-proof admission/final-proof owners.
 Source review, local source acceptance, live watchdog handoff and this diagnostic
 remain separate from complete canonical gate/global85aggregate/75each-file line

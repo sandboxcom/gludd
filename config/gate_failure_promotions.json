@@ -1195,6 +1195,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_task_watchdog.py::test_terminal_status_cap_preserves_native_gate_protection[absent-64]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "scratch-nested-symlink-permissions",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_target_modes[file]",
+      "full_gate_phase": "test"
     }
   ]
 }

@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 148
+EXPECTED_FAMILY_COUNT = 149
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1844,16 +1844,14 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "importtime-native-numeric-columns",
         "importtime-failed-child-status",
         "importtime-missing-data-failure",
-        "pipeline-observed-job-progress",
-        "ci-cancel-request-contract",
+        "pipeline-observed-job-progress", "ci-cancel-request-contract",
         "release-proof-production-runner-binding",
         "line-edit-literal-forwarding",
         "trace-summary-literal-inputs",
         "cache-policy-home-and-proof-boundary", "watched-pytest-trace-native-argv", "disk-native-temp-size-ordering",
         "coverage-native-source-identity",
-        "watchdog-secrets-owned-timeout",
-        "watchdog-scan-fixture-workspace",
-        "watchdog-empty-observer-projection",
+        "watchdog-secrets-owned-timeout", "watchdog-scan-fixture-workspace",
+        "watchdog-empty-observer-projection", "scratch-nested-symlink-permissions",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2065,6 +2063,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace "
         "tests/unit/test_task_watchdog.py::"
         "test_terminal_status_cap_preserves_native_gate_protection[absent-64] "
+        "tests/unit/test_clean_ci_shard_scratch.py::"
+        "test_stale_scratch_nested_symlink_preserves_external_target_modes[file] "
         "tests/unit/test_status_heartbeat_terminal.py "
         "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py "

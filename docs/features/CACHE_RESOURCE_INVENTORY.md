@@ -464,3 +464,210 @@ This supports reusing the existing native sort -h owner instead of writing a
 size parser. It does not attribute this host's disk pressure. Native fixture
 and actual-target runs establish the selected environment's behavior; no
 cross-platform binary compatibility or package installation is inferred.
+
+## Native capacity cleanup and direct owner (2026-10-21)
+
+S98.4 on development0ab4ae6050728348e53abc19ac248669a57197bf keeps the
+protected release evidence and all seven tasks open. The native disk-check
+reports97percent against95 and766.5MB generated scratch against100MB.
+The preceding39-namespace/0-reclaimable24h plan remains history; it does not
+answer the separate canonical scratch/cache cleanup question.
+
+### Preserve the failed plan and actual consumers
+
+Existing run-watched retains plan20261021T225700Z-62649-ccb94ac1 under
+.gate-logs/observed/v012-capacity-scratch-plan/,30quiet/60total, exit2/native8.6s.
+Native preflight inspects395scratch candidates and reports nine dry-run eligible,
+386skipped. These dry-run counts are no removal or capacity proof.
+It reports active UV PIDs62648/62722; subsequent exact diagnostics find62648
+missing and62722 present as the real five-core detect-secrets command under62707.
+
+The installed agent watchdog owns that separate natural scan,
+scan-9a19b82fb09544bdb607a43fb8e418e8, parent57626/child62697.
+It starts2026-10-21T22:57:04.134653Z and naturally terminates inactive124/60.518s,
+max-runtime-timeout. No scan is forced or cooldown changed. Its timeout has no
+established scanner or original-publication cause.
+
+The cleanup owner itself streams bounded phases. A UV-backed observer also
+participates in its global UV-idle checks, so use the existing direct Make owner
+with installed SYSTEM_PYTHON after actual consumers drain. Do not ignore UV
+PIDs, remove the idle gate or create a second observer/cache. Direct dry-run
+then reports would-prune shared UV cache rather than active UV consumers:
+
+~~~console
+make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800 SYSTEM_PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+This direct plan exits Make2/no-progress at97percent and768.1MB; no source,
+policy or resource is changed by the dry-run. Neither plan exit is green admission.
+
+### Apply only the existing native policy
+
+After readers/model owners/tests/observers quiesce, actual apply uses the same
+native owner and1800-second receipt grace:
+
+~~~console
+make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800 SYSTEM_PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+Pass1 reports16removed/401skipped/zeroerrors. It removes the three regenerable
+cache directories in the cold-render peer,6314bytecode files/244991371bytes
+there and16files/167311bytes in the public-review peer. The release-note peer
+has zero eligible bytecode. Total bytecode is6330files/245158682bytes.
+The same owner removes nine stale scratch entries and its exact shared
+Playwright download root. UV prune finds no unused entries; native UV clean
+reports11files/12.3KiB and completes the exact shared cache cleanup.
+Installed test runtimes and protected refs/evidence/locks/checkpoints remain.
+
+Native pass1 recheck changes97to96percent and768.1to711.7MB scratch. Pass2
+removes0/skips403/zeroerrors and stops nonzero with no-progress at96/711.7;
+the enclosing Make exit is2. Subsequent make disk measures96percent/8.1GiB free;
+make ps shows only registered watchdogs57626/57964, no test/audit/scanner
+processes. Partial measured reclamation supplies no green capacity verdict.
+
+These direct-owner phase outputs are manual receiving evidence, not a generated
+current observation or release receipt. Preserve both failed plans and the
+partial apply result. No broader cleanup, shortened grace, protected-artifact
+removal or unchanged cleanup retry follows. Actual hard capacity must clear95;
+original60907 publication, full canonical gate/global85aggregate/75each-file line
+AND branch, exact-SHA all-shard hosted CI/deployment, ZDD/retention and guarded
+promotion remain separate and unproved.
+
+## Scratch permission repair through owned directory descriptors (2026-10-21)
+
+### Measured defect and confined reproduction
+
+After the capacity apply and documentation replay, native worktree-state at
+development 0ab4ae6050728348e53abc19ac248669a57197bf reports the seven expected
+prose edits plus executable-bit changes to scripts/stream_command.py and
+scripts/reviewed_head_inputs.py. Scoped native git-diff-full shows only
+100644-to-100755, with no byte changes. The specific deleted entry responsible
+is unproved. Preserve /tmp/gludd-v012-cleanup-mode-observation.md as manual
+receiving evidence. The native Git owner restores only those measured modes;
+subsequent worktree-state no longer includes either script.
+
+The existing scratch helper walks directory and file names, then chmods every
+path. Not traversing directory symlinks in os.walk does not prevent chmod from
+following a listed link. Confined tests invoke the actual public cleaner with
+nested file-link and directory-link variants and retain external target bytes,
+modes and contents inside the owned fixture. Both fail against the old code:
+2 failures in 0.68s/native 1.6s, v012-scratch-symlink-red311.
+A separate readable-directory/unreadable-refusal boundary gives 3 failures and
+1 pass in 0.65s/native 1.5s, v012-scratch-boundary-red311.
+The complete old 38 cases plus ten additive controls then give 8 failures and
+40 passes in 1.42s/native 2.3s, v012-scratch-complete-red311.
+Logs/XML remain under the corresponding /tmp/gludd-v012-* names.
+
+### Reuse the standard library and preserve refusal
+
+Root fully reads /tmp/gludd-v012-scratch-symlink-repair-design.md before changing
+production. The single existing _remove_tree owner now requires the public
+symlink-resistant rmtree capability plus native fwalk/fchmod before mutation.
+It uses os.fwalk with follow_symlinks=False and repairs permissions only through
+the yielded directory descriptors with fchmod. Regular-file and symlink paths
+are never chmodded. Both existing callers retain their original ownership,
+age, PID/socket checks, leases, fresh identity validation and result assertions.
+
+Native fwalk validates lstat/open/fstat identity before yielding a descriptor.
+Controlled swaps before native open and before descriptor chmod leave the
+replacement external bytes and modes unchanged. Public shutil.rmtree retains
+its own descriptor-based symlink defenses. No private helper, custom walker,
+path-chmod fallback, subprocess or dependency is added.
+
+The registered CPython implementations return a generator; the typing stub
+exposes only Iterator. A fully parameterized Generator cast supplies that
+verified close interface to contextlib.closing, retaining descriptor cleanup
+on normal and exceptional exits without Any or suppression comments.
+An unsupported native implementation becomes OSError and the existing public
+removal-failed refusal. Traversal errors are raised rather than silently skipped.
+
+Readable 0500 directories still clean. A genuinely unreadable 000 directory
+fails safely before an unverified descriptor can be used. Its test measures
+actual access first: a privileged process that can traverse it may clean it;
+a denied traversal must retain the tree and original data as removal-failed.
+No skip or fabricated platform-independent denial replaces either assertion.
+The original permission-failure control keeps its assertion and injects at the
+actual fchmod seam, matching the repaired adapter.
+
+### Complete source acceptance and early routing
+
+The unchanged coverage_check_disk profile measures the same two source files
+with branch data and both 85 aggregate / 75 each-file floors. Four complete
+owners run: test_clean_ci_shard_scratch.py, test_check_disk_usage.py,
+test_automatic_disk_cleanup.py and test_automatic_disk_cleanup_resources.py.
+
+Python 3.11 reports 193 passes in 5.64s/native 7.7s, run
+20261021T231324Z-69341-c4817721, audit .gate-logs/coverage-20261021T231332Z.json.
+Python 3.12 reports the same 193 passes in 6.83s/native 9.4s, run
+20261021T231429Z-70087-dc083aba, audit .gate-logs/coverage-20261021T231438Z.json.
+Both report 86.7% aggregate line / 89.0% branch coverage. Check-disk measures
+86.1% line / 87.1% branch; scratch cleanup measures 87.3% / 90.5%.
+Every measured file passes 75% for both metrics; this is not global coverage.
+
+The actual existing-owner command for 3.11 is:
+
+~~~console
+make coverage-files COVERAGE_TESTFILES="tests/unit/test_clean_ci_shard_scratch.py tests/unit/test_check_disk_usage.py tests/unit/test_automatic_disk_cleanup.py tests/unit/test_automatic_disk_cleanup_resources.py" COVERAGE_CONFIG=config/coverage_check_disk.ini COVERAGE_REPORT=.gate-logs/coverage-v012-scratch-callers-final311.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=5 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=180 OBSERVED_RETAIN_RUNS=20 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+The 3.12 invocation uses the installed sibling python-3.12 for both environment
+paths, UV_PYTHON=3.12.15 and the separate final312 report path. No environment
+acquisition, warning suppression or reduced selector replaces these runs.
+Earlier 82-case source-only receipts remain history, separately scoped.
+
+Family 149, scratch-nested-symlink-permissions, appends after all 148 predecessors.
+Its real file-link witness joins the existing first child exactly once:
+tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_target_modes[file].
+The whole owner is not widened into admission. Three children, 2/1/1 workers,
+90-total/60-quiet, 21 phases/2850 seconds and required full gate stay unchanged.
+The native routing witness first fails in 0.75s/native 1.7s, then three focused
+pins pass in 1.73s/native 2.6s. Preserve v012-scratch-route-red311 and
+v012-scratch-route-green311.
+
+The first full four-owner routing replay retains 2 failures/295 passes in
+54.24s/native 55.2s at v012-scratch-routing-final311: one independent explicit
+selector pin still lacks the new node, and its native-check consumer propagates
+that failure. Only expected selector data is updated, preserving all prior
+selectors, order, assertions and original worker/budget constraints.
+The canonical existing check then reports 149 families and six passes/1.83s.
+The complete four routing/workflow owners pass 297 on each runtime: Python3.11
+42.35s/native43.3s and Python3.12 49.30s/native50.5s, fatal warnings and zero
+skips/errors. Preserve /tmp/gludd-v012-scratch-routing-repaired{311,312}.{log,xml}
+and their native immutable observed receipts separately from the failed run.
+
+The five complete documentation/handoff/ledger owners pass 98 in4.13s/native5.0s,
+v012-scratch-handoff-docs311, fatal warnings and zero skips. The first line-limit
+check retains2500 lines in the existing roster test; data-only list formatting
+preserves every value/order/assertion and returns it below the strict limit.
+No assertion, coverage floor or line-limit policy is weakened.
+
+Ruff checks four Python scopes; production docstrings and four separate strict
+typing scopes pass. The existing target contract reports 276, Make validates
+1157 targets/zero duplicates with 9 CI/12 local phases, and the full canonical
+resource inventory passes unchanged at 264. A wrong inventory filename attempt
+is retained as a caller error; the actual documented input is
+config/resource_ownership_inventory.json with empty RESOURCE_OWNERSHIP_PATHS.
+
+### Practitioner evidence and release limits
+
+The [Python 3.11 fwalk reference](https://docs.python.org/3.11/library/os.html#os.fwalk)
+documents directory descriptors and their lifetime. The registered
+[3.11 implementation](https://github.com/python/cpython/blob/v3.11.14/Lib/os.py)
+and [3.12 implementation](https://github.com/python/cpython/blob/v3.12.15/Lib/os.py)
+retain descriptor identity checks before yield. The public
+[rmtree reference](https://docs.python.org/3.11/library/shutil.html#shutil.rmtree)
+describes its symlink-resistant capability. Those APIs support the repair;
+the confined runtime tests establish this checkout behavior.
+
+A firsthand [2022 cleanup report](https://bugs.python.org/issue46977) reproduces
+permission repair following a link out of a read-only directory. Its
+[migrated discussion](https://github.com/python/cpython/issues/91133) records
+fixes and 2024 closure. It is a relevant historical pattern, not attribution
+of the deleted Gludd entry or a claim that installed Python is vulnerable.
+No private TemporaryDirectory callback or unsafe path fallback is copied.
+
+Actual capacity remains 96% against 95, with the retained partial apply result.
+This source repair supplies no new disposable owner or changed capacity input;
+do not repeat that failed cleanup for a badge. Preserve original publication
+60907 and all required canonical gate/global coverage, exact-SHA hosted and
+deployment proofs, ZDD, retention and guarded promotion. No task is ticked.

@@ -8,14 +8,58 @@ Total tests: 128526 selected / 128550 collected,24 deselected,zero collection er
 
 Root owns S98.4 and all Main/shared/Git/proof mutations. All seven S98.1-S98.7 remain unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff supplies no gate/release authority. Model-agent names/status come from the live conversation, never OS PIDs. Contributor states are supplied by the live conversation at each receiving boundary; quiesce every Main reader, model owner, test and observer before Git hooks may stash.
 
+## Current scratch permission repair
+
+Root owns S98.4 on development from 0ab4ae6050728348e53abc19ac248669a57197bf.
+The [native scratch record](docs/features/CACHE_RESOURCE_INVENTORY.md#scratch-permission-repair-through-owned-directory-descriptors-2026-10-21)
+retains measured byte-unchanged mode changes, their scoped native restore and
+public-cleaner REDs: two link failures, then 8 failures/40 passes across the
+complete old owner plus ten new controls. The existing production helper now
+uses native fwalk directory descriptors/fchmod and capability-checked rmtree.
+Its Generator close interface is explicitly typed; no custom walker or fallback
+is introduced. Original assertions and ownership/retention checks remain;
+the permission fault control injects through the actual fchmod adapter.
+Four complete source/caller owners pass 193 on each installed runtime:
+311 5.64s/native7.7s and312 6.83s/native9.4s. Both native audits retain
+86.7% line/89.0% branch overall, every measured file above75 BOTH.
+Family149 adds the real file-link witness once after148 predecessors; original
+three2/1/1 children,90/60,21/2850/full gate remain. Preserve routing RED and the
+first full replay2FAIL/295PASS caused by one outdated independent selector pin.
+Expected data now includes the new node with all old assertions/order intact;
+six canonical pins pass1.83s. Complete four-owner routing passes297 each:
+31142.35s/native43.3s and31249.30s/native50.5s, fatal warnings/zero skips/errors.
+Retain /tmp/gludd-v012-scratch-routing-repaired{311,312}.{log,xml}.
+The five complete documentation/handoff/ledger owners pass98/4.13s/native5.0s,
+v012-scratch-handoff-docs311; Ruff4, four strict scopes, docstrings,276contracts,
+Make1157/zero duplicates, full264 resource inventory and Markdown8 pass.
+Exact receiving commit/review belongs to native HEAD and the manual receiving
+record; read that boundary before repeating finished source work. Capacity
+96>95, original60907 publication and final gate/exactSHA CI/deployment remain.
+
+## Receiving correction and current capacity
+
+Documentation-only0ab4ae6050728348e53abc19ac248669a57197bf has CHANGES REQUIRED
+at /tmp/gludd-v012-handoff-profile-0ab4ae6-source-review.md, fully read by Root.
+The one stale present-tense PID sentence is now explicitly pre-handoff history,
+using the exact independent repair proposal; other source decisions stand.
+Normal0ab hooks retain128526selected/128550collected,24deselected/zero errors,
+47.64s/native52.8s, with six checkpoints. That prior0ab commit changes only prose;
+the separate native helper repair and its receiving evidence are recorded above.
+Current capacity after native cleanup is96percent/8.1GiB free and711.7MB counted
+scratch;96 still exceeds95. The later capacity subsection and owning cache
+feature retain plan/apply evidence, the direct native Make route and all refusals.
+Native current HEAD and the manual receiving decision own this correction
+commit/review boundary; do not repeat finished source steps from older prose.
+
 ## Current control-plane handoff and bounded diagnostic
 
 Reviewed development 9ac03d9f32f81c53ffcca842c2132d470919fb2c has independent
 APPROVE SOURCE ONLY against49 at
 /tmp/gludd-v012-watchdog-history-9ac03d9-source-review.md, fully read by Root.
 Its normal12-path hooks retain the fresh collection above, zero new clones
-(two existing clone records)/six checkpoints. Both source decisions remain
-immutable; this later tracking-only work changes no production source.
+(two existing clone records)/six checkpoints. These decisions remain immutable.
+The subsequent0ab handoff changes prose; the later scratch helper repair is
+separately recorded above.
 
 Actual owned agent plan1/apply0 drains39922, then auto acknowledges57626 while
 task29001 remains. Actual task plan1/apply0 drains29001, then auto acknowledges
@@ -33,8 +77,9 @@ native ps shows only57626/57964 and no test/audit/scanner processes. This
 measures the bounded live lifecycle, not a successful secrets scan or its cause.
 Old scan-a004eb6d stays failed history. The60-second scan/300-second cooldown
 and native current JSON are unchanged; no check is forced.
-The final five documentation/handoff/ledger owners pass98/5.82s/native7.0s,
-run v012-reviewed-watchdog-profile-docs311, with fatal warnings and no skips.
+At the0ab receiving boundary, five documentation/handoff/ledger owners pass98/
+5.82s/native7.0s, v012-reviewed-watchdog-profile-docs311, fatal warnings/no skips.
+The later scratch-unit documentation receipt is recorded in the current section.
 
 The [bounded readonly-scanner decision](docs/features/PUBLICATION_READONLY_SCANNER_PROFILE.md)
 records a new exact-case question at clean9ac:1PASS3.48s/native4.534s through the
@@ -43,7 +88,7 @@ poll2.353s; parent totals overlap and child/grandchild CPU is unobserved.
 The profiler's own five-event trace has one2.832465s protocol pair/zero issues;
 the separate allocated outer trace has zero events. Stop this wrapper proposal:
 no redundant parent work, optimization or60907 attribution is established.
-Original90/60 publication, capacity97>95, full gate/exactSHA CI/deployment and
+Original90/60 publication, current capacity96>95, full gate/exactSHA CI/deployment and
 promotion remain blocked. No task is ticked or code transported to GitHub.
 
 ## Reviewed empty-observer projection source
@@ -115,7 +160,25 @@ Exact published2f Build39587418003 is terminal FAILURE:30jobs,25success/1failure
 
 ## Capacity and retention prerequisites
 
-Latest native disk-check still fails97percent against95 and separately reports generated scratch766.5MB against100MB; the last native free-space reading is6.9GiB. Historical98percent/5.8GiB remains retained. The largest counted scratch roots are three retained v012 Pages/Chromium coverage artifacts near110MB each; size alone gives no retirement authority. Existing namespace plan finds39candidates/0reclaimable at unchanged24-hour grace; no duplicate scan, broader cleanup or shortened grace follows. Last native footprint report (after427) records Main .git555MiB/.gate-logs219MiB/.venv626MiB and scratch worktrees1.4GiB; those sizes do not establish disposable ownership. Last native load2.92/3.61/3.79,8CPU,0.36x,OK supplies no CPU-overload cause. ps/active-work-status identify only watchdogs29001/39922 when tests are idle, not model PIDs. Capacity HumanTodo remains UNFILED after API refusal/no ID; host-space question is unanswered.
+Before native cleanup, disk-check fails97percent against95 and separately reports generated scratch766.5MB against100MB with6.9GiB last free. After the actual cleanup below, native recheck is96percent/711.7MB scratch and make disk measures8.1GiB free; capacity still exceeds95. Historical98percent/5.8GiB remains retained. The largest counted scratch roots are three retained v012 Pages/Chromium coverage artifacts near110MB each; size alone gives no retirement authority. Existing namespace plan finds39candidates/0reclaimable at unchanged24-hour grace; no duplicate scan, broader cleanup or shortened grace follows. Last native footprint report (after427) records Main .git555MiB/.gate-logs219MiB/.venv626MiB and scratch worktrees1.4GiB; those sizes do not establish disposable ownership. Last native load2.92/3.61/3.79,8CPU,0.36x,OK supplies no CPU-overload cause. The pre-handoff ps/active-work-status observation identified watchdogs 29001/39922 when tests were idle. The later acknowledged successors 57626/57964 and measured predecessor absence are recorded in the current control-plane handoff above; these are OS process identities, not model-agent PIDs. Capacity HumanTodo remains UNFILED after API refusal/no ID; host-space question is unanswered.
+
+The [native capacity record](docs/features/CACHE_RESOURCE_INVENTORY.md#native-capacity-cleanup-and-direct-owner-2026-10-21)
+retains watched plan20261021T225700Z-62649-ccb94ac1 (exit2/native8.6s):
+395scratch candidates/nine dry-run eligible/386skips, with actual UV consumers.
+The next natural watchdog scan, scan-9a19b82fb09544bdb607a43fb8e418e8,
+terminates124/60.518s; no scan is forced. Direct preflight with the same installed
+SYSTEM_PYTHON and DRY_RUN=1 then reaches would-prune shared UV cache while idle.
+Direct apply0 keeps the1800-second receipt grace and all native checks. Pass1
+removes16 owner-reported resources with401skips/zeroerrors, including6330
+bytecode files/245158682bytes, three peer cache directories, nine stale scratch
+entries, the exact shared Playwright download root and UV-owned cache cleanup.
+UV reports11files/12.3KiB removed. Pass1 changes97to96 and768.1to711.7MB;
+pass2 removes0/skips403/zeroerrors and exits Make2 for no-progress at96/711.7.
+This is partial measured reclamation, never a green capacity or release verdict.
+No protected evidence/ref/lock/checkpoint is removed; no broader retry follows.
+Use the native preflight directly with explicit SYSTEM_PYTHON for its own phase
+streaming; a UV-backed observer also participates in the global UV-idle check.
+Do not ignore active UV PIDs or weaken that refusal to prune.
 
 Preserve locked gate-admission source, protected Pages refs, edc52 unmerged refusal after six checkpoints, dirty old release-note/runbook and legacy merge fixtures. DIFFERENT56d76bc retirement archive remains .git/gludd-release-evidence/79a7b76110a3-56d76bc75d24b6119574680b121563e18bbe550a/manifest.json. Re-reading cleanup/browser/admission failures does not authorize unchanged replay.
 

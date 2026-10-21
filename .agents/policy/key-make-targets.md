@@ -600,6 +600,24 @@ barrier. Use the owner's explicit validation mode and retained native tests.
 
 ### Bounded cache diagnostics
 
+Scratch permission repair belongs to the existing native cleanup owner. It
+requires descriptor-safe rmtree/fwalk/fchmod, uses only yielded directory FDs
+for mode repair and retains capability/traversal refusals. Preserve the actual
+adapter seam in fault injection and foreign bytes/modes across both link-swap
+boundaries. The [source repair record](../../docs/features/CACHE_RESOURCE_INVENTORY.md#scratch-permission-repair-through-owned-directory-descriptors-2026-10-21)
+retains failing-first public-cleaner cases, complete source/caller coverage and
+the single cheap family149 witness. A source patch supplies no new disposable
+owner or clearance for the retained actual capacity/publication failures.
+
+The canonical disk-cleanup-preflight streams its own bounded phases. Invoke it
+directly with explicit DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0,
+DISK_CLEANUP_PREFLIGHT_DRY_RUN=1|0, DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800 and
+the installed SYSTEM_PYTHON; its UV-idle checks also see a UV-backed observer.
+Drain real consumers and retain their native identities; never bypass the idle
+refusal. Dry-run eligible counts are plans, not removals. Apply can reclaim
+resources and still fail capacity/no-progress. The [actual plan/apply record](../../docs/features/CACHE_RESOURCE_INVENTORY.md#native-capacity-cleanup-and-direct-owner-2026-10-21)
+retains the precise route and97-to96 partial result, not a green release verdict.
+
 make disk delegates its temporary section to the existing tmp-gludd-usage
 owner: one native du measurement, human-size ordering and the largest40 rows.
 make tmp-gludd-usage is the standalone contract example. This human view can

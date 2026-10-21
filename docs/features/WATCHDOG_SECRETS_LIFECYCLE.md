@@ -281,8 +281,10 @@ cooldown/current JSON is edited.
 
 The final five documentation/handoff/ledger owners pass98 in5.82s/native7.0s,
 run v012-reviewed-watchdog-profile-docs311, fatal warnings/zero skips. Latest
-native disk-check fails97percent>95 and generated scratch766.5MB>100MB;
-retained artifact sizes grant no cleanup authority.
+native disk-check at the0ab boundary fails97percent>95 and scratch766.5MB>100MB.
+Later [native cleanup](CACHE_RESOURCE_INVENTORY.md#native-capacity-cleanup-and-direct-owner-2026-10-21)
+changes97to96 with8.1GiB free/711.7MB counted scratch, then stops at no-progress.
+Capacity still fails95; retained artifact sizes grant no cleanup authority.
 
 The separate [readonly-scanner profile](PUBLICATION_READONLY_SCANNER_PROFILE.md)
 answers a new parent-scope publication question with1PASS/native4.534s and mostly
