@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 132
+EXPECTED_FAMILY_COUNT = 136
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 HELP = "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries"
@@ -156,6 +156,10 @@ ROSTER = (
     "test_process_inventory_preserves_python_module_argument_forms",
     "tests/unit/test_code_intelligence_import_boundary.py::"
     "test_extractor_import_does_not_load_introspection_or_database",
+    "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure",
+    "tests/unit/test_import_time_deep.py::test_measurement_contract_parses_native_numeric_rows",
+    "tests/unit/test_import_time_deep.py::test_measurement_contract_rejects_failed_children",
+    "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data",
 )
 
 

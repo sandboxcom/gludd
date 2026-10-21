@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 132
+EXPECTED_FAMILY_COUNT = 136
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1851,6 +1851,10 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "watchdog-absence-refusal-context",
         "process-inventory-python-module-forms",
         "code-intelligence-extractor-import-boundary",
+        "native-directory-listing-producer-status",
+        "importtime-native-numeric-columns",
+        "importtime-failed-child-status",
+        "importtime-missing-data-failure",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2137,7 +2141,15 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_active_work_status.py::"
         "test_process_inventory_preserves_python_module_argument_forms "
         "tests/unit/test_code_intelligence_import_boundary.py::"
-        "test_extractor_import_does_not_load_introspection_or_database\"" in runtime_compatibility_owner
+        "test_extractor_import_does_not_load_introspection_or_database "
+        "tests/unit/test_list_files_target.py::"
+        "test_listing_missing_input_preserves_native_failure "
+        "tests/unit/test_import_time_deep.py::"
+        "test_measurement_contract_parses_native_numeric_rows "
+        "tests/unit/test_import_time_deep.py::"
+        "test_measurement_contract_rejects_failed_children "
+        "tests/unit/test_import_time_deep.py::"
+        "test_measurement_contract_consumers_fail_for_missing_data\"" in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
     assert "-n 0" in runtime_compatibility_owner
@@ -2361,12 +2373,28 @@ def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None
             "tests/unit/test_code_intelligence_import_boundary.py::"
             "test_extractor_import_does_not_load_introspection_or_database",
         ),
+        (
+            "native-directory-listing-producer-status",
+            "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure",
+        ),
+        (
+            "importtime-native-numeric-columns",
+            "tests/unit/test_import_time_deep.py::test_measurement_contract_parses_native_numeric_rows",
+        ),
+        (
+            "importtime-failed-child-status",
+            "tests/unit/test_import_time_deep.py::test_measurement_contract_rejects_failed_children",
+        ),
+        (
+            "importtime-missing-data-failure",
+            "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data",
+        ),
     ),
 )
 def test_hosted_failures_have_exact_early_routes(
     family_id: str, node: str,
 ) -> None:
-    """Replay actual hosted failures once in the existing bounded first child."""
+    """Replay observed regression classes once in the existing bounded first child."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     expected = {
         "id": family_id,

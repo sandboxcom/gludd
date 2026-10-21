@@ -152,6 +152,13 @@ This includes both formerly skipped original checks at their unchanged threshold
 These source acceptance bounds do not change original90/60 admission or final
 release proof. No product source changes after the separately accepted decoder.
 
+The existing admission owner additionally selects the exact numeric-row,
+failed-child and missing-data functions: nine deterministic cases. Alongside
+the listing failure function, the appended four families bring the literal
+roster to136 while retaining every prior selector and original90/60 bounds.
+The [admission record](INTEGRATION_ADMISSION.md#admit-actual-measurement-and-producer-failures-2026-10-21-utc)
+retains the routing RED and separate executable proof obligations.
+
 ## Primary and firsthand research
 
 [Python311](https://docs.python.org/3.11/using/cmdline.html#cmdoption-X) and

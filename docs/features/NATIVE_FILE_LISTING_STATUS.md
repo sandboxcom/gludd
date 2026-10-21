@@ -46,6 +46,12 @@ pass139 on31127.69s/native28.7s and31229.62s/native30.8s, fatal warnings/zero
 skips/errors; /tmp/gludd-v012-list-files-whole-311.log/XML and312 equivalent.
 This is source/helper acceptance, not runtime admission, gate or release proof.
 
+The existing early admission additionally selects just the missing-input
+function as native-directory-listing-producer-status, alongside the three
+measurement controls. All prior132 family identities/selectors remain; the
+literal roster is136. See the [routing record](INTEGRATION_ADMISSION.md#admit-actual-measurement-and-producer-failures-2026-10-21-utc)
+for preserved90/60 limits and separate actual-execution obligations.
+
 ## Existing tools and firsthand research
 
 The [GNU Bash pipeline contract](https://www.gnu.org/software/bash/manual/html_node/Pipelines)

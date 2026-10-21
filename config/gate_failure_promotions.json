@@ -1083,6 +1083,34 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_code_intelligence_import_boundary.py::test_extractor_import_does_not_load_introspection_or_database",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "native-directory-listing-producer-status",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "importtime-native-numeric-columns",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_import_time_deep.py::test_measurement_contract_parses_native_numeric_rows",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "importtime-failed-child-status",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_import_time_deep.py::test_measurement_contract_rejects_failed_children",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "importtime-missing-data-failure",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data",
+      "full_gate_phase": "test"
     }
   ]
 }

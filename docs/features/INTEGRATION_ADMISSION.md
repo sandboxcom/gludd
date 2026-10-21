@@ -246,6 +246,34 @@ The same five complete routing/contract owners pass312 cases on311 in
 /tmp/gludd-v012-132-family-whole-311.log/XML and312 equivalent. Actual original
 90/60 execution remains separate; source/contract results supply no repair receipt.
 
+## Admit actual measurement and producer failures (2026-10-21 UTC)
+
+After the132-family checkpoint, append four exact cheap functions to the existing
+first child, preserving all132 prior identities/order/selectors:
+
+- native-directory-listing-producer-status selects the existing missing-input
+  control in tests/unit/test_list_files_target.py.
+- importtime-native-numeric-columns selects test_measurement_contract_parses_native_numeric_rows.
+- importtime-failed-child-status selects all six test_measurement_contract_rejects_failed_children cases.
+- importtime-missing-data-failure selects both test_measurement_contract_consumers_fail_for_missing_data cases.
+
+The last three live in tests/unit/test_import_time_deep.py. This adds ten
+deterministic cases, not either whole file or the timing-sensitive original
+threshold tests. Their [measurement owner](IMPORT_TIME_MEASUREMENT_INTEGRITY.md)
+and [listing owner](NATIVE_FILE_LISTING_STATUS.md) retain real REDs, supported-
+runtime whole-owner acceptance, research and compatibility limits.
+
+Routing retains4FAIL/18PASS0.82s/native1.6s before wiring;
+ /tmp/gludd-v012-measurement-routes-red.log/XML. Literal full Make wiring,
+ROSTER, manifest and both independent literal totals change together to136.
+The documented promotion owner passes its original four pins1.41s;271 contracts,
+1161targets/0duplicates and9CI/12local parity pass. Keep first setuid input,
+three2/1/1 children,90total/60quiet,21phases2850 and required full gate.
+The same five complete routing/contract owners pass316 cases on311 in
+72.66s/native73.9s and312 in76.80s/native78.1s, fatal warnings/zero skips/errors;
+/tmp/gludd-v012-136-family-whole-311.log/XML and312 equivalent. These source
+results remain distinct from actual original90/60 repair-owned execution.
+
 ## Bounded receiving proof after instrumented timeout (2026-10-21 UTC)
 
 The first clean repair-owned replay at edd9a0348105129696a18ead986f913cb6c4b620
