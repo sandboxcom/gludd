@@ -1161,6 +1161,29 @@ def test_absent_pointer_recovery_refuses_uncertain_or_live_checkout(
     assert sent == [] and marker.read_bytes() == before
 
 
+@pytest.mark.parametrize("unknown_cwd", (False, True))
+def test_watchdog_absence_refusal_names_the_exact_pid_and_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+    _owned_daemon: tuple[OwnedPoll, Path],
+    unknown_cwd: bool,
+) -> None:
+    """A conservative lifecycle refusal must identify its actual blocking input."""
+    (root, records, cwds, _deadlines, sent), _marker = _owned_daemon
+    daemon = records[1]
+    records[:] = [daemon]
+    if unknown_cwd:
+        cwds[daemon.pid] = None
+
+    with pytest.raises(ValueError, match="live or unlocated") as refused:
+        watchdog._confirm_watchdog_absence(root, None, records, {})
+
+    message = str(refused.value)
+    assert f"pid={daemon.pid}" in message
+    assert f"current_pid={watchdog._SELF_PID}" in message
+    assert f"cwd={cwds[daemon.pid]}" in message
+    assert sent == []
+
+
 def test_absent_pointer_recovery_requires_a_fresh_available_snapshot(
     monkeypatch: pytest.MonkeyPatch, _owned_daemon: tuple[OwnedPoll, Path],
 ) -> None:

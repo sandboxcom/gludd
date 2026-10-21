@@ -608,9 +608,11 @@ class WatchdogSpec:
     ] | None = None
 
     def marker_path(self, root: Path) -> Path:
+        """Resolve the configured native lease or default checkout PID marker."""
         return self.marker(root) if self.marker else root / f".gate-logs/{self.stem}.pid"
 
     def marker_pid(self, path: Path) -> int | None:
+        """Read the marker through its configured lease or native PID decoder."""
         return self.read_pid(path) if self.read_pid else _read_gate_pid(str(path))
 
 
@@ -657,7 +659,10 @@ def _confirm_watchdog_absence(
             continue
         cwd = cleanup_owner._process_cwd(record.pid)
         if cwd is None or cwd.resolve() == root:
-            raise ValueError("a matching watchdog daemon or launcher is live or unlocated")
+            raise ValueError(
+                "a matching watchdog daemon or launcher is live or unlocated: "
+                f"pid={record.pid} current_pid={_SELF_PID} ppid={record.ppid} cwd={cwd}"
+            )
 
 
 def stop_owned_watchdog(
