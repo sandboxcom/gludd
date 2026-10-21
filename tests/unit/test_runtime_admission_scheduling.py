@@ -119,6 +119,17 @@ ROSTER = (
     "tests/unit/test_ci_collect_all_stress.py",
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
     PRESENTATION_MANIFEST_SELECTOR,
+    "tests/unit/test_presentation_make_targets.py::"
+    "test_native_browser_preserves_unset_empty_and_explicit_worker_environment"
+    "[1-command-line-None-NPROC]",
+    "tests/unit/test_presentation_make_targets.py::"
+    "test_native_browser_preserves_unset_empty_and_explicit_worker_environment"
+    "[1-command-line-None-GLUDD_XDIST_WORKERS]",
+    "tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve",
+    "tests/unit/test_markdown_docs_deep.py::test_relative_links_do_not_escape_repo",
+    "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree",
+    "tests/unit/test_branch_discipline_checks.py::"
+    "TestWorktreeCleanupAfterMerge::test_agent_cu_preserves_branch_and_release_evidence",
 )
 
 
@@ -449,7 +460,7 @@ def _assert_native_git_metadata_query_count_route(
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(families) == 114
+    assert len(families) == 120
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selectors = rows[0]["files"]
@@ -667,7 +678,7 @@ def test_watchdog_handoff_exit_control_is_routed_once_in_third_child(tmp_path: P
         "node": node,
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 114
+    assert len(payload["families"]) == 120
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -684,7 +695,7 @@ def test_native_watchdog_start_control_is_routed_once_in_third_child(tmp_path: P
         "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
         "full_gate_phase": "test",
     }]
-    assert len(payload["families"]) == 114
+    assert len(payload["families"]) == 120
 
 
 def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(tmp_path: Path) -> None:
@@ -701,7 +712,7 @@ def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(
         "full_gate_phase": "test",
     }
     assert payload["families"][108] == expected
-    assert len(payload["families"]) == 114
+    assert len(payload["families"]) == 120
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -726,7 +737,7 @@ def test_watchdog_unit_log_namespace_guard_is_the_exact_new_third_child_node(tmp
         "id": "watchdog-unit-log-namespace", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(manifest["families"]) == 114
+    assert len(manifest["families"]) == 120
 
 
 def test_profile_composition_guard_is_once_in_third_child_with_original_bounds(tmp_path: Path) -> None:
@@ -772,7 +783,7 @@ def test_descendant_symlink_cleanup_is_selected_once_by_original_whole_owner(tmp
         "id": "ordinary-descendant-symlink-unlink", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(payload["families"]) == 114
+    assert len(payload["families"]) == 120
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert payload["full_gate_required"] is True
@@ -792,7 +803,7 @@ def _assert_native_setuid_input_first_route(
         "id": "native-setuid-input-realization", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
-    assert len(families) == 114 and families[112] == expected
+    assert len(families) == 120 and families[112] == expected
     assert [family for family in families if family["id"] == expected["id"]] == [expected]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     first_files = rows[0]["files"]

@@ -1831,6 +1831,12 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "ordinary-descendant-symlink-unlink",
         "native-setuid-input-realization",
         "presentation-js-coverage-child-manifest",
+        "native-worker-unset-nproc",
+        "native-worker-unset-xdist",
+        "repository-document-link-resolution",
+        "repository-document-link-containment",
+        "branch-discipline-selected-retirement",
+        "branch-discipline-release-evidence-retention",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2080,7 +2086,20 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_admission_cold_start_selection.py::"
         "test_real_admission_filters_only_never_selected_main_siblings "
         "tests/unit/test_presentation_browser_runner.py::"
-        'test_javascript_viewport_child_reads_the_actual_producer_manifest"' in runtime_compatibility_owner
+        "test_javascript_viewport_child_reads_the_actual_producer_manifest "
+        "tests/unit/test_presentation_make_targets.py::"
+        "test_native_browser_preserves_unset_empty_and_explicit_worker_environment"
+        "[1-command-line-None-NPROC] "
+        "tests/unit/test_presentation_make_targets.py::"
+        "test_native_browser_preserves_unset_empty_and_explicit_worker_environment"
+        "[1-command-line-None-GLUDD_XDIST_WORKERS] "
+        "tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve "
+        "tests/unit/test_markdown_docs_deep.py::test_relative_links_do_not_escape_repo "
+        "tests/unit/test_branch_discipline_checks.py::"
+        "TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree "
+        "tests/unit/test_branch_discipline_checks.py::"
+        "TestWorktreeCleanupAfterMerge::"
+        'test_agent_cu_preserves_branch_and_release_evidence"' in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
     assert "-n 0" in runtime_compatibility_owner
@@ -2160,7 +2179,7 @@ def test_profile_composition_failure_has_one_exact_native_admission_family() -> 
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
     assert payload["families"][110] == expected
-    assert len(payload["families"]) == 114
+    assert len(payload["families"]) == 120
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     assert owner.count(expected["node"]) == 1
 
@@ -2179,7 +2198,7 @@ def test_ordinary_descendant_links_have_one_exact_native_admission_family() -> N
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
     assert payload["families"][111] == expected
-    assert len(payload["families"]) == 114
+    assert len(payload["families"]) == 120
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     first_files = owner.split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert first_files.count("tests/unit/test_clean_stale_resource_namespaces.py") == 1
@@ -2201,7 +2220,7 @@ def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None
         "full_gate_phase": "test",
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
-    assert len(payload["families"]) == 114 and payload["families"][112] == expected
+    assert len(payload["families"]) == 120 and payload["families"][112] == expected
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
     arguments = re.findall(r'TESTFILES="([^"]*)"', owner)
     assert len(arguments) == 3 and arguments[0].split()[0] == expected["node"]
@@ -2209,4 +2228,66 @@ def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None
     assert [
         selector for argument in arguments for selector in argument.split() if selector.split("::", 1)[0] == file
     ] == [expected["node"]]
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+@pytest.mark.parametrize(
+    ("family_id", "node"),
+    (
+        (
+            "native-worker-unset-nproc",
+            "tests/unit/test_presentation_make_targets.py::"
+            "test_native_browser_preserves_unset_empty_and_explicit_worker_environment"
+            "[1-command-line-None-NPROC]",
+        ),
+        (
+            "native-worker-unset-xdist",
+            "tests/unit/test_presentation_make_targets.py::"
+            "test_native_browser_preserves_unset_empty_and_explicit_worker_environment"
+            "[1-command-line-None-GLUDD_XDIST_WORKERS]",
+        ),
+        (
+            "repository-document-link-resolution",
+            "tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve",
+        ),
+        (
+            "repository-document-link-containment",
+            "tests/unit/test_markdown_docs_deep.py::test_relative_links_do_not_escape_repo",
+        ),
+        (
+            "branch-discipline-selected-retirement",
+            "tests/unit/test_branch_discipline_checks.py::"
+            "TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree",
+        ),
+        (
+            "branch-discipline-release-evidence-retention",
+            "tests/unit/test_branch_discipline_checks.py::"
+            "TestWorktreeCleanupAfterMerge::test_agent_cu_preserves_branch_and_release_evidence",
+        ),
+    ),
+)
+def test_hosted_failures_have_exact_early_routes(
+    family_id: str, node: str,
+) -> None:
+    """Replay actual hosted failures once in the existing bounded first child."""
+    payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    expected = {
+        "id": family_id,
+        "owner_target": "_pytest-runtime-compatibility-admission",
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
+    }
+    assert [family for family in payload["families"] if family["id"] == family_id] == [expected]
+    assert len(payload["families"]) == 120
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), expected["owner_target"])
+    arguments = re.findall(r'TESTFILES="([^"]*)"', owner)
+    assert len(arguments) == 3
+    assert arguments[0].split().count(node) == 1
+    assert [selector for argument in arguments for selector in argument.split() if selector == node] == [node]
+    assert node.split("::", 1)[0] not in arguments[0].split()
+    phases = payload["runtime_contract"]["phases"]
+    phase = next(item for item in phases if item["name"] == "pytest-runtime-compatibility")
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(phases) == 21 and sum(item["max_seconds"] for item in phases) == 2850
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True

@@ -957,6 +957,48 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_presentation_browser_runner.py::test_javascript_viewport_child_reads_the_actual_producer_manifest",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "native-worker-unset-nproc",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_presentation_make_targets.py::test_native_browser_preserves_unset_empty_and_explicit_worker_environment[1-command-line-None-NPROC]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "native-worker-unset-xdist",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_presentation_make_targets.py::test_native_browser_preserves_unset_empty_and_explicit_worker_environment[1-command-line-None-GLUDD_XDIST_WORKERS]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "repository-document-link-resolution",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "repository-document-link-containment",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_markdown_docs_deep.py::test_relative_links_do_not_escape_repo",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "branch-discipline-selected-retirement",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "branch-discipline-release-evidence-retention",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_preserves_branch_and_release_evidence",
+      "full_gate_phase": "test"
     }
   ]
 }

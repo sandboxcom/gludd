@@ -14,9 +14,120 @@ that the branch cleared the deterministic, comparatively cheap failure classes
 listed below. Release evidence still requires the normal exact-head gate and
 hosted checks after integration.
 
+## Hosted worker and document failures move into existing admission (2026-10-21 UTC)
+
+Current manifest total120 retains all114 original families plus six exact hosted
+worker/link/B24 nodes. Unit-1d's two older raw-removal/branch-delete assumptions
+now exercise real native retirement, retaining refs and ignored failure proof.
+Two additional routing controls retain2FAIL1.08s/native2.0s before wiring. The
+prior complete16-owner118-family checkpoint passes482 cases on31196.57s/native97.9s
+and312104.81s/native106.3s with fatal warnings, zero skips or errors. Preserve
+/tmp/gludd-v012-hosted-repairs-final-3.11.log and
+/tmp/gludd-v012-hosted-repairs-final-3.12.log plus XML. All six routed controls, their actual failure nodes and the original roster pin
+pass13/3.79s/native4.8s in /tmp/gludd-v012-six-hosted-routes-green.log and XML;
+the documented120-family checker retains its original four pins,4PASS2.15s.
+Final22-owner120-family source acceptance passes745 cases on311123.90s/native125.7s
+and312130.92s/native133.4s, fatal warnings and zero skips/errors. Preserve
+/tmp/gludd-v012-three-hosted-final-3.11.log and
+/tmp/gludd-v012-three-hosted-final-3.12.log plus XML; the complete immutable
+historical shard owner is included. Actual original90/60 family execution,
+repair receipts, clean-SHA publication and full release proofs remain separate. The
+[B24 record](GATE_RESOURCE_LIFECYCLE.md#b24-cleanup-checks-follow-actual-retirement-and-retained-refs-2026-10-21-utc)
+explains why test conformance must preserve the native cleanup behavior.
+
+The first118-family checkpoint retains all114 prior families in order and appends four exact
+failure nodes: absent NPROC, absent GLUDD_XDIST_WORKERS, repository link resolution
+and repository link containment. That checkpoint total118. The first existing runtime
+child executes each new selector once; the shared literal roster adds the same
+four selectors without replacing or widening older entries. Two validate-only
+native worker cases provide the cheap initial signal; the full32-case worker
+matrix and full changed owners remain required source acceptance.
+
+Four new routing controls fail before wiring:4FAIL1.14s/native2.0s. The wired
+controls, original native roster control and all four exact nodes then pass
+9/2.76s/native4.1s. Preserve /tmp/gludd-v012-hosted-route-red.log and
+/tmp/gludd-v012-hosted-route-green.log with their XML. Exact family equality,
+single first-child execution and unchanged90total/60quiet, three2/1/1 children,
+21phases/2850seconds and mandatory full gate are asserted. Earlier family index
+assertions remain; only totals conform to the four additions.
+
+The first complete16-owner replay retains40FAIL/440PASS/2SKIP on both runtimes:
+31193.47s/native94.6s and31298.52s/native99.9s. Seven older literal family totals
+still expected114 and the complete native wiring oracle still ended before the
+four additions. Conform those exact totals to118 and append the same four nodes
+to that full literal oracle; preserve every older selector, index, assertion and
+negative mutation. The handoff edit also omitted its mandatory Total tests:
+label, failing one original case and causing two original guards to skip.
+Restore that source label, without editing the handoff tests. Preserve both
+/tmp/gludd-v012-hosted-repairs-whole-3.11.log and
+/tmp/gludd-v012-hosted-repairs-whole-3.12.log plus XML as failures.
+
+For future additions, update the manifest, executable first-child selectors,
+test_runtime_admission_scheduling.py literal ROSTER and family totals, and
+test_gate_failure_promotion.py full literal wiring oracle/family totals together.
+Run the existing documented check-gate-failure-promotions example, then complete
+changed owners. Four focused route cases alone do not establish that whole-owner
+compatibility. Retain structured handoff labels and validate them before commit.
+
+These failures came from published6161 Build39533219987 unit-3a and unit-2.
+The original carrier and Markdown assertion bodies remain unchanged. Existing
+native owners implement the repair and feedback path; no second scanner,
+runner, cache, daemon or enlarged time budget is introduced. Coverage85aggregate/
+75each-file for both line and branch, fatal warnings, ZDD and exact-SHA gate/
+CI/deployment/promotion still apply. Focused source acceptance never closes S98.4.
+See [the worker boundary](PRESENTATION_JAVASCRIPT_COVERAGE.md#preserve-absent-worker-inputs-at-the-native-make-boundary-2026-10-21-utc)
+and [portable evidence links](RELEASE_PROOF_THROUGHPUT.md#portable-evidence-links-and-actual-hosted-failure-routing-2026-10-21-utc)
+for causes, retained failures and native commands.
+
+## Portable evidence links and actual hosted failure routing (2026-10-21 UTC)
+
+Published6161 Build39533219987 fails unit-2 job119007635547, batch037, at
+tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve and
+test_relative_links_do_not_escape_repo. The release-throughput document linked
+/tmp/gludd-v012-webkit-svg-closure-proposal.md as a repository Markdown target.
+Hosted runners do not have that machine-local artifact; the link also escapes
+the repository. Keep its exact provenance path as plain text. Do not remove
+the artifact, change either original assertion or allow external paths as
+repository hyperlinks. Local replay retains1FAIL/1PASS1.72s/native2.7s before
+the source correction and2PASS1.54s/native2.4s after it:
+ /tmp/gludd-v012-hosted-artifact-link-red.log and
+ /tmp/gludd-v012-hosted-artifact-link-green.log, each with XML.
+The locally present artifact explains why link resolution alone passed here;
+both original checks are required for portable feedback.
+
+Use the existing exact job-log owner with literal PATTERN, not the regex syntax
+accepted by make search. The first regex-shaped FAILED|ERROR request honestly
+returns pattern-not-found; FAILED retrieves the actual assertions. Limit matches
+or choose a narrower literal to avoid the bounded output truncating repeated
+progress lines. Completed job logs are available while sibling shards run.
+
+```text
+make ci-job-failure-context RUN=39533219987 JOB=119007635547 PATTERN='FAILED' BEFORE=4 AFTER=12 MAX_MATCHES=3 CI_JOB_CONTEXT_VALIDATE_ONLY=0
+make ci-job-failure-context RUN=39533219987 JOB=119007635541 PATTERN='FAILED' BEFORE=4 AFTER=12 MAX_MATCHES=3 CI_JOB_CONTEXT_VALIDATE_ONLY=0
+make ci-job-failure-context RUN=39533219987 JOB=119007635499 PATTERN='short test summary' BEFORE=1 AFTER=18 MAX_MATCHES=8 CI_JOB_CONTEXT_VALIDATE_ONLY=0
+```
+
+The second job fails the original worker-carrier assertions; its distinct source
+repair and GNU/firsthand research live in
+[the owning feature](PRESENTATION_JAVASCRIPT_COVERAGE.md#preserve-absent-worker-inputs-at-the-native-make-boundary-2026-10-21-utc).
+The first118-family admission manifest/first runtime child adds four exact nodes,
+with4FAIL before wiring and9PASS afterward, retaining all114 prior families.
+Current120-family routing adds unit-1d's real native B24 conformance without
+changing original90/60/2-1-1/21-phase limits. The whole Markdown owner must also
+replay: generic Markdown formatting and eight documentation architecture owners
+did not exercise these link assertions. No CI job, full gate, required deployment
+or task closure follows from focus. Native pipeline-status and ci-await retain
+current observations; immutable run summaries retain failed/censored shard
+intervals and all eight shard identities.
+
+The unchanged file-line guard rejects the expanded release-throughput index at
+2529lines. Move these current hosted receipts into this owning admission feature
+and keep a bounded RPT index; do not raise its original less-than2500 limit,
+discard older history or turn machine-local provenance back into repo hyperlinks.
+
 ## Native coverage-manifest promotion (2026-10-20)
 
-Current114families include the original113 plus
+The earlier114-family checkpoint includes the original113 plus
 presentation-js-coverage-child-manifest. Its four cheap real producer/child cases
 run in the original first runtime child and cover both viewports with JS0/JS1,
 actual manifest/source hashes and inherited stale carriers. Two routing/roster
