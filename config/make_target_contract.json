@@ -1096,6 +1096,7 @@
       "make_variables": [],
       "behavior": "make check-disk-classification"
     },
+    {"name": "disk", "make_variables": [], "behavior": "make disk"}, {"name": "tmp-gludd-usage", "make_variables": [], "behavior": "make tmp-gludd-usage"},
     {"name": "cache-disk", "make_variables": [], "behavior": "make cache-disk"},
     {"name": "disk-user-caches", "make_variables": [], "behavior": "make disk-user-caches"},
     {

@@ -13,9 +13,16 @@ silent long-running operation (the exact class of defect that produced a
 
 from __future__ import annotations
 
+import os
 import re
+import shlex
+import subprocess
+import sys
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 
+import pytest
 from scripts.makefile_layout import compose_makefile
 
 from tests.unit.test_collection_lock import _native_collection_recipe
@@ -311,3 +318,84 @@ class TestNoSilentStalls:
         assert not missing, (
             f"CI jobs with no timeout-minutes (could hang for hours): {missing}"
         )
+
+
+@dataclass(frozen=True)
+class DiskInventoryProbe:
+    """Keep native diagnostic artifacts confined and environment values private."""
+
+    directory: Path
+    environment: dict[str, str] = dataclass_field(repr=False)
+
+
+def _disk_inventory_probe(tmp_path: Path) -> DiskInventoryProbe:
+    source = compose_makefile(MAKEFILE)
+    for target in ("disk", "tmp-gludd-usage"):
+        assert source.count("\n" + target + ":") == 1, "Expected one real native disk owner"
+    disk_recipe = _recipe("disk")
+    temp_recipe = _recipe("tmp-gludd-usage")
+    assert disk_recipe.strip() and temp_recipe.strip()
+    home = tmp_path / "fixture-home"
+    process_tmp = tmp_path / "process-tmp"
+    binary = tmp_path / "bin"
+    for directory in (home, process_tmp, binary):
+        directory.mkdir()
+    child = tmp_path / "du-probe.py"
+    child.write_text(
+        "import os, sys\nfrom pathlib import Path\n"
+        "assert sys.argv[1] == '-sh'\n"
+        "if sys.argv[2:] and all(value.startswith('/tmp/gludd-') for value in sys.argv[2:]):\n"
+        f"    with Path({str(tmp_path / 'calls.txt')!r}).open('a', encoding='utf-8') as stream:\n"
+        "        stream.write(os.environ['MAKELEVEL'] + '\\n')\n"
+        "    print('2G\\t/tmp/gludd-a-largest')\n"
+        "    for size in range(1, 45):\n"
+        "        print(str(size) + 'M\\t/tmp/gludd-z-' + str(size).zfill(2))\n"
+        "else:\n    print('1K\\tfixture-workspace')\n",
+        encoding="utf-8",
+    )
+    du = binary / "du"
+    du.write_text(
+        "#!/bin/sh\n" + shlex.join([sys.executable, str(child)]) + ' "$@"\n',
+        encoding="utf-8",
+    )
+    du.chmod(0o700)
+    (tmp_path / "Makefile").write_text(
+        ".PHONY: disk tmp-gludd-usage\ndisk:\n" + disk_recipe
+        + "\n\ntmp-gludd-usage:\n" + temp_recipe + "\n",
+        encoding="utf-8",
+    )
+    recursion = {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "GNUMAKEFLAGS"}
+    environment = {key: value for key, value in os.environ.items() if key not in recursion}
+    environment.update(
+        HOME=str(home), TMPDIR=str(process_tmp), PATH=str(binary) + os.pathsep + os.environ["PATH"],
+        GLUDD_DISK_PROBE_PRIVATE="fixture-only-private-environment",
+    )
+    return DiskInventoryProbe(tmp_path, environment)
+
+
+@pytest.mark.parametrize("disk_inventory_goal", ["disk", "tmp-gludd-usage"])
+def test_disk_and_native_temp_owner_keep_largest_entries(
+    tmp_path: Path, disk_inventory_goal: str,
+) -> None:
+    fixture = _disk_inventory_probe(tmp_path)
+    result = subprocess.run(
+        ["make", "--no-print-directory", disk_inventory_goal], cwd=fixture.directory,
+        env=fixture.environment, capture_output=True, text=True, check=False, timeout=10,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    if disk_inventory_goal == "disk":
+        report = result.stdout.split("--- gludd scratch + worktree footprint ---\n", 1)[1]
+        expected_level = "2"
+    else:
+        report = result.stdout
+        expected_level = "1"
+    expected = [f"{size}M\t/tmp/gludd-z-{size:02d}" for size in range(6, 45)]
+    expected.append("2G\t/tmp/gludd-a-largest")
+    assert report.splitlines() == expected, "largest entries must survive the native size ordering"
+    assert (fixture.directory / "calls.txt").read_text().splitlines() == [expected_level]
+
+
+def test_disk_inventory_probe_repr_keeps_environment_private(tmp_path: Path) -> None:
+    fixture = _disk_inventory_probe(tmp_path)
+    assert "fixture-only-private-environment" not in repr(fixture)
+    assert "GLUDD_DISK_PROBE_PRIVATE" not in repr(fixture)

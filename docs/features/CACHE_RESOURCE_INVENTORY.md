@@ -351,3 +351,116 @@ capacity input or the original publication timeout. Full gate/global coverage,
 exact-SHA hosted/deployment and all seven release checklist items stay pending.
 
 Whole routing after the guide's runtime correction passes451 on311 in127.84s/native128.9s and451 on312 in121.26s/native122.5s. The actual canonical142-family checker passes6/2.21s; Node compatibility passes6/12.42s. The normal current-source operating/commit/review owners still supply their own terminal receipts; no original runtime/publication/gate is inferred.
+
+## Native temporary-size attribution (2026-10-21)
+
+This bounded S98.4 support starts from development
+a4f894c29f982281470d07bf4d78ace5114320cc. It changes the diagnostic display;
+it does not clear the release capacity prerequisite or authorize removal.
+
+### Reuse the existing owner
+
+The old disk recipe ended with unsorted du output and tail5. Shell name order
+could discard the largest entry. The existing tmp-gludd-usage owner already
+uses one native du measurement, sort -h and tail40. Disk now delegates to that
+owner with recursive Make; the original workspace-volume, generated-file,
+gate-log, workspace and Terraform sections remain. There is no new parser,
+scanner, dependency, resource manager, observer or background process.
+
+The executable contract records both public targets without new variables:
+
+~~~console
+make disk
+make tmp-gludd-usage
+~~~
+
+These are human diagnostics for the fixed project/temp scope. The forty-row
+view is not an exhaustive inventory: existing error suppression may omit paths,
+and entries below the retained forty are absent. A zero diagnostic exit does
+not certify complete measurement, disposable ownership or safe cleanup.
+Use the canonical JSON inventory when its complete/incomplete status matters.
+
+### Failing-first native boundary and actual behavior
+
+The additive fixture runs the actual two recipes through native Make, sort
+and tail, replacing only du at a confined process boundary. Forty-five rows put
+a 2G entry first by name and 1M..44M entries later. It requires exactly the forty
+largest rows in size order, exactly one temporary measurement, and native
+MAKELEVEL2 for disk delegation versus1 for the standalone owner. Synthetic
+HOME/TMPDIR and a private environment representation keep fixtures confined.
+
+Before source repair, the three new cases retain1FAIL/2PASS in1.76s/native2.8s:
+disk prints only40M..44M, losing the2G entry; the existing canonical owner and
+privacy guard pass. Receipt: /tmp/gludd-v012-disk-native-red311.{log,xml}.
+After delegation, the complete unchanged observability owner plus all three
+additions passes22 on311 in1.86s/native2.8s and312 in1.97s/native3.1s.
+Receipts: /tmp/gludd-v012-disk-native-green{311,312}.{log,xml}.
+The selected native disk node takes0.55s/0.52s; no whole-file admission is added.
+
+Independent manifest, Make-wiring and native-roster expectations fail first:
+3FAIL/1.24s/native2.3s, /tmp/gludd-v012-disk-routing-red311.{log,xml}.
+The disk exact node then appends family144 after every143 predecessor.
+The canonical six-pin checker passes6/2.14s; original3children2/1/1,
+90total/60quiet,21phases2850 and full-gate authority remain. Both target
+contract entries pass with276 total. Actual watched examples terminate
+disk0/6.4s and tmp-gludd-usage0/3.7s; their logs are
+/tmp/gludd-v012-disk-contract-{disk,temp}.log. Later complete/static/collection
+and source-review receipts remain separately recorded by their native owners.
+
+### Complete receiving acceptance
+
+All eight complete routing/observability owners pass478 on311 in134.26s/native
+135.5s and312 in139.31s/native140.6s, fatal warnings and zero skips/errors.
+Receipts: /tmp/gludd-v012-disk-routing-complete{311,312}.{log,xml}.
+This includes the complete changed test owners, original publication/CI/contract
+controls and all22 observability cases after the final fixture import fix.
+Ruff passes all three changed Python scopes; strict mypy passes the complete
+observability scope without suppressions. The existing field loop is preserved;
+the new dataclass field import uses an explicit alias and native import ordering.
+
+Make lint retains1157 unique targets/zero duplicates,9CI12local phases and the
+actual help dry-run. Locked Markdown passes six files; native SESSION structure
+and registration13 pass. The line guard first refuses TASKS at2501 lines; removal
+of two synopsis blank lines preserves every word/criterion and returns PASS for
+all10828 tracked files under the unchanged less-than2500 limit. No checker or
+threshold is weakened. The complete eight operating/documentation owners then pass235 in83.24s/native
+84.4s, /tmp/gludd-v012-disk-operating311.{log,xml}, including actual collection,
+Ansible syntax and all original guardrails. Normal commit/collection and
+independent exact-source review remain separate required receipts.
+
+### Resource findings and safe continuation
+
+The actual disk example measures98percent and5.8GiB free, versus the95percent
+ceiling. The preceding98percent/5.7GiB reading and historical97percent/6.9GiB
+remain evidence, not an attributed growth cause. The temporary view exposes
+worktrees1.4G, pinned Playwright browsers853M and retained testfiles115M;
+these sizes do not confer deletion authority. No resource is removed.
+
+The existing JSON inventory on /Users/shawnwilson/tmp reaches its unchanged
+1000-entry cap after3.316s and returns Make2/native3.4s with twenty partial
+rows. Receipt: /tmp/gludd-v012-capacity-temp-inventory-a4f894c.log.
+Those rows cannot rank the complete parent or justify repeating that scan with
+larger bounds. Use a known allowlisted narrower root when needed, or the
+existing fixed-scope temporary diagnostic for its stated human-display purpose.
+Preserve the existing39-candidate/0-reclaimable24-hour namespace plan,
+proof retention, browser lifecycle, worktree ownership and ZDD. Capacity
+HumanTodo remains UNFILED after API refusal; no ID or host-space answer exists.
+
+Actual capacity must clear95 before native release-proof-admission mode0.
+The different60907 publication124/90.554s/trace_path:null still has no established
+cause and no Git transport. A new display, source SHA or observer ID changes
+neither prerequisite. Full canonical gate/global85-75 line AND branch coverage,
+exact-SHA all-shard CI, deployment acceptance and guarded promotion remain
+pending; all seven release tasks stay unchecked.
+
+### Long-lived practitioner evidence
+
+A firsthand2009 [Server Fault question](https://serverfault.com/questions/62411/how-can-i-sort-du-h-output-by-size)
+shows numeric sorting placing508K ahead of64M. The enduring issue is preserving
+unit meaning when ordering human-readable sizes. The primary
+[GNU sort manual](https://www.gnu.org/software/coreutils/manual/html_node/sort-invocation.html)
+defines human-numeric ordering and its use with one du invocation.
+This supports reusing the existing native sort -h owner instead of writing a
+size parser. It does not attribute this host's disk pressure. Native fixture
+and actual-target runs establish the selected environment's behavior; no
+cross-platform binary compatibility or package installation is inferred.

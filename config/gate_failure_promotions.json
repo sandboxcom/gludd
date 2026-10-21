@@ -1160,6 +1160,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_run_watched_trace.py::test_native_trace_option_preserves_default_off_and_exact_on_argv[enabled]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "disk-native-temp-size-ordering",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_entries[disk]",
+      "full_gate_phase": "test"
     }
   ]
 }

@@ -538,6 +538,15 @@ barrier. Use the owner's explicit validation mode and retained native tests.
 
 ### Bounded cache diagnostics
 
+make disk delegates its temporary section to the existing tmp-gludd-usage
+owner: one native du measurement, human-size ordering and the largest40 rows.
+make tmp-gludd-usage is the standalone contract example. This human view can
+omit paths/errors and grants no exhaustive inventory or cleanup authority.
+If JSON inventory reaches its1000-entry cap, retain partial/nonzero status;
+use a known allowlisted narrower root rather than raising the bound or
+repeating an unchanged parent scan. The [native disk record](../../docs/features/CACHE_RESOURCE_INVENTORY.md#native-temporary-size-attribution-2026-10-21)
+retains the lost-largest-entry RED, actual-target examples and capacity limits.
+
 The canonical inventory uses system Python, native30s/1000-entry bounds and at
 most100 output rows, with visible errors:
 

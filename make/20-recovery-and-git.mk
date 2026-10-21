@@ -156,7 +156,7 @@ disk:
 	@echo "--- Terraform footprint ---"
 	@du -sh infra/terraform/.plugin-cache infra/terraform/* 2>/dev/null | sort -h | tail -20 || true
 	@echo "--- gludd scratch + worktree footprint ---"
-	@du -sh /tmp/gludd-* 2>/dev/null | tail -5 || true
+	@$(MAKE) --no-print-directory tmp-gludd-usage
 
 # Read-only inventory is the default. Apply mode delegates all object parsing
 # and rewriting to Git, retains reflogs/worktree metadata, and requires an

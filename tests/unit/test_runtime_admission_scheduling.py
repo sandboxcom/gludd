@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 143
+EXPECTED_FAMILY_COUNT = 144
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -89,6 +89,7 @@ ROSTER = (
     "test_prohibited_home_roots_refuse_before_measurement[library-caches-inventory]",
     "tests/unit/test_run_watched_trace.py::"
     "test_native_trace_option_preserves_default_off_and_exact_on_argv[enabled]",
+    "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_entries[disk]",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
