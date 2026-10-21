@@ -148,6 +148,39 @@ controls, whole-file coverage and separate canonical strict source/test scopes.
 Its deterministic operation bound and local profile supply different evidence
 from the enclosing original runtime-family receipt.
 
+### Preserve producer status and measurement meaning
+
+Use the native producer's return status before consuming its output. A formatter
+can succeed after its producer fails. The existing sorted listing owner now
+preserves that failure; its documented actual example is:
+
+~~~console
+make list-files DIR=.agents/policy
+~~~
+
+The [listing record](../../docs/features/NATIVE_FILE_LISTING_STATUS.md) retains
+the missing-path negative control, original filters and exact temporary ownership.
+A lock's observed absence permits normal guard re-evaluation; it does not prove
+the original cause or authorize raw lock deletion or process termination.
+
+For cold imports, reuse the existing CPython row decoder and check the child
+return code before parsing. Missing, malformed or nonfinite measurements must
+retain failure, not become zero or a skip. The
+[measurement record](../../docs/features/IMPORT_TIME_MEASUREMENT_INTEGRITY.md)
+retains the native format, all original thresholds, complete owner commands and
+the TEN-owner coverage-files contract example. Select the entire documented
+scope: the retained nine-owner attempt failed a real per-file branch floor.
+The [canonical export record](../../docs/features/CODE_INTELLIGENCE_IMPORT_BOUNDARY.md)
+covers reload, actual class identity, failure/retry and concurrent import controls.
+Paired local timings, operation counts and focused coverage do not establish the
+original runtime-family receipt, hosted throughput or release readiness.
+
+Make command-line variables are exported to native child fixtures. Clearing
+MAKEFLAGS alone does not clear an inherited LOG. A fixture that owns a different
+log must pass that owned path explicitly to its existing native command; retain
+the namespace/ownership refusal. Use approved /tmp/gludd-* names for temporary
+transport artifacts, and resolve a refused mutation before dependent verification.
+
 ### Cleanup, pinned browser prefetch and acceptance
 
 The native pressure policy may reclaim the exact idle Playwright cache after
