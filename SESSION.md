@@ -1,8 +1,8 @@
 # Current release handoff
 
 Last Updated: 2026-10-20 (UTC21 measurements).
-Recorded source base: development `6ec94ab4daf59e45b44720a44ffca19b2e7d0b23`, published and remote-verified. Native worktree-state owns current HEAD/index/cleanliness.
-Total tests: 127723 selected /127747 collected,24 deselected,0 collection errors at that published source; current supporting source requires fresh native commit collection.
+Recorded source base: development `5b10dd57eef9cc70f0b56fb34ca3dbfa9b7443f9`, local diagnostic commit descending from published/verified6ec94ab4daf59e45b44720a44ffca19b2e7d0b23. Native worktree-state owns current HEAD/index/cleanliness.
+Total tests: 127770 selected /127794 collected,24 deselected,0 collection errors46.99s/native52.1s at5b10dd5; the counted-occurrence successor requires fresh native commit collection.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
@@ -18,9 +18,9 @@ Exact hosted Build39519193318 is FAILURE. Gate311 job118958621444 passes the man
 
 Gate312 job118958621454 is PASS: original runtime admission89.5s, tail11/9.20s and fresh127723/127747collection,24deselected/0errors203.01s/native216.3s. The overall Build still fails, all eight canonical shards skip and their durations remain unknown/censored. Immutable ci-run-summary SHARD_TIMINGS=1 owns hosted timing; no hosted improvement is claimed.
 
-Molecule39519193450 is SUCCESS with all six jobs PASS. Pages39519193335 has WebKit job118958594081 PASS and Chromium job118958593666 still in progress at the last native summary. These exact-SHA hosted observations do not supply public deployment or final release proof. Query their terminal successor state through existing native owners, never an unchanged hosted rerun.
+Molecule39519193450 is SUCCESS with all six jobs PASS. Pages39519193335 is CANCELLED: WebKit job118958594081 passes original23+1/416.52+51.18s/native472.4s; Chromium job118958593666 cancels during separate JS1 at00:26:04UTC, with a bare operation-canceled log. Deploy skips. Native annotations must establish the cancellation cause before any budget/configuration change. These exact-SHA hosted observations do not supply public deployment or final release proof. Query their terminal successor state through existing native owners, never an unchanged hosted rerun.
 
-Native pipeline-status last records ledger open1/repaired11/resolved39/runs143, current release_ready=false/gate_evidence=false and hard capacity blockage. Required actual repair input remains311 runtime cost; the same-source local75.1s pass is not a repair of a new hosted timeout.
+Native pipeline-status now records terminal ledger open2/repaired10/resolved40/runs145, current release_ready=false/gate_evidence=false and hard capacity blockage. WebKit family is resolved; Chromium JS1 family8696e2300442bfa9c976296ceaae3cd691a31b38bee20b39c82d87250bf82b59 and311 runtime familycf5b089df8ad5c0921ed70ee9d01916f40baeacd98f086caf110f7f139404596 remain open. Required actual repair input remains311 runtime cost; the same-source local75.1s pass is not a repair of a new hosted timeout.
 
 ## Current coupled diagnostic support
 
@@ -32,6 +32,8 @@ The existing four-file coverage profile initially executes290PASS/28.20s but rej
 
 Locked Markdown and native file-line checks pass for the changed records. AGENTS, Make guide, CONFIG_REFERENCE and XDIST_TRACE_SUMMARY codify exact option semantics, full coverage recipe, failures and primary/firsthand upstream research. Current supporting source still needs its normal guarded commit/fresh collection and source review; no full gate or CI-family repair follows from diagnostic support.
 
+Independent source review of5b10dd5 returns CHANGES REQUIRED at /tmp/gludd-v012-candidate-5b10dd5-source-review.md. Six-event native witness wrongly admits B after duplicate A START; Root retains this negative decision. Five additive controls fail5/1.05s/native2.1s; same summary owner now counts pending occurrences, poisons overlaps, consumes one FINISH per START and waits for full drain before serial recovery. Incomplete diagnostics include outstanding_occurrences. The same12-owner/full4-file coverage then passes437/71.34s/native73.4s,91.5line/85.6branch and whole summarizer98.3/95.8, audit .gate-logs/coverage-20261021T003417Z.json. Preserve original47controls and legacy failure/memory processing; successor approval remains pending.
+
 ## Retained runtime attribution and exact next action
 
 Original unchanged main/tail diagnostic profiles are:
@@ -42,7 +44,7 @@ Controller main cProfile measures61.196s, mostly60.101s thread-lock waits for wo
 
 Literal unchanged native summary output is /tmp/gludd-v012-main-trace-timings.txt and /tmp/gludd-v012-tail-trace-timings.txt. The measured decision, exact commands and rejected speculative Git batching are /tmp/gludd-v012-hosted-runtime-cost-decision.md. Agent deliverable is a persisted decision, not a pending source change.
 
-After the guarded diagnostic commit, use the existing Make/stdlib import-time diagnostic route on the actual pipeline-status owner to attribute the identified heartbeat child startup. Preserve its actual plan-only semantics and raw log; no new observer/parser/cache or gate authority. Select a production repair only from measured native costs, write a failing-first counted behavior witness and preserve all fresh observations, failure fences, original2023+1+11 selectors,2/1/1 workers and90total/60quiet bounds. Do not alter the final lock assertion or cache its test-only TOML reads.
+The actual pipeline-status plan-only import-time diagnostic passes0.3s; /tmp/gludd-v012-pipeline-imports-5b10dd5.log retains raw stdlib import times, including active_work_status25.151ms/task_scope18.258ms. It supplies no hosted or latency proof. Whole heartbeat39PASS23.19s/native24.4s through existing cProfile retains profile-2878-b3b7932ce3216592: parent23.012s,38native children/_execute19.818s and poll19.591s, overlapping cumulative costs. Child CPU remains unmeasured. Investigate the existing two-CLI pipeline-status process boundary before any production optimization; no measured gain or approved rewrite exists. Separately obtain Pages job annotations through the existing native ledger API before inferring its cancellation cause. Preserve its actual plan-only semantics and raw log; no new observer/parser/cache or gate authority. Select a production repair only from measured native costs, write a failing-first counted behavior witness and preserve all fresh observations, failure fences, original2023+1+11 selectors,2/1/1 workers and90total/60quiet bounds. Do not alter the final lock assertion or cache its test-only TOML reads.
 
 Before another hosted push, batch all known independent actual repairs, run their complete owners/85-75 coverage, fresh collection and independent source review. Run first actual family acceptance through ci-failure-repair with exact full families and matching existing evidence owner; then normal guarded publication. No publication for diagnostic source alone while the unchanged311 family remains open.
 

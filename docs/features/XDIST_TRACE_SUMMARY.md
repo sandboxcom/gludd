@@ -244,6 +244,33 @@ make coverage-files \
   OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
 ```
 
+### Independent occurrence-accounting repair
+
+Source5b10dd57eef9cc70f0b56fb34ca3dbfa9b7443f9 retains fresh
+127770/127794collection,24deselected/0errors46.99s/native52.1s, but independent
+review returns CHANGES REQUIRED at
+/tmp/gludd-v012-candidate-5b10dd5-source-review.md. Its exact six-event witness
+START A10,START A11,FINISH A12,START B13,FINISH B14,FINISH A15 wrongly accepts
+B13-14 because one pending entry overwrites the second A occurrence.
+
+Five additive controls first fail5/1.05s/native2.1s. The same existing timing
+owner now counts each pending occurrence, poisons overlapping spans and consumes
+one occurrence per matching FINISH. A stream resumes timing only after every
+occurrence drains. An unfinished_start issue includes outstanding_occurrences;
+original legacy failure/unfinished/memory processing is unchanged. Exact
+witness, two/three duplicate counts, incomplete drains and serial recovery retain
+all prior47controls, giving52timing cases.
+
+The same complete12-owner/four-production-file profile passes437/71.34s,
+native73.4s:91.5aggregate lines/85.6branches, every file above75% both.
+Complete summarizer98.3line/95.8branch; immutable audit
+.gate-logs/coverage-20261021T003417Z.json. Final52timing controls plus whole
+original diagnostic/fixture/session/objective owners pass195/11.06s,
+native12.4s; Ruff/strict2files, locked Markdown and universal line limits pass.
+Original negative review, source
+receipts and failed witnesses remain. Successor source review, actual hosted
+cost repair and all final release proofs stay separate.
+
 ## RSS Unit Contract
 
 Legacy events call their field `rss_kb`, but Python's `ru_maxrss` is

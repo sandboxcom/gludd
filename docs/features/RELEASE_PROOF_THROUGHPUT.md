@@ -24,6 +24,17 @@ Actual hosted311 cost repair, original90/60 family evidence, independent final
 review/full gate, exact-SHA CI, deployment and promotion remain missing.
 Disk97% still blocks expensive final release proof; no unchanged retry.
 
+Independent5b10dd57eef9cc70f0b56fb34ca3dbfa9b7443f9 source review rejects duplicate
+START accounting with a native six-event witness; retain the negative decision.
+Root adds5failing controls and counted pending occurrences in the same summary
+owner. Complete437PASS71.34s/native73.4s measures unchanged four-file
+91.5line/85.6branch, summarizer98.3/95.8; no release authority follows.
+Native terminal6ec observations now record open2/repaired10/resolved40/runs145:
+WebKit23+1PASS416.52/51.18s/native472.4s and all six Molecule jobs pass, but
+Pages Chromium is cancelled during JS1 and deploy skips. Cancellation cause
+still needs native annotation evidence; do not infer manual cancellation or
+alter budgets from the bare cancelled status. Runtime311 remains open.
+
 ## Problem and decision
 
 Repeated source resealing, partial replays, and metadata repairs consumed work

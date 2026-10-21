@@ -95,6 +95,12 @@ def _as_kib(value: int) -> int:
     return value // 1024
 
 
+@dataclass
+class _PendingTiming:
+    timestamp: float | None
+    outstanding_occurrences: int = 1
+
+
 @dataclass(frozen=True)
 class _ProtocolSpan:
     stream: tuple[str, str, int]
@@ -176,16 +182,21 @@ def _timing_rows(spans: Sequence[_ProtocolSpan], limit: int) -> dict[str, object
 
 def _trace_timings(events: Sequence[Mapping[str, object]]) -> dict[str, object]:
     """Pair serial test protocols; wall spans include fixtures and child waits."""
-    pending: dict[tuple[str, str, int], dict[str, float | None]] = {}
+    pending: dict[tuple[str, str, int], dict[str, _PendingTiming]] = {}
     last_finish: dict[tuple[str, str, int], float] = {}
     spans: list[_ProtocolSpan] = []
     issues: list[dict[str, object]] = []
 
-    def reject(reason: str, event: Mapping[str, object]) -> None:
-        issues.append({
+    def reject(
+        reason: str, event: Mapping[str, object], *, outstanding_occurrences: int | None = None
+    ) -> None:
+        issue = {
             "reason": reason,
             **{key: event.get(key) for key in ("run_id", "worker", "pid", "nodeid")},
-        })
+        }
+        if outstanding_occurrences is not None:
+            issue["outstanding_occurrences"] = outstanding_occurrences
+        issues.append(issue)
 
     for event in events:
         kind = event.get("event")
@@ -205,17 +216,24 @@ def _trace_timings(events: Sequence[Mapping[str, object]]) -> dict[str, object]:
             if active:
                 reject("overlapping_start", event)
                 # Neither overlapping protocol has an unambiguous serial span.
-                for node in active:
-                    active[node] = None
+                for occurrence in active.values():
+                    occurrence.timestamp = None
                 timestamp = None
             elif timestamp is not None and timestamp < last_finish.get(stream, 0):
                 reject("overlapping_interval", event)
                 timestamp = None
-            active[nodeid] = timestamp
+            if nodeid in active:
+                active[nodeid].outstanding_occurrences += 1
+            else:
+                active[nodeid] = _PendingTiming(timestamp)
         elif nodeid not in active:
             reject("unmatched_finish", event)
         else:
-            started = active.pop(nodeid)
+            occurrence = active[nodeid]
+            started = occurrence.timestamp
+            occurrence.outstanding_occurrences -= 1
+            if occurrence.outstanding_occurrences == 0:
+                del active[nodeid]
             if timestamp is not None:
                 if started is not None:
                     if timestamp < started:
@@ -224,11 +242,11 @@ def _trace_timings(events: Sequence[Mapping[str, object]]) -> dict[str, object]:
                         spans.append(_ProtocolSpan(stream, nodeid, timestamp - started))
                 last_finish[stream] = max(last_finish.get(stream, 0), timestamp)
     for stream, active in pending.items():
-        for nodeid in active:
+        for nodeid, occurrence in active.items():
             reject("unfinished_start", {
                 "run_id": stream[0], "worker": stream[1],
                 "pid": stream[2], "nodeid": nodeid,
-            })
+            }, outstanding_occurrences=occurrence.outstanding_occurrences)
     limit = 25
     return {
         "authority": "diagnostic-only", "gate_evidence": False, "release_ready": False,

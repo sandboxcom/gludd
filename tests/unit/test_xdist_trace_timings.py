@@ -331,3 +331,63 @@ def test_native_summary_treats_its_timing_option_as_inert_data(tmp_path: Path) -
     assert result.returncode == 2, result.stdout + result.stderr
     assert "TRACE_SUMMARY_TIMINGS must be 0 or 1" in result.stderr
     assert not marker.exists(), "a rejected timing option executed a shell command"
+
+
+def test_duplicate_start_does_not_admit_the_review_witness_overlap(tmp_path: Path) -> None:
+    report = _timings(
+        _summary(
+            tmp_path,
+            [
+                _event("START", timestamp=10),
+                _event("START", timestamp=11),
+                _event("FINISH", timestamp=12),
+                _event("START", "tests/b.py::test_b", timestamp=13),
+                _event("FINISH", "tests/b.py::test_b", timestamp=14),
+                _event("FINISH", timestamp=15),
+            ],
+        )
+    )
+
+    assert report["paired_count"] == 0
+    assert report["slowest_tests"] == []
+    assert report["modules"] == []
+    assert report["workers"] == []
+    assert "unmatched_finish" not in _reasons(report)
+
+
+@pytest.mark.parametrize("duplicate_count", [2, 3])
+@pytest.mark.parametrize("drain_pending", [False, True])
+def test_duplicate_occurrences_must_all_drain_before_serial_recovery(
+    tmp_path: Path, duplicate_count: int, drain_pending: bool
+) -> None:
+    events = [_event("START", timestamp=10 + index) for index in range(duplicate_count)]
+    clock = 10 + duplicate_count
+    events.extend([
+        _event("FINISH", timestamp=clock),
+        _event("START", "tests/b.py::test_b", timestamp=clock + 1),
+        _event("FINISH", "tests/b.py::test_b", timestamp=clock + 2),
+    ])
+    clock += 3
+    if drain_pending:
+        for _ in range(duplicate_count - 1):
+            events.append(_event("FINISH", timestamp=clock))
+            clock += 1
+    events.extend([
+        _event("START", "tests/c.py::test_c", timestamp=clock),
+        _event("FINISH", "tests/c.py::test_c", timestamp=clock + 1),
+    ])
+    report = _timings(_summary(tmp_path, events))
+
+    assert report["paired_count"] == int(drain_pending)
+    assert "unmatched_finish" not in _reasons(report)
+    rows = cast(list[dict[str, object]], report["slowest_tests"])
+    if drain_pending:
+        assert [row["nodeid"] for row in rows] == ["tests/c.py::test_c"]
+        assert "unfinished_start" not in _reasons(report)
+    else:
+        assert rows == []
+        issues = cast(list[dict[str, object]], report["issues"])
+        unfinished = [issue for issue in issues if issue["reason"] == "unfinished_start"]
+        assert len(unfinished) == 1
+        assert unfinished[0]["nodeid"] == "tests/a.py::test_a"
+        assert unfinished[0]["outstanding_occurrences"] == duplicate_count - 1
