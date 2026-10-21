@@ -373,3 +373,18 @@ def test_owned_native_timeout_retains_its_trace_log_and_terminal_receipt(tmp_pat
     assert isinstance(pid, int) and pid > 0
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
+
+
+@pytest.mark.parametrize("watched_trace_option", ["0", "1"])
+def test_optional_trace_preserves_cmd_shell_positional_arguments(
+    tmp_path: Path, watched_trace_option: str,
+) -> None:
+    fixture = _fixture(tmp_path)
+    with fixture.makefile.open("a", encoding="utf-8") as stream:
+        stream.write('\noverride CMD := $(value CMD) "$$@"\n')
+    _native_child(fixture)
+    result = _make(fixture, watched_trace_option, watched_trace_uv=_real_uv(fixture))
+    assert result.returncode == 0, result.stdout + result.stderr
+    status = _status(fixture)
+    assert status["state"] == "passed" and status["exit_code"] == 0
+    assert _child_payload(fixture)["argv"] == ["literal child argument"]

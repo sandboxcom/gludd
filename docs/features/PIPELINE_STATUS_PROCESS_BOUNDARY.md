@@ -1420,3 +1420,60 @@ explicitly separate from the original admission's unchanged90total/60quiet.
 No Python production owner, coverage floor or coverage configuration changes.
 Final operating/static/normal commit/source-review evidence remains distinct
 from full gate, exact-SHA hosted/deployment and guarded promotion.
+
+## Preserve CMD positional arguments during optional tracing (2026-10-21)
+
+Normal source commit427b06c7d3f7ba9139c04961d6c3d9b57fee4c59 retains all15
+paths,zero new clones,six checkpoints and fresh128477selected/128501collected,
+24deselected/zero errors46.19s/native52.8s. Its native working tree is clean
+before independent review. The prior complete operating235PASS88.49s/native89.8s,
+four-scope Ruff/strict,274contracts,1157unique Make targets,Markdown6/24ms,
+SESSION validation and Node6PASS11.28s are source receipts, not a full gate.
+
+Independent review returns CHANGES REQUIRED for exact427 versus845:
+ /tmp/gludd-v012-watched-trace-427b06c-source-review.md, fully read by Root.
+The new shell set-- changes the same shell's positional arguments before CMD
+expands. A legitimate CMD using escaped dollars to expand shell positional argv
+receives an unintended --pytest-trace under mode1. Trace allocation/status remain
+passed, so the original enabled-observer argv control cannot detect this input.
+
+The confined native witness extracts immutable parent/candidate recipes, reuses
+the committed real-observer fixture and appends a fixture-only CMD suffix.
+Parent845 preserves the original child argument in modes0/1; candidate427
+preserves0 but appends --pytest-trace under1. The outer assertion observes actual
+child argv after Make/child return. It fails1/1PASS0.85s/native1.6s with Make2;
+retain /tmp/gludd-v012-watched-positional-427-red311.{log,xml}, the reusable
+-tests.py, all four parent/candidate-mode JSON receipts, literal two-case
+-test-appendix.py and two-line -fix.patch under the same prefix. Keep rejected427
+and its negative decision immutable; no failure is reclassified as approval.
+
+Root receives the exact two-case appendix without changing35 prior cases/helper
+API. Complete canonical37 fails1/36PASS4.56s/native5.4s before production repair:
+ /tmp/gludd-v012-watched-positional-canonical-red311.{log,xml}. Only mode1
+actual-child argv fails. The existing recipe then validates the same literal
+0/1 flag into a namespaced local shell variable and expands only the fixed
+optional observer argument. It leaves caller shell positional parameters intact;
+no new parser, wrapper, owner, dependency or private environment export is added.
+The two additive cases remain full acceptance; the single cheap admission node,
+all143families/142predecessors, three2/1/1 children,90/60 and21/2850 are unchanged.
+
+The mandatory guide and AGENTS now state the demonstrated CMD preservation
+contract. Corrected complete acceptance, static/operating checks, normal successor
+commit/collection and exact independent re-review must be recorded separately.
+Existing publication60907 still times out124/90.554s with trace_path:null and no
+transport. Disk97percent/6.9GiB against95, no eligible native cleanup, UNFILED
+capacity HumanTodo/API refusal and unanswered host input remain. The correction
+supplies no publication-timeout cause, unchanged-replay authority, full gate,
+global85/75 BOTH, exact-SHA hosted/deployment or promotion proof. Seven release
+tasks remain unchecked.
+
+The complete corrected four-owner cohort passes173 on311/83.82s/native85.1s
+and312/85.75s/native87.0s, with fatal warnings and zero skips/collection errors.
+Receipts: /tmp/gludd-v012-positional-complete311.{log,xml} and
+/tmp/gludd-v012-positional-complete312.{log,xml}. This includes all37 generic
+cases and all136 original publication/observer/observability cases. Native child
+argv in both modes is the original single literal argument; observers still own
+exactly one trace option when enabled. All sessions are drained before subsequent
+static/operating/normal Git work. No Python production/coverage policy changes,
+new admission node or broader compatibility replay are needed for this two-line
+argument correction; existing foundation/roster inputs are unchanged.

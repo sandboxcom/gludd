@@ -2,13 +2,15 @@
 
 Last Updated: 2026-10-21 (local and UTC; receipts retain their actual dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128437 selected / 128461 collected,24 deselected,zero collection errors in46.00s/native51.1s during the normal845d65a source commit. Collection is not test acceptance.
+Total tests: 128477 selected / 128501 collected,24 deselected,zero collection errors in46.19s/native52.8s during the normal427b06c source commit. Collection is not test acceptance.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and all Main/shared/Git/proof mutations. All seven S98.1-S98.7 remain unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff supplies no gate/release authority. Model contributors public_review_integrity and release_note_integrity are terminal/quiescent; model names are not OS PIDs.
 
 ## Reviewed source and current watched trace support
+
+Immutable427b06c7d3f7ba9139c04961d6c3d9b57fee4c59 follows845 and has CHANGES REQUIRED at /tmp/gludd-v012-watched-trace-427b06c-source-review.md, fully read by Root. All15paths are locally committed with zero new clones,six retained checkpoints and the collection above; no transport. Independent native parent/candidate witness1FAIL/1PASS0.85s shows mode1 set-- leaking --pytest-trace into legitimate CMD shell positional argv. Root receives two additive cases preserving all35/helper API; canonical37 retains1FAIL/36PASS4.56s/native5.4s before a two-line existing-recipe repair. A validated local flag now expands only the constant observer option, preserving CMD parameters. Corrected complete173 cases pass311/83.82s/native85.1s and312/85.75s/native87.0s, with zero skip/collection errors and fatal warnings. Final static/operating, normal successor collection and exact source re-review belong to native owners/Root's manual history; do not treat427 as approved. Every prior receipt below is historical source support, not proof for the correction or release.
 
 Development base845d65a3ef3e4ae40c61b144d9ae7718d2ad1506 follows3964002be2b039fc81d94989bf0e818fdc9a6144 and its retained predecessors. Exact source decision APPROVE SOURCE ONLY is /tmp/gludd-v012-cache-policy-845d65a-source-review.md, fully read by Root. Normal guarded commit retains235 operating passes85.01s/native86.0s,zero new clones,six unchanged checkpoints and the collection above. All16 cache-policy paths are committed; remote remains2f. The owning cache feature retains508 compatibility/451 routing passes per runtime,128-case98.8line/94.4branch under unchanged85/75 BOTH and every negative/fixture receipt. Prior396 trace source review remains /tmp/gludd-v012-trace-summary-3964002-source-review.md. No local support establishes release proof.
 
@@ -48,7 +50,7 @@ UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
 
 Python312 uses sibling python-3.12 and UV_PYTHON=3.12.15. Use work-item WORK_ITEM_ACTION=status WORK_ITEM_ID=S98.4 WORK_ITEM_REASON='' WORK_ITEM_VALIDATE_ONLY=0, active-work-status ACTIVE_WORK_STATUS_PID= and worktree-state for current ownership. At most two execution/testing owners; original runtime runs alone. Set RUN_WATCHED_PYTEST_TRACE explicitly for watched work. Drain every yielded session before sequential replacements. Quiesce ALL Main readers, model owners, tests and observers before normal Git hooks may stash. Keep strict scopes separate; no implicit environment acquisition.
 
-Finish the current coherent watched trace unit through remaining acceptance, static/operating checks and normal ship-commit-files PUSH=0/fresh collection, then exact-SHA independent source decision. Inspect native HEAD and Root's manual receiving history before repeating a completed step. Source support does not repair volume headroom or original90.554s failure. Identify/change the actual failing input before another original runtime/publication replay. Startup diagnostics still require actual capacity; do not invoke mode0 with that prerequisite unchanged.
+Finish the bounded positional-argument correction through complete173-case acceptance on311/312, static/operating checks and normal ship-commit-files PUSH=0/fresh collection, then exact-SHA independent source re-review. Preserve427 and its CHANGES REQUIRED decision. Inspect native HEAD and Root's manual receiving history before repeating a completed step. Source support does not repair volume headroom or original90.554s failure. Identify/change the actual failing input before another original runtime/publication replay. Startup diagnostics still require actual capacity; do not invoke mode0 with that prerequisite unchanged.
 
 After actual capacity changes, run release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 WORK_ITEM_ID=S98.4 OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20 with the installed tuple. Freeze one independently reviewed candidate only if admitted. The canonical final-gate owner remains:
 

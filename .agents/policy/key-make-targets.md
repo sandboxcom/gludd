@@ -158,7 +158,10 @@ behavior and any inherited trace context; it allocates no additional trace.
 The public flag is literal0|1, with defined-empty/invalid input refused before
 child execution. Publication admission owns mode1 for both prerequisite/runtime
 watchers; a caller's mode0 cannot disable those bindings. Bounds, workers,
-selectors, retention and proof authority stay unchanged.
+selectors, retention and proof authority stay unchanged. Optional observer
+arguments must leave CMD's shell positional parameters intact. Native two-mode
+real-child argv controls retain the rejected427 counterexample; the cheap
+enabled-observer argv pin alone did not cover that command input.
 
 The native producer already generates fresh identities and paths when RUN_ID and
 LOG are explicitly empty. This repeatable non-pytest behavioral example exercises

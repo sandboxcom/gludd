@@ -1673,11 +1673,11 @@ STALL_SECS ?= 180
 MAX_SECS ?= 3600
 run-watched:
 	@if [ -z "$(if $(strip $(CMD)),1,)" ]; then echo "Usage: make run-watched CMD='<command>' [OBSERVED_LABEL=run-watched] [RUN_ID=name] [STALL_SECS=180] [MAX_SECS=3600] [LOG=.gate-logs/observed/run-watched/name.log] [OBSERVED_RETAIN_RUNS=20] [RUN_WATCHED_PYTEST_TRACE=0|1]"; exit 1; fi
-	@case "$${RUN_WATCHED_PYTEST_TRACE-0}" in 0) set -- ;; 1) set -- --pytest-trace ;; *) echo "RUN_WATCHED_PYTEST_TRACE must be 0 or 1" >&2; exit 2;; esac; \
+	@case "$${RUN_WATCHED_PYTEST_TRACE-0}" in 0) gludd_watched_pytest_trace_arg= ;; 1) gludd_watched_pytest_trace_arg=1 ;; *) echo "RUN_WATCHED_PYTEST_TRACE must be 0 or 1" >&2; exit 2;; esac; \
 	$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label "$(if $(strip $(OBSERVED_LABEL)),$(OBSERVED_LABEL),run-watched)" \
 		--item-progress --item-task "$(WORK_ITEM_ID)" \
 		$(if $(RUN_ID),--run-id "$(RUN_ID)",) $(if $(LOG),--log "$(LOG)",) --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" \
-		--quiet-secs "$(STALL_SECS)" --max-secs "$(MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" "$$@" -- $(CMD)
+		--quiet-secs "$(STALL_SECS)" --max-secs "$(MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" $${gludd_watched_pytest_trace_arg:+"--pytest-trace"} -- $(CMD)
 
 test-integration:
 	@BT=$$(mktemp -d /tmp/gludd-test-integration-XXXXXX); \
