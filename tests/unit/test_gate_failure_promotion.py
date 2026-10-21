@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 147
+EXPECTED_FAMILY_COUNT = 148
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1853,6 +1853,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "coverage-native-source-identity",
         "watchdog-secrets-owned-timeout",
         "watchdog-scan-fixture-workspace",
+        "watchdog-empty-observer-projection",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2062,6 +2063,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_watchdog_secrets_lifecycle.py::"
         "test_native_scan_owns_terminal_receipt_and_descendants[timeout-124-timed_out] "
         "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace "
+        "tests/unit/test_task_watchdog.py::"
+        "test_terminal_status_cap_preserves_native_gate_protection[absent-64] "
         "tests/unit/test_status_heartbeat_terminal.py "
         "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py "

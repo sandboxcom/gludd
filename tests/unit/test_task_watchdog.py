@@ -946,6 +946,34 @@ def test_terminal_observer_without_live_owner_does_not_disable_owned_cleanup(
     assert sent == [(88888, signal.SIGTERM)]
 
 
+@pytest.mark.parametrize("terminal_count", [64, 65])
+@pytest.mark.parametrize("gate_marker", ["absent", "pid", "lock"])
+def test_terminal_status_cap_preserves_native_gate_protection(
+    _owned_poll: OwnedPoll, terminal_count: int, gate_marker: str,
+) -> None:
+    """Historical pointers cannot add owners absent from the complete process view."""
+    root, records, _cwds, _deadlines, sent = _owned_poll
+    for index in range(terminal_count):
+        pointer = root / ".gate-logs" / "observed" / f"terminal-{index}" / "current.json"
+        pointer.parent.mkdir(parents=True)
+        pointer.write_text(json.dumps({
+            "schema_version": 1, "kind": "observed_command",
+            "label": pointer.parent.name, "state": "passed",
+            "owner_pid": 99999, "child_pid": 99998,
+        }), encoding="utf-8")
+    target = records[0].pid
+    if gate_marker == "pid":
+        (root / ".gate-background.pid").write_text(str(target), encoding="utf-8")
+    elif gate_marker == "lock":
+        (root / ".gate-logs" / "gate-run.lock").write_text(
+            json.dumps({"pid": target}), encoding="utf-8",
+        )
+    expected = set() if gate_marker == "absent" else {target}
+    assert watchdog._protected_pids(records, (root,)) == expected
+    assert sent == [] and len(records) == 1
+    assert len(list((root / ".gate-logs" / "observed").glob("*/current.json"))) == terminal_count
+
+
 def test_daemon_startup_names_policy_and_preserves_replaced_pid_pointer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:

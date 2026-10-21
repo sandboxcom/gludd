@@ -417,13 +417,17 @@ def _script_role(record: cleanup_owner.ProcessRecord, root: Path, name: str, *, 
 
 def _protected_pids(records: list[cleanup_owner.ProcessRecord], roots: tuple[Path, ...]) -> set[int]:
     """Use native observer metadata conservatively; display absence grants nothing."""
-    paths = inventory_owner._observer_status_paths(roots)
-    if len(paths) >= inventory_owner._OBSERVER_STATUS_LIMIT:
-        raise ValueError("native observer status inventory reached its display cap")
-    output = "\n".join(f"{record.pid} {record.ppid} {record.command}" for record in records)
-    observed = inventory_owner._observer_owned_processes_from_output(output, repository_roots=roots)
-    if len(observed) >= inventory_owner._OBSERVER_PROCESS_LIMIT:
-        raise ValueError("native observer process inventory reached its display cap")
+    observed: list[dict[str, str]] = []
+    # The existing producer requires this token in every proven owner command.
+    # Its empty process projection needs no historical status display inventory.
+    if any("stream_command.py" in record.command for record in records):
+        paths = inventory_owner._observer_status_paths(roots)
+        if len(paths) >= inventory_owner._OBSERVER_STATUS_LIMIT:
+            raise ValueError("native observer status inventory reached its display cap")
+        output = "\n".join(f"{record.pid} {record.ppid} {record.command}" for record in records)
+        observed = inventory_owner._observer_owned_processes_from_output(output, repository_roots=roots)
+        if len(observed) >= inventory_owner._OBSERVER_PROCESS_LIMIT:
+            raise ValueError("native observer process inventory reached its display cap")
     owners = {int(row["pid"]) for row in observed if row["observer_role"] == "owner"}
     for record in records:
         # This is deny-only discovery. A live native observer omitted by damaged,

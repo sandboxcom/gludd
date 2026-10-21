@@ -1188,6 +1188,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-empty-observer-projection",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_task_watchdog.py::test_terminal_status_cap_preserves_native_gate_protection[absent-64]",
+      "full_gate_phase": "test"
     }
   ]
 }

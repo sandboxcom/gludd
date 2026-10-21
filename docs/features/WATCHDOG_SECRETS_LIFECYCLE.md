@@ -117,7 +117,7 @@ The receiving source-identity unit is425e47444284a555a2211db13988edae6ed82b61,
 parent0a302b8. Normal hooks retain128520selected/128544collected,24deselected,
 zero collection errors48.63s/native54.1s, zero new clones and six checkpoints.
 The first EOF hook normalization remains retained. The392-case receipts measure
-the combined receiving bytes including this still-uncommitted adapter; they are
+the combined receiving bytes including this then-uncommitted adapter; they are
 not partial425 exact-commit proof or full-gate evidence.
 
 ## Deterministic admission and model operating guidance
@@ -172,6 +172,77 @@ Fresh receiving disk is97percent/6.9GiB against95; earlier98percent/5.8GiB is
 historical. The changed observation supplies no cleanup or final-proof authority. No unchanged release admission, startup, cleanup or full-gate
 retry follows. All seven S98 tasks stay unchecked; exact-SHA CI/deployment,
 global coverage and guarded promotion remain pending.
+
+## Terminal pointers and native handoff
+
+Exact development49a373b1ae2081e7209e4be5253d3ce270d58e09 commits the adapter,
+parent425e474. Normal hooks retain zero new clones/six checkpoints and128520/
+128544 collection,24deselected/zero errors46.46s/native51.7s. Receipt:
+.gate-logs/observed/test-count/20261021T223029Z-12749-dd1c0aeb.{log,json}.
+Root fully reads /tmp/gludd-v012-watchdog-coverage-49a373b-source-review.md:
+independent APPROVE SOURCE ONLY against0a302b8 for both source units/nineteen
+paths. That approval does not apply to this later empty-projection repair.
+
+The failed stop plan hits the existing64-current-status display bound even
+without a live CLI observer. The existing producer can admit an observer owner
+only when its complete native process row contains stream_command.py.
+The cleanup owner now skips only that provably empty metadata projection.
+Native gate PID/lock protection, ancestor/descendant protection, fresh process
+identity/CWD/start checks and verified signal/drain ownership remain unchanged.
+If any process command contains that token, even an uncertain or foreign one,
+the original metadata path and64-status/128-process refusals still run. No
+bound is raised, pointer deleted, inventory claimed complete from a truncated
+view, new parser/observer/cache introduced or unknown process authorized.
+
+Six native fixture controls fail first1.33s at the exact existing cap.
+They cover64/65 historical pointers with absent/pid/lock gate markers and retain
+every pointer. All six plus the existing live/omitted/damaged/capped safeguards
+then pass12/.91s. Complete task-watchdog acceptance159PASS3115.54s/native7.2s
+measures the unchanged one-file profile at92.8line/85.2branch, all85/75 BOTH
+floors intact; native audit .gate-logs/coverage-20261021T223430Z.json passed=true.
+The same159PASS3124.83s/native6.1s; source/test strict and Ruff pass.
+Actual watchdog-stop plan1 then returns verified apply=False old_tree_drained=False.
+No daemon has been stopped or activated by that result.
+
+A mistaken single-file RESOURCE_OWNERSHIP_PATHS request against the full manifest
+reports unrelated entries stale. The documented empty-path/full-scope native
+check passes264 resources:29async-task/73client/36process/9service/117temp-artifact.
+The inventory is unchanged. Correct caller scope rather than regenerating data
+to match a partial scan.
+
+Family148 appends only the exact absent-64 control after all147 predecessors.
+Its independent count/order/two-roster pins retain5FAIL/1PASS1.19s before wiring,
+then six PASS1.59s. Complete nine-owner routing/lifecycle acceptance passes533
+on311130.22s/native131.9s and312127.71s/native129.1s, zero skips/errors and fatal
+warnings. The complete five documentation/handoff/ledger owners pass98/4.40s/
+native5.7s. Ruff four files, four separate strict scopes, docstrings,276contracts,
+Make1157/zero duplicates/9CI12local, Markdown6, SESSION structure,12-path
+registration and the unchanged file-line guard pass.
+All original selectors/order, three2/1/1 children,90total/60quiet,21phases2850,
+full gate, fatal warnings,85/75 BOTH,ZDD/cleanup/retention/promotion remain.
+
+After normal source commit and independent review, quiesce all checkout readers,
+model owners, tests and observers. Use the installed311 tuple above for every
+native owner. Plan and apply the agent handoff first, immediately restore both
+guards, then plan/apply the task handoff and immediately restore both again:
+
+~~~console
+make watchdog-stop WATCHDOG_VALIDATE_ONLY=1
+make watchdog-stop WATCHDOG_VALIDATE_ONLY=0
+make watchdog-auto WATCHDOG_AUTO_VALIDATE_ONLY=0
+make task-watchdog-stop TASK_WATCHDOG_VALIDATE_ONLY=1
+make task-watchdog-stop TASK_WATCHDOG_VALIDATE_ONLY=0
+make watchdog-auto WATCHDOG_AUTO_VALIDATE_ONLY=0
+make watchdog-start WATCHDOG_START_VALIDATE_ONLY=1
+make task-watchdog-start TASK_WATCHDOG_START_VALIDATE_ONLY=1
+~~~
+
+A refusal stops the dependent sequence and preserves evidence. Use native
+active-work-status/ps to measure predecessor absence and acknowledged successor
+identities; do not invent PIDs, raw-signal a process or infer activation from
+source tests. Keep the other watchdog alive during each handoff. Native current
+scan evidence must show the installed successor's observer lifecycle; an actual
+timeout remains unknown, not a clean secrets finding or release proof.
 
 ## Long-lived practitioner evidence
 

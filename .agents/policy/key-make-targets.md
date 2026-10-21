@@ -69,6 +69,23 @@ bounded descendants; no test reaches the host scanner. The [lifecycle record](..
 retains original failed receipts and the owned activation sequence. A native
 source test result does not activate a daemon already running older code.
 
+Historical current pointers can exceed the64-status display bound. The cleanup
+owner skips that metadata projection only when the complete native process
+snapshot contains no stream_command.py command, a necessary condition in the
+unchanged producer. Gate PID/lock protection still runs; any live observer keeps
+both status/process caps and missing/damaged metadata refusals. Quiesce readers
+and observers before an owned handoff. After reviewed source integration, hand
+off the agent watchdog and immediately run watchdog-auto mode0, then hand off
+the task watchdog and immediately run auto again. This reloads both fixes while
+keeping the other guard alive. Each stop needs its verified plan and actual
+mode0; the [lifecycle record](../../docs/features/WATCHDOG_SECRETS_LIFECYCLE.md)
+retains the exact sequence and separate activation evidence.
+
+For the full versioned resource inventory, keep RESOURCE_OWNERSHIP_PATHS empty.
+A single-file scan against that complete manifest reports every other entry as
+stale. The documented full-scope native check retains264 resources; do not
+regenerate or narrow a manifest merely to repair that caller-scope mismatch.
+
 The coverage-files owner automatically captures physical pwd -P and exports
 private GLUDD_COVERAGE_SOURCE_ROOT for the existing watchdog profile. Children
 retain that identity across CWD changes; the required variable is not a caller

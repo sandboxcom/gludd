@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 147
+EXPECTED_FAMILY_COUNT = 148
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -95,6 +95,7 @@ ROSTER = (
     "tests/unit/test_watchdog_secrets_lifecycle.py::"
     "test_native_scan_owns_terminal_receipt_and_descendants[timeout-124-timed_out]",
     "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace",
+    "tests/unit/test_task_watchdog.py::test_terminal_status_cap_preserves_native_gate_protection[absent-64]",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
