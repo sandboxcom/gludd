@@ -104,6 +104,11 @@ overlap and supply no CPU, gate, CI-repair or release verdict. Mode0 keeps
 compact output. Read the [measured boundary and commands](../../docs/features/XDIST_TRACE_SUMMARY.md#validated-test-protocol-wall-spans-v012)
 before choosing a production repair. Do not widen deadlines, alter selectors,
 cache test fixtures or add another observer to obtain a pass.
+The [fixture-audit record](../../docs/features/PYTEST_PARAMETER_FIXTURE_COLLISION_GUARD.md#bind-native-declaration-types-once-per-traversal-2026-10-21-utc)
+retains a measured per-traversal lookup repair, original field/owner/freshness
+controls, whole-file coverage and separate canonical strict source/test scopes.
+Its deterministic operation bound and local profile supply different evidence
+from the enclosing original runtime-family receipt.
 
 ### Cleanup, pinned browser prefetch and acceptance
 

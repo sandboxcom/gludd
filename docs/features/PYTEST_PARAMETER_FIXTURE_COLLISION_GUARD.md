@@ -98,3 +98,102 @@ coverage/audit are retained in /tmp/gludd-v012-ast-field-traversal-evidence.
 These are focused compatibility and operation-count proofs. They establish no
 whole-admission timing gain, full gate, hosted success, release closure or change
 to90/60, three children/workers2-1-1,21phases2850, ZDD or cleanup/promotion policy.
+
+## Bind native declaration types once per traversal (2026-10-21 UTC)
+
+Source commit 76c6d53cbf2ffb0388024221fb99d154213186c0 descends from
+2e9d6d4b0f90e5526728174b495d33cb02c843df. Independent review approves
+SOURCE ONLY in /tmp/gludd-v012-runtime-budget-type-binding-source-review.md.
+The immutable two-file patch preserves all 57 original cases and assertions.
+
+The original 2e9 repair passes main 2023/75.96s, help 1/1.00s and tail 11/8.52s,
+but its enclosing owner still times out with status 124 after 90.57s; Make
+returns 2 and issues no repair receipt. The last lock assertion also passes.
+The [process-boundary record](PIPELINE_STATUS_PROCESS_BOUNDARY.md) retains the
+native raw failure. Passing components do not clear that failed outer result.
+
+The existing public test-files-cprofile owner then measures the exact current
+2023-case, two-worker main roster: 65.21s, observed 68.1s. This is an unchanged
+base diagnostic with a separate 180/60 bound, not a successor timing or original
+90/60 clearance. Controller waits and overlapping worker wall spans are not
+worker CPU. Existing test-xdist-trace-summary pairs all 2023 protocols without
+issues; the source-inventory node remains the largest at 5.211319s.
+
+A complete 57-case owner profile identifies repeated declaration-class lookups
+inside the existing walker. The repair binds five native type values locally
+once per invocation. Each subsequent invocation resolves them afresh. Parsing,
+every current field, statement/wrapper handling, LIFO order, nearest owner,
+findings, exceptions, GC restoration and tree release remain unchanged.
+No parser, schema table, scan-result cache, dependency, runner or observer is added.
+
+Two additive controls compare 1 and 256 pass statements while retaining real
+imports, functions, plugin values, owner order and body lengths. On unchanged
+source both fail in 1.10s: Import lookup counts grow from 8 to 263 and
+FunctionDef from 15 to 525. The successor resolves each tracked declaration
+class once in both cases. Original native/custom/modified-field, one-visit,
+failure, GC and fresh-scan controls remain mandatory.
+
+| Local profiled measurement | Original 57 cases | Final 59 cases |
+|---|---:|---:|
+| Pytest seconds | 8.27 | 7.82 |
+| Observed owner seconds | 9.2 | 8.8 |
+| Whole audit cumulative seconds | 6.043 | 5.669 |
+| Declaration traversal cumulative/self seconds | 1.760/1.127 | 1.558/0.940 |
+| Native parse cumulative seconds | 3.207 | 3.101 |
+
+Cumulative rows overlap. Parse time also varies, so these observations do not
+attribute the whole elapsed difference to the lookup repair. The deterministic
+operation bound is distinct evidence. No successor main-roster profile or
+unchanged 90-second retry is substituted for the actual repair owner.
+
+Source whole-file coverage passes 59 cases in 7.59s, observed 9.1s:
+97.8% line and 94.0% branch under unchanged config/coverage_pytest_fixture_audit.ini
+and both 85% aggregate/75% each-file floors. Source audit is
+.gate-logs/coverage-20261021T020602Z.json. Normal source commit freshly collects
+127838/127862, 24 deselected, zero errors, 43.28s/observed 48.5s.
+
+Root receives the exact source into development 1bcca8b through the existing
+inactive gate guard and no-commit merge, with no conflicts. The complete receiving
+59-case coverage owner passes in 8.70s, observed 10.8s, at the same 97.8%/94.0%.
+Native audit .gate-logs/coverage-20261021T021309Z.json and full report
+.gate-logs/coverage-runtime-budget-ast-types-receiving.json retain this separate
+measurement. Python 3.12.15 independently passes all 59 cases in 7.09s;
+JUnit is /tmp/gludd-v012-ast-types-receiving-py312.xml. Ruff and both complete
+canonical strict scopes pass. A combined strict invocation reports the existing
+flat/package module collision; separate source and test scopes retain strict
+checking without import, configuration or suppression changes.
+
+The exact receiving coverage and profiling owners are:
+
+~~~console
+make coverage-files COVERAGE_TESTFILES=tests/unit/test_pytest_param_fixture_collisions.py COVERAGE_CONFIG=config/coverage_pytest_fixture_audit.ini COVERAGE_REPORT=.gate-logs/coverage-runtime-budget-ast-types-receiving.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+make test-files-cprofile TESTFILES=tests/unit/test_pytest_param_fixture_collisions.py NPROC=1 GLUDD_XDIST_WORKERS=1 PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+make typecheck-scope FILES=scripts/check_pytest_param_fixture_collisions.py UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+make typecheck-scope FILES=tests/unit/test_pytest_param_fixture_collisions.py UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+The profile command above is diagnostic. Its actual source runs use public
+run-watched at 180/60 with explicit progress/retention/runtime inputs, as retained
+in /tmp/gludd-v012-runtime-budget-2e9d6d4-report.md. That report preserves exact
+run IDs, both native profile directories, the original failed owner, all commands,
+setup side effects and resource limitations. No timing improvement is claimed
+for hosted scheduling or the original enclosing admission.
+
+The [official AST field contract](https://docs.python.org/3.11/library/ast.html#ast.iter_fields)
+and [firsthand CPython discussion #123373](https://github.com/python/cpython/issues/123373),
+opened 2024-08-27, were rechecked. The reporter discusses ast.walk's queue-based
+traversal and the documented unspecified ordering. This supports retaining the
+explicit field/owner/LIFO walker; it establishes no Gludd speedup or timeout cause.
+Supporting research is /tmp/gludd-v012-ast-native-traversal-research.txt.
+
+The first redundant TASKS proof paragraph reaches 2501 lines and fails the
+unchanged less-than-2500 guard. Complete new detail stays in this owning feature;
+TASKS retains a short index link and every original checkbox/acceptance condition.
+The labeled manual native failure copy is
+/tmp/gludd-v012-ast-types-task-line-limit-red.txt. No line limit is raised.
+
+The next original-family evidence belongs to ci-failure-repair at the clean
+receiving commit, with public run-watched and unchanged original 90/60,
+2023+1+11 selectors and 2/1/1 workers. Receiving collection/source review, native
+family receipt, capacity clearance, full gate, exact-SHA hosted/deployment and
+normal promotion remain separate obligations. All seven task closures remain open.

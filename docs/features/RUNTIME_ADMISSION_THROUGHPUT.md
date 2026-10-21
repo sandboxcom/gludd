@@ -1,5 +1,14 @@
 # Runtime Admission Throughput
 
+## Per-traversal native AST type binding (2026-10-21 UTC)
+
+[The existing fixture-audit feature](PYTEST_PARAMETER_FIXTURE_COLLISION_GUARD.md#bind-native-declaration-types-once-per-traversal-2026-10-21-utc)
+owns source76c6d53, two failing-first operation controls, all57 original cases,
+59-case source/receiving acceptance and97.8line/94.0branch whole-file coverage.
+It retains both local profiles, explicit commands and the long-lived upstream
+ordering discussion. Original2e9 timeout124/90.57s remains unrepaired until the
+native clean-receiving family owner passes; no deadline or assertion changes.
+
 ## Pipeline public CLI reuse (2026-10-21 UTC)
 
 [Pipeline Status Process Boundary](PIPELINE_STATUS_PROCESS_BOUNDARY.md) owns the

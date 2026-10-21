@@ -67,6 +67,11 @@ def _field_values(node: ast.AST) -> Iterator[object]:
 
 
 def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
+    import_types = (ast.Import, ast.ImportFrom)
+    function_types = (ast.FunctionDef, ast.AsyncFunctionDef)
+    assignment_types = (ast.Assign, ast.AnnAssign)
+    owner_types = (ast.Module, ast.ClassDef, *function_types)
+    statement_type = ast.stmt
     imports: list[ast.Import | ast.ImportFrom] = []
     functions: list[
         tuple[
@@ -80,17 +85,17 @@ def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
     ] = [(tree, tree)]
     while pending:
         node, owner = pending.pop()
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, import_types):
             imports.append(node)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        elif isinstance(node, function_types):
             functions.append((node, owner))
-        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+        elif isinstance(node, assignment_types):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             if node.value is not None and any(
                 isinstance(target, ast.Name) and target.id == "pytest_plugins" for target in targets
             ):
                 plugin_values.append(node.value)
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(node, owner_types):
             owner = node
         # Only statement lists can hold declarations. Non-statement wrappers
         # (exception handlers and match cases) expose their statements as body.
@@ -99,14 +104,14 @@ def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
             if not isinstance(value, list):
                 continue
             for child in value:
-                if isinstance(child, ast.stmt):
+                if isinstance(child, statement_type):
                     pending.append((child, owner))
                 else:
                     body = getattr(child, "body", None)
                     if isinstance(body, list):
                         pending.extend(
                             (statement, owner) for statement in body
-                            if isinstance(statement, ast.stmt)
+                            if isinstance(statement, statement_type)
                         )
     return _SourceDeclarations(tuple(imports), tuple(functions), tuple(plugin_values))
 
