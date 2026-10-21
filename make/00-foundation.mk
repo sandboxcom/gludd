@@ -24,6 +24,23 @@ export GLUDD_TRACE_SUMMARY_MEMORY := $(value TRACE_SUMMARY_MEMORY)
 unexport LOG RUN_ID TRACE_SUMMARY_TIMINGS TRACE_SUMMARY_MEMORY
 endif
 
+# Capture cache data for native diagnostic/removal goals before startup exports.
+CACHE_RESOURCE_ROOT ?=
+CACHE_RESOURCE_LIMIT ?= 20
+CACHE_RESOURCE_CANDIDATE ?=
+CACHE_RESOURCE_VALIDATE_ONLY ?= 1
+ifneq ($(filter cache-resource-inventory cache-resource-remove cache-disk disk-user-caches,$(MAKECMDGOALS)),)
+override GLUDD_CACHE_RESOURCE_ROOT := $(value CACHE_RESOURCE_ROOT)
+override GLUDD_CACHE_RESOURCE_LIMIT := $(value CACHE_RESOURCE_LIMIT)
+override GLUDD_CACHE_RESOURCE_CANDIDATE := $(value CACHE_RESOURCE_CANDIDATE)
+override GLUDD_CACHE_RESOURCE_VALIDATE_ONLY := $(value CACHE_RESOURCE_VALIDATE_ONLY)
+export GLUDD_CACHE_RESOURCE_ROOT := $(value CACHE_RESOURCE_ROOT)
+export GLUDD_CACHE_RESOURCE_LIMIT := $(value CACHE_RESOURCE_LIMIT)
+export GLUDD_CACHE_RESOURCE_CANDIDATE := $(value CACHE_RESOURCE_CANDIDATE)
+export GLUDD_CACHE_RESOURCE_VALIDATE_ONLY := $(value CACHE_RESOURCE_VALIDATE_ONLY)
+unexport CACHE_RESOURCE_ROOT CACHE_RESOURCE_LIMIT CACHE_RESOURCE_CANDIDATE CACHE_RESOURCE_VALIDATE_ONLY
+endif
+
 # This one-shot mode is selected only by the owning file-defined alias.
 unexport _TEST_FILES_CPROFILE
 ifneq ($(filter command line environment override,$(origin _TEST_FILES_CPROFILE)),)
@@ -426,7 +443,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
          secrets-scrub secrets-scan secrets-baseline secrets-baseline-check security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development branch-reconciliation-inventory branch-reconciliation-summary branch-reconciliation-completed-backlog check-git-hygiene git-object-store-reclaim cache-disk cache-clean disk-user-caches cache-resource-inventory cache-resource-remove rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
+         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development branch-reconciliation-inventory branch-reconciliation-summary branch-reconciliation-completed-backlog check-git-hygiene git-object-store-reclaim cache-disk disk-user-caches cache-resource-inventory cache-resource-remove rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
         molecule-clean plan ps ps-gludd kill-stale terminate-project-process-tree reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
@@ -937,9 +954,8 @@ help:
 		"  disk                  Print disk usage + gludd footprint" \
 		"  disk-reclaim          Run bounded, heartbeat-emitting cache cleanup" \
 		"  git-object-store-reclaim  Inventory or conservatively reclaim Git objects (GIT_OBJECT_STORE_*)" \
-		"  cache-disk            Show bounded user-cache directory sizes" \
-		"  cache-clean           Remove the explicitly enumerated tool caches" \
-		"  disk-user-caches      Show accessible user-cache and data-root sizes" \
+		"  cache-disk            Show bounded allowlisted cache children" \
+		"  disk-user-caches      Show bounded allowlisted cache children" \
 		"  cache-resource-inventory  List largest children of one allowlisted cache root" \
 		"  cache-resource-remove     Validate or remove one exact allowlisted cache child" \
 		"  native-temp-artifact-inspect  Read-only exact native-cache identity (NATIVE_TEMP_ARTIFACT_PATH, NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY=0|1); no cleanup authority" \

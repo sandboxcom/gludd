@@ -17,6 +17,18 @@ INVENTORY_MAX_SECONDS = 30.0
 INVENTORY_MAX_ENTRIES = 1000
 INVENTORY_PROGRESS_SECONDS = 5.0
 
+_MANAGED_CACHE_LIFECYCLES = {
+    "uv": "use native uv cache commands after lifecycle admission; never edit cache files directly",
+    "gh": "retain native CI logs until the GitHub CLI evidence lifecycle admits removal",
+    "opencode": "use offline OpenCode maintenance and preserve active state",
+    "huggingface": "use clean-hf-cache only for verified Gludd-owned, unleased artifacts",
+    "pip": "use the native pip cache lifecycle",
+    "pre-commit": "use the native pre-commit environment lifecycle",
+    "claude": "retain application-managed state until its lifecycle owner admits removal",
+    "gludd": "use Gludd resource ownership and evidence retention",
+    "general-ludd": "use Gludd resource ownership and evidence retention",
+}
+
 
 class CacheResourceError(ValueError):
     """Report an invalid or unsafe cache-resource operation."""
@@ -42,6 +54,7 @@ class CacheInventoryIncomplete(CacheResourceError):
     """Retain bounded partial rows without claiming a complete inventory."""
 
     def __init__(self, reason: str, rows: list[CacheEntry]) -> None:
+        """Store the cause and bounded partial inventory rows."""
         super().__init__(reason)
         self.rows = rows
 
@@ -53,19 +66,14 @@ def _project_gate_logs_root() -> Path:
 
 def _removable_roots() -> frozenset[Path]:
     home = Path.home().resolve(strict=False)
-    return frozenset(
-        {
-            (home / ".cache").resolve(strict=False),
-            (home / ".local" / "share" / "containers").resolve(strict=False),
-            (home / "Library" / "Caches").resolve(strict=False),
-            _project_gate_logs_root(),
-        }
-    )
+    return frozenset({(home / ".cache").resolve(strict=False)})
 
 
 def _inventory_roots() -> frozenset[Path]:
     home = Path.home().resolve(strict=False)
-    return _removable_roots() | frozenset({(home / "tmp").resolve(strict=False)})
+    return _removable_roots() | frozenset(
+        {(home / "tmp").resolve(strict=False), _project_gate_logs_root()}
+    )
 
 
 def _validate_root(root: Path, *, removal: bool = False) -> Path:
@@ -208,6 +216,12 @@ def remove_cache_child(root: Path, candidate: Path, *, apply: bool) -> bool:
         raise CacheResourceError("candidate must be an exact immediate child of root")
     if not canonical_candidate.exists():
         raise CacheResourceError(f"candidate does not exist: {canonical_candidate}")
+    lifecycle = _MANAGED_CACHE_LIFECYCLES.get(canonical_candidate.name.casefold())
+    if lifecycle is not None:
+        raise CacheResourceError(
+            f"managed cache child requires its lifecycle owner: {canonical_candidate.name}; "
+            f"{lifecycle}"
+        )
     if not apply:
         return False
     if canonical_candidate.is_dir():

@@ -507,6 +507,43 @@ retain native ownership, integration, locks, ignored proof and rollback.
 Make -n/-q can execute an entire recursive recipe line; they are not a mutation
 barrier. Use the owner's explicit validation mode and retained native tests.
 
+### Bounded cache diagnostics
+
+The canonical inventory uses system Python, native30s/1000-entry bounds and at
+most100 output rows, with visible errors:
+
+~~~console
+make cache-resource-inventory CACHE_RESOURCE_ROOT=/Users/shawnwilson/.cache CACHE_RESOURCE_LIMIT=20 CACHE_RESOURCE_VALIDATE_ONLY=1
+~~~
+
+cache-disk/disk-user-caches are recipe-free default aliases; parameterize the
+canonical owner. Library/Caches and container storage are outside its access
+policy. Gate artifacts and project temp namespaces are inventory-only.
+
+The remove contract deliberately exercises a refusal. This command must return
+Make2 with the managed-cache error:
+
+~~~console
+make cache-resource-remove CACHE_RESOURCE_ROOT=/Users/shawnwilson/.cache CACHE_RESOURCE_CANDIDATE=/Users/shawnwilson/.cache/uv CACHE_RESOURCE_VALIDATE_ONLY=1
+~~~
+
+A successful inventory is not deletion authority. Both plan1 and apply0 refuse
+known managed names; use their lifecycle owners with native ownership/retention/ZDD
+checks. The retired cache-clean/clean-gh-run-logs/clean-all-caches recipes cannot
+substitute. The JSON behavior's shell comment states this expected refusal;
+run the command before that comment and preserve the actual stderr/Make status.
+
+Positive exact-child plan/apply and sibling retention use an automatic confined
+synthetic HOME through this existing owner with the installed runtime:
+
+~~~console
+make test-files TESTFILES=tests/unit/test_cache_resource_policy.py PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+Do not create a real host-cache fixture or turn a policy refusal into an apply
+retry. The [cache feature](../../docs/features/CACHE_RESOURCE_INVENTORY.md#native-cache-policy-alignment-2026-10-21)
+retains upstream cache-safety evidence, failing controls and precise proof limits.
+
 ### Other supported work
 
 Use `make search PATTERN=regex SEARCH_PATH=directory-or-file` for bounded

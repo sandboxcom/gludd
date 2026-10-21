@@ -1096,6 +1096,8 @@
       "make_variables": [],
       "behavior": "make check-disk-classification"
     },
+    {"name": "cache-disk", "make_variables": [], "behavior": "make cache-disk"},
+    {"name": "disk-user-caches", "make_variables": [], "behavior": "make disk-user-caches"},
     {
       "name": "cache-resource-inventory",
       "make_variables": [
@@ -1103,7 +1105,7 @@
         "CACHE_RESOURCE_LIMIT",
         "CACHE_RESOURCE_VALIDATE_ONLY"
       ],
-      "behavior": "make cache-resource-inventory CACHE_RESOURCE_ROOT=/Users/shawnwilson/Library/Caches CACHE_RESOURCE_LIMIT=20 CACHE_RESOURCE_VALIDATE_ONLY=1"
+      "behavior": "make cache-resource-inventory CACHE_RESOURCE_ROOT=/Users/shawnwilson/.cache CACHE_RESOURCE_LIMIT=20 CACHE_RESOURCE_VALIDATE_ONLY=1"
     },
     {
       "name": "cache-resource-remove",
@@ -1112,7 +1114,7 @@
         "CACHE_RESOURCE_CANDIDATE",
         "CACHE_RESOURCE_VALIDATE_ONLY"
       ],
-      "behavior": "make cache-resource-remove CACHE_RESOURCE_ROOT=/Users/shawnwilson/Library/Caches CACHE_RESOURCE_CANDIDATE=/Users/shawnwilson/Library/Caches/pip CACHE_RESOURCE_VALIDATE_ONLY=1"
+      "behavior": "make cache-resource-remove CACHE_RESOURCE_ROOT=/Users/shawnwilson/.cache CACHE_RESOURCE_CANDIDATE=/Users/shawnwilson/.cache/uv CACHE_RESOURCE_VALIDATE_ONLY=1 # expected exit 2: managed-cache refusal"
     },
     {
       "name": "tmp-gludd-clean-ci-shards-now",

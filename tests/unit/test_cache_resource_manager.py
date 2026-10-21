@@ -22,7 +22,7 @@ from scripts.makefile_layout import compose_makefile
 
 def _cache_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
-    root = tmp_path / "Library" / "Caches"
+    root = tmp_path / ".cache"
     root.mkdir(parents=True)
     return root
 
@@ -176,7 +176,7 @@ def test_remove_apply_deletes_only_exact_child(tmp_path: Path, monkeypatch: pyte
     assert sibling.is_dir()
 
 
-def test_project_gate_logs_are_removable_generated_resources(
+def test_project_gate_logs_are_inventory_only_protected_resources(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -193,8 +193,10 @@ def test_project_gate_logs_are_removable_generated_resources(
         raising=False,
     )
 
-    assert remove_cache_child(root, generated, apply=True) is True
-    assert not generated.exists()
+    assert {row.path for row in inventory_cache_children(root, limit=20)} == {generated, retained}
+    with pytest.raises(CacheResourceError, match="root is not allowlisted for removal"):
+        remove_cache_child(root, generated, apply=True)
+    assert generated.is_dir()
     assert retained.read_text(encoding="utf-8") == "retained"
 
 

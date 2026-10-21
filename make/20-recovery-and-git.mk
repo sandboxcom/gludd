@@ -263,28 +263,8 @@ git-object-store-reclaim: ## Inventory or conservatively reclaim one Git object 
 	(cd "$$repository" && git count-objects -vH); \
 	echo "GIT_OBJECT_STORE_READY repository=$$repository before_kib=$$before_kib after_kib=$$after_kib reclaimed_kib=$$reclaimed_kib refs_unchanged=true worktree_unchanged=true"
 
-CACHE_RESOURCE_ROOT ?= $(HOME)/Library/Caches
-CACHE_RESOURCE_LIMIT ?= 20
-CACHE_RESOURCE_CANDIDATE ?=
-CACHE_RESOURCE_VALIDATE_ONLY ?= 1
-
-cache-disk: ## Show cache directory sizes (uv, huggingface, pip, npm)
-	@echo "--- cache directories ---"
-	@for d in ~/.cache/uv ~/.cache/huggingface ~/.cache/pip ~/.cache/claude ~/.cache/pre-commit ~/.cache/gh ~/.cache/opencode ~/Library/Caches/pip ~/.npm/_cacache; do \
-		if [ -d "$$d" ]; then du -sh "$$d" 2>/dev/null; fi; \
-	done
-	@echo "--- uv cache detail ---"
-	@du -sh ~/.cache/uv/*/ 2>/dev/null | sort -h | tail -10 || true
-
-cache-clean: ## Clean uv, huggingface, and npm caches to free disk space
-	@echo "--- cleaning uv cache ---"
-	@rm -rf ~/.cache/uv/.gitignore ~/.cache/uv/.lock ~/.cache/uv/CACHEDIR.TAG ~/.cache/uv/archive-v0 ~/.cache/uv/builds-v0 ~/.cache/uv/interpreter-v4 ~/.cache/uv/sdists-v9 ~/.cache/uv/simple-v21 ~/.cache/uv/wheels-v6 2>/dev/null; echo "uv cache directories cleaned"
-	@echo "--- cleaning huggingface cache ---"
-	@rm -rf ~/.cache/huggingface/hub ~/.cache/huggingface/xet 2>/dev/null; echo "huggingface cache cleaned"
-	@echo "--- cleaning npm cache ---"
-	@npm cache clean --force 2>/dev/null && echo "npm cache cleaned" || echo "npm cache clean skipped"
-	@echo "--- after cleanup ---"
-	@$(MAKE) --no-print-directory cache-disk
+# Cache diagnostics share one bounded owner; bulk deletion entrypoints are retired.
+cache-disk: cache-resource-inventory ## Show bounded allowlisted cache children
 
 tmp-gludd-usage:
 	@du -sh /tmp/gludd-* 2>/dev/null | sort -h | tail -40 || true
@@ -319,51 +299,31 @@ opencode-clean-hard: ## Offline aggressive cache/log cleanup (OPENCODE_DB, OPENC
 		$(if $(filter 1,$(OPENCODE_MAINTENANCE_VALIDATE_ONLY)),--validate-only,) \
 		$(if $(filter 1,$(OPENCODE_MAINTENANCE_FORCE)),--force,)
 
-disk-user-caches: ## Show all user-cache directories accessible to this agent + their sizes
-	@echo "=== user cache footprint ==="
-	@for d in ~/.cache/huggingface ~/.cache/gh ~/.cache/uv ~/.cache/pip ~/.cache/opencode ~/.cache/claude ~/.cache/pre-commit ~/.cache/gludd ~/.cache/general-ludd; do \
-		if [ -d "$$d" ]; then \
-			printf "%-50s %s\n" "$$d:" "$$(du -sh "$$d" 2>/dev/null | cut -f1)"; \
-		fi; \
-	done
-	@echo ""
-	@echo "=== major user-data roots (read-only) ==="
-	@for d in "$$HOME/.local/share/opencode" "$$HOME/.local/share/containers" "$$HOME/.lima" "$$HOME/.npm" "$$HOME/.cargo" "$$HOME/.rustup" "$$HOME/.docker" "$$HOME/Library/Caches" "$$HOME/Library/Application Support" "$$HOME/Library/Developer" "$$HOME/Library/Logs" "$$HOME/tmp" "$$HOME/gludd" "$${TMPDIR:-/tmp}"; do \
-		if [ -d "$$d" ]; then \
-			echo "  measuring $$d"; \
-			printf "%-50s %s\n" "$$d:" "$$(du -sh "$$d" 2>/dev/null | cut -f1)"; \
-		fi; \
-	done
-	@echo ""
-	@echo "=== gh run-log zips ==="
-	@gh_logs=$$(find ~/.cache/gh -name 'run-log-*.zip' 2>/dev/null | wc -l | tr -d ' '); \
-	echo "  count: $$gh_logs files"; \
-	echo "  total: $$(du -sh ~/.cache/gh 2>/dev/null | cut -f1)"
+disk-user-caches: cache-resource-inventory ## Show bounded allowlisted cache children
+
+# Bind raw inputs in the actual target context, including diagnostic aliases.
+export GLUDD_CACHE_RESOURCE_ROOT
+export GLUDD_CACHE_RESOURCE_LIMIT
+export GLUDD_CACHE_RESOURCE_CANDIDATE
+export GLUDD_CACHE_RESOURCE_VALIDATE_ONLY
+cache-resource-inventory cache-resource-remove: override GLUDD_CACHE_RESOURCE_ROOT = $(value CACHE_RESOURCE_ROOT)
+cache-resource-inventory cache-resource-remove: override GLUDD_CACHE_RESOURCE_LIMIT = $(value CACHE_RESOURCE_LIMIT)
+cache-resource-inventory cache-resource-remove: override GLUDD_CACHE_RESOURCE_CANDIDATE = $(value CACHE_RESOURCE_CANDIDATE)
+cache-resource-inventory cache-resource-remove: override GLUDD_CACHE_RESOURCE_VALIDATE_ONLY = $(value CACHE_RESOURCE_VALIDATE_ONLY)
 
 cache-resource-inventory: ## List bounded immediate children of an allowlisted cache root
-	@case "$(CACHE_RESOURCE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CACHE_RESOURCE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@[ "$(CACHE_RESOURCE_LIMIT)" -ge 1 ] 2>/dev/null && [ "$(CACHE_RESOURCE_LIMIT)" -le 100 ] 2>/dev/null || { echo "CACHE_RESOURCE_LIMIT must be between 1 and 100"; exit 2; }
-	@$(SYSTEM_PYTHON) scripts/cache_resource_manager.py inventory --root "$(CACHE_RESOURCE_ROOT)" --limit "$(CACHE_RESOURCE_LIMIT)"
+	@case "$$GLUDD_CACHE_RESOURCE_VALIDATE_ONLY" in 0|1) ;; *) echo "CACHE_RESOURCE_VALIDATE_ONLY must be 0 or 1" >&2; exit 2;; esac; \
+	[ "$$GLUDD_CACHE_RESOURCE_LIMIT" -ge 1 ] 2>/dev/null && [ "$$GLUDD_CACHE_RESOURCE_LIMIT" -le 100 ] 2>/dev/null || { echo "CACHE_RESOURCE_LIMIT must be between 1 and 100" >&2; exit 2; }; \
+	$(SYSTEM_PYTHON) scripts/cache_resource_manager.py inventory --root "$${GLUDD_CACHE_RESOURCE_ROOT:-$$HOME/.cache}" --limit "$$GLUDD_CACHE_RESOURCE_LIMIT"
 
 cache-resource-remove: ## Validate or remove one exact immediate cache child
-	@case "$(CACHE_RESOURCE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CACHE_RESOURCE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@[ -n "$(CACHE_RESOURCE_CANDIDATE)" ] || { echo "CACHE_RESOURCE_CANDIDATE is required"; exit 2; }
-	@if [ "$(CACHE_RESOURCE_VALIDATE_ONLY)" = "1" ]; then \
-		$(SYSTEM_PYTHON) scripts/cache_resource_manager.py remove --root "$(CACHE_RESOURCE_ROOT)" --candidate "$(CACHE_RESOURCE_CANDIDATE)"; \
-	else \
-		$(SYSTEM_PYTHON) scripts/cache_resource_manager.py remove --root "$(CACHE_RESOURCE_ROOT)" --candidate "$(CACHE_RESOURCE_CANDIDATE)" --apply; \
-	fi
+	@case "$$GLUDD_CACHE_RESOURCE_VALIDATE_ONLY" in 0|1) ;; *) echo "CACHE_RESOURCE_VALIDATE_ONLY must be 0 or 1" >&2; exit 2;; esac; \
+	[ -n "$$GLUDD_CACHE_RESOURCE_CANDIDATE" ] || { echo "CACHE_RESOURCE_CANDIDATE is required" >&2; exit 2; }; \
+	set -- remove --root "$${GLUDD_CACHE_RESOURCE_ROOT:-$$HOME/.cache}" --candidate "$$GLUDD_CACHE_RESOURCE_CANDIDATE"; \
+	if [ "$$GLUDD_CACHE_RESOURCE_VALIDATE_ONLY" = "0" ]; then set -- "$$@" --apply; fi; \
+	$(SYSTEM_PYTHON) scripts/cache_resource_manager.py "$$@"
 
-clean-gh-run-logs: ## Delete all cached GitHub Actions run log zip files
-	@echo "=== cleaning GH run logs ==="
-	@before_files=$$(find ~/.cache/gh -name 'run-log-*.zip' 2>/dev/null | wc -l | tr -d ' '); \
-	before_size=$$(du -sh ~/.cache/gh 2>/dev/null | cut -f1); \
-	echo "  before: $$before_files files ($$before_size)"
-	@find ~/.cache/gh -name 'run-log-*.zip' -delete 2>/dev/null || true
-	@after_size=$$(du -sh ~/.cache/gh 2>/dev/null | cut -f1); \
-	after_files=$$(find ~/.cache/gh -name 'run-log-*.zip' 2>/dev/null | wc -l | tr -d ' '); \
-	echo "  after:  $$after_files files ($$after_size)"
-	@echo "=== done ==="
+
 
 audit-home-tmp: ## Show ~/tmp directory summary (read-only)
 	@echo "=== ~/tmp audit ==="
@@ -393,10 +353,7 @@ audit-home-tmp: ## Show ~/tmp directory summary (read-only)
 cleanup-stale-tmp: ## Remove stale gludd-owned temp dirs/files from ~/tmp (APPLY=1 to execute, default dry-run)
 	@$(SYSTEM_PYTHON) scripts/cleanup_stale_tmp.py $$([ "$(APPLY)" = "1" ] && echo "--apply") --min-age-seconds 3600
 
-clean-all-caches: clean-tmp clean-hf-cache clean-gh-run-logs clean-worktree-venvs cleanup-stale-tmp ## Clean all caches: tmp, HF, GH run logs, worktree venvs, stale tmp entries
-	@echo "=== all caches cleaned ==="
-	@$(MAKE) --no-print-directory disk
-	@$(MAKE) --no-print-directory disk-user-caches
+
 
 opencode-db-stats: ## Bounded read-only OpenCode table counts (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py stats \

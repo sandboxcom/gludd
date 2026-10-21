@@ -1146,6 +1146,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_trace_summary_make_inputs.py::test_summary_public_inputs_never_execute_make_or_shell_data[backticks-LOG-False]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "cache-policy-home-and-proof-boundary",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_cache_resource_policy.py::test_prohibited_home_roots_refuse_before_measurement[library-caches-inventory]",
+      "full_gate_phase": "test"
     }
   ]
 }
