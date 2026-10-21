@@ -492,6 +492,49 @@ def test_repository_class_scoped_fixtures_use_supported_binding(
     )
 
 
+@pytest.mark.parametrize("statement_count", [1, 256])
+def test_declaration_type_resolution_is_bounded_per_traversal(
+    monkeypatch: pytest.MonkeyPatch, statement_count: int,
+) -> None:
+    tree = ast.parse(
+        "import pytest as pt\n"
+        "pytest_plugins = ('plugin.owner',)\n"
+        "@pt.mark.parametrize('base_url', [1])\n"
+        "def test_case(base_url):\n"
+        + "    pass\n" * statement_count
+        + "class TestExample:\n"
+        "    @pt.fixture(scope='class')\n"
+        "    def shared(self): pass\n",
+    )
+    tracked = {
+        "Import", "ImportFrom", "FunctionDef", "AsyncFunctionDef",
+        "AnnAssign", "Module", "ClassDef", "stmt",
+    }
+    lookups: dict[str, int] = {}
+
+    class ObservedAst:
+        def __getattr__(self, name: str) -> object:
+            if name in tracked:
+                lookups[name] = lookups.get(name, 0) + 1
+            value: object = getattr(ast, name)
+            return value
+
+    monkeypatch.setattr(fixture_audit, "ast", ObservedAst())
+    declarations = fixture_audit._source_declarations(tree)
+
+    assert set(lookups) == tracked
+    assert all(count == 1 for count in lookups.values()), lookups
+    assert [ast.unparse(node) for node in declarations.imports] == ["import pytest as pt"]
+    assert [
+        (node.name, getattr(owner, "name", "<module>"))
+        for node, owner in declarations.functions
+    ] == [("shared", "TestExample"), ("test_case", "<module>")]
+    assert [ast.literal_eval(value) for value in declarations.plugin_values] == [("plugin.owner",)]
+    function = tree.body[2]
+    assert isinstance(function, ast.FunctionDef)
+    assert len(function.body) == statement_count
+
+
 def test_declaration_field_values_avoid_python_field_pair_iterator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
