@@ -1,5 +1,16 @@
 # Runtime Admission Throughput
 
+## Pipeline public CLI reuse (2026-10-21 UTC)
+
+[Pipeline Status Process Boundary](PIPELINE_STATUS_PROCESS_BOUNDARY.md) owns the
+reviewed4a10517 public-CLI reuse, both preserved negative reviews, cleanup120
+versus reporting-only1, final-diagnostic precedence and actual stale-success
+invalidation. Both native queries remain fresh; no observer/cache/daemon is added.
+Main receiving576PASS55.92s/native58.5s measures98.6line/96.9branch under85/75 BOTH;
+full command/audit and original90/60/hosted/full-gate obligations stay in that record.
+The initial combined document fails the unchanged line guard at2549lines;
+extracting the new topic preserves all previous history and the<2500 limit.
+
 ## Accurate project target catalog (2026-10-21 UTC)
 
 Mandatory make help exposed seven tracked fixture-only echo targets:

@@ -627,23 +627,14 @@ PIPELINE_STATUS_FAILURE_LEDGER ?= .gludd/ci-failure-ledger.json
 PIPELINE_STATUS_OUTPUT ?= .gludd/release-proof-status.json
 pipeline-status:
 	@case "$(PIPELINE_STATUS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PIPELINE_STATUS_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
-	@OBSERVE_RC=0; STATUS_RC=0; \
-	export GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new'; \
-	$(UV) run python scripts/ci_failure_ledger.py observe-sha \
-		--repo "$(PIPELINE_STATUS_REPO)" --branch "$(PIPELINE_STATUS_BRANCH)" \
-		--remote "$(PIPELINE_STATUS_REMOTE)" --ledger "$(PIPELINE_STATUS_FAILURE_LEDGER)" \
-		$(if $(PIPELINE_STATUS_SHA),--sha "$(PIPELINE_STATUS_SHA)",) \
-		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,) || OBSERVE_RC=$$?; \
-	$(UV) run python scripts/pipeline_status.py status \
+	@export GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new'; \
+	$(UV) run python scripts/pipeline_status.py status --observe-ledger \
 		--repo "$(PIPELINE_STATUS_REPO)" --branch "$(PIPELINE_STATUS_BRANCH)" \
 		--remote "$(PIPELINE_STATUS_REMOTE)" \
 		--failure-ledger "$(PIPELINE_STATUS_FAILURE_LEDGER)" \
-		--snapshot-output "$(PIPELINE_STATUS_OUTPUT)" --ledger-observation-exit-code "$$OBSERVE_RC" \
+		--snapshot-output "$(PIPELINE_STATUS_OUTPUT)" \
 		$(if $(PIPELINE_STATUS_SHA),--sha "$(PIPELINE_STATUS_SHA)",) \
-		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,) || STATUS_RC=$$?; \
-	if [ $$OBSERVE_RC -ne 0 ]; then echo "pipeline-status: failure-ledger observation failed rc=$$OBSERVE_RC"; fi; \
-	if [ $$OBSERVE_RC -ne 0 ]; then exit $$OBSERVE_RC; fi; \
-	exit $$STATUS_RC
+		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,)
 
 # Emit an auditable pipeline heartbeat at a five-minute cadence by default.
 # COUNT=0 stays continuous unless an explicit pinned terminal stop is enabled.

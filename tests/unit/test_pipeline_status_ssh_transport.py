@@ -42,13 +42,20 @@ def test_pipeline_status_uses_configured_key_for_both_native_git_lookups(
     uv.write_text(
         "import json, sys\nfrom pathlib import Path\n"
         f"sys.path.insert(0, {str(ROOT)!r})\n"
-        "from scripts.pipeline_status import remote_head\n"
+        "from scripts import pipeline_status as owner\n"
         "assert sys.argv[1:3] == ['run', 'python']\n"
-        f"assert remote_head(branch='development', remote='sandboxcom') == {SHA!r}\n"
-        "phase = Path(sys.argv[3]).name\n"
-        f"with Path({str(phases)!r}).open('a') as stream:\n"
-        "    stream.write(json.dumps(phase) + '\\n')\n"
-        f"sys.exit({ledger_rc!r} if phase == 'ci_failure_ledger.py' else {status_rc!r})\n",
+        f"with Path({str(tmp_path / 'launches.jsonl')!r}).open('a') as stream:\n"
+        "    stream.write(json.dumps(Path(sys.argv[3]).name) + '\\n')\n"
+        "def observe(phase, result):\n"
+        f"    assert owner.remote_head(branch='development', remote='sandboxcom') == {SHA!r}\n"
+        f"    with Path({str(phases)!r}).open('a') as stream:\n"
+        "        stream.write(json.dumps(phase) + '\\n')\n"
+        "    return result\n"
+        "if Path(sys.argv[3]).name == 'ci_failure_ledger.py':\n"
+        f"    sys.exit(observe('ci_failure_ledger.py', {ledger_rc!r}))\n"
+        f"owner.ci_failure_ledger.main = lambda argv: observe('ci_failure_ledger.py', {ledger_rc!r})\n"
+        f"owner._status = lambda args: observe('pipeline_status.py', {status_rc!r})\n"
+        "sys.exit(owner.main(sys.argv[4:]))\n",
         encoding="utf-8",
     )
     environment = {**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"}
@@ -77,3 +84,5 @@ def test_pipeline_status_uses_configured_key_for_both_native_git_lookups(
         and shlex.split(command) == ["ssh", "-i", str(key), "-o", "StrictHostKeyChecking=accept-new"]
         for command in transports
     ), transports
+    launches = [json.loads(line) for line in (tmp_path / "launches.jsonl").read_text().splitlines()]
+    assert launches == ["pipeline_status.py"]

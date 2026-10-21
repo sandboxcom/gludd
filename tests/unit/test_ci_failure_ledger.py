@@ -1545,10 +1545,9 @@ def test_exact_sha_observer_collects_all_fetch_errors_without_short_circuiting()
 def test_pipeline_status_automatically_observes_all_exact_sha_workflows() -> None:
     source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "pipeline-status")
-    assert "scripts/ci_failure_ledger.py observe-sha" in block
-    assert block.index("observe-sha") < block.index("scripts/pipeline_status.py")
-    assert "OBSERVE_RC" in block
-    assert "STATUS_RC" in block
+    assert "scripts/pipeline_status.py status --observe-ledger" in block
+    assert block.count("$(UV) run python") == 1
+    assert '--failure-ledger "$(PIPELINE_STATUS_FAILURE_LEDGER)"' in block
 
     payload = json.loads(
         (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")

@@ -191,7 +191,13 @@ actual failures. For a workflow's internal target, use public run-watched as the
 evidence target and its unchanged Make command as the quoted CMD evidence
 variable; preserve original timeout, worker and runtime policy. Read
 [the native repair workflow](../../docs/features/CI_FAILURE_LEDGER.md#repair-workflow)
-for every required argument. A local repair receipt can permit a development
+for every required argument. The existing pipeline-status owner now reuses the
+public ledger CLI in the same interpreter while retaining both fresh queries.
+[Its runtime boundary record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md)
+retains whole-source coverage, cleanup120 versus reporting-only1, final-message
+precedence, prior-success invalidation and both negative source decisions.
+The documented validate-only behavior remains offline planning; its fabricated
+PASS rows grant no native repair, CI, gate or release authority. A local repair receipt can permit a development
 push; it does not supply hosted success, deployment acceptance or release proof.
 
 ### Commit, integrate and promote through their owners

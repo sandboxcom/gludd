@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import time as time
+import traceback
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -327,7 +328,12 @@ def _parser() -> argparse.ArgumentParser:
         help="record a complete terminal all-workflow verdict through the existing history owner",
     )
     parser.add_argument("--failure-ledger", type=Path, default=Path(".gludd/ci-failure-ledger.json"))
-    parser.add_argument("--ledger-observation-exit-code", type=int, default=0)
+    observation = parser.add_mutually_exclusive_group()
+    observation.add_argument(
+        "--observe-ledger", action="store_true",
+        help="run the existing failure-ledger observation before the independent status query",
+    )
+    observation.add_argument("--ledger-observation-exit-code", type=int)
     parser.add_argument(
         "--required-workflow",
         action="append",
@@ -518,9 +524,78 @@ def _publish_snapshot(
     return not errors
 
 
+def _observe_ledger(args: argparse.Namespace) -> int:
+    """Forward explicit identity to the public ledger CLI without sharing its queries."""
+    argv = [
+        "observe-sha", "--repo", args.repo, "--branch", args.branch,
+        "--remote", args.remote, "--ledger", str(args.failure_ledger),
+    ]
+    if args.sha:
+        argv.extend(["--sha", args.sha])
+    if args.validate_only:
+        argv.append("--validate-only")
+    return ci_failure_ledger.main(argv)
+
+
+def _command_exit_code(command: Callable[[], int]) -> int:
+    """Normalize explicit exits and report unexpected command exceptions."""
+    try:
+        return command()
+    except SystemExit as exc:
+        if exc.code is None:
+            return 0
+        if isinstance(exc.code, int):
+            return exc.code & 255
+        print(exc.code, file=sys.stderr)
+        return 1
+    except Exception:
+        traceback.print_exc()
+        return 1
+
+
+def _cli_exit_code(command: Callable[[], int]) -> int:
+    """Complete both stream flushes and retain CPython's cleanup failure code 120."""
+    result = 1
+    try:
+        result = _command_exit_code(command)
+    except Exception:
+        result = 1
+    finally:
+        for stream in (getattr(sys, "stdout", None), getattr(sys, "stderr", None)):
+            try:
+                if stream is not None and not getattr(stream, "closed", False):
+                    stream.flush()
+            except Exception as exc:
+                result = 120
+                try:
+                    traceback.print_exception(exc, file=sys.stderr)
+                except Exception:
+                    result = 120
+    return result
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Print local and complete remote state, returning a fail-closed verdict."""
+    """Print both observations while retaining the ledger's failure precedence."""
     args = _parser().parse_args(argv)
+    args.ledger_observation_exit_code = args.ledger_observation_exit_code or 0
+    if args.observe_ledger:
+        args.ledger_observation_exit_code = _cli_exit_code(lambda: _observe_ledger(args))
+    status_rc = _cli_exit_code(lambda: _status(args)) if args.observe_ledger else _status(args)
+    if args.observe_ledger and args.ledger_observation_exit_code:
+        ledger_rc = int(args.ledger_observation_exit_code)
+        try:
+            print(f"pipeline-status: failure-ledger observation failed rc={ledger_rc}")
+        except Exception:
+            try:
+                traceback.print_exc()
+            except Exception:
+                return ledger_rc
+        return ledger_rc
+    return status_rc
+
+
+def _status(args: argparse.Namespace) -> int:
+    """Print local and complete remote state, returning a fail-closed verdict."""
     if args.validate_only:
         sha = args.sha or "0" * 40
         runs = [
