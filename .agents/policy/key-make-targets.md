@@ -5,6 +5,10 @@ operating path; [the executable contract](../../config/make_target_contract.json
 owns target variables and safe examples. Use only Make commands, including
 reads, edits, research helpers, tests and Git operations. Add and test a missing
 target before using it. Follow the release rules in the root AGENTS.md.
+The current catalog omits seven historical fixture-only echo targets, including
+a misleading secret-scanner label. The [owning catalog record](../../docs/features/RUNTIME_ADMISSION_THROUGHPUT.md#accurate-project-target-catalog-2026-10-21-utc)
+retains native checks and footer conformance. Static discovery and dry-run
+checks do not replace the documented actual behavior command.
 
 ### Establish current state before changing it
 

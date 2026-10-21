@@ -100,7 +100,10 @@ def test_help_recipe_uses_one_shell_for_all_static_text_and_native_index(tmp_pat
     assert result.stderr == b""
     assert calls == ["invocation"]
     assert result.stdout.startswith(b"Usage: make [target]\n\n  --- Setup ---\n")
-    assert result.stdout.endswith(b"  foo-test                Test\n\n\n")
+    assert result.stdout.endswith(
+        b"  gate-all-background     run gate-all in background, "
+        b"poll with gate-status-check\n\n\n"
+    )
     assert result.stdout.index(b"  --- Complete Target Index ---\n") < result.stdout.index(
         b"  native-index-contract available\n"
     ) < result.stdout.index(b"  --- New Targets ---\n")
@@ -144,7 +147,10 @@ def test_native_help_editor_roundtrip_keeps_continuation_and_index_failure(
     else:
         assert result.returncode == 0, result.stderr
         assert b"  help-roundtrip          Retained native editor\n" in result.stdout
-        assert result.stdout.endswith(b"  foo-test                Test\n\n\n")
+        assert result.stdout.endswith(
+            b"  gate-all-background     run gate-all in background, "
+            b"poll with gate-status-check\n\n\n"
+        )
 
 
 @pytest.mark.parametrize("section", ["Setup", "Uncatalogued"])

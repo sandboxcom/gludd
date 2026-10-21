@@ -598,45 +598,6 @@ gate-all-background:
 	echo "[gate-all-background] PID=$!  LOG=$LOG"
 
 
-# temporary test
-
-
-# Second test target
-target-two:
-	@echo "target-two: Second test target"
-
-
-# First test target
-target-one:
-	@echo "target-one: First test target"
-
-
-# Duplicate target
-my-target:
-	@echo "my-target: Duplicate target"
-
-
-# Scan for secrets
-my-secret-scanner:
-	@echo "my-secret-scanner: Scan for secrets"
-
-
-# A test target with no keyword match
-zzyx-test:
-	@echo "zzyx-test: A test target with no keyword match"
-
-
-# Debug test
-debug-test-target:
-	@echo "debug-test-target: Debug test"
-
-
-# Test
-foo-test:
-	@echo "foo-test: Test"
-
-# Temp test target
-
 
 # Run the worktree health gate. Exits non-zero on any violation
 # (stale >24h, unmerged, missing from remote, prunable).

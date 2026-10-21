@@ -1,5 +1,37 @@
 # Runtime Admission Throughput
 
+## Accurate project target catalog (2026-10-21 UTC)
+
+Mandatory make help exposed seven tracked fixture-only echo targets:
+target-one, target-two, my-target, my-secret-scanner, zzyx-test, debug-test-target
+and foo-test. The apparent secret scanner only printed its description.
+Root removes those definitions from the95 fragment and their00 help rows;
+legitimate temporary editor fixtures and real validation owners remain.
+
+Current explicit-path editor behavior is not blamed for historical artifacts.
+Its complete baseline/editor/help/layout owners pass87/28.31s with Main still
+clean. The catalog cleanup's first116-case replay catches a broken continued
+recipe4FAIL/112PASS27.21s; correcting the blank line preserves one native shell.
+A second replay retains3FAIL/113PASS28.51s because two footer assertions still
+name the removed foo-test. Their exact-byte expectations now use the last real
+gate-all-background row and retain all three trailing newlines. No test case,
+single-shell, index-failure, literal-output, editor refusal or canary check is removed.
+The final five complete owners pass116/26.90s; Ruff and strict typing pass.
+
+Native269target contracts,1167targets/0duplicates and gate parity9CI/12local
+pass. The existing help audit covers all1079public targets, and actual make help
+exits0 after the continuation repair. Static discovery/dry-run checks have a
+different scope from actual recipe execution; keep the documented behavior run.
+No production Python, dependency, coverage scope/floor, daemon, ZDD or gate
+authority changes. Native JUnits retain baseline and both failed attempts:
+ /tmp/gludd-v012-catalog-existing-owners-baseline.xml,
+ /tmp/gludd-v012-catalog-whole-owners.xml,
+ /tmp/gludd-v012-catalog-whole-owners-green.xml and
+ /tmp/gludd-v012-catalog-whole-owners-final.xml.
+The earlier decision is /tmp/gludd-v012-make-catalog-artifacts-decision.txt.
+Full release gate, exact-SHA hosted/deployment proof and all seven task closures
+remain pending.
+
 ## Read-only ledger import boundary (2026-10-19)
 
 Single source agent-v012-ledger-read-import-20261019 starts at Main

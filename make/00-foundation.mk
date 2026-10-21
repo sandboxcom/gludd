@@ -961,13 +961,6 @@ help:
 		"  pipeline-status         exact pushed-SHA local/all-workflow status and automatic JSON handoff (PIPELINE_STATUS_*)" \
 		"  status-heartbeat         Refresh producer-owned proof state (INTERVAL, COUNT, STATUS_HEARTBEAT_VALIDATE_ONLY, STATUS_HEARTBEAT_STOP_ON_TERMINAL=0|1, PIPELINE_STATUS_*)" \
 		"  gate-all-background     run gate-all in background, poll with gate-status-check" \
-		"  target-two              Second test target" \
-		"  target-one              First test target" \
-		"  my-target               Duplicate target" \
-		"  my-secret-scanner       Scan for secrets" \
-		"  zzyx-test               A test target with no keyword match" \
-		"  debug-test-target       Debug test" \
-		"  foo-test                Test" \
 		"" \
 		""
 
