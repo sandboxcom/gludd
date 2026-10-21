@@ -25,6 +25,42 @@ dependency. Python 3.12 and later freeze protocol members and use static
 attribute lookup, so the contract never relies on post-definition monkey
 patching or property evaluation.
 
+## Public protocol introspection on supported runtimes (2026-10-21 UTC)
+
+Published6161 Build39533219987 unit-1b job119007635429 fails the core
+method-only protocol test on Python3.11: stdlib protocols do not expose the
+private __protocol_attrs__ storage asserted by that test. The complete original
+nine-case owner reproduces1FAIL/8PASS0.91s/native1.8s in
+/tmp/gludd-v012-protocol-red.log and XML.
+
+Use the existing locked typing_extensions4.15.0 public get_protocol_members API
+in the test. It accepts stdlib and backport protocols and was added in4.7.0;
+stdlib typing.get_protocol_members starts only in3.13. Both exact singleton
+member sets and all existing runtime-decoration/admission/error/result assertions
+remain. Add public issubclass checks for both adapters: method-only protocols
+must also support subclass checks. Production bases, decorators, signatures,
+behavior, dependency declarations and lock stay unchanged. No private collector,
+injected metadata, None allowance, platform skip or production-base migration.
+
+The complete owner passes9/1.01s/native2.1s on311 and9/1.20s/native2.4s on312,
+fatal warnings/no skips, without sync or acquisition. Preserve
+/tmp/gludd-v012-protocol-green-3.11.log and
+/tmp/gludd-v012-protocol-green-3.12.log plus XML. The concrete alternatives and
+review limits remain in /tmp/gludd-v012-protocol-compatibility-decision.md.
+These source receipts do not establish the full gate, exact-SHA CI or release.
+
+The [pinned public API](https://github.com/python/typing_extensions/blob/4.15.0/doc/index.rst)
+and [pinned compatibility implementation](https://github.com/python/typing_extensions/blob/4.15.0/src/typing_extensions.py#L3499-L3516)
+own introspection across versions. The
+[Python3.12 runtime contract](https://docs.python.org/3.12/library/typing.html#typing.runtime_checkable)
+describes changed attribute lookup and frozen members; changing production bases
+could therefore change311 admission behavior unnecessarily. Firsthand
+[CPython113320](https://github.com/python/cpython/issues/113320) in December2023
+and [typing_extensions245](https://github.com/python/typing_extensions/issues/245)
+in June2023 record version-sensitive construction and mixed-base limitations.
+They support the compatibility decision, not a claim that those distinct issues
+are the same failure. Static types and behavioral admission remain authoritative.
+
 ## Safety and Resources
 
 - Runtime checks do not authorize an adapter, validate a callable signature,

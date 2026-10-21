@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
+from typing_extensions import get_protocol_members
 
 from general_ludd.execution.adapter_protocols import (
     CallableAdapterProtocol,
@@ -84,12 +85,10 @@ def test_core_protocols_do_not_claim_data_member_validation() -> None:
     """The task-general runtime seams remain strictly method-only."""
     assert getattr(ObservableRunnerProtocol, "_is_runtime_protocol", False)
     assert getattr(CallableAdapterProtocol, "_is_runtime_protocol", False)
-    assert getattr(ObservableRunnerProtocol, "__protocol_attrs__", None) == frozenset(
-        {"run_observable"}
-    )
-    assert getattr(CallableAdapterProtocol, "__protocol_attrs__", None) == frozenset(
-        {"__call__"}
-    )
+    assert get_protocol_members(ObservableRunnerProtocol) == frozenset({"run_observable"})
+    assert get_protocol_members(CallableAdapterProtocol) == frozenset({"__call__"})
+    assert issubclass(_DomainRunner, ObservableRunnerProtocol)
+    assert issubclass(_DomainEvaluator, CallableAdapterProtocol)
 
 
 @pytest.mark.parametrize(
