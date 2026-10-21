@@ -236,6 +236,13 @@ obtain a new trace. Preserve prerequisites and use bounded source acceptance.
 
 ### Attribute a runtime timeout before changing source
 
+When test-files-cprofile owns a private trace, use the generated profile run ID
+and trace.jsonl from its published directory. A wrapping observer can allocate
+an empty separate trace; preserve both identities. The [readonly-scanner decision](../../docs/features/PUBLICATION_READONLY_SCANNER_PROFILE.md)
+retains1PASS/4.534s, one private protocol pair and parent polling time. It selects
+no optimization and supplies no original-timeout cause. Do not repeat that
+wrapper profile or infer child CPU from a parent wait.
+
 Read the retained native failure and preserve its exact failing input. A
 test-files-cprofile controller profile can mostly measure waiting for xdist
 workers; cumulative rows overlap. Use the existing test-xdist-trace-summary

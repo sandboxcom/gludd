@@ -158,9 +158,8 @@ source acceptance; two cheap controls only move deterministic failures earlier.
 AGENTS and the mandatory Make guide explain the actual adapter mock seam,
 workspace-plus-state fixture defaults, installed runtime, descendant drain and
 source-versus-live activation. Normal guarded commit/fresh collection,
-independent source review and actual daemon handoff remain separate evidence. Live39922
-still has old code loaded until an owned stop/start. Source tests do not activate
-it. Use the [acknowledged lifecycle](GATE_RESOURCE_LIFECYCLE.md#acknowledged-agent-watchdog-handoff-2026-10-20)
+independent source review and actual daemon handoff remain separate evidence. At the source49 receiving boundary,39922
+still had old code loaded; source tests did not activate it. Use the [acknowledged lifecycle](GATE_RESOURCE_LIFECYCLE.md#acknowledged-agent-watchdog-handoff-2026-10-20)
 after reviewed integration, with the installed runtime and no active readers.
 The actual receiving stop plan WATCHDOG_VALIDATE_ONLY=1 refuses: native observer
 status inventory reached its display cap, scripts/task_watchdog.py:422. No stop
@@ -243,6 +242,54 @@ identities; do not invent PIDs, raw-signal a process or infer activation from
 source tests. Keep the other watchdog alive during each handoff. Native current
 scan evidence must show the installed successor's observer lifecycle; an actual
 timeout remains unknown, not a clean secrets finding or release proof.
+
+## Reviewed source9ac and actual owned handoffs
+
+Exact9ac03d9f32f81c53ffcca842c2132d470919fb2c follows49. Normal twelve-path hooks
+retain128526selected/128550collected,24deselected/zeroerrors47.92s/native53.2s,
+zero new clones(two existing records)/six checkpoints. Collection receipt:
+.gate-logs/observed/test-count/20261021T224329Z-55885-b5b48fcd.{log,json}.
+Root fully reads independent APPROVE SOURCE ONLY at
+/tmp/gludd-v012-watchdog-history-9ac03d9-source-review.md. It verifies the
+necessary-token condition, unconditional gate protection, retained live caps,
+six additive controls and exact family148. No source-only approval closes S98.
+
+After all readers/tests/observers/model owners quiesce, actual agent plan1/apply0
+drains old39922 with native fresh identity and SIGTERM/wait evidence. Immediate
+auto acknowledges57626 at2026-10-21 18:46:35 local, PID=PGID=SID, using the
+registered311 executable; task29001 is already-running without spawn/signals.
+Actual task plan1/apply0 then drains29001. Immediate auto reuses57626 and
+acknowledges57964 at18:47:03 local with PID=PGID=SID and the same interpreter.
+Thus the other guard remains during each native handoff.
+
+Native start plans1 subsequently reuse57626/57964 with writes=false/signals=false.
+Exact old39922/29001 active-work-status diagnostics report missing; native ps
+shows only the two successor watchdogs and no audit/test processes. These
+native identities describe OS controllers, not model-agent PIDs. No raw signal
+or CWD-only authority is used, and no serving component is restarted.
+
+After its unchanged300-second cooldown, the first natural successor scan starts
+2026-10-21T22:50:58.994740Z: scan-801b14b84dbf4538bdf543d3bd6bab08,
+owner57626/child59561, label watchdog-secrets. Native observed-status reports
+inactive/timed_out, exit124, elapsed60.552s, max-runtime-timeout and null trace.
+Exact active-work-status for59561 is then missing; native ps shows only57626/
+57964, with no test/audit/scanner processes. The60-second lifecycle bound and
+post-timeout child absence are measured on the installed reviewed source.
+Successful secrets scanning and its timeout cause remain unproved; retain this
+failure and old scan-a004eb6d separately. No scan is forced and no native
+cooldown/current JSON is edited.
+
+The final five documentation/handoff/ledger owners pass98 in5.82s/native7.0s,
+run v012-reviewed-watchdog-profile-docs311, fatal warnings/zero skips. Latest
+native disk-check fails97percent>95 and generated scratch766.5MB>100MB;
+retained artifact sizes grant no cleanup authority.
+
+The separate [readonly-scanner profile](PUBLICATION_READONLY_SCANNER_PROFILE.md)
+answers a new parent-scope publication question with1PASS/native4.534s and mostly
+subprocess waiting. It selects no optimization and does not explain60907.
+Its two distinct trace identities and firsthand fixture-attribution evidence
+are codified there. Capacity, original publication, complete canonical gate,
+exact-SHA hosted/deployment proof and guarded promotion remain pending.
 
 ## Long-lived practitioner evidence
 

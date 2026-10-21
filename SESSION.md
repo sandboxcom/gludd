@@ -2,20 +2,58 @@
 
 Last Updated: 2026-10-21 (local and UTC; receipts retain their actual dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128520 selected / 128544 collected,24 deselected,zero collection errors in46.46s/native51.7s during normal49a373b1ae2081e7209e4be5253d3ce270d58e09 source hooks. Native receipt: .gate-logs/observed/test-count/20261021T223029Z-12749-dd1c0aeb.{log,json}. Collection is not test acceptance.
+Total tests: 128526 selected / 128550 collected,24 deselected,zero collection errors in47.92s/native53.2s during normal9ac03d9f32f81c53ffcca842c2132d470919fb2c source hooks. Native receipt: .gate-logs/observed/test-count/20261021T224329Z-55885-b5b48fcd.{log,json}. Collection is not test acceptance.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and all Main/shared/Git/proof mutations. All seven S98.1-S98.7 remain unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff supplies no gate/release authority. Model-agent names/status come from the live conversation, never OS PIDs. Contributor states are supplied by the live conversation at each receiving boundary; quiesce every Main reader, model owner, test and observer before Git hooks may stash.
 
-## Current empty-observer projection repair
+## Current control-plane handoff and bounded diagnostic
+
+Reviewed development 9ac03d9f32f81c53ffcca842c2132d470919fb2c has independent
+APPROVE SOURCE ONLY against49 at
+/tmp/gludd-v012-watchdog-history-9ac03d9-source-review.md, fully read by Root.
+Its normal12-path hooks retain the fresh collection above, zero new clones
+(two existing clone records)/six checkpoints. Both source decisions remain
+immutable; this later tracking-only work changes no production source.
+
+Actual owned agent plan1/apply0 drains39922, then auto acknowledges57626 while
+task29001 remains. Actual task plan1/apply0 drains29001, then auto acknowledges
+57964 while57626 remains. Both new guards use the registered311 executable,
+with acknowledged PID=PGID=SID. Native start plan1 reuses57626/57964 without
+writes/signals; exact old39922/29001 diagnostics report missing. Native ps shows
+only those two watchdogs after this handoff, with no audit/test processes.
+Model-agent names/status are separately quiescent, not inferred from those PIDs.
+The [lifecycle record](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md) keeps proof.
+The first natural successor scan, scan-801b14b84dbf4538bdf543d3bd6bab08,
+starts2026-10-21T22:50:58.994740Z under owner57626/child59561. Its native
+watchdog-secrets receipt is inactive/timed_out,124/60.552s,
+max-runtime-timeout, trace_path:null. Exact child59561 is subsequently missing;
+native ps shows only57626/57964 and no test/audit/scanner processes. This
+measures the bounded live lifecycle, not a successful secrets scan or its cause.
+Old scan-a004eb6d stays failed history. The60-second scan/300-second cooldown
+and native current JSON are unchanged; no check is forced.
+The final five documentation/handoff/ledger owners pass98/5.82s/native7.0s,
+run v012-reviewed-watchdog-profile-docs311, with fatal warnings and no skips.
+
+The [bounded readonly-scanner decision](docs/features/PUBLICATION_READONLY_SCANNER_PROFILE.md)
+records a new exact-case question at clean9ac:1PASS3.48s/native4.534s through the
+existing45total/30quiet profiler. A single subprocess call2.357s mostly waits in
+poll2.353s; parent totals overlap and child/grandchild CPU is unobserved.
+The profiler's own five-event trace has one2.832465s protocol pair/zero issues;
+the separate allocated outer trace has zero events. Stop this wrapper proposal:
+no redundant parent work, optimization or60907 attribution is established.
+Original90/60 publication, capacity97>95, full gate/exactSHA CI/deployment and
+promotion remain blocked. No task is ticked or code transported to GitHub.
+
+## Reviewed empty-observer projection source
 
 Exact reviewed development 49a373b1ae2081e7209e4be5253d3ce270d58e09 and its425
 parent have independent APPROVE SOURCE ONLY at
 /tmp/gludd-v012-watchdog-coverage-49a373b-source-review.md, fully read by Root.
 All19 paths, combined392/89.2line85.9branch, both478 routing receipts and236
-operating passes are retained. Normal49 hooks retain the collection above,
-zero new clones/six checkpoints. Source approval does not activate either daemon.
+operating passes are retained. Normal49 hooks retain their own128520/128544 collection,24deselected/zeroerrors
+46.46s/native51.7s, zero new clones/six checkpoints. Source approval does not activate either daemon.
 
 Root owns the later scripts/task_watchdog.py repair. Historical64-current
 pointers block the native stop plan even when the process view has no observer.
@@ -27,16 +65,19 @@ Six original-cap REDs1.33s precede12 focused safeguards/.91s; whole159PASS311
 3124.83s/native6.1s. Ruff/strict pass; correct full-scope resource ownership passes
 264 after a retained mistaken partial-scan/full-manifest request. Native stop
 plan1 now verifies apply=False/old_tree_drained=False; actual activation remains
-pending normal source commit/review and the [owned sequential handoffs](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md#terminal-pointers-and-native-handoff).
+separate from source acceptance. Exact9ac normal commit/review and the actual
+[owned sequential handoffs](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md#terminal-pointers-and-native-handoff)
+are recorded above. The natural successor scan's terminal timeout and measured
+child absence are also recorded above; successful scanning remains unproved.
 Family148 keeps147 predecessors; routing RED5FAIL/1PASS1.19s precedes six pins1.59s. Nine complete routing/lifecycle owners pass533 each311130.22s/native131.9s and312127.71s/native129.1s, fatal warnings/zero skips/errors. Five complete documentation/handoff/ledger owners pass98/4.40s/native5.7s; Ruff4/four strict scopes/docstrings/276contracts/Make1157/zero duplicates/Markdown6/SESSION structure/12-path registration/lineguard pass.
 No original90/60 proof is retried. Disk97percent/6.9GiB still exceeds95; original
 60907 publication timeout, full gate/exact-SHA CI/deployment/promotion remain missing.
 
-## Current canonical coverage support
+## Reviewed coverage source support
 
 Root's receiving base is reviewed development0a302b8eacfaeeae90149abca5d144a324110169. The [source-identity record](docs/features/COVERAGE_SOURCE_IDENTITY.md) retains the failed38percent measurement from seven altered temporary copies and canonical9FAIL/98deselected1.82s/native2.7s before the existing-owner physical-root export/same-profile repair. The full original98 cases plus9 additive controls pass107 on311 in3.52s/native4.3s and312 in4.11s/native5.0s. Ruff/strict,276contracts and Make1157/zero duplicates/9CI12local pass. The unchanged ten-owner contract passes472 cases in62.66s/native64.8s at91.3line/85.6branch, all four files above75 BOTH, native audit .gate-logs/coverage-20261021T164052Z.json. Normal source commit425e47444284a555a2211db13988edae6ed82b61 retains its own128520selected/128544collected,24deselected/zeroerrors48.63s/native54.1s, zero new clones and six checkpoints. Its first hook attempt corrects one EOF blank before the normal retry; no bypass or transport follows. Independent combined49-against0a source review is now APPROVE SOURCE ONLY, fully read above; no task tick follows.
 
-Preserve the corrected-profile failure:376PASS25.10s/native26.9s but88.7line/84.7branch and enforcement74.6branch at .gate-logs/coverage-20261021T163633Z.json. Sixteen additive actual heartbeat/latch controls then pass inside all13 complete owners:392PASS31125.31s/native26.9s,89.2line/85.9branch, all nine nonempty canonical files above75 BOTH; audit .gate-logs/coverage-20261021T164644Z.json passed=true. The identical392 cases pass31220.30s/native21.7s through the authorized host Make boundary after the retained sandbox25FAIL/367PASS/3ERROR process-inspection denial. The [watchdog repair](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md) is committed and source-approved at49a373b; its12 native lifecycle/signal controls and one CWD guard also retain48PASS per runtime. Family146 timeout and147 fixture confinement follow145 unchanged predecessors; independent routing controls retain5FAIL/1PASS1.17s/native2.6s before all six pins pass2.13s. Whole eight-owner routing passes478 on311128.82s/native130.2s and312125.84s/native127.2s, zero skips/errors and fatal warnings. Native276contracts, Make1157/zero duplicates/9CI12local, Ruff6, source/routing strict scopes, docstrings, Markdown7,lineguard,SESSION structure,15-path registration and Node26six/10.97s pass. The first236-case operating attempt incorrectly uses60quiet rather than the prior helper180/240 and fails124/69.938s/quiet60.554s, with captured native collection20261021T222634Z-9931-22171430 orphaned. Native prior operating status proves180/240; restoring that caller input yields236PASS84.51s/native85.5s, preserving the failed run and original publication90/60. The49 source commit/review is evidenced above; actual daemon activation remains separate. These392 receipts cover the combined receiving bytes, not partial425 exact-commit proof. Old39922 still needs the owned handoff. The initial49 stop plan1 refuses observer status inventory at its display cap (scripts/task_watchdog.py:422); that failure is retained. The later empty-projection repair and verified nonmutating plan are recorded above; actual activation remains pending its normal source commit/review. Capacity/publication blockers remain below.
+Preserve the corrected-profile failure:376PASS25.10s/native26.9s but88.7line/84.7branch and enforcement74.6branch at .gate-logs/coverage-20261021T163633Z.json. Sixteen additive actual heartbeat/latch controls then pass inside all13 complete owners:392PASS31125.31s/native26.9s,89.2line/85.9branch, all nine nonempty canonical files above75 BOTH; audit .gate-logs/coverage-20261021T164644Z.json passed=true. The identical392 cases pass31220.30s/native21.7s through the authorized host Make boundary after the retained sandbox25FAIL/367PASS/3ERROR process-inspection denial. The [watchdog repair](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md) is committed and source-approved at49a373b; its12 native lifecycle/signal controls and one CWD guard also retain48PASS per runtime. Family146 timeout and147 fixture confinement follow145 unchanged predecessors; independent routing controls retain5FAIL/1PASS1.17s/native2.6s before all six pins pass2.13s. Whole eight-owner routing passes478 on311128.82s/native130.2s and312125.84s/native127.2s, zero skips/errors and fatal warnings. Native276contracts, Make1157/zero duplicates/9CI12local, Ruff6, source/routing strict scopes, docstrings, Markdown7,lineguard,SESSION structure,15-path registration and Node26six/10.97s pass. The first236-case operating attempt incorrectly uses60quiet rather than the prior helper180/240 and fails124/69.938s/quiet60.554s, with captured native collection20261021T222634Z-9931-22171430 orphaned. Native prior operating status proves180/240; restoring that caller input yields236PASS84.51s/native85.5s, preserving the failed run and original publication90/60. The49 source commit/review is evidenced above; actual daemon activation remains separate. These392 receipts cover the combined receiving bytes, not partial425 exact-commit proof. At the historical49 boundary,39922 still needed the owned handoff and stop plan1 refused observer inventory at its display cap (scripts/task_watchdog.py:422); preserve that failure. The later9ac source commit/review, verified plan and actual sequential activation are evidenced above. Do not repeat that completed source/handoff work. Capacity/publication blockers remain below.
 
 ## Reviewed disk attribution support
 
@@ -74,7 +115,7 @@ Exact published2f Build39587418003 is terminal FAILURE:30jobs,25success/1failure
 
 ## Capacity and retention prerequisites
 
-Fresh native receiving disk reports97percent/6.9GiB free against95ceiling; historical98percent/5.8GiB remains retained. Existing namespace plan finds39candidates/0reclaimable at unchanged24-hour grace; no duplicate scan, broader cleanup or shortened grace follows. Last native footprint report (after427) records Main .git555MiB/.gate-logs219MiB/.venv626MiB and scratch worktrees1.4GiB; those sizes do not establish disposable ownership. Last native load2.92/3.61/3.79,8CPU,0.36x,OK supplies no CPU-overload cause. ps/active-work-status identify only watchdogs29001/39922 when tests are idle, not model PIDs. Capacity HumanTodo remains UNFILED after API refusal/no ID; host-space question is unanswered.
+Latest native disk-check still fails97percent against95 and separately reports generated scratch766.5MB against100MB; the last native free-space reading is6.9GiB. Historical98percent/5.8GiB remains retained. The largest counted scratch roots are three retained v012 Pages/Chromium coverage artifacts near110MB each; size alone gives no retirement authority. Existing namespace plan finds39candidates/0reclaimable at unchanged24-hour grace; no duplicate scan, broader cleanup or shortened grace follows. Last native footprint report (after427) records Main .git555MiB/.gate-logs219MiB/.venv626MiB and scratch worktrees1.4GiB; those sizes do not establish disposable ownership. Last native load2.92/3.61/3.79,8CPU,0.36x,OK supplies no CPU-overload cause. ps/active-work-status identify only watchdogs29001/39922 when tests are idle, not model PIDs. Capacity HumanTodo remains UNFILED after API refusal/no ID; host-space question is unanswered.
 
 Preserve locked gate-admission source, protected Pages refs, edc52 unmerged refusal after six checkpoints, dirty old release-note/runbook and legacy merge fixtures. DIFFERENT56d76bc retirement archive remains .git/gludd-release-evidence/79a7b76110a3-56d76bc75d24b6119574680b121563e18bbe550a/manifest.json. Re-reading cleanup/browser/admission failures does not authorize unchanged replay.
 
