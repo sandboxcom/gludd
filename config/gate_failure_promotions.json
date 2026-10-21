@@ -1118,6 +1118,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_pipeline_status_job_progress.py::test_original_native_queued_workflow_displays_its_active_gate_and_actual_steps",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "ci-cancel-request-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_ci_cancel_contract.py::test_default_and_explicit_plan_are_offline_and_preserve_proof",
+      "full_gate_phase": "test"
     }
   ]
 }

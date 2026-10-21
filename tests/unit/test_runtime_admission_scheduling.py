@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 137
+EXPECTED_FAMILY_COUNT = 138
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -79,6 +79,7 @@ ROSTER = (
     "tests/unit/test_secrets_baseline_compaction.py",
     "tests/unit/test_pipeline_status_exact_sha.py",
     "tests/unit/test_pipeline_status_job_progress.py",
+    "tests/unit/test_ci_cancel_contract.py",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",

@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 137
+EXPECTED_FAMILY_COUNT = 138
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1845,6 +1845,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "importtime-failed-child-status",
         "importtime-missing-data-failure",
         "pipeline-observed-job-progress",
+        "ci-cancel-request-contract",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2039,6 +2040,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_ci_verdict_structural_repair.py "
         "tests/unit/test_secrets_baseline_compaction.py "
         "tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_pipeline_status_job_progress.py "
+        "tests/unit/test_ci_cancel_contract.py "
         "tests/unit/test_status_heartbeat_terminal.py "
         "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py "
@@ -2409,13 +2411,21 @@ def test_hosted_failures_have_exact_early_routes(
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
 
 
-def test_pipeline_job_progress_has_one_whole_owner_before_fanout() -> None:
-    """Replay the complete diagnostic owner once under the original runtime policy."""
+@pytest.mark.parametrize(("promoted_family", "owner_test_file", "promoted_basic_test"), (
+    ("pipeline-observed-job-progress", "tests/unit/test_pipeline_status_job_progress.py",
+     "test_original_native_queued_workflow_displays_its_active_gate_and_actual_steps"),
+    ("ci-cancel-request-contract", "tests/unit/test_ci_cancel_contract.py",
+     "test_default_and_explicit_plan_are_offline_and_preserve_proof"),
+))
+def test_pipeline_runtime_owners_keep_one_whole_route_before_fanout(
+    promoted_family: str, owner_test_file: str, promoted_basic_test: str,
+) -> None:
+    """Replay each complete pipeline owner under the unchanged original runtime policy."""
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    file = "tests/unit/test_pipeline_status_job_progress.py"
-    node = f"{file}::test_original_native_queued_workflow_displays_its_active_gate_and_actual_steps"
+    file = owner_test_file
+    node = f"{file}::{promoted_basic_test}"
     expected = {
-        "id": "pipeline-observed-job-progress",
+        "id": promoted_family,
         "owner_target": "_pytest-runtime-compatibility-admission",
         "node_kind": "pytest_node",
         "node": node,

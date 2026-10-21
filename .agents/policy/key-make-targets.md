@@ -85,7 +85,10 @@ the accompanying prose; the complete persistence owner exercises those fields.
 Keep the native gate marker pair during handoff compaction, then run
 make status-snapshot STATUS_SNAPSHOT_VALIDATE_ONLY=0 to regenerate from the actual
 retained .gate-status. Keep source/profile/age interpretation outside that region;
-a copied old FAIL is not candidate proof. Its documented mode1 validates existing
+a copied old FAIL is not candidate proof. Put historical age/profile explanation
+BEFORE the native Current Gate Status heading. Text between that heading and its
+marker makes the native renderer insert another immediate heading; preserve the
+native heading/markers/evidence and verify repeated regeneration. Its documented mode1 validates existing
 structure without writing. Include the complete status-snapshot and session-
 persistence test owners. Missing/duplicate/reversed or inline markers must fail validation,
 and repeated native writes must preserve one header and surrounding handoff.
@@ -286,6 +289,16 @@ native JSON retains omitted display rows. This projection is diagnostic, with
 unchanged terminal exact-SHA and failure/publication fences. The
 [job-progress record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#observed-job-progress-beside-workflow-status-2026-10-21)
 retains the repeated interpretation error and executable controls.
+
+For an explicitly requested emergency cancellation, use the existing single-run
+owner. Its safe actual example is make ci-cancel RUN=1 CI_CANCEL_VALIDATE_ONLY=1;
+mode1 is the offline default. An authorized mode0 request sends one fixed-repo
+native command with a positive RUN and preserves its failure status/stderr.
+Request acceptance is separate from terminal cancellation; observe through the
+existing pipeline owner. The queued-run bulk target is retired. Raw-value capture
+and public unexport precede startup shell expansion; unrelated goals retain their
+inputs. The [cancellation record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#explicit-cancellation-with-literal-inputs-2026-10-21)
+retains whole-owner/native-bootstrap controls and Make-version research.
 
 For a completed job whose sibling is still running, use ci-job-failure-context
 with its exact numeric run/job binding and a raw assertion pattern. Its contract

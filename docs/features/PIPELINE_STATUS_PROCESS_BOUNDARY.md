@@ -865,3 +865,167 @@ refusal; a host-space question is pending. No task tick, final sealing, combined
 replay/full gate, exact-successor CI/deployment or promotion follows. Normal
 guarded commit/fresh collection and independent exact-successor review still
 require their own actual receipts.
+
+## Explicit cancellation with literal inputs (2026-10-21)
+
+Local 0d7b8771ca4e707e9c819f78a188ccbe33d40182 commits the job-progress change.
+Normal guards collect 128170 selected / 128194 total, 24 deselected, zero errors
+in 48.16s/native 53.5s. Independent SOURCE ONLY approval versus published
+2f6ad0d is /tmp/gludd-v012-job-progress-0d7b877-source-review.md; Root read it and
+the corrected distinction between 38 new-owner cases and 43 focused cases.
+This approval covers that exact source, not later cancellation changes, a full
+gate, transport, hosted CI, deployment or release completion.
+
+The review finds one nonblocking handoff defect: Root placed the historical-FAIL
+explanation between an outer Current Gate Status heading and its marker.
+status-snapshot inserted its required immediate heading, leaving the outer one.
+The narrow correction removes only the redundant outer heading, keeps the
+explanation BEFORE the native heading, and preserves all marker/attestation bytes.
+Use native regeneration twice and complete status/persistence/Markdown owners.
+Do not change the renderer or weaken its existing assertions to conceal this input.
+
+The observed queued Build has active jobs. Nevertheless, the old
+ci-cancel-zombies-dev selects up to ten queued development Build runs and cancels
+every ID without checking jobs. Query/decode failures look empty, and cancellation
+errors can end0. The original single-run ci-cancel also masks native failure with
+echo and claims cancelled on request acceptance. No destructive reproduction is
+needed: the retained queued/active payload is the exact unsafe bulk predicate.
+
+Retire ONLY the bulk target. Preserve explicit single-RUN emergency cancellation,
+its original target/presence/gh intent, fixed sandboxcom/gludd scope and all other
+recovery guards. The existing terminal ledger owner rejects non-completed runs;
+do not weaken it to serve as another queued-cancellation policy or observer.
+Default CI_CANCEL_VALIDATE_ONLY=1 is an offline plan. An explicitly authorized
+mode0 sends one native request for a positive canonical RUN. Empty, noncanonical
+RUN and nonliteral mode refuse before gh; native failure status/stderr remain
+observable. A request accepted by gh is separate from terminal cancellation.
+Later observation belongs to existing pipeline-status, with no cancellation side
+effect on repair history, proof files, reruns, pushes or current JSON.
+
+Reuse native Make value capture, simply expanded private variables and public
+unexport. The declared block is conditional on the explicit ci-cancel goal;
+unrelated target inputs remain exported, and private CLI/environment spoofing
+cannot replace public inputs, ordinary or -e. Capture ONCE in foundation00 before
+the first eager startup shell expansion; recipe50 holds only validation/dispatch.
+No new parser, dependency, scanner, daemon, observer, permission layer or cache.
+
+A missing-unexport negative producer actually fails 4/pass12 in1.10s: public
+Make expressions still execute while environment values are exported, despite
+private copies. A first 94-case candidate also records 4FAIL/90PASS in7.06s:
+native Make strips leading command-line assignment whitespace before value
+capture. Retain preserved-whitespace refusal through environment and add explicit
+argv-normalization controls. No assertion is removed and no owner pretends to
+recover bytes Make consumed. The final isolated100 pass on311/5.27s and312/5.65s.
+
+Primary research read on 2026-10-21 supplies the portability boundary:
+
+- [GNU Make 4.4 announcement](https://lists.gnu.org/archive/html/info-gnu/2022-10/msg00008.html)
+  documents exporting Make variables to shell-function commands and its
+  shell-export feature flag.
+- [The shell-function contract](https://www.gnu.org/software/make/manual/html_node/Shell-Function.html)
+  and [variable/recursion contract](https://www.gnu.org/software/make/manual/html_node/Variables_002fRecursion.html)
+  explain expansion timing, automatic export and explicit unexport.
+- [A firsthand January 2017 help-make report](https://lists.gnu.org/archive/html/help-make/2017-01/msg00014.html)
+  demonstrates the older distinction between recipe and shell-function export.
+  This is historical practitioner context, not current failure attribution.
+
+Root's actual include chain is00 then10/20/30/40/50. Earlier eager shell sites
+include00:_TERMINFO_OK/_XDIST_WORKERS and10:GATE_CANDIDATE_SHA/_OLLAMA_BIN.
+A50-only fixture cannot prove the full startup path or another Make version.
+The final whole owner retains all100 cases, includes real00+50 in its fixture,
+adds four real ROOT/Makefile controls (RUN/mode times ordinary/-e) with fake gh,
+absolute TMP tripwire and expected guard diagnostics, plus one deterministic
+unique/scoped early-order pin. These105 cases do not claim a GNU4.4 binary replay.
+
+Root receives tests BEFORE source. Canonical source/registration/old-intent
+conformance fails106/pass9 in20.42s/native21.5s, then passes all115 in7.60s/native
+8.5s with early capture, new recipe and registration. Retain
+/tmp/gludd-v012-ci-cancel-canonical-{red,green}.xml/log and native
+v012-ci-cancel-canonical-red-0d7b877-20261021 and
+v012-ci-cancel-canonical-green-receiving-0d7b877-20261021. All calls use fake gh;
+no live CI cancellation, ledger write or generated-observation edit occurs.
+
+All original emergency cases/names/presence/gh assertions remain. Only the two
+unsafe direct-$(RUN) text pins conform to stronger native value/export/unexport
+bindings and actual quoted argv assertions; complete executable cases retain the
+RUN requirement. The independent family count becomes138 by appending
+ci-cancel-request-contract after all137 predecessors. Its WHOLE owner is added
+once to the first existing runtime child; original order, three children,
+2/1/1,90total/60quiet,21phases2850 and required full gate remain. Existing
+job-progress routing assertions now cover both concrete owners, retaining every
+original check and avoiding a duplicated test body.
+
+The complete compatibility cohort contains TEN whole owners: ci_cancel_contract,
+ci_interaction_discipline, execution_discipline, release_tag_push_target,
+ci_failure_ledger, pytest_param_fixture_collisions, makefile_layout,
+makefile_syntax, makefile_targets_deep and make_help_audit (each
+tests/unit/test_<name>.py). Initial311 passes567/42.64s/native44.2s. Strict checks
+then expose52 pre-existing missing return annotations in the changed interaction
+owner. Add only -> None to those test signatures; preserve bodies/assertions and
+all node counts. All five changed test owners now pass separate strict scopes.
+Final receiving passes the SAME567 on311 in37.49s/native38.6s and312 in39.61s/native
+40.8s, fatal warnings with no skips/errors. Retain
+/tmp/gludd-v012-ci-cancel-final-whole-{311,312}.xml/log and matching dated native
+run IDs. This is not a performance comparison.
+
+The actual documented offline example make ci-cancel RUN=1
+CI_CANCEL_VALIDATE_ONLY=1 prints CI_CANCEL_PLAN/cancellation_requested=false
+without gh. Native check-make-target-contract passes272 contracts. The complete
+seven-owner admission/workflow cohort passes448 on311 in117.68s/native118.8s
+and448 on312 in125.10s/native126.4s. The complete eight operating/doc owners
+first record1FAIL/234PASS in87.91s/native89.1s: the new target contract crosses
+the existing less-than2500-line limit at2503. Compact short variable arrays only;
+all schema/values remain. A still-equal2500 diagnostic also fails; the final
+native line-limit and272-contract checks pass. Full Ruff passes, then the SAME
+235 owners/cases pass in95.43s/native96.6s with fatal warnings and no skips/errors.
+Retain both /tmp/gludd-v012-ci-cancel-operating-311.xml/log and
+/tmp/gludd-v012-ci-cancel-operating-green-311.xml/log. No line ceiling or assertion
+changes. Native promotion checks pass all six pins/138families, Make duplicate/
+parity passes1160targets/zero duplicates and9CI/12local phases, all16 paths are
+task-registered,264 resource owners pass, and Node compatibility passes6/16.45s.
+The unchanged whole-pipeline Python coverage audit remains bound to the earlier
+job-progress source; no new production Python is added by this Make repair.
+Global85/75 BOTH still requires the complete canonical gate.
+
+Confined decisions and every earlier RED are retained in
+/tmp/gludd-v012-ci-cancel-literal-contract-decision.md and
+/tmp/gludd-v012-ci-cancel-receiving-decision.md. Native errors7/130/143 previously
+became Make0 with empty stderr; controlled exits130/143 are not signal-lifecycle
+proof. Preserve /tmp/gludd-v012-ci-cancel-{red,native-status-red,unexport-red,
+parser-contract-red,final311,final312}.xml and the first green311.xml containing
+the four native-parser fixture failures. No negative receipt is relabeled green.
+
+Capacity still97percent exceeds95; its HumanTodo is UNFILED after API refusal,
+with a host-space question pending. All seven release tasks remain unchecked.
+Normal guarded commit/fresh collection, independent exact-successor source
+review, original runtime/publication admission, exact-SHA hosted/deployment,
+full gate/global coverage and promotion remain distinct missing proofs.
+
+
+### Published-base failure discovery while cancellation receiving finishes
+
+The native12:05:11UTC published2f6ad0d snapshot records unit-3a failed, three active,20 successful,two queued,two skipped; workflow queued/pending. Native proof state is failure. The terminal ledger has not admitted the pending Build: open0/repaired11/resolved42/runs156 is not hosted success. Native ci-run-summary for39587418003 with SHARD_TIMINGS=1 returns diagnostic non-success, exact2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83 and all eight rows. Gate119179699827 succeeds at11:03:05UTC. Retain the nonterminal intervals without a timing-improvement or release claim:
+
+| Shard | Source job | State | Gate delay seconds | Test seconds | Censored |
+| --- | --- | --- | --- | --- | --- |
+| unit-1a1 |119185158495|pending|1|unknown|true|
+| unit-1a2 |119185158443|pending|1|unknown|true|
+| unit-1b |119185158277|censored|3063|unknown|true|
+| unit-1d |119185158371|censored|3504|unknown|true|
+| unit-2 |119185158441|success|3|2942|false|
+| unit-3a |119185158396|failed|3|3016|true|
+| unit-3b |119185158329|censored|2988|unknown|true|
+| other |119185158270|success|3|3452|false|
+
+The existing owner binds [job119185158396](https://github.com/sandboxcom/gludd/actions/runs/39587418003/job/119185158396) to this run with the exact command below; the selected runtime variables above still apply:
+
+```text
+make ci-job-failure-context RUN=39587418003 JOB=119185158396 PATTERN='FAILED tests/' BEFORE=4 AFTER=12 MAX_MATCHES=5 CI_JOB_CONTEXT_VALIDATE_ONLY=0
+```
+
+It identifies TWO failures:
+
+- batch27: test_release_proof_admission_target.py::test_admission_probe_cannot_invent_production_runner_binding[missing] fails DID NOT RAISE AssertionError;670 other cases pass in93.02s.
+- batch29: test_replace_lines_make_target.py::test_replace_lines_target_forwards_all_documented_variables requires an old direct-Make FILE token despite the quoted private literal carrier;244 other cases pass in26.70s.
+
+Both are required follow-up repairs before another hosted push. Preserve the original negative assertion, every forwarding requirement and literal-input protection. Final cancellation receiving also passes five whole doc/contract/session owners104/5.40s after operating235. These source receipts do not close S98.4 or replace final gate, exact-source runtime, exact-SHA CI/deployment or capacity prerequisites.

@@ -161,7 +161,11 @@ class TestCiCancel:
 
     def test_accepts_RUN_argument(self) -> None:
         recipe = _recipe("ci-cancel")
-        assert "$(RUN)" in recipe, "ci-cancel must accept a RUN=<id> argument"
+        source = _content()
+        assert "override GLUDD_CI_CANCEL_RUN := $(value RUN)" in source
+        assert "export GLUDD_CI_CANCEL_RUN := $(value RUN)" in source
+        assert "unexport RUN CI_CANCEL_VALIDATE_ONLY" in source
+        assert '"$$GLUDD_CI_CANCEL_RUN"' in recipe, "ci-cancel must accept a literal RUN=<id> argument"
 
 
 class TestVerifyRemote:

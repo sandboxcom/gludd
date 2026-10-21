@@ -1,3 +1,14 @@
+# Capture raw CI cancellation inputs before native startup shell expansion.
+# Capture emergency cancellation inputs only for its explicit Make goal.
+ifneq ($(filter ci-cancel,$(MAKECMDGOALS)),)
+CI_CANCEL_VALIDATE_ONLY ?= 1
+override GLUDD_CI_CANCEL_RUN := $(value RUN)
+override GLUDD_CI_CANCEL_VALIDATE_ONLY := $(value CI_CANCEL_VALIDATE_ONLY)
+export GLUDD_CI_CANCEL_RUN := $(value RUN)
+export GLUDD_CI_CANCEL_VALIDATE_ONLY := $(value CI_CANCEL_VALIDATE_ONLY)
+unexport RUN CI_CANCEL_VALIDATE_ONLY
+endif
+
 # This one-shot mode is selected only by the owning file-defined alias.
 unexport _TEST_FILES_CPROFILE
 ifneq ($(filter command line environment override,$(origin _TEST_FILES_CPROFILE)),)
@@ -676,7 +687,7 @@ help:
 		"  tf-clean              Remove the shared plugin cache" \
 		"" \
 		"  --- Git ---" \
-		"  ci-cancel               cancel a CI run by id — use for zombie runs blocking push" \
+		"  ci-cancel             Plan an emergency single-run request (RUN, CI_CANCEL_VALIDATE_ONLY=1; explicit apply=0)" \
 		"  (Single-source policy: features land on development first, then merge to master)" \
 		"  git-status            Show git status" \
 		"  git-owned-checkpoint-push     Checkpoint explicit owned files (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_VALIDATE_ONLY)" \

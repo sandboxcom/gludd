@@ -492,6 +492,11 @@
       "behavior": "make ci-view RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-cancel",
+      "make_variables": ["RUN", "CI_CANCEL_VALIDATE_ONLY"],
+      "behavior": "make ci-cancel RUN=1 CI_CANCEL_VALIDATE_ONLY=1"
+    },
+    {
       "name": "ci-rerun",
       "make_variables": [
         "RUN",
@@ -515,10 +520,7 @@
     },
     {
       "name": "ci-failure-status",
-      "make_variables": [
-        "CI_FAILURE_LEDGER",
-        "CI_FAILURE_VALIDATE_ONLY"
-      ],
+      "make_variables": ["CI_FAILURE_LEDGER", "CI_FAILURE_VALIDATE_ONLY"],
       "behavior": "make ci-failure-status CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_VALIDATE_ONLY=1"
     },
     {
@@ -536,12 +538,7 @@
     },
     {
       "name": "ci-failure-push-guard",
-      "make_variables": [
-        "CI_FAILURE_LEDGER",
-        "CI_FAILURE_BRANCH",
-        "CI_FAILURE_HEAD",
-        "CI_FAILURE_VALIDATE_ONLY"
-      ],
+      "make_variables": ["CI_FAILURE_LEDGER", "CI_FAILURE_BRANCH", "CI_FAILURE_HEAD", "CI_FAILURE_VALIDATE_ONLY"],
       "behavior": "make ci-failure-push-guard CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_BRANCH=development CI_FAILURE_HEAD=0000000000000000000000000000000000000000 CI_FAILURE_VALIDATE_ONLY=1"
     },
     {
