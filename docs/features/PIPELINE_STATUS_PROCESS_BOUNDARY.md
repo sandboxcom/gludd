@@ -134,3 +134,110 @@ BUGS.md has2501lines. Moving this new incident detail here retains its dated
 BUGS index entry, every previous incident and the original<2500 limit.
 /tmp/gludd-v012-runtime-handoff-line-limit-red.txt is a labeled manual copy
 of that native failure, not a generated current observation.
+
+## Published candidate runtime failure and bounded repair (2026-10-21)
+
+Published/remote-VERIFIED development source
+c0a4bf5a5fe3525bd0644cf0356c8619e6a4a31a has independent APPROVE SOURCE ONLY
+versus fe60a94589f4fb312d5c04bc5e97ab3ab2775195 in
+/tmp/gludd-v012-repair-c0a4bf5-source-review.md. Its first separate native
+ci-failure-repair receipts each pass2090 original cases:311/native73.2s and
+312/native79.1s. Normal publication independently passes2090/native83.8s,
+after checking the served exact pinned EE digest and before guarded transport.
+These local receipts do not establish hosted throughput or release readiness.
+
+The exact [Build and Release39559012239](https://github.com/sandboxcom/gludd/actions/runs/39559012239)
+fails2jobs, passes3 and skips14. Both failed steps are the original Known
+runtime and handoff regression admission with90total/60quiet and2/1/1 workers:
+
+| Runtime / exact job | Main cohort | Fresh HELP | Native terminal result |
+| --- | --- | --- | --- |
+| 3.11 /119085557368 | 2078PASS77.89s | 1PASS0.97s | timeout124/90.6s |
+| 3.12 /119085557488 | 2078PASS77.32s | 1PASS1.29s | timeout124/90.5s |
+
+Each tail collects11, passes the first historical-focus node and is censored
+during the second finalization node. No assertion failure is recorded. Most
+budget is consumed before that node; the last visible node is not an attributed
+cause. Immutable ci-run-summary retains all eight downstream canonical shards
+as unscheduled/unknown, with exact run/SHA and censoring. Native ci-artifacts for
+this exact run reports TOTAL ARTIFACTS:0. Its completed main cohort has no native
+per-test duration report in the raw log; use the existing pytest reporter for
+further attribution instead of another trace/runner. No improvement is claimed.
+
+Native pipeline-status subsequently records the exact
+[Molecule39559012077](https://github.com/sandboxcom/gludd/actions/runs/39559012077)
+and [Pages39559012098](https://github.com/sandboxcom/gludd/actions/runs/39559012098)
+as success; all six Molecule jobs, both browsers and separate JavaScript coverage
+pass. Deployment skips on development. The native ledger is then
+open2/repaired9/resolved42/runs154 and the current snapshot remains failure,
+release_ready=false. Full311/312 open family identities remain in SESSION.
+Earlier repaired unit families do not become hosted-resolved through skipped jobs.
+
+A first job-log request before terminal job state returns404 and is retained.
+A later terminal assertion-pattern query finds no assertion; the observed-result
+pattern exposes the real timeout. Run-level queued state did not imply absent
+jobs. Reuse native ci-jobs-anon/ci-job-failure-context for a failed terminal job,
+then pipeline-status/ci-await for exact current authority; do not add an observer.
+
+### Explicitly declined proposal and bounded diagnostic meaning
+
+The public agent delivers an eight-export lazy validation proposal, retained at
+/tmp/gludd-v012-cold-pipeline-enhancement-decision.md with source patch, raw
+samples and negative controls. Five interleaved fresh-child pairs measure median
+paired savings4.361ms import and3.865ms whole-child wall; one wall pair regresses
+1.608ms. Differences between group medians are not paired medians. Root declines
+integration for this release repair: that modest controlled warm-filesystem
+measurement does not explain these hosted timeouts and does not justify eight
+additional public-export changes here. The proposal remains unapplied; this
+versioned decision explicitly cancels integration without discarding the artifact.
+
+The unchanged native heartbeat baseline passes39cases18.48s. Its process-local
+profile records16.415s in subprocess.run and16.269s in parent poll; child CPU and
+cold startup are unobserved. Its fake UV starts Python and then execs Python.
+A proposed shell exec would preserve that fake's limited exec behavior, but
+cannot establish parity with real UV supervision. Production UV must retain
+runtime selection; the Make PYTHON bootstrap alias is not its replacement.
+
+The actual [UV command contract](https://docs.astral.sh/uv/concepts/projects/run/#signal-handling)
+states that UV retains its parent process and forwards signals. The firsthand
+[April2025 supervision report12830](https://github.com/astral-sh/uv/issues/12830)
+describes orphaned children and requests exec behavior; it is closed through13017.
+That history motivates real argv/PID/signal controls, not a claim of a current UV
+defect. The bounded installed-provider probe retains missing-supervisor
+RED1FAIL0.29s and four actual warning failures from conflicting no-project/no-sync
+flags. Its changed-input explicit tiny project then passes4controls0.59s with
+exact argv/cwd/carriers/streams, native status5, supervisor PID and SIGTERM
+forwarding/drain, unchanged pyvenv.cfg and no new environment/lock. No warning is
+filtered. Five interleaved fresh startup pairs save only0.512ms median; Root
+therefore also declines this throughput integration, without full39 replay.
+The complete retained decision/probe is /tmp/gludd-v012-native-uv-fixture-decision.md.
+Other-runtime/Linux/SIGINT/full-Make compatibility remain unproved; native UV
+also accepts commands beyond the old fake's guarded exact run/python request.
+No claim of full provider parity or hosted improvement follows.
+
+The separate current-source SearXNG25-case profile passes7.26s/native8.5s;
+19 frozen-source fixtures use5.209s and239 native subprocess calls use5.542s,
+including220 native Git calls2.752s. These overlapping parent wall intervals
+identify required fixture/provenance work, not a production image-validator
+defect. Keep actual fresh Git, frozen upstream bytes and every original control;
+no shared fixture cache, omitted checks or synthetic Git replacement is approved.
+
+Hosted Hypothesis selects ci while the earlier local replay prints default.
+The [upstream settings contract](https://hypothesis.readthedocs.io/en/latest/settings.html#built-in-profiles)
+explains environment-driven defaults. This difference is not a measured cause;
+do not spoof CI environment or weaken settings. Explicit diagnostic profile
+selection remains diagnostic and cannot relabel either original receipt.
+
+Root owns the actual changed-input repair. Preserve the failed source/run and
+all bounds; first successor original-runtime proof belongs to ci-failure-repair
+in a new clean descendant, separately for each full family, with aligned outer
+and child runtime. Capacity97percent still blocks final candidate/full-gate
+proof; these diagnostic receipts do not clear unchanged cleanup/admission
+retries, final sealing or task ticks.
+
+The six changed operating documents pass the complete five existing handoff,
+branch, Markdown and task-ledger owners:144PASS6.04s/native6.9s, zero skips/errors,
+fatal warnings; /tmp/gludd-v012-c0a4-hosted-failure-handoff.xml and its.log retain
+the native result. Locked Markdown reports no issues in all six files; native
+snapshot validation, task-ledger validation and unchanged<2500 line guards pass.
+No production/test source, policy bound or checkbox changes in this record.

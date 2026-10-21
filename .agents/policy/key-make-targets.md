@@ -148,6 +148,14 @@ controls, whole-file coverage and separate canonical strict source/test scopes.
 Its deterministic operation bound and local profile supply different evidence
 from the enclosing original runtime-family receipt.
 
+The [published-candidate decision](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#published-candidate-runtime-failure-and-bounded-repair-2026-10-21)
+retains local passes followed by hosted90-second failures. Attribute the actual
+failed owner, not the last visible test. Compare paired differences rather than
+differences of group medians; reject unrelated micro-optimizations explicitly.
+Real UV supervises its Python child. A fake exec launcher, runpy or the bootstrap
+PYTHON alias does not prove that lifecycle; preserve native runtime selection,
+fresh observations and every original assertion while assessing a fixture repair.
+
 ### Preserve producer status and measurement meaning
 
 Use the native producer's return status before consuming its output. A formatter
