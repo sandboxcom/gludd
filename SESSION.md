@@ -2,7 +2,7 @@
 
 Last Updated: 2026-10-21 (local and UTC; receipts retain their actual dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128526 selected / 128550 collected,24 deselected,zero collection errors in47.92s/native53.2s during normal9ac03d9f32f81c53ffcca842c2132d470919fb2c source hooks. Native receipt: .gate-logs/observed/test-count/20261021T224329Z-55885-b5b48fcd.{log,json}. Collection is not test acceptance.
+Total tests: 128537 selected / 128561 collected,24 deselected,zero collection errors in49.16s/native54.324s during normal41013b302decef572cb119bea5eeffef33c2a6e6 source hooks; the raw collection retains4 skips. Native receipt: .gate-logs/observed/test-count/20261021T232605Z-79835-b3d0bee0.{log,json}. Collection is not test acceptance.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
@@ -10,7 +10,12 @@ Root owns S98.4 and all Main/shared/Git/proof mutations. All seven S98.1-S98.7 r
 
 ## Current scratch permission repair
 
-Root owns S98.4 on development from 0ab4ae6050728348e53abc19ac248669a57197bf.
+Root owns S98.4 on development. Exact source41013b302decef572cb119bea5eeffef33c2a6e6
+against0ab4ae6050728348e53abc19ac248669a57197bf has independent APPROVE SOURCE ONLY
+at /tmp/gludd-v012-scratch-permissions-41013b3-source-review.md, fully read by Root.
+All14 source paths were reviewed. The reviewer independently read both193-case
+native receipts, both86.7line/89.0branch audits and the fresh410 collection above.
+No source repair remains from that decision; release proofs remain pending.
 The [native scratch record](docs/features/CACHE_RESOURCE_INVENTORY.md#scratch-permission-repair-through-owned-directory-descriptors-2026-10-21)
 retains measured byte-unchanged mode changes, their scoped native restore and
 public-cleaner REDs: two link failures, then 8 failures/40 passes across the
@@ -56,7 +61,8 @@ commit/review boundary; do not repeat finished source steps from older prose.
 Reviewed development 9ac03d9f32f81c53ffcca842c2132d470919fb2c has independent
 APPROVE SOURCE ONLY against49 at
 /tmp/gludd-v012-watchdog-history-9ac03d9-source-review.md, fully read by Root.
-Its normal12-path hooks retain the fresh collection above, zero new clones
+Its normal12-path hooks retain128526selected/128550collected,24deselected/zeroerrors
+47.92s/native53.2s at20261021T224329Z-55885-b5b48fcd, zero new clones
 (two existing clone records)/six checkpoints. These decisions remain immutable.
 The subsequent0ab handoff changes prose; the later scratch helper repair is
 separately recorded above.
@@ -115,8 +121,9 @@ separate from source acceptance. Exact9ac normal commit/review and the actual
 are recorded above. The natural successor scan's terminal timeout and measured
 child absence are also recorded above; successful scanning remains unproved.
 Family148 keeps147 predecessors; routing RED5FAIL/1PASS1.19s precedes six pins1.59s. Nine complete routing/lifecycle owners pass533 each311130.22s/native131.9s and312127.71s/native129.1s, fatal warnings/zero skips/errors. Five complete documentation/handoff/ledger owners pass98/4.40s/native5.7s; Ruff4/four strict scopes/docstrings/276contracts/Make1157/zero duplicates/Markdown6/SESSION structure/12-path registration/lineguard pass.
-No original90/60 proof is retried. Disk97percent/6.9GiB still exceeds95; original
-60907 publication timeout, full gate/exact-SHA CI/deployment/promotion remain missing.
+No original90/60 proof is retried. At the9ac source boundary, disk97percent/6.9GiB
+exceeded95; later native cleanup measures96percent/8.1GiB above. Original60907
+publication timeout, full gate/exact-SHA CI/deployment/promotion remain missing.
 
 ## Reviewed coverage source support
 
