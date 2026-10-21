@@ -1,5 +1,16 @@
 # Runtime Admission Throughput
 
+## Single-export cold-import boundary (2026-10-21 UTC)
+
+[The owning import feature](CODE_INTELLIGENCE_IMPORT_BOUNDARY.md) retains exact
+fe60 hosted90.5/90.6-second failures, isolated research/profile limits, normally
+committed f206e69bc, original-source/reload REDs, both-runtime85-case acceptance
+and100line/100branch whole-initializer coverage under85/75 BOTH. The native
+admission feature records appended family132, all131 predecessor selectors,
+unchanged90/60/2-1-1/21phases2850 and the312-case routing acceptance. No source
+profile or wiring result establishes actual runtime, hosted or full-gate proof.
+
+
 ## Per-traversal native AST type binding (2026-10-21 UTC)
 
 [The existing fixture-audit feature](PYTEST_PARAMETER_FIXTURE_COLLISION_GUARD.md#bind-native-declaration-types-once-per-traversal-2026-10-21-utc)

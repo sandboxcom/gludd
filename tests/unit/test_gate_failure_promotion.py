@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 131
+EXPECTED_FAMILY_COUNT = 132
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1850,6 +1850,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "agent-cleanup-retained-ref-retirement",
         "watchdog-absence-refusal-context",
         "process-inventory-python-module-forms",
+        "code-intelligence-extractor-import-boundary",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2134,7 +2135,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_task_watchdog.py::"
         "test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True] "
         "tests/unit/test_active_work_status.py::"
-        "test_process_inventory_preserves_python_module_argument_forms\"" in runtime_compatibility_owner
+        "test_process_inventory_preserves_python_module_argument_forms "
+        "tests/unit/test_code_intelligence_import_boundary.py::"
+        "test_extractor_import_does_not_load_introspection_or_database\"" in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
     assert "-n 0" in runtime_compatibility_owner
@@ -2352,6 +2355,11 @@ def test_native_setuid_input_has_one_exact_first_main_admission_family() -> None
             "process-inventory-python-module-forms",
             "tests/unit/test_active_work_status.py::"
             "test_process_inventory_preserves_python_module_argument_forms",
+        ),
+        (
+            "code-intelligence-extractor-import-boundary",
+            "tests/unit/test_code_intelligence_import_boundary.py::"
+            "test_extractor_import_does_not_load_introspection_or_database",
         ),
     ),
 )

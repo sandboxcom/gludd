@@ -226,6 +226,26 @@ promotion checker passes all four original pins in1.87s;270 Make contracts,
 Ruff and the separate strict test scope pass. This remains wiring/source
 acceptance until the actual original90/60 bounded native execution.
 
+## Route the cold-import graph regression (2026-10-21 UTC)
+
+[The export boundary](CODE_INTELLIGENCE_IMPORT_BOUNDARY.md) owns sourcef206e69bc,
+seven behavioral controls and the unchanged public implementations. Append just
+the fresh-process extractor import-graph node after all131 prior families,
+as code-intelligence-extractor-import-boundary. Keep every previous selector/
+identity/order, literal whole Make wiring, independent ROSTER and separate
+literal132 totals in both existing test modules. The whole new test file is
+not selected by early admission. Original first setuid node,2/1/1 children,
+90total/60quiet,21phases2850 and required full gate remain.
+
+The new routing control first fails1/18 with17PASS0.72s/native1.5s against
+unwired source; retain /tmp/gludd-v012-import-route-red.log/XML. The actual
+documented promotion checker then passes all four original pins1.58s;
+270 Make contracts and1161targets/0duplicates with9CI/12local parity pass.
+The same five complete routing/contract owners pass312 cases on311 in
+70.30s/native71.3s and312 in73.25s/native74.4s, fatal warnings/zero skips/errors;
+/tmp/gludd-v012-132-family-whole-311.log/XML and312 equivalent. Actual original
+90/60 execution remains separate; source/contract results supply no repair receipt.
+
 ## Bounded receiving proof after instrumented timeout (2026-10-21 UTC)
 
 The first clean repair-owned replay at edd9a0348105129696a18ead986f913cb6c4b620

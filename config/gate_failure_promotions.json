@@ -1076,6 +1076,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_active_work_status.py::test_process_inventory_preserves_python_module_argument_forms",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "code-intelligence-extractor-import-boundary",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_code_intelligence_import_boundary.py::test_extractor_import_does_not_load_introspection_or_database",
+      "full_gate_phase": "test"
     }
   ]
 }

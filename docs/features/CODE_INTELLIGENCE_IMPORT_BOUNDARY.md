@@ -110,8 +110,9 @@ Root's implementation.
 
 ## Required receiving and release proof
 
-Promote the cheap import-graph oracle through the existing admission owner while
-preserving every prior selector and original90total/60quiet,2/1/1 workers,
+The existing admission owner appends just the cheap import-graph node as family132
+while preserving all131 prior identities/selectors/order and original90total/
+60quiet,2/1/1 workers,
 fatal warnings,21phases2850 and full gate. No fragile timing threshold replaces
 that deterministic graph condition. Bind first actual runtime replay to the
 native CI repair owner at one clean descendant SHA. Independent source review,
