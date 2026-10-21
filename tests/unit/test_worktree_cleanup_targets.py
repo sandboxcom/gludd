@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.test_worktree_retirement import git as native_git
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -20,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_cleanup_targets_reuse_native_owner_with_literal_policy(
     tmp_path: Path, environment_overrides: bool, target: str, policy: str | None,
 ) -> None:
+    tmp_path = tmp_path.resolve()
+    native_git(tmp_path, "init", "--quiet")
     recorder = tmp_path / "capture.py"
     recorder.write_text("import json,sys\nprint(json.dumps(sys.argv[1:]))\n", encoding="utf-8")
     binaries = tmp_path / "bin"
