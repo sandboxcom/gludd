@@ -26,21 +26,21 @@ def _load_status_snapshot() -> ModuleType:
 
 
 class TestStatusSnapshot:
-    def test_script_exists(self):
+    def test_script_exists(self) -> None:
         script = Path(__file__).parent.parent.parent / "scripts" / "status_snapshot.py"
         assert script.exists(), "scripts/status_snapshot.py must exist"
 
-    def test_session_md_has_markers(self):
+    def test_session_md_has_markers(self) -> None:
         session = Path(__file__).parent.parent.parent / "SESSION.md"
         content = session.read_text()
         assert "<!-- gate:begin -->" in content, "SESSION.md missing gate:begin marker"
         assert "<!-- gate:end -->" in content, "SESSION.md missing gate:end marker"
 
-    def test_makefile_status_snapshot_uses_script(self):
+    def test_makefile_status_snapshot_uses_script(self) -> None:
         content = _makefile_text()
         assert "status_snapshot.py" in content, "Makefile status-snapshot must use status_snapshot.py"
 
-    def test_makefile_status_snapshot_uses_project_interpreter_and_validation_mode(self):
+    def test_makefile_status_snapshot_uses_project_interpreter_and_validation_mode(self) -> None:
         content = _makefile_text()
         start = content.index("status-snapshot:")
         end = content.index("\n\n", start)
@@ -50,7 +50,7 @@ class TestStatusSnapshot:
         assert "STATUS_SNAPSHOT_VALIDATE_ONLY" in section
         assert "@python3 scripts/status_snapshot.py" not in section
 
-    def test_makefile_status_snapshot_writes_in_place(self):
+    def test_makefile_status_snapshot_writes_in_place(self) -> None:
         content = _makefile_text()
         start = content.index("status-snapshot:")
         end = content.index("\n\n", start) if "\n\n" in content[start:] else len(content)
@@ -78,6 +78,88 @@ class TestStatusSnapshot:
         assert session.read_text(encoding="utf-8") == before
         assert "status-snapshot validation: PASS" in capsys.readouterr().out
 
+
+    @pytest.mark.parametrize("content", (
+        None,
+        "# Session without markers\n",
+        "<!-- gate:begin -->\n",
+        "<!-- gate:end -->\n",
+        "<!-- gate:end -->\n<!-- gate:begin -->\n",
+        "<!-- gate:begin -->\n<!-- gate:begin -->\n<!-- gate:end -->\n",
+        "<!-- gate:begin -->\n<!-- gate:end -->\n<!-- gate:end -->\n",
+        pytest.param(
+            "preamble <!-- gate:begin -->\nprevious\n<!-- gate:end -->\n",
+            id="inline-begin-prefix",
+        ),
+        pytest.param(
+            "<!-- gate:begin --> suffix\nprevious\n<!-- gate:end -->\n",
+            id="inline-begin-suffix",
+        ),
+        pytest.param(
+            "<!-- gate:begin -->\nprevious\nprefix <!-- gate:end -->\n",
+            id="inline-end-prefix",
+        ),
+        pytest.param(
+            "<!-- gate:begin -->\nprevious\n<!-- gate:end --> suffix\n",
+            id="inline-end-suffix",
+        ),
+    ))
+    def test_validation_refuses_invalid_session_structure_without_writes(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        content: str | None,
+    ) -> None:
+        module = _load_status_snapshot()
+        session = tmp_path / "SESSION.md"
+        monkeypatch.setattr(module, "SESSION_MD", session)
+        if content is not None:
+            session.write_text(content, encoding="utf-8")
+
+        with pytest.raises(SystemExit, match="1"):
+            module.main(["--validate-only"])
+
+        assert session.exists() is (content is not None)
+        if content is not None:
+            assert session.read_text(encoding="utf-8") == content
+
+    @pytest.mark.parametrize("previous_header", (
+        "",
+        "## Current Gate Status\n",
+        "## Current Gate Status (2026-10-20)\n",
+    ), ids=("absent", "undated", "dated"))
+    def test_repeated_native_rewrite_keeps_one_header_and_surrounding_handoff(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        previous_header: str,
+    ) -> None:
+        module = _load_status_snapshot()
+        session = tmp_path / "SESSION.md"
+        gate_status = tmp_path / ".gate-status"
+        preamble = "# Bounded release handoff\n\n"
+        trailing = "\nRetain exact source, failed evidence and missing release proof.\n"
+        session.write_text(
+            preamble + previous_header + "<!-- gate:begin -->\n"
+            "- previous\n<!-- gate:end -->\n" + trailing,
+            encoding="utf-8",
+        )
+        gate_status.write_text("test FAIL non-zero-exit\n", encoding="utf-8")
+        monkeypatch.setattr(module, "SESSION_MD", session)
+        monkeypatch.setattr(module, "GATE_STATUS", gate_status)
+
+        assert module.main([]) == 0
+        first = session.read_text(encoding="utf-8")
+        assert module.main([]) == 0
+        second = session.read_text(encoding="utf-8")
+
+        assert second == first
+        assert second.count("## Current Gate Status") == 1
+        assert second.count("<!-- gate:begin -->") == 1
+        assert second.count("<!-- gate:end -->") == 1
+        assert second.count("- test FAIL non-zero-exit") == 1
+        assert second.startswith(preamble)
+        assert second.endswith(trailing)
 
     def test_missing_gate_status_is_explicit(
         self,
@@ -168,12 +250,12 @@ class TestSessionDriftDetector:
 
         assert check_session_drift() == {"passed": True, "violations": []}
 
-    def test_drift_detected_with_stale_block(self):
+    def test_drift_detected_with_stale_block(self) -> None:
         result = check_session_drift()
         assert "passed" in result
         assert "violations" in result
 
-    def test_drift_detected_when_markers_missing(self, tmp_path):
+    def test_drift_detected_when_markers_missing(self, tmp_path: Path) -> None:
         session = tmp_path / "SESSION.md"
         session.write_text("# No markers here\n")
         gate = tmp_path / ".gate-status"
@@ -187,7 +269,9 @@ class TestSessionDriftDetector:
         finally:
             pf.REPO_ROOT = orig
 
-    def test_in_progress_gate_is_not_authoritative(self, tmp_path, monkeypatch):
+    def test_in_progress_gate_is_not_authoritative(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         (tmp_path / "SESSION.md").write_text(
             "<!-- gate:begin -->\n- previous PASS\n<!-- gate:end -->\n"
         )
@@ -212,7 +296,7 @@ class TestSessionDriftDetector:
 class TestReadmeNoHardcodedMetrics:
     """W5.5: README must not hardcode measured metrics; the gate is the truth."""
 
-    def _run_against(self, tmp_path: Path, readme_text: str):
+    def _run_against(self, tmp_path: Path, readme_text: str) -> dict[str, object]:
         import general_ludd.quality.preflight as pf
         (tmp_path / "README.md").write_text(readme_text)
         orig = pf.REPO_ROOT
@@ -222,30 +306,33 @@ class TestReadmeNoHardcodedMetrics:
         finally:
             pf.REPO_ROOT = orig
 
-    def test_live_readme_has_no_hardcoded_metrics(self):
+    def test_live_readme_has_no_hardcoded_metrics(self) -> None:
         from general_ludd.quality.preflight import check_readme_no_hardcoded_metrics
         result = check_readme_no_hardcoded_metrics()
+        violations = result.get("violations", [])
+        assert isinstance(violations, list)
+        assert all(isinstance(message, str) for message in violations)
         assert result["passed"], (
             "README.md contains hardcoded metrics that drift from the gate:\n"
-            + "\n".join(result.get("violations", []))
+            + "\n".join(str(message) for message in violations)
         )
 
-    def test_hardcoded_test_count_fails(self, tmp_path):
+    def test_hardcoded_test_count_fails(self, tmp_path: Path) -> None:
         result = self._run_against(
             tmp_path, "The suite has 5,460 passing tests as of today.\n"
         )
         assert not result["passed"]
         assert result["violations"]
 
-    def test_hardcoded_mypy_count_fails(self, tmp_path):
+    def test_hardcoded_mypy_count_fails(self, tmp_path: Path) -> None:
         result = self._run_against(tmp_path, "There are 21 mypy errors in source.\n")
         assert not result["passed"]
 
-    def test_hardcoded_coverage_pct_fails(self, tmp_path):
+    def test_hardcoded_coverage_pct_fails(self, tmp_path: Path) -> None:
         result = self._run_against(tmp_path, "Coverage is 85% across the suite.\n")
         assert not result["passed"]
 
-    def test_pointer_to_gate_passes(self, tmp_path):
+    def test_pointer_to_gate_passes(self, tmp_path: Path) -> None:
         result = self._run_against(
             tmp_path,
             "Run `make gate`; see `.gate-status` for the current counts.\n",
