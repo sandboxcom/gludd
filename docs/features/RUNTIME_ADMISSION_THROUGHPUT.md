@@ -6,8 +6,11 @@
 owns source76c6d53, two failing-first operation controls, all57 original cases,
 59-case source/receiving acceptance and97.8line/94.0branch whole-file coverage.
 It retains both local profiles, explicit commands and the long-lived upstream
-ordering discussion. Original2e9 timeout124/90.57s remains unrepaired until the
-native clean-receiving family owner passes; no deadline or assertion changes.
+ordering discussion. Original2e9 timeout124/90.57s remains preserved. Clean
+receiving6161e10 now passes the actual original90/60 family repair74.272s and
+separate guarded publication72.3s; native verify-remote binds development@6161e10.
+The owning record distinguishes those receipts from hosted/full-gate proof and
+causal timing claims; no deadline or assertion changes.
 
 ## Pipeline public CLI reuse (2026-10-21 UTC)
 

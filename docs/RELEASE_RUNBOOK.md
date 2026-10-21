@@ -52,7 +52,13 @@ SHA and fast-forwards canonical master only after its gates pass.
 Commit all release metadata before sealing the candidate: `pyproject.toml`,
 `src/general_ludd/__init__.py`, README, release notes, changelog, workflow
 inputs, locks, and required task/evidence metadata must describe the same
-version and candidate. Run:
+version and candidate. Select the installed registered Python3.11 release
+toolchain before every outer Make invocation, including Git/helper targets.
+Use the five runtime assignments in the [mandatory Make guide](../.agents/policy/key-make-targets.md#run-focused-checks-with-explicit-inputs)
+and append them to the commands below. The current SESSION identifies the
+installed paths. Main's existing .venv may be Python3.14 and is not this release's
+canonical311 runtime. Reuse the selected environment without synchronization or
+downloads; do not let a documentation example acquire an implicit runtime. Run:
 
 ```console
 make check-version-consistency
@@ -60,7 +66,10 @@ make check-readme-status TAG=v0.1.2
 make check-runbook-currency TAG=v0.1.2
 make validate-ansible-runtime-boundary
 make test-files TESTFILES=tests/unit/test_collection_interop.py \
-  PYTEST_ARGS='-q -W error -n 0' UV_PROJECT_ENVIRONMENT=.venv
+  PYTEST_ARGS='-q -W error -n 0' \
+  UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 \
+  VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 \
+  UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
 make release-page-notes TAG=v0.1.2 \
   RELEASE_PAGE_NOTES_LEDGER=config/v012_completed_backlog_reconciliation.json \
   RELEASE_PAGE_NOTES_OUTPUT=docs/releases/v0.1.2.md \

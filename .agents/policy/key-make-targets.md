@@ -308,5 +308,29 @@ proof evidence. clean-stale-worktrees now plans through the native prune owner
 with CLEAN_STALE_WORKTREES_VALIDATE_ONLY=1. agent-cleanup requires explicit BRANCH
 and canonical WORKTREE and plans native merged-owner retirement with
 AGENT_CLEANUP_VALIDATE_ONLY=1. Both retain active streams, locks, checkpoints and
-branch refs; literal0 applies only after the same owner validates eligibility. A target name, dry run or old threshold in prose is not evidence
-that its current policy admits an action.
+branch refs. The alias and parsed native request must bind the same literal
+plan/apply mode; valid plan1 and apply0 need real registered-owner controls,
+alongside both mismatched-mode refusals. An absent-path refusal or recorder-only
+argv check does not establish that a valid plan works.
+
+Resolve the exact branch, clean HEAD and canonical absolute path through
+worktree-state/all-worktree-state. macOS may register /private/tmp when the
+supplied /tmp path resolves there; use the native identity. Confirm integration,
+publication, ended model ownership and absence of live users before releasing
+only that completed lease through the existing owner:
+
+~~~text
+make workstream-unregister BRANCH=actual-completed-branch ACTIVE_WORKSTREAM_REGISTRY=''
+~~~
+
+Replace the branch with its measured completed identity; an empty registry input
+selects the existing native default. Never fabricate completion or discard a Git lock.
+
+Run selected-owner plan1 with that same BRANCH, WORKTREE and existing registry.
+It must preserve the target, ignored evidence, refs and registry. Literal0 applies
+only after the same native owner validates eligibility; actual removal retains
+archival, fresh ownership fences and rollback. Measure disk afterward: a plan,
+removal or new HEAD does not establish capacity clearance. Preserve dirty,
+unknown and checkpoint-owned work. The [owning resource record](../../docs/features/GATE_RESOURCE_LIFECYCLE.md#native-alias-plan-and-apply-must-bind-the-same-request-2026-10-20)
+retains actual failures and complete-source proof. A target name, dry run or old
+threshold in prose is not evidence that current policy admits an action.

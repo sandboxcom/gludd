@@ -192,8 +192,24 @@ TASKS retains a short index link and every original checkbox/acceptance conditio
 The labeled manual native failure copy is
 /tmp/gludd-v012-ast-types-task-line-limit-red.txt. No line limit is raised.
 
-The next original-family evidence belongs to ci-failure-repair at the clean
-receiving commit, with public run-watched and unchanged original 90/60,
-2023+1+11 selectors and 2/1/1 workers. Receiving collection/source review, native
-family receipt, capacity clearance, full gate, exact-SHA hosted/deployment and
-normal promotion remain separate obligations. All seven task closures remain open.
+Clean receiving merge6161e102eee998bf94407457ad3dde5d0e4ad459 freshly collects
+127838/127862,24deselected,zero errors55.40s/native62.0s. Independent SOURCE ONLY
+approval is /tmp/gludd-v012-candidate-6161e10-source-review.md. Its actual
+ci-failure-repair replay passes2025main/60.57s,help1/0.91s,tail11/8.34s and
+outer74.272s/rc0 through public run-watched at unchanged90/60 and2/1/1 workers.
+The two additive audit controls account for2023→2025 without changing selectors.
+The native owner records exactly family
+cf5b089df8ad5c0921ed70ee9d01916f40baeacd98f086caf110f7f139404596.
+Raw .gate-logs/observed/v012-runtime-family-repair/v012-runtime-family-6161e10-20261021.log
+and native observed-status retain terminal passed/active:false/exit0.
+
+The separate normal batch-push checks the served pinned EE manifest, replays
+2025main/58.38s,help1/0.89s,tail11/8.56s in72.3s and passes ordinary collection
+and push guards before13-commit development publication. Native verify-remote
+returns VERIFIED development@6161e102eee998bf94407457ad3dde5d0e4ad459.
+Immutable Build39533219987 at that exact SHA now records both311/312gate jobs
+PASS and all eight shards scheduled; running/queued durations remain censored.
+These are measurements of their respective owners, not a causal attribution of
+the whole elapsed difference to type binding or a final hosted-success claim.
+Capacity clearance, complete gate, exact-SHA all-workflow/deployment proof and
+normal promotion remain separate. All seven task closures remain open.
