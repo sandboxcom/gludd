@@ -9,6 +9,12 @@ from pathlib import Path
 
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_worktree_prune_preservation import (
+    test_cleanup_alias_applies_the_real_registered_native_retirement as _assert_native_retirement,
+)
+
+pytest_plugins = ("tests.unit.test_worktree_retirement",)
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 MAKEFILE_PATH = ROOT / "Makefile"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
@@ -454,19 +460,13 @@ class TestWorktreeCleanupAfterMerge:
     def test_agent_cleanup_target_exists(self) -> None:
         assert guard_exists_in_makefile("agent-cleanup"), "B24: agent-cleanup target missing from Makefile"
 
-    def test_agent_cu_removes_worktree(self) -> None:
-        text = makefile_text()
-        idx = text.find("agent-cleanup:")
-        assert idx != -1, "B24: agent-cleanup target not found"
-        block = text[idx : idx + 500]
-        assert "worktree remove" in block, "B24: agent-cleanup does not remove worktree"
+    def test_agent_cu_removes_worktree(self, checkout: tuple[Path, Path, Path]) -> None:
+        """Remove only the eligible fixture while retaining all refs and failed proof."""
+        _assert_native_retirement(checkout, environment_overrides=False)
 
-    def test_agent_cu_deletes_branch(self) -> None:
-        text = makefile_text()
-        idx = text.find("agent-cleanup:")
-        assert idx != -1, "B24: agent-cleanup target not found"
-        block = text[idx : idx + 500]
-        assert "branch -d" in block, "B24: agent-cleanup does not delete branch"
+    def test_agent_cu_preserves_branch_and_release_evidence(self, checkout: tuple[Path, Path, Path]) -> None:
+        """The native -e route must archive ignored failure evidence and preserve refs."""
+        _assert_native_retirement(checkout, environment_overrides=True)
 
 
 # ── B25: No more than 6 concurrent worktree agents ──────────────────

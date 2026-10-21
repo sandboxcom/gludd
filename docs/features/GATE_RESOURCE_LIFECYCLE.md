@@ -204,6 +204,62 @@ actual eligibility or reclamation. Apply uses fresh native ownership and archiva
 capacity must be measured afterward before real release admission. All19 release
 items remain open; source/coverage/plan are not full-gate or exact-SHA proof.
 
+### B24 cleanup checks follow actual retirement and retained refs (2026-10-21 UTC)
+
+Hosted6161 Build39533219987 unit-1d job119007635499, batch006, fails two
+tests/unit/test_branch_discipline_checks.py B24 cases. Their500-character recipe
+windows require raw worktree remove and branch -d even though the target delegates
+to native retirement. The original B24 spec requires cleanup after integration;
+it never requires branch deletion. Reintroducing raw removal or deleting retained
+refs would regress the established ownership/evidence contract above.
+
+Local complete B24/branch replay retains2FAIL/49PASS1.30s/native2.5s in
+/tmp/gludd-v012-cleanup-discipline-red.log and XML. Only the two obsolete
+implementation-shaped checks conform to the retention instructions: reuse the
+unchanged real-Git selected-retirement helper and existing checkout fixture.
+Both ordinary Make and -e must actually remove the eligible fixture, preserve
+the entire native show-ref output and archive the exact ignored FAILED original
+proof bytes. The misleading branch-delete case is named for branch/evidence
+preservation. All other49 branch assertion bodies stay intact; no application
+policy, refusal, process/checkpoint guard, production code or coverage floor changes.
+
+The initial complete branch owner passes51/2.90s/native3.9s in
+/tmp/gludd-v012-cleanup-discipline-green.log and XML. A123-character import alias
+fails Ruff E501; shortening only that alias retains the120-column guard.
+Calling lint-files and typecheck-scope in one Make invocation also fails the
+existing FILES/stray-goal guard; run them separately. Separate Ruff and strict
+typing pass. These retained refusals motivate precise copyable guidance, not a
+relaxed guard. Whole successor acceptance still includes native preservation,
+cleanup routing and the parameter/fixture audit.
+
+The existing early runtime owner appends the two exact B24 nodes after the first
+four hosted worker/link repairs, retaining all114 original families and selectors.
+The two new routing controls first fail2/1.08s/native2.0s in
+/tmp/gludd-v012-cleanup-route-red.log and XML; current manifest total120.
+The original90/60,2-1-1,21phases2850,85/75 line AND branch, fatal warnings, ZDD and
+required exact-SHA/full-gate/deployment proofs remain. This test conformance
+supplies no new release or live-cleanup eligibility. The current feature and mandatory Make guide name the same actual owner,
+explicit inputs, archival and retained refs; the original historical B24 stays intact.
+The first combined21-owner replay retains1FAIL/733PASS on both runtimes:
+311124.45s/native126.4s and312131.65s/native133.5s. Updating the historical B24
+shard invalidates the deliberately pinned corpus digest. Restore its original
+bytes; do not add a digest waiver, refresh authority or new publication route.
+Keep current operational guidance here and in the Make guide. Preserve
+/tmp/gludd-v012-three-hosted-repairs-3.11.log and
+/tmp/gludd-v012-three-hosted-repairs-3.12.log/XML as failures. The unchanged
+behavioral-spec shard owner must verify original SHA36f7cbb2a90b3ee606a732433ce18b3133d46fc159cb5ffbb70d71fb5dcd851c,
+21495lines, stable routes/anchors and corruption refusal. The original B24
+required cleanup, not branch deletion; its history and new native tests agree.
+The firsthand ignored-data-loss reports above support preserving evidence; the
+project's real-Git assertions independently verify the actual behavior.
+
+Final22-owner acceptance includes the whole historical shard owner and all
+native preservation/routing cases:745PASS on311123.90s/native125.7s and
+312130.92s/native133.4s, fatal warnings and zero skips/errors. Preserve
+/tmp/gludd-v012-three-hosted-final-3.11.log and
+/tmp/gludd-v012-three-hosted-final-3.12.log plus XML. This source checkpoint
+does not grant gate, hosted CI, deployment or task-completion authority.
+
 ### Watchdog observations stay inside their native ownership boundary
 
 Actual post-integration pruning at development 3b62a8b archives the finished
