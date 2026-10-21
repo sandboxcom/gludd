@@ -57,6 +57,9 @@ UNSORTED_ALLOWLIST: frozenset[str] = frozenset()
 # they're imported via explicit `from ... import ... as name` that matches
 # differently, or imported in nested scopes. Reviewed per-file.
 ORPHAN_ALLOWLIST: dict[str, frozenset[str]] = {
+    # PEP 562 resolves this single canonical class on first use. Fresh-process
+    # identity/error/retry controls live in test_code_intelligence_import_boundary.py.
+    "code_intelligence/__init__.py": frozenset({"CodebaseIntrospector"}),
     # PEP 562 lazy __getattr__: the model lives in db.models.py and is
     # imported inside __getattr__ to avoid a circular import at package init.
     "remediation/__init__.py": frozenset({"RemediationActionModel"}),
