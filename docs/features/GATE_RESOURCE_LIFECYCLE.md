@@ -235,7 +235,7 @@ cleanup routing and the parameter/fixture audit.
 The existing early runtime owner appends the two exact B24 nodes after the first
 four hosted worker/link repairs, retaining all114 original families and selectors.
 The two new routing controls first fail2/1.08s/native2.0s in
-/tmp/gludd-v012-cleanup-route-red.log and XML; current manifest total120.
+/tmp/gludd-v012-cleanup-route-red.log and XML; that checkpoint manifest total120.
 The original90/60,2-1-1,21phases2850,85/75 line AND branch, fatal warnings, ZDD and
 required exact-SHA/full-gate/deployment proofs remain. This test conformance
 supplies no new release or live-cleanup eligibility. The current feature and mandatory Make guide name the same actual owner,
@@ -259,6 +259,10 @@ native preservation/routing cases:745PASS on311123.90s/native125.7s and
 /tmp/gludd-v012-three-hosted-final-3.11.log and
 /tmp/gludd-v012-three-hosted-final-3.12.log plus XML. This source checkpoint
 does not grant gate, hosted CI, deployment or task-completion authority.
+
+The [remaining hosted repair record](INTEGRATION_ADMISSION.md#remaining-hosted-failures-and-native-readiness-repairs-2026-10-21-utc)
+also owns native worktree-fixture conformance, command-word ownership, acquisition
+SIGTERM cleanup, retained failure experiments and whole-file coverage.
 
 ### Watchdog observations stay inside their native ownership boundary
 

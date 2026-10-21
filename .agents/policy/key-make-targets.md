@@ -12,9 +12,26 @@ checks do not replace the documented actual behavior command.
 
 ### Establish current state before changing it
 
-Read TASKS.md, BUGS.md, config/ratchet.yml and SESSION.md together using
-`make cat-file FILE=path`. Use `make worktree-state` for the current branch,
-SHA and staged/unstaged paths; `make all-worktree-state` includes other checkouts.
+Read current tracking views together before work:
+
+~~~console
+make show-lines FILE=TASKS.md START=1 END=9
+make show-lines FILE=BUGS.md START=1 END=5
+make cat-file FILE=config/ratchet.yml
+make cat-file FILE=SESSION.md
+~~~
+
+TASKS and BUGS keep compact current pointers above their full retained history.
+A seven-line active-task search can still truncate because each line contains a
+large evidence history. These windows establish navigation, not a changed task
+definition or proof. Read the selected task's full criteria and owning feature
+before implementation/closure; complete native guards still evaluate the ledger.
+Use the existing work-item status with explicit WORK_ITEM_ACTION=status,
+WORK_ITEM_ID=S98.4, WORK_ITEM_REASON='' and WORK_ITEM_VALIDATE_ONLY=0 after
+selecting the installed runtime below. It reports observations, not acceptance.
+Use make active-work-status ACTIVE_WORK_STATUS_PID= for current scope/ownership.
+Use make worktree-state for the current branch, SHA and staged/unstaged paths;
+make all-worktree-state includes other checkouts.
 Use `make active-work-status`, `make ps` and `make disk` to identify existing
 owners, subprocesses, worker capacity and disk use. `make ps-gludd` covers
 namespaced daemons only. Model-agent status is separate from process PIDs.
@@ -63,8 +80,15 @@ UV_PYTHON_DOWNLOADS=never, for this release's Git/helper and child operations.
 The current SESSION identifies that installed environment; reuse it before
 running a command rather than allowing an implicit environment acquisition.
 SESSION's existing parser expects the local Last Updated date and a leading
-numeric Total tests count. Keep UTC measurement dates and source provenance in
+numeric Total tests: N field, including the colon. Keep UTC measurement dates and source provenance in
 the accompanying prose; the complete persistence owner exercises those fields.
+Keep the native gate marker pair during handoff compaction, then run
+make status-snapshot STATUS_SNAPSHOT_VALIDATE_ONLY=0 to regenerate from the actual
+retained .gate-status. Keep source/profile/age interpretation outside that region;
+a copied old FAIL is not candidate proof. Its documented mode1 validates existing
+structure without writing. Include the complete status-snapshot and session-
+persistence test owners. Missing/duplicate/reversed or inline markers must fail validation,
+and repeated native writes must preserve one header and surrounding handoff.
 
 This is a safe contract example, not the complete acceptance scope for a change:
 
@@ -89,8 +113,22 @@ assertions. The existing repository guard remains part of native admission;
 focused behavior alone does not establish fixture-namespace conformance.
 `make lint-files FILES='path1.py path2.py'` and
 `make typecheck-scope FILES='path1.py path2.py'` provide focused checks.
+Run them as separate Make invocations; the FILES/stray-goal guard rejects mixing
+path-carrying targets. Keep that refusal and use each documented native owner.
+The commit docstring guard scopes src and can report SKIP for script-only changes.
+Native make lint-docstrings DOCSTRING_FILES='scripts/changed_owner.py' checks that
+script explicitly; a commit-guard SKIP is distinct from script docstring acceptance.
+A yielded session ID means a process is still active. Drain each pair to a native
+terminal result before launching replacements; awaiting launch responses alone
+does not enforce the two-process testing bound. Serialize native watchdog lifecycle
+cohorts after a live/unlocated refusal and retain its actual PID/CWD diagnostic.
+The initial cause may remain unproven; never relax the ownership fence.
 `make lint`, `make collect-check` and `make test-count` remain required
 by the commit/completion policy. A focused pass is not a green full gate.
+The routed docs/specs/BEHAVIORAL_SPECS.md corpus is pinned historical source.
+Keep its index/shard bytes, SHA and original line-count assertions intact; current
+operational changes belong in the owning feature/AGENTS/this guide. Include the
+complete tests/unit/test_behavioral_spec_shards.py owner when this boundary is touched.
 
 ### Attribute a runtime timeout before changing source
 

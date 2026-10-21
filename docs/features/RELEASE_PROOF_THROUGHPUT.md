@@ -262,7 +262,8 @@ records74910 at1792531040.02602. Preserve the raw history copy
 The complete original six-fixture node then passes unchanged1/32.97s,
 native34.0s under existing run-watched; pw:browser91308 exits0 without a signal.
 Exact diagnostic log is .gate-logs/observed/v012-webkit-svg-diagnostic/v012-svg-webkit-e2912f5-20261020.log.
-The [bounded research proposal](/tmp/gludd-v012-webkit-svg-closure-proposal.md)
+The bounded research proposal at
+/tmp/gludd-v012-webkit-svg-closure-proposal.md
 retains firsthand lifecycle/reentrancy hypotheses; the actual watchdog evidence
 controls this repair. No collector, controller, assertion or engine is changed.
 
@@ -528,6 +529,29 @@ Original session-persistence/objective tests remain the verification owners and
 pass in the complete103-case cohort above. The current TASKS preamble now names
 seven native milestone items and labels older19-item source counts as history;
 no checkbox or status is changed.
+
+Seven active checklist lines still exceed the tool bound: roughly27,348tokens
+before10,000 displayed. Use the mandatory guide's native TASKS1-9/BUGS1-5 windows,
+complete ratchet/current SESSION and existing work-item/active-work-status owners.
+Actual7774 views retain S98.4/seven active/132backlog, no live audit workers and
+release_ready=false/gate_evidence=false. Read full selected criteria/owning feature;
+whole native ledger guards and all historical checklists/incidents retain authority.
+No extra observer/cache, shortened acceptance or measured cross-model parity.
+
+## Portable evidence links and actual hosted failure routing (2026-10-21 UTC)
+
+Published6161 Build39533219987 unit-2 job119007635547 fails both original Markdown
+link assertions at batch037. Its machine-local proposal path above is now plain
+provenance. The unchanged original nodes retain1FAIL/1PASS before and2PASS after.
+[Admission](INTEGRATION_ADMISSION.md#portable-evidence-links-and-actual-hosted-failure-routing-2026-10-21-utc)
+owns complete red/green paths, exact native job-log commands, literal PATTERN
+semantics, truncated-request history and the118/120/130-family promotion receipts.
+[Worker source/research](PRESENTATION_JAVASCRIPT_COVERAGE.md#preserve-absent-worker-inputs-at-the-native-make-boundary-2026-10-21-utc)
+and [B24 retention](GATE_RESOURCE_LIFECYCLE.md#b24-cleanup-checks-follow-actual-retirement-and-retained-refs-2026-10-21-utc)
+own their distinct repairs. Replay the whole Markdown owner; format/architecture
+checks alone did not detect these links. Native producers own current JSON;
+immutable summaries retain all eight shards/censored intervals, diagnostic only.
+Focused source acceptance supplies no full gate, hosted, deployment or task closure.
 
 ## Model-independent release operating path (2026-10-20)
 
