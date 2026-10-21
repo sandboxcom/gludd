@@ -582,8 +582,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.ledger_observation_exit_code = _cli_exit_code(lambda: _observe_ledger(args))
     status_rc = _cli_exit_code(lambda: _status(args)) if args.observe_ledger else _status(args)
     if args.observe_ledger and args.ledger_observation_exit_code:
-        print(f"pipeline-status: failure-ledger observation failed rc={args.ledger_observation_exit_code}")
-        return int(args.ledger_observation_exit_code)
+        ledger_rc = int(args.ledger_observation_exit_code)
+        try:
+            print(f"pipeline-status: failure-ledger observation failed rc={ledger_rc}")
+        except Exception:
+            try:
+                traceback.print_exc()
+            except Exception:
+                return ledger_rc
+        return ledger_rc
     return status_rc
 
 
