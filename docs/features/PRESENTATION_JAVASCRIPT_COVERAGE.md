@@ -113,6 +113,17 @@ deadline invariants, retained diagnostic profiles and long-lived practitioner
 research are in the [owning deck design](../presentation/DESIGN_revealjs_deck.md#serial-layout-and-independent-image-completion--2026-10-20).
 The original browser file and all5s/600s assertions remain unchanged.
 
+Original source03966b6d905cb8eb6dde118f3297f54993abb76f, parent
+84199e3f1a2ca1cb55e991d8640c4b4bcf54395c, has the same native Git patch identity
+as receiving53c1e2168c1c084f236b85818a3595a13d3b44d3. The complete two-file
+product is present in published6161e102eee998bf94407457ad3dde5d0e4ad459 and
+measured receiving0650c124f7246736dcac52da84be4ce25b909eaf. The original commit
+is outside receiving ancestry; its clean original branch/worktree remains
+retained under "unmerged worktree cannot be retired". Patch equivalence leaves
+that native retirement prerequisite unchanged. Preserve the original source;
+no duplicate integration or ancestry-only merge is needed. Exact source
+decision and native outputs: /tmp/gludd-v012-cold-render-integration-decision.md.
+
 The receiving checkout stays clean/frozen through three separate serial owners:
 
 | Native owner | Complete original acceptance | Measured readiness |

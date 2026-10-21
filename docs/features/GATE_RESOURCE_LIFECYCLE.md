@@ -2190,12 +2190,12 @@ A complete initial311 replay retains10FAIL/220PASS59.86s, observed61.7s/rc2. All
 
 Separate fixture prerequisite d69c4d6c113b89f934a1e1271c591f6ba91d7d1e passes all30 cases on311(2.45s/native3.4s) and312(3.30s/native4.6s), Ruff and strict typing. Its normal guarded collection reports127848/127872,24deselected,0errors50.15s/native55.8s including the unstaged additive product controls; it is not an immutable fixture-only acceptance claim. Full source commands and failures remain /tmp/gludd-v012-retirement-alias-plan-6161e10-report.md.
 
-Root owns documentation and receiving integration; release_note_integrity produces separate fixture d69c4d6c113b89f934a1e1271c591f6ba91d7d1e and product56d76bc75d24b6119574680b121563e18bbe550a on codex-v012-retirement-plan-6161e10-20261021 in the reused pipeline-status checkout. Complete230 cases pass on311(64.24s/native65.9s) and312(67.20s/native69.4s), zero skips. Unchanged config/coverage_workstream_prune.ini measures aggregate93.5line/85.8branch, prune92.0/84.4 and registry98.9/95.0;85/75 BOTH pass. Source audit is .gate-logs/coverage-20261021T024551Z.json. Normal product commit freshly collects127848/127872,24deselected,0errors45.63s/native52.3s. Native source state is clean; Git serializer returns to Root and the model owner is quiescent. Existing lease still protects that checkout until explicit completed-owner release. Independent exact-source approval is /tmp/gludd-v012-retirement-plan-source-review.md. Root's guarded no-commit merge receives both source commits without conflicts; complete receiving230PASS43.15s/native44.8s retains the same whole-file metrics in audit .gate-logs/coverage-20261021T025055Z.json and full report .gate-logs/coverage-retirement-alias-plan-receiving-56d76bc.json. Receiving Ruff3 and all three separate complete canonical strict scopes pass; eight complete documentation/tracking/incident owners pass110/3.96s. Normal receiving commit/collection and actual selected-owner retirement remain pending. A distinct plan for agent-v012-gate-admission-resume-20261019 correctly refuses "git worktree lock protects this owner"; no lock is discarded.
+Root owns documentation and receiving integration; release_note_integrity produces separate fixture d69c4d6c113b89f934a1e1271c591f6ba91d7d1e and product56d76bc75d24b6119574680b121563e18bbe550a on codex-v012-retirement-plan-6161e10-20261021 in the reused pipeline-status checkout. Complete230 cases pass on311(64.24s/native65.9s) and312(67.20s/native69.4s), zero skips. Unchanged config/coverage_workstream_prune.ini measures aggregate93.5line/85.8branch, prune92.0/84.4 and registry98.9/95.0;85/75 BOTH pass. Source audit is .gate-logs/coverage-20261021T024551Z.json. Normal product commit freshly collects127848/127872,24deselected,0errors45.63s/native52.3s. Native source state is clean; Git serializer returns to Root and the model owner is quiescent. That historical source lease was released only after producer completion and genuine receiving integration; its actual native retirement/evidence archive is recorded below. Independent exact-source approval is /tmp/gludd-v012-retirement-plan-source-review.md. Root's guarded no-commit merge receives both source commits without conflicts; complete receiving230PASS43.15s/native44.8s retains the same whole-file metrics in audit .gate-logs/coverage-20261021T025055Z.json and full report .gate-logs/coverage-retirement-alias-plan-receiving-56d76bc.json. Receiving Ruff3 and all three separate complete canonical strict scopes pass; eight complete documentation/tracking/incident owners pass110/3.96s. At that source-proof checkpoint, receiving commit/collection and actual retirement were pending; the subsequent0650/98de receipts and actual native retirement are recorded below. A distinct plan for agent-v012-gate-admission-resume-20261019 correctly refuses "git worktree lock protects this owner"; no lock is discarded.
 
 For later selected-owner cleanup:
 
 1. Resolve exact branch, clean HEAD and canonical path through native worktree-state/all-worktree-state. Retain dirty/unknown work and protected checkpoints.
-2. Confirm the source is integrated and published, its model owner has ended and no live process owns it. Release only that completed logical lease through the existing workstream-unregister owner.
+2. Confirm genuine native integration, completed logical/model production and absence of live users. Keep publication and Root's milestone proof obligations recorded separately; the unchanged native owner decides checkout eligibility. Release only that completed source lease through workstream-unregister. The earlier broad publication prerequisite in operating prose exceeded this owner's actual contract; no production guard is changed.
 3. Run documented selected-owner plan1 through agent-cleanup or wt-prune-safe with the real canonical path and existing registry. A successful plan must leave the target, ignored evidence, branch refs and registry unchanged.
 4. Only then use literal apply0 through the same owner. Actual application retains evidence archival, fresh fences and rollback. Preserve refs and checkpoints; no force removal or metadata reconstruction.
 5. Measure disk again. A plan, a removal or a new HEAD does not itself prove the95% capacity prerequisite.
@@ -2269,3 +2269,54 @@ history; implementation-looking bytes do not establish native ancestry.
 The old gate-admission owner remains Git-locked. No live removal, reclaimed
 bytes, capacity clearance, full gate, exact-SHA hosted/deployment, promotion or
 release-task closure follows from these repairs.
+
+## Actual completed-owner retirement and evidence location (2026-10-20)
+
+After source56d76bc and its separate d69 fixture prerequisite are genuinely
+merged into0650, all required source/receiving acceptance and normal commits
+are terminal. The source model also finishes its concrete original-Pages
+decision; it is quiescent. Root explicitly releases only that completed
+codex-v012-retirement-plan-6161e10-20261021 lease through the existing native
+workstream-unregister owner. Root retains the release milestone/proof ownership.
+
+The canonical selected-owner plan now returns status:planned,
+validate_only:true,native_ownership_verified:1 at exact56d76bc, preserving
+all six checkpoints/unowned0. The same owner in literal apply0 then repeats
+identity/ownership/ancestry fences, visibly archives ignored evidence and
+natively removes only that selected clean materialization. Terminal return0
+reports status:removed,validate_only:false,native_ownership_verified:1.
+No force, unlock, branch deletion or policy exception is used.
+
+Actual native manifest, read back through make cat-file:
+
+~~~text
+.git/gludd-release-evidence/79a7b76110a3-56d76bc75d24b6119574680b121563e18bbe550a/manifest.json
+~~~
+
+The manifest records the exact branch/HEAD/original path and rehydrate identity.
+Its preserved paths include the prior pipeline/runtime/cleanup coverage audits,
+full reports, observed logs, CPU profiles and .gludd/branches. Source-local
+.gate-logs paths cited in older paragraphs now resolve under that archive;
+all external /tmp reports remain at their original paths. Native git-show-commit
+still resolves56d76bc and parentd69 with its exact two-file68insertions/1deletion.
+All six checkpoint identities remain verified before/after actual removal.
+
+Exact actual owner inputs:
+
+~~~console
+make agent-cleanup BRANCH=codex-v012-retirement-plan-6161e10-20261021 WORKTREE=/private/tmp/gludd-worktrees/codex-v012-pipeline-status-overhead-20261020 ACTIVE_WORKSTREAM_REGISTRY= AGENT_CLEANUP_VALIDATE_ONLY=0 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+The preceding successful plan uses the same inputs with literal1. A future
+owner must establish current eligibility again rather than reuse this receipt.
+Earlier broad prose coupled retirement to publication; the native contract
+requires genuine integration/completed ownership and its existing fences.
+Root clarifies that operating dependency without changing production policy.
+Publication, exact-SHA CI and release proof remain independent obligations.
+
+After removal make disk measures97%/7.5GiB available, remaining worktrees1.4GiB
+and Git581MiB including retained evidence. This is an actual footprint
+observation, not an exact reclaimed-byte attribution or95% clearance.
+Keep the original03966 Pages materialization under its native ancestry refusal,
+the locked gate-admission owner, dirty/unknown work and all checkpoints.
+No unchanged final-admission/full-gate retry follows from disk still97%.

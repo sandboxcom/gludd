@@ -681,6 +681,7 @@ help:
 		"  git-log               Show recent commits" \
 		"  git-show-commit C=<sha>  Show hash, parents, committer time, subject, and files" \
 		"  git-show-full SHA=<sha>  Show a host-independent canonical patch" \
+		"  git-is-ancestor A=<commit> B=<commit>  Print and retain native Git ancestry status" \
 		"  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity" \
 		"  branches-unmerged-development  List every local branch tip not reachable from development" \
 		"  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON" \

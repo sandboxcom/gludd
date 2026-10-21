@@ -744,11 +744,17 @@ git-mv:
 	@rm -f "$(TO)"
 	@git mv "$(FROM)" "$(TO)" && echo "git-moved: $(FROM) -> $(TO)"
 
-# Read-only ancestor check: exit=0 means A is a strict ancestor of B (ff-only valid).
+# Literal commit arguments must not expand while Make builds the child environment.
+ifneq ($(filter git-is-ancestor,$(MAKECMDGOALS)),)
+unexport A B
+endif
+
+# Read-only ancestry check, including identical commits. Print and retain native status.
 # Usage: make git-is-ancestor A=<commit> B=<commit>
 git-is-ancestor:
-	@[ -n "$(A)" ] && [ -n "$(B)" ] || { echo "Usage: make git-is-ancestor A=<commit> B=<commit>"; exit 1; }
-	@git merge-base --is-ancestor $(A) $(B); echo "exit=$$?"
+	@[ -n '$(subst ','"'"',$(value A))' ] && [ -n '$(subst ','"'"',$(value B))' ] || { echo "Usage: make git-is-ancestor A=<commit> B=<commit>"; exit 1; }
+	@ANCESTRY_STATUS=0; git merge-base --is-ancestor -- '$(subst ','"'"',$(value A))' '$(subst ','"'"',$(value B))' || ANCESTRY_STATUS=$$?; \
+		printf 'exit=%s\n' "$$ANCESTRY_STATUS"; exit "$$ANCESTRY_STATUS"
 
 # Read-only rev-list counts for ff-only check.
 # Usage: make git-revlist-count A=<old> B=<new>

@@ -285,6 +285,20 @@ filing succeeds; do not invent one if the daemon is unavailable. Keep credential
 out of request prose and shell arguments; use existing module authentication.
 This entrypoint grants no additional permission or release authority.
 
+### Read native Git diagnostic status correctly
+
+~~~console
+make git-is-ancestor A=HEAD B=HEAD
+~~~
+
+Both literal commit inputs are required. Git0 means ancestry, including equal
+commits;1 means non-ancestry; other nonzero means an error. Make reports2 for a
+failed recipe and preserves the native exit=N/ErrorN diagnostics. The [owning
+native-input record](../../docs/features/NATIVE_REVIEWED_HEAD_INPUTS.md#read-only-ancestry-status-and-literal-inputs-2026-10-20)
+retains failing-first controls, safe argument transport and full-source proof.
+Keep patch equivalence, actual ancestry, cleanup eligibility and authenticated
+release proof distinct. Follow the existing release/promotion owners above.
+
 ### Other supported work
 
 Use `make search PATTERN=regex SEARCH_PATH=directory-or-file` for bounded
@@ -315,9 +329,11 @@ argv check does not establish that a valid plan works.
 
 Resolve the exact branch, clean HEAD and canonical absolute path through
 worktree-state/all-worktree-state. macOS may register /private/tmp when the
-supplied /tmp path resolves there; use the native identity. Confirm integration,
-publication, ended model ownership and absence of live users before releasing
-only that completed lease through the existing owner:
+supplied /tmp path resolves there; use the native identity. Confirm genuine
+integration, completed logical/model production and absence of live users before
+releasing only that completed source lease through the existing owner. Root's
+milestone, publication and exact-SHA release obligations remain recorded
+separately; the unchanged native cleanup owner supplies checkout eligibility:
 
 ~~~text
 make workstream-unregister BRANCH=actual-completed-branch ACTIVE_WORKSTREAM_REGISTRY=''

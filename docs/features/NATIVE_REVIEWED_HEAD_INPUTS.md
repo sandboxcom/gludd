@@ -680,3 +680,76 @@ After frozen-source acceptance, review and integration, Root owns the original
 unchanged canonical admission, ordinary guarded development push and final
 native release proofs. Reduced native operation counts do not establish
 wall-time savings, hosted margin, passing admission or release readiness.
+
+## Read-only ancestry status and literal inputs (2026-10-20)
+
+Actual full-Make git-is-ancestor with A=98de284528ce1be381ab93610d8d29be132d4c6e
+and B=6161e102eee998bf94407457ad3dde5d0e4ad459 prints exit=1 but returns0.
+The recipe's final echo hides both a genuine non-ancestor and native Git errors.
+That contradicts the status expected by an agent choosing a merge action.
+
+Twenty-four additive native fixture cases preserve all nine original
+development-merge-forward assertions. Same/ancestor/non-ancestor/invalid refs,
+both A/B positions, ordinary Make/-e, literal GNU/shell/quote payloads and a
+leading option are exercised inside real isolated Git repositories. They first
+retain20FAIL/4PASS/9deselected4.82s, observed6.0s/rc2. Failures include false
+success and confined tripwire creation. Raw /tmp/gludd-v012-ancestry-target-red.log
+and .xml remain immutable; no live checkout executes hostile inputs.
+
+The existing Make owner keeps both arguments literal with GNU Make value,
+the established single-quote codec and goal-scoped unexportA/B. Git's native
+option terminator precedes both arguments. The same shell captures Git's
+status immediately and exits with it after retaining the existing exit=N
+diagnostic. Same commits are valid ancestry. No new parser, wrapper script,
+Git client, cache or promotion authority is introduced.
+
+Git0 means ancestry;1 means non-ancestry; another nonzero identifies an error.
+Make itself reports2 for a failed recipe while retaining native Error1/128
+and exit=N. Check the complete observation. This read-only helper produces
+diagnostic ancestry facts; the existing authenticated integration, cleanup,
+gate, CI and promotion owners retain their own authority.
+
+The target is registered with explicit A/B and the no-mutation behavior:
+
+~~~console
+make git-is-ancestor A=HEAD B=HEAD
+~~~
+
+Actual full-Make example returns0/exit=0. The same negative immutable98de→6161
+witness now returns2/exit=1/Error1. Initial complete-source execution retains
+1FAIL/102PASS11.29s, observed12.4s: the original contract checker refuses the
+missing make-help row after registration. Root adds that actual discovery row;
+the checker/assertions remain unchanged. Ruff's initial I001 is corrected by
+using the project's existing scripts-import grouping; no suppression is added.
+
+Final three complete owners, development-merge-forward/native controls,
+fixture namespace and Make contract, pass103 cases on311 in15.47s/native16.8s
+and312 in16.95s/native18.5s, fatal warnings/zero skips. Ruff and complete
+strict owner typing pass. Contract validation reports270 targets; lint-make
+retains1166definitions/zero duplicates and9CI/12local phase parity.
+The native line guard initially refuses the contract catalog at2501lines;
+compacting only the new JSON entry retains identical values and the unchanged
+<2500policy. Eight complete documentation/tracking/incident owners pass110cases
+in3.95s/native5.0s. No Python production source or coverage profile changes;
+existing85/75 BOTH and complete release-proof requirements remain.
+
+Exact final311 command, with the installed registered runtime:
+
+~~~console
+make run-watched WORK_ITEM_ID=S98.4 CMD='make test-files TESTFILES="tests/unit/test_development_merge_forward_targets.py tests/unit/test_pytest_param_fixture_collisions.py tests/unit/test_make_target_contract.py" PYTEST_ARGS="-q -W error -n 0 --tb=short --junitxml=/tmp/gludd-v012-ancestry-target-final311.xml" UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never' OBSERVED_LABEL=v012-ancestry-target RUN_ID=v012-ancestry-final311-98de284-20261021 STALL_SECS=60 MAX_SECS=180 LOG=/tmp/gludd-v012-ancestry-target-final311.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=15 OBSERVED_RETAIN_RUNS=20 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+The312 replay uses the same three complete TESTFILES/arguments/bounds,
+python-3.12 for both environment paths, UV_PYTHON=3.12.15, and final312 in
+RUN_ID, LOG and JUnit. Retain /tmp/gludd-v012-ancestry-target-final312.log/.xml.
+These focused receipts do not supply the next commit/collection, full gate,
+exact-SHA hosted/deployment or any release-task closure.
+
+Research rechecked the [Git contract](https://git-scm.com/docs/git-merge-base),
+[GNU Make environment expansion](https://www.gnu.org/software/make/manual/make.html#Variables_002fRecursion)
+and [firsthand2014 status report](https://unix.stackexchange.com/questions/153763/dont-stop-makeing-if-a-command-fails-but-check-exit-status).
+The reporter demonstrates false success after observing status in a separate
+recipe shell. GNU documents expansion side effects when exporting variables;
+the indexed full manual supplies that section after its direct page times out.
+These sources support immediate same-shell capture and literal inputs. They
+supply no Gludd failure diagnosis beyond the native witnesses above.

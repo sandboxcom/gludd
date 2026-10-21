@@ -8,11 +8,17 @@ worktree merge fan-in path.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
+import pytest
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_worktree_retirement import git as native_git
+
+pytest_plugins = ("tests.unit.test_worktree_retirement",)
 ROOT = Path(__file__).resolve().parents[2]
 
 _TARGET_RE = r"^(?P<name>%s):\n(?P<recipe>(?:\t.*(?:\n|$))+)"
@@ -100,3 +106,67 @@ def test_agent_merge_dev_exists_and_uses_no_ff() -> None:
     assert "git checkout development" in recipe
     assert "git merge --no-ff" in recipe
     assert "into development" in recipe
+
+
+def _ancestry_make(
+    root: Path, first: str, second: str, environment_overrides: bool,
+) -> subprocess.CompletedProcess[str]:
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key not in {"MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS", "MAKELEVEL"}
+    }
+    return subprocess.run(
+        [
+            "make", "--no-print-directory", *(["-e"] if environment_overrides else []),
+            "-f", str(ROOT / "make/20-recovery-and-git.mk"),
+            "git-is-ancestor", f"A={first}", f"B={second}",
+        ],
+        cwd=root, env=environment, check=False, capture_output=True, text=True, timeout=30,
+    )
+
+
+@pytest.mark.parametrize("environment_overrides", [False, True])
+@pytest.mark.parametrize("commit_relationship", ["same", "ancestor", "not-ancestor", "invalid"])
+def test_ancestry_target_propagates_native_git_status(
+    checkout: tuple[Path, Path, Path], environment_overrides: bool, commit_relationship: str,
+) -> None:
+    root, _target, _registry = checkout
+    older = native_git(root, "rev-parse", "HEAD^").strip()
+    newer = native_git(root, "rev-parse", "HEAD").strip()
+    first, second = {
+        "same": (newer, newer), "ancestor": (older, newer),
+        "not-ancestor": (newer, older), "invalid": ("refs/heads/absent-ancestry-fixture", newer),
+    }[commit_relationship]
+    native = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", "--", first, second],
+        cwd=root, check=False, capture_output=True, text=True, timeout=30,
+    )
+    before_refs = native_git(root, "show-ref")
+    before_status = native_git(root, "status", "--porcelain=v1")
+    result = _ancestry_make(root, first, second, environment_overrides)
+    assert result.returncode == (0 if native.returncode == 0 else 2), result.stdout + result.stderr
+    assert f"exit={native.returncode}\n" in result.stdout
+    if native.returncode:
+        assert f"Error {native.returncode}" in result.stderr
+    assert native_git(root, "show-ref") == before_refs
+    assert native_git(root, "status", "--porcelain=v1") == before_status
+
+
+@pytest.mark.parametrize("environment_overrides", [False, True])
+@pytest.mark.parametrize("git_ref_field", ["A", "B"])
+@pytest.mark.parametrize(
+    "git_ref_value",
+    ["$(shell touch TRIPWIRE)", "`touch TRIPWIRE`", '"; touch TRIPWIRE; #', "--not-an-option"],
+)
+def test_ancestry_target_keeps_commit_arguments_literal(
+    checkout: tuple[Path, Path, Path], environment_overrides: bool, git_ref_field: str, git_ref_value: str,
+) -> None:
+    root, _target, _registry = checkout
+    first, second = (git_ref_value, "HEAD") if git_ref_field == "A" else ("HEAD", git_ref_value)
+    before_refs = native_git(root, "show-ref")
+    result = _ancestry_make(root, first, second, environment_overrides)
+    assert not (root / "TRIPWIRE").exists(), result.stdout + result.stderr
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "exit=128\n" in result.stdout
+    assert "Error 128" in result.stderr
+    assert native_git(root, "show-ref") == before_refs

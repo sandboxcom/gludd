@@ -1642,6 +1642,7 @@
       ],
       "behavior": "make git-show-full SHA=e4c9b68aea0ff59cab77a06747471e248e9e0601"
     },
+    {"name": "git-is-ancestor", "make_variables": ["A", "B"], "behavior": "make git-is-ancestor A=HEAD B=HEAD"},
     {
       "name": "git-patch-equivalence",
       "make_variables": [
