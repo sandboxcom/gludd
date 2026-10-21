@@ -256,6 +256,21 @@ The documented validate-only behavior remains offline planning; its fabricated
 PASS rows grant no native repair, CI, gate or release authority. A local repair receipt can permit a development
 push; it does not supply hosted success, deployment acceptance or release proof.
 
+The edd9 receiving attempt instrumented all35 complete repair owners and timed
+out at240.6s during the final worktree owner; it recorded no repair receipt.
+For its successor, retain all35 owners in test-files under run-watched with the
+same240-second bound, and run the13 complete readiness owners through
+coverage-files/config/coverage_v012_readiness.ini separately with a90-second
+bound. Bind both to the same clean immutable SHA and retain their distinct logs.
+This changes the instrumented workload while keeping every acceptance owner,
+all five complete source files and both85/75 coverage metrics. The
+[receiving record](../../docs/features/INTEGRATION_ADMISSION.md#bounded-receiving-proof-after-instrumented-timeout-2026-10-21-utc)
+owns exact scope and results. Use public run-watched as the native repair
+evidence target for the complete35-owner command; do not record a receipt from
+collection, a plan or an incomplete timed-out coverage run. Preserve each
+terminal result before the next lifecycle cohort. Final gate/global coverage
+and exact-SHA release proof remain separate.
+
 ### Commit, integrate and promote through their owners
 
 After integration, accept the complete changed owners and registered whole-file

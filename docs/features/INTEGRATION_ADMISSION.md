@@ -207,6 +207,94 @@ files above75 for BOTH metrics. Preserve .gate-logs/coverage-20261021T051844Z.js
 this is source acceptance, not a clean repair receipt. Guarded collection/commit
 and an immutable successor source decision remain separate.
 
+## Route the review regression through native admission (2026-10-21 UTC)
+
+Promote the cheap deterministic compatibility failure into the existing first
+runtime child as process-inventory-python-module-forms. Its exact whole16-case
+function covers spaced/attached modules and audit roles; do not select a whole
+test file. The controlled routing replay first fails1/17 with16PASS1.11s/native2.0s;
+retain /tmp/gludd-v012-compact-module-route-red.log/XML. Append this one family
+after all130 predecessor records, preserving every earlier identity/order/selector.
+Update the independent literal total to131 in both existing test modules, their
+full literal wiring/ROSTER and the actual Make/manifest together. Keep the
+original first setuid node, three2/1/1 children,90total/60quiet,21phases2850 and
+mandatory full gate. The five complete admission/contract owners pass 311 cases
+on Python 3.11 in 92.19s/native93.6s and Python 3.12 in 94.75s/native96.2s, with
+fatal warnings and zero skips/errors. Preserve
+/tmp/gludd-v012-131-family-whole-3.11.log/XML and312 equivalent. The documented
+promotion checker passes all four original pins in1.87s;270 Make contracts,
+Ruff and the separate strict test scope pass. This remains wiring/source
+acceptance until the actual original90/60 bounded native execution.
+
+## Bounded receiving proof after instrumented timeout (2026-10-21 UTC)
+
+The first clean repair-owned replay at edd9a0348105129696a18ead986f913cb6c4b620
+selects the exact six hosted families and all35 complete owners under
+coverage-files. Native run20261021T051040Z-97994-b3899acd collects1338, reaches the
+final worktree lifecycle owner, then terminates timed_out/124 at240.6s. Make
+returns2 and ci-failure-repair records no receipt. Preserve the entire native
+.gate-logs/observed/coverage-files/20261021T051040Z-97994-b3899acd.log and status.
+No complete pytest/XML/coverage success is inferred from its99% progress.
+
+The actual changed input is instrumentation scope: retain all35 whole owners
+under the existing test-files/run-watched240-second execution, and separately
+run the following13 whole owners through the existing coverage-files90-second
+execution. Both execute at one clean immutable successor SHA, with fatal warnings,
+serial pytest, unchanged source files and85aggregate/75each line AND branch.
+The prior603-case source checkpoint demonstrates the complete five-file scope in
+27.3s; it does not replace the clean successor execution. No deadline is widened,
+test/behavioral assertion removed, file partially measured or new runner/cache/
+observer introduced. Full gate/global coverage and exact-SHA proofs stay pending.
+
+Complete combined acceptance is the22 predecessor owners followed by these13
+readiness owners. Retain this literal set; no whole changed owner is dropped:
+
+~~~text
+tests/unit/test_gate_failure_promotion.py
+tests/unit/test_runtime_admission_scheduling.py
+tests/unit/test_admission_cold_start_selection.py
+tests/unit/test_integration_admission_target.py
+tests/unit/test_markdown_docs_deep.py
+tests/unit/test_documentation_integrity.py
+tests/unit/test_make_target_contract.py
+tests/unit/test_session_persistence_integration.py
+tests/unit/test_oversized_document_splits.py
+tests/unit/test_runbook_currency_native.py
+tests/unit/test_task_ledger_validation.py
+tests/unit/test_bugs_md_has_binary_crash_entry.py
+tests/unit/test_dc3_dc4_dc5_sections.py
+tests/unit/test_makefile_syntax.py
+tests/unit/test_makefile_layout.py
+tests/unit/test_makefile_targets_deep.py
+tests/unit/test_presentation_make_targets.py
+tests/unit/test_pytest_param_fixture_collisions.py
+tests/unit/test_branch_discipline_checks.py
+tests/unit/test_worktree_prune_preservation.py
+tests/unit/test_worktree_cleanup_targets.py
+tests/unit/test_behavioral_spec_shards.py
+tests/unit/test_agent_watchdog_lifecycle.py
+tests/unit/test_task_watchdog.py
+tests/unit/test_watchdog_singleton.py
+tests/unit/test_watchdog_component_behavior.py
+tests/unit/test_agent_watchdog_split_compat.py
+tests/unit/test_agent_watchdog.py
+tests/unit/test_watchdog.py
+tests/unit/test_watchdog_deep.py
+tests/unit/test_active_work_status.py
+tests/unit/test_active_work_resource_observability.py
+tests/unit/test_status_snapshot.py
+tests/unit/test_execution_adapter_protocols.py
+tests/unit/test_agent_worktree_targets.py
+~~~
+
+Coverage uses the final13 lines only, from test_agent_watchdog_lifecycle.py
+through test_agent_worktree_targets.py, with the checked-in five-source config.
+All35 still run in combined acceptance. Native ci-failure-repair binds that
+complete command through evidence-target=run-watched and structured quoted
+evidence variables; it validates clean SHA/selection before execution and
+SHA/cleanliness/fingerprints again before recording. Current observations remain
+owned by native producers. A local repair receipt permits no TASKS tick.
+
 ## Hosted worker and document failures move into existing admission (2026-10-21 UTC)
 
 The first six-repair checkpoint total120 retains all114 original families plus six exact hosted

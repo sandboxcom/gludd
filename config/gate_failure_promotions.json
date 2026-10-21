@@ -1069,6 +1069,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_task_watchdog.py::test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "process-inventory-python-module-forms",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_active_work_status.py::test_process_inventory_preserves_python_module_argument_forms",
+      "full_gate_phase": "test"
     }
   ]
 }

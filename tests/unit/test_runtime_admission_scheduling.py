@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 130
+EXPECTED_FAMILY_COUNT = 131
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 HELP = "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries"
@@ -152,6 +152,8 @@ ROSTER = (
     "test_agent_cleanup_removes_worktree[False]",
     "tests/unit/test_task_watchdog.py::"
     "test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True]",
+    "tests/unit/test_active_work_status.py::"
+    "test_process_inventory_preserves_python_module_argument_forms",
 )
 
 
