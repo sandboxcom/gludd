@@ -2,16 +2,16 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128736 selected / 128760 collected, 24 deselected, zero collection errors in56.55s/native63.545s during normal49bb1326bb8adf818d476ca3ade4751487735834 hooks. Native receipt: .gate-logs/observed/test-count/20261022T064554Z-890-82da95ff.{log,json}. Collection is separate from behavioral and final-gate proof; rejected621 and older6e8, daf, eb6,3e8,e5/bd3,f36/815 collections retain their own refs. Uncommitted receiving admission/fixture work requires its own collection.
+Total tests: 128738 selected / 128762 collected, 24 deselected, zero collection errors in51.42s/native57.111s during normal41b8ea255b23dc309f8d0114ff56ea3174ba2ee6 hooks. Native receipt: .gate-logs/observed/test-count/20261022T094532Z-66298-af7e9c5f.{log,json}. Collection is separate from behavioral and final-gate proof;49bb, rejected621 and older collections retain their own refs. Uncommitted Make/helper receiving work requires its own normal collection.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 Git-mutex task-handoff repair
+## Reviewed mutex source and current S98.4 Make receiving
 
 Root owns release-candidate/v012-git-mutex-20261022 at reviewed exact
-49bb1326bb8adf818d476ca3ade4751487735834, descending from rejected
+41b8ea255b23dc309f8d0114ff56ea3174ba2ee6, descending from reviewed49bb and rejected
 62151e62d048c2f425cdc016f682da86ab9e15f6 against development
 82db11b57b254c1ca1e035975b5cc86253e2fed5, using the existing canonical checkout.
 The [mutex record](docs/features/GIT_REPOSITORY_MUTEX.md#task-handoff-correction-after-independent-rejection-2026-10-22-utc)
@@ -46,15 +46,42 @@ files,12-path registration, native SESSION mode1 and unchanged line ceiling pass
 The operating scope retains sandbox2FAIL/122PASS from native process-inspection
 refusal, then passes124/10.45s/native12.0s through authorized host Make at
 /tmp/gludd-v012-git-handoff-admission-docs-host.{log,xml}; no fence is weakened.
-Fresh normal receiving collection and independent source review remain pending;
-this focused observer never certifies original90/60.
-The publication_repair_design model owner produces only a separate confined
-merge-helper proposal; Root stays Main/shared/Git writer. Preserve its unknown
-index.lock cause, refused approaches and ignored-file tests. No lock deletion
-or unchanged retry. Retain all154 early families; promote cheap regressions
-through that existing owner before final proof. Capacity97/6.7GiB, original60907,
-final gate/global coverage and all exact-SHA release proofs remain blocked;
-all seven task states stay open.
+Normal41b collection is recorded above. Independent APPROVE SOURCE ONLY against
+49bb is fully read at /tmp/gludd-v012-git-handoff-admission-41-source-review.md.
+This441-case diagnostic never certifies original90/60. Accepted source stays frozen.
+Root now receives the coupled native merge/helper and outcome-guidance repair;
+publication_repair_design and watchdog_coverage_source_decision model owners
+returned concrete private code/decision artifacts and are quiescent. No agent PID
+is inferred. Root remains the sole Main/shared/Git writer.
+The [merge feature](docs/features/GIT_MERGE_NO_COMMIT.md) retains unknown index.lock
+cause, private38/57/74 controls, receiving28FAIL/namesake1FAIL and87PASS each runtime.
+Git guidance retains5FAIL->5PASS; the [result feature](docs/features/MAKE_RESULT_GUIDANCE.md)
+retains Make8FAIL->8PASS and canonical/native checker25FAIL/2PASS->27PASS.
+Four routing REDs precede157-160 after156 predecessors; all six canonical pins
+pass6/1.91s terminal0 at that earlier scope. The614-case coverage replay retains
+2FAIL/612PASS205.47s/native207.0s for a missing copyable guide command and Python
+recipe lines mistaken for Make assignments. Fixtures retain a separate6FAIL/
+IndentationError, then2FAIL/4PASS1.09s semantic RED. Two guard-context lines preserve
+original20-limit assertions; guide/control green is8PASS0.77s. Two routing REDs
+precede161/162. Eight current cheap pins retain six predecessors and pass8/1.87s
+terminal0. Original2/1/1,90/60,21/2850 and85/75 BOTH remain.
+AGENTS/Make guide codify cheap-first feedback, two-compatible-item pilot,
+deduplicated complete-owner acceptance, terminal child draining and mandatory
+per-commit collection. The complete contract checker joins the retained complete
+promotion checker in the existing canonical source coverage profile.
+Stable source/consumer/merge scopes pass209/417/92 per installed runtime. Native
+coverage audit .gate-logs/coverage-20261022T103826Z.json measures95.2line/90.2branch
+across both complete canonical checkers, each above75 BOTH. Operating passes122
+per runtime,3115.68s/native6.5s and3129.68s/native10.8s. The result feature retains the
+actual receipt paths and separate diagnostic envelopes. Cheap contracts/Make/
+Markdown/registration/SESSION/line checks and strict scopes/Ruff pass; the native
+installed314 Node owner passes6/9.46s separately. Next: finish receiving evidence,
+normal guarded source commit, freeze/readback and independent exact-source review. Do not replay accepted41b
+mid-repair or mint current proof from historical receipts. The documented
+git-merge-nc BR='' behavior deliberately refuses2 and makes no mutation.
+Capacity97percent/7.8GiB, original60907, original runtime replay, canonical full
+gate/global coverage and every exact-SHA release proof remain pending; all seven
+task states stay open. No lock deletion, real cleanup or unchanged failed retry.
 
 ## Reviewed S98.4 exact shared-cache inventory repair
 

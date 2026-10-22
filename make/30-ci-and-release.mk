@@ -1,3 +1,8 @@
+# Keep no-commit merge branch data literal before startup or export children.
+override GLUDD_GIT_MERGE_NC_BR := $(value BR)
+export GLUDD_GIT_MERGE_NC_BR
+unexport BR
+
 # Item 17: Poll CI until green with periodic heartbeat
 ci-wait:
 	@INTERVAL=$${CI_WAIT_INTERVAL:-60}; MAX_WAIT=$${CI_WAIT_MAX:-3600}; ELAPSED=0; \
@@ -809,17 +814,81 @@ wt-prune-safe:
 		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))') \
 		$(if $(filter 1,$(value WT_PRUNE_VALIDATE_ONLY)),--validate-only))
 
-# Read-only: which feature/* branches still have work NOT yet in master (the real
-# integration backlog). A branch absent here is already merged.
-# Merge a branch into the working tree WITHOUT committing (so its changes can be
-# gated together with other staged work, then committed once). Aborts cleanly on
-# conflict. Usage: make git-merge-nc BR=feature/xxx
+# Prepare a no-commit merge only from a clean checkout without an existing merge.
+# Keep caller work/checkpoints intact; abort only a newly opened matching conflict.
+# Refuse branch merge options/external drivers before preflight; merge with native ort.
+# Usage: make git-merge-nc BR=feature/xxx
+.PHONY: git-merge-nc
+git-merge-nc: override GLUDD_GIT_MERGE_NC_BR = $(value BR)
 git-merge-nc:
-	@[ -n "$(BR)" ] || { echo "Usage: make git-merge-nc BR=feature/xxx"; exit 1; }
-	@git merge --no-ff --no-commit "$(BR)" && echo "merged (uncommitted): $(BR)" || { echo "MERGE CONFLICT — aborting"; git merge --abort; exit 1; }
+	@gludd_merge_next() { \
+		if [ "$$1" = passed ]; then \
+			printf 'AGENT_NEXT target=git-merge-nc outcome=%s phase=%s gate_evidence=false release_ready=false: Inspect owned FILES with make git-diff-full, then run complete affected Make test owners and normal collection before commit.\n' "$$1" "$$2" >&2; \
+		else \
+			printf 'AGENT_NEXT target=git-merge-nc outcome=%s phase=%s gate_evidence=false release_ready=false: Inspect make worktree-state; preserve owned state and repair the reported input before retrying. Required gate and exact-SHA proofs remain pending.\n' "$$1" "$$2" >&2; \
+		fi; \
+	}; \
+	[ -n "$$GLUDD_GIT_MERGE_NC_BR" ] || { echo "Usage: make git-merge-nc BR=feature/xxx" >&2; gludd_merge_next refused usage; exit 2; }; \
+	MERGE_HEAD_PATH=$$(git rev-parse --git-path MERGE_HEAD) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed metadata; exit "$$MERGE_CHECK_STATUS"; }; \
+	MERGE_AUTOSTASH_PATH=$$(git rev-parse --git-path MERGE_AUTOSTASH) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed metadata; exit "$$MERGE_CHECK_STATUS"; }; \
+	if [ -e "$$MERGE_HEAD_PATH" ] || [ -L "$$MERGE_HEAD_PATH" ] || \
+		[ -e "$$MERGE_AUTOSTASH_PATH" ] || [ -L "$$MERGE_AUTOSTASH_PATH" ]; then \
+		echo "GIT_MERGE_NC_REFUSED existing merge/autostash state" >&2; gludd_merge_next refused existing; exit 2; \
+	fi; \
+	MERGE_WORK_STATUS=$$(git --no-optional-locks status --porcelain=v1 --untracked-files=all --ignore-submodules=none) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed worktree; exit "$$MERGE_CHECK_STATUS"; }; \
+	if [ -n "$$MERGE_WORK_STATUS" ]; then \
+		echo "GIT_MERGE_NC_REFUSED dirty index/worktree/untracked files" >&2; gludd_merge_next refused worktree; exit 2; \
+	fi; \
+	MERGE_START_HEAD=$$(git rev-parse --verify HEAD) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed reference; exit "$$MERGE_CHECK_STATUS"; }; \
+	MERGE_TARGET=$$(git rev-parse --verify --end-of-options "$$GLUDD_GIT_MERGE_NC_BR^{commit}") || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed reference; exit "$$MERGE_CHECK_STATUS"; }; \
+	$(or $(PYTHON),python3) -c 'import os, subprocess, sys; from pathlib import PurePosixPath; \
+	branch_result = subprocess.run(["git", "--no-optional-locks", "symbolic-ref", "--quiet", "HEAD"], stdout=subprocess.PIPE, check=False); \
+	branch_result.returncode not in (0, 1) and sys.exit(128 - branch_result.returncode if branch_result.returncode < 0 else branch_result.returncode); \
+	branch_name = os.fsdecode(branch_result.stdout.rstrip(b"\n")).removeprefix("refs/heads/"); \
+	options_result = subprocess.run(["git", "--no-optional-locks", "config", "get", "--null", "branch." + branch_name + ".mergeOptions"], stdout=subprocess.PIPE, check=False) if branch_result.returncode == 0 else None; \
+	options_result is not None and options_result.returncode not in (0, 1) and sys.exit(128 - options_result.returncode if options_result.returncode < 0 else options_result.returncode); \
+	options_result is not None and options_result.returncode == 0 and options_result.stdout != b"\0" and (print("GIT_MERGE_NC_REFUSED branch mergeOptions", file=sys.stderr), sys.exit(2)); \
+	driver_result = subprocess.run(["git", "--no-optional-locks", "config", "get", "--all", "--name-only", "--null", "--regexp", r"^merge\..*\.driver$$"], stdout=subprocess.PIPE, check=False); \
+	driver_result.returncode not in (0, 1) and sys.exit(128 - driver_result.returncode if driver_result.returncode < 0 else driver_result.returncode); \
+	driver_result.returncode == 0 and (print("GIT_MERGE_NC_REFUSED configured merge driver", file=sys.stderr), sys.exit(2)); \
+	merge_result = subprocess.run(["git", "--no-optional-locks", "merge-tree", "--write-tree", "--no-messages", "--name-only", "-z", sys.argv[1], sys.argv[2]], stdout=subprocess.PIPE, check=False); \
+	merge_result.returncode not in (0, 1) and sys.exit(128 - merge_result.returncode if merge_result.returncode < 0 else merge_result.returncode); \
+	tree_oid, tree_separator, _ = merge_result.stdout.partition(b"\0"); \
+	tree_separator or (print("GIT_MERGE_NC_REFUSED invalid merge-tree result", file=sys.stderr), sys.exit(2)); \
+	tree_result = subprocess.run(["git", "--no-optional-locks", "rev-parse", "--verify", "--end-of-options", os.fsdecode(tree_oid) + "^{tree}"], stdout=subprocess.PIPE, check=False); \
+	tree_result.returncode and sys.exit(128 - tree_result.returncode if tree_result.returncode < 0 else tree_result.returncode); \
+	incoming_result = subprocess.run(["git", "--no-optional-locks", "diff-tree", "--no-commit-id", "-r", "-z", "--name-only", "--no-renames", "--diff-filter=AMT", sys.argv[1], os.fsdecode(tree_result.stdout.strip()), "--"], stdout=subprocess.PIPE, check=False); \
+	incoming_result.returncode and sys.exit(128 - incoming_result.returncode if incoming_result.returncode < 0 else incoming_result.returncode); \
+	ignored_result = subprocess.run(["git", "--no-optional-locks", "ls-files", "-z", "--full-name", "--others", "--ignored", "--exclude-standard"], stdout=subprocess.PIPE, check=False); \
+	ignored_result.returncode and sys.exit(128 - ignored_result.returncode if ignored_result.returncode < 0 else ignored_result.returncode); \
+	incoming = {PurePosixPath(os.fsdecode(item)) for item in incoming_result.stdout.split(b"\0") if item}; \
+	ignored = {PurePosixPath(os.fsdecode(item)) for item in ignored_result.stdout.split(b"\0") if item}; \
+	collision = bool((incoming & ignored) or (incoming & {parent for path in ignored for parent in path.parents}) or (ignored & {parent for path in incoming for parent in path.parents})); \
+	collision and print("GIT_MERGE_NC_REFUSED ignored checkpoint collision", file=sys.stderr); sys.exit(2 if collision else 0)' "$$MERGE_START_HEAD" "$$MERGE_TARGET" || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed preflight; exit "$$MERGE_CHECK_STATUS"; }; \
+	if git -c merge.autoStash=false merge --strategy=ort --no-autostash --no-ff --no-commit --no-overwrite-ignore -- "$$MERGE_TARGET"; then \
+		printf 'merged (uncommitted): %s\n' "$$GLUDD_GIT_MERGE_NC_BR" || exit $$?; gludd_merge_next passed merge; exit $$?; \
+	else MERGE_STATUS=$$?; fi; \
+	printf 'GIT_MERGE_NC_FAILED merge_exit=%s\n' "$$MERGE_STATUS" >&2; \
+	if [ "$$MERGE_STATUS" -eq 1 ] && [ -f "$$MERGE_HEAD_PATH" ] && \
+		[ ! -L "$$MERGE_HEAD_PATH" ] && [ ! -e "$$MERGE_AUTOSTASH_PATH" ] && [ ! -L "$$MERGE_AUTOSTASH_PATH" ]; then \
+		MERGE_CURRENT_HEAD=$$(git rev-parse --verify HEAD) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed ownership; exit "$$MERGE_CHECK_STATUS"; }; \
+		MERGE_OPENED_TARGET=$$(git rev-parse --verify MERGE_HEAD) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed ownership; exit "$$MERGE_CHECK_STATUS"; }; \
+		if [ "$$MERGE_CURRENT_HEAD" = "$$MERGE_START_HEAD" ] && [ "$$MERGE_OPENED_TARGET" = "$$MERGE_TARGET" ]; then \
+			if git -c merge.autoStash=false merge --abort; then \
+				printf 'GIT_MERGE_NC_ABORTED merge_exit=%s abort_exit=0\n' "$$MERGE_STATUS" >&2; \
+			else \
+				MERGE_ABORT_STATUS=$$?; \
+				printf 'GIT_MERGE_NC_ABORT_FAILED merge_exit=%s abort_exit=%s\n' "$$MERGE_STATUS" "$$MERGE_ABORT_STATUS" >&2; \
+				gludd_merge_next failed abort; exit "$$MERGE_ABORT_STATUS"; \
+			fi; \
+		else echo "GIT_MERGE_NC_STATE_RETAINED merge ownership mismatch" >&2; fi; \
+	fi; \
+	gludd_merge_next failed merge; exit "$$MERGE_STATUS"
 
 # Selected merged owners retire through agent-cleanup or wt-prune-safe.
 # The historical force-prune recipe is intentionally unavailable.
+# Read-only: which feature/* branches still have work not yet in master.
+# A branch absent here is already merged.
 branches-unmerged:
 	@git branch --no-merged master | sed 's/^[+* ]*//' | grep -E '^(feature/|worktree-agent-)' | grep -v worktree-agent || echo "(all feature branches merged)"
 

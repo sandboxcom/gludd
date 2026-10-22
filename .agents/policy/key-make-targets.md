@@ -141,12 +141,55 @@ actual child config assertions and every native outcome retained.
 
 | Current input | Next action |
 |---|---|
-| Capacity, runtime, configuration or ownership prerequisite fails | Repair the named input and run its focused acceptance. |
-| Focused tests pass | Run each complete changed test owner, lint and strict typing; collect before committing. |
-| A Make recipe or variable changes | Run `make check-make-target-contract` and the contract's behavioral example. |
-| Source is reviewed and prerequisites pass | Freeze one candidate for combined acceptance, full gate and exact-SHA hosted CI. |
-| Local or hosted proof fails | Preserve its receipt and log; change the actual failing input before retrying. |
-| Gate and required exact-SHA proofs pass | Record task evidence and use the guarded promotion owner from the canonical main checkout. |
+| A repair or run already has an owner | Consume its existing terminal receipt before starting another execution. |
+| Capacity, runtime, configuration or ownership fails | Repair the actual input; preserve the refusal before another final proof attempt. |
+| A source boundary lacks failing-first evidence | Run its narrow real failing selector, then repair code and permanent controls. |
+| Source/tests or Make wiring change | Run lint-files, separate typecheck-scope, line and target-contract checks before broad positives. Retain documented behavior and fixture-boundary acceptance. After promotion edits, drain all eight current check-gate-failure-promotions pins to terminal0 first; retain all six predecessors. |
+| Cheap checks pass | Run complete changed owners and required callers; a whole-owner positive covers its failing subset. |
+| A compatible implemented batch stabilizes | Run the deduplicated complete-owner union and unchanged coverage profiles per required runtime; retain normal guarded commit collection. |
+| Local or hosted proof fails | Preserve receipt/log and repair its actual input before retrying that owner. |
+| Reviewable source/docs and actual prerequisites clear | Run release-proof-admission mode0, freeze once, obtain independent review, then combined acceptance/full gate/exact-SHA hosted and deployment proof. |
+| Gate and every required exact-SHA proof pass | Record each item's evidence and use guarded promotion from the canonical main checkout. |
+
+### Batch already implemented release work
+
+Start with two compatible, already implemented current-release items when both
+are ready; one is valid. This is a conservative pilot, not a measured optimum.
+Keep immediate item-level feedback, original criteria, one proof owner and
+missing-proof record per item through existing work-item/native observations.
+Keep one shared-file/Git writer and the existing concurrency limits.
+
+Retain small logical commits and mandatory per-commit collection. Carry a
+known review receipt into the next coherent change's owning guidance instead
+of adding recursive receipt-only commits. Do not wait for unrelated work to fill
+a batch or edit a frozen final-proof candidate.
+
+Skip only optional diagnostics already covered by a terminal complete receipt
+with matching tested code/tests and relevant Make/config/runtime/fixture inputs.
+Changed shared foundation or unknown impact requires affected consumers at the
+stable receiving point. This planning reuse supplies no current observation or
+cross-SHA gate/CI authority; native freshness guards remain mandatory.
+
+### Read outcome guidance before choosing another target
+
+The existing result owners emit short AGENT_NEXT prompts. They advise the next
+action; they do not execute it or create gate/release proof.
+
+| Target/result | Required model action |
+|---|---|
+| make check-make-target-contract PASS | Run the changed target's registered behavioral example with every variable explicit; preserve expected refusal/status. |
+| Contract FAIL/ERROR | Repair the listed target/help/variable/example or input/parse error, then rerun the same native owner. |
+| Promotion script STRUCTURAL ONLY | Wait for all eight required child pins and terminal Make exit0 before broader acceptance. |
+| check-gate-failure-promotions terminal passed | Run complete changed owners and required callers once at the stable receiving point. |
+| Promotion manifest/input/child failure | Retain the actual failed receipt; repair its reported input before rerunning that owner. |
+| git-merge-nc passed | Inspect owned FILES with git-diff-full and retain affected tests/collection before commit. |
+| git-merge-nc refused/failed | Inspect worktree-state and preserve owned state; repair the actual prerequisite before retrying. |
+
+See [native result guidance](../../docs/features/MAKE_RESULT_GUIDANCE.md) for
+output ordering, native exit codes and controls, and the
+[merge contract](../../docs/features/GIT_MERGE_NO_COMMIT.md) for literal BR,
+ignored checkpoints and configuration refusal. Never convert a prompt, count,
+plan, structural pass or focused test into full-gate/exact-SHA authority.
 
 Use a single guarded public Make target per invocation. For example,
 lint-markdown treats additional target names as stray unquoted goals; batch

@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 156
+EXPECTED_FAMILY_COUNT = 162
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -36,6 +36,8 @@ STRUCTURAL_PROMOTION_NODES = (
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
     "tests/unit/test_runtime_admission_scheduling.py::test_native_git_metadata_query_count_executes_once_in_first_cohort",
     "tests/unit/test_gate_failure_promotion.py::test_async_canonical_profile_contract_fails_in_compatibility_admission_first",
+    "tests/unit/test_make_target_contract.py::test_key_make_targets_recommends_guarded_release_owners",
+    "tests/unit/test_makefile_targets_deep.py::TestVariableConsistency::test_no_bare_equals",
 )
 
 EXPECTED_RUNTIME_PHASES = [
@@ -49,20 +51,8 @@ EXPECTED_RUNTIME_PHASES = [
         90,
         60,
     ),
-    (
-        "ansible-role-variable-prefix",
-        "_ansible-role-variable-prefix",
-        "fast",
-        90,
-        60,
-    ),
-    (
-        "cloud-iam-generation-parity",
-        "_cloud-iam-generation-parity",
-        "fast",
-        90,
-        60,
-    ),
+    ("ansible-role-variable-prefix", "_ansible-role-variable-prefix", "fast", 90, 60),
+    ("cloud-iam-generation-parity", "_cloud-iam-generation-parity", "fast", 90, 60),
     (
         "_dead-code-baseline-refresh",
         "_dead-code-baseline-refresh",
@@ -256,7 +246,7 @@ def _target_stanza(makefile: str, target: str) -> str:
     ids=(
         "success", "manifest-pin-fails", "wiring-pin-fails",
         "roster-pin-fails", "cold-start-pin-fails", "native-flags-pin-fails",
-        "make-flags-pin-fails", "validator-fails",
+        "make-flags-pin-fails", "guide-pin-fails", "make-variable-pin-fails", "validator-fails",
     ),
 )
 def test_promotion_checker_executes_both_structural_pins_only_after_valid_manifest(
@@ -1841,6 +1831,9 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "native-full-scan-success-inventory", "coverage-native-suite-provenance", "uv-prune-native-failure-status",
         "uv-prune-inherited-policy-context", "shared-uv-cache-inventory-exposure",
         "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
+        "git-merge-no-commit-dirty-preservation", "git-merge-no-commit-literal-branch",
+        "make-promotion-terminal-result-guidance", "make-contract-layout-error-guidance",
+        "make-guide-required-owner-command", "make-variable-recipe-context",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2066,6 +2059,13 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_live_task_handoff_cannot_allow_critical_section_overlap "
         "tests/unit/test_git_automation_locking_handoff.py::"
         "test_wait_for_result_binds_nested_use_to_consuming_task "
+        "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command] "
+        "tests/unit/test_git_merge_nc_safety.py::"
+        "test_full_make_branch_data_stays_literal_before_startup[make-expression-command] "
+        "tests/unit/test_make_result_guidance.py::"
+        "test_promotion_make_guidance_waits_for_all_required_children[validator] "
+        "tests/unit/test_make_checker_guidance.py::"
+        "test_contract_native_input_error_guidance_retains_exit_one[include] "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py "

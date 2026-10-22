@@ -15,6 +15,67 @@
 11. Do not manually update generated current handoff or observation JSON. Use `make ci-await` or `make pipeline-status`; preserve manual/history evidence as such. Configuration JSON is not a generated observation. Pending/lookup-error/timeout must invalidate prior current success.
 12. Hosted timing comes from immutable `make ci-run-summary CI_RUN_SUMMARY_SHARD_TIMINGS=1`, retaining exact run/SHA, all eight shards and censored/unknown intervals. The report is diagnostic-only, never gate or release authority. Measure the exact hosted scheduling SHA before claiming improvement.
 
+## Fast repair loop and compatible candidate batches
+
+Use this sequence with the existing Make owners and release rules above.
+The [throughput decision](docs/features/RELEASE_PROOF_THROUGHPUT.md) retains
+measurements, rejected approaches and the missing release proofs.
+
+1. Resume from TASKS.md, BUGS.md, config/ratchet.yml and SESSION.md. Use
+   work-item/active-work-status and worktree-state for current task, owner,
+   branch and source. Consume the existing owner's terminal receipt before
+   starting another execution of that work; a yielded session is still active.
+2. Prefer a small batch of compatible, already implemented release-required
+   changes when their ownership, source and individual criteria are known.
+   Two is a conservative pilot, not a measured optimum; one coupled repair is valid. Keep one
+   shared-file/Git writer and the existing agent/testing concurrency ceilings.
+   Do not add unrelated backlog work to fill a batch.
+3. Write and run the narrow failing regression, then repair its actual input.
+   Run cheap lint, strict typing and target-contract checks before a broad
+   positive replay. Changed Make targets also need their documented behavior;
+   preserve expected refusal statuses. For promoted failures, update the native
+   manifest, independent seeds/counts and literal rosters together, then drain
+   all eight current check-gate-failure-promotions pins (six predecessors plus
+   two Make consumers) before the complete routing cohort.
+4. Form one deduplicated acceptance union from complete changed test owners and
+   affected consumers. Run that union on each required installed runtime after
+   the known repairs are ready. Keep each item's criteria/evidence separate.
+   Retain mandatory normal collection for every small complete source commit;
+   carry its review receipt into the next substantive receiving change when
+   possible instead of creating repeated metadata-only proof cycles.
+5. Reuse a passed receipt only for its actual unchanged source, tests,
+   configuration, interpreter and scope. Preserve old failures and source refs.
+   A handoff edit alone does not justify repeating accepted source tests, and an
+   old receipt never supplies a new exact-SHA gate, CI or deployment result.
+6. After actual prerequisites clear, freeze one candidate for independent
+   review, combined acceptance, the complete canonical gate and exact-SHA hosted
+   and deployment proofs. A shared green gate can support multiple items only
+   when every item's own acceptance criteria also have the required evidence.
+7. Use run-watched or the existing observed native owner for long operations,
+   with documented variables, visible progress and native terminal status.
+   Drain each exact exec session before dependent edits, commits or replacement
+   execution. Use make ps for test/audit processes and active-work-status for
+   ownership; ps-gludd shows daemons and cannot prove model/audit idleness.
+   Keep model-agent names/status separate from OS PIDs.
+8. Record the failing owner/input, RED/GREEN counts, runtime/ref, receipt path,
+   proof scope and exact next Make action in the owning feature and tracking
+   files. Source review, collection, focused acceptance and final proof retain
+   distinct authority. Reuse the native owners; no second observer or cache.
+
+### Make results teach the next action
+
+Agent-facing target output should include outcome-specific guidance from the
+existing result owner. On refusal/failure, identify the actual failed input,
+retain its native status/artifacts and name the narrow repair or prerequisite.
+On success, state what was measured and the next required owner, including
+missing gate/exact-SHA proof. Emit terminal-success guidance only after all
+required children finish successfully. Preserve exit codes, original assertions,
+fatal warnings, coverage, cleanup and promotion gates. Guidance is advisory
+context for the model; native measurements and the established gates remain
+authoritative. The [result contract](docs/features/MAKE_RESULT_GUIDANCE.md)
+and [native merge contract](docs/features/GIT_MERGE_NO_COMMIT.md) retain the
+actual output branches, negative controls, decisions and proof limits.
+
 ## Make Target Selection Contract
 
 Watched pytest diagnostics opt into the existing native trace with RUN_WATCHED_PYTEST_TRACE=1; mode0 preserves ordinary/inherited behavior. Publication owns mode1 for both watchers, without changing90/60,2/1/1 or proof authority. Native trace_path/run_id and failed artifacts remain producer-owned; no trace/cause/performance claim may be inferred from a different run. Explicit empty RUN_ID/LOG use existing automatic native identities, not a manual fixture. Optional observer arguments preserve CMD's shell positional parameters; retain the native two-mode regression. See the mandatory guide and [publication trace record](docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#retain-a-native-trace-for-publication-admission-2026-10-21).

@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 156
+EXPECTED_FAMILY_COUNT = 162
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -108,6 +108,13 @@ ROSTER = (
     "test_live_task_handoff_cannot_allow_critical_section_overlap",
     "tests/unit/test_git_automation_locking_handoff.py::"
     "test_wait_for_result_binds_nested_use_to_consuming_task",
+    "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]",
+    "tests/unit/test_git_merge_nc_safety.py::"
+    "test_full_make_branch_data_stays_literal_before_startup[make-expression-command]",
+    "tests/unit/test_make_result_guidance.py::"
+    "test_promotion_make_guidance_waits_for_all_required_children[validator]",
+    "tests/unit/test_make_checker_guidance.py::"
+    "test_contract_native_input_error_guidance_retains_exit_one[include]",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
@@ -1005,7 +1012,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 156
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 162
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1069,7 +1076,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 156
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 162
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1105,7 +1112,7 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 156
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 162
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
@@ -1136,7 +1143,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert all(node.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 156
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 162
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
         "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
@@ -1176,9 +1183,9 @@ def test_git_handoff_failures_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 156
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 162
     assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
-    assert payload["families"][-2:] == [
+    assert payload["families"][154:156] == [
         {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
          "node": selected_node, "full_gate_phase": "test"}
         for family_id, selected_node in (
@@ -1190,7 +1197,54 @@ def test_git_handoff_failures_have_exact_native_routes(
              "test_wait_for_result_binds_nested_use_to_consuming_task"),
         )
     ]
-    assert any(family["id"] == promoted_family for family in payload["families"][-2:])
+    assert any(family["id"] == promoted_family for family in payload["families"][154:156])
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    phase = next(item for item in payload["runtime_contract"]["phases"]
+                 if item["name"] == "pytest-runtime-compatibility")
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+MAKE_GUIDANCE_PROMOTIONS = (
+    ("git-merge-no-commit-dirty-preservation",
+     "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]"),
+    ("git-merge-no-commit-literal-branch",
+     "tests/unit/test_git_merge_nc_safety.py::test_full_make_branch_data_stays_literal_before_startup[make-expression-command]"),
+    ("make-promotion-terminal-result-guidance",
+     "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_children[validator]"),
+    ("make-contract-layout-error-guidance",
+     "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_exit_one[include]"),
+)
+
+
+@pytest.mark.parametrize(("promoted_family", "node_selector"), MAKE_GUIDANCE_PROMOTIONS)
+def test_make_safety_and_guidance_have_exact_native_routes(
+    tmp_path: Path, promoted_family: str, node_selector: str,
+) -> None:
+    """Keep each witnessed cheap failure in the existing first child."""
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    selections = []
+    for row in rows:
+        selection = row["files"]
+        assert isinstance(selection, list)
+        selections.append(selection)
+    assert [selection.count(node_selector) for selection in selections] == [1, 0, 0]
+    assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
+    assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 162
+    assert [family["id"] for family in payload["families"][154:156]] == [
+        "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
+    ]
+    assert payload["families"][156:160] == [
+        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
+         "node": selected_node, "full_gate_phase": "test"}
+        for family_id, selected_node in MAKE_GUIDANCE_PROMOTIONS
+    ]
+    assert any(family["id"] == promoted_family for family in payload["families"][156:160])
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     phase = next(item for item in payload["runtime_contract"]["phases"]
                  if item["name"] == "pytest-runtime-compatibility")

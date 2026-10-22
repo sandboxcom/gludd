@@ -367,7 +367,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--repository-root", type=Path, default=ROOT)
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        if exc.code:
+            print(
+                "AGENT_NEXT gate-failure-promotions ERROR: repair the reported CLI arguments; "
+                "rerun make check-gate-failure-promotions with the same intended inputs; "
+                "do not retry an unchanged broader cohort.",
+                file=sys.stderr,
+            )
+        raise
     repository_root = args.repository_root.resolve()
     manifest_path = args.manifest
     if not manifest_path.is_absolute():
@@ -376,11 +386,24 @@ def main(argv: list[str] | None = None) -> int:
         payload = _load_manifest(manifest_path)
     except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         print(f"gate-failure-promotions: ERROR cannot load manifest: {exc}", file=sys.stderr)
+        print(
+            "AGENT_NEXT gate-failure-promotions ERROR: repair the reported manifest/path/parse input; "
+            "rerun make check-gate-failure-promotions with the same manifest; "
+            "do not retry an unchanged broader cohort.",
+            file=sys.stderr,
+        )
         return 1
     errors = validate_manifest(payload, repository_root=repository_root)
     if errors:
         for error in errors:
             print(f"gate-failure-promotions: ERROR {error}", file=sys.stderr)
+        print(
+            "AGENT_NEXT gate-failure-promotions FAIL: repair the reported manifest/schema/node/Make-wiring inputs; "
+            "rerun make check-gate-failure-promotions with the same manifest; "
+            "keep all eight required child pins and bounds; "
+            "do not retry an unchanged broader cohort.",
+            file=sys.stderr,
+        )
         return 1
     manifest = cast(dict[str, Any], payload)
     family_count = len(manifest["families"])
@@ -393,6 +416,11 @@ def main(argv: list[str] | None = None) -> int:
         f"runtime_phases={len(runtime_phases)} "
         f"runtime_ceiling_seconds={runtime_ceiling} "
         f"full_gate={manifest['full_gate_target']} required=true"
+    )
+    print(
+        "AGENT_NEXT gate-failure-promotions PASS STRUCTURAL ONLY: finish all eight required child pins and "
+        "await terminal make check-gate-failure-promotions exit0 before a broader cohort; "
+        "this script PASS is not full-owner, gate or CI proof."
     )
     return 0
 

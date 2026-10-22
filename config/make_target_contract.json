@@ -80,6 +80,7 @@
       ],
       "behavior": "make check-molecule-yaml MOLECULE_YAML_LINT_TIMEOUT_SECONDS=120 MOLECULE_YAML_VALIDATE_ONLY=1"
     },
+    {"name": "git-merge-nc", "make_variables": ["BR"], "behavior": "make git-merge-nc BR=''"},
     {
       "name": "git-owned-checkpoint-push",
       "make_variables": [

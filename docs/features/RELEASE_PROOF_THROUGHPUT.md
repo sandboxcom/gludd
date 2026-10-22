@@ -1483,30 +1483,34 @@ The required S97 repairs remain in scope; excluded backlog work does not.
 | S98.6 | Stable promotion and release-cut evidence | Keep promotion, tagging, and publication blocked until final proof is green |
 | S98.7 | One complete canonical gate and hosted presentation/shards | Clear capacity, then replay the repaired launcher, handoff, and browser paths |
 
-Normalize each blocker by owner/node and actual failing input. A new SHA,
-observer suffix, time passage, source-only approval, or unrelated green check
-does not clear it. Retain the original failed run and specify the input change
-needed before another expensive attempt. This is a standing scheduling rule,
-not a new persisted fingerprint engine or a cache that reuses proof across SHAs.
+Normalize blockers by owner/node and actual failing input. A new SHA, observer
+label, elapsed time, source review or unrelated green result does not repair
+one. Retain its failed receipt and name the input change needed before retry.
 
-While blocked, continue bounded failing-first repair tests, mandatory actual
-collection before each small commit, and normal ledger-guarded development
-repair pushes. Do not repeat full gates, reseal candidates, broaden into
-unrelated features, or silently skip hosted failures. Batch known independent
-repair siblings before another CI push. Never edit tests just to obtain green;
-conform obsolete interface assertions only while retaining their intent.
+Use the mandatory Make guide's compatible implemented-release batch recipe:
+start with two eligible current-release items when ready, one if only one is.
+This is a conservative pilot, not a measured optimal batch size. Keep immediate
+failing-first and complete changed-owner feedback, one owner/record per item.
 
-The actual latest capacity failure is a hard prerequisite. Ambiguous toolchain
-ownership and shared OpenCode history remain protected; this workflow does not
-grant deletion authority or relax lock, link, lease, or cleanup checks. Local
-browser prerequisites are also absent, so focused JavaScript/CSS acceptance is
-not a substitute for the required fresh browser run.
+Retain each small logical commit, mandatory fresh collection and normal guarded
+repair push. Deduplicate complete acceptance owners at the stable receiving
+batch. Skip only optional terminal-covered unchanged-input repeats, never exact
+candidate proof or failures. Carry receipt guidance into the next coherent change.
+Preserve original test intent, fresh browser/runtime prerequisites and toolchain
+ownership; ambiguous shared history and every lock/link/lease/cleanup fence stay
+protected. This policy grants no deletion authority.
 
-After hard prerequisites clear: freeze once, obtain independent source review,
-run the combined acceptance set, run the complete canonical gate, and obtain
-required hosted success for that exact immutable SHA. No candidate edits during
-final proof. A failed final run returns to bounded repair work; it is never
-relabelled as green. Only then may the existing guarded promotion proceed.
+Actual capacity/configuration/ownership failures still block final proof.
+After they clear, run release-proof-admission mode0 and freeze once for independent
+review, combined acceptance, the complete canonical gate and required exact-SHA
+hosted/deployment/reviewed-head/promotion evidence. No edits during proof; changed
+source needs fresh applicable proof. Only actual full criteria and final proofs
+permit TASKS closure and the existing guarded promotion.
+
+### Measured scheduling decision, 2026-10-22 UTC
+
+The [dated measured decision](MAKE_RESULT_GUIDANCE.md#measured-throughput-decision)
+retains exact441-case/collection timings, the163.142s arithmetic, unmeasured costs, small-batch pilot and evidence-reuse limits. It claims no measured pipeline speedup.
 
 ## Move known failures ahead of costly fan-out
 

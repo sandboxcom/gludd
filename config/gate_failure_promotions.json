@@ -1251,6 +1251,48 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_git_automation_locking_handoff.py::test_wait_for_result_binds_nested_use_to_consuming_task",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "git-merge-no-commit-dirty-preservation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "git-merge-no-commit-literal-branch",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_merge_nc_safety.py::test_full_make_branch_data_stays_literal_before_startup[make-expression-command]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-promotion-terminal-result-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_children[validator]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-contract-layout-error-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_exit_one[include]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-guide-required-owner-command",
+      "owner_target": "check-gate-failure-promotions",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_target_contract.py::test_key_make_targets_recommends_guarded_release_owners",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-variable-recipe-context",
+      "owner_target": "check-gate-failure-promotions",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_makefile_targets_deep.py::TestVariableConsistency::test_no_bare_equals",
+      "full_gate_phase": "test"
     }
   ]
 }

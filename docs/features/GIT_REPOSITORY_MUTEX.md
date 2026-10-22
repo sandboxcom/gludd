@@ -260,9 +260,14 @@ early routes155/156 after all154 predecessors; the
 owns their failing-first routing and remaining receiving proof. Original2/1/1,
 90/60,21/2850 and required full gate remain.
 
-This ownership correction is separate from the still-proposed merge-helper
-repair. Preserve its actual failed approaches, checkpoint/ignored-file controls
-and unknown index.lock cause. Neither source change clears capacity97/6.7GiB,
+Exact41b8ea255b23dc309f8d0114ff56ea3174ba2ee6 normal hooks retain128738selected/
+128762collected,24deselected0errors51.42s/native57.111s, zero new clones/six checkpoints.
+Independent APPROVE SOURCE ONLY against49bb is fully read at
+/tmp/gludd-v012-git-handoff-admission-41-source-review.md. Source remains frozen.
+This ownership correction is separate from the now-receiving
+[native merge-helper repair](GIT_MERGE_NO_COMMIT.md). Its failed approaches,
+checkpoint/ignored-file controls and unknown index.lock cause remain distinct.
+Neither source change clears capacity97percent/7.8GiB,
 original60907, full canonical gate/global coverage, exact-SHA all-shard hosted/
 deployment/reviewed-head or guarded promotion proof. All seven tasks stay open.
 

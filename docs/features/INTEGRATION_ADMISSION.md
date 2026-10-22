@@ -88,8 +88,12 @@ native12.0s at /tmp/gludd-v012-git-handoff-admission-docs-host.{log,xml} and
 .gate-logs/observed/git-handoff-admission-docs-host/
 v012-git-handoff-admission-docs-host.json. This changes the execution boundary,
 not assertions or retirement eligibility.
-Normal receiving collection and independent source review remain pending at
-this authoring boundary. The focused replay's180s observer is
+Normal41b8ea255b23dc309f8d0114ff56ea3174ba2ee6 hooks retain128738selected/
+128762collected,24deselected0errors51.42s/native57.111s, zero new clones/six checkpoints.
+Independent APPROVE SOURCE ONLY against49bb is fully read at
+/tmp/gludd-v012-git-handoff-admission-41-source-review.md. New
+[Make/helper receiving work](MAKE_RESULT_GUIDANCE.md) needs its own applicable
+proof; accepted41b source stays frozen. The focused replay's180s observer is
 diagnostic-only; original runtime admission remains three2/1/1 children,
 90total/60quiet,21phases/2850 and mandatory full gate. The internal owner's
 documented full behavioral invocation remains pending behind actual capacity

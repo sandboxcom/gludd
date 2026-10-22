@@ -1,3 +1,8 @@
+# Keep no-commit merge branch data literal before startup or export children.
+override GLUDD_GIT_MERGE_NC_BR := $(value BR)
+export GLUDD_GIT_MERGE_NC_BR
+unexport BR
+
 # Capture raw CI cancellation inputs before native startup shell expansion.
 # Capture emergency cancellation inputs only for its explicit Make goal.
 ifneq ($(filter ci-cancel,$(MAKECMDGOALS)),)
@@ -742,6 +747,7 @@ help:
 		"  ci-cancel             Plan an emergency single-run request (RUN, CI_CANCEL_VALIDATE_ONLY=1; explicit apply=0)" \
 		"  (Single-source policy: features land on development first, then merge to master)" \
 		"  git-status            Show git status" \
+		"  git-merge-nc           Prepare a clean no-commit ort merge (BR; refuses unsafe state)" \
 		"  git-owned-checkpoint-push     Checkpoint explicit owned files (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_VALIDATE_ONLY)" \
 		"  git-owned-checkpoint-restore  Restore exact top checkpoint, retaining evidence (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_VALIDATE_ONLY)" \
 		"  git-diff              Show diff stats" \
