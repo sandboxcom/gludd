@@ -2,15 +2,15 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128698 selected / 128722 collected, 24 deselected, zero collection errors in 48.26s/native 53.47s during normal daf9a07d4e09f7e1bcfd8319909fab3c3363b459 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T053725Z-42332-c069c26c.{log,json}. Collection is separate from behavioral and final-gate proof; older eb6, 3e8, e5/bd3 and f36/815 collections retain their own refs.
+Total tests: 128719 selected / 128743 collected, 24 deselected, zero collection errors in 50.96s/native 56.326s during normal 6e8945bdae0ee30df0a18219872d92026ccece68 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T060356Z-71787-587c0e32.{log,json}. Collection is separate from behavioral and final-gate proof; older daf, eb6, 3e8, e5/bd3 and f36/815 collections retain their own refs.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 exact shared-cache inventory repair
+## Reviewed S98.4 exact shared-cache inventory repair
 
-Root owns the coupled source repair on development at
+Root owns exact source6e8945bdae0ee30df0a18219872d92026ccece68 on development against
 e45d68172baeac83d46c2f1204168f253ddd5838. The [cache record](docs/features/CACHE_RESOURCE_INVENTORY.md#inventory-the-exact-native-shared-uv-cache-2026-10-22-utc)
 retains the private capacity decision, exact native refusal and genuine11FAIL/
 99PASS9.08s/native10.4s before110PASS8.89s/native9.9s. Inventory now admits only
@@ -28,8 +28,16 @@ cases pass18.98s/native20.4s at99.4line/97.2branch under the unchanged profile;
 each runtime:31180.59s/native81.6s and31282.42s/native83.6s. Four strict scopes,
 Ruff and all six canonical pins pass; the record keeps the independent seed
 omission, nested refusal and additive conformance. Disk97percent/6.7GiB remains
-above95. Normal collection, exact-source review and final release proofs remain
-pending; the prior seven task states do not change.
+above95. Normal6e8 hooks retain128719selected/128743collected,24deselected0errors
+50.96s/native56.326s in .gate-logs/observed/test-count/20261022T060356Z-71787-587c0e32.json,
+zero new clones and six retained checkpoints. Independent APPROVE SOURCE ONLY
+against e45 is fully read at /tmp/gludd-v012-shared-uv-6e8945b-source-review.md;
+no blocking correction. Reviewer readers and sessions are quiescent. This receiving
+receipt changes documentation only. Original60907, capacity, canonical full gate,
+exact-SHA hosted/deployment/reviewed-head and promotion remain pending; no seven
+task states change. Only an actual repaired prerequisite admits the next
+make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0; a new HEAD,
+source approval or elapsed time does not authorize another unchanged replay.
 
 ## Reviewed S98.4 ledger identity repair
 

@@ -1221,9 +1221,21 @@ four documentation/handoff/contract/branch owners:394PASS30.21s/native31.6s in
 controls and124 operating cases; no test is skipped or weakened.
 
 Separate strict source/test scopes, Ruff, all six Markdown files, strict line
-limits, twelve-path registration and SESSION validation pass. These receipts
-complete local source acceptance, not normal collection or independent exact-SHA
-review; those actual post-commit receipts remain required. The original failed
-publication60907, capacity97/6.7GiB, full canonical gate/global85-75 BOTH,
-all-shard exact-SHA CI/deployment/reviewed-head and guarded promotion remain
-pending. All seven task checkboxes and immutable failure/history refs stay intact.
+limits, twelve-path registration and SESSION validation pass. Normal source
+commit6e8945bdae0ee30df0a18219872d92026ccece68 hooks retain128719selected/
+128743collected,24deselected/zeroerrors50.96s/native56.326s. Preserve native
+.gate-logs/observed/test-count/20261022T060356Z-71787-587c0e32.{log,json,pytest.jsonl};
+zero new clones and six retained checkpoints pass the normal content guards.
+Independent APPROVE SOURCE ONLY against e45d68172baeac83d46c2f1204168f253ddd5838
+is fully read at /tmp/gludd-v012-shared-uv-6e8945b-source-review.md, covering all
+twelve exact changed exports. No blocking correction is required; reviewer
+sessions are terminal and readers quiescent. This receiving edit records those
+facts without changing accepted source or expanding approval to a later SHA.
+
+The original failed publication60907, capacity97/6.7GiB, full canonical gate/
+global85-75 BOTH, all-shard exact-SHA CI/deployment/reviewed-head and guarded
+promotion remain pending. All seven task checkboxes and immutable failure/history
+refs stay intact. Source approval and the20KiB diagnostic supply no cleanup,
+publication-retry or release authority. After an actual prerequisite repair,
+run make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 before
+freezing a candidate; a new HEAD or elapsed time is not a changed failing input.
