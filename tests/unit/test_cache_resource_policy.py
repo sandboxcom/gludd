@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shlex
@@ -9,6 +10,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 from typing import cast
 
 import pytest
@@ -410,3 +412,229 @@ def test_native_make_keeps_child_failure_status_and_stderr(
     assert f"Error {cache_policy_child_status}" in result.stderr
     assert (fixture.child / "payload.bin").read_bytes() == b"x" * 4096
     assert not (tmp_path / "UV_TRIPWIRE").exists()
+
+
+def _shared_uv_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> CachePolicyFixture:
+    """Substitute only the private root after binding the real production owner."""
+    fixture = _fixture(tmp_path)
+    root = tmp_path / "shared-uv" / "gludd-uv-cache-public-v2"
+    child = root / "archive-v0"
+    child.mkdir(parents=True)
+    payload = child / "payload.bin"
+    payload.write_bytes(b"shared UV fixture remains intact")
+    payload.chmod(0o640)
+    monkeypatch.setenv("HOME", str(fixture.home))
+    monkeypatch.setattr(cache_manager, "_SHARED_UV_CACHE_INVENTORY_ROOT", root, raising=False)
+    return CachePolicyFixture(fixture.home, root, child, fixture.environment, fixture.uv)
+
+
+def _assert_shared_uv_payload(payload: Path) -> None:
+    assert payload.read_bytes() == b"shared UV fixture remains intact"
+    assert payload.stat().st_mode & 0o777 == 0o640
+
+
+def _refuse_shared_uv_measurement(path: Path, *, timeout: float = 30.0) -> int:
+    raise AssertionError(f"unadmitted shared UV root reached measurement: {path}, {timeout}")
+
+
+def _assert_shared_uv_constructor_keeps_symlink_leaf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Execute the real constant construction with only its parent confined."""
+    parent = tmp_path / "native-cache-parent"
+    parent.mkdir()
+    target = tmp_path / "native-cache-outside-target"
+    target.mkdir()
+    retained = target / "keep.bin"
+    retained.write_bytes(b"constructor target remains intact")
+    retained.chmod(0o640)
+    leaf = parent / "gludd-uv-cache-public-v2"
+    leaf.symlink_to(target, target_is_directory=True)
+
+    def confined_path(value: str) -> Path:
+        assert value == "/tmp", "constructor requested an unexpected path"
+        return parent
+
+    pathlib_proxy = ModuleType("pathlib")
+    vars(pathlib_proxy)["Path"] = confined_path
+    spec = importlib.util.spec_from_file_location(
+        "shared_uv_constructor_owner", ROOT / "scripts/cache_resource_manager.py",
+    )
+    assert spec is not None and spec.loader is not None
+    owner = importlib.util.module_from_spec(spec)
+    with monkeypatch.context() as isolated:
+        isolated.setitem(sys.modules, spec.name, owner)
+        isolated.setitem(sys.modules, "pathlib", pathlib_proxy)
+        spec.loader.exec_module(owner)
+    observed = getattr(owner, "_SHARED_UV_CACHE_INVENTORY_ROOT", None)
+    assert observed == leaf
+    assert observed != target
+    assert leaf.is_symlink()
+    assert retained.read_bytes() == b"constructor target remains intact"
+    assert retained.stat().st_mode & 0o777 == 0o640
+
+
+def test_shared_uv_inventory_root_matches_native_default_without_resolving_leaf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture.environment.pop("GLUDD_UV_CACHE_DIR", None)
+    result = _make(tmp_path, fixture, "uv-cache-path", _values(fixture))
+    assert result.returncode == 0, result.stdout + result.stderr
+    selected = Path(result.stdout.strip())
+    assert str(selected) == "/tmp/gludd-uv-cache-public-v2"
+    expected = selected.parent.resolve(strict=False) / selected.name
+    assert getattr(cache_manager, "_SHARED_UV_CACHE_INVENTORY_ROOT", None) == expected
+    assert expected not in cache_manager._removable_roots()
+    assert not (tmp_path / "UV_TRIPWIRE").exists()
+    _assert_shared_uv_constructor_keeps_symlink_leaf(tmp_path, monkeypatch)
+
+
+def test_shared_uv_inventory_reports_complete_without_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture = _shared_uv_fixture(tmp_path, monkeypatch)
+    assert cache_manager.main(["inventory", "--root", str(fixture.root), "--limit", "100"]) == 0
+    captured = capsys.readouterr()
+    rows = [cast(dict[str, object], json.loads(line)) for line in captured.out.splitlines()]
+    assert len(rows) == 2
+    assert rows[0]["path"] == str(fixture.child)
+    allocated = rows[0]["allocated_bytes"]
+    assert isinstance(allocated, int) and allocated > 0
+    assert rows[0]["status"] == "measured" and rows[0]["error"] is None
+    assert rows[1] == {"entries": 1, "status": "complete"}
+    assert "max_seconds=30 max_entries=1000" in captured.err
+    assert "complete inspected=1 errors=0" in captured.err
+    _assert_shared_uv_payload(fixture.child / "payload.bin")
+
+
+@pytest.mark.parametrize("shared_uv_escape", ["parent", "sibling", "descendant", "traversal", "override"])
+def test_shared_uv_inventory_refuses_every_other_root_before_measurement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    shared_uv_escape: str,
+) -> None:
+    fixture = _shared_uv_fixture(tmp_path, monkeypatch)
+    roots = {
+        "parent": fixture.root.parent,
+        "sibling": fixture.root.with_name("gludd-uv-cache-public-v2-other"),
+        "descendant": fixture.child,
+        "traversal": fixture.root / "..",
+        "override": tmp_path / "selected-arbitrary-cache",
+    }
+    selected = roots[shared_uv_escape]
+    selected.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("GLUDD_UV_CACHE_DIR", str(selected))
+    monkeypatch.setattr(cache_manager, "_allocated_bytes", _refuse_shared_uv_measurement)
+    assert cache_manager.main(["inventory", "--root", str(selected), "--limit", "100"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "root is not allowlisted" in captured.err
+    _assert_shared_uv_payload(fixture.child / "payload.bin")
+
+
+@pytest.mark.parametrize("shared_uv_spelling", ["leaf", "target"])
+def test_shared_uv_inventory_never_admits_a_symlink_or_its_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    shared_uv_spelling: str,
+) -> None:
+    fixture = _shared_uv_fixture(tmp_path, monkeypatch)
+    original = tmp_path / "original-shared-cache"
+    fixture.root.rename(original)
+    target = tmp_path / "otherwise-prohibited-target"
+    target.mkdir()
+    retained = target / "keep.bin"
+    retained.write_bytes(b"outside target remains intact")
+    retained.chmod(0o640)
+    fixture.root.symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr(cache_manager, "_allocated_bytes", _refuse_shared_uv_measurement)
+    selected = fixture.root if shared_uv_spelling == "leaf" else target
+    assert cache_manager.main(["inventory", "--root", str(selected), "--limit", "100"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    refusal = "root must not be a symlink" if shared_uv_spelling == "leaf" else "root is not allowlisted"
+    assert refusal in captured.err
+    assert retained.read_bytes() == b"outside target remains intact"
+    assert retained.stat().st_mode & 0o777 == 0o640
+    _assert_shared_uv_payload(original / fixture.child.name / "payload.bin")
+
+
+@pytest.mark.parametrize("shared_uv_apply", [False, True])
+def test_shared_uv_cache_has_no_generic_removal_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    shared_uv_apply: bool,
+) -> None:
+    fixture = _shared_uv_fixture(tmp_path, monkeypatch)
+    arguments = ["remove", "--root", str(fixture.root), "--candidate", str(fixture.child)]
+    if shared_uv_apply:
+        arguments.append("--apply")
+    assert cache_manager.main(arguments) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "root is not allowlisted for removal" in captured.err
+    _assert_shared_uv_payload(fixture.child / "payload.bin")
+
+
+@pytest.mark.parametrize("shared_uv_unavailable", ["absent", "file"])
+def test_shared_uv_inventory_unavailable_root_stays_nonzero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    shared_uv_unavailable: str,
+) -> None:
+    fixture = _shared_uv_fixture(tmp_path, monkeypatch)
+    original = tmp_path / "retained-shared-cache"
+    fixture.root.rename(original)
+    if shared_uv_unavailable == "file":
+        fixture.root.write_text("not a cache directory", encoding="utf-8")
+    monkeypatch.setattr(cache_manager, "_allocated_bytes", _refuse_shared_uv_measurement)
+    assert cache_manager.main(["inventory", "--root", str(fixture.root), "--limit", "100"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "root is not a directory" in captured.err
+    _assert_shared_uv_payload(original / fixture.child.name / "payload.bin")
+
+
+def test_shared_uv_inventory_empty_existing_root_is_distinct_from_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture = _shared_uv_fixture(tmp_path, monkeypatch)
+    original = tmp_path / "retained-shared-payload"
+    fixture.child.rename(original)
+    assert cache_manager.main(["inventory", "--root", str(fixture.root), "--limit", "100"]) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"entries": 0, "status": "complete"}
+    assert "complete inspected=0 errors=0" in captured.err
+    _assert_shared_uv_payload(original / "payload.bin")
+
+
+@pytest.mark.parametrize("cache_policy_environment_overrides", [False, True])
+@pytest.mark.parametrize("cache_policy_goal", ["cache-resource-inventory", "cache-disk", "disk-user-caches"])
+def test_native_make_shared_uv_inventory_uses_real_owner_and_preserves_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cache_policy_environment_overrides: bool,
+    cache_policy_goal: str,
+) -> None:
+    fixture = _shared_uv_fixture(tmp_path, monkeypatch)
+    bridge = tmp_path / "shared-uv-binding.py"
+    bridge.write_text(
+        "import importlib.util\nimport sys\nfrom pathlib import Path\n"
+        f"assert Path(sys.argv[1]).resolve() == Path({str(ROOT / 'scripts/cache_resource_manager.py')!r})\n"
+        "spec = importlib.util.spec_from_file_location('shared_uv_native_owner', sys.argv[1])\n"
+        "assert spec is not None and spec.loader is not None\n"
+        "owner = importlib.util.module_from_spec(spec)\n"
+        "sys.modules[spec.name] = owner\n"
+        "spec.loader.exec_module(owner)\n"
+        f"owner._SHARED_UV_CACHE_INVENTORY_ROOT = Path({str(fixture.root)!r})\n"
+        "raise SystemExit(owner.main(sys.argv[2:]))\n",
+        encoding="utf-8",
+    )
+    result = _make(
+        tmp_path, fixture, cache_policy_goal, _values(fixture),
+        cache_policy_environment_overrides=cache_policy_environment_overrides,
+        cache_policy_system_python=shlex.join([sys.executable, str(bridge)]),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    rows = _rows(result)
+    assert rows[0]["path"] == str(fixture.child)
+    assert rows[-1] == {"entries": 1, "status": "complete"}
+    assert result.stderr.count("cache inventory start") == 1
+    assert "max_seconds=30 max_entries=1000" in result.stderr
+    assert not (tmp_path / "UV_TRIPWIRE").exists()
+    _assert_shared_uv_payload(fixture.child / "payload.bin")

@@ -1068,3 +1068,162 @@ all46 ledger memberships, four individually confirmed pending source groups,
 S83.169 integrated-but-unassigned scope, uncommitted drafts and native all-branch
 failure2/124.267s with unknown/null completion totals. No proof claim is inferred
 from the failed diagnostic, historical labels or source-only approval.
+
+## Inventory the exact native shared UV cache (2026-10-22 UTC)
+
+S98.4 starts this coupled repair at development
+e45d68172baeac83d46c2f1204168f253ddd5838, after the exactdaf receiving record.
+Root fully reads /tmp/gludd-v012-native-cache-capacity-daf-decision.md and its
+private patch. Native uv-cache-path selects /tmp/gludd-uv-cache-public-v2, but
+the existing inventory refuses its canonical /private/tmp spelling as outside
+the allowlist. The largest40 temporary view omits it; that omission proves
+neither absence, small size nor a reclaimable amount. No prune is attempted.
+
+The existing source adds only a private fixed-root constant and inventory-set
+membership. Resolve trusted /tmp, then append literal gludd-uv-cache-public-v2;
+do not resolve through the cache leaf and accidentally allow its arbitrary
+symlink target by canonical spelling. The constant cannot follow public
+GLUDD_UV_CACHE_DIR overrides. _validate_root and _removable_roots remain unchanged:
+no parent, sibling, descendant, other selected root or generic removal authority.
+Reuse the existing native scandir/du/JSON owner,30s global,1000 inspected entries,
+1..100 output rows,5s progress, error-first partial rows and nonzero failure.
+No new target, dependency, runner, observer, scanner or cache is introduced.
+
+Twenty additive cases retain all90 predecessor cases/assertions. A production
+default-binding control executes native uv-cache-path without reading its cache.
+Confined fixtures bind the real source before replacing only its private root;
+they actually measure private payloads, preserve bytes/modes and check complete
+JSON versus unavailable/empty/refused states. Six real-Make direct/alias and -e
+controls import the actual argv-selected production module before that one
+test-only substitution. Symlink leaf and nonsymlink target spellings, parent,
+sibling, descendant, traversal, arbitrary overrides and both removal modes
+refuse before measurement/mutation; no real host cache is a test fixture.
+Existing unreadable-child, du-error, deadline and entry-bound controls remain.
+
+Actual RED retains11FAIL/99PASS9.08s/native10.4s in
+/tmp/gludd-v012-shared-uv-inventory-red311.{log,xml}; GREEN retains110PASS8.89s/
+native9.9s in /tmp/gludd-v012-shared-uv-inventory-green311.{log,xml}. The one new
+routing witness first fails1case0.68s/native1.3s with actual counts0/0/0.
+Family154 then appends after all153 predecessors and selects that cheap actual
+measurement case exactly once in the existing first admission child. Independent
+roster/count pins conform only to the additive selector; all old node, native
+argv,2/1/1,90total/60quiet,21phases2850 and full-gate assertions remain.
+
+Root obtains one read-only native measurement after the focused repair:
+.gate-logs/observed/shared-uv-capacity/v012-shared-uv-capacity-e45-20261022.json
+and /tmp/gludd-v012-shared-uv-capacity-e45-20261022.log. Native exit0/0.15s,
+complete, inspected5/errors0 and all5 displayed children: interpreter-v4=12288,
+.gitignore=4096, CACHEDIR.TAG=4096, .lock=0, sdists-v9=0 allocated bytes.
+Their20480-byte total is child-allocation accounting, not guaranteed physical
+or reclaimable space. It cannot plausibly repair GiB-scale pressure; select no
+actual prune and preserve the earlier failed broad cleanup/no-progress evidence.
+
+Reproduce the diagnostic only when its selected source/input actually changes:
+
+~~~console
+make cache-resource-inventory CACHE_RESOURCE_ROOT=/tmp/gludd-uv-cache-public-v2 CACHE_RESOURCE_LIMIT=100 CACHE_RESOURCE_VALIDATE_ONLY=1
+~~~
+
+This inventory mode1 measures read-only; reviewed UV prune mode1 only plans.
+A missing, non-directory, symlink, measurement error or incomplete result never
+becomes0bytes/complete success. Compare inspected count and displayed rows before
+forming a total; output limits and hardlinks must retain their actual meaning.
+
+[UV cache safety](https://docs.astral.sh/uv/concepts/cache/#cache-safety)
+requires native cache maintenance. The firsthand [cache size discussion5731](https://github.com/astral-sh/uv/issues/5731),
+opened August2024, reports a roughly40GB self-hosted-runner cache and discusses
+size limits and cleanup tradeoffs. That long-lived report motivates measurement;
+it does not establish this host's size, pressure cause or retirement authority.
+The local20KiB measurement is the actual decision input here.
+
+Managed services, database and serving routes are untouched. Rollback restores
+the exact source/selector pair and retains failure/measurement evidence; no ZDD
+handoff changes. Full source/consumer acceptance, unchanged one-file branch
+coverage, fresh normal collection and independent exact-source review need their
+own receipts. Complete canonical gate/global85aggregate/75each-file line AND
+branch, exact-SHA hosted/deployment/reviewed-head and guarded promotion remain
+required. Original60907 is unresolved; no new source or diagnostic clears that
+timeout, capacity prerequisite, natural scanner unknowns or seven open tasks.
+
+Before the constructor strengthening below, complete eight-owner source/consumer
+acceptance retains285PASS on each runtime:
+311 under the unchanged one-source branch-coverage profile in89.71s/native91.4s,
+312 in40.37s/native41.9s. Preserve native coverage-files/
+20261022T055118Z-54217-40df6ca4.json, .gate-logs/coverage-shared-uv-inventory-311.json
+and /tmp/gludd-v012-shared-uv-consumers312.{log,xml}. The native audit
+.gate-logs/coverage-20261022T055250Z.json measures99.4% line/97.2% branch, passing
+both85aggregate/75each-file floors. The original production file/profile remains;
+all manager error/deadline/entry bounds and native UV lifecycle controls execute.
+
+The canonical six-pin checker catches a stale independent family-ID seed:
+1FAIL/5PASS1.22s. The already-running complete routing cohort retains the same
+cause and its required nested checker refusal as2FAIL/373PASS72.28s/native73.1s,
+in /tmp/gludd-v012-shared-uv-routing311.{log,xml}. The new family was present in
+the manifest/Make selection but missing from the independent ordered seed list.
+Add its single explicit seed after all153 predecessors; do not derive expected
+IDs from the manifest or weaken equality. Native six-pin receipt then retains
+6PASS1.72s/native3.0s under .gate-logs/observed/shared-uv-family-pins.
+The first structural PASS line never overrides the later child or enclosing exit.
+
+A2500-line refusal catches the additive roster line. An attempted204-character
+literal compaction then fails E501; reflow preserves every exact roster byte and
+joins two short comma-separated seed entries on one line instead. Strict<2500
+and Ruff subsequently pass with no assertion or lint suppression. One literal
+replacement also refuses its absent expected needle before mutation; the actual
+149-index context supplies the corrected edit. The mandatory guide now lists the
+coupled independent seed/count/roster edits and runs the existing cheap six-pin
+owner to terminal0 before a broad routing cohort. No second checker is added.
+
+Four separate strict scopes, Ruff,277target contracts/actual readonly inventory,
+1157targets/zero duplicates, Make parity and native help parse pass. Current
+native disk measures97percent/6.7GiB free. The separate native classification is
+a bounded diagnostic with5184 omitted rows and a live coverage scratch entry,
+not exhaustive retirement authority or a new capacity allowance. No cleanup,
+prune, publication replay, full gate, push or promotion follows those observations.
+
+The complete routing cohorts pass375each after that conformance:31180.59s/
+native81.6s and31282.42s/native83.6s. Preserve
+/tmp/gludd-v012-shared-uv-routing-green311.{log,xml} and green312 counterparts,
+plus native JSON under .gate-logs/observed/shared-uv-routing-green311 and green312.
+These are five complete metadata/workflow owners, not original publication replay.
+
+A final source review identifies a test-boundary gap: substituting a finished
+private constant does not exercise its construction under a symlink leaf.
+The existing new default-binding case now executes the actual production module
+through the stdlib loader, substituting only pathlib's trusted parent constructor
+inside an isolated import context. All cache/foreign paths are fixture-owned;
+the actual leaf is a symlink, outside bytes/modes remain unchanged and the module
+context is restored before assertions. Test count and all90 predecessor cases
+remain unchanged. A deliberate temporary trailing resolve on the full production
+constant reproduces1FAIL0.70s/native1.5s, where actual construction admits the
+outside target. Preserve /tmp/gludd-v012-shared-uv-constructor-mutation311.{log,xml}.
+The safe parent-only construction is restored and read back immediately; no
+unsafe mutation is committed or used for a real inventory. The earlier positive
+control retains1PASS0.63s/native1.4s. Ruff rejects constant setattr in the fixture;
+explicit isolated module namespace assignment passes Ruff and strict typing.
+
+This new constructor assertion requires fresh complete cache-source acceptance.
+The earlier285 compatibility and375 routing receipts retain their own scope;
+they are not relabeled as execution of this later assertion. Production source,
+the selected early measurement node, manifest/rosters, all bounds and the
+one-source coverage profile remain unchanged after restoration.
+
+Final complete three-cache-source acceptance with that stronger constructor
+assertion passes211cases on311,18.98s/native20.4s, retaining the unchanged profile
+and99.4line/97.2branch. Actual native coverage receipt:
+.gate-logs/observed/coverage-files/20261022T060051Z-67406-1933b456.json;
+raw .gate-logs/coverage-shared-uv-final-311.json and terminal audit
+.gate-logs/coverage-20261022T060111Z.json. The broader final312 union includes all
+three cache owners, the complete pytest-param-fixture-collisions owner and all
+four documentation/handoff/contract/branch owners:394PASS30.21s/native31.6s in
+/tmp/gludd-v012-shared-uv-final312.{log,xml} and native JSON under
+.gate-logs/observed/shared-uv-final312. That includes all211 cache cases,59 fixture
+controls and124 operating cases; no test is skipped or weakened.
+
+Separate strict source/test scopes, Ruff, all six Markdown files, strict line
+limits, twelve-path registration and SESSION validation pass. These receipts
+complete local source acceptance, not normal collection or independent exact-SHA
+review; those actual post-commit receipts remain required. The original failed
+publication60907, capacity97/6.7GiB, full canonical gate/global85-75 BOTH,
+all-shard exact-SHA CI/deployment/reviewed-head and guarded promotion remain
+pending. All seven task checkboxes and immutable failure/history refs stay intact.

@@ -194,8 +194,13 @@ registered shared toolchain. An isolated worktree must not point at the canonica
 main checkout's .venv: its subprocess-confinement guard rejects that reference.
 Keep warnings fatal and preserve ordinary plugins and original assertions.
 For promoted selectors, check-gate-failure-promotions executes the manifest and
-Make wiring pins plus both exact roster pins. Its documented native example
-exposes a stale shared roster before the bounded runtime replay. The complete
+Make wiring pins plus both exact roster pins. Run that cheap owner to terminal
+exit0 before launching the complete routing cohort after an additive family edit.
+Update independent family-ID seeds, expected counts and literal child rosters
+additively with the manifest/Make selector, retaining every prior entry and bound.
+Its first structural PASS line is not its terminal six-pin result; a stale seed
+can still fail the required child and enclosing Make. Its documented example
+exposes that mismatch before the bounded runtime replay. The complete
 runtime-admission-scheduling and cold-start-selection owners also retain mutation
 checks for omitted, duplicated and widened selectors.
 When pytest parametrization changes, include the complete existing
@@ -665,6 +670,25 @@ make cache-resource-inventory CACHE_RESOURCE_ROOT=/Users/shawnwilson/.cache CACH
 cache-disk/disk-user-caches are recipe-free default aliases; parameterize the
 canonical owner. Library/Caches and container storage are outside its access
 policy. Gate artifacts and project temp namespaces are inventory-only.
+The fixed shared UV leaf is also inventory-only, using the existing owner:
+
+~~~console
+make cache-resource-inventory CACHE_RESOURCE_ROOT=/tmp/gludd-uv-cache-public-v2 CACHE_RESOURCE_LIMIT=100 CACHE_RESOURCE_VALIDATE_ONLY=1
+~~~
+
+Mode1 here performs a read-only measurement; UV prune mode1 instead plans only.
+Only the trusted temporary parent is resolved while constructing membership;
+never resolve through the cache leaf or admit arbitrary GLUDD_UV_CACHE_DIR paths.
+Parent/sibling/descendant and symlink-target spellings retain their refusals, as
+do both generic removal modes. A missing/non-directory/error/incomplete root is
+not zero bytes. Compare displayed rows with inspected count before summing; native
+du child allocations are not guaranteed reclaimable bytes. The [exact-root record](../../docs/features/CACHE_RESOURCE_INVENTORY.md#inventory-the-exact-native-shared-uv-cache-2026-10-22-utc)
+retains the complete5-child20480-byte measurement, too small to justify a prune
+for the retained GiB-scale capacity deficit. Keep that decision source-bound.
+The default-binding regression also executes real constant construction with a
+confined parent and actual symlink leaf; replacing only the finished constant
+cannot cover leaf-resolution behavior. Retain isolated import restoration and
+foreign payload bytes/modes alongside the ordinary root-validation controls.
 
 The remove contract deliberately exercises a refusal. This command must return
 Make2 with the managed-cache error:

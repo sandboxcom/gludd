@@ -16,6 +16,9 @@ from time import monotonic
 INVENTORY_MAX_SECONDS = 30.0
 INVENTORY_MAX_ENTRIES = 1000
 INVENTORY_PROGRESS_SECONDS = 5.0
+_SHARED_UV_CACHE_INVENTORY_ROOT = (
+    Path("/tmp").resolve(strict=False) / "gludd-uv-cache-public-v2"
+)
 
 _MANAGED_CACHE_LIFECYCLES = {
     "uv": "use native uv cache commands after lifecycle admission; never edit cache files directly",
@@ -72,7 +75,11 @@ def _removable_roots() -> frozenset[Path]:
 def _inventory_roots() -> frozenset[Path]:
     home = Path.home().resolve(strict=False)
     return _removable_roots() | frozenset(
-        {(home / "tmp").resolve(strict=False), _project_gate_logs_root()}
+        {
+            (home / "tmp").resolve(strict=False),
+            _project_gate_logs_root(),
+            _SHARED_UV_CACHE_INVENTORY_ROOT,
+        }
     )
 
 

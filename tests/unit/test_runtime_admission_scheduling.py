@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 153
+EXPECTED_FAMILY_COUNT = 154
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -103,6 +103,7 @@ ROSTER = (
     "test_imported_cobertura_never_proves_e2e_execution",
     "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_status[native-failure]",
     "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_target_policy_refuses_invalid[UV_CACHE_PRUNE_TIMEOUT=0]",
+    "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_mutation",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
@@ -1000,7 +1001,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 153
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 154
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1064,7 +1065,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 153
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 154
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1100,10 +1101,41 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 153
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 154
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
+        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+    }
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    phase = next(
+        item for item in payload["runtime_contract"]["phases"]
+        if item["name"] == "pytest-runtime-compatibility"
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
+    """Keep the actual root-exposure witness before expensive native fanout."""
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    node = "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_mutation"
+    selections = []
+    for row in rows:
+        selection = row["files"]
+        assert isinstance(selection, list)
+        selections.append(selection)
+    assert [selection.count(node) for selection in selections] == [1, 0, 0]
+    assert all(node.split("::", 1)[0] not in selection for selection in selections)
+    assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 154
+    assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
+    assert payload["families"][153] == {
+        "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
         "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
     }
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]

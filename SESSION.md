@@ -8,6 +8,29 @@ Total tests: 128698 selected / 128722 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
+## Current S98.4 exact shared-cache inventory repair
+
+Root owns the coupled source repair on development at
+e45d68172baeac83d46c2f1204168f253ddd5838. The [cache record](docs/features/CACHE_RESOURCE_INVENTORY.md#inventory-the-exact-native-shared-uv-cache-2026-10-22-utc)
+retains the private capacity decision, exact native refusal and genuine11FAIL/
+99PASS9.08s/native10.4s before110PASS8.89s/native9.9s. Inventory now admits only
+the fixed shared UV root; neither generic removal nor arbitrary selected paths
+are admitted. One routing RED1FAIL0.68s/native1.3s precedes family154, preserving
+all153 predecessors, original2/1/1,90/60,21/2850/full-gate and85/75 BOTH.
+The actual bounded read-only inventory is complete0/native0.15s: all five child
+rows,0errors,20480 allocated bytes total. It is not reclaimable-byte proof; this
+negligible result rules out pruning that root as a useful GiB-capacity repair.
+No actual UV cleanup follows. Earlier285 compatibility cases pass each runtime.
+The strengthened constructor assertion detects unsafe full-leaf resolution in
+1FAIL0.70s/native1.5s; safe source is restored and read back. Final211311 cache
+cases pass18.98s/native20.4s at99.4line/97.2branch under the unchanged profile;
+394312 cache/namespace/docs cases pass30.21s/native31.6s. All375 routing cases pass
+each runtime:31180.59s/native81.6s and31282.42s/native83.6s. Four strict scopes,
+Ruff and all six canonical pins pass; the record keeps the independent seed
+omission, nested refusal and additive conformance. Disk97percent/6.7GiB remains
+above95. Normal collection, exact-source review and final release proofs remain
+pending; the prior seven task states do not change.
+
 ## Reviewed S98.4 ledger identity repair
 
 Root owns exact source daf9a07d4e09f7e1bcfd8319909fab3c3363b459 on development against9b3e90a25ac1af18a0890b731f059712d992986a.
