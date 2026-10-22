@@ -2,7 +2,7 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128731 selected / 128755 collected, 24 deselected, zero collection errors in 49.21s/native 54.504s during normal rejected 62151e62d048c2f425cdc016f682da86ab9e15f6 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T062646Z-83008-3cc4c8cc.{log,json}. Collection is separate from behavioral and final-gate proof; older 6e8, daf, eb6, 3e8, e5/bd3 and f36/815 collections retain their own refs.
+Total tests: 128736 selected / 128760 collected, 24 deselected, zero collection errors in56.55s/native63.545s during normal49bb1326bb8adf818d476ca3ade4751487735834 hooks. Native receipt: .gate-logs/observed/test-count/20261022T064554Z-890-82da95ff.{log,json}. Collection is separate from behavioral and final-gate proof; rejected621 and older6e8, daf, eb6,3e8,e5/bd3,f36/815 collections retain their own refs. Uncommitted receiving admission/fixture work requires its own collection.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
@@ -10,7 +10,8 @@ Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch name
 
 ## Current S98.4 Git-mutex task-handoff repair
 
-Root owns release-candidate/v012-git-mutex-20261022 from rejected exact
+Root owns release-candidate/v012-git-mutex-20261022 at reviewed exact
+49bb1326bb8adf818d476ca3ade4751487735834, descending from rejected
 62151e62d048c2f425cdc016f682da86ab9e15f6 against development
 82db11b57b254c1ca1e035975b5cc86253e2fed5, using the existing canonical checkout.
 The [mutex record](docs/features/GIT_REPOSITORY_MUTEX.md#task-handoff-correction-after-independent-rejection-2026-10-22-utc)
@@ -27,8 +28,26 @@ binding and no conflicting worker; live foreign owners refuse before entry.
 Seven complete source/consumer owners pass266 on31115.42s/native17.6s with the
 unchanged profile at96.8line/90.7branch and85/75 BOTH. The same266 cases pass312
 in14.90s/native16.1s at /tmp/gludd-v012-git-mutex-handoff-312.{log,xml}; separate
-strict source/test scopes and Ruff pass. Operating checks, fresh collection and
-independent exact-source re-review remain pending.
+strict source/test scopes and Ruff pass. Four operating owners pass124/6.92s/
+native7.8s. Normal49bb collection is recorded above; independent APPROVE SOURCE
+ONLY against rejected621 is fully read at
+/tmp/gludd-v012-git-mutex-49-source-review.md. Accepted source stays frozen.
+Receiving early-admission routes155/156 retain154 predecessors; two routing
+REDs precede six canonical pins6PASS/1.77s. The first441-case cohort retains
+5FAIL/436PASS90.39s/native91.487s: five duration fixture children traverse
+unrelated temporary ancestors. Actual equal-physical-root/config assertions
+retain5FAIL before both root/cutoff arguments give5PASS13.25s/native14.075s.
+The [admission record](docs/features/INTEGRATION_ADMISSION.md#git-task-handoff-admission-and-confined-duration-fixtures-2026-10-22-utc)
+owns unchanged assertions, research and receipts. Complete seven-owner receiving
+replay passes441 on31177.78s/native78.668s and31283.19s/native84.474s, zero skips/
+errors and fatal warnings. Preserve /tmp/gludd-v012-git-handoff-admission-final{311,312}.{log,xml}.
+All three strict scopes/Ruff,277 contracts,1157 targets/zero duplicates,7 Markdown
+files,12-path registration, native SESSION mode1 and unchanged line ceiling pass.
+The operating scope retains sandbox2FAIL/122PASS from native process-inspection
+refusal, then passes124/10.45s/native12.0s through authorized host Make at
+/tmp/gludd-v012-git-handoff-admission-docs-host.{log,xml}; no fence is weakened.
+Fresh normal receiving collection and independent source review remain pending;
+this focused observer never certifies original90/60.
 The publication_repair_design model owner produces only a separate confined
 merge-helper proposal; Root stays Main/shared/Git writer. Preserve its unknown
 index.lock cause, refused approaches and ignored-file tests. No lock deletion

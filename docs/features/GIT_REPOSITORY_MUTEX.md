@@ -240,11 +240,25 @@ pass266 on311 in15.42s/native17.6s under the unchanged one-file profile:
 96.8% line/90.7% branch, both85aggregate/75each-file requirements passing.
 Preserve native coverage-files/20261022T063717Z-94134-2804838a.json,
 .gate-logs/coverage-git-mutex-handoff-311.json and terminal
-.gate-logs/coverage-20261022T063735Z.json. Operating checks, fresh collection and independent successor-source review
-remain required. The same266 cases also pass312 in14.90s/native16.1s at
+.gate-logs/coverage-20261022T063735Z.json. The same266 cases also pass312 in14.90s/native16.1s at
 /tmp/gludd-v012-git-mutex-handoff-312.{log,xml}; both separate strict scopes and
-Ruff pass. Promote the cheap regressions through existing admission with
-all154 predecessor families, original2/1/1,90/60,21/2850 and full gate retained.
+Ruff pass.
+
+Normal49bb1326bb8adf818d476ca3ade4751487735834 hooks retain128736selected/
+128760collected,24deselected/zero errors56.55s/native63.545s, zero new clones and
+six checkpoints. Receipt:
+.gate-logs/observed/test-count/20261022T064554Z-890-82da95ff.json.
+Independent APPROVE SOURCE ONLY against rejected621 is fully read at
+/tmp/gludd-v012-git-mutex-49-source-review.md. It accepts the handoff scope and
+all five additive controls, preserving the earlier rejection and unproved fork
+boundary. Four complete operating owners pass124 in6.92s/native7.8s; Markdown,
+registration, native SESSION validation and the unchanged line ceiling pass.
+This receiving documentation binds that actual review/collection without
+rerunning accepted source work. The two semantic controls now have additive
+early routes155/156 after all154 predecessors; the
+[admission record](INTEGRATION_ADMISSION.md#git-task-handoff-admission-and-confined-duration-fixtures-2026-10-22-utc)
+owns their failing-first routing and remaining receiving proof. Original2/1/1,
+90/60,21/2850 and required full gate remain.
 
 This ownership correction is separate from the still-proposed merge-helper
 repair. Preserve its actual failed approaches, checkpoint/ignored-file controls

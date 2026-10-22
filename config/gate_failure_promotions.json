@@ -1237,6 +1237,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_mutation",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "git-async-live-owner-handoff",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_automation_locking_handoff.py::test_live_task_handoff_cannot_allow_critical_section_overlap",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "git-async-completed-owner-adoption",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_automation_locking_handoff.py::test_wait_for_result_binds_nested_use_to_consuming_task",
+      "full_gate_phase": "test"
     }
   ]
 }

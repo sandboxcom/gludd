@@ -25,6 +25,77 @@ that the branch cleared the deterministic, comparatively cheap failure classes
 listed below. Release evidence still requires the normal exact-head gate and
 hosted checks after integration.
 
+## Git task-handoff admission and confined duration fixtures (2026-10-22 UTC)
+
+Exact49bb1326bb8adf818d476ca3ade4751487735834 has independent source-only approval
+for the [mutex handoff correction](GIT_REPOSITORY_MUTEX.md#task-handoff-correction-after-independent-rejection-2026-10-22-utc).
+Promote its live-owner overlap and completed wait_for-consumer nesting controls
+as exact nodes, not the whole file. Native
+/tmp/gludd-v012-git-mutex-handoff-routes-red311.{log,xml} retains2FAIL0.92s/
+native1.816s because neither selector ran. Families155/156 append
+git-async-live-owner-handoff and git-async-completed-owner-adoption after all154
+unchanged records. Update the independent ordered ID seed, expected counts and
+both literal child rosters together. The documented native promotion checker
+then passes all six pins6/1.77s to terminal Make0.
+
+The first seven-owner replay retains5FAIL/436PASS90.39s/native91.487s in
+/tmp/gludd-v012-git-handoff-admission-311.{log,xml}. All failures belong to the
+existing five-mode duration fixture: each external child retains project -c
+but infers the project root and traverses unrelated temporary ancestors,
+raising PermissionError at /private/tmp/codex-daemon-501 before its assertions.
+Do not seek broader filesystem access, ignore that directory or change pytest's
+failure reporting. This is a fixture-scope prerequisite, not evidence about
+the two new semantic routes or the original60907 timeout.
+
+Apply the existing physical-fixture contract to both native duration children:
+-c retains project configuration; --rootdir and --confcutdir receive the same
+resolved owned temporary directory. The actual child conftest asserts both
+values and the unchanged project config before execution. Preserve native
+two-worker/plugin inventory, all success/assertion/warning/setup/import outcomes,
+fatal warnings, error statuses and setup/call/teardown duration assertions.
+The new boundary assertions first retain5FAIL5.95s/native6.814s with the wrong
+root. After supplying both arguments, all5 pass13.25s/native14.075s. Preserve
+/tmp/gludd-v012-duration-confinement-{red,green}311.{log,xml} and their native
+.gate-logs/observed/duration-confinement-{red,green}311/
+v012-duration-confinement-{red,green}311.json receipts.
+
+The firsthand2024 [pytest12291 report](https://github.com/pytest-dev/pytest/issues/12291)
+describes symlink/resolved-path disagreement in collection cutoff. The2023
+[pytest11261 discussion](https://github.com/pytest-dev/pytest/issues/11261)
+explains the distinct config-root and conftest-cutoff behavior. These reports
+motivate physical equality; they do not replace this fixture's measured failures.
+[Pytest configuration documentation](https://github.com/pytest-dev/pytest/blob/main/doc/en/reference/customize.rst)
+defines -c/rootdir/config.rootpath; the
+[native collector](https://github.com/pytest-dev/pytest/blob/main/src/_pytest/main.py)
+stops parent traversal at confcutdir. Reuse those existing options and assertions,
+with no new wrapper, collector, ignore rule or permission expansion.
+
+The complete seven-owner receiving scope passes441 on31177.78s/native78.668s
+and31283.19s/native84.474s, fatal warnings and zero skips/errors. Preserve
+/tmp/gludd-v012-git-handoff-admission-final{311,312}.{log,xml} and corresponding
+.gate-logs/observed/git-handoff-admission-final{311,312}/
+v012-git-handoff-admission-final{311,312}.json. This includes the five whole
+routing owners, complete five-case handoff owner and complete parameter-fixture
+collision guard. No predecessor assertion or selector is removed.
+Three separate strict test scopes and Ruff pass. Native277-target contract,
+1157target/zero-duplicate Make parity,12-path registration, SESSION validation,
+all seven Markdown files and the unchanged less-than2500 ceiling pass.
+The four whole operating owners first retain2FAIL/122PASS6.26s/native7.4s:
+native worktree retirement refuses unavailable process inspection in the sandbox.
+Preserve /tmp/gludd-v012-git-handoff-admission-docs.{log,xml}; no ownership or
+cleanup fence changes. The authorized host Make boundary then passes124/10.45s/
+native12.0s at /tmp/gludd-v012-git-handoff-admission-docs-host.{log,xml} and
+.gate-logs/observed/git-handoff-admission-docs-host/
+v012-git-handoff-admission-docs-host.json. This changes the execution boundary,
+not assertions or retirement eligibility.
+Normal receiving collection and independent source review remain pending at
+this authoring boundary. The focused replay's180s observer is
+diagnostic-only; original runtime admission remains three2/1/1 children,
+90total/60quiet,21phases/2850 and mandatory full gate. The internal owner's
+documented full behavioral invocation remains pending behind actual capacity
+admission; routing capture and source approval do not certify that invocation.
+Capacity, original60907 and every exact-SHA release proof remain open.
+
 ## Remaining hosted failures and native readiness repairs (2026-10-21 UTC)
 
 Terminal Build39533219987 at published6161 records6failed/20passed/4skipped

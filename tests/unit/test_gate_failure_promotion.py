@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 154
+EXPECTED_FAMILY_COUNT = 156
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -40,13 +40,7 @@ STRUCTURAL_PROMOTION_NODES = (
 
 EXPECTED_RUNTIME_PHASES = [
     ("worktree-guard", "worktree-guard", "fast", 90, 60),
-    (
-        "check-gate-failure-promotions",
-        "check-gate-failure-promotions",
-        "fast",
-        90,
-        60,
-    ),
+    ("check-gate-failure-promotions", "check-gate-failure-promotions", "fast", 90, 60),
     ("check-duplicate-code", "check-duplicate-code", "standard", 180, 120),
     (
         "pytest-runtime-compatibility",
@@ -1846,6 +1840,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "watchdog-empty-observer-projection", "scratch-nested-symlink-permissions",
         "native-full-scan-success-inventory", "coverage-native-suite-provenance", "uv-prune-native-failure-status",
         "uv-prune-inherited-policy-context", "shared-uv-cache-inventory-exposure",
+        "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2067,6 +2062,10 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_make_uv_cache_sandbox.py::"
         "test_native_prune_target_policy_refuses_invalid[UV_CACHE_PRUNE_TIMEOUT=0] "
         "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_mutation "
+        "tests/unit/test_git_automation_locking_handoff.py::"
+        "test_live_task_handoff_cannot_allow_critical_section_overlap "
+        "tests/unit/test_git_automation_locking_handoff.py::"
+        "test_wait_for_result_binds_nested_use_to_consuming_task "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py "

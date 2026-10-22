@@ -132,7 +132,10 @@ that native failure and repair collection scope before replaying. Native lifecyc
 checks additionally need process inspection: /bin/ps or sysctl denial is failed
 proof; use the authorized host Make execution boundary with identity/cleanup
 requirements intact. The [source record](../../docs/features/COVERAGE_SOURCE_IDENTITY.md)
-retains both distinct incidents and exact negative/positive receipts.
+retains both distinct incidents and exact negative/positive receipts. The
+[duration comparison](../../docs/features/INTEGRATION_ADMISSION.md#git-task-handoff-admission-and-confined-duration-fixtures-2026-10-22-utc)
+applies the same boundary to both baseline and instrumented children, with
+actual child config assertions and every native outcome retained.
 
 ### Choose the next action from evidence
 
